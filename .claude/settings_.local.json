@@ -1,0 +1,55 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:developers.cloudflare.com)",
+      "Bash(xxd:*)",
+      "Bash(go doc:*)",
+      "WebFetch(domain:developer.paypal.com)",
+      "Bash(cmake --build:*)",
+      "Bash(ctest:*)",
+      "Bash(cmake:*)",
+      "Bash(cmake-build-debug/tests/tst_Tags:*)",
+      "Bash(cmake-build-debug/tests/tst_ED2KLink:*)",
+      "WebFetch(domain:doc.qt.io)",
+      "Bash(./cmake-build-debug/tests/tst_MediaInfo:*)",
+      "Bash(cmake-build-debug/tests/tst_KnownFile:*)",
+      "Bash(./tests/tst_UpDownClient:*)",
+      "Bash(./tests/tst_ClientList:*)",
+      "Bash(cmake-build-debug/tests/tst_UpDownClient:*)",
+      "Bash(cmake-build-debug/tests/tst_URLClient:*)",
+      "Bash(cmake-build-debug/tests/tst_PartFile:*)",
+      "Bash(cmake-build-debug/tests/tst_DownloadQueue:*)",
+      "Bash(./tests/tst_TimeUtils:*)",
+      "Bash(cmake-build-debug/tests/tst_AICHHashSet:*)",
+      "Bash(./tests/tst_Preferences:*)",
+      "Bash(QT_QPA_PLATFORM=offscreen ./tests/tst_SearchExpr:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/bin/pushover.sh \"Claude Code Finished\" \"Task complete in $(basename $PWD)\""
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/bin/pushover.sh \"Claude Code\""
+          }
+        ]
+      }
+    ]
+  }
+}

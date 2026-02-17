@@ -1,0 +1,6 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <!-- ToDo: Migrate icons from srchybrid/res/ here (Module 27) -->
+    </qresource>
+</RCC>

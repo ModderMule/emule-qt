@@ -1,0 +1,98 @@
+/// @file tst_KadUDPListener.cpp
+/// @brief Tests for KadUDPListener.h — Kad UDP packet handler.
+
+#include "TestHelpers.h"
+
+#include "kademlia/KadUDPListener.h"
+#include "kademlia/KadUDPKey.h"
+#include "kademlia/KadUInt128.h"
+#include "utils/Opcodes.h"
+#include "utils/SafeFile.h"
+
+#include <QSignalSpy>
+#include <QTest>
+
+using namespace eMule;
+using namespace eMule::kad;
+
+class tst_KadUDPListener : public QObject {
+    Q_OBJECT
+
+private slots:
+    void construct_basic();
+    void processPacket_unknownOpcode();
+    void sendPacket_emitsSignal();
+    void sendNullPacket_basic();
+    void findNodeIDByIP_queued();
+    void expireClientSearch_noRequester();
+};
+
+void tst_KadUDPListener::construct_basic()
+{
+    KademliaUDPListener listener;
+    // Construction should succeed without crash
+    QVERIFY(true);
+}
+
+void tst_KadUDPListener::processPacket_unknownOpcode()
+{
+    KademliaUDPListener listener;
+
+    // Unknown opcode — should not crash, just log and return
+    uint8 data[] = {0xFF}; // invalid opcode
+    KadUDPKey senderKey(0);
+    listener.processPacket(data, sizeof(data), 0x0A000001, 4672, false, senderKey);
+    QVERIFY(true); // no crash
+}
+
+void tst_KadUDPListener::sendPacket_emitsSignal()
+{
+    KademliaUDPListener listener;
+    QSignalSpy spy(&listener, &KademliaUDPListener::packetToSend);
+
+    SafeMemFile file;
+    file.writeUInt8(0x42); // dummy data
+    KadUDPKey targetKey(0);
+
+    listener.sendPacket(file, KADEMLIA2_BOOTSTRAP_REQ, 0x0A000001, 4672,
+                        targetKey, nullptr);
+
+    QCOMPARE(spy.count(), 1);
+    auto args = spy.takeFirst();
+    QCOMPARE(args.at(1).value<uint32>(), uint32{0x0A000001});
+    QCOMPARE(args.at(2).value<uint16>(), uint16{4672});
+}
+
+void tst_KadUDPListener::sendNullPacket_basic()
+{
+    KademliaUDPListener listener;
+    QSignalSpy spy(&listener, &KademliaUDPListener::packetToSend);
+
+    KadUDPKey targetKey(0);
+    listener.sendNullPacket(KADEMLIA2_BOOTSTRAP_REQ, 0x0A000001, 4672,
+                            targetKey, nullptr);
+
+    // Should emit a packet with just the opcode
+    QCOMPARE(spy.count(), 1);
+}
+
+void tst_KadUDPListener::findNodeIDByIP_queued()
+{
+    KademliaUDPListener listener;
+
+    // With null requester, should return false
+    bool result = listener.findNodeIDByIP(nullptr, 0x0A000001, 4662, 4672);
+    QVERIFY(!result);
+}
+
+void tst_KadUDPListener::expireClientSearch_noRequester()
+{
+    KademliaUDPListener listener;
+
+    // Expire with no requester should not crash
+    listener.expireClientSearch(nullptr);
+    QVERIFY(true);
+}
+
+QTEST_GUILESS_MAIN(tst_KadUDPListener)
+#include "tst_KadUDPListener.moc"

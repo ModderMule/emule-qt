@@ -1,0 +1,5 @@
+# Sample IP filter in FilterDat format
+# Lines starting with # are comments
+001.002.003.000 - 001.002.003.255 , 100 , Test range 1
+010.000.000.000 - 010.000.000.255 ,  50 , Test range 2 low level
+192.168.001.000 - 192.168.001.255 , 100 , Test range 3

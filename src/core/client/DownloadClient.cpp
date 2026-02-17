@@ -1,0 +1,1246 @@
+/// @file DownloadClient.cpp
+/// @brief UpDownClient download methods — file requests, block transfer, source swapping.
+///
+/// Ported from MFC srchybrid/DownloadClient.cpp.
+/// Methods of UpDownClient related to download functionality.
+
+#include "client/UpDownClient.h"
+#include "client/ClientCredits.h"
+#include "client/ClientList.h"
+#include "client/DeadSourceList.h"
+#include "app/AppContext.h"
+#include "crypto/AICHData.h"
+#include "crypto/AICHHashSet.h"
+#include "crypto/FileIdentifier.h"
+#include "files/KnownFile.h"
+#include "files/PartFile.h"
+#include "files/SharedFileList.h"
+#include "net/ClientUDPSocket.h"
+#include "net/EMSocket.h"
+#include "net/ListenSocket.h"
+#include "net/Packet.h"
+#include "prefs/Preferences.h"
+#include "transfer/DownloadQueue.h"
+#include "utils/Log.h"
+#include "utils/OtherFunctions.h"
+#include "utils/Opcodes.h"
+#include "utils/SafeFile.h"
+#include "utils/TimeUtils.h"
+
+#include <QDebug>
+
+#include <algorithm>
+#include <cstring>
+
+#include <zlib.h>
+
+namespace eMule {
+
+// ===========================================================================
+// askForDownload
+// ===========================================================================
+
+bool UpDownClient::askForDownload()
+{
+    if (!m_reqFile) {
+        qDebug() << "askForDownload: no reqFile for" << userName();
+        return false;
+    }
+
+    if (m_downloadState == DownloadState::Downloading) {
+        qDebug() << "askForDownload: already downloading from" << userName();
+        return false;
+    }
+
+    // Check socket limit
+    if (theApp.listenSocket && theApp.listenSocket->tooManySockets())
+        return false;
+
+    // Check if already waiting on queue
+    if (m_downloadState == DownloadState::OnQueue)
+        return false;
+
+    return tryToConnect();
+}
+
+// ===========================================================================
+// isSourceRequestAllowed
+// ===========================================================================
+
+bool UpDownClient::isSourceRequestAllowed() const
+{
+    return isSourceRequestAllowed(m_reqFile);
+}
+
+bool UpDownClient::isSourceRequestAllowed(PartFile* partFile, bool sourceExchangeCheck) const
+{
+    Q_UNUSED(partFile);
+
+    if (m_sourceExchange1Ver == 0)
+        return false;
+
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+
+    // Don't request sources too often
+    if (m_lastAskedForSources != 0 && (curTick - m_lastAskedForSources) < SOURCECLIENTREASKS)
+        return false;
+
+    if (sourceExchangeCheck) {
+        if (partFile && partFile->sourceCount() >= thePrefs.maxSourcesPerFile())
+            return false;
+    }
+
+    return true;
+}
+
+// ===========================================================================
+// sendFileRequest — MFC DownloadClient.cpp
+// ===========================================================================
+
+void UpDownClient::sendFileRequest()
+{
+    if (!m_socket || !m_reqFile)
+        return;
+
+    // Build file request with the requested file hash
+    SafeMemFile data;
+    data.writeHash16(m_reqUpFileId.data()); // file hash
+
+    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_SETREQFILEID);
+    sendPacket(std::move(packet));
+
+    // Also request filename
+    auto fnPacket = std::make_unique<Packet>(OP_REQUESTFILENAME, 0);
+    fnPacket->prot = OP_EDONKEYPROT;
+    sendPacket(std::move(fnPacket));
+}
+
+// ===========================================================================
+// sendStartupLoadReq
+// ===========================================================================
+
+void UpDownClient::sendStartupLoadReq()
+{
+    if (!m_socket)
+        return;
+
+    auto packet = std::make_unique<Packet>(OP_STARTUPLOADREQ, 16);
+    std::memcpy(packet->pBuffer, m_reqUpFileId.data(), 16);
+    packet->prot = OP_EDONKEYPROT;
+    sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// processFileInfo
+// ===========================================================================
+
+void UpDownClient::processFileInfo(SafeMemFile& data, PartFile* file)
+{
+    // Read filename from peer response
+    const QString filename = data.readString(true);
+    m_clientFilename = filename;
+
+    if (file && file->fileName().isEmpty())
+        file->setFileName(filename, true);
+}
+
+// ===========================================================================
+// processFileStatus
+// ===========================================================================
+
+void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile* file)
+{
+    Q_UNUSED(udpPacket);
+
+    const uint16 partCount = data.readUInt16();
+    m_partCount = partCount;
+
+    if (partCount == 0) {
+        // Complete file — all parts available
+        m_completeSource = true;
+        m_partStatus.clear();
+        return;
+    }
+
+    m_completeSource = false;
+    m_partStatus.resize(partCount);
+
+    // Read availability bitmap
+    const uint16 byteCount = (partCount + 7) / 8;
+    std::vector<uint8> bitmap(byteCount);
+    data.read(bitmap.data(), byteCount);
+
+    bool allAvailable = true;
+    for (uint16 i = 0; i < partCount; ++i) {
+        m_partStatus[i] = (bitmap[i / 8] & (1 << (i % 8))) ? 1 : 0;
+        if (!m_partStatus[i])
+            allAvailable = false;
+    }
+
+    if (allAvailable)
+        m_completeSource = true;
+
+    // Update PartFile source part frequency
+    if (file) {
+        auto& freq = file->srcPartFrequency();
+        if (freq.size() == partCount) {
+            for (uint16 i = 0; i < partCount; ++i) {
+                if (m_partStatus[i])
+                    freq[i]++;
+            }
+        }
+    }
+}
+
+// ===========================================================================
+// processHashSet
+// ===========================================================================
+
+void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdentifiers)
+{
+    if (!data || size < 16 || !m_reqFile) {
+        m_hashsetRequestingMD4 = false;
+        m_hashsetRequestingAICH = false;
+        return;
+    }
+
+    SafeMemFile file(data, size);
+
+    if (fileIdentifiers) {
+        // New-style: read via FileIdentifier with MD4 + AICH hashsets
+        auto& ident = m_reqFile->fileIdentifier();
+        bool md4 = false;
+        bool aich = false;
+
+        if (!ident.readHashSetsFromPacket(file, md4, aich)) {
+            qDebug() << "processHashSet: readHashSetsFromPacket failed from" << userName();
+            m_hashsetRequestingMD4 = false;
+            m_hashsetRequestingAICH = false;
+            return;
+        }
+
+        if (md4) {
+            // Verify MD4 hashset against file hash
+            if (!ident.calculateMD4HashByHashSet(true, true)) {
+                qDebug() << "processHashSet: MD4 hashset verification failed from" << userName();
+            }
+            m_hashsetRequestingMD4 = false;
+        }
+
+        if (aich) {
+            if (!ident.verifyAICHHashSet()) {
+                qDebug() << "processHashSet: AICH hashset verification failed from" << userName();
+            }
+            m_hashsetRequestingAICH = false;
+        }
+    } else {
+        // Legacy: read file hash + part hashes
+        uint8 fileHash[16];
+        file.readHash16(fileHash);
+
+        // Verify this is the file we requested
+        if (!md4equ(fileHash, m_reqFile->fileHash())) {
+            qDebug() << "processHashSet: hash mismatch from" << userName();
+            m_hashsetRequestingMD4 = false;
+            return;
+        }
+
+        auto& ident = m_reqFile->fileIdentifier();
+        if (!ident.loadMD4HashsetFromFile(file, true)) {
+            qDebug() << "processHashSet: loadMD4HashsetFromFile failed from" << userName();
+            m_hashsetRequestingMD4 = false;
+            return;
+        }
+
+        // Verify the hashset
+        if (!ident.calculateMD4HashByHashSet(true, true)) {
+            qDebug() << "processHashSet: MD4 verification failed from" << userName();
+        }
+
+        m_hashsetRequestingMD4 = false;
+    }
+
+    // If hashset obtained, proceed with download
+    if (m_downloadState == DownloadState::ReqHashSet) {
+        sendStartupLoadReq();
+    }
+}
+
+// ===========================================================================
+// processAcceptUpload
+// ===========================================================================
+
+void UpDownClient::processAcceptUpload()
+{
+    m_remoteQueueFull = false;
+
+    if (m_downloadState == DownloadState::OnQueue ||
+        m_downloadState == DownloadState::Connecting ||
+        m_downloadState == DownloadState::Connected ||
+        m_downloadState == DownloadState::WaitCallback ||
+        m_downloadState == DownloadState::WaitCallbackKad ||
+        m_downloadState == DownloadState::ReqHashSet)
+    {
+        setDownloadState(DownloadState::Downloading);
+        m_downStartTime = static_cast<uint32>(getTickCount());
+
+        // Start requesting blocks
+        sendBlockRequests();
+    }
+}
+
+// ===========================================================================
+// addRequestForAnotherFile
+// ===========================================================================
+
+bool UpDownClient::addRequestForAnotherFile(PartFile* file)
+{
+    if (!file)
+        return false;
+
+    // Check if already in other requests list
+    for (const auto* f : m_otherRequests) {
+        if (f == file)
+            return false;
+    }
+
+    m_otherRequests.push_back(file);
+    return true;
+}
+
+// ===========================================================================
+// clearDownloadBlockRequests
+// ===========================================================================
+
+void UpDownClient::clearDownloadBlockRequests()
+{
+    for (auto* pending : m_pendingBlocks) {
+        clearPendingBlockRequest(pending);
+        delete pending;
+    }
+    m_pendingBlocks.clear();
+}
+
+// ===========================================================================
+// createBlockRequests — heavily stubbed
+// ===========================================================================
+
+void UpDownClient::createBlockRequests(int blockCount)
+{
+    if (!m_reqFile || blockCount <= 0)
+        return;
+
+    Requested_Block_Struct* blocks[3] = {};
+    int count = std::min(blockCount, 3);
+
+    if (m_reqFile->getNextRequestedBlock(this, blocks, count)) {
+        for (int i = 0; i < count; ++i) {
+            auto* pending = new Pending_Block_Struct;
+            pending->block = blocks[i];
+            m_pendingBlocks.push_back(pending);
+        }
+    }
+}
+
+// ===========================================================================
+// sendBlockRequests
+// ===========================================================================
+
+void UpDownClient::sendBlockRequests()
+{
+    if (!m_socket)
+        return;
+
+    if (m_downloadState != DownloadState::Downloading)
+        return;
+
+    // Create new block requests if needed
+    createBlockRequests(3);
+
+    if (m_pendingBlocks.empty()) {
+        sendCancelTransfer();
+        setDownloadState(DownloadState::NoNeededParts);
+        return;
+    }
+
+    // Build request packet
+    SafeMemFile data;
+    data.writeHash16(m_reqUpFileId.data());
+
+    int blocksInPacket = 0;
+    for (const auto* pending : m_pendingBlocks) {
+        if (blocksInPacket >= 3)
+            break;
+        if (!pending->block || pending->queued)
+            continue;
+
+        if (m_supportsLargeFiles) {
+            data.writeUInt64(pending->block->startOffset);
+        } else {
+            data.writeUInt32(static_cast<uint32>(pending->block->startOffset));
+        }
+        blocksInPacket++;
+    }
+
+    if (blocksInPacket == 0)
+        return;
+
+    // Pad to 3 blocks
+    while (blocksInPacket < 3) {
+        if (m_supportsLargeFiles)
+            data.writeUInt64(0);
+        else
+            data.writeUInt32(0);
+        blocksInPacket++;
+    }
+
+    // Write end offsets
+    blocksInPacket = 0;
+    for (const auto* pending : m_pendingBlocks) {
+        if (blocksInPacket >= 3)
+            break;
+        if (!pending->block || pending->queued)
+            continue;
+
+        if (m_supportsLargeFiles) {
+            data.writeUInt64(pending->block->endOffset);
+        } else {
+            data.writeUInt32(static_cast<uint32>(pending->block->endOffset));
+        }
+        blocksInPacket++;
+    }
+
+    while (blocksInPacket < 3) {
+        if (m_supportsLargeFiles)
+            data.writeUInt64(0);
+        else
+            data.writeUInt32(0);
+        blocksInPacket++;
+    }
+
+    const uint8 opcode = m_supportsLargeFiles ? OP_REQUESTPARTS_I64 : OP_REQUESTPARTS;
+    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, opcode);
+    sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// processBlockPacket — heavily stubbed
+// ===========================================================================
+
+void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
+                                       bool packed, bool i64Offsets)
+{
+    Q_UNUSED(packed);
+
+    if (!data || size == 0)
+        return;
+
+    // Read file hash (16 bytes)
+    if (size < 16)
+        return;
+
+    // Read offsets
+    uint64 startOffset, endOffset;
+    uint32 headerSize;
+
+    if (i64Offsets) {
+        if (size < 16 + 8 + 8)
+            return;
+        std::memcpy(&startOffset, data + 16, 8);
+        std::memcpy(&endOffset, data + 24, 8);
+        headerSize = 16 + 8 + 8;
+    } else {
+        if (size < 16 + 4 + 4)
+            return;
+        uint32 start32, end32;
+        std::memcpy(&start32, data + 16, 4);
+        std::memcpy(&end32, data + 20, 4);
+        startOffset = start32;
+        endOffset = end32;
+        headerSize = 16 + 4 + 4;
+    }
+
+    const uint32 blockSize = size - headerSize;
+
+    // Update transfer statistics
+    m_transferredDown += blockSize;
+    m_curSessionDown += blockSize;
+    m_lastBlockReceived = static_cast<uint32>(getTickCount());
+    m_lastBlockOffset = startOffset;
+
+    // Add to rate averaging
+    TransferredData td;
+    td.dataLen = blockSize;
+    td.timestamp = m_lastBlockReceived;
+    m_averageDDR.push_back(td);
+    m_sumForAvgDownDataRate += blockSize;
+
+    // Write data to PartFile buffer
+    if (m_reqFile) {
+        m_reqFile->writeToBuffer(blockSize, data + headerSize,
+                                  startOffset, endOffset, nullptr);
+    }
+}
+
+// ===========================================================================
+// clearPendingBlockRequest (private)
+// ===========================================================================
+
+void UpDownClient::clearPendingBlockRequest(const Pending_Block_Struct* pending)
+{
+    if (!pending)
+        return;
+
+    if (pending->zStream) {
+        deflateEnd(pending->zStream);
+        delete pending->zStream;
+    }
+
+    delete pending->block;
+}
+
+// ===========================================================================
+// sendCancelTransfer
+// ===========================================================================
+
+void UpDownClient::sendCancelTransfer()
+{
+    if (!m_sentCancelTransfer) {
+        auto packet = std::make_unique<Packet>(OP_CANCELTRANSFER, 0);
+        packet->prot = OP_EDONKEYPROT;
+        sendPacket(std::move(packet));
+        m_sentCancelTransfer = true;
+    }
+}
+
+// ===========================================================================
+// startDownload
+// ===========================================================================
+
+void UpDownClient::startDownload()
+{
+    setDownloadState(DownloadState::Downloading);
+    m_downStartTime = static_cast<uint32>(getTickCount());
+    m_sentCancelTransfer = false;
+    sendBlockRequests();
+}
+
+// ===========================================================================
+// sendHashSetRequest
+// ===========================================================================
+
+void UpDownClient::sendHashSetRequest()
+{
+    if (!m_socket)
+        return;
+
+    if (m_hashsetRequestingMD4 || m_hashsetRequestingAICH)
+        return;
+
+    m_hashsetRequestingMD4 = true;
+    setDownloadState(DownloadState::ReqHashSet);
+
+    SafeMemFile data;
+    data.writeHash16(m_reqUpFileId.data());
+
+    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HASHSETREQUEST);
+    sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// calculateDownloadRate
+// ===========================================================================
+
+uint32 UpDownClient::calculateDownloadRate()
+{
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+
+    // Remove old entries (older than 10 seconds)
+    while (!m_averageDDR.empty() && (curTick - m_averageDDR.front().timestamp) > 10000) {
+        m_sumForAvgDownDataRate -= m_averageDDR.front().dataLen;
+        m_averageDDR.pop_front();
+    }
+
+    if (!m_averageDDR.empty()) {
+        const uint32 elapsed = curTick - m_averageDDR.front().timestamp;
+        if (elapsed > 0)
+            m_downDatarate = static_cast<uint32>((m_sumForAvgDownDataRate * 1000) / elapsed);
+        else
+            m_downDatarate = 0;
+    } else {
+        m_downDatarate = 0;
+    }
+
+    return m_downDatarate;
+}
+
+// ===========================================================================
+// checkDownloadTimeout
+// ===========================================================================
+
+void UpDownClient::checkDownloadTimeout()
+{
+    if (m_downloadState != DownloadState::Downloading)
+        return;
+
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+
+    if (m_lastBlockReceived == 0)
+        m_lastBlockReceived = curTick;
+
+    if ((curTick - m_lastBlockReceived) > DOWNLOADTIMEOUT) {
+        qDebug() << "Download timeout for" << userName();
+        disconnected(QStringLiteral("Download timeout"));
+    }
+}
+
+// ===========================================================================
+// availablePartCount
+// ===========================================================================
+
+uint16 UpDownClient::availablePartCount() const
+{
+    uint16 count = 0;
+    for (const auto status : m_partStatus) {
+        if (status != 0)
+            ++count;
+    }
+    return count;
+}
+
+// ===========================================================================
+// isPartAvailable
+// ===========================================================================
+
+bool UpDownClient::isPartAvailable(uint32 part) const
+{
+    if (part >= m_partStatus.size())
+        return false;
+    return m_partStatus[part] != 0;
+}
+
+// ===========================================================================
+// setRemoteQueueRank
+// ===========================================================================
+
+void UpDownClient::setRemoteQueueRank(uint32 rank, bool updateDisplay)
+{
+    Q_UNUSED(updateDisplay);
+    m_remoteQueueRank = rank;
+    m_remoteQueueFull = false;
+}
+
+// ===========================================================================
+// UDP reask methods
+// ===========================================================================
+
+void UpDownClient::udpReaskACK(uint16 newQR)
+{
+    m_reaskPending = false;
+    setRemoteQueueRank(newQR);
+}
+
+void UpDownClient::udpReaskFNF()
+{
+    m_reaskPending = false;
+
+    // File not found — remove source
+    if (theApp.downloadQueue)
+        theApp.downloadQueue->removeSource(this);
+    setDownloadState(DownloadState::None);
+}
+
+void UpDownClient::udpReaskForDownload()
+{
+    if (!m_reqFile || !supportsUDP())
+        return;
+
+    if (m_reaskPending)
+        return;
+
+    // Check UDP packet success rate — abort if failure rate > 30%
+    if (m_totalUDPPackets > 5 && m_failedUDPPackets > 0) {
+        if ((m_failedUDPPackets * 100 / m_totalUDPPackets) > 30)
+            return;
+    }
+
+    m_reaskPending = true;
+    m_totalUDPPackets++;
+
+    // Build OP_REASKFILEPING packet: file hash + part status
+    SafeMemFile data;
+    data.writeHash16(m_reqFile->fileHash());
+
+    // If source exchange v3+, include our part status for better source matching
+    if (m_sourceExchange1Ver >= 3 && m_reqFile->partCount() > 0) {
+        const uint16 parts = m_reqFile->partCount();
+        data.writeUInt16(parts);
+
+        const uint16 byteCount = (parts + 7) / 8;
+        std::vector<uint8> bitmap(byteCount, 0);
+        for (uint16 i = 0; i < parts; ++i) {
+            if (m_reqFile->isComplete(i))
+                bitmap[i / 8] |= (1 << (i % 8));
+        }
+        data.write(bitmap.data(), byteCount);
+    }
+
+    // Include complete source count if extended requests
+    if (m_extendedRequestsVer >= 2) {
+        data.writeUInt16(m_reqFile->sourceCount());
+    }
+
+    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);
+
+    // Send via client UDP socket
+    if (theApp.clientUDP) {
+        const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
+        theApp.clientUDP->sendPacket(std::move(packet), m_connectIP, m_udpPort,
+                                     encrypt, m_userHash.data(), false, 0);
+    }
+}
+
+// ===========================================================================
+// isValidSource
+// ===========================================================================
+
+bool UpDownClient::isValidSource() const
+{
+    return m_downloadState != DownloadState::None &&
+           m_downloadState != DownloadState::Error;
+}
+
+// ===========================================================================
+// Source swapping — heavily stubbed
+// ===========================================================================
+
+bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
+                                      bool ignoreSuspensions, bool removeCompletely,
+                                      PartFile* toFile, bool allowSame, bool isAboutToAsk)
+{
+    Q_UNUSED(isAboutToAsk);
+
+    if (!m_reqFile)
+        return false;
+
+    // Determine aggressive swapping mode
+    const bool aggressiveSwapping = (removeCompletely || ignoreNoNeeded);
+
+    // If specific target file given, try to swap directly
+    if (toFile) {
+        if (toFile == m_reqFile && !allowSame)
+            return false;
+        if (toFile != m_reqFile) {
+            bool skipped = false;
+            if (swapToRightFile(toFile, m_reqFile, ignoreSuspensions,
+                                isInNoNeededList(toFile),
+                                m_downloadState == DownloadState::NoNeededParts,
+                                skipped, aggressiveSwapping))
+            {
+                return doSwap(toFile, removeCompletely, reason);
+            }
+        }
+        return false;
+    }
+
+    // Find best file to swap to from our other-requests lists
+    PartFile* bestFile = nullptr;
+    bool bestSkippedSrcExch = false;
+
+    // Check m_otherRequests list
+    for (auto* otherFile : m_otherRequests) {
+        if (otherFile == m_reqFile)
+            continue;
+        bool skipped = false;
+        if (swapToRightFile(otherFile, bestFile ? bestFile : m_reqFile,
+                            ignoreSuspensions, false,
+                            (m_downloadState == DownloadState::NoNeededParts),
+                            skipped, aggressiveSwapping))
+        {
+            bestFile = otherFile;
+            bestSkippedSrcExch = skipped;
+        }
+    }
+
+    // Check m_otherNoNeeded list if ignoring no-needed
+    if (ignoreNoNeeded) {
+        for (auto* otherFile : m_otherNoNeeded) {
+            if (otherFile == m_reqFile)
+                continue;
+            bool skipped = false;
+            if (swapToRightFile(otherFile, bestFile ? bestFile : m_reqFile,
+                                ignoreSuspensions, true,
+                                (m_downloadState == DownloadState::NoNeededParts),
+                                skipped, aggressiveSwapping))
+            {
+                bestFile = otherFile;
+                bestSkippedSrcExch = skipped;
+            }
+        }
+    }
+
+    if (bestFile) {
+        if (bestSkippedSrcExch)
+            setSwapForSourceExchangeTick();
+        return doSwap(bestFile, removeCompletely, reason);
+    }
+
+    return false;
+}
+
+bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString& reason)
+{
+    if (!swapTo || !m_reqFile || swapTo == m_reqFile)
+        return false;
+
+    PartFile* oldFile = m_reqFile;
+
+    // Remove this client from old file's source list
+    oldFile->removeSource(this);
+
+    // Remove from new file's A4AF source list
+    auto& a4afList = swapTo->a4afSrcList();
+    a4afList.erase(std::remove(a4afList.begin(), a4afList.end(), this), a4afList.end());
+
+    // If not removing completely, add to old file's A4AF list
+    if (!removeCompletely) {
+        oldFile->a4afSrcList().push_back(this);
+
+        // Add to appropriate other-requests list
+        if (m_downloadState == DownloadState::NoNeededParts) {
+            m_otherNoNeeded.push_back(oldFile);
+        } else {
+            m_otherRequests.push_back(oldFile);
+        }
+    }
+
+    // Remove old file from our other-requests/no-needed lists
+    m_otherRequests.remove(swapTo);
+    m_otherNoNeeded.remove(swapTo);
+
+    // Set the new request file
+    m_reqFile = swapTo;
+    if (m_reqFile->fileHash()) {
+        md4cpy(m_reqUpFileId.data(), m_reqFile->fileHash());
+    }
+
+    // Add to new file's source list
+    swapTo->addSource(this);
+
+    // Reset download state for new file
+    resetFileStatusInfo();
+    m_sentCancelTransfer = false;
+
+    qDebug() << "Source swap:" << userName() << "from" << oldFile->fileName()
+             << "to" << swapTo->fileName() << "reason:" << reason;
+
+    return true;
+}
+
+bool UpDownClient::swapToRightFile(PartFile* swapTo, PartFile* curFile, bool ignoreSuspensions,
+                                    bool swapToIsNNP, bool curFileIsNNP,
+                                    bool& wasSkippedDueToSrcExch,
+                                    bool aggressiveSwapping)
+{
+    wasSkippedDueToSrcExch = false;
+
+    if (!swapTo || !curFile)
+        return false;
+
+    // Don't swap if suspended (unless ignoring suspensions)
+    if (!ignoreSuspensions && isSwapSuspended(swapTo))
+        return false;
+
+    // Source count check — prefer files needing more sources
+    const int swapToSrcCount = swapTo->sourceCount();
+    const int curFileSrcCount = curFile->sourceCount();
+    const int maxSources = static_cast<int>(thePrefs.maxSourcesPerFile());
+
+    // If swapTo already has max sources, don't swap
+    if (swapToSrcCount >= maxSources)
+        return false;
+
+    // NNP (No Needed Parts) handling:
+    // Prefer swapping away from NNP files to non-NNP files
+    if (curFileIsNNP && !swapToIsNNP)
+        return true;  // Current is NNP, target is not — swap
+
+    if (!curFileIsNNP && swapToIsNNP) {
+        if (!aggressiveSwapping)
+            return false;  // Current is not NNP, target is — don't swap unless aggressive
+    }
+
+    // Source exchange: avoid swapping too frequently for source exchange
+    if (!aggressiveSwapping && recentlySwappedForSourceExchange()) {
+        wasSkippedDueToSrcExch = true;
+        return false;
+    }
+
+    // Prefer the file with fewer sources (needs us more)
+    if (swapToSrcCount < curFileSrcCount)
+        return true;
+
+    // Equal source count: prefer higher priority file
+    if (swapToSrcCount == curFileSrcCount) {
+        if (swapTo->upPriority() > curFile->upPriority())
+            return true;
+    }
+
+    return false;
+}
+
+void UpDownClient::dontSwapTo(PartFile* file)
+{
+    if (!file)
+        return;
+
+    FileStamp stamp;
+    stamp.file = file;
+    stamp.timestamp = static_cast<uint32>(getTickCount());
+    m_dontSwap.push_back(stamp);
+}
+
+bool UpDownClient::isSwapSuspended(const PartFile* file, bool allowShortReaskTime,
+                                    bool fileIsNNP) const
+{
+    Q_UNUSED(allowShortReaskTime);
+    Q_UNUSED(fileIsNNP);
+
+    if (!file)
+        return false;
+
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+
+    for (const auto& stamp : m_dontSwap) {
+        if (stamp.file == file) {
+            return (curTick - stamp.timestamp) < PURGESOURCESWAPSTOP;
+        }
+    }
+
+    return false;
+}
+
+bool UpDownClient::isInNoNeededList(const PartFile* file) const
+{
+    for (const auto* f : m_otherNoNeeded) {
+        if (f == file)
+            return true;
+    }
+    return false;
+}
+
+bool UpDownClient::recentlySwappedForSourceExchange() const
+{
+    if (m_lastSwapForSourceExchangeTick == 0)
+        return false;
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    return (curTick - m_lastSwapForSourceExchangeTick) < SEC2MS(30);
+}
+
+void UpDownClient::setSwapForSourceExchangeTick()
+{
+    m_lastSwapForSourceExchangeTick = static_cast<uint32>(getTickCount());
+}
+
+// ===========================================================================
+// timeUntilReask
+// ===========================================================================
+
+uint32 UpDownClient::timeUntilReask() const
+{
+    return timeUntilReask(m_reqFile);
+}
+
+uint32 UpDownClient::timeUntilReask(const PartFile* file) const
+{
+    const uint32 lastAsk = lastAskedTime(file);
+    if (lastAsk == 0)
+        return 0;
+
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint32 elapsed = curTick - lastAsk;
+
+    if (elapsed >= FILEREASKTIME)
+        return 0;
+    return FILEREASKTIME - elapsed;
+}
+
+uint32 UpDownClient::lastAskedTime(const PartFile* file) const
+{
+    if (file) {
+        auto it = m_fileReaskTimes.find(file);
+        if (it != m_fileReaskTimes.end())
+            return it->second;
+    }
+    return m_lastAskedForSources;
+}
+
+void UpDownClient::setLastAskedTime()
+{
+    m_lastAskedForSources = static_cast<uint32>(getTickCount());
+    if (m_reqFile)
+        m_fileReaskTimes[m_reqFile] = m_lastAskedForSources;
+}
+
+// ===========================================================================
+// updateDisplayedInfo
+// ===========================================================================
+
+void UpDownClient::updateDisplayedInfo(bool force)
+{
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+
+    if (!force) {
+        // Rate-limit display updates
+        if ((curTick - m_lastRefreshedDLDisplay) < MIN2MS(1) + m_randomUpdateWait)
+            return;
+    }
+
+    m_lastRefreshedDLDisplay = curTick;
+    emit updateDisplayedInfoRequested();
+}
+
+// ===========================================================================
+// AICH
+// ===========================================================================
+
+const AICHHash* UpDownClient::reqFileAICHHash() const
+{
+    if (!m_reqFile)
+        return nullptr;
+    if (!m_reqFile->aichRecoveryHashSet().hasValidMasterHash())
+        return nullptr;
+    return &m_reqFile->aichRecoveryHashSet().getMasterHash();
+}
+
+void UpDownClient::sendAICHRequest(PartFile* forFile, uint16 part)
+{
+    if (!forFile || !m_socket)
+        return;
+
+    m_aichRequested = true;
+
+    // Build OP_AICHREQUEST: file hash (16) + part number (uint16) + master hash (20)
+    SafeMemFile data;
+    data.writeHash16(forFile->fileHash());
+    data.writeUInt16(part);
+    forFile->aichRecoveryHashSet().getMasterHash().write(data);
+
+    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_AICHREQUEST);
+    safeConnectAndSendPacket(std::move(packet));
+}
+
+void UpDownClient::processAICHAnswer(const uint8* data, uint32 size)
+{
+    if (!data || size < 16 + 2 + kAICHHashSize) {
+        m_aichRequested = false;
+        return;
+    }
+
+    if (!m_aichRequested) {
+        qDebug() << "processAICHAnswer: unrequested AICH answer from" << userName();
+        return;
+    }
+    m_aichRequested = false;
+
+    SafeMemFile file(data, size);
+
+    // Read file hash and part number
+    uint8 fileHash[16];
+    file.readHash16(fileHash);
+    const uint16 partNumber = file.readUInt16();
+
+    // Read and verify the master hash
+    AICHHash masterHash(file);
+
+    // Find the PartFile this belongs to
+    PartFile* partFile = nullptr;
+    if (theApp.downloadQueue)
+        partFile = theApp.downloadQueue->fileByID(fileHash);
+
+    if (!partFile) {
+        qDebug() << "processAICHAnswer: file not found for AICH answer";
+        return;
+    }
+
+    auto& recoveryHashSet = partFile->aichRecoveryHashSet();
+
+    // Verify master hash matches
+    if (!recoveryHashSet.hasValidMasterHash() ||
+        recoveryHashSet.getMasterHash() != masterHash)
+    {
+        qDebug() << "processAICHAnswer: master hash mismatch from" << userName();
+        return;
+    }
+
+    // Read recovery data
+    if (!recoveryHashSet.readRecoveryData(
+            static_cast<uint64>(partNumber) * PARTSIZE, file))
+    {
+        qDebug() << "processAICHAnswer: readRecoveryData failed from" << userName();
+        return;
+    }
+
+    // Notify PartFile that AICH recovery data is available
+    partFile->aichRecoveryDataAvailable(partNumber);
+}
+
+void UpDownClient::processAICHRequest(const uint8* data, uint32 size)
+{
+    if (!data || size < 16 + 2 + kAICHHashSize || !m_socket)
+        return;
+
+    SafeMemFile file(data, size);
+
+    // Read file hash, part number, and master hash
+    uint8 fileHash[16];
+    file.readHash16(fileHash);
+    const uint16 partNumber = file.readUInt16();
+    AICHHash masterHash(file);
+
+    // Look up file in shared files
+    KnownFile* knownFile = nullptr;
+    if (theApp.sharedFileList)
+        knownFile = theApp.sharedFileList->getFileByID(fileHash);
+
+    if (!knownFile || !knownFile->isAICHRecoverHashSetAvailable()) {
+        qDebug() << "processAICHRequest: file not found or AICH not available";
+        return;
+    }
+
+    // Verify the file has an AICH hash in its identifier
+    const auto& ident = knownFile->fileIdentifier();
+    if (!ident.hasAICHHash() || ident.getAICHHash() != masterHash) {
+        qDebug() << "processAICHRequest: master hash mismatch";
+        return;
+    }
+
+    // Validate part number
+    const uint64 fileSize = knownFile->fileSize();
+    if (static_cast<uint64>(partNumber) * PARTSIZE >= fileSize) {
+        qDebug() << "processAICHRequest: invalid part number" << partNumber;
+        return;
+    }
+
+    // Create a temporary recovery hash set to generate recovery data.
+    // createPartRecoveryData will load the hash tree from known2_64.met.
+    AICHRecoveryHashSet recoveryHashSet(fileSize);
+    recoveryHashSet.setMasterHash(masterHash, EAICHStatus::Verified);
+
+    SafeMemFile response;
+    response.writeHash16(fileHash);
+    response.writeUInt16(partNumber);
+    masterHash.write(response);
+
+    if (!recoveryHashSet.createPartRecoveryData(
+            static_cast<uint64>(partNumber) * PARTSIZE, response))
+    {
+        qDebug() << "processAICHRequest: createPartRecoveryData failed";
+        return;
+    }
+
+    auto packet = std::make_unique<Packet>(response, OP_EMULEPROT, OP_AICHANSWER);
+    sendPacket(std::move(packet));
+}
+
+void UpDownClient::processAICHFileHash(SafeMemFile& data, PartFile* file)
+{
+    if (!file)
+        return;
+
+    // Read the AICH master hash from the peer
+    AICHHash masterHash(data);
+
+    auto& recoveryHashSet = file->aichRecoveryHashSet();
+
+    if (recoveryHashSet.hasValidMasterHash() &&
+        recoveryHashSet.getStatus() == EAICHStatus::Verified)
+    {
+        // We already have a verified hash — check if it matches
+        if (recoveryHashSet.getMasterHash() != masterHash) {
+            qDebug() << "processAICHFileHash: hash mismatch from" << userName()
+                     << "for" << file->fileName();
+            // Add to dead source list — this source has wrong AICH hash
+            if (theApp.clientList) {
+                DeadSourceKey key;
+                key.hash = m_userHash;
+                key.serverIP = m_serverIP;
+                key.userID = m_userIDHybrid;
+                key.port = m_userPort;
+                key.kadPort = m_kadPort;
+                theApp.clientList->globalDeadSourceList.addDeadSource(key, hasLowID());
+            }
+            return;
+        }
+    }
+
+    // Report hash to trust system for consensus building
+    recoveryHashSet.untrustedHashReceived(masterHash, m_connectIP);
+}
+
+// ===========================================================================
+// unzip — zlib decompression
+// ===========================================================================
+
+int UpDownClient::unzip(Pending_Block_Struct* block, const uint8* zipped,
+                         uint32 lenZipped, uint8** unzipped, uint32* lenUnzipped,
+                         int recursion)
+{
+    if (recursion > 3)
+        return -1;
+
+    if (!block || !zipped || !unzipped || !lenUnzipped)
+        return -1;
+
+    // Allocate output buffer (estimate: 2x input for first try)
+    const uint32 outputSize = lenZipped * static_cast<uint32>(2 + recursion);
+    *unzipped = new uint8[outputSize];
+    *lenUnzipped = 0;
+
+    if (!block->zStream) {
+        block->zStream = new z_stream_s;
+        std::memset(block->zStream, 0, sizeof(z_stream_s));
+
+        int ret = inflateInit(block->zStream);
+        if (ret != Z_OK) {
+            delete[] *unzipped;
+            *unzipped = nullptr;
+            block->zStreamError = true;
+            return -1;
+        }
+    }
+
+    block->zStream->next_in = const_cast<Bytef*>(zipped);
+    block->zStream->avail_in = lenZipped;
+    block->zStream->next_out = *unzipped;
+    block->zStream->avail_out = outputSize;
+
+    int ret = inflate(block->zStream, Z_SYNC_FLUSH);
+
+    if (ret == Z_OK || ret == Z_STREAM_END) {
+        *lenUnzipped = outputSize - block->zStream->avail_out;
+        block->totalUnzipped += *lenUnzipped;
+
+        if (ret == Z_STREAM_END) {
+            inflateEnd(block->zStream);
+            delete block->zStream;
+            block->zStream = nullptr;
+        }
+
+        return 0;
+    }
+
+    // Error
+    delete[] *unzipped;
+    *unzipped = nullptr;
+    *lenUnzipped = 0;
+    block->zStreamError = true;
+
+    inflateEnd(block->zStream);
+    delete block->zStream;
+    block->zStream = nullptr;
+
+    return -1;
+}
+
+} // namespace eMule
