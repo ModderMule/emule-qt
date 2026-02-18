@@ -7,6 +7,8 @@
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
+#include "app/AppContext.h"
+#include "client/ClientList.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
@@ -152,6 +154,10 @@ void UDPFirewallTester::queryNextClient()
         if (routingZone && routingZone->getContact(testContact.getClientID()))
             continue;
 
+        // Skip if we already know this IP from the client list
+        if (routingZone && routingZone->getContact(testContact.getIPAddress(), 0, false))
+            continue;
+
         // Skip if already tested
         bool alreadyTested = false;
         for (const auto& used : s_usedTestClients) {
@@ -170,16 +176,16 @@ void UDPFirewallTester::queryNextClient()
 
         ++s_fwChecksRunning;
 
-        // Send the UDP firewall check request
-        auto* udpListener = Kademlia::getInstanceUDPListener();
-        if (udpListener) {
-            UInt128 clientID = testContact.getClientID();
-            udpListener->sendNullPacket(KADEMLIA2_FIREWALLUDP,
-                testContact.getIPAddress(), testContact.getUDPPort(),
-                testContact.getUDPKey(), &clientID);
+        // Request UDP firewall check via TCP connection (matches original
+        // theApp.clientlist->DoRequestFirewallCheckUDP at srchybrid/kademlia/UDPFirewallTester.cpp:255)
+        if (!theApp.clientList || !theApp.clientList->doRequestFirewallCheckUDP(testContact)) {
+            logDebug(QStringLiteral("Kad: UDP FW check TCP request failed for %1")
+                         .arg(testContact.getClientID().toHexString()));
+            --s_fwChecksRunning;
+            continue;
         }
 
-        logDebug(QStringLiteral("Kad: Sent UDP FW check to %1")
+        logDebug(QStringLiteral("Kad: Initiated UDP FW check via TCP to %1")
                      .arg(testContact.getClientID().toHexString()));
         break;
     }

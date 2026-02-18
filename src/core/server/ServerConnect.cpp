@@ -18,6 +18,12 @@
 
 #include <algorithm>
 
+#if __has_include(<zlib.h>)
+#define HAVE_ZLIB 1
+#else
+#define HAVE_ZLIB 0
+#endif
+
 namespace eMule {
 
 // ---------------------------------------------------------------------------
@@ -698,9 +704,11 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     if (m_config.cryptLayerRequired)
         cryptFlags |= SRVCAP_REQUIRECRYPT;
 
-    Tag tagFlags(static_cast<uint8>(CT_SERVER_FLAGS),
-                 static_cast<uint32>(SRVCAP_ZLIB | SRVCAP_NEWTAGS | SRVCAP_LARGEFILES |
-                                     SRVCAP_UNICODE | cryptFlags));
+    uint32 srvCaps = SRVCAP_NEWTAGS | SRVCAP_LARGEFILES | SRVCAP_UNICODE | cryptFlags;
+#if HAVE_ZLIB
+    srvCaps |= SRVCAP_ZLIB;
+#endif
+    Tag tagFlags(static_cast<uint8>(CT_SERVER_FLAGS), srvCaps);
     tagFlags.writeTagToFile(data);
 
     // Tag: CT_EMULE_VERSION

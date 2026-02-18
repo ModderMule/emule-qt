@@ -527,28 +527,40 @@ void RoutingZone::readFile(const QString& specialNodesdat)
     if (filename.isEmpty())
         return;
 
-    QFile file(filename);
-    if (!file.exists() || !file.open(QIODevice::ReadOnly))
+    SafeFile sf;
+    if (!sf.open(filename, QIODevice::ReadOnly))
         return;
 
     try {
-        SafeFile sf;
-        if (!sf.open(filename, QIODevice::ReadOnly))
-            return;
-
         uint32 numContacts = sf.readUInt32();
         uint32 version = 0;
 
-        // Check for version header
-        if (numContacts == kNodesFileVersionTag) {
-            // v2 format
+        if (numContacts == 0) {
+            // Newer eMule clients write 0 as first uint32 to prevent older clients
+            // from reading the file (original eMule format).
+            if (sf.length() >= 8) {
+                version = sf.readUInt32();
+                if (version == 3) {
+                    uint32 bootstrapEdition = sf.readUInt32();
+                    if (bootstrapEdition == 1) {
+                        // Bootstrap nodes.dat — contacts used for initial Kad bootstrapping
+                        readBootstrapNodesDat(sf);
+                        return;
+                    }
+                }
+                if (version >= 1 && version <= 3)
+                    numContacts = sf.readUInt32();
+            }
+        } else if (numContacts == kNodesFileVersionTag) {
+            // v2 format (written by this Qt port)
             version = 2;
             numContacts = sf.readUInt32();
         } else if (numContacts == kNodesFileVersion3Tag) {
-            // v3 format
+            // v3 format (written by this Qt port)
             version = 3;
             numContacts = sf.readUInt32();
         }
+        // else: legacy version 0 — numContacts is the actual count
 
         // Sanity check
         if (numContacts > 5000) {
@@ -566,7 +578,16 @@ void RoutingZone::readFile(const QString& specialNodesdat)
             uint32 ip = sf.readUInt32();
             uint16 udpPort = sf.readUInt16();
             uint16 tcpPort = sf.readUInt16();
-            uint8 contactVersion = sf.readUInt8();
+
+            uint8 contactVersion = 0;
+            if (version >= 1) {
+                contactVersion = sf.readUInt8();
+            } else {
+                // Legacy format: byte is contact type, not version
+                uint8 type = sf.readUInt8();
+                if (type >= 4)
+                    continue; // expired contact
+            }
 
             KadUDPKey udpKey(uint32{0});
             bool ipVerified = false;
@@ -793,6 +814,61 @@ void RoutingZone::onTimerTick()
     if (now >= m_nextBigTimer) {
         onBigTimer();
         m_nextBigTimer = now + HR2S(1);
+    }
+}
+
+void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
+{
+    // Bootstrap nodes.dat files (v3 edition 1) contain 500-1000+ contacts in v1
+    // format (25 bytes each). In the original eMule these are not added to the
+    // routing table but kept in a bootstrap list for initial Kad connection.
+    // For simplicity we add them directly to the routing table here.
+    // TODO: implement dedicated bootstrap list for proper bootstrap-only handling
+
+    uint32 numContacts = sf.readUInt32();
+    if (numContacts == 0)
+        return;
+
+    const uint64 remaining = static_cast<uint64>(sf.length() - sf.position());
+    if (static_cast<uint64>(numContacts) * 25 > remaining)
+        return;
+
+    for (uint32 i = 0; i < numContacts; ++i) {
+        uint8 idBytes[16];
+        sf.readHash16(idBytes);
+        UInt128 id(idBytes);
+
+        uint32 ip = sf.readUInt32();
+        uint16 udpPort = sf.readUInt16();
+        uint16 tcpPort = sf.readUInt16();
+        uint8 contactVersion = sf.readUInt8();
+
+        if (!isGoodIP(htonl(ip)))
+            continue;
+        if (udpPort == 0)
+            continue;
+        if (udpPort == 53 && contactVersion <= KADEMLIA_VERSION5_48a)
+            continue;
+        if (contactVersion <= KADEMLIA_VERSION1_46c)
+            continue;
+
+        if (auto* ipFilter = Kademlia::getIPFilter()) {
+            if (ipFilter->isFiltered(htonl(ip), thePrefs.ipFilterLevel()))
+                continue;
+        }
+
+        if (id == s_localKadId)
+            continue;
+
+        auto* contact = new Contact(id, ip, udpPort, tcpPort, contactVersion,
+                                    KadUDPKey(), false, s_localKadId);
+
+        bool verifiedOut = false;
+        if (!add(contact, false, verifiedOut)) {
+            delete contact;
+        } else {
+            emit contactAdded(contact);
+        }
     }
 }
 

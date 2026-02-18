@@ -1,5 +1,6 @@
 #include <QApplication>
 
+#include "app/CoreSession.h"
 #include "utils/Types.h"
 
 int main(int argc, char* argv[])
@@ -12,6 +13,9 @@ int main(int argc, char* argv[])
     // ToDo: Create main window (Module 21)
     // ToDo: Load preferences (Module 16)
     // ToDo: Initialize core session (Module 31)
+
+    eMule::CoreSession session;
+    session.start();
 
     return QApplication::exec();
 }

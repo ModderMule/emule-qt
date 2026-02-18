@@ -34,7 +34,7 @@ using WordList     = std::vector<QString>;
 using SearchMap    = std::map<UInt128, Search*>;
 
 // ---------------------------------------------------------------------------
-// Indexed data structures (used by deferred Indexed.h)
+// Indexed data structures (used by KadIndexed.h)
 // ---------------------------------------------------------------------------
 struct Source {
     UInt128 sourceID;

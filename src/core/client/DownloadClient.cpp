@@ -32,7 +32,12 @@
 #include <algorithm>
 #include <cstring>
 
+#if __has_include(<zlib.h>)
 #include <zlib.h>
+#define HAVE_ZLIB 1
+#else
+#define HAVE_ZLIB 0
+#endif
 
 namespace eMule {
 
@@ -322,7 +327,7 @@ void UpDownClient::clearDownloadBlockRequests()
 }
 
 // ===========================================================================
-// createBlockRequests — heavily stubbed
+// createBlockRequests
 // ===========================================================================
 
 void UpDownClient::createBlockRequests(int blockCount)
@@ -330,13 +335,20 @@ void UpDownClient::createBlockRequests(int blockCount)
     if (!m_reqFile || blockCount <= 0)
         return;
 
+    // Don't exceed 3 pending blocks total
+    auto currentPending = static_cast<int>(m_pendingBlocks.size());
+    int toRequest = std::min(blockCount, 3 - currentPending);
+    if (toRequest <= 0)
+        return;
+
     Requested_Block_Struct* blocks[3] = {};
-    int count = std::min(blockCount, 3);
+    int count = toRequest;
 
     if (m_reqFile->getNextRequestedBlock(this, blocks, count)) {
         for (int i = 0; i < count; ++i) {
             auto* pending = new Pending_Block_Struct;
             pending->block = blocks[i];
+            pending->queued = 0; // not yet sent, sendBlockRequests will mark as sent
             m_pendingBlocks.push_back(pending);
         }
     }
@@ -424,61 +436,202 @@ void UpDownClient::sendBlockRequests()
 }
 
 // ===========================================================================
-// processBlockPacket — heavily stubbed
+// processBlockPacket — MFC DownloadClient.cpp ProcessBlockPacket
 // ===========================================================================
 
 void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
                                        bool packed, bool i64Offsets)
 {
-    Q_UNUSED(packed);
-
     if (!data || size == 0)
         return;
 
-    // Read file hash (16 bytes)
-    if (size < 16)
+    // Ignore if not in a downloading state
+    if (m_downloadState != DownloadState::Downloading &&
+        m_downloadState != DownloadState::NoNeededParts) {
         return;
-
-    // Read offsets
-    uint64 startOffset, endOffset;
-    uint32 headerSize;
-
-    if (i64Offsets) {
-        if (size < 16 + 8 + 8)
-            return;
-        std::memcpy(&startOffset, data + 16, 8);
-        std::memcpy(&endOffset, data + 24, 8);
-        headerSize = 16 + 8 + 8;
-    } else {
-        if (size < 16 + 4 + 4)
-            return;
-        uint32 start32, end32;
-        std::memcpy(&start32, data + 16, 4);
-        std::memcpy(&end32, data + 20, 4);
-        startOffset = start32;
-        endOffset = end32;
-        headerSize = 16 + 4 + 4;
     }
 
-    const uint32 blockSize = size - headerSize;
+    m_lastBlockReceived = static_cast<uint32>(getTickCount());
+
+    // Parse the packet header using SafeMemFile, matching MFC approach.
+    // Header layout depends on packed vs. unpacked and 32-bit vs. 64-bit offsets:
+    //   hash(16) + startOffset(4|8) + [compressedSize(4) | endOffset(4|8)]
+    SafeMemFile packet(data, size);
+
+    uint8 fileHash[16];
+    packet.readHash16(fileHash);
+    uint32 nHeaderSize = 16;
+
+    // Verify this data is for the correct file
+    if (!m_reqFile || !md4equ(data, m_reqFile->fileHash())) {
+        qDebug() << "processBlockPacket: wrong file ID from" << userName();
+        return;
+    }
+
+    // Read start position
+    uint64 nStartPos;
+    if (i64Offsets) {
+        nStartPos = packet.readUInt64();
+        nHeaderSize += 8;
+    } else {
+        nStartPos = packet.readUInt32();
+        nHeaderSize += 4;
+    }
+
+    // Read end position — differs for packed vs. unpacked
+    uint64 nEndPos;
+    if (packed) {
+        // For compressed packets: next 4 bytes are compressed size, skip them.
+        // The actual end position is calculated from remaining packet data.
+        packet.seek(sizeof(uint32), SEEK_CUR);
+        nHeaderSize += 4;
+        nEndPos = nStartPos + (size - nHeaderSize);
+    } else if (i64Offsets) {
+        nEndPos = packet.readUInt64();
+        nHeaderSize += 8;
+    } else {
+        nEndPos = packet.readUInt32();
+        nHeaderSize += 4;
+    }
+
+    const uint32 uTransferredFileDataSize = size - nHeaderSize;
+
+    // Validate: end must be > start and data size must match
+    if (nEndPos <= nStartPos || uTransferredFileDataSize != (nEndPos - nStartPos)) {
+        qDebug() << "processBlockPacket: bad data block from" << userName();
+        return;
+    }
 
     // Update transfer statistics
-    m_transferredDown += blockSize;
-    m_curSessionDown += blockSize;
-    m_lastBlockReceived = static_cast<uint32>(getTickCount());
-    m_lastBlockOffset = startOffset;
+    m_transferredDown += uTransferredFileDataSize;
+    m_curSessionDown += uTransferredFileDataSize;
 
     // Add to rate averaging
     TransferredData td;
-    td.dataLen = blockSize;
+    td.dataLen = uTransferredFileDataSize;
     td.timestamp = m_lastBlockReceived;
     m_averageDDR.push_back(td);
-    m_sumForAvgDownDataRate += blockSize;
+    m_sumForAvgDownDataRate += uTransferredFileDataSize;
 
-    // Write data to PartFile buffer
-    if (m_reqFile) {
-        m_reqFile->writeToBuffer(blockSize, data + headerSize,
-                                  startOffset, endOffset, nullptr);
+    // Move end back by one (MFC uses inclusive end offset)
+    --nEndPos;
+
+    // Find the matching pending block for this data range
+    Pending_Block_Struct* curBlock = nullptr;
+    auto itPos = m_pendingBlocks.end();
+    for (auto it = m_pendingBlocks.begin(); it != m_pendingBlocks.end(); ++it) {
+        if ((*it)->block &&
+            (*it)->block->startOffset <= nStartPos &&
+            (*it)->block->endOffset >= nStartPos)
+        {
+            curBlock = *it;
+            itPos = it;
+            break;
+        }
+    }
+
+    if (!curBlock) {
+        // No matching pending block — drop packet
+        return;
+    }
+
+    if (curBlock->zStreamError) {
+        // Previous decompression error — discard and remove block
+        m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+        return;
+    }
+
+    m_lastBlockOffset = nStartPos;
+
+    uint32 lenWritten = 0;
+
+    if (!packed) {
+        // --- Uncompressed data ---
+        // Security check: received end must not exceed requested end
+        if (nEndPos > curBlock->block->endOffset) {
+            qDebug() << "processBlockPacket: block exceeds requested boundary from" << userName();
+            m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+            return;
+        }
+
+        m_reqFile->writeToBuffer(uTransferredFileDataSize,
+                                  data + nHeaderSize,
+                                  nStartPos, nEndPos,
+                                  curBlock->block);
+        lenWritten = uTransferredFileDataSize;
+    } else {
+        // --- Compressed data ---
+#if HAVE_ZLIB
+        // Allocate initial decompression buffer
+        uint32 lenUnzipped = std::min(size * 2, static_cast<uint32>(EMBLOCKSIZE + 300));
+        uint8* unzipped = new uint8[lenUnzipped];
+
+        int result = unzip(curBlock, data + nHeaderSize, uTransferredFileDataSize,
+                           &unzipped, &lenUnzipped);
+
+        if (result == Z_OK && static_cast<int>(lenUnzipped) >= 0) {
+            if (lenUnzipped > 0) {
+                // Calculate write positions from cumulative decompression progress
+                // (MFC: nStartPos = block->StartOffset + totalUnzipped - lenUnzipped)
+                uint64 writeStart = curBlock->block->startOffset
+                                  + curBlock->totalUnzipped - lenUnzipped;
+                uint64 writeEnd = curBlock->block->startOffset
+                                + curBlock->totalUnzipped - 1;
+
+                if (writeStart > curBlock->block->endOffset ||
+                    writeEnd > curBlock->block->endOffset)
+                {
+                    qDebug() << "processBlockPacket: decompressed data exceeds block boundary from" << userName();
+                    m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+                } else {
+                    m_reqFile->writeToBuffer(uTransferredFileDataSize,
+                                              unzipped,
+                                              writeStart, writeEnd,
+                                              curBlock->block);
+                    lenWritten = lenUnzipped;
+                }
+            }
+        } else {
+            qDebug() << "processBlockPacket: decompression error" << result << "from" << userName();
+            m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+
+            // Clean up the failed zstream
+            if (curBlock->zStream) {
+                inflateEnd(curBlock->zStream);
+                delete curBlock->zStream;
+                curBlock->zStream = nullptr;
+            }
+            curBlock->zStreamError = true;
+            curBlock->totalUnzipped = 0;
+        }
+        delete[] unzipped;
+#else
+        logError(QStringLiteral("Received compressed block but zlib not available"));
+        return;
+#endif
+    }
+
+    // If data was written, check for block completion and request more
+    if (lenWritten > 0 && !m_pendingBlocks.empty() && curBlock->block) {
+        curBlock->block->transferredByClient += lenWritten;
+
+        // Check if block is complete (end of decompressed/uncompressed data matches block end)
+        bool complete = false;
+        if (packed) {
+            // For compressed: complete when zStream ended (set to null by unzip on Z_STREAM_END)
+            complete = (curBlock->zStream == nullptr && !curBlock->zStreamError);
+        } else {
+            complete = (nEndPos >= curBlock->block->endOffset);
+        }
+
+        if (complete) {
+            m_pendingBlocks.erase(itPos);
+            clearPendingBlockRequest(curBlock);
+            delete curBlock;
+
+            // Request next blocks
+            sendBlockRequests();
+        }
     }
 }
 
@@ -491,10 +644,12 @@ void UpDownClient::clearPendingBlockRequest(const Pending_Block_Struct* pending)
     if (!pending)
         return;
 
+#if HAVE_ZLIB
     if (pending->zStream) {
-        deflateEnd(pending->zStream);
+        inflateEnd(pending->zStream);
         delete pending->zStream;
     }
+#endif
 
     delete pending->block;
 }
@@ -1179,68 +1334,117 @@ void UpDownClient::processAICHFileHash(SafeMemFile& data, PartFile* file)
 }
 
 // ===========================================================================
-// unzip — zlib decompression
+// unzip — zlib decompression — faithful port of MFC CUpDownClient::unzip
+//
+// Called once per compressed sub-packet (~10 KB).  The z_stream persists
+// across calls in block->zStream until Z_STREAM_END is reached for the
+// full 180 KB block.  block->totalUnzipped tracks cumulative output via
+// zS->total_out so that the caller can compute write offsets.
 // ===========================================================================
 
+#if HAVE_ZLIB
 int UpDownClient::unzip(Pending_Block_Struct* block, const uint8* zipped,
                          uint32 lenZipped, uint8** unzipped, uint32* lenUnzipped,
-                         int recursion)
+                         int iRecursion)
 {
-    if (recursion > 3)
-        return -1;
+    int err = Z_DATA_ERROR;
 
     if (!block || !zipped || !unzipped || !lenUnzipped)
-        return -1;
+        return err;
 
-    // Allocate output buffer (estimate: 2x input for first try)
-    const uint32 outputSize = lenZipped * static_cast<uint32>(2 + recursion);
-    *unzipped = new uint8[outputSize];
-    *lenUnzipped = 0;
+    z_stream* zS = block->zStream;
 
-    if (!block->zStream) {
-        block->zStream = new z_stream_s;
-        std::memset(block->zStream, 0, sizeof(z_stream_s));
+    // First call for this block — create and initialise the z_stream
+    if (zS == nullptr) {
+        block->zStream = new z_stream;
+        zS = block->zStream;
 
-        int ret = inflateInit(block->zStream);
-        if (ret != Z_OK) {
-            delete[] *unzipped;
-            *unzipped = nullptr;
-            block->zStreamError = true;
-            return -1;
-        }
+        zS->zalloc = nullptr;
+        zS->zfree = nullptr;
+        zS->opaque = nullptr;
+
+        // Set output pointers here to avoid overwriting on recursive calls
+        zS->next_out = *unzipped;
+        zS->avail_out = *lenUnzipped;
+
+        err = inflateInit(zS);
+        if (err != Z_OK)
+            return err;
     }
 
-    block->zStream->next_in = const_cast<Bytef*>(zipped);
-    block->zStream->avail_in = lenZipped;
-    block->zStream->next_out = *unzipped;
-    block->zStream->avail_out = outputSize;
+    // Feed input data
+    zS->next_in = const_cast<Bytef*>(zipped);
+    zS->avail_in = lenZipped;
 
-    int ret = inflate(block->zStream, Z_SYNC_FLUSH);
-
-    if (ret == Z_OK || ret == Z_STREAM_END) {
-        *lenUnzipped = outputSize - block->zStream->avail_out;
-        block->totalUnzipped += *lenUnzipped;
-
-        if (ret == Z_STREAM_END) {
-            inflateEnd(block->zStream);
-            delete block->zStream;
-            block->zStream = nullptr;
-        }
-
-        return 0;
+    // Only set output pointers on non-recursive calls
+    if (iRecursion == 0) {
+        zS->next_out = *unzipped;
+        zS->avail_out = *lenUnzipped;
     }
 
-    // Error
-    delete[] *unzipped;
-    *unzipped = nullptr;
-    *lenUnzipped = 0;
-    block->zStreamError = true;
+    err = inflate(zS, Z_SYNC_FLUSH);
 
-    inflateEnd(block->zStream);
-    delete block->zStream;
-    block->zStream = nullptr;
+    if (err == Z_STREAM_END) {
+        // Stream completed — finish up
+        err = inflateEnd(zS);
+        if (err != Z_OK)
+            return err;
 
-    return -1;
+        // Output = bytes produced in this call sequence
+        *lenUnzipped = static_cast<uint32>(zS->total_out - block->totalUnzipped);
+        block->totalUnzipped = static_cast<uint32>(zS->total_out);
+
+        // zStream is done — null it so caller knows block is complete
+        delete block->zStream;
+        block->zStream = nullptr;
+
+    } else if (err == Z_OK && zS->avail_out == 0 && zS->avail_in != 0) {
+        // Output buffer was too small — expand and recurse
+        uint32 newLength = *lenUnzipped * 2;
+        if (newLength == 0)
+            newLength = lenZipped * 2;
+
+        // Copy successfully unzipped data so far to a larger buffer
+        uint8* temp = new uint8[newLength];
+        uint32 alreadyOut = static_cast<uint32>(zS->total_out - block->totalUnzipped);
+        std::memcpy(temp, *unzipped, alreadyOut);
+        delete[] *unzipped;
+        *unzipped = temp;
+        *lenUnzipped = newLength;
+
+        // Reposition stream output into new buffer
+        zS->next_out = *unzipped + alreadyOut;
+        zS->avail_out = *lenUnzipped - alreadyOut;
+
+        // Recurse with remaining input
+        err = unzip(block, zS->next_in, zS->avail_in,
+                    unzipped, lenUnzipped, iRecursion + 1);
+
+    } else if (err == Z_OK && zS->avail_in == 0) {
+        // All input consumed, output OK
+        *lenUnzipped = static_cast<uint32>(zS->total_out - block->totalUnzipped);
+        block->totalUnzipped = static_cast<uint32>(zS->total_out);
+
+    } else {
+        // Unexpected error — corrupt data
+        qDebug() << "unzip error:" << err
+                 << (zS->msg ? zS->msg : zError(err));
+    }
+
+    if (err != Z_OK)
+        *lenUnzipped = 0;
+
+    return err;
 }
+#else
+int UpDownClient::unzip(Pending_Block_Struct* /*block*/, const uint8* /*zipped*/,
+                         uint32 /*lenZipped*/, uint8** unzipped, uint32* lenUnzipped,
+                         int /*recursion*/)
+{
+    if (unzipped) *unzipped = nullptr;
+    if (lenUnzipped) *lenUnzipped = 0;
+    return -1; // Z_DATA_ERROR equivalent — zlib not available
+}
+#endif
 
 } // namespace eMule

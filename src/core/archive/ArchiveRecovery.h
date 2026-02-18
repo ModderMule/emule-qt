@@ -47,11 +47,11 @@ public:
     static bool recoverRar(QFile& input, QFile& output,
                            const std::vector<Gap>& filled);
 
-    /// Recover ISO image data from a partial file (stub — not yet implemented).
+    /// Recover ISO image data from a partial file.
     static bool recoverISO(QFile& input, QFile& output,
                            const std::vector<Gap>& filled, uint64 fileSize);
 
-    /// Recover ACE archive data from a partial file (stub — not yet implemented).
+    /// Recover ACE archive data from a partial file.
     static bool recoverACE(QFile& input, QFile& output,
                            const std::vector<Gap>& filled);
 

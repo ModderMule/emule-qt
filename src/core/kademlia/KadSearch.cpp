@@ -2,9 +2,11 @@
 /// @brief Kademlia search state machine implementation.
 
 #include "kademlia/KadSearch.h"
+#include "kademlia/KadClientSearcher.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
+#include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLookupHistory.h"
 #include "kademlia/KadMiscUtils.h"
@@ -12,7 +14,14 @@
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadUDPListener.h"
+#include "app/AppContext.h"
+#include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "files/KnownFile.h"
+#include "files/PartFile.h"
+#include "files/SharedFileList.h"
+#include "prefs/Preferences.h"
+#include "transfer/DownloadQueue.h"
 #include "protocol/Tag.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
@@ -41,6 +50,14 @@ Search::Search()
 
 Search::~Search()
 {
+    // Notify NodeSpecial requester if still waiting.
+    // Matches MFC Search.cpp:113-117.
+    if (m_nodeSpecialSearchRequester) {
+        m_nodeSpecialSearchRequester->kadSearchIPByNodeIDResult(
+            KadClientSearchResult::NotFound, 0, 0);
+        m_nodeSpecialSearchRequester = nullptr;
+    }
+
     // Clean up contacts in use
     for (auto& [id, contact] : m_inUse) {
         if (contact)
@@ -200,6 +217,22 @@ void Search::processResponse(uint32 /*fromIP*/, uint16 /*fromPort*/, const Conta
     }
 
     ++m_totalRequestAnswers;
+
+    // NodeSpecial: check if exact match (distance 0) was found among results.
+    // Matches MFC Search.cpp:878-885.
+    if (m_type == SearchType::NodeSpecial && m_nodeSpecialSearchRequester) {
+        static const UInt128 zero(uint32{0});
+        for (auto& [dist, contact] : m_possible) {
+            if (dist == zero) {
+                m_nodeSpecialSearchRequester->kadSearchIPByNodeIDResult(
+                    KadClientSearchResult::Succeeded,
+                    contact->getIPAddress(), contact->getTCPPort());
+                m_nodeSpecialSearchRequester = nullptr;
+                prepareToStop();
+                break;
+            }
+        }
+    }
 }
 
 void Search::processResult(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort)
@@ -392,9 +425,31 @@ void Search::sendFindValue(Contact* contact, bool /*reAskMore*/)
 
     // Build the appropriate request packet based on search type
     switch (m_type) {
-    case SearchType::File:
+    case SearchType::File: {
+        // Send file source search request (KADEMLIA2_SEARCH_SOURCE_REQ)
+        SafeMemFile packet;
+        io::writeUInt128(packet, m_target);
+        // Look up the file to get its size
+        uint8 hash[16];
+        m_target.toByteArray(hash);
+        auto* partFile = theApp.downloadQueue
+            ? theApp.downloadQueue->fileByID(hash) : nullptr;
+        if (!partFile) {
+            prepareToStop();
+            break;
+        }
+        // TODO: Add ability to change start position
+        // Start position range (0x0 to 0x7FFF)
+        packet.writeUInt16(0);
+        packet.writeUInt64(static_cast<uint64>(partFile->fileSize()));
+        UInt128 clientID = contact->getClientID();
+        udpListener->sendPacket(packet, KADEMLIA2_SEARCH_SOURCE_REQ,
+                                contact->getIPAddress(), contact->getUDPPort(),
+                                contact->getUDPKey(), &clientID);
+        break;
+    }
     case SearchType::Keyword: {
-        // Send keyword/file search request
+        // Send keyword search request (KADEMLIA2_SEARCH_KEY_REQ)
         SafeMemFile packet;
         io::writeUInt128(packet, m_target);
         if (!m_searchTermsData.isEmpty())
@@ -446,11 +501,15 @@ void Search::prepareToStop()
     if (m_lookupHistory)
         m_lookupHistory->setSearchStopped();
 
-    // Store phase: if this was a store search, initiate store
+    // Action phase: store searches send publish packets; FindBuddy/FindSource/
+    // NodeSpecial send their respective buddy/callback/lookup packets.
     switch (m_type) {
     case SearchType::StoreFile:
     case SearchType::StoreKeyword:
     case SearchType::StoreNotes:
+    case SearchType::FindBuddy:
+    case SearchType::FindSource:
+    case SearchType::NodeSpecial:
         storePacket();
         break;
     default:
@@ -471,10 +530,18 @@ void Search::storePacket()
         return;
     }
 
+    // Determine the per-type contact limit
+    uint32 maxStore = kSearchStoreKeywordTotal;
+    switch (m_type) {
+    case SearchType::FindBuddy:  maxStore = kSearchFindBuddyTotal; break;
+    case SearchType::FindSource: maxStore = kSearchFindSourceTotal; break;
+    default: break;
+    }
+
     // Collect the best responded contacts from m_best
     uint32 storeCount = 0;
     for (auto& [dist, contact] : m_best) {
-        if (!contact || storeCount >= kSearchStoreKeywordTotal)
+        if (!contact || storeCount >= maxStore)
             break;
 
         // Only store to contacts that responded
@@ -483,16 +550,27 @@ void Search::storePacket()
 
         switch (m_type) {
         case SearchType::StoreKeyword: {
-            // Build keyword publish packet
+            // Build keyword publish packet: targetID + fileCount + [fileID + tags]*
             SafeMemFile packet;
             io::writeUInt128(packet, m_target);
-            // Write publisher's own contact ID
-            if (auto* prefs = Kademlia::getInstancePrefs())
-                io::writeUInt128(packet, prefs->kadId());
-            else
-                io::writeUInt128(packet, RoutingZone::localKadId());
-            // Tag list would be built from shared file data (deferred)
-            packet.writeUInt32(0); // 0 tags for now
+
+            // Collect files that are still shared
+            std::vector<std::pair<UInt128, KnownFile*>> validFiles;
+            for (const auto& fileID : m_fileIDs) {
+                uint8 hash[16];
+                fileID.toByteArray(hash);
+                auto* file = theApp.sharedFileList
+                    ? theApp.sharedFileList->getFileByID(hash) : nullptr;
+                if (file)
+                    validFiles.emplace_back(fileID, file);
+            }
+
+            packet.writeUInt16(static_cast<uint16>(validFiles.size()));
+            for (const auto& [fileID, file] : validFiles) {
+                io::writeUInt128(packet, fileID);
+                preparePacketForTags(packet, file, KADEMLIA_VERSION);
+            }
+
             udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_KEY_REQ,
                                     contact->getIPAddress(), contact->getUDPPort(),
                                     contact->getUDPKey(), nullptr);
@@ -500,14 +578,42 @@ void Search::storePacket()
             break;
         }
         case SearchType::StoreFile: {
-            // Build source publish packet
+            // Build source publish packet: targetID + sourceID + tagList
             SafeMemFile packet;
             io::writeUInt128(packet, m_target);
-            if (auto* prefs = Kademlia::getInstancePrefs())
-                io::writeUInt128(packet, prefs->kadId());
-            else
-                io::writeUInt128(packet, RoutingZone::localKadId());
-            packet.writeUInt32(0); // 0 tags for now
+            auto* prefs = Kademlia::getInstancePrefs();
+            io::writeUInt128(packet, prefs ? prefs->kadId() : RoutingZone::localKadId());
+
+            // Build source tags: IP, TCP port, UDP port, and buddy info if firewalled
+            std::vector<Tag> tags;
+            uint32 myIP = prefs ? prefs->ipAddress() : 0;
+            tags.emplace_back(QByteArray(TAG_SOURCEIP, 1), myIP);
+            tags.emplace_back(QByteArray(TAG_SOURCEPORT, 1),
+                              static_cast<uint32>(thePrefs.port()));
+            tags.emplace_back(QByteArray(TAG_SOURCEUPORT, 1),
+                              static_cast<uint32>(thePrefs.udpPort()));
+
+            auto* kadInst = Kademlia::instance();
+            if (kadInst && kadInst->isFirewalled()) {
+                auto* clientList = Kademlia::getClientList();
+                auto* buddy = clientList ? clientList->getBuddy() : nullptr;
+                if (buddy) {
+                    // For firewalled clients, TAG_SERVERIP/TAG_SERVERPORT carry buddy info
+                    tags.emplace_back(QByteArray(TAG_SERVERIP, 1), buddy->userIP());
+                    tags.emplace_back(QByteArray(TAG_SERVERPORT, 1),
+                                      static_cast<uint32>(buddy->userPort()));
+                    tags.emplace_back(QByteArray(TAG_BUDDYHASH, 1), buddy->userHash());
+
+                    uint8 byCrypt = 0;
+                    if (buddy->supportsCryptLayer())  byCrypt |= 0x01;
+                    if (buddy->requestsCryptLayer())  byCrypt |= 0x02;
+                    if (buddy->requiresCryptLayer())  byCrypt |= 0x04;
+                    tags.emplace_back(QByteArray(TAG_ENCRYPTION, 1),
+                                      static_cast<uint32>(byCrypt));
+                }
+            }
+
+            io::writeKadTagList(packet, tags);
             udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
                                     contact->getIPAddress(), contact->getUDPPort(),
                                     contact->getUDPKey(), nullptr);
@@ -515,18 +621,102 @@ void Search::storePacket()
             break;
         }
         case SearchType::StoreNotes: {
-            // Build notes publish packet
+            // Build notes publish packet: targetID + sourceID + tagList
             SafeMemFile packet;
             io::writeUInt128(packet, m_target);
-            if (auto* prefs = Kademlia::getInstancePrefs())
-                io::writeUInt128(packet, prefs->kadId());
-            else
-                io::writeUInt128(packet, RoutingZone::localKadId());
-            packet.writeUInt32(0); // 0 tags for now
+            auto* prefs = Kademlia::getInstancePrefs();
+            io::writeUInt128(packet, prefs ? prefs->kadId() : RoutingZone::localKadId());
+
+            // Build notes tags from the file data
+            std::vector<Tag> tags;
+            // Look up the file via the first fileID (notes are per-file)
+            KnownFile* noteFile = nullptr;
+            if (!m_fileIDs.empty()) {
+                uint8 hash[16];
+                m_fileIDs[0].toByteArray(hash);
+                noteFile = theApp.sharedFileList
+                    ? theApp.sharedFileList->getFileByID(hash) : nullptr;
+            }
+            if (noteFile) {
+                if (!noteFile->fileName().isEmpty())
+                    tags.emplace_back(FT_FILENAME, noteFile->fileName());
+                uint32 rating = noteFile->getFileRating();
+                if (rating > 0)
+                    tags.emplace_back(FT_FILERATING, rating);
+                QString comment = noteFile->getFileComment();
+                if (!comment.isEmpty())
+                    tags.emplace_back(FT_FILECOMMENT, comment);
+                auto sz = static_cast<uint64>(noteFile->fileSize());
+                tags.emplace_back(FT_FILESIZE,
+                                  static_cast<uint32>(sz & 0xFFFFFFFF));
+                if (sz > 0xFFFFFFFFULL)
+                    tags.emplace_back(FT_FILESIZE_HI,
+                                      static_cast<uint32>(sz >> 32));
+            }
+
+            io::writeKadTagList(packet, tags);
             udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_NOTES_REQ,
                                     contact->getIPAddress(), contact->getUDPPort(),
                                     contact->getUDPKey(), nullptr);
             ++storeCount;
+            break;
+        }
+        case SearchType::FindBuddy: {
+            // Send KADEMLIA_FINDBUDDY_REQ to closest responded contacts.
+            // Matches MFC Search.cpp:810-837.
+            auto* prefs = Kademlia::getInstancePrefs();
+            if (!prefs)
+                break;
+
+            SafeMemFile packet;
+            // Write our KadID XOR'd with the target (check/verify ID)
+            UInt128 check(prefs->kadId());
+            check.xorWith(m_target);
+            io::writeUInt128(packet, check);
+            // Write our client hash
+            io::writeUInt128(packet, prefs->clientHash());
+            // Write our TCP port
+            packet.writeUInt16(prefs->internKadPort());
+            // Write our connect options
+            packet.writeUInt8(prefs->myConnectOptions());
+
+            udpListener->sendPacket(packet, KADEMLIA_FINDBUDDY_REQ,
+                                    contact->getIPAddress(), contact->getUDPPort(),
+                                    contact->getUDPKey(), nullptr);
+            ++storeCount;
+            break;
+        }
+        case SearchType::FindSource: {
+            // Send KADEMLIA_CALLBACK_REQ through the buddy's contact.
+            // Matches MFC Search.cpp:844-876.
+            SafeMemFile packet;
+            // Write the target ID (the buddy's ID)
+            io::writeUInt128(packet, m_target);
+            // Write the file ID (stored in m_fileIDs[0])
+            if (!m_fileIDs.empty())
+                io::writeUInt128(packet, m_fileIDs[0]);
+            else
+                io::writeUInt128(packet, UInt128());
+            // Write our TCP port
+            auto* prefs = Kademlia::getInstancePrefs();
+            packet.writeUInt16(prefs ? prefs->internKadPort() : uint16{0});
+
+            udpListener->sendPacket(packet, KADEMLIA_CALLBACK_REQ,
+                                    contact->getIPAddress(), contact->getUDPPort(),
+                                    contact->getUDPKey(), nullptr);
+            ++storeCount;
+            break;
+        }
+        case SearchType::NodeSpecial: {
+            // Check if exact match (distance 0) was found among best contacts.
+            // Matches MFC Search.cpp:878-885.
+            static const UInt128 zero(uint32{0});
+            if (dist == zero && m_nodeSpecialSearchRequester) {
+                m_nodeSpecialSearchRequester->kadSearchIPByNodeIDResult(
+                    KadClientSearchResult::Succeeded,
+                    contact->getIPAddress(), contact->getTCPPort());
+                m_nodeSpecialSearchRequester = nullptr;
+            }
             break;
         }
         default:

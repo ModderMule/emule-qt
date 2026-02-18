@@ -7,7 +7,7 @@
 ///                         → CollectionFile
 ///                         → SearchFile
 ///
-/// Kademlia notes and comment loading from INI are stubbed (need Modules 10/16).
+/// Kademlia notes and comment loading from INI are supported.
 
 #include "crypto/FileIdentifier.h"
 #include "protocol/Tag.h"
@@ -95,7 +95,6 @@ public:
     const QString& getFileComment();
     uint32 getFileRating();
 
-    /// @note Stubbed — needs Preferences for INI file path.
     void loadComment();
 
     virtual void updateFileRatingCommentAvail(bool forceUpdate = false) = 0;

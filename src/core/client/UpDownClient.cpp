@@ -31,6 +31,7 @@
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
+#include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
@@ -51,6 +52,12 @@
 
 #include <cstring>
 #include <random>
+
+#if __has_include(<zlib.h>)
+#define HAVE_ZLIB 1
+#else
+#define HAVE_ZLIB 0
+#endif
 
 namespace eMule {
 
@@ -1015,7 +1022,7 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
         (static_cast<uint32>(1) << 29) | // AICH version = 1
         (static_cast<uint32>(1) << 28) | // Unicode
         (static_cast<uint32>(4) << 24) | // UDP version
-        (static_cast<uint32>(1) << 20) | // Data compression
+        (static_cast<uint32>(HAVE_ZLIB ? 1 : 0) << 20) | // Data compression
         (static_cast<uint32>(2) << 16) | // Secure ident
         (static_cast<uint32>(SOURCEEXCHANGE2_VERSION) << 12) | // Source exchange
         (static_cast<uint32>(2) <<  8) | // Extended requests
@@ -1077,10 +1084,12 @@ void UpDownClient::sendMuleInfoPacket(bool answer)
     data.writeUInt8(static_cast<uint8>(EMULE_VERSION_MAJOR)); // eMule version byte
     data.writeUInt8(EMULE_PROTOCOL); // protocol version
 
-    constexpr uint32 tagCount = 7;
+    constexpr uint32 tagCount = HAVE_ZLIB ? 7 : 6;
     data.writeUInt32(tagCount);
 
+#if HAVE_ZLIB
     Tag(ET_COMPRESSION, static_cast<uint32>(1)).writeTagToFile(data);
+#endif
     Tag(ET_UDPVER, static_cast<uint32>(4)).writeTagToFile(data);
     Tag(ET_UDPPORT, static_cast<uint32>(thePrefs.udpPort())).writeTagToFile(data);
     Tag(ET_SOURCEEXCHANGE, static_cast<uint32>(SOURCEEXCHANGE2_VERSION)).writeTagToFile(data);
@@ -1290,6 +1299,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     }
 
     if (m_connectIP != 0) {
+        // Transition Kad UDP FW check state before connecting
+        if (m_kadState == KadState::QueuedFwCheckUDP)
+            setKadState(KadState::ConnectingFwCheckUDP);
+
         // Direct TCP connection
         m_connectingState = ConnectingState::DirectTCP;
         connect();
@@ -1357,6 +1370,21 @@ void UpDownClient::connect()
         disconnected(reason, true);
     });
 
+    QObject::connect(reqSocket, &ClientReqSocket::extPacketReceived,
+                     this, &UpDownClient::onExtPacketReceived);
+
+    QObject::connect(reqSocket, &ClientReqSocket::packetForClient,
+                     this, &UpDownClient::onPacketForClient);
+
+    QObject::connect(reqSocket, &ClientReqSocket::helloReceived,
+                     this, &UpDownClient::onHelloReceived);
+
+    QObject::connect(reqSocket, &ClientReqSocket::fileRequestReceived,
+                     this, &UpDownClient::onFileRequestReceived);
+
+    QObject::connect(reqSocket, &ClientReqSocket::uploadRequestReceived,
+                     this, &UpDownClient::onUploadRequestReceived);
+
     // Initiate TCP connection
     const QHostAddress addr(ntohl(m_connectIP));
     reqSocket->connectToHost(addr, m_userPort);
@@ -1396,6 +1424,12 @@ void UpDownClient::connectionEstablished()
     switch (m_kadState) {
     case KadState::ConnectingFwCheck:
         setKadState(KadState::ConnectedFwCheck);
+        {
+            // MFC BaseClient.cpp — send ACK so the remote node knows its TCP port is reachable
+            auto packet = std::make_unique<Packet>(OP_KAD_FWTCPCHECK_ACK, 0);
+            packet->prot = OP_EMULEPROT;
+            sendPacket(std::move(packet));
+        }
         break;
     case KadState::ConnectingBuddy:
     case KadState::IncomingBuddy:
@@ -1475,6 +1509,15 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     emit updateDisplayedInfoRequested();
 
     m_sentCancelTransfer = false;
+
+    // Handle Kad UDP firewall check cancellation/failure — MFC BaseClient.cpp:1109-1112
+    if (m_kadState == KadState::QueuedFwCheckUDP
+        || m_kadState == KadState::ConnectingFwCheckUDP) {
+        kad::UDPFirewallTester::setUDPFWCheckResult(false, true, ntohl(m_connectIP), 0);
+    } else if (m_kadState == KadState::FwCheckUDP) {
+        kad::UDPFirewallTester::setUDPFWCheckResult(false, false, ntohl(m_connectIP), 0);
+    }
+    setKadState(KadState::None);
 
     return true;
 }
@@ -2411,6 +2454,309 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
     }
 
     qDebug() << "Answered UDP firewall check request from" << dbgGetClientInfo();
+}
+
+// ===========================================================================
+// processKadFwTcpCheckAck — MFC ListenSocket.cpp:1672-1681
+// ===========================================================================
+
+void UpDownClient::processKadFwTcpCheckAck()
+{
+    if (auto* prefs = kad::Kademlia::getInstancePrefs())
+        prefs->incFirewalled();
+}
+
+// ===========================================================================
+// onExtPacketReceived — dispatch eMule extended protocol packets
+// MFC ListenSocket.cpp ProcessExtPacket
+// ===========================================================================
+
+void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opcode)
+{
+    switch (opcode) {
+    case OP_EMULEINFO:
+        processMuleInfoPacket(data, size);
+        sendMuleInfoPacket(false);
+        onInfoPacketsReceived();
+        break;
+
+    case OP_EMULEINFOANSWER:
+        processMuleInfoPacket(data, size);
+        onInfoPacketsReceived();
+        break;
+
+    case OP_COMPRESSEDPART:
+        (void)checkHandshakeFinished();
+        processBlockPacket(data, size, true, false);
+        break;
+
+    case OP_COMPRESSEDPART_I64:
+        (void)checkHandshakeFinished();
+        processBlockPacket(data, size, true, true);
+        break;
+
+    case OP_SENDINGPART_I64:
+        (void)checkHandshakeFinished();
+        processBlockPacket(data, size, false, true);
+        break;
+
+    case OP_REQUESTPARTS_I64:
+        // Remote client requesting file blocks from us (large file)
+        // TODO: implement addReqBlock from 64-bit request
+        break;
+
+    case OP_QUEUERANKING:
+        processEmuleQueueRank(data, size);
+        break;
+
+    case OP_FILEDESC:
+        processMuleCommentPacket(data, size);
+        break;
+
+    case OP_REQUESTSOURCES2:
+        // TODO: source exchange response
+        break;
+
+    case OP_ANSWERSOURCES2:
+        // TODO: process incoming source exchange
+        break;
+
+    case OP_PUBLICKEY:
+        processPublicKeyPacket(data, size);
+        break;
+
+    case OP_SIGNATURE:
+        processSignaturePacket(data, size);
+        break;
+
+    case OP_SECIDENTSTATE:
+        processSecIdentStatePacket(data, size);
+        break;
+
+    case OP_REQUESTPREVIEW:
+        processPreviewReq(data, size);
+        break;
+
+    case OP_PREVIEWANSWER:
+        processPreviewAnswer(data, size);
+        break;
+
+    case OP_PUBLICIP_REQ:
+        // Respond with our public IP
+        sendPublicIPRequest();
+        break;
+
+    case OP_PUBLICIP_ANSWER:
+        processPublicIPAnswer(data, size);
+        break;
+
+    case OP_AICHREQUEST:
+        processAICHRequest(data, size);
+        break;
+
+    case OP_AICHANSWER:
+        processAICHAnswer(data, size);
+        break;
+
+    case OP_CALLBACK:
+    case OP_REASKCALLBACKTCP:
+    case OP_BUDDYPING:
+    case OP_BUDDYPONG:
+        // TODO: buddy/callback handling
+        break;
+
+    case OP_CHATCAPTCHAREQ: {
+        SafeMemFile io(data, size);
+        processCaptchaRequest(io);
+        break;
+    }
+
+    case OP_CHATCAPTCHARES:
+        if (size >= 1)
+            processCaptchaReqRes(data[0]);
+        break;
+
+    case OP_FWCHECKUDPREQ: {
+        SafeMemFile io(data, size);
+        processFirewallCheckUDPRequest(io);
+        break;
+    }
+
+    case OP_KAD_FWTCPCHECK_ACK:
+        processKadFwTcpCheckAck();
+        break;
+
+    case OP_MULTIPACKET_EXT2:
+    case OP_MULTIPACKETANSWER_EXT2:
+        // TODO: multi-packet handling
+        break;
+
+    case OP_HASHSETREQUEST2:
+        sendHashsetPacket(data, size, true);
+        break;
+
+    case OP_HASHSETANSWER2:
+        processHashSet(data, size, true);
+        break;
+
+    default:
+        qDebug() << "onExtPacketReceived: unhandled opcode 0x"
+                 << Qt::hex << opcode << "from" << userName();
+        break;
+    }
+}
+
+// ===========================================================================
+// onPacketForClient — dispatch standard ED2K protocol packets
+// MFC ListenSocket.cpp ProcessPacket
+// ===========================================================================
+
+void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcode, uint8 protocol)
+{
+    Q_UNUSED(protocol);
+
+    switch (opcode) {
+    case OP_SENDINGPART:
+        (void)checkHandshakeFinished();
+        processBlockPacket(data, size, false, false);
+        break;
+
+    case OP_ACCEPTUPLOADREQ:
+        processAcceptUpload();
+        break;
+
+    case OP_CANCELTRANSFER:
+        // Remote client cancelled the transfer — remove from upload queue
+        if (theApp.uploadQueue)
+            theApp.uploadQueue->removeFromUploadQueue(this);
+        break;
+
+    case OP_OUTOFPARTREQS:
+        setDownloadState(DownloadState::OnQueue);
+        break;
+
+    case OP_REQUESTPARTS:
+        // Remote client requesting file blocks from us (standard 32-bit)
+        // TODO: implement addReqBlock from 32-bit request
+        break;
+
+    case OP_QUEUERANK:
+        processEdonkeyQueueRank(data, size);
+        break;
+
+    case OP_END_OF_DOWNLOAD:
+        if (theApp.uploadQueue)
+            theApp.uploadQueue->removeFromUploadQueue(this);
+        break;
+
+    case OP_CHANGE_CLIENT_ID:
+    case OP_CHANGE_SLOT:
+        // TODO: slot/ID change handling
+        break;
+
+    case OP_ASKSHAREDFILES:
+    case OP_ASKSHAREDFILESANSWER:
+    case OP_ASKSHAREDDIRS:
+    case OP_ASKSHAREDFILESDIR:
+    case OP_ASKSHAREDDIRSANS:
+    case OP_ASKSHAREDFILESDIRANS:
+    case OP_ASKSHAREDDENIEDANS:
+        // TODO: shared file browsing
+        break;
+
+    case OP_MESSAGE: {
+        SafeMemFile io(data, size);
+        processChatMessage(io, size);
+        break;
+    }
+
+    default:
+        qDebug() << "onPacketForClient: unhandled opcode 0x"
+                 << Qt::hex << opcode << "from" << userName();
+        break;
+    }
+}
+
+// ===========================================================================
+// onHelloReceived — dispatch hello/helloAnswer packets
+// ===========================================================================
+
+void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
+{
+    SafeMemFile io(data, size);
+
+    if (opcode == OP_HELLO) {
+        processHelloTypePacket(io);
+        // Send hello answer back
+        SafeMemFile response;
+        sendHelloTypePacket(response);
+        auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_HELLOANSWER);
+        sendPacket(std::move(packet));
+        onInfoPacketsReceived();
+    } else if (opcode == OP_HELLOANSWER) {
+        processHelloTypePacket(io);
+        onInfoPacketsReceived();
+    }
+}
+
+// ===========================================================================
+// onFileRequestReceived — dispatch file info/status/hashset packets
+// ===========================================================================
+
+void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 opcode)
+{
+    switch (opcode) {
+    case OP_SETREQFILEID:
+    case OP_REQUESTFILENAME:
+    case OP_REQFILENAMEANSWER:
+        // TODO: file request handling
+        break;
+
+    case OP_FILEREQANSNOFIL:
+        // Remote peer doesn't have the file
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->removeSource(this);
+        setDownloadState(DownloadState::None);
+        break;
+
+    case OP_FILESTATUS: {
+        SafeMemFile io(data, size);
+        processFileStatus(false, io, m_reqFile);
+        break;
+    }
+
+    case OP_HASHSETREQUEST:
+        sendHashsetPacket(data, size, false);
+        break;
+
+    case OP_HASHSETANSWER:
+        processHashSet(data, size, false);
+        break;
+
+    default:
+        break;
+    }
+}
+
+// ===========================================================================
+// onUploadRequestReceived — handle OP_STARTUPLOADREQ
+// ===========================================================================
+
+void UpDownClient::onUploadRequestReceived(const uint8* data, uint32 size)
+{
+    if (size < 16)
+        return;
+
+    // The packet contains the requested file hash (16 bytes)
+    KnownFile* file = nullptr;
+    if (theApp.sharedFileList)
+        file = theApp.sharedFileList->getFileByID(data);
+
+    if (file) {
+        setUploadFileID(file);
+        if (theApp.uploadQueue)
+            theApp.uploadQueue->addClientToQueue(this);
+    }
 }
 
 // ===========================================================================

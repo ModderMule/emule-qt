@@ -5,6 +5,10 @@
 
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "kademlia/KadContact.h"
+#include "kademlia/KadFirewallTester.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
 #include "utils/Opcodes.h"
@@ -175,35 +179,92 @@ UpDownClient* ClientList::findByIP_KadPort(uint32 ip, uint16 kadPort) const
 
 void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
 {
+    // Losing our buddy while firewalled — instantly re-trigger buddy search.
+    // Matches MFC ClientList.cpp:578-585.
+    if (status == BuddyStatus::None && (m_buddyStatus != BuddyStatus::None || m_buddy)) {
+        if (auto* kadInst = kad::Kademlia::instance()) {
+            if (kadInst->isRunning() && kadInst->isFirewalled()
+                && kad::UDPFirewallTester::isFirewalledUDP(true))
+            {
+                if (auto* prefs = kad::Kademlia::getInstancePrefs())
+                    prefs->setFindBuddy(true);
+            }
+        }
+    }
+
     m_buddy = buddy;
     m_buddyStatus = status;
 }
 
-bool ClientList::incomingBuddy(uint32 buddyIP, uint16 buddyPort, const uint8* buddyID)
+bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
+                               const uint8* clientID, const uint8* buddyID)
 {
-    Q_UNUSED(buddyID);
-
-    // Accept if we don't already have a buddy
+    // Already have a connected buddy — reject.
+    // Matches MFC ClientList.cpp:721-747.
     if (m_buddyStatus == BuddyStatus::Connected && m_buddy)
         return false;
 
-    // For now, just log the incoming buddy request.
-    // Full implementation requires creating an UpDownClient from the IP/port
-    // and establishing a TCP connection for the buddy relay.
+    // Check if we already know this client
+    if (findByConnIP(ip, tcpPort))
+        return false;
+
+    // Create a new client for the incoming buddy
+    auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+    client->setConnectIP(ip);
+    client->setKadPort(udpPort);
+    client->setUserHash(clientID);
+    client->setKadState(KadState::IncomingBuddy);
+    client->setBuddyID(buddyID);
+
+    addClient(client);
+
     m_buddyStatus = BuddyStatus::Connecting;
     return true;
 }
 
-void ClientList::requestBuddy(uint32 ip, uint16 port, uint8 connectOptions)
+void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
+                               const uint8* clientID, uint8 connectOptions)
 {
-    Q_UNUSED(connectOptions);
-
+    // Already have a connected buddy — skip.
+    // Matches MFC ClientList.cpp:694-719.
     if (m_buddyStatus == BuddyStatus::Connected)
         return;
 
-    // Mark as connecting. Full implementation requires creating an UpDownClient
-    // and initiating a TCP connection for the buddy relay.
+    // Find existing client by IP+port, or create a new one
+    auto* client = findByConnIP(ip, tcpPort);
+    if (!client) {
+        client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+        client->setConnectIP(ip);
+        addClient(client);
+    }
+
+    client->setKadPort(udpPort);
+    client->setUserHash(clientID);
+    client->setKadState(KadState::QueuedBuddy);
+    client->setConnectOptions(connectOptions, true, false);
+    client->tryToConnect();
+
     m_buddyStatus = BuddyStatus::Connecting;
+}
+
+// ===========================================================================
+// Kademlia UDP firewall check — MFC ClientList.cpp:767-784
+// ===========================================================================
+
+bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
+{
+    // Skip if we already know this IP — the result would be biased
+    if (findByIP(contact.getNetIP()))
+        return false;
+
+    // Create a temporary client for the TCP connection
+    auto* client = new UpDownClient(contact.getTCPPort(), 0, 0, 0, nullptr);
+    client->setConnectIP(contact.getIPAddress());
+    client->setKadState(KadState::QueuedFwCheckUDP);
+
+    addClient(client);
+    client->tryToConnect();
+    return true;
 }
 
 // ===========================================================================

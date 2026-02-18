@@ -69,7 +69,6 @@ public:
 
     /// Construct from a source: port, user ID, server address, ed2kID flag.
     /// Matches MFC CUpDownClient(CPartFile*, uint16, uint32, uint32, uint16, bool).
-    /// PartFile parameter replaced with void* placeholder.
     UpDownClient(uint16 port, uint32 userId, uint32 serverIP,
                  uint16 serverPort, PartFile* reqFile = nullptr,
                  bool ed2kID = false, QObject* parent = nullptr);
@@ -429,6 +428,7 @@ public:
 
     void sendFirewallCheckUDPRequest();
     void processFirewallCheckUDPRequest(SafeMemFile& data);
+    void processKadFwTcpCheckAck();
 
     // -- Phase 3 — upload (UploadClient.cpp) --------------------------------
 
@@ -521,6 +521,13 @@ signals:
                                const std::vector<QImage>& images);
     void chatStateChanged();
     void updateDisplayedInfoRequested();
+
+private slots:
+    void onExtPacketReceived(const uint8* data, uint32 size, uint8 opcode);
+    void onPacketForClient(const uint8* data, uint32 size, uint8 opcode, uint8 protocol);
+    void onHelloReceived(const uint8* data, uint32 size, uint8 opcode);
+    void onFileRequestReceived(const uint8* data, uint32 size, uint8 opcode);
+    void onUploadRequestReceived(const uint8* data, uint32 size);
 
 private:
     void init();

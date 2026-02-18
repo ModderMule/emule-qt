@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <vector>
 
+namespace eMule::kad { class Contact; }
+
 namespace eMule {
 
 class UpDownClient;
@@ -65,10 +67,18 @@ public:
 
     /// Called when a remote node wants to become our buddy.
     /// Returns true if accepted.
-    bool incomingBuddy(uint32 buddyIP, uint16 buddyPort, const uint8* buddyID);
+    /// Matches MFC CClientList::IncomingBuddy (srchybrid/ClientList.cpp:721).
+    bool incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
+                       const uint8* clientID, const uint8* buddyID);
 
     /// Initiate a buddy request to a remote node found via Kad.
-    void requestBuddy(uint32 ip, uint16 port, uint8 connectOptions);
+    /// Matches MFC CClientList::RequestBuddy (srchybrid/ClientList.cpp:694).
+    void requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
+                      const uint8* clientID, uint8 connectOptions);
+
+    /// Create a temporary client to request a UDP firewall check via TCP.
+    /// Matches MFC CClientList::DoRequestFirewallCheckUDP (srchybrid/ClientList.cpp:767).
+    bool doRequestFirewallCheckUDP(const kad::Contact& contact);
 
     // -- Banned clients -----------------------------------------------------
 

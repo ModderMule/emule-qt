@@ -18,6 +18,7 @@ class ClientUDPSocket;
 class DownloadQueue;
 class FriendList;
 class IPFilter;
+class KnownFileList;
 class ListenSocket;
 class SearchList;
 class ServerConnect;
@@ -34,6 +35,7 @@ struct AppContext {
     DownloadQueue*   downloadQueue  = nullptr;
     UploadQueue*     uploadQueue    = nullptr;
     SharedFileList*  sharedFileList = nullptr;
+    KnownFileList*   knownFileList  = nullptr;
     IPFilter*        ipFilter       = nullptr;
     ListenSocket*    listenSocket   = nullptr;
     FriendList*      friendList     = nullptr;

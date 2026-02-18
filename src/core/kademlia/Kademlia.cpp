@@ -2,6 +2,8 @@
 /// @brief Main Kademlia DHT engine implementation.
 
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadClientSearcher.h"
+#include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIndexed.h"
@@ -9,6 +11,8 @@
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
+#include "app/AppContext.h"
+#include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
@@ -166,10 +170,22 @@ bool Kademlia::isFirewalled() const
 
 void Kademlia::recheckFirewalled()
 {
-    if (!m_running || !m_prefs)
+    if (!m_running || !m_prefs || isRunningInLANMode())
         return;
+
+    // Stop any pending buddy search and force a firewall re-check.
+    // Matches MFC Kademlia.cpp:409-426.
+    m_prefs->setFindBuddy(false);
     m_prefs->setRecheckIP();
     UDPFirewallTester::reCheckFirewallUDP(false);
+
+    const auto now = static_cast<time_t>(time(nullptr));
+    // Delay the next buddy search to at least 5 min so the firewall
+    // recheck has time to complete and we don't start a buddy search
+    // based on stale firewalled status.
+    if (m_nextFindBuddy < now + MIN2S(5))
+        m_nextFindBuddy = now + MIN2S(5);
+    m_nextFirewallCheck = now + HR2S(1);
 }
 
 uint32 Kademlia::getKademliaUsers(bool newMethod) const
@@ -268,6 +284,19 @@ bool Kademlia::findNodeIDByIP(KadClientSearcher& requester, uint32 ip, uint16 tc
 {
     if (!m_udpListener)
         return false;
+
+    // Check routing table first for an immediate result.
+    // Matches MFC Kademlia.cpp: GetRoutingZone()->GetContact(ntohl(dwIP), nTCPPort, true).
+    // In the Qt port, IPs are already in host byte order throughout.
+    if (m_routingZone) {
+        if (auto* contact = m_routingZone->getContact(ip, tcpPort, true)) {
+            uint8 nodeIDBytes[16];
+            contact->getClientID().toByteArray(nodeIDBytes);
+            requester.kadSearchNodeIDByIPResult(KadClientSearchResult::Succeeded, nodeIDBytes);
+            return true;
+        }
+    }
+
     return m_udpListener->findNodeIDByIP(&requester, ip, tcpPort, udpPort);
 }
 
@@ -352,15 +381,30 @@ void Kademlia::process()
         UDPFirewallTester::connected();
     }
 
-    // 6. Find buddy
+    // 6. Find buddy — set the one-shot flag on the timer; the actual search
+    //    only fires below if we are firewalled and have no buddy.
+    //    Matches MFC Kademlia.cpp:227-229 + ClientList.cpp:592-610.
     if (now >= m_nextFindBuddy && m_prefs) {
+        m_prefs->setFindBuddy(true);
         m_nextFindBuddy = now + MIN2S(20);
-        if (m_prefs->findBuddy()) {
+    }
+
+    // 6b. Consume the flag and start a buddy search if we actually need one:
+    //     only when both TCP and UDP firewalled, no buddy, and Kad connected.
+    if (m_prefs && isConnected()
+        && isFirewalled() && UDPFirewallTester::isFirewalledUDP(true))
+    {
+        if (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::None
+            && m_prefs->findBuddy())
+        {
             auto* search = SearchManager::prepareLookup(SearchType::FindBuddy,
                                                          true, m_prefs->kadId());
             if (search) {
                 SearchManager::startSearch(search);
                 logDebug(QStringLiteral("Kad: Initiated buddy search"));
+            } else {
+                // Search ID already in use — re-set the flag for next cycle
+                m_prefs->setFindBuddy(true);
             }
         }
     }

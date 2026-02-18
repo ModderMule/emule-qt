@@ -19,6 +19,8 @@
 #include <cstdint>
 #include <ctime>
 
+namespace eMule { class SafeFile; }
+
 namespace eMule::kad {
 
 class Contact;
@@ -122,6 +124,7 @@ private:
     [[nodiscard]] uint32 getMaxDepth() const;
     [[nodiscard]] RoutingBin* randomBin() const;
 
+    void readBootstrapNodesDat(SafeFile& sf);
     void randomLookup();
     void setAllContactsVerified();
     void startTimer();

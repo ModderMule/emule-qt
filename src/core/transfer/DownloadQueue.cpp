@@ -255,18 +255,36 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
 {
     Q_UNUSED(searchID);
 
-    // Find the PartFile matching this hash
     PartFile* file = fileByID(fileHash);
     if (!file)
         return;
 
-    // Create a new source client for this Kad result.
-    // Full source connection is deferred until the TCP client module is complete.
-    // For now, log the source info for diagnostics.
-    logDebug(QStringLiteral("Kad source for %1: IP=%2:%3, buddy=%4:%5")
-                 .arg(file->fileName())
-                 .arg(ip).arg(tcpPort)
-                 .arg(buddyIP).arg(buddyPort));
+    // Don't exceed max sources per file
+    if (file->sourceCount() >= thePrefs.maxSourcesPerFile())
+        return;
+
+    // Create a new client for this Kad source
+    auto* client = new UpDownClient(tcpPort, 0, 0, 0, file);
+    client->setConnectIP(ip);
+    client->setSourceFrom(SourceFrom::Kademlia);
+
+    // Set buddy info for firewalled sources
+    if (buddyIP != 0) {
+        client->setBuddyIP(buddyIP);
+        client->setBuddyPort(buddyPort);
+        // Decode buddy crypt options
+        client->setConnectOptions(buddyCrypt, true, true);
+    }
+
+    // IPFilter + dead source + dedup checks
+    if (checkAndAddSource(file, client)) {
+        logDebug(QStringLiteral("Kad source added for %1: IP=%2:%3")
+                     .arg(file->fileName())
+                     .arg(ip).arg(tcpPort));
+        client->tryToConnect();
+    } else {
+        delete client;
+    }
 }
 
 // ===========================================================================

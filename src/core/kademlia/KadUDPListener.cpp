@@ -2,6 +2,7 @@
 /// @brief Kademlia UDP packet handler implementation.
 
 #include "kademlia/KadUDPListener.h"
+#include "kademlia/KadClientSearcher.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
@@ -14,7 +15,9 @@
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
+#include "app/AppContext.h"
 #include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
@@ -54,18 +57,33 @@ void KademliaUDPListener::bootstrap(const QString& host, uint16 udpPort)
     });
 }
 
-void KademliaUDPListener::bootstrap(uint32 ip, uint16 udpPort, uint8 /*kadVersion*/,
+void KademliaUDPListener::bootstrap(uint32 ip, uint16 udpPort, uint8 kadVersion,
                                      const UInt128* cryptTargetID)
 {
-    SafeMemFile packet;
-    sendMyDetails(KADEMLIA2_HELLO_REQ, ip, udpPort, KADEMLIA_VERSION,
-                  KadUDPKey(0), cryptTargetID, true);
+    sendNullPacket(KADEMLIA2_BOOTSTRAP_REQ, ip, udpPort, KadUDPKey(0),
+                   (kadVersion >= KADEMLIA_VERSION6_49aBETA) ? cryptTargetID : nullptr);
 }
 
 void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
-                                           const KadUDPKey& senderKey, uint8 /*kadVersion*/)
+                                           const KadUDPKey& senderKey, uint8 kadVersion)
 {
-    sendNullPacket(KADEMLIA_FIREWALLED_REQ, ip, udpPort, senderKey, nullptr);
+    auto* prefs = Kademlia::getInstancePrefs();
+
+    if (kadVersion > KADEMLIA_VERSION6_49aBETA) {
+        // Extended request with client hash + connect options for obfuscation support
+        SafeMemFile packet;
+        packet.writeUInt16(prefs ? prefs->internKadPort() : uint16{0});
+        io::writeUInt128(packet, prefs ? prefs->clientHash() : UInt128());
+        packet.writeUInt8(prefs ? prefs->myConnectOptions() : uint8{0});
+        sendPacket(packet, KADEMLIA_FIREWALLED2_REQ, ip, udpPort, senderKey, nullptr);
+    } else {
+        SafeMemFile packet;
+        packet.writeUInt16(prefs ? prefs->internKadPort() : uint16{0});
+        sendPacket(packet, KADEMLIA_FIREWALLED_REQ, ip, udpPort, senderKey, nullptr);
+    }
+
+    // Track so we accept the KADEMLIA_FIREWALLED_RES reply from this IP
+    addTrackedOutPacket(ip, KADEMLIA_FIREWALLED_REQ);
 }
 
 // ---------------------------------------------------------------------------
@@ -275,10 +293,16 @@ void KademliaUDPListener::expireClientSearch(const KadClientSearcher* expireImme
     uint32 now = static_cast<uint32>(time(nullptr));
     auto it = m_fetchNodeIDRequests.begin();
     while (it != m_fetchNodeIDRequests.end()) {
-        if (it->requester == expireImmediately || it->expire < now)
+        if (it->requester == expireImmediately) {
+            // Caller is destructing — remove silently without callback
             it = m_fetchNodeIDRequests.erase(it);
-        else
+        } else if (it->expire < now) {
+            // Timed out — notify the requester before removal
+            it->requester->kadSearchNodeIDByIPResult(KadClientSearchResult::Timeout, nullptr);
+            it = m_fetchNodeIDRequests.erase(it);
+        } else {
             ++it;
+        }
     }
 }
 
@@ -534,6 +558,12 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
         io::writeUInt128(ackPacket, contactID);
         sendPacket(ackPacket, KADEMLIA2_HELLO_RES_ACK, ip, udpPort, senderKey, &contactID);
     }
+
+    // Check if firewalled — ask this node to report our external IP
+    if (auto* prefs = Kademlia::getInstancePrefs()) {
+        if (prefs->recheckIP())
+            firewalledCheck(ip, udpPort, senderKey, version);
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 len,
@@ -548,8 +578,32 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
     bool ipVerified = false;
     UInt128 contactID;
 
-    addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
-                         ipVerified, true, false, nullptr, &contactID);
+    if (!addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
+                              ipVerified, true, false, nullptr, &contactID))
+        return;
+
+    // Deliver node-ID result to any pending FetchNodeIDRequest for this IP.
+    // The contact data starts with 16 bytes KadID + 2 bytes TCP port.
+    // Matches MFC KademliaUDPListener.cpp:461-474.
+    if (len >= 18 && !m_fetchNodeIDRequests.empty()) {
+        uint16 tcpPort = static_cast<uint16>(data[16]) | (static_cast<uint16>(data[17]) << 8);
+        uint8 nodeIDBytes[16];
+        contactID.toByteArray(nodeIDBytes);
+
+        for (auto it = m_fetchNodeIDRequests.begin(); it != m_fetchNodeIDRequests.end(); ++it) {
+            if (it->ip == ip && it->tcpPort == tcpPort) {
+                it->requester->kadSearchNodeIDByIPResult(KadClientSearchResult::Succeeded, nodeIDBytes);
+                m_fetchNodeIDRequests.erase(it);
+                break;
+            }
+        }
+    }
+
+    // Check if firewalled — ask this node to report our external IP
+    if (auto* prefs = Kademlia::getInstancePrefs()) {
+        if (prefs->recheckIP())
+            firewalledCheck(ip, udpPort, senderKey, version);
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA2_HELLO_RES_ACK(const uint8* data, uint32 len,
@@ -637,6 +691,18 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
         auto* contact = new Contact(contactID, contactIP, contactUDP, contactTCP,
                                      target, contactVersion, KadUDPKey(0), false);
         results.push_back(contact);
+    }
+
+    // If this is a firewall check search, feed contacts to the UDP firewall tester
+    if (SearchManager::isFWCheckUDPSearch(target)) {
+        for (const auto* contact : results) {
+            UDPFirewallTester::addPossibleTestContact(
+                contact->getClientID(), contact->getIPAddress(),
+                contact->getUDPPort(), contact->getTCPPort(),
+                target, contact->getVersion(),
+                contact->getUDPKey(), contact->isIpVerified());
+        }
+        UDPFirewallTester::queryNextClient();
     }
 
     SearchManager::processResponse(target, ip, udpPort, results);
@@ -791,6 +857,15 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_RES(const uint8* data, uint3
     uint8 load = io.readUInt8();
 
     SearchManager::processPublishResult(target, load, true);
+
+    // Check if the remote node requests an ACK
+    if (io.position() < io.length()) {
+        uint8 options = io.readUInt8();
+        bool requestACK = (options & 0x01) != 0;
+        if (requestACK && !senderKey.isEmpty()) {
+            sendNullPacket(KADEMLIA2_PUBLISH_RES_ACK, ip, udpPort, senderKey, nullptr);
+        }
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA2_SEARCH_NOTES_REQ(const uint8* data, uint32 len,
@@ -852,16 +927,23 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
         return;
 
     SafeMemFile io(data, len);
-    [[maybe_unused]] uint16 tcpPort = io.readUInt16();
+    uint16 tcpPort = io.readUInt16();
 
-    // Respond with their external IP so they can determine their public address.
-    // Full TCP verification (connecting to their TCP port) requires outbound TCP
-    // socket support, which is deferred. The IP response is still useful.
+    // Respond with their external IP so they can determine their public address
     SafeMemFile resPacket;
     resPacket.writeUInt32(ip);
     sendPacket(resPacket, KADEMLIA_FIREWALLED_RES, ip, udpPort, senderKey, nullptr);
 
-    logDebug(QStringLiteral("Kad: FIREWALLED_REQ from %1:%2, responded with their IP")
+    // Attempt TCP verification: connect to their TCP port to verify it's open.
+    // This is best-effort — failure is silently ignored.
+    auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+    client->setConnectIP(ip);
+    client->setKadState(KadState::QueuedFwCheck);
+    if (theApp.clientList)
+        theApp.clientList->addClient(client);
+    client->tryToConnect();
+
+    logDebug(QStringLiteral("Kad: FIREWALLED_REQ from %1:%2, responded + TCP fw check")
                  .arg(ipToString(ip)).arg(udpPort));
 }
 
@@ -873,17 +955,25 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
         return;
 
     SafeMemFile io(data, len);
-    [[maybe_unused]] uint16 tcpPort = io.readUInt16();
+    uint16 tcpPort = io.readUInt16();
     UInt128 contactID = io::readUInt128(io);
-    [[maybe_unused]] uint8 options = io.readUInt8();
+    uint8 options = io.readUInt8();
 
-    // Respond with their external IP (same as FIREWALLED_REQ).
-    // Full TCP verification is deferred.
+    // Respond with their external IP
     SafeMemFile resPacket;
     resPacket.writeUInt32(ip);
     sendPacket(resPacket, KADEMLIA_FIREWALLED_RES, ip, udpPort, senderKey, &contactID);
 
-    logDebug(QStringLiteral("Kad: FIREWALLED2_REQ from %1:%2, responded with their IP")
+    // Attempt TCP verification: connect to their TCP port to verify it's open
+    auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+    client->setConnectIP(ip);
+    client->setKadState(KadState::QueuedFwCheck);
+    client->setConnectOptions(options, true, true);
+    if (theApp.clientList)
+        theApp.clientList->addClient(client);
+    client->tryToConnect();
+
+    logDebug(QStringLiteral("Kad: FIREWALLED2_REQ from %1:%2, responded + TCP fw check")
                  .arg(ipToString(ip)).arg(udpPort));
 }
 
@@ -925,13 +1015,14 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
                                                           uint32 ip, uint16 udpPort,
                                                           const KadUDPKey& senderKey)
 {
-    if (len < 34) // 16 + 16 + 2
+    if (len < 35) // 16 (checkID) + 16 (clientHash) + 2 (tcpPort) + 1 (connectOptions)
         return;
 
     SafeMemFile io(data, len);
     [[maybe_unused]] UInt128 checkID = io::readUInt128(io);
     UInt128 contactID = io::readUInt128(io);
     uint16 tcpPort = io.readUInt16();
+    uint8 connectOptions = io.readUInt8();
 
     auto* prefs = Kademlia::getInstancePrefs();
     auto* clientList = Kademlia::getClientList();
@@ -948,14 +1039,18 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     // Send FINDBUDDY_RES back with our info
     SafeMemFile resPacket;
     io::writeUInt128(resPacket, prefs->kadId());
-    io::writeUInt128(resPacket, contactID);
+    io::writeUInt128(resPacket, prefs->clientHash());
     resPacket.writeUInt16(prefs->internKadPort());
+    resPacket.writeUInt8(prefs->myConnectOptions());
     sendPacket(resPacket, KADEMLIA_FINDBUDDY_RES, ip, udpPort, senderKey, nullptr);
 
-    // Attempt to accept this as our buddy
+    // Attempt to accept this as our buddy — pass all parameters.
+    // Matches MFC KademliaUDPListener.cpp incomingBuddy call.
+    uint8 clientIDBytes[16];
+    contactID.toByteArray(clientIDBytes);
     uint8 buddyIDBytes[16];
-    contactID.toByteArray(buddyIDBytes);
-    clientList->incomingBuddy(ip, tcpPort, buddyIDBytes);
+    checkID.toByteArray(buddyIDBytes);
+    clientList->incomingBuddy(ip, tcpPort, udpPort, clientIDBytes, buddyIDBytes);
 
     logDebug(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — accepted, sent response")
                  .arg(ipToString(ip)).arg(udpPort));
@@ -965,23 +1060,25 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint
                                                           uint32 ip, uint16 udpPort,
                                                           const KadUDPKey& senderKey)
 {
-    if (len < 34)
+    if (len < 35) // 16 (kadID) + 16 (clientHash) + 2 (tcpPort) + 1 (connectOptions)
         return;
 
     SafeMemFile io(data, len);
-    [[maybe_unused]] UInt128 checkID = io::readUInt128(io);
-    [[maybe_unused]] UInt128 contactID = io::readUInt128(io);
+    [[maybe_unused]] UInt128 kadID = io::readUInt128(io);
+    UInt128 clientHash = io::readUInt128(io);
     uint16 tcpPort = io.readUInt16();
+    uint8 connectOptions = io.readUInt8();
 
     auto* clientList = Kademlia::getClientList();
     if (!clientList)
         return;
 
     // We sent a FindBuddy search and this node responded — try to connect
-    // as our buddy via TCP. For now, initiate the buddy request.
-    auto* prefs = Kademlia::getInstancePrefs();
-    uint8 connectOptions = prefs ? prefs->myConnectOptions() : 0;
-    clientList->requestBuddy(ip, tcpPort, connectOptions);
+    // as our buddy via TCP. Pass all parameters for full buddy setup.
+    // Matches MFC KademliaUDPListener.cpp requestBuddy call.
+    uint8 clientIDBytes[16];
+    clientHash.toByteArray(clientIDBytes);
+    clientList->requestBuddy(ip, tcpPort, udpPort, clientIDBytes, connectOptions);
 
     logDebug(QStringLiteral("Kad: FINDBUDDY_RES from %1:%2 — requesting buddy connection")
                  .arg(ipToString(ip)).arg(udpPort));
@@ -1011,10 +1108,30 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
         return;
     }
 
-    // Relay: create a connection to the firewalled client at the given IP:port.
-    // Full implementation requires TCP client connection support.
-    logDebug(QStringLiteral("Kad: CALLBACK_REQ from %1 for %2:%3 — relay deferred (needs TCP)")
-                 .arg(ipToString(ip)).arg(ipToString(contactID.get32BitChunk(0))).arg(tcpPort));
+    // Verify the request comes from our buddy's IP
+    if (buddy->userIP() != ip) {
+        logDebug(QStringLiteral("Kad: CALLBACK_REQ from %1 — not from buddy IP %2, ignoring")
+                     .arg(ipToString(ip)).arg(ipToString(buddy->userIP())));
+        return;
+    }
+
+    // Relay: create a client for the remote requester and initiate connection.
+    // The contactID identifies the requesting client; the TCP port is theirs.
+    // Since this arrives through our buddy relay, the remote client's IP is
+    // not directly available — the connection goes through the buddy relay.
+    auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+    uint8 targetHash[16];
+    contactID.toByteArray(targetHash);
+    client->setUserHash(targetHash);
+    client->setBuddyIP(buddy->userIP());
+    client->setBuddyPort(buddy->userPort());
+    client->setKadState(KadState::IncomingBuddy);
+    if (theApp.clientList)
+        theApp.clientList->addClient(client);
+    client->tryToConnect();
+
+    logDebug(QStringLiteral("Kad: CALLBACK_REQ from buddy %1 — relaying callback for port %2")
+                 .arg(ipToString(ip)).arg(tcpPort));
 }
 
 // ---------------------------------------------------------------------------

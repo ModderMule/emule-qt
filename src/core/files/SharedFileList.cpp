@@ -222,7 +222,7 @@ uint64 SharedFileList::getDataSize(uint64& largestOut) const
 }
 
 // ---------------------------------------------------------------------------
-// Keywords (stub storage)
+// Keywords
 // ---------------------------------------------------------------------------
 
 void SharedFileList::addKeywords(KnownFile* file)

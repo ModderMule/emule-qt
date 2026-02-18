@@ -536,7 +536,7 @@ void KnownFile::requestGrabFrames(uint8 count, double startTime,
 }
 
 // ---------------------------------------------------------------------------
-// Stubs
+// Rating / publishing
 // ---------------------------------------------------------------------------
 
 void KnownFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
