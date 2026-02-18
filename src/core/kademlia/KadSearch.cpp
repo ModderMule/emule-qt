@@ -185,9 +185,21 @@ void Search::go()
     }
 }
 
-void Search::processResponse(uint32 /*fromIP*/, uint16 /*fromPort*/, const ContactArray& results)
+void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray& results)
 {
     m_lastResponse = time(nullptr);
+
+    // Record the responding contact: move from m_tried → m_best, mark in m_responded.
+    // Without this, storePacket() would find m_responded empty and skip the store phase.
+    for (auto it = m_tried.begin(); it != m_tried.end(); ++it) {
+        Contact* c = it->second;
+        if (c->getIPAddress() == fromIP && c->getUDPPort() == fromPort) {
+            m_best[it->first] = c;
+            m_responded[c->getClientID()] = true;
+            m_tried.erase(it);
+            break;
+        }
+    }
 
     for (auto* contact : results) {
         // Check if we've already tried this contact
@@ -454,9 +466,10 @@ void Search::sendFindValue(Contact* contact, bool /*reAskMore*/)
         io::writeUInt128(packet, m_target);
         if (!m_searchTermsData.isEmpty())
             packet.write(m_searchTermsData.constData(), m_searchTermsData.size());
+        UInt128 keyClientID = contact->getClientID();
         udpListener->sendPacket(packet, KADEMLIA2_SEARCH_KEY_REQ,
                                 contact->getIPAddress(), contact->getUDPPort(),
-                                contact->getUDPKey(), nullptr);
+                                contact->getUDPKey(), &keyClientID);
         break;
     }
     case SearchType::Notes: {
@@ -464,9 +477,10 @@ void Search::sendFindValue(Contact* contact, bool /*reAskMore*/)
         SafeMemFile packet;
         io::writeUInt128(packet, m_target);
         packet.writeUInt64(0); // file size (not known here)
+        UInt128 noteClientID = contact->getClientID();
         udpListener->sendPacket(packet, KADEMLIA2_SEARCH_NOTES_REQ,
                                 contact->getIPAddress(), contact->getUDPPort(),
-                                contact->getUDPKey(), nullptr);
+                                contact->getUDPKey(), &noteClientID);
         break;
     }
     default: {
@@ -483,9 +497,10 @@ void Search::sendFindValue(Contact* contact, bool /*reAskMore*/)
             io::writeUInt128(packet, prefs->kadId());
         else
             io::writeUInt128(packet, RoutingZone::localKadId());
+        UInt128 reqClientID = contact->getClientID();
         udpListener->sendPacket(packet, KADEMLIA2_REQ,
                                 contact->getIPAddress(), contact->getUDPPort(),
-                                contact->getUDPKey(), nullptr);
+                                contact->getUDPKey(), &reqClientID);
         break;
     }
     }

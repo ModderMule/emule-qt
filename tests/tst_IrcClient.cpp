@@ -377,7 +377,7 @@ void tst_IrcClient::names_signal()
     QCOMPARE(endSpy[0][0].toString(), QStringLiteral("#chan"));
 
     // Should also have sent a MODE request
-    QTRY_VERIFY(fix.serverSocket->bytesAvailable() > 0);
+    fix.serverSocket->waitForReadyRead(1000);
     const QString sent = QString::fromUtf8(fix.serverSocket->readAll());
     QVERIFY(sent.contains(QStringLiteral("MODE #chan")));
 

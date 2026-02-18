@@ -167,8 +167,8 @@ public:
                                      uint8* md4HashOut, AICHHashTree* aichTree);
 
     // Protocol
-    std::unique_ptr<Packet> createSrcInfoPacket(const UpDownClient* forClient,
-                                                 uint8 version, uint16 options) const;
+    virtual std::unique_ptr<Packet> createSrcInfoPacket(const UpDownClient* forClient,
+                                                         uint8 version, uint16 options) const;
 
     // Kad publishing
     bool publishSrc();

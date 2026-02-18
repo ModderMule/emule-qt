@@ -58,7 +58,8 @@ public:
     void expireClientSearch(const KadClientSearcher* expireImmediately = nullptr);
 
 signals:
-    void packetToSend(QByteArray data, uint32 destIP, uint16 destPort);
+    void packetToSend(QByteArray data, uint32 destIP, uint16 destPort,
+                      KadUDPKey targetKey, UInt128 cryptTargetID);
 
 private:
     // Packet handlers

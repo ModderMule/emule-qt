@@ -27,8 +27,10 @@ target_link_libraries(emule_test_helpers INTERFACE
 )
 
 # Test data directory — available to test code via EMULE_TEST_DATA_DIR define
+# Project data directory — available via EMULE_PROJECT_DATA_DIR (server.met, nodes.dat)
 target_compile_definitions(emule_test_helpers INTERFACE
     EMULE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    EMULE_PROJECT_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
 )
 
 # ---------------------------------------------------------------------------
@@ -218,3 +220,15 @@ emule_add_test(tst_StatisticsReset FOLDER "Stats")
 
 # Module 19: Web Server
 emule_add_test(tst_WebServer FOLDER "WebServer")
+
+# Data file integration tests — verify real server.met / nodes.dat / .part loading
+emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
+emule_add_test(tst_KadNodesData   FOLDER "DataFiles")
+emule_add_test(tst_PartFileData   FOLDER "DataFiles")
+emule_add_test(tst_SharedFileData FOLDER "DataFiles")
+
+# Live network integration tests (requires real network connectivity)
+if(EMULE_LIVE_TESTS)
+    emule_add_test(tst_KadLiveNetwork FOLDER "LiveNetwork")
+    set_tests_properties(tst_KadLiveNetwork PROPERTIES LABELS "live" TIMEOUT 180)
+endif()

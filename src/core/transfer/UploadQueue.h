@@ -8,15 +8,18 @@
 
 #include "utils/Types.h"
 
+#include <QList>
 #include <QMutex>
 #include <QObject>
 
 #include <deque>
 #include <functional>
+#include <memory>
 #include <vector>
 
 namespace eMule {
 
+class Packet;
 class SharedFileList;
 class UpDownClient;
 class UploadBandwidthThrottler;
@@ -60,7 +63,7 @@ public:
 
     // Component access
     void setThrottler(UploadBandwidthThrottler* throttler) { m_throttler = throttler; }
-    void setDiskIOThread(UploadDiskIOThread* diskIO) { m_diskIO = diskIO; }
+    void setDiskIOThread(UploadDiskIOThread* diskIO);
     [[nodiscard]] UploadDiskIOThread* diskIOThread() const { return m_diskIO; }
     void setSharedFileList(SharedFileList* sharedFiles) { m_sharedFiles = sharedFiles; }
 
@@ -73,6 +76,11 @@ signals:
     void clientRemovedFromQueue(eMule::UpDownClient* client);
     void uploadStarted(eMule::UpDownClient* client);
     void uploadEnded(eMule::UpDownClient* client);
+
+private slots:
+    void onBlockPacketsReady(eMule::UpDownClient* client,
+                             QList<std::shared_ptr<eMule::Packet>> packets);
+    void onReadError(eMule::UpDownClient* client);
 
 private:
     // Slot management

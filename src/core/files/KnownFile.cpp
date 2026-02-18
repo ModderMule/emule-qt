@@ -628,14 +628,19 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
     if (m_uploadingClients.empty())
         return nullptr;
 
-    // Build source info packet: file hash + source count + per-source data
+    // Negotiate version down to our max supported
+    const uint8 usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
+
     SafeMemFile data;
+
+    // SX2 header: version byte
+    data.writeUInt8(usedVersion);
 
     // File hash (16 bytes)
     data.writeHash16(fileHash());
 
     // Limit number of sources based on protocol version
-    const uint16 maxSources = (version >= 4) ? 500 : 50;
+    const uint16 maxSources = (usedVersion >= 4) ? 500 : 50;
     const auto srcCount = static_cast<uint16>(
         std::min(static_cast<size_t>(maxSources), m_uploadingClients.size()));
 
@@ -644,20 +649,36 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
     for (uint16 i = 0; i < srcCount; ++i) {
         const auto* client = m_uploadingClients[i];
 
-        // Client ID (4 bytes) — use IP as client ID for high-ID clients
+        // Skip low-ID clients
+        if (client->hasLowID())
+            continue;
+
         data.writeUInt32(client->userIP());
-
-        // Client port (2 bytes)
         data.writeUInt16(client->userPort());
+        data.writeUInt32(client->serverIP());
+        data.writeUInt16(client->serverPort());
 
-        // Server IP (4 bytes) — 0 for now (no server tracking per-client)
-        data.writeUInt32(0);
+        if (usedVersion >= 2)
+            data.writeHash16(client->userHash());
 
-        // Server port (2 bytes)
-        data.writeUInt16(0);
+        if (usedVersion >= 4) {
+            uint8 cryptOpts = 0;
+            if (client->supportsCryptLayer())
+                cryptOpts |= 0x01;
+            if (client->requestsCryptLayer())
+                cryptOpts |= 0x02;
+            if (client->requiresCryptLayer())
+                cryptOpts |= 0x04;
+            if (client->supportsDirectUDPCallback())
+                cryptOpts |= 0x08;
+            data.writeUInt8(cryptOpts);
+        }
     }
 
-    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_ANSWERSOURCES);
+    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_ANSWERSOURCES2);
+    if (packet->size > 354)
+        packet->packPacket();
+
     return packet;
 }
 

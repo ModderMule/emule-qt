@@ -5,6 +5,7 @@
 #include "crypto/AICHHashSet.h"
 #include "crypto/AICHHashTree.h"
 #include "crypto/SHAHash.h"
+#include "files/KnownFile.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
@@ -55,9 +56,29 @@ private slots:
     // isLargeFile
     void isLargeFile_smallFile();
 
+    // AICH hash set requesting — recovery data for different parts
+    void recoveryData_middlePart_roundtrip();
+    void recoveryData_lastPart_roundtrip();
+
+    // AICH part verification via createHashFromMemory
+    void partVerification_fromMemory_consistent();
+    void partVerification_corruptBlock_detected();
+
+    // AICH part recovery — block-level corruption identification
+    void aichRecovery_blockLevel_identification();
+
+    // Trust evaluation edge cases
+    void untrustedHash_conflictingHashes_preventsTrust();
+    void untrustedHash_sameIP_differentHash_ignored();
+
 private:
-    /// Build a fully hashed tree with deterministic block data.
+    /// Build a fully hashed tree with deterministic block data (synthetic per-block).
     void buildHashedTree(AICHRecoveryHashSet& hashSet, uint64 fileSize);
+
+    /// Build a fully hashed tree from actual byte data using createHashFromMemory.
+    /// Only for single-part files (dataSize <= PARTSIZE). outData receives the data.
+    void buildHashedTreeFromData(AICHRecoveryHashSet& hashSet, uint32 dataSize,
+                                 QByteArray& outData);
 
     QTemporaryDir m_tempDir;
 };
@@ -384,6 +405,318 @@ void tst_AICHHashSet::isLargeFile_smallFile()
     recData.seek(0, 0);
     uint16 count16 = recData.readUInt16();
     QVERIFY(count16 > 0); // Should have 16-bit hashes for small file
+}
+
+// ---------------------------------------------------------------------------
+// buildHashedTreeFromData — from actual byte data via createHashFromMemory
+// ---------------------------------------------------------------------------
+
+void tst_AICHHashSet::buildHashedTreeFromData(AICHRecoveryHashSet& hashSet,
+                                               uint32 dataSize,
+                                               QByteArray& outData)
+{
+    QVERIFY(dataSize <= PARTSIZE);
+    hashSet.setFileSize(dataSize);
+
+    outData.resize(static_cast<qsizetype>(dataSize));
+    for (uint32 i = 0; i < dataSize; ++i)
+        outData[static_cast<qsizetype>(i)] = static_cast<char>(i % 251);
+
+    uint8 dummyMD4[16]{};
+    KnownFile::createHashFromMemory(
+        reinterpret_cast<const uint8*>(outData.constData()),
+        dataSize, dummyMD4, &hashSet.m_hashTree);
+
+    QVERIFY(hashSet.reCalculateHash(false));
+    hashSet.setStatus(EAICHStatus::HashSetComplete);
+}
+
+// ---------------------------------------------------------------------------
+// AICH hash set requesting — recovery data for different parts
+// ---------------------------------------------------------------------------
+
+void tst_AICHHashSet::recoveryData_middlePart_roundtrip()
+{
+    const uint64 fileSize = PARTSIZE * 3 + 1; // 4 parts
+    AICHRecoveryHashSet creator;
+    buildHashedTree(creator, fileSize);
+    const AICHHash masterHash = creator.getMasterHash();
+
+    // Create recovery data for part 1 (middle part)
+    SafeMemFile recData;
+    QVERIFY(creator.createPartRecoveryData(PARTSIZE, recData, true));
+
+    // Read recovery data into a fresh hashset
+    AICHRecoveryHashSet reader(fileSize);
+    reader.setMasterHash(masterHash, EAICHStatus::Verified);
+
+    recData.seek(0, 0);
+    QVERIFY(reader.readRecoveryData(PARTSIZE, recData));
+
+    // All block hashes for part 1 should be available
+    QVERIFY(reader.isPartDataAvailable(PARTSIZE, fileSize));
+
+    // Part 0 should NOT be available (only part 1 was recovered)
+    // Note: part 0 blocks weren't received, but the root/sibling hashes were set
+    // during recovery. isPartDataAvailable checks leaf-level hashes.
+    // Part 0's leaf hashes should NOT be present.
+}
+
+void tst_AICHHashSet::recoveryData_lastPart_roundtrip()
+{
+    const uint64 fileSize = PARTSIZE * 2 + EMBLOCKSIZE; // last part = 1 block
+    AICHRecoveryHashSet creator;
+    buildHashedTree(creator, fileSize);
+    const AICHHash masterHash = creator.getMasterHash();
+
+    // Create recovery data for the last part (part 2)
+    const uint64 lastPartStart = PARTSIZE * 2;
+    SafeMemFile recData;
+    QVERIFY(creator.createPartRecoveryData(lastPartStart, recData, true));
+
+    // Read into fresh hashset
+    AICHRecoveryHashSet reader(fileSize);
+    reader.setMasterHash(masterHash, EAICHStatus::Verified);
+
+    recData.seek(0, 0);
+    QVERIFY(reader.readRecoveryData(lastPartStart, recData));
+
+    // Last part's block hashes should be available
+    QVERIFY(reader.isPartDataAvailable(lastPartStart, fileSize));
+}
+
+// ---------------------------------------------------------------------------
+// AICH part verification
+// ---------------------------------------------------------------------------
+
+void tst_AICHHashSet::partVerification_fromMemory_consistent()
+{
+    const uint32 dataSize = EMBLOCKSIZE * 4;
+
+    // Build two AICH trees from the same deterministic data
+    AICHRecoveryHashSet hs1, hs2;
+    QByteArray data1, data2;
+    buildHashedTreeFromData(hs1, dataSize, data1);
+    buildHashedTreeFromData(hs2, dataSize, data2);
+
+    // Root hashes must be identical (same data → same AICH hash)
+    QVERIFY(hs1.hasValidMasterHash());
+    QVERIFY(hs2.hasValidMasterHash());
+    QCOMPARE(hs1.getMasterHash(), hs2.getMasterHash());
+
+    // Block-level hashes should also match
+    for (uint32 blockIdx = 0; blockIdx < 4; ++blockIdx) {
+        const uint64 blockStart = static_cast<uint64>(blockIdx) * EMBLOCKSIZE;
+        const AICHHashTree* b1 = hs1.m_hashTree.findExistingHash(blockStart, EMBLOCKSIZE);
+        const AICHHashTree* b2 = hs2.m_hashTree.findExistingHash(blockStart, EMBLOCKSIZE);
+        QVERIFY(b1 && b1->m_hashValid);
+        QVERIFY(b2 && b2->m_hashValid);
+        QCOMPARE(b1->m_hash, b2->m_hash);
+    }
+}
+
+void tst_AICHHashSet::partVerification_corruptBlock_detected()
+{
+    const uint32 dataSize = EMBLOCKSIZE * 4;
+
+    // Build "known good" tree from clean data
+    AICHRecoveryHashSet goodSet;
+    QByteArray goodData;
+    buildHashedTreeFromData(goodSet, dataSize, goodData);
+
+    // Create corrupt data — flip bytes in block 2
+    QByteArray corruptData = goodData;
+    corruptData[static_cast<qsizetype>(EMBLOCKSIZE) * 2] ^= 0xFF;
+    corruptData[static_cast<qsizetype>(EMBLOCKSIZE) * 2 + 100] ^= 0xFF;
+
+    // Hash corrupt data into a new tree
+    AICHHashTree badTree(dataSize, true, EMBLOCKSIZE);
+    uint8 dummyMD4[16]{};
+    KnownFile::createHashFromMemory(
+        reinterpret_cast<const uint8*>(corruptData.constData()),
+        dataSize, dummyMD4, &badTree);
+    std::unique_ptr<AICHHashAlgo> algo(AICHRecoveryHashSet::getNewHashAlgo());
+    QVERIFY(badTree.reCalculateHash(algo.get(), false));
+
+    // Root hashes should differ
+    QVERIFY(goodSet.getMasterHash() != badTree.m_hash);
+
+    // Block-level comparison: blocks 0, 1, 3 should match; block 2 should differ
+    for (uint32 blockIdx = 0; blockIdx < 4; ++blockIdx) {
+        const uint64 blockStart = static_cast<uint64>(blockIdx) * EMBLOCKSIZE;
+        const AICHHashTree* goodBlock = goodSet.m_hashTree.findExistingHash(blockStart, EMBLOCKSIZE);
+        const AICHHashTree* badBlock = badTree.findExistingHash(blockStart, EMBLOCKSIZE);
+        QVERIFY(goodBlock && goodBlock->m_hashValid);
+        QVERIFY(badBlock && badBlock->m_hashValid);
+
+        if (blockIdx == 2)
+            QVERIFY(goodBlock->m_hash != badBlock->m_hash);
+        else
+            QCOMPARE(goodBlock->m_hash, badBlock->m_hash);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AICH part recovery — block-level corruption identification
+// ---------------------------------------------------------------------------
+
+void tst_AICHHashSet::aichRecovery_blockLevel_identification()
+{
+    const uint32 dataSize = EMBLOCKSIZE * 4;
+    QByteArray goodData;
+
+    // Step 1: Build "source" hash tree from good data
+    AICHRecoveryHashSet source;
+    buildHashedTreeFromData(source, dataSize, goodData);
+    const AICHHash masterHash = source.getMasterHash();
+
+    // Step 2: Create recovery data for part 0 (entire file for single-part)
+    SafeMemFile recData;
+    QVERIFY(source.createPartRecoveryData(0, recData, true));
+
+    // Step 3: Read recovery data into "downloader" hash set
+    AICHRecoveryHashSet downloader(dataSize);
+    downloader.setMasterHash(masterHash, EAICHStatus::Verified);
+    recData.seek(0, 0);
+    QVERIFY(downloader.readRecoveryData(0, recData));
+
+    // Step 4: Create corrupt data — block 2 is bad, others are good
+    QByteArray corruptData = goodData;
+    corruptData[static_cast<qsizetype>(EMBLOCKSIZE) * 2] ^= 0xFF;
+    corruptData[static_cast<qsizetype>(EMBLOCKSIZE) * 2 + 50] ^= 0xAA;
+
+    // Step 5: Hash corrupt data into local AICH tree (simulating PartFile::aichRecoveryDataAvailable)
+    AICHHashTree localTree(dataSize, true, EMBLOCKSIZE);
+    uint8 dummyMD4[16]{};
+    KnownFile::createHashFromMemory(
+        reinterpret_cast<const uint8*>(corruptData.constData()),
+        dataSize, dummyMD4, &localTree);
+    std::unique_ptr<AICHHashAlgo> algo(AICHRecoveryHashSet::getNewHashAlgo());
+    QVERIFY(localTree.reCalculateHash(algo.get(), false));
+
+    // Step 6: Block-by-block comparison (as done in PartFile::aichRecoveryDataAvailable)
+    uint32 goodBlocks = 0;
+    uint32 corruptBlocks = 0;
+
+    for (uint32 blockIdx = 0; blockIdx < 4; ++blockIdx) {
+        const uint64 blockStart = static_cast<uint64>(blockIdx) * EMBLOCKSIZE;
+        const AICHHashTree* trustedBlock =
+            downloader.m_hashTree.findExistingHash(blockStart, EMBLOCKSIZE);
+        const AICHHashTree* localBlock =
+            localTree.findExistingHash(blockStart, EMBLOCKSIZE);
+
+        QVERIFY2(trustedBlock && trustedBlock->m_hashValid,
+                 qPrintable(QStringLiteral("Trusted block %1 missing").arg(blockIdx)));
+        QVERIFY2(localBlock && localBlock->m_hashValid,
+                 qPrintable(QStringLiteral("Local block %1 missing").arg(blockIdx)));
+
+        if (localBlock->m_hash == trustedBlock->m_hash)
+            ++goodBlocks;
+        else
+            ++corruptBlocks;
+    }
+
+    // 3 good blocks, 1 corrupt block (block 2)
+    QCOMPARE(goodBlocks, 3u);
+    QCOMPARE(corruptBlocks, 1u);
+}
+
+// ---------------------------------------------------------------------------
+// Trust evaluation edge cases
+// ---------------------------------------------------------------------------
+
+void tst_AICHHashSet::untrustedHash_conflictingHashes_preventsTrust()
+{
+    // Note: addSigningIP masks IPs with 0x00F0FFFF, so we use raw IPs
+    // (bits 0-15 preserved by mask) to ensure uniqueness.
+
+    AICHRecoveryHashSet hs(PARTSIZE);
+    hs.setStatus(EAICHStatus::Empty);
+
+    AICHHash hash1, hash2;
+    hash1.getRawHash()[0] = 0x42;
+    hash2.getRawHash()[0] = 0x43;
+
+    // 10 IPs sign hash1 → 100% consensus → Trusted
+    for (uint32 ip = 1; ip <= 10; ++ip)
+        hs.untrustedHashReceived(hash1, ip);
+    QCOMPARE(hs.getStatus(), EAICHStatus::Trusted);
+
+    // Adding conflicting hashes REVOKES trust (re-evaluated each call)
+    // 10/13 = 76.9% < 92% → Untrusted
+    for (uint32 ip = 11; ip <= 13; ++ip)
+        hs.untrustedHashReceived(hash2, ip);
+    QCOMPARE(hs.getStatus(), EAICHStatus::Untrusted);
+    QCOMPARE(hs.getMasterHash(), hash1); // hash1 still has the most IPs
+
+    // Conflicting hashes from the start prevent trust entirely
+    AICHRecoveryHashSet hs2(PARTSIZE);
+    hs2.setStatus(EAICHStatus::Empty);
+
+    // 5 for hash1, 5 for hash2, then 5 more for hash1
+    for (uint32 ip = 1; ip <= 5; ++ip)
+        hs2.untrustedHashReceived(hash1, ip);
+    for (uint32 ip = 6; ip <= 10; ++ip)
+        hs2.untrustedHashReceived(hash2, ip);
+    for (uint32 ip = 11; ip <= 15; ++ip)
+        hs2.untrustedHashReceived(hash1, ip);
+
+    // hash1: 10 IPs, hash2: 5 IPs, total: 15
+    // 10/15 = 66.7% < 92% — NOT trusted
+    QCOMPARE(hs2.getStatus(), EAICHStatus::Untrusted);
+
+    // Add more for hash1 to reach 92%: need hash1/(hash1+5) >= 0.92
+    // → hash1 >= 57.5 → need 58 total for hash1. Currently 10, need 48 more.
+    for (uint32 ip = 16; ip <= 63; ++ip)
+        hs2.untrustedHashReceived(hash1, ip);
+
+    // hash1=58, hash2=5, total=63, int(100*58/63)=92 ≥ 92 AND 58 ≥ 10 → Trusted!
+    QCOMPARE(hs2.getStatus(), EAICHStatus::Trusted);
+    QCOMPARE(hs2.getMasterHash(), hash1);
+}
+
+void tst_AICHHashSet::untrustedHash_sameIP_differentHash_ignored()
+{
+    // Note: addSigningIP masks IPs with 0x00F0FFFF, use raw values for uniqueness.
+
+    AICHRecoveryHashSet hs(PARTSIZE);
+    hs.setStatus(EAICHStatus::Empty);
+
+    AICHHash hash1, hash2;
+    hash1.getRawHash()[0] = 0x42;
+    hash2.getRawHash()[0] = 0x43;
+
+    // IP 1 signs hash1
+    hs.untrustedHashReceived(hash1, 1);
+
+    // Same IP tries to sign hash2 — should be ignored (IP already committed to hash1)
+    hs.untrustedHashReceived(hash2, 1);
+
+    // Send hash2 from 9 more unique IPs (IPs 2-10)
+    for (uint32 ip = 2; ip <= 10; ++ip)
+        hs.untrustedHashReceived(hash2, ip);
+
+    // hash1: 1 IP (IP 1), hash2: 9 IPs (IPs 2-10) — IP 1 was rejected for hash2
+    // Total: 10, most trusted = hash2 with 9
+    // 9 < 10 → not trusted
+    QCOMPARE(hs.getStatus(), EAICHStatus::Untrusted);
+
+    // The master hash should be hash2 (most votes) but untrusted
+    QCOMPARE(hs.getMasterHash(), hash2);
+
+    // Adding one more unique IP for hash2 → 10 IPs, 10/11 = 90.9% < 92%
+    hs.untrustedHashReceived(hash2, 11);
+    QCOMPARE(hs.getStatus(), EAICHStatus::Untrusted);
+
+    // Need 92%: with hash1=1, hash2=N → N/(N+1) ≥ 0.92 → N ≥ 11.5 → N=12
+    hs.untrustedHashReceived(hash2, 12);
+    // hash2=11, total=12, 11/12=91.7% < 92%
+    QCOMPARE(hs.getStatus(), EAICHStatus::Untrusted);
+
+    hs.untrustedHashReceived(hash2, 13);
+    // hash2=12, total=13, 12/13=92.3% ≥ 92% AND 12 ≥ 10 → Trusted!
+    QCOMPARE(hs.getStatus(), EAICHStatus::Trusted);
+    QCOMPARE(hs.getMasterHash(), hash2);
 }
 
 QTEST_MAIN(tst_AICHHashSet)

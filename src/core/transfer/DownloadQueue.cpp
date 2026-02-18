@@ -9,18 +9,21 @@
 #include "client/ClientList.h"
 #include "client/DeadSourceList.h"
 #include "client/UpDownClient.h"
+#include "crypto/FileIdentifier.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "ipfilter/IPFilter.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
+#include "protocol/ED2KLink.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
 #include <QDir>
@@ -284,6 +287,136 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
         client->tryToConnect();
     } else {
         delete client;
+    }
+}
+
+// ===========================================================================
+// addDownloadFromED2KLink
+// ===========================================================================
+
+bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& tempDir,
+                                             uint32 category, bool paused)
+{
+    auto parsed = parseED2KLink(link);
+    if (!parsed) {
+        logWarning(QStringLiteral("addDownloadFromED2KLink: failed to parse link"));
+        return false;
+    }
+
+    auto* fileLink = std::get_if<ED2KFileLink>(&*parsed);
+    if (!fileLink) {
+        logWarning(QStringLiteral("addDownloadFromED2KLink: not a file link"));
+        return false;
+    }
+
+    // Check for duplicate
+    if (isFileExisting(fileLink->hash.data())) {
+        logInfo(QStringLiteral("addDownloadFromED2KLink: file already exists: %1").arg(fileLink->name));
+        return false;
+    }
+
+    auto* partFile = new PartFile(category);
+    partFile->setFileName(fileLink->name, true);
+    partFile->setFileSize(fileLink->size);
+    partFile->setFileHash(fileLink->hash.data());
+
+    if (fileLink->hasValidAICHHash)
+        partFile->fileIdentifier().setAICHHash(fileLink->aichHash);
+
+    if (fileLink->hashset)
+        partFile->fileIdentifier().loadMD4HashsetFromFile(*fileLink->hashset, true);
+
+    if (!partFile->createPartFile(tempDir)) {
+        logError(QStringLiteral("addDownloadFromED2KLink: failed to create part file for %1")
+                     .arg(fileLink->name));
+        delete partFile;
+        return false;
+    }
+
+    addDownload(partFile, paused);
+    logInfo(QStringLiteral("addDownloadFromED2KLink: started download: %1").arg(fileLink->name));
+    return true;
+}
+
+// ===========================================================================
+// addServerSourceResult
+// ===========================================================================
+
+void DownloadQueue::addServerSourceResult(const uint8* data, uint32 size, bool obfuscated)
+{
+    // Packet format: fileHash[16] + sourceCount[1] + per-source data
+    if (!data || size < 17)
+        return;
+
+    // Extract file hash (first 16 bytes)
+    PartFile* file = fileByID(data);
+    if (!file)
+        return;
+
+    const uint8 sourceCount = data[16];
+    uint32 offset = 17;
+
+    // Get server IP/port for low-ID source construction
+    uint32 srvIP = 0;
+    uint16 srvPort = 0;
+    if (m_serverConnect) {
+        if (auto* srv = m_serverConnect->currentServer()) {
+            srvIP = srv->ip();
+            srvPort = srv->port();
+        }
+    }
+
+    for (uint8 i = 0; i < sourceCount; ++i) {
+        // Each source: userId[4] + port[2] = 6 bytes minimum
+        if (offset + 6 > size)
+            break;
+
+        uint32 userId = 0;
+        uint16 port = 0;
+        std::memcpy(&userId, data + offset, 4);
+        std::memcpy(&port, data + offset + 4, 2);
+        offset += 6;
+
+        uint8 cryptFlags = 0;
+        std::array<uint8, 16> userHash{};
+        bool hasHash = false;
+
+        if (obfuscated) {
+            if (offset + 1 > size)
+                break;
+            cryptFlags = data[offset];
+            offset += 1;
+
+            if ((cryptFlags & 0x80) != 0) {
+                if (offset + 16 > size)
+                    break;
+                std::memcpy(userHash.data(), data + offset, 16);
+                offset += 16;
+                hasHash = true;
+            }
+        }
+
+        // Validate source
+        if (!isLowID(userId) && !isGoodIP(userId))
+            continue;
+
+        if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+            break;
+
+        auto* client = new UpDownClient(port, userId, srvIP, srvPort, file, true);
+        client->setSourceFrom(SourceFrom::Server);
+
+        if (obfuscated)
+            client->setConnectOptions(cryptFlags, true, false);
+
+        if (hasHash)
+            client->setUserHash(userHash.data());
+
+        if (checkAndAddSource(file, client)) {
+            client->tryToConnect();
+        } else {
+            delete client;
+        }
     }
 }
 

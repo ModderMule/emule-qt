@@ -13,6 +13,7 @@
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
+#include "prefs/Preferences.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
 #include "app/AppContext.h"
@@ -62,23 +63,28 @@ void KademliaUDPListener::bootstrap(uint32 ip, uint16 udpPort, uint8 kadVersion,
 {
     sendNullPacket(KADEMLIA2_BOOTSTRAP_REQ, ip, udpPort, KadUDPKey(0),
                    (kadVersion >= KADEMLIA_VERSION6_49aBETA) ? cryptTargetID : nullptr);
+    addTrackedOutPacket(ip, KADEMLIA2_BOOTSTRAP_REQ);
 }
 
 void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
                                            const KadUDPKey& senderKey, uint8 kadVersion)
 {
     auto* prefs = Kademlia::getInstancePrefs();
+    // The remote node TCP-connects to this port to verify we're reachable.
+    // Must be the TCP listener port, not the Kad UDP port.
+    const uint16 tcpPort = thePrefs.port();
 
     if (kadVersion > KADEMLIA_VERSION6_49aBETA) {
-        // Extended request with client hash + connect options for obfuscation support
+        // Kad v2 (v7+): extended request with client hash + connect options for obfuscation support
         SafeMemFile packet;
-        packet.writeUInt16(prefs ? prefs->internKadPort() : uint16{0});
+        packet.writeUInt16(tcpPort);
         io::writeUInt128(packet, prefs ? prefs->clientHash() : UInt128());
         packet.writeUInt8(prefs ? prefs->myConnectOptions() : uint8{0});
         sendPacket(packet, KADEMLIA_FIREWALLED2_REQ, ip, udpPort, senderKey, nullptr);
     } else {
+        // Kad v1 compat (v2–v6): legacy request with port only
         SafeMemFile packet;
-        packet.writeUInt16(prefs ? prefs->internKadPort() : uint16{0});
+        packet.writeUInt16(tcpPort);
         sendPacket(packet, KADEMLIA_FIREWALLED_REQ, ip, udpPort, senderKey, nullptr);
     }
 
@@ -126,9 +132,10 @@ void KademliaUDPListener::sendPublishSourcePacket(Contact* contact, const UInt12
     io::writeUInt128(packet, contactID);
     io::writeKadTagList(packet, tags);
 
+    UInt128 pubClientID = contact->getClientID();
     sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
                contact->getIPAddress(), contact->getUDPPort(),
-               contact->getUDPKey(), nullptr);
+               contact->getUDPKey(), &pubClientID);
 }
 
 void KademliaUDPListener::sendNullPacket(uint8 opcode, uint32 ip, uint16 udpPort,
@@ -153,6 +160,10 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     uint8 opcode = data[0];
     const uint8* payload = data + 1;
     uint32 payloadLen = len - 1;
+
+    // TODO: remove debug logging
+    logDebug(QStringLiteral("Kad: processPacket opcode=0x%1 from %2:%3 len=%4")
+                 .arg(opcode, 2, 16, QLatin1Char('0')).arg(ipToString(ip)).arg(udpPort).arg(len));
 
     switch (opcode) {
     case KADEMLIA2_BOOTSTRAP_REQ:
@@ -200,25 +211,25 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     case KADEMLIA2_PUBLISH_NOTES_REQ:
         process_KADEMLIA2_PUBLISH_NOTES_REQ(payload, payloadLen, ip, udpPort, senderKey);
         break;
-    case KADEMLIA_FIREWALLED_REQ:
+    case KADEMLIA_FIREWALLED_REQ:   // Kad v1 compat: receive-only (we send KADEMLIA_FIREWALLED2_REQ)
         process_KADEMLIA_FIREWALLED_REQ(payload, payloadLen, ip, udpPort, senderKey);
         break;
-    case KADEMLIA_FIREWALLED2_REQ:
+    case KADEMLIA_FIREWALLED2_REQ:  // Kad v2
         process_KADEMLIA_FIREWALLED2_REQ(payload, payloadLen, ip, udpPort, senderKey);
         break;
-    case KADEMLIA_FIREWALLED_RES:
+    case KADEMLIA_FIREWALLED_RES:   // Response to both v1 and v2 requests
         process_KADEMLIA_FIREWALLED_RES(payload, payloadLen, ip, senderKey);
         break;
     case KADEMLIA_FIREWALLED_ACK_RES:
         process_KADEMLIA_FIREWALLED_ACK_RES(payloadLen);
         break;
-    case KADEMLIA_FINDBUDDY_REQ:
+    case KADEMLIA_FINDBUDDY_REQ:    // No v2 equivalent — part of modern buddy protocol
         process_KADEMLIA_FINDBUDDY_REQ(payload, payloadLen, ip, udpPort, senderKey);
         break;
-    case KADEMLIA_FINDBUDDY_RES:
+    case KADEMLIA_FINDBUDDY_RES:    // No v2 equivalent
         process_KADEMLIA_FINDBUDDY_RES(payload, payloadLen, ip, udpPort, senderKey);
         break;
-    case KADEMLIA_CALLBACK_REQ:
+    case KADEMLIA_CALLBACK_REQ:     // No v2 equivalent
         process_KADEMLIA_CALLBACK_REQ(payload, payloadLen, ip, senderKey);
         break;
     case KADEMLIA2_PING:
@@ -239,11 +250,12 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
 }
 
 void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint32 destIP,
-                                      uint16 destPort, const KadUDPKey& /*targetKey*/,
-                                      const UInt128* /*cryptTargetID*/)
+                                      uint16 destPort, const KadUDPKey& targetKey,
+                                      const UInt128* cryptTargetID)
 {
     QByteArray packetData(reinterpret_cast<const char*>(data), static_cast<qsizetype>(len));
-    emit packetToSend(std::move(packetData), destIP, destPort);
+    emit packetToSend(std::move(packetData), destIP, destPort,
+                      targetKey, cryptTargetID ? *cryptTargetID : UInt128());
 }
 
 void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint8 opcode,
@@ -256,7 +268,14 @@ void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint8 opcode
     fullPacket.append(static_cast<char>(opcode));
     if (len > 0)
         fullPacket.append(reinterpret_cast<const char*>(data), static_cast<qsizetype>(len));
-    emit packetToSend(std::move(fullPacket), destIP, destPort);
+    emit packetToSend(std::move(fullPacket), destIP, destPort,
+                      targetKey, cryptTargetID ? *cryptTargetID : UInt128());
+
+    // Track outgoing request packets whose response handlers check isOnOutTrackList().
+    // bootstrap(), sendMyDetails(), and firewalledCheck() already track their own opcodes;
+    // these two are sent from Search::sendFindValue() / process_KADEMLIA2_PING.
+    if (opcode == KADEMLIA2_REQ || opcode == KADEMLIA2_PING)
+        addTrackedOutPacket(destIP, opcode);
 }
 
 void KademliaUDPListener::sendPacket(SafeMemFile& data, uint8 opcode, uint32 destIP,
@@ -541,13 +560,18 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
                                                        bool validReceiverKey)
 {
     uint8 version = 0;
-    bool ipVerified = false;
+    bool ipVerified = validReceiverKey;
     bool requestsACK = false;
     UInt128 contactID;
 
     if (!addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
                               ipVerified, true, true, &requestsACK, &contactID))
         return;
+
+    if (ipVerified) {
+        if (auto* rz = Kademlia::getInstanceRoutingZone())
+            rz->verifyContact(contactID, ip);
+    }
 
     // Send hello response
     sendMyDetails(KADEMLIA2_HELLO_RES, ip, udpPort, version,
@@ -575,12 +599,19 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
         return;
 
     uint8 version = 0;
-    bool ipVerified = false;
+    bool ipVerified = validReceiverKey;
     UInt128 contactID;
 
     if (!addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
                               ipVerified, true, false, nullptr, &contactID))
         return;
+
+    // If the contact's IP was verified (valid receiver key proves the remote
+    // echoed back our UDP verify key), mark it in the routing table.
+    if (ipVerified) {
+        if (auto* rz = Kademlia::getInstanceRoutingZone())
+            rz->verifyContact(contactID, ip);
+    }
 
     // Deliver node-ID result to any pending FetchNodeIDRequest for this IP.
     // The contact data starts with 16 bytes KadID + 2 bytes TCP port.
@@ -670,8 +701,13 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
 void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, uint32 ip,
                                                   uint16 udpPort, const KadUDPKey& senderKey)
 {
-    if (!isOnOutTrackList(ip, KADEMLIA2_REQ))
+    if (!isOnOutTrackList(ip, KADEMLIA2_REQ)) {
+        logDebug(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2 dropped — not on track list")
+                     .arg(ipToString(ip)).arg(udpPort));
         return;
+    }
+    logDebug(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2, %3 bytes")
+                 .arg(ipToString(ip)).arg(udpPort).arg(len));
 
     if (len < 17) // 16 (target) + 1 (count)
         return;
@@ -919,6 +955,8 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
 // Process handlers — Firewall
 // ---------------------------------------------------------------------------
 
+/// Kad v1 compat: handles legacy KADEMLIA_FIREWALLED_REQ from older clients.
+/// We always send KADEMLIA_FIREWALLED2_REQ for our own firewall checks.
 void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uint32 len,
                                                            uint32 ip, uint16 udpPort,
                                                            const KadUDPKey& senderKey)

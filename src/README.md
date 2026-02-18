@@ -30,3 +30,6 @@ Run a single test function within a suite:
 
 List all available tests without running:
 ctest --test-dir cmake-build-debug -N
+
+
+EMULE_TCP_PORT=5662 EMULE_UDP_PORT=5672 ./build/tests/tst_KadLiveNetwork

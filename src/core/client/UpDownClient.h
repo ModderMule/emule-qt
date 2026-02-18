@@ -180,6 +180,7 @@ public:
     [[nodiscard]] uint8 dataCompVer() const { return m_dataCompVer; }
     [[nodiscard]] uint8 udpVer() const { return m_udpVer; }
     [[nodiscard]] uint8 sourceExchange1Ver() const { return m_sourceExchange1Ver; }
+    [[nodiscard]] bool supportsSourceExchange2() const { return m_supportsSourceEx2; }
     [[nodiscard]] uint8 extendedRequestsVer() const { return m_extendedRequestsVer; }
     [[nodiscard]] uint8 acceptCommentVer() const { return m_acceptCommentVer; }
     [[nodiscard]] uint8 compatibleClient() const { return m_compatibleClient; }
@@ -253,6 +254,7 @@ public:
     void setReqUpFileId(const uint8* id);
 
     [[nodiscard]] uint16 upPartCount() const { return m_upPartCount; }
+    [[nodiscard]] const std::vector<uint8>& upPartStatus() const { return m_upPartStatus; }
     [[nodiscard]] uint16 upCompleteSourcesCount() const { return m_upCompleteSourcesCount; }
     void setUpCompleteSourcesCount(uint16 c) { m_upCompleteSourcesCount = c; }
 
@@ -324,6 +326,15 @@ public:
     [[nodiscard]] bool sentCancelTransfer() const { return m_sentCancelTransfer; }
 
     [[nodiscard]] const std::vector<uint8>& partStatus() const { return m_partStatus; }
+
+    // -- Source exchange timestamps -------------------------------------------
+
+    [[nodiscard]] uint32 lastSourceRequestTime() const { return m_lastSourceRequest; }
+    void setLastSourceRequestTime(uint32 t) { m_lastSourceRequest = t; }
+    [[nodiscard]] uint32 lastSourceAnswerTime() const { return m_lastSourceAnswer; }
+    void setLastSourceAnswerTime(uint32 t) { m_lastSourceAnswer = t; }
+    [[nodiscard]] uint32 lastAskedForSourcesTime() const { return m_lastAskedForSources; }
+    void setLastAskedForSourcesTime();
 
     // -- Debug strings ------------------------------------------------------
 
@@ -430,6 +441,16 @@ public:
     void processFirewallCheckUDPRequest(SafeMemFile& data);
     void processKadFwTcpCheckAck();
 
+    // -- Phase 3 — buddy / callback -----------------------------------------
+
+    void processCallbackPacket(const uint8* data, uint32 size);
+    void processReaskCallbackTCP(const uint8* data, uint32 size);
+    void processBuddyPing();
+    void processBuddyPong();
+    [[nodiscard]] bool allowIncomingBuddyPingPong() const;
+    [[nodiscard]] bool sendBuddyPingPong() const;
+    void setLastBuddyPingPongTime();
+
     // -- Phase 3 — upload (UploadClient.cpp) --------------------------------
 
     virtual uint32 score(bool sysValue = false, bool isDownloading = false,
@@ -498,6 +519,11 @@ public:
     void setLastAskedTime();
     void updateDisplayedInfo(bool force = false);
 
+    // -- Source exchange (SX2) ------------------------------------------------
+
+    void processRequestSources2(const uint8* data, uint32 size);
+    void processAnswerSources2(const uint8* data, uint32 size);
+
     // AICH
     [[nodiscard]] bool isSupportingAICH() const { return m_supportsAICH > 0; }
     [[nodiscard]] const AICHHash* reqFileAICHHash() const;
@@ -536,6 +562,18 @@ private:
     bool processHelloTypePacket(SafeMemFile& data);
     void sendHelloTypePacket(SafeMemFile& data);
     void checkForGPLEvildoer();
+
+    // -- Phase 3 — upload-side packet handlers --------------------------------
+    void processRequestParts(const uint8* data, uint32 size, bool i64Offsets);
+    void processSetReqFileID(const uint8* data, uint32 size);
+    void processRequestFileName(const uint8* data, uint32 size);
+    void processMultiPacketExt2(const uint8* data, uint32 size);
+    void processMultiPacketAnswer(const uint8* data, uint32 size);
+
+    // Helpers for upload-side file lookup
+    KnownFile* findUploadFile(const uint8* fileHash) const;
+    void sendFileNotFound(const uint8* fileHash);
+    void sendFileStatus(const uint8* fileHash, KnownFile* file);
 
     // -- Phase 3 — private helpers ------------------------------------------
     int filePrioAsNumber() const;

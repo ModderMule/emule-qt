@@ -8,10 +8,13 @@
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "app/AppContext.h"
+#include "crypto/FileIdentifier.h"
 #include "files/KnownFile.h"
+#include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
+#include "transfer/DownloadQueue.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
 #include "utils/OtherFunctions.h"
@@ -19,7 +22,7 @@
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
-#include <QDebug>
+#include "utils/Log.h"
 
 #include <algorithm>
 #include <cstring>
@@ -375,7 +378,7 @@ void UpDownClient::addRequestCount(const uint8* fileID)
 void UpDownClient::ban(const QString& reason)
 {
     if (m_uploadState != UploadState::Banned) {
-        qDebug() << "Banning client:" << userName() << "reason:" << reason;
+        logDebug(QStringLiteral("Banning client: %1 reason: %2").arg(userName(), reason));
         setUploadState(UploadState::Banned);
         if (theApp.clientList)
             theApp.clientList->addBannedClient(m_connectIP);
@@ -459,6 +462,303 @@ uint32 UpDownClient::getUpStartTimeDelay() const
         return 0;
     uint32 curTick = static_cast<uint32>(getTickCount());
     return (curTick >= m_uploadTime) ? (curTick - m_uploadTime) : 0;
+}
+
+// ===========================================================================
+// findUploadFile — look up a file by hash for upload purposes
+// ===========================================================================
+
+KnownFile* UpDownClient::findUploadFile(const uint8* fileHash) const
+{
+    KnownFile* file = nullptr;
+    if (theApp.sharedFileList)
+        file = theApp.sharedFileList->getFileByID(fileHash);
+
+    if (!file && theApp.downloadQueue) {
+        auto* partFile = theApp.downloadQueue->fileByID(fileHash);
+        if (partFile && static_cast<uint64>(partFile->completedSize()) >= PARTSIZE)
+            file = partFile;
+    }
+    return file;
+}
+
+// ===========================================================================
+// sendFileNotFound — send OP_FILEREQANSNOFIL
+// ===========================================================================
+
+void UpDownClient::sendFileNotFound(const uint8* fileHash)
+{
+    auto packet = std::make_unique<Packet>(OP_FILEREQANSNOFIL, 16);
+    md4cpy(reinterpret_cast<uint8*>(packet->pBuffer), fileHash);
+    sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// sendFileStatus — send OP_FILESTATUS for a file we share
+// ===========================================================================
+
+void UpDownClient::sendFileStatus(const uint8* fileHash, KnownFile* file)
+{
+    SafeMemFile response;
+    response.writeHash16(fileHash);
+
+    if (file->isPartFile()) {
+        static_cast<PartFile*>(file)->writePartStatus(response);
+    } else {
+        response.writeUInt16(0); // 0 = complete file
+    }
+
+    auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_FILESTATUS);
+    sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// processRequestParts — handle OP_REQUESTPARTS / OP_REQUESTPARTS_I64
+// ===========================================================================
+
+void UpDownClient::processRequestParts(const uint8* data, uint32 size, bool i64Offsets)
+{
+    const uint32 expectedSize = i64Offsets ? 64u : 40u; // 16 + 3*(4 or 8) + 3*(4 or 8)
+    if (size < expectedSize)
+        return;
+
+    SafeMemFile io(data, size);
+
+    // Read file hash (16 bytes)
+    uint8 fileHash[16];
+    io.readHash16(fileHash);
+
+    // Read 3 start offsets, then 3 end offsets
+    std::array<uint64, 3> starts{};
+    std::array<uint64, 3> ends{};
+
+    for (int i = 0; i < 3; ++i)
+        starts[i] = i64Offsets ? io.readUInt64() : io.readUInt32();
+    for (int i = 0; i < 3; ++i)
+        ends[i] = i64Offsets ? io.readUInt64() : io.readUInt32();
+
+    for (int i = 0; i < 3; ++i) {
+        if (starts[i] < ends[i]) {
+            auto* reqBlock = new Requested_Block_Struct;
+            reqBlock->startOffset = starts[i];
+            reqBlock->endOffset = ends[i];
+            md4cpy(reqBlock->fileID.data(), fileHash);
+            reqBlock->transferredByClient = 0;
+            addReqBlock(reqBlock);
+        }
+    }
+}
+
+// ===========================================================================
+// processSetReqFileID — handle OP_SETREQFILEID (upload side)
+// ===========================================================================
+
+void UpDownClient::processSetReqFileID(const uint8* data, uint32 size)
+{
+    if (size < 16)
+        return;
+
+    setWaitStartTime();
+
+    KnownFile* file = findUploadFile(data);
+    if (!file) {
+        checkFailedFileIdReqs(data);
+        return;
+    }
+
+    if (file->isLargeFile() && !supportsLargeFiles()) {
+        sendFileNotFound(data);
+        return;
+    }
+
+    if (!md4equ(data, m_reqUpFileId.data()))
+        setCommentDirty(true);
+
+    setUploadFileID(file);
+    sendFileStatus(data, file);
+}
+
+// ===========================================================================
+// processRequestFileName — handle OP_REQUESTFILENAME (upload side)
+// ===========================================================================
+
+void UpDownClient::processRequestFileName(const uint8* data, uint32 size)
+{
+    if (size < 16)
+        return;
+
+    setWaitStartTime();
+
+    SafeMemFile io(data, size);
+    uint8 fileHash[16];
+    io.readHash16(fileHash);
+
+    KnownFile* file = findUploadFile(fileHash);
+    if (!file) {
+        checkFailedFileIdReqs(fileHash);
+        return;
+    }
+
+    if (file->isLargeFile() && !supportsLargeFiles()) {
+        sendFileNotFound(fileHash);
+        return;
+    }
+
+    // Process extended info (part status) if available
+    if (m_extendedRequestsVer > 0 && (io.length() - io.position()) >= 2) {
+        if (!processExtendedInfo(io, file)) {
+            sendFileNotFound(fileHash);
+            return;
+        }
+    }
+
+    if (!md4equ(fileHash, m_reqUpFileId.data()))
+        setCommentDirty(true);
+
+    setUploadFileID(file);
+
+    // Send OP_REQFILENAMEANSWER: hash + filename
+    SafeMemFile response;
+    response.writeHash16(fileHash);
+    response.writeString(file->fileName(), UTF8Mode::Raw);
+
+    auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_REQFILENAMEANSWER);
+    sendPacket(std::move(packet));
+
+    sendCommentInfo(file);
+}
+
+// ===========================================================================
+// processMultiPacketExt2 — handle OP_MULTIPACKET_EXT2 (upload side)
+// ===========================================================================
+
+void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
+{
+    (void)checkHandshakeFinished();
+
+    if (size < 1)
+        return;
+
+    SafeMemFile dataIn(data, size);
+
+    // Read file identifier
+    FileIdentifierSA fileIdent;
+    if (!fileIdent.readIdentifier(dataIn)) {
+        logDebug(QStringLiteral("MultiPacketExt2: failed to read file identifier"));
+        return;
+    }
+
+    // Look up the file
+    KnownFile* reqFile = findUploadFile(fileIdent.getMD4Hash());
+    if (!reqFile || !reqFile->fileIdentifier().compareRelaxed(fileIdent)) {
+        sendFileNotFound(fileIdent.getMD4Hash());
+        return;
+    }
+
+    if (reqFile->isLargeFile() && !supportsLargeFiles()) {
+        sendFileNotFound(fileIdent.getMD4Hash());
+        return;
+    }
+
+    setWaitStartTime();
+
+    if (!md4equ(fileIdent.getMD4Hash(), m_reqUpFileId.data()))
+        setCommentDirty(true);
+
+    setUploadFileID(reqFile);
+
+    // Build response
+    SafeMemFile dataOut;
+    reqFile->fileIdentifier().writeIdentifier(dataOut);
+    bool hasResponse = false;
+    bool answerFNF = false;
+
+    // Process sub-opcodes
+    while ((dataIn.length() - dataIn.position()) > 0 && !answerFNF) {
+        const uint8 subOpcode = dataIn.readUInt8();
+
+        switch (subOpcode) {
+        case OP_REQUESTFILENAME: {
+            // Read extended info if available
+            if (m_extendedRequestsVer > 0 && (dataIn.length() - dataIn.position()) >= 2) {
+                if (!processExtendedInfo(dataIn, reqFile)) {
+                    sendFileNotFound(fileIdent.getMD4Hash());
+                    answerFNF = true;
+                    break;
+                }
+            }
+            // Write filename answer
+            dataOut.writeUInt8(OP_REQFILENAMEANSWER);
+            dataOut.writeString(reqFile->fileName(), UTF8Mode::Raw);
+            hasResponse = true;
+            break;
+        }
+
+        case OP_SETREQFILEID:
+            // Write file status
+            dataOut.writeUInt8(OP_FILESTATUS);
+            if (reqFile->isPartFile()) {
+                static_cast<PartFile*>(reqFile)->writePartStatus(dataOut);
+            } else {
+                dataOut.writeUInt16(0); // complete file
+            }
+            hasResponse = true;
+            break;
+
+        default:
+            logDebug(QStringLiteral("MultiPacketExt2: unknown sub-opcode 0x%1")
+                         .arg(subOpcode, 2, 16, QLatin1Char('0')));
+            break;
+        }
+    }
+
+    if (hasResponse && !answerFNF) {
+        auto packet = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_MULTIPACKETANSWER_EXT2);
+        sendPacket(std::move(packet));
+        sendCommentInfo(reqFile);
+    }
+}
+
+// ===========================================================================
+// processMultiPacketAnswer — handle OP_MULTIPACKETANSWER_EXT2 (download side)
+// ===========================================================================
+
+void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
+{
+    (void)checkHandshakeFinished();
+
+    if (size < 1)
+        return;
+
+    SafeMemFile dataIn(data, size);
+
+    // Read file identifier
+    FileIdentifierSA fileIdent;
+    if (!fileIdent.readIdentifier(dataIn))
+        return;
+
+    // Find the file we requested
+    if (!m_reqFile || !md4equ(fileIdent.getMD4Hash(), m_reqFile->fileHash()))
+        return;
+
+    // Process sub-responses
+    while ((dataIn.length() - dataIn.position()) > 0) {
+        const uint8 subOpcode = dataIn.readUInt8();
+
+        switch (subOpcode) {
+        case OP_REQFILENAMEANSWER:
+            processFileInfo(dataIn, m_reqFile);
+            break;
+
+        case OP_FILESTATUS:
+            processFileStatus(false, dataIn, m_reqFile);
+            break;
+
+        default:
+            // Unknown sub-response, can't continue (unknown length)
+            return;
+        }
+    }
 }
 
 } // namespace eMule

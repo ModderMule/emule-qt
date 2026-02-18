@@ -5,6 +5,7 @@
 /// status machine, priority, block selection, persistence, source tracking.
 
 #include "files/PartFile.h"
+#include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHData.h"
 #include "crypto/AICHHashSet.h"
@@ -12,9 +13,13 @@
 #include "crypto/FileIdentifier.h"
 #include "crypto/MD4Hash.h"
 #include "crypto/SHAHash.h"
+#include "ipfilter/IPFilter.h"
+#include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
+#include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
@@ -950,14 +955,25 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                     }
                 }
                 break;
-            default:
-                // Handle gap tags by name string
-                if (tag.nameId() == FT_GAPSTART) {
+            default: {
+                // Handle gap tags — either by numeric nameId (new format)
+                // or by string name starting with FT_GAPSTART/FT_GAPEND byte
+                // followed by gap index digits (original eMule format).
+                const bool isGapStart =
+                    tag.nameId() == FT_GAPSTART ||
+                    (!tag.name().isEmpty() &&
+                     static_cast<uint8>(tag.name().at(0)) == FT_GAPSTART);
+                const bool isGapEnd =
+                    tag.nameId() == FT_GAPEND ||
+                    (!tag.name().isEmpty() &&
+                     static_cast<uint8>(tag.name().at(0)) == FT_GAPEND);
+
+                if (isGapStart) {
                     if (tag.isInt())
                         pendingGapStart = tag.intValue();
                     else if (tag.isInt64(false))
                         pendingGapStart = tag.int64Value();
-                } else if (tag.nameId() == FT_GAPEND) {
+                } else if (isGapEnd) {
                     uint64 gapEnd = 0;
                     if (tag.isInt())
                         gapEnd = tag.intValue();
@@ -973,13 +989,20 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                 }
                 break;
             }
+            }
         }
 
-        // Replace auto-generated gap with actual gaps from file
+        // Replace auto-generated gap with actual gaps from file.
+        // Clamp end to fileSize-1 (inclusive range) — some clients
+        // store gap end == fileSize for the trailing gap.
         m_gapList.clear();
         const uint64 fs = static_cast<uint64>(fileSize());
-        for (const auto& [gStart, gEnd] : gapPairs) {
-            if (gStart <= gEnd && gEnd < fs)
+        for (auto [gStart, gEnd] : gapPairs) {
+            if (fs == 0 || gStart >= fs)
+                continue;
+            if (gEnd >= fs)
+                gEnd = fs - 1;
+            if (gStart <= gEnd)
                 m_gapList.push_back({gStart, gEnd});
         }
 
@@ -1742,6 +1765,175 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
     savePartFile();
     logInfo(QStringLiteral("PartFile AICH recovery: recovered %1 of %2 bytes from part %3 of '%4'")
                 .arg(recovered).arg(partLen).arg(partNumber).arg(fileName()));
+}
+
+// ===========================================================================
+// createSrcInfoPacket — SX2 override for PartFile (uses srcList)
+// ===========================================================================
+
+std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
+    const UpDownClient* forClient, uint8 version, uint16 /*options*/) const
+{
+    if (m_srcList.empty() || !forClient)
+        return nullptr;
+
+    // Negotiate version down to our max supported
+    const uint8 usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
+
+    SafeMemFile data;
+
+    // SX2 header: version byte
+    data.writeUInt8(usedVersion);
+
+    // File hash (16 bytes)
+    data.writeHash16(fileHash());
+
+    // Placeholder for source count (will seek back to fill in)
+    const auto countPos = data.position();
+    data.writeUInt16(0);
+
+    const uint16 maxSources = (usedVersion >= 4) ? 500 : 50;
+    uint16 count = 0;
+
+    // Get forClient's part status for filtering
+    const auto& clientParts = forClient->upPartStatus();
+
+    for (const auto* src : m_srcList) {
+        if (count >= maxSources)
+            break;
+
+        // Skip low-ID clients (they can't be contacted directly)
+        if (src->hasLowID())
+            continue;
+
+        // Skip invalid IPs
+        if (src->userIP() == 0)
+            continue;
+
+        // Skip the requesting client itself
+        if (src == forClient)
+            continue;
+
+        // Check if this source has parts the requester needs
+        const auto& srcParts = src->partStatus();
+        if (!srcParts.empty() && !clientParts.empty() &&
+            srcParts.size() == clientParts.size())
+        {
+            bool hasNeededPart = false;
+            for (size_t p = 0; p < srcParts.size(); ++p) {
+                if (srcParts[p] != 0 && clientParts[p] == 0) {
+                    hasNeededPart = true;
+                    break;
+                }
+            }
+            if (!hasNeededPart)
+                continue;
+        }
+
+        // Write per-source data
+        data.writeUInt32(src->userIP());      // userId (4 bytes)
+        data.writeUInt16(src->userPort());     // port (2 bytes)
+        data.writeUInt32(src->serverIP());     // serverIP (4 bytes)
+        data.writeUInt16(src->serverPort());   // serverPort (2 bytes)
+
+        if (usedVersion >= 2)
+            data.writeHash16(src->userHash()); // userHash (16 bytes)
+
+        if (usedVersion >= 4) {
+            // Crypt options byte
+            uint8 cryptOpts = 0;
+            if (src->supportsCryptLayer())
+                cryptOpts |= 0x01;
+            if (src->requestsCryptLayer())
+                cryptOpts |= 0x02;
+            if (src->requiresCryptLayer())
+                cryptOpts |= 0x04;
+            if (src->supportsDirectUDPCallback())
+                cryptOpts |= 0x08;
+            data.writeUInt8(cryptOpts);
+        }
+
+        ++count;
+    }
+
+    if (count == 0)
+        return nullptr;
+
+    // Seek back and write actual count
+    const auto endPos = data.position();
+    data.seek(static_cast<int>(countPos), SEEK_SET);
+    data.writeUInt16(count);
+    data.seek(static_cast<int>(endPos), SEEK_SET);
+
+    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_ANSWERSOURCES2);
+    if (packet->size > 354)
+        packet->packPacket();
+
+    return packet;
+}
+
+// ===========================================================================
+// addClientSources — process SX2 source answer for this PartFile
+// ===========================================================================
+
+void PartFile::addClientSources(SafeMemFile& data, uint8 version, const UpDownClient* sender)
+{
+    Q_UNUSED(sender);
+
+    if (version == 0 || version > SOURCEEXCHANGE2_VERSION)
+        return;
+
+    const uint16 srcCount = data.readUInt16();
+
+    for (uint16 i = 0; i < srcCount; ++i) {
+        uint32 userId = data.readUInt32();
+        uint16 port = data.readUInt16();
+        uint32 serverIP = data.readUInt32();
+        uint16 serverPort = data.readUInt16();
+
+        std::array<uint8, 16> userHash{};
+        if (version >= 2)
+            data.readHash16(userHash.data());
+
+        uint8 cryptFlags = 0;
+        if (version >= 4)
+            cryptFlags = data.readUInt8();
+
+        // v1/v2: IDs were in network byte order for high-ID detection
+        if (version < 3)
+            userId = ntohl(userId);
+
+        // Validate IP (for high-ID clients, userId == IP)
+        if (!isLowID(userId) && !isGoodIP(userId))
+            continue;
+
+        // IPFilter check
+        if (!isLowID(userId) && theApp.ipFilter && theApp.ipFilter->isFiltered(userId))
+            continue;
+
+        // Max sources check
+        if (sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+            break;
+
+        auto* client = new UpDownClient(port, userId, serverIP, serverPort, this, version < 3);
+        client->setSourceFrom(SourceFrom::SourceExchange);
+
+        if (version >= 2)
+            client->setUserHash(userHash.data());
+
+        if (version >= 4)
+            client->setConnectOptions(cryptFlags, true, false);
+
+        if (theApp.downloadQueue) {
+            if (theApp.downloadQueue->checkAndAddSource(this, client)) {
+                client->tryToConnect();
+            } else {
+                delete client;
+            }
+        } else {
+            delete client;
+        }
+    }
 }
 
 } // namespace eMule

@@ -17,7 +17,6 @@
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
 
-#include <QDebug>
 
 #include <algorithm>
 
@@ -29,6 +28,55 @@ UploadQueue::UploadQueue(QObject* parent)
 }
 
 UploadQueue::~UploadQueue() = default;
+
+// ===========================================================================
+// setDiskIOThread — connect block-ready and error signals
+// ===========================================================================
+
+void UploadQueue::setDiskIOThread(UploadDiskIOThread* diskIO)
+{
+    if (m_diskIO) {
+        disconnect(m_diskIO, nullptr, this, nullptr);
+    }
+    m_diskIO = diskIO;
+    if (m_diskIO) {
+        connect(m_diskIO, &UploadDiskIOThread::blockPacketsReady,
+                this, &UploadQueue::onBlockPacketsReady,
+                Qt::QueuedConnection);
+        connect(m_diskIO, &UploadDiskIOThread::readError,
+                this, &UploadQueue::onReadError,
+                Qt::QueuedConnection);
+    }
+}
+
+// ===========================================================================
+// onBlockPacketsReady — enqueue disk-read packets on the client's socket
+// ===========================================================================
+
+void UploadQueue::onBlockPacketsReady(UpDownClient* client,
+                                       QList<std::shared_ptr<Packet>> packets)
+{
+    if (!client || !client->socket())
+        return;
+
+    auto* sock = client->socket();
+    for (const auto& pkt : packets) {
+        if (pkt) {
+            // EMSocket takes ownership via unique_ptr; copy from shared_ptr
+            sock->sendPacket(std::make_unique<Packet>(*pkt), false);
+        }
+    }
+}
+
+// ===========================================================================
+// onReadError — handle disk read failure for a client
+// ===========================================================================
+
+void UploadQueue::onReadError(UpDownClient* client)
+{
+    if (client)
+        removeFromUploadQueue(client);
+}
 
 // ===========================================================================
 // Query methods

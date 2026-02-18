@@ -41,6 +41,8 @@ public:
     // -- File management ------------------------------------------------------
 
     void addDownload(PartFile* file, bool paused = false);
+    bool addDownloadFromED2KLink(const QString& link, const QString& tempDir,
+                                  uint32 category = 0, bool paused = false);
     void removeFile(PartFile* file);
     void deleteAll();
     [[nodiscard]] int fileCount() const { return static_cast<int>(m_fileList.size()); }
@@ -62,6 +64,9 @@ public:
     void addKadSourceResult(uint32 searchID, const uint8* fileHash,
                             uint32 ip, uint16 tcpPort,
                             uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt);
+
+    /// Process OP_FOUNDSOURCES / OP_FOUNDSOURCES_OBFU from the connected server.
+    void addServerSourceResult(const uint8* data, uint32 size, bool obfuscated);
 
     // -- Queue operations -----------------------------------------------------
 

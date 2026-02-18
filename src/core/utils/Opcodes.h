@@ -620,23 +620,23 @@
 #define KADEMLIA_RES_DEPRECATED                 0x28
 #define KADEMLIA2_RES                           0x29
 
-#define KADEMLIA_SEARCH_REQ                     0x30
-#define KADEMLIA_SEARCH_NOTES_REQ               0x32
+#define KADEMLIA_SEARCH_REQ                     0x30  // Deprecated: Kad v1 — use KADEMLIA2_SEARCH_KEY_REQ / KADEMLIA2_SEARCH_SOURCE_REQ
+#define KADEMLIA_SEARCH_NOTES_REQ               0x32  // Deprecated: Kad v1 — use KADEMLIA2_SEARCH_NOTES_REQ
 #define KADEMLIA2_SEARCH_KEY_REQ                0x33
 #define KADEMLIA2_SEARCH_SOURCE_REQ             0x34
 #define KADEMLIA2_SEARCH_NOTES_REQ              0x35
 
-#define KADEMLIA_SEARCH_RES                     0x38
-#define KADEMLIA_SEARCH_NOTES_RES               0x3A
+#define KADEMLIA_SEARCH_RES                     0x38  // Deprecated: Kad v1 — use KADEMLIA2_SEARCH_RES
+#define KADEMLIA_SEARCH_NOTES_RES               0x3A  // Deprecated: Kad v1 — no v2 equivalent (notes in KADEMLIA2_SEARCH_RES)
 #define KADEMLIA2_SEARCH_RES                    0x3B
 
-#define KADEMLIA_PUBLISH_REQ                    0x40
+#define KADEMLIA_PUBLISH_REQ                    0x40  // Deprecated: Kad v1 — use KADEMLIA2_PUBLISH_KEY_REQ / KADEMLIA2_PUBLISH_SOURCE_REQ
 #define KADEMLIA_PUBLISH_NOTES_REQ_DEPRECATED   0x42
 #define KADEMLIA2_PUBLISH_KEY_REQ               0x43
 #define KADEMLIA2_PUBLISH_SOURCE_REQ            0x44
 #define KADEMLIA2_PUBLISH_NOTES_REQ             0x45
 
-#define KADEMLIA_PUBLISH_RES                    0x48
+#define KADEMLIA_PUBLISH_RES                    0x48  // Deprecated: Kad v1 — use KADEMLIA2_PUBLISH_RES
 #define KADEMLIA_PUBLISH_NOTES_RES_DEPRECATED   0x4A
 #define KADEMLIA2_PUBLISH_RES                   0x4B
 #define KADEMLIA2_PUBLISH_RES_ACK               0x4C

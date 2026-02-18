@@ -27,7 +27,7 @@
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
-#include <QDebug>
+
 
 #include <algorithm>
 #include <cstring>
@@ -48,12 +48,12 @@ namespace eMule {
 bool UpDownClient::askForDownload()
 {
     if (!m_reqFile) {
-        qDebug() << "askForDownload: no reqFile for" << userName();
+        logDebug(QStringLiteral("askForDownload: no reqFile for %1").arg(userName()));
         return false;
     }
 
     if (m_downloadState == DownloadState::Downloading) {
-        qDebug() << "askForDownload: already downloading from" << userName();
+        logDebug(QStringLiteral("askForDownload: already downloading from %1").arg(userName()));
         return false;
     }
 
@@ -118,6 +118,18 @@ void UpDownClient::sendFileRequest()
     auto fnPacket = std::make_unique<Packet>(OP_REQUESTFILENAME, 0);
     fnPacket->prot = OP_EDONKEYPROT;
     sendPacket(std::move(fnPacket));
+
+    // Source Exchange 2: request sources from this peer
+    if (isSourceRequestAllowed()) {
+        SafeMemFile sxData;
+        sxData.writeUInt8(SOURCEEXCHANGE2_VERSION);
+        sxData.writeUInt16(0); // reserved options
+        sxData.writeHash16(m_reqUpFileId.data());
+
+        auto sxPacket = std::make_unique<Packet>(sxData, OP_EMULEPROT, OP_REQUESTSOURCES2);
+        sendPacket(std::move(sxPacket));
+        setLastAskedForSourcesTime();
+    }
 }
 
 // ===========================================================================
@@ -218,7 +230,7 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
         bool aich = false;
 
         if (!ident.readHashSetsFromPacket(file, md4, aich)) {
-            qDebug() << "processHashSet: readHashSetsFromPacket failed from" << userName();
+            logDebug(QStringLiteral("processHashSet: readHashSetsFromPacket failed from %1").arg(userName()));
             m_hashsetRequestingMD4 = false;
             m_hashsetRequestingAICH = false;
             return;
@@ -227,14 +239,14 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
         if (md4) {
             // Verify MD4 hashset against file hash
             if (!ident.calculateMD4HashByHashSet(true, true)) {
-                qDebug() << "processHashSet: MD4 hashset verification failed from" << userName();
+                logDebug(QStringLiteral("processHashSet: MD4 hashset verification failed from %1").arg(userName()));
             }
             m_hashsetRequestingMD4 = false;
         }
 
         if (aich) {
             if (!ident.verifyAICHHashSet()) {
-                qDebug() << "processHashSet: AICH hashset verification failed from" << userName();
+                logDebug(QStringLiteral("processHashSet: AICH hashset verification failed from %1").arg(userName()));
             }
             m_hashsetRequestingAICH = false;
         }
@@ -245,21 +257,21 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
 
         // Verify this is the file we requested
         if (!md4equ(fileHash, m_reqFile->fileHash())) {
-            qDebug() << "processHashSet: hash mismatch from" << userName();
+            logDebug(QStringLiteral("processHashSet: hash mismatch from %1").arg(userName()));
             m_hashsetRequestingMD4 = false;
             return;
         }
 
         auto& ident = m_reqFile->fileIdentifier();
         if (!ident.loadMD4HashsetFromFile(file, true)) {
-            qDebug() << "processHashSet: loadMD4HashsetFromFile failed from" << userName();
+            logDebug(QStringLiteral("processHashSet: loadMD4HashsetFromFile failed from %1").arg(userName()));
             m_hashsetRequestingMD4 = false;
             return;
         }
 
         // Verify the hashset
         if (!ident.calculateMD4HashByHashSet(true, true)) {
-            qDebug() << "processHashSet: MD4 verification failed from" << userName();
+            logDebug(QStringLiteral("processHashSet: MD4 verification failed from %1").arg(userName()));
         }
 
         m_hashsetRequestingMD4 = false;
@@ -464,7 +476,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
 
     // Verify this data is for the correct file
     if (!m_reqFile || !md4equ(data, m_reqFile->fileHash())) {
-        qDebug() << "processBlockPacket: wrong file ID from" << userName();
+        logDebug(QStringLiteral("processBlockPacket: wrong file ID from %1").arg(userName()));
         return;
     }
 
@@ -498,7 +510,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
 
     // Validate: end must be > start and data size must match
     if (nEndPos <= nStartPos || uTransferredFileDataSize != (nEndPos - nStartPos)) {
-        qDebug() << "processBlockPacket: bad data block from" << userName();
+        logDebug(QStringLiteral("processBlockPacket: bad data block from %1").arg(userName()));
         return;
     }
 
@@ -549,7 +561,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         // --- Uncompressed data ---
         // Security check: received end must not exceed requested end
         if (nEndPos > curBlock->block->endOffset) {
-            qDebug() << "processBlockPacket: block exceeds requested boundary from" << userName();
+            logDebug(QStringLiteral("processBlockPacket: block exceeds requested boundary from %1").arg(userName()));
             m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
             return;
         }
@@ -581,7 +593,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
                 if (writeStart > curBlock->block->endOffset ||
                     writeEnd > curBlock->block->endOffset)
                 {
-                    qDebug() << "processBlockPacket: decompressed data exceeds block boundary from" << userName();
+                    logDebug(QStringLiteral("processBlockPacket: decompressed data exceeds block boundary from %1").arg(userName()));
                     m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
                 } else {
                     m_reqFile->writeToBuffer(uTransferredFileDataSize,
@@ -592,7 +604,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
                 }
             }
         } else {
-            qDebug() << "processBlockPacket: decompression error" << result << "from" << userName();
+            logDebug(QStringLiteral("processBlockPacket: decompression error %1 from %2").arg(result).arg(userName()));
             m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
 
             // Clean up the failed zstream
@@ -744,7 +756,7 @@ void UpDownClient::checkDownloadTimeout()
         m_lastBlockReceived = curTick;
 
     if ((curTick - m_lastBlockReceived) > DOWNLOADTIMEOUT) {
-        qDebug() << "Download timeout for" << userName();
+        logDebug(QStringLiteral("Download timeout for %1").arg(userName()));
         disconnected(QStringLiteral("Download timeout"));
     }
 }
@@ -866,7 +878,7 @@ bool UpDownClient::isValidSource() const
 }
 
 // ===========================================================================
-// Source swapping — heavily stubbed
+// Source swapping
 // ===========================================================================
 
 bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
@@ -986,8 +998,7 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
     resetFileStatusInfo();
     m_sentCancelTransfer = false;
 
-    qDebug() << "Source swap:" << userName() << "from" << oldFile->fileName()
-             << "to" << swapTo->fileName() << "reason:" << reason;
+    logDebug(QStringLiteral("Source swap: %1 from %2 to %3 reason: %4").arg(userName(), oldFile->fileName(), swapTo->fileName(), reason));
 
     return true;
 }
@@ -1193,7 +1204,7 @@ void UpDownClient::processAICHAnswer(const uint8* data, uint32 size)
     }
 
     if (!m_aichRequested) {
-        qDebug() << "processAICHAnswer: unrequested AICH answer from" << userName();
+        logDebug(QStringLiteral("processAICHAnswer: unrequested AICH answer from %1").arg(userName()));
         return;
     }
     m_aichRequested = false;
@@ -1214,7 +1225,7 @@ void UpDownClient::processAICHAnswer(const uint8* data, uint32 size)
         partFile = theApp.downloadQueue->fileByID(fileHash);
 
     if (!partFile) {
-        qDebug() << "processAICHAnswer: file not found for AICH answer";
+        logDebug(QStringLiteral("processAICHAnswer: file not found for AICH answer"));
         return;
     }
 
@@ -1224,7 +1235,7 @@ void UpDownClient::processAICHAnswer(const uint8* data, uint32 size)
     if (!recoveryHashSet.hasValidMasterHash() ||
         recoveryHashSet.getMasterHash() != masterHash)
     {
-        qDebug() << "processAICHAnswer: master hash mismatch from" << userName();
+        logDebug(QStringLiteral("processAICHAnswer: master hash mismatch from %1").arg(userName()));
         return;
     }
 
@@ -1232,7 +1243,7 @@ void UpDownClient::processAICHAnswer(const uint8* data, uint32 size)
     if (!recoveryHashSet.readRecoveryData(
             static_cast<uint64>(partNumber) * PARTSIZE, file))
     {
-        qDebug() << "processAICHAnswer: readRecoveryData failed from" << userName();
+        logDebug(QStringLiteral("processAICHAnswer: readRecoveryData failed from %1").arg(userName()));
         return;
     }
 
@@ -1259,21 +1270,21 @@ void UpDownClient::processAICHRequest(const uint8* data, uint32 size)
         knownFile = theApp.sharedFileList->getFileByID(fileHash);
 
     if (!knownFile || !knownFile->isAICHRecoverHashSetAvailable()) {
-        qDebug() << "processAICHRequest: file not found or AICH not available";
+        logDebug(QStringLiteral("processAICHRequest: file not found or AICH not available"));
         return;
     }
 
     // Verify the file has an AICH hash in its identifier
     const auto& ident = knownFile->fileIdentifier();
     if (!ident.hasAICHHash() || ident.getAICHHash() != masterHash) {
-        qDebug() << "processAICHRequest: master hash mismatch";
+        logDebug(QStringLiteral("processAICHRequest: master hash mismatch"));
         return;
     }
 
     // Validate part number
     const uint64 fileSize = knownFile->fileSize();
     if (static_cast<uint64>(partNumber) * PARTSIZE >= fileSize) {
-        qDebug() << "processAICHRequest: invalid part number" << partNumber;
+        logDebug(QStringLiteral("processAICHRequest: invalid part number %1").arg(partNumber));
         return;
     }
 
@@ -1290,7 +1301,7 @@ void UpDownClient::processAICHRequest(const uint8* data, uint32 size)
     if (!recoveryHashSet.createPartRecoveryData(
             static_cast<uint64>(partNumber) * PARTSIZE, response))
     {
-        qDebug() << "processAICHRequest: createPartRecoveryData failed";
+        logDebug(QStringLiteral("processAICHRequest: createPartRecoveryData failed"));
         return;
     }
 
@@ -1313,8 +1324,7 @@ void UpDownClient::processAICHFileHash(SafeMemFile& data, PartFile* file)
     {
         // We already have a verified hash — check if it matches
         if (recoveryHashSet.getMasterHash() != masterHash) {
-            qDebug() << "processAICHFileHash: hash mismatch from" << userName()
-                     << "for" << file->fileName();
+            logDebug(QStringLiteral("processAICHFileHash: hash mismatch from %1 for %2").arg(userName(), file->fileName()));
             // Add to dead source list — this source has wrong AICH hash
             if (theApp.clientList) {
                 DeadSourceKey key;
@@ -1427,8 +1437,7 @@ int UpDownClient::unzip(Pending_Block_Struct* block, const uint8* zipped,
 
     } else {
         // Unexpected error — corrupt data
-        qDebug() << "unzip error:" << err
-                 << (zS->msg ? zS->msg : zError(err));
+        logDebug(QStringLiteral("unzip error: %1 %2").arg(err).arg(QString::fromUtf8(zS->msg ? zS->msg : zError(err))));
     }
 
     if (err != Z_OK)

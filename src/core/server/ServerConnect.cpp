@@ -4,10 +4,12 @@
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
+#include "app/AppContext.h"
 #include "net/ServerSocket.h"
 #include "net/UDPSocket.h"
 #include "net/Packet.h"
 #include "protocol/Tag.h"
+#include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
@@ -184,6 +186,12 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
 
     connect(socket, &ServerSocket::serverMessage, this,
             &ServerConnect::serverMessageReceived);
+
+    connect(socket, &ServerSocket::foundSourcesReceived, this,
+            [](const uint8* data, uint32 size, bool obfuscated) {
+                if (theApp.downloadQueue)
+                    theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
+            });
 
     socket->connectTo(*server, noCrypt);
 

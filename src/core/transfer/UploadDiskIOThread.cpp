@@ -11,7 +11,8 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
-#include <QDebug>
+#include "utils/Log.h"
+
 #include <QFile>
 #include <QFileInfo>
 
@@ -118,7 +119,7 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
 
     uint64 dataLen = req.endOffset - req.startOffset;
     if (dataLen > EMBLOCKSIZE * 3) {
-        qWarning() << "UploadDiskIOThread: Block too large:" << dataLen;
+        logWarning(QStringLiteral("UploadDiskIOThread: Block too large: %1").arg(dataLen));
         emit readError(req.client);
         return;
     }
@@ -137,13 +138,13 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
 
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
-        qWarning() << "UploadDiskIOThread: Cannot open file:" << filePath;
+        logWarning(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(filePath));
         emit readError(req.client);
         return;
     }
 
     if (!file.seek(static_cast<qint64>(req.startOffset))) {
-        qWarning() << "UploadDiskIOThread: Seek failed at offset" << req.startOffset;
+        logWarning(QStringLiteral("UploadDiskIOThread: Seek failed at offset %1").arg(req.startOffset));
         emit readError(req.client);
         return;
     }
@@ -152,7 +153,7 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
     file.close();
 
     if (static_cast<uint64>(data.size()) != dataLen) {
-        qWarning() << "UploadDiskIOThread: Read mismatch — wanted:" << dataLen << "got:" << data.size();
+        logWarning(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 got: %2").arg(dataLen).arg(data.size()));
         emit readError(req.client);
         return;
     }

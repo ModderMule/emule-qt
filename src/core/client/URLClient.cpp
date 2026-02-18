@@ -16,7 +16,8 @@
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
-#include <QDebug>
+#include "utils/Log.h"
+
 #include <QHostInfo>
 #include <QUrl>
 
@@ -94,7 +95,7 @@ bool URLClient::tryToConnect(bool ignoreMaxCon)
     Q_UNUSED(ignoreMaxCon);
 
     if (m_urlHost.isEmpty()) {
-        qDebug() << "URLClient::tryToConnect: no host set";
+        logDebug(QStringLiteral("URLClient::tryToConnect: no host set"));
         return false;
     }
 
@@ -117,11 +118,10 @@ bool URLClient::tryToConnect(bool ignoreMaxCon)
     }
 
     // Resolve hostname to IP asynchronously
-    qDebug() << "URLClient::tryToConnect: resolving" << m_urlHost;
+    logDebug(QStringLiteral("URLClient::tryToConnect: resolving %1").arg(m_urlHost));
     QHostInfo::lookupHost(m_urlHost, this, [this](const QHostInfo& info) {
         if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-            qDebug() << "URLClient: DNS resolution failed for" << m_urlHost
-                     << ":" << info.errorString();
+            logDebug(QStringLiteral("URLClient: DNS resolution failed for %1: %2").arg(m_urlHost, info.errorString()));
             disconnected(QStringLiteral("DNS resolution failed"));
             return;
         }
@@ -157,7 +157,7 @@ void URLClient::connectionEstablished()
 
 bool URLClient::disconnected(const QString& reason, bool fromSocket)
 {
-    qDebug() << "URLClient disconnected:" << m_urlHost << "reason:" << reason;
+    logDebug(QStringLiteral("URLClient disconnected: %1 reason: %2").arg(m_urlHost, reason));
 
     // Clean up HTTP state
     setConnectingState(ConnectingState::None);
@@ -269,7 +269,7 @@ bool URLClient::processHttpDownResponse(const QList<QByteArray>& headers)
     const int code = statusCode.toInt();
 
     if (code != 200 && code != 206) {
-        qDebug() << "URLClient: HTTP error" << code << "from" << m_urlHost;
+        logDebug(QStringLiteral("URLClient: HTTP error %1 from %2").arg(code).arg(m_urlHost));
         return false;
     }
 
@@ -360,8 +360,7 @@ void URLClient::onSocketConnected(int errorCode)
     if (errorCode == 0) {
         connectionEstablished();
     } else {
-        qDebug() << "URLClient: connection failed to" << m_urlHost
-                 << "error:" << errorCode;
+        logDebug(QStringLiteral("URLClient: connection failed to %1 error: %2").arg(m_urlHost).arg(errorCode));
         disconnected(QStringLiteral("Connection failed"));
     }
 }
@@ -393,8 +392,7 @@ void URLClient::connectToHost()
     reqSocket->connectToHost(addr, m_urlPort);
     reqSocket->waitForOnConnect();
 
-    qDebug() << "URLClient::connectToHost: connecting to"
-             << addr.toString() << ":" << m_urlPort;
+    logDebug(QStringLiteral("URLClient::connectToHost: connecting to %1:%2").arg(addr.toString()).arg(m_urlPort));
 }
 
 } // namespace eMule

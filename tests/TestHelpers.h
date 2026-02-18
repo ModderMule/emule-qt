@@ -43,6 +43,12 @@ inline QString testDataDir()
     return QStringLiteral(EMULE_TEST_DATA_DIR);
 }
 
+/// Return the path to the project-level data/ directory (set by CMake).
+inline QString projectDataDir()
+{
+    return QStringLiteral(EMULE_PROJECT_DATA_DIR);
+}
+
 /// Generate a QByteArray filled with random bytes.
 inline QByteArray randomBytes(int size)
 {

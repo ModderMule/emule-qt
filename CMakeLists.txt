@@ -138,6 +138,7 @@ add_subdirectory(src)
 # Testing
 # ---------------------------------------------------------------------------
 option(EMULE_BUILD_TESTS "Build unit tests" ON)
+option(EMULE_LIVE_TESTS  "Build live network integration tests (requires internet)" OFF)
 if(EMULE_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

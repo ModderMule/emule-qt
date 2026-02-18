@@ -182,6 +182,10 @@ bool SharedFileList::removeFile(KnownFile* file)
 void SharedFileList::process()
 {
     publish();
+
+    // ED2K server publishing — send unpublished files to connected server
+    if (m_serverConnect && m_serverConnect->isConnected())
+        sendListToServer();
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +347,34 @@ void SharedFileList::sendListToServer()
         file->setPublishedED2K(true);
 
     logDebug(QStringLiteral("Sent %1 shared files to server").arg(sortedFiles.size()));
+}
+
+// ---------------------------------------------------------------------------
+// setServerConnect — wire up reconnect signal to reset publish flags
+// ---------------------------------------------------------------------------
+
+void SharedFileList::setServerConnect(ServerConnect* sc)
+{
+    if (m_serverConnect)
+        disconnect(m_serverConnect, nullptr, this, nullptr);
+
+    m_serverConnect = sc;
+
+    if (m_serverConnect) {
+        connect(m_serverConnect, &ServerConnect::connectedToServer,
+                this, [this]() { clearED2KPublishFlags(); });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// clearED2KPublishFlags — reset all files so they get re-offered to new server
+// ---------------------------------------------------------------------------
+
+void SharedFileList::clearED2KPublishFlags()
+{
+    QMutexLocker locker(&m_mutex);
+    for (auto& [key, file] : m_filesMap)
+        file->setPublishedED2K(false);
 }
 
 void SharedFileList::publish()

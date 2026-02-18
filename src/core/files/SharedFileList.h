@@ -103,7 +103,10 @@ public:
     void publish();
 
     // Server connect integration
-    void setServerConnect(ServerConnect* sc) { m_serverConnect = sc; }
+    void setServerConnect(ServerConnect* sc);
+
+    /// Reset publishedED2K flag on all files (e.g., on server reconnect).
+    void clearED2KPublishFlags();
 
 signals:
     void fileAdded(eMule::KnownFile* file);

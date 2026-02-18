@@ -17,10 +17,12 @@
 #include "ipfilter/IPFilter.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadFirewallTester.h"
+#include "kademlia/KadIO.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadUDPListener.h"
 #include "net/ClientReqSocket.h"
+#include "net/ClientUDPSocket.h"
 #include "net/EMSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
@@ -38,8 +40,9 @@
 #include "utils/TimeUtils.h"
 #include "utils/Opcodes.h"
 
+#include "utils/Log.h"
+
 #include <QBuffer>
-#include <QDebug>
 #include <QImage>
 #include <QPainter>
 #include <QRandomGenerator>
@@ -1339,7 +1342,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         return true;
     }
 
-    qDebug() << "tryToConnect: no viable connection path for" << userName();
+    logDebug(QStringLiteral("tryToConnect: no viable connection path for %1").arg(userName()));
     return false;
 }
 
@@ -1352,7 +1355,7 @@ void UpDownClient::connect()
     // Create a ClientReqSocket for this peer connection
     auto* reqSocket = new ClientReqSocket(this);
     if (!reqSocket->createSocket()) {
-        qDebug() << "connect: failed to create socket for" << userName();
+        logDebug(QStringLiteral("connect: failed to create socket for %1").arg(userName()));
         delete reqSocket;
         m_connectingState = ConnectingState::None;
         return;
@@ -1458,7 +1461,7 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
 {
     Q_UNUSED(fromSocket);
 
-    qDebug() << "Client disconnected:" << userName() << "reason:" << reason;
+    logDebug(QStringLiteral("Client disconnected: %1 reason: %2").arg(userName(), reason));
 
     m_connectingState = ConnectingState::None;
 
@@ -1614,7 +1617,7 @@ void UpDownClient::checkQueueRankFlood()
     if (m_unaskQueueRankRecv >= 3) {
         m_unaskQueueRankRecv = 0;
         // Possible flood — log warning
-        qDebug() << "Queue rank flood detected from" << userName();
+        logDebug(QStringLiteral("Queue rank flood detected from %1").arg(userName()));
     }
 }
 
@@ -1628,7 +1631,7 @@ void UpDownClient::requestSharedFileList()
         return;
 
     if (m_noViewSharedFiles) {
-        qDebug() << "Client" << userName() << "doesn't allow viewing shared files";
+        logDebug(QStringLiteral("Client %1 doesn't allow viewing shared files").arg(userName()));
         return;
     }
 
@@ -1647,7 +1650,7 @@ void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const Q
     Q_UNUSED(dir);
 
     if (m_fileListRequested == 0) {
-        qDebug() << "processSharedFileList: unrequested response from" << userName();
+        logDebug(QStringLiteral("processSharedFileList: unrequested response from %1").arg(userName()));
         return;
     }
 
@@ -1838,7 +1841,7 @@ void UpDownClient::sendSignaturePacket()
 
     // Signature requires a valid challenge from the peer
     if (m_credits->cryptRndChallengeFrom == 0) {
-        qDebug() << "sendSignaturePacket: no challenge available for" << userName();
+        logDebug(QStringLiteral("sendSignaturePacket: no challenge available for %1").arg(userName()));
         return;
     }
 
@@ -1865,7 +1868,7 @@ void UpDownClient::sendSignaturePacket()
         m_credits, sig, sizeof(sig), challengeIP, chaIPKind);
 
     if (sigLen == 0) {
-        qDebug() << "sendSignaturePacket: signature creation failed for" << userName();
+        logDebug(QStringLiteral("sendSignaturePacket: signature creation failed for %1").arg(userName()));
         return;
     }
 
@@ -1910,7 +1913,7 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
 
     // Prevent duplicate signatures from the same IP
     if (m_lastSignatureIP == m_connectIP) {
-        qDebug() << "processSignaturePacket: duplicate signature from" << userName();
+        logDebug(QStringLiteral("processSignaturePacket: duplicate signature from %1").arg(userName()));
         return;
     }
 
@@ -1920,13 +1923,13 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
 
     // Must have their public key
     if (m_credits->secIDKeyLen() == 0) {
-        qDebug() << "processSignaturePacket: no public key stored for" << userName();
+        logDebug(QStringLiteral("processSignaturePacket: no public key stored for %1").arg(userName()));
         return;
     }
 
     // Must have a valid challenge
     if (m_credits->cryptRndChallengeFor == 0) {
-        qDebug() << "processSignaturePacket: no challenge for" << userName();
+        logDebug(QStringLiteral("processSignaturePacket: no challenge for %1").arg(userName()));
         return;
     }
 
@@ -2037,7 +2040,7 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
 
     // Apply filters
     if (m_isSpammer) {
-        qDebug() << "Chat message from spammer" << userName() << "blocked";
+        logDebug(QStringLiteral("Chat message from spammer %1 blocked").arg(userName()));
         return;
     }
 
@@ -2049,13 +2052,13 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
 
     // Friends-only filter
     if (thePrefs.msgOnlyFriends() && !m_friend) {
-        qDebug() << "Chat message from non-friend" << userName() << "blocked (msgOnlyFriends)";
+        logDebug(QStringLiteral("Chat message from non-friend %1 blocked (msgOnlyFriends)").arg(userName()));
         return;
     }
 
     // Secure-only filter
     if (thePrefs.msgSecure() && !hasPassedSecureIdent(false)) {
-        qDebug() << "Chat message from unverified" << userName() << "blocked (msgSecure)";
+        logDebug(QStringLiteral("Chat message from unverified %1 blocked (msgSecure)").arg(userName()));
         return;
     }
 
@@ -2068,7 +2071,7 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
     for (const auto& keyword : spamKeywords) {
         if (message.contains(keyword, Qt::CaseInsensitive)) {
             m_isSpammer = true;
-            qDebug() << "Spam detected from" << userName() << ":" << message;
+            logDebug(QStringLiteral("Spam detected from %1: %2").arg(userName(), message));
             return;
         }
     }
@@ -2148,7 +2151,7 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
     // Read BMP image data size
     const uint32 imgSize = data.readUInt8();
     if (imgSize == 0 || imgSize > 4096) {
-        qDebug() << "processCaptchaRequest: invalid image size" << imgSize;
+        logDebug(QStringLiteral("processCaptchaRequest: invalid image size %1").arg(imgSize));
         m_chatCaptchaState = ChatCaptchaState::None;
         return;
     }
@@ -2160,7 +2163,7 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
     // Decode BMP using QImage
     QImage captchaImg;
     if (!captchaImg.loadFromData(imgData.data(), imgSize, "BMP")) {
-        qDebug() << "processCaptchaRequest: failed to decode BMP captcha";
+        logDebug(QStringLiteral("processCaptchaRequest: failed to decode BMP captcha"));
         m_chatCaptchaState = ChatCaptchaState::None;
         return;
     }
@@ -2169,8 +2172,7 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
     if (captchaImg.height() < 10 || captchaImg.height() > 50
         || captchaImg.width() < 10 || captchaImg.width() > 150)
     {
-        qDebug() << "processCaptchaRequest: invalid captcha dimensions"
-                 << captchaImg.width() << "x" << captchaImg.height();
+        logDebug(QStringLiteral("processCaptchaRequest: invalid captcha dimensions %1x%2").arg(captchaImg.width()).arg(captchaImg.height()));
         m_chatCaptchaState = ChatCaptchaState::None;
         return;
     }
@@ -2320,7 +2322,7 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
 
     const uint8 frameCount = file.readUInt8();
     if (frameCount == 0) {
-        qDebug() << "processPreviewAnswer: remote sent 0 frames";
+        logDebug(QStringLiteral("processPreviewAnswer: remote sent 0 frames"));
         return;
     }
 
@@ -2335,7 +2337,7 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
     for (uint8 i = 0; i < frameCount; ++i) {
         const uint32 imgSize = file.readUInt32();
         if (imgSize == 0 || imgSize > size) {
-            qDebug() << "processPreviewAnswer: frame" << i << "size exceeds packet";
+            logDebug(QStringLiteral("processPreviewAnswer: frame %1 size exceeds packet").arg(i));
             break;
         }
 
@@ -2347,7 +2349,7 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
         if (image.loadFromData(imgData.data(), imgSize, "PNG") && !image.isNull()) {
             previewImages.push_back(std::move(image));
         } else {
-            qDebug() << "processPreviewAnswer: failed to decode frame" << i;
+            logDebug(QStringLiteral("processPreviewAnswer: failed to decode frame %1").arg(i));
         }
     }
 
@@ -2409,7 +2411,7 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
     // MFC BaseClient.cpp:2860-2899
     auto* kadInstance = kad::Kademlia::instance();
     if (!kadInstance || !kadInstance->isRunning() || !kadInstance->getUDPListener()) {
-        qDebug() << "processFirewallCheckUDPRequest: Kad not running, ignoring";
+        logDebug(QStringLiteral("processFirewallCheckUDPRequest: Kad not running, ignoring"));
         return;
     }
 
@@ -2426,12 +2428,12 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
     const uint32 senderKey = data.readUInt32();
 
     if (remoteInternPort == 0) {
-        qDebug() << "processFirewallCheckUDPRequest: intern port == 0";
+        logDebug(QStringLiteral("processFirewallCheckUDPRequest: intern port == 0"));
         return;
     }
 
     if (senderKey == 0)
-        qDebug() << "processFirewallCheckUDPRequest: sender key == 0";
+        logDebug(QStringLiteral("processFirewallCheckUDPRequest: sender key == 0"));
 
     auto* udpListener = kadInstance->getUDPListener();
 
@@ -2453,7 +2455,7 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
                                 kad::KadUDPKey(senderKey, thePrefs.publicIP()), nullptr);
     }
 
-    qDebug() << "Answered UDP firewall check request from" << dbgGetClientInfo();
+    logDebug(QStringLiteral("Answered UDP firewall check request from %1").arg(dbgGetClientInfo()));
 }
 
 // ===========================================================================
@@ -2464,6 +2466,230 @@ void UpDownClient::processKadFwTcpCheckAck()
 {
     if (auto* prefs = kad::Kademlia::getInstancePrefs())
         prefs->incFirewalled();
+}
+
+// ===========================================================================
+// processCallbackPacket — MFC ListenSocket.cpp OP_CALLBACK (lines 1365-1400)
+//
+// Received from our Kad buddy via TCP. The buddy forwards a callback
+// request from a firewalled client that wants to download from us.
+// Packet: <check 16><fileid 16><ip 4><tcp 2>
+// ===========================================================================
+
+void UpDownClient::processCallbackPacket(const uint8* data, uint32 size)
+{
+    // Minimum: 16 (check) + 16 (fileid) + 4 (IP) + 2 (port) = 38 bytes
+    if (!data || size < 38)
+        return;
+
+    auto* kadInst = kad::Kademlia::instance();
+    if (!kadInst || !kadInst->isRunning())
+        return;
+
+    SafeMemFile file(data, size);
+
+    // Read the check hash and verify it matches our Kad ID XOR'd with 0xFF..FF
+    kad::UInt128 check = kad::io::readUInt128(file);
+    kad::UInt128 flipped(true); // all bits set (0xFF...)
+    check.xorWith(flipped);
+
+    auto* kadPrefs = kad::Kademlia::getInstancePrefs();
+    if (!kadPrefs || check != kadPrefs->kadId())
+        return;
+
+    // Read the file ID the requester wants
+    kad::UInt128 fileId = kad::io::readUInt128(file);
+    uint8 fileidMD4[16];
+    fileId.toByteArray(fileidMD4);
+
+    // Verify we actually share this file
+    if (theApp.sharedFileList) {
+        if (!theApp.sharedFileList->getFileByID(fileidMD4))
+            return;
+    }
+
+    // Read the requester's IP and TCP port
+    const uint32 ip = file.readUInt32();
+    const uint16 tcp = file.readUInt16();
+
+    // Find or create a client for the requester
+    UpDownClient* callback = nullptr;
+    if (theApp.clientList)
+        callback = theApp.clientList->findByConnIP(ntohl(ip), tcp);
+
+    if (!callback) {
+        callback = new UpDownClient(tcp, 0, ip, 0, nullptr);
+        if (theApp.clientList)
+            theApp.clientList->addClient(callback);
+    }
+
+    callback->tryToConnect(true);
+}
+
+// ===========================================================================
+// processReaskCallbackTCP — MFC ListenSocket.cpp OP_REASKCALLBACKTCP (1433-1519)
+//
+// Received from our Kad buddy via TCP. The buddy forwards a UDP file
+// reask from a firewalled client. We respond with OP_REASKACK,
+// OP_QUEUEFULL, or OP_FILENOTFOUND back via UDP to the requester.
+// Packet: <ip 4><port 2><filehash 16>[...]
+// ===========================================================================
+
+void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
+{
+    if (!data || size < 22) // 4 (IP) + 2 (port) + 16 (hash) minimum
+        return;
+
+    // Verify the sender is our buddy
+    UpDownClient* buddy = nullptr;
+    if (theApp.clientList)
+        buddy = theApp.clientList->getBuddy();
+
+    if (buddy != this) {
+        logDebug(QStringLiteral("processReaskCallbackTCP: received from non-buddy %1").arg(userName()));
+        return;
+    }
+
+    SafeMemFile dataIn(data, size);
+
+    const uint32 destIP = dataIn.readUInt32();
+    const uint16 destPort = dataIn.readUInt16();
+
+    uint8 reqFileHash[16];
+    dataIn.readHash16(reqFileHash);
+
+    // Look up the requested file in shared files
+    KnownFile* reqFile = nullptr;
+    if (theApp.sharedFileList)
+        reqFile = theApp.sharedFileList->getFileByID(reqFileHash);
+
+    if (!reqFile) {
+        // File not found — send OP_FILENOTFOUND via UDP
+        if (theApp.clientUDP) {
+            auto response = std::make_unique<Packet>(OP_FILENOTFOUND, 0, OP_EMULEPROT);
+            theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                                         false, nullptr, false, 0);
+        }
+        return;
+    }
+
+    // Find the requesting client by IP + UDP port
+    UpDownClient* sender = nullptr;
+    if (theApp.clientList) {
+        sender = theApp.clientList->findByIP_UDP(destIP, destPort);
+    }
+
+    if (sender) {
+        // Verify the file matches
+        KnownFile* senderReqFile = sender->uploadFile();
+        if (senderReqFile && md4equ(senderReqFile->fileHash(), reqFileHash)) {
+            // Build reask ACK with part status and queue rank
+            SafeMemFile dataOut;
+
+            if (sender->udpVer() > 3) {
+                if (reqFile->isPartFile())
+                    static_cast<PartFile*>(reqFile)->writePartStatus(dataOut);
+                else
+                    dataOut.writeUInt16(0);
+            }
+
+            const uint16 queueRank = theApp.uploadQueue
+                ? static_cast<uint16>(theApp.uploadQueue->waitingPosition(sender))
+                : 0;
+            dataOut.writeUInt16(queueRank);
+
+            auto response = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_REASKACK);
+            if (theApp.clientUDP) {
+                theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                                             sender->shouldReceiveCryptUDPPackets(),
+                                             sender->userHash(), false, 0);
+            }
+        } else {
+            logDebug(QStringLiteral("processReaskCallbackTCP: reqfile mismatch for client at %1:%2")
+                     .arg(destIP).arg(destPort));
+        }
+    } else {
+        // Unknown client — if queue is full, inform; otherwise ignore
+        if (theApp.uploadQueue && theApp.clientUDP) {
+            // MFC default queue size is 200; use the same threshold
+            if (theApp.uploadQueue->waitingUserCount() + 50 > 200) {
+                auto response = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
+                theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                                             false, nullptr, false, 0);
+            }
+        }
+    }
+}
+
+// ===========================================================================
+// processBuddyPing — MFC ListenSocket.cpp OP_BUDDYPING (1401-1418)
+//
+// Our Kad buddy pings us to keep the connection alive. We verify the
+// sender is our buddy, check rate limiting, and reply with OP_BUDDYPONG.
+// ===========================================================================
+
+void UpDownClient::processBuddyPing()
+{
+    UpDownClient* buddy = nullptr;
+    if (theApp.clientList)
+        buddy = theApp.clientList->getBuddy();
+
+    // Verify: sender must be our buddy, with valid Kad version, not too frequent
+    if (buddy != this || m_kadVersion == 0 || !allowIncomingBuddyPingPong())
+        return;
+
+    auto packet = std::make_unique<Packet>(OP_BUDDYPONG, 0, OP_EMULEPROT);
+    sendPacket(std::move(packet));
+    setLastBuddyPingPongTime();
+}
+
+// ===========================================================================
+// processBuddyPong — MFC ListenSocket.cpp OP_BUDDYPONG (1419-1432)
+//
+// Our Kad buddy responds to our ping. Just update the timestamp to
+// keep the socket timeout from firing.
+// ===========================================================================
+
+void UpDownClient::processBuddyPong()
+{
+    UpDownClient* buddy = nullptr;
+    if (theApp.clientList)
+        buddy = theApp.clientList->getBuddy();
+
+    if (buddy != this || m_kadVersion == 0)
+        return;
+
+    setLastBuddyPingPongTime();
+}
+
+// ===========================================================================
+// allowIncomingBuddyPingPong — MFC BaseClient.cpp AllowIncomeingBuddyPingPong
+//
+// Rate-limit buddy ping/pong to once every 10 minutes.
+// ===========================================================================
+
+bool UpDownClient::allowIncomingBuddyPingPong() const
+{
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    return (curTick - m_lastBuddyPingPongTime) > MIN2MS(10);
+}
+
+// ===========================================================================
+// sendBuddyPingPong — MFC BaseClient.cpp SendBuddyPingPong
+//
+// Returns true if enough time has passed to send a buddy ping (10 min).
+// The caller (ClientList::processKadList) sends the actual OP_BUDDYPING.
+// ===========================================================================
+
+bool UpDownClient::sendBuddyPingPong() const
+{
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    return (curTick - m_lastBuddyPingPongTime) > MIN2MS(10);
+}
+
+void UpDownClient::setLastBuddyPingPongTime()
+{
+    m_lastBuddyPingPongTime = static_cast<uint32>(getTickCount());
 }
 
 // ===========================================================================
@@ -2501,8 +2727,7 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         break;
 
     case OP_REQUESTPARTS_I64:
-        // Remote client requesting file blocks from us (large file)
-        // TODO: implement addReqBlock from 64-bit request
+        processRequestParts(data, size, true);
         break;
 
     case OP_QUEUERANKING:
@@ -2514,11 +2739,11 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         break;
 
     case OP_REQUESTSOURCES2:
-        // TODO: source exchange response
+        processRequestSources2(data, size);
         break;
 
     case OP_ANSWERSOURCES2:
-        // TODO: process incoming source exchange
+        processAnswerSources2(data, size);
         break;
 
     case OP_PUBLICKEY:
@@ -2559,10 +2784,19 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         break;
 
     case OP_CALLBACK:
+        processCallbackPacket(data, size);
+        break;
+
     case OP_REASKCALLBACKTCP:
+        processReaskCallbackTCP(data, size);
+        break;
+
     case OP_BUDDYPING:
+        processBuddyPing();
+        break;
+
     case OP_BUDDYPONG:
-        // TODO: buddy/callback handling
+        processBuddyPong();
         break;
 
     case OP_CHATCAPTCHAREQ: {
@@ -2587,8 +2821,11 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         break;
 
     case OP_MULTIPACKET_EXT2:
+        processMultiPacketExt2(data, size);
+        break;
+
     case OP_MULTIPACKETANSWER_EXT2:
-        // TODO: multi-packet handling
+        processMultiPacketAnswer(data, size);
         break;
 
     case OP_HASHSETREQUEST2:
@@ -2600,8 +2837,7 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         break;
 
     default:
-        qDebug() << "onExtPacketReceived: unhandled opcode 0x"
-                 << Qt::hex << opcode << "from" << userName();
+        logDebug(QStringLiteral("onExtPacketReceived: unhandled opcode 0x%1 from %2").arg(opcode, 0, 16).arg(userName()));
         break;
     }
 }
@@ -2636,8 +2872,7 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         break;
 
     case OP_REQUESTPARTS:
-        // Remote client requesting file blocks from us (standard 32-bit)
-        // TODO: implement addReqBlock from 32-bit request
+        processRequestParts(data, size, false);
         break;
 
     case OP_QUEUERANK:
@@ -2650,8 +2885,11 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         break;
 
     case OP_CHANGE_CLIENT_ID:
+        // Server notifies of client ID change — not used in peer-to-peer context
+        break;
+
     case OP_CHANGE_SLOT:
-        // TODO: slot/ID change handling
+        // Slot change notification — no action needed
         break;
 
     case OP_ASKSHAREDFILES:
@@ -2671,8 +2909,7 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
     }
 
     default:
-        qDebug() << "onPacketForClient: unhandled opcode 0x"
-                 << Qt::hex << opcode << "from" << userName();
+        logDebug(QStringLiteral("onPacketForClient: unhandled opcode 0x%1 from %2").arg(opcode, 0, 16).arg(userName()));
         break;
     }
 }
@@ -2707,10 +2944,19 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
 {
     switch (opcode) {
     case OP_SETREQFILEID:
-    case OP_REQUESTFILENAME:
-    case OP_REQFILENAMEANSWER:
-        // TODO: file request handling
+        processSetReqFileID(data, size);
         break;
+
+    case OP_REQUESTFILENAME:
+        processRequestFileName(data, size);
+        break;
+
+    case OP_REQFILENAMEANSWER: {
+        // Answer to our file name request (download side)
+        SafeMemFile io(data, size);
+        processFileInfo(io, m_reqFile);
+        break;
+    }
 
     case OP_FILEREQANSNOFIL:
         // Remote peer doesn't have the file
@@ -2831,6 +3077,90 @@ QImage UpDownClient::generateCaptchaImage(const QString& text)
 
     painter.end();
     return image;
+}
+
+// ===========================================================================
+// setLastAskedForSourcesTime
+// ===========================================================================
+
+void UpDownClient::setLastAskedForSourcesTime()
+{
+    m_lastAskedForSources = static_cast<uint32>(getTickCount());
+}
+
+// ===========================================================================
+// processRequestSources2 — handle OP_REQUESTSOURCES2 (peer requests sources)
+// ===========================================================================
+
+void UpDownClient::processRequestSources2(const uint8* data, uint32 size)
+{
+    if (!data || size < 19) // 1 byte version + 2 bytes options + 16 bytes hash
+        return;
+
+    SafeMemFile io(data, size);
+    const uint8 version = io.readUInt8();
+    const uint16 options = io.readUInt16();
+    Q_UNUSED(options);
+
+    uint8 fileHash[16];
+    io.readHash16(fileHash);
+
+    // Look up in shared files first, then download queue
+    KnownFile* file = nullptr;
+    if (theApp.sharedFileList)
+        file = theApp.sharedFileList->getFileByID(fileHash);
+    if (!file && theApp.downloadQueue)
+        file = theApp.downloadQueue->fileByID(fileHash);
+
+    if (!file) {
+        logDebug(QStringLiteral("processRequestSources2: file not found"));
+        return;
+    }
+
+    // Rate-limit source requests
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    if (m_lastSourceRequest != 0) {
+        const int srcCount = file->isPartFile()
+            ? static_cast<PartFile*>(file)->sourceCount()
+            : file->uploadingClientCount();
+        const uint32 interval = (srcCount <= RARE_FILE)
+            ? SOURCECLIENTREASKS
+            : SOURCECLIENTREASKS * MINCOMMONPENALTY;
+        if ((curTick - m_lastSourceRequest) < (interval - CONNECTION_LATENCY))
+            return;
+    }
+    m_lastSourceRequest = curTick;
+
+    auto packet = file->createSrcInfoPacket(this, version, options);
+    if (packet)
+        sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// processAnswerSources2 — handle OP_ANSWERSOURCES2 (peer sends us sources)
+// ===========================================================================
+
+void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
+{
+    if (!data || size < 17) // 1 byte version + 16 bytes hash
+        return;
+
+    SafeMemFile io(data, size);
+    const uint8 version = io.readUInt8();
+
+    uint8 fileHash[16];
+    io.readHash16(fileHash);
+
+    if (!theApp.downloadQueue)
+        return;
+
+    auto* file = theApp.downloadQueue->fileByID(fileHash);
+    if (!file)
+        return;
+
+    m_lastSourceAnswer = static_cast<uint32>(getTickCount());
+
+    file->addClientSources(io, version, this);
 }
 
 } // namespace eMule

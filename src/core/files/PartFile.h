@@ -237,6 +237,12 @@ public:
     void writeCompleteSourcesCount(SafeMemFile& file) const;
     void getFilledArray(std::vector<Gap>& filled) const;
 
+    // -- Source exchange (SX2) ------------------------------------------------
+
+    std::unique_ptr<Packet> createSrcInfoPacket(const UpDownClient* forClient,
+                                                 uint8 version, uint16 options) const override;
+    void addClientSources(SafeMemFile& data, uint8 version, const UpDownClient* sender);
+
     // -- Category -------------------------------------------------------------
 
     [[nodiscard]] uint32 category() const { return m_category; }
