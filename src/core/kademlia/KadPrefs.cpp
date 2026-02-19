@@ -5,6 +5,7 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadFirewallTester.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadRoutingZone.h"
 #include "client/ClientList.h"
 #include "crypto/MD5Hash.h"
@@ -422,7 +423,7 @@ void KadPrefs::readFile()
         return;
 
     if (!file.open(QIODevice::ReadOnly)) {
-        logWarning(QStringLiteral("Failed to open Kad preferences file: %1").arg(m_filename));
+        logKad(QStringLiteral("Failed to open Kad preferences file: %1").arg(m_filename));
         return;
     }
 
@@ -431,7 +432,7 @@ void KadPrefs::readFile()
 
     // Binary format: uint32 IP | uint16 reserved | 16-byte KadID | uint8 tagCount(0)
     if (file.size() < 23) {
-        logWarning(QStringLiteral("Kad preferences file too small: %1").arg(m_filename));
+        logKad(QStringLiteral("Kad preferences file too small: %1").arg(m_filename));
         return;
     }
 
@@ -441,7 +442,7 @@ void KadPrefs::readFile()
 
     uint8 kadIdBytes[16];
     if (in.readRawData(reinterpret_cast<char*>(kadIdBytes), 16) != 16) {
-        logWarning(QStringLiteral("Failed to read KadID from: %1").arg(m_filename));
+        logKad(QStringLiteral("Failed to read KadID from: %1").arg(m_filename));
         return;
     }
 
@@ -457,7 +458,7 @@ void KadPrefs::writeFile()
 {
     QSaveFile file(m_filename);
     if (!file.open(QIODevice::WriteOnly)) {
-        logWarning(QStringLiteral("Failed to write Kad preferences file: %1").arg(m_filename));
+        logKad(QStringLiteral("Failed to write Kad preferences file: %1").arg(m_filename));
         return;
     }
 
@@ -473,7 +474,7 @@ void KadPrefs::writeFile()
     out << uint8{0}; // tag count
 
     if (!file.commit()) {
-        logWarning(QStringLiteral("Failed to commit Kad preferences file: %1").arg(m_filename));
+        logKad(QStringLiteral("Failed to commit Kad preferences file: %1").arg(m_filename));
     }
 }
 

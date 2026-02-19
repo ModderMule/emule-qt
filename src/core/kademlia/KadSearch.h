@@ -99,6 +99,7 @@ private:
     uint32 m_totalLoadResponses = 0;
     uint32 m_searchID = 0;
     bool m_stopping = false;
+    time_t m_storePhaseStarted = 0;  // When prepareToStop() triggered storePacket()
 };
 
 } // namespace eMule::kad

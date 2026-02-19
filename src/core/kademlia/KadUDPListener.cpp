@@ -9,6 +9,7 @@
 #include "kademlia/KadEntry.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
@@ -49,8 +50,8 @@ void KademliaUDPListener::bootstrap(const QString& host, uint16 udpPort)
     // Resolve hostname and bootstrap
     QHostInfo::lookupHost(host, this, [this, udpPort](const QHostInfo& info) {
         if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-            logWarning(QStringLiteral("Kad: Failed to resolve bootstrap host: %1")
-                           .arg(info.errorString()));
+            logKad(QStringLiteral("Kad: Failed to resolve bootstrap host: %1")
+                       .arg(info.errorString()));
             return;
         }
         uint32 ip = info.addresses().first().toIPv4Address();
@@ -81,11 +82,15 @@ void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
         io::writeUInt128(packet, prefs ? prefs->clientHash() : UInt128());
         packet.writeUInt8(prefs ? prefs->myConnectOptions() : uint8{0});
         sendPacket(packet, KADEMLIA_FIREWALLED2_REQ, ip, udpPort, senderKey, nullptr);
+        logKad(QStringLiteral("Kad: Sent FIREWALLED2_REQ (v2) to %1:%2, tcpPort=%3")
+                   .arg(ip).arg(udpPort).arg(tcpPort));
     } else {
         // Kad v1 compat (v2–v6): legacy request with port only
         SafeMemFile packet;
         packet.writeUInt16(tcpPort);
         sendPacket(packet, KADEMLIA_FIREWALLED_REQ, ip, udpPort, senderKey, nullptr);
+        logKad(QStringLiteral("Kad: Sent FIREWALLED_REQ (v1) to %1:%2, tcpPort=%3")
+                   .arg(ip).arg(udpPort).arg(tcpPort));
     }
 
     // Track so we accept the KADEMLIA_FIREWALLED_RES reply from this IP
@@ -162,8 +167,8 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     uint32 payloadLen = len - 1;
 
     // TODO: remove debug logging
-    logDebug(QStringLiteral("Kad: processPacket opcode=0x%1 from %2:%3 len=%4")
-                 .arg(opcode, 2, 16, QLatin1Char('0')).arg(ipToString(ip)).arg(udpPort).arg(len));
+    logKad(QStringLiteral("Kad: processPacket opcode=0x%1 from %2:%3 len=%4")
+               .arg(opcode, 2, 16, QLatin1Char('0')).arg(ipToString(ip)).arg(udpPort).arg(len));
 
     switch (opcode) {
     case KADEMLIA2_BOOTSTRAP_REQ:
@@ -242,9 +247,9 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
         process_KADEMLIA2_FIREWALLUDP(payload, payloadLen, ip, senderKey);
         break;
     default:
-        logDebug(QStringLiteral("Kad: Unknown opcode 0x%1 from %2:%3")
-                     .arg(opcode, 2, 16, QChar(u'0'))
-                     .arg(ipToString(ip)).arg(udpPort));
+        logKad(QStringLiteral("Kad: Unknown opcode 0x%1 from %2:%3")
+                   .arg(opcode, 2, 16, QChar(u'0'))
+                   .arg(ipToString(ip)).arg(udpPort));
         break;
     }
 }
@@ -511,8 +516,8 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uin
     if (!isOnOutTrackList(ip, KADEMLIA2_BOOTSTRAP_REQ))
         return;
 
-    logDebug(QStringLiteral("Kad: BOOTSTRAP_RES from %1:%2, %3 bytes")
-                 .arg(ipToString(ip)).arg(udpPort).arg(len));
+    logKad(QStringLiteral("Kad: BOOTSTRAP_RES from %1:%2, %3 bytes")
+               .arg(ipToString(ip)).arg(udpPort).arg(len));
 
     if (len < 23) // minimum: 16 (ID) + 2 (TCP) + 1 (version) + 2 (count) + 2
         return;
@@ -585,8 +590,11 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
 
     // Check if firewalled — ask this node to report our external IP
     if (auto* prefs = Kademlia::getInstancePrefs()) {
-        if (prefs->recheckIP())
+        if (prefs->recheckIP()) {
+            logKad(QStringLiteral("Kad: HELLO_REQ_ACK triggered firewall check to %1:%2")
+                       .arg(ip).arg(udpPort));
             firewalledCheck(ip, udpPort, senderKey, version);
+        }
     }
 }
 
@@ -632,8 +640,11 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
 
     // Check if firewalled — ask this node to report our external IP
     if (auto* prefs = Kademlia::getInstancePrefs()) {
-        if (prefs->recheckIP())
+        if (prefs->recheckIP()) {
+            logKad(QStringLiteral("Kad: HELLO_RES triggered firewall check to %1:%2")
+                       .arg(ip).arg(udpPort));
             firewalledCheck(ip, udpPort, senderKey, version);
+        }
     }
 }
 
@@ -667,16 +678,27 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
 
     SafeMemFile io(data, len);
     uint8 type = io.readUInt8();
+    type &= 0x1F;
+    if (type == 0)
+        return;
+
     UInt128 target = io::readUInt128(io);
-    UInt128 receiver = io::readUInt128(io);
+
+    // Sanity check: the sender writes the contact's (our) Kad ID so we can
+    // verify the request is actually intended for us.  Silently drop if the
+    // check doesn't match — matches MFC Process_KADEMLIA2_REQ behaviour.
+    UInt128 check = io::readUInt128(io);
+    if (!(RoutingZone::localKadId() == check))
+        return;
 
     // Compute distance for lookup
     UInt128 distance(RoutingZone::localKadId());
     distance.xorWith(target);
 
-    // Get closest contacts
+    // Get closest contacts — maxType=2 (alive/recent/seen-recently),
+    // maxRequired=type (contact count requested by sender).
     ContactMap results;
-    rz->getClosestTo(type, target, distance, kK * 2, results, true, false);
+    rz->getClosestTo(2, target, distance, static_cast<uint32>(type), results, true, false);
 
     // Build response packet
     SafeMemFile resPacket;
@@ -702,12 +724,12 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
                                                   uint16 udpPort, const KadUDPKey& senderKey)
 {
     if (!isOnOutTrackList(ip, KADEMLIA2_REQ)) {
-        logDebug(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2 dropped — not on track list")
-                     .arg(ipToString(ip)).arg(udpPort));
+        logKad(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2 dropped — not on track list")
+                   .arg(ipToString(ip)).arg(udpPort));
         return;
     }
-    logDebug(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2, %3 bytes")
-                 .arg(ipToString(ip)).arg(udpPort).arg(len));
+    logKad(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2, %3 bytes")
+               .arg(ipToString(ip)).arg(udpPort).arg(len));
 
     if (len < 17) // 16 (target) + 1 (count)
         return;
@@ -731,6 +753,8 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
 
     // If this is a firewall check search, feed contacts to the UDP firewall tester
     if (SearchManager::isFWCheckUDPSearch(target)) {
+        logKad(QStringLiteral("Kad: FW check search response — feeding %1 contacts to UDP FW tester")
+                   .arg(results.size()));
         for (const auto* contact : results) {
             UDPFirewallTester::addPossibleTestContact(
                 contact->getClientID(), contact->getIPAddress(),
@@ -792,17 +816,28 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_RES(const uint8* data, uint32
                                                         const KadUDPKey& senderKey,
                                                         uint32 ip, uint16 udpPort)
 {
-    if (len < 17)
+    // MFC format: UInt128 senderKadID + UInt128 target + uint16 count + results
+    if (len < 34)
         return;
 
     SafeMemFile io(data, len);
+    [[maybe_unused]] UInt128 senderID = io::readUInt128(io);
     UInt128 target = io::readUInt128(io);
     uint16 count = io.readUInt16();
 
-    for (uint16 i = 0; i < count && io.position() < io.length(); ++i) {
-        UInt128 answer = io::readUInt128(io);
-        TagList tags = io::readKadTagList(io);
-        SearchManager::processResult(target, answer, tags, ip, udpPort);
+    logKad(QStringLiteral("Kad: SEARCH_RES from %1:%2, target=%3, count=%4")
+               .arg(ipToString(ip)).arg(udpPort)
+               .arg(target.toHexString()).arg(count));
+
+    try {
+        for (uint16 i = 0; i < count && io.position() < io.length(); ++i) {
+            UInt128 answer = io::readUInt128(io);
+            TagList tags = io::readKadTagList(io);
+            SearchManager::processResult(target, answer, tags, ip, udpPort);
+        }
+    } catch (const FileException&) {
+        logKad(QStringLiteral("Kad: SEARCH_RES from %1:%2 — truncated packet, parsed partial results")
+                   .arg(ipToString(ip)).arg(udpPort));
     }
 }
 
@@ -824,23 +859,28 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
     auto* indexed = Kademlia::getInstanceIndexed();
     uint8 totalLoad = 0;
 
-    for (uint16 i = 0; i < count && io.position() < io.length(); ++i) {
-        UInt128 sourceID = io::readUInt128(io);
-        TagList tags = io::readKadTagList(io);
+    try {
+        for (uint16 i = 0; i < count && io.position() < io.length(); ++i) {
+            UInt128 sourceID = io::readUInt128(io);
+            TagList tags = io::readKadTagList(io);
 
-        if (indexed) {
-            auto* entry = new KeyEntry();
-            entry->m_keyID = keyID;
-            entry->m_sourceID = sourceID;
-            entry->m_ip = ip;
-            for (auto& tag : tags)
-                entry->addTag(std::move(tag));
+            if (indexed) {
+                auto* entry = new KeyEntry();
+                entry->m_keyID = keyID;
+                entry->m_sourceID = sourceID;
+                entry->m_ip = ip;
+                for (auto& tag : tags)
+                    entry->addTag(std::move(tag));
 
-            uint8 load = 0;
-            if (!indexed->addKeyword(keyID, sourceID, entry, load))
-                delete entry;
-            totalLoad = std::max(totalLoad, load);
+                uint8 load = 0;
+                if (!indexed->addKeyword(keyID, sourceID, entry, load))
+                    delete entry;
+                totalLoad = std::max(totalLoad, load);
+            }
         }
+    } catch (const FileException&) {
+        logKad(QStringLiteral("Kad: PUBLISH_KEY_REQ from %1:%2 — truncated packet")
+                   .arg(ipToString(ip)).arg(udpPort));
     }
 
     // Send publish response with load
@@ -858,27 +898,32 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
         return;
 
     SafeMemFile io(data, len);
-    UInt128 keyID = io::readUInt128(io);
-    UInt128 sourceID = io::readUInt128(io);
-    TagList tags = io::readKadTagList(io);
-
     uint8 load = 0;
-    if (auto* indexed = Kademlia::getInstanceIndexed()) {
-        auto* entry = new Entry();
-        entry->m_keyID = keyID;
-        entry->m_sourceID = sourceID;
-        entry->m_ip = ip;
-        for (auto& tag : tags)
-            entry->addTag(std::move(tag));
-        if (!indexed->addSources(keyID, sourceID, entry, load))
-            delete entry;
-    }
+    try {
+        UInt128 keyID = io::readUInt128(io);
+        UInt128 sourceID = io::readUInt128(io);
+        TagList tags = io::readKadTagList(io);
 
-    // Send publish response with load
-    SafeMemFile resPacket;
-    io::writeUInt128(resPacket, keyID);
-    resPacket.writeUInt8(load);
-    sendPacket(resPacket, KADEMLIA2_PUBLISH_RES, ip, udpPort, senderKey, nullptr);
+        if (auto* indexed = Kademlia::getInstanceIndexed()) {
+            auto* entry = new Entry();
+            entry->m_keyID = keyID;
+            entry->m_sourceID = sourceID;
+            entry->m_ip = ip;
+            for (auto& tag : tags)
+                entry->addTag(std::move(tag));
+            if (!indexed->addSources(keyID, sourceID, entry, load))
+                delete entry;
+        }
+
+        // Send publish response with load
+        SafeMemFile resPacket;
+        io::writeUInt128(resPacket, keyID);
+        resPacket.writeUInt8(load);
+        sendPacket(resPacket, KADEMLIA2_PUBLISH_RES, ip, udpPort, senderKey, nullptr);
+    } catch (const FileException&) {
+        logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ from %1:%2 — truncated packet")
+                   .arg(ipToString(ip)).arg(udpPort));
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA2_PUBLISH_RES(const uint8* data, uint32 len,
@@ -928,27 +973,32 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
         return;
 
     SafeMemFile io(data, len);
-    UInt128 keyID = io::readUInt128(io);
-    UInt128 sourceID = io::readUInt128(io);
-    TagList tags = io::readKadTagList(io);
-
     uint8 load = 0;
-    if (auto* indexed = Kademlia::getInstanceIndexed()) {
-        auto* entry = new Entry();
-        entry->m_keyID = keyID;
-        entry->m_sourceID = sourceID;
-        entry->m_ip = ip;
-        for (auto& tag : tags)
-            entry->addTag(std::move(tag));
-        if (!indexed->addNotes(keyID, sourceID, entry, load))
-            delete entry;
-    }
+    try {
+        UInt128 keyID = io::readUInt128(io);
+        UInt128 sourceID = io::readUInt128(io);
+        TagList tags = io::readKadTagList(io);
 
-    // Send publish response with load
-    SafeMemFile resPacket;
-    io::writeUInt128(resPacket, keyID);
-    resPacket.writeUInt8(load);
-    sendPacket(resPacket, KADEMLIA2_PUBLISH_RES, ip, udpPort, senderKey, nullptr);
+        if (auto* indexed = Kademlia::getInstanceIndexed()) {
+            auto* entry = new Entry();
+            entry->m_keyID = keyID;
+            entry->m_sourceID = sourceID;
+            entry->m_ip = ip;
+            for (auto& tag : tags)
+                entry->addTag(std::move(tag));
+            if (!indexed->addNotes(keyID, sourceID, entry, load))
+                delete entry;
+        }
+
+        // Send publish response with load
+        SafeMemFile resPacket;
+        io::writeUInt128(resPacket, keyID);
+        resPacket.writeUInt8(load);
+        sendPacket(resPacket, KADEMLIA2_PUBLISH_RES, ip, udpPort, senderKey, nullptr);
+    } catch (const FileException&) {
+        logKad(QStringLiteral("Kad: PUBLISH_NOTES_REQ from %1:%2 — truncated packet")
+                   .arg(ipToString(ip)).arg(udpPort));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -981,8 +1031,8 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
         theApp.clientList->addClient(client);
     client->tryToConnect();
 
-    logDebug(QStringLiteral("Kad: FIREWALLED_REQ from %1:%2, responded + TCP fw check")
-                 .arg(ipToString(ip)).arg(udpPort));
+    logKad(QStringLiteral("Kad: FIREWALLED_REQ from %1:%2, responded + TCP fw check")
+               .arg(ipToString(ip)).arg(udpPort));
 }
 
 void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, uint32 len,
@@ -1011,8 +1061,8 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
         theApp.clientList->addClient(client);
     client->tryToConnect();
 
-    logDebug(QStringLiteral("Kad: FIREWALLED2_REQ from %1:%2, responded + TCP fw check")
-                 .arg(ipToString(ip)).arg(udpPort));
+    logKad(QStringLiteral("Kad: FIREWALLED2_REQ from %1:%2, responded + TCP fw check")
+               .arg(ipToString(ip)).arg(udpPort));
 }
 
 void KademliaUDPListener::process_KADEMLIA_FIREWALLED_RES(const uint8* data, uint32 len,
@@ -1035,14 +1085,18 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_RES(const uint8* data, uin
         prefs->incRecheckIP();
     }
 
-    logDebug(QStringLiteral("Kad: FIREWALLED_RES from %1 — external IP: %2")
-                 .arg(ipToString(ip)).arg(ipToString(externalIP)));
+    logKad(QStringLiteral("Kad: FIREWALLED_RES from %1 — external IP: %2")
+               .arg(ipToString(ip)).arg(ipToString(externalIP)));
 }
 
 void KademliaUDPListener::process_KADEMLIA_FIREWALLED_ACK_RES(uint32 len)
 {
-    // No payload expected
-    logDebug(QStringLiteral("Kad: FIREWALLED_ACK_RES received"));
+    // The remote node successfully TCP-connected to our listen port,
+    // confirming we are reachable.  Increment the firewall counter so
+    // that KadPrefs::firewalled() eventually returns false.
+    if (auto* prefs = Kademlia::getInstancePrefs())
+        prefs->incFirewalled();
+    logKad(QStringLiteral("Kad: FIREWALLED_ACK_RES received — incremented firewall counter"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,8 +1123,8 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
 
     // Accept the buddy request if we don't already have a buddy
     if (clientList->buddyStatus() == eMule::BuddyStatus::Connected) {
-        logDebug(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — already have a buddy")
-                     .arg(ipToString(ip)).arg(udpPort));
+        logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — already have a buddy")
+                   .arg(ipToString(ip)).arg(udpPort));
         return;
     }
 
@@ -1090,8 +1144,8 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     checkID.toByteArray(buddyIDBytes);
     clientList->incomingBuddy(ip, tcpPort, udpPort, clientIDBytes, buddyIDBytes);
 
-    logDebug(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — accepted, sent response")
-                 .arg(ipToString(ip)).arg(udpPort));
+    logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — accepted, sent response")
+               .arg(ipToString(ip)).arg(udpPort));
 }
 
 void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint32 len,
@@ -1118,8 +1172,8 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint
     clientHash.toByteArray(clientIDBytes);
     clientList->requestBuddy(ip, tcpPort, udpPort, clientIDBytes, connectOptions);
 
-    logDebug(QStringLiteral("Kad: FINDBUDDY_RES from %1:%2 — requesting buddy connection")
-                 .arg(ipToString(ip)).arg(udpPort));
+    logKad(QStringLiteral("Kad: FINDBUDDY_RES from %1:%2 — requesting buddy connection")
+               .arg(ipToString(ip)).arg(udpPort));
 }
 
 void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint32 len,
@@ -1141,15 +1195,15 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
     // We need to have a buddy and the request must come from our buddy's IP.
     auto* buddy = clientList->getBuddy();
     if (!buddy || clientList->buddyStatus() != eMule::BuddyStatus::Connected) {
-        logDebug(QStringLiteral("Kad: CALLBACK_REQ from %1 — no buddy, ignoring")
-                     .arg(ipToString(ip)));
+        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — no buddy, ignoring")
+                   .arg(ipToString(ip)));
         return;
     }
 
     // Verify the request comes from our buddy's IP
     if (buddy->userIP() != ip) {
-        logDebug(QStringLiteral("Kad: CALLBACK_REQ from %1 — not from buddy IP %2, ignoring")
-                     .arg(ipToString(ip)).arg(ipToString(buddy->userIP())));
+        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — not from buddy IP %2, ignoring")
+                   .arg(ipToString(ip)).arg(ipToString(buddy->userIP())));
         return;
     }
 
@@ -1168,8 +1222,8 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
         theApp.clientList->addClient(client);
     client->tryToConnect();
 
-    logDebug(QStringLiteral("Kad: CALLBACK_REQ from buddy %1 — relaying callback for port %2")
-                 .arg(ipToString(ip)).arg(tcpPort));
+    logKad(QStringLiteral("Kad: CALLBACK_REQ from buddy %1 — relaying callback for port %2")
+               .arg(ipToString(ip)).arg(tcpPort));
 }
 
 // ---------------------------------------------------------------------------
@@ -1220,6 +1274,8 @@ void KademliaUDPListener::process_KADEMLIA2_FIREWALLUDP(const uint8* data, uint3
     uint8 errorCode = io.readUInt8();
     uint16 incomingPort = io.readUInt16();
 
+    logKad(QStringLiteral("Kad: FIREWALLUDP from %1 — errorCode=%2, incomingPort=%3")
+               .arg(ip).arg(errorCode).arg(incomingPort));
     UDPFirewallTester::setUDPFWCheckResult(errorCode == 0, false, ip, incomingPort);
 }
 

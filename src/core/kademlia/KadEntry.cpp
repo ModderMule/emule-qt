@@ -151,7 +151,8 @@ void Entry::writeTagListInc(FileDataIO& data, uint32 increaseTagNumber) const
     if (hasFilename) ++count;
     if (hasFilesize) ++count;
 
-    data.writeUInt32(count);
+    // MFC WriteTagList uses WriteByte — single uint8 for Kad tag count
+    data.writeUInt8(static_cast<uint8>(count));
 
     // Write virtual filename tag
     if (hasFilename) {

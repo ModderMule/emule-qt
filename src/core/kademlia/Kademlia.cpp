@@ -2,6 +2,7 @@
 /// @brief Main Kademlia DHT engine implementation.
 
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadClientSearcher.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
@@ -21,6 +22,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <limits>
 
 namespace eMule::kad {
 
@@ -59,11 +61,11 @@ void Kademlia::start()
 void Kademlia::start(KadPrefs* prefs)
 {
     if (m_running) {
-        logWarning(QStringLiteral("Kad: Already running"));
+        logKad(QStringLiteral("Kad: Already running"));
         return;
     }
 
-    logInfo(QStringLiteral("Kad: Starting Kademlia"));
+    logKad(QStringLiteral("Kad: Starting Kademlia"));
 
     if (prefs) {
         m_prefs = prefs;
@@ -87,7 +89,11 @@ void Kademlia::start(KadPrefs* prefs)
     time_t now = time(nullptr);
     m_nextSearchJumpStart = now;
     m_nextSelfLookup = now + MIN2S(3);
-    m_nextFirewallCheck = now + HR2S(1);
+    // MFC uses hr2min(0)+MIN2S(1)=60 which is below epoch time, so the
+    // firewall check fires on every process() tick.  This lets
+    // m_firewallCounter reach 2 within 2 seconds, clearing the initial
+    // "assume firewalled" state.  Match that behavior.
+    m_nextFirewallCheck = 0;
     m_nextFindBuddy = now + MIN2S(5);
     m_statusUpdate = now + SEC(60);
     m_bigTimer = now + SEC(10);
@@ -108,7 +114,7 @@ void Kademlia::start(KadPrefs* prefs)
     UDPFirewallTester::reset();
 
     emit started();
-    logInfo(QStringLiteral("Kad: Started with ID %1").arg(m_prefs->kadId().toHexString()));
+    logKad(QStringLiteral("Kad: Started with ID %1").arg(m_prefs->kadId().toHexString()));
 }
 
 void Kademlia::stop()
@@ -116,7 +122,7 @@ void Kademlia::stop()
     if (!m_running)
         return;
 
-    logInfo(QStringLiteral("Kad: Stopping Kademlia"));
+    logKad(QStringLiteral("Kad: Stopping Kademlia"));
 
     m_running = false;
     m_bootstrapping = false;
@@ -153,7 +159,7 @@ void Kademlia::stop()
     s_bootstrapList.clear();
 
     emit stopped();
-    logInfo(QStringLiteral("Kad: Stopped"));
+    logKad(QStringLiteral("Kad: Stopped"));
 }
 
 bool Kademlia::isConnected() const
@@ -185,7 +191,7 @@ void Kademlia::recheckFirewalled()
     // based on stale firewalled status.
     if (m_nextFindBuddy < now + MIN2S(5))
         m_nextFindBuddy = now + MIN2S(5);
-    m_nextFirewallCheck = now + HR2S(1);
+    m_nextFirewallCheck = 0;  // Fire every tick, matching MFC
 }
 
 uint32 Kademlia::getKademliaUsers(bool newMethod) const
@@ -373,11 +379,12 @@ void Kademlia::process()
         SearchManager::findNode(m_prefs->kadId(), false);
     }
 
-    // 5. Firewall check
+    // 5. Firewall check — fires once on startup (initial value 0 is always
+    //    below epoch time).  incFirewalled() is called from
+    //    process_KADEMLIA_FIREWALLED_ACK_RES when remote nodes successfully
+    //    TCP-connect to us, confirming we are reachable.
     if (now >= m_nextFirewallCheck) {
-        m_nextFirewallCheck = now + HR2S(1);
-        if (m_prefs)
-            m_prefs->incFirewalled();
+        m_nextFirewallCheck = std::numeric_limits<time_t>::max();
         UDPFirewallTester::connected();
     }
 
@@ -401,7 +408,7 @@ void Kademlia::process()
                                                          true, m_prefs->kadId());
             if (search) {
                 SearchManager::startSearch(search);
-                logDebug(QStringLiteral("Kad: Initiated buddy search"));
+                logKad(QStringLiteral("Kad: Initiated buddy search"));
             } else {
                 // Search ID already in use — re-set the flag for next cycle
                 m_prefs->setFindBuddy(true);
@@ -428,7 +435,7 @@ void Kademlia::process()
         bool previousLanMode = m_lanMode;
         m_lanMode = m_routingZone->hasOnlyLANNodes();
         if (m_lanMode != previousLanMode) {
-            logInfo(QStringLiteral("Kad: LAN mode %1").arg(m_lanMode ? "enabled" : "disabled"));
+            logKad(QStringLiteral("Kad: LAN mode %1").arg(m_lanMode ? "enabled" : "disabled"));
         }
     }
 

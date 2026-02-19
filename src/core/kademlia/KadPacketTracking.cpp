@@ -2,6 +2,7 @@
 /// @brief Token bucket rate limiting and challenge tracking implementation.
 
 #include "kademlia/KadPacketTracking.h"
+#include "kademlia/KadLog.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
@@ -120,9 +121,9 @@ int PacketTracking::inTrackListIsAllowedPacket(uint32 ip, uint8 opcode, bool val
     }
 
     if (!req->dbgLogged) {
-        logDebug(QStringLiteral("Kad: Rate limiting packet opcode 0x%1 from %2")
-                     .arg(opcode, 2, 16, QChar(u'0'))
-                     .arg(ip));
+        logKad(QStringLiteral("Kad: Rate limiting packet opcode 0x%1 from %2")
+                   .arg(opcode, 2, 16, QChar(u'0'))
+                   .arg(ip));
         req->dbgLogged = true;
     }
     return 0; // Rate limited

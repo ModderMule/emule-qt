@@ -3,6 +3,7 @@
 
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearchManager.h"
@@ -47,17 +48,21 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
                                              uint32 /*fromIP*/, uint16 /*incomingPort*/)
 {
     if (testCancelled) {
-        logDebug(QStringLiteral("Kad: UDP FW check cancelled"));
+        logKad(QStringLiteral("Kad: UDP FW check cancelled"));
         return;
     }
 
     ++s_fwChecksFinished;
+    logKad(QStringLiteral("Kad: UDP FW check result — succeeded=%1, finished=%2/%3")
+               .arg(succeeded ? "yes" : "no")
+               .arg(s_fwChecksFinished)
+               .arg(KADEMLIAFIREWALLCHECKS));
 
     if (succeeded) {
         s_firewalledUDP = false;
         s_isFWVerifiedUDP = true;
         s_lastSucceededTime = static_cast<uint32>(time(nullptr));
-        logDebug(QStringLiteral("Kad: UDP FW check succeeded — not firewalled"));
+        logKad(QStringLiteral("Kad: UDP FW check succeeded — not firewalled"));
     }
 
     // Check if all tests are finished
@@ -66,13 +71,15 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
             s_firewalledUDP = true;
         s_fwChecksRunning = 0;
         s_firewalledLastStateUDP = s_firewalledUDP;
-        logDebug(QStringLiteral("Kad: UDP FW check complete — firewalled: %1")
-                     .arg(s_firewalledUDP ? "yes" : "no"));
+        logKad(QStringLiteral("Kad: UDP FW check complete — firewalled: %1")
+                   .arg(s_firewalledUDP ? "yes" : "no"));
     }
 }
 
 void UDPFirewallTester::reCheckFirewallUDP(bool setUnverified)
 {
+    logKad(QStringLiteral("Kad: UDP FW recheck requested (setUnverified=%1)")
+               .arg(setUnverified ? "yes" : "no"));
     if (setUnverified)
         s_isFWVerifiedUDP = false;
     s_fwChecksRunning = 0;
@@ -99,15 +106,22 @@ void UDPFirewallTester::addPossibleTestContact(const UInt128& clientID, uint32 i
                                                 const KadUDPKey& udpKey, bool ipVerified)
 {
     // Only accept Kad2 contacts with sufficient version
-    if (version < KADEMLIA_VERSION8_49b)
+    if (version < KADEMLIA_VERSION8_49b) {
+        logKad(QStringLiteral("Kad: UDP FW test contact rejected — version %1 too low")
+                   .arg(version));
         return;
+    }
 
     // Don't add if already enough clients
-    if (s_possibleTestClients.size() >= 20)
+    if (s_possibleTestClients.size() >= 20) {
+        logKad(QStringLiteral("Kad: UDP FW test contact rejected — pool full (20)"));
         return;
+    }
 
     Contact contact(clientID, ip, udpPort, tcpPort, target, version, udpKey, ipVerified);
     s_possibleTestClients.push_back(std::move(contact));
+    logKad(QStringLiteral("Kad: UDP FW test contact added — pool size %1")
+               .arg(s_possibleTestClients.size()));
 }
 
 void UDPFirewallTester::reset()
@@ -130,14 +144,19 @@ void UDPFirewallTester::connected()
     if (!s_nodeSearchStarted && getUDPCheckClientsNeeded()) {
         s_nodeSearchStarted = true;
         s_testStart = static_cast<uint32>(time(nullptr));
+        logKad(QStringLiteral("Kad: UDP FW tester connected — starting node search for test clients"));
         SearchManager::findNodeFWCheckUDP();
     }
 }
 
 void UDPFirewallTester::queryNextClient()
 {
-    if (!getUDPCheckClientsNeeded() || s_possibleTestClients.empty())
+    if (!getUDPCheckClientsNeeded() || s_possibleTestClients.empty()) {
+        logKad(QStringLiteral("Kad: UDP FW queryNextClient — needed=%1, pool=%2")
+                   .arg(getUDPCheckClientsNeeded() ? "yes" : "no")
+                   .arg(s_possibleTestClients.size()));
         return;
+    }
 
     auto* prefs = Kademlia::getInstancePrefs();
     auto* routingZone = Kademlia::getInstanceRoutingZone();
@@ -147,16 +166,22 @@ void UDPFirewallTester::queryNextClient()
         s_possibleTestClients.pop_front();
 
         // Skip if this is our own ID
-        if (prefs && testContact.getClientID() == prefs->kadId())
+        if (prefs && testContact.getClientID() == prefs->kadId()) {
+            logKad(QStringLiteral("Kad: UDP FW skip contact — own ID"));
             continue;
+        }
 
         // Skip if already in routing table (they might know our IP already)
-        if (routingZone && routingZone->getContact(testContact.getClientID()))
+        if (routingZone && routingZone->getContact(testContact.getClientID())) {
+            logKad(QStringLiteral("Kad: UDP FW skip contact — already in routing table"));
             continue;
+        }
 
         // Skip if we already know this IP from the client list
-        if (routingZone && routingZone->getContact(testContact.getIPAddress(), 0, false))
+        if (routingZone && routingZone->getContact(testContact.getIPAddress(), 0, false)) {
+            logKad(QStringLiteral("Kad: UDP FW skip contact — IP already known"));
             continue;
+        }
 
         // Skip if already tested
         bool alreadyTested = false;
@@ -166,8 +191,10 @@ void UDPFirewallTester::queryNextClient()
                 break;
             }
         }
-        if (alreadyTested)
+        if (alreadyTested) {
+            logKad(QStringLiteral("Kad: UDP FW skip contact — already tested"));
             continue;
+        }
 
         UsedClient used;
         used.contact = testContact;
@@ -179,14 +206,14 @@ void UDPFirewallTester::queryNextClient()
         // Request UDP firewall check via TCP connection (matches original
         // theApp.clientlist->DoRequestFirewallCheckUDP at srchybrid/kademlia/UDPFirewallTester.cpp:255)
         if (!theApp.clientList || !theApp.clientList->doRequestFirewallCheckUDP(testContact)) {
-            logDebug(QStringLiteral("Kad: UDP FW check TCP request failed for %1")
-                         .arg(testContact.getClientID().toHexString()));
+            logKad(QStringLiteral("Kad: UDP FW check TCP request failed for %1")
+                       .arg(testContact.getClientID().toHexString()));
             --s_fwChecksRunning;
             continue;
         }
 
-        logDebug(QStringLiteral("Kad: Initiated UDP FW check via TCP to %1")
-                     .arg(testContact.getClientID().toHexString()));
+        logKad(QStringLiteral("Kad: Initiated UDP FW check via TCP to %1")
+                   .arg(testContact.getClientID().toHexString()));
         break;
     }
 }

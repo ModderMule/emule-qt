@@ -6,6 +6,7 @@
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadFirewallTester.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingBin.h"
 #include "kademlia/KadSearchManager.h"
@@ -564,8 +565,8 @@ void RoutingZone::readFile(const QString& specialNodesdat)
 
         // Sanity check
         if (numContacts > 5000) {
-            logWarning(QStringLiteral("Kad nodes file has too many contacts (%1), truncating to 5000")
-                           .arg(numContacts));
+            logKad(QStringLiteral("Kad nodes file has too many contacts (%1), truncating to 5000")
+                   .arg(numContacts));
             numContacts = 5000;
         }
 
@@ -631,7 +632,7 @@ void RoutingZone::readFile(const QString& specialNodesdat)
         }
 
     } catch (const FileException& e) {
-        logWarning(QStringLiteral("Failed to read Kad nodes file: %1").arg(e.what()));
+        logKad(QStringLiteral("Failed to read Kad nodes file: %1").arg(e.what()));
     }
 }
 
@@ -673,7 +674,7 @@ void RoutingZone::writeFile()
         }
 
     } catch (const FileException& e) {
-        logWarning(QStringLiteral("Failed to write Kad nodes file: %1").arg(e.what()));
+        logKad(QStringLiteral("Failed to write Kad nodes file: %1").arg(e.what()));
     }
 }
 

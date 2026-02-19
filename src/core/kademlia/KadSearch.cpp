@@ -8,6 +8,7 @@
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadLookupHistory.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
@@ -166,9 +167,34 @@ void Search::go()
         return;
 
     if (m_possible.empty() && m_tried.empty()) {
-        // No contacts to query — search fails
+        // No contacts to query — search converged or failed
+        logKad(QStringLiteral("Kad search %1: go() — no possible or tried contacts, stopping")
+                   .arg(m_searchID));
         prepareToStop();
         return;
+    }
+
+    // Convergence detection: when enough close contacts have responded
+    // (m_best >= K), check whether the closest untried contact is farther
+    // than the closest contact that already responded.  If so, the iterative
+    // lookup has converged — no closer contacts exist in the network.
+    // Transition immediately to the action phase (storePacket / search
+    // request) instead of waiting for the full lifetime to expire.
+    // Note: m_tried may still contain non-responsive contacts — we don't
+    // require m_tried to be empty because offline contacts would block
+    // convergence indefinitely.
+    if (!m_possible.empty() && m_best.size() >= kK) {
+        UInt128 closestBest = m_best.begin()->first;
+        UInt128 closestPossible = m_possible.begin()->first;
+        if (!(closestPossible < closestBest)) {
+            // All remaining candidates are at least as far as our closest
+            // responded contact — the lookup has converged.
+            logKad(QStringLiteral("Kad search %1: converged — best=%2 responded=%3 possible=%4 tried=%5")
+                       .arg(m_searchID).arg(m_best.size()).arg(m_responded.size())
+                       .arg(m_possible.size()).arg(m_tried.size()));
+            prepareToStop();
+            return;
+        }
     }
 
     // Send FindValue to the closest untried contacts
@@ -191,15 +217,21 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
 
     // Record the responding contact: move from m_tried → m_best, mark in m_responded.
     // Without this, storePacket() would find m_responded empty and skip the store phase.
+    bool foundSender = false;
     for (auto it = m_tried.begin(); it != m_tried.end(); ++it) {
         Contact* c = it->second;
         if (c->getIPAddress() == fromIP && c->getUDPPort() == fromPort) {
             m_best[it->first] = c;
             m_responded[c->getClientID()] = true;
             m_tried.erase(it);
+            foundSender = true;
             break;
         }
     }
+    logKad(QStringLiteral("Kad search %1: response from %2:%3 — sender %4, +%5 contacts, best=%6 responded=%7 possible=%8")
+               .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort)
+               .arg(foundSender ? QStringLiteral("found") : QStringLiteral("NOT found"))
+               .arg(results.size()).arg(m_best.size()).arg(m_responded.size()).arg(m_possible.size()));
 
     for (auto* contact : results) {
         // Check if we've already tried this contact
@@ -297,14 +329,16 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
         cb(m_searchID, fileHash, sourceIP, sourcePort, buddyIP, buddyPort, cryptOptions);
     }
 
-    logDebug(QStringLiteral("Kad search %1: got file source %2, IP=%3:%4")
-                 .arg(m_searchID).arg(answer.toHexString())
-                 .arg(ipToString(sourceIP)).arg(sourcePort));
+    logKad(QStringLiteral("Kad search %1: got file source %2, IP=%3:%4")
+               .arg(m_searchID).arg(answer.toHexString())
+               .arg(ipToString(sourceIP)).arg(sourcePort));
 }
 
 void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort)
 {
     ++m_answers;
+    logKad(QStringLiteral("Kad: keyword result #%1 from %2:%3, %4 tags")
+               .arg(m_answers).arg(fromIP).arg(fromPort).arg(info.size()));
 
     // Extract file metadata from tags
     QString fileName;
@@ -394,8 +428,8 @@ void Search::processResultNotes(const UInt128& answer, TagList& info)
         cb(m_searchID, fileHash, fileName, rating, comment);
     }
 
-    logDebug(QStringLiteral("Kad search %1: got notes result %2, rating=%3")
-                 .arg(m_searchID).arg(answer.toHexString()).arg(rating));
+    logKad(QStringLiteral("Kad search %1: got notes result %2, rating=%3")
+               .arg(m_searchID).arg(answer.toHexString()).arg(rating));
 }
 
 void Search::jumpStart()
@@ -408,6 +442,9 @@ void Search::jumpStart()
     // Check if search has expired
     time_t lifetime = static_cast<time_t>(getLifetime());
     if ((now - m_created) > lifetime) {
+        logKad(QStringLiteral("Kad search %1: lifetime expired (%2s) — best=%3 responded=%4 possible=%5")
+                   .arg(m_searchID).arg(now - m_created)
+                   .arg(m_best.size()).arg(m_responded.size()).arg(m_possible.size()));
         prepareToStop();
         return;
     }
@@ -435,74 +472,27 @@ void Search::sendFindValue(Contact* contact, bool /*reAskMore*/)
     if (m_lookupHistory)
         m_lookupHistory->contactAskedKad(contact);
 
-    // Build the appropriate request packet based on search type
-    switch (m_type) {
-    case SearchType::File: {
-        // Send file source search request (KADEMLIA2_SEARCH_SOURCE_REQ)
+    // Find phase: always send KADEMLIA2_REQ to discover closest contacts.
+    // The type-specific opcodes (SEARCH_KEY_REQ, SEARCH_SOURCE_REQ, etc.)
+    // are sent in the action phase from storePacket(), matching MFC's
+    // two-phase design: SendFindValue → KADEMLIA2_REQ, StorePacket → opcode.
+    {
         SafeMemFile packet;
-        io::writeUInt128(packet, m_target);
-        // Look up the file to get its size
-        uint8 hash[16];
-        m_target.toByteArray(hash);
-        auto* partFile = theApp.downloadQueue
-            ? theApp.downloadQueue->fileByID(hash) : nullptr;
-        if (!partFile) {
-            prepareToStop();
-            break;
-        }
-        // TODO: Add ability to change start position
-        // Start position range (0x0 to 0x7FFF)
-        packet.writeUInt16(0);
-        packet.writeUInt64(static_cast<uint64>(partFile->fileSize()));
-        UInt128 clientID = contact->getClientID();
-        udpListener->sendPacket(packet, KADEMLIA2_SEARCH_SOURCE_REQ,
-                                contact->getIPAddress(), contact->getUDPPort(),
-                                contact->getUDPKey(), &clientID);
-        break;
-    }
-    case SearchType::Keyword: {
-        // Send keyword search request (KADEMLIA2_SEARCH_KEY_REQ)
-        SafeMemFile packet;
-        io::writeUInt128(packet, m_target);
-        if (!m_searchTermsData.isEmpty())
-            packet.write(m_searchTermsData.constData(), m_searchTermsData.size());
-        UInt128 keyClientID = contact->getClientID();
-        udpListener->sendPacket(packet, KADEMLIA2_SEARCH_KEY_REQ,
-                                contact->getIPAddress(), contact->getUDPPort(),
-                                contact->getUDPKey(), &keyClientID);
-        break;
-    }
-    case SearchType::Notes: {
-        // Send notes search request
-        SafeMemFile packet;
-        io::writeUInt128(packet, m_target);
-        packet.writeUInt64(0); // file size (not known here)
-        UInt128 noteClientID = contact->getClientID();
-        udpListener->sendPacket(packet, KADEMLIA2_SEARCH_NOTES_REQ,
-                                contact->getIPAddress(), contact->getUDPPort(),
-                                contact->getUDPKey(), &noteClientID);
-        break;
-    }
-    default: {
-        // Node lookups / store preparations: send KADEMLIA2_REQ
-        SafeMemFile packet;
-        // Type byte determines what kind of response we expect
+        // Type byte determines how many contacts the receiver returns
         uint8 searchType = KADEMLIA_FIND_NODE;
         if (m_type == SearchType::File || m_type == SearchType::Keyword ||
             m_type == SearchType::Notes)
             searchType = KADEMLIA_FIND_VALUE;
         packet.writeUInt8(searchType);
         io::writeUInt128(packet, m_target);
-        if (auto* prefs = Kademlia::getInstancePrefs())
-            io::writeUInt128(packet, prefs->kadId());
-        else
-            io::writeUInt128(packet, RoutingZone::localKadId());
+        // Third field: the contact's Kad ID — the receiver checks this
+        // against its own ID for sanity (MFC: "for sanity checks on the
+        // other end").  Sending our own ID here causes silent drops.
+        io::writeUInt128(packet, contact->getClientID());
         UInt128 reqClientID = contact->getClientID();
         udpListener->sendPacket(packet, KADEMLIA2_REQ,
                                 contact->getIPAddress(), contact->getUDPPort(),
                                 contact->getUDPKey(), &reqClientID);
-        break;
-    }
     }
 }
 
@@ -512,13 +502,18 @@ void Search::prepareToStop()
         return;
 
     m_stopping = true;
+    m_storePhaseStarted = time(nullptr);
 
     if (m_lookupHistory)
         m_lookupHistory->setSearchStopped();
 
-    // Action phase: store searches send publish packets; FindBuddy/FindSource/
-    // NodeSpecial send their respective buddy/callback/lookup packets.
+    // Action phase: search types send their search requests to closest
+    // responded contacts; store types send publish packets; FindBuddy/
+    // FindSource/NodeSpecial send their respective packets.
     switch (m_type) {
+    case SearchType::File:
+    case SearchType::Keyword:
+    case SearchType::Notes:
     case SearchType::StoreFile:
     case SearchType::StoreKeyword:
     case SearchType::StoreNotes:
@@ -540,8 +535,8 @@ void Search::storePacket()
 
     // Send store packets to the closest contacts that responded
     if (m_responded.empty()) {
-        logDebug(QStringLiteral("Kad search %1: store phase — no responded contacts")
-                     .arg(m_searchID));
+        logKad(QStringLiteral("Kad search %1: store phase — no responded contacts")
+                   .arg(m_searchID));
         return;
     }
 
@@ -564,6 +559,70 @@ void Search::storePacket()
             continue;
 
         switch (m_type) {
+        case SearchType::Keyword: {
+            // Action phase: send KADEMLIA2_SEARCH_KEY_REQ to closest responded contacts
+            logKad(QStringLiteral("Kad search %1: SEARCH_KEY_REQ #%2 → %3:%4 dist=%5")
+                       .arg(m_searchID).arg(storeCount + 1)
+                       .arg(ipToString(contact->getIPAddress())).arg(contact->getUDPPort())
+                       .arg(dist.toHexString()));
+            SafeMemFile packet;
+            io::writeUInt128(packet, m_target);
+            // Position marker with 0x8000 flag indicating search terms follow
+            if (!m_searchTermsData.isEmpty()) {
+                packet.writeUInt16(0x8000);
+                packet.write(m_searchTermsData.constData(), m_searchTermsData.size());
+            } else {
+                packet.writeUInt16(0);
+            }
+            {
+                UInt128 keyClientID = contact->getClientID();
+                udpListener->sendPacket(packet, KADEMLIA2_SEARCH_KEY_REQ,
+                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->getUDPKey(), &keyClientID);
+            }
+            ++storeCount;
+            break;
+        }
+        case SearchType::File: {
+            // Action phase: send KADEMLIA2_SEARCH_SOURCE_REQ to closest responded contacts
+            SafeMemFile packet;
+            io::writeUInt128(packet, m_target);
+            uint8 hash[16];
+            m_target.toByteArray(hash);
+            auto* partFile = theApp.downloadQueue
+                ? theApp.downloadQueue->fileByID(hash) : nullptr;
+            if (!partFile)
+                break;
+            packet.writeUInt16(0); // start position
+            packet.writeUInt64(static_cast<uint64>(partFile->fileSize()));
+            {
+                UInt128 clientID = contact->getClientID();
+                udpListener->sendPacket(packet, KADEMLIA2_SEARCH_SOURCE_REQ,
+                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->getUDPKey(), &clientID);
+            }
+            ++storeCount;
+            break;
+        }
+        case SearchType::Notes: {
+            // Action phase: send KADEMLIA2_SEARCH_NOTES_REQ to closest responded contacts
+            SafeMemFile packet;
+            io::writeUInt128(packet, m_target);
+            uint8 noteHash[16];
+            m_target.toByteArray(noteHash);
+            auto* noteSearchFile = theApp.sharedFileList
+                ? theApp.sharedFileList->getFileByID(noteHash) : nullptr;
+            packet.writeUInt64(noteSearchFile
+                ? static_cast<uint64>(noteSearchFile->fileSize()) : 0);
+            {
+                UInt128 noteClientID = contact->getClientID();
+                udpListener->sendPacket(packet, KADEMLIA2_SEARCH_NOTES_REQ,
+                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->getUDPKey(), &noteClientID);
+            }
+            ++storeCount;
+            break;
+        }
         case SearchType::StoreKeyword: {
             // Build keyword publish packet: targetID + fileCount + [fileID + tags]*
             SafeMemFile packet;
@@ -586,9 +645,12 @@ void Search::storePacket()
                 preparePacketForTags(packet, file, KADEMLIA_VERSION);
             }
 
-            udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_KEY_REQ,
-                                    contact->getIPAddress(), contact->getUDPPort(),
-                                    contact->getUDPKey(), nullptr);
+            {
+                UInt128 pubKeyClientID = contact->getClientID();
+                udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_KEY_REQ,
+                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->getUDPKey(), &pubKeyClientID);
+            }
             ++storeCount;
             break;
         }
@@ -599,25 +661,39 @@ void Search::storePacket()
             auto* prefs = Kademlia::getInstancePrefs();
             io::writeUInt128(packet, prefs ? prefs->kadId() : RoutingZone::localKadId());
 
-            // Build source tags: IP, TCP port, UDP port, and buddy info if firewalled
+            // Build source tags matching MFC format.  The receiver (MFC
+            // Process_KADEMLIA2_PUBLISH_SOURCE_REQ) requires TAG_SOURCETYPE
+            // to be present — without it, m_bSource stays false and the
+            // publish is silently dropped.  TAG_SOURCEIP is NOT sent; the
+            // receiver adds it from the sender's actual IP address.
             std::vector<Tag> tags;
-            uint32 myIP = prefs ? prefs->ipAddress() : 0;
-            tags.emplace_back(QByteArray(TAG_SOURCEIP, 1), myIP);
-            tags.emplace_back(QByteArray(TAG_SOURCEPORT, 1),
-                              static_cast<uint32>(thePrefs.port()));
-            tags.emplace_back(QByteArray(TAG_SOURCEUPORT, 1),
-                              static_cast<uint32>(thePrefs.udpPort()));
+
+            // Look up file for size information
+            uint8 targetHash[16];
+            m_target.toByteArray(targetHash);
+            auto* pubFile = theApp.sharedFileList
+                ? theApp.sharedFileList->getFileByID(targetHash) : nullptr;
+            bool largeFile = pubFile && pubFile->isLargeFile();
 
             auto* kadInst = Kademlia::instance();
             if (kadInst && kadInst->isFirewalled()) {
                 auto* clientList = Kademlia::getClientList();
                 auto* buddy = clientList ? clientList->getBuddy() : nullptr;
                 if (buddy) {
-                    // For firewalled clients, TAG_SERVERIP/TAG_SERVERPORT carry buddy info
+                    // Source type 3 (firewalled) or 5 (firewalled, >4GB)
+                    tags.emplace_back(QByteArray(TAG_SOURCETYPE, 1),
+                                      static_cast<uint32>(largeFile ? 5 : 3));
                     tags.emplace_back(QByteArray(TAG_SERVERIP, 1), buddy->userIP());
                     tags.emplace_back(QByteArray(TAG_SERVERPORT, 1),
                                       static_cast<uint32>(buddy->userPort()));
                     tags.emplace_back(QByteArray(TAG_BUDDYHASH, 1), buddy->userHash());
+                    tags.emplace_back(QByteArray(TAG_SOURCEPORT, 1),
+                                      static_cast<uint32>(thePrefs.port()));
+                    tags.emplace_back(QByteArray(TAG_SOURCEUPORT, 1),
+                                      static_cast<uint32>(thePrefs.udpPort()));
+                    if (pubFile)
+                        tags.emplace_back(QByteArray(TAG_FILESIZE, 1),
+                                          static_cast<uint64>(pubFile->fileSize()));
 
                     uint8 byCrypt = 0;
                     if (buddy->supportsCryptLayer())  byCrypt |= 0x01;
@@ -626,12 +702,37 @@ void Search::storePacket()
                     tags.emplace_back(QByteArray(TAG_ENCRYPTION, 1),
                                       static_cast<uint32>(byCrypt));
                 }
+            } else {
+                // Not firewalled: source type 1 (normal) or 4 (>4GB)
+                tags.emplace_back(QByteArray(TAG_SOURCETYPE, 1),
+                                  static_cast<uint32>(largeFile ? 4 : 1));
+                tags.emplace_back(QByteArray(TAG_SOURCEPORT, 1),
+                                  static_cast<uint32>(thePrefs.port()));
+                tags.emplace_back(QByteArray(TAG_SOURCEUPORT, 1),
+                                  static_cast<uint32>(thePrefs.udpPort()));
+                if (pubFile)
+                    tags.emplace_back(QByteArray(TAG_FILESIZE, 1),
+                                      static_cast<uint64>(pubFile->fileSize()));
+                // TAG_ENCRYPTION: connect options for non-firewalled sources
+                uint8 byCrypt = 0;
+                if (thePrefs.cryptLayerSupported())  byCrypt |= 0x01;
+                if (thePrefs.cryptLayerRequested())  byCrypt |= 0x02;
+                if (thePrefs.cryptLayerRequired())   byCrypt |= 0x04;
+                tags.emplace_back(QByteArray(TAG_ENCRYPTION, 1),
+                                  static_cast<uint32>(byCrypt));
             }
 
             io::writeKadTagList(packet, tags);
-            udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
-                                    contact->getIPAddress(), contact->getUDPPort(),
-                                    contact->getUDPKey(), nullptr);
+            logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ pktLen=%1 tags=%2 srcType=%3")
+                       .arg(packet.length())
+                       .arg(tags.size())
+                       .arg(tags.empty() ? 0 : tags[0].intValue()));
+            {
+                UInt128 pubSrcClientID = contact->getClientID();
+                udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
+                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->getUDPKey(), &pubSrcClientID);
+            }
             ++storeCount;
             break;
         }
@@ -670,9 +771,12 @@ void Search::storePacket()
             }
 
             io::writeKadTagList(packet, tags);
-            udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_NOTES_REQ,
-                                    contact->getIPAddress(), contact->getUDPPort(),
-                                    contact->getUDPKey(), nullptr);
+            {
+                UInt128 pubNotesClientID = contact->getClientID();
+                udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_NOTES_REQ,
+                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->getUDPKey(), &pubNotesClientID);
+            }
             ++storeCount;
             break;
         }
@@ -739,8 +843,8 @@ void Search::storePacket()
         }
     }
 
-    logDebug(QStringLiteral("Kad search %1: store phase — sent to %2 contacts")
-                 .arg(m_searchID).arg(storeCount));
+    logKad(QStringLiteral("Kad search %1: store phase — sent to %2 contacts")
+               .arg(m_searchID).arg(storeCount));
 }
 
 uint8 Search::getRequestContactCount() const

@@ -53,6 +53,8 @@ void PublishKeywordList::addKeywords(KnownFile* file)
     if (!file)
         return;
 
+    bool wasEmpty = m_keywords.empty();
+
     std::vector<QString> words;
     kad::getWords(file->fileName(), words);
 
@@ -72,6 +74,12 @@ void PublishKeywordList::addKeywords(KnownFile* file)
             m_keywords.back().addRef(file);
         }
     }
+
+    // Initialize the round-robin iterator when first keywords are added.
+    // Without this, m_nextKeywordIter is singular and getNextKeyword()
+    // returns nullptr, causing publish() to set a 24h delay.
+    if (wasEmpty && !m_keywords.empty())
+        m_nextKeywordIter = m_keywords.begin();
 }
 
 void PublishKeywordList::removeKeywords(KnownFile* file)

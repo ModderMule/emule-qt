@@ -2,6 +2,7 @@
 /// @brief Kad-specific I/O implementation.
 
 #include "kademlia/KadIO.h"
+#include "kademlia/KadLog.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
@@ -103,27 +104,38 @@ Tag readKadTag(FileDataIO& f, bool optACP)
     if (nameLen > 0)
         f.read(name.data(), nameLen);
 
+    // When the name is a single byte, it represents a numeric tag ID
+    // (e.g. FT_FILENAME = 0x01).  Use the nameId-based Tag constructors
+    // so that tag.nameId() returns the correct value for switch dispatch.
+    const bool hasNumericId = (nameLen == 1);
+    const uint8 numericId = hasNumericId ? static_cast<uint8>(name[0]) : 0;
+
     switch (type) {
     case TAGTYPE_STRING: {
         QString val = readStringUTF8(f, optACP);
+        if (hasNumericId) return Tag(numericId, val);
         return Tag(std::move(name), val);
     }
     case TAGTYPE_UINT64: {
         uint64 val = f.readUInt64();
+        if (hasNumericId) return Tag(numericId, val);
         return Tag(std::move(name), val);
     }
     case TAGTYPE_UINT32: {
         uint32 val = f.readUInt32();
+        if (hasNumericId) return Tag(numericId, val);
         return Tag(std::move(name), val);
     }
     case TAGTYPE_UINT16: {
         // Normalize to uint32 on read
         uint32 val = f.readUInt16();
+        if (hasNumericId) return Tag(numericId, val);
         return Tag(std::move(name), val);
     }
     case TAGTYPE_UINT8: {
         // Normalize to uint32 on read
         uint32 val = f.readUInt8();
+        if (hasNumericId) return Tag(numericId, val);
         return Tag(std::move(name), val);
     }
     case TAGTYPE_FLOAT32: {
@@ -131,15 +143,18 @@ Tag readKadTag(FileDataIO& f, bool optACP)
         // Store as uint32 via reinterpret (same as MFC)
         uint32 intVal = 0;
         std::memcpy(&intVal, &val, sizeof(float));
+        if (hasNumericId) return Tag(numericId, intVal);
         return Tag(std::move(name), intVal);
     }
     case TAGTYPE_HASH: {
         uint8 hash[16];
         f.read(hash, 16);
+        if (hasNumericId) return Tag(numericId, hash);
         return Tag(std::move(name), hash);
     }
     case TAGTYPE_BSOB: {
         QByteArray bsob = readBsob(f);
+        if (hasNumericId) return Tag(numericId, std::move(bsob));
         return Tag(std::move(name), std::move(bsob));
     }
     case TAGTYPE_BLOB: {
@@ -147,6 +162,7 @@ Tag readKadTag(FileDataIO& f, bool optACP)
         QByteArray blob(static_cast<qsizetype>(blobLen), Qt::Uninitialized);
         if (blobLen > 0)
             f.read(blob.data(), blobLen);
+        if (hasNumericId) return Tag(numericId, std::move(blob));
         return Tag(std::move(name), std::move(blob));
     }
     default:
@@ -156,9 +172,11 @@ Tag readKadTag(FileDataIO& f, bool optACP)
             QByteArray raw(static_cast<qsizetype>(strLen), Qt::Uninitialized);
             f.read(raw.data(), strLen);
             QString val = QString::fromUtf8(raw);
+            if (hasNumericId) return Tag(numericId, val);
             return Tag(std::move(name), val);
         }
-        logWarning(QStringLiteral("Kad: Unknown tag type 0x%1").arg(type, 2, 16, QChar(u'0')));
+        logKad(QStringLiteral("Kad: Unknown tag type 0x%1").arg(type, 2, 16, QChar(u'0')));
+        if (hasNumericId) return Tag(numericId, uint32{0});
         return Tag(std::move(name), uint32{0});
     }
 }
@@ -245,17 +263,19 @@ void writeKadTag(FileDataIO& f, const Tag& tag)
 
 std::vector<Tag> readKadTagList(FileDataIO& f, bool optACP)
 {
-    uint32 count = f.readUInt32();
+    // MFC ReadTagList uses ReadByte() — single uint8 for tag count
+    uint8 count = f.readUInt8();
     std::vector<Tag> tags;
     tags.reserve(count);
-    for (uint32 i = 0; i < count; ++i)
+    for (uint8 i = 0; i < count; ++i)
         tags.push_back(readKadTag(f, optACP));
     return tags;
 }
 
 void writeKadTagList(FileDataIO& f, const std::vector<Tag>& tags)
 {
-    f.writeUInt32(static_cast<uint32>(tags.size()));
+    // MFC WriteTagList uses WriteByte() — single uint8 for tag count
+    f.writeUInt8(static_cast<uint8>(tags.size()));
     for (const auto& tag : tags)
         writeKadTag(f, tag);
 }

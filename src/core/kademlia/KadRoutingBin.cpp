@@ -4,6 +4,7 @@
 #include "kademlia/KadRoutingBin.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
+#include "kademlia/KadLog.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
@@ -64,9 +65,9 @@ bool RoutingBin::addContact(Contact* contact)
 
     // No more than 2 IPs from the same /24 in one bin (unless LAN)
     if (sameSubnets >= 2 && !isLanIP(contact->getNetIP())) {
-        logDebug(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same subnet in RoutingBin")
-                     .arg(ipstr(contact->getNetIP()))
-                     .arg(contact->getUDPPort()));
+        logKad(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same subnet in RoutingBin")
+                   .arg(ipstr(contact->getNetIP()))
+                   .arg(contact->getUDPPort()));
         return false;
     }
 
@@ -222,8 +223,8 @@ bool RoutingBin::changeContactIPAddress(Contact* contact, uint32 newIP)
     auto itIP = s_globalContactIPs.find(newIP);
     uint32 sameIPCount = (itIP != s_globalContactIPs.end()) ? itIP->second : 0;
     if (sameIPCount >= kMaxContactsIP) {
-        logDebug(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same IP (global)")
-                     .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
+        logKad(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same IP (global)")
+                   .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
         return false;
     }
 
@@ -232,8 +233,8 @@ bool RoutingBin::changeContactIPAddress(Contact* contact, uint32 newIP)
         auto itSubnet = s_globalContactSubnets.find(newIP & ~0xFFu);
         uint32 sameSubnetGlobal = (itSubnet != s_globalContactSubnets.end()) ? itSubnet->second : 0;
         if (sameSubnetGlobal >= kMaxContactsSubnet && !isLanIP(ntohl(newIP))) {
-            logDebug(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same Subnet (global)")
-                         .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
+            logKad(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same Subnet (global)")
+                       .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
             return false;
         }
 
@@ -242,8 +243,8 @@ bool RoutingBin::changeContactIPAddress(Contact* contact, uint32 newIP)
             sameSubnet += static_cast<uint32>(((newIP ^ c->getIPAddress()) & ~0xFFu) == 0);
 
         if (sameSubnet >= 2 && !isLanIP(ntohl(newIP))) {
-            logDebug(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same Subnet (local)")
-                         .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
+            logKad(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same Subnet (local)")
+                       .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
             return false;
         }
     }
@@ -273,9 +274,9 @@ bool RoutingBin::checkGlobalIPLimits(uint32 ip, uint16 port, bool log)
     uint32 sameIPCount = (itIP != s_globalContactIPs.end()) ? itIP->second : 0;
     if (sameIPCount >= kMaxContactsIP) {
         if (log)
-            logDebug(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same IP (global)")
-                         .arg(ipstr(htonl(ip)))
-                         .arg(port));
+            logKad(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same IP (global)")
+                       .arg(ipstr(htonl(ip)))
+                       .arg(port));
         return false;
     }
 
@@ -283,9 +284,9 @@ bool RoutingBin::checkGlobalIPLimits(uint32 ip, uint16 port, bool log)
     uint32 sameSubnetCount = (itSubnet != s_globalContactSubnets.end()) ? itSubnet->second : 0;
     if (sameSubnetCount >= kMaxContactsSubnet && !isLanIP(ntohl(ip))) {
         if (log)
-            logDebug(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same Subnet (global)")
-                         .arg(ipstr(htonl(ip)))
-                         .arg(port));
+            logKad(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same Subnet (global)")
+                       .arg(ipstr(htonl(ip)))
+                       .arg(port));
         return false;
     }
     return true;
@@ -318,14 +319,14 @@ void RoutingBin::adjustGlobalTracking(uint32 ip, bool increase)
     if (increase) {
         if (sameIPCount >= kMaxContactsIP) {
             Q_ASSERT(false);
-            logWarning(QStringLiteral("RoutingBin Global IP Tracking inconsistency on increase (%1)")
-                           .arg(ipstr(htonl(ip))));
+            logKad(QStringLiteral("RoutingBin Global IP Tracking inconsistency on increase (%1)")
+                       .arg(ipstr(htonl(ip))));
         }
         ++sameIPCount;
     } else if (sameIPCount == 0) {
         Q_ASSERT(false);
-        logWarning(QStringLiteral("RoutingBin Global IP Tracking inconsistency on decrease (%1)")
-                       .arg(ipstr(htonl(ip))));
+        logKad(QStringLiteral("RoutingBin Global IP Tracking inconsistency on decrease (%1)")
+                   .arg(ipstr(htonl(ip))));
     } else {
         --sameIPCount;
     }
@@ -343,14 +344,14 @@ void RoutingBin::adjustGlobalTracking(uint32 ip, bool increase)
     if (increase) {
         if (sameSubnetCount >= kMaxContactsSubnet && !isLanIP(ntohl(ip))) {
             Q_ASSERT(false);
-            logWarning(QStringLiteral("RoutingBin Global Subnet Tracking inconsistency on increase (%1)")
-                           .arg(ipstr(htonl(ip))));
+            logKad(QStringLiteral("RoutingBin Global Subnet Tracking inconsistency on increase (%1)")
+                       .arg(ipstr(htonl(ip))));
         }
         ++sameSubnetCount;
     } else if (sameSubnetCount == 0) {
         Q_ASSERT(false);
-        logWarning(QStringLiteral("RoutingBin Global IP Subnet inconsistency on decrease (%1)")
-                       .arg(ipstr(htonl(ip))));
+        logKad(QStringLiteral("RoutingBin Global IP Subnet inconsistency on decrease (%1)")
+                   .arg(ipstr(htonl(ip))));
     } else {
         --sameSubnetCount;
     }

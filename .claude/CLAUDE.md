@@ -11,3 +11,7 @@
 
 ## GUI
 - make the GUI look as close to the original MFC GUI as possible by comparing with sreenshots at `docs/eMuleScreensGUI`
+
+
+## Testing
+- open ports: TCP `5662`, UDP `5672`

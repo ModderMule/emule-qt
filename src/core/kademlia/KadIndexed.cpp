@@ -4,6 +4,7 @@
 #include "kademlia/KadIndexed.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadIO.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadUDPListener.h"
@@ -295,8 +296,10 @@ void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* sea
     // Collect matching entries
     KeyHash* keyHash = it->second;
 
-    // Build response packet: target + count + entries
+    // Build response packet: senderKadID + target + count + entries
+    // MFC includes the sender's Kad ID before the target in KADEMLIA2_SEARCH_RES.
     SafeMemFile packet;
+    io::writeUInt128(packet, Kademlia::getInstancePrefs()->kadId());
     io::writeUInt128(packet, keyID);
     // Placeholder for count — we'll update it after
     auto countPos = packet.position();
@@ -357,7 +360,9 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
 
     SrcHash* srcHash = it->second;
 
+    // MFC format: senderKadID + target + uint16 count + results
     SafeMemFile packet;
+    io::writeUInt128(packet, Kademlia::getInstancePrefs()->kadId());
     io::writeUInt128(packet, keyID);
     auto countPos = packet.position();
     packet.writeUInt16(0);
@@ -408,7 +413,9 @@ void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
 
     SrcHash* srcHash = it->second;
 
+    // MFC format: senderKadID + target + uint16 count + results
     SafeMemFile packet;
+    io::writeUInt128(packet, Kademlia::getInstancePrefs()->kadId());
     io::writeUInt128(packet, keyID);
     auto countPos = packet.position();
     packet.writeUInt16(0);
@@ -507,11 +514,11 @@ void Indexed::readFile()
                             }
                         }
                     }
-                    logDebug(QStringLiteral("Kad: Loaded %1 keywords from key_index.dat")
-                                 .arg(m_totalIndexKeyword));
+                    logKad(QStringLiteral("Kad: Loaded %1 keywords from key_index.dat")
+                               .arg(m_totalIndexKeyword));
                 }
             } catch (const FileException& ex) {
-                logWarning(QStringLiteral("Kad: Failed to load key_index.dat: %1").arg(ex.what()));
+                logKad(QStringLiteral("Kad: Failed to load key_index.dat: %1").arg(ex.what()));
             }
         }
     }
@@ -550,11 +557,11 @@ void Indexed::readFile()
                             }
                         }
                     }
-                    logDebug(QStringLiteral("Kad: Loaded %1 sources from src_index.dat")
-                                 .arg(m_totalIndexSource));
+                    logKad(QStringLiteral("Kad: Loaded %1 sources from src_index.dat")
+                               .arg(m_totalIndexSource));
                 }
             } catch (const FileException& ex) {
-                logWarning(QStringLiteral("Kad: Failed to load src_index.dat: %1").arg(ex.what()));
+                logKad(QStringLiteral("Kad: Failed to load src_index.dat: %1").arg(ex.what()));
             }
         }
     }
@@ -577,11 +584,11 @@ void Indexed::readFile()
                             addLoad(keyID, loadTime);
                         }
                     }
-                    logDebug(QStringLiteral("Kad: Loaded %1 load entries from load_index.dat")
-                                 .arg(m_totalIndexLoad));
+                    logKad(QStringLiteral("Kad: Loaded %1 load entries from load_index.dat")
+                               .arg(m_totalIndexLoad));
                 }
             } catch (const FileException& ex) {
-                logWarning(QStringLiteral("Kad: Failed to load load_index.dat: %1").arg(ex.what()));
+                logKad(QStringLiteral("Kad: Failed to load load_index.dat: %1").arg(ex.what()));
             }
         }
     }

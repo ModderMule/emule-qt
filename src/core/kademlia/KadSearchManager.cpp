@@ -5,6 +5,7 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
@@ -81,10 +82,16 @@ Search* SearchManager::prepareFindKeywords(const QString& keyword,
                                             uint32 searchTermsSize,
                                             const uint8* searchTermsData)
 {
-    // Compute keyword hash
+    // Split keywords first, then hash only the first word (MFC behavior).
+    // The Kad DHT indexes keywords individually, so the target for "test file"
+    // is MD4("test"), not MD4("test file").
     UInt128 target;
     QString lowerKeyword = kadTagStrToLower(keyword);
-    getKeywordHash(lowerKeyword, target);
+    std::vector<QString> words;
+    getWords(lowerKeyword, words);
+    if (words.empty())
+        return nullptr;
+    getKeywordHash(words.front(), target);
 
     // Check for duplicate
     if (alreadySearchingFor(target))
@@ -95,8 +102,8 @@ Search* SearchManager::prepareFindKeywords(const QString& keyword,
     search->setSearchType(SearchType::Keyword);
     search->setGUIName(keyword);
 
-    // Split keywords for search term matching
-    getWords(lowerKeyword, search->m_words);
+    // Copy split words for search term matching
+    search->m_words = std::move(words);
 
     // Store search terms data
     if (searchTermsSize > 0 && searchTermsData)
@@ -112,8 +119,8 @@ bool SearchManager::startSearch(Search* search)
 
     // Check for duplicate
     if (s_searches.count(search->getTarget()) > 0) {
-        logDebug(QStringLiteral("Kad: Search for %1 already active")
-                     .arg(search->getTarget().toHexString()));
+        logKad(QStringLiteral("Kad: Search for %1 already active")
+                   .arg(search->getTarget().toHexString()));
         return false;
     }
 
@@ -132,10 +139,10 @@ bool SearchManager::startSearch(Search* search)
     s_searches[search->getTarget()] = search;
     search->go();
 
-    logDebug(QStringLiteral("Kad: Started %1 search %2 for %3")
-                 .arg(Search::getTypeName(search->getSearchType()))
-                 .arg(search->getSearchID())
-                 .arg(search->getTarget().toHexString()));
+    logKad(QStringLiteral("Kad: Started %1 search %2 for %3")
+               .arg(Search::getTypeName(search->getSearchType()))
+               .arg(search->getSearchID())
+               .arg(search->getTarget().toHexString()));
 
     return true;
 }
@@ -167,28 +174,80 @@ void SearchManager::processResult(const UInt128& target, const UInt128& answer,
                                    TagList& info, uint32 fromIP, uint16 fromPort)
 {
     auto it = s_searches.find(target);
-    if (it != s_searches.end())
+    if (it != s_searches.end()) {
         it->second->processResult(answer, info, fromIP, fromPort);
+    } else {
+        logKad(QStringLiteral("Kad: SEARCH_RES result for %1 — search not found (already removed)")
+                   .arg(target.toHexString()));
+    }
 }
 
 void SearchManager::processPublishResult(const UInt128& target, uint8 load, bool loadResponse)
 {
     auto it = s_searches.find(target);
     if (it != s_searches.end()) {
+        it->second->m_answers++;
         if (loadResponse)
             it->second->updateNodeLoad(load);
+
+        // Immediately complete store searches that reached the answer threshold.
+        // updateStats() only runs every 60s; without this, a search with 140s
+        // lifetime might not be removed until ~200s (worst-case alignment).
+        uint32 maxAnswers = 0;
+        switch (it->second->getSearchType()) {
+        case SearchType::StoreFile:    maxAnswers = kSearchStoreFileTotal; break;
+        case SearchType::StoreKeyword: maxAnswers = kSearchStoreKeywordTotal; break;
+        case SearchType::StoreNotes:   maxAnswers = kSearchStoreNotesTotal; break;
+        default: break;
+        }
+        if (maxAnswers > 0 && it->second->getAnswers() >= maxAnswers) {
+            it->second->prepareToStop();
+            delete it->second;
+            s_searches.erase(it);
+        }
     }
 }
 
 void SearchManager::updateStats()
 {
-    // Remove expired searches
+    // Remove expired searches — by time or by answer count (MFC compat)
     time_t now = time(nullptr);
     auto it = s_searches.begin();
     while (it != s_searches.end()) {
         Search* search = it->second;
         uint32 lifetime = search->getLifetime();
-        if ((now - search->m_created) > static_cast<time_t>(lifetime)) {
+        bool expired = (now - search->m_created) > static_cast<time_t>(lifetime);
+
+        // Keyword/File/Notes searches enter the store phase when the find
+        // phase converges, then wait for SEARCH_RES responses.  Give them
+        // at least 30 extra seconds after the store phase starts so that
+        // remote nodes have time to send back results.
+        if (expired && search->stopping() && search->m_storePhaseStarted > 0) {
+            auto type = search->getSearchType();
+            bool needsResults = (type == SearchType::Keyword
+                                 || type == SearchType::File
+                                 || type == SearchType::Notes);
+            if (needsResults && (now - search->m_storePhaseStarted) < 30)
+                expired = false;
+        }
+
+        // Store searches also complete when enough responses arrive
+        if (!expired) {
+            uint32 maxAnswers = 0;
+            switch (search->getSearchType()) {
+            case SearchType::StoreFile:    maxAnswers = kSearchStoreFileTotal; break;
+            case SearchType::StoreKeyword: maxAnswers = kSearchStoreKeywordTotal; break;
+            case SearchType::StoreNotes:   maxAnswers = kSearchStoreNotesTotal; break;
+            default: break;
+            }
+            if (maxAnswers > 0 && search->getAnswers() >= maxAnswers)
+                expired = true;
+        }
+
+        if (expired) {
+            logKad(QStringLiteral("Kad: updateStats removing search %1 (type=%2 age=%3s answers=%4)")
+                       .arg(search->getSearchID()).arg(static_cast<int>(search->getSearchType()))
+                       .arg(now - search->m_created).arg(search->getAnswers()));
             search->prepareToStop();
             delete search;
             it = s_searches.erase(it);
@@ -270,8 +329,38 @@ void SearchManager::cancelNodeSpecial(const KadClientSearcher* requester)
 
 void SearchManager::jumpStart()
 {
-    for (auto& [target, search] : s_searches)
-        search->jumpStart();
+    // Jump-start all active searches.  After jumpStart(), a search may have
+    // transitioned to the stopping state (find phase converged or lifetime
+    // expired).  prepareToStop() fires the action phase (storePacket) and
+    // sets m_stopping.
+    //
+    // Store-type searches (StoreFile, StoreKeyword, StoreNotes) and node
+    // searches are fire-and-forget — remove them immediately so callers
+    // see completion within 1 second instead of waiting 60s for updateStats().
+    //
+    // Search-type searches (Keyword, File, Notes) must stay alive after
+    // stopping because storePacket() sends SEARCH_KEY_REQ / SEARCH_SOURCE_REQ
+    // / SEARCH_NOTES_REQ and the remote nodes respond with SEARCH_RES.
+    // Removing the search here would cause processResult() to drop all
+    // results.  These searches are cleaned up by updateStats() when their
+    // lifetime expires.
+    for (auto it = s_searches.begin(); it != s_searches.end(); ) {
+        it->second->jumpStart();
+        if (it->second->stopping()) {
+            auto type = it->second->getSearchType();
+            bool needsResults = (type == SearchType::Keyword
+                                 || type == SearchType::File
+                                 || type == SearchType::Notes);
+            if (needsResults) {
+                ++it; // keep alive for SEARCH_RES responses
+            } else {
+                delete it->second;
+                it = s_searches.erase(it);
+            }
+        } else {
+            ++it;
+        }
+    }
 }
 
 } // namespace eMule::kad
