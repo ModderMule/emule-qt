@@ -114,6 +114,7 @@ emule_add_test(tst_UDPSocket             FOLDER "Net")
 emule_add_test(tst_ListenSocket          FOLDER "Net")
 emule_add_test(tst_HttpClientReqSocket   FOLDER "Net")
 emule_add_test(tst_ClientUDPSocket       FOLDER "Net")
+emule_add_test(tst_TcpConnect            FOLDER "Net")
 
 # Module 29e: Firewall & UPnP
 emule_add_test(tst_UPnPManager   FOLDER "UPnP")
@@ -231,4 +232,8 @@ emule_add_test(tst_SharedFileData FOLDER "DataFiles")
 if(EMULE_LIVE_TESTS)
     emule_add_test(tst_KadLiveNetwork FOLDER "LiveNetwork")
     set_tests_properties(tst_KadLiveNetwork PROPERTIES LABELS "live" TIMEOUT 180)
+
+    emule_add_test(tst_FileDownloadLive FOLDER "LiveNetwork")
+    target_compile_definitions(tst_FileDownloadLive PRIVATE QTEST_FUNCTION_TIMEOUT=960000)
+    set_tests_properties(tst_FileDownloadLive PROPERTIES LABELS "live" TIMEOUT 960)
 endif()

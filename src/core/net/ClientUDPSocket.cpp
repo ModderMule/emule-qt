@@ -217,11 +217,12 @@ void ClientUDPSocket::onReadyRead()
             // May be encrypted — use our userHash and kadID for decryption
             auto userHash = thePrefs.userHash();
             const uint8* kadIDPtr = nullptr;
-            uint8 kadIDBytes[16] = {};
             uint32 kadRecvKey = 0;
             if (auto* kadPrefs = eMule::kad::Kademlia::getInstancePrefs()) {
-                eMule::kad::RoutingZone::localKadId().toByteArray(kadIDBytes);
-                kadIDPtr = kadIDBytes;
+                // Use getData() (raw m_data bytes), NOT toByteArray() which
+                // byte-swaps.  The wire format uses the raw uint32 representation,
+                // so encryption keys must match that byte order.
+                kadIDPtr = eMule::kad::RoutingZone::localKadId().getData();
                 kadRecvKey = kadPrefs->getUDPVerifyKey(senderIP);
             }
             DecryptResult dr = EncryptedDatagramSocket::decryptReceivedClient(

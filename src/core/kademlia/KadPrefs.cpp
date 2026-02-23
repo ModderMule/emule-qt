@@ -440,8 +440,9 @@ void KadPrefs::readFile()
     uint16 reserved = 0;
     in >> ip >> reserved;
 
-    uint8 kadIdBytes[16];
-    if (in.readRawData(reinterpret_cast<char*>(kadIdBytes), 16) != 16) {
+    // MFC uses ReadUInt128 → GetDataPtr() (raw host-order bytes).
+    m_clientId = UInt128();
+    if (in.readRawData(reinterpret_cast<char*>(m_clientId.getDataPtr()), 16) != 16) {
         logKad(QStringLiteral("Failed to read KadID from: %1").arg(m_filename));
         return;
     }
@@ -451,7 +452,6 @@ void KadPrefs::readFile()
 
     m_ip = ip;
     m_ipLast = ip;
-    m_clientId.setValueBE(kadIdBytes);
 }
 
 void KadPrefs::writeFile()
@@ -467,9 +467,8 @@ void KadPrefs::writeFile()
 
     out << m_ip << uint16{0};
 
-    uint8 kadIdBytes[16];
-    m_clientId.toByteArray(kadIdBytes);
-    out.writeRawData(reinterpret_cast<const char*>(kadIdBytes), 16);
+    // MFC uses WriteUInt128 → GetData() (raw host-order bytes).
+    out.writeRawData(reinterpret_cast<const char*>(m_clientId.getData()), 16);
 
     out << uint8{0}; // tag count
 

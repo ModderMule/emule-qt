@@ -61,9 +61,12 @@ public:
 
     /// Add a Kad-discovered file source. Finds the matching PartFile by hash
     /// and stores the source info for later connection.
+    /// sourceType: 1/2=High-ID (direct TCP), 4=Low-ID (Kad buddy callback).
     void addKadSourceResult(uint32 searchID, const uint8* fileHash,
                             uint32 ip, uint16 tcpPort,
-                            uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt);
+                            uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
+                            uint8 sourceType, const uint8* buddyHash,
+                            const uint8* clientHash);
 
     /// Process OP_FOUNDSOURCES / OP_FOUNDSOURCES_OBFU from the connected server.
     void addServerSourceResult(const uint8* data, uint32 size, bool obfuscated);

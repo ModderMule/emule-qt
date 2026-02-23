@@ -3,6 +3,7 @@
 
 #include "net/ListenSocket.h"
 #include "net/ClientReqSocket.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QHostAddress>
@@ -40,16 +41,17 @@ ListenSocket::~ListenSocket()
 
 bool ListenSocket::startListening(uint16 port)
 {
-    m_port = port;
-
     if (!listen(QHostAddress::AnyIPv4, port)) {
         logError(QStringLiteral("ListenSocket: Failed to listen on port %1: %2")
                      .arg(port).arg(errorString()));
         return false;
     }
 
+    // When port=0, the OS assigns a random port. Read it back.
+    m_port = serverPort();
+
     m_listening = true;
-    logInfo(QStringLiteral("ListenSocket: Listening on port %1").arg(port));
+    logInfo(QStringLiteral("ListenSocket: Listening on port %1").arg(m_port));
     return true;
 }
 
@@ -83,6 +85,7 @@ void ListenSocket::incomingConnection(qintptr socketDescriptor)
 
     auto* reqSocket = new ClientReqSocket(nullptr, this);
     reqSocket->setSocketDescriptor(socketDescriptor);
+    reqSocket->setObfuscationConfig(thePrefs.obfuscationConfig());
 
     addSocket(reqSocket);
     emit newClientConnection(reqSocket);
@@ -127,8 +130,13 @@ void ListenSocket::process()
     while (it != m_socketList.end()) {
         ClientReqSocket* socket = *it;
         if (socket->checkTimeOut()) {
-            logDebug(QStringLiteral("ListenSocket: Socket timed out: %1")
-                         .arg(socket->debugClientInfo()));
+            logDebug(QStringLiteral("ListenSocket: Socket timed out: %1 "
+                                    "socketState=%2 qtState=%3 fd=%4 error=%5")
+                         .arg(socket->debugClientInfo())
+                         .arg(static_cast<int>(socket->peerSocketState()))
+                         .arg(static_cast<int>(socket->state()))
+                         .arg(socket->socketDescriptor())
+                         .arg(socket->errorString()));
             socket->disconnect(QStringLiteral("Timeout"));
             it = m_socketList.erase(it);
         } else {

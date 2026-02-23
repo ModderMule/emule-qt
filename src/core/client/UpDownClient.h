@@ -139,6 +139,8 @@ public:
     void setUploadState(UploadState state);
 
     [[nodiscard]] DownloadState downloadState() const { return m_downloadState; }
+    [[nodiscard]] bool isDownloading() const { return m_downloadState == DownloadState::Downloading; }
+    [[nodiscard]] uint32 downStartTime() const { return m_downStartTime; }
     void setDownloadState(DownloadState state);
 
     [[nodiscard]] ChatState chatState() const { return m_chatState; }
@@ -563,6 +565,14 @@ private:
     void sendHelloTypePacket(SafeMemFile& data);
     void checkForGPLEvildoer();
 
+    // -- Phase 3 — shared file browse handlers --------------------------------
+    void processAskSharedFiles();
+    void processAskSharedDirs();
+    void processAskSharedFilesDir(const uint8* data, uint32 size);
+    void processSharedDirsAnswer(const uint8* data, uint32 size);
+    void processSharedFilesDirAnswer(const uint8* data, uint32 size);
+    void processSharedDenied();
+
     // -- Phase 3 — upload-side packet handlers --------------------------------
     void processRequestParts(const uint8* data, uint32 size, bool i64Offsets);
     void processSetReqFileID(const uint8* data, uint32 size);
@@ -753,6 +763,7 @@ private:
     bool m_commentDirty = false;
     bool m_gplEvildoer = false;
     bool m_helloAnswerPending = false;
+    bool m_pendingFileRequest = false;
     bool m_addNextConnect = false;
     bool m_sourceExchangeSwapped = false;
     uint16 m_lastPartAsked = UINT16_MAX;

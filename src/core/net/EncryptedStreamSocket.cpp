@@ -115,8 +115,12 @@ void EncryptedStreamSocket::cryptPrepareSendData(uint8* buffer, uint32 len)
         logWarning(QStringLiteral("EncryptedStreamSocket: Premature send, overwriting ECS_UNKNOWN with ECS_NONE (%1)").arg(dbgGetIPString()));
     }
 
-    if (m_streamCryptState == StreamCryptState::Encrypting && m_sendKey)
+    if (m_streamCryptState == StreamCryptState::Encrypting && m_sendKey) {
+        logDebug(QStringLiteral("cryptPrepareSendData: encrypting %1 bytes, sendKey x=%2 y=%3 peer=%4:%5")
+                     .arg(len).arg(m_sendKey->x).arg(m_sendKey->y)
+                     .arg(peerAddress().toString()).arg(peerPort()));
         rc4Crypt(buffer, len, *m_sendKey);
+    }
 }
 
 bool EncryptedStreamSocket::isObfuscating() const
@@ -205,9 +209,14 @@ int EncryptedStreamSocket::processReceivedData(void* buf, int len)
         int nRead = negotiate(static_cast<uint8*>(buf), len);
         if (nRead != -1 && nRead != len) {
             if (m_streamCryptState == StreamCryptState::Encrypting) {
-                // Finished handshake with extra payload
-                std::memmove(buf, static_cast<uint8*>(buf) + nRead, static_cast<std::size_t>(len - nRead));
-                return len - nRead;
+                // Finished handshake with extra payload — decrypt the remaining bytes.
+                // MFC CEncryptedStreamSocket::OnReceive does RC4Crypt on leftover data.
+                auto* remaining = static_cast<uint8*>(buf) + nRead;
+                int remainingLen = len - nRead;
+                if (m_receiveKey)
+                    rc4Crypt(remaining, static_cast<uint32>(remainingLen), *m_receiveKey);
+                std::memmove(buf, remaining, static_cast<std::size_t>(remainingLen));
+                return remainingLen;
             }
             logWarning(QStringLiteral("EncryptedStreamSocket: Client %1 sent more data than expected while negotiating (2)").arg(dbgGetIPString()));
             onError(kErrEncryption);
@@ -218,6 +227,15 @@ int EncryptedStreamSocket::processReceivedData(void* buf, int len)
     case StreamCryptState::Encrypting:
         if (m_receiveKey)
             rc4Crypt(static_cast<uint8*>(buf), static_cast<uint32>(len), *m_receiveKey);
+        {
+            // Debug: dump first bytes after decryption
+            int dumpLen = std::min(len, 16);
+            QString hex;
+            for (int i = 0; i < dumpLen; ++i)
+                hex += QStringLiteral("%1 ").arg(static_cast<const uint8*>(buf)[i], 2, 16, QLatin1Char('0'));
+            logDebug(QStringLiteral("EncryptedStreamSocket::Encrypting — decrypted %1 bytes, first: %2 (peer %3:%4)")
+                         .arg(len).arg(hex).arg(peerAddress().toString()).arg(peerPort()));
+        }
         break;
     }
 
@@ -237,6 +255,8 @@ void EncryptedStreamSocket::startNegotiation(bool outgoing)
         m_receiveBytesWanted = 4;
     } else if (m_streamCryptState == StreamCryptState::Pending) {
         // Outgoing client connection
+        logDebug(QStringLiteral("EncryptedStreamSocket::startNegotiation(outgoing) — sending handshake to %1:%2")
+                     .arg(peerAddress().toString()).arg(peerPort()));
         SafeMemFile fileRequest;
         const uint8 marker = getSemiRandomNotProtocolMarker();
         fileRequest.writeUInt8(marker);
@@ -403,11 +423,17 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
                 sendNegotiatingData(responseBuf.constData(), static_cast<int>(responseBuf.size()));
                 m_negotiatingState = NegotiatingState::Complete;
                 m_streamCryptState = StreamCryptState::Encrypting;
+                onEncryptionHandshakeComplete();
                 break;
             }
 
             case NegotiatingState::ClientB_MagicValue: {
-                if (m_receiveBuffer->readUInt32() != kMagicValueSync) {
+                uint32 receivedMagic = m_receiveBuffer->readUInt32();
+                logDebug(QStringLiteral("EncryptedStreamSocket: ClientB_MagicValue — received 0x%1, expected 0x%2 from %3:%4")
+                             .arg(receivedMagic, 8, 16, QLatin1Char('0'))
+                             .arg(kMagicValueSync, 8, 16, QLatin1Char('0'))
+                             .arg(peerAddress().toString()).arg(peerPort()));
+                if (receivedMagic != kMagicValueSync) {
                     logWarning(QStringLiteral("EncryptedStreamSocket: Wrong sync magic from %1").arg(dbgGetIPString()));
                     onError(kErrEncryption);
                     return -1;
@@ -434,6 +460,11 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
             case NegotiatingState::ClientB_Padding:
                 m_negotiatingState = NegotiatingState::Complete;
                 m_streamCryptState = StreamCryptState::Encrypting;
+                logDebug(QStringLiteral("negotiate: handshake complete — sendKey x=%1 y=%2, recvKey x=%3 y=%4, peer=%5:%6")
+                             .arg(m_sendKey ? m_sendKey->x : -1).arg(m_sendKey ? m_sendKey->y : -1)
+                             .arg(m_receiveKey ? m_receiveKey->x : -1).arg(m_receiveKey ? m_receiveKey->y : -1)
+                             .arg(peerAddress().toString()).arg(peerPort()));
+                onEncryptionHandshakeComplete();
                 break;
 
             case NegotiatingState::Server_DHAnswer: {
@@ -514,6 +545,7 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
                 const auto& responseBuf = fileResponse.buffer();
                 sendNegotiatingData(responseBuf.constData(), static_cast<int>(responseBuf.size()), 0, true);
                 m_streamCryptState = StreamCryptState::Encrypting;
+                onEncryptionHandshakeComplete();
                 break;
             }
 

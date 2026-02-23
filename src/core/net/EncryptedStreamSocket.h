@@ -126,6 +126,11 @@ protected:
     /// Must be implemented by subclasses to handle socket errors.
     virtual void onError(int errorCode) = 0;
 
+    /// Called when the encryption handshake completes.  Subclasses can
+    /// override to defer connection-established until the crypto layer is
+    /// ready.  Default implementation does nothing.
+    virtual void onEncryptionHandshakeComplete() {}
+
     /// Get a string representation of the peer IP (for logging).
     [[nodiscard]] QString dbgGetIPString() const;
 
@@ -138,6 +143,9 @@ protected:
     /// Process received raw data through the encryption layer.
     /// @return Number of decrypted bytes available, or 0 if handshake consumed all data.
     int processReceivedData(void* buf, int len);
+
+    /// Whether the encryption handshake is currently in progress.
+    [[nodiscard]] bool isNegotiating() const { return m_streamCryptState == StreamCryptState::Negotiating; }
 
     StreamCryptState m_streamCryptState = StreamCryptState::None;
     EncryptionMethod m_encryptionMethod = EncryptionMethod::Obfuscation;

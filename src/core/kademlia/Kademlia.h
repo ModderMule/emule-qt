@@ -95,10 +95,14 @@ public:
         const uint8* fileHash, const QString& name, uint64 size,
         const QString& type, uint32 sources, uint32 completeSources)>;
     /// Callback type for Kad source results (file sources found via DHT).
-    /// Parameters: searchID, fileHash (16 bytes), sourceIP, sourcePort, buddyIP, buddyPort, cryptOptions
+    /// Parameters: searchID, fileHash (16 bytes), sourceIP, sourcePort,
+    ///   buddyIP, buddyPort, cryptOptions, sourceType, buddyHash (16 bytes),
+    ///   clientHash (16 bytes — ED2K user hash published by the source)
     using KadSourceResultCallback = std::function<void(uint32 searchID,
         const uint8* fileHash, uint32 ip, uint16 tcpPort,
-        uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt)>;
+        uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
+        uint8 sourceType, const uint8* buddyHash,
+        const uint8* clientHash)>;
     /// Callback type for Kad notes results.
     using KadNotesResultCallback = std::function<void(uint32 searchID,
         const uint8* fileHash, const QString& name, uint8 rating,

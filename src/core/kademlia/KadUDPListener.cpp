@@ -20,6 +20,8 @@
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "net/EMSocket.h"
+#include "net/Packet.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
@@ -27,6 +29,12 @@
 
 #include <cstring>
 #include <ctime>
+
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>  // htonl
+#endif
 
 namespace eMule::kad {
 
@@ -110,11 +118,8 @@ void KademliaUDPListener::sendMyDetails(uint8 opcode, uint32 ip, uint16 udpPort,
     // Write our KadID
     io::writeUInt128(packet, RoutingZone::localKadId());
 
-    // Write TCP port from preferences
-    uint16 tcpPort = 0;
-    if (auto* prefs = Kademlia::getInstancePrefs())
-        tcpPort = prefs->internKadPort();
-    packet.writeUInt16(tcpPort);
+    // Write our ED2K TCP port (MFC: thePrefs.GetPort(), line 115)
+    packet.writeUInt16(thePrefs.port());
 
     // Write version
     packet.writeUInt8(KADEMLIA_VERSION);
@@ -491,8 +496,8 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpP
     SafeMemFile packet;
     // Write our own contact info
     io::writeUInt128(packet, RoutingZone::localKadId());
-    auto* prefs = Kademlia::getInstancePrefs();
-    packet.writeUInt16(prefs ? prefs->internKadPort() : uint16{0});
+    // ED2K TCP port (MFC: thePrefs.GetPort(), line 505)
+    packet.writeUInt16(thePrefs.port());
     packet.writeUInt8(KADEMLIA_VERSION);
 
     // Write contact list
@@ -1025,7 +1030,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
     // Attempt TCP verification: connect to their TCP port to verify it's open.
     // This is best-effort — failure is silently ignored.
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-    client->setConnectIP(ip);
+    client->setConnectIP(htonl(ip));  // Kad IPs are host BO; m_connectIP is network BO
     client->setKadState(KadState::QueuedFwCheck);
     if (theApp.clientList)
         theApp.clientList->addClient(client);
@@ -1054,7 +1059,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
 
     // Attempt TCP verification: connect to their TCP port to verify it's open
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-    client->setConnectIP(ip);
+    client->setConnectIP(htonl(ip));  // Kad IPs are host BO; m_connectIP is network BO
     client->setKadState(KadState::QueuedFwCheck);
     client->setConnectOptions(options, true, true);
     if (theApp.clientList)
@@ -1107,42 +1112,53 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
                                                           uint32 ip, uint16 udpPort,
                                                           const KadUDPKey& senderKey)
 {
-    if (len < 35) // 16 (checkID) + 16 (clientHash) + 2 (tcpPort) + 1 (connectOptions)
+    // Matches MFC KademliaUDPListener.cpp:1681-1722
+    if (len < 34) // 16 (buddyID) + 16 (clientHash) + 2 (tcpPort)
         return;
-
-    SafeMemFile io(data, len);
-    [[maybe_unused]] UInt128 checkID = io::readUInt128(io);
-    UInt128 contactID = io::readUInt128(io);
-    uint16 tcpPort = io.readUInt16();
-    uint8 connectOptions = io.readUInt8();
 
     auto* prefs = Kademlia::getInstancePrefs();
     auto* clientList = Kademlia::getClientList();
     if (!clientList || !prefs)
         return;
 
-    // Accept the buddy request if we don't already have a buddy
+    // Reject if we ourselves are firewalled or UDP-unverified — we can't be a buddy.
+    // Matches MFC line 1690.
+    if (prefs->firewalled() || UDPFirewallTester::isFirewalledUDP(true)
+        || !UDPFirewallTester::isVerified())
+    {
+        return;
+    }
+
+    // Already have a connected buddy — reject.
+    // Matches MFC line 1693.
     if (clientList->buddyStatus() == eMule::BuddyStatus::Connected) {
         logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — already have a buddy")
                    .arg(ipToString(ip)).arg(udpPort));
         return;
     }
 
-    // Send FINDBUDDY_RES back with our info
-    SafeMemFile resPacket;
-    io::writeUInt128(resPacket, prefs->kadId());
-    io::writeUInt128(resPacket, prefs->clientHash());
-    resPacket.writeUInt16(prefs->internKadPort());
-    resPacket.writeUInt8(prefs->myConnectOptions());
-    sendPacket(resPacket, KADEMLIA_FINDBUDDY_RES, ip, udpPort, senderKey, nullptr);
+    SafeMemFile bio(data, len);
+    UInt128 buddyID = io::readUInt128(bio);
+    UInt128 userID  = io::readUInt128(bio);
+    uint16 tcpPort  = bio.readUInt16();
 
-    // Attempt to accept this as our buddy — pass all parameters.
-    // Matches MFC KademliaUDPListener.cpp incomingBuddy call.
+    // Try to accept this as our buddy first (MFC does incomingBuddy before sending RES).
     uint8 clientIDBytes[16];
-    contactID.toByteArray(clientIDBytes);
+    userID.toByteArray(clientIDBytes);
     uint8 buddyIDBytes[16];
-    checkID.toByteArray(buddyIDBytes);
-    clientList->incomingBuddy(ip, tcpPort, udpPort, clientIDBytes, buddyIDBytes);
+    buddyID.toByteArray(buddyIDBytes);
+    if (!clientList->incomingBuddy(ip, tcpPort, udpPort, clientIDBytes, buddyIDBytes))
+        return; // cancelled — don't send a response
+
+    // Send FINDBUDDY_RES back with our info.
+    // Matches MFC line 1712-1717.
+    SafeMemFile resPacket;
+    io::writeUInt128(resPacket, buddyID);
+    io::writeUInt128(resPacket, prefs->clientHash());
+    resPacket.writeUInt16(thePrefs.port());  // ED2K TCP port
+    if (!senderKey.isEmpty()) // connectOptions only sent with verified key (MFC line 1716)
+        resPacket.writeUInt8(prefs->myConnectOptions());
+    sendPacket(resPacket, KADEMLIA_FINDBUDDY_RES, ip, udpPort, senderKey, nullptr);
 
     logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — accepted, sent response")
                .arg(ipToString(ip)).arg(udpPort));
@@ -1152,22 +1168,38 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint
                                                           uint32 ip, uint16 udpPort,
                                                           const KadUDPKey& senderKey)
 {
-    if (len < 35) // 16 (kadID) + 16 (clientHash) + 2 (tcpPort) + 1 (connectOptions)
+    // Matches MFC KademliaUDPListener.cpp:1725-1761
+    if (len < 34) // 16 (checkID) + 16 (clientHash) + 2 (tcpPort)
         return;
 
-    SafeMemFile io(data, len);
-    [[maybe_unused]] UInt128 kadID = io::readUInt128(io);
-    UInt128 clientHash = io::readUInt128(io);
-    uint16 tcpPort = io.readUInt16();
-    uint8 connectOptions = io.readUInt8();
+    SafeMemFile bio(data, len);
+    UInt128 checkID = io::readUInt128(bio);
+
+    // Verify: checkID XOR ~0 should equal our KadID.
+    // The responder echoes back our BuddyID (= ~kadID from the REQ).
+    // MFC line 1743: uCheck.Xor(CUInt128(true)) → should == GetKadID()
+    auto* prefs = Kademlia::getInstancePrefs();
+    if (!prefs)
+        return;
+    checkID.xorWith(UInt128(true));
+    if (checkID != prefs->kadId()) {
+        logKad(QStringLiteral("Kad: FINDBUDDY_RES from %1:%2 — check ID mismatch, ignoring")
+                   .arg(ipToString(ip)).arg(udpPort));
+        return;
+    }
+
+    UInt128 clientHash = io::readUInt128(bio);
+    uint16 tcpPort = bio.readUInt16();
+    uint8 connectOptions = 0;
+    if (len > 34)  // 0.49a+ sends connectOptions (MFC line 1749)
+        connectOptions = bio.readUInt8();
 
     auto* clientList = Kademlia::getClientList();
     if (!clientList)
         return;
 
     // We sent a FindBuddy search and this node responded — try to connect
-    // as our buddy via TCP. Pass all parameters for full buddy setup.
-    // Matches MFC KademliaUDPListener.cpp requestBuddy call.
+    // as our buddy via TCP.  Matches MFC line 1759.
     uint8 clientIDBytes[16];
     clientHash.toByteArray(clientIDBytes);
     clientList->requestBuddy(ip, tcpPort, udpPort, clientIDBytes, connectOptions);
@@ -1179,51 +1211,46 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint
 void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint32 len,
                                                          uint32 ip, const KadUDPKey& senderKey)
 {
-    if (len < 34)
+    // We are a buddy relay node. A firewalled client wants us to relay a
+    // callback to our buddy (another firewalled client).
+    // Matches MFC KademliaUDPListener.cpp:1764-1797.
+    if (len < 34) // 16 (checkID) + 16 (fileID) + 2 (tcpPort)
         return;
-
-    SafeMemFile io(data, len);
-    [[maybe_unused]] UInt128 checkID = io::readUInt128(io);
-    UInt128 contactID = io::readUInt128(io);
-    uint16 tcpPort = io.readUInt16();
 
     auto* clientList = Kademlia::getClientList();
     if (!clientList)
         return;
 
-    // A callback request is sent through our buddy to reach a firewalled client.
-    // We need to have a buddy and the request must come from our buddy's IP.
     auto* buddy = clientList->getBuddy();
     if (!buddy || clientList->buddyStatus() != eMule::BuddyStatus::Connected) {
-        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — no buddy, ignoring")
+        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — no connected buddy, ignoring")
                    .arg(ipToString(ip)));
         return;
     }
 
-    // Verify the request comes from our buddy's IP
-    if (buddy->userIP() != ip) {
-        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — not from buddy IP %2, ignoring")
-                   .arg(ipToString(ip)).arg(ipToString(buddy->userIP())));
+    if (!buddy->socket() || !buddy->socket()->isConnected()) {
+        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — buddy has no active socket")
+                   .arg(ipToString(ip)));
         return;
     }
 
-    // Relay: create a client for the remote requester and initiate connection.
-    // The contactID identifies the requesting client; the TCP port is theirs.
-    // Since this arrives through our buddy relay, the remote client's IP is
-    // not directly available — the connection goes through the buddy relay.
-    auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-    uint8 targetHash[16];
-    contactID.toByteArray(targetHash);
-    client->setUserHash(targetHash);
-    client->setBuddyIP(buddy->userIP());
-    client->setBuddyPort(buddy->userPort());
-    client->setKadState(KadState::IncomingBuddy);
-    if (theApp.clientList)
-        theApp.clientList->addClient(client);
-    client->tryToConnect();
+    SafeMemFile bio(data, len);
+    UInt128 checkID = io::readUInt128(bio);
+    UInt128 fileID  = io::readUInt128(bio);
+    uint16 tcpPort  = bio.readUInt16();
 
-    logKad(QStringLiteral("Kad: CALLBACK_REQ from buddy %1 — relaying callback for port %2")
-               .arg(ipToString(ip)).arg(tcpPort));
+    // Build OP_CALLBACK TCP packet: original fields + sender's IP and port
+    SafeMemFile relayPacket;
+    io::writeUInt128(relayPacket, checkID);
+    io::writeUInt128(relayPacket, fileID);
+    relayPacket.writeUInt32(ip);       // sender's IP
+    relayPacket.writeUInt16(tcpPort);  // sender's TCP port
+
+    auto packet = std::make_unique<eMule::Packet>(relayPacket, OP_EMULEPROT, OP_CALLBACK);
+    buddy->sendPacket(std::move(packet));
+
+    logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — relayed to buddy via TCP")
+               .arg(ipToString(ip)));
 }
 
 // ---------------------------------------------------------------------------
@@ -1233,16 +1260,10 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
 void KademliaUDPListener::process_KADEMLIA2_PING(uint32 ip, uint16 udpPort,
                                                   const KadUDPKey& senderKey)
 {
-    // Respond with pong + our external UDP port
+    // Echo back the sender's UDP port so they can discover their external port.
+    // Matches MFC KademliaUDPListener.cpp:1799-1807.
     SafeMemFile packet;
-    uint16 externPort = 0;
-    if (auto* prefs = Kademlia::getInstancePrefs()) {
-        if (prefs->useExternKadPort())
-            externPort = prefs->externalKadPort();
-        else
-            externPort = prefs->internKadPort();
-    }
-    packet.writeUInt16(externPort);
+    packet.writeUInt16(udpPort);
     sendPacket(packet, KADEMLIA2_PONG, ip, udpPort, senderKey, nullptr);
 }
 

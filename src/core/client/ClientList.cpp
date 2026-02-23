@@ -210,7 +210,7 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
 
     // Create a new client for the incoming buddy
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-    client->setConnectIP(ip);
+    client->setConnectIP(htonl(ip));  // Kad IPs are host byte order; m_connectIP is network BO
     client->setKadPort(udpPort);
     client->setUserHash(clientID);
     client->setKadState(KadState::IncomingBuddy);
@@ -234,7 +234,7 @@ void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     auto* client = findByConnIP(ip, tcpPort);
     if (!client) {
         client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-        client->setConnectIP(ip);
+        client->setConnectIP(htonl(ip));  // Kad IPs are host byte order; m_connectIP is network BO
         addClient(client);
     }
 
@@ -259,7 +259,7 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
 
     // Create a temporary client for the TCP connection
     auto* client = new UpDownClient(contact.getTCPPort(), 0, 0, 0, nullptr);
-    client->setConnectIP(contact.getIPAddress());
+    client->setConnectIP(htonl(contact.getIPAddress()));  // Kad IPs are host BO; m_connectIP is network BO
     client->setKadState(KadState::QueuedFwCheckUDP);
 
     addClient(client);

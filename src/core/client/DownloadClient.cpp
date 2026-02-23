@@ -107,26 +107,51 @@ void UpDownClient::sendFileRequest()
     if (!m_socket || !m_reqFile)
         return;
 
-    // Build file request with the requested file hash
-    SafeMemFile data;
-    data.writeHash16(m_reqUpFileId.data()); // file hash
+    logDebug(QStringLiteral("sendFileRequest: reqFile=%1")
+                 .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
 
-    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_SETREQFILEID);
-    sendPacket(std::move(packet));
+    // OP_SETREQFILEID — set the file context on the remote (MFC DownloadClient.cpp)
+    {
+        SafeMemFile data;
+        data.writeHash16(m_reqUpFileId.data());
+        auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_SETREQFILEID);
+        sendPacket(std::move(packet));
+    }
 
-    // Also request filename
-    auto fnPacket = std::make_unique<Packet>(OP_REQUESTFILENAME, 0);
-    fnPacket->prot = OP_EDONKEYPROT;
-    sendPacket(std::move(fnPacket));
+    // OP_REQUESTFILENAME — MFC DownloadClient.cpp SendFileRequest()
+    // We advertise extReqVer=2 in CT_EMULE_MISCOPTIONS1 (our HELLO).
+    // The remote uses OUR extReqVer to parse this packet, so we must
+    // include the extended fields the remote expects:
+    //   extReqVer >= 1: 16-byte file hash
+    //   extReqVer >= 2: + partStatus bitmap + uint16 completeSources
+    {
+        SafeMemFile fnData;
+        fnData.writeHash16(m_reqUpFileId.data());
+
+        // extReqVer >= 2: include our part status + complete sources
+        if (m_reqFile) {
+            m_reqFile->writePartStatus(fnData);
+            fnData.writeUInt16(static_cast<uint16>(
+                m_reqFile->completeSourcesCount()));
+        }
+
+        auto fnPacket = std::make_unique<Packet>(fnData, OP_EDONKEYPROT, OP_REQUESTFILENAME);
+        sendPacket(std::move(fnPacket));
+    }
 
     // Source Exchange 2: request sources from this peer
+    // MFC uses OP_REQUESTSOURCES (0x81) in eMule proto for SX2 when
+    // source exchange version >= 4. The data format is:
+    //   [16-byte hash][1-byte options][optional 8-byte filesize]
     if (isSourceRequestAllowed()) {
         SafeMemFile sxData;
-        sxData.writeUInt8(SOURCEEXCHANGE2_VERSION);
-        sxData.writeUInt16(0); // reserved options
         sxData.writeHash16(m_reqUpFileId.data());
 
-        auto sxPacket = std::make_unique<Packet>(sxData, OP_EMULEPROT, OP_REQUESTSOURCES2);
+        uint8 options = 0;
+        // TODO: set options bits as needed (available sources, etc.)
+        sxData.writeUInt8(options);
+
+        auto sxPacket = std::make_unique<Packet>(sxData, OP_EMULEPROT, OP_REQUESTSOURCES);
         sendPacket(std::move(sxPacket));
         setLastAskedForSourcesTime();
     }
@@ -184,6 +209,13 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
 
     // Read availability bitmap
     const uint16 byteCount = (partCount + 7) / 8;
+    if (data.length() - data.position() < byteCount) {
+        // Malformed packet — not enough data for bitmap
+        m_completeSource = true;   // assume complete if bitmap missing
+        m_partStatus.clear();
+        m_partCount = 0;
+        return;
+    }
     std::vector<uint8> bitmap(byteCount);
     data.read(bitmap.data(), byteCount);
 
@@ -290,19 +322,29 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
 void UpDownClient::processAcceptUpload()
 {
     m_remoteQueueFull = false;
+    logDebug(QStringLiteral("processAcceptUpload: downloadState=%1 from %2")
+                 .arg(static_cast<int>(m_downloadState)).arg(userName()));
 
-    if (m_downloadState == DownloadState::OnQueue ||
-        m_downloadState == DownloadState::Connecting ||
-        m_downloadState == DownloadState::Connected ||
-        m_downloadState == DownloadState::WaitCallback ||
-        m_downloadState == DownloadState::WaitCallbackKad ||
-        m_downloadState == DownloadState::ReqHashSet)
+    // MFC: Check file is valid and ready for download
+    if (m_reqFile && !m_reqFile->isStopped() &&
+        (m_reqFile->status() == PartFileStatus::Ready ||
+         m_reqFile->status() == PartFileStatus::Empty))
     {
-        setDownloadState(DownloadState::Downloading);
-        m_downStartTime = static_cast<uint32>(getTickCount());
+        m_sentCancelTransfer = false;  // MFC: SetSentCancelTransfer(0)
 
-        // Start requesting blocks
-        sendBlockRequests();
+        if (m_downloadState == DownloadState::OnQueue) {
+            setDownloadState(DownloadState::Downloading);
+            m_downStartTime = static_cast<uint32>(getTickCount());
+
+            logDebug(QStringLiteral("processAcceptUpload: state → Downloading, sending block requests"));
+            sendBlockRequests();
+        }
+    } else {
+        // File is stopped or invalid — cancel the transfer
+        logDebug(QStringLiteral("processAcceptUpload: file not ready, sending cancel"));
+        sendCancelTransfer();
+        setDownloadState(m_reqFile == nullptr || m_reqFile->isStopped()
+                             ? DownloadState::None : DownloadState::OnQueue);
     }
 }
 
@@ -332,6 +374,12 @@ bool UpDownClient::addRequestForAnotherFile(PartFile* file)
 void UpDownClient::clearDownloadBlockRequests()
 {
     for (auto* pending : m_pendingBlocks) {
+        // MFC: CPartFile::RemoveBlockFromList — return block range to the
+        // PartFile so getNextRequestedBlock() can re-issue it to another source.
+        if (m_reqFile && pending->block) {
+            m_reqFile->removeBlockFromList(pending->block->startOffset,
+                                           pending->block->endOffset);
+        }
         clearPendingBlockRequest(pending);
         delete pending;
     }
@@ -372,78 +420,84 @@ void UpDownClient::createBlockRequests(int blockCount)
 
 void UpDownClient::sendBlockRequests()
 {
-    if (!m_socket)
+    if (!m_socket) {
+        logDebug(QStringLiteral("sendBlockRequests: no socket"));
         return;
+    }
 
-    if (m_downloadState != DownloadState::Downloading)
+    if (m_downloadState != DownloadState::Downloading) {
+        logDebug(QStringLiteral("sendBlockRequests: wrong state %1").arg(static_cast<int>(m_downloadState)));
         return;
+    }
+
+    // MFC resets the block-receive timer here to prevent download timeout
+    // before the first block arrives (especially on slow connections)
+    m_lastBlockReceived = static_cast<uint32>(getTickCount());
 
     // Create new block requests if needed
     createBlockRequests(3);
 
+    logDebug(QStringLiteral("sendBlockRequests: pendingBlocks=%1 from %2")
+                 .arg(m_pendingBlocks.size()).arg(userName()));
+
     if (m_pendingBlocks.empty()) {
+        logDebug(QStringLiteral("sendBlockRequests: no blocks available — NoNeededParts"));
         sendCancelTransfer();
         setDownloadState(DownloadState::NoNeededParts);
         return;
     }
 
-    // Build request packet
+    // Collect unsent blocks (up to 3) — MFC collects pointers first, then
+    // marks as queued before writing offsets so that a subsequent call never
+    // re-requests the same blocks.
+    Pending_Block_Struct* pblock[3] = {};
+    int nr = 0;
+    for (auto* pending : m_pendingBlocks) {
+        if (nr >= 3)
+            break;
+        if (!pending->block || pending->queued)
+            continue;
+        pblock[nr++] = pending;
+        pending->queued = 1;
+    }
+
+    if (nr == 0) {
+        logDebug(QStringLiteral("sendBlockRequests: all blocks already queued"));
+        return;
+    }
+
+    // Build request packet: hash + 3 start offsets + 3 end offsets
     SafeMemFile data;
     data.writeHash16(m_reqUpFileId.data());
 
-    int blocksInPacket = 0;
-    for (const auto* pending : m_pendingBlocks) {
-        if (blocksInPacket >= 3)
-            break;
-        if (!pending->block || pending->queued)
-            continue;
-
-        if (m_supportsLargeFiles) {
-            data.writeUInt64(pending->block->startOffset);
-        } else {
-            data.writeUInt32(static_cast<uint32>(pending->block->startOffset));
-        }
-        blocksInPacket++;
-    }
-
-    if (blocksInPacket == 0)
-        return;
-
-    // Pad to 3 blocks
-    while (blocksInPacket < 3) {
+    for (int i = 0; i < 3; ++i) {
+        const uint64 start = (i < nr) ? pblock[i]->block->startOffset : 0;
         if (m_supportsLargeFiles)
-            data.writeUInt64(0);
+            data.writeUInt64(start);
         else
-            data.writeUInt32(0);
-        blocksInPacket++;
+            data.writeUInt32(static_cast<uint32>(start));
     }
 
-    // Write end offsets
-    blocksInPacket = 0;
-    for (const auto* pending : m_pendingBlocks) {
-        if (blocksInPacket >= 3)
-            break;
-        if (!pending->block || pending->queued)
-            continue;
-
-        if (m_supportsLargeFiles) {
-            data.writeUInt64(pending->block->endOffset);
-        } else {
-            data.writeUInt32(static_cast<uint32>(pending->block->endOffset));
-        }
-        blocksInPacket++;
-    }
-
-    while (blocksInPacket < 3) {
+    for (int i = 0; i < 3; ++i) {
+        // MFC sends exclusive end offset on the wire: endOffset + 1
+        const uint64 end = (i < nr) ? pblock[i]->block->endOffset + 1 : 0;
         if (m_supportsLargeFiles)
-            data.writeUInt64(0);
+            data.writeUInt64(end);
         else
-            data.writeUInt32(0);
-        blocksInPacket++;
+            data.writeUInt32(static_cast<uint32>(end));
     }
 
+    // OP_REQUESTPARTS uses OP_EDONKEYPROT, OP_REQUESTPARTS_I64 uses OP_EMULEPROT
     const uint8 opcode = m_supportsLargeFiles ? OP_REQUESTPARTS_I64 : OP_REQUESTPARTS;
-    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, opcode);
+    const uint8 proto  = m_supportsLargeFiles ? OP_EMULEPROT : OP_EDONKEYPROT;
+    auto packet = std::make_unique<Packet>(data, proto, opcode);
+
+    for (int i = 0; i < nr; ++i) {
+        logDebug(QStringLiteral("sendBlockRequests: block[%1] start=%2 end=%3 to %4")
+                     .arg(i).arg(pblock[i]->block->startOffset)
+                     .arg(pblock[i]->block->endOffset).arg(userName()));
+    }
+
     sendPacket(std::move(packet));
 }
 

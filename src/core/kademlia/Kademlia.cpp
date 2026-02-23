@@ -404,8 +404,11 @@ void Kademlia::process()
         if (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::None
             && m_prefs->findBuddy())
         {
+            // Target = ~kadID (bitwise NOT).  MFC: CUInt128(true).Xor(GetKadID())
+            UInt128 target(UInt128(true));
+            target.xorWith(m_prefs->kadId());
             auto* search = SearchManager::prepareLookup(SearchType::FindBuddy,
-                                                         true, m_prefs->kadId());
+                                                         true, target);
             if (search) {
                 SearchManager::startSearch(search);
                 logKad(QStringLiteral("Kad: Initiated buddy search"));

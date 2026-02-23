@@ -283,6 +283,8 @@ void Search::processResult(const UInt128& answer, TagList& info, uint32 fromIP, 
 {
     switch (m_type) {
     case SearchType::File:
+        processResultFile(answer, info);
+        break;
     case SearchType::Keyword:
         processResultKeyword(answer, info, fromIP, fromPort);
         break;
@@ -308,30 +310,61 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
     uint16 buddyPort = 0;
     uint8 cryptOptions = 0;
 
+    // Kad tags use numeric IDs (single-byte names → nameId), not string names.
     for (const auto& tag : info) {
-        if (tag.name() == QByteArray(TAG_SOURCEIP) && tag.isInt())
-            sourceIP = tag.intValue();
-        else if (tag.name() == QByteArray(TAG_SOURCEPORT) && tag.isInt())
-            sourcePort = static_cast<uint16>(tag.intValue());
-        else if (tag.name() == QByteArray(TAG_SOURCEUPORT) && tag.isInt())
-            sourceUPort = static_cast<uint16>(tag.intValue());
-        else if (tag.name() == QByteArray(TAG_SOURCETYPE) && tag.isInt())
-            sourceType = static_cast<uint8>(tag.intValue());
-        else if (tag.name() == QByteArray(TAG_ENCRYPTION) && tag.isInt())
-            cryptOptions = static_cast<uint8>(tag.intValue());
+        if (!tag.isInt())
+            continue;
+        switch (tag.nameId()) {
+        case 0xFE: sourceIP      = tag.intValue();                    break; // TAG_SOURCEIP
+        case 0xFD: sourcePort    = static_cast<uint16>(tag.intValue()); break; // TAG_SOURCEPORT
+        case 0xFC: sourceUPort   = static_cast<uint16>(tag.intValue()); break; // TAG_SOURCEUPORT
+        case 0xFF: sourceType    = static_cast<uint8>(tag.intValue());  break; // TAG_SOURCETYPE
+        case 0xFB: buddyIP       = tag.intValue();                    break; // TAG_BUDDYIP
+        case 0xFA: buddyPort     = static_cast<uint16>(tag.intValue()); break; // TAG_BUDDYPORT
+        case 0xF3: cryptOptions  = static_cast<uint8>(tag.intValue());  break; // TAG_ENCRYPTION
+        default: break;
+        }
+    }
+
+    // Handle source types — MFC SearchManager.cpp ProcessResult().
+    uint8 buddyHash[16]{};
+    switch (sourceType) {
+    case 1: // High-ID, UDP firewalled
+    case 2: // High-ID, UDP open
+        break; // Use sourceIP and sourcePort as-is
+    case 4: { // Firewalled Kad source — needs buddy callback
+        // The answer (source's Kad node ID) serves as its buddy ID.
+        answer.toByteArray(buddyHash);
+        sourceIP = 0;
+        sourcePort = 0;
+        break;
+    }
+    case 3: // Firewalled, needs server callback — not useable from Kad
+    default:
+        logKad(QStringLiteral("Kad search %1: skipping unuseable source type %2 from %3")
+                   .arg(m_searchID).arg(sourceType).arg(answer.toHexString()));
+        return;
     }
 
     // Report via callback to DownloadQueue
     const auto& cb = Kademlia::kadSourceResultCallback();
     if (cb) {
+        // Pass the search target (= file hash) and the answer (= source client hash).
+        // MFC publishes GetClientHash() (the ED2K user hash) as the source ID in
+        // PUBLISH_SOURCE, NOT GetKadID().  So the answer IS the correct user hash
+        // and toByteArray() recovers the original bytes for encryption key derivation.
         uint8 fileHash[16];
-        answer.toByteArray(fileHash);
-        cb(m_searchID, fileHash, sourceIP, sourcePort, buddyIP, buddyPort, cryptOptions);
+        m_target.toByteArray(fileHash);
+        uint8 sourceClientHash[16];
+        answer.toByteArray(sourceClientHash);
+        cb(m_searchID, fileHash, sourceIP, sourcePort, buddyIP, buddyPort, cryptOptions,
+           sourceType, buddyHash, sourceClientHash);
     }
 
-    logKad(QStringLiteral("Kad search %1: got file source %2, IP=%3:%4")
-               .arg(m_searchID).arg(answer.toHexString())
-               .arg(ipToString(sourceIP)).arg(sourcePort));
+    logKad(QStringLiteral("Kad search %1: got file source %2, type=%3 IP=%4:%5 buddy=%6:%7")
+               .arg(m_searchID).arg(answer.toHexString()).arg(sourceType)
+               .arg(ipToString(sourceIP)).arg(sourcePort)
+               .arg(ipToString(buddyIP)).arg(buddyPort));
 }
 
 void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort)
@@ -659,7 +692,10 @@ void Search::storePacket()
             SafeMemFile packet;
             io::writeUInt128(packet, m_target);
             auto* prefs = Kademlia::getInstancePrefs();
-            io::writeUInt128(packet, prefs ? prefs->kadId() : RoutingZone::localKadId());
+            // MFC uses GetClientHash() (ED2K user hash) for source publishing,
+            // NOT GetKadID().  The receiver stores this as the source's client hash
+            // and uses it for encryption key derivation when connecting back.
+            io::writeUInt128(packet, prefs ? prefs->clientHash() : RoutingZone::localKadId());
 
             // Build source tags matching MFC format.  The receiver (MFC
             // Process_KADEMLIA2_PUBLISH_SOURCE_REQ) requires TAG_SOURCETYPE
@@ -788,16 +824,13 @@ void Search::storePacket()
                 break;
 
             SafeMemFile packet;
-            // Write our KadID XOR'd with the target (check/verify ID)
-            UInt128 check(prefs->kadId());
-            check.xorWith(m_target);
-            io::writeUInt128(packet, check);
-            // Write our client hash
+            // Write the target (= ~kadID) as BuddyID — used for callback verification.
+            // MFC writes m_uTarget directly (which is ~kadID, set at search creation).
+            io::writeUInt128(packet, m_target);
+            // Write our client hash so the remote can do a callback
             io::writeUInt128(packet, prefs->clientHash());
-            // Write our TCP port
-            packet.writeUInt16(prefs->internKadPort());
-            // Write our connect options
-            packet.writeUInt8(prefs->myConnectOptions());
+            // Write our ED2K TCP port so the remote can TCP-connect to us
+            packet.writeUInt16(thePrefs.port());
 
             udpListener->sendPacket(packet, KADEMLIA_FINDBUDDY_REQ,
                                     contact->getIPAddress(), contact->getUDPPort(),
@@ -816,9 +849,8 @@ void Search::storePacket()
                 io::writeUInt128(packet, m_fileIDs[0]);
             else
                 io::writeUInt128(packet, UInt128());
-            // Write our TCP port
-            auto* prefs = Kademlia::getInstancePrefs();
-            packet.writeUInt16(prefs ? prefs->internKadPort() : uint16{0});
+            // Write our ED2K TCP port so the callback works (MFC: thePrefs.GetPort())
+            packet.writeUInt16(thePrefs.port());
 
             udpListener->sendPacket(packet, KADEMLIA_CALLBACK_REQ,
                                     contact->getIPAddress(), contact->getUDPPort(),

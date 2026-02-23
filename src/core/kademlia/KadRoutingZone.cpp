@@ -572,9 +572,9 @@ void RoutingZone::readFile(const QString& specialNodesdat)
 
         for (uint32 i = 0; i < numContacts; ++i) {
             // Read KadID (16 bytes)
-            uint8 idBytes[16];
-            sf.readHash16(idBytes);
-            UInt128 id(idBytes);
+            // MFC uses ReadUInt128 → GetDataPtr() (raw host-order bytes).
+            UInt128 id;
+            sf.readHash16(id.getDataPtr());
 
             uint32 ip = sf.readUInt32();
             uint16 udpPort = sf.readUInt16();
@@ -660,9 +660,8 @@ void RoutingZone::writeFile()
         sf.writeUInt32(static_cast<uint32>(contacts.size()));
 
         for (auto* contact : contacts) {
-            uint8 idBytes[16];
-            contact->getClientID().toByteArray(idBytes);
-            sf.writeHash16(idBytes);
+            // MFC uses WriteUInt128 → GetData() (raw host-order bytes).
+            sf.writeHash16(contact->getClientID().getData());
 
             sf.writeUInt32(contact->getIPAddress());
             sf.writeUInt16(contact->getUDPPort());

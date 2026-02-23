@@ -310,6 +310,12 @@ public:
     [[nodiscard]] bool useSecureIdent() const;
     void setUseSecureIdent(bool val);
 
+    // -- Shared file visibility -----------------------------------------------
+
+    /// Who can browse our shared files: 0=nobody, 1=friends, 2=everybody.
+    [[nodiscard]] int viewSharedFilesAccess() const;
+    void setViewSharedFilesAccess(int val);
+
     // -- Download behavior ----------------------------------------------------
 
     [[nodiscard]] bool autoDownloadPriority() const;

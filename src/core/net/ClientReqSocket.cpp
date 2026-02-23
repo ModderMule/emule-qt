@@ -3,6 +3,7 @@
 
 #include "net/ClientReqSocket.h"
 #include "app/AppContext.h"
+#include "client/UpDownClient.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
@@ -76,6 +77,13 @@ bool ClientReqSocket::checkTimeOut()
     if (m_socketState == PeerSocketState::Half) {
         // Give connecting sockets 4x timeout
         timeout *= 4;
+    } else if (m_client) {
+        // MFC: extend timeout for downloading clients during slow-start phase
+        if (m_client->isDownloading() &&
+            now < m_client->downStartTime() + 4 * CONNECTION_TIMEOUT)
+        {
+            timeout += 4 * CONNECTION_TIMEOUT;
+        }
     }
 
     return elapsed > timeout;
@@ -112,6 +120,11 @@ void ClientReqSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPac
 
 bool ClientReqSocket::packetReceived(Packet* packet)
 {
+    logDebug(QStringLiteral("ClientReqSocket::packetReceived — proto=0x%1 opcode=0x%2 size=%3 peer=%4:%5")
+                 .arg(packet->prot, 2, 16, QLatin1Char('0'))
+                 .arg(packet->opcode, 2, 16, QLatin1Char('0'))
+                 .arg(packet->size)
+                 .arg(peerAddress().toString()).arg(peerPort()));
     resetTimeOutTimer();
 
     if (auto* stats = theApp.statistics)
@@ -260,8 +273,31 @@ void ClientReqSocket::onError(int errorCode)
 
 void ClientReqSocket::onSocketConnected()
 {
+    logDebug(QStringLiteral("ClientReqSocket::onSocketConnected — peer=%1:%2 fd=%3")
+                 .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()));
+
+    // If the encryption handshake is in progress, defer the connection
+    // notification until onEncryptionHandshakeComplete().  Emitting now would
+    // cause the upper layer to send OP_HELLO before the RC4 layer is ready.
+    if (isNegotiating()) {
+        logDebug(QStringLiteral("ClientReqSocket::onSocketConnected — deferring, crypto handshake in progress"));
+        return;
+    }
+    emitSocketConnected();
+}
+
+void ClientReqSocket::onEncryptionHandshakeComplete()
+{
+    logDebug(QStringLiteral("ClientReqSocket::onEncryptionHandshakeComplete — peer=%1:%2")
+                 .arg(peerAddress().toString()).arg(peerPort()));
+    emitSocketConnected();
+}
+
+void ClientReqSocket::emitSocketConnected()
+{
     setPeerSocketState(PeerSocketState::Complete);
     resetTimeOutTimer();
+    emit socketConnected();
 }
 
 void ClientReqSocket::onSocketDisconnected()
@@ -272,10 +308,14 @@ void ClientReqSocket::onSocketDisconnected()
 
 void ClientReqSocket::onSocketError(QAbstractSocket::SocketError error)
 {
+    logDebug(QStringLiteral("ClientReqSocket::onSocketError — error=%1 (%2) peer=%3:%4 fd=%5")
+                 .arg(static_cast<int>(error)).arg(errorString())
+                 .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()));
+
     if (m_deleteThis)
         return;
 
-    QString reason = QStringLiteral("Socket error: %1").arg(static_cast<int>(error));
+    QString reason = QStringLiteral("Socket error: %1 (%2)").arg(static_cast<int>(error)).arg(errorString());
     disconnect(reason);
 }
 

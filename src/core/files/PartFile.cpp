@@ -1299,6 +1299,31 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         m_datarate += client->calculateDownloadRate();
     }
 
+    // Retry connections to idle sources — MFC PartFile.cpp Process() source loop.
+    // Only attempt a few per cycle to avoid socket flooding.
+    int connectAttempts = 0;
+    static constexpr int kMaxConnectAttemptsPerCycle = 3;
+    for (auto* client : m_srcList) {
+        if (connectAttempts >= kMaxConnectAttemptsPerCycle)
+            break;
+
+        const auto ds = client->downloadState();
+        const bool disconnectedOnQueue =
+            (ds == DownloadState::OnQueue) && !client->socket();
+
+        if ((ds == DownloadState::None || disconnectedOnQueue)
+            && client->connectingState() == ConnectingState::None)
+        {
+            // Reset OnQueue → None so tryToConnect sets Connecting and
+            // connectionEstablished defers the file request properly.
+            if (disconnectedOnQueue)
+                client->setDownloadState(DownloadState::None);
+
+            if (client->tryToConnect())
+                ++connectAttempts;
+        }
+    }
+
     return m_datarate;
 }
 

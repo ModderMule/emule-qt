@@ -139,6 +139,7 @@ struct Preferences::Data {
 
     // Security (extended)
     bool useSecureIdent = true;  // Enable secure identity (RSA key exchange)
+    int viewSharedFilesAccess = 1;  // 0=nobody, 1=friends only, 2=everybody
 
     // Download behavior
     bool autoDownloadPriority = true;  // Auto-adjust download priority by source count
@@ -1155,6 +1156,22 @@ void Preferences::setUseSecureIdent(bool val)
 }
 
 // ---------------------------------------------------------------------------
+// Getters / setters — Shared file visibility
+// ---------------------------------------------------------------------------
+
+int Preferences::viewSharedFilesAccess() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->viewSharedFilesAccess;
+}
+
+void Preferences::setViewSharedFilesAccess(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->viewSharedFilesAccess = val;
+}
+
+// ---------------------------------------------------------------------------
 // Getters / setters — Download behavior
 // ---------------------------------------------------------------------------
 
@@ -1285,6 +1302,9 @@ void Preferences::validate()
 
     // maxConsPerFive: clamp 1–50
     m_data->maxConsPerFive = std::clamp<uint16>(m_data->maxConsPerFive, 1, 50);
+
+    // viewSharedFilesAccess: clamp 0–2
+    m_data->viewSharedFilesAccess = std::clamp(m_data->viewSharedFilesAccess, 0, 2);
 
     // kadUDPKey: generate random if 0
     if (m_data->kadUDPKey == 0) {
@@ -1469,6 +1489,7 @@ bool Preferences::load(const QString& filePath)
         if (auto sec = root["security"]) {
             m_data->ipFilterLevel = sec["ipFilterLevel"].as<uint32>(m_data->ipFilterLevel);
             m_data->useSecureIdent = sec["useSecureIdent"].as<bool>(m_data->useSecureIdent);
+            m_data->viewSharedFilesAccess = sec["viewSharedFilesAccess"].as<int>(m_data->viewSharedFilesAccess);
         }
 
         // IRC
@@ -1608,8 +1629,10 @@ std::array<uint8, 16> Preferences::generateUserHash()
     for (auto& byte : hash)
         byte = static_cast<uint8>(dist(rng));
 
-    // eMule markers
-    hash[5] = 14;
+    // eMule markers — MFC Preferences.cpp:CreateUserHash()
+    // Byte[5]:  14 = eDonkey base marker, |= 0x80 → 0x8E for eMule client
+    // Byte[14]: 111 = eMule magic value
+    hash[5] = 14 | 0x80;
     hash[14] = 111;
     return hash;
 }
@@ -1743,6 +1766,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "security" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "ipFilterLevel" << YAML::Value << m_data->ipFilterLevel;
     out << YAML::Key << "useSecureIdent" << YAML::Value << m_data->useSecureIdent;
+    out << YAML::Key << "viewSharedFilesAccess" << YAML::Value << m_data->viewSharedFilesAccess;
     out << YAML::EndMap;
 
     // IRC

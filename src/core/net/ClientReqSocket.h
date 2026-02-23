@@ -75,9 +75,15 @@ public:
     /// Debug info about connected client.
     [[nodiscard]] QString debugClientInfo() const;
 
+    /// Current peer socket state (for debug logging).
+    [[nodiscard]] PeerSocketState peerSocketState() const { return m_socketState; }
+
 signals:
     /// Socket disconnected (with reason).
     void clientDisconnected(const QString& reason);
+
+    /// TCP connection completed (outgoing connect succeeded).
+    void socketConnected();
 
     /// Hello packet received from peer.
     void helloReceived(const uint8* data, uint32 size, uint8 opcode);
@@ -97,6 +103,7 @@ signals:
 protected:
     bool packetReceived(Packet* packet) override;
     void onError(int errorCode) override;
+    void onEncryptionHandshakeComplete() override;
 
     /// Process ED2K standard protocol packet.
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode);
@@ -117,6 +124,7 @@ private:
     void onSocketConnected();
     void onSocketDisconnected();
     void onSocketError(QAbstractSocket::SocketError error);
+    void emitSocketConnected();
 
     QElapsedTimer m_elapsedTimer;
 };

@@ -81,6 +81,12 @@ UpDownClient::UpDownClient(uint16 port, uint32 userId, uint32 serverIP,
     , m_reqFile(reqFile)
 {
     init();
+
+    // Copy file hash into m_reqUpFileId so sendFileRequest() sends the right hash.
+    // init() zeroes m_reqUpFileId, so this must come after init().
+    if (m_reqFile && m_reqFile->fileHash())
+        md4cpy(m_reqUpFileId.data(), m_reqFile->fileHash());
+
     m_userPort = port;
 
     // Convert ED2K user ID to hybrid format if needed
@@ -371,12 +377,20 @@ void UpDownClient::setUploadState(UploadState state)
 void UpDownClient::setDownloadState(DownloadState state)
 {
     if (state != m_downloadState) {
-        // Clear rate data when leaving Downloading
+        // MFC: Increase socket timeout to 4x when entering Downloading state
+        // to give the uploader time to start sending data blocks
+        if (state == DownloadState::Downloading && m_socket) {
+            m_socket->setTimeOut(CONNECTION_TIMEOUT * 4);
+        }
+
+        // Clear rate data and reset socket timeout when leaving Downloading
         if (m_downloadState == DownloadState::Downloading) {
             m_downDatarate = 0;
             m_downDataRateMS = 0;
             m_sumForAvgDownDataRate = 0;
             m_averageDDR.clear();
+            if (m_socket)
+                m_socket->setTimeOut(CONNECTION_TIMEOUT);
         }
 
         m_downloadState = state;
@@ -958,14 +972,18 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 
 void UpDownClient::sendHelloPacket()
 {
-    if (!m_socket)
+    if (!m_socket) {
+        logDebug(QStringLiteral("sendHelloPacket: NO SOCKET, skipping"));
         return;
+    }
 
     SafeMemFile data;
     data.writeUInt8(16); // userhash size
     sendHelloTypePacket(data);
 
     auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HELLO);
+    logDebug(QStringLiteral("sendHelloPacket: sending OP_HELLO size=%1 to %2:%3")
+                 .arg(packet->size).arg(m_socket->peerAddress().toString()).arg(m_socket->peerPort()));
     m_socket->sendPacket(std::move(packet));
     m_helloAnswerPending = true;
 }
@@ -1026,7 +1044,7 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
         (static_cast<uint32>(1) << 28) | // Unicode
         (static_cast<uint32>(4) << 24) | // UDP version
         (static_cast<uint32>(HAVE_ZLIB ? 1 : 0) << 20) | // Data compression
-        (static_cast<uint32>(2) << 16) | // Secure ident
+        (static_cast<uint32>((theApp.clientCredits && theApp.clientCredits->cryptoAvailable()) ? 3 : 0) << 16) | // Secure ident (MFC: CryptoAvailable() ? 3 : 0)
         (static_cast<uint32>(SOURCEEXCHANGE2_VERSION) << 12) | // Source exchange
         (static_cast<uint32>(2) <<  8) | // Extended requests
         (static_cast<uint32>(1) <<  4) | // Comments
@@ -1052,11 +1070,13 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     Tag(CT_EMULE_MISCOPTIONS2, miscOpts2).writeTagToFile(data);
 
     // CT_EMULE_VERSION — (compatClient << 24) | (majVer << 17) | (minVer << 10) | (upVer << 7)
+    // Report as official eMule 0.50a (SO_EMULE=4) to avoid anti-leecher detection.
+    constexpr uint32 SO_EMULE = 4;
     const uint32 emuleVer =
-        (static_cast<uint32>(0) << 24) | // compatible client = 0 (eMule)
-        (static_cast<uint32>(EMULE_VERSION_MAJOR) << 17) |
-        (static_cast<uint32>(EMULE_VERSION_MINOR) << 10) |
-        (static_cast<uint32>(EMULE_VERSION_PATCH) <<  7);
+        (SO_EMULE << 24) |
+        (static_cast<uint32>(0) << 17) |  // major = 0
+        (static_cast<uint32>(50) << 10) | // minor = 50
+        (static_cast<uint32>(0) <<  7);   // update = a (0: a=0, b=1)
     Tag(CT_EMULE_VERSION, emuleVer).writeTagToFile(data);
 
     // Write server info
@@ -1084,7 +1104,7 @@ void UpDownClient::sendMuleInfoPacket(bool answer)
         return;
 
     SafeMemFile data;
-    data.writeUInt8(static_cast<uint8>(EMULE_VERSION_MAJOR)); // eMule version byte
+    data.writeUInt8(0x50); // eMule version byte = 0.50
     data.writeUInt8(EMULE_PROTOCOL); // protocol version
 
     constexpr uint32 tagCount = HAVE_ZLIB ? 7 : 6;
@@ -1271,27 +1291,31 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     Q_UNUSED(ignoreMaxCon);
 
     if (m_connectingState != ConnectingState::None) {
-        // Already connecting
+        logDebug(QStringLiteral("tryToConnect: already connecting (state=%1) for %2")
+                     .arg(static_cast<int>(m_connectingState)).arg(userName()));
         return true;
     }
 
     const uint32 curTick = static_cast<uint32>(getTickCount());
     if ((curTick - m_lastTriedToConnect) < MIN2MS(1)) {
-        // Too soon since last attempt
         return false;
     }
     m_lastTriedToConnect = curTick;
 
     // IP filter check
-    if (theApp.ipFilter && theApp.ipFilter->isFiltered(m_connectIP))
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(m_connectIP)) {
+        logDebug(QStringLiteral("tryToConnect: IP filtered: %1").arg(m_connectIP));
         return false;
+    }
 
     // Socket limit check
-    if (theApp.listenSocket && theApp.listenSocket->tooManySockets())
+    if (theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
+        logDebug(QStringLiteral("tryToConnect: too many sockets"));
         return false;
+    }
 
     if (m_socket && m_socket->isConnected()) {
-        // Already connected — just send what's needed
+        logDebug(QStringLiteral("tryToConnect: already connected, calling connectionEstablished()"));
         connectionEstablished();
         return true;
     }
@@ -1305,6 +1329,17 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         // Transition Kad UDP FW check state before connecting
         if (m_kadState == KadState::QueuedFwCheckUDP)
             setKadState(KadState::ConnectingFwCheckUDP);
+
+        // Set download state so connectionEstablished() sends the file request.
+        // Matches MFC UpDownClient.cpp TryToConnect().
+        if (m_reqFile && m_downloadState == DownloadState::None)
+            setDownloadState(DownloadState::Connecting);
+
+        const QHostAddress dbgAddr(ntohl(m_connectIP));
+        logDebug(QStringLiteral("tryToConnect: DIRECT TCP to %1:%2 (connectIP=0x%3, userIDHybrid=0x%4)")
+                     .arg(dbgAddr.toString()).arg(m_userPort)
+                     .arg(m_connectIP, 8, 16, QLatin1Char('0'))
+                     .arg(m_userIDHybrid, 8, 16, QLatin1Char('0')));
 
         // Direct TCP connection
         m_connectingState = ConnectingState::DirectTCP;
@@ -1322,27 +1357,47 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
             auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_CALLBACKREQUEST);
             theApp.serverConnect->sendPacket(std::move(packet));
             m_connectingState = ConnectingState::ServerCallback;
+            logDebug(QStringLiteral("tryToConnect: SERVER CALLBACK for lowID=%1").arg(m_userIDHybrid));
             return true;
         }
     }
 
-    // Kademlia callback path — use buddy if available
-    if (hasLowID() && m_kadVersion >= KADEMLIA_VERSION2_47a
-        && m_buddyIP != 0 && m_buddyPort != 0)
+    // Kademlia callback path — send KADEMLIA_CALLBACK_REQ via UDP to target's buddy.
+    // Matches MFC BaseClient.cpp:1435-1449.
+    if (hasValidBuddyID() && kad::Kademlia::instance()
+        && kad::Kademlia::instance()->isConnected()
+        && ((m_buddyIP != 0 && m_buddyPort != 0) || m_reqFile != nullptr))
     {
-        m_connectingState = ConnectingState::KadCallback;
-        // Build Kademlia callback packet via buddy
-        SafeMemFile data;
-        data.writeUInt16(m_userPort); // our port
-        data.writeHash16(m_userHash.data()); // target client hash
-        // Send the buddy connection request
-        // This will be forwarded by the buddy to the target client
-        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_CALLBACK);
-        sendPacket(std::move(packet));
-        return true;
+        if (m_buddyIP != 0 && m_buddyPort != 0 && m_reqFile != nullptr) {
+            SafeMemFile data;
+            kad::UInt128 buddyKadId(m_buddyID.data());
+            kad::io::writeUInt128(data, buddyKadId);
+            kad::UInt128 fileId(m_reqFile->fileHash());
+            kad::io::writeUInt128(data, fileId);
+            data.writeUInt16(thePrefs.port());
+
+            auto packet = std::make_unique<Packet>(data, OP_KADEMLIAHEADER, KADEMLIA_CALLBACK_REQ);
+            m_connectingState = ConnectingState::KadCallback;
+            // Send encrypted UDP to buddy using their Kad ID as the encryption key. We assume all Kad clients support encryption by now
+            if (theApp.clientUDP)
+                theApp.clientUDP->sendPacket(std::move(packet), htonl(m_buddyIP),
+                                             m_buddyPort, true, m_buddyID.data(), true, 0);
+            setDownloadState(DownloadState::WaitCallbackKad);
+            logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2")
+                         .arg(QHostAddress(ntohl(m_buddyIP)).toString()).arg(m_buddyPort));
+            return true;
+        }
+        // Buddy without known IP — would need FindSource search (TODO)
+        logDebug(QStringLiteral("tryToConnect: Kad buddy without known IP for %1").arg(userName()));
+        return false;
     }
 
-    logDebug(QStringLiteral("tryToConnect: no viable connection path for %1").arg(userName()));
+    logDebug(QStringLiteral("tryToConnect: no viable connection path for %1 "
+                            "(connectIP=0x%2 lowID=%3 buddyValid=%4)")
+                 .arg(userName())
+                 .arg(m_connectIP, 8, 16, QLatin1Char('0'))
+                 .arg(hasLowID())
+                 .arg(hasValidBuddyID()));
     return false;
 }
 
@@ -1388,9 +1443,58 @@ void UpDownClient::connect()
     QObject::connect(reqSocket, &ClientReqSocket::uploadRequestReceived,
                      this, &UpDownClient::onUploadRequestReceived);
 
+    QObject::connect(reqSocket, &ClientReqSocket::socketConnected,
+                     this, &UpDownClient::connectionEstablished);
+
+    // Monitor all QAbstractSocket state changes for debugging
+    QObject::connect(reqSocket, &QAbstractSocket::stateChanged,
+                     this, [this, reqSocket](QAbstractSocket::SocketState state) {
+        static const char* stateNames[] = {
+            "UnconnectedState", "HostLookupState", "ConnectingState",
+            "ConnectedState", "BoundState", "ListeningState", "ClosingState"
+        };
+        const char* name = (state >= 0 && state <= 6) ? stateNames[state] : "Unknown";
+        logDebug(QStringLiteral("Socket state → %1 for %2:%3 (fd=%4)")
+                     .arg(QLatin1String(name))
+                     .arg(reqSocket->peerAddress().toString())
+                     .arg(reqSocket->peerPort())
+                     .arg(reqSocket->socketDescriptor()));
+    });
+
+    // Set up connection encryption if the peer supports/requests it and we have their hash.
+    // MFC BaseClient.cpp:1487-1491.
+    // MFC: IsCryptLayerEnabled() = cryptLayerSupported(), IsCryptLayerPreferred() = cryptLayerRequested()
+    reqSocket->setObfuscationConfig(thePrefs.obfuscationConfig());
+    bool encrypted = false;
+    logDebug(QStringLiteral("connect: encryption check — hasValidHash=%1 supportsCrypt=%2 prefCryptSupported=%3 requestsCrypt=%4 prefCryptRequested=%5")
+                 .arg(hasValidHash()).arg(supportsCryptLayer()).arg(thePrefs.cryptLayerSupported())
+                 .arg(requestsCryptLayer()).arg(thePrefs.cryptLayerRequested()));
+    if (hasValidHash()) {
+        QString hashHex;
+        for (int i = 0; i < 16; ++i)
+            hashHex += QStringLiteral("%1").arg(userHash()[i], 2, 16, QLatin1Char('0'));
+        logDebug(QStringLiteral("connect: targetHash=%1").arg(hashHex));
+    }
+    if (hasValidHash() && supportsCryptLayer() && thePrefs.cryptLayerSupported()
+        && (requestsCryptLayer() || thePrefs.cryptLayerRequested())) {
+        reqSocket->setConnectionEncryption(true, userHash(), false);
+        encrypted = true;
+    }
+
     // Initiate TCP connection
     const QHostAddress addr(ntohl(m_connectIP));
+    logDebug(QStringLiteral("connect: connectToHost(%1, %2) encrypted=%3 socketState=%4 fd=%5")
+                 .arg(addr.toString()).arg(m_userPort)
+                 .arg(encrypted)
+                 .arg(static_cast<int>(reqSocket->state()))
+                 .arg(reqSocket->socketDescriptor()));
+
     reqSocket->connectToHost(addr, m_userPort);
+
+    logDebug(QStringLiteral("connect: after connectToHost — socketState=%1 fd=%2")
+                 .arg(static_cast<int>(reqSocket->state()))
+                 .arg(reqSocket->socketDescriptor()));
+
     reqSocket->waitForOnConnect();
 
     m_connectingState = ConnectingState::DirectTCP;
@@ -1402,6 +1506,11 @@ void UpDownClient::connect()
 
 void UpDownClient::connectionEstablished()
 {
+    logDebug(QStringLiteral("connectionEstablished: peer=%1:%2 socket=%3")
+                 .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("null"))
+                 .arg(m_socket ? m_socket->peerPort() : 0)
+                 .arg(m_socket ? QStringLiteral("valid") : QStringLiteral("null")));
+
     m_connectingState = ConnectingState::None;
 
     // Flush waiting packets
@@ -1411,9 +1520,24 @@ void UpDownClient::connectionEstablished()
     }
     m_waitingPackets.clear();
 
-    // Handle state transitions based on what we were trying to do
-    if (m_downloadState == DownloadState::Connecting) {
+    // Send HELLO on outgoing connections if handshake not started
+    logDebug(QStringLiteral("connectionEstablished: handshakeFinished=%1 helloAnswerPending=%2 downloadState=%3")
+                 .arg(checkHandshakeFinished()).arg(m_helloAnswerPending)
+                 .arg(static_cast<int>(m_downloadState)));
+    if (!checkHandshakeFinished() && !m_helloAnswerPending) {
+        sendHelloPacket();
+    }
+
+    // Handle download state transitions including callback states.
+    // Matches MFC BaseClient.cpp:1541-1548.
+    if (m_downloadState == DownloadState::Connecting
+        || m_downloadState == DownloadState::WaitCallback
+        || m_downloadState == DownloadState::WaitCallbackKad)
+    {
+        logDebug(QStringLiteral("connectionEstablished: deferring file request until HELLO_ANSWER (downloadState=%1)")
+                     .arg(static_cast<int>(m_downloadState)));
         setDownloadState(DownloadState::Connected);
+        m_pendingFileRequest = true; // defer until HELLO_ANSWER
     }
 
     if (m_uploadState == UploadState::Connecting) {
@@ -1434,6 +1558,7 @@ void UpDownClient::connectionEstablished()
             sendPacket(std::move(packet));
         }
         break;
+    case KadState::QueuedBuddy:
     case KadState::ConnectingBuddy:
     case KadState::IncomingBuddy:
         setKadState(KadState::ConnectedBuddy);
@@ -1463,7 +1588,27 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
 
     logDebug(QStringLiteral("Client disconnected: %1 reason: %2").arg(userName(), reason));
 
+    // If we never completed the HELLO exchange, the connection failed during
+    // or before the handshake.  If encryption was in use, fall back to
+    // plaintext for the next retry.  This matches MFC behaviour where a
+    // failed obfuscation handshake triggers an unencrypted retry.
+    if (m_infoPacketsReceived == InfoPacketState::None && m_supportsCryptLayer) {
+        logDebug(QStringLiteral("Client %1: encrypted connection failed before HELLO — disabling crypt for retry")
+                     .arg(userName()));
+        m_supportsCryptLayer = false;
+        m_requestsCryptLayer = false;
+    }
+
     m_connectingState = ConnectingState::None;
+
+    // Release socket reference so tryToConnect() can create a fresh one.
+    m_socket = nullptr;
+
+    // Reset handshake state so the next connection starts a fresh HELLO
+    // exchange.  Without this, checkHandshakeFinished() returns true on
+    // reconnect and connectionEstablished() never sends OP_HELLO.
+    m_infoPacketsReceived = InfoPacketState::None;
+    m_helloAnswerPending  = false;
 
     // Save session stats
     if (m_uploadState == UploadState::Uploading) {
@@ -1560,6 +1705,11 @@ void UpDownClient::resetFileStatusInfo()
 
 void UpDownClient::onInfoPacketsReceived()
 {
+    // Complete buddy link after HELLO exchange (MFC ProcessMuleInfoPacket)
+    if (m_kadState == KadState::ConnectedBuddy && theApp.clientList) {
+        theApp.clientList->setBuddy(this, BuddyStatus::Connected);
+    }
+
     if (m_supportSecIdent != 0 && m_credits) {
         sendSecIdentStatePacket();
     }
@@ -1589,6 +1739,12 @@ void UpDownClient::processEmuleQueueRank(const uint8* data, uint32 size)
     SafeMemFile file(data, size);
     const uint16 rank = file.readUInt16();
     setRemoteQueueRank(rank);
+
+    // Receiving a queue rank means we're on the remote's upload queue
+    if (m_downloadState != DownloadState::OnQueue
+        && m_downloadState != DownloadState::Downloading) {
+        setDownloadState(DownloadState::OnQueue);
+    }
     checkQueueRankFlood();
 }
 
@@ -1604,6 +1760,12 @@ void UpDownClient::processEdonkeyQueueRank(const uint8* data, uint32 size)
     SafeMemFile file(data, size);
     const uint32 rank = file.readUInt32();
     setRemoteQueueRank(rank);
+
+    // Receiving a queue rank means we're on the remote's upload queue
+    if (m_downloadState != DownloadState::OnQueue
+        && m_downloadState != DownloadState::Downloading) {
+        setDownloadState(DownloadState::OnQueue);
+    }
     checkQueueRankFlood();
 }
 
@@ -1647,21 +1809,21 @@ void UpDownClient::requestSharedFileList()
 
 void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const QString& dir)
 {
-    Q_UNUSED(dir);
-
     if (m_fileListRequested == 0) {
         logDebug(QStringLiteral("processSharedFileList: unrequested response from %1").arg(userName()));
         return;
     }
 
-    m_fileListRequested = 0;
+    // Only reset counter for flat (non-directory) file list responses.
+    // Directory-based responses are counted down by processSharedFilesDirAnswer.
+    if (dir.isEmpty())
+        m_fileListRequested = 0;
 
     if (!data || size == 0)
         return;
 
     // Process the shared file list through SearchList
     if (theApp.searchList) {
-        // Process as a TCP search result packet (shared file list has the same format)
         theApp.searchList->processSearchAnswer(data, size,
                                                 m_unicodeSupport,
                                                 m_serverIP, m_serverPort);
@@ -1722,9 +1884,24 @@ void UpDownClient::sendSharedDirectories()
     if (!m_socket)
         return;
 
-    // Send empty shared directories response
+    // Collect unique directory pseudonyms from shared files
+    std::vector<QString> dirs;
+    if (theApp.sharedFileList) {
+        theApp.sharedFileList->forEachFile([&](KnownFile* file) {
+            QString dir = file->sharedDirectory();
+            if (dir.isEmpty())
+                dir = file->path();
+            if (!dir.isEmpty()) {
+                if (std::ranges::find(dirs, dir) == dirs.end())
+                    dirs.push_back(dir);
+            }
+        });
+    }
+
     SafeMemFile data;
-    data.writeUInt32(0); // 0 directories
+    data.writeUInt32(static_cast<uint32>(dirs.size()));
+    for (const auto& dir : dirs)
+        data.writeString(dir, UTF8Mode::Raw);
 
     auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_ASKSHAREDDIRSANS);
     sendPacket(std::move(packet));
@@ -1839,6 +2016,13 @@ void UpDownClient::sendSignaturePacket()
     if (!theApp.clientCredits || !theApp.clientCredits->cryptoAvailable())
         return;
 
+    // MFC: bail out if we don't have the remote's public key yet —
+    // will be called again from processPublicKeyPacket when it arrives
+    if (m_credits->secIDKeyLen() == 0) {
+        logDebug(QStringLiteral("sendSignaturePacket: no remote public key yet for %1 — deferring").arg(userName()));
+        return;
+    }
+
     // Signature requires a valid challenge from the peer
     if (m_credits->cryptRndChallengeFrom == 0) {
         logDebug(QStringLiteral("sendSignaturePacket: no challenge available for %1").arg(userName()));
@@ -1899,7 +2083,14 @@ void UpDownClient::processPublicKeyPacket(const uint8* data, uint32 size)
     if (keyLen + 1 > size || keyLen == 0)
         return;
 
-    m_credits->setSecureIdent(data + 1, keyLen);
+    if (m_credits->setSecureIdent(data + 1, keyLen)) {
+        // MFC: If we were waiting to send our signature (deferred because we
+        // didn't have the remote's public key yet), send it now.
+        if (m_secureIdentState == SecureIdentState::SignatureNeeded) {
+            logDebug(QStringLiteral("processPublicKeyPacket: got remote key, sending deferred signature to %1").arg(userName()));
+            sendSignaturePacket();
+        }
+    }
 }
 
 // ===========================================================================
@@ -1972,6 +2163,16 @@ void UpDownClient::sendSecIdentStatePacket()
 
     data.writeUInt8(state);
 
+    // Write our random challenge for the remote to sign
+    // (MFC: PokeUInt32(packet->GetDataBuffer()+1, m_dwCryptRndChallengeFor))
+    if (m_credits) {
+        if (m_credits->cryptRndChallengeFor == 0)
+            m_credits->cryptRndChallengeFor = getRandomUInt32();
+        data.writeUInt32(m_credits->cryptRndChallengeFor);
+    } else {
+        data.writeUInt32(0);
+    }
+
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_SECIDENTSTATE);
     sendPacket(std::move(packet));
 }
@@ -1987,13 +2188,31 @@ void UpDownClient::processSecIdentStatePacket(const uint8* data, uint32 size)
 
     const uint8 state = data[0];
 
+    // Extract the 4-byte random challenge the remote wants us to sign
+    // (MFC: credits->m_dwCryptRndChallengeFrom = PeekUInt32(pachPacket+1))
+    if (size >= 5 && m_credits) {
+        m_credits->cryptRndChallengeFrom = peekUInt32(data + 1);
+    }
+
+    logDebug(QStringLiteral("processSecIdentStatePacket: state=%1 size=%2 credits=%3 challenge=%4")
+                 .arg(state).arg(size)
+                 .arg(m_credits ? "yes" : "null")
+                 .arg(m_credits ? m_credits->cryptRndChallengeFrom : 0));
+
+    // MFC: Set m_secureIdentState to the received value so that
+    // processPublicKeyPacket can trigger deferred sendSignaturePacket
     switch (state) {
     case static_cast<uint8>(SecureIdentState::KeyAndSigNeeded):
+        m_secureIdentState = SecureIdentState::KeyAndSigNeeded;
         sendPublicKeyPacket();
-        sendSignaturePacket();
+        sendSignaturePacket();  // may defer if remote key not yet available
         break;
     case static_cast<uint8>(SecureIdentState::SignatureNeeded):
-        sendSignaturePacket();
+        m_secureIdentState = SecureIdentState::SignatureNeeded;
+        sendSignaturePacket();  // may defer if remote key not yet available
+        break;
+    case 0:
+        m_secureIdentState = SecureIdentState::Unavailable;
         break;
     default:
         break;
@@ -2558,6 +2777,12 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
     uint8 reqFileHash[16];
     dataIn.readHash16(reqFileHash);
 
+    // Look up the requesting client by IP + UDP port before checking the file,
+    // so we can encrypt the response if possible. Matches MFC ListenSocket.cpp:1453.
+    UpDownClient* sender = nullptr;
+    if (theApp.clientList)
+        sender = theApp.clientList->findByIP_UDP(destIP, destPort);
+
     // Look up the requested file in shared files
     KnownFile* reqFile = nullptr;
     if (theApp.sharedFileList)
@@ -2567,16 +2792,15 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
         // File not found — send OP_FILENOTFOUND via UDP
         if (theApp.clientUDP) {
             auto response = std::make_unique<Packet>(OP_FILENOTFOUND, 0, OP_EMULEPROT);
-            theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
-                                         false, nullptr, false, 0);
+            if (sender)
+                theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                                             sender->shouldReceiveCryptUDPPackets(),
+                                             sender->userHash(), false, 0);
+            else
+                theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                                             false, nullptr, false, 0);
         }
         return;
-    }
-
-    // Find the requesting client by IP + UDP port
-    UpDownClient* sender = nullptr;
-    if (theApp.clientList) {
-        sender = theApp.clientList->findByIP_UDP(destIP, destPort);
     }
 
     if (sender) {
@@ -2702,7 +2926,7 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
     switch (opcode) {
     case OP_EMULEINFO:
         processMuleInfoPacket(data, size);
-        sendMuleInfoPacket(false);
+        sendMuleInfoPacket(true); // answer=true → OP_EMULEINFOANSWER
         onInfoPacketsReceived();
         break;
 
@@ -2893,13 +3117,31 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         break;
 
     case OP_ASKSHAREDFILES:
+        processAskSharedFiles();
+        break;
+
     case OP_ASKSHAREDFILESANSWER:
+        processSharedFileList(data, size);
+        break;
+
     case OP_ASKSHAREDDIRS:
+        processAskSharedDirs();
+        break;
+
     case OP_ASKSHAREDFILESDIR:
+        processAskSharedFilesDir(data, size);
+        break;
+
     case OP_ASKSHAREDDIRSANS:
+        processSharedDirsAnswer(data, size);
+        break;
+
     case OP_ASKSHAREDFILESDIRANS:
+        processSharedFilesDirAnswer(data, size);
+        break;
+
     case OP_ASKSHAREDDENIEDANS:
-        // TODO: shared file browsing
+        processSharedDenied();
         break;
 
     case OP_MESSAGE: {
@@ -2923,6 +3165,11 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
     SafeMemFile io(data, size);
 
     if (opcode == OP_HELLO) {
+        // OP_HELLO has a 1-byte hash-size prefix (always 16) before the
+        // user hash — must be consumed before processHelloTypePacket,
+        // matching processHelloPacket() (MFC BaseClient.cpp:340-355).
+        io.readUInt8();
+        clearHelloProperties();
         processHelloTypePacket(io);
         // Send hello answer back
         SafeMemFile response;
@@ -2931,7 +3178,22 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
         sendPacket(std::move(packet));
         onInfoPacketsReceived();
     } else if (opcode == OP_HELLOANSWER) {
-        processHelloTypePacket(io);
+        m_helloAnswerPending = false;
+        const bool isMule = processHelloTypePacket(io);
+
+        // Send deferred file request BEFORE EMULEINFO so the remote
+        // processes it with ExtendedRequestsVersion=0 (matching MFC
+        // packet order where file requests are sent from
+        // ConnectionEstablished before HELLO_ANSWER/EMULEINFO).
+        if (m_pendingFileRequest) {
+            m_pendingFileRequest = false;
+            logDebug(QStringLiteral("onHelloReceived: sending deferred file request after HELLO_ANSWER"));
+            sendFileRequest();
+        }
+
+        // MFC sends OP_EMULEINFO after receiving HELLO_ANSWER (BaseClient.cpp:691).
+        if (isMule)
+            sendMuleInfoPacket(false);
         onInfoPacketsReceived();
     }
 }
@@ -2953,8 +3215,21 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
 
     case OP_REQFILENAMEANSWER: {
         // Answer to our file name request (download side)
+        // Payload: [16-byte fileHash] [filename string...]
         SafeMemFile io(data, size);
-        processFileInfo(io, m_reqFile);
+        uint8 fileHash[16];
+        io.readHash16(fileHash);
+        // Verify this is for the file we requested
+        if (m_reqFile && md4equ(fileHash, m_reqFile->fileHash())) {
+            processFileInfo(io, m_reqFile);
+
+            // MFC: REQFILENAMEANSWER triggers sendStartupLoadReq if not already queued
+            if (m_downloadState == DownloadState::Connected
+                || m_downloadState == DownloadState::Connecting) {
+                sendStartupLoadReq();
+                setDownloadState(DownloadState::OnQueue);
+            }
+        }
         break;
     }
 
@@ -2966,8 +3241,36 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
         break;
 
     case OP_FILESTATUS: {
+        // Payload: [16-byte fileHash] [2-byte partCount] [bitmap...]
         SafeMemFile io(data, size);
-        processFileStatus(false, io, m_reqFile);
+        uint8 fileHash[16];
+        io.readHash16(fileHash);
+        // Verify this is for the file we requested
+        if (m_reqFile && md4equ(fileHash, m_reqFile->fileHash())) {
+            processFileStatus(false, io, m_reqFile);
+            logDebug(QStringLiteral("OP_FILESTATUS: partCount=%1 completeSource=%2 downloadState=%3 from %4")
+                         .arg(m_partCount).arg(m_completeSource)
+                         .arg(static_cast<int>(m_downloadState)).arg(userName()));
+
+            // MFC: after receiving file status, request an upload slot if we
+            // haven't already and don't need a hashset first.
+            if (m_downloadState == DownloadState::Connected
+                || m_downloadState == DownloadState::Connecting) {
+                const auto& ident = m_reqFile->fileIdentifier();
+                const bool hashsetNeeded =
+                    ident.getTheoreticalMD4PartHashCount() > 0
+                    && !ident.hasExpectedMD4HashCount();
+
+                if (!hashsetNeeded) {
+                    logDebug(QStringLiteral("OP_FILESTATUS: sending STARTUPLOADREQ → OnQueue"));
+                    sendStartupLoadReq();
+                    setDownloadState(DownloadState::OnQueue);
+                } else {
+                    logDebug(QStringLiteral("OP_FILESTATUS: hashset needed, requesting"));
+                    sendHashSetRequest();
+                }
+            }
+        }
         break;
     }
 
@@ -3161,6 +3464,240 @@ void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
     m_lastSourceAnswer = static_cast<uint32>(getTickCount());
 
     file->addClientSources(io, version, this);
+}
+
+// ===========================================================================
+// processAskSharedFiles — respond to OP_ASKSHAREDFILES
+// ===========================================================================
+
+void UpDownClient::processAskSharedFiles()
+{
+    const int access = thePrefs.viewSharedFilesAccess();
+    const bool allowed = (access == 2) || (access == 1 && m_friend != nullptr);
+
+    if (!allowed) {
+        logDebug(QStringLiteral("Denied shared file browse request from %1").arg(userName()));
+        auto packet = std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0);
+        packet->prot = OP_EDONKEYPROT;
+        sendPacket(std::move(packet));
+        return;
+    }
+
+    if (!theApp.sharedFileList)
+        return;
+
+    // Collect shared files, skipping large files if peer doesn't support them
+    const bool largePeer = supportsLargeFiles();
+    std::vector<KnownFile*> files;
+    theApp.sharedFileList->forEachFile([&](KnownFile* file) {
+        if (!file->isLargeFile() || largePeer)
+            files.push_back(file);
+    });
+
+    SafeMemFile response;
+    response.writeUInt32(static_cast<uint32>(files.size()));
+
+    const uint32 clientID = thePrefs.publicIP();
+    const uint16 clientPort = thePrefs.port();
+
+    for (KnownFile* file : files) {
+        response.writeHash16(file->fileHash());
+        response.writeUInt32(clientID);
+        response.writeUInt16(clientPort);
+
+        std::vector<Tag> tags;
+        tags.emplace_back(FT_FILENAME, file->fileName());
+
+        auto sz = static_cast<uint64>(file->fileSize());
+        tags.emplace_back(FT_FILESIZE, static_cast<uint32>(sz & 0xFFFFFFFF));
+        if (file->isLargeFile())
+            tags.emplace_back(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32));
+
+        if (!file->fileType().isEmpty())
+            tags.emplace_back(FT_FILETYPE, file->fileType());
+
+        if (file->getFileRating() > 0)
+            tags.emplace_back(FT_FILERATING, file->getFileRating());
+
+        response.writeUInt32(static_cast<uint32>(tags.size()));
+        for (const auto& tag : tags) {
+            if (isEmuleClient())
+                tag.writeNewEd2kTag(response, UTF8Mode::Raw);
+            else
+                tag.writeTagToFile(response, UTF8Mode::None);
+        }
+    }
+
+    auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_ASKSHAREDFILESANSWER);
+    sendPacket(std::move(packet));
+
+    logDebug(QStringLiteral("Sent %1 shared files to %2").arg(files.size()).arg(userName()));
+}
+
+// ===========================================================================
+// processAskSharedDirs — respond to OP_ASKSHAREDDIRS
+// ===========================================================================
+
+void UpDownClient::processAskSharedDirs()
+{
+    const int access = thePrefs.viewSharedFilesAccess();
+    const bool allowed = (access == 2) || (access == 1 && m_friend != nullptr);
+
+    if (!allowed) {
+        logDebug(QStringLiteral("Denied shared dirs browse request from %1").arg(userName()));
+        auto packet = std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0);
+        packet->prot = OP_EDONKEYPROT;
+        sendPacket(std::move(packet));
+        return;
+    }
+
+    sendSharedDirectories();
+}
+
+// ===========================================================================
+// processAskSharedFilesDir — respond to OP_ASKSHAREDFILESDIR
+// ===========================================================================
+
+void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
+{
+    const int access = thePrefs.viewSharedFilesAccess();
+    const bool allowed = (access == 2) || (access == 1 && m_friend != nullptr);
+
+    if (!allowed) {
+        logDebug(QStringLiteral("Denied shared files dir request from %1").arg(userName()));
+        auto packet = std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0);
+        packet->prot = OP_EDONKEYPROT;
+        sendPacket(std::move(packet));
+        return;
+    }
+
+    if (!data || size == 0 || !theApp.sharedFileList)
+        return;
+
+    SafeMemFile io(data, size);
+    const QString reqDir = io.readString(m_unicodeSupport);
+
+    // Collect files matching the requested directory
+    const bool largePeer = supportsLargeFiles();
+    std::vector<KnownFile*> matchedFiles;
+    theApp.sharedFileList->forEachFile([&](KnownFile* file) {
+        if (!file->isLargeFile() || largePeer) {
+            QString dir = file->sharedDirectory();
+            if (dir.isEmpty())
+                dir = file->path();
+            if (dir == reqDir)
+                matchedFiles.push_back(file);
+        }
+    });
+
+    SafeMemFile response;
+    response.writeString(reqDir, UTF8Mode::Raw);
+    response.writeUInt32(static_cast<uint32>(matchedFiles.size()));
+
+    const uint32 clientID = thePrefs.publicIP();
+    const uint16 clientPort = thePrefs.port();
+
+    for (KnownFile* file : matchedFiles) {
+        response.writeHash16(file->fileHash());
+        response.writeUInt32(clientID);
+        response.writeUInt16(clientPort);
+
+        std::vector<Tag> tags;
+        tags.emplace_back(FT_FILENAME, file->fileName());
+
+        auto sz = static_cast<uint64>(file->fileSize());
+        tags.emplace_back(FT_FILESIZE, static_cast<uint32>(sz & 0xFFFFFFFF));
+        if (file->isLargeFile())
+            tags.emplace_back(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32));
+
+        if (!file->fileType().isEmpty())
+            tags.emplace_back(FT_FILETYPE, file->fileType());
+
+        if (file->getFileRating() > 0)
+            tags.emplace_back(FT_FILERATING, file->getFileRating());
+
+        response.writeUInt32(static_cast<uint32>(tags.size()));
+        for (const auto& tag : tags) {
+            if (isEmuleClient())
+                tag.writeNewEd2kTag(response, UTF8Mode::Raw);
+            else
+                tag.writeTagToFile(response, UTF8Mode::None);
+        }
+    }
+
+    auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_ASKSHAREDFILESDIRANS);
+    sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// processSharedDirsAnswer — handle OP_ASKSHAREDDIRSANS
+// ===========================================================================
+
+void UpDownClient::processSharedDirsAnswer(const uint8* data, uint32 size)
+{
+    if (m_fileListRequested != 1) {
+        logDebug(QStringLiteral("processSharedDirsAnswer: unrequested response from %1").arg(userName()));
+        return;
+    }
+
+    if (!data || size < 4)
+        return;
+
+    SafeMemFile io(data, size);
+    const uint32 dirCount = io.readUInt32();
+
+    if (dirCount == 0) {
+        m_fileListRequested = 0;
+        return;
+    }
+
+    // Request files for each directory
+    m_fileListRequested = static_cast<int>(dirCount);
+    for (uint32 i = 0; i < dirCount; ++i) {
+        const QString dirName = io.readString(m_unicodeSupport);
+
+        SafeMemFile reqData;
+        reqData.writeString(dirName, UTF8Mode::Raw);
+
+        auto packet = std::make_unique<Packet>(reqData, OP_EDONKEYPROT, OP_ASKSHAREDFILESDIR);
+        sendPacket(std::move(packet));
+    }
+}
+
+// ===========================================================================
+// processSharedFilesDirAnswer — handle OP_ASKSHAREDFILESDIRANS
+// ===========================================================================
+
+void UpDownClient::processSharedFilesDirAnswer(const uint8* data, uint32 size)
+{
+    if (m_fileListRequested <= 0) {
+        logDebug(QStringLiteral("processSharedFilesDirAnswer: unrequested response from %1").arg(userName()));
+        return;
+    }
+
+    if (!data || size < 4)
+        return;
+
+    SafeMemFile io(data, size);
+    const QString dirName = io.readString(m_unicodeSupport);
+
+    // Remaining data is the file list — pass to processSharedFileList
+    const auto pos = static_cast<uint32>(io.position());
+    if (pos < size)
+        processSharedFileList(data + pos, size - pos, dirName);
+
+    --m_fileListRequested;
+}
+
+// ===========================================================================
+// processSharedDenied — handle OP_ASKSHAREDDENIEDANS
+// ===========================================================================
+
+void UpDownClient::processSharedDenied()
+{
+    m_fileListRequested = 0;
+    m_noViewSharedFiles = true;
+    logDebug(QStringLiteral("Client %1 denied shared file browse request").arg(userName()));
 }
 
 } // namespace eMule

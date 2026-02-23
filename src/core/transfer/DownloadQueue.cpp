@@ -33,6 +33,12 @@
 #include <algorithm>
 #include <cstring>
 
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>  // htonl
+#endif
+
 namespace eMule {
 
 // ===========================================================================
@@ -238,6 +244,7 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
     if (file->sourceCount() >= thePrefs.maxSourcesPerFile())
         return false;
 
+    source->setReqFile(file);  // MFC: SetRequestFile(sender)
     file->addSource(source);
     return true;
 }
@@ -254,7 +261,9 @@ void DownloadQueue::removeSource(UpDownClient* source)
 void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
                                         uint32 ip, uint16 tcpPort,
                                         uint32 buddyIP, uint16 buddyPort,
-                                        uint8 buddyCrypt)
+                                        uint8 buddyCrypt, uint8 sourceType,
+                                        const uint8* buddyHash,
+                                        const uint8* clientHash)
 {
     Q_UNUSED(searchID);
 
@@ -268,24 +277,58 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
 
     // Create a new client for this Kad source
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, file);
-    client->setConnectIP(ip);
     client->setSourceFrom(SourceFrom::Kademlia);
 
-    // Set buddy info for firewalled sources
-    if (buddyIP != 0) {
-        client->setBuddyIP(buddyIP);
+    // MFC publishes GetClientHash() (the ED2K user hash) as the source ID,
+    // NOT GetKadID().  So clientHash here IS the correct user hash.
+    // Setting it enables encrypted connection setup (connectionEstablished
+    // checks hasValidHash() before enabling encryption).
+    if (clientHash)
+        client->setUserHash(clientHash);
+
+    if (sourceType == 4) {
+        // Low-ID source — uses Kad buddy callback, not direct TCP.
+        // Don't set the client IP; tryToConnect() uses the Kad callback path
+        // when m_connectIP == 0 and hasValidBuddyID().
+        if (buddyHash)
+            client->setBuddyID(buddyHash);
+        client->setBuddyIP(htonl(buddyIP));
         client->setBuddyPort(buddyPort);
-        // Decode buddy crypt options
         client->setConnectOptions(buddyCrypt, true, true);
+        logDebug(QStringLiteral("Kad LowID source for %1: buddy=%2:%3")
+                     .arg(file->fileName())
+                     .arg(buddyIP).arg(buddyPort));
+    } else {
+        // High-ID source (type 1/2) — direct TCP connection.
+        client->setIP(htonl(ip));  // Kad IPs are host BO; setIP sets both m_userIP and m_connectIP
+        client->setConnectOptions(buddyCrypt, true, false);
+        {
+            QString hashHex;
+            for (int i = 0; i < 16; ++i)
+                hashHex += QStringLiteral("%1").arg(clientHash ? clientHash[i] : 0, 2, 16, QLatin1Char('0'));
+            logDebug(QStringLiteral("Kad HighID source for %1: IP=%2:%3 crypt=0x%4 hash=%5 hasValid=%6")
+                         .arg(file->fileName())
+                         .arg(ip).arg(tcpPort)
+                         .arg(buddyCrypt, 2, 16, QLatin1Char('0'))
+                         .arg(hashHex)
+                         .arg(client->hasValidHash()));
+        }
     }
 
     // IPFilter + dead source + dedup checks
     if (checkAndAddSource(file, client)) {
-        logDebug(QStringLiteral("Kad source added for %1: IP=%2:%3")
+        logDebug(QStringLiteral("addKadSourceResult: source ADDED, calling tryToConnect — "
+                                "type=%1 connectIP=0x%2 port=%3 file=%4 totalSources=%5")
+                     .arg(sourceType)
+                     .arg(client->connectIP(), 8, 16, QLatin1Char('0'))
+                     .arg(tcpPort)
                      .arg(file->fileName())
-                     .arg(ip).arg(tcpPort));
+                     .arg(file->sourceCount()));
         client->tryToConnect();
     } else {
+        logDebug(QStringLiteral("addKadSourceResult: source REJECTED by checkAndAddSource — "
+                                "type=%1 IP=%2:%3")
+                     .arg(sourceType).arg(ip).arg(tcpPort));
         delete client;
     }
 }
