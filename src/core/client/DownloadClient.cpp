@@ -107,6 +107,10 @@ void UpDownClient::sendFileRequest()
     if (!m_socket || !m_reqFile)
         return;
 
+    // MFC: Mark the time of this file request so PartFile::process() and UDP
+    // reask logic know when we last asked this source.
+    setLastAskedTime();
+
     logDebug(QStringLiteral("sendFileRequest: reqFile=%1")
                  .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
 

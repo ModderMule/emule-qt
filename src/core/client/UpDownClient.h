@@ -766,6 +766,7 @@ private:
     bool m_pendingFileRequest = false;
     bool m_addNextConnect = false;
     bool m_sourceExchangeSwapped = false;
+    bool m_secIdentSent = false;
     uint16 m_lastPartAsked = UINT16_MAX;
     uint16 m_showDR = 0;
     QString m_clientSoftwareStr;

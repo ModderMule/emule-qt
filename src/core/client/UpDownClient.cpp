@@ -949,10 +949,14 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     // Set info packets received flag
     m_infoPacketsReceived |= InfoPacketState::EDonkeyProtPack;
 
-    // If CT_EMULE_VERSION was received, mark eMule protocol
+    // If CT_EMULE_VERSION was received, mark eMule protocol.
+    // Note: Do NOT set InfoPacketState::EMuleProtPack here — that flag
+    // must only be set when the actual OP_EMULEINFO/ANSWER is processed
+    // (in processMuleInfoPacket).  MFC only sets IP_EMULECOMPAT from
+    // ProcessMuleInfoPacket, ensuring InfoPacketsReceived() doesn't fire
+    // until the full capability exchange is complete.
     if (bIsMule) {
         m_emuleProtocol = true;
-        m_infoPacketsReceived |= InfoPacketState::EMuleProtPack;
     }
 
     if (bPrTag)
@@ -1609,6 +1613,7 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // reconnect and connectionEstablished() never sends OP_HELLO.
     m_infoPacketsReceived = InfoPacketState::None;
     m_helloAnswerPending  = false;
+    m_secIdentSent        = false;
 
     // Save session stats
     if (m_uploadState == UploadState::Uploading) {
@@ -1710,7 +1715,12 @@ void UpDownClient::onInfoPacketsReceived()
         theApp.clientList->setBuddy(this, BuddyStatus::Connected);
     }
 
-    if (m_supportSecIdent != 0 && m_credits) {
+    // Send SecureIdent state packet exactly once per connection.
+    // Called from both onHelloReceived and processMuleInfoPacket — the
+    // m_secIdentSent flag prevents duplicate SECIDENTSTATE packets that
+    // were confusing some remote peers.
+    if (m_supportSecIdent != 0 && m_credits && !m_secIdentSent) {
+        m_secIdentSent = true;
         sendSecIdentStatePacket();
     }
     m_failedFileIdReqs = 0;

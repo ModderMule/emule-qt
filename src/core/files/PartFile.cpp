@@ -1314,6 +1314,14 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         if ((ds == DownloadState::None || disconnectedOnQueue)
             && client->connectingState() == ConnectingState::None)
         {
+            // MFC: Disconnected OnQueue sources should NOT be retried
+            // immediately — the reask interval (FILEREASKTIME ~29 min)
+            // must elapse first.  Without this guard the source is
+            // reconnected every process() cycle (~100 ms), flooding the
+            // remote and potentially resetting our queue position.
+            if (disconnectedOnQueue && client->timeUntilReask(this) > 0)
+                continue;
+
             // Reset OnQueue → None so tryToConnect sets Connecting and
             // connectionEstablished defers the file request properly.
             if (disconnectedOnQueue)
