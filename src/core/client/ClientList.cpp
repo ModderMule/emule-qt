@@ -5,6 +5,7 @@
 
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "net/ClientReqSocket.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
@@ -81,6 +82,17 @@ int ClientList::clientCount() const
 void ClientList::deleteAll()
 {
     m_clients.clear();
+}
+
+// ===========================================================================
+// Incoming connection handling
+// ===========================================================================
+
+void ClientList::handleIncomingConnection(ClientReqSocket* socket)
+{
+    auto* client = new UpDownClient(this);
+    client->wireIncomingSocket(socket);
+    addClient(client);
 }
 
 // ===========================================================================

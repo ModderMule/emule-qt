@@ -31,6 +31,7 @@ namespace eMule {
 // Forward declarations
 class AICHHash;
 class ClientCredits;
+class ClientReqSocket;
 class EMSocket;
 class Friend;
 class KnownFile;
@@ -391,6 +392,10 @@ public:
     virtual bool disconnected(const QString& reason, bool fromSocket = false);
     void connect();
     virtual void onSocketConnected(int errorCode);
+
+    /// Wire signal connections for an incoming (already-accepted) socket.
+    /// Mirrors the signal wiring in connect() but skips connectToHost/encryption.
+    void wireIncomingSocket(ClientReqSocket* socket);
 
     // -- Phase 3 — protocol utility -----------------------------------------
 

@@ -54,15 +54,15 @@ private slots:
     void connectionEstablished_sendsHelloToListener();
     void tryToConnect_alreadyConnecting_returnsTrue();
     void tryToConnect_noConnectIP_returnsFalse();
+    void secureIdent_completesHandshake();
     void download_completesFile();
+    void download_askedForAnotherFile();
+    void download_completesZipFile();
     void cleanupTestCase();
 
 private:
     /// Create a minimal PartFile for download connection tests.
     std::unique_ptr<PartFile> makePartFile();
-
-    /// Wire server-side UpDownClient to a freshly accepted ClientReqSocket.
-    void wireServerClient(UpDownClient* client, ClientReqSocket* socket);
 
     TempDir* m_tmpDir = nullptr;
     ListenSocket* m_listenSocket = nullptr;
@@ -80,6 +80,7 @@ private:
     UploadQueue* m_uploadQueue = nullptr;
     DownloadQueue* m_downloadQueue = nullptr;
     KnownFile* m_sharedFile = nullptr;
+    KnownFile* m_sharedZipFile = nullptr;
     QList<UpDownClient*> m_serverClients;
 };
 
@@ -96,28 +97,6 @@ std::unique_ptr<PartFile> tst_TcpConnect::makePartFile()
     memset(hash, 0xAB, 16);
     pf->setFileHash(hash);
     return pf;
-}
-
-void tst_TcpConnect::wireServerClient(UpDownClient* client, ClientReqSocket* socket)
-{
-    client->setSocket(socket);
-    socket->setClient(client);
-
-    // Use string-based connect to access private slots on UpDownClient
-    QObject::connect(socket, SIGNAL(helloReceived(const uint8*,uint32,uint8)),
-                     client, SLOT(onHelloReceived(const uint8*,uint32,uint8)));
-
-    QObject::connect(socket, SIGNAL(fileRequestReceived(const uint8*,uint32,uint8)),
-                     client, SLOT(onFileRequestReceived(const uint8*,uint32,uint8)));
-
-    QObject::connect(socket, SIGNAL(uploadRequestReceived(const uint8*,uint32)),
-                     client, SLOT(onUploadRequestReceived(const uint8*,uint32)));
-
-    QObject::connect(socket, SIGNAL(extPacketReceived(const uint8*,uint32,uint8)),
-                     client, SLOT(onExtPacketReceived(const uint8*,uint32,uint8)));
-
-    QObject::connect(socket, SIGNAL(packetForClient(const uint8*,uint32,uint8,uint8)),
-                     client, SLOT(onPacketForClient(const uint8*,uint32,uint8,uint8)));
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +139,14 @@ void tst_TcpConnect::initTestCase()
     m_listenSocket = new ListenSocket(this);
     QVERIFY2(m_listenSocket->startListening(0), "Failed to start TCP listener");
     theApp.listenSocket = m_listenSocket;
+
+    // 6b. Wire production incoming connection handler
+    QObject::connect(m_listenSocket, &ListenSocket::newClientConnection,
+                     m_clientList, &ClientList::handleIncomingConnection);
+
+    // Track server-side clients created by the production handler
+    QObject::connect(m_clientList, &ClientList::clientAdded,
+                     this, [this](UpDownClient* c) { m_serverClients.append(c); });
 
     // 7. UploadBandwidthThrottler — flushes control packets like OP_HELLO
     m_throttler = new UploadBandwidthThrottler(this);
@@ -204,6 +191,15 @@ void tst_TcpConnect::initTestCase()
     QVERIFY2(m_sharedFile->createFromFile(dataIncoming, QStringLiteral("readme.txt")),
              "Failed to create KnownFile from readme.txt");
     QVERIFY(m_sharedFiles->safeAddKFile(m_sharedFile));
+
+    // 15. Create KnownFile from data/incoming/eMule0.50a.zip and share it
+    QVERIFY2(QFile::exists(dataIncoming + QStringLiteral("/eMule0.50a.zip")),
+             "Missing data/incoming/eMule0.50a.zip");
+
+    m_sharedZipFile = new KnownFile();
+    QVERIFY2(m_sharedZipFile->createFromFile(dataIncoming, QStringLiteral("eMule0.50a.zip")),
+             "Failed to create KnownFile from eMule0.50a.zip");
+    QVERIFY(m_sharedFiles->safeAddKFile(m_sharedZipFile));
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +319,59 @@ void tst_TcpConnect::tryToConnect_noConnectIP_returnsFalse()
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: Full loopback file download
+// Test 5: SecureIdent handshake completes with Identified on both sides
+// ---------------------------------------------------------------------------
+
+void tst_TcpConnect::secureIdent_completesHandshake()
+{
+    // -- Cleanup from earlier tests ------------------------------------------
+    m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients)
+        m_clientList->removeClient(c);
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
+
+    // -- Initiate connection (no PartFile — just handshake) ------------------
+    const uint32 loopbackNBO = htonl(0x7F000001);
+    const uint16 port = m_listenSocket->connectedPort();
+    auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
+                                    nullptr, true, this);
+
+    QVERIFY(client->tryToConnect());
+
+    // -- Wait for TCP + HELLO exchange ---------------------------------------
+    QTRY_COMPARE_WITH_TIMEOUT(client->connectingState(), ConnectingState::None, 10000);
+
+    // -- Wait for client-side SecureIdent to complete ------------------------
+    QTRY_VERIFY_WITH_TIMEOUT(client->hasPassedSecureIdent(false), 15000);
+
+    // Verify client-side
+    QVERIFY(client->credits() != nullptr);
+    QVERIFY(client->credits()->secIDKeyLen() > 0);
+    QCOMPARE(client->credits()->currentIdentState(loopbackNBO),
+             IdentState::Identified);
+    QCOMPARE(client->secureIdentState(), SecureIdentState::AllRequestsSend);
+
+    // -- Wait for server-side SecureIdent to complete ------------------------
+    QVERIFY(!m_serverClients.isEmpty());
+    auto* serverClient = m_serverClients.first();
+    QTRY_VERIFY_WITH_TIMEOUT(serverClient->hasPassedSecureIdent(false), 15000);
+
+    // Verify server-side
+    QVERIFY(serverClient->credits() != nullptr);
+    QVERIFY(serverClient->credits()->secIDKeyLen() > 0);
+    QCOMPARE(serverClient->secureIdentState(), SecureIdentState::AllRequestsSend);
+
+    // -- Cleanup -------------------------------------------------------------
+    delete client;
+    for (auto* c : m_serverClients)
+        m_clientList->removeClient(c);
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Test 6: Full loopback file download
 // ---------------------------------------------------------------------------
 
 void tst_TcpConnect::download_completesFile()
@@ -334,23 +382,16 @@ void tst_TcpConnect::download_completesFile()
     // Kill orphaned server-side sockets from tests 1–3 so they don't time out
     // and cause cascading disconnects during this test.
     m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients)
+        m_clientList->removeClient(c);
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
 
     // Stop the throttler thread.  The throttler calls sendFileAndControlData()
     // from its own thread, which triggers QSocketNotifier cross-thread warnings
     // and corrupts Qt socket state (QTcpSocket is not thread-safe).
     // We manually drain server socket queues from the main thread instead.
     m_throttler->endThread();
-
-    // -- Server-side client factory ------------------------------------------
-    // Create an UpDownClient for each incoming connection and wire all signals.
-    // This is only active during this test to avoid interfering with tests 1–4.
-    auto factoryConn = QObject::connect(
-        m_listenSocket, &ListenSocket::newClientConnection,
-        this, [this](ClientReqSocket* socket) {
-            auto* serverClient = new UpDownClient(this);
-            wireServerClient(serverClient, socket);
-            m_serverClients.append(serverClient);
-        }, Qt::DirectConnection);
 
     // -- Process timer -------------------------------------------------------
     // Drives download/upload queues and manually sends queued data on server
@@ -431,7 +472,232 @@ void tst_TcpConnect::download_completesFile()
     QVERIFY2(QFile::exists(originalPath), "Original readme.txt was removed!");
 
     processTimer.stop();
-    QObject::disconnect(factoryConn);
+    delete client;
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: Asked for Another File — one client, two files, sequential download
+// ---------------------------------------------------------------------------
+
+void tst_TcpConnect::download_askedForAnotherFile()
+{
+    QVERIFY2(m_sharedFile != nullptr, "Shared readme.txt not set up from initTestCase");
+    QVERIFY2(m_sharedZipFile != nullptr, "Shared zip not set up from initTestCase");
+
+    // -- Cleanup from earlier tests ------------------------------------------
+    m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients)
+        m_clientList->removeClient(c);
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
+
+    // Stop the throttler thread — same reason as download_completesFile:
+    // sendFileAndControlData() from the throttler thread triggers cross-thread
+    // QSocketNotifier warnings and corrupts Qt socket state.
+    m_throttler->endThread();
+
+    // -- Process timer -------------------------------------------------------
+    QTimer processTimer;
+    QObject::connect(&processTimer, &QTimer::timeout, this, [this] {
+        m_downloadQueue->process();
+        m_uploadQueue->process();
+
+        for (auto* serverClient : m_serverClients) {
+            if (auto* sock = serverClient->socket())
+                sock->sendFileAndControlData(1024 * 1024, 0);
+        }
+    });
+    processTimer.start(100);
+
+    // -- Setup: create PartFile A (readme.txt) for first download ------------
+    const uint8* hashA = m_sharedFile->fileHash();
+    const uint64 sizeA = static_cast<uint64>(m_sharedFile->fileSize());
+
+    auto* partFileA = new PartFile();
+    partFileA->setFileName(QStringLiteral("readme.txt"));
+    partFileA->setFileSize(static_cast<EMFileSize>(sizeA));
+    partFileA->setFileHash(hashA);
+
+    const QString tempDir = thePrefs.tempDirs().first();
+    QVERIFY2(partFileA->createPartFile(tempDir), "Failed to create .part for readme.txt");
+    partFileA->setStatus(PartFileStatus::Ready);
+
+    m_downloadQueue->addDownload(partFileA);
+
+    // -- Setup: create PartFile B (zip) and register as A4AF -----------------
+    const uint8* hashB = m_sharedZipFile->fileHash();
+    const uint64 sizeB = static_cast<uint64>(m_sharedZipFile->fileSize());
+
+    auto* partFileB = new PartFile();
+    partFileB->setFileName(QStringLiteral("eMule0.50a.zip"));
+    partFileB->setFileSize(static_cast<EMFileSize>(sizeB));
+    partFileB->setFileHash(hashB);
+
+    QVERIFY2(partFileB->createPartFile(tempDir), "Failed to create .part for zip");
+    partFileB->setStatus(PartFileStatus::Ready);
+
+    m_downloadQueue->addDownload(partFileB);
+
+    // -- Spies ---------------------------------------------------------------
+    QSignalSpy moveFinishedSpyA(partFileA->partNotifier(),
+                                &PartFileNotifier::fileMoveFinished);
+    QSignalSpy moveFinishedSpyB(partFileB->partNotifier(),
+                                &PartFileNotifier::fileMoveFinished);
+
+    // -- Initiate connection for file A (readme.txt) -------------------------
+    const uint32 loopbackNBO = htonl(0x7F000001);
+    const uint16 port = m_listenSocket->connectedPort();
+    auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
+                                    partFileA, true, this);
+
+    // Register file B as "asked for another file" on this client
+    QVERIFY(client->addRequestForAnotherFile(partFileB));
+
+    QVERIFY(client->tryToConnect());
+
+    // -- Wait for file A (readme.txt) to complete ----------------------------
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyA.count() >= 1, 30000);
+    QVERIFY2(moveFinishedSpyA.first().first().toBool(), "File A move failed");
+    QCOMPARE(partFileA->status(), PartFileStatus::Complete);
+
+    // -- Verify server is still connected ------------------------------------
+    QVERIFY(!m_serverClients.isEmpty());
+    auto* serverClient = m_serverClients.first();
+    QVERIFY(serverClient->uploadFile() != nullptr);
+
+    // -- Switch client to file B (the "asked for another file") --------------
+    // In real eMule this happens via swapToAnotherFile(). Here we manually
+    // switch reqFile and reqUpFileId, then re-send the file request — exactly
+    // what doSwap() + the download queue would do.
+    client->setReqFile(partFileB);
+    client->setReqUpFileId(hashB);
+    client->setDownloadState(DownloadState::Connected);
+    client->sendFileRequest();
+    client->sendStartupLoadReq();
+
+    // -- Wait for file B (zip) to complete -----------------------------------
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyB.count() >= 1, 120000);
+    QVERIFY2(moveFinishedSpyB.first().first().toBool(), "File B move failed");
+    QCOMPARE(partFileB->status(), PartFileStatus::Complete);
+
+    // -- Verify server switched upload file ----------------------------------
+    // The server should now be uploading the zip file (or have finished it).
+    // uploadFile() may be nullptr if the upload completed, but the upload file
+    // hash should have changed from readme.txt to zip during the transfer.
+
+    // -- Verify downloaded files ---------------------------------------------
+    const QString downloadedA = thePrefs.incomingDir() + QDir::separator()
+                                + QStringLiteral("readme.txt");
+    QVERIFY2(QFile::exists(downloadedA),
+             qPrintable(QStringLiteral("Downloaded readme.txt not found at %1").arg(downloadedA)));
+    QFileInfo fiA(downloadedA);
+    QCOMPARE(static_cast<uint64>(fiA.size()), sizeA);
+
+    const QString downloadedB = thePrefs.incomingDir() + QDir::separator()
+                                + QStringLiteral("eMule0.50a.zip");
+    QVERIFY2(QFile::exists(downloadedB),
+             qPrintable(QStringLiteral("Downloaded zip not found at %1").arg(downloadedB)));
+    QFileInfo fiB(downloadedB);
+    QCOMPARE(static_cast<uint64>(fiB.size()), sizeB);
+
+    // -- Cleanup: delete downloaded copies -----------------------------------
+    QVERIFY(QFile::remove(downloadedA));
+    QVERIFY(QFile::remove(downloadedB));
+
+    processTimer.stop();
+    delete client;
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: Full loopback file download — eMule0.50a.zip (~2.9 MB)
+// ---------------------------------------------------------------------------
+
+void tst_TcpConnect::download_completesZipFile()
+{
+    QVERIFY2(m_sharedZipFile != nullptr, "Shared KnownFile for zip not set up from initTestCase");
+
+    // -- Cleanup from earlier tests ------------------------------------------
+    m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients)
+        m_clientList->removeClient(c);
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
+
+    // -- Process timer -------------------------------------------------------
+    QTimer processTimer;
+    QObject::connect(&processTimer, &QTimer::timeout, this, [this] {
+        m_downloadQueue->process();
+        m_uploadQueue->process();
+
+        for (auto* serverClient : m_serverClients) {
+            if (auto* sock = serverClient->socket()) {
+                sock->sendFileAndControlData(1024 * 1024, 0);
+                sock->flush();
+            }
+        }
+    });
+    processTimer.start(100);
+
+    // -- Setup: create PartFile for download ----------------------------------
+    const uint8* fileHash = m_sharedZipFile->fileHash();
+    const uint64 fileSize = static_cast<uint64>(m_sharedZipFile->fileSize());
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("eMule0.50a.zip"));
+    partFile->setFileSize(static_cast<EMFileSize>(fileSize));
+    partFile->setFileHash(fileHash);
+
+    const QString tempDir = thePrefs.tempDirs().first();
+    QVERIFY2(partFile->createPartFile(tempDir), "Failed to create .part file for zip");
+    partFile->setStatus(PartFileStatus::Ready);
+
+    m_downloadQueue->addDownload(partFile);
+
+    // -- Spies ---------------------------------------------------------------
+    QSignalSpy moveFinishedSpy(partFile->partNotifier(),
+                               &PartFileNotifier::fileMoveFinished);
+
+    // -- Initiate connection -------------------------------------------------
+    const uint32 loopbackNBO = htonl(0x7F000001);
+    const uint16 port = m_listenSocket->connectedPort();
+    auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
+                                    partFile, true, this);
+
+    QVERIFY(client->tryToConnect());
+
+    // -- Wait for download to complete (up to 120s for a ~2.9 MB file) -------
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpy.count() >= 1, 120000);
+
+    // Verify move succeeded
+    QVERIFY2(moveFinishedSpy.first().first().toBool(), "File move failed");
+
+    // Verify PartFile status is Complete
+    QCOMPARE(partFile->status(), PartFileStatus::Complete);
+
+    // -- Verify downloaded file ----------------------------------------------
+    const QString downloadedPath = thePrefs.incomingDir() + QDir::separator()
+                                   + QStringLiteral("eMule0.50a.zip");
+    QVERIFY2(QFile::exists(downloadedPath),
+             qPrintable(QStringLiteral("Downloaded file not found at %1").arg(downloadedPath)));
+
+    QFileInfo fi(downloadedPath);
+    QCOMPARE(static_cast<uint64>(fi.size()), fileSize);
+
+    // Byte-for-byte content comparison with original
+    const QString originalPath = projectDataDir() + QStringLiteral("/incoming/eMule0.50a.zip");
+    QFile original(originalPath);
+    QVERIFY(original.open(QIODevice::ReadOnly));
+    QFile downloaded(downloadedPath);
+    QVERIFY(downloaded.open(QIODevice::ReadOnly));
+    QCOMPARE(downloaded.readAll(), original.readAll());
+
+    // -- Cleanup: delete downloaded copy, verify original unchanged -----------
+    downloaded.close();
+    original.close();
+    QVERIFY(QFile::remove(downloadedPath));
+    QVERIFY2(QFile::exists(originalPath), "Original eMule0.50a.zip was removed!");
+
+    processTimer.stop();
     delete client;
 }
 
@@ -457,7 +723,9 @@ void tst_TcpConnect::cleanupTestCase()
     if (m_listenSocket)
         m_listenSocket->stopListening();
 
-    // Delete server-side clients created by the factory
+    // Delete server-side clients created by the production handler
+    for (auto* c : m_serverClients)
+        m_clientList->removeClient(c);
     qDeleteAll(m_serverClients);
     m_serverClients.clear();
 

@@ -26,6 +26,7 @@ public:
                                         uint16 udpPort, uint16 tcpPort,
                                         const UInt128& target, uint8 version,
                                         const KadUDPKey& udpKey, bool ipVerified);
+    static bool needsMoreTestContacts();
     static void reset();
     static void connected();
     static void queryNextClient();

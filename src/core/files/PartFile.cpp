@@ -56,9 +56,8 @@ PartFile::~PartFile()
     if (m_partFileHandle.isOpen())
         m_partFileHandle.close();
 
-    // Clean up requested blocks
-    for (auto* block : m_requestedBlocks)
-        delete block;
+    // Clear requested blocks list — blocks are owned by clients'
+    // Pending_Block_Struct and freed by clearPendingBlockRequest.
     m_requestedBlocks.clear();
 }
 
@@ -485,13 +484,22 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     });
 
     int blocksFound = 0;
+
     for (const auto& cand : candidates) {
         if (blocksFound >= count)
             break;
 
-        auto* reqBlock = new Requested_Block_Struct;
-        if (getNextEmptyBlockInPart(cand.part, reqBlock)) {
-            // Check not already requested
+        // Try multiple blocks from the same part (MFC eMule queues up to 3)
+        uint64 searchFrom = 0;
+        while (blocksFound < count) {
+            auto* reqBlock = new Requested_Block_Struct;
+            if (!getNextEmptyBlockInPart(cand.part, reqBlock, searchFrom)) {
+                delete reqBlock;
+                break;
+            }
+            // Advance past this block for next iteration
+            searchFrom = reqBlock->endOffset + 1;
+
             if (!isAlreadyRequested(reqBlock->startOffset, reqBlock->endOffset)) {
                 newblocks[blocksFound] = reqBlock;
                 m_requestedBlocks.push_back(reqBlock);
@@ -499,8 +507,6 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
             } else {
                 delete reqBlock;
             }
-        } else {
-            delete reqBlock;
         }
     }
 
@@ -509,7 +515,8 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
 }
 
 bool PartFile::getNextEmptyBlockInPart(uint32 partNumber,
-                                        Requested_Block_Struct* reqBlock) const
+                                        Requested_Block_Struct* reqBlock,
+                                        uint64 searchFrom) const
 {
     if (!reqBlock)
         return false;
@@ -520,15 +527,20 @@ bool PartFile::getNextEmptyBlockInPart(uint32 partNumber,
     if (partEnd >= fs)
         partEnd = fs - 1;
 
-    // Find first gap within this part's byte range
+    // Effective search start: at least partStart, at least searchFrom
+    const uint64 effectiveStart = std::max(partStart, searchFrom);
+    if (effectiveStart > partEnd)
+        return false;
+
+    // Find first gap within this part's byte range, starting from effectiveStart
     for (const auto& gap : m_gapList) {
         if (gap.start > partEnd)
             break;
-        if (gap.end < partStart)
+        if (gap.end < effectiveStart)
             continue;
 
-        // Found a gap in this part
-        const uint64 blockStart = std::max(gap.start, partStart);
+        // Found a gap that overlaps [effectiveStart, partEnd]
+        const uint64 blockStart = std::max(gap.start, effectiveStart);
         uint64 blockEnd = std::min(gap.end, partEnd);
 
         // Align to EMBLOCKSIZE
@@ -548,7 +560,8 @@ bool PartFile::removeBlockFromList(uint64 start, uint64 end)
 {
     for (auto it = m_requestedBlocks.begin(); it != m_requestedBlocks.end(); ++it) {
         if ((*it)->startOffset == start && (*it)->endOffset == end) {
-            delete *it;
+            // Only remove from list — the block is still alive in the
+            // client's Pending_Block_Struct and freed by clearPendingBlockRequest.
             m_requestedBlocks.erase(it);
             return true;
         }
@@ -558,8 +571,8 @@ bool PartFile::removeBlockFromList(uint64 start, uint64 end)
 
 void PartFile::removeAllRequestedBlocks()
 {
-    for (auto* block : m_requestedBlocks)
-        delete block;
+    // Only clear the list — blocks are owned by the clients'
+    // Pending_Block_Struct and freed by clearPendingBlockRequest.
     m_requestedBlocks.clear();
 }
 
@@ -1301,35 +1314,61 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
 
     // Retry connections to idle sources — MFC PartFile.cpp Process() source loop.
     // Only attempt a few per cycle to avoid socket flooding.
+    // Index-based loop because NNP purge can call removeSource() which invalidates iterators.
     int connectAttempts = 0;
     static constexpr int kMaxConnectAttemptsPerCycle = 3;
-    for (auto* client : m_srcList) {
-        if (connectAttempts >= kMaxConnectAttemptsPerCycle)
-            break;
-
+    for (size_t i = 0; i < m_srcList.size(); ) {
+        auto* client = m_srcList[i];
         const auto ds = client->downloadState();
-        const bool disconnectedOnQueue =
-            (ds == DownloadState::OnQueue) && !client->socket();
 
-        if ((ds == DownloadState::None || disconnectedOnQueue)
-            && client->connectingState() == ConnectingState::None)
-        {
-            // MFC: Disconnected OnQueue sources should NOT be retried
-            // immediately — the reask interval (FILEREASKTIME ~29 min)
-            // must elapse first.  Without this guard the source is
-            // reconnected every process() cycle (~100 ms), flooding the
-            // remote and potentially resetting our queue position.
-            if (disconnectedOnQueue && client->timeUntilReask(this) > 0)
-                continue;
+        if (connectAttempts < kMaxConnectAttemptsPerCycle) {
+            const bool disconnectedOnQueue =
+                (ds == DownloadState::OnQueue) && !client->socket();
 
-            // Reset OnQueue → None so tryToConnect sets Connecting and
-            // connectionEstablished defers the file request properly.
-            if (disconnectedOnQueue)
-                client->setDownloadState(DownloadState::None);
+            if ((ds == DownloadState::None || disconnectedOnQueue)
+                && client->connectingState() == ConnectingState::None)
+            {
+                // MFC: Disconnected OnQueue sources should NOT be retried
+                // immediately — the reask interval (FILEREASKTIME ~29 min)
+                // must elapse first.  Without this guard the source is
+                // reconnected every process() cycle (~100 ms), flooding the
+                // remote and potentially resetting our queue position.
+                if (disconnectedOnQueue && client->timeUntilReask(this) > 0) {
+                    ++i;
+                    continue;
+                }
 
-            if (client->tryToConnect())
-                ++connectAttempts;
+                // Reset OnQueue → None so tryToConnect sets Connecting and
+                // connectionEstablished defers the file request properly.
+                if (disconnectedOnQueue)
+                    client->setDownloadState(DownloadState::None);
+
+                if (client->tryToConnect())
+                    ++connectAttempts;
+            }
         }
+
+        // NNP source handling — MFC PartFile.cpp:2309-2326
+        if (ds == DownloadState::NoNeededParts) {
+            // Purge NNP sources when at 80% capacity (40s interval)
+            if (curTick >= m_lastPurgeTime + SEC2MS(40)) {
+                m_lastPurgeTime = curTick;
+                if (sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()) * 4 / 5) {
+                    if (theApp.downloadQueue)
+                        theApp.downloadQueue->removeSource(client);
+                    continue; // client removed, don't increment i
+                }
+            }
+            // Re-ask when doubled reask time (58 min) elapses
+            if (client->timeUntilReask(this) == 0) {
+                client->swapToAnotherFile(
+                    QStringLiteral("A4AF for NNP file. PartFile::process()"),
+                    true, false, false, nullptr, true, true);
+                client->setDownloadState(DownloadState::OnQueue);
+            }
+        }
+
+        ++i;
     }
 
     return m_datarate;

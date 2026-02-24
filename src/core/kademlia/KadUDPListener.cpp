@@ -757,10 +757,13 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
     }
 
     // If this is a firewall check search, feed contacts to the UDP firewall tester
-    if (SearchManager::isFWCheckUDPSearch(target)) {
+    // (skip entirely when the tester already has enough candidates).
+    if (SearchManager::isFWCheckUDPSearch(target) && UDPFirewallTester::needsMoreTestContacts()) {
         logKad(QStringLiteral("Kad: FW check search response — feeding %1 contacts to UDP FW tester")
                    .arg(results.size()));
         for (const auto* contact : results) {
+            if (!UDPFirewallTester::needsMoreTestContacts())
+                break;
             UDPFirewallTester::addPossibleTestContact(
                 contact->getClientID(), contact->getIPAddress(),
                 contact->getUDPPort(), contact->getTCPPort(),

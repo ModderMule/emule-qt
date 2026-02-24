@@ -19,6 +19,7 @@ namespace eMule::kad { class Contact; }
 
 namespace eMule {
 
+class ClientReqSocket;
 class UpDownClient;
 
 /// Buddy connection state for Kademlia firewall traversal.
@@ -38,6 +39,12 @@ public:
     // Non-copyable (QObject)
     ClientList(const ClientList&) = delete;
     ClientList& operator=(const ClientList&) = delete;
+
+    // -- Incoming connection handling ----------------------------------------
+
+    /// Handle a new incoming TCP connection from ListenSocket.
+    /// Creates an UpDownClient and wires packet signals.
+    void handleIncomingConnection(ClientReqSocket* socket);
 
     // -- Client management --------------------------------------------------
 

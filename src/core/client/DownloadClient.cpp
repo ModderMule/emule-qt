@@ -242,6 +242,24 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
                     freq[i]++;
             }
         }
+
+        // MFC: Check if this source has any parts we still need
+        bool partsNeeded = m_completeSource;
+        if (!partsNeeded) {
+            for (uint16 i = 0; i < partCount; ++i) {
+                if (m_partStatus[i] && !file->isComplete(i)) {
+                    partsNeeded = true;
+                    break;
+                }
+            }
+        }
+
+        if (!partsNeeded) {
+            setDownloadState(DownloadState::NoNeededParts);
+            swapToAnotherFile(
+                QStringLiteral("A4AF for NNP file. processFileStatus() TCP"),
+                true, false, false, nullptr, true, true);
+        }
     }
 }
 
@@ -696,6 +714,14 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
 
         if (complete) {
             m_pendingBlocks.erase(itPos);
+
+            // Remove from PartFile's requested-blocks list so the range
+            // is no longer considered "already requested" by other sources.
+            if (m_reqFile && curBlock->block) {
+                m_reqFile->removeBlockFromList(curBlock->block->startOffset,
+                                               curBlock->block->endOffset);
+            }
+
             clearPendingBlockRequest(curBlock);
             delete curBlock;
 
@@ -1181,12 +1207,20 @@ uint32 UpDownClient::timeUntilReask(const PartFile* file) const
     if (lastAsk == 0)
         return 0;
 
+    // MFC: NNP sources get doubled reask time to save connections and traffic
+    uint32 reaskTime = FILEREASKTIME;
+    if ((file == m_reqFile && m_downloadState == DownloadState::NoNeededParts)
+        || (file != m_reqFile && isInNoNeededList(file)))
+    {
+        reaskTime = FILEREASKTIME * 2;
+    }
+
     const uint32 curTick = static_cast<uint32>(getTickCount());
     const uint32 elapsed = curTick - lastAsk;
 
-    if (elapsed >= FILEREASKTIME)
+    if (elapsed >= reaskTime)
         return 0;
-    return FILEREASKTIME - elapsed;
+    return reaskTime - elapsed;
 }
 
 uint32 UpDownClient::lastAskedTime(const PartFile* file) const

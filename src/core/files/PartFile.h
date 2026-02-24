@@ -177,7 +177,8 @@ public:
                                Requested_Block_Struct** newblocks,
                                int& count);
     bool getNextEmptyBlockInPart(uint32 partNumber,
-                                Requested_Block_Struct* reqBlock) const;
+                                Requested_Block_Struct* reqBlock,
+                                uint64 searchFrom = 0) const;
     bool removeBlockFromList(uint64 start, uint64 end);
     void removeAllRequestedBlocks();
 
@@ -337,6 +338,7 @@ private:
     time_t m_tCreated = 0;
     time_t m_lastPausePurge = 0;
     uint32 m_lastBufferFlushTime = 0;
+    uint32 m_lastPurgeTime = 0;
     uint32 m_dlActiveTime = 0;
 
     // Hashset

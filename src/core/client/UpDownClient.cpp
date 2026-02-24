@@ -394,6 +394,11 @@ void UpDownClient::setDownloadState(DownloadState state)
         }
 
         m_downloadState = state;
+
+        // MFC: record reask baseline on NNP entry so doubled reask timing works
+        if (state == DownloadState::NoNeededParts)
+            setLastAskedTime();
+
         emit downloadStateChanged(state);
     }
 }
@@ -1506,6 +1511,36 @@ void UpDownClient::connect()
     reqSocket->waitForOnConnect();
 
     m_connectingState = ConnectingState::DirectTCP;
+}
+
+// ===========================================================================
+// wireIncomingSocket — production incoming connection handler
+// ===========================================================================
+
+void UpDownClient::wireIncomingSocket(ClientReqSocket* socket)
+{
+    setSocket(socket);
+    socket->setClient(this);
+
+    QObject::connect(socket, &ClientReqSocket::clientDisconnected,
+                     this, [this](const QString& reason) {
+        disconnected(reason, true);
+    });
+
+    QObject::connect(socket, &ClientReqSocket::helloReceived,
+                     this, &UpDownClient::onHelloReceived);
+
+    QObject::connect(socket, &ClientReqSocket::fileRequestReceived,
+                     this, &UpDownClient::onFileRequestReceived);
+
+    QObject::connect(socket, &ClientReqSocket::uploadRequestReceived,
+                     this, &UpDownClient::onUploadRequestReceived);
+
+    QObject::connect(socket, &ClientReqSocket::extPacketReceived,
+                     this, &UpDownClient::onExtPacketReceived);
+
+    QObject::connect(socket, &ClientReqSocket::packetForClient,
+                     this, &UpDownClient::onPacketForClient);
 }
 
 // ===========================================================================

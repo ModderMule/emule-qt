@@ -100,6 +100,11 @@ bool UDPFirewallTester::isVerified()
     return s_isFWVerifiedUDP;
 }
 
+bool UDPFirewallTester::needsMoreTestContacts()
+{
+    return getUDPCheckClientsNeeded() && s_possibleTestClients.size() < 20;
+}
+
 void UDPFirewallTester::addPossibleTestContact(const UInt128& clientID, uint32 ip,
                                                 uint16 udpPort, uint16 tcpPort,
                                                 const UInt128& target, uint8 version,
@@ -113,10 +118,8 @@ void UDPFirewallTester::addPossibleTestContact(const UInt128& clientID, uint32 i
     }
 
     // Don't add if already enough clients
-    if (s_possibleTestClients.size() >= 20) {
-        logKad(QStringLiteral("Kad: UDP FW test contact rejected — pool full (20)"));
+    if (s_possibleTestClients.size() >= 20)
         return;
-    }
 
     Contact contact(clientID, ip, udpPort, tcpPort, target, version, udpKey, ipVerified);
     s_possibleTestClients.push_back(std::move(contact));
@@ -224,7 +227,10 @@ void UDPFirewallTester::queryNextClient()
 
 bool UDPFirewallTester::getUDPCheckClientsNeeded()
 {
-    return s_fwChecksRunning + s_fwChecksFinished < KADEMLIAFIREWALLCHECKS;
+    // MFC UDPFirewallTester.cpp:37 — "more clients increase the chance of a
+    // false positive, while less the chance of a false negative"
+    static constexpr uint8 kUDPFirewallTestClientsToAsk = 2;
+    return s_fwChecksRunning + s_fwChecksFinished < kUDPFirewallTestClientsToAsk;
 }
 
 } // namespace eMule::kad
