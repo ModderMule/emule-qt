@@ -1483,6 +1483,10 @@ void UpDownClient::connect()
         && (requestsCryptLayer() || thePrefs.cryptLayerRequested())) {
         reqSocket->setConnectionEncryption(true, userHash(), false);
         encrypted = true;
+    } else {
+        // Explicitly mark the socket as plaintext so the send path
+        // doesn't warn about an unknown encryption state.
+        reqSocket->setConnectionEncryption(false, nullptr, false);
     }
 
     // Initiate TCP connection
@@ -1591,17 +1595,6 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     Q_UNUSED(fromSocket);
 
     logDebug(QStringLiteral("Client disconnected: %1 reason: %2").arg(userName(), reason));
-
-    // If we never completed the HELLO exchange, the connection failed during
-    // or before the handshake.  If encryption was in use, fall back to
-    // plaintext for the next retry.  This matches MFC behaviour where a
-    // failed obfuscation handshake triggers an unencrypted retry.
-    if (m_infoPacketsReceived == InfoPacketState::None && m_supportsCryptLayer) {
-        logDebug(QStringLiteral("Client %1: encrypted connection failed before HELLO — disabling crypt for retry")
-                     .arg(userName()));
-        m_supportsCryptLayer = false;
-        m_requestsCryptLayer = false;
-    }
 
     m_connectingState = ConnectingState::None;
 
