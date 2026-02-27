@@ -10,6 +10,7 @@
 
 #include "utils/Types.h"
 
+#include <QList>
 #include <QString>
 #include <QReadWriteLock>
 #include <QStringList>
@@ -190,6 +191,12 @@ public:
     [[nodiscard]] bool verbose() const;
     void setVerbose(bool val);
 
+    [[nodiscard]] bool kadVerboseLog() const;
+    void setKadVerboseLog(bool val);
+
+    [[nodiscard]] uint32 maxLogLines() const;
+    void setMaxLogLines(uint32 val);
+
     // -- Files ----------------------------------------------------------------
 
     [[nodiscard]] uint16 maxSourcesPerFile() const;
@@ -250,6 +257,21 @@ public:
 
     [[nodiscard]] QString ircPerformString() const;
     void setIrcPerformString(const QString& val);
+
+    // -- IPC Daemon -----------------------------------------------------------
+
+    [[nodiscard]] bool ipcEnabled() const;
+    void setIpcEnabled(bool val);
+
+    [[nodiscard]] uint16 ipcPort() const;
+    void setIpcPort(uint16 val);
+
+    [[nodiscard]] QString ipcListenAddress() const;
+    void setIpcListenAddress(const QString& val);
+
+    /// Path to emulecored binary. Empty = search next to GUI executable.
+    [[nodiscard]] QString ipcDaemonPath() const;
+    void setIpcDaemonPath(const QString& val);
 
     // -- Web Server -----------------------------------------------------------
 
@@ -341,6 +363,23 @@ public:
 
     [[nodiscard]] uint32 publicIP() const;
     void setPublicIP(uint32 val);
+
+    // -- UI State (persisted window layout) -----------------------------------
+
+    [[nodiscard]] QList<int> serverSplitSizes() const;
+    void setServerSplitSizes(const QList<int>& val);
+
+    [[nodiscard]] QList<int> kadSplitSizes() const;
+    void setKadSplitSizes(const QList<int>& val);
+
+    [[nodiscard]] int windowWidth() const;
+    void setWindowWidth(int val);
+
+    [[nodiscard]] int windowHeight() const;
+    void setWindowHeight(int val);
+
+    [[nodiscard]] bool windowMaximized() const;
+    void setWindowMaximized(bool val);
 
     // -- Factory methods (bridge to existing config structs) -------------------
 

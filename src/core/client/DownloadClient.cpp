@@ -305,17 +305,9 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
             m_hashsetRequestingAICH = false;
         }
     } else {
-        // Legacy: read file hash + part hashes
-        uint8 fileHash[16];
-        file.readHash16(fileHash);
-
-        // Verify this is the file we requested
-        if (!md4equ(fileHash, m_reqFile->fileHash())) {
-            logDebug(QStringLiteral("processHashSet: hash mismatch from %1").arg(userName()));
-            m_hashsetRequestingMD4 = false;
-            return;
-        }
-
+        // Legacy: OP_HASHSETANSWER — packet is hash(16) + count(2) + N×hash(16)
+        // loadMD4HashsetFromFile reads the full structure (hash + count + parts),
+        // so pass the file from position 0 without pre-reading the hash.
         auto& ident = m_reqFile->fileIdentifier();
         if (!ident.loadMD4HashsetFromFile(file, true)) {
             logDebug(QStringLiteral("processHashSet: loadMD4HashsetFromFile failed from %1").arg(userName()));
@@ -323,7 +315,7 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
             return;
         }
 
-        // Verify the hashset
+        // Verify the hashset — concatenate part hashes and check MD4 root
         if (!ident.calculateMD4HashByHashSet(true, true)) {
             logDebug(QStringLiteral("processHashSet: MD4 verification failed from %1").arg(userName()));
         }
@@ -331,8 +323,11 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
         m_hashsetRequestingMD4 = false;
     }
 
-    // If hashset obtained, proceed with download
+    // If hashset obtained, proceed with download — MFC: transition to
+    // OnQueue before sending OP_STARTUPLOADREQ so that the subsequent
+    // OP_ACCEPTUPLOADREQ will be processed correctly by processAcceptUpload().
     if (m_downloadState == DownloadState::ReqHashSet) {
+        setDownloadState(DownloadState::OnQueue);
         sendStartupLoadReq();
     }
 }

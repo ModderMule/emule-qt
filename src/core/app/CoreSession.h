@@ -22,6 +22,8 @@ class UploadBandwidthThrottler;
 class UploadDiskIOThread;
 class UploadQueue;
 
+namespace kad { class Kademlia; class KadPrefs; }
+
 class CoreSession : public QObject {
     Q_OBJECT
 
@@ -31,6 +33,8 @@ public:
 
     void start();
     void stop();
+
+    [[nodiscard]] kad::Kademlia* kademlia() const { return m_kademlia.get(); }
 
 private slots:
     void onTimer();
@@ -42,12 +46,17 @@ private:
     QTimer m_timer;
     uint32 m_tickCounter = 0;
 
+    void initKademlia();
+    void shutdownKademlia();
+
     // Owned components
     std::unique_ptr<KnownFileList> m_knownFileList;
     std::unique_ptr<SharedFileList> m_sharedFileList;
     std::unique_ptr<UploadQueue> m_uploadQueue;
     std::unique_ptr<UploadBandwidthThrottler> m_uploadThrottler;
     std::unique_ptr<UploadDiskIOThread> m_uploadDiskIO;
+    std::unique_ptr<kad::Kademlia> m_kademlia;
+    std::unique_ptr<kad::KadPrefs> m_kadPrefs;
 };
 
 } // namespace eMule

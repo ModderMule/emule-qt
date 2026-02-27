@@ -8,6 +8,8 @@
 #include "client/ClientCredits.h"
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
 #include "net/ListenSocket.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
@@ -15,6 +17,7 @@
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
+#include "utils/Log.h"
 
 #include <QDir>
 
@@ -30,12 +33,14 @@ CoreSession::CoreSession(QObject* parent)
 CoreSession::~CoreSession()
 {
     stop();
+    shutdownKademlia();
     shutdownUploadPipeline();
 }
 
 void CoreSession::start()
 {
     initUploadPipeline();
+    initKademlia();
     m_tickCounter = 0;
     m_timer.start();
 }
@@ -54,6 +59,7 @@ void CoreSession::initUploadPipeline()
     // Create KnownFileList if not already set
     if (!theApp.knownFileList) {
         m_knownFileList = std::make_unique<KnownFileList>();
+        m_knownFileList->init(thePrefs.configDir());
         theApp.knownFileList = m_knownFileList.get();
     }
 
@@ -161,6 +167,39 @@ void CoreSession::onTimer()
         if (theApp.statistics)
             theApp.statistics->updateConnectionStats(0.0f, 0.0f);
     }
+}
+
+// ---------------------------------------------------------------------------
+// initKademlia — create and start Kademlia if enabled
+// ---------------------------------------------------------------------------
+
+void CoreSession::initKademlia()
+{
+    if (!thePrefs.kadEnabled())
+        return;
+
+    if (m_kademlia)
+        return;
+
+    const QString configDir = thePrefs.configDir();
+    m_kadPrefs = std::make_unique<kad::KadPrefs>(configDir);
+    m_kademlia = std::make_unique<kad::Kademlia>();
+    m_kademlia->start(m_kadPrefs.get());
+
+    logInfo(QStringLiteral("Kademlia started."));
+}
+
+// ---------------------------------------------------------------------------
+// shutdownKademlia — stop and destroy Kademlia
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownKademlia()
+{
+    if (m_kademlia) {
+        m_kademlia->stop();
+        m_kademlia.reset();
+    }
+    m_kadPrefs.reset();
 }
 
 } // namespace eMule

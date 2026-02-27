@@ -14,6 +14,7 @@
 #include "kademlia/KadUDPListener.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
+#include "prefs/Preferences.h"
 #include "ipfilter/IPFilter.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
@@ -51,6 +52,8 @@ Kademlia::~Kademlia()
 {
     if (m_running)
         stop();
+    if (s_instance == this)
+        s_instance = nullptr;
 }
 
 void Kademlia::start()
@@ -65,6 +68,7 @@ void Kademlia::start(KadPrefs* prefs)
         return;
     }
 
+    setKadLogging(thePrefs.kadVerboseLog());
     logKad(QStringLiteral("Kad: Starting Kademlia"));
 
     if (prefs) {
@@ -80,20 +84,24 @@ void Kademlia::start(KadPrefs* prefs)
     // Create indexed storage
     m_indexed = new Indexed(this);
 
-    // Create routing zone
-    QString nodesFile = QDir::tempPath() + QStringLiteral("/nodes.dat");
+    // Create routing zone — use config directory for nodes.dat persistence
+    const QString cfgDir = thePrefs.configDir();
+    const QString nodesFile = (cfgDir.isEmpty() ? QDir::tempPath() : cfgDir)
+        + QStringLiteral("/nodes.dat");
     m_routingZone = new RoutingZone(m_prefs->kadId(), nodesFile, this);
     m_prefs->setRoutingZone(m_routingZone);
 
     // Initialize timers
     time_t now = time(nullptr);
     m_nextSearchJumpStart = now;
-    m_nextSelfLookup = now + MIN2S(3);
-    // MFC uses hr2min(0)+MIN2S(1)=60 which is below epoch time, so the
-    // firewall check fires on every process() tick.  This lets
-    // m_firewallCounter reach 2 within 2 seconds, clearing the initial
-    // "assume firewalled" state.  Match that behavior.
-    m_nextFirewallCheck = 0;
+    // Self-lookup and firewall checks are deferred until the routing table
+    // has verified contacts.  The staged bootstrap in process() schedules
+    // them after random lookups complete.
+    m_nextSelfLookup = std::numeric_limits<time_t>::max();
+    m_nextFirewallCheck = std::numeric_limits<time_t>::max();
+    m_initialBootstrapDone = false;
+    m_randomLookupCount = 0;
+    m_nextRandomLookup = 0;
     m_nextFindBuddy = now + MIN2S(5);
     m_statusUpdate = now + SEC(60);
     m_bigTimer = now + SEC(10);
@@ -126,8 +134,9 @@ void Kademlia::stop()
 
     m_running = false;
     m_bootstrapping = false;
-    if (s_instance == this)
-        s_instance = nullptr;
+    // Note: s_instance intentionally NOT cleared here — the object still
+    // exists, just isn't running.  Cleared in the destructor so that
+    // handleBootstrapKad can call start() on a stopped instance.
 
     // Stop timer
     if (m_processTimer) {
@@ -191,7 +200,7 @@ void Kademlia::recheckFirewalled()
     // based on stale firewalled status.
     if (m_nextFindBuddy < now + MIN2S(5))
         m_nextFindBuddy = now + MIN2S(5);
-    m_nextFirewallCheck = 0;  // Fire every tick, matching MFC
+    m_nextFirewallCheck = static_cast<time_t>(time(nullptr));  // Fire on next tick
 }
 
 uint32 Kademlia::getKademliaUsers(bool newMethod) const
@@ -355,7 +364,31 @@ void Kademlia::process()
         }
     }
 
-    // 2. Status update (every 60 seconds)
+    // 2. Staged bootstrap: once we have a verified contact, do random
+    //    lookups to populate the routing table, then self-lookup, then
+    //    schedule the firewall checks.
+    if (!m_initialBootstrapDone && m_prefs && m_prefs->hasHadContact()) {
+        m_initialBootstrapDone = true;
+        m_nextRandomLookup = now;
+        logKad(QStringLiteral("Kad: First contact verified — starting random lookups"));
+        emit connected();
+    }
+    if (m_initialBootstrapDone && m_randomLookupCount < 3 && now >= m_nextRandomLookup) {
+        UInt128 target;
+        target.setValueRandom();
+        SearchManager::findNode(target, false);
+        ++m_randomLookupCount;
+        if (m_randomLookupCount < 3) {
+            m_nextRandomLookup = now + SEC(3);
+        } else {
+            // Random lookups done — schedule self-lookup, then firewall checks
+            m_nextSelfLookup = now + SEC(5);
+            m_nextFirewallCheck = now + SEC(15);
+            logKad(QStringLiteral("Kad: Random lookups done — self-lookup in 5s, firewall check in 15s"));
+        }
+    }
+
+    // 3. Status update (every 60 seconds)
     if (now >= m_statusUpdate) {
         m_statusUpdate = now + SEC(60);
         SearchManager::updateStats();
@@ -367,28 +400,27 @@ void Kademlia::process()
         }
     }
 
-    // 3. Search jumpstart (every second)
+    // 4. Search jumpstart (every second)
     if (now >= m_nextSearchJumpStart) {
         m_nextSearchJumpStart = now + kSearchJumpstart;
         SearchManager::jumpStart();
     }
 
-    // 4. Self-lookup for routing table refresh
+    // 5. Self-lookup for routing table refresh (first fire scheduled by
+    //    staged bootstrap above, then every 4 hours)
     if (now >= m_nextSelfLookup && m_prefs) {
         m_nextSelfLookup = now + HR2S(4);
         SearchManager::findNode(m_prefs->kadId(), false);
     }
 
-    // 5. Firewall check — fires once on startup (initial value 0 is always
-    //    below epoch time).  incFirewalled() is called from
-    //    process_KADEMLIA_FIREWALLED_ACK_RES when remote nodes successfully
-    //    TCP-connect to us, confirming we are reachable.
+    // 6. Firewall check — scheduled by staged bootstrap after self-lookup.
+    //    Fires once, then disabled (set to max).
     if (now >= m_nextFirewallCheck) {
         m_nextFirewallCheck = std::numeric_limits<time_t>::max();
         UDPFirewallTester::connected();
     }
 
-    // 6. Find buddy — set the one-shot flag on the timer; the actual search
+    // 7. Find buddy — set the one-shot flag on the timer; the actual search
     //    only fires below if we are firewalled and have no buddy.
     //    Matches MFC Kademlia.cpp:227-229 + ClientList.cpp:592-610.
     if (now >= m_nextFindBuddy && m_prefs) {
@@ -396,7 +428,7 @@ void Kademlia::process()
         m_nextFindBuddy = now + MIN2S(20);
     }
 
-    // 6b. Consume the flag and start a buddy search if we actually need one:
+    // 7b. Consume the flag and start a buddy search if we actually need one:
     //     only when both TCP and UDP firewalled, no buddy, and Kad connected.
     if (m_prefs && isConnected()
         && isFirewalled() && UDPFirewallTester::isFirewalledUDP(true))
@@ -419,20 +451,20 @@ void Kademlia::process()
         }
     }
 
-    // 7. Consolidate routing table
+    // 8. Consolidate routing table
     if (now >= m_consolidate && m_routingZone) {
         m_consolidate = now + MIN2S(45);
         m_routingZone->consolidate();
     }
 
-    // 8. External port lookup
+    // 9. External port lookup
     if (now >= m_externPortLookup && m_prefs) {
         if (m_prefs->findExternKadPort(false)) {
             m_externPortLookup = now + HR2S(1);
         }
     }
 
-    // 9. LAN mode check
+    // 10. LAN mode check
     if (now >= m_lanModeCheck && m_routingZone) {
         m_lanModeCheck = now + SEC(10);
         bool previousLanMode = m_lanMode;
@@ -442,7 +474,7 @@ void Kademlia::process()
         }
     }
 
-    // 10. Connection state
+    // 11. Connection state
     if (m_prefs && m_prefs->hasHadContact()) {
         if (m_bootstrapping) {
             m_bootstrapping = false;

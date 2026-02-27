@@ -334,32 +334,16 @@ void SearchManager::jumpStart()
     // expired).  prepareToStop() fires the action phase (storePacket) and
     // sets m_stopping.
     //
-    // Store-type searches (StoreFile, StoreKeyword, StoreNotes) and node
-    // searches are fire-and-forget — remove them immediately so callers
-    // see completion within 1 second instead of waiting 60s for updateStats().
-    //
-    // Search-type searches (Keyword, File, Notes) must stay alive after
-    // stopping because storePacket() sends SEARCH_KEY_REQ / SEARCH_SOURCE_REQ
-    // / SEARCH_NOTES_REQ and the remote nodes respond with SEARCH_RES.
-    // Removing the search here would cause processResult() to drop all
-    // results.  These searches are cleaned up by updateStats() when their
-    // lifetime expires.
-    for (auto it = s_searches.begin(); it != s_searches.end(); ) {
-        it->second->jumpStart();
-        if (it->second->stopping()) {
-            auto type = it->second->getSearchType();
-            bool needsResults = (type == SearchType::Keyword
-                                 || type == SearchType::File
-                                 || type == SearchType::Notes);
-            if (needsResults) {
-                ++it; // keep alive for SEARCH_RES responses
-            } else {
-                delete it->second;
-                it = s_searches.erase(it);
-            }
-        } else {
-            ++it;
-        }
+    // Stopped searches are NOT deleted here — they remain in s_searches
+    // until updateStats() removes them when their lifetime expires.  This
+    // is important for the GUI Kad panel which polls every 1-2 seconds:
+    // if a Node search converges within 1 second, immediate deletion here
+    // would make it invisible to the GUI.  Keeping it around until the
+    // natural lifetime expires (45s for Node searches) lets the GUI
+    // display the search with its final status.
+    for (auto it = s_searches.begin(); it != s_searches.end(); ++it) {
+        if (!it->second->stopping())
+            it->second->jumpStart();
     }
 }
 

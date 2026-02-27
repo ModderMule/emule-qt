@@ -83,6 +83,8 @@ struct Preferences::Data {
     bool logToDisk = false;
     uint32 maxLogFileSize = 1048576; // 1 MB
     bool verbose = false;
+    bool kadVerboseLog = true;
+    uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
 
     // Files
     uint16 maxSourcesPerFile = 400;
@@ -110,6 +112,12 @@ struct Preferences::Data {
     bool ircEnableUTF8 = true;
     bool ircUsePerform = false;
     QString ircPerformString;
+
+    // IPC Daemon
+    bool ipcEnabled = true;
+    uint16 ipcPort = 4712;
+    QString ipcListenAddress = QStringLiteral("127.0.0.1");
+    QString ipcDaemonPath;  // Empty = auto-detect next to GUI binary
 
     // Web Server
     bool webServerEnabled = false;
@@ -154,6 +162,13 @@ struct Preferences::Data {
 
     // Network detection
     uint32 publicIP = 0;  // Our detected public IP (set by server/peers)
+
+    // UI State (GUI-only, persisted across sessions)
+    QList<int> serverSplitSizes;
+    QList<int> kadSplitSizes;
+    int windowWidth = 900;
+    int windowHeight = 620;
+    bool windowMaximized = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -723,6 +738,30 @@ void Preferences::setVerbose(bool val)
     m_data->verbose = val;
 }
 
+bool Preferences::kadVerboseLog() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->kadVerboseLog;
+}
+
+void Preferences::setKadVerboseLog(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->kadVerboseLog = val;
+}
+
+uint32 Preferences::maxLogLines() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->maxLogLines;
+}
+
+void Preferences::setMaxLogLines(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->maxLogLines = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Files
 // ---------------------------------------------------------------------------
@@ -945,6 +984,58 @@ void Preferences::setIrcPerformString(const QString& val)
 {
     QWriteLocker lock(&m_lock);
     m_data->ircPerformString = val;
+}
+
+// ---------------------------------------------------------------------------
+// Getters / setters — IPC Daemon
+// ---------------------------------------------------------------------------
+
+bool Preferences::ipcEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ipcEnabled;
+}
+
+void Preferences::setIpcEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ipcEnabled = val;
+}
+
+uint16 Preferences::ipcPort() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ipcPort;
+}
+
+void Preferences::setIpcPort(uint16 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ipcPort = val;
+}
+
+QString Preferences::ipcListenAddress() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ipcListenAddress;
+}
+
+void Preferences::setIpcListenAddress(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ipcListenAddress = val;
+}
+
+QString Preferences::ipcDaemonPath() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ipcDaemonPath;
+}
+
+void Preferences::setIpcDaemonPath(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ipcDaemonPath = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -1260,6 +1351,70 @@ void Preferences::setPublicIP(uint32 val)
 }
 
 // ---------------------------------------------------------------------------
+// Getters / setters — UI State
+// ---------------------------------------------------------------------------
+
+QList<int> Preferences::serverSplitSizes() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->serverSplitSizes;
+}
+
+void Preferences::setServerSplitSizes(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->serverSplitSizes = val;
+}
+
+QList<int> Preferences::kadSplitSizes() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->kadSplitSizes;
+}
+
+void Preferences::setKadSplitSizes(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->kadSplitSizes = val;
+}
+
+int Preferences::windowWidth() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->windowWidth;
+}
+
+void Preferences::setWindowWidth(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->windowWidth = val;
+}
+
+int Preferences::windowHeight() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->windowHeight;
+}
+
+void Preferences::setWindowHeight(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->windowHeight = val;
+}
+
+bool Preferences::windowMaximized() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->windowMaximized;
+}
+
+void Preferences::setWindowMaximized(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->windowMaximized = val;
+}
+
+// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
@@ -1319,20 +1474,20 @@ void Preferences::validate()
 
 void Preferences::resolveDefaultDirectories()
 {
-    if (m_data->incomingDir.isEmpty()) {
-        const QString downloads = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
-        m_data->incomingDir = downloads + QStringLiteral("/eMule/Incoming");
-    }
+#ifdef Q_OS_MACOS
+    const QString baseDir = QDir::homePath() + QStringLiteral("/eMuleQt");
+#else
+    const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+#endif
 
-    if (m_data->configDir.isEmpty()) {
-        const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-        m_data->configDir = appData;
-    }
+    if (m_data->incomingDir.isEmpty())
+        m_data->incomingDir = baseDir + QStringLiteral("/Incoming");
 
-    if (m_data->tempDirs.isEmpty()) {
-        const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-        m_data->tempDirs.append(appData + QStringLiteral("/Temp"));
-    }
+    if (m_data->configDir.isEmpty())
+        m_data->configDir = baseDir + QStringLiteral("/Config");
+
+    if (m_data->tempDirs.isEmpty())
+        m_data->tempDirs.append(baseDir + QStringLiteral("/Temp"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1355,6 +1510,13 @@ bool Preferences::load(const QString& filePath)
             m_data->udpPort = randomUDPPort();
         validate();
         resolveDefaultDirectories();
+
+        // Create directories and persist initial preferences
+        QDir().mkpath(m_data->configDir);
+        QDir().mkpath(m_data->incomingDir);
+        for (const auto& td : m_data->tempDirs)
+            QDir().mkpath(td);
+        saveImpl(filePath);
         return true;
     }
 
@@ -1456,6 +1618,8 @@ bool Preferences::load(const QString& filePath)
             m_data->logToDisk = l["logToDisk"].as<bool>(m_data->logToDisk);
             m_data->maxLogFileSize = l["maxLogFileSize"].as<uint32>(m_data->maxLogFileSize);
             m_data->verbose = l["verbose"].as<bool>(m_data->verbose);
+            m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
+            m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
         }
 
         // Files
@@ -1514,6 +1678,14 @@ bool Preferences::load(const QString& filePath)
             m_data->enableSearchResultFilter = sr["enableSearchResultFilter"].as<bool>(m_data->enableSearchResultFilter);
         }
 
+        // IPC Daemon
+        if (auto ipc = root["ipc"]) {
+            m_data->ipcEnabled = ipc["enabled"].as<bool>(m_data->ipcEnabled);
+            m_data->ipcPort = static_cast<uint16>(ipc["port"].as<int>(m_data->ipcPort));
+            m_data->ipcListenAddress = QString::fromStdString(ipc["listenAddress"].as<std::string>(m_data->ipcListenAddress.toStdString()));
+            m_data->ipcDaemonPath = QString::fromStdString(ipc["daemonPath"].as<std::string>(m_data->ipcDaemonPath.toStdString()));
+        }
+
         // Web Server
         if (auto ws = root["webserver"]) {
             m_data->webServerEnabled = ws["enabled"].as<bool>(m_data->webServerEnabled);
@@ -1526,6 +1698,23 @@ bool Preferences::load(const QString& filePath)
         if (auto k = root["kademlia"]) {
             m_data->kadEnabled = k["enabled"].as<bool>(m_data->kadEnabled);
             m_data->kadUDPKey = k["udpKey"].as<uint32>(m_data->kadUDPKey);
+        }
+
+        // UI State
+        if (auto ui = root["uistate"]) {
+            if (ui["serverSplitSizes"] && ui["serverSplitSizes"].IsSequence()) {
+                m_data->serverSplitSizes.clear();
+                for (const auto& item : ui["serverSplitSizes"])
+                    m_data->serverSplitSizes.append(item.as<int>(0));
+            }
+            if (ui["kadSplitSizes"] && ui["kadSplitSizes"].IsSequence()) {
+                m_data->kadSplitSizes.clear();
+                for (const auto& item : ui["kadSplitSizes"])
+                    m_data->kadSplitSizes.append(item.as<int>(0));
+            }
+            m_data->windowWidth     = ui["windowWidth"].as<int>(m_data->windowWidth);
+            m_data->windowHeight    = ui["windowHeight"].as<int>(m_data->windowHeight);
+            m_data->windowMaximized = ui["windowMaximized"].as<bool>(m_data->windowMaximized);
         }
 
     } catch (const YAML::Exception& ex) {
@@ -1630,9 +1819,11 @@ std::array<uint8, 16> Preferences::generateUserHash()
         byte = static_cast<uint8>(dist(rng));
 
     // eMule markers — MFC Preferences.cpp:CreateUserHash()
-    // Byte[5]:  14 = eDonkey base marker, |= 0x80 → 0x8E for eMule client
-    // Byte[14]: 111 = eMule magic value
-    hash[5] = 14 | 0x80;
+    // Byte[5]:  14 (0x0E) — eMule client marker
+    // Byte[14]: 111 (0x6F) — eMule magic value
+    // Servers check these exact values to verify the client is eMule.
+    // Using any other value (e.g. 0x8E) triggers anti-leecher bans.
+    hash[5] = 14;
     hash[14] = 111;
     return hash;
 }
@@ -1733,6 +1924,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "logToDisk" << YAML::Value << m_data->logToDisk;
     out << YAML::Key << "maxLogFileSize" << YAML::Value << m_data->maxLogFileSize;
     out << YAML::Key << "verbose" << YAML::Value << m_data->verbose;
+    out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
+    out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
     out << YAML::EndMap;
 
     // Files
@@ -1791,6 +1984,14 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "enableSearchResultFilter" << YAML::Value << m_data->enableSearchResultFilter;
     out << YAML::EndMap;
 
+    // IPC Daemon
+    out << YAML::Key << "ipc" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled" << YAML::Value << m_data->ipcEnabled;
+    out << YAML::Key << "port" << YAML::Value << static_cast<int>(m_data->ipcPort);
+    out << YAML::Key << "listenAddress" << YAML::Value << m_data->ipcListenAddress.toStdString();
+    out << YAML::Key << "daemonPath" << YAML::Value << m_data->ipcDaemonPath.toStdString();
+    out << YAML::EndMap;
+
     // Web Server
     out << YAML::Key << "webserver" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->webServerEnabled;
@@ -1803,6 +2004,21 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "kademlia" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->kadEnabled;
     out << YAML::Key << "udpKey" << YAML::Value << m_data->kadUDPKey;
+    out << YAML::EndMap;
+
+    // UI State
+    out << YAML::Key << "uistate" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "serverSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int sz : m_data->serverSplitSizes)
+        out << sz;
+    out << YAML::EndSeq;
+    out << YAML::Key << "kadSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int sz : m_data->kadSplitSizes)
+        out << sz;
+    out << YAML::EndSeq;
+    out << YAML::Key << "windowWidth"     << YAML::Value << m_data->windowWidth;
+    out << YAML::Key << "windowHeight"    << YAML::Value << m_data->windowHeight;
+    out << YAML::Key << "windowMaximized" << YAML::Value << m_data->windowMaximized;
     out << YAML::EndMap;
 
     out << YAML::EndMap;

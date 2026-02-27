@@ -154,6 +154,9 @@ private:
     bool m_running = false;
     bool m_lanMode = false;
     bool m_bootstrapping = false;
+    bool m_initialBootstrapDone = false;
+    uint8 m_randomLookupCount = 0;
+    time_t m_nextRandomLookup = 0;
     std::list<uint32> m_statsEstUsersProbes;
 
     static Kademlia* s_instance;

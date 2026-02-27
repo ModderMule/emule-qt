@@ -46,6 +46,7 @@ target_include_directories(emuleqt
 target_link_libraries(emuleqt
     PRIVATE
         eMule::Core
+        eMule::Ipc
         Qt6::Widgets
         eMule::CommonSettings
 )

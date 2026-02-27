@@ -81,7 +81,9 @@ void RoutingZone::init(RoutingZone* superZone, uint32 level, const UInt128& zone
 
     time_t now = time(nullptr);
     m_nextSmallTimer = now + SEC(10);
-    m_nextBigTimer = now + SEC(10) + HR2S(1);
+    // MFC fires bigTimer immediately (m_tNextBigTimer = time(NULL)) so that
+    // contacts loaded from nodes.dat get verified via HELLO_REQ right away.
+    m_nextBigTimer = now;
 
     // Start timer for root zone only
     if (!m_superZone) {
@@ -431,8 +433,32 @@ void RoutingZone::consolidate()
 void RoutingZone::onBigTimer()
 {
     if (isLeaf()) {
-        if (m_bin->getRemaining() > 0) {
+        if (m_bin->getRemaining() >= static_cast<uint32>(kK * 0.8)) {
+            // Bin mostly empty — search for new contacts in this zone's range
             randomLookup();
+        } else {
+            // Bin has contacts — verify the oldest one or replace if expired.
+            // This is critical at startup: contacts loaded from nodes.dat have
+            // type=3 and are excluded from search results.  Sending HELLO_REQ
+            // triggers updateType() on response, promoting them to type<=2,
+            // making them usable for searches.
+            Contact* oldest = m_bin->getOldest();
+            if (oldest) {
+                if (oldest->getType() == 4 && !oldest->inUse()) {
+                    m_bin->removeContact(oldest);
+                    emit contactRemoved(oldest);
+                    delete oldest;
+                    randomLookup();
+                } else {
+                    // Send HELLO to verify/refresh this contact
+                    if (auto* udpListener = Kademlia::getInstanceUDPListener()) {
+                        udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
+                            oldest->getIPAddress(), oldest->getUDPPort(),
+                            oldest->getVersion(), oldest->getUDPKey(),
+                            nullptr, true);
+                    }
+                }
+            }
         }
     } else {
         m_subZones[0]->onBigTimer();
@@ -630,6 +656,9 @@ void RoutingZone::readFile(const QString& specialNodesdat)
                 emit contactAdded(contact);
             }
         }
+
+        logKad(QStringLiteral("Kad: Loaded nodes.dat — %1 contacts")
+                   .arg(getNumContacts()));
 
     } catch (const FileException& e) {
         logKad(QStringLiteral("Failed to read Kad nodes file: %1").arg(e.what()));
