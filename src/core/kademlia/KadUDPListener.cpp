@@ -127,6 +127,12 @@ void KademliaUDPListener::sendMyDetails(uint8 opcode, uint32 ip, uint16 udpPort,
     // Write tags count (0 for minimal hello)
     packet.writeUInt8(0);
 
+    if (opcode == KADEMLIA2_HELLO_REQ) {
+        m_hellosSent.fetch_add(1, std::memory_order_relaxed);
+        logKad(QStringLiteral("Kad: [diag] sending HELLO_REQ to %1:%2")
+                   .arg(ipToString(ip)).arg(udpPort));
+    }
+
     sendPacket(packet, opcode, ip, udpPort, targetKey, cryptTargetID);
     addTrackedOutPacket(ip, opcode);
 }
@@ -642,6 +648,10 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
             }
         }
     }
+
+    // Mark that we've had contact — enables the staged bootstrap flow
+    if (auto* prefs = Kademlia::getInstancePrefs())
+        prefs->setLastContact();
 
     // Check if firewalled — ask this node to report our external IP
     if (auto* prefs = Kademlia::getInstancePrefs()) {

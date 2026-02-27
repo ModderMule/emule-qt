@@ -18,6 +18,7 @@
 #include <QObject>
 #include <QString>
 
+#include <atomic>
 #include <cstdint>
 #include <list>
 #include <memory>
@@ -56,6 +57,9 @@ public:
 
     bool findNodeIDByIP(KadClientSearcher* requester, uint32 ip, uint16 tcpPort, uint16 udpPort);
     void expireClientSearch(const KadClientSearcher* expireImmediately = nullptr);
+
+    /// Total number of HELLO_REQ packets sent since startup (monotonically increasing).
+    [[nodiscard]] uint32_t totalHellosSent() const { return m_hellosSent.load(std::memory_order_relaxed); }
 
 signals:
     void packetToSend(QByteArray data, uint32 destIP, uint16 destPort,
@@ -124,6 +128,7 @@ private:
         KadClientSearcher* requester = nullptr;
     };
     std::list<FetchNodeIDRequest> m_fetchNodeIDRequests;
+    std::atomic<uint32_t> m_hellosSent{0};  ///< HELLO_REQ packets sent (monotonically increasing).
 };
 
 } // namespace eMule::kad

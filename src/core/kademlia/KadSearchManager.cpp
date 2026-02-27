@@ -329,21 +329,11 @@ void SearchManager::cancelNodeSpecial(const KadClientSearcher* requester)
 
 void SearchManager::jumpStart()
 {
-    // Jump-start all active searches.  After jumpStart(), a search may have
-    // transitioned to the stopping state (find phase converged or lifetime
-    // expired).  prepareToStop() fires the action phase (storePacket) and
-    // sets m_stopping.
-    //
-    // Stopped searches are NOT deleted here — they remain in s_searches
-    // until updateStats() removes them when their lifetime expires.  This
-    // is important for the GUI Kad panel which polls every 1-2 seconds:
-    // if a Node search converges within 1 second, immediate deletion here
-    // would make it invisible to the GUI.  Keeping it around until the
-    // natural lifetime expires (45s for Node searches) lets the GUI
-    // display the search with its final status.
+    // Jump-start all searches including stopped ones — matches MFC behavior.
+    // MFC JumpStart() always calls pSearch->JumpStart() unconditionally.
+    // Stopped searches remain in s_searches until updateStats() removes them.
     for (auto it = s_searches.begin(); it != s_searches.end(); ++it) {
-        if (!it->second->stopping())
-            it->second->jumpStart();
+        it->second->jumpStart();
     }
 }
 

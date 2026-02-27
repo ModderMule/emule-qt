@@ -91,23 +91,16 @@ void Kademlia::start(KadPrefs* prefs)
     m_routingZone = new RoutingZone(m_prefs->kadId(), nodesFile, this);
     m_prefs->setRoutingZone(m_routingZone);
 
-    // Initialize timers
+    // Initialize timers — matches MFC Kademlia.cpp Start()
     time_t now = time(nullptr);
     m_nextSearchJumpStart = now;
-    // Self-lookup and firewall checks are deferred until the routing table
-    // has verified contacts.  The staged bootstrap in process() schedules
-    // them after random lookups complete.
-    m_nextSelfLookup = std::numeric_limits<time_t>::max();
-    m_nextFirewallCheck = std::numeric_limits<time_t>::max();
-    m_initialBootstrapDone = false;
-    m_randomLookupCount = 0;
-    m_nextRandomLookup = 0;
+    m_nextSelfLookup = now + MIN2S(3);
+    m_nextFirewallCheck = now + HR2S(1);
     m_nextFindBuddy = now + MIN2S(5);
     m_statusUpdate = now + SEC(60);
     m_bigTimer = now + SEC(10);
     m_consolidate = now + MIN2S(45);
     m_externPortLookup = now;
-    m_lanModeCheck = now + SEC(10);
     m_bootstrap = now;
 
     // Start process timer (1-second interval)
@@ -292,6 +285,32 @@ void Kademlia::storeClosestDistance(const UInt128& distance)
 
 bool Kademlia::isRunningInLANMode() const
 {
+    // MFC: CKademlia::IsRunningInLANMode() — cached check every 10 seconds.
+    // If FilterLANIPs is on, LAN mode is never active (LAN contacts are rejected).
+    if (thePrefs.filterLANIPs() || !m_running || !m_routingZone)
+        return false;
+
+    time_t now = time(nullptr);
+    if (now >= m_lanModeCheck + 10) {
+        // const_cast: MFC uses mutable statics; we cache in mutable-equivalent members.
+        auto* self = const_cast<Kademlia*>(this);
+        self->m_lanModeCheck = now;
+        uint32 count = m_routingZone->getNumContacts();
+        // Limit to 256 nodes — larger networks are not small home LANs
+        if (count == 0 || count > 256) {
+            self->m_lanMode = false;
+        } else {
+            if (m_routingZone->hasOnlyLANNodes()) {
+                if (!m_lanMode) {
+                    self->m_lanMode = true;
+                    logKad(QStringLiteral("Kad: Activating LAN Mode"));
+                }
+            } else if (m_lanMode) {
+                self->m_lanMode = false;
+                logKad(QStringLiteral("Kad: Deactivating LAN Mode"));
+            }
+        }
+    }
     return m_lanMode;
 }
 
@@ -364,31 +383,7 @@ void Kademlia::process()
         }
     }
 
-    // 2. Staged bootstrap: once we have a verified contact, do random
-    //    lookups to populate the routing table, then self-lookup, then
-    //    schedule the firewall checks.
-    if (!m_initialBootstrapDone && m_prefs && m_prefs->hasHadContact()) {
-        m_initialBootstrapDone = true;
-        m_nextRandomLookup = now;
-        logKad(QStringLiteral("Kad: First contact verified — starting random lookups"));
-        emit connected();
-    }
-    if (m_initialBootstrapDone && m_randomLookupCount < 3 && now >= m_nextRandomLookup) {
-        UInt128 target;
-        target.setValueRandom();
-        SearchManager::findNode(target, false);
-        ++m_randomLookupCount;
-        if (m_randomLookupCount < 3) {
-            m_nextRandomLookup = now + SEC(3);
-        } else {
-            // Random lookups done — schedule self-lookup, then firewall checks
-            m_nextSelfLookup = now + SEC(5);
-            m_nextFirewallCheck = now + SEC(15);
-            logKad(QStringLiteral("Kad: Random lookups done — self-lookup in 5s, firewall check in 15s"));
-        }
-    }
-
-    // 3. Status update (every 60 seconds)
+    // 2. Status update (every 60 seconds)
     if (now >= m_statusUpdate) {
         m_statusUpdate = now + SEC(60);
         SearchManager::updateStats();
@@ -400,27 +395,25 @@ void Kademlia::process()
         }
     }
 
-    // 4. Search jumpstart (every second)
+    // 3. Search jumpstart (every second)
     if (now >= m_nextSearchJumpStart) {
         m_nextSearchJumpStart = now + kSearchJumpstart;
         SearchManager::jumpStart();
     }
 
-    // 5. Self-lookup for routing table refresh (first fire scheduled by
-    //    staged bootstrap above, then every 4 hours)
+    // 4. Self-lookup for routing table refresh (every 4 hours, first at +3min)
     if (now >= m_nextSelfLookup && m_prefs) {
         m_nextSelfLookup = now + HR2S(4);
         SearchManager::findNode(m_prefs->kadId(), false);
     }
 
-    // 6. Firewall check — scheduled by staged bootstrap after self-lookup.
-    //    Fires once, then disabled (set to max).
+    // 5. Firewall check (first at +1hr, then disabled)
     if (now >= m_nextFirewallCheck) {
         m_nextFirewallCheck = std::numeric_limits<time_t>::max();
         UDPFirewallTester::connected();
     }
 
-    // 7. Find buddy — set the one-shot flag on the timer; the actual search
+    // 6. Find buddy — set the one-shot flag on the timer; the actual search
     //    only fires below if we are firewalled and have no buddy.
     //    Matches MFC Kademlia.cpp:227-229 + ClientList.cpp:592-610.
     if (now >= m_nextFindBuddy && m_prefs) {
@@ -428,7 +421,7 @@ void Kademlia::process()
         m_nextFindBuddy = now + MIN2S(20);
     }
 
-    // 7b. Consume the flag and start a buddy search if we actually need one:
+    // 6b. Consume the flag and start a buddy search if we actually need one:
     //     only when both TCP and UDP firewalled, no buddy, and Kad connected.
     if (m_prefs && isConnected()
         && isFirewalled() && UDPFirewallTester::isFirewalledUDP(true))
@@ -451,30 +444,20 @@ void Kademlia::process()
         }
     }
 
-    // 8. Consolidate routing table
+    // 7. Consolidate routing table
     if (now >= m_consolidate && m_routingZone) {
         m_consolidate = now + MIN2S(45);
         m_routingZone->consolidate();
     }
 
-    // 9. External port lookup
+    // 8. External port lookup
     if (now >= m_externPortLookup && m_prefs) {
         if (m_prefs->findExternKadPort(false)) {
             m_externPortLookup = now + HR2S(1);
         }
     }
 
-    // 10. LAN mode check
-    if (now >= m_lanModeCheck && m_routingZone) {
-        m_lanModeCheck = now + SEC(10);
-        bool previousLanMode = m_lanMode;
-        m_lanMode = m_routingZone->hasOnlyLANNodes();
-        if (m_lanMode != previousLanMode) {
-            logKad(QStringLiteral("Kad: LAN mode %1").arg(m_lanMode ? "enabled" : "disabled"));
-        }
-    }
-
-    // 11. Connection state
+    // 9. Connection state
     if (m_prefs && m_prefs->hasHadContact()) {
         if (m_bootstrapping) {
             m_bootstrapping = false;

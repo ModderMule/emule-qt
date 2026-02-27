@@ -194,7 +194,7 @@ void RoutingBin::getClosestTo(uint32 maxType, const UInt128& target, uint32 maxR
         return;
 
     for (auto* contact : m_entries) {
-        if (contact->getType() <= maxType && contact->isIpVerified()) {
+        if (contact->getType() <= maxType) {
             UInt128 targetDistance(contact->getClientID());
             targetDistance.xorWith(target);
             result[targetDistance] = contact;

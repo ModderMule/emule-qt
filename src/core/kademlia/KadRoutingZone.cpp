@@ -432,35 +432,14 @@ void RoutingZone::consolidate()
 
 void RoutingZone::onBigTimer()
 {
-    if (isLeaf()) {
-        if (m_bin->getRemaining() >= static_cast<uint32>(kK * 0.8)) {
-            // Bin mostly empty — search for new contacts in this zone's range
-            randomLookup();
-        } else {
-            // Bin has contacts — verify the oldest one or replace if expired.
-            // This is critical at startup: contacts loaded from nodes.dat have
-            // type=3 and are excluded from search results.  Sending HELLO_REQ
-            // triggers updateType() on response, promoting them to type<=2,
-            // making them usable for searches.
-            Contact* oldest = m_bin->getOldest();
-            if (oldest) {
-                if (oldest->getType() == 4 && !oldest->inUse()) {
-                    m_bin->removeContact(oldest);
-                    emit contactRemoved(oldest);
-                    delete oldest;
-                    randomLookup();
-                } else {
-                    // Send HELLO to verify/refresh this contact
-                    if (auto* udpListener = Kademlia::getInstanceUDPListener()) {
-                        udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                            oldest->getIPAddress(), oldest->getUDPPort(),
-                            oldest->getVersion(), oldest->getUDPKey(),
-                            nullptr, true);
-                    }
-                }
-            }
-        }
-    } else {
+    // MFC: OnBigTimer() — randomLookup for zones that are close to our ID,
+    // at low depth, or mostly empty.  This keeps the routing table populated
+    // and ensures contacts loaded from nodes.dat get verified via HELLO_REQ.
+    if (isLeaf() && (m_zoneIndex < kKK || m_level < kKBase
+                     || m_bin->getRemaining() >= static_cast<uint32>(kK * 0.8)))
+    {
+        randomLookup();
+    } else if (!isLeaf()) {
         m_subZones[0]->onBigTimer();
         m_subZones[1]->onBigTimer();
     }
@@ -485,14 +464,16 @@ void RoutingZone::onSmallTimer()
                 delete oldest;
             }
         } else if (oldest->getExpireTime() > 0 && oldest->getExpireTime() <= time(nullptr)) {
-            // Contact needs a type check — send HELLO to verify alive
+            // Contact needs a type check — send HELLO to verify alive.
+            // Pass the contact's KadID to enable NodeID-based encryption.
             oldest->checkingType();
             m_bin->pushToBottom(oldest);
             if (auto* udpListener = Kademlia::getInstanceUDPListener()) {
+                const UInt128 contactID = oldest->getClientID();
                 udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
                     oldest->getIPAddress(), oldest->getUDPPort(),
                     oldest->getVersion(), oldest->getUDPKey(),
-                    nullptr, true);
+                    &contactID, true);
             }
         }
     }
@@ -734,7 +715,9 @@ void RoutingZone::split()
 {
     Q_ASSERT(isLeaf());
 
-    stopTimer();
+    // Do NOT stop the timer here. Only the root zone has a timer, and it must
+    // keep running after splitting (onTimerTick recurses into subzones).
+    // stopTimer() is only called in the root zone destructor.
 
     m_subZones[0] = genSubZone(0);
     m_subZones[1] = genSubZone(1);
@@ -841,8 +824,9 @@ void RoutingZone::onTimerTick()
     }
 
     if (now >= m_nextBigTimer) {
+        logKad(QStringLiteral("Kad: [diag] onBigTimer firing, contacts=%1").arg(getNumContacts()));
         onBigTimer();
-        m_nextBigTimer = now + HR2S(1);
+        m_nextBigTimer = now + SEC(180);  // 3-minute interval (matches MFC)
     }
 }
 
