@@ -71,6 +71,7 @@ private:
 
     // Kept alive across related tests (1 & 2)
     UpDownClient* m_connectedClient = nullptr;
+    std::unique_ptr<PartFile> m_connPartFile;  // prevent use-after-free in test 2
     QSignalSpy* m_helloSpy = nullptr;
 
     // Download infrastructure (used by test 5)
@@ -81,6 +82,7 @@ private:
     DownloadQueue* m_downloadQueue = nullptr;
     KnownFile* m_sharedFile = nullptr;
     KnownFile* m_sharedZipFile = nullptr;
+    KnownFile* m_sharedDmgFile = nullptr;
     QList<UpDownClient*> m_serverClients;
 };
 
@@ -200,6 +202,16 @@ void tst_TcpConnect::initTestCase()
     QVERIFY2(m_sharedZipFile->createFromFile(dataIncoming, QStringLiteral("eMule0.50a.zip")),
              "Failed to create KnownFile from eMule0.50a.zip");
     QVERIFY(m_sharedFiles->safeAddKFile(m_sharedZipFile));
+
+    // 16. Create KnownFile from data/incoming/qt-online-installer and share it
+    const QString dmgName = QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg");
+    QVERIFY2(QFile::exists(dataIncoming + QDir::separator() + dmgName),
+             "Missing data/incoming/qt-online-installer-macOS-x64-4.10.0.dmg");
+
+    m_sharedDmgFile = new KnownFile();
+    QVERIFY2(m_sharedDmgFile->createFromFile(dataIncoming, dmgName),
+             "Failed to create KnownFile from qt-online-installer DMG");
+    QVERIFY(m_sharedFiles->safeAddKFile(m_sharedDmgFile));
 }
 
 // ---------------------------------------------------------------------------
@@ -208,14 +220,14 @@ void tst_TcpConnect::initTestCase()
 
 void tst_TcpConnect::tryToConnect_establishesTcpConnection()
 {
-    auto partFile = makePartFile();
+    m_connPartFile = makePartFile();
 
     // Create client targeting loopback on the listener port.
     // userId = htonl(0x7F000001) with ed2kID=true → m_connectIP = userId (NBO)
     const uint32 loopbackNBO = htonl(0x7F000001);
     const uint16 port = m_listenSocket->connectedPort();
     auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
-                                    partFile.get(), true, this);
+                                    m_connPartFile.get(), true, this);
 
     // Capture the server-side socket immediately when accepted and set up
     // the hello spy before event processing delivers the OP_HELLO packet.
@@ -271,6 +283,7 @@ void tst_TcpConnect::connectionEstablished_sendsHelloToListener()
     m_helloSpy = nullptr;
     delete m_connectedClient;
     m_connectedClient = nullptr;
+    m_connPartFile.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -476,13 +489,19 @@ void tst_TcpConnect::download_completesFile()
 }
 
 // ---------------------------------------------------------------------------
-// Test 7: Asked for Another File — one client, two files, sequential download
+// Test 7: Asked for Another File — one client, three files, sequential download
+//
+// The downloader requests 3 files via A4AF (Ask for Another File), but the
+// uploader only ever sends 1 file at a time — as specified in MFC eMule.
+// Each UpDownClient has a single m_uploadFile pointer; the server switches
+// to the next file only after the current one completes.
 // ---------------------------------------------------------------------------
 
 void tst_TcpConnect::download_askedForAnotherFile()
 {
     QVERIFY2(m_sharedFile != nullptr, "Shared readme.txt not set up from initTestCase");
     QVERIFY2(m_sharedZipFile != nullptr, "Shared zip not set up from initTestCase");
+    QVERIFY2(m_sharedDmgFile != nullptr, "Shared DMG not set up from initTestCase");
 
     // -- Cleanup from earlier tests ------------------------------------------
     m_listenSocket->killAllSockets();
@@ -509,6 +528,8 @@ void tst_TcpConnect::download_askedForAnotherFile()
     });
     processTimer.start(100);
 
+    const QString tempDir = thePrefs.tempDirs().first();
+
     // -- Setup: create PartFile A (readme.txt) for first download ------------
     const uint8* hashA = m_sharedFile->fileHash();
     const uint64 sizeA = static_cast<uint64>(m_sharedFile->fileSize());
@@ -518,7 +539,6 @@ void tst_TcpConnect::download_askedForAnotherFile()
     partFileA->setFileSize(static_cast<EMFileSize>(sizeA));
     partFileA->setFileHash(hashA);
 
-    const QString tempDir = thePrefs.tempDirs().first();
     QVERIFY2(partFileA->createPartFile(tempDir), "Failed to create .part for readme.txt");
     partFileA->setStatus(PartFileStatus::Ready);
 
@@ -538,10 +558,26 @@ void tst_TcpConnect::download_askedForAnotherFile()
 
     m_downloadQueue->addDownload(partFileB);
 
+    // -- Setup: create PartFile C (qt-online-installer DMG) as A4AF ----------
+    const uint8* hashC = m_sharedDmgFile->fileHash();
+    const uint64 sizeC = static_cast<uint64>(m_sharedDmgFile->fileSize());
+
+    auto* partFileC = new PartFile();
+    partFileC->setFileName(QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg"));
+    partFileC->setFileSize(static_cast<EMFileSize>(sizeC));
+    partFileC->setFileHash(hashC);
+
+    QVERIFY2(partFileC->createPartFile(tempDir), "Failed to create .part for DMG");
+    partFileC->setStatus(PartFileStatus::Ready);
+
+    m_downloadQueue->addDownload(partFileC);
+
     // -- Spies ---------------------------------------------------------------
     QSignalSpy moveFinishedSpyA(partFileA->partNotifier(),
                                 &PartFileNotifier::fileMoveFinished);
     QSignalSpy moveFinishedSpyB(partFileB->partNotifier(),
+                                &PartFileNotifier::fileMoveFinished);
+    QSignalSpy moveFinishedSpyC(partFileC->partNotifier(),
                                 &PartFileNotifier::fileMoveFinished);
 
     // -- Initiate connection for file A (readme.txt) -------------------------
@@ -550,22 +586,27 @@ void tst_TcpConnect::download_askedForAnotherFile()
     auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
                                     partFileA, true, this);
 
-    // Register file B as "asked for another file" on this client
+    // Register files B and C as "asked for another file" on this client.
+    // The downloader requests all 3 files, but the server-side uploader
+    // only sends 1 file at a time (single m_uploadFile pointer per client).
     QVERIFY(client->addRequestForAnotherFile(partFileB));
+    QVERIFY(client->addRequestForAnotherFile(partFileC));
 
     QVERIFY(client->tryToConnect());
 
-    // -- Wait for file A (readme.txt) to complete ----------------------------
+    // ========================================================================
+    // File A (readme.txt, ~12 KB) — uploader sends only this file
+    // ========================================================================
     QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyA.count() >= 1, 30000);
     QVERIFY2(moveFinishedSpyA.first().first().toBool(), "File A move failed");
     QCOMPARE(partFileA->status(), PartFileStatus::Complete);
 
-    // -- Verify server is still connected ------------------------------------
+    // Verify server is still connected and was uploading only 1 file
     QVERIFY(!m_serverClients.isEmpty());
     auto* serverClient = m_serverClients.first();
     QVERIFY(serverClient->uploadFile() != nullptr);
 
-    // -- Switch client to file B (the "asked for another file") --------------
+    // -- Switch client to file B (zip) — manual A4AF swap --------------------
     // In real eMule this happens via swapToAnotherFile(). Here we manually
     // switch reqFile and reqUpFileId, then re-send the file request — exactly
     // what doSwap() + the download queue would do.
@@ -575,15 +616,28 @@ void tst_TcpConnect::download_askedForAnotherFile()
     client->sendFileRequest();
     client->sendStartupLoadReq();
 
-    // -- Wait for file B (zip) to complete -----------------------------------
+    // ========================================================================
+    // File B (eMule0.50a.zip, ~2.9 MB) — uploader switches to this file
+    // ========================================================================
     QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyB.count() >= 1, 120000);
     QVERIFY2(moveFinishedSpyB.first().first().toBool(), "File B move failed");
     QCOMPARE(partFileB->status(), PartFileStatus::Complete);
 
-    // -- Verify server switched upload file ----------------------------------
-    // The server should now be uploading the zip file (or have finished it).
-    // uploadFile() may be nullptr if the upload completed, but the upload file
-    // hash should have changed from readme.txt to zip during the transfer.
+    // -- Switch client to file C (DMG) — manual A4AF swap --------------------
+    client->setReqFile(partFileC);
+    client->setReqUpFileId(hashC);
+    client->setDownloadState(DownloadState::Connected);
+    client->sendFileRequest();
+    client->sendStartupLoadReq();
+
+    // ========================================================================
+    // File C (qt-online-installer DMG, ~23 MB, multi-part) — uploader
+    // switches to this file; hashset is exchanged automatically for files
+    // larger than PARTSIZE (~9.7 MB)
+    // ========================================================================
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyC.count() >= 1, 300000);
+    QVERIFY2(moveFinishedSpyC.first().first().toBool(), "File C move failed");
+    QCOMPARE(partFileC->status(), PartFileStatus::Complete);
 
     // -- Verify downloaded files ---------------------------------------------
     const QString downloadedA = thePrefs.incomingDir() + QDir::separator()
@@ -600,9 +654,42 @@ void tst_TcpConnect::download_askedForAnotherFile()
     QFileInfo fiB(downloadedB);
     QCOMPARE(static_cast<uint64>(fiB.size()), sizeB);
 
+    const QString downloadedC = thePrefs.incomingDir() + QDir::separator()
+                                + QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg");
+    QVERIFY2(QFile::exists(downloadedC),
+             qPrintable(QStringLiteral("Downloaded DMG not found at %1").arg(downloadedC)));
+    QFileInfo fiC(downloadedC);
+    QCOMPARE(static_cast<uint64>(fiC.size()), sizeC);
+
+    // Byte-for-byte content comparison with originals
+    const QString dataIncoming = projectDataDir() + QStringLiteral("/incoming");
+
+    {
+        QFile original(dataIncoming + QStringLiteral("/readme.txt"));
+        QVERIFY(original.open(QIODevice::ReadOnly));
+        QFile downloaded(downloadedA);
+        QVERIFY(downloaded.open(QIODevice::ReadOnly));
+        QCOMPARE(downloaded.readAll(), original.readAll());
+    }
+    {
+        QFile original(dataIncoming + QStringLiteral("/eMule0.50a.zip"));
+        QVERIFY(original.open(QIODevice::ReadOnly));
+        QFile downloaded(downloadedB);
+        QVERIFY(downloaded.open(QIODevice::ReadOnly));
+        QCOMPARE(downloaded.readAll(), original.readAll());
+    }
+    {
+        QFile original(dataIncoming + QStringLiteral("/qt-online-installer-macOS-x64-4.10.0.dmg"));
+        QVERIFY(original.open(QIODevice::ReadOnly));
+        QFile downloaded(downloadedC);
+        QVERIFY(downloaded.open(QIODevice::ReadOnly));
+        QCOMPARE(downloaded.readAll(), original.readAll());
+    }
+
     // -- Cleanup: delete downloaded copies -----------------------------------
     QVERIFY(QFile::remove(downloadedA));
     QVERIFY(QFile::remove(downloadedB));
+    QVERIFY(QFile::remove(downloadedC));
 
     processTimer.stop();
     delete client;

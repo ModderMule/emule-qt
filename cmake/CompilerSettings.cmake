@@ -64,6 +64,7 @@ target_compile_definitions(emule_platform INTERFACE
     # Project
     SUPPORT_LARGE_FILES
     $<$<CONFIG:Debug>:EMULE_DEBUG>
+    $<$<CONFIG:Debug>:EMULE_DEV_BUILD>
     $<$<PLATFORM_ID:Windows>:NOMINMAX>
     $<$<PLATFORM_ID:Windows>:WIN32_LEAN_AND_MEAN>
     $<$<PLATFORM_ID:Windows>:UNICODE>

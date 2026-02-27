@@ -10,7 +10,6 @@
 
 #include <cstdint>
 
-class QPushButton;
 class QTabWidget;
 class QTextBrowser;
 
@@ -55,7 +54,6 @@ private:
     QTextBrowser* m_logBrowser = nullptr;
     QTextBrowser* m_verboseBrowser = nullptr;
     QTextBrowser* m_kadBrowser = nullptr;
-    QPushButton* m_resetBtn = nullptr;
 
     /// Static instance pointer for the message handler callback.
     static LogWidget* s_instance;

@@ -88,13 +88,13 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
     titleFont.setBold(true);
     p.setFont(titleFont);
     p.drawText(QRect(plotArea.left(), r.top(), plotArea.width(), 12),
-               Qt::AlignRight, QStringLiteral("Contacts"));
+               Qt::AlignRight, tr("Contacts"));
 
     // X-axis label
     p.setFont(labelFont);
     p.setPen(Qt::darkGray);
     p.drawText(QRect(plotArea.left(), plotArea.bottom() + 1, plotArea.width(), labelH),
-               Qt::AlignCenter, QStringLiteral("Time"));
+               Qt::AlignCenter, tr("Time"));
 
     // Grid lines
     p.setPen(QPen(QColor(220, 220, 220), 1, Qt::DotLine));

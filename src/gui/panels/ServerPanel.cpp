@@ -78,10 +78,10 @@ void ServerPanel::onConnectClicked()
 
     if (m_serverConnect->isConnected() || m_serverConnect->isConnecting()) {
         m_serverConnect->disconnect();
-        m_connectBtn->setText(QStringLiteral("Connect"));
+        m_connectBtn->setText(tr("Connect"));
     } else {
         m_serverConnect->connectToAnyServer();
-        m_connectBtn->setText(QStringLiteral("Cancel"));
+        m_connectBtn->setText(tr("Cancel"));
     }
 }
 
@@ -109,7 +109,7 @@ void ServerPanel::onAddServerClicked()
 
     if (m_serverList->addServer(std::move(server))) {
         m_newServerIp->clear();
-        m_newServerPort->setText(QStringLiteral("4661"));
+        m_newServerPort->setText(QStringLiteral("4661")); // default port, not translatable
         m_newServerName->clear();
     }
 }
@@ -128,18 +128,18 @@ void ServerPanel::onServerListChanged()
 {
     m_serverListModel->refreshFromServerList(m_serverList);
     m_serversLabel->setText(
-        QStringLiteral("\u25B8 Servers (%1)").arg(m_serverListModel->rowCount()));
+        tr("\u25B8 Servers (%1)").arg(m_serverListModel->rowCount()));
 }
 
 void ServerPanel::onConnectedToServer()
 {
-    m_connectBtn->setText(QStringLiteral("Disconnect"));
+    m_connectBtn->setText(tr("Disconnect"));
     refreshMyInfo();
 
     if (m_serverConnect) {
         if (auto* srv = m_serverConnect->currentServer()) {
             m_logWidget->appendServerInfo(
-                QStringLiteral("Connected to <b>%1</b> (%2:%3)")
+                tr("Connected to <b>%1</b> (%2:%3)")
                     .arg(srv->name(), srv->address())
                     .arg(srv->port()));
         }
@@ -148,9 +148,9 @@ void ServerPanel::onConnectedToServer()
 
 void ServerPanel::onDisconnectedFromServer()
 {
-    m_connectBtn->setText(QStringLiteral("Connect"));
+    m_connectBtn->setText(tr("Connect"));
     refreshMyInfo();
-    m_logWidget->appendServerInfo(QStringLiteral("Disconnected from server."));
+    m_logWidget->appendServerInfo(tr("Disconnected from server."));
 }
 
 void ServerPanel::onServerMessage(const QString& msg)
@@ -217,7 +217,7 @@ QWidget* ServerPanel::createServerListPanel()
     layout->setContentsMargins(2, 2, 2, 2);
     layout->setSpacing(2);
 
-    m_serversLabel = new QLabel(QStringLiteral("\u25B8 Servers (0)"));
+    m_serversLabel = new QLabel(tr("\u25B8 Servers (0)"));
     QFont boldFont = m_serversLabel->font();
     boldFont.setBold(true);
     m_serversLabel->setFont(boldFont);
@@ -258,7 +258,7 @@ QWidget* ServerPanel::createControlsPanel()
     layout->setSpacing(6);
 
     // Connect button (top, matching screenshot)
-    m_connectBtn = new QPushButton(QStringLiteral("Connect"));
+    m_connectBtn = new QPushButton(tr("Connect"));
     auto* connectRow = new QHBoxLayout;
     connectRow->addStretch();
     connectRow->addWidget(m_connectBtn);
@@ -266,18 +266,18 @@ QWidget* ServerPanel::createControlsPanel()
     connect(m_connectBtn, &QPushButton::clicked, this, &ServerPanel::onConnectClicked);
 
     // New Server section
-    auto* newServerGroup = new QGroupBox(QStringLiteral("New Server"));
+    auto* newServerGroup = new QGroupBox(tr("New Server"));
     auto* nsLayout = new QVBoxLayout(newServerGroup);
     nsLayout->setSpacing(4);
 
     // IP + Port row
     auto* ipPortRow = new QHBoxLayout;
     ipPortRow->setSpacing(4);
-    ipPortRow->addWidget(new QLabel(QStringLiteral("IP Address:")));
+    ipPortRow->addWidget(new QLabel(tr("IP Address:")));
     m_newServerIp = new QLineEdit;
     m_newServerIp->setPlaceholderText(QStringLiteral("0.0.0.0"));
     ipPortRow->addWidget(m_newServerIp, 1);
-    ipPortRow->addWidget(new QLabel(QStringLiteral("Port:")));
+    ipPortRow->addWidget(new QLabel(tr("Port:")));
     m_newServerPort = new QLineEdit(QStringLiteral("4661"));
     m_newServerPort->setMaximumWidth(55);
     ipPortRow->addWidget(m_newServerPort);
@@ -286,13 +286,13 @@ QWidget* ServerPanel::createControlsPanel()
     // Name row
     auto* nameRow = new QHBoxLayout;
     nameRow->setSpacing(4);
-    nameRow->addWidget(new QLabel(QStringLiteral("Name:")));
+    nameRow->addWidget(new QLabel(tr("Name:")));
     m_newServerName = new QLineEdit;
     nameRow->addWidget(m_newServerName, 1);
     nsLayout->addLayout(nameRow);
 
     // Add to list button
-    m_addServerBtn = new QPushButton(QStringLiteral("Add to list"));
+    m_addServerBtn = new QPushButton(tr("Add to list"));
     auto* addBtnRow = new QHBoxLayout;
     addBtnRow->addStretch();
     addBtnRow->addWidget(m_addServerBtn);
@@ -305,9 +305,9 @@ QWidget* ServerPanel::createControlsPanel()
     auto* updateRow = new QHBoxLayout;
     updateRow->setSpacing(4);
     auto* updateIcon = new QLabel(QStringLiteral("\u21BB")); // ↻ refresh icon
-    updateIcon->setToolTip(QStringLiteral("Update server.met from URL"));
+    updateIcon->setToolTip(tr("Update server.met from URL"));
     updateRow->addWidget(updateIcon);
-    updateRow->addWidget(new QLabel(QStringLiteral("Update server.met from URL:")));
+    updateRow->addWidget(new QLabel(tr("Update server.met from URL:")));
     updateRow->addStretch();
     layout->addLayout(updateRow);
 
@@ -315,7 +315,7 @@ QWidget* ServerPanel::createControlsPanel()
     urlRow->setSpacing(4);
     m_updateUrlEdit = new QLineEdit;
     urlRow->addWidget(m_updateUrlEdit, 1);
-    m_updateBtn = new QPushButton(QStringLiteral("Update"));
+    m_updateBtn = new QPushButton(tr("Update"));
     m_updateBtn->setFixedWidth(55);
     urlRow->addWidget(m_updateBtn);
     layout->addLayout(urlRow);
@@ -347,44 +347,43 @@ QWidget* ServerPanel::createControlsPanel()
 void ServerPanel::refreshMyInfo()
 {
     QString html;
-    html += QStringLiteral("<b>My Info</b><br>");
+    html += QStringLiteral("<b>") + tr("My Info") + QStringLiteral("</b><br>");
 
     // eD2K Network
-    html += QStringLiteral("<b>eD2K Network</b><br>");
+    html += QStringLiteral("<b>") + tr("eD2K Network") + QStringLiteral("</b><br>");
     if (m_serverConnect && m_serverConnect->isConnected()) {
-        html += QStringLiteral("&nbsp;&nbsp;Status: <font color='green'>Connected</font><br>");
+        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" <font color='green'>") + tr("Connected") + QStringLiteral("</font><br>");
         if (auto* srv = m_serverConnect->currentServer()) {
-            html += QStringLiteral("&nbsp;&nbsp;Server: %1<br>").arg(srv->name());
+            html += QStringLiteral("&nbsp;&nbsp;") + tr("Server: %1").arg(srv->name()) + QStringLiteral("<br>");
         }
-        html += QStringLiteral("&nbsp;&nbsp;Client ID: %1<br>")
-                    .arg(m_serverConnect->clientID());
+        html += QStringLiteral("&nbsp;&nbsp;") + tr("Client ID: %1").arg(m_serverConnect->clientID()) + QStringLiteral("<br>");
         html += QStringLiteral("&nbsp;&nbsp;%1<br>")
                     .arg(m_serverConnect->isLowID()
-                             ? QStringLiteral("<font color='orange'>Low ID (Firewalled)</font>")
-                             : QStringLiteral("<font color='green'>High ID</font>"));
+                             ? QStringLiteral("<font color='orange'>") + tr("Low ID (Firewalled)") + QStringLiteral("</font>")
+                             : QStringLiteral("<font color='green'>") + tr("High ID") + QStringLiteral("</font>"));
     } else if (m_serverConnect && m_serverConnect->isConnecting()) {
-        html += QStringLiteral("&nbsp;&nbsp;Status: <font color='orange'>Connecting...</font><br>");
+        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" <font color='orange'>") + tr("Connecting...") + QStringLiteral("</font><br>");
     } else {
-        html += QStringLiteral("&nbsp;&nbsp;Status: Disconnected<br>");
+        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" ") + tr("Disconnected") + QStringLiteral("<br>");
     }
 
     // Kad Network
-    html += QStringLiteral("<br><b>Kad Network</b><br>");
+    html += QStringLiteral("<br><b>") + tr("Kad Network") + QStringLiteral("</b><br>");
     if (theApp.serverConnect) {
         // ToDo: Get Kad status from Kademlia instance
-        html += QStringLiteral("&nbsp;&nbsp;Status: --<br>");
+        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" --<br>");
     } else {
-        html += QStringLiteral("&nbsp;&nbsp;Status: --<br>");
+        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" --<br>");
     }
 
     // Network info
-    html += QStringLiteral("<br><b>Network</b><br>");
-    html += QStringLiteral("&nbsp;&nbsp;IP:Port: %1:%2<br>")
+    html += QStringLiteral("<br><b>") + tr("Network") + QStringLiteral("</b><br>");
+    html += QStringLiteral("&nbsp;&nbsp;") + tr("IP:Port: %1:%2")
                 .arg(thePrefs.bindAddress().isEmpty()
                          ? QStringLiteral("0.0.0.0")
                          : thePrefs.bindAddress())
-                .arg(thePrefs.port());
-    html += QStringLiteral("&nbsp;&nbsp;UDP Port: %1<br>").arg(thePrefs.udpPort());
+                .arg(thePrefs.port()) + QStringLiteral("<br>");
+    html += QStringLiteral("&nbsp;&nbsp;") + tr("UDP Port: %1").arg(thePrefs.udpPort()) + QStringLiteral("<br>");
 
     m_infoLabel->setText(html);
 }

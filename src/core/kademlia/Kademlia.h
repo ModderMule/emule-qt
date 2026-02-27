@@ -154,6 +154,8 @@ private:
     bool m_running = false;
     bool m_lanMode = false;
     bool m_bootstrapping = false;
+    bool m_wasConnected = false;
+    bool m_ownsPrefs = false;
     std::list<uint32> m_statsEstUsersProbes;
 
     static Kademlia* s_instance;

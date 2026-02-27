@@ -124,13 +124,18 @@ bool SearchManager::startSearch(Search* search)
         return false;
     }
 
-    // Populate initial contacts from routing table
+    // Populate initial contacts from routing table.
+    // While still connecting (no verified contact yet), include type-3
+    // nodes.dat contacts so bootstrap lookups have candidates.
     UInt128 distance(RoutingZone::localKadId());
     distance.xorWith(search->getTarget());
 
+    auto* kadInst = Kademlia::instance();
+    uint32 maxType = (kadInst && !kadInst->isConnected()) ? 3 : KADEMLIA_FIND_VALUE;
+
     if (auto* rz = Kademlia::getInstanceRoutingZone()) {
         ContactMap contacts;
-        rz->getClosestTo(KADEMLIA_FIND_VALUE, search->getTarget(),
+        rz->getClosestTo(maxType, search->getTarget(),
                          distance, 50, contacts, true, false);
         for (auto& [dist, contact] : contacts)
             search->m_possible[dist] = contact;

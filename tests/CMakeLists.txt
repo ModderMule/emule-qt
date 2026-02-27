@@ -222,6 +222,11 @@ emule_add_test(tst_StatisticsReset FOLDER "Stats")
 # Module 19: Web Server
 emule_add_test(tst_WebServer FOLDER "WebServer")
 
+# IPC Protocol
+emule_add_test(tst_IpcProtocol   FOLDER "Ipc" LIBRARIES eMule::Ipc)
+emule_add_test(tst_IpcMessage    FOLDER "Ipc" LIBRARIES eMule::Ipc)
+emule_add_test(tst_IpcConnection FOLDER "Ipc" LIBRARIES eMule::Ipc)
+
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
 emule_add_test(tst_KadNodesData   FOLDER "DataFiles")
@@ -236,4 +241,8 @@ if(EMULE_LIVE_TESTS)
     emule_add_test(tst_FileDownloadLive FOLDER "LiveNetwork")
     target_compile_definitions(tst_FileDownloadLive PRIVATE QTEST_FUNCTION_TIMEOUT=960000)
     set_tests_properties(tst_FileDownloadLive PROPERTIES LABELS "live" TIMEOUT 960)
+
+    emule_add_test(tst_ServerDownloadLive FOLDER "LiveNetwork")
+    target_compile_definitions(tst_ServerDownloadLive PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
+    set_tests_properties(tst_ServerDownloadLive PROPERTIES LABELS "live" TIMEOUT 120)
 endif()

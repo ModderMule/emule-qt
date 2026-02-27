@@ -78,9 +78,9 @@ QVariant KadContactsModel::headerData(int section, Qt::Orientation orientation, 
         return {};
 
     switch (section) {
-    case ColStatus:   return QStringLiteral("Status");
-    case ColClientId: return QStringLiteral("Client ID");
-    case ColDistance:  return QStringLiteral("Distance");
+    case ColStatus:   return tr("Status");
+    case ColClientId: return tr("Client ID");
+    case ColDistance:  return tr("Distance");
     default:          return {};
     }
 }

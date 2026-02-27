@@ -404,16 +404,6 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             m_sent = 0;
             delete curPacket;
 
-            // Debug: dump full outgoing packet
-            {
-                QString hex;
-                for (uint32 i = 0; i < m_sendBufferLen; ++i)
-                    hex += QStringLiteral("%1 ").arg(static_cast<uint8>(m_sendBuffer[i]), 2, 16, QLatin1Char('0'));
-                logDebug(QStringLiteral("EMSocket::send — outgoing pkt len=%1 hex=[%2] peer=%3:%4")
-                             .arg(m_sendBufferLen).arg(hex.trimmed())
-                             .arg(peerAddress().toString()).arg(peerPort()));
-            }
-
             // Encrypt the data
             cryptPrepareSendData(reinterpret_cast<uint8*>(m_sendBuffer), m_sendBufferLen);
 
@@ -454,9 +444,6 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             m_lastSent = static_cast<uint32>(m_elapsedTimer.elapsed());
 
             qint64 result = write(m_sendBuffer + m_sent, toSend);
-            logDebug(QStringLiteral("EMSocket::send — write(%1) returned %2 peer=%3:%4")
-                         .arg(toSend).arg(result)
-                         .arg(peerAddress().toString()).arg(peerPort()));
             if (result < 0) {
                 m_busy = true;
                 return ret;

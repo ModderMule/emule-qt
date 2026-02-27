@@ -273,6 +273,10 @@ public:
     [[nodiscard]] QString ipcDaemonPath() const;
     void setIpcDaemonPath(const QString& val);
 
+    /// Remote IPC polling interval in milliseconds (default 1500).
+    [[nodiscard]] int ipcRemotePollingMs() const;
+    void setIpcRemotePollingMs(int val);
+
     // -- Web Server -----------------------------------------------------------
 
     [[nodiscard]] bool webServerEnabled() const;
@@ -371,6 +375,9 @@ public:
 
     [[nodiscard]] QList<int> kadSplitSizes() const;
     void setKadSplitSizes(const QList<int>& val);
+
+    [[nodiscard]] QList<int> transferSplitSizes() const;
+    void setTransferSplitSizes(const QList<int>& val);
 
     [[nodiscard]] int windowWidth() const;
     void setWindowWidth(int val);

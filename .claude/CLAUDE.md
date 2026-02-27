@@ -16,3 +16,5 @@
 
 ## Testing
 - open ports: TCP `5662`, UDP `5672`
+- kill `emulecored` after testing
+- never disable UDP or TCP encryption as it is required by most peers to connect

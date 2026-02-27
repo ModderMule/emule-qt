@@ -3,6 +3,7 @@
 #include "app/UiState.h"
 #include "panels/KadPanel.h"
 #include "panels/ServerPanel.h"
+#include "panels/TransferPanel.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -20,7 +21,7 @@ namespace eMule {
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("eMule Qt v%1").arg(QApplication::applicationVersion()));
+    setWindowTitle(tr("eMule Qt v%1").arg(QApplication::applicationVersion()));
 
     setupPages();
     setupToolbar();
@@ -56,15 +57,15 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled)
 {
     if (connected) {
         const QString label = firewalled
-            ? QStringLiteral("eD2K: Connected (LowID)")
-            : QStringLiteral("eD2K: Connected");
+            ? tr("eD2K: Connected (LowID)")
+            : tr("eD2K: Connected");
         m_statusEd2k->setText(label);
         m_statusEd2k->setStyleSheet(QStringLiteral("color: green;"));
     } else if (connecting) {
-        m_statusEd2k->setText(QStringLiteral("eD2K: Connecting..."));
+        m_statusEd2k->setText(tr("eD2K: Connecting..."));
         m_statusEd2k->setStyleSheet(QStringLiteral("color: orange;"));
     } else {
-        m_statusEd2k->setText(QStringLiteral("eD2K: Disconnected"));
+        m_statusEd2k->setText(tr("eD2K: Disconnected"));
         m_statusEd2k->setStyleSheet(QString{});
     }
 }
@@ -72,13 +73,13 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled)
 void MainWindow::setKadStatus(bool running, bool kadConnected)
 {
     if (kadConnected) {
-        m_statusKad->setText(QStringLiteral("Kad: Connected"));
+        m_statusKad->setText(tr("Kad: Connected"));
         m_statusKad->setStyleSheet(QStringLiteral("color: green;"));
     } else if (running) {
-        m_statusKad->setText(QStringLiteral("Kad: Connecting..."));
+        m_statusKad->setText(tr("Kad: Connecting..."));
         m_statusKad->setStyleSheet(QStringLiteral("color: orange;"));
     } else {
-        m_statusKad->setText(QStringLiteral("Kad: Disconnected"));
+        m_statusKad->setText(tr("Kad: Disconnected"));
         m_statusKad->setStyleSheet(QString{});
     }
 }
@@ -95,7 +96,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
 
 void MainWindow::setupToolbar()
 {
-    auto* toolbar = addToolBar(QStringLiteral("Main"));
+    auto* toolbar = addToolBar(tr("Main"));
     toolbar->setObjectName(QStringLiteral("MainToolbar"));
     toolbar->setMovable(false);
     toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
@@ -104,7 +105,7 @@ void MainWindow::setupToolbar()
     // Connect/Disconnect button (not part of tab group)
     m_connectAction = toolbar->addAction(
         style()->standardIcon(QStyle::SP_MediaStop),
-        QStringLiteral("Disconnect"));
+        tr("Disconnect"));
     connect(m_connectAction, &QAction::triggered, this, &MainWindow::onConnectToggle);
 
     toolbar->addSeparator();
@@ -134,7 +135,7 @@ void MainWindow::setupToolbar()
 
     for (const auto& [label, icon, tab] : tabs) {
         auto* action = toolbar->addAction(style()->standardIcon(icon),
-                                          QString::fromLatin1(label));
+                                          tr(label));
         action->setCheckable(true);
         action->setData(static_cast<int>(tab));
         m_tabGroup->addAction(action);
@@ -147,19 +148,19 @@ void MainWindow::setupToolbar()
     // Options, Tools, Help (non-tab actions)
     auto* optionsAction = toolbar->addAction(
         style()->standardIcon(QStyle::SP_FileDialogDetailedView),
-        QStringLiteral("Options"));
+        tr("Options"));
     Q_UNUSED(optionsAction);
     // ToDo: Open options dialog
 
     auto* toolsAction = toolbar->addAction(
         style()->standardIcon(QStyle::SP_FileDialogListView),
-        QStringLiteral("Tools"));
+        tr("Tools"));
     Q_UNUSED(toolsAction);
     // ToDo: Open tools menu
 
     auto* helpAction = toolbar->addAction(
         style()->standardIcon(QStyle::SP_TitleBarContextHelpButton),
-        QStringLiteral("Help"));
+        tr("Help"));
     Q_UNUSED(helpAction);
     // ToDo: Open help
 }
@@ -168,19 +169,19 @@ void MainWindow::setupStatusBar()
 {
     auto* sb = statusBar();
 
-    m_statusMsg = new QLabel(QStringLiteral("Ready"), this);
+    m_statusMsg = new QLabel(tr("Ready"), this);
     sb->addWidget(m_statusMsg, 1);
 
-    m_statusUsers = new QLabel(QStringLiteral("Users: 0 | Files: 0"), this);
+    m_statusUsers = new QLabel(tr("Users: 0 | Files: 0"), this);
     sb->addPermanentWidget(m_statusUsers);
 
-    m_statusUpDown = new QLabel(QStringLiteral("Up: 0.0 | Down: 0.0"), this);
+    m_statusUpDown = new QLabel(tr("Up: 0.0 | Down: 0.0"), this);
     sb->addPermanentWidget(m_statusUpDown);
 
-    m_statusEd2k = new QLabel(QStringLiteral("eD2K: Disconnected"), this);
+    m_statusEd2k = new QLabel(tr("eD2K: Disconnected"), this);
     sb->addPermanentWidget(m_statusEd2k);
 
-    m_statusKad = new QLabel(QStringLiteral("Kad: Disconnected"), this);
+    m_statusKad = new QLabel(tr("Kad: Disconnected"), this);
     sb->addPermanentWidget(m_statusKad);
 }
 
@@ -197,11 +198,15 @@ void MainWindow::setupPages()
     m_serverPanel = new ServerPanel(this);
     m_pages->addWidget(m_serverPanel);
 
+    // Tab 2: Transfers
+    m_transferPanel = new TransferPanel(this);
+    m_pages->addWidget(m_transferPanel);
+
     // Placeholder widgets for unimplemented tabs
-    for (int i = TabTransfers; i < TabCount; ++i) {
+    for (int i = TabSearch; i < TabCount; ++i) {
         auto* placeholder = new QWidget(this);
         auto* layout = new QVBoxLayout(placeholder);
-        auto* label = new QLabel(QStringLiteral("Not implemented yet"), placeholder);
+        auto* label = new QLabel(tr("Not implemented yet"), placeholder);
         label->setAlignment(Qt::AlignCenter);
         layout->addWidget(label);
         m_pages->addWidget(placeholder);

@@ -2,10 +2,13 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLibraryInfo>
+#include <QLocale>
 #include <QPixmap>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QTranslator>
 
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
@@ -13,6 +16,7 @@
 #include "controls/LogWidget.h"
 #include "panels/KadPanel.h"
 #include "panels/ServerPanel.h"
+#include "panels/TransferPanel.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/Types.h"
@@ -87,6 +91,28 @@ int main(int argc, char* argv[])
     QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     QApplication::setOrganizationName(QStringLiteral("eMule"));
 
+    // Load Qt's own translations (dialogs, standard buttons, etc.)
+    QTranslator qtTranslator;
+    if (qtTranslator.load(QLocale(), QStringLiteral("qt"), QStringLiteral("_"),
+                          QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
+        app.installTranslator(&qtTranslator);
+
+    // Load application translations
+    QTranslator appTranslator;
+    const QStringList translationPaths = {
+        QCoreApplication::applicationDirPath() + QStringLiteral("/lang"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/../Resources/lang"),
+#ifdef EMULE_DEV_BUILD
+        QCoreApplication::applicationDirPath() + QStringLiteral("/../../../lang"),
+#endif
+    };
+    for (const auto& path : translationPaths) {
+        if (appTranslator.load(QLocale(), QStringLiteral("emuleqt"), QStringLiteral("_"), path)) {
+            app.installTranslator(&appTranslator);
+            break;
+        }
+    }
+
     // Load preferences
 #ifdef Q_OS_MACOS
     const QString configDir = QDir::homePath() + QStringLiteral("/eMuleQt/Config");
@@ -148,13 +174,15 @@ int main(int argc, char* argv[])
     if (eMule::thePrefs.ipcEnabled()) {
         const QHostAddress addr(eMule::thePrefs.ipcListenAddress());
         const uint16_t port = eMule::thePrefs.ipcPort();
+        ipcClient.setRemotePollingMs(eMule::thePrefs.ipcRemotePollingMs());
         const QString daemonPath = resolveDaemonPath();
 
         eMule::logInfo(QStringLiteral("Connecting to daemon at %1:%2...")
                            .arg(addr.toString()).arg(port));
 
-        // Wire IPC client to KadPanel
+        // Wire IPC client to panels
         mainWindow.kadPanel()->setIpcClient(&ipcClient);
+        mainWindow.transferPanel()->setIpcClient(&ipcClient);
 
         // Wire daemon log messages to the LogWidget
         // PushLogMessage format: [logId(0), category(1), severity(2), message(3), timestamp(4)]

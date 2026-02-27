@@ -10,6 +10,8 @@
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
 
+#include <algorithm>
+
 #include <QButtonGroup>
 #include <QCborArray>
 #include <QCborMap>
@@ -37,8 +39,11 @@ KadPanel::KadPanel(QWidget* parent)
     setupUi();
 
     m_refreshTimer = new QTimer(this);
-    m_refreshTimer->setInterval(1400);
     connect(m_refreshTimer, &QTimer::timeout, this, &KadPanel::onRefreshTimer);
+
+    m_graphTimer = new QTimer(this);
+    m_graphTimer->setInterval(60'000);
+    connect(m_graphTimer, &QTimer::timeout, this, &KadPanel::onGraphTimer);
 }
 
 KadPanel::~KadPanel() = default;
@@ -48,31 +53,40 @@ void KadPanel::setIpcClient(IpcClient* client)
     m_ipc = client;
 
     if (m_ipc && m_ipc->isConnected()) {
+        m_refreshTimer->setInterval(m_ipc->pollingInterval());
         m_refreshTimer->start();
+        m_graphTimer->start();
         onRefreshTimer();
     } else if (m_ipc) {
         // Start polling once connected
         connect(m_ipc, &IpcClient::connected, this, [this]() {
+            m_refreshTimer->setInterval(m_ipc->pollingInterval());
             m_refreshTimer->start();
+            m_graphTimer->start();
+            m_lastHelloCount = 0;
             onRefreshTimer();
         });
         connect(m_ipc, &IpcClient::disconnected, this, [this]() {
             m_refreshTimer->stop();
+            m_graphTimer->stop();
+            m_lastHelloCount = 0;
             m_contactsModel->clear();
             m_searchesModel->clear();
             m_contactsGraph->clearSamples();
             m_kadNetworkGraph->clearSamples();
-            m_contactsLabel->setText(QStringLiteral("\u25B8 Contacts (0)"));
-            m_searchesLabel->setText(QStringLiteral("\u25B8 Current Searches (0)"));
+            m_contactsLabel->setText(tr("\u25B8 Contacts (0)"));
+            m_searchesLabel->setText(tr("\u25B8 Current Searches (0)"));
         });
     } else {
         m_refreshTimer->stop();
+        m_graphTimer->stop();
+        m_lastHelloCount = 0;
         m_contactsModel->clear();
         m_searchesModel->clear();
         m_contactsGraph->clearSamples();
         m_kadNetworkGraph->clearSamples();
-        m_contactsLabel->setText(QStringLiteral("\u25B8 Contacts (0)"));
-        m_searchesLabel->setText(QStringLiteral("\u25B8 Current Searches (0)"));
+        m_contactsLabel->setText(tr("\u25B8 Contacts (0)"));
+        m_searchesLabel->setText(tr("\u25B8 Current Searches (0)"));
     }
 }
 
@@ -85,6 +99,24 @@ void KadPanel::onRefreshTimer()
     requestContacts();
     requestSearches();
     requestStatus();
+}
+
+void KadPanel::onGraphTimer()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    IpcMessage req(IpcMsgType::GetKadStatus);
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+
+        const QCborMap status = resp.fieldMap(1);
+        const int64_t hellosSent = status.value(QStringLiteral("hellosSent")).toInteger();
+        const int delta = static_cast<int>(hellosSent - m_lastHelloCount);
+        m_lastHelloCount = hellosSent;
+        m_contactsGraph->addSample(std::max(0, delta));
+    });
 }
 
 void KadPanel::onBootstrapClicked()
@@ -197,7 +229,7 @@ QWidget* KadPanel::createContactsPanel()
     layout->setSpacing(2);
 
     // Section header matching MFC style: icon-like prefix + bold text
-    m_contactsLabel = new QLabel(QStringLiteral("\u25B8 Contacts (0)"));
+    m_contactsLabel = new QLabel(tr("\u25B8 Contacts (0)"));
     QFont boldFont = m_contactsLabel->font();
     boldFont.setBold(true);
     m_contactsLabel->setFont(boldFont);
@@ -242,8 +274,8 @@ QWidget* KadPanel::createControlsPanel()
     // Recheck Firewall + Connect/Disconnect buttons
     auto* btnRow = new QHBoxLayout;
     btnRow->setSpacing(4);
-    m_recheckFwBtn  = new QPushButton(QStringLiteral("Recheck Firewall"));
-    m_disconnectBtn = new QPushButton(QStringLiteral("Connect"));
+    m_recheckFwBtn  = new QPushButton(tr("Recheck Firewall"));
+    m_disconnectBtn = new QPushButton(tr("Connect"));
     btnRow->addStretch();
     btnRow->addWidget(m_recheckFwBtn);
     btnRow->addWidget(m_disconnectBtn);
@@ -258,15 +290,15 @@ QWidget* KadPanel::createControlsPanel()
     // Row 1: ○ Bootstrap   IP Address: [______]  Port: [___]
     auto* ipRow = new QHBoxLayout;
     ipRow->setSpacing(4);
-    m_bootstrapIpRadio = new QRadioButton(QStringLiteral("Bootstrap"));
+    m_bootstrapIpRadio = new QRadioButton(tr("Bootstrap"));
     m_bootstrapIpRadio->setChecked(true);
     m_bootstrapGroup->addButton(m_bootstrapIpRadio);
     ipRow->addWidget(m_bootstrapIpRadio);
-    ipRow->addWidget(new QLabel(QStringLiteral("IP Address:")));
+    ipRow->addWidget(new QLabel(tr("IP Address:")));
     m_ipEdit = new QLineEdit;
     m_ipEdit->setPlaceholderText(QStringLiteral("0.0.0.0"));
     ipRow->addWidget(m_ipEdit, 2);
-    ipRow->addWidget(new QLabel(QStringLiteral("Port:")));
+    ipRow->addWidget(new QLabel(tr("Port:")));
     m_portEdit = new QLineEdit;
     m_portEdit->setPlaceholderText(QStringLiteral("4672"));
     m_portEdit->setMaximumWidth(48);
@@ -276,7 +308,7 @@ QWidget* KadPanel::createControlsPanel()
     // Row 2: ○ Nodes.dat from URL:  [_______________________]
     auto* urlRow = new QHBoxLayout;
     urlRow->setSpacing(4);
-    m_bootstrapUrlRadio = new QRadioButton(QStringLiteral("Nodes.dat from URL:"));
+    m_bootstrapUrlRadio = new QRadioButton(tr("Nodes.dat from URL:"));
     m_bootstrapGroup->addButton(m_bootstrapUrlRadio);
     urlRow->addWidget(m_bootstrapUrlRadio);
     m_urlEdit = new QLineEdit;
@@ -286,7 +318,7 @@ QWidget* KadPanel::createControlsPanel()
     layout->addLayout(urlRow);
 
     // Bootstrap button — right-aligned, disabled until valid input
-    m_bootstrapBtn = new QPushButton(QStringLiteral("Bootstrap"));
+    m_bootstrapBtn = new QPushButton(tr("Bootstrap"));
     m_bootstrapBtn->setEnabled(false);
     auto* bsBtnRow = new QHBoxLayout;
     bsBtnRow->addStretch();
@@ -327,7 +359,7 @@ QWidget* KadPanel::createSearchesPanel()
     layout->setSpacing(2);
 
     // Section header matching MFC style
-    m_searchesLabel = new QLabel(QStringLiteral("\u25B8 Current Searches (0)"));
+    m_searchesLabel = new QLabel(tr("\u25B8 Current Searches (0)"));
     QFont boldFont = m_searchesLabel->font();
     boldFont.setBold(true);
     m_searchesLabel->setFont(boldFont);
@@ -364,8 +396,7 @@ void KadPanel::requestContacts()
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_contactsModel->clear();
-            m_contactsLabel->setText(QStringLiteral("\u25B8 Contacts (0)"));
-            m_contactsGraph->addSample(0);
+            m_contactsLabel->setText(tr("\u25B8 Contacts (0)"));
             return;
         }
 
@@ -388,8 +419,7 @@ void KadPanel::requestContacts()
 
         m_contactsModel->setContacts(std::move(rows));
         const int count = m_contactsModel->contactCount();
-        m_contactsLabel->setText(QStringLiteral("\u25B8 Contacts (%1)").arg(count));
-        m_contactsGraph->addSample(count);
+        m_contactsLabel->setText(tr("\u25B8 Contacts (%1)").arg(count));
     });
 }
 
@@ -402,7 +432,7 @@ void KadPanel::requestSearches()
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_searchesModel->clear();
-            m_searchesLabel->setText(QStringLiteral("\u25B8 Current Searches (0)"));
+            m_searchesLabel->setText(tr("\u25B8 Current Searches (0)"));
             return;
         }
 
@@ -426,7 +456,7 @@ void KadPanel::requestSearches()
 
         m_searchesModel->setSearches(std::move(rows));
         const int count = m_searchesModel->searchCount();
-        m_searchesLabel->setText(QStringLiteral("\u25B8 Current Searches (%1)").arg(count));
+        m_searchesLabel->setText(tr("\u25B8 Current Searches (%1)").arg(count));
     });
 }
 
@@ -443,8 +473,8 @@ void KadPanel::requestStatus()
         const QCborMap status = resp.fieldMap(1);
         m_kadRunning = status.value(QStringLiteral("running")).toBool();
         m_disconnectBtn->setText(m_kadRunning
-            ? QStringLiteral("Disconnect")
-            : QStringLiteral("Connect"));
+            ? tr("Disconnect")
+            : tr("Connect"));
     });
 }
 

@@ -16,13 +16,14 @@
 
 namespace eMule {
 
+class ClientUDPSocket;
 class KnownFileList;
 class SharedFileList;
 class UploadBandwidthThrottler;
 class UploadDiskIOThread;
 class UploadQueue;
 
-namespace kad { class Kademlia; class KadPrefs; }
+namespace kad { class Kademlia; }
 
 class CoreSession : public QObject {
     Q_OBJECT
@@ -56,7 +57,7 @@ private:
     std::unique_ptr<UploadBandwidthThrottler> m_uploadThrottler;
     std::unique_ptr<UploadDiskIOThread> m_uploadDiskIO;
     std::unique_ptr<kad::Kademlia> m_kademlia;
-    std::unique_ptr<kad::KadPrefs> m_kadPrefs;
+    std::unique_ptr<ClientUDPSocket> m_clientUDP;
 };
 
 } // namespace eMule

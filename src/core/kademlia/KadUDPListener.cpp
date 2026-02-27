@@ -25,16 +25,11 @@
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
+#include <QHostAddress>
 #include <QHostInfo>
 
 #include <cstring>
 #include <ctime>
-
-#ifdef Q_OS_WIN
-#include <winsock2.h>
-#else
-#include <arpa/inet.h>  // htonl
-#endif
 
 namespace eMule::kad {
 
@@ -278,20 +273,22 @@ void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint8 opcode
                                       uint32 destIP, uint16 destPort,
                                       const KadUDPKey& targetKey, const UInt128* cryptTargetID)
 {
-    // Prepend opcode
+    // Prepend opcode then delegate to the base sendPacket for encryption + send.
     QByteArray fullPacket;
     fullPacket.reserve(static_cast<qsizetype>(len + 1));
     fullPacket.append(static_cast<char>(opcode));
     if (len > 0)
         fullPacket.append(reinterpret_cast<const char*>(data), static_cast<qsizetype>(len));
-    emit packetToSend(std::move(fullPacket), destIP, destPort,
-                      targetKey, cryptTargetID ? *cryptTargetID : UInt128());
 
     // Track outgoing request packets whose response handlers check isOnOutTrackList().
     // bootstrap(), sendMyDetails(), and firewalledCheck() already track their own opcodes;
     // these two are sent from Search::sendFindValue() / process_KADEMLIA2_PING.
     if (opcode == KADEMLIA2_REQ || opcode == KADEMLIA2_PING)
         addTrackedOutPacket(destIP, opcode);
+
+    sendPacket(reinterpret_cast<const uint8*>(fullPacket.constData()),
+               static_cast<uint32>(fullPacket.size()),
+               destIP, destPort, targetKey, cryptTargetID);
 }
 
 void KademliaUDPListener::sendPacket(SafeMemFile& data, uint8 opcode, uint32 destIP,
@@ -754,7 +751,8 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
     uint8 numContacts = io.readUInt8();
 
     ContactArray results;
-    for (uint8 i = 0; i < numContacts && io.position() < io.length(); ++i) {
+    // Each contact entry: 16 (KadID) + 4 (IP) + 2 (UDP) + 2 (TCP) + 1 (ver) = 25 bytes
+    for (uint8 i = 0; i < numContacts && io.length() - io.position() >= 25; ++i) {
         UInt128 contactID = io::readUInt128(io);
         uint32 contactIP = io.readUInt32();
         uint16 contactUDP = io.readUInt16();

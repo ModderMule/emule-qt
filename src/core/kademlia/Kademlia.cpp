@@ -73,12 +73,16 @@ void Kademlia::start(KadPrefs* prefs)
 
     if (prefs) {
         m_prefs = prefs;
+        m_ownsPrefs = false;
     } else if (!m_prefs) {
-        // Create default prefs with temp directory
-        m_prefs = new KadPrefs(QDir::tempPath());
+        const QString cfgDir = !thePrefs.configDir().isEmpty()
+            ? thePrefs.configDir() : QDir::tempPath();
+        m_prefs = new KadPrefs(cfgDir);
+        m_ownsPrefs = true;
     }
 
-    // Create UDP listener
+    // Create UDP listener — socket binding is done externally by CoreSession
+    // via ClientUDPSocket (shared socket for both client and Kad traffic).
     m_udpListener = new KademliaUDPListener(this);
 
     // Create indexed storage
@@ -151,7 +155,12 @@ void Kademlia::stop()
     delete m_udpListener;
     m_udpListener = nullptr;
 
-    // Note: m_prefs may be externally owned, don't delete if we didn't create it
+    // Delete prefs only if we created them internally.
+    if (m_ownsPrefs) {
+        delete m_prefs;
+        m_prefs = nullptr;
+        m_ownsPrefs = false;
+    }
 
     UDPFirewallTester::reset();
 
@@ -457,9 +466,13 @@ void Kademlia::process()
         }
     }
 
-    // 9. Connection state
-    if (m_prefs && m_prefs->hasHadContact()) {
-        if (m_bootstrapping) {
+    // 9. Connection state — detect not-connected → connected transition.
+    //    Don't gate on m_bootstrapping: it goes false in step 1 (bootstrap
+    //    list empty, contacts > 0) before any HELLO_RES sets lastContact.
+    const bool nowConnected = m_prefs && m_prefs->hasHadContact();
+    if (nowConnected != m_wasConnected) {
+        m_wasConnected = nowConnected;
+        if (nowConnected) {
             m_bootstrapping = false;
             emit connected();
         }

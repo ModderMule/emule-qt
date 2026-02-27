@@ -73,6 +73,21 @@ bool IpcClient::isConnected() const
     return m_handshaked && m_connection && m_connection->isConnected();
 }
 
+bool IpcClient::isLocalConnection() const
+{
+    return m_address.isLoopback();
+}
+
+int IpcClient::pollingInterval() const
+{
+    return isLocalConnection() ? LocalPollingMs : m_remotePollingMs;
+}
+
+void IpcClient::setRemotePollingMs(int ms)
+{
+    m_remotePollingMs = std::clamp(ms, 200, 10000);
+}
+
 void IpcClient::sendShutdown()
 {
     if (!isConnected())

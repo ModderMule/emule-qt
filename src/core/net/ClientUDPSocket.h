@@ -27,7 +27,7 @@ namespace eMule {
 
 struct UDPPack {
     std::unique_ptr<Packet> packet;
-    uint32 ip = 0;                          ///< Destination IP (network byte order).
+    uint32 ip = 0;                          ///< Destination IP (host byte order).
     uint16 port = 0;                        ///< Destination port.
     uint32 queueTime = 0;                   ///< Tick count when queued.
     bool encrypt = false;                   ///< Use encryption.
@@ -66,7 +66,7 @@ public:
 
     /// Send a packet to a peer. Takes ownership of packet.
     /// @param packet     Packet to send (can be nullptr for raw data).
-    /// @param ip         Destination IP (network byte order).
+    /// @param ip         Destination IP (host byte order).
     /// @param port       Destination port.
     /// @param encrypt    Use encryption.
     /// @param targetHash Target client hash or Kad ID (16 bytes), or nullptr.
@@ -106,9 +106,16 @@ signals:
     void portTestReceived(uint32 senderIP, uint16 senderPort);
 
     /// Kademlia packet received — forward to Kademlia engine.
-    void kadPacketReceived(uint8 protocol, uint8 opcode,
-                           const uint8* data, uint32 size,
-                           uint32 senderIP, uint16 senderPort);
+    /// @param opcode  Kad opcode (first byte after protocol).
+    /// @param data    Payload after opcode.
+    /// @param size    Size of payload.
+    /// @param senderIP   IP in host byte order.
+    /// @param senderPort Sender port.
+    /// @param validReceiverKey  True if the decrypted receiver key matched.
+    /// @param receiverVerifyKey The receiver verify key from decryption (0 if plaintext).
+    void kadPacketReceived(uint8 opcode, const uint8* data, uint32 size,
+                           uint32 senderIP, uint16 senderPort,
+                           bool validReceiverKey, uint32 receiverVerifyKey);
 
 private slots:
     void onReadyRead();

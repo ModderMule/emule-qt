@@ -18,6 +18,12 @@
 #include <QHostAddress>
 #include <QNetworkDatagram>
 
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>  // htonl
+#endif
+
 #include <cstring>
 
 namespace eMule {
@@ -137,11 +143,17 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
         if (pkt->pBuffer && pkt->size > 0)
             std::memcpy(buf.data() + offset + 2, pkt->pBuffer, pkt->size);
 
-        // Encrypt if requested
+        // Encrypt if requested.
+        // encryptSendClient writes a crypto header at buf[0..overhead-1]
+        // and expects the plaintext payload at buf[overhead..overhead+len-1].
+        // We placed the plaintext at buf.data()+offset, so pass
+        // buf.data()+offset-overhead so the header goes into the reserved area.
         if (pack.encrypt) {
             uint32 publicIP = thePrefs.publicIP();
+            uint32 cryptOverhead = static_cast<uint32>(
+                EncryptedDatagramSocket::encryptOverheadSize(pack.kad));
             uint32 encryptedLen = EncryptedDatagramSocket::encryptSendClient(
-                buf.data() + offset, rawSize,
+                buf.data() + offset - cryptOverhead, rawSize,
                 pack.targetHash.data(), pack.kad,
                 pack.receiverVerifyKey, 0, publicIP);
 
@@ -153,7 +165,7 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
         qint64 sent = m_socket.writeDatagram(
             reinterpret_cast<const char*>(buf.data() + offset),
             static_cast<qint64>(rawSize),
-            QHostAddress(ntohl(pack.ip)),
+            QHostAddress(pack.ip),
             pack.port);
 
         if (sent < 0) {
@@ -184,18 +196,20 @@ void ClientUDPSocket::onReadyRead()
             continue;
 
         QHostAddress senderAddr = datagram.senderAddress();
-        uint32 senderIP = htonl(senderAddr.toIPv4Address());
+        uint32 senderIP = senderAddr.toIPv4Address();
         uint16 senderPort = static_cast<uint16>(datagram.senderPort());
 
+        // IP filter and ban checks expect network byte order
+        const uint32 senderIPnbo = htonl(senderIP);
         if (auto* filter = theApp.ipFilter) {
-            if (filter->isFiltered(senderIP, thePrefs.ipFilterLevel())) {
+            if (filter->isFiltered(senderIPnbo, thePrefs.ipFilterLevel())) {
                 if (auto* stats = theApp.statistics)
                     stats->addFilteredClient();
                 continue;
             }
         }
         if (auto* cl = theApp.clientList) {
-            if (cl->isBannedClient(senderIP))
+            if (cl->isBannedClient(senderIPnbo))
                 continue;
         }
 
@@ -209,10 +223,11 @@ void ClientUDPSocket::onReadyRead()
             uint8 opcode = buf[1];
             processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderIP, senderPort);
         } else if (protoByte == OP_KADEMLIAHEADER || protoByte == OP_KADEMLIAPACKEDPROT) {
-            // Kademlia packet — forward via signal
+            // Kademlia packet — forward via signal (plaintext, no encryption metadata)
             uint8 opcode = buf[1];
-            emit kadPacketReceived(protoByte, opcode, buf + 2,
-                                   static_cast<uint32>(bufLen - 2), senderIP, senderPort);
+            emit kadPacketReceived(opcode, buf + 2,
+                                   static_cast<uint32>(bufLen - 2), senderIP, senderPort,
+                                   false, 0);
         } else {
             // May be encrypted — use our userHash and kadID for decryption
             auto userHash = thePrefs.userHash();
@@ -237,9 +252,12 @@ void ClientUDPSocket::onReadyRead()
                                   opcode, senderIP, senderPort);
                 } else if (innerProto == OP_KADEMLIAHEADER ||
                            innerProto == OP_KADEMLIAPACKEDPROT) {
-                    emit kadPacketReceived(innerProto, opcode, dr.data + 2,
+                    bool validKey = (dr.senderVerifyKey != 0) &&
+                        (dr.senderVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIP));
+                    emit kadPacketReceived(opcode, dr.data + 2,
                                            static_cast<uint32>(dr.length - 2),
-                                           senderIP, senderPort);
+                                           senderIP, senderPort,
+                                           validKey, dr.receiverVerifyKey);
                 }
             }
         }

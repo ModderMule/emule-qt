@@ -63,6 +63,19 @@ set_target_properties(emuleqt PROPERTIES
 
 # ToDo: Add target_precompile_headers(emuleqt REUSE_FROM emulecore) when GUI has more source files
 
+# -- Translations (i18n) ----------------------------------------------------
+# Compile any .ts files found in lang/ into .qm and copy to build dir.
+# To extract strings or add languages, use: ./scripts/localize.sh
+
+file(GLOB TS_FILES "${CMAKE_SOURCE_DIR}/lang/emuleqt_*.ts")
+if(TS_FILES)
+    find_package(Qt6 REQUIRED COMPONENTS LinguistTools)
+    qt_add_translations(emuleqt
+        TS_FILES ${TS_FILES}
+        QM_FILES_OUTPUT_VARIABLE QM_FILES
+    )
+endif()
+
 # Source groups for IDE navigation
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
     ${APP_SOURCES} ${PANEL_SOURCES} ${CONTROL_SOURCES}

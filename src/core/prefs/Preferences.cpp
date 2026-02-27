@@ -118,6 +118,7 @@ struct Preferences::Data {
     uint16 ipcPort = 4712;
     QString ipcListenAddress = QStringLiteral("127.0.0.1");
     QString ipcDaemonPath;  // Empty = auto-detect next to GUI binary
+    int ipcRemotePollingMs = 1500;
 
     // Web Server
     bool webServerEnabled = false;
@@ -166,6 +167,7 @@ struct Preferences::Data {
     // UI State (GUI-only, persisted across sessions)
     QList<int> serverSplitSizes;
     QList<int> kadSplitSizes;
+    QList<int> transferSplitSizes;
     int windowWidth = 900;
     int windowHeight = 620;
     bool windowMaximized = false;
@@ -1038,6 +1040,18 @@ void Preferences::setIpcDaemonPath(const QString& val)
     m_data->ipcDaemonPath = val;
 }
 
+int Preferences::ipcRemotePollingMs() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ipcRemotePollingMs;
+}
+
+void Preferences::setIpcRemotePollingMs(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ipcRemotePollingMs = std::clamp(val, 200, 10000);
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Web Server
 // ---------------------------------------------------------------------------
@@ -1378,6 +1392,18 @@ void Preferences::setKadSplitSizes(const QList<int>& val)
     m_data->kadSplitSizes = val;
 }
 
+QList<int> Preferences::transferSplitSizes() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->transferSplitSizes;
+}
+
+void Preferences::setTransferSplitSizes(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->transferSplitSizes = val;
+}
+
 int Preferences::windowWidth() const
 {
     QReadLocker lock(&m_lock);
@@ -1684,6 +1710,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ipcPort = static_cast<uint16>(ipc["port"].as<int>(m_data->ipcPort));
             m_data->ipcListenAddress = QString::fromStdString(ipc["listenAddress"].as<std::string>(m_data->ipcListenAddress.toStdString()));
             m_data->ipcDaemonPath = QString::fromStdString(ipc["daemonPath"].as<std::string>(m_data->ipcDaemonPath.toStdString()));
+            m_data->ipcRemotePollingMs = std::clamp(ipc["remotePollingMs"].as<int>(m_data->ipcRemotePollingMs), 200, 10000);
         }
 
         // Web Server
@@ -1711,6 +1738,11 @@ bool Preferences::load(const QString& filePath)
                 m_data->kadSplitSizes.clear();
                 for (const auto& item : ui["kadSplitSizes"])
                     m_data->kadSplitSizes.append(item.as<int>(0));
+            }
+            if (ui["transferSplitSizes"] && ui["transferSplitSizes"].IsSequence()) {
+                m_data->transferSplitSizes.clear();
+                for (const auto& item : ui["transferSplitSizes"])
+                    m_data->transferSplitSizes.append(item.as<int>(0));
             }
             m_data->windowWidth     = ui["windowWidth"].as<int>(m_data->windowWidth);
             m_data->windowHeight    = ui["windowHeight"].as<int>(m_data->windowHeight);
@@ -1990,6 +2022,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "port" << YAML::Value << static_cast<int>(m_data->ipcPort);
     out << YAML::Key << "listenAddress" << YAML::Value << m_data->ipcListenAddress.toStdString();
     out << YAML::Key << "daemonPath" << YAML::Value << m_data->ipcDaemonPath.toStdString();
+    out << YAML::Key << "remotePollingMs" << YAML::Value << m_data->ipcRemotePollingMs;
     out << YAML::EndMap;
 
     // Web Server
@@ -2014,6 +2047,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::EndSeq;
     out << YAML::Key << "kadSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
     for (int sz : m_data->kadSplitSizes)
+        out << sz;
+    out << YAML::EndSeq;
+    out << YAML::Key << "transferSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int sz : m_data->transferSplitSizes)
         out << sz;
     out << YAML::EndSeq;
     out << YAML::Key << "windowWidth"     << YAML::Value << m_data->windowWidth;

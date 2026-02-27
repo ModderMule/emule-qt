@@ -38,6 +38,17 @@ public:
     /// Returns true if connected and handshake is complete.
     [[nodiscard]] bool isConnected() const;
 
+    /// Returns true if connected to a loopback address (localhost).
+    [[nodiscard]] bool isLocalConnection() const;
+
+    /// Recommended polling interval: 500ms for localhost, configurable for remote.
+    [[nodiscard]] int pollingInterval() const;
+
+    /// Set the remote polling interval (from preferences). Default 1500ms.
+    void setRemotePollingMs(int ms);
+
+    static constexpr int LocalPollingMs  = 500;
+
     /// Callback type for request responses.
     using ResponseCallback = std::function<void(const Ipc::IpcMessage&)>;
 
@@ -101,6 +112,7 @@ private:
     int64_t m_lastVerboseId = 0;
     QString m_daemonToken;
     std::unordered_map<int, ResponseCallback> m_pendingCallbacks;
+    int m_remotePollingMs = 1500;
 
     static constexpr int MaxReconnectDelay = 30000;
 };

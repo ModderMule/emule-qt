@@ -2,9 +2,7 @@
 
 #include "prefs/Preferences.h"
 
-#include <QHBoxLayout>
 #include <QDateTime>
-#include <QPushButton>
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QTextCursor>
@@ -24,10 +22,6 @@ LogWidget::LogWidget(QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
 
-    // Top row: tabs + reset button
-    auto* topRow = new QHBoxLayout;
-    topRow->setContentsMargins(0, 0, 0, 0);
-
     m_tabs = new QTabWidget;
     m_tabs->setTabPosition(QTabWidget::South);
 
@@ -36,40 +30,27 @@ LogWidget::LogWidget(QWidget* parent)
     m_serverInfoBrowser->setReadOnly(true);
     m_serverInfoBrowser->setOpenExternalLinks(true);
     m_serverInfoBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabs->addTab(m_serverInfoBrowser, QStringLiteral("Server Info"));
+    m_tabs->addTab(m_serverInfoBrowser, tr("Server Info"));
 
     // Log tab
     m_logBrowser = new QTextBrowser;
     m_logBrowser->setReadOnly(true);
     m_logBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabs->addTab(m_logBrowser, QStringLiteral("Log"));
+    m_tabs->addTab(m_logBrowser, tr("Log"));
 
     // Verbose tab
     m_verboseBrowser = new QTextBrowser;
     m_verboseBrowser->setReadOnly(true);
     m_verboseBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabs->addTab(m_verboseBrowser, QStringLiteral("Verbose"));
+    m_tabs->addTab(m_verboseBrowser, tr("Verbose"));
 
     // Kad tab
     m_kadBrowser = new QTextBrowser;
     m_kadBrowser->setReadOnly(true);
     m_kadBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabs->addTab(m_kadBrowser, QStringLiteral("Kad"));
+    m_tabs->addTab(m_kadBrowser, tr("Kad"));
 
-    topRow->addWidget(m_tabs, 1);
-
-    // Reset button (right side, matching screenshot)
-    auto* btnLayout = new QVBoxLayout;
-    btnLayout->setContentsMargins(4, 0, 0, 0);
-    m_resetBtn = new QPushButton(QStringLiteral("Clear Logs"));
-    m_resetBtn->setFixedWidth(50);
-    btnLayout->addWidget(m_resetBtn);
-    btnLayout->addStretch();
-    topRow->addLayout(btnLayout);
-
-    layout->addLayout(topRow);
-
-    connect(m_resetBtn, &QPushButton::clicked, this, &LogWidget::clearAll);
+    layout->addWidget(m_tabs);
 
     // Initial info message
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.0 ready</font>"));

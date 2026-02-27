@@ -10,7 +10,12 @@
 #include "files/SharedFileList.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
+#include "kademlia/KadUDPKey.h"
+#include "kademlia/KadUDPListener.h"
+#include "kademlia/KadUInt128.h"
+#include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
+#include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
@@ -18,8 +23,11 @@
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
 #include "utils/Log.h"
+#include "utils/Opcodes.h"
 
 #include <QDir>
+
+#include <cstring>
 
 namespace eMule {
 
@@ -39,6 +47,8 @@ CoreSession::~CoreSession()
 
 void CoreSession::start()
 {
+    logInfo(QStringLiteral("Starting core — TCP port %1, UDP port %2")
+                .arg(thePrefs.port()).arg(thePrefs.udpPort()));
     initUploadPipeline();
     initKademlia();
     m_tickCounter = 0;
@@ -175,16 +185,85 @@ void CoreSession::onTimer()
 
 void CoreSession::initKademlia()
 {
-    if (!thePrefs.kadEnabled())
+    if (!thePrefs.kadEnabled() || m_kademlia)
         return;
 
-    if (m_kademlia)
+    // 1. Create and bind the shared UDP socket (client + Kad traffic).
+    m_clientUDP = std::make_unique<ClientUDPSocket>();
+    const uint16 udpPort = static_cast<uint16>(thePrefs.udpPort());
+    if (!m_clientUDP->rebind(udpPort)) {
+        logError(QStringLiteral("Failed to bind client UDP socket on port %1 — Kademlia disabled")
+                     .arg(udpPort));
+        m_clientUDP.reset();
         return;
+    }
+    theApp.clientUDP = m_clientUDP.get();
+    logInfo(QStringLiteral("Client UDP socket bound on port %1").arg(udpPort));
 
-    const QString configDir = thePrefs.configDir();
-    m_kadPrefs = std::make_unique<kad::KadPrefs>(configDir);
+    // 2. Create and start Kademlia (no internal socket binding).
     m_kademlia = std::make_unique<kad::Kademlia>();
-    m_kademlia->start(m_kadPrefs.get());
+    m_kademlia->start();
+
+    if (!m_kademlia->isRunning()) {
+        m_kademlia.reset();
+        theApp.clientUDP = nullptr;
+        m_clientUDP.reset();
+        return;
+    }
+
+    auto* listener = m_kademlia->getUDPListener();
+    auto* udp = m_clientUDP.get();
+
+    // 3. Receive bridge: ClientUDPSocket → KademliaUDPListener
+    //    Reconstruct [opcode][payload] buffer for processPacket().
+    connect(udp, &ClientUDPSocket::kadPacketReceived,
+        listener, [listener](uint8 opcode, const uint8* data, uint32 size,
+                             uint32 senderIP, uint16 senderPort,
+                             bool validReceiverKey, uint32 receiverVerifyKey) {
+            QByteArray buf(1 + static_cast<qsizetype>(size), Qt::Uninitialized);
+            buf[0] = static_cast<char>(opcode);
+            if (size > 0)
+                std::memcpy(buf.data() + 1, data, size);
+            listener->processPacket(reinterpret_cast<const uint8*>(buf.constData()),
+                                    static_cast<uint32>(buf.size()),
+                                    senderIP, senderPort,
+                                    validReceiverKey,
+                                    kad::KadUDPKey(receiverVerifyKey, senderIP));
+        });
+
+    // 4. Send bridge: KademliaUDPListener → ClientUDPSocket
+    //    Build a Packet from the raw [opcode][payload] and queue it for sending.
+    connect(listener, &kad::KademliaUDPListener::packetToSend,
+        udp, [udp](QByteArray data, uint32 destIP, uint16 destPort,
+                    kad::KadUDPKey targetKey, kad::UInt128 cryptTargetID) {
+            if (data.isEmpty())
+                return;
+
+            auto pkt = std::make_unique<Packet>(OP_KADEMLIAHEADER);
+            pkt->opcode = static_cast<uint8>(data[0]);
+            if (data.size() > 1) {
+                pkt->size = static_cast<uint32>(data.size() - 1);
+                pkt->pBuffer = new char[pkt->size];
+                std::memcpy(pkt->pBuffer, data.constData() + 1, pkt->size);
+            }
+
+            // Determine encryption parameters
+            const uint8* targetHash = nullptr;
+            uint32 receiverVerifyKey = 0;
+            bool hasTarget = !(cryptTargetID == kad::UInt128());
+            if (hasTarget) {
+                targetHash = cryptTargetID.getData();
+            } else {
+                auto* prefs = kad::Kademlia::getInstancePrefs();
+                receiverVerifyKey = targetKey.getKeyValue(
+                    prefs ? prefs->ipAddress() : 0);
+            }
+
+            udp->sendPacket(std::move(pkt), destIP, destPort,
+                            hasTarget || (receiverVerifyKey != 0),
+                            hasTarget ? targetHash : nullptr,
+                            true, receiverVerifyKey);
+        });
 
     logInfo(QStringLiteral("Kademlia started."));
 }
@@ -195,11 +274,13 @@ void CoreSession::initKademlia()
 
 void CoreSession::shutdownKademlia()
 {
-    if (m_kademlia) {
+    if (m_kademlia)
         m_kademlia->stop();
-        m_kademlia.reset();
-    }
-    m_kadPrefs.reset();
+    m_kademlia.reset();
+
+    if (theApp.clientUDP == m_clientUDP.get())
+        theApp.clientUDP = nullptr;
+    m_clientUDP.reset();
 }
 
 } // namespace eMule

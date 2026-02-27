@@ -463,7 +463,7 @@ void RoutingZone::onSmallTimer()
                 emit contactRemoved(oldest);
                 delete oldest;
             }
-        } else if (oldest->getExpireTime() > 0 && oldest->getExpireTime() <= time(nullptr)) {
+        } else if (oldest->getExpireTime() <= time(nullptr)) {
             // Contact needs a type check — send HELLO to verify alive.
             // Pass the contact's KadID to enable NodeID-based encryption.
             oldest->checkingType();

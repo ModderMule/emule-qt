@@ -8,6 +8,9 @@
 ///
 /// Outbound packets are rate-limited to 10/sec to avoid flooding the network.
 ///
+/// Maximum total runtime: ~3 minutes.  Individual test timeouts are kept short
+/// so the suite completes within this budget.
+///
 /// Port configuration (env vars EMULE_TCP_PORT, EMULE_UDP_PORT):
 ///   - Both set → bind TCP listener and UDP socket to those ports.
 ///     When forwarded, both firewall checks should PASS (not firewalled).
@@ -307,6 +310,17 @@ void tst_KadLiveNetwork::initTestCase()
     m_kad->start();
     QVERIFY(m_kad->isRunning());
 
+    // Pause the RoutingZone maintenance timer during setup to prevent
+    // runaway Node searches from dominating I/O during bootstrap.
+    // The Kademlia process timer (direct child) stays running — it drives
+    // the search state machine needed by later tests.
+    // The RoutingZone timer (grandchild) sends HELLO_REQ and spawns Node
+    // searches that create a cascading feedback loop.
+    auto* routingZone = m_kad->getRoutingZone();
+    auto* rzTimer = routingZone ? routingZone->findChild<QTimer*>(Qt::FindDirectChildrenOnly) : nullptr;
+    if (rzTimer)
+        rzTimer->stop();
+
     // 7. Wire outbound: KademliaUDPListener::packetToSend → m_socket
     //    Signal data format: [opcode | payload...]
     //    Wire format:        [protocol | opcode | payload...]
@@ -378,35 +392,40 @@ void tst_KadLiveNetwork::initTestCase()
         }
     });
 
-    // 8. Send BOOTSTRAP_REQ to contacts from nodes.dat at kSendRate/sec.
-    //    Bootstrap requests are sent plain (no encryption) so any live
-    //    Kad node will respond with BOOTSTRAP_RES containing ~20 fresh
-    //    contacts.  Stop early once we have enough responses.
+    // 8. Send BOOTSTRAP_REQ to up to 50 contacts from nodes.dat at
+    //    kSendRate/sec.  Send all without early stop — more online contacts
+    //    means better results for subsequent store/search tests.
     ContactArray contacts;
     m_kad->getRoutingZone()->getAllEntries(contacts);
     qDebug() << "Loaded" << contacts.size() << "bootstrap contacts from nodes.dat";
+    if (contacts.size() > 50)
+        contacts.resize(50);
 
     auto* udpListener = m_kad->getUDPListener();
     rateLimitedSend(contacts,
         [udpListener](const Contact* c) {
             udpListener->bootstrap(c->getIPAddress(), c->getUDPPort());
-        },
-        [this] { return m_kadPacketsReceived.load(std::memory_order_relaxed) >= 10; });
+        });
 
     // Also try DNS bootstrap in case nodes.dat is too stale
     m_kad->bootstrap(QStringLiteral("boot.emule-security.org"), 4672);
 
-    // Let remaining bootstrap responses arrive
-    QTest::qWait(3'000);
+    // Let remaining bootstrap responses arrive (short wait — 3 min total budget)
+    QTest::qWait(2'000);
     qDebug() << "After bootstrap — sent:" << m_kadPacketsSent.load()
              << "received:" << m_kadPacketsReceived.load();
 
-    // 9. Send HELLO_REQ to routing contacts so they become IP-verified.
-    //    getClosestTo() (used by search) only returns verified contacts.
-    //    This mirrors the RoutingZone small-timer verification behavior.
+    // Stop node searches that Kademlia::process() spawned during bootstrap.
+    // They create a feedback loop of REQ/RES packets that dominates I/O.
+    SearchManager::stopAllSearches();
+
+    // 9. Send HELLO_REQ to a subset of routing contacts so they become
+    //    IP-verified. Cap to 30 contacts to keep initTestCase fast (3 min budget).
     {
         ContactArray helloContacts;
         m_kad->getRoutingZone()->getAllEntries(helloContacts);
+        if (helloContacts.size() > 30)
+            helloContacts.resize(30);
         const int baseRecv = m_kadPacketsReceived.load(std::memory_order_relaxed);
         rateLimitedSend(helloContacts,
             [udpListener](const Contact* c) {
@@ -416,16 +435,20 @@ void tst_KadLiveNetwork::initTestCase()
                                            c->getVersion(), c->getUDPKey(), &contactID, false);
             },
             [this, baseRecv] {
-                return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 20;
+                return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 10;
             });
 
         // Wait for HELLO_RES responses to arrive and verify contacts
         (void)QTest::qWaitFor([this, baseRecv] {
-            return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 10;
-        }, 10'000);
+            return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 5;
+        }, 5'000);
 
         qDebug() << "After HELLO exchange — verified contacts in routing table";
     }
+
+    // Restart the RoutingZone maintenance timer for individual tests.
+    if (rzTimer)
+        rzTimer->start();
 }
 
 // ---------------------------------------------------------------------------
@@ -434,20 +457,22 @@ void tst_KadLiveNetwork::initTestCase()
 
 void tst_KadLiveNetwork::bootstrap_connectsToNetwork()
 {
-    // Wait up to 60 seconds for Kademlia to establish contact with the network.
+    // Wait up to 20s for Kademlia to establish contact with the network.
     // The initial BOOTSTRAP_REQ batch was sent in initTestCase.  Once the
     // first response arrives, setLastContact() makes isConnected() true.
     const bool connected = QTest::qWaitFor([this] {
         return m_kad->isConnected();
-    }, 60'000);
+    }, 20'000);
 
-    QVERIFY2(connected, "Kademlia did not connect to the network within 60 seconds");
+    QVERIFY2(connected, "Kademlia did not connect to the network within 20 seconds");
 
     // Send HELLO_REQ (encrypted) to routing contacts at kSendRate/sec.
-    // This mirrors the RoutingZone small-timer behavior and triggers the
-    // firewall check mechanism.  Stop early once we have 20+ responses.
+    // Cap to 30 contacts to stay within 3 min budget.  Stop early once
+    // we have 10+ responses.
     ContactArray contacts;
     m_kad->getRoutingZone()->getAllEntries(contacts);
+    if (contacts.size() > 30)
+        contacts.resize(30);
 
     auto* udpListener = m_kad->getUDPListener();
     const int baseReceived = m_kadPacketsReceived.load(std::memory_order_relaxed);
@@ -459,7 +484,7 @@ void tst_KadLiveNetwork::bootstrap_connectsToNetwork()
                                        c->getVersion(), c->getUDPKey(), &contactID, false);
         },
         [this, baseReceived] {
-            return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseReceived >= 20;
+            return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseReceived >= 10;
         });
 
     qDebug() << "Kad connected — sent HELLOs, routing contacts:"
@@ -497,7 +522,7 @@ void tst_KadLiveNetwork::bootstrap_connectsToNetwork()
 
         const bool pingResponse = QTest::qWaitFor([this, baseRaw] {
             return m_rawDatagramsReceived.load(std::memory_order_relaxed) > baseRaw;
-        }, 10'000);
+        }, 5'000);
         qDebug() << "PING probe:" << (pingResponse ? "GOT PONG" : "NO RESPONSE")
                  << "new datagrams:" << m_rawDatagramsReceived.load(std::memory_order_relaxed) - baseRaw;
     }
@@ -522,7 +547,7 @@ void tst_KadLiveNetwork::bootstrap_connectsToNetwork()
 
         const bool reqResponse = QTest::qWaitFor([this, baseRaw] {
             return m_rawDatagramsReceived.load(std::memory_order_relaxed) > baseRaw;
-        }, 15'000);
+        }, 5'000);
         qDebug() << "KADEMLIA2_REQ probe:" << (reqResponse ? "GOT RESPONSE" : "NO RESPONSE")
                  << "new datagrams:" << m_rawDatagramsReceived.load(std::memory_order_relaxed) - baseRaw;
     }
@@ -530,12 +555,12 @@ void tst_KadLiveNetwork::bootstrap_connectsToNetwork()
 
 void tst_KadLiveNetwork::udpPackets_areReceived()
 {
-    // Wait up to 60 seconds for at least 5 Kad responses.
+    // Wait up to 15s for at least 5 Kad responses (3 min total budget).
     // Bootstrap responses (plain) are reliable; HELLO_RES (encrypted) provide
     // additional packets and trigger firewall check processing.
     const bool enough = QTest::qWaitFor([this] {
         return m_kadPacketsReceived.load(std::memory_order_relaxed) >= 5;
-    }, 60'000);
+    }, 15'000);
 
     const int count = m_kadPacketsReceived.load(std::memory_order_relaxed);
     qDebug() << "Kad packets received:" << count << "sent:" << m_kadPacketsSent.load()
@@ -636,21 +661,33 @@ void tst_KadLiveNetwork::publishSources_completesForSharedFiles()
 
     QVERIFY2(!searchIDs.empty(), "No source publish searches were created");
 
-    // Wait for all source publishes to complete (searches expire when done).
-    // kSearchStoreFileLifetime = 140s, so we allow 150s for the store phase
-    // to finish and updateStats() to remove the search.
+    // Wait for all source publishes to complete (3 min total budget — 45s here).
     const bool allDone = QTest::qWaitFor([&] {
         for (uint32 id : searchIDs) {
             if (SearchManager::isSearching(id))
                 return false;
         }
         return true;
-    }, 150'000);
+    }, 45'000);
 
-    qDebug() << "Source publish — all done:" << allDone
-             << "total packets sent:" << m_kadPacketsSent.load();
+    // Build per-search response stats for diagnostics
+    QString stats;
+    for (uint32 id : searchIDs) {
+        for (const auto& [target, search] : SearchManager::getSearches()) {
+            if (search->getSearchID() == id) {
+                stats += QStringLiteral("  search %1: answers=%2 loadResp=%3 active=%4\n")
+                             .arg(id).arg(search->getAnswers())
+                             .arg(search->getNodeLoadResponse())
+                             .arg(!search->stopping());
+                break;
+            }
+        }
+    }
+    stats += QStringLiteral("  packets sent: %1").arg(m_kadPacketsSent.load());
+    qDebug().noquote() << "Source publish stats:\n" << stats;
 
-    QVERIFY2(allDone, "Source publish did not complete within 150 seconds");
+    QVERIFY2(allDone, qPrintable(
+        QStringLiteral("Source publish did not complete within 45 seconds\n%1").arg(stats)));
 }
 
 void tst_KadLiveNetwork::publishKeywords_completesWithLoad()
@@ -709,14 +746,14 @@ void tst_KadLiveNetwork::publishKeywords_completesWithLoad()
              "No keyword publish searches were created");
     qDebug() << "Keyword publishes started:" << keywordsPublished;
 
-    // Wait for all keyword publishes to complete
+    // Wait for all keyword publishes to complete (3 min total budget — 45s here)
     const bool allDone = QTest::qWaitFor([&] {
         for (const auto& [id, kw] : searchInfo) {
             if (SearchManager::isSearching(id))
                 return false;
         }
         return true;
-    }, 180'000);
+    }, 45'000);
 
     // Check load values — at least 1
     // one keyword search should have received load
@@ -734,7 +771,7 @@ void tst_KadLiveNetwork::publishKeywords_completesWithLoad()
              << "keywords with load data:" << withLoad
              << "average load:" << (withLoad > 0 ? totalLoad / static_cast<uint32>(withLoad) : 0u);
 
-    QVERIFY2(allDone, "Keyword publish did not complete within 180 seconds");
+    QVERIFY2(allDone, "Keyword publish did not complete within 45 seconds");
 }
 
 void tst_KadLiveNetwork::publishNotes_completesForComment()
@@ -787,13 +824,13 @@ void tst_KadLiveNetwork::publishNotes_completesForComment()
 
     qDebug() << "Notes publish started — searchID:" << searchID;
 
-    // Wait for the notes publish to complete
+    // Wait for the notes publish to complete (3 min total budget — 30s here)
     const bool done = QTest::qWaitFor([searchID] {
         return !SearchManager::isSearching(searchID);
-    }, 120'000);
+    }, 30'000);
 
     qDebug() << "Notes publish — done:" << done;
-    QVERIFY2(done, "Notes publish did not complete within 120 seconds");
+    QVERIFY2(done, "Notes publish did not complete within 30 seconds");
 }
 
 void tst_KadLiveNetwork::notesSearch_findsPublishedComment()
@@ -831,12 +868,10 @@ void tst_KadLiveNetwork::notesSearch_findsPublishedComment()
 
     qDebug() << "Started notes search" << searchID << "for" << noteFile->fileName();
 
-    // Wait for at least 1 result (up to 120 seconds — the search needs to
-    // converge on the closest nodes, then send KADEMLIA2_SEARCH_NOTES_REQ,
-    // then receive KADEMLIA2_SEARCH_RES with note entries).
+    // Wait for at least 1 result (3 min total budget — 30s here).
     const bool gotResults = QTest::qWaitFor([&noteResults] {
         return !noteResults.empty();
-    }, 120'000);
+    }, 30'000);
 
     const auto resultCount = noteResults.size();
     qDebug() << "Notes search returned" << resultCount << "results";
@@ -907,10 +942,13 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
                     });
             });
 
-    // Send HELLO_REQ to all contacts — triggers firewalledCheck() which
-    // sends FIREWALLED2_REQ now that recheckIP has been reset.
+    // Send HELLO_REQ to a subset of contacts — triggers firewalledCheck()
+    // which sends FIREWALLED2_REQ now that recheckIP has been reset.
+    // Cap to 30 contacts (3 min total budget).
     ContactArray contacts;
     m_kad->getRoutingZone()->getAllEntries(contacts);
+    if (contacts.size() > 30)
+        contacts.resize(30);
     auto* udpListener = m_kad->getUDPListener();
     rateLimitedSend(contacts,
         [udpListener](const Contact* c) {
@@ -921,9 +959,10 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
         });
     qDebug() << "Sent HELLO_REQ to" << contacts.size() << "contacts for firewall check";
 
+    // 3 min total budget — 30s for TCP firewall check
     const bool tcpDone = QTest::qWaitFor([prefs] {
         return !prefs->recheckIP();
-    }, 90'000);
+    }, 30'000);
 
     const bool tcpFirewalled = m_kad->isFirewalled();
     qDebug() << "TCP firewall check — done:" << tcpDone
@@ -989,14 +1028,14 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
 
     UDPFirewallTester::connected();
 
-    // Wait for at least one doRequestFirewallCheckUDP call.
+    // Wait for at least one doRequestFirewallCheckUDP call (3 min budget — 20s here)
     const bool gotFwClient = QTest::qWaitFor([&fwCheckClientsCreated] {
         return fwCheckClientsCreated.load() >= 1;
-    }, 60'000);
+    }, 20'000);
 
     // If we got a client, wait a bit more for TCP connect + UDP response.
     if (gotFwClient && m_portsOpen) {
-        (void)QTest::qWaitFor([] { return UDPFirewallTester::isVerified(); }, 30'000);
+        (void)QTest::qWaitFor([] { return UDPFirewallTester::isVerified(); }, 10'000);
     }
 
     const bool udpFirewalled = UDPFirewallTester::isFirewalledUDP(false);
@@ -1056,10 +1095,10 @@ void tst_KadLiveNetwork::keywordSearch_findsResults()
 
     qDebug() << "Started Kad keyword search" << searchID << "for 'emule'";
 
-    // Wait up to 60 seconds for at least 1 result.
+    // Wait up to 20s for at least 1 result (3 min total budget).
     const bool gotResults = QTest::qWaitFor([this] {
         return m_searchResults.size() >= 1;
-    }, 60'000);
+    }, 20'000);
 
     const auto resultCount = m_searchResults.size();
     qDebug() << "Keyword search returned" << resultCount << "results";
@@ -1105,6 +1144,8 @@ void tst_KadLiveNetwork::buddySearch_connectsWithBuddy()
     {
         ContactArray contacts;
         m_kad->getRoutingZone()->getAllEntries(contacts);
+        if (contacts.size() > 30)
+            contacts.resize(30);
         auto* udpListener = m_kad->getUDPListener();
         const int baseRecv = m_kadPacketsReceived.load(std::memory_order_relaxed);
         rateLimitedSend(contacts,
@@ -1115,13 +1156,13 @@ void tst_KadLiveNetwork::buddySearch_connectsWithBuddy()
                                            c->getVersion(), c->getUDPKey(), &contactID, false);
             },
             [this, baseRecv] {
-                return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 30;
+                return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 10;
             });
 
         // Wait for HELLO_RES to arrive and verify contacts
         (void)QTest::qWaitFor([this, baseRecv] {
-            return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 20;
-        }, 15'000);
+            return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 10;
+        }, 5'000);
 
         ContactArray verified;
         m_kad->getRoutingZone()->getAllEntries(verified);
@@ -1148,7 +1189,7 @@ void tst_KadLiveNetwork::buddySearch_connectsWithBuddy()
         // Let events settle, then stop any auto-created search so our
         // own prepareLookup for the same target succeeds.
         m_clientList->setBuddy(nullptr, BuddyStatus::None);
-        QTest::qWait(2'000);
+        QTest::qWait(1'000);
         SearchManager::stopAllSearches();
 
         // Target = ~kadID (bitwise NOT), matching MFC ClientList.cpp:603
@@ -1160,10 +1201,10 @@ void tst_KadLiveNetwork::buddySearch_connectsWithBuddy()
         const uint32 searchID = search->getSearchID();
 
         // Wait for buddy status to leave None (FINDBUDDY_RES received, TCP initiated).
-        // 75s allows ~20s for search convergence + store phase + response.
+        // 3 min total budget — 20s per attempt here.
         const bool gotConnecting = QTest::qWaitFor([this] {
             return m_clientList->buddyStatus() != BuddyStatus::None;
-        }, 75'000);
+        }, 20'000);
 
         qDebug() << "Attempt" << (attempt + 1)
                  << "buddyStatus:" << static_cast<int>(m_clientList->buddyStatus());

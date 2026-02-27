@@ -23,6 +23,7 @@ public:
     /// Restore a splitter from saved sizes, connect it to auto-update.
     void bindServerSplitter(QSplitter* splitter);
     void bindKadSplitter(QSplitter* splitter);
+    void bindTransferSplitter(QSplitter* splitter);
 
     /// Restore the main window size. Call in the constructor before show().
     void bindMainWindow(QMainWindow* window);
@@ -36,6 +37,7 @@ public:
 private:
     QList<int> m_serverSplitSizes;
     QList<int> m_kadSplitSizes;
+    QList<int> m_transferSplitSizes;
     int  m_windowWidth     = 0;
     int  m_windowHeight    = 0;
     bool m_windowMaximized = false;

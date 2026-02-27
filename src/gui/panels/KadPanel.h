@@ -40,6 +40,7 @@ public:
 
 private slots:
     void onRefreshTimer();
+    void onGraphTimer();
     void onBootstrapClicked();
     void onDisconnectClicked();
     void onRecheckFirewall();
@@ -82,8 +83,12 @@ private:
     // Splitters
     QSplitter* m_vertSplitter = nullptr;
 
-    // Refresh timer
+    // Refresh timer (1.4 s — contacts list + searches + status)
     QTimer* m_refreshTimer = nullptr;
+
+    // Graph timer (60 s — hello packet count per minute)
+    QTimer*  m_graphTimer     = nullptr;
+    int64_t  m_lastHelloCount = 0;
 
     // IPC link
     IpcClient* m_ipc       = nullptr;

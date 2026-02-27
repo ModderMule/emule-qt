@@ -8,6 +8,7 @@
 
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
+#include "client/UpDownClient.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
@@ -15,6 +16,7 @@
 #include "friends/FriendList.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadContact.h"
+#include "kademlia/KadUDPListener.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
@@ -254,9 +256,20 @@ void IpcClientHandler::handleCancelDownload(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
 {
-    QCborArray uploads;
-    // ToDo: serialize active uploads when UploadQueue exposes upload list
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(uploads)));
+    QCborArray uploading;
+    QCborArray waiting;
+    if (theApp.uploadQueue) {
+        theApp.uploadQueue->forEachUploading([&](UpDownClient* c) {
+            uploading.append(toCbor(*c));
+        });
+        theApp.uploadQueue->forEachWaiting([&](UpDownClient* c) {
+            waiting.append(toCbor(*c));
+        });
+    }
+    QCborMap result;
+    result.insert(QStringLiteral("uploading"), uploading);
+    result.insert(QStringLiteral("waiting"), waiting);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(result)));
 }
 
 void IpcClientHandler::handleGetServers(const IpcMessage& msg)
@@ -504,6 +517,10 @@ void IpcClientHandler::handleGetKadStatus(const IpcMessage& msg)
             status.insert(QStringLiteral("contactCount"),
                           static_cast<qint64>(allContacts.size()));
         }
+        auto* udp = kad->getUDPListener();
+        if (udp)
+            status.insert(QStringLiteral("hellosSent"),
+                          static_cast<qint64>(udp->totalHellosSent()));
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(status)));
 }

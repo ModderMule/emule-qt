@@ -954,14 +954,12 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     // Set info packets received flag
     m_infoPacketsReceived |= InfoPacketState::EDonkeyProtPack;
 
-    // If CT_EMULE_VERSION was received, mark eMule protocol.
-    // Note: Do NOT set InfoPacketState::EMuleProtPack here — that flag
-    // must only be set when the actual OP_EMULEINFO/ANSWER is processed
-    // (in processMuleInfoPacket).  MFC only sets IP_EMULECOMPAT from
-    // ProcessMuleInfoPacket, ensuring InfoPacketsReceived() doesn't fire
-    // until the full capability exchange is complete.
+    // MFC BaseClient.cpp:658-661: if CT_EMULE_VERSION was in the HELLO,
+    // set both EMuleProtPack and emuleProtocol.  processMuleInfoPacket()
+    // also sets EMuleProtPack (harmless |= idempotent).
     if (bIsMule) {
         m_emuleProtocol = true;
+        m_infoPacketsReceived |= InfoPacketState::EMuleProtPack;
     }
 
     if (bPrTag)
@@ -1389,7 +1387,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
             m_connectingState = ConnectingState::KadCallback;
             // Send encrypted UDP to buddy using their Kad ID as the encryption key. We assume all Kad clients support encryption by now
             if (theApp.clientUDP)
-                theApp.clientUDP->sendPacket(std::move(packet), htonl(m_buddyIP),
+                theApp.clientUDP->sendPacket(std::move(packet), m_buddyIP,
                                              m_buddyPort, true, m_buddyID.data(), true, 0);
             setDownloadState(DownloadState::WaitCallbackKad);
             logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2")

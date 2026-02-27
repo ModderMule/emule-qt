@@ -4,11 +4,8 @@
 
 Port the eMule filesharing client (~465 source files, ~250 modules) from Microsoft Foundation Classes (MFC) / Win32 to Qt 6 with modern C++23, targeting cross-platform support (Windows, macOS, Linux).
 
-**Architecture:** Daemon/GUI split — a headless `emulecored` daemon runs the core P2P engine, while the `emuleqt` GUI connects via a CBOR-over-TCP IPC protocol. Both link against `libemulecore` (static library) and `libemuleipc` (shared IPC protocol library).
-
-**Source directory (original MFC):** `srchybrid/`
-**Ported source directory:** `src/` — `core/`, `ipc/`, `daemon/`, `gui/`
-**Kademlia subsystem:** `src/core/kademlia/` (48 files, 6 sub-modules)
+**Source directory:** `srchybrid/`
+**Kademlia subsystem:** `srchybrid/kademlia/` (48 files, 6 sub-modules)
 
 ---
 
@@ -20,7 +17,7 @@ Set up the Qt 6 / CMake project structure replacing the Visual Studio `.sln`/`.v
 
 - [x] Create root `CMakeLists.txt` with Qt 6 discovery (`find_package(Qt6 REQUIRED)`) — `CMakeLists.txt`
 - [x] Define project-wide C++23 standard (`set(CMAKE_CXX_STANDARD 23)`) — `cmake/CompilerSettings.cmake`
-- [x] Create modular `CMakeLists.txt` per library/module — `src/CMakeLists.txt`, `src/core/CMakeLists.txt` (17 sub-modules), `src/ipc/CMakeLists.txt`, `src/daemon/CMakeLists.txt`, `src/gui/CMakeLists.txt`, `tests/CMakeLists.txt`
+- [x] Create modular `CMakeLists.txt` per library/module — `src/CMakeLists.txt`, `src/core/CMakeLists.txt` (17 sub-modules), `src/gui/CMakeLists.txt`, `tests/CMakeLists.txt`
 - [x] Set up Qt 6 path hint for `/Users/daniel/Qt` — Qt 6.10.2 in `CMakeLists.txt`
 - [x] Replace `Stdafx.h` precompiled header with CMake PCH support — `target_precompile_headers()` on `emulecore` with 15 C++ stdlib + 8 Qt Core headers; GUI PCH deferred until more source files exist
 - [x] Create `config.h.in` / platform abstraction header replacing `emule_site_config.h` — `src/core/config.h.in`
@@ -343,13 +340,13 @@ Phase 6 (complete):
 
 ### Module 21: GUI — Main Application Shell
 
-Replace the MFC application framework with Qt Widgets. The GUI connects to the `emulecored` daemon via IPC (see Module 31) and auto-launches it if needed.
+Replace the MFC application framework with Qt Widgets.
 
-- [x] Port `Emule.cpp/h` (`CWinApp` → `QApplication`) — `gui/app/main.cpp` (loads prefs, creates MainWindow, manages IpcClient lifecycle, auto-launches daemon)
-- [x] Port `EmuleDlg.cpp/h` (`CDialog` → `QMainWindow`) — `gui/app/MainWindow.h/.cpp` (toolbar with 32×32 icons, stacked tab pages, status bar with up/down speed + user count + eD2k/Kad status)
-- [x] Port `ToolbarWnd.cpp/h` / `MuleToolBarCtrl.cpp/h` → `QToolBar` — integrated into `MainWindow` (tab buttons: Kad, Servers, Transfers, Search, SharedFiles, Messages, IRC, Statistics + Connect/Disconnect)
-- [x] Port `MuleStatusBarCtrl.cpp/h` → `QStatusBar` — integrated into `MainWindow` (status message, users, up/down speeds, eD2k, Kad labels)
-- [x] IPC client for daemon communication — `gui/app/IpcClient.h/.cpp` (connects to daemon, request/callback pattern with seqId, push event dispatch, auto-subscribe)
+- [ ] Port `Emule.cpp/h` (`CWinApp` → `QApplication` subclass)
+- [ ] Port `EmuleDlg.cpp/h` (`CDialog` → `QMainWindow`)
+- [ ] Port `ToolbarWnd.cpp/h` → `QToolBar`
+- [ ] Port `MuleStatusBarCtrl.cpp/h` → `QStatusBar`
+- [ ] Port `MuleToolBarCtrl.cpp/h` → `QToolBar`
 - [ ] Port `SplashScreen.cpp/h` → `QSplashScreen`
 - [ ] Port `Wizard.cpp/h` → `QWizard`
 - [ ] Port `MiniMule.cpp/h` → `QWidget` (floating info window)
@@ -369,8 +366,8 @@ Replace the MFC application framework with Qt Widgets. The GUI connects to the `
 - [ ] Port `TransferDlg.cpp/h` / `TransferWnd.cpp/h` → `QWidget` (Transfers tab)
 - [ ] Port `SearchDlg.cpp/h` / `SearchResultsWnd.cpp/h` / `SearchParamsWnd.cpp/h` → `QWidget` (Search tab)
 - [ ] Port `SharedFilesWnd.cpp/h` → `QWidget` (Shared Files tab)
-- [x] Port `ServerWnd.cpp/h` → `QWidget` (Servers tab) — `gui/panels/ServerPanel.h/.cpp` (server list view, connect/disconnect, add server form, update server.met, My Info, LogWidget with Server Info/Log/Verbose tabs; uses both direct core access and IPC)
-- [x] Port `KademliaWnd.cpp/h` → `QWidget` (Kademlia tab) — `gui/panels/KadPanel.h/.cpp` (contacts tree, bootstrap controls, firewall check, ContactsGraph histogram + network graph, searches table; IPC-driven with 2s refresh timer)
+- [ ] Port `ServerWnd.cpp/h` → `QWidget` (Servers tab)
+- [ ] Port `KademliaWnd.cpp/h` → `QWidget` (Kademlia tab)
 - [ ] Port `StatisticsDlg.cpp/h` → `QWidget` (Statistics tab)
 - [ ] Port `IrcWnd.cpp/h` → `QWidget` (IRC tab)
 - [ ] Port `ChatWnd.cpp/h` → `QWidget` (Messages tab)
@@ -388,12 +385,12 @@ Replace MFC custom controls with Qt equivalents.
 - [ ] Port `DownloadListCtrl.cpp/h` → `QTreeView` + custom model
 - [ ] Port `UploadListCtrl.cpp/h` → `QTreeView` + custom model
 - [ ] Port `SharedFilesCtrl.cpp/h` → `QTreeView` + custom model
-- [x] Port `ServerListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/ServerListModel.h/.cpp` (columns: Name, IP:Port, Description, Ping, Users, MaxUsers, Preference, Failed, Static, SoftFiles, LowID, Obfuscation; refreshFromServerList + context menu support)
+- [ ] Port `ServerListCtrl.cpp/h` → `QTreeView` + custom model
 - [ ] Port `ClientListCtrl.cpp/h` → `QTreeView` + custom model
 - [ ] Port `SearchListCtrl.cpp/h` → `QTreeView` + custom model
-- [x] Port `KadSearchListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/KadSearchesModel.h/.cpp` (columns: Number, Key, Type, Name, Status, Load, PacketsSent, Responses; skeleton, not yet fed with IPC data)
-- [x] Port `KadContactListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/KadContactsModel.h/.cpp` (columns: Status icon, ClientId hex, Distance binary; 5 colored circle icons indicating contact quality; Courier New 8pt font)
-- [x] Port `KadContactHistogramCtrl.cpp/h` → `QWidget` with custom paint — `gui/controls/ContactsGraph.h/.cpp` (deque-based bar chart, 120 samples, auto-scaled Y-axis)
+- [ ] Port `KadSearchListCtrl.cpp/h` → `QTreeView` + custom model
+- [ ] Port `KadContactListCtrl.cpp/h` → `QTreeView` + custom model
+- [ ] Port `KadContactHistogramCtrl.cpp/h` → `QWidget` with custom paint
 - [ ] Port `KadLookupGraph.cpp/h` → `QWidget` with custom paint
 - [ ] Port `DownloadClientsCtrl.cpp/h` → `QTreeView` + custom model
 - [ ] Port `FriendListCtrl.cpp/h` → `QTreeView` + custom model
@@ -411,7 +408,8 @@ Replace MFC custom controls with Qt equivalents.
 - [ ] Port `ProgressCtrlX.cpp/h` → `QProgressBar` subclass
 - [ ] Port `SplitterControl.cpp/h` → `QSplitter`
 - [ ] Port `ToolTipCtrlX.cpp/h` → `QToolTip` / custom tooltip widget
-- [x] Port `HTRichEditCtrl.cpp/h` / `RichEditCtrlX.cpp/h` → `QTextBrowser` — `gui/controls/LogWidget.h/.cpp` (tabbed log display: Server Info, Log, Verbose, Kad; Qt message handler integration; append methods per category)
+- [ ] Port `HTRichEditCtrl.cpp/h` → `QTextBrowser` (HTML display)
+- [ ] Port `RichEditCtrlX.cpp/h` → `QTextEdit`
 - [ ] Port `TreeOptionsCtrl.cpp/h` / `TreeOptionsCtrlEx.cpp/h` → `QTreeWidget` with checkboxes
 - [ ] Port `DropTarget.cpp/h` → Qt drag-and-drop (`QMimeData`, `dragEnterEvent`)
 - [ ] Port `DropDownButton.cpp/h` → `QToolButton` with `QMenu`
@@ -510,11 +508,12 @@ Set up the Qt Test framework infrastructure. Each test is a standalone executabl
 `QVERIFY`, `QCOMPARE`, `QFETCH` (data-driven), `QBENCHMARK`, and `QSignalSpy` for
 signal verification. All test classes inherit `QObject` and use `Q_OBJECT`.
 
-- [x] Create `tests/` directory with its own `CMakeLists.txt` — auto-discovers `tst_*.cpp` files
-- [x] Add `enable_testing()` and `find_package(Qt6 REQUIRED COMPONENTS Test)` to root CMake
-- [x] Set up CTest integration so `ctest` runs all test suites
+- [ ] Create `tests/` directory with its own `CMakeLists.txt`
+- [ ] Add `enable_testing()` and `find_package(Qt6 REQUIRED COMPONENTS Test)` to root CMake
+- [ ] Create `tests/CMakeLists.txt` that auto-discovers and registers all `tst_*.cpp` files
 - [ ] Create `tests/TestHelpers.h` — shared utilities (temp dirs, mock data factories, fixture base class)
 - [ ] Create `tests/data/` directory for test fixtures (sample .part files, server.met, known.met, IP filter lists, etc.)
+- [ ] Set up CTest integration so `ctest` runs all test suites
 - [ ] Configure CI pipeline to run tests on Linux, macOS, Windows
 - [ ] Port `SelfTest.cpp/h` → Qt Test as `tst_SelfTest.cpp`
 
@@ -569,7 +568,6 @@ Use `QTcpServer` / `QTcpSocket` loopback and `QSignalSpy` for async signal testi
 - [ ] `tst_ProxySocket.cpp` — SOCKS4/SOCKS5/HTTP proxy negotiation (mock proxy server)
 - [ ] `tst_HttpClient.cpp` — `QNetworkAccessManager` GET/POST, redirect following, timeout handling
 - [x] `tst_Pinger.cpp` — ICMP echo to localhost, invalid address handling, sequential pings, PingStatus defaults (uses QSKIP when ICMP socket unavailable)
-- [x] `tst_TcpConnect.cpp` — TCP localhost connectivity test, connection establishment verification
 - [ ] `tst_SocketStress.cpp` — open/close 100 connections rapidly, verify no resource leaks
 
 ---
@@ -738,20 +736,6 @@ Use `QTcpServer` / `QTcpSocket` loopback and `QSignalSpy` for async signal testi
 
 ---
 
-### Module 29s2: Unit Tests — IPC & Daemon (Module 31)
-
-- [x] `tst_IpcProtocol.cpp` — frame encoding (4-byte header + payload), round-trip encode/decode, edge cases (insufficient data, incomplete payload, oversized, non-array), multiple frames in buffer, message type enum constants
-- [x] `tst_IpcMessage.cpp` — construction (type/seqId), CBOR array round-trip, field accessors (string/int/bool/map/array), out-of-range handling, append chaining, makeResult/makeError factories, frame round-trip
-- [x] `tst_IpcConnection.cpp` — single/multiple message send/receive over TCP pair, signal emission (messageReceived, disconnected), protocol error (oversized frame), isConnected state tracking
-- [x] `tst_TcpConnect.cpp` — TCP localhost connectivity test
-- [ ] `tst_IpcClientHandler.cpp` — request dispatch for all message types, handshake enforcement, error responses
-- [ ] `tst_IpcServer.cpp` — multi-client connections, broadcast to handshaked clients, client disconnect cleanup
-- [ ] `tst_CoreNotifierBridge.cpp` — verify core signals produce correct IPC push events
-- [ ] `tst_IpcClient.cpp` — handshake flow, request/callback dispatch, push event signal emission, reconnection
-- [ ] `tst_DaemonApp.cpp` — start/stop lifecycle, CoreSession + IpcServer integration
-
----
-
 ### Module 29t: Unit Tests — GUI Widgets (Modules 21-25)
 
 Test GUI components using `QTest::mouseClick`, `QTest::keyClick`, `QSignalSpy`, and
@@ -797,8 +781,6 @@ Larger tests that exercise multiple modules together.
 - [ ] `tst_ConfigPersistence.cpp` — modify preferences → restart application core → verify settings persisted
 - [ ] `tst_IPFilterIntegration.cpp` — load IP filter → attempt connection from filtered IP → verify rejection
 - [ ] `tst_CrossPlatformFileIO.cpp` — write `.part` file on one platform format, read on another (simulate via byte-level comparison)
-- [ ] `tst_ServerDownloadLive.cpp` — live server connection + download test (requires network access, TCP 5662, UDP 5672)
-- [ ] `tst_IpcEndToEnd.cpp` — launch daemon, connect GUI IpcClient, exercise request/response/push lifecycle end-to-end
 
 ---
 
@@ -815,119 +797,85 @@ Larger tests that exercise multiple modules together.
 
 ---
 
-### Module 31: IPC Layer, Daemon & GUI/Core Separation
+### Module 31: Separate GUI and Core — Use QVariant for Communication
 
-The GUI/Core separation uses a **CBOR-over-TCP IPC protocol** rather than QVariant messages.
-The architecture consists of four build targets:
+<!-- ToDo: This is the final architectural goal after the initial port is complete. -->
 
-- `libemulecore` — static library, headless P2P engine (Qt6::Core + Qt6::Network only)
-- `libemuleipc` — static library, shared IPC protocol (Qt6::Core + Qt6::Network only)
-- `emulecored` — headless daemon executable (links core + ipc)
-- `emuleqt` — GUI executable (links core + ipc + Qt6::Widgets)
+Refactor the monolithic architecture into a clean **Core library** (no GUI dependency) and a
+**GUI application** that communicates with Core exclusively through `QVariant`-based messages.
+This enables headless operation, alternative frontends (QML, web), and clean testability.
 
-```
-GUI Process (emuleqt)               Daemon Process (emulecored)
-─────────────────────               ──────────────────────────
-MainWindow                           DaemonApp
-  ├─ KadPanel                         ├─ CoreSession
-  ├─ ServerPanel                      │   ├─ DownloadQueue
-  ├─ ...panels                        │   ├─ UploadQueue
-  │                                   │   ├─ SharedFileList
-  IpcClient ◄──── TCP/CBOR ────►     │   ├─ Kademlia
-    (request/callback)                │   └─ ...managers
-    (push event dispatch)             ├─ IpcServer
-                                      │   └─ IpcClientHandler (per client)
-                                      └─ CoreNotifierBridge
-                                          (core signals → IPC push events)
-```
+#### 31a: Define the Core/GUI Boundary
 
-#### 31a: IPC Protocol Library (`src/ipc/`)
+- [ ] Identify all direct calls from GUI widgets into core objects (grep for core class usage in `*Wnd.cpp`, `*Dlg.cpp`, `*Ctrl.cpp`)
+- [ ] Document every data flow: GUI → Core (user actions) and Core → GUI (state updates)
+- [ ] Design a `QVariantMap`-based message protocol: each message has a `"type"` key (string) and typed payload fields
+- [ ] Write `docs/core-gui-protocol.md` specifying all message types, fields, and expected responses
 
-- [x] Design length-prefixed CBOR wire protocol — `ipc/IpcProtocol.h/.cpp` (4-byte big-endian uint32 length + CBOR payload, 16 MiB max frame, protocol version "1.0")
-- [x] Implement type-safe message wrapper — `ipc/IpcMessage.h/.cpp` (QCborArray-based, fluent `append()` API, `makeResult()`/`makeError()` factories, field accessors for string/int/bool/map/array)
-- [x] Implement framed TCP connection — `ipc/IpcConnection.h/.cpp` (QObject wrapper over QTcpSocket, read buffer with frame assembly, signals: `messageReceived`, `disconnected`, `protocolError`)
-- [x] Define all IPC message type constants — `ipc/IpcProtocol.h` (requests 100-213, responses 300-302, push events 400-480)
-- [x] Implement CBOR serializers for core entities — `ipc/CborSerializers.h` (toCbor for PartFile, Server, Friend, SearchFile; status/priority string converters)
-- [x] CMake target `libemuleipc` — `src/ipc/CMakeLists.txt` (links Qt6::Core + Qt6::Network only, no core dependency)
+#### 31b: Build the Core as a Standalone Library
 
-**IPC Message Types:**
+- [ ] Create `src/core/` directory with its own `CMakeLists.txt` producing `libemulecore` (static or shared)
+- [ ] Move all non-GUI modules into `src/core/`: networking (Module 5), protocol (Module 7), servers (Module 8), clients (Module 9), Kademlia (Module 10), files (Module 11), queues (Module 12), search (Module 13), IP filter (Module 14), stats (Module 15), preferences (Module 16), IRC protocol logic (Module 17), friends (Module 18), web server (Module 19)
+- [ ] Ensure `libemulecore` links only against `Qt6::Core`, `Qt6::Network` — no `Qt6::Widgets` or `Qt6::Gui`
+- [ ] Verify `libemulecore` builds and all Module 29 non-GUI tests pass against it
 
-| Range | Direction | Purpose |
-|-------|-----------|---------|
-| 100–213 | GUI → Core | Requests (Handshake, Get/Set data, actions) |
-| 300–302 | Core → GUI | Responses (HandshakeOk, Result, Error) |
-| 400–480 | Core → GUI | Push events (state changes, seqId=0) |
+#### 31c: Implement the Core Interface (`CoreSession`)
 
-#### 31b: Daemon (`src/daemon/`)
+- [ ] Create `CoreSession` class — the single entry point for GUI to interact with Core
+- [ ] `CoreSession` inherits `QObject`, emits signals with `QVariant` payloads for all state changes
+- [ ] `CoreSession` exposes public slots accepting `QVariantMap` commands (e.g., `addDownload`, `connectServer`, `search`)
+- [ ] All `QVariant` payloads use only serializable types: `QString`, `qint64`, `double`, `bool`, `QByteArray`, `QVariantList`, `QVariantMap`
+- [ ] Example signal: `stateChanged(QString type, QVariantMap data)` where type = `"download.progress"`, `"server.connected"`, `"search.result"`, etc.
+- [ ] Example slot: `executeCommand(QVariantMap cmd)` where cmd `"type"` = `"download.add"`, `"server.connect"`, `"search.start"`, etc.
+- [ ] Create `CoreEvents` enum/namespace documenting all event type strings
+- [ ] Create `CoreCommands` enum/namespace documenting all command type strings
 
-- [x] Create `DaemonApp` orchestrator — `daemon/DaemonApp.h/.cpp` (owns CoreSession + IpcServer + CoreNotifierBridge; `start()`/`stop()` lifecycle)
-- [x] Create `IpcServer` — `daemon/IpcServer.h/.cpp` (QTcpServer wrapper, manages IpcClientHandler instances, `broadcast()` to handshaked clients)
-- [x] Create `IpcClientHandler` — `daemon/IpcClientHandler.h/.cpp` (per-connection request dispatcher, handshake enforcement, 26 handle methods for all request types)
-- [x] Create `CoreNotifierBridge` — `daemon/CoreNotifierBridge.h/.cpp` (connects core Qt signals to IPC push events: download add/remove, server state, stats, search results, shared files, uploads, Kad)
-- [x] Create daemon entry point — `daemon/main.cpp` (QCoreApplication, loads preferences, starts DaemonApp, IPC listener)
-- [x] CMake target `emulecored` — `src/daemon/CMakeLists.txt` (links eMule::Core + eMule::Ipc)
+#### 31d: Adapt the GUI to Use CoreSession Only
 
-**Request handling status:**
+- [ ] Create `src/gui/` directory with its own `CMakeLists.txt` producing the `emuleqt` executable
+- [ ] Move all GUI modules into `src/gui/`: main window (Module 21), panels (Module 22), controls (Module 23), dialogs (Module 24), graphics (Module 25)
+- [ ] Replace all direct core object access in GUI with `CoreSession` signal/slot connections
+- [ ] GUI widgets receive `QVariantMap` in slots and extract display data using `value<T>()` accessors
+- [ ] GUI widgets send commands as `QVariantMap` via `CoreSession::executeCommand()`
+- [ ] Remove all `#include` of core headers from GUI source files (only include `CoreSession.h`)
+- [ ] Verify `emuleqt` links against `libemulecore` + `Qt6::Widgets` — no direct core class coupling
 
-| Category | Status | Notes |
-|----------|--------|-------|
-| Downloads (get/pause/resume/cancel) | Working | Full PartFile serialization via CborSerializers |
-| Servers (list, connect, disconnect) | Working | |
-| Stats | Working | Session bytes sent/received |
-| Friends (list, add, remove) | Working | |
-| Shared files | Working | |
-| Kad (contacts, status, bootstrap, disconnect) | Working | |
-| Search (start, get results) | Working | Returns searchID, results via forEachResult |
-| Uploads | Stubbed | ToDo: implement GetUploads handler |
-| Preferences (get) | Working | |
-| Preferences (set) | Partial | Only subset of keys supported |
-| Subscription mask | Stubbed | Currently broadcasts to all clients |
+#### 31e: Enable Alternative Frontends
 
-#### 31c: Core Session (`src/core/app/`)
+- [ ] Verify `libemulecore` works headless (instantiate `CoreSession` in a `QCoreApplication`)
+- [ ] Create minimal CLI frontend example (`src/cli/main.cpp`) using `CoreSession` + `QCoreApplication`
+- [ ] Document how to build a QML frontend using `CoreSession` as context object with `QVariant` properties
 
-- [x] `CoreSession` class — `core/app/CoreSession.h/.cpp` (timer-driven process orchestrator, owns KnownFileList, SharedFileList, UploadQueue, UploadBandwidthThrottler, UploadDiskIOThread, Kademlia; 100ms timer drives `process()` on managers)
-- [x] `AppContext` global context — `core/app/AppContext.h` (theApp singleton providing access to all managers)
-- [x] Core as standalone library — `src/core/CMakeLists.txt` producing `libemulecore` (17 sub-modules, links Qt6::Core + Qt6::Network + Qt6::Multimedia + Qt6::HttpServer + OpenSSL + zlib + miniupnpc + yaml-cpp + libarchive)
+#### 31f: Test the Separated Architecture
 
-#### 31d: GUI IPC Integration
-
-- [x] `IpcClient` — `gui/app/IpcClient.h/.cpp` (connects to daemon, handshake protocol, request/callback with seqId, push event dispatch via Qt signals)
-- [x] Auto-launch daemon from GUI — `gui/app/main.cpp` (resolves daemon binary path, connects on startup, retries after 1.5s if daemon launch needed)
-- [x] GUI directory structure — `src/gui/` with sub-modules: `app/`, `panels/`, `controls/`, `dialogs/`, `graphics/`
-- [x] CMake target `emuleqt` — `src/gui/CMakeLists.txt` (links eMule::Core + eMule::Ipc + Qt6::Widgets)
-- [ ] Remove direct core object access from GUI panels — ServerPanel still uses direct `ServerList*`/`ServerConnect*` pointers alongside IPC; migrate to IPC-only
-- [ ] Implement subscription filtering — IpcServer currently broadcasts all push events to all clients; honor `m_subscriptionMask`
-
-#### 31e: Remaining IPC Work
-
-- [ ] Implement rich push event payloads — current push messages are mostly notifications with minimal data; add full entity snapshots
-- [ ] Implement `GetUploads` handler in IpcClientHandler
-- [ ] Complete `SetPreferences` handler — support all preference keys
-- [ ] Wire KadSearchesModel to IPC data — model is defined but not yet fed with search data
-- [ ] Remote daemon connection — currently auto-localhost only; add GUI preferences for remote host:port
-- [ ] IPC authentication — secure the daemon connection (API key or challenge-response)
-- [ ] IPC reconnection — auto-reconnect GUI to daemon after connection loss
+- [ ] `tst_CoreSession.cpp` — send commands via `QVariantMap`, verify corresponding signals emitted with correct payloads
+- [ ] `tst_CoreSessionDownload.cpp` — `download.add` → `download.progress` signals → `download.completed`
+- [ ] `tst_CoreSessionSearch.cpp` — `search.start` → `search.result` signals → `search.complete`
+- [ ] `tst_CoreSessionServer.cpp` — `server.connect` → `server.connected` / `server.disconnected`
+- [ ] `tst_CoreGUIDecoupling.cpp` — verify `libemulecore` has zero symbols from `Qt6::Widgets`
+- [ ] `tst_HeadlessMode.cpp` — run `CoreSession` in `QCoreApplication`, execute full download cycle without GUI
 
 ---
 
 ## Recommended Porting Order
 
-The modules are ported bottom-up. Phases 1–5 and the core of Phase 6 (31) are **complete**; remaining work is GUI panels, dialogs, and polish.
+The modules should be ported bottom-up, starting with layers that have no MFC dependencies:
 
-| Phase | Modules | Status | Rationale |
-|-------|---------|--------|-----------|
-| **Phase 1** | 1, 2, 3, 29 | **Done** | Build system + platform abstraction + utilities + test infrastructure |
-| **Phase 2** | 4, 7, 29c, 29f | **Done** | Crypto + protocol + their unit tests |
-| **Phase 3** | 5, 6, 29d, 29e | **Done** | Networking layer + tests |
-| **Phase 4** | 8, 9, 10, 11, 29g–29j | **Done** | Server, Client, Kademlia, Files + tests |
-| **Phase 5** | 12–19, 29k–29r | **Done** | Queues, Search, IP filter, Stats, Prefs, Chat, Friends, Web + tests |
-| **Phase 6** | 31, 29s2 | **Mostly done** | IPC layer, daemon, GUI/core separation + IPC tests |
-| **Phase 7** | 21–25, 29t | **In progress** | GUI shell (done), remaining panels, controls, dialogs, graphics + widget tests |
-| **Phase 8** | 20, 26, 27, 28, 29s, 29u | Pending | Media, Localization, Resources, Dependencies + tests |
-| **Phase 9** | 29v, 30 | Pending | Integration/E2E tests + cleanup |
+| Phase | Modules | Rationale |
+|-------|---------|-----------|
+| **Phase 1** | 1, 2, 3, 29 | Build system + platform abstraction + utilities + test infrastructure |
+| **Phase 2** | 4, 7, 29c, 29f | Crypto + protocol + their unit tests |
+| **Phase 3** | 5, 6, 29d, 29e | Networking layer + tests |
+| **Phase 4** | 8, 9, 10, 11, 29g–29j | Server, Client, Kademlia, Files + tests |
+| **Phase 5** | 12–19, 29k–29r | Queues, Search, IP filter, Stats, Prefs, Chat, Friends, Web + tests |
+| **Phase 6** | 21–25, 29t | GUI shell, panels, controls, dialogs, graphics + widget tests |
+| **Phase 7** | 20, 26, 27, 28, 29s, 29u | Media, Localization, Resources, Dependencies + tests |
+| **Phase 8** | 29v, 30 | Integration/E2E tests + cleanup |
+| **Phase 9** | 31 | Separate GUI/Core architecture with `QVariant` communication |
 
 **Testing philosophy:** Write tests for each module immediately after porting it (same phase).
-Module 29v integration tests run after all modules are ported.
+Module 29v integration tests run after all modules are ported. Module 31 is the final
+architectural refactoring once the port is stable and fully tested.
 
 ---
 
@@ -968,23 +916,12 @@ Module 29v integration tests run after all modules are ported.
 
 ## Statistics
 
-### Original MFC codebase
 - **Total source files:** ~465 (250 unique base modules)
 - **Kademlia subsystem:** 48 files across 6 sub-modules
 - **Files with MFC classes:** ~103
 - **Language/localization files:** 131
 - **Resource files (icons, bitmaps):** 271+
 - **Largest files:** `BaseClient.cpp` (107KB), `WebServer.cpp` (172KB)
-
-### Ported Qt codebase (current)
-- **Ported source files:** 247 (`.cpp` + `.h` in `src/`)
-  - `src/core/`: 210 files (17 sub-modules)
-  - `src/ipc/`: 7 files (protocol, message, connection, serializers)
-  - `src/daemon/`: 9 files (DaemonApp, IpcServer, IpcClientHandler, CoreNotifierBridge)
-  - `src/gui/`: 19 files (MainWindow, 2 panels, 5 models/controls, IpcClient)
-- **Test files:** 102 (`tst_*.cpp`)
-- **Build targets:** 4 (`libemulecore`, `libemuleipc`, `emulecored`, `emuleqt`)
-- **Porting modules:** 31 (including 23 test sub-modules)
-- **Porting phases:** 9
-- **Core modules (1–20, 28, 31):** Phases 1–6 complete
-- **Remaining:** GUI panels/dialogs/controls (Modules 22–25), localization (26), resources (27), media polish (20), integration tests (29v), cleanup (30)
+- **Planned test files:** ~100+ (`tst_*.cpp`)
+- **Porting modules:** 31 (including 22 test sub-modules)
+- **Porting phases:** 9 (Phase 9 = GUI/Core separation)

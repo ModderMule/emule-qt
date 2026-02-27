@@ -10,10 +10,10 @@ namespace {
 QString priorityString(ServerPriority pref)
 {
     switch (pref) {
-    case ServerPriority::High:   return QStringLiteral("High");
-    case ServerPriority::Low:    return QStringLiteral("Low");
+    case ServerPriority::High:   return QObject::tr("High");
+    case ServerPriority::Low:    return QObject::tr("Low");
     case ServerPriority::Normal:
-    default:                     return QStringLiteral("Normal");
+    default:                     return QObject::tr("Normal");
     }
 }
 
@@ -51,10 +51,10 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColMaxUsers:    return r.maxUsers;
         case ColPreference:  return r.preference;
         case ColFailed:      return r.failed;
-        case ColStatic:      return r.isStatic ? QStringLiteral("Yes") : QStringLiteral("No");
+        case ColStatic:      return r.isStatic ? tr("Yes") : tr("No");
         case ColSoftFiles:   return r.softFiles;
         case ColLowID:       return r.lowIdUsers;
-        case ColObfuscation: return r.obfuscation ? QStringLiteral("Yes") : QStringLiteral("No");
+        case ColObfuscation: return r.obfuscation ? tr("Yes") : tr("No");
         default:             break;
         }
     }
@@ -82,18 +82,18 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
         return {};
 
     switch (section) {
-    case ColName:        return QStringLiteral("Server Name");
-    case ColIP:          return QStringLiteral("IP");
-    case ColDescription: return QStringLiteral("Description");
-    case ColPing:        return QStringLiteral("Ping");
-    case ColUsers:       return QStringLiteral("Users");
-    case ColMaxUsers:    return QStringLiteral("Max Users");
-    case ColPreference:  return QStringLiteral("Preference");
-    case ColFailed:      return QStringLiteral("Failed");
-    case ColStatic:      return QStringLiteral("Static");
-    case ColSoftFiles:   return QStringLiteral("Soft Files");
-    case ColLowID:       return QStringLiteral("Low ID");
-    case ColObfuscation: return QStringLiteral("Obfuscation");
+    case ColName:        return tr("Server Name");
+    case ColIP:          return tr("IP");
+    case ColDescription: return tr("Description");
+    case ColPing:        return tr("Ping");
+    case ColUsers:       return tr("Users");
+    case ColMaxUsers:    return tr("Max Users");
+    case ColPreference:  return tr("Preference");
+    case ColFailed:      return tr("Failed");
+    case ColStatic:      return tr("Static");
+    case ColSoftFiles:   return tr("Soft Files");
+    case ColLowID:       return tr("Low ID");
+    case ColObfuscation: return tr("Obfuscation");
     default:             return {};
     }
 }

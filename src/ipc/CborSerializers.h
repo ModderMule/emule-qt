@@ -6,7 +6,9 @@
 /// Mirrors JsonSerializers.h but produces QCborMap instead of QJsonObject.
 /// Include only from daemon code that has access to core types.
 
+#include "client/UpDownClient.h"
 #include "files/AbstractFile.h"
+#include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "friends/Friend.h"
 #include "search/SearchFile.h"
@@ -109,6 +111,36 @@ namespace eMule::Ipc {
         {QStringLiteral("fileSize"),    static_cast<qint64>(f.fileSize())},
         {QStringLiteral("sourceCount"), static_cast<qint64>(f.sourceCount())},
     };
+}
+
+[[nodiscard]] inline QCborMap toCbor(const UpDownClient& c)
+{
+    QCborMap m;
+    m.insert(QStringLiteral("userName"),        c.userName());
+    m.insert(QStringLiteral("userHash"),        md4str(c.userHash()));
+    m.insert(QStringLiteral("software"),        c.clientSoftwareStr());
+    m.insert(QStringLiteral("uploadState"),     c.uploadStateDisplayString());
+    m.insert(QStringLiteral("downloadState"),   c.downloadStateDisplayString());
+    m.insert(QStringLiteral("sourceFrom"),      static_cast<int>(c.sourceFrom()));
+    // Upload fields
+    m.insert(QStringLiteral("transferredUp"),   static_cast<qint64>(c.transferredUp()));
+    m.insert(QStringLiteral("sessionUp"),       static_cast<qint64>(c.sessionUp()));
+    m.insert(QStringLiteral("askedCount"),      static_cast<qint64>(c.askedCount()));
+    m.insert(QStringLiteral("waitStartTime"),   static_cast<qint64>(c.waitStartTime()));
+    m.insert(QStringLiteral("isBanned"),        c.isBanned());
+    // Download fields
+    m.insert(QStringLiteral("transferredDown"), static_cast<qint64>(c.transferredDown()));
+    m.insert(QStringLiteral("sessionDown"),     static_cast<qint64>(c.sessionDown()));
+    m.insert(QStringLiteral("partCount"),       c.partCount());
+    m.insert(QStringLiteral("fileName"),        c.clientFilename());
+    m.insert(QStringLiteral("remoteQueueRank"), static_cast<qint64>(c.remoteQueueRank()));
+    m.insert(QStringLiteral("availPartCount"),  c.availablePartCount());
+    // File info
+    if (c.reqFile())
+        m.insert(QStringLiteral("reqFileName"), c.reqFile()->fileName());
+    if (c.uploadFile())
+        m.insert(QStringLiteral("uploadFileName"), c.uploadFile()->fileName());
+    return m;
 }
 
 } // namespace eMule::Ipc

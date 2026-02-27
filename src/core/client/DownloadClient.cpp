@@ -941,7 +941,7 @@ void UpDownClient::udpReaskForDownload()
     // Send via client UDP socket
     if (theApp.clientUDP) {
         const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
-        theApp.clientUDP->sendPacket(std::move(packet), m_connectIP, m_udpPort,
+        theApp.clientUDP->sendPacket(std::move(packet), ntohl(m_connectIP), m_udpPort,
                                      encrypt, m_userHash.data(), false, 0);
     }
 }

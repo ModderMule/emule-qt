@@ -83,12 +83,17 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
     uint16 port = specialPort ? specialPort : (server.port() + 4); // Default UDP port = TCP+4
     uint32 ip = server.ip();
 
-    // Encrypt if server supports it
+    // Encrypt if server supports it.
+    // encryptSendServer writes a crypto header at buf[0..overhead-1]
+    // and expects the plaintext payload at buf[overhead..overhead+len-1].
+    // We placed the plaintext at buf.data()+offset, so pass
+    // buf.data()+offset-overhead so the header goes into the reserved area.
     if (server.serverKeyUDP() != 0 && server.supportsObfuscationUDP()) {
+        uint32 cryptOverhead = static_cast<uint32>(
+            EncryptedDatagramSocket::encryptOverheadSize(false));
         uint32 encryptedLen = EncryptedDatagramSocket::encryptSendServer(
-            buf.data() + offset, rawSize, server.serverKeyUDP());
+            buf.data() + offset - cryptOverhead, rawSize, server.serverKeyUDP());
 
-        // Adjust offset to account for encryption header prepended before offset
         uint32 actualStart = offset - (encryptedLen - rawSize);
         rawSize = encryptedLen;
         offset = actualStart;

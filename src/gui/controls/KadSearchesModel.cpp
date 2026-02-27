@@ -58,14 +58,14 @@ QVariant KadSearchesModel::headerData(int section, Qt::Orientation orientation, 
         return {};
 
     switch (section) {
-    case ColNumber:      return QStringLiteral("No.");
-    case ColKey:         return QStringLiteral("Key");
-    case ColType:        return QStringLiteral("Type");
-    case ColName:        return QStringLiteral("Name");
-    case ColStatus:      return QStringLiteral("Status");
-    case ColLoad:        return QStringLiteral("Load");
-    case ColPacketsSent: return QStringLiteral("Packets Sent");
-    case ColResponses:   return QStringLiteral("Responses");
+    case ColNumber:      return tr("No.");
+    case ColKey:         return tr("Key");
+    case ColType:        return tr("Type");
+    case ColName:        return tr("Name");
+    case ColStatus:      return tr("Status");
+    case ColLoad:        return tr("Load");
+    case ColPacketsSent: return tr("Packets Sent");
+    case ColResponses:   return tr("Responses");
     default:             return {};
     }
 }

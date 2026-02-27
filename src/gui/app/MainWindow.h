@@ -19,6 +19,7 @@ namespace eMule {
 
 class KadPanel;
 class ServerPanel;
+class TransferPanel;
 
 /// Main application window matching the MFC eMule look & feel.
 class MainWindow : public QMainWindow {
@@ -45,6 +46,7 @@ public:
 
     [[nodiscard]] KadPanel* kadPanel() const { return m_kadPanel; }
     [[nodiscard]] ServerPanel* serverPanel() const { return m_serverPanel; }
+    [[nodiscard]] TransferPanel* transferPanel() const { return m_transferPanel; }
 
     /// Update the eD2K status label in the footer.
     void setEd2kStatus(bool connected, bool connecting, bool firewalled);
@@ -71,7 +73,8 @@ private:
     // Tab panels
     KadPanel* m_kadPanel = nullptr;
     ServerPanel* m_serverPanel = nullptr;
-    // ToDo: Add other panels (Transfers, Search, SharedFiles, Messages, IRC, Statistics)
+    TransferPanel* m_transferPanel = nullptr;
+    // ToDo: Add other panels (Search, SharedFiles, Messages, IRC, Statistics)
 
     // Status bar labels
     QLabel* m_statusMsg = nullptr;
