@@ -160,9 +160,11 @@ uint32 Search::getNodeLoad() const
 // Private methods
 // ---------------------------------------------------------------------------
 
-void Search::go()
+void Search::go(uint32 maxToSend)
 {
-    // Called when the search is started or jumpstarted
+    // Called when the search is started (maxToSend = kAlphaQuery = 3) or
+    // jumpstarted (maxToSend = kJumpstartMaxSend = 1).
+    // MFC's Go() sends ALPHA_QUERY on initial start; JumpStart() sends 1.
     if (m_stopping)
         return;
 
@@ -200,7 +202,7 @@ void Search::go()
     // Send FindValue to the closest untried contacts
     uint32 sent = 0;
     auto it = m_possible.begin();
-    while (it != m_possible.end() && sent < kAlphaQuery) {
+    while (it != m_possible.end() && sent < maxToSend) {
         Contact* contact = it->second;
         auto curIt = it++;
 
@@ -482,11 +484,13 @@ void Search::jumpStart()
         return;
     }
 
-    // Check for response timeout
-    if ((now - m_lastResponse) > kSearchJumpstart) {
-        // Try sending to more contacts
-        go();
-    }
+    // If we had a response within the cooldown period, no need to jumpstart.
+    // MFC hardcodes SEC(3) in CSearch::JumpStart(), independent of SEARCH_JUMPSTART.
+    if ((now - m_lastResponse) < static_cast<time_t>(kSearchJumpstartCooldown))
+        return;
+
+    // Send a single packet to unstick a stalled search (MFC sends 1 per jumpstart).
+    go(kJumpstartMaxSend);
 }
 
 void Search::sendFindValue(Contact* contact, bool /*reAskMore*/)

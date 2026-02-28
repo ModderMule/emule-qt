@@ -283,6 +283,7 @@ QWidget* TransferPanel::createClientsSection()
     // Tab widget for the 4 client lists — tabs at top, left-aligned like MFC
     m_clientTabs = new QTabWidget;
     m_clientTabs->setTabPosition(QTabWidget::North);
+    m_clientTabs->tabBar()->setExpanding(false);
 
     m_uploadingModel   = new ClientListModel(ClientListMode::Uploading, this);
     m_downloadingModel = new ClientListModel(ClientListMode::Downloading, this);

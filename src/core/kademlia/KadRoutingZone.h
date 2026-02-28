@@ -14,7 +14,6 @@
 
 #include <QObject>
 #include <QString>
-#include <QTimer>
 
 #include <cstdint>
 #include <ctime>
@@ -86,8 +85,15 @@ public:
     // -- Maintenance ----------------------------------------------------------
 
     void consolidate();
-    void onBigTimer();
+    /// Process big timer for this leaf zone (non-recursive).
+    /// Returns true if a randomLookup was triggered (zone qualifies).
+    [[nodiscard]] bool onBigTimer();
     void onSmallTimer();
+
+    [[nodiscard]] time_t nextBigTimer() const { return m_nextBigTimer; }
+    void setNextBigTimer(time_t t) { m_nextBigTimer = t; }
+    [[nodiscard]] time_t nextSmallTimer() const { return m_nextSmallTimer; }
+    void setNextSmallTimer(time_t t) { m_nextSmallTimer = t; }
 
     [[nodiscard]] uint32 estimateCount() const;
 
@@ -127,9 +133,6 @@ private:
     void readBootstrapNodesDat(SafeFile& sf);
     void randomLookup();
     void setAllContactsVerified();
-    void startTimer();
-    void stopTimer();
-    void onTimerTick();
 
     RoutingZone* m_subZones[2] = {nullptr, nullptr};
     RoutingZone* m_superZone = nullptr;
@@ -138,7 +141,6 @@ private:
     uint32 m_level = 0;
     time_t m_nextSmallTimer = 0;
     time_t m_nextBigTimer = 0;
-    QTimer* m_timer = nullptr;
 
     static UInt128 s_localKadId;
     static QString s_nodesFilename;

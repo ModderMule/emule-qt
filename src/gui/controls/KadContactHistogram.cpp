@@ -77,16 +77,25 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
     p.setPen(QPen(QColor(128, 128, 128), 1));
     p.drawRect(rc.adjusted(0, 0, -1, -1));
 
-    // -- Layout constants matching MFC ---
-    // MFC uses: iLeftBorder = 3*penAxis.GetWidth()+fontLabel.GetHeight()
-    // and iBottomBorder = 3*penAxis.GetWidth()+fontLabel.GetHeight()
-    // With pen width 1 and ~10px font, that gives roughly 13px.
-    const int fontHeight = 10;
+    // -- Fonts ---
+    QFont labelFont;
+    labelFont.setPixelSize(10);
+    const QFontMetrics fmLabel(labelFont);
+
+    // MFC: measures "888" to get max numeric label width
+    const int maxLabelHeight = fmLabel.height();
+    const int maxNumLabelWidth = fmLabel.horizontalAdvance(QStringLiteral("888"));
+
+    // -- Layout borders matching MFC ---
+    // MFC: iLeftBorder  = 1 + m_iMaxNumLabelWidth + 3
+    //      iRightBorder = 8
+    //      iTopBorder   = m_iMaxLabelHeight
+    //      iBottomBorder= m_iMaxLabelHeight
     const int axisWidth = 1;
-    const int leftBorder = 3 * axisWidth + fontHeight;
-    const int bottomBorder = 3 * axisWidth + fontHeight;
-    const int topBorder = fontHeight / 2 + 1;
-    const int rightBorder = 2;
+    const int leftBorder = 1 + maxNumLabelWidth + 3;
+    const int rightBorder = 8;
+    const int topBorder = maxLabelHeight;
+    const int bottomBorder = maxLabelHeight;
 
     const int plotW = rc.width() - leftBorder - rightBorder;
     const int plotH = rc.height() - topBorder - bottomBorder;
@@ -100,9 +109,6 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
     if (uMax < 15)
         uMax = 15;
 
-    // -- Fonts ---
-    QFont labelFont;
-    labelFont.setPixelSize(fontHeight);
     p.setFont(labelFont);
 
     // -- Colors matching MFC ---
@@ -110,36 +116,36 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
     const QColor auxColor(192, 192, 192);
     const QColor barColor(255, 32, 32);
 
-    // -- Y-axis step labels (MFC: drawn at intervals of 5) ---
-    // MFC: uStep = 5 initially, doubled while (uMax / uStep) > iPlotHeight
-    uint32_t uStep = 5;
-    while (uMax / uStep > static_cast<uint32_t>(plotH))
-        uStep *= 2;
+    // -- Y-axis step labels (MFC algorithm) ---
+    // MFC: uLabels = plotH / (fontHeight + fontHeight/2)
+    //      uStep = ((uMax / uLabels + 5) / 10) * 10, minimum 5
+    const uint32_t uLabels = std::max(1u,
+        static_cast<uint32_t>(plotH) / static_cast<uint32_t>(maxLabelHeight + maxLabelHeight / 2));
+    uint32_t uStep = ((uMax / uLabels + 5) / 10) * 10;
+    if (uStep < 5)
+        uStep = 5;
 
-    p.setPen(axisColor);
+    // Draw Y-axis numeric labels and grid lines together
     for (uint32_t y = uStep; y <= uMax; y += uStep) {
         const int yPos = rc.top() + topBorder + plotH
                          - static_cast<int>(static_cast<uint64_t>(y) * static_cast<uint32_t>(plotH) / uMax);
-        // Right-aligned label in left margin
-        const QRect labelRect(rc.left(), yPos - fontHeight / 2,
-                              leftBorder - axisWidth - 1, fontHeight);
+
+        // MFC: label rect = { 1, yPos, 1 + numLabelWidth, yPos + labelHeight }
+        // Right-aligned in left margin
+        p.setPen(axisColor);
+        const QRect labelRect(rc.left() + 1, yPos - maxLabelHeight / 2,
+                              maxNumLabelWidth, maxLabelHeight);
         p.drawText(labelRect, Qt::AlignRight | Qt::AlignVCenter, QString::number(y));
-    }
 
-    // -- Dotted auxiliary grid lines ---
-    p.setPen(QPen(auxColor, 1, Qt::DotLine));
-    for (uint32_t y = uStep; y <= uMax; y += uStep) {
-        const int yPos = rc.top() + topBorder + plotH
-                         - static_cast<int>(static_cast<uint64_t>(y) * static_cast<uint32_t>(plotH) / uMax);
+        // Dotted auxiliary grid line
+        p.setPen(QPen(auxColor, 1, Qt::DotLine));
         p.drawLine(rc.left() + leftBorder, yPos,
                    rc.left() + leftBorder + plotW - 1, yPos);
     }
 
     // -- Draw bars ---
     // MFC: each pixel column accumulates buckets mapping to it.
-    // When plotW < kHistSize, multiple buckets per pixel; when wider, 1:1 or stretched.
     for (int x = 0; x < plotW; ++x) {
-        // Map this pixel column to a range of buckets
         const int bucketStart = static_cast<int>(
             static_cast<int64_t>(x) * kHistSize / plotW);
         const int bucketEnd = static_cast<int>(
@@ -173,22 +179,23 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
     p.drawLine(rc.left() + leftBorder, rc.top() + topBorder + plotH,
                rc.left() + leftBorder + plotW, rc.top() + topBorder + plotH);
 
-    // -- Axis labels ---
+    // -- Axis labels (bold, matching MFC) ---
     QFont boldFont(labelFont);
     boldFont.setBold(true);
-
-    // "Contacts" top-left (MFC: leftBorder + 1, topBorder + 1)
     p.setFont(boldFont);
     p.setPen(axisColor);
-    p.drawText(rc.left() + leftBorder + 2, rc.top() + topBorder + fontHeight,
+
+    // MFC: "Contacts" at (iBaseLineX + 1, iTopBorder + 1) with DT_LEFT | DT_TOP | DT_NOCLIP
+    p.drawText(rc.left() + leftBorder + 1, rc.top() + topBorder + 1 + fmLabel.ascent(),
                tr("Contacts"));
 
-    // "Kademlia Network" bottom-right
-    const QFontMetrics fm(boldFont);
-    const int labelW = fm.horizontalAdvance(tr("Kademlia Network"));
-    p.drawText(rc.left() + leftBorder + plotW - labelW - 2,
-               rc.top() + topBorder + plotH + fontHeight + 1,
-               tr("Kademlia Network"));
+    // MFC: "Kademlia Network" at rcClient with DT_RIGHT | DT_BOTTOM | DT_NOCLIP
+    const QFontMetrics fmBold(boldFont);
+    const QString xLabel = tr("Kademlia Network"); // by KadID UInt128, not XOR
+    const int xLabelW = fmBold.horizontalAdvance(xLabel);
+    p.drawText(rc.right() - xLabelW - 1,
+               rc.bottom() - fmBold.descent() - 1,
+               xLabel);
 }
 
 } // namespace eMule

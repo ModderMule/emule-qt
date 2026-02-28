@@ -3,6 +3,7 @@
 /// @file KadSearch.h
 /// @brief Kademlia search state machine (ported from kademlia/kademlia/Search.h).
 
+#include "kademlia/KadDefines.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadTypes.h"
 #include "kademlia/KadUInt128.h"
@@ -63,7 +64,7 @@ public:
     [[nodiscard]] LookupHistory* getLookupHistory() const { return m_lookupHistory.get(); }
 
 private:
-    void go();
+    void go(uint32 maxToSend = kAlphaQuery);
     void processResponse(uint32 fromIP, uint16 fromPort, const ContactArray& results);
     void processResult(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort);
     void processResultFile(const UInt128& answer, TagList& info);

@@ -102,7 +102,7 @@ void Kademlia::start(KadPrefs* prefs)
     m_nextFirewallCheck = now + HR2S(1);
     m_nextFindBuddy = now + MIN2S(5);
     m_statusUpdate = now + SEC(60);
-    m_bigTimer = now + SEC(10);
+    m_bigTimer = now;  // MFC: m_tBigTimer = tNow (per-zone timers gate first fire)
     m_consolidate = now + MIN2S(45);
     m_externPortLookup = now;
     m_bootstrap = now;
@@ -144,6 +144,10 @@ void Kademlia::stop()
 
     // Stop all searches
     SearchManager::stopAllSearches();
+
+    // Clear zone events before deleting routing zones.
+    // MFC: m_mapEvents.clear() in Stop().
+    m_zoneEvents.clear();
 
     // Clean up components (reverse order of creation)
     delete m_routingZone;
@@ -273,13 +277,13 @@ void Kademlia::processPacket(const uint8* data, uint32 len, uint32 ip, uint16 po
 void Kademlia::addEvent(RoutingZone* zone)
 {
     if (zone)
-        m_events[zone->localKadId()] = zone;
+        m_zoneEvents.insert(zone);
 }
 
 void Kademlia::removeEvent(RoutingZone* zone)
 {
     if (zone)
-        m_events.erase(zone->localKadId());
+        m_zoneEvents.erase(zone);
 }
 
 void Kademlia::storeClosestDistance(const UInt128& distance)
@@ -413,7 +417,7 @@ void Kademlia::process()
     // 4. Self-lookup for routing table refresh (every 4 hours, first at +3min)
     if (now >= m_nextSelfLookup && m_prefs) {
         m_nextSelfLookup = now + HR2S(4);
-        SearchManager::findNode(m_prefs->kadId(), false);
+        SearchManager::findNode(m_prefs->kadId(), true);
     }
 
     // 5. Firewall check (first at +1hr, then disabled)
@@ -457,6 +461,26 @@ void Kademlia::process()
     if (now >= m_consolidate && m_routingZone) {
         m_consolidate = now + MIN2S(45);
         m_routingZone->consolidate();
+    }
+
+    // 7b. Zone maintenance — iterate leaf zones (matches MFC Process() zone loop).
+    //     BigTimer: global gate kBigTimerGlobal (10s), per-zone kBigTimerPerZone (1hr).
+    //     SmallTimer: per-zone kSmallTimerInterval (1min).
+    //     Extra OR: fire early when 15+ min since last contact (disconnect at 20 min).
+    const time_t lastContact = m_prefs ? m_prefs->lastContact() : 0;
+    for (auto* zone : m_zoneEvents) {
+        if (now >= m_bigTimer
+            && (now >= zone->nextBigTimer()
+                || (lastContact && now >= lastContact + KADEMLIADISCONNECTDELAY - MIN2S(5)))
+            && zone->onBigTimer())
+        {
+            zone->setNextBigTimer(now + kBigTimerPerZone);
+            m_bigTimer = now + kBigTimerGlobal;
+        }
+        if (now >= zone->nextSmallTimer()) {
+            zone->onSmallTimer();
+            zone->setNextSmallTimer(now + kSmallTimerInterval);
+        }
     }
 
     // 8. External port lookup

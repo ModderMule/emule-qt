@@ -80,24 +80,26 @@ void RoutingZone::init(RoutingZone* superZone, uint32 level, const UInt128& zone
     m_bin = new RoutingBin();
 
     time_t now = time(nullptr);
-    m_nextSmallTimer = now + SEC(10);
-    // MFC fires bigTimer immediately (m_tNextBigTimer = time(NULL)) so that
-    // contacts loaded from nodes.dat get verified via HELLO_REQ right away.
-    m_nextBigTimer = now;
+    // MFC staggers small timers via zone index: time(NULL) + m_uZoneIndex.Get32BitChunk(3)
+    m_nextSmallTimer = now + m_zoneIndex.get32BitChunk(3);
+    // MFC: m_tNextBigTimer = time(NULL) + SEC(10) in StartTimer()
+    m_nextBigTimer = now + SEC(10);
 
-    // Start timer for root zone only
-    if (!m_superZone) {
-        startTimer();
-    }
+    // Register this leaf zone with Kademlia for timer processing.
+    // Matches MFC: CKademlia::AddEvent(this) in StartTimer().
+    if (auto* kad = Kademlia::instance())
+        kad->addEvent(this);
 }
 
 RoutingZone::~RoutingZone()
 {
     // Root zone writes contacts to disk
-    if (!m_superZone) {
+    if (!m_superZone)
         writeFile();
-        stopTimer();
-    }
+
+    // Deregister from Kademlia's zone event list.
+    if (auto* kad = Kademlia::instance())
+        kad->removeEvent(this);
 
     if (isLeaf()) {
         delete m_bin;
@@ -423,6 +425,10 @@ void RoutingZone::consolidate()
                 m_bin->addContact(c);
             for (auto* c : entries1)
                 m_bin->addContact(c);
+
+            // Re-register as leaf zone (matches MFC Consolidate → StartTimer)
+            if (auto* kad = Kademlia::instance())
+                kad->addEvent(this);
         }
     } else {
         m_subZones[0]->consolidate();
@@ -430,28 +436,25 @@ void RoutingZone::consolidate()
     }
 }
 
-void RoutingZone::onBigTimer()
+bool RoutingZone::onBigTimer()
 {
-    // MFC: OnBigTimer() — randomLookup for zones that are close to our ID,
-    // at low depth, or mostly empty.  This keeps the routing table populated
-    // and ensures contacts loaded from nodes.dat get verified via HELLO_REQ.
+    // MFC: OnBigTimer() — called per leaf zone from Kademlia::process().
+    // Non-recursive: the event map only contains leaf zones.
+    // Returns true if a randomLookup was triggered (qualifying zone).
     if (isLeaf() && (m_zoneIndex < kKK || m_level < kKBase
                      || m_bin->getRemaining() >= static_cast<uint32>(kK * 0.8)))
     {
         randomLookup();
-    } else if (!isLeaf()) {
-        m_subZones[0]->onBigTimer();
-        m_subZones[1]->onBigTimer();
+        return true;
     }
+    return false;
 }
 
 void RoutingZone::onSmallTimer()
 {
-    if (!isLeaf()) {
-        m_subZones[0]->onSmallTimer();
-        m_subZones[1]->onSmallTimer();
+    // Non-recursive: called per leaf zone from Kademlia::process().
+    if (!isLeaf())
         return;
-    }
 
     // Leaf zone: check for expired contacts
     Contact* oldest = m_bin->getOldest();
@@ -715,9 +718,10 @@ void RoutingZone::split()
 {
     Q_ASSERT(isLeaf());
 
-    // Do NOT stop the timer here. Only the root zone has a timer, and it must
-    // keep running after splitting (onTimerTick recurses into subzones).
-    // stopTimer() is only called in the root zone destructor.
+    // Deregister this zone — it's no longer a leaf.
+    // The new sub-zones register themselves in their constructor.
+    if (auto* kad = Kademlia::instance())
+        kad->removeEvent(this);
 
     m_subZones[0] = genSubZone(0);
     m_subZones[1] = genSubZone(1);
@@ -792,41 +796,6 @@ void RoutingZone::setAllContactsVerified()
     } else {
         m_subZones[0]->setAllContactsVerified();
         m_subZones[1]->setAllContactsVerified();
-    }
-}
-
-void RoutingZone::startTimer()
-{
-    if (!m_timer) {
-        m_timer = new QTimer(this);
-        m_timer->setInterval(1000); // 1 second
-        connect(m_timer, &QTimer::timeout, this, &RoutingZone::onTimerTick);
-        m_timer->start();
-    }
-}
-
-void RoutingZone::stopTimer()
-{
-    if (m_timer) {
-        m_timer->stop();
-        delete m_timer;
-        m_timer = nullptr;
-    }
-}
-
-void RoutingZone::onTimerTick()
-{
-    time_t now = time(nullptr);
-
-    if (now >= m_nextSmallTimer) {
-        onSmallTimer();
-        m_nextSmallTimer = now + SEC(1);
-    }
-
-    if (now >= m_nextBigTimer) {
-        logKad(QStringLiteral("Kad: [diag] onBigTimer firing, contacts=%1").arg(getNumContacts()));
-        onBigTimer();
-        m_nextBigTimer = now + SEC(180);  // 3-minute interval (matches MFC)
     }
 }
 

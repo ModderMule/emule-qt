@@ -19,7 +19,7 @@
 #include <ctime>
 #include <functional>
 #include <list>
-#include <map>
+#include <set>
 
 namespace eMule {
 class ClientList;
@@ -140,7 +140,7 @@ private:
     Indexed* m_indexed = nullptr;
     QTimer* m_processTimer = nullptr;
 
-    std::map<UInt128, RoutingZone*> m_events;
+    std::set<RoutingZone*> m_zoneEvents;
     time_t m_nextSearchJumpStart = 0;
     time_t m_nextSelfLookup = 0;
     time_t m_nextFirewallCheck = 0;

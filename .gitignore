@@ -80,3 +80,7 @@ conan/
 # eMule
 *.part
 *.part*
+
+# local tools and scripts
+*.local.sh
+
