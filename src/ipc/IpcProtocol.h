@@ -52,6 +52,7 @@ enum class IpcMsgType : int {
     SyncLogs             = 214,  ///< [lastLogId: int64]  — request buffered logs since ID
     Shutdown             = 215,  ///< [] — request graceful daemon shutdown
     GetKadSearches       = 216,
+    GetKadLookupHistory  = 217,  ///< [searchId: int] — lookup history for a search
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 

@@ -18,6 +18,7 @@
 #include "kademlia/KadContact.h"
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/KadRoutingZone.h"
+#include "kademlia/KadLookupHistory.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
 #include "prefs/Preferences.h"
@@ -122,6 +123,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::BootstrapKad:         handleBootstrapKad(msg); break;
     case IpcMsgType::DisconnectKad:        handleDisconnectKad(msg); break;
     case IpcMsgType::GetKadSearches:       handleGetKadSearches(msg); break;
+    case IpcMsgType::GetKadLookupHistory:  handleGetKadLookupHistory(msg); break;
     case IpcMsgType::SyncLogs:             handleSyncLogs(msg); break;
     case IpcMsgType::Shutdown:             handleShutdown(msg); break;
     default:
@@ -518,9 +520,12 @@ void IpcClientHandler::handleGetKadStatus(const IpcMessage& msg)
                           static_cast<qint64>(allContacts.size()));
         }
         auto* udp = kad->getUDPListener();
-        if (udp)
+        if (udp) {
             status.insert(QStringLiteral("hellosSent"),
                           static_cast<qint64>(udp->totalHellosSent()));
+            status.insert(QStringLiteral("hellosReceived"),
+                          static_cast<qint64>(udp->totalHellosReceived()));
+        }
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(status)));
 }
@@ -573,6 +578,54 @@ void IpcClientHandler::handleGetKadSearches(const IpcMessage& msg)
         }
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(searches)));
+}
+
+void IpcClientHandler::handleGetKadLookupHistory(const IpcMessage& msg)
+{
+    const uint32_t searchId = static_cast<uint32_t>(msg.fieldInt(0));
+    QCborArray entries;
+
+    auto* kad = kad::Kademlia::instance();
+    if (kad) {
+        // Find the search with the given ID
+        for (const auto& [id, search] : kad::SearchManager::getSearches()) {
+            if (search->getSearchID() == searchId) {
+                auto* history = search->getLookupHistory();
+                if (history) {
+                    auto& he = history->getHistoryEntries();
+                    for (size_t i = 0; i < he.size(); ++i) {
+                        const auto* e = he[i];
+                        QCborMap m;
+                        m.insert(QStringLiteral("contactID"), e->contactID.toHexString());
+                        m.insert(QStringLiteral("distance"), e->distance.toHexString());
+                        m.insert(QStringLiteral("contactVersion"), static_cast<qint64>(e->contactVersion));
+                        m.insert(QStringLiteral("askedContactsTime"), static_cast<qint64>(e->askedContactsTime));
+                        m.insert(QStringLiteral("respondedContact"), static_cast<qint64>(e->respondedContact));
+                        m.insert(QStringLiteral("askedSearchItemTime"), static_cast<qint64>(e->askedSearchItemTime));
+                        m.insert(QStringLiteral("respondedSearchItem"), static_cast<qint64>(e->respondedSearchItem));
+                        m.insert(QStringLiteral("providedCloser"), e->providedCloser);
+                        m.insert(QStringLiteral("forcedInteresting"), e->forcedInteresting);
+
+                        // Encode receivedFromIdx as CBOR array
+                        QCborArray fromArr;
+                        for (int idx : e->receivedFromIdx)
+                            fromArr.append(static_cast<qint64>(idx));
+                        m.insert(QStringLiteral("receivedFromIdx"), fromArr);
+
+                        // 128-bit distance as 4x uint32 chunks for scaling
+                        m.insert(QStringLiteral("dist0"), static_cast<qint64>(e->distance.get32BitChunk(0)));
+                        m.insert(QStringLiteral("dist1"), static_cast<qint64>(e->distance.get32BitChunk(1)));
+                        m.insert(QStringLiteral("dist2"), static_cast<qint64>(e->distance.get32BitChunk(2)));
+                        m.insert(QStringLiteral("dist3"), static_cast<qint64>(e->distance.get32BitChunk(3)));
+
+                        entries.append(m);
+                    }
+                }
+                break;
+            }
+        }
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(entries)));
 }
 
 void IpcClientHandler::handleSyncLogs(const IpcMessage& msg)

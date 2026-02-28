@@ -18,6 +18,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSortFilterProxyModel>
 #include <QPushButton>
 #include <QSplitter>
 #include <QTimer>
@@ -224,8 +225,11 @@ QWidget* ServerPanel::createServerListPanel()
     layout->addWidget(m_serversLabel);
 
     m_serverListModel = new ServerListModel(this);
+    auto* serverProxy = new QSortFilterProxyModel(this);
+    serverProxy->setSourceModel(m_serverListModel);
+    serverProxy->setSortRole(Qt::UserRole);
     m_serverListView = new QTreeView;
-    m_serverListView->setModel(m_serverListModel);
+    m_serverListView->setModel(serverProxy);
     m_serverListView->setRootIsDecorated(false);
     m_serverListView->setAlternatingRowColors(true);
     m_serverListView->setSortingEnabled(true);
@@ -239,6 +243,7 @@ QWidget* ServerPanel::createServerListPanel()
     header->resizeSection(ServerListModel::ColName, 140);
     header->resizeSection(ServerListModel::ColIP, 140);
     header->resizeSection(ServerListModel::ColDescription, 160);
+    theUiState.bindHeaderView(header, QStringLiteral("serverList"));
 
     connect(m_serverListView, &QTreeView::doubleClicked,
             this, &ServerPanel::onServerDoubleClicked);

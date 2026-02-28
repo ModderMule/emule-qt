@@ -27,6 +27,9 @@ void UiState::save()
     thePrefs.setWindowWidth(m_windowWidth);
     thePrefs.setWindowHeight(m_windowHeight);
     thePrefs.setWindowMaximized(m_windowMaximized);
+
+    for (auto it = m_headerStates.cbegin(); it != m_headerStates.cend(); ++it)
+        thePrefs.setHeaderState(it.key(), it.value());
 }
 
 void UiState::bindServerSplitter(QSplitter* splitter)
@@ -73,6 +76,25 @@ void UiState::captureMainWindow(QMainWindow* window)
         m_windowHeight = window->height();
     }
     // When maximized, keep the last saved normal size so it restores correctly.
+}
+
+void UiState::bindHeaderView(QHeaderView* header, const QString& key)
+{
+    // Restore saved state (overrides hardcoded defaults if available)
+    QByteArray state = thePrefs.headerState(key);
+    if (!state.isEmpty())
+        header->restoreState(state);
+
+    // Cache current state and auto-update on any change
+    m_headerStates[key] = header->saveState();
+
+    auto capture = [this, header, key]() {
+        m_headerStates[key] = header->saveState();
+    };
+
+    QObject::connect(header, &QHeaderView::sectionResized, header, capture);
+    QObject::connect(header, &QHeaderView::sectionMoved,   header, capture);
+    QObject::connect(header, &QHeaderView::sortIndicatorChanged, header, capture);
 }
 
 } // namespace eMule

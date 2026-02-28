@@ -10,9 +10,11 @@
 
 #include "utils/Types.h"
 
+#include <QByteArray>
 #include <QList>
-#include <QString>
+#include <QMap>
 #include <QReadWriteLock>
+#include <QString>
 #include <QStringList>
 
 #include <array>
@@ -368,6 +370,14 @@ public:
     [[nodiscard]] uint32 publicIP() const;
     void setPublicIP(uint32 val);
 
+    // -- GUI (General page) ---------------------------------------------------
+
+    [[nodiscard]] bool promptOnExit() const;
+    void setPromptOnExit(bool val);
+
+    [[nodiscard]] bool startMinimized() const;
+    void setStartMinimized(bool val);
+
     // -- UI State (persisted window layout) -----------------------------------
 
     [[nodiscard]] QList<int> serverSplitSizes() const;
@@ -387,6 +397,9 @@ public:
 
     [[nodiscard]] bool windowMaximized() const;
     void setWindowMaximized(bool val);
+
+    [[nodiscard]] QByteArray headerState(const QString& key) const;
+    void setHeaderState(const QString& key, const QByteArray& val);
 
     // -- Factory methods (bridge to existing config structs) -------------------
 

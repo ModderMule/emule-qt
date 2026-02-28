@@ -1,6 +1,7 @@
 #include "app/MainWindow.h"
 
 #include "app/UiState.h"
+#include "dialogs/OptionsDialog.h"
 #include "panels/KadPanel.h"
 #include "panels/ServerPanel.h"
 #include "panels/TransferPanel.h"
@@ -37,8 +38,17 @@ MainWindow::~MainWindow() = default;
 
 void MainWindow::switchToTab(Tab tab)
 {
-    if (tab >= 0 && tab < TabCount)
-        m_pages->setCurrentIndex(tab);
+    if (tab < 0 || tab >= TabCount)
+        return;
+    m_pages->setCurrentIndex(tab);
+
+    // Update the toolbar button to match
+    for (auto* action : m_tabGroup->actions()) {
+        if (action->data().toInt() == tab) {
+            action->setChecked(true);
+            break;
+        }
+    }
 }
 
 void MainWindow::onToolbarAction(QAction* action)
@@ -51,6 +61,19 @@ void MainWindow::onToolbarAction(QAction* action)
 void MainWindow::onConnectToggle()
 {
     // ToDo: Toggle eD2K/Kad connection
+}
+
+void MainWindow::showOptionsDialog(int page)
+{
+    OptionsDialog dlg(m_ipc, this);
+    if (page >= 0 && page < OptionsDialog::PageCount)
+        dlg.selectPage(page);
+    dlg.exec();
+}
+
+void MainWindow::onOptionsClicked()
+{
+    showOptionsDialog();
 }
 
 void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled)
@@ -149,8 +172,7 @@ void MainWindow::setupToolbar()
     auto* optionsAction = toolbar->addAction(
         style()->standardIcon(QStyle::SP_FileDialogDetailedView),
         tr("Options"));
-    Q_UNUSED(optionsAction);
-    // ToDo: Open options dialog
+    connect(optionsAction, &QAction::triggered, this, &MainWindow::onOptionsClicked);
 
     auto* toolsAction = toolbar->addAction(
         style()->standardIcon(QStyle::SP_FileDialogListView),

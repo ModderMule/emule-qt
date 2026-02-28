@@ -611,6 +611,8 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
                                                        const KadUDPKey& senderKey,
                                                        bool validReceiverKey)
 {
+    m_hellosReceived.fetch_add(1, std::memory_order_relaxed);
+
     if (!isOnOutTrackList(ip, KADEMLIA2_HELLO_REQ))
         return;
 

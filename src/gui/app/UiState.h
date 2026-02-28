@@ -6,9 +6,13 @@
 /// Keeps splitter positions and other window geometry in memory,
 /// syncing to the uistate section of the shared preferences file.
 
+#include <QByteArray>
+#include <QHeaderView>
 #include <QList>
 #include <QMainWindow>
+#include <QMap>
 #include <QSplitter>
+#include <QString>
 
 namespace eMule {
 
@@ -24,6 +28,9 @@ public:
     void bindServerSplitter(QSplitter* splitter);
     void bindKadSplitter(QSplitter* splitter);
     void bindTransferSplitter(QSplitter* splitter);
+
+    /// Restore a header view's column widths/sort order, connect it to auto-update.
+    void bindHeaderView(QHeaderView* header, const QString& key);
 
     /// Restore the main window size. Call in the constructor before show().
     void bindMainWindow(QMainWindow* window);
@@ -41,6 +48,7 @@ private:
     int  m_windowWidth     = 0;
     int  m_windowHeight    = 0;
     bool m_windowMaximized = false;
+    QMap<QString, QByteArray> m_headerStates;
 };
 
 /// Global UI state instance (GUI process only).

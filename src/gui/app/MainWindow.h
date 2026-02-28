@@ -17,6 +17,7 @@ class QStackedWidget;
 
 namespace eMule {
 
+class IpcClient;
 class KadPanel;
 class ServerPanel;
 class TransferPanel;
@@ -44,6 +45,12 @@ public:
 
     void switchToTab(Tab tab);
 
+    /// Open the Options dialog, optionally at a specific page index.
+    void showOptionsDialog(int page = -1);
+
+    /// Set the IPC client (needed for Options dialog).
+    void setIpcClient(IpcClient* ipc) { m_ipc = ipc; }
+
     [[nodiscard]] KadPanel* kadPanel() const { return m_kadPanel; }
     [[nodiscard]] ServerPanel* serverPanel() const { return m_serverPanel; }
     [[nodiscard]] TransferPanel* transferPanel() const { return m_transferPanel; }
@@ -60,6 +67,7 @@ protected:
 private slots:
     void onToolbarAction(QAction* action);
     void onConnectToggle();
+    void onOptionsClicked();
 
 private:
     void setupToolbar();
@@ -69,6 +77,7 @@ private:
     QStackedWidget* m_pages = nullptr;
     QAction* m_connectAction = nullptr;
     QActionGroup* m_tabGroup = nullptr;
+    IpcClient* m_ipc = nullptr;
 
     // Tab panels
     KadPanel* m_kadPanel = nullptr;

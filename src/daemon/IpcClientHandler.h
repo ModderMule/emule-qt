@@ -64,6 +64,7 @@ private:
     void handleBootstrapKad(const Ipc::IpcMessage& msg);
     void handleDisconnectKad(const Ipc::IpcMessage& msg);
     void handleGetKadSearches(const Ipc::IpcMessage& msg);
+    void handleGetKadLookupHistory(const Ipc::IpcMessage& msg);
     void handleSyncLogs(const Ipc::IpcMessage& msg);
     void handleShutdown(const Ipc::IpcMessage& msg);
 

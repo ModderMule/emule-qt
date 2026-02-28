@@ -13,6 +13,7 @@
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
 #include "app/UiState.h"
+#include "dialogs/OptionsDialog.h"
 #include "controls/LogWidget.h"
 #include "panels/KadPanel.h"
 #include "panels/ServerPanel.h"
@@ -145,6 +146,7 @@ int main(int argc, char* argv[])
     seedNodesDat(configDir);
 
     // Parse --tab argument (used by both screenshot and normal mode)
+    auto activeTab = eMule::MainWindow::TabKad;
     const auto tabIdx = app.arguments().indexOf(QStringLiteral("--tab"));
     if (tabIdx >= 0 && tabIdx + 1 < app.arguments().size()) {
         const QString tabArg = app.arguments().at(tabIdx + 1).toLower();
@@ -158,15 +160,31 @@ int main(int argc, char* argv[])
             {QStringLiteral("irc"),        eMule::MainWindow::TabIRC},
             {QStringLiteral("statistics"), eMule::MainWindow::TabStatistics},
         };
-        auto tab = static_cast<eMule::MainWindow::Tab>(tabArg.toInt());
+        activeTab = static_cast<eMule::MainWindow::Tab>(tabArg.toInt());
         for (const auto& [name, value] : tabNames) {
             if (tabArg == name) {
-                tab = value;
+                activeTab = value;
                 break;
             }
         }
-        mainWindow.switchToTab(tab);
+        mainWindow.switchToTab(activeTab);
     }
+
+    // Parse --subtab argument: switch to a sub-tab within the active panel
+    const auto subTabIdx = app.arguments().indexOf(QStringLiteral("--subtab"));
+    if (subTabIdx >= 0 && subTabIdx + 1 < app.arguments().size()) {
+        const int subtab = app.arguments().at(subTabIdx + 1).toInt();
+        if (activeTab == eMule::MainWindow::TabKad)
+            mainWindow.kadPanel()->switchToSubTab(subtab);
+        else if (activeTab == eMule::MainWindow::TabTransfers)
+            mainWindow.transferPanel()->switchToSubTab(subtab);
+    }
+
+    // Parse --delay argument: override screenshot delay (default 3000 ms)
+    int screenshotDelay = 3000;
+    const auto delayIdx = app.arguments().indexOf(QStringLiteral("--delay"));
+    if (delayIdx >= 0 && delayIdx + 1 < app.arguments().size())
+        screenshotDelay = app.arguments().at(delayIdx + 1).toInt();
 
     // IPC client — always used to connect to the daemon
     eMule::IpcClient ipcClient;
@@ -180,7 +198,8 @@ int main(int argc, char* argv[])
         eMule::logInfo(QStringLiteral("Connecting to daemon at %1:%2...")
                            .arg(addr.toString()).arg(port));
 
-        // Wire IPC client to panels
+        // Wire IPC client to main window and panels
+        mainWindow.setIpcClient(&ipcClient);
         mainWindow.kadPanel()->setIpcClient(&ipcClient);
         mainWindow.transferPanel()->setIpcClient(&ipcClient);
 
@@ -299,16 +318,61 @@ int main(int argc, char* argv[])
         eMule::logInfo(QStringLiteral("IPC disabled in settings."));
     }
 
+    // Parse --options argument: open Options dialog at a specific page
+    int optionsPage = -1;
+    const auto optIdx = app.arguments().indexOf(QStringLiteral("--options"));
+    if (optIdx >= 0 && optIdx + 1 < app.arguments().size()) {
+        const QString optArg = app.arguments().at(optIdx + 1).toLower();
+        static const std::pair<QString, int> pageNames[] = {
+            {QStringLiteral("general"),      eMule::OptionsDialog::PageGeneral},
+            {QStringLiteral("display"),      eMule::OptionsDialog::PageDisplay},
+            {QStringLiteral("connection"),   eMule::OptionsDialog::PageConnection},
+            {QStringLiteral("proxy"),        eMule::OptionsDialog::PageProxy},
+            {QStringLiteral("server"),       eMule::OptionsDialog::PageServer},
+            {QStringLiteral("directories"),  eMule::OptionsDialog::PageDirectories},
+            {QStringLiteral("files"),        eMule::OptionsDialog::PageFiles},
+            {QStringLiteral("notifications"),eMule::OptionsDialog::PageNotifications},
+            {QStringLiteral("statistics"),   eMule::OptionsDialog::PageStatistics},
+            {QStringLiteral("irc"),          eMule::OptionsDialog::PageIRC},
+            {QStringLiteral("messages"),     eMule::OptionsDialog::PageMessages},
+            {QStringLiteral("security"),     eMule::OptionsDialog::PageSecurity},
+            {QStringLiteral("scheduler"),    eMule::OptionsDialog::PageScheduler},
+            {QStringLiteral("webinterface"), eMule::OptionsDialog::PageWebInterface},
+            {QStringLiteral("extended"),     eMule::OptionsDialog::PageExtended},
+        };
+        optionsPage = optArg.toInt(); // fallback: numeric index
+        for (const auto& [name, value] : pageNames) {
+            if (optArg == name) {
+                optionsPage = value;
+                break;
+            }
+        }
+    }
+
     // In screenshot mode, grab the window after a delay and exit
     if (screenshotMode) {
-        QTimer::singleShot(2000, &app, [&mainWindow, &screenshotPath, &app]() {
-            mainWindow.repaint();
-            QApplication::processEvents();
-            QPixmap pixmap = mainWindow.grab();
-            pixmap.save(screenshotPath);
+        QTimer::singleShot(screenshotDelay, &app, [&mainWindow, &screenshotPath, &app, optionsPage]() {
+            // If --options was specified, open the dialog and screenshot it
+            if (optionsPage >= 0) {
+                eMule::OptionsDialog dlg(nullptr, &mainWindow);
+                dlg.selectPage(optionsPage);
+                dlg.show();
+                dlg.repaint();
+                QApplication::processEvents();
+                QPixmap pixmap = dlg.grab();
+                pixmap.save(screenshotPath);
+            } else {
+                mainWindow.repaint();
+                QApplication::processEvents();
+                QPixmap pixmap = mainWindow.grab();
+                pixmap.save(screenshotPath);
+            }
             eMule::logInfo(QStringLiteral("Screenshot saved to %1").arg(screenshotPath));
             app.quit();
         });
+    } else if (optionsPage >= 0) {
+        // Non-screenshot mode: just open the options dialog
+        mainWindow.showOptionsDialog(optionsPage);
     }
 
     const int result = QApplication::exec();

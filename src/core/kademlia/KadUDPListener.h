@@ -61,6 +61,9 @@ public:
     /// Total number of HELLO_REQ packets sent since startup (monotonically increasing).
     [[nodiscard]] uint32_t totalHellosSent() const { return m_hellosSent.load(std::memory_order_relaxed); }
 
+    /// Total number of HELLO_RES packets received since startup (monotonically increasing).
+    [[nodiscard]] uint32_t totalHellosReceived() const { return m_hellosReceived.load(std::memory_order_relaxed); }
+
 signals:
     void packetToSend(QByteArray data, uint32 destIP, uint16 destPort,
                       KadUDPKey targetKey, UInt128 cryptTargetID);
@@ -128,7 +131,8 @@ private:
         KadClientSearcher* requester = nullptr;
     };
     std::list<FetchNodeIDRequest> m_fetchNodeIDRequests;
-    std::atomic<uint32_t> m_hellosSent{0};  ///< HELLO_REQ packets sent (monotonically increasing).
+    std::atomic<uint32_t> m_hellosSent{0};      ///< HELLO_REQ packets sent (monotonically increasing).
+    std::atomic<uint32_t> m_hellosReceived{0};  ///< HELLO_RES packets received (monotonically increasing).
 };
 
 } // namespace eMule::kad

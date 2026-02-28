@@ -98,11 +98,15 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
     if (!index.isValid() || index.row() >= static_cast<int>(m_clients.size()))
         return {};
 
-    if (role != Qt::DisplayRole)
-        return {};
-
     const auto& c = m_clients[static_cast<size_t>(index.row())];
-    return displayData(c, index.column());
+
+    if (role == Qt::DisplayRole)
+        return displayData(c, index.column());
+
+    if (role == Qt::UserRole)
+        return sortData(c, index.column());
+
+    return {};
 }
 
 QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, int role) const
@@ -187,6 +191,67 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         case 4: return formatSize(c.transferredDown);
         case 5: return c.software;
         case 6: return {}; // Connected (ToDo)
+        case 7: return c.userHash;
+        default: return {};
+        }
+    }
+
+    return {};
+}
+
+QVariant ClientListModel::sortData(const ClientRow& c, int column) const
+{
+    switch (m_mode) {
+    case ClientListMode::Uploading:
+        switch (column) {
+        case 0: return c.userName;
+        case 1: return c.fileName;
+        case 2: return QVariant::fromValue(c.sessionUp);
+        case 3: return QVariant::fromValue(c.transferredUp);
+        case 4: return QVariant::fromValue(c.waitStartTime);
+        case 5: return QVariant::fromValue(int64_t{0});
+        case 6: return c.uploadState;
+        case 7: return c.partCount;
+        default: return {};
+        }
+
+    case ClientListMode::Downloading:
+        switch (column) {
+        case 0: return c.userName;
+        case 1: return c.software;
+        case 2: return c.fileName;
+        case 3: return QVariant::fromValue(c.sessionDown);
+        case 4: return c.availPartCount;
+        case 5: return QVariant::fromValue(c.sessionDown);
+        case 6: return QVariant::fromValue(c.transferredDown);
+        case 7: return c.sourceFrom;
+        default: return {};
+        }
+
+    case ClientListMode::OnQueue:
+        switch (column) {
+        case 0: return c.userName;
+        case 1: return c.fileName;
+        case 2: return {};
+        case 3: return {};
+        case 4: return c.remoteQueueRank;
+        case 5: return QVariant::fromValue(c.askedCount);
+        case 6: return QVariant::fromValue(c.waitStartTime);
+        case 7: return QVariant::fromValue(c.waitStartTime);
+        case 8: return c.isBanned ? 1 : 0;
+        case 9: return c.partCount;
+        default: return {};
+        }
+
+    case ClientListMode::KnownClients:
+        switch (column) {
+        case 0: return c.userName;
+        case 1: return c.uploadState;
+        case 2: return QVariant::fromValue(c.transferredUp);
+        case 3: return c.downloadState;
+        case 4: return QVariant::fromValue(c.transferredDown);
+        case 5: return c.software;
+        case 6: return {};
         case 7: return c.userHash;
         default: return {};
         }

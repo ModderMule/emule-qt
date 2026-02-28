@@ -59,6 +59,24 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         }
     }
 
+    if (role == Qt::UserRole) {
+        switch (index.column()) {
+        case ColName:        return r.name;
+        case ColIP:          return QStringLiteral("%1:%2").arg(r.ip).arg(r.port, 5, 10, QLatin1Char('0'));
+        case ColDescription: return r.description;
+        case ColPing:        return r.ping;
+        case ColUsers:       return r.users;
+        case ColMaxUsers:    return r.maxUsers;
+        case ColPreference:  return r.preference;
+        case ColFailed:      return r.failed;
+        case ColStatic:      return r.isStatic ? 1 : 0;
+        case ColSoftFiles:   return r.softFiles;
+        case ColLowID:       return r.lowIdUsers;
+        case ColObfuscation: return r.obfuscation ? 1 : 0;
+        default:             break;
+        }
+    }
+
     if (role == Qt::TextAlignmentRole) {
         switch (index.column()) {
         case ColPing:

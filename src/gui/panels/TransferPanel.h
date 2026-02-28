@@ -36,6 +36,9 @@ public:
     /// Connect this panel to the IPC client for data updates.
     void setIpcClient(IpcClient* client);
 
+    /// Switch to a client sub-tab by index (0=Uploading, 1=Downloading, 2=On Queue, 3=Known).
+    void switchToSubTab(int index);
+
 private slots:
     void onRefreshTimer();
     void onDownloadContextMenu(const QPoint& pos);
@@ -44,7 +47,7 @@ private:
     void setupUi();
     QWidget* createDownloadsSection();
     QWidget* createClientsSection();
-    QTreeView* createClientView(ClientListModel* model);
+    QTreeView* createClientView(ClientListModel* model, const QString& headerKey);
     void requestDownloads();
     void requestUploads();
     void sendDownloadAction(const QString& hash, int action);

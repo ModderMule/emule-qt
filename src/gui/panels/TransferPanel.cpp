@@ -91,6 +91,12 @@ TransferPanel::TransferPanel(QWidget* parent)
 
 TransferPanel::~TransferPanel() = default;
 
+void TransferPanel::switchToSubTab(int index)
+{
+    if (m_clientTabs && index >= 0 && index < m_clientTabs->count())
+        m_clientTabs->setCurrentIndex(index);
+}
+
 void TransferPanel::setIpcClient(IpcClient* client)
 {
     m_ipc = client;
@@ -260,6 +266,7 @@ QWidget* TransferPanel::createDownloadsSection()
     header->resizeSection(DownloadListModel::ColLastReception, 80);
     header->resizeSection(DownloadListModel::ColCategory, 60);
     header->resizeSection(DownloadListModel::ColAddedOn, 120);
+    theUiState.bindHeaderView(header, QStringLiteral("downloads"));
 
     layout->addWidget(m_downloadView);
 
@@ -282,16 +289,20 @@ QWidget* TransferPanel::createClientsSection()
     m_onQueueModel     = new ClientListModel(ClientListMode::OnQueue, this);
     m_knownModel       = new ClientListModel(ClientListMode::KnownClients, this);
 
-    m_clientTabs->addTab(createClientView(m_uploadingModel),
+    m_clientTabs->addTab(createClientView(m_uploadingModel,
+                                         QStringLiteral("clientsUploading")),
                          QIcon(uploadingIcon()),
                          tr("Uploading (0)"));
-    m_clientTabs->addTab(createClientView(m_downloadingModel),
+    m_clientTabs->addTab(createClientView(m_downloadingModel,
+                                         QStringLiteral("clientsDownloading")),
                          QIcon(downloadingIcon()),
                          tr("Downloading (0)"));
-    m_clientTabs->addTab(createClientView(m_onQueueModel),
+    m_clientTabs->addTab(createClientView(m_onQueueModel,
+                                         QStringLiteral("clientsOnQueue")),
                          QIcon(onQueueIcon()),
                          tr("On Queue (0)"));
-    m_clientTabs->addTab(createClientView(m_knownModel),
+    m_clientTabs->addTab(createClientView(m_knownModel,
+                                         QStringLiteral("clientsKnown")),
                          QIcon(knownClientsIcon()),
                          tr("Known Clients (0)"));
 
@@ -305,10 +316,12 @@ QWidget* TransferPanel::createClientsSection()
     return widget;
 }
 
-QTreeView* TransferPanel::createClientView(ClientListModel* model)
+QTreeView* TransferPanel::createClientView(ClientListModel* model,
+                                            const QString& headerKey)
 {
     auto* proxy = new QSortFilterProxyModel(this);
     proxy->setSourceModel(model);
+    proxy->setSortRole(Qt::UserRole);
 
     auto* view = new QTreeView;
     view->setModel(proxy);
@@ -323,6 +336,7 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model)
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(100);
     header->resizeSection(0, 140); // User Name column
+    theUiState.bindHeaderView(header, headerKey);
 
     return view;
 }

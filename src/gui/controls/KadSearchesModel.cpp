@@ -38,6 +38,20 @@ QVariant KadSearchesModel::data(const QModelIndex& index, int role) const
         }
     }
 
+    if (role == Qt::UserRole) {
+        switch (index.column()) {
+        case ColNumber:      return s.searchId;
+        case ColKey:         return s.key;
+        case ColType:        return s.type;
+        case ColName:        return s.name;
+        case ColStatus:      return s.status;
+        case ColLoad:        return static_cast<double>(s.load);
+        case ColPacketsSent: return s.packetsSent;
+        case ColResponses:   return s.responses;
+        default:             break;
+        }
+    }
+
     if (role == Qt::TextAlignmentRole) {
         switch (index.column()) {
         case ColLoad:

@@ -56,9 +56,6 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
     p.setPen(QPen(QColor(180, 180, 180), 1));
     p.drawRect(r.adjusted(0, 0, -1, -1));
 
-    if (m_samples.empty())
-        return;
-
     // Leave margin for axis labels
     const int labelW = 25;
     const int labelH = 14;
@@ -103,6 +100,14 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
         p.drawLine(plotArea.left(), y, plotArea.right(), y);
     }
 
+    // Axes
+    p.setPen(QPen(Qt::darkGray, 1));
+    p.drawLine(plotArea.left(), plotArea.bottom(), plotArea.right(), plotArea.bottom());
+    p.drawLine(plotArea.left(), plotArea.top(), plotArea.left(), plotArea.bottom());
+
+    if (m_samples.empty())
+        return;
+
     // Bars
     const int n = static_cast<int>(m_samples.size());
     const double barWidth = static_cast<double>(plotArea.width()) / kMaxSamples;
@@ -124,10 +129,6 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
             p.fillRect(QRect(x, plotArea.bottom() - barH, 1, barH), barColorDark);
     }
 
-    // Bottom axis line
-    p.setPen(QPen(Qt::darkGray, 1));
-    p.drawLine(plotArea.left(), plotArea.bottom(), plotArea.right(), plotArea.bottom());
-    p.drawLine(plotArea.left(), plotArea.top(), plotArea.left(), plotArea.bottom());
 }
 
 } // namespace eMule

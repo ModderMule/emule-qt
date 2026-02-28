@@ -2,7 +2,9 @@
 
 #include "app/IpcClient.h"
 #include "controls/ContactsGraph.h"
+#include "controls/KadContactHistogram.h"
 #include "controls/KadContactsModel.h"
+#include "controls/KadLookupGraph.h"
 #include "controls/KadSearchesModel.h"
 
 #include "app/UiState.h"
@@ -25,6 +27,7 @@
 #include <QRadioButton>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
+#include <QTabWidget>
 #include <QTimer>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -48,6 +51,22 @@ KadPanel::KadPanel(QWidget* parent)
 
 KadPanel::~KadPanel() = default;
 
+void KadPanel::switchToSubTab(int index)
+{
+    if (!m_topTabWidget || index < 0 || index >= m_topTabWidget->count())
+        return;
+
+    m_topTabWidget->setCurrentIndex(index);
+
+    // Auto-select the first search if none is selected (needed for Search Details tab)
+    if (index == 1 && m_searchesView->selectionModel()->selectedRows().isEmpty()
+        && m_searchesModel->searchCount() > 0) {
+        m_searchesView->selectionModel()->select(
+            m_searchesView->model()->index(0, 0),
+            QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
+}
+
 void KadPanel::setIpcClient(IpcClient* client)
 {
     m_ipc = client;
@@ -63,28 +82,30 @@ void KadPanel::setIpcClient(IpcClient* client)
             m_refreshTimer->setInterval(m_ipc->pollingInterval());
             m_refreshTimer->start();
             m_graphTimer->start();
-            m_lastHelloCount = 0;
+            m_lastResponseCount = 0;
             onRefreshTimer();
         });
         connect(m_ipc, &IpcClient::disconnected, this, [this]() {
             m_refreshTimer->stop();
             m_graphTimer->stop();
-            m_lastHelloCount = 0;
+            m_lastResponseCount = 0;
             m_contactsModel->clear();
             m_searchesModel->clear();
             m_contactsGraph->clearSamples();
-            m_kadNetworkGraph->clearSamples();
+            m_kadNetworkGraph->clear();
+            m_lookupGraph->clear();
             m_contactsLabel->setText(tr("\u25B8 Contacts (0)"));
             m_searchesLabel->setText(tr("\u25B8 Current Searches (0)"));
         });
     } else {
         m_refreshTimer->stop();
         m_graphTimer->stop();
-        m_lastHelloCount = 0;
+        m_lastResponseCount = 0;
         m_contactsModel->clear();
         m_searchesModel->clear();
         m_contactsGraph->clearSamples();
-        m_kadNetworkGraph->clearSamples();
+        m_kadNetworkGraph->clear();
+        m_lookupGraph->clear();
         m_contactsLabel->setText(tr("\u25B8 Contacts (0)"));
         m_searchesLabel->setText(tr("\u25B8 Current Searches (0)"));
     }
@@ -99,6 +120,10 @@ void KadPanel::onRefreshTimer()
     requestContacts();
     requestSearches();
     requestStatus();
+
+    // Only fetch lookup history when the Search Details tab is visible
+    if (m_topTabWidget->currentIndex() == 1)
+        requestLookupHistory();
 }
 
 void KadPanel::onGraphTimer()
@@ -112,9 +137,9 @@ void KadPanel::onGraphTimer()
             return;
 
         const QCborMap status = resp.fieldMap(1);
-        const int64_t hellosSent = status.value(QStringLiteral("hellosSent")).toInteger();
-        const int delta = static_cast<int>(hellosSent - m_lastHelloCount);
-        m_lastHelloCount = hellosSent;
+        const int64_t hellosReceived = status.value(QStringLiteral("hellosReceived")).toInteger();
+        const int delta = static_cast<int>(hellosReceived - m_lastResponseCount);
+        m_lastResponseCount = hellosReceived;
         m_contactsGraph->addSample(std::max(0, delta));
     });
 }
@@ -187,6 +212,13 @@ void KadPanel::onRecheckFirewall()
     // ToDo: add RecheckFirewall IPC message if needed
 }
 
+void KadPanel::onSearchSelectionChanged()
+{
+    // When a search is selected in the bottom panel, update the lookup graph
+    if (m_topTabWidget->currentIndex() == 1)
+        requestLookupHistory();
+}
+
 // ---------------------------------------------------------------------------
 // UI setup
 // ---------------------------------------------------------------------------
@@ -203,9 +235,19 @@ void KadPanel::setupUi()
     m_vertSplitter->setStyleSheet(
         QStringLiteral("QSplitter::handle { background: palette(mid); }"));
 
-    // Top section: contacts list (left) + controls panel (right)
+    // Top section: tab widget (left) + controls panel (right)
     auto* topSplitter = new QSplitter(Qt::Horizontal);
-    topSplitter->addWidget(createContactsPanel());
+
+    // Create the tab widget with Contacts + Search Details tabs
+    m_topTabWidget = new QTabWidget;
+    m_topTabWidget->setDocumentMode(true);
+    m_topTabWidget->addTab(createContactsPanel(), tr("\u25B8 Contacts (0)"));
+
+    // Search Details tab with lookup graph
+    m_lookupGraph = new KadLookupGraph;
+    m_topTabWidget->addTab(m_lookupGraph, tr("\u25B8 Search Details"));
+
+    topSplitter->addWidget(m_topTabWidget);
     topSplitter->addWidget(createControlsPanel());
     topSplitter->setStretchFactor(0, 3);
     topSplitter->setStretchFactor(1, 1);
@@ -219,6 +261,12 @@ void KadPanel::setupUi()
     theUiState.bindKadSplitter(m_vertSplitter);
 
     mainLayout->addWidget(m_vertSplitter);
+
+    // When switching to the Search Details tab, fetch lookup history
+    connect(m_topTabWidget, &QTabWidget::currentChanged, this, [this](int index) {
+        if (index == 1)
+            requestLookupHistory();
+    });
 }
 
 QWidget* KadPanel::createContactsPanel()
@@ -238,6 +286,7 @@ QWidget* KadPanel::createContactsPanel()
     m_contactsModel = new KadContactsModel(this);
     auto* proxyModel = new QSortFilterProxyModel(this);
     proxyModel->setSourceModel(m_contactsModel);
+    proxyModel->setSortRole(Qt::UserRole);
     m_contactsView = new QTreeView;
     m_contactsView->setModel(proxyModel);
     m_contactsView->setRootIsDecorated(false);
@@ -247,11 +296,12 @@ QWidget* KadPanel::createContactsPanel()
     m_contactsView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_contactsView->setUniformRowHeights(true);
 
-    // Style the header
+    // Style the header — defaults used on first launch, then overridden by saved state
     auto* header = m_contactsView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(200);
     header->resizeSection(KadContactsModel::ColStatus, 70);
+    theUiState.bindHeaderView(header, QStringLiteral("kadContacts"));
 
     // Compact monospace font for hex/binary display
     QFont monoFont(QStringLiteral("Courier New"), 9);
@@ -343,8 +393,8 @@ QWidget* KadPanel::createControlsPanel()
     m_contactsGraph->setMinimumHeight(70);
     layout->addWidget(m_contactsGraph, 2);
 
-    // Kad Network graph
-    m_kadNetworkGraph = new ContactsGraph;
+    // Kad Network distance histogram
+    m_kadNetworkGraph = new KadContactHistogram;
     m_kadNetworkGraph->setMinimumHeight(50);
     layout->addWidget(m_kadNetworkGraph, 1);
 
@@ -366,8 +416,11 @@ QWidget* KadPanel::createSearchesPanel()
     layout->addWidget(m_searchesLabel);
 
     m_searchesModel = new KadSearchesModel(this);
+    auto* searchProxy = new QSortFilterProxyModel(this);
+    searchProxy->setSourceModel(m_searchesModel);
+    searchProxy->setSortRole(Qt::UserRole);
     m_searchesView = new QTreeView;
-    m_searchesView->setModel(m_searchesModel);
+    m_searchesView->setModel(searchProxy);
     m_searchesView->setRootIsDecorated(false);
     m_searchesView->setAlternatingRowColors(true);
     m_searchesView->setSortingEnabled(true);
@@ -377,8 +430,13 @@ QWidget* KadPanel::createSearchesPanel()
 
     auto* header = m_searchesView->header();
     header->setStretchLastSection(true);
+    theUiState.bindHeaderView(header, QStringLiteral("kadSearches"));
 
     layout->addWidget(m_searchesView);
+
+    // Wire search selection to update the lookup graph
+    connect(m_searchesView->selectionModel(), &QItemSelectionModel::selectionChanged,
+            this, &KadPanel::onSearchSelectionChanged);
 
     return widget;
 }
@@ -417,9 +475,13 @@ void KadPanel::requestContacts()
             rows.push_back(std::move(row));
         }
 
+        m_kadNetworkGraph->setContacts(rows);
         m_contactsModel->setContacts(std::move(rows));
         const int count = m_contactsModel->contactCount();
         m_contactsLabel->setText(tr("\u25B8 Contacts (%1)").arg(count));
+
+        // Update the Contacts tab title with count
+        m_topTabWidget->setTabText(0, tr("\u25B8 Contacts (%1)").arg(count));
     });
 }
 
@@ -454,9 +516,37 @@ void KadPanel::requestSearches()
             rows.push_back(std::move(row));
         }
 
+        // Save selected search ID before model reset clears selection
+        const uint32_t prevSelected = selectedSearchId();
+
         m_searchesModel->setSearches(std::move(rows));
         const int count = m_searchesModel->searchCount();
         m_searchesLabel->setText(tr("\u25B8 Current Searches (%1)").arg(count));
+
+        // Restore selection: find the row matching the previous search ID
+        if (prevSelected != 0 && count > 0) {
+            const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(m_searchesView->model());
+            for (int r = 0; r < count; ++r) {
+                const uint32_t rowId = m_searchesModel->data(
+                    m_searchesModel->index(r, KadSearchesModel::ColNumber),
+                    Qt::UserRole).toUInt();
+                if (rowId == prevSelected) {
+                    const auto srcIdx = m_searchesModel->index(r, 0);
+                    const auto proxyIdx = proxy ? proxy->mapFromSource(srcIdx) : srcIdx;
+                    m_searchesView->selectionModel()->select(
+                        proxyIdx,
+                        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                    break;
+                }
+            }
+        }
+
+        // Auto-select first search if nothing is selected (initial load)
+        if (m_searchesView->selectionModel()->selectedRows().isEmpty() && count > 0) {
+            m_searchesView->selectionModel()->select(
+                m_searchesView->model()->index(0, 0),
+                QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        }
     });
 }
 
@@ -476,6 +566,101 @@ void KadPanel::requestStatus()
             ? tr("Disconnect")
             : tr("Connect"));
     });
+}
+
+void KadPanel::requestLookupHistory()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    const uint32_t searchId = selectedSearchId();
+    if (searchId == 0) {
+        m_lookupGraph->clear();
+        m_topTabWidget->setTabText(1, tr("\u25B8 Search Details"));
+        return;
+    }
+
+    IpcMessage req(IpcMsgType::GetKadLookupHistory);
+    req.append(static_cast<int64_t>(searchId));
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_lookupGraph->clear();
+            return;
+        }
+
+        const QCborArray arr = resp.fieldArray(1);
+        std::vector<LookupEntry> entries;
+        entries.reserve(static_cast<size_t>(arr.size()));
+
+        for (const auto& val : arr) {
+            const QCborMap m = val.toMap();
+            LookupEntry e;
+            e.contactID = m.value(QStringLiteral("contactID")).toString();
+            e.distance  = m.value(QStringLiteral("distance")).toString();
+            e.contactVersion = static_cast<uint8_t>(m.value(QStringLiteral("contactVersion")).toInteger());
+            e.askedContactsTime = static_cast<uint32_t>(m.value(QStringLiteral("askedContactsTime")).toInteger());
+            e.respondedContact = static_cast<uint32_t>(m.value(QStringLiteral("respondedContact")).toInteger());
+            e.askedSearchItemTime = static_cast<uint32_t>(m.value(QStringLiteral("askedSearchItemTime")).toInteger());
+            e.respondedSearchItem = static_cast<uint32_t>(m.value(QStringLiteral("respondedSearchItem")).toInteger());
+            e.providedCloser = m.value(QStringLiteral("providedCloser")).toBool();
+            e.forcedInteresting = m.value(QStringLiteral("forcedInteresting")).toBool();
+
+            e.dist[0] = static_cast<uint32_t>(m.value(QStringLiteral("dist0")).toInteger());
+            e.dist[1] = static_cast<uint32_t>(m.value(QStringLiteral("dist1")).toInteger());
+            e.dist[2] = static_cast<uint32_t>(m.value(QStringLiteral("dist2")).toInteger());
+            e.dist[3] = static_cast<uint32_t>(m.value(QStringLiteral("dist3")).toInteger());
+
+            const QCborArray fromArr = m.value(QStringLiteral("receivedFromIdx")).toArray();
+            for (const auto& idx : fromArr)
+                e.receivedFromIdx.push_back(static_cast<int>(idx.toInteger()));
+
+            entries.push_back(std::move(e));
+        }
+
+        m_lookupGraph->setEntries(std::move(entries));
+
+        // Update the Search Details tab title to show the search type
+        // Find the selected search's type name from the searches model
+        const uint32_t sid = selectedSearchId();
+        for (int r = 0; r < m_searchesModel->searchCount(); ++r) {
+            const auto idx = m_searchesModel->index(r, KadSearchesModel::ColNumber);
+            const uint32_t rowId = idx.data(Qt::UserRole).toUInt();
+            if (rowId == sid) {
+                const QString typeName = m_searchesModel->index(r, KadSearchesModel::ColType).data().toString();
+                m_topTabWidget->setTabText(1, tr("\u25B8 Search Details (%1)").arg(typeName));
+                break;
+            }
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+uint32_t KadPanel::selectedSearchId() const
+{
+    // Get the currently selected search ID from the searches view
+    const auto selection = m_searchesView->selectionModel()->selectedRows();
+    if (!selection.isEmpty()) {
+        // Map from proxy to source model
+        const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(m_searchesView->model());
+        if (proxy) {
+            const auto sourceIdx = proxy->mapToSource(selection.first());
+            return m_searchesModel->data(
+                m_searchesModel->index(sourceIdx.row(), KadSearchesModel::ColNumber),
+                Qt::UserRole).toUInt();
+        }
+    }
+
+    // No selection — use the first search if available
+    if (m_searchesModel->searchCount() > 0) {
+        return m_searchesModel->data(
+            m_searchesModel->index(0, KadSearchesModel::ColNumber),
+            Qt::UserRole).toUInt();
+    }
+
+    return 0;
 }
 
 } // namespace eMule

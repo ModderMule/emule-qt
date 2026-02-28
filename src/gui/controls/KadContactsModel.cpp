@@ -57,6 +57,15 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
         }
     }
 
+    if (role == Qt::UserRole) {
+        switch (index.column()) {
+        case ColStatus:   return c.type;
+        case ColClientId: return c.clientId;
+        case ColDistance:  return c.distance;
+        default:          break;
+        }
+    }
+
     if (role == Qt::DecorationRole && index.column() == ColStatus) {
         const int t = std::min(static_cast<int>(c.type), 4);
         return m_icons[t];

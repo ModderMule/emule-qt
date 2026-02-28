@@ -164,6 +164,10 @@ struct Preferences::Data {
     // Network detection
     uint32 publicIP = 0;  // Our detected public IP (set by server/peers)
 
+    // GUI (General page)
+    bool promptOnExit = true;
+    bool startMinimized = false;
+
     // UI State (GUI-only, persisted across sessions)
     QList<int> serverSplitSizes;
     QList<int> kadSplitSizes;
@@ -171,6 +175,7 @@ struct Preferences::Data {
     int windowWidth = 900;
     int windowHeight = 620;
     bool windowMaximized = false;
+    QMap<QString, QByteArray> headerStates;
 };
 
 // ---------------------------------------------------------------------------
@@ -1365,6 +1370,34 @@ void Preferences::setPublicIP(uint32 val)
 }
 
 // ---------------------------------------------------------------------------
+// Getters / setters — GUI (General page)
+// ---------------------------------------------------------------------------
+
+bool Preferences::promptOnExit() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->promptOnExit;
+}
+
+void Preferences::setPromptOnExit(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->promptOnExit = val;
+}
+
+bool Preferences::startMinimized() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->startMinimized;
+}
+
+void Preferences::setStartMinimized(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->startMinimized = val;
+}
+
+// ---------------------------------------------------------------------------
 // Getters / setters — UI State
 // ---------------------------------------------------------------------------
 
@@ -1438,6 +1471,18 @@ void Preferences::setWindowMaximized(bool val)
 {
     QWriteLocker lock(&m_lock);
     m_data->windowMaximized = val;
+}
+
+QByteArray Preferences::headerState(const QString& key) const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->headerStates.value(key);
+}
+
+void Preferences::setHeaderState(const QString& key, const QByteArray& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->headerStates[key] = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -1555,6 +1600,8 @@ bool Preferences::load(const QString& filePath)
             m_data->autoConnect = g["autoConnect"].as<bool>(m_data->autoConnect);
             m_data->reconnect = g["reconnect"].as<bool>(m_data->reconnect);
             m_data->filterLANIPs = g["filterLANIPs"].as<bool>(m_data->filterLANIPs);
+            m_data->promptOnExit = g["promptOnExit"].as<bool>(m_data->promptOnExit);
+            m_data->startMinimized = g["startMinimized"].as<bool>(m_data->startMinimized);
 
             // userHash: decode from hex
             if (g["userHash"]) {
@@ -1747,6 +1794,15 @@ bool Preferences::load(const QString& filePath)
             m_data->windowWidth     = ui["windowWidth"].as<int>(m_data->windowWidth);
             m_data->windowHeight    = ui["windowHeight"].as<int>(m_data->windowHeight);
             m_data->windowMaximized = ui["windowMaximized"].as<bool>(m_data->windowMaximized);
+
+            if (ui["headers"] && ui["headers"].IsMap()) {
+                for (const auto& pair : ui["headers"]) {
+                    auto key = QString::fromStdString(pair.first.as<std::string>());
+                    auto val = QByteArray::fromBase64(
+                        QByteArray::fromStdString(pair.second.as<std::string>()));
+                    m_data->headerStates[key] = val;
+                }
+            }
         }
 
     } catch (const YAML::Exception& ex) {
@@ -1879,6 +1935,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "autoConnect" << YAML::Value << m_data->autoConnect;
     out << YAML::Key << "reconnect" << YAML::Value << m_data->reconnect;
     out << YAML::Key << "filterLANIPs" << YAML::Value << m_data->filterLANIPs;
+    out << YAML::Key << "promptOnExit" << YAML::Value << m_data->promptOnExit;
+    out << YAML::Key << "startMinimized" << YAML::Value << m_data->startMinimized;
     out << YAML::EndMap;
 
     // Server connection
@@ -2056,6 +2114,15 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "windowWidth"     << YAML::Value << m_data->windowWidth;
     out << YAML::Key << "windowHeight"    << YAML::Value << m_data->windowHeight;
     out << YAML::Key << "windowMaximized" << YAML::Value << m_data->windowMaximized;
+
+    if (!m_data->headerStates.isEmpty()) {
+        out << YAML::Key << "headers" << YAML::Value << YAML::BeginMap;
+        for (auto it = m_data->headerStates.cbegin(); it != m_data->headerStates.cend(); ++it)
+            out << YAML::Key << it.key().toStdString()
+                << YAML::Value << it.value().toBase64().toStdString();
+        out << YAML::EndMap;
+    }
+
     out << YAML::EndMap;
 
     out << YAML::EndMap;

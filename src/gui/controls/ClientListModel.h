@@ -67,6 +67,7 @@ public:
 
 private:
     [[nodiscard]] QVariant displayData(const ClientRow& c, int column) const;
+    [[nodiscard]] QVariant sortData(const ClientRow& c, int column) const;
     [[nodiscard]] QVariant headerLabel(int column) const;
 
     ClientListMode m_mode;
