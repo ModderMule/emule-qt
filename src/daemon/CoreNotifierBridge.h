@@ -12,6 +12,8 @@
 namespace eMule {
 
 class IpcServer;
+class SearchFile;
+class UpDownClient;
 
 class CoreNotifierBridge : public QObject {
     Q_OBJECT
@@ -35,7 +37,7 @@ private slots:
     void onStatsUpdated();
 
     // SearchList signals
-    void onSearchResultAdded();
+    void onSearchResultAdded(eMule::SearchFile* file);
 
     // SharedFileList signals
     void onSharedFileAdded();
@@ -43,10 +45,24 @@ private slots:
     // UploadQueue signals
     void onUploadChanged();
 
+    // Download source signals
+    void onDownloadSourcesChanged();
+
+    // Known clients signals
+    void onKnownClientsChanged();
+
     // Kademlia signals
     void onKadStateChanged();
+    void onKadSearchesChanged();
+
+    // FriendList signals
+    void onFriendListChanged();
+
+    // Chat signals
+    void onChatMessageReceived(const QString& fromUser, const QString& message);
 
 private:
+    void connectClientChatSignal(eMule::UpDownClient* client);
     IpcServer* m_ipcServer;
 };
 

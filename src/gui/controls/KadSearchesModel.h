@@ -20,6 +20,7 @@ struct KadSearchRow {
     QString status;
     float load = 0.0f;
     uint32_t packetsSent = 0;
+    uint32_t requestAnswers = 0;
     uint32_t responses = 0;
 };
 

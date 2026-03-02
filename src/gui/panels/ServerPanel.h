@@ -13,6 +13,7 @@
 
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QPushButton;
 class QSplitter;
 class QTimer;
@@ -20,6 +21,7 @@ class QTreeView;
 
 namespace eMule {
 
+class IpcClient;
 class LogWidget;
 class ServerListModel;
 
@@ -33,6 +35,9 @@ class ServerPanel : public QWidget {
 public:
     explicit ServerPanel(QWidget* parent = nullptr);
     ~ServerPanel() override;
+
+    /// Connect this panel to the IPC client for data updates.
+    void setIpcClient(IpcClient* client);
 
     /// Connect this panel to live core objects for data and events.
     void setServerList(ServerList* serverList);
@@ -49,17 +54,27 @@ private slots:
     void onServerListChanged();
     void onConnectedToServer();
     void onDisconnectedFromServer();
+    void updateConnectButton(bool connected, bool connecting);
     void onServerMessage(const QString& msg);
     void onServerDoubleClicked(const QModelIndex& index);
+    void onServerContextMenu(const QPoint& pos);
 
 private:
     void setupUi();
     QWidget* createServerListPanel();
     QWidget* createControlsPanel();
     void refreshMyInfo();
+    void requestServerList();
+    [[nodiscard]] QString saveSelection() const;
+    void restoreSelection(const QString& key);
+
+    void showFindDialog();
 
     // Models
     ServerListModel* m_serverListModel = nullptr;
+
+    // Context menu
+    QMenu* m_serverMenu = nullptr;
 
     // Views
     QTreeView* m_serverListView = nullptr;
@@ -85,6 +100,9 @@ private:
 
     // Refresh timer
     QTimer* m_refreshTimer = nullptr;
+
+    // IPC client
+    IpcClient* m_ipc = nullptr;
 
     // Core links
     ServerList* m_serverList = nullptr;

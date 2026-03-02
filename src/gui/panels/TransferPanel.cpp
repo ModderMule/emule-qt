@@ -7,23 +7,35 @@
 #include "app/UiState.h"
 #include "controls/ClientListModel.h"
 #include "controls/DownloadListModel.h"
+#include "controls/DownloadProgressDelegate.h"
+#include "controls/TransferToolbar.h"
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "protocol/ED2KLink.h"
 
+#include <QApplication>
 #include <QCborArray>
 #include <QCborMap>
+#include <QClipboard>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFont>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QItemSelectionModel>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
-#include <QPainter>
+#include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTabBar>
-#include <QTabWidget>
 #include <QTimer>
+#include <QToolBar>
 #include <QTreeView>
 #include <QVBoxLayout>
 
@@ -31,52 +43,89 @@ namespace eMule {
 
 using namespace Ipc;
 
-// ---------------------------------------------------------------------------
-// Tab icon helpers — small colored icons matching MFC Transfers tab bar
-// ---------------------------------------------------------------------------
-
 namespace {
 
-/// Create a small pixmap with two arrows (upload red ↑, download green ↓, etc.)
-QPixmap makeTabIcon(const QColor& color, const QString& arrowChar)
+/// Parse a CBOR map into a ClientRow — shared by uploads, download clients, known clients.
+ClientRow parseClient(const QCborMap& m)
 {
-    constexpr int sz = 16;
-    QPixmap pm(sz, sz);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing);
-    QFont font;
-    font.setPixelSize(12);
-    font.setBold(true);
-    p.setFont(font);
-    p.setPen(color);
-    p.drawText(QRect(0, 0, sz, sz), Qt::AlignCenter, arrowChar);
-    return pm;
+    ClientRow row;
+    row.userName        = m.value(QStringLiteral("userName")).toString();
+    row.software        = m.value(QStringLiteral("software")).toString();
+    row.userHash        = m.value(QStringLiteral("userHash")).toString();
+    row.uploadState     = m.value(QStringLiteral("uploadState")).toString();
+    row.downloadState   = m.value(QStringLiteral("downloadState")).toString();
+    row.transferredUp   = m.value(QStringLiteral("transferredUp")).toInteger();
+    row.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
+    row.sessionUp       = m.value(QStringLiteral("sessionUp")).toInteger();
+    row.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
+    row.askedCount      = m.value(QStringLiteral("askedCount")).toInteger();
+    row.waitStartTime   = m.value(QStringLiteral("waitStartTime")).toInteger();
+    row.partCount       = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
+    row.availPartCount  = static_cast<int>(m.value(QStringLiteral("availPartCount")).toInteger());
+    row.remoteQueueRank = static_cast<int>(m.value(QStringLiteral("remoteQueueRank")).toInteger());
+    row.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());
+    row.ip              = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
+    row.port            = static_cast<uint16_t>(m.value(QStringLiteral("port")).toInteger());
+    row.isBanned        = m.value(QStringLiteral("isBanned")).toBool();
+    row.softwareId      = static_cast<int>(m.value(QStringLiteral("softwareId")).toInteger(-1));
+    row.hasCredit       = m.value(QStringLiteral("hasCredit")).toBool();
+    row.isFriend        = m.value(QStringLiteral("isFriend")).toBool();
+
+    // New fields for TODO columns
+    row.uploadStartDelay = m.value(QStringLiteral("uploadStartDelay")).toInteger();
+    row.filePriority     = static_cast<int>(m.value(QStringLiteral("filePriority")).toInteger(-1));
+    row.isAutoPriority   = m.value(QStringLiteral("isAutoPriority")).toBool();
+    row.fileRating       = static_cast<uint8_t>(m.value(QStringLiteral("fileRating")).toInteger());
+    row.isConnected      = m.value(QStringLiteral("isConnected")).toBool();
+
+    // Pick best file name from reqFileName or uploadFileName or fileName
+    row.fileName = m.value(QStringLiteral("uploadFileName")).toString();
+    if (row.fileName.isEmpty())
+        row.fileName = m.value(QStringLiteral("reqFileName")).toString();
+    if (row.fileName.isEmpty())
+        row.fileName = m.value(QStringLiteral("fileName")).toString();
+    return row;
 }
 
-QPixmap uploadingIcon()
-{
-    // Red up-arrow like MFC
-    return makeTabIcon(QColor(0xCC, 0x00, 0x00), QStringLiteral("\u25B2"));
-}
+/// MFC priority integer constants matching PartFile.h
+constexpr int PrVeryLow = 4;
+constexpr int PrLow     = 0;
+constexpr int PrNormal  = 1;
+constexpr int PrHigh    = 2;
+constexpr int PrVeryHigh = 3;
 
-QPixmap downloadingIcon()
-{
-    // Green down-arrow like MFC
-    return makeTabIcon(QColor(0x00, 0x88, 0x00), QStringLiteral("\u25BC"));
-}
+// ---------------------------------------------------------------------------
+// CategoryFilterProxy — filters downloads by category
+// ---------------------------------------------------------------------------
 
-QPixmap onQueueIcon()
-{
-    // Blue/teal queue icon
-    return makeTabIcon(QColor(0x00, 0x66, 0xCC), QStringLiteral("\u29BF"));
-}
+class CategoryFilterProxy : public QSortFilterProxyModel {
+public:
+    using QSortFilterProxyModel::QSortFilterProxyModel;
 
-QPixmap knownClientsIcon()
-{
-    // Gray/olive known clients icon
-    return makeTabIcon(QColor(0x66, 0x88, 0x00), QStringLiteral("\u263A"));
-}
+    void setCategoryFilter(int64_t cat)
+    {
+        if (m_category == cat)
+            return;
+        beginFilterChange();
+        m_category = cat;
+        endFilterChange();
+    }
+
+protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex& /*sourceParent*/) const override
+    {
+        if (m_category == 0)
+            return true; // "All" — show everything
+        auto* model = qobject_cast<DownloadListModel*>(sourceModel());
+        if (!model)
+            return true;
+        const auto* dl = model->downloadAt(sourceRow);
+        return dl && dl->category == m_category;
+    }
+
+private:
+    int64_t m_category = 0;
+};
 
 } // anonymous namespace
 
@@ -93,8 +142,8 @@ TransferPanel::~TransferPanel() = default;
 
 void TransferPanel::switchToSubTab(int index)
 {
-    if (m_clientTabs && index >= 0 && index < m_clientTabs->count())
-        m_clientTabs->setCurrentIndex(index);
+    if (index >= 0 && index <= 3)
+        setBottomClientView(index);
 }
 
 void TransferPanel::setIpcClient(IpcClient* client)
@@ -118,8 +167,7 @@ void TransferPanel::setIpcClient(IpcClient* client)
             m_downloadingModel->clear();
             m_onQueueModel->clear();
             m_knownModel->clear();
-            m_downloadsLabel->setText(tr("\u25B8 Downloads (0)"));
-            m_queueLabel->setText(tr("Clients on queue:   0"));
+            updateToolbarLabels();
         });
 
         // Wire push events for immediate refresh
@@ -131,9 +179,13 @@ void TransferPanel::setIpcClient(IpcClient* client)
         });
         connect(m_ipc, &IpcClient::downloadUpdated, this, [this](const IpcMessage&) {
             requestDownloads();
+            requestDownloadClients();  // sources may have changed too
         });
         connect(m_ipc, &IpcClient::uploadUpdated, this, [this](const IpcMessage&) {
             requestUploads();
+        });
+        connect(m_ipc, &IpcClient::knownClientsChanged, this, [this](const IpcMessage&) {
+            requestKnownClients();
         });
     } else {
         m_refreshTimer->stop();
@@ -142,8 +194,7 @@ void TransferPanel::setIpcClient(IpcClient* client)
         m_downloadingModel->clear();
         m_onQueueModel->clear();
         m_knownModel->clear();
-        m_downloadsLabel->setText(tr("\u25B8 Downloads (0)"));
-        m_queueLabel->setText(tr("Clients on queue:   0"));
+        updateToolbarLabels();
     }
 }
 
@@ -155,35 +206,199 @@ void TransferPanel::onRefreshTimer()
 {
     requestDownloads();
     requestUploads();
+    requestDownloadClients();
+    requestKnownClients();
 }
 
 void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 {
+    // Resolve item under cursor (may be empty — menu still shown)
+    QString hash;
+    const DownloadRow* dl = nullptr;
     const QModelIndex proxyIdx = m_downloadView->indexAt(pos);
-    if (!proxyIdx.isValid())
-        return;
+    if (proxyIdx.isValid()) {
+        const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
+        const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+        hash = m_downloadModel->hashAt(srcIdx.row());
+        dl = m_downloadModel->downloadAt(srcIdx.row());
+    }
+    const bool hasSel = (dl != nullptr && !hash.isEmpty());
 
-    const QModelIndex srcIdx = m_downloadProxy->mapToSource(proxyIdx);
-    const QString hash = m_downloadModel->hashAt(srcIdx.row());
-    if (hash.isEmpty())
-        return;
-
-    // Rebuild menu each time to capture the current hash
+    // Rebuild menu each time to capture the current state
     if (!m_downloadMenu)
         m_downloadMenu = new QMenu(this);
     else
         m_downloadMenu->clear();
 
-    m_downloadMenu->addAction(tr("Pause"), this, [this, hash]() {
-        sendDownloadAction(hash, 0);
-    });
-    m_downloadMenu->addAction(tr("Resume"), this, [this, hash]() {
-        sendDownloadAction(hash, 1);
-    });
+    // -- 1. Priority (Download) submenu --
+    auto* prioMenu = m_downloadMenu->addMenu(tr("Priority (Download)"));
+    prioMenu->setEnabled(hasSel);
+    if (hasSel) {
+        auto prioStr = [](int prio) -> QString {
+            switch (prio) {
+            case PrVeryLow:  return QStringLiteral("veryLow");
+            case PrLow:      return QStringLiteral("low");
+            case PrNormal:   return QStringLiteral("normal");
+            case PrHigh:     return QStringLiteral("high");
+            case PrVeryHigh: return QStringLiteral("veryHigh");
+            default:         return {};
+            }
+        };
+        auto addPrioAction = [&](const QString& text, int prio) {
+            auto* act = prioMenu->addAction(text, this, [this, hash, prio]() {
+                sendSetPriority(hash, prio, false);
+            });
+            if (!dl->isAutoDownPriority && dl->priority == prioStr(prio))
+                act->setCheckable(true), act->setChecked(true);
+        };
+        addPrioAction(tr("Low"),    PrLow);
+        addPrioAction(tr("Normal"), PrNormal);
+        addPrioAction(tr("High"),   PrHigh);
+        prioMenu->addSeparator();
+        addPrioAction(tr("Very Low"),  PrVeryLow);
+        addPrioAction(tr("Very High"), PrVeryHigh);
+        prioMenu->addSeparator();
+        auto* autoAct = prioMenu->addAction(tr("Auto"), this, [this, hash]() {
+            sendSetPriority(hash, PrNormal, true);
+        });
+        if (dl->isAutoDownPriority)
+            autoAct->setCheckable(true), autoAct->setChecked(true);
+    }
+
     m_downloadMenu->addSeparator();
-    m_downloadMenu->addAction(tr("Cancel"), this, [this, hash]() {
-        sendDownloadAction(hash, 2);
-    });
+
+    // -- 2. Pause / Stop / Resume --
+    {
+        auto* pauseAct = m_downloadMenu->addAction(tr("Pause"), this, [this, hash]() {
+            sendDownloadAction(hash, 0);
+        });
+        if (!hasSel) {
+            pauseAct->setEnabled(false);
+        } else {
+            const bool isComplete = (dl->status == QStringLiteral("complete"));
+            pauseAct->setEnabled(!dl->isPaused && !dl->isStopped && !isComplete);
+        }
+    }
+    {
+        auto* stopAct = m_downloadMenu->addAction(tr("Stop"), this, [this, hash]() {
+            // ToDo: add StopDownload IPC type for full MFC match
+            sendDownloadAction(hash, 0);
+        });
+        if (!hasSel) {
+            stopAct->setEnabled(false);
+        } else {
+            const bool isComplete = (dl->status == QStringLiteral("complete"));
+            stopAct->setEnabled(!dl->isStopped && !isComplete);
+        }
+    }
+    {
+        auto* resumeAct = m_downloadMenu->addAction(tr("Resume"), this, [this, hash]() {
+            sendDownloadAction(hash, 1);
+        });
+        resumeAct->setEnabled(hasSel && (dl->isPaused || dl->isStopped));
+    }
+
+    m_downloadMenu->addSeparator();
+
+    // -- 3. Cancel --
+    {
+        auto* cancelAct = m_downloadMenu->addAction(tr("Cancel"), this, [this, hash]() {
+            sendDownloadAction(hash, 2);
+        });
+        cancelAct->setEnabled(hasSel);
+    }
+
+    m_downloadMenu->addSeparator();
+
+    // -- 4. Open File / Preview / Details / Comments (ToDo) --
+    {
+        auto* act = m_downloadMenu->addAction(tr("Open File"));
+        act->setEnabled(false); // ToDo: needs IPC support
+    }
+    {
+        auto* act = m_downloadMenu->addAction(tr("Preview"));
+        act->setEnabled(false); // ToDo: needs IPC support
+    }
+    {
+        auto* act = m_downloadMenu->addAction(tr("Details..."));
+        act->setEnabled(false); // ToDo: needs IPC support
+    }
+    {
+        auto* act = m_downloadMenu->addAction(tr("Comments..."));
+        act->setEnabled(false); // ToDo: needs IPC support
+    }
+
+    m_downloadMenu->addSeparator();
+
+    // -- 5. Clear Completed (greyed out when no completed downloads) --
+    {
+        bool hasCompleted = false;
+        for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+            if (m_downloadModel->downloadAt(i)->status == QStringLiteral("complete")) {
+                hasCompleted = true;
+                break;
+            }
+        }
+        auto* clearAct = m_downloadMenu->addAction(tr("Clear Completed"), this, [this]() {
+            sendClearCompleted();
+        });
+        clearAct->setEnabled(hasCompleted);
+    }
+
+    m_downloadMenu->addSeparator();
+
+    // -- 6. eD2K Links / Paste eD2K Links --
+    {
+        auto* act = m_downloadMenu->addAction(tr("eD2K Links..."), this, [this, hash]() {
+            copyEd2kLink(hash);
+        });
+        act->setEnabled(hasSel);
+    }
+    {
+        auto* pasteAct = m_downloadMenu->addAction(tr("Paste eD2K Links"));
+        const QString clipText = QApplication::clipboard()->text().trimmed();
+        const bool hasFileLink = clipText.contains(
+            QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive);
+        pasteAct->setEnabled(hasFileLink && m_ipc && m_ipc->isConnected());
+        connect(pasteAct, &QAction::triggered, this, [this, clipText]() {
+            const QStringList lines = clipText.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            for (const QString& line : lines) {
+                auto parsed = parseED2KLink(line.trimmed());
+                if (!parsed)
+                    continue;
+                auto* fileLink = std::get_if<ED2KFileLink>(&*parsed);
+                if (!fileLink)
+                    continue;
+                // Convert 16-byte MD4 hash to hex string
+                QString hashHex;
+                for (uint8 b : fileLink->hash)
+                    hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
+                Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
+                msg.append(hashHex);
+                msg.append(fileLink->name);
+                msg.append(static_cast<int64_t>(fileLink->size));
+                m_ipc->sendRequest(std::move(msg));
+            }
+        });
+    }
+
+    m_downloadMenu->addSeparator();
+
+    // -- 7. Find / Search Related --
+    connect(m_downloadMenu->addAction(tr("Find...")),
+            &QAction::triggered, this, &TransferPanel::showFindDialog);
+    {
+        auto* act = m_downloadMenu->addAction(tr("Search Related Files"));
+        act->setEnabled(false); // ToDo: needs search panel integration
+    }
+
+    m_downloadMenu->addSeparator();
+
+    // -- 8. Assign To Category --
+    {
+        auto* catMenu = m_downloadMenu->addMenu(tr("Assign To Category"));
+        catMenu->setEnabled(false); // ToDo: needs category assignment
+    }
 
     m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));
 }
@@ -194,10 +409,22 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
 void TransferPanel::setupUi()
 {
-    auto* mainLayout = new QVBoxLayout(this);
+    // Create models first (needed by both panes)
+    m_downloadModel    = new DownloadListModel(this);
+    m_uploadingModel   = new ClientListModel(ClientListMode::Uploading, this);
+    m_downloadingModel = new ClientListModel(ClientListMode::Downloading, this);
+    m_onQueueModel     = new ClientListModel(ClientListMode::OnQueue, this);
+    m_knownModel       = new ClientListModel(ClientListMode::KnownClients, this);
+
+    auto* mainLayout = new QHBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
+    // Left-side vertical action toolbar (MFC CToolbarWnd)
+    m_actionToolbar = createActionToolbar();
+    mainLayout->addWidget(m_actionToolbar);
+
+    // Right side: splitter with downloads (top) and clients (bottom)
     m_vertSplitter = new QSplitter(Qt::Vertical, this);
     m_vertSplitter->setHandleWidth(4);
     m_vertSplitter->setChildrenCollapsible(false);
@@ -205,14 +432,18 @@ void TransferPanel::setupUi()
         QStringLiteral("QSplitter::handle { background: palette(mid); }"));
 
     m_vertSplitter->addWidget(createDownloadsSection());
-    m_vertSplitter->addWidget(createClientsSection());
+    m_vertSplitter->addWidget(createBottomPane());
     m_vertSplitter->setStretchFactor(0, 3);
     m_vertSplitter->setStretchFactor(1, 2);
 
-    // Restore saved splitter position
     theUiState.bindTransferSplitter(m_vertSplitter);
 
-    mainLayout->addWidget(m_vertSplitter);
+    mainLayout->addWidget(m_vertSplitter, 1);
+
+    // Restore saved bottom view
+    QSettings settings;
+    const int savedBottom = settings.value(QStringLiteral("transfer/bottomView"), 0).toInt();
+    setBottomClientView(savedBottom);
 }
 
 QWidget* TransferPanel::createDownloadsSection()
@@ -222,22 +453,55 @@ QWidget* TransferPanel::createDownloadsSection()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // Section header matching MFC: "▸ Downloads (N)" with bold font
-    m_downloadsLabel = new QLabel(tr("\u25B8 Downloads (0)"));
-    m_downloadsLabel->setContentsMargins(4, 2, 4, 2);
-    QFont boldFont = m_downloadsLabel->font();
-    boldFont.setBold(true);
-    m_downloadsLabel->setFont(boldFont);
-    layout->addWidget(m_downloadsLabel);
+    // --- Header row: icon + bold label (left) + category tab bar (right) ---
+    auto* headerRow = new QHBoxLayout;
+    headerRow->setContentsMargins(4, 0, 0, 0);
+    headerRow->setSpacing(2);
 
-    // Downloads model + proxy for sorting
-    m_downloadModel = new DownloadListModel(this);
+    // Green arrow icon matching MFC downloads header
+    auto* dlIcon = new QLabel;
+    dlIcon->setFixedSize(16, 16);
+    dlIcon->setScaledContents(true);
+    dlIcon->setPixmap(QIcon(QStringLiteral(":/icons/DownloadFiles.ico")).pixmap(16, 16));
+    headerRow->addWidget(dlIcon);
+
+    m_downloadsLabel = new QLabel(tr("Downloads (0)"));
+    QFont bold = m_downloadsLabel->font();
+    bold.setBold(true);
+    m_downloadsLabel->setFont(bold);
+    m_downloadsLabel->setFixedHeight(22);
+    headerRow->addWidget(m_downloadsLabel);
+
+    headerRow->addStretch(1);
+
+    // Category tab bar — right-aligned
+    m_categoryTabBar = new QTabBar;
+    m_categoryTabBar->setExpanding(false);
+    m_categoryTabBar->setDocumentMode(true);
+    m_categoryTabBar->addTab(tr("All"));
+    m_categoryTabBar->setTabData(0, QVariant::fromValue(int64_t{0}));
+
+    connect(m_categoryTabBar, &QTabBar::currentChanged, this, [this](int tabIdx) {
+        const int64_t catId = m_categoryTabBar->tabData(tabIdx).toLongLong();
+        static_cast<CategoryFilterProxy*>(m_categoryProxy)->setCategoryFilter(catId);
+    });
+
+    headerRow->addWidget(m_categoryTabBar);
+    layout->addLayout(headerRow);
+
+    // --- Download view (always visible) ---
     m_downloadProxy = new QSortFilterProxyModel(this);
     m_downloadProxy->setSourceModel(m_downloadModel);
     m_downloadProxy->setSortRole(Qt::UserRole);
 
+    // Category filter proxy sits on top of download sort proxy
+    auto* catProxy = new CategoryFilterProxy(this);
+    catProxy->setSourceModel(m_downloadProxy);
+    catProxy->setSortRole(Qt::UserRole);
+    m_categoryProxy = catProxy;
+
     m_downloadView = new QTreeView;
-    m_downloadView->setModel(m_downloadProxy);
+    m_downloadView->setModel(m_categoryProxy);
     m_downloadView->setRootIsDecorated(false);
     m_downloadView->setAlternatingRowColors(true);
     m_downloadView->setSortingEnabled(true);
@@ -246,13 +510,18 @@ QWidget* TransferPanel::createDownloadsSection()
     m_downloadView->setUniformRowHeights(true);
     m_downloadView->setContextMenuPolicy(Qt::CustomContextMenu);
 
+    m_downloadView->setItemDelegateForColumn(
+        DownloadListModel::ColProgress,
+        new DownloadProgressDelegate(m_downloadView));
+
     connect(m_downloadView, &QTreeView::customContextMenuRequested,
             this, &TransferPanel::onDownloadContextMenu);
+    connect(m_downloadView->selectionModel(), &QItemSelectionModel::currentChanged,
+            this, &TransferPanel::updateActionStates);
 
     auto* header = m_downloadView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(90);
-    // Match MFC column widths approximately
     header->resizeSection(DownloadListModel::ColFileName, 220);
     header->resizeSection(DownloadListModel::ColSize, 65);
     header->resizeSection(DownloadListModel::ColCompleted, 65);
@@ -268,46 +537,58 @@ QWidget* TransferPanel::createDownloadsSection()
     header->resizeSection(DownloadListModel::ColAddedOn, 120);
     theUiState.bindHeaderView(header, QStringLiteral("downloads"));
 
-    layout->addWidget(m_downloadView);
+    layout->addWidget(m_downloadView, 1);
 
     return widget;
 }
 
-QWidget* TransferPanel::createClientsSection()
+QWidget* TransferPanel::createBottomPane()
 {
     auto* widget = new QWidget;
     auto* layout = new QVBoxLayout(widget);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // Tab widget for the 4 client lists — tabs at top, left-aligned like MFC
-    m_clientTabs = new QTabWidget;
-    m_clientTabs->setTabPosition(QTabWidget::North);
-    m_clientTabs->tabBar()->setExpanding(false);
+    // Bottom toolbar header
+    m_toolbar2 = new TransferToolbar;
+    m_toolbar2->setLabelText(tr("Uploading (0)"));
+    m_toolbar2->addButton(QIcon(QStringLiteral(":/icons/Upload.ico")),         tr("Uploading"));
+    m_toolbar2->addButton(QIcon(QStringLiteral(":/icons/Download.ico")),       tr("Downloading"));
+    m_toolbar2->addButton(QIcon(QStringLiteral(":/icons/ClientsOnQueue.ico")), tr("On Queue"));
+    m_toolbar2->addButton(QIcon(QStringLiteral(":/icons/ClientsKnown.ico")),   tr("Known Clients"));
+    m_toolbar2->checkButton(0);
+    m_toolbar2->setLeadingIcon(QIcon(QStringLiteral(":/icons/Upload.ico")));
 
-    m_uploadingModel   = new ClientListModel(ClientListMode::Uploading, this);
-    m_downloadingModel = new ClientListModel(ClientListMode::Downloading, this);
-    m_onQueueModel     = new ClientListModel(ClientListMode::OnQueue, this);
-    m_knownModel       = new ClientListModel(ClientListMode::KnownClients, this);
+    connect(m_toolbar2, &TransferToolbar::buttonClicked, this, [this](int id) {
+        setBottomClientView(id);
+    });
 
-    m_clientTabs->addTab(createClientView(m_uploadingModel,
-                                         QStringLiteral("clientsUploading")),
-                         QIcon(uploadingIcon()),
-                         tr("Uploading (0)"));
-    m_clientTabs->addTab(createClientView(m_downloadingModel,
-                                         QStringLiteral("clientsDownloading")),
-                         QIcon(downloadingIcon()),
-                         tr("Downloading (0)"));
-    m_clientTabs->addTab(createClientView(m_onQueueModel,
-                                         QStringLiteral("clientsOnQueue")),
-                         QIcon(onQueueIcon()),
-                         tr("On Queue (0)"));
-    m_clientTabs->addTab(createClientView(m_knownModel,
-                                         QStringLiteral("clientsKnown")),
-                         QIcon(knownClientsIcon()),
-                         tr("Known Clients (0)"));
+    layout->addWidget(m_toolbar2);
 
-    layout->addWidget(m_clientTabs, 1);
+    // Bottom client stack — 4 separate views
+    m_bottomClientStack = new QStackedWidget;
+
+    m_uploadingView   = createClientView(m_uploadingModel,   QStringLiteral("clientsUploading2"));
+    m_downloadingView = createClientView(m_downloadingModel, QStringLiteral("clientsDownloading2"));
+    m_onQueueView     = createClientView(m_onQueueModel,     QStringLiteral("clientsOnQueue2"));
+    m_knownView       = createClientView(m_knownModel,       QStringLiteral("clientsKnown2"));
+
+    m_bottomClientStack->addWidget(m_uploadingView);
+    m_bottomClientStack->addWidget(m_downloadingView);
+    m_bottomClientStack->addWidget(m_onQueueView);
+    m_bottomClientStack->addWidget(m_knownView);
+
+    // Wire context menus on all 4 client views
+    connect(m_uploadingView, &QTreeView::customContextMenuRequested,
+            this, [this](const QPoint& p) { onClientContextMenu(m_uploadingView, m_uploadingModel, p); });
+    connect(m_downloadingView, &QTreeView::customContextMenuRequested,
+            this, [this](const QPoint& p) { onClientContextMenu(m_downloadingView, m_downloadingModel, p); });
+    connect(m_onQueueView, &QTreeView::customContextMenuRequested,
+            this, [this](const QPoint& p) { onClientContextMenu(m_onQueueView, m_onQueueModel, p); });
+    connect(m_knownView, &QTreeView::customContextMenuRequested,
+            this, [this](const QPoint& p) { onClientContextMenu(m_knownView, m_knownModel, p); });
+
+    layout->addWidget(m_bottomClientStack, 1);
 
     // Bottom status label matching MFC: "Clients on queue:    N"
     m_queueLabel = new QLabel(tr("Clients on queue:   0"));
@@ -315,6 +596,114 @@ QWidget* TransferPanel::createClientsSection()
     layout->addWidget(m_queueLabel);
 
     return widget;
+}
+
+QToolBar* TransferPanel::createActionToolbar()
+{
+    auto* toolbar = new QToolBar;
+    toolbar->setOrientation(Qt::Vertical);
+    toolbar->setIconSize(QSize(16, 16));
+    toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    toolbar->setMovable(false);
+    toolbar->setFixedWidth(24);
+
+    // Remove frame styling to match MFC narrow strip
+    toolbar->setStyleSheet(QStringLiteral(
+        "QToolBar { border: none; spacing: 1px; padding: 1px; }"
+        "QToolButton { padding: 2px; }"));
+
+    // Group 1: Priority / Pause / Stop / Resume / Cancel
+    auto* actPriority = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/FilePriority.ico")), tr("Priority"));
+    connect(actPriority, &QAction::triggered, this, &TransferPanel::showPriorityMenu);
+    m_selectionActions.append(actPriority);
+
+    auto* actPause = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/Pause.ico")), tr("Pause"));
+    connect(actPause, &QAction::triggered, this, [this]() {
+        sendDownloadAction(saveDownloadSelection(), 0);
+    });
+    m_selectionActions.append(actPause);
+
+    auto* actStop = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/Stop.ico")), tr("Stop"));
+    connect(actStop, &QAction::triggered, this, [this]() {
+        // ToDo: add StopDownload IPC type for full MFC match
+        sendDownloadAction(saveDownloadSelection(), 0);
+    });
+    m_selectionActions.append(actStop);
+
+    auto* actResume = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/Start.ico")), tr("Resume"));
+    connect(actResume, &QAction::triggered, this, [this]() {
+        sendDownloadAction(saveDownloadSelection(), 1);
+    });
+    m_selectionActions.append(actResume);
+
+    auto* actCancel = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/Delete.ico")), tr("Cancel"));
+    connect(actCancel, &QAction::triggered, this, [this]() {
+        sendDownloadAction(saveDownloadSelection(), 2);
+    });
+    m_selectionActions.append(actCancel);
+
+    toolbar->addSeparator();
+
+    // Group 2: Open File / Open Folder / Preview / Details / Comments / eD2K Links
+    auto* actOpenFile = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/FileOpen.ico")), tr("Open File"));
+    actOpenFile->setEnabled(false); // ToDo: needs IPC support
+
+    auto* actOpenFolder = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/FolderOpen.ico")), tr("Open Folder"));
+    actOpenFolder->setEnabled(false); // ToDo: needs IPC support
+
+    auto* actPreview = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/Preview.ico")), tr("Preview"));
+    actPreview->setEnabled(false); // ToDo: needs IPC support
+
+    auto* actDetails = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/FileInfo.ico")), tr("Details"));
+    actDetails->setEnabled(false); // ToDo: needs IPC support
+
+    auto* actComments = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/FileComments.ico")), tr("Comments"));
+    actComments->setEnabled(false); // ToDo: needs IPC support
+
+    auto* actEd2kLinks = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/eD2kLink.ico")), tr("eD2K Links"),
+        this, [this]() { copyEd2kLink(saveDownloadSelection()); });
+    m_selectionActions.append(actEd2kLinks);
+
+    toolbar->addSeparator();
+
+    // Group 3: Assign To Category / Clear Completed / Search Related
+    auto* actCategory = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/Category.ico")), tr("Assign To Category"));
+    actCategory->setEnabled(false); // ToDo: needs category assignment
+
+    // Clear Completed — greyed out when no completed downloads exist
+    m_clearCompletedAction = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/DeleteAll.ico")), tr("Clear Completed"),
+        this, [this]() { sendClearCompleted(); });
+    m_clearCompletedAction->setEnabled(false);
+
+    auto* actSearchRelated = toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/KadFileSearch.ico")), tr("Search Related"));
+    actSearchRelated->setEnabled(false); // ToDo: needs search panel integration
+
+    toolbar->addSeparator();
+
+    // Group 4: Find — NOT selection-dependent
+    toolbar->addAction(
+        QIcon(QStringLiteral(":/icons/Search.ico")), tr("Find"),
+        this, &TransferPanel::showFindDialog);
+
+    // Start with all selection-dependent actions disabled (nothing selected)
+    for (auto* act : m_selectionActions)
+        act->setEnabled(false);
+
+    return toolbar;
 }
 
 QTreeView* TransferPanel::createClientView(ClientListModel* model,
@@ -332,12 +721,13 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     view->setSelectionMode(QAbstractItemView::SingleSelection);
     view->setSelectionBehavior(QAbstractItemView::SelectRows);
     view->setUniformRowHeights(true);
+    view->setContextMenuPolicy(Qt::CustomContextMenu);
 
-    auto* header = view->header();
-    header->setStretchLastSection(true);
-    header->setDefaultSectionSize(100);
-    header->resizeSection(0, 140); // User Name column
-    theUiState.bindHeaderView(header, headerKey);
+    auto* hdr = view->header();
+    hdr->setStretchLastSection(true);
+    hdr->setDefaultSectionSize(100);
+    hdr->resizeSection(0, 140); // User Name column
+    theUiState.bindHeaderView(hdr, headerKey);
 
     return view;
 }
@@ -355,9 +745,11 @@ void TransferPanel::requestDownloads()
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_downloadModel->clear();
-            m_downloadsLabel->setText(tr("\u25B8 Downloads (0)"));
+            updateToolbarLabels();
             return;
         }
+
+        const QString selectedHash = saveDownloadSelection();
 
         const QCborArray arr = resp.fieldArray(1);
         std::vector<DownloadRow> rows;
@@ -383,12 +775,19 @@ void TransferPanel::requestDownloads()
             row.lastSeenComplete  = m.value(QStringLiteral("lastSeenComplete")).toInteger();
             row.lastReception     = m.value(QStringLiteral("lastReception")).toInteger();
             row.addedOn           = m.value(QStringLiteral("addedOn")).toInteger();
+            row.fileType          = m.value(QStringLiteral("fileType")).toString();
+            row.requests          = m.value(QStringLiteral("requests")).toInteger();
+            row.acceptedRequests  = m.value(QStringLiteral("acceptedReqs")).toInteger();
+            row.transferredData   = m.value(QStringLiteral("transferredData")).toInteger();
             rows.push_back(std::move(row));
         }
 
         m_downloadModel->setDownloads(std::move(rows));
-        const int count = m_downloadModel->downloadCount();
-        m_downloadsLabel->setText(tr("\u25B8 Downloads (%1)").arg(count));
+        updateToolbarLabels();
+        updateCategoryTabs();
+        restoreDownloadSelection(selectedHash);
+        updateActionStates();
+        updateClearCompletedState();
     });
 }
 
@@ -404,43 +803,13 @@ void TransferPanel::requestUploads()
 
         const QCborMap result = resp.fieldMap(1);
 
-        // Parse uploading clients
         const QCborArray uploadingArr = result.value(QStringLiteral("uploading")).toArray();
         std::vector<ClientRow> uploadingRows;
         uploadingRows.reserve(static_cast<size_t>(uploadingArr.size()));
 
-        // Parse waiting clients
         const QCborArray waitingArr = result.value(QStringLiteral("waiting")).toArray();
         std::vector<ClientRow> waitingRows;
         waitingRows.reserve(static_cast<size_t>(waitingArr.size()));
-
-        auto parseClient = [](const QCborMap& m) -> ClientRow {
-            ClientRow row;
-            row.userName        = m.value(QStringLiteral("userName")).toString();
-            row.software        = m.value(QStringLiteral("software")).toString();
-            row.userHash        = m.value(QStringLiteral("userHash")).toString();
-            row.uploadState     = m.value(QStringLiteral("uploadState")).toString();
-            row.downloadState   = m.value(QStringLiteral("downloadState")).toString();
-            row.transferredUp   = m.value(QStringLiteral("transferredUp")).toInteger();
-            row.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
-            row.sessionUp       = m.value(QStringLiteral("sessionUp")).toInteger();
-            row.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
-            row.askedCount      = m.value(QStringLiteral("askedCount")).toInteger();
-            row.waitStartTime   = m.value(QStringLiteral("waitStartTime")).toInteger();
-            row.partCount       = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
-            row.availPartCount  = static_cast<int>(m.value(QStringLiteral("availPartCount")).toInteger());
-            row.remoteQueueRank = static_cast<int>(m.value(QStringLiteral("remoteQueueRank")).toInteger());
-            row.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());
-            row.isBanned        = m.value(QStringLiteral("isBanned")).toBool();
-
-            // Pick best file name from reqFileName or uploadFileName or fileName
-            row.fileName = m.value(QStringLiteral("uploadFileName")).toString();
-            if (row.fileName.isEmpty())
-                row.fileName = m.value(QStringLiteral("reqFileName")).toString();
-            if (row.fileName.isEmpty())
-                row.fileName = m.value(QStringLiteral("fileName")).toString();
-            return row;
-        };
 
         for (const auto& val : uploadingArr)
             uploadingRows.push_back(parseClient(val.toMap()));
@@ -448,21 +817,53 @@ void TransferPanel::requestUploads()
         for (const auto& val : waitingArr)
             waitingRows.push_back(parseClient(val.toMap()));
 
-        // Uploading tab = actively uploading clients
         m_uploadingModel->setClients(std::move(uploadingRows));
-
-        // On Queue tab = waiting clients
         m_onQueueModel->setClients(std::move(waitingRows));
+        updateToolbarLabels();
+    });
+}
 
-        // Update tab titles with counts
-        m_clientTabs->setTabText(0,
-            tr("Uploading (%1)").arg(m_uploadingModel->clientCount()));
-        m_clientTabs->setTabText(2,
-            tr("On Queue (%1)").arg(m_onQueueModel->clientCount()));
+void TransferPanel::requestDownloadClients()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
 
-        // Update bottom bar label
-        m_queueLabel->setText(
-            tr("Clients on queue:   %1").arg(m_onQueueModel->clientCount()));
+    IpcMessage req(IpcMsgType::GetDownloadClients);
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+
+        const QCborArray arr = resp.fieldArray(1);
+        std::vector<ClientRow> rows;
+        rows.reserve(static_cast<size_t>(arr.size()));
+
+        for (const auto& val : arr)
+            rows.push_back(parseClient(val.toMap()));
+
+        m_downloadingModel->setClients(std::move(rows));
+        updateToolbarLabels();
+    });
+}
+
+void TransferPanel::requestKnownClients()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    IpcMessage req(IpcMsgType::GetKnownClients);
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+
+        const QCborArray arr = resp.fieldArray(1);
+        std::vector<ClientRow> rows;
+        rows.reserve(static_cast<size_t>(arr.size()));
+
+        for (const auto& val : arr)
+            rows.push_back(parseClient(val.toMap()));
+
+        m_knownModel->setClients(std::move(rows));
+        updateToolbarLabels();
     });
 }
 
@@ -486,9 +887,416 @@ void TransferPanel::sendDownloadAction(const QString& hash, int action)
     IpcMessage msg(msgType);
     msg.append(hash);
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-        // Refresh after action
         requestDownloads();
     });
+}
+
+void TransferPanel::sendSetPriority(const QString& hash, int priority, bool isAuto)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+
+    IpcMessage msg(IpcMsgType::SetDownloadPriority);
+    msg.append(hash);
+    msg.append(static_cast<int64_t>(priority));
+    msg.append(isAuto);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+        requestDownloads();
+    });
+}
+
+void TransferPanel::sendClearCompleted()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    IpcMessage msg(IpcMsgType::ClearCompleted);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+        requestDownloads();
+    });
+}
+
+void TransferPanel::copyEd2kLink(const QString& hash)
+{
+    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+        const auto* dl = m_downloadModel->downloadAt(i);
+        if (dl && dl->hash == hash) {
+            const QString link = QStringLiteral("ed2k://|file|%1|%2|%3|/")
+                .arg(dl->fileName)
+                .arg(dl->fileSize)
+                .arg(dl->hash);
+            QApplication::clipboard()->setText(link);
+            return;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Selection preservation
+// ---------------------------------------------------------------------------
+
+QString TransferPanel::saveDownloadSelection() const
+{
+    const auto sel = m_downloadView->selectionModel()->currentIndex();
+    if (!sel.isValid())
+        return {};
+
+    // Map through category proxy → sort proxy → source model
+    const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(sel);
+    const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+    return m_downloadModel->hashAt(srcIdx.row());
+}
+
+void TransferPanel::restoreDownloadSelection(const QString& key)
+{
+    if (key.isEmpty())
+        return;
+
+    for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
+        if (m_downloadModel->hashAt(row) == key) {
+            const QModelIndex srcIdx = m_downloadModel->index(row, 0);
+            const QModelIndex sortIdx = m_downloadProxy->mapFromSource(srcIdx);
+            const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
+            if (catIdx.isValid()) {
+                m_downloadView->setCurrentIndex(catIdx);
+                m_downloadView->scrollTo(catIdx);
+            }
+            return;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// View switching
+// ---------------------------------------------------------------------------
+
+void TransferPanel::setBottomClientView(int index)
+{
+    if (index >= 0 && index < m_bottomClientStack->count()) {
+        m_bottomClientStack->setCurrentIndex(index);
+        m_toolbar2->checkButton(index);
+        QSettings settings;
+        settings.setValue(QStringLiteral("transfer/bottomView"), index);
+
+        // Update leading icon to match selected client view
+        static constexpr const char* iconPaths[] = {
+            ":/icons/Upload.ico",
+            ":/icons/Download.ico",
+            ":/icons/ClientsOnQueue.ico",
+            ":/icons/ClientsKnown.ico",
+        };
+        m_toolbar2->setLeadingIcon(QIcon(QString::fromLatin1(iconPaths[index])));
+
+        updateToolbarLabels();
+    }
+}
+
+void TransferPanel::updateActionStates()
+{
+    const bool hasSelection = !saveDownloadSelection().isEmpty();
+    for (auto* act : m_selectionActions)
+        act->setEnabled(hasSelection);
+}
+
+void TransferPanel::updateToolbarLabels()
+{
+    const int dlCount  = m_downloadModel->downloadCount();
+    const int ulCount  = m_uploadingModel->clientCount();
+    const int dlcCount = m_downloadingModel->clientCount();
+    const int qCount   = m_onQueueModel->clientCount();
+    const int knCount  = m_knownModel->clientCount();
+
+    // Top label always shows download count
+    m_downloadsLabel->setText(tr("Downloads (%1)").arg(dlCount));
+
+    // Bottom toolbar label — based on selected bottom client view
+    const int bottomIdx = m_bottomClientStack->currentIndex();
+    switch (bottomIdx) {
+    case 0: m_toolbar2->setLabelText(tr("Uploading (%1)").arg(ulCount));      break;
+    case 1: m_toolbar2->setLabelText(tr("Downloading (%1)").arg(dlcCount));   break;
+    case 2: m_toolbar2->setLabelText(tr("On Queue (%1)").arg(qCount));        break;
+    case 3: m_toolbar2->setLabelText(tr("Known Clients (%1)").arg(knCount));  break;
+    default: break;
+    }
+
+    m_queueLabel->setText(tr("Clients on queue:   %1").arg(qCount));
+}
+
+void TransferPanel::updateCategoryTabs()
+{
+    // Scan downloads for unique non-zero category values
+    QSet<int64_t> cats;
+    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+        const auto* dl = m_downloadModel->downloadAt(i);
+        if (dl && dl->category != 0)
+            cats.insert(dl->category);
+    }
+
+    // Only rebuild tabs when the set has changed
+    if (cats == m_categorySet)
+        return;
+    m_categorySet = cats;
+
+    // Block signals to avoid triggering filter changes during rebuild
+    const QSignalBlocker blocker(m_categoryTabBar);
+
+    // Remember current selection
+    const int64_t currentCat = m_categoryTabBar->currentIndex() >= 0
+        ? m_categoryTabBar->tabData(m_categoryTabBar->currentIndex()).toLongLong()
+        : 0;
+
+    // Remove all tabs except "All" (index 0)
+    while (m_categoryTabBar->count() > 1)
+        m_categoryTabBar->removeTab(1);
+
+    // Add category tabs
+    QList<int64_t> sorted(cats.begin(), cats.end());
+    std::sort(sorted.begin(), sorted.end());
+    for (int64_t cat : sorted) {
+        const int idx = m_categoryTabBar->addTab(tr("Cat %1").arg(cat));
+        m_categoryTabBar->setTabData(idx, QVariant::fromValue(cat));
+    }
+
+    // Restore previous selection
+    int restoreIdx = 0;
+    for (int i = 0; i < m_categoryTabBar->count(); ++i) {
+        if (m_categoryTabBar->tabData(i).toLongLong() == currentCat) {
+            restoreIdx = i;
+            break;
+        }
+    }
+    m_categoryTabBar->setCurrentIndex(restoreIdx);
+}
+
+void TransferPanel::showPriorityMenu()
+{
+    const QString hash = saveDownloadSelection();
+    if (hash.isEmpty())
+        return;
+
+    // Find the download row for current state
+    const DownloadRow* dl = nullptr;
+    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+        if (m_downloadModel->hashAt(i) == hash) {
+            dl = m_downloadModel->downloadAt(i);
+            break;
+        }
+    }
+    if (!dl)
+        return;
+
+    auto prioStr = [](int prio) -> QString {
+        switch (prio) {
+        case PrVeryLow:  return QStringLiteral("veryLow");
+        case PrLow:      return QStringLiteral("low");
+        case PrNormal:   return QStringLiteral("normal");
+        case PrHigh:     return QStringLiteral("high");
+        case PrVeryHigh: return QStringLiteral("veryHigh");
+        default:         return {};
+        }
+    };
+
+    QMenu menu(this);
+    auto addPrioAction = [&](const QString& text, int prio) {
+        auto* act = menu.addAction(text, this, [this, hash, prio]() {
+            sendSetPriority(hash, prio, false);
+        });
+        if (!dl->isAutoDownPriority && dl->priority == prioStr(prio))
+            act->setCheckable(true), act->setChecked(true);
+    };
+
+    addPrioAction(tr("Low"),    PrLow);
+    addPrioAction(tr("Normal"), PrNormal);
+    addPrioAction(tr("High"),   PrHigh);
+    menu.addSeparator();
+    addPrioAction(tr("Very Low"),  PrVeryLow);
+    addPrioAction(tr("Very High"), PrVeryHigh);
+    menu.addSeparator();
+    {
+        auto* autoAct = menu.addAction(tr("Auto"), this, [this, hash]() {
+            sendSetPriority(hash, PrNormal, true);
+        });
+        if (dl->isAutoDownPriority)
+            autoAct->setCheckable(true), autoAct->setChecked(true);
+    }
+
+    // Show below the priority button in the action toolbar
+    menu.exec(QCursor::pos());
+}
+
+void TransferPanel::showFindDialog()
+{
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle(tr("Search"));
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+
+    auto* layout = new QFormLayout(dlg);
+
+    auto* searchEdit = new QLineEdit(dlg);
+    layout->addRow(tr("Search for:"), searchEdit);
+
+    auto* columnCombo = new QComboBox(dlg);
+    columnCombo->addItem(tr("File Name"),       DownloadListModel::ColFileName);
+    columnCombo->addItem(tr("Size"),            DownloadListModel::ColSize);
+    columnCombo->addItem(tr("Transferred"),     DownloadListModel::ColCompleted);
+    columnCombo->addItem(tr("Speed"),           DownloadListModel::ColSpeed);
+    columnCombo->addItem(tr("Progress"),        DownloadListModel::ColProgress);
+    columnCombo->addItem(tr("Sources"),         DownloadListModel::ColSources);
+    columnCombo->addItem(tr("Priority"),        DownloadListModel::ColPriority);
+    columnCombo->addItem(tr("Status"),          DownloadListModel::ColStatus);
+    columnCombo->addItem(tr("Remaining"),       DownloadListModel::ColRemaining);
+    columnCombo->addItem(tr("Last reception"),  DownloadListModel::ColLastReception);
+    columnCombo->addItem(tr("Category"),        DownloadListModel::ColCategory);
+    columnCombo->addItem(tr("Added On"),        DownloadListModel::ColAddedOn);
+    layout->addRow(tr("Search in column:"), columnCombo);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+    layout->addRow(buttons);
+
+    connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+
+    connect(dlg, &QDialog::accepted, this, [this, searchEdit, columnCombo]() {
+        const QString term = searchEdit->text().trimmed();
+        if (term.isEmpty())
+            return;
+
+        const int column = columnCombo->currentData().toInt();
+
+        for (int row = 0; row < m_categoryProxy->rowCount(); ++row) {
+            const QModelIndex idx = m_categoryProxy->index(row, column);
+            if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
+                m_downloadView->setCurrentIndex(idx);
+                m_downloadView->scrollTo(idx);
+                return;
+            }
+        }
+    });
+
+    dlg->exec();
+}
+
+void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
+                                         const QPoint& pos)
+{
+    // Resolve the clicked row through the view's proxy model
+    const ClientRow* client = nullptr;
+    const QModelIndex proxyIdx = view->indexAt(pos);
+    if (proxyIdx.isValid()) {
+        auto* proxy = qobject_cast<QSortFilterProxyModel*>(view->model());
+        if (proxy) {
+            const QModelIndex srcIdx = proxy->mapToSource(proxyIdx);
+            client = model->clientAt(srcIdx.row());
+        }
+    }
+
+    QMenu menu(this);
+
+    // 1. Details... (ToDo: needs client details dialog)
+    auto* detailsAct = menu.addAction(tr("Details..."));
+    detailsAct->setEnabled(false);
+
+    // 2. Add To Friends
+    auto* addFriendAct = menu.addAction(tr("Add To Friends"));
+    addFriendAct->setEnabled(client != nullptr && !client->isFriend);
+    if (client && !client->isFriend) {
+        const QString hash = client->userHash;
+        const QString name = client->userName;
+        const auto ip   = client->ip;
+        const auto port = client->port;
+        connect(addFriendAct, &QAction::triggered, this, [this, hash, name, ip, port]() {
+            if (!m_ipc || !m_ipc->isConnected())
+                return;
+            IpcMessage msg(IpcMsgType::AddFriend);
+            msg.append(hash);
+            msg.append(name);
+            msg.append(static_cast<int64_t>(ip));
+            msg.append(static_cast<int64_t>(port));
+            m_ipc->sendRequest(std::move(msg));
+        });
+    }
+
+    // 3. Send Message (ToDo: no SendMessage IPC type yet)
+    auto* sendMsgAct = menu.addAction(tr("Send Message"));
+    sendMsgAct->setEnabled(false);
+
+    // 4. View Shared Files (ToDo: needs shared files browsing)
+    auto* viewSharedAct = menu.addAction(tr("View Shared Files"));
+    viewSharedAct->setEnabled(false);
+
+    menu.addSeparator();
+
+    // 5. Find...
+    menu.addAction(tr("Find..."), this, [this, view]() {
+        showClientFindDialog(view);
+    });
+
+    menu.exec(view->viewport()->mapToGlobal(pos));
+}
+
+void TransferPanel::showClientFindDialog(QTreeView* view)
+{
+    auto* proxy = qobject_cast<QSortFilterProxyModel*>(view->model());
+    if (!proxy)
+        return;
+
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle(tr("Search"));
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+
+    auto* layout = new QFormLayout(dlg);
+
+    auto* searchEdit = new QLineEdit(dlg);
+    layout->addRow(tr("Search for:"), searchEdit);
+
+    auto* columnCombo = new QComboBox(dlg);
+    const int colCount = proxy->columnCount();
+    for (int col = 0; col < colCount; ++col) {
+        const QString label = proxy->headerData(col, Qt::Horizontal, Qt::DisplayRole).toString();
+        if (!label.isEmpty())
+            columnCombo->addItem(label, col);
+    }
+    layout->addRow(tr("Search in column:"), columnCombo);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+    layout->addRow(buttons);
+
+    connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+
+    connect(dlg, &QDialog::accepted, this, [view, proxy, searchEdit, columnCombo]() {
+        const QString term = searchEdit->text().trimmed();
+        if (term.isEmpty())
+            return;
+
+        const int column = columnCombo->currentData().toInt();
+
+        for (int row = 0; row < proxy->rowCount(); ++row) {
+            const QModelIndex idx = proxy->index(row, column);
+            if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
+                view->setCurrentIndex(idx);
+                view->scrollTo(idx);
+                return;
+            }
+        }
+    });
+
+    dlg->exec();
+}
+
+void TransferPanel::updateClearCompletedState()
+{
+    if (!m_clearCompletedAction)
+        return;
+
+    bool hasCompleted = false;
+    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+        if (m_downloadModel->downloadAt(i)->status == QStringLiteral("complete")) {
+            hasCompleted = true;
+            break;
+        }
+    }
+    m_clearCompletedAction->setEnabled(hasCompleted);
 }
 
 } // namespace eMule

@@ -168,12 +168,19 @@ void Search::go(uint32 maxToSend)
     if (m_stopping)
         return;
 
-    if (m_possible.empty() && m_tried.empty()) {
-        // No contacts to query — search converged or failed
-        logKad(QStringLiteral("Kad search %1: go() — no possible or tried contacts, stopping")
+    // MFC Go() lines 169-177: if possible map is empty, repopulate from
+    // routing table with maxType=3 (includes type-3 nodes.dat contacts that
+    // haven't responded to HELLO yet).  If still empty, just return without
+    // stopping — JumpStart will retry later.
+    if (m_possible.empty()) {
+        logKad(QStringLiteral("Kad search %1: go() — possible map empty, repopulating from routing table")
                    .arg(m_searchID));
-        prepareToStop();
-        return;
+        UInt128 distance(RoutingZone::localKadId());
+        distance.xorWith(m_target);
+        if (auto* rz = Kademlia::getInstanceRoutingZone())
+            rz->getClosestTo(3, m_target, distance, 50, m_possible, true, false);
+        if (m_possible.empty())
+            return;  // Still empty — just return, don't stop (MFC behavior)
     }
 
     // Convergence detection: when enough close contacts have responded
@@ -235,16 +242,30 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
                .arg(foundSender ? QStringLiteral("found") : QStringLiteral("NOT found"))
                .arg(results.size()).arg(m_best.size()).arg(m_responded.size()).arg(m_possible.size()));
 
-    for (auto* contact : results) {
-        // Check if we've already tried this contact
-        if (m_tried.count(contact->getClientID()) > 0 ||
-            m_responded.count(contact->getClientID()) > 0) {
-            delete contact;
-            continue;
+    // NodeFwCheckUDP: feed response contacts to the UDP firewall tester
+    // before the dedup loop which may delete some contacts.
+    // Matches MFC Search.cpp ProcessResponse() NODEFWCHECKUDP case.
+    if (m_type == SearchType::NodeFwCheckUDP) {
+        for (auto* contact : results) {
+            if (!UDPFirewallTester::needsMoreTestContacts())
+                break;
+            UDPFirewallTester::addPossibleTestContact(
+                contact->getClientID(), contact->getIPAddress(),
+                contact->getUDPPort(), contact->getTCPPort(),
+                m_target, contact->getVersion(),
+                contact->getUDPKey(), contact->isIpVerified());
         }
+        UDPFirewallTester::queryNextClient();
+    }
 
-        // Check if already in possible list
-        if (m_possible.count(contact->getClientID()) > 0) {
+    for (auto* contact : results) {
+        // Dedup by distance key for distance-keyed maps (m_best, m_tried, m_possible),
+        // by clientID for clientID-keyed map (m_responded). Matches MFC ProcessResponse().
+        UInt128 dist = contact->getDistance();
+        if (m_best.count(dist) > 0 ||
+            m_tried.count(dist) > 0 ||
+            m_responded.count(contact->getClientID()) > 0 ||
+            m_possible.count(dist) > 0) {
             delete contact;
             continue;
         }

@@ -6,6 +6,7 @@
 
 #include "client/URLClient.h"
 #include "app/AppContext.h"
+#include "prefs/Preferences.h"
 #include "files/PartFile.h"
 #include "net/ClientReqSocket.h"
 #include "net/EMSocket.h"
@@ -385,6 +386,9 @@ void URLClient::connectToHost()
                      this, [this](const QString& reason) {
         disconnected(reason, true);
     });
+
+    // Configure proxy
+    reqSocket->initProxySupport(thePrefs.proxySettings());
 
     // Initiate TCP connection
     const uint32 ip = connectIP();

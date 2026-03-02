@@ -5,11 +5,13 @@
 
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "app/AppContext.h"
 #include "net/ClientReqSocket.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
+#include "transfer/UploadQueue.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
 #include "utils/Opcodes.h"
@@ -272,11 +274,62 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
     // Create a temporary client for the TCP connection
     auto* client = new UpDownClient(contact.getTCPPort(), 0, 0, 0, nullptr);
     client->setConnectIP(htonl(contact.getIPAddress()));  // Kad IPs are host BO; m_connectIP is network BO
+    client->setKadVersion(contact.getVersion());
+    client->setKadPort(contact.getUDPPort());
     client->setKadState(KadState::QueuedFwCheckUDP);
 
     addClient(client);
     client->tryToConnect();
     return true;
+}
+
+// ===========================================================================
+// Iteration
+// ===========================================================================
+
+void ClientList::forEachClient(const std::function<void(UpDownClient*)>& callback) const
+{
+    for (auto* client : m_clients)
+        callback(client);
+}
+
+// ===========================================================================
+// Periodic cleanup — matches MFC CClientList::Process()
+// ===========================================================================
+
+void ClientList::process()
+{
+    cleanUpBannedList();
+
+    // Remove clients that serve no purpose — matches MFC CClientList::Process()
+    for (auto it = m_clients.begin(); it != m_clients.end(); ) {
+        auto* client = *it;
+
+        // Keep clients that are still useful
+        if (client->socket()
+            || client->downloadState() != DownloadState::None
+            || client->uploadState() != UploadState::None
+            || client->reqFile() != nullptr
+            || client->kadState() != KadState::None
+            || client == m_buddy
+            || client->friendPtr() != nullptr
+            || (client->chatState() != ChatState::None
+                && client->chatState() != ChatState::UnableToConnect))
+        {
+            ++it;
+            continue;
+        }
+
+        // Also keep if on upload waiting queue
+        if (theApp.uploadQueue && theApp.uploadQueue->isOnUploadQueue(client)) {
+            ++it;
+            continue;
+        }
+
+        it = m_clients.erase(it);
+        emit clientRemoved(client);
+        client->deleteLater();
+    }
 }
 
 // ===========================================================================

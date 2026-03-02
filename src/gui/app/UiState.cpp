@@ -14,6 +14,10 @@ void UiState::load()
     m_serverSplitSizes   = thePrefs.serverSplitSizes();
     m_kadSplitSizes      = thePrefs.kadSplitSizes();
     m_transferSplitSizes = thePrefs.transferSplitSizes();
+    m_sharedHorzSplitSizes = thePrefs.sharedHorzSplitSizes();
+    m_sharedVertSplitSizes = thePrefs.sharedVertSplitSizes();
+    m_messagesSplitSizes   = thePrefs.messagesSplitSizes();
+    m_ircSplitSizes        = thePrefs.ircSplitSizes();
     m_windowWidth      = thePrefs.windowWidth();
     m_windowHeight     = thePrefs.windowHeight();
     m_windowMaximized  = thePrefs.windowMaximized();
@@ -24,6 +28,10 @@ void UiState::save()
     thePrefs.setServerSplitSizes(m_serverSplitSizes);
     thePrefs.setKadSplitSizes(m_kadSplitSizes);
     thePrefs.setTransferSplitSizes(m_transferSplitSizes);
+    thePrefs.setSharedHorzSplitSizes(m_sharedHorzSplitSizes);
+    thePrefs.setSharedVertSplitSizes(m_sharedVertSplitSizes);
+    thePrefs.setMessagesSplitSizes(m_messagesSplitSizes);
+    thePrefs.setIrcSplitSizes(m_ircSplitSizes);
     thePrefs.setWindowWidth(m_windowWidth);
     thePrefs.setWindowHeight(m_windowHeight);
     thePrefs.setWindowMaximized(m_windowMaximized);
@@ -59,6 +67,46 @@ void UiState::bindTransferSplitter(QSplitter* splitter)
 
     QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
         m_transferSplitSizes = splitter->sizes();
+    });
+}
+
+void UiState::bindSharedHorzSplitter(QSplitter* splitter)
+{
+    if (m_sharedHorzSplitSizes.size() == 2)
+        splitter->setSizes(m_sharedHorzSplitSizes);
+
+    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
+        m_sharedHorzSplitSizes = splitter->sizes();
+    });
+}
+
+void UiState::bindSharedVertSplitter(QSplitter* splitter)
+{
+    if (m_sharedVertSplitSizes.size() == 2)
+        splitter->setSizes(m_sharedVertSplitSizes);
+
+    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
+        m_sharedVertSplitSizes = splitter->sizes();
+    });
+}
+
+void UiState::bindMessagesSplitter(QSplitter* splitter)
+{
+    if (m_messagesSplitSizes.size() == 2)
+        splitter->setSizes(m_messagesSplitSizes);
+
+    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
+        m_messagesSplitSizes = splitter->sizes();
+    });
+}
+
+void UiState::bindIrcSplitter(QSplitter* splitter)
+{
+    if (m_ircSplitSizes.size() == 2)
+        splitter->setSizes(m_ircSplitSizes);
+
+    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
+        m_ircSplitSizes = splitter->sizes();
     });
 }
 

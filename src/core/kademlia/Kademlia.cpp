@@ -88,6 +88,9 @@ void Kademlia::start(KadPrefs* prefs)
     // Create indexed storage
     m_indexed = new Indexed(this);
 
+    // Set instance before creating zones so they can register via Kademlia::instance()
+    s_instance = this;
+
     // Create routing zone — use config directory for nodes.dat persistence
     const QString cfgDir = thePrefs.configDir();
     const QString nodesFile = (cfgDir.isEmpty() ? QDir::tempPath() : cfgDir)
@@ -115,7 +118,6 @@ void Kademlia::start(KadPrefs* prefs)
 
     m_running = true;
     m_bootstrapping = true;
-    s_instance = this;
     UDPFirewallTester::reset();
 
     emit started();
@@ -404,6 +406,8 @@ void Kademlia::process()
         if (m_prefs && m_routingZone) {
             uint32 users = m_routingZone->estimateCount();
             m_prefs->setKademliaUsers(users);
+            if (m_indexed)
+                m_prefs->setKademliaFiles(m_indexed->getFileKeyCount());
             emit statsUpdated(users, m_prefs->kademliaFiles());
         }
     }
@@ -420,9 +424,9 @@ void Kademlia::process()
         SearchManager::findNode(m_prefs->kadId(), true);
     }
 
-    // 5. Firewall check (first at +1hr, then disabled)
+    // 5. Firewall recheck (hourly, matching MFC Kademlia.cpp:216-217)
     if (now >= m_nextFirewallCheck) {
-        m_nextFirewallCheck = std::numeric_limits<time_t>::max();
+        m_nextFirewallCheck = now + HR2S(1);
         UDPFirewallTester::connected();
     }
 
@@ -498,6 +502,9 @@ void Kademlia::process()
         m_wasConnected = nowConnected;
         if (nowConnected) {
             m_bootstrapping = false;
+            // Schedule firewall check 15s after initial bootstrap (MFC: SEC(15))
+            // so random lookups and self-lookup start first.
+            m_nextFirewallCheck = now + SEC(15);
             emit connected();
         }
     }

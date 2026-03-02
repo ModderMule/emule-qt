@@ -8,6 +8,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QLoggingCategory>
 #include <QStandardPaths>
 
 #ifndef Q_OS_WIN
@@ -35,6 +36,11 @@ int main(int argc, char* argv[])
     QDir().mkpath(configDir);
     const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
     eMule::thePrefs.load(prefsPath);
+
+    // Enable debug-level output for all emule.* categories so logDebug()
+    // messages reach the message handler and are forwarded to the GUI.
+    if (eMule::thePrefs.verbose())
+        QLoggingCategory::setFilterRules(QStringLiteral("emule.*.debug=true"));
 
     eMule::logInfo(QStringLiteral("eMule Core Daemon starting..."));
 

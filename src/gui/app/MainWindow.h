@@ -9,6 +9,9 @@
 
 #include <QCloseEvent>
 #include <QMainWindow>
+#include <QWidget>
+#include <QPainter>
+#include <QMouseEvent>
 
 class QAction;
 class QActionGroup;
@@ -18,9 +21,44 @@ class QStackedWidget;
 namespace eMule {
 
 class IpcClient;
+class IrcPanel;
 class KadPanel;
+class MessagesPanel;
+class SearchPanel;
 class ServerPanel;
+class SharedFilesPanel;
 class TransferPanel;
+
+/// Small status bar widget showing a world globe with two arrows:
+/// left arrow = eD2K status, right arrow = Kad status.
+/// Colors: red = disconnected, yellow = firewalled, green = open/connected.
+class ConnectionStatusWidget : public QWidget {
+    Q_OBJECT
+
+public:
+    enum State { Disconnected, Firewalled, Connected };
+
+    explicit ConnectionStatusWidget(QWidget* parent = nullptr);
+
+    void setEd2kState(State s);
+    void setKadState(State s);
+
+    [[nodiscard]] QSize sizeHint() const override { return {36, 18}; }
+    [[nodiscard]] QSize minimumSizeHint() const override { return {36, 18}; }
+
+signals:
+    void doubleClicked();
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+
+private:
+    static QColor colorForState(State s);
+
+    State m_ed2kState = Disconnected;
+    State m_kadState  = Disconnected;
+};
 
 /// Main application window matching the MFC eMule look & feel.
 class MainWindow : public QMainWindow {
@@ -54,25 +92,36 @@ public:
     [[nodiscard]] KadPanel* kadPanel() const { return m_kadPanel; }
     [[nodiscard]] ServerPanel* serverPanel() const { return m_serverPanel; }
     [[nodiscard]] TransferPanel* transferPanel() const { return m_transferPanel; }
+    [[nodiscard]] SearchPanel* searchPanel() const { return m_searchPanel; }
+    [[nodiscard]] SharedFilesPanel* sharedFilesPanel() const { return m_sharedFilesPanel; }
+    [[nodiscard]] MessagesPanel* messagesPanel() const { return m_messagesPanel; }
+    [[nodiscard]] IrcPanel* ircPanel() const { return m_ircPanel; }
 
     /// Update the eD2K status label in the footer.
     void setEd2kStatus(bool connected, bool connecting, bool firewalled);
 
     /// Update the Kad status label in the footer.
-    void setKadStatus(bool running, bool kadConnected);
+    void setKadStatus(bool running, bool kadConnected, bool firewalled);
+
+    /// Update the Users/Files label in the footer with Kad network estimates.
+    void setNetworkStats(quint32 users, quint32 files);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
 private slots:
     void onToolbarAction(QAction* action);
     void onConnectToggle();
     void onOptionsClicked();
+    void showNetworkInfo();
+    void onClipboardChanged();
 
 private:
     void setupToolbar();
     void setupStatusBar();
     void setupPages();
+    void updateConnectButton();
 
     QStackedWidget* m_pages = nullptr;
     QAction* m_connectAction = nullptr;
@@ -83,14 +132,32 @@ private:
     KadPanel* m_kadPanel = nullptr;
     ServerPanel* m_serverPanel = nullptr;
     TransferPanel* m_transferPanel = nullptr;
-    // ToDo: Add other panels (Search, SharedFiles, Messages, IRC, Statistics)
+    SearchPanel* m_searchPanel = nullptr;
+    SharedFilesPanel* m_sharedFilesPanel = nullptr;
+    MessagesPanel* m_messagesPanel = nullptr;
+    IrcPanel* m_ircPanel = nullptr;
+    // ToDo: Add Statistics panel
 
     // Status bar labels
     QLabel* m_statusMsg = nullptr;
-    QLabel* m_statusUsers = nullptr;
-    QLabel* m_statusUpDown = nullptr;
+    QWidget* m_statusUsersWidget = nullptr;   // container for user icon + label
+    QLabel* m_statusUsersLabel = nullptr;
+    QWidget* m_statusUpDownWidget = nullptr;  // container for up/down icons + labels
+    QLabel* m_statusUpLabel = nullptr;
+    QLabel* m_statusDownLabel = nullptr;
     QLabel* m_statusEd2k = nullptr;
     QLabel* m_statusKad = nullptr;
+    ConnectionStatusWidget* m_connStatus = nullptr;
+
+    // Clipboard monitoring (MFC SearchClipboard equivalent)
+    QString m_lastClipboardContents;
+
+    // Cached status for world icon
+    bool m_ed2kConnected = false;
+    bool m_ed2kFirewalled = false;
+    bool m_kadRunning = false;
+    bool m_kadConnected = false;
+    bool m_kadFirewalled = false;
 };
 
 } // namespace eMule

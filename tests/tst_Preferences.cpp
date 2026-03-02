@@ -40,8 +40,8 @@ private slots:
     void defaults_bandwidth()
     {
         Preferences prefs;
-        QCOMPARE(prefs.maxUpload(), 80u);
-        QCOMPARE(prefs.maxDownload(), 90u);
+        QCOMPARE(prefs.maxUpload(), 250u);
+        QCOMPARE(prefs.maxDownload(), 500u);
         QCOMPARE(prefs.minUpload(), 1u);
     }
 
@@ -417,7 +417,7 @@ private slots:
     void defaults_networkModes()
     {
         Preferences prefs;
-        QCOMPARE(prefs.networkED2K(), true);
+        QCOMPARE(prefs.networkED2K(), false);
     }
 
     void defaults_chat()

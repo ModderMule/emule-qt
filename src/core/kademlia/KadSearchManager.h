@@ -55,6 +55,7 @@ private:
     static bool findNodeSpecial(const UInt128& id, KadClientSearcher* requester);
     static void cancelNodeSpecial(const KadClientSearcher* requester);
     static void jumpStart();
+    static void notifySearchesChanged();
 
     static uint32 s_nextID;
     static SearchMap s_searches;

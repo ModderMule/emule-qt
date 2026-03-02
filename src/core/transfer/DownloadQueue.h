@@ -101,6 +101,7 @@ signals:
 private:
     void onDownloadCompleted(PartFile* file);
     void connectPartFileSignals(PartFile* file);
+    void distributeDownloadLimit();
 
     std::vector<PartFile*> m_fileList;
     SharedFileList* m_sharedFileList = nullptr;

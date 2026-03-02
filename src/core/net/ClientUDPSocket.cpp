@@ -24,6 +24,8 @@
 #include <arpa/inet.h>  // htonl
 #endif
 
+#include <zlib.h>
+
 #include <cstring>
 
 namespace eMule {
@@ -222,12 +224,22 @@ void ClientUDPSocket::onReadyRead()
             // Unencrypted eMule client UDP packet
             uint8 opcode = buf[1];
             processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderIP, senderPort);
-        } else if (protoByte == OP_KADEMLIAHEADER || protoByte == OP_KADEMLIAPACKEDPROT) {
-            // Kademlia packet — forward via signal (plaintext, no encryption metadata)
+        } else if (protoByte == OP_KADEMLIAHEADER) {
+            // Uncompressed Kademlia packet — forward directly
             uint8 opcode = buf[1];
             emit kadPacketReceived(opcode, buf + 2,
                                    static_cast<uint32>(bufLen - 2), senderIP, senderPort,
                                    false, 0);
+        } else if (protoByte == OP_KADEMLIAPACKEDPROT) {
+            // Compressed Kademlia packet — decompress before forwarding
+            uint8 opcode = buf[1];
+            QByteArray decompressed = decompressKadPayload(buf + 2, bufLen - 2);
+            if (!decompressed.isEmpty()) {
+                emit kadPacketReceived(opcode,
+                                       reinterpret_cast<const uint8*>(decompressed.constData()),
+                                       static_cast<uint32>(decompressed.size()),
+                                       senderIP, senderPort, false, 0);
+            }
         } else {
             // May be encrypted — use our userHash and kadID for decryption
             auto userHash = thePrefs.userHash();
@@ -250,14 +262,24 @@ void ClientUDPSocket::onReadyRead()
                 if (innerProto == OP_EMULEPROT) {
                     processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2),
                                   opcode, senderIP, senderPort);
-                } else if (innerProto == OP_KADEMLIAHEADER ||
-                           innerProto == OP_KADEMLIAPACKEDPROT) {
+                } else if (innerProto == OP_KADEMLIAHEADER) {
                     bool validKey = (dr.senderVerifyKey != 0) &&
                         (dr.senderVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIP));
                     emit kadPacketReceived(opcode, dr.data + 2,
                                            static_cast<uint32>(dr.length - 2),
                                            senderIP, senderPort,
                                            validKey, dr.receiverVerifyKey);
+                } else if (innerProto == OP_KADEMLIAPACKEDPROT) {
+                    bool validKey = (dr.senderVerifyKey != 0) &&
+                        (dr.senderVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIP));
+                    QByteArray decompressed = decompressKadPayload(dr.data + 2, dr.length - 2);
+                    if (!decompressed.isEmpty()) {
+                        emit kadPacketReceived(opcode,
+                                               reinterpret_cast<const uint8*>(decompressed.constData()),
+                                               static_cast<uint32>(decompressed.size()),
+                                               senderIP, senderPort,
+                                               validKey, dr.receiverVerifyKey);
+                    }
                 }
             }
         }
@@ -327,6 +349,35 @@ void ClientUDPSocket::purgeExpiredPackets()
     std::erase_if(m_controlQueue, [now](const UDPPack& pack) {
         return (now - pack.queueTime) > UDPMAXQUEUETIME;
     });
+}
+
+// ---------------------------------------------------------------------------
+// Decompression helper
+// ---------------------------------------------------------------------------
+
+QByteArray ClientUDPSocket::decompressKadPayload(const uint8* data, int len)
+{
+    if (len <= 0)
+        return {};
+
+    uLongf outSize = static_cast<uLongf>(len) * 10 + 300;
+    constexpr uLongf kMaxDecompressed = 250000;
+
+    QByteArray out;
+    int result = Z_OK;
+    do {
+        out.resize(static_cast<qsizetype>(outSize));
+        uLongf actualSize = outSize;
+        result = uncompress(reinterpret_cast<Bytef*>(out.data()), &actualSize,
+                            reinterpret_cast<const Bytef*>(data), static_cast<uLong>(len));
+        if (result == Z_OK) {
+            out.resize(static_cast<qsizetype>(actualSize));
+            return out;
+        }
+        outSize *= 2;
+    } while (result == Z_BUF_ERROR && outSize < kMaxDecompressed);
+
+    return {};
 }
 
 } // namespace eMule

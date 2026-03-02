@@ -64,6 +64,9 @@ public:
     /// Remove all servers.
     void removeAllServers();
 
+    /// Remove servers with failedCount >= maxRetries. Returns count removed.
+    int removeDeadServers(uint32 maxRetries);
+
     // -- Lookups ----------------------------------------------------------
 
     [[nodiscard]] Server* findByIPTcp(uint32 ip, uint16 port) const;

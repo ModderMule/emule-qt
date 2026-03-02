@@ -143,9 +143,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         setConnectionState(ServerConnState::Connected);
         emit loginReceived(clientID, tcpFlags);
 
-        logInfo(QStringLiteral("Server login successful, ID: %1 (flags: 0x%2)")
-                    .arg(clientID)
-                    .arg(tcpFlags, 8, 16, QLatin1Char('0')));
+        logInfo(QStringLiteral("New client ID is %1").arg(clientID));
         break;
     }
 

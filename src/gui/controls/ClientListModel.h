@@ -40,7 +40,17 @@ struct ClientRow {
     int availPartCount = 0;
     int remoteQueueRank = 0;
     int sourceFrom = 0;
+    int softwareId = -1;
+    uint32_t ip = 0;
+    uint16_t port = 0;
     bool isBanned = false;
+    bool hasCredit = false;
+    bool isFriend = false;
+    int64_t uploadStartDelay = 0;  // ms since upload started (0 = not uploading)
+    int filePriority = -1;         // download priority of queued file (-1 = unknown)
+    bool isAutoPriority = false;   // whether file priority is auto
+    uint8_t fileRating = 0;        // client's rating for file (0-5)
+    bool isConnected = false;      // has active socket connection
 };
 
 /// Table model backing the client list tree views in the Transfer panel.
@@ -64,6 +74,7 @@ public:
 
     [[nodiscard]] int clientCount() const { return static_cast<int>(m_clients.size()); }
     [[nodiscard]] ClientListMode mode() const { return m_mode; }
+    [[nodiscard]] const ClientRow* clientAt(int row) const;
 
 private:
     [[nodiscard]] QVariant displayData(const ClientRow& c, int column) const;

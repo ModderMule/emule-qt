@@ -4,6 +4,7 @@
 /// @brief Table model for the ED2K server list in the Server tab.
 
 #include <QAbstractTableModel>
+#include <QCborArray>
 #include <QString>
 
 #include <cstdint>
@@ -30,6 +31,9 @@ struct ServerRow {
     uint32_t lowIdUsers = 0;
     bool obfuscation = false;
     uint32_t files = 0;
+
+    // Numeric IP for IPC connect-to-specific-server
+    uint32_t numericIp = 0;
 
     // Internal reference for double-click / context menu
     const Server* serverPtr = nullptr;
@@ -67,11 +71,17 @@ public:
     /// Rebuild model from a ServerList.
     void refreshFromServerList(const ServerList* serverList);
 
+    /// Rebuild model from CBOR array received via IPC.
+    void refreshFromCborArray(const QCborArray& servers);
+
     /// Clear all rows.
     void clear();
 
     /// Get the server pointer for a given row index.
     [[nodiscard]] const Server* serverAtRow(int row) const;
+
+    /// Get the row data snapshot for a given row index (nullptr if out of range).
+    [[nodiscard]] const ServerRow* rowAt(int row) const;
 
 private:
     std::vector<ServerRow> m_rows;

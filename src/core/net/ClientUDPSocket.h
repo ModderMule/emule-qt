@@ -124,6 +124,8 @@ private:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode,
                        uint32 senderIP, uint16 senderPort);
 
+    QByteArray decompressKadPayload(const uint8* data, int len);
+
     void purgeExpiredPackets();
 
     QUdpSocket m_socket;

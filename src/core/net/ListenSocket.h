@@ -104,6 +104,7 @@ private:
 
     // Rate limiting
     uint16 m_openSocketsInterval = 0;
+    uint16 m_processTickCount = 0;
     uint32 m_maxConnectionReached = 0;
 
     // Statistics

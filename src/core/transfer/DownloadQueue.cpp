@@ -14,6 +14,7 @@
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "ipfilter/IPFilter.h"
+#include "net/EMSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
@@ -515,6 +516,8 @@ void DownloadQueue::process()
             emit fileCompleted(file);
     }
 
+    distributeDownloadLimit();
+
     // UDP source request batching — send re-ask requests via UDP
     const uint32 curTick = static_cast<uint32>(getTickCount());
     if (curTick >= m_lastUDPSourceRequestTime + FILEREASKTIME) {
@@ -620,6 +623,49 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     }
 
     emit fileCompleted(file);
+}
+
+// ===========================================================================
+// Download bandwidth distribution
+// ===========================================================================
+
+void DownloadQueue::distributeDownloadLimit()
+{
+    const uint32 maxDown = thePrefs.maxDownload(); // KB/s, 0 = unlimited
+    if (maxDown == 0) {
+        // Unlimited — disable per-socket limits on all downloading sockets
+        for (auto* file : m_fileList) {
+            for (auto* client : file->downloadingSources()) {
+                if (auto* sock = client->socket())
+                    sock->disableDownloadLimit();
+            }
+        }
+        return;
+    }
+
+    // Collect all unique downloading sockets
+    std::vector<EMSocket*> sockets;
+    for (auto* file : m_fileList) {
+        for (auto* client : file->downloadingSources()) {
+            if (auto* sock = client->socket())
+                sockets.push_back(sock);
+        }
+    }
+
+    // Deduplicate (a client can only download one file, but be safe)
+    std::ranges::sort(sockets);
+    auto [first, last] = std::ranges::unique(sockets);
+    sockets.erase(first, last);
+
+    if (sockets.empty())
+        return;
+
+    // Budget for this 100ms tick, distributed equally
+    const uint32 tickBudget = maxDown * 1024 / 10;  // bytes per 100ms
+    const uint32 perSocket = std::max(1u, tickBudget / static_cast<uint32>(sockets.size()));
+
+    for (auto* sock : sockets)
+        sock->setDownloadLimit(perSocket);
 }
 
 } // namespace eMule

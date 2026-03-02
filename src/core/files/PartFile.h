@@ -218,6 +218,7 @@ public:
     void addDownloadingSource(UpDownClient* client);
     void removeDownloadingSource(UpDownClient* client);
     [[nodiscard]] int transferringSrcCount() const { return static_cast<int>(m_downloadingSources.size()); }
+    [[nodiscard]] const std::vector<UpDownClient*>& downloadingSources() const { return m_downloadingSources; }
 
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
     [[nodiscard]] uint64 transferred() const { return m_transferred; }
@@ -252,6 +253,7 @@ public:
     // -- Misc -----------------------------------------------------------------
 
     [[nodiscard]] time_t lastReceptionDate() const { return m_tLastModified; }
+    [[nodiscard]] time_t createdDate() const { return m_tCreated; }
     [[nodiscard]] const std::vector<uint16>& srcPartFrequency() const { return m_srcPartFrequency; }
     std::vector<uint16>& srcPartFrequency() { return m_srcPartFrequency; }
     [[nodiscard]] const std::vector<uint16>& corruptedParts() const { return m_corruptedParts; }

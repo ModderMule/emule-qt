@@ -30,17 +30,34 @@ enum class IpcMsgType : int {
     PauseDownload        = 112,  ///< [hash: string]
     ResumeDownload       = 113,  ///< [hash: string]
     CancelDownload       = 114,  ///< [hash: string]
+    SetDownloadPriority  = 115,  ///< [hash, priority, isAuto]
+    ClearCompleted       = 116,  ///< [] — remove completed downloads
     GetUploads           = 120,
+    GetDownloadClients   = 121,  ///< [] — source clients we are downloading from
+    GetKnownClients      = 122,  ///< [] — all known clients
     GetServers           = 130,
+    RemoveServer         = 131,  ///< [ip: int64, port: int64]
+    RemoveAllServers     = 132,  ///< []
+    SetServerPriority    = 133,  ///< [ip: int64, port: int64, priority: int]
+    SetServerStatic      = 134,  ///< [ip: int64, port: int64, isStatic: bool]
+    AddServer            = 135,  ///< [address: string, port: int64, name: string]
     GetConnection        = 140,
     ConnectToServer      = 141,
     DisconnectFromServer = 142,
-    StartSearch          = 150,  ///< [expression, type, ...]
+    StartSearch          = 150,  ///< [expression, fileType, method, minSize, maxSize, avail, ext, completeSrc]
     GetSearchResults     = 151,  ///< [searchID]
+    StopSearch           = 152,  ///< [searchID: int]
+    RemoveSearch         = 153,  ///< [searchID: int]
+    ClearAllSearches     = 154,  ///< []
+    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64]
     GetSharedFiles       = 160,
+    SetSharedFilePriority = 161, ///< [hash: string, priority: int, isAuto: bool]
+    ReloadSharedFiles    = 162, ///< [] — rescan shared directories from disk
     GetFriends           = 170,
     AddFriend            = 171,  ///< [hash, name, ip, port]
     RemoveFriend         = 172,  ///< [hash]
+    SendChatMessage      = 173,  ///< [hash: string, message: string]
+    SetFriendSlot        = 174,  ///< [hash: string, enabled: bool]
     GetStats             = 180,
     GetPreferences       = 190,
     SetPreferences       = 191,  ///< [key, value, ...]
@@ -53,6 +70,8 @@ enum class IpcMsgType : int {
     Shutdown             = 215,  ///< [] — request graceful daemon shutdown
     GetKadSearches       = 216,
     GetKadLookupHistory  = 217,  ///< [searchId: int] — lookup history for a search
+    GetNetworkInfo       = 218,  ///< [] — all network info for the Network Information dialog
+    RecheckFirewall      = 219,  ///< [] — restart TCP + UDP firewall checks
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -72,6 +91,10 @@ enum class IpcMsgType : int {
     PushSharedFileUpdate = 460,
     PushUploadUpdate     = 470,
     PushKadUpdate        = 480,
+    PushKadSearchesChanged = 481,
+    PushKnownClientsChanged = 490,
+    PushChatMessage       = 500,  ///< [senderHash, senderName, message]
+    PushFriendListChanged = 510,  ///< [] — friend list changed
 };
 
 // ---------------------------------------------------------------------------

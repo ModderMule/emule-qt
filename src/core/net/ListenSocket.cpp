@@ -13,14 +13,6 @@
 namespace eMule {
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-static constexpr uint16 kMaxOpenSockets = 512;
-static constexpr uint16 kSoftMaxOpenSockets = 400;
-static constexpr uint16 kRateCheckIntervalMs = 5000;
-
-// ---------------------------------------------------------------------------
 // Construction / destruction
 // ---------------------------------------------------------------------------
 
@@ -88,6 +80,7 @@ void ListenSocket::incomingConnection(qintptr socketDescriptor)
     reqSocket->setObfuscationConfig(thePrefs.obfuscationConfig());
 
     addSocket(reqSocket);
+    addConnection();
     emit newClientConnection(reqSocket);
 }
 
@@ -125,6 +118,12 @@ void ListenSocket::killAllSockets()
 
 void ListenSocket::process()
 {
+    // Reset per-5-second connection counter every 5th call (~5s)
+    if (++m_processTickCount >= 5) {
+        m_processTickCount = 0;
+        m_openSocketsInterval = 0;
+    }
+
     // Check for timed-out sockets
     auto it = m_socketList.begin();
     while (it != m_socketList.end()) {
@@ -151,21 +150,19 @@ void ListenSocket::process()
 
 bool ListenSocket::tooManySockets(bool ignoreInterval) const
 {
-    uint32 count = static_cast<uint32>(m_socketList.size());
-
-    // Hard limit
-    if (count > kMaxOpenSockets)
+    if (static_cast<uint32>(m_socketList.size()) > thePrefs.maxConnections())
         return true;
-
-    // Soft limit with rate check
-    if (!ignoreInterval && count > kSoftMaxOpenSockets)
+    if (!ignoreInterval
+        && m_openSocketsInterval > thePrefs.maxConsPerFive() * maxConPerFiveModifier())
         return true;
-
+    if (!ignoreInterval && m_nHalfOpen >= thePrefs.maxHalfConnections())
+        return true;
     return false;
 }
 
 void ListenSocket::addConnection()
 {
+    ++m_openSocketsInterval;
     ++m_totalConnectionChecks;
     uint32 count = static_cast<uint32>(m_socketList.size());
     if (count > m_maxConnectionReached)
@@ -226,14 +223,10 @@ void ListenSocket::updateConnectionsStatus()
 
 float ListenSocket::maxConPerFiveModifier() const
 {
-    uint32 count = static_cast<uint32>(m_socketList.size());
-    if (count < 20)
-        return 1.0f;
-    if (count < 100)
-        return 0.8f;
-    if (count < 200)
-        return 0.6f;
-    return 0.4f;
+    float spikeSize = std::max(1.0f,
+        static_cast<float>(m_socketList.size()) - m_averageConnections);
+    float spikeTolerance = 25.0f * thePrefs.maxConsPerFive() / 10.0f;
+    return (spikeSize > spikeTolerance) ? 0.0f : 1.0f - spikeSize / spikeTolerance;
 }
 
 } // namespace eMule

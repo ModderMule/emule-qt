@@ -493,6 +493,12 @@ void SharedFileList::findSharedFiles()
     const QString incomingDir = thePrefs.incomingDir();
     if (!incomingDir.isEmpty())
         addFilesFromDirectory(incomingDir);
+
+    // Add configured shared directories
+    for (const auto& dir : thePrefs.sharedDirs()) {
+        if (!dir.isEmpty() && dir != incomingDir)
+            addFilesFromDirectory(dir);
+    }
 }
 
 // ---------------------------------------------------------------------------

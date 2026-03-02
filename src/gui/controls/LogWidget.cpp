@@ -160,6 +160,7 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
     case QtFatalMsg:
         colored = QStringLiteral("<font color='red'><b>%1</b></font>").arg(msg.toHtmlEscaped());
         break;
+    case QtInfoMsg:
     default:
         colored = QStringLiteral("<font color='#3399FF'>%1</font>").arg(msg.toHtmlEscaped());
         break;
@@ -168,7 +169,7 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
     // Route to the correct tab based on category and severity
     const bool isServer = (std::strcmp(cat, "emule.server") == 0);
     const bool isKad = (std::strcmp(cat, "emule.kad") == 0);
-    const bool isVerbose = (type == QtDebugMsg);
+    const bool isVerbose = (type == QtDebugMsg || type == QtWarningMsg);
 
     // Server category messages go to Server Info
     if (isServer)
@@ -184,7 +185,7 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
         return;
     }
 
-    // All other emule messages go to the Log tab (except debug which goes to Verbose)
+    // All other emule messages go to the Log tab (debug+warning go to Verbose)
     if (isVerbose) {
         QMetaObject::invokeMethod(s_instance, [colored]() {
             if (s_instance) s_instance->appendVerbose(colored);

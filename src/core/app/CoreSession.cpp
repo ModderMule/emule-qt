@@ -6,9 +6,12 @@
 #include "app/CoreSession.h"
 #include "app/AppContext.h"
 #include "client/ClientCredits.h"
+#include "client/ClientList.h"
 #include "files/KnownFileList.h"
+#include "friends/FriendList.h"
 #include "files/SharedFileList.h"
 #include "kademlia/Kademlia.h"
+#include "search/SearchList.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUDPListener.h"
@@ -17,6 +20,8 @@
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
+#include "server/ServerConnect.h"
+#include "server/ServerList.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadBandwidthThrottler.h"
@@ -26,6 +31,11 @@
 #include "utils/Opcodes.h"
 
 #include <QDir>
+#include <QEventLoop>
+#include <QFile>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QTimer>
 
 #include <cstring>
 
@@ -42,7 +52,10 @@ CoreSession::~CoreSession()
 {
     stop();
     shutdownKademlia();
+    shutdownServerConnect();
+    shutdownClientInfra();
     shutdownUploadPipeline();
+    shutdownSearch();
 }
 
 void CoreSession::start()
@@ -50,6 +63,9 @@ void CoreSession::start()
     logInfo(QStringLiteral("Starting core — TCP port %1, UDP port %2")
                 .arg(thePrefs.port()).arg(thePrefs.udpPort()));
     initUploadPipeline();
+    initClientInfra();
+    initSearch();
+    initServerConnect();
     initKademlia();
     m_tickCounter = 0;
     m_timer.start();
@@ -176,7 +192,218 @@ void CoreSession::onTimer()
             theApp.sharedFileList->process();
         if (theApp.statistics)
             theApp.statistics->updateConnectionStats(0.0f, 0.0f);
+        if (theApp.clientList)
+            theApp.clientList->process();
+        if (theApp.serverConnect) {
+            theApp.serverConnect->checkForTimeout();
+            theApp.serverConnect->keepConnectionAlive();
+        }
     }
+}
+
+// ---------------------------------------------------------------------------
+// initServerConnect — create ServerList + ServerConnect, load server.met
+// ---------------------------------------------------------------------------
+
+void CoreSession::initServerConnect()
+{
+    if (m_serverList || m_serverConnect)
+        return;
+
+    // 1. Create ServerList and load server.met
+    m_serverList = std::make_unique<ServerList>();
+    theApp.serverList = m_serverList.get();
+
+    const QString serverMetPath = QDir(thePrefs.configDir()).filePath(
+        QStringLiteral("server.met"));
+    if (QFile::exists(serverMetPath)) {
+        if (m_serverList->loadServerMet(serverMetPath))
+            logInfo(QStringLiteral("Loaded %1 servers from server.met")
+                        .arg(m_serverList->serverCount()));
+        else
+            logWarning(QStringLiteral("Failed to load server.met"));
+    } else {
+        logInfo(QStringLiteral("No server.met found — server list is empty"));
+    }
+
+    // 1b. Auto-update server list from URL if configured
+    if (thePrefs.autoUpdateServerList() && !thePrefs.serverListURL().isEmpty())
+        autoUpdateServerList();
+
+    // 2. Create ServerConnect
+    m_serverConnect = std::make_unique<ServerConnect>(*m_serverList);
+    theApp.serverConnect = m_serverConnect.get();
+
+    // 3. Build config from preferences
+    ServerConnectConfig cfg;
+    cfg.safeServerConnect     = thePrefs.safeServerConnect();
+    cfg.autoConnectStaticOnly = thePrefs.autoConnectStaticOnly();
+    cfg.useServerPriorities   = thePrefs.useServerPriorities();
+    cfg.reconnectOnDisconnect = thePrefs.reconnect();
+    cfg.addServersFromServer  = thePrefs.addServersFromServer();
+    cfg.cryptLayerPreferred   = thePrefs.cryptLayerRequested();
+    cfg.cryptLayerRequired    = thePrefs.cryptLayerRequired();
+    cfg.cryptLayerEnabled     = thePrefs.cryptLayerSupported();
+    cfg.serverKeepAliveTimeout = thePrefs.serverKeepAliveTimeout();
+    cfg.userHash              = thePrefs.userHash();
+    cfg.userNick              = thePrefs.nick();
+    cfg.listenPort            = thePrefs.port();
+    cfg.smartLowIdCheck       = thePrefs.smartLowIdCheck();
+    m_serverConnect->setConfig(cfg);
+
+    // 4. Wire SharedFileList to ServerConnect for shared-file announcements
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->setServerConnect(theApp.serverConnect);
+
+    // 5. Auto-connect to a server if enabled
+    if (thePrefs.autoConnect()) {
+        logInfo(QStringLiteral("Auto-connecting to eD2K server..."));
+        m_serverConnect->connectToAnyServer();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// autoUpdateServerList — download server.met from configured URL and merge
+// ---------------------------------------------------------------------------
+
+void CoreSession::autoUpdateServerList()
+{
+    const QString url = thePrefs.serverListURL();
+    logInfo(QStringLiteral("Auto-updating server list from %1").arg(url));
+
+    QNetworkAccessManager nam;
+    QNetworkRequest request{QUrl(url)};
+    request.setTransferTimeout(10000); // 10 seconds
+
+    auto* reply = nam.get(request);
+
+    // Block briefly with event loop (same pattern as MFC's modal download)
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(10000, &loop, &QEventLoop::quit); // safety timeout
+    loop.exec();
+
+    if (reply->error() != QNetworkReply::NoError) {
+        logWarning(QStringLiteral("Failed to download server list: %1").arg(reply->errorString()));
+        reply->deleteLater();
+        return;
+    }
+
+    const QByteArray data = reply->readAll();
+    reply->deleteLater();
+
+    if (data.isEmpty()) {
+        logWarning(QStringLiteral("Downloaded server list is empty"));
+        return;
+    }
+
+    // Save to temp file and merge
+    const QString downloadPath = QDir(thePrefs.configDir()).filePath(
+        QStringLiteral("server_met.download"));
+    QFile file(downloadPath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        logWarning(QStringLiteral("Failed to save downloaded server list"));
+        return;
+    }
+    file.write(data);
+    file.close();
+
+    const size_t before = m_serverList->serverCount();
+    m_serverList->addServerMetToList(downloadPath, true);
+    const size_t added = m_serverList->serverCount() - before;
+    logInfo(QStringLiteral("Server list updated: %1 new servers added").arg(added));
+
+    QFile::remove(downloadPath);
+}
+
+// ---------------------------------------------------------------------------
+// shutdownServerConnect — disconnect, save, and release
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownServerConnect()
+{
+    if (m_serverConnect) {
+        if (m_serverConnect->isConnected() || m_serverConnect->isConnecting())
+            m_serverConnect->disconnect();
+    }
+
+    // Save server.met
+    if (m_serverList) {
+        const QString serverMetPath = QDir(thePrefs.configDir()).filePath(
+            QStringLiteral("server.met"));
+        m_serverList->saveServerMet(serverMetPath);
+    }
+
+    // Unwire SharedFileList
+    if (theApp.sharedFileList && theApp.serverConnect == m_serverConnect.get())
+        theApp.sharedFileList->setServerConnect(nullptr);
+
+    // Clear theApp pointers before destroying
+    if (m_serverConnect && theApp.serverConnect == m_serverConnect.get())
+        theApp.serverConnect = nullptr;
+    if (m_serverList && theApp.serverList == m_serverList.get())
+        theApp.serverList = nullptr;
+
+    m_serverConnect.reset();
+    m_serverList.reset();
+}
+
+// ---------------------------------------------------------------------------
+// initClientInfra — create ClientList and ListenSocket
+// ---------------------------------------------------------------------------
+
+void CoreSession::initClientInfra()
+{
+    if (!theApp.clientList) {
+        m_clientList = std::make_unique<ClientList>(this);
+        theApp.clientList = m_clientList.get();
+    }
+
+    if (!theApp.friendList) {
+        m_friendList = std::make_unique<FriendList>(this);
+        m_friendList->load(thePrefs.configDir());
+        theApp.friendList = m_friendList.get();
+    }
+
+    if (!theApp.listenSocket) {
+        m_listenSocket = std::make_unique<ListenSocket>(this);
+        if (m_listenSocket->startListening(thePrefs.port())) {
+            theApp.listenSocket = m_listenSocket.get();
+            logInfo(QStringLiteral("TCP listen socket bound on port %1")
+                        .arg(m_listenSocket->connectedPort()));
+        } else {
+            logWarning(QStringLiteral("Failed to bind TCP listen socket on port %1")
+                           .arg(thePrefs.port()));
+            m_listenSocket.reset();
+        }
+    }
+
+    if (theApp.listenSocket && theApp.clientList) {
+        connect(theApp.listenSocket, &ListenSocket::newClientConnection,
+                theApp.clientList, &ClientList::handleIncomingConnection);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shutdownClientInfra — release ClientList and ListenSocket
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownClientInfra()
+{
+    if (m_friendList) {
+        m_friendList->save(thePrefs.configDir());
+        if (theApp.friendList == m_friendList.get())
+            theApp.friendList = nullptr;
+        m_friendList.reset();
+    }
+
+    if (m_listenSocket && theApp.listenSocket == m_listenSocket.get())
+        theApp.listenSocket = nullptr;
+    m_listenSocket.reset();
+
+    if (m_clientList && theApp.clientList == m_clientList.get())
+        theApp.clientList = nullptr;
+    m_clientList.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +429,17 @@ void CoreSession::initKademlia()
 
     // 2. Create and start Kademlia (no internal socket binding).
     m_kademlia = std::make_unique<kad::Kademlia>();
+    kad::Kademlia::setClientList(theApp.clientList);
+
+    // Wire Kad keyword result callback → SearchList
+    kad::Kademlia::setKadKeywordResultCallback(
+        [](uint32 searchID, const uint8* fileHash, const QString& name,
+           uint64 size, const QString& type, uint32 sources, uint32 completeSources) {
+            if (theApp.searchList)
+                theApp.searchList->addKadKeywordResult(searchID, fileHash, name, size,
+                                                       type, sources, completeSources);
+        });
+
     m_kademlia->start();
 
     if (!m_kademlia->isRunning()) {
@@ -274,6 +512,8 @@ void CoreSession::initKademlia()
 
 void CoreSession::shutdownKademlia()
 {
+    kad::Kademlia::setKadKeywordResultCallback(nullptr);
+    kad::Kademlia::setClientList(nullptr);
     if (m_kademlia)
         m_kademlia->stop();
     m_kademlia.reset();
@@ -281,6 +521,29 @@ void CoreSession::shutdownKademlia()
     if (theApp.clientUDP == m_clientUDP.get())
         theApp.clientUDP = nullptr;
     m_clientUDP.reset();
+}
+
+// ---------------------------------------------------------------------------
+// initSearch — create SearchList
+// ---------------------------------------------------------------------------
+
+void CoreSession::initSearch()
+{
+    if (!theApp.searchList) {
+        m_searchList = std::make_unique<SearchList>(this);
+        theApp.searchList = m_searchList.get();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shutdownSearch — release SearchList
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownSearch()
+{
+    if (m_searchList && theApp.searchList == m_searchList.get())
+        theApp.searchList = nullptr;
+    m_searchList.reset();
 }
 
 } // namespace eMule

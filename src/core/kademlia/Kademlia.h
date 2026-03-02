@@ -129,6 +129,7 @@ signals:
     void connected();
     void firewallStatusChanged(bool firewalled);
     void statsUpdated(uint32 users, uint32 files);
+    void searchesChanged();
 
 private:
     void process();

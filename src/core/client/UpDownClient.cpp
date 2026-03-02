@@ -1492,6 +1492,9 @@ void UpDownClient::connect()
         reqSocket->setConnectionEncryption(false, nullptr, false);
     }
 
+    // Configure proxy
+    reqSocket->initProxySupport(thePrefs.proxySettings());
+
     // Initiate TCP connection
     const QHostAddress addr(ntohl(m_connectIP));
     logDebug(QStringLiteral("connect: connectToHost(%1, %2) encrypted=%3 socketState=%4 fd=%5")
@@ -1605,6 +1608,7 @@ void UpDownClient::connectionEstablished()
         setKadState(KadState::ConnectedBuddy);
         break;
     case KadState::ConnectingFwCheckUDP:
+        logDebug(QStringLiteral("connectionEstablished: KadState → FwCheckUDP, sending FW check request"));
         setKadState(KadState::FwCheckUDP);
         sendFirewallCheckUDPRequest();
         break;
@@ -2624,10 +2628,14 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
 void UpDownClient::sendFirewallCheckUDPRequest()
 {
     // MFC BaseClient.cpp:2837-2858
-    if (m_kadState != KadState::FwCheckUDP)
+    if (m_kadState != KadState::FwCheckUDP) {
+        logDebug(QStringLiteral("sendFirewallCheckUDPRequest: wrong state %1, expected FwCheckUDP")
+                     .arg(static_cast<int>(m_kadState)));
         return;
+    }
 
     if (!kad::Kademlia::instance() || !kad::Kademlia::instance()->isRunning()) {
+        logDebug(QStringLiteral("sendFirewallCheckUDPRequest: Kad not running, aborting"));
         setKadState(KadState::None);
         return;
     }
@@ -2637,6 +2645,12 @@ void UpDownClient::sendFirewallCheckUDPRequest()
         || m_chatState != ChatState::None
         || m_kadVersion <= KADEMLIA_VERSION5_48a || kadPort() == 0)
     {
+        logDebug(QStringLiteral("sendFirewallCheckUDPRequest: cancelled — upState=%1 downState=%2 "
+                                "chatState=%3 kadVer=%4 kadPort=%5")
+                     .arg(static_cast<int>(m_uploadState))
+                     .arg(static_cast<int>(m_downloadState))
+                     .arg(static_cast<int>(m_chatState))
+                     .arg(m_kadVersion).arg(kadPort()));
         kad::UDPFirewallTester::setUDPFWCheckResult(false, true, ntohl(m_connectIP), 0);
         setKadState(KadState::None);
         return;
@@ -2644,14 +2658,25 @@ void UpDownClient::sendFirewallCheckUDPRequest()
 
     auto* kadPrefs = kad::Kademlia::getInstancePrefs();
     if (!kadPrefs) {
+        logDebug(QStringLiteral("sendFirewallCheckUDPRequest: no KadPrefs, aborting"));
         setKadState(KadState::None);
         return;
     }
 
+    const uint16 internPort = kadPrefs->internKadPort();
+    const uint16 externPort = kadPrefs->externalKadPort();
+    const uint32 verifyKey = kad::KadPrefs::getUDPVerifyKey(m_connectIP);
+
     SafeMemFile data;
-    data.writeUInt16(kadPrefs->internKadPort());
-    data.writeUInt16(kadPrefs->externalKadPort());
-    data.writeUInt32(kad::KadPrefs::getUDPVerifyKey(m_connectIP));
+    data.writeUInt16(internPort);
+    data.writeUInt16(externPort);
+    data.writeUInt32(verifyKey);
+
+    logDebug(QStringLiteral("sendFirewallCheckUDPRequest: sending OP_FWCHECKUDPREQ "
+                            "internPort=%1 externPort=%2 verifyKey=0x%3 to %4")
+                 .arg(internPort).arg(externPort)
+                 .arg(verifyKey, 8, 16, QLatin1Char('0'))
+                 .arg(userName()));
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_FWCHECKUDPREQ);
     safeConnectAndSendPacket(std::move(packet));

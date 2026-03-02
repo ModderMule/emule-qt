@@ -16,8 +16,14 @@
 
 namespace eMule {
 
+class ClientList;
 class ClientUDPSocket;
+class FriendList;
 class KnownFileList;
+class ListenSocket;
+class SearchList;
+class ServerConnect;
+class ServerList;
 class SharedFileList;
 class UploadBandwidthThrottler;
 class UploadDiskIOThread;
@@ -47,8 +53,15 @@ private:
     QTimer m_timer;
     uint32 m_tickCounter = 0;
 
+    void initClientInfra();
+    void shutdownClientInfra();
     void initKademlia();
     void shutdownKademlia();
+    void initSearch();
+    void shutdownSearch();
+    void initServerConnect();
+    void shutdownServerConnect();
+    void autoUpdateServerList();
 
     // Owned components
     std::unique_ptr<KnownFileList> m_knownFileList;
@@ -58,6 +71,12 @@ private:
     std::unique_ptr<UploadDiskIOThread> m_uploadDiskIO;
     std::unique_ptr<kad::Kademlia> m_kademlia;
     std::unique_ptr<ClientUDPSocket> m_clientUDP;
+    std::unique_ptr<ClientList> m_clientList;
+    std::unique_ptr<FriendList> m_friendList;
+    std::unique_ptr<ListenSocket> m_listenSocket;
+    std::unique_ptr<SearchList> m_searchList;
+    std::unique_ptr<ServerList> m_serverList;
+    std::unique_ptr<ServerConnect> m_serverConnect;
 };
 
 } // namespace eMule

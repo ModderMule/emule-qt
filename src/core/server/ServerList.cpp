@@ -314,6 +314,23 @@ bool ServerList::removeServer(const Server* server)
     return false;
 }
 
+int ServerList::removeDeadServers(uint32 maxRetries)
+{
+    if (maxRetries == 0)
+        return 0;
+
+    int removed = 0;
+    for (auto i = static_cast<ptrdiff_t>(m_servers.size()) - 1; i >= 0; --i) {
+        if (m_servers[static_cast<size_t>(i)]->failedCount() >= maxRetries) {
+            emit serverAboutToBeRemoved(m_servers[static_cast<size_t>(i)].get());
+            adjustPositionsAfterRemoval(static_cast<size_t>(i));
+            m_servers.erase(m_servers.begin() + i);
+            ++removed;
+        }
+    }
+    return removed;
+}
+
 void ServerList::removeAllServers()
 {
     for (const auto& srv : m_servers)

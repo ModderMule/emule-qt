@@ -3,6 +3,8 @@
 #include "server/Server.h"
 #include "server/ServerList.h"
 
+#include <QCborMap>
+
 namespace eMule {
 
 namespace {
@@ -141,9 +143,51 @@ void ServerListModel::refreshFromServerList(const ServerList* serverList)
             row.lowIdUsers = srv->lowIDUsers();
             row.obfuscation = srv->supportsObfuscationTCP();
             row.files = srv->files();
+            row.numericIp = srv->ip();
             row.serverPtr = srv.get();
             m_rows.push_back(std::move(row));
         }
+    }
+
+    endResetModel();
+}
+
+void ServerListModel::refreshFromCborArray(const QCborArray& servers)
+{
+    beginResetModel();
+    m_rows.clear();
+    m_rows.reserve(static_cast<size_t>(servers.size()));
+
+    static constexpr std::pair<int, const char*> prefNames[] = {
+        {0, "Low"}, {1, "Normal"}, {2, "High"},
+    };
+
+    for (const auto& val : servers) {
+        const QCborMap m = val.toMap();
+        ServerRow row;
+        row.name        = m.value(QStringLiteral("name")).toString();
+        row.ip          = m.value(QStringLiteral("address")).toString();
+        row.port        = static_cast<uint16_t>(m.value(QStringLiteral("port")).toInteger());
+        row.description = m.value(QStringLiteral("description")).toString();
+        row.ping        = static_cast<uint32_t>(m.value(QStringLiteral("ping")).toInteger());
+        row.users       = static_cast<uint32_t>(m.value(QStringLiteral("users")).toInteger());
+        row.maxUsers    = static_cast<uint32_t>(m.value(QStringLiteral("maxUsers")).toInteger());
+        row.files       = static_cast<uint32_t>(m.value(QStringLiteral("files")).toInteger());
+        row.failed      = static_cast<uint32_t>(m.value(QStringLiteral("failedCount")).toInteger());
+        row.isStatic    = m.value(QStringLiteral("isStatic")).toBool();
+        row.softFiles   = static_cast<uint32_t>(m.value(QStringLiteral("softFiles")).toInteger());
+        row.lowIdUsers  = static_cast<uint32_t>(m.value(QStringLiteral("lowIDUsers")).toInteger());
+        row.obfuscation = m.value(QStringLiteral("obfuscation")).toBool();
+
+        const int pref  = static_cast<int>(m.value(QStringLiteral("preference")).toInteger());
+        row.preference = QStringLiteral("Normal");
+        for (const auto& [v, s] : prefNames) {
+            if (v == pref) { row.preference = QString::fromLatin1(s); break; }
+        }
+
+        row.numericIp = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
+        row.serverPtr = nullptr; // no direct pointer in IPC mode
+        m_rows.push_back(std::move(row));
     }
 
     endResetModel();
@@ -161,6 +205,13 @@ const Server* ServerListModel::serverAtRow(int row) const
     if (row < 0 || row >= static_cast<int>(m_rows.size()))
         return nullptr;
     return m_rows[static_cast<size_t>(row)].serverPtr;
+}
+
+const ServerRow* ServerListModel::rowAt(int row) const
+{
+    if (row < 0 || row >= static_cast<int>(m_rows.size()))
+        return nullptr;
+    return &m_rows[static_cast<size_t>(row)];
 }
 
 } // namespace eMule

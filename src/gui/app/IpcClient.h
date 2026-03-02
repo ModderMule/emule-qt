@@ -82,6 +82,10 @@ signals:
     void sharedFileUpdated(const Ipc::IpcMessage& msg);
     void uploadUpdated(const Ipc::IpcMessage& msg);
     void kadUpdated(const Ipc::IpcMessage& msg);
+    void kadSearchesChanged(const Ipc::IpcMessage& msg);
+    void knownClientsChanged(const Ipc::IpcMessage& msg);
+    void chatMessageReceived(const Ipc::IpcMessage& msg);
+    void friendListChanged(const Ipc::IpcMessage& msg);
 
 private slots:
     void onSocketConnected();

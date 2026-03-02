@@ -273,15 +273,10 @@ void tst_ServerConnect::connectToAnyServer_emptyList_stays_notConnected()
     ServerConnect conn(list);
     conn.setConfig(makeTestConfig());
 
-    QSignalSpy logSpy(&conn, &ServerConnect::logMessage);
-
     conn.connectToAnyServer();
 
     QVERIFY(!conn.isConnecting());
     QVERIFY(!conn.isConnected());
-
-    // Should have emitted an error log message
-    QVERIFY(!logSpy.isEmpty());
 }
 
 void tst_ServerConnect::connectToAnyServer_staticOnly_noStatic_fails()

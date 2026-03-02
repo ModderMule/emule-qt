@@ -70,6 +70,9 @@ struct ServerConnectConfig {
 
     // -- Timeouts --
     uint32 connectionTimeout = CONSERVTIMEOUT; ///< Per-socket timeout (ms).
+
+    // -- Smart LowID --
+    bool smartLowIdCheck = true;  ///< Try another server on LowID assignment.
 };
 
 // ---------------------------------------------------------------------------
@@ -174,9 +177,6 @@ signals:
     /// Forwarded server message.
     void serverMessageReceived(const QString& msg);
 
-    /// An error or notable event occurred (for logging/UI).
-    void logMessage(const QString& msg, uint32 flags);
-
 private slots:
     void onRetryTimer();
 
@@ -191,6 +191,9 @@ private:
     void tryAnotherConnectionRequest();
     void destroySocket(ServerSocket* socket);
     void initLocalIP();
+
+    // -- Smart LowID ----------------------------------------------------------
+    void onLoginReceived(ServerSocket* socket, uint32 clientID);
 
     // -- Login packet construction -------------------------------------------
     void sendLoginPacket(ServerSocket* socket);
@@ -221,6 +224,7 @@ private:
     bool m_singleConnecting = false;
     bool m_connected = false;
     bool m_tryObfuscated = false;
+    uint8 m_smartIdState = 0;  // 0=idle, 1=got HighID once, 2=retrying after LowID
 
     ServerConnectConfig m_config;
 };

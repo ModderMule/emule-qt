@@ -168,6 +168,9 @@ public:
     [[nodiscard]] QString fileCommentsFilePath() const;
     void setFileCommentsFilePath(const QString& val);
 
+    [[nodiscard]] QStringList sharedDirs() const;
+    void setSharedDirs(const QStringList& val);
+
     // -- UPnP -----------------------------------------------------------------
 
     [[nodiscard]] bool enableUPnP() const;
@@ -206,6 +209,30 @@ public:
 
     [[nodiscard]] bool useICH() const;
     void setUseICH(bool val);
+
+    [[nodiscard]] bool autoSharedFilesPriority() const;
+    void setAutoSharedFilesPriority(bool val);
+
+    [[nodiscard]] bool transferFullChunks() const;
+    void setTransferFullChunks(bool val);
+
+    [[nodiscard]] bool previewPrio() const;
+    void setPreviewPrio(bool val);
+
+    [[nodiscard]] bool startNextPausedFile() const;
+    void setStartNextPausedFile(bool val);
+
+    [[nodiscard]] bool startNextPausedFileSameCat() const;
+    void setStartNextPausedFileSameCat(bool val);
+
+    [[nodiscard]] bool startNextPausedFileOnlySameCat() const;
+    void setStartNextPausedFileOnlySameCat(bool val);
+
+    [[nodiscard]] bool rememberDownloadedFiles() const;
+    void setRememberDownloadedFiles(bool val);
+
+    [[nodiscard]] bool rememberCancelledFiles() const;
+    void setRememberCancelledFiles(bool val);
 
     // -- Transfer -------------------------------------------------------------
 
@@ -314,6 +341,21 @@ public:
     [[nodiscard]] bool filterServerByIP() const;
     void setFilterServerByIP(bool val);
 
+    [[nodiscard]] uint32 deadServerRetries() const;
+    void setDeadServerRetries(uint32 val);
+
+    [[nodiscard]] bool autoUpdateServerList() const;
+    void setAutoUpdateServerList(bool val);
+
+    [[nodiscard]] QString serverListURL() const;
+    void setServerListURL(const QString& val);
+
+    [[nodiscard]] bool smartLowIdCheck() const;
+    void setSmartLowIdCheck(bool val);
+
+    [[nodiscard]] bool manualServerHighPriority() const;
+    void setManualServerHighPriority(bool val);
+
     // -- Network modes --------------------------------------------------------
 
     [[nodiscard]] bool networkED2K() const;
@@ -378,6 +420,70 @@ public:
     [[nodiscard]] bool startMinimized() const;
     void setStartMinimized(bool val);
 
+    [[nodiscard]] uint32 startVersion() const;
+    void setStartVersion(uint32 val);
+
+    // -- GUI (Display page) ---------------------------------------------------
+
+    [[nodiscard]] int depth3D() const;
+    void setDepth3D(int val);
+
+    [[nodiscard]] int tooltipDelay() const;
+    void setTooltipDelay(int val);
+
+    [[nodiscard]] bool minimizeToTray() const;
+    void setMinimizeToTray(bool val);
+
+    [[nodiscard]] bool transferDoubleClick() const;
+    void setTransferDoubleClick(bool val);
+
+    [[nodiscard]] bool showDwlPercentage() const;
+    void setShowDwlPercentage(bool val);
+
+    [[nodiscard]] bool showRatesInTitle() const;
+    void setShowRatesInTitle(bool val);
+
+    [[nodiscard]] bool showCatTabInfos() const;
+    void setShowCatTabInfos(bool val);
+
+    [[nodiscard]] bool autoRemoveFinishedDownloads() const;
+    void setAutoRemoveFinishedDownloads(bool val);
+
+    [[nodiscard]] bool showTransToolbar() const;
+    void setShowTransToolbar(bool val);
+
+    [[nodiscard]] bool storeSearches() const;
+    void setStoreSearches(bool val);
+
+    [[nodiscard]] bool disableKnownClientList() const;
+    void setDisableKnownClientList(bool val);
+
+    [[nodiscard]] bool disableQueueList() const;
+    void setDisableQueueList(bool val);
+
+    [[nodiscard]] bool useAutoCompletion() const;
+    void setUseAutoCompletion(bool val);
+
+    // -- GUI (Files page) -----------------------------------------------------
+
+    [[nodiscard]] bool watchClipboard4ED2KLinks() const;
+    void setWatchClipboard4ED2KLinks(bool val);
+
+    [[nodiscard]] bool useAdvancedCalcRemainingTime() const;
+    void setUseAdvancedCalcRemainingTime(bool val);
+
+    [[nodiscard]] QString videoPlayerCommand() const;
+    void setVideoPlayerCommand(const QString& val);
+
+    [[nodiscard]] QString videoPlayerArgs() const;
+    void setVideoPlayerArgs(const QString& val);
+
+    [[nodiscard]] bool createBackupToPreview() const;
+    void setCreateBackupToPreview(bool val);
+
+    [[nodiscard]] bool autoCleanupFilenames() const;
+    void setAutoCleanupFilenames(bool val);
+
     // -- UI State (persisted window layout) -----------------------------------
 
     [[nodiscard]] QList<int> serverSplitSizes() const;
@@ -388,6 +494,18 @@ public:
 
     [[nodiscard]] QList<int> transferSplitSizes() const;
     void setTransferSplitSizes(const QList<int>& val);
+
+    [[nodiscard]] QList<int> sharedHorzSplitSizes() const;
+    void setSharedHorzSplitSizes(const QList<int>& val);
+
+    [[nodiscard]] QList<int> sharedVertSplitSizes() const;
+    void setSharedVertSplitSizes(const QList<int>& val);
+
+    [[nodiscard]] QList<int> messagesSplitSizes() const;
+    void setMessagesSplitSizes(const QList<int>& val);
+
+    [[nodiscard]] QList<int> ircSplitSizes() const;
+    void setIrcSplitSizes(const QList<int>& val);
 
     [[nodiscard]] int windowWidth() const;
     void setWindowWidth(int val);
@@ -425,6 +543,7 @@ private:
 
     void validate();
     void resolveDefaultDirectories();
+    void resolveDefaultVideoPlayer();
     bool saveImpl(const QString& filePath) const;
 
     std::unique_ptr<Data> m_data;

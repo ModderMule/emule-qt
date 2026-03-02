@@ -6,8 +6,10 @@
 /// Mirrors JsonSerializers.h but produces QCborMap instead of QJsonObject.
 /// Include only from daemon code that has access to core types.
 
+#include "client/ClientCredits.h"
 #include "client/UpDownClient.h"
 #include "files/AbstractFile.h"
+#include "utils/Opcodes.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "friends/Friend.h"
@@ -72,6 +74,13 @@ namespace eMule::Ipc {
         {QStringLiteral("isPaused"),             f.isPaused()},
         {QStringLiteral("isStopped"),            f.isStopped()},
         {QStringLiteral("category"),             static_cast<qint64>(f.category())},
+        {QStringLiteral("lastSeenComplete"),    static_cast<qint64>(f.completeSourcesTime())},
+        {QStringLiteral("lastReception"),       static_cast<qint64>(f.lastReceptionDate())},
+        {QStringLiteral("addedOn"),             static_cast<qint64>(f.createdDate())},
+        {QStringLiteral("fileType"),            f.fileType()},
+        {QStringLiteral("requests"),            static_cast<qint64>(f.statistic.allTimeRequests())},
+        {QStringLiteral("acceptedReqs"),        static_cast<qint64>(f.statistic.allTimeAccepts())},
+        {QStringLiteral("transferredData"),     static_cast<qint64>(f.statistic.allTimeTransferred())},
     };
 }
 
@@ -85,32 +94,52 @@ namespace eMule::Ipc {
         {QStringLiteral("description"), s.description()},
         {QStringLiteral("version"),     s.version()},
         {QStringLiteral("users"),       static_cast<qint64>(s.users())},
+        {QStringLiteral("maxUsers"),    static_cast<qint64>(s.maxUsers())},
         {QStringLiteral("files"),       static_cast<qint64>(s.files())},
         {QStringLiteral("ping"),        static_cast<qint64>(s.ping())},
         {QStringLiteral("failedCount"), static_cast<qint64>(s.failedCount())},
         {QStringLiteral("preference"),  static_cast<int>(s.preference())},
+        {QStringLiteral("isStatic"),    s.isStaticMember()},
+        {QStringLiteral("softFiles"),   static_cast<qint64>(s.softFiles())},
+        {QStringLiteral("lowIDUsers"),  static_cast<qint64>(s.lowIDUsers())},
+        {QStringLiteral("obfuscation"), s.supportsObfuscationTCP()},
     };
 }
 
 [[nodiscard]] inline QCborMap toCbor(const Friend& f)
 {
     return QCborMap{
-        {QStringLiteral("hash"),     f.hasUserhash() ? md4str(f.userHash().data()) : QString()},
-        {QStringLiteral("name"),     f.name()},
-        {QStringLiteral("ip"),       static_cast<qint64>(f.lastUsedIP())},
-        {QStringLiteral("port"),     f.lastUsedPort()},
-        {QStringLiteral("lastSeen"), static_cast<qint64>(f.lastSeen())},
+        {QStringLiteral("hash"),        f.hasUserhash() ? md4str(f.userHash().data()) : QString()},
+        {QStringLiteral("name"),        f.name()},
+        {QStringLiteral("ip"),          static_cast<qint64>(f.lastUsedIP())},
+        {QStringLiteral("port"),        f.lastUsedPort()},
+        {QStringLiteral("lastSeen"),    static_cast<qint64>(f.lastSeen())},
+        {QStringLiteral("lastChatted"), static_cast<qint64>(f.lastChatted())},
+        {QStringLiteral("friendSlot"),  f.friendSlot()},
+        {QStringLiteral("kadID"),       md4str(f.kadID().data())},
     };
 }
 
 [[nodiscard]] inline QCborMap toCbor(const SearchFile& f)
 {
-    return QCborMap{
-        {QStringLiteral("hash"),        md4str(f.fileHash())},
-        {QStringLiteral("fileName"),    f.fileName()},
-        {QStringLiteral("fileSize"),    static_cast<qint64>(f.fileSize())},
-        {QStringLiteral("sourceCount"), static_cast<qint64>(f.sourceCount())},
-    };
+    QCborMap m;
+    m.insert(QStringLiteral("hash"),                md4str(f.fileHash()));
+    m.insert(QStringLiteral("fileName"),            f.fileName());
+    m.insert(QStringLiteral("fileSize"),            static_cast<qint64>(f.fileSize()));
+    m.insert(QStringLiteral("sourceCount"),         static_cast<qint64>(f.sourceCount()));
+    m.insert(QStringLiteral("completeSourceCount"), static_cast<qint64>(f.completeSourceCount()));
+    m.insert(QStringLiteral("fileType"),            f.fileType());
+    m.insert(QStringLiteral("searchID"),            static_cast<qint64>(f.searchID()));
+    m.insert(QStringLiteral("knownType"),           static_cast<int>(f.knownType()));
+    m.insert(QStringLiteral("isSpam"),              f.isConsideredSpam());
+    // Media metadata from ED2K tags
+    m.insert(QStringLiteral("artist"),  f.getStrTagValue(FT_MEDIA_ARTIST));
+    m.insert(QStringLiteral("album"),   f.getStrTagValue(FT_MEDIA_ALBUM));
+    m.insert(QStringLiteral("title"),   f.getStrTagValue(FT_MEDIA_TITLE));
+    m.insert(QStringLiteral("length"),  static_cast<qint64>(f.getIntTagValue(FT_MEDIA_LENGTH)));
+    m.insert(QStringLiteral("bitrate"), static_cast<qint64>(f.getIntTagValue(FT_MEDIA_BITRATE)));
+    m.insert(QStringLiteral("codec"),   f.getStrTagValue(FT_MEDIA_CODEC));
+    return m;
 }
 
 [[nodiscard]] inline QCborMap toCbor(const UpDownClient& c)
@@ -135,9 +164,23 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("fileName"),        c.clientFilename());
     m.insert(QStringLiteral("remoteQueueRank"), static_cast<qint64>(c.remoteQueueRank()));
     m.insert(QStringLiteral("availPartCount"),  c.availablePartCount());
+    // Client software identification
+    m.insert(QStringLiteral("softwareId"), static_cast<int>(c.clientSoft()));
+    m.insert(QStringLiteral("hasCredit"),  c.credits() ? (c.credits()->scoreRatio(c.connectIP()) > 1.0f) : false);
+    m.insert(QStringLiteral("isFriend"),   c.friendPtr() != nullptr);
+    // Network address
+    m.insert(QStringLiteral("ip"),   static_cast<qint64>(c.connectIP()));
+    m.insert(QStringLiteral("port"), static_cast<qint64>(c.userPort()));
+    // Upload timing and connection state
+    m.insert(QStringLiteral("uploadStartDelay"), static_cast<qint64>(c.getUpStartTimeDelay()));
+    m.insert(QStringLiteral("fileRating"), static_cast<int>(c.fileRating()));
+    m.insert(QStringLiteral("isConnected"), c.socket() != nullptr);
     // File info
-    if (c.reqFile())
+    if (c.reqFile()) {
         m.insert(QStringLiteral("reqFileName"), c.reqFile()->fileName());
+        m.insert(QStringLiteral("filePriority"), static_cast<int>(c.reqFile()->downPriority()));
+        m.insert(QStringLiteral("isAutoPriority"), c.reqFile()->isAutoDownPriority());
+    }
     if (c.uploadFile())
         m.insert(QStringLiteral("uploadFileName"), c.uploadFile()->fileName());
     return m;

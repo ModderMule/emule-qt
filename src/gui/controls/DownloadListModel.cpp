@@ -57,6 +57,21 @@ QString formatTimestamp(int64_t epoch)
     return QDateTime::fromSecsSinceEpoch(epoch).toString(QStringLiteral("dd/MM/yyyy HH:mm:ss"));
 }
 
+/// Map ED2K file type codes to display names matching MFC.
+QString fileTypeDisplay(const QString& type)
+{
+    if (type == QLatin1String("Arc"))      return QObject::tr("Archive");
+    if (type == QLatin1String("Audio"))    return QObject::tr("Audio");
+    if (type == QLatin1String("Video"))    return QObject::tr("Video");
+    if (type == QLatin1String("Image"))    return QObject::tr("Image");
+    if (type == QLatin1String("Pro"))      return QObject::tr("Program");
+    if (type == QLatin1String("Doc"))      return QObject::tr("Document");
+    if (type == QLatin1String("Iso"))      return QObject::tr("CD-Image");
+    if (type == QLatin1String("EmuleCollection")) return QObject::tr("eMule Collection");
+    if (!type.isEmpty())                   return type;
+    return {};
+}
+
 } // anonymous namespace
 
 DownloadListModel::DownloadListModel(QObject* parent)
@@ -108,6 +123,22 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             return formatTimestamp(d.addedOn);
         default: break;
         }
+    }
+
+    if (role == Qt::ToolTipRole) {
+        return tr(
+            "File Name:\t%1\n"
+            "ED2K Hash:\t%2\n"
+            "Type:\t%3\n"
+            "Status:\t%4\n"
+            "Priority:\t%5\n"
+            "Requests:\t%6\n"
+            "Accepted Requests:\t%7\n"
+            "Transferred Data:\t%8")
+            .arg(d.fileName, d.hash, fileTypeDisplay(d.fileType),
+                 d.status, d.priority)
+            .arg(d.requests).arg(d.acceptedRequests)
+            .arg(formatSize(d.transferredData));
     }
 
     // Raw data for sorting
@@ -179,6 +210,13 @@ QString DownloadListModel::hashAt(int row) const
     if (row >= 0 && row < static_cast<int>(m_downloads.size()))
         return m_downloads[static_cast<size_t>(row)].hash;
     return {};
+}
+
+const DownloadRow* DownloadListModel::downloadAt(int row) const
+{
+    if (row >= 0 && row < static_cast<int>(m_downloads.size()))
+        return &m_downloads[static_cast<size_t>(row)];
+    return nullptr;
 }
 
 } // namespace eMule

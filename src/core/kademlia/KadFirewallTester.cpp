@@ -17,6 +17,11 @@
 
 namespace eMule::kad {
 
+// MFC UDPFirewallTester.cpp — UDP_FIREWALLCHECK_CLIENTSNEEDED = 2
+// Must match in both setUDPFWCheckResult() and getUDPCheckClientsNeeded().
+// Note: KADEMLIAFIREWALLCHECKS (4) is the TCP constant — do NOT use it here.
+static constexpr uint8 kUDPFWCheckClientsNeeded = 2;
+
 // ---------------------------------------------------------------------------
 // Static data
 // ---------------------------------------------------------------------------
@@ -48,7 +53,11 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
                                              uint32 /*fromIP*/, uint16 /*incomingPort*/)
 {
     if (testCancelled) {
-        logKad(QStringLiteral("Kad: UDP FW check cancelled"));
+        if (s_fwChecksRunning > 0)
+            --s_fwChecksRunning;
+        logKad(QStringLiteral("Kad: UDP FW check cancelled — running=%1, finished=%2")
+                   .arg(s_fwChecksRunning).arg(s_fwChecksFinished));
+        queryNextClient();
         return;
     }
 
@@ -56,7 +65,7 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
     logKad(QStringLiteral("Kad: UDP FW check result — succeeded=%1, finished=%2/%3")
                .arg(succeeded ? "yes" : "no")
                .arg(s_fwChecksFinished)
-               .arg(KADEMLIAFIREWALLCHECKS));
+               .arg(kUDPFWCheckClientsNeeded));
 
     if (succeeded) {
         s_firewalledUDP = false;
@@ -66,7 +75,7 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
     }
 
     // Check if all tests are finished
-    if (s_fwChecksFinished >= KADEMLIAFIREWALLCHECKS) {
+    if (s_fwChecksFinished >= kUDPFWCheckClientsNeeded) {
         if (!s_isFWVerifiedUDP)
             s_firewalledUDP = true;
         s_fwChecksRunning = 0;
@@ -92,7 +101,22 @@ void UDPFirewallTester::reCheckFirewallUDP(bool setUnverified)
 
 bool UDPFirewallTester::isFWCheckUDPRunning()
 {
-    return s_fwChecksRunning > 0 || s_nodeSearchStarted;
+    if (s_fwChecksRunning > 0 || s_nodeSearchStarted) {
+        // Timeout after 45s — matches MFC UDPFirewallTester.cpp
+        if (s_testStart != 0
+            && static_cast<uint32>(time(nullptr)) - s_testStart > 45)
+        {
+            s_timedOut = true;
+            s_fwChecksRunning = 0;
+            s_fwChecksFinished = 0;
+            s_nodeSearchStarted = false;
+            s_possibleTestClients.clear();
+            logKad(QStringLiteral("Kad: UDP FW check timed out"));
+            return false;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool UDPFirewallTester::isVerified()
@@ -227,10 +251,7 @@ void UDPFirewallTester::queryNextClient()
 
 bool UDPFirewallTester::getUDPCheckClientsNeeded()
 {
-    // MFC UDPFirewallTester.cpp:37 — "more clients increase the chance of a
-    // false positive, while less the chance of a false negative"
-    static constexpr uint8 kUDPFirewallTestClientsToAsk = 2;
-    return s_fwChecksRunning + s_fwChecksFinished < kUDPFirewallTestClientsToAsk;
+    return s_fwChecksRunning + s_fwChecksFinished < kUDPFWCheckClientsNeeded;
 }
 
 } // namespace eMule::kad

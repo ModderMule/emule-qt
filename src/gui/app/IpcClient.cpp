@@ -291,6 +291,10 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;
     case IpcMsgType::PushKadUpdate:        emit kadUpdated(msg); break;
+    case IpcMsgType::PushKadSearchesChanged: emit kadSearchesChanged(msg); break;
+    case IpcMsgType::PushKnownClientsChanged: emit knownClientsChanged(msg); break;
+    case IpcMsgType::PushChatMessage:        emit chatMessageReceived(msg); break;
+    case IpcMsgType::PushFriendListChanged:  emit friendListChanged(msg); break;
     default: break;
     }
 }

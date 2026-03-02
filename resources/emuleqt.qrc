@@ -1,6 +1,92 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
-    <qresource prefix="/">
-        <!-- ToDo: Migrate icons from srchybrid/res/ here (Module 27) -->
+    <qresource prefix="/icons">
+        <!-- File type icons -->
+        <file alias="FileTypeAny.ico">../srchybrid/res/FileTypeAny.ico</file>
+        <file alias="FileTypeAudio.ico">../srchybrid/res/FileTypeAudio.ico</file>
+        <file alias="FileTypeVideo.ico">../srchybrid/res/FileTypeVideo.ico</file>
+        <file alias="FileTypePicture.ico">../srchybrid/res/FileTypePicture.ico</file>
+        <file alias="FileTypeDocument.ico">../srchybrid/res/FileTypeDocument.ico</file>
+        <file alias="FileTypeProgram.ico">../srchybrid/res/FileTypeProgram.ico</file>
+        <file alias="FileTypeArchive.ico">../srchybrid/res/FileTypeArchive.ico</file>
+        <file alias="FileTypeCDImage.ico">../srchybrid/res/FileTypeCDImage.ico</file>
+        <file alias="emuleCollectionFileType.ico">../srchybrid/res/emuleCollectionFileType.ico</file>
+        <!-- Search method icons -->
+        <file alias="KadServer.ico">../srchybrid/res/KadServer.ico</file>
+        <file alias="SearchKad.ico">../srchybrid/res/SearchKad.ico</file>
+        <file alias="Server.ico">../srchybrid/res/Server.ico</file>
+        <file alias="Global.ico">../srchybrid/res/Global.ico</file>
+        <!-- Client software icons -->
+        <file alias="ClientDefault.ico">../srchybrid/res/ClientDefault.ico</file>
+        <file alias="ClientDefaultPlus.ico">../srchybrid/res/ClientDefaultPlus.ico</file>
+        <file alias="ClientCompatible.ico">../srchybrid/res/ClientCompatible.ico</file>
+        <file alias="ClientCompatiblePlus.ico">../srchybrid/res/ClientCompatiblePlus.ico</file>
+        <file alias="ClientMLDonkey.ico">../srchybrid/res/ClientMLDonkey.ico</file>
+        <file alias="ClientMLDonkeyPlus.ico">../srchybrid/res/ClientMLDonkeyPlus.ico</file>
+        <file alias="ClienteDonkeyHybrid.ico">../srchybrid/res/ClienteDonkeyHybrid.ico</file>
+        <file alias="ClienteDonkeyHybridPlus.ico">../srchybrid/res/ClienteDonkeyHybridPlus.ico</file>
+        <file alias="ClientShareaza.ico">../srchybrid/res/ClientShareaza.ico</file>
+        <file alias="ClientShareazaPlus.ico">../srchybrid/res/ClientShareazaPlus.ico</file>
+        <file alias="ClientaMule.ico">../srchybrid/res/ClientaMule.ico</file>
+        <file alias="ClientaMulePlus.ico">../srchybrid/res/ClientaMulePlus.ico</file>
+        <file alias="ClientlPhant.ico">../srchybrid/res/ClientlPhant.ico</file>
+        <file alias="ClientlPhantPlus.ico">../srchybrid/res/ClientlPhantPlus.ico</file>
+        <file alias="Friend.ico">../srchybrid/res/Friend.ico</file>
+        <!-- Transfer toolbar icons -->
+        <file alias="TransferUpDown.ico">../srchybrid/res/TransferUpDown.ico</file>
+        <file alias="DownloadFiles.ico">../srchybrid/res/DownloadFiles.ico</file>
+        <file alias="Upload.ico">../srchybrid/res/Upload.ico</file>
+        <file alias="Download.ico">../srchybrid/res/Download.ico</file>
+        <file alias="ClientsOnQueue.ico">../srchybrid/res/ClientsOnQueue.ico</file>
+        <file alias="ClientsKnown.ico">../srchybrid/res/ClientsKnown.ico</file>
+        <file alias="User.ico">../srchybrid/res/User.ico</file>
+        <file alias="SplitWindow.ico">../srchybrid/res/SplitWindow.ico</file>
+        <!-- Action toolbar icons (left-side vertical toolbar) -->
+        <file alias="FilePriority.ico">../srchybrid/res/FilePriority.ico</file>
+        <file alias="Pause.ico">../srchybrid/res/Pause.ico</file>
+        <file alias="Stop.ico">../srchybrid/res/Stop.ico</file>
+        <file alias="Start.ico">../srchybrid/res/Start.ico</file>
+        <file alias="Delete.ico">../srchybrid/res/Delete.ico</file>
+        <file alias="FileOpen.ico">../srchybrid/res/FileOpen.ico</file>
+        <file alias="FolderOpen.ico">../srchybrid/res/FolderOpen.ico</file>
+        <file alias="Preview.ico">../srchybrid/res/Preview.ico</file>
+        <file alias="FileInfo.ico">../srchybrid/res/FileInfo.ico</file>
+        <file alias="FileComments.ico">../srchybrid/res/FileComments.ico</file>
+        <file alias="eD2kLink.ico">../srchybrid/res/eD2kLink.ico</file>
+        <file alias="Category.ico">../srchybrid/res/Category.ico</file>
+        <file alias="DeleteAll.ico">../srchybrid/res/DeleteAll.ico</file>
+        <file alias="KadFileSearch.ico">../srchybrid/res/KadFileSearch.ico</file>
+        <file alias="Search.ico">../srchybrid/res/Search.ico</file>
+        <!-- Shared Files panel icons -->
+        <file alias="SharedFilesList.ico">../srchybrid/res/SharedFilesList.ico</file>
+        <file alias="HardDisk.ico">../srchybrid/res/HardDisk.ico</file>
+        <!-- Messages panel icons -->
+        <file alias="Messages.ico">../srchybrid/res/Messages.ico</file>
+        <file alias="Chat.ico">../srchybrid/res/Chat.ico</file>
+        <!-- Messages context menu icons -->
+        <file alias="UserAdd.ico">../srchybrid/res/UserAdd.ico</file>
+        <file alias="UserDelete.ico">../srchybrid/res/UserDelete.ico</file>
+        <file alias="UserMessage.ico">../srchybrid/res/UserMessage.ico</file>
+        <file alias="FriendSlot.ico">../srchybrid/res/FriendSlot.ico</file>
+        <!-- IRC icons -->
+        <file alias="IRC.ico">../srchybrid/res/IRC.ico</file>
+        <!-- Smiley icons -->
+        <file alias="Smiley_Smile.ico">../srchybrid/res/Smiley_Smile.ico</file>
+        <file alias="Smiley_Happy.ico">../srchybrid/res/Smiley_Happy.ico</file>
+        <file alias="Smiley_Laugh.ico">../srchybrid/res/Smiley_Laugh.ico</file>
+        <file alias="Smiley_Wink.ico">../srchybrid/res/Smiley_Wink.ico</file>
+        <file alias="Smiley_Tongue.ico">../srchybrid/res/Smiley_Tongue.ico</file>
+        <file alias="Smiley_Interest.ico">../srchybrid/res/Smiley_Interest.ico</file>
+        <file alias="Smiley_Sad.ico">../srchybrid/res/Smiley_Sad.ico</file>
+        <file alias="Smiley_Cry.ico">../srchybrid/res/Smiley_Cry.ico</file>
+        <file alias="Smiley_Disgust.ico">../srchybrid/res/Smiley_Disgust.ico</file>
+        <file alias="Smiley_omg.ico">../srchybrid/res/Smiley_omg.ico</file>
+        <file alias="Smiley_Skeptic.ico">../srchybrid/res/Smiley_Skeptic.ico</file>
+        <file alias="Smiley_Love.ico">../srchybrid/res/Smiley_Love.ico</file>
+        <file alias="Smiley_smileq.ico">../srchybrid/res/Smiley_smileq.ico</file>
+        <file alias="Smiley_sadq.ico">../srchybrid/res/Smiley_sadq.ico</file>
+        <file alias="Smiley_Ph34r.ico">../srchybrid/res/Smiley_Ph34r.ico</file>
+        <file alias="Smiley_lookside.ico">../srchybrid/res/Smiley_lookside.ico</file>
+        <file alias="Smiley_Sealed.ico">../srchybrid/res/Smiley_Sealed.ico</file>
     </qresource>
 </RCC>

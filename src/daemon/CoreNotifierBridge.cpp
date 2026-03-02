@@ -7,6 +7,11 @@
 #include "IpcMessage.h"
 
 #include "app/AppContext.h"
+#include "client/ClientList.h"
+#include "client/UpDownClient.h"
+#include "files/PartFile.h"
+#include "friends/FriendList.h"
+#include "utils/OtherFunctions.h"
 #include "kademlia/Kademlia.h"
 #include "files/SharedFileList.h"
 #include "search/SearchList.h"
@@ -35,6 +40,21 @@ void CoreNotifierBridge::connectAll()
                 this, &CoreNotifierBridge::onDownloadAdded);
         connect(theApp.downloadQueue, &DownloadQueue::fileRemoved,
                 this, &CoreNotifierBridge::onDownloadRemoved);
+
+        // Wire source signals for existing PartFiles (downloading tab)
+        for (auto* pf : theApp.downloadQueue->files()) {
+            connect(pf->partNotifier(), &PartFileNotifier::sourceAdded,
+                    this, &CoreNotifierBridge::onDownloadSourcesChanged);
+            connect(pf->partNotifier(), &PartFileNotifier::sourceRemoved,
+                    this, &CoreNotifierBridge::onDownloadSourcesChanged);
+        }
+        // Wire source signals for newly added PartFiles
+        connect(theApp.downloadQueue, &DownloadQueue::fileAdded, this, [this](PartFile* pf) {
+            connect(pf->partNotifier(), &PartFileNotifier::sourceAdded,
+                    this, &CoreNotifierBridge::onDownloadSourcesChanged);
+            connect(pf->partNotifier(), &PartFileNotifier::sourceRemoved,
+                    this, &CoreNotifierBridge::onDownloadSourcesChanged);
+        });
     }
 
     // ServerConnect
@@ -67,6 +87,36 @@ void CoreNotifierBridge::connectAll()
                 this, &CoreNotifierBridge::onUploadChanged);
         connect(theApp.uploadQueue, &UploadQueue::uploadEnded,
                 this, &CoreNotifierBridge::onUploadChanged);
+        connect(theApp.uploadQueue, &UploadQueue::clientAddedToQueue,
+                this, &CoreNotifierBridge::onUploadChanged);
+        connect(theApp.uploadQueue, &UploadQueue::clientRemovedFromQueue,
+                this, &CoreNotifierBridge::onUploadChanged);
+    }
+
+    // ClientList (Known Clients tab)
+    if (theApp.clientList) {
+        connect(theApp.clientList, &ClientList::clientAdded,
+                this, &CoreNotifierBridge::onKnownClientsChanged);
+        connect(theApp.clientList, &ClientList::clientRemoved,
+                this, &CoreNotifierBridge::onKnownClientsChanged);
+
+        // Wire chat signals for existing clients
+        theApp.clientList->forEachClient([this](UpDownClient* c) {
+            connectClientChatSignal(c);
+        });
+        // Wire chat signals for newly added clients
+        connect(theApp.clientList, &ClientList::clientAdded,
+                this, &CoreNotifierBridge::connectClientChatSignal);
+    }
+
+    // FriendList
+    if (theApp.friendList) {
+        connect(theApp.friendList, &FriendList::friendAdded,
+                this, &CoreNotifierBridge::onFriendListChanged);
+        connect(theApp.friendList, &FriendList::friendRemoved,
+                this, [this](const QString&) { onFriendListChanged(); });
+        connect(theApp.friendList, &FriendList::friendUpdated,
+                this, [this](Friend*) { onFriendListChanged(); });
     }
 
     // Kademlia
@@ -76,6 +126,10 @@ void CoreNotifierBridge::connectAll()
         connect(kad, &kad::Kademlia::connected, this, &CoreNotifierBridge::onKadStateChanged);
         connect(kad, &kad::Kademlia::firewallStatusChanged,
                 this, [this](bool) { onKadStateChanged(); });
+        connect(kad, &kad::Kademlia::searchesChanged,
+                this, &CoreNotifierBridge::onKadSearchesChanged);
+        connect(kad, &kad::Kademlia::statsUpdated,
+                this, [this](uint32_t, uint32_t) { onKadStateChanged(); });
     }
 }
 
@@ -122,9 +176,11 @@ void CoreNotifierBridge::onStatsUpdated()
     m_ipcServer->broadcast(msg);
 }
 
-void CoreNotifierBridge::onSearchResultAdded()
+void CoreNotifierBridge::onSearchResultAdded(SearchFile* file)
 {
     IpcMessage msg(IpcMsgType::PushSearchResult, 0);
+    if (file)
+        msg.append(static_cast<int64_t>(file->searchID()));
     m_ipcServer->broadcast(msg);
 }
 
@@ -148,8 +204,52 @@ void CoreNotifierBridge::onKadStateChanged()
     info.insert(QStringLiteral("running"),    kad && kad->isRunning());
     info.insert(QStringLiteral("connected"),  kad && kad->isConnected());
     info.insert(QStringLiteral("firewalled"), kad && kad->isFirewalled());
+    info.insert(QStringLiteral("users"),  static_cast<qint64>(kad ? kad->getKademliaUsers() : 0));
+    info.insert(QStringLiteral("files"),  static_cast<qint64>(kad ? kad->getKademliaFiles() : 0));
     msg.append(info);
     m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::onKadSearchesChanged()
+{
+    IpcMessage msg(IpcMsgType::PushKadSearchesChanged, 0);
+    m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::onDownloadSourcesChanged()
+{
+    // Reuses existing PushDownloadUpdate — GUI already handles it
+    IpcMessage msg(IpcMsgType::PushDownloadUpdate, 0);
+    m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::onKnownClientsChanged()
+{
+    IpcMessage msg(IpcMsgType::PushKnownClientsChanged, 0);
+    m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::onFriendListChanged()
+{
+    IpcMessage msg(IpcMsgType::PushFriendListChanged, 0);
+    m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::onChatMessageReceived(const QString& fromUser,
+                                                const QString& message)
+{
+    auto* client = qobject_cast<UpDownClient*>(sender());
+    IpcMessage msg(IpcMsgType::PushChatMessage, 0);
+    msg.append(client ? md4str(client->userHash()) : QString());
+    msg.append(fromUser);
+    msg.append(message);
+    m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::connectClientChatSignal(UpDownClient* client)
+{
+    connect(client, &UpDownClient::chatMessageReceived,
+            this, &CoreNotifierBridge::onChatMessageReceived);
 }
 
 } // namespace eMule

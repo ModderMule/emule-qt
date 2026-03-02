@@ -47,11 +47,11 @@ struct Preferences::Data {
     QString bindAddress;
 
     // Bandwidth (KB/s)
-    uint32 maxUpload = 80;
-    uint32 maxDownload = 90;
+    uint32 maxUpload = 250;
+    uint32 maxDownload = 500;
     uint32 minUpload = 1;
-    uint32 maxGraphUploadRate = 100;
-    uint32 maxGraphDownloadRate = 100;
+    uint32 maxGraphUploadRate = 250;
+    uint32 maxGraphDownloadRate = 500;
 
     // Encryption
     bool cryptLayerSupported = true;
@@ -72,6 +72,7 @@ struct Preferences::Data {
     QStringList tempDirs;
     QString configDir;
     QString fileCommentsFilePath;
+    QStringList sharedDirs;
 
     // UPnP
     bool enableUPnP = true;
@@ -82,13 +83,21 @@ struct Preferences::Data {
     // Logging
     bool logToDisk = false;
     uint32 maxLogFileSize = 1048576; // 1 MB
-    bool verbose = false;
+    bool verbose = true;
     bool kadVerboseLog = true;
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
 
     // Files
     uint16 maxSourcesPerFile = 400;
     bool useICH = true;
+    bool autoSharedFilesPriority = true;
+    bool transferFullChunks = true;
+    bool previewPrio = false;
+    bool startNextPausedFile = false;
+    bool startNextPausedFileSameCat = false;
+    bool startNextPausedFileOnlySameCat = false;
+    bool rememberDownloadedFiles = true;
+    bool rememberCancelledFiles = true;
 
     // Transfer
     uint32 fileBufferSize = 245760;     // 240 KB
@@ -136,9 +145,14 @@ struct Preferences::Data {
     // Server management (extended)
     bool addServersFromClients = true;  // Accept server list from other clients
     bool filterServerByIP = false;      // Apply IP filter to server addresses
+    uint32 deadServerRetries = 1;       // Remove dead servers after N failed attempts (0 = disabled)
+    bool autoUpdateServerList = false;  // Auto-update server list from URL at startup
+    QString serverListURL;              // URL for server.met download
+    bool smartLowIdCheck = true;        // Try another server if we get a LowID
+    bool manualServerHighPriority = false; // Set manually added servers to high priority
 
     // Network modes
-    bool networkED2K = true;  // ED2K protocol enabled
+    bool networkED2K = false;  // ED2K protocol disabled by default
 
     // Chat / Messages
     bool msgOnlyFriends = false;   // Only accept messages from friends
@@ -167,11 +181,39 @@ struct Preferences::Data {
     // GUI (General page)
     bool promptOnExit = true;
     bool startMinimized = false;
+    uint32 startVersion = 0;  // Migration counter: 0=first run, 1+=migrations applied
+
+    // GUI (Display page)
+    int depth3D = 0;                        // 0=flat, 5=round
+    int tooltipDelay = 1;                   // seconds
+    bool minimizeToTray = true;
+    bool transferDoubleClick = true;
+    bool showDwlPercentage = false;
+    bool showRatesInTitle = false;
+    bool showCatTabInfos = false;
+    bool autoRemoveFinishedDownloads = false;
+    bool showTransToolbar = true;
+    bool storeSearches = true;
+    bool disableKnownClientList = false;
+    bool disableQueueList = false;
+    bool useAutoCompletion = true;
+
+    // GUI (Files page)
+    bool watchClipboard4ED2KLinks = false;
+    bool useAdvancedCalcRemainingTime = true;
+    QString videoPlayerCommand;
+    QString videoPlayerArgs;
+    bool createBackupToPreview = true;
+    bool autoCleanupFilenames = false;
 
     // UI State (GUI-only, persisted across sessions)
     QList<int> serverSplitSizes;
     QList<int> kadSplitSizes;
     QList<int> transferSplitSizes;
+    QList<int> sharedHorzSplitSizes;
+    QList<int> sharedVertSplitSizes;
+    QList<int> messagesSplitSizes;
+    QList<int> ircSplitSizes;
     int windowWidth = 900;
     int windowHeight = 620;
     bool windowMaximized = false;
@@ -651,6 +693,18 @@ void Preferences::setFileCommentsFilePath(const QString& val)
 {
     QWriteLocker lock(&m_lock);
     m_data->fileCommentsFilePath = val;
+}
+
+QStringList Preferences::sharedDirs() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->sharedDirs;
+}
+
+void Preferences::setSharedDirs(const QStringList& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->sharedDirs = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,6 +1235,66 @@ void Preferences::setFilterServerByIP(bool val)
     m_data->filterServerByIP = val;
 }
 
+uint32 Preferences::deadServerRetries() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->deadServerRetries;
+}
+
+void Preferences::setDeadServerRetries(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->deadServerRetries = val;
+}
+
+bool Preferences::autoUpdateServerList() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->autoUpdateServerList;
+}
+
+void Preferences::setAutoUpdateServerList(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->autoUpdateServerList = val;
+}
+
+QString Preferences::serverListURL() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->serverListURL;
+}
+
+void Preferences::setServerListURL(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->serverListURL = val;
+}
+
+bool Preferences::smartLowIdCheck() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->smartLowIdCheck;
+}
+
+void Preferences::setSmartLowIdCheck(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->smartLowIdCheck = val;
+}
+
+bool Preferences::manualServerHighPriority() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->manualServerHighPriority;
+}
+
+void Preferences::setManualServerHighPriority(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->manualServerHighPriority = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Network modes
 // ---------------------------------------------------------------------------
@@ -1310,6 +1424,106 @@ void Preferences::setAddNewFilesPaused(bool val)
 }
 
 // ---------------------------------------------------------------------------
+// Getters / setters — Files (extended)
+// ---------------------------------------------------------------------------
+
+bool Preferences::autoSharedFilesPriority() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->autoSharedFilesPriority;
+}
+
+void Preferences::setAutoSharedFilesPriority(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->autoSharedFilesPriority = val;
+}
+
+bool Preferences::transferFullChunks() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->transferFullChunks;
+}
+
+void Preferences::setTransferFullChunks(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->transferFullChunks = val;
+}
+
+bool Preferences::previewPrio() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->previewPrio;
+}
+
+void Preferences::setPreviewPrio(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->previewPrio = val;
+}
+
+bool Preferences::startNextPausedFile() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->startNextPausedFile;
+}
+
+void Preferences::setStartNextPausedFile(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->startNextPausedFile = val;
+}
+
+bool Preferences::startNextPausedFileSameCat() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->startNextPausedFileSameCat;
+}
+
+void Preferences::setStartNextPausedFileSameCat(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->startNextPausedFileSameCat = val;
+}
+
+bool Preferences::startNextPausedFileOnlySameCat() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->startNextPausedFileOnlySameCat;
+}
+
+void Preferences::setStartNextPausedFileOnlySameCat(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->startNextPausedFileOnlySameCat = val;
+}
+
+bool Preferences::rememberDownloadedFiles() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->rememberDownloadedFiles;
+}
+
+void Preferences::setRememberDownloadedFiles(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->rememberDownloadedFiles = val;
+}
+
+bool Preferences::rememberCancelledFiles() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->rememberCancelledFiles;
+}
+
+void Preferences::setRememberCancelledFiles(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->rememberCancelledFiles = val;
+}
+
+// ---------------------------------------------------------------------------
 // Getters / setters — Disk space
 // ---------------------------------------------------------------------------
 
@@ -1397,6 +1611,254 @@ void Preferences::setStartMinimized(bool val)
     m_data->startMinimized = val;
 }
 
+uint32 Preferences::startVersion() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->startVersion;
+}
+
+void Preferences::setStartVersion(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->startVersion = val;
+}
+
+// ---------------------------------------------------------------------------
+// Getters / setters — GUI (Display page)
+// ---------------------------------------------------------------------------
+
+int Preferences::depth3D() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->depth3D;
+}
+
+void Preferences::setDepth3D(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->depth3D = val;
+}
+
+int Preferences::tooltipDelay() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->tooltipDelay;
+}
+
+void Preferences::setTooltipDelay(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->tooltipDelay = val;
+}
+
+bool Preferences::minimizeToTray() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->minimizeToTray;
+}
+
+void Preferences::setMinimizeToTray(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->minimizeToTray = val;
+}
+
+bool Preferences::transferDoubleClick() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->transferDoubleClick;
+}
+
+void Preferences::setTransferDoubleClick(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->transferDoubleClick = val;
+}
+
+bool Preferences::showDwlPercentage() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showDwlPercentage;
+}
+
+void Preferences::setShowDwlPercentage(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showDwlPercentage = val;
+}
+
+bool Preferences::showRatesInTitle() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showRatesInTitle;
+}
+
+void Preferences::setShowRatesInTitle(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showRatesInTitle = val;
+}
+
+bool Preferences::showCatTabInfos() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showCatTabInfos;
+}
+
+void Preferences::setShowCatTabInfos(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showCatTabInfos = val;
+}
+
+bool Preferences::autoRemoveFinishedDownloads() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->autoRemoveFinishedDownloads;
+}
+
+void Preferences::setAutoRemoveFinishedDownloads(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->autoRemoveFinishedDownloads = val;
+}
+
+bool Preferences::showTransToolbar() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showTransToolbar;
+}
+
+void Preferences::setShowTransToolbar(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showTransToolbar = val;
+}
+
+bool Preferences::storeSearches() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->storeSearches;
+}
+
+void Preferences::setStoreSearches(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->storeSearches = val;
+}
+
+bool Preferences::disableKnownClientList() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->disableKnownClientList;
+}
+
+void Preferences::setDisableKnownClientList(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->disableKnownClientList = val;
+}
+
+bool Preferences::disableQueueList() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->disableQueueList;
+}
+
+void Preferences::setDisableQueueList(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->disableQueueList = val;
+}
+
+bool Preferences::useAutoCompletion() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->useAutoCompletion;
+}
+
+void Preferences::setUseAutoCompletion(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->useAutoCompletion = val;
+}
+
+// ---------------------------------------------------------------------------
+// Getters / setters — GUI (Files page)
+// ---------------------------------------------------------------------------
+
+bool Preferences::watchClipboard4ED2KLinks() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->watchClipboard4ED2KLinks;
+}
+
+void Preferences::setWatchClipboard4ED2KLinks(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->watchClipboard4ED2KLinks = val;
+}
+
+bool Preferences::useAdvancedCalcRemainingTime() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->useAdvancedCalcRemainingTime;
+}
+
+void Preferences::setUseAdvancedCalcRemainingTime(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->useAdvancedCalcRemainingTime = val;
+}
+
+QString Preferences::videoPlayerCommand() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->videoPlayerCommand;
+}
+
+void Preferences::setVideoPlayerCommand(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->videoPlayerCommand = val;
+}
+
+QString Preferences::videoPlayerArgs() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->videoPlayerArgs;
+}
+
+void Preferences::setVideoPlayerArgs(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->videoPlayerArgs = val;
+}
+
+bool Preferences::createBackupToPreview() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->createBackupToPreview;
+}
+
+void Preferences::setCreateBackupToPreview(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->createBackupToPreview = val;
+}
+
+bool Preferences::autoCleanupFilenames() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->autoCleanupFilenames;
+}
+
+void Preferences::setAutoCleanupFilenames(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->autoCleanupFilenames = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — UI State
 // ---------------------------------------------------------------------------
@@ -1435,6 +1897,54 @@ void Preferences::setTransferSplitSizes(const QList<int>& val)
 {
     QWriteLocker lock(&m_lock);
     m_data->transferSplitSizes = val;
+}
+
+QList<int> Preferences::sharedHorzSplitSizes() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->sharedHorzSplitSizes;
+}
+
+void Preferences::setSharedHorzSplitSizes(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->sharedHorzSplitSizes = val;
+}
+
+QList<int> Preferences::sharedVertSplitSizes() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->sharedVertSplitSizes;
+}
+
+void Preferences::setSharedVertSplitSizes(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->sharedVertSplitSizes = val;
+}
+
+QList<int> Preferences::messagesSplitSizes() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->messagesSplitSizes;
+}
+
+void Preferences::setMessagesSplitSizes(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->messagesSplitSizes = val;
+}
+
+QList<int> Preferences::ircSplitSizes() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircSplitSizes;
+}
+
+void Preferences::setIrcSplitSizes(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircSplitSizes = val;
 }
 
 int Preferences::windowWidth() const
@@ -1561,6 +2071,30 @@ void Preferences::resolveDefaultDirectories()
         m_data->tempDirs.append(baseDir + QStringLiteral("/Temp"));
 }
 
+void Preferences::resolveDefaultVideoPlayer()
+{
+    if (!m_data->videoPlayerCommand.isEmpty())
+        return;
+
+    static constexpr const char* vlcPaths[] = {
+#ifdef Q_OS_MACOS
+        "/Applications/VLC.app/Contents/MacOS/VLC",
+#elif defined(Q_OS_WIN)
+        "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+        "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
+#else
+        "/usr/bin/vlc",
+#endif
+    };
+
+    for (const char* path : vlcPaths) {
+        if (QFile::exists(QString::fromLatin1(path))) {
+            m_data->videoPlayerCommand = QString::fromLatin1(path);
+            return;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // YAML persistence — load
 // ---------------------------------------------------------------------------
@@ -1581,6 +2115,8 @@ bool Preferences::load(const QString& filePath)
             m_data->udpPort = randomUDPPort();
         validate();
         resolveDefaultDirectories();
+        resolveDefaultVideoPlayer();
+        m_data->startVersion = 1;
 
         // Create directories and persist initial preferences
         QDir().mkpath(m_data->configDir);
@@ -1602,6 +2138,7 @@ bool Preferences::load(const QString& filePath)
             m_data->filterLANIPs = g["filterLANIPs"].as<bool>(m_data->filterLANIPs);
             m_data->promptOnExit = g["promptOnExit"].as<bool>(m_data->promptOnExit);
             m_data->startMinimized = g["startMinimized"].as<bool>(m_data->startMinimized);
+            m_data->startVersion = g["startVersion"].as<uint32>(m_data->startVersion);
 
             // userHash: decode from hex
             if (g["userHash"]) {
@@ -1623,6 +2160,12 @@ bool Preferences::load(const QString& filePath)
             m_data->serverKeepAliveTimeout = s["serverKeepAliveTimeout"].as<uint32>(m_data->serverKeepAliveTimeout);
             m_data->addServersFromClients = s["addServersFromClients"].as<bool>(m_data->addServersFromClients);
             m_data->filterServerByIP = s["filterServerByIP"].as<bool>(m_data->filterServerByIP);
+            m_data->deadServerRetries = s["deadServerRetries"].as<uint32>(m_data->deadServerRetries);
+            m_data->autoUpdateServerList = s["autoUpdateServerList"].as<bool>(m_data->autoUpdateServerList);
+            if (s["serverListURL"])
+                m_data->serverListURL = QString::fromStdString(s["serverListURL"].as<std::string>(""));
+            m_data->smartLowIdCheck = s["smartLowIdCheck"].as<bool>(m_data->smartLowIdCheck);
+            m_data->manualServerHighPriority = s["manualServerHighPriority"].as<bool>(m_data->manualServerHighPriority);
         }
 
         // Network
@@ -1676,6 +2219,12 @@ bool Preferences::load(const QString& filePath)
                 for (const auto& item : d["tempDirs"])
                     m_data->tempDirs.append(QString::fromStdString(item.as<std::string>("")));
             }
+
+            if (d["sharedDirs"] && d["sharedDirs"].IsSequence()) {
+                m_data->sharedDirs.clear();
+                for (const auto& item : d["sharedDirs"])
+                    m_data->sharedDirs.append(QString::fromStdString(item.as<std::string>("")));
+            }
         }
 
         // UPnP
@@ -1701,6 +2250,14 @@ bool Preferences::load(const QString& filePath)
             m_data->useICH = f["useICH"].as<bool>(m_data->useICH);
             m_data->checkDiskspace = f["checkDiskspace"].as<bool>(m_data->checkDiskspace);
             m_data->minFreeDiskSpace = f["minFreeDiskSpace"].as<uint64>(m_data->minFreeDiskSpace);
+            m_data->autoSharedFilesPriority = f["autoSharedFilesPriority"].as<bool>(m_data->autoSharedFilesPriority);
+            m_data->transferFullChunks = f["transferFullChunks"].as<bool>(m_data->transferFullChunks);
+            m_data->previewPrio = f["previewPrio"].as<bool>(m_data->previewPrio);
+            m_data->startNextPausedFile = f["startNextPausedFile"].as<bool>(m_data->startNextPausedFile);
+            m_data->startNextPausedFileSameCat = f["startNextPausedFileSameCat"].as<bool>(m_data->startNextPausedFileSameCat);
+            m_data->startNextPausedFileOnlySameCat = f["startNextPausedFileOnlySameCat"].as<bool>(m_data->startNextPausedFileOnlySameCat);
+            m_data->rememberDownloadedFiles = f["rememberDownloadedFiles"].as<bool>(m_data->rememberDownloadedFiles);
+            m_data->rememberCancelledFiles = f["rememberCancelledFiles"].as<bool>(m_data->rememberCancelledFiles);
         }
 
         // Transfer
@@ -1774,6 +2331,29 @@ bool Preferences::load(const QString& filePath)
             m_data->kadUDPKey = k["udpKey"].as<uint32>(m_data->kadUDPKey);
         }
 
+        // Display
+        if (auto d = root["display"]) {
+            m_data->depth3D = d["depth3D"].as<int>(m_data->depth3D);
+            m_data->tooltipDelay = d["tooltipDelay"].as<int>(m_data->tooltipDelay);
+            m_data->minimizeToTray = d["minimizeToTray"].as<bool>(m_data->minimizeToTray);
+            m_data->transferDoubleClick = d["transferDoubleClick"].as<bool>(m_data->transferDoubleClick);
+            m_data->showDwlPercentage = d["showDwlPercentage"].as<bool>(m_data->showDwlPercentage);
+            m_data->showRatesInTitle = d["showRatesInTitle"].as<bool>(m_data->showRatesInTitle);
+            m_data->showCatTabInfos = d["showCatTabInfos"].as<bool>(m_data->showCatTabInfos);
+            m_data->autoRemoveFinishedDownloads = d["autoRemoveFinishedDownloads"].as<bool>(m_data->autoRemoveFinishedDownloads);
+            m_data->showTransToolbar = d["showTransToolbar"].as<bool>(m_data->showTransToolbar);
+            m_data->storeSearches = d["storeSearches"].as<bool>(m_data->storeSearches);
+            m_data->disableKnownClientList = d["disableKnownClientList"].as<bool>(m_data->disableKnownClientList);
+            m_data->disableQueueList = d["disableQueueList"].as<bool>(m_data->disableQueueList);
+            m_data->useAutoCompletion = d["useAutoCompletion"].as<bool>(m_data->useAutoCompletion);
+            m_data->watchClipboard4ED2KLinks = d["watchClipboard4ED2KLinks"].as<bool>(m_data->watchClipboard4ED2KLinks);
+            m_data->useAdvancedCalcRemainingTime = d["useAdvancedCalcRemainingTime"].as<bool>(m_data->useAdvancedCalcRemainingTime);
+            m_data->videoPlayerCommand = QString::fromStdString(d["videoPlayerCommand"].as<std::string>(m_data->videoPlayerCommand.toStdString()));
+            m_data->videoPlayerArgs = QString::fromStdString(d["videoPlayerArgs"].as<std::string>(m_data->videoPlayerArgs.toStdString()));
+            m_data->createBackupToPreview = d["createBackupToPreview"].as<bool>(m_data->createBackupToPreview);
+            m_data->autoCleanupFilenames = d["autoCleanupFilenames"].as<bool>(m_data->autoCleanupFilenames);
+        }
+
         // UI State
         if (auto ui = root["uistate"]) {
             if (ui["serverSplitSizes"] && ui["serverSplitSizes"].IsSequence()) {
@@ -1790,6 +2370,26 @@ bool Preferences::load(const QString& filePath)
                 m_data->transferSplitSizes.clear();
                 for (const auto& item : ui["transferSplitSizes"])
                     m_data->transferSplitSizes.append(item.as<int>(0));
+            }
+            if (ui["sharedHorzSplitSizes"] && ui["sharedHorzSplitSizes"].IsSequence()) {
+                m_data->sharedHorzSplitSizes.clear();
+                for (const auto& item : ui["sharedHorzSplitSizes"])
+                    m_data->sharedHorzSplitSizes.append(item.as<int>(0));
+            }
+            if (ui["sharedVertSplitSizes"] && ui["sharedVertSplitSizes"].IsSequence()) {
+                m_data->sharedVertSplitSizes.clear();
+                for (const auto& item : ui["sharedVertSplitSizes"])
+                    m_data->sharedVertSplitSizes.append(item.as<int>(0));
+            }
+            if (ui["messagesSplitSizes"] && ui["messagesSplitSizes"].IsSequence()) {
+                m_data->messagesSplitSizes.clear();
+                for (const auto& item : ui["messagesSplitSizes"])
+                    m_data->messagesSplitSizes.append(item.as<int>(0));
+            }
+            if (ui["ircSplitSizes"] && ui["ircSplitSizes"].IsSequence()) {
+                m_data->ircSplitSizes.clear();
+                for (const auto& item : ui["ircSplitSizes"])
+                    m_data->ircSplitSizes.append(item.as<int>(0));
             }
             m_data->windowWidth     = ui["windowWidth"].as<int>(m_data->windowWidth);
             m_data->windowHeight    = ui["windowHeight"].as<int>(m_data->windowHeight);
@@ -1831,6 +2431,13 @@ bool Preferences::load(const QString& filePath)
 
     validate();
     resolveDefaultDirectories();
+
+    // One-time migrations keyed by startVersion
+    if (m_data->startVersion == 0) {
+        resolveDefaultVideoPlayer();
+        m_data->startVersion = 1;
+    }
+
     return true;
 }
 
@@ -1937,6 +2544,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "filterLANIPs" << YAML::Value << m_data->filterLANIPs;
     out << YAML::Key << "promptOnExit" << YAML::Value << m_data->promptOnExit;
     out << YAML::Key << "startMinimized" << YAML::Value << m_data->startMinimized;
+    out << YAML::Key << "startVersion" << YAML::Value << m_data->startVersion;
     out << YAML::EndMap;
 
     // Server connection
@@ -1948,6 +2556,12 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "serverKeepAliveTimeout" << YAML::Value << m_data->serverKeepAliveTimeout;
     out << YAML::Key << "addServersFromClients" << YAML::Value << m_data->addServersFromClients;
     out << YAML::Key << "filterServerByIP" << YAML::Value << m_data->filterServerByIP;
+    out << YAML::Key << "deadServerRetries" << YAML::Value << m_data->deadServerRetries;
+    out << YAML::Key << "autoUpdateServerList" << YAML::Value << m_data->autoUpdateServerList;
+    if (!m_data->serverListURL.isEmpty())
+        out << YAML::Key << "serverListURL" << YAML::Value << m_data->serverListURL.toStdString();
+    out << YAML::Key << "smartLowIdCheck" << YAML::Value << m_data->smartLowIdCheck;
+    out << YAML::Key << "manualServerHighPriority" << YAML::Value << m_data->manualServerHighPriority;
     out << YAML::EndMap;
 
     // Network
@@ -1999,6 +2613,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::EndSeq;
     out << YAML::Key << "configDir" << YAML::Value << m_data->configDir.toStdString();
     out << YAML::Key << "fileCommentsFilePath" << YAML::Value << m_data->fileCommentsFilePath.toStdString();
+    out << YAML::Key << "sharedDirs" << YAML::Value << YAML::BeginSeq;
+    for (const auto& dir : m_data->sharedDirs)
+        out << dir.toStdString();
+    out << YAML::EndSeq;
     out << YAML::EndMap;
 
     // UPnP
@@ -2024,6 +2642,14 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "useICH" << YAML::Value << m_data->useICH;
     out << YAML::Key << "checkDiskspace" << YAML::Value << m_data->checkDiskspace;
     out << YAML::Key << "minFreeDiskSpace" << YAML::Value << m_data->minFreeDiskSpace;
+    out << YAML::Key << "autoSharedFilesPriority" << YAML::Value << m_data->autoSharedFilesPriority;
+    out << YAML::Key << "transferFullChunks" << YAML::Value << m_data->transferFullChunks;
+    out << YAML::Key << "previewPrio" << YAML::Value << m_data->previewPrio;
+    out << YAML::Key << "startNextPausedFile" << YAML::Value << m_data->startNextPausedFile;
+    out << YAML::Key << "startNextPausedFileSameCat" << YAML::Value << m_data->startNextPausedFileSameCat;
+    out << YAML::Key << "startNextPausedFileOnlySameCat" << YAML::Value << m_data->startNextPausedFileOnlySameCat;
+    out << YAML::Key << "rememberDownloadedFiles" << YAML::Value << m_data->rememberDownloadedFiles;
+    out << YAML::Key << "rememberCancelledFiles" << YAML::Value << m_data->rememberCancelledFiles;
     out << YAML::EndMap;
 
     // Transfer
@@ -2097,6 +2723,29 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "udpKey" << YAML::Value << m_data->kadUDPKey;
     out << YAML::EndMap;
 
+    // Display
+    out << YAML::Key << "display" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "depth3D" << YAML::Value << m_data->depth3D;
+    out << YAML::Key << "tooltipDelay" << YAML::Value << m_data->tooltipDelay;
+    out << YAML::Key << "minimizeToTray" << YAML::Value << m_data->minimizeToTray;
+    out << YAML::Key << "transferDoubleClick" << YAML::Value << m_data->transferDoubleClick;
+    out << YAML::Key << "showDwlPercentage" << YAML::Value << m_data->showDwlPercentage;
+    out << YAML::Key << "showRatesInTitle" << YAML::Value << m_data->showRatesInTitle;
+    out << YAML::Key << "showCatTabInfos" << YAML::Value << m_data->showCatTabInfos;
+    out << YAML::Key << "autoRemoveFinishedDownloads" << YAML::Value << m_data->autoRemoveFinishedDownloads;
+    out << YAML::Key << "showTransToolbar" << YAML::Value << m_data->showTransToolbar;
+    out << YAML::Key << "storeSearches" << YAML::Value << m_data->storeSearches;
+    out << YAML::Key << "disableKnownClientList" << YAML::Value << m_data->disableKnownClientList;
+    out << YAML::Key << "disableQueueList" << YAML::Value << m_data->disableQueueList;
+    out << YAML::Key << "useAutoCompletion" << YAML::Value << m_data->useAutoCompletion;
+    out << YAML::Key << "watchClipboard4ED2KLinks" << YAML::Value << m_data->watchClipboard4ED2KLinks;
+    out << YAML::Key << "useAdvancedCalcRemainingTime" << YAML::Value << m_data->useAdvancedCalcRemainingTime;
+    out << YAML::Key << "videoPlayerCommand" << YAML::Value << m_data->videoPlayerCommand.toStdString();
+    out << YAML::Key << "videoPlayerArgs" << YAML::Value << m_data->videoPlayerArgs.toStdString();
+    out << YAML::Key << "createBackupToPreview" << YAML::Value << m_data->createBackupToPreview;
+    out << YAML::Key << "autoCleanupFilenames" << YAML::Value << m_data->autoCleanupFilenames;
+    out << YAML::EndMap;
+
     // UI State
     out << YAML::Key << "uistate" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "serverSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
@@ -2109,6 +2758,22 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::EndSeq;
     out << YAML::Key << "transferSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
     for (int sz : m_data->transferSplitSizes)
+        out << sz;
+    out << YAML::EndSeq;
+    out << YAML::Key << "sharedHorzSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int sz : m_data->sharedHorzSplitSizes)
+        out << sz;
+    out << YAML::EndSeq;
+    out << YAML::Key << "sharedVertSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int sz : m_data->sharedVertSplitSizes)
+        out << sz;
+    out << YAML::EndSeq;
+    out << YAML::Key << "messagesSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int sz : m_data->messagesSplitSizes)
+        out << sz;
+    out << YAML::EndSeq;
+    out << YAML::Key << "ircSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int sz : m_data->ircSplitSizes)
         out << sz;
     out << YAML::EndSeq;
     out << YAML::Key << "windowWidth"     << YAML::Value << m_data->windowWidth;

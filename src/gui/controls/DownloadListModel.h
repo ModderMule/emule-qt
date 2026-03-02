@@ -30,6 +30,10 @@ struct DownloadRow {
     int64_t lastSeenComplete = 0;
     int64_t lastReception = 0;
     int64_t addedOn = 0;
+    QString fileType;
+    int64_t requests = 0;
+    int64_t acceptedRequests = 0;
+    int64_t transferredData = 0;
 };
 
 /// Table model backing the downloads tree view in the Transfer panel.
@@ -72,6 +76,9 @@ public:
 
     /// Get the file hash for a row index.
     [[nodiscard]] QString hashAt(int row) const;
+
+    /// Get the full download row for a row index (nullptr if out of range).
+    [[nodiscard]] const DownloadRow* downloadAt(int row) const;
 
 private:
     std::vector<DownloadRow> m_downloads;

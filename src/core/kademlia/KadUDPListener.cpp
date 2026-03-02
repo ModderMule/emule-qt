@@ -168,6 +168,12 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     if (len < 1)
         return;
 
+    // Update connection state on every incoming packet (MFC KademliaUDPListener.cpp:229-231)
+    auto* prefs = Kademlia::getInstancePrefs();
+    if (prefs)
+        prefs->setLastContact();
+    //UDPFirewallTester::connected();
+
     uint8 opcode = data[0];
     const uint8* payload = data + 1;
     uint32 payloadLen = len - 1;
@@ -834,12 +840,12 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_RES(const uint8* data, uint32
                                                         const KadUDPKey& senderKey,
                                                         uint32 ip, uint16 udpPort)
 {
-    // MFC format: UInt128 senderKadID + UInt128 target + uint16 count + results
+    // Kad2 format: UInt128 source + UInt128 target + uint16 count + results
     if (len < 34)
         return;
 
     SafeMemFile io(data, len);
-    [[maybe_unused]] UInt128 senderID = io::readUInt128(io);
+    [[maybe_unused]] UInt128 source = io::readUInt128(io);  // sender's node ID
     UInt128 target = io::readUInt128(io);
     uint16 count = io.readUInt16();
 

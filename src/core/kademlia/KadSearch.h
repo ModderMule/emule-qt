@@ -39,6 +39,7 @@ public:
     Search& operator=(const Search&) = delete;
 
     [[nodiscard]] uint32 getSearchID() const { return m_searchID; }
+    void setSearchID(uint32 id) { m_searchID = id; }
     [[nodiscard]] SearchType getSearchType() const { return m_type; }
     void setSearchType(SearchType type);
     void setTargetID(const UInt128& target);

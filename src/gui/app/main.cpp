@@ -16,7 +16,10 @@
 #include "dialogs/OptionsDialog.h"
 #include "controls/LogWidget.h"
 #include "panels/KadPanel.h"
+#include "panels/MessagesPanel.h"
+#include "panels/SearchPanel.h"
 #include "panels/ServerPanel.h"
+#include "panels/SharedFilesPanel.h"
 #include "panels/TransferPanel.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -201,7 +204,11 @@ int main(int argc, char* argv[])
         // Wire IPC client to main window and panels
         mainWindow.setIpcClient(&ipcClient);
         mainWindow.kadPanel()->setIpcClient(&ipcClient);
+        mainWindow.serverPanel()->setIpcClient(&ipcClient);
         mainWindow.transferPanel()->setIpcClient(&ipcClient);
+        mainWindow.searchPanel()->setIpcClient(&ipcClient);
+        mainWindow.sharedFilesPanel()->setIpcClient(&ipcClient);
+        mainWindow.messagesPanel()->setIpcClient(&ipcClient);
 
         // Wire daemon log messages to the LogWidget
         // PushLogMessage format: [logId(0), category(1), severity(2), message(3), timestamp(4)]
@@ -222,7 +229,7 @@ int main(int argc, char* argv[])
             QString colored;
             if (severity == QtWarningMsg)
                 colored = QStringLiteral("<font color='#CC6600'>%1</font>").arg(text.toHtmlEscaped());
-            else if (severity >= QtCriticalMsg)
+            else if (severity == QtCriticalMsg || severity == QtFatalMsg)
                 colored = QStringLiteral("<font color='red'><b>%1</b></font>").arg(text.toHtmlEscaped());
             else
                 colored = QStringLiteral("<font color='#3399FF'>%1</font>").arg(text.toHtmlEscaped());
@@ -232,7 +239,7 @@ int main(int argc, char* argv[])
                 logWidget->appendKad(colored, timestamp);
             else if (cat == QStringLiteral("emule.server"))
                 logWidget->appendServerInfo(colored);
-            else if (severity == QtDebugMsg)
+            else if (severity == QtDebugMsg || severity == QtWarningMsg)
                 logWidget->appendVerbose(colored, timestamp);
             else
                 logWidget->appendLog(colored, timestamp);
@@ -260,7 +267,8 @@ int main(int argc, char* argv[])
                 const QCborMap info = resp.fieldMap(1);
                 mainWindow.setKadStatus(
                     info.value(QStringLiteral("running")).toBool(),
-                    info.value(QStringLiteral("connected")).toBool());
+                    info.value(QStringLiteral("connected")).toBool(),
+                    info.value(QStringLiteral("firewalled")).toBool());
             });
         });
 
@@ -290,14 +298,19 @@ int main(int argc, char* argv[])
             const QCborMap info = msg.fieldMap(0);
             mainWindow.setKadStatus(
                 info.value(QStringLiteral("running")).toBool(),
-                info.value(QStringLiteral("connected")).toBool());
+                info.value(QStringLiteral("connected")).toBool(),
+                info.value(QStringLiteral("firewalled")).toBool());
+            mainWindow.setNetworkStats(
+                static_cast<quint32>(info.value(QStringLiteral("users")).toInteger()),
+                static_cast<quint32>(info.value(QStringLiteral("files")).toInteger()));
         });
 
         // Reset status when IPC connection to daemon is lost
         QObject::connect(&ipcClient, &eMule::IpcClient::disconnected,
                          &mainWindow, [&mainWindow]() {
             mainWindow.setEd2kStatus(false, false, false);
-            mainWindow.setKadStatus(false, false);
+            mainWindow.setKadStatus(false, false, false);
+            mainWindow.setNetworkStats(0, 0);
         });
 
         // When the GUI closes, shut down the daemon only if we launched it.

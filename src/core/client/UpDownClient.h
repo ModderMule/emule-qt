@@ -188,6 +188,7 @@ public:
     [[nodiscard]] uint8 acceptCommentVer() const { return m_acceptCommentVer; }
     [[nodiscard]] uint8 compatibleClient() const { return m_compatibleClient; }
     [[nodiscard]] uint8 kadVersion() const { return m_kadVersion; }
+    void setKadVersion(uint8 v) { m_kadVersion = v; }
     [[nodiscard]] uint8 emuleVersion() const { return m_emuleVersion; }
 
     // Version fields — set by hello packet processing

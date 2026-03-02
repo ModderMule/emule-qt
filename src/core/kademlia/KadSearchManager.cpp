@@ -44,6 +44,7 @@ void SearchManager::stopSearch(uint32 searchID, bool /*delayDelete*/)
             it->second->prepareToStop();
             delete it->second;
             s_searches.erase(it);
+            notifySearchesChanged();
             return;
         }
     }
@@ -56,6 +57,7 @@ void SearchManager::stopAllSearches()
         delete search;
     }
     s_searches.clear();
+    notifySearchesChanged();
 }
 
 Search* SearchManager::prepareLookup(SearchType type, bool start, const UInt128& id)
@@ -131,7 +133,8 @@ bool SearchManager::startSearch(Search* search)
     distance.xorWith(search->getTarget());
 
     auto* kadInst = Kademlia::instance();
-    uint32 maxType = (kadInst && !kadInst->isConnected()) ? 3 : KADEMLIA_FIND_VALUE;
+    //uint32 maxType = (kadInst && !kadInst->isConnected()) ? 3 : KADEMLIA_FIND_VALUE; // MFC always 3
+    uint32 maxType = 3;
 
     if (auto* rz = Kademlia::getInstanceRoutingZone()) {
         ContactMap contacts;
@@ -149,6 +152,7 @@ bool SearchManager::startSearch(Search* search)
                .arg(search->getSearchID())
                .arg(search->getTarget().toHexString()));
 
+    notifySearchesChanged();
     return true;
 }
 
@@ -209,6 +213,7 @@ void SearchManager::processPublishResult(const UInt128& target, uint8 load, bool
             it->second->prepareToStop();
             delete it->second;
             s_searches.erase(it);
+            notifySearchesChanged();
         }
     }
 }
@@ -217,6 +222,7 @@ void SearchManager::updateStats()
 {
     // Remove expired searches — by time or by answer count (MFC compat)
     time_t now = time(nullptr);
+    bool anyRemoved = false;
     auto it = s_searches.begin();
     while (it != s_searches.end()) {
         Search* search = it->second;
@@ -256,10 +262,14 @@ void SearchManager::updateStats()
             search->prepareToStop();
             delete search;
             it = s_searches.erase(it);
+            anyRemoved = true;
         } else {
             ++it;
         }
     }
+
+    if (anyRemoved)
+        notifySearchesChanged();
 }
 
 bool SearchManager::alreadySearchingFor(const UInt128& target)
@@ -274,6 +284,7 @@ void SearchManager::cancelNodeFWCheckUDPSearch()
             it->second->prepareToStop();
             delete it->second;
             s_searches.erase(it);
+            notifySearchesChanged();
             return;
         }
     }
@@ -327,6 +338,7 @@ void SearchManager::cancelNodeSpecial(const KadClientSearcher* requester)
             it->second->prepareToStop();
             delete it->second;
             s_searches.erase(it);
+            notifySearchesChanged();
             return;
         }
     }
@@ -340,6 +352,12 @@ void SearchManager::jumpStart()
     for (auto it = s_searches.begin(); it != s_searches.end(); ++it) {
         it->second->jumpStart();
     }
+}
+
+void SearchManager::notifySearchesChanged()
+{
+    if (auto* kad = Kademlia::instance())
+        emit kad->searchesChanged();
 }
 
 } // namespace eMule::kad

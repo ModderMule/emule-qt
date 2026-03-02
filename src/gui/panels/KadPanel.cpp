@@ -71,6 +71,12 @@ void KadPanel::setIpcClient(IpcClient* client)
 {
     m_ipc = client;
 
+    if (m_ipc) {
+        connect(m_ipc, &IpcClient::kadSearchesChanged, this, [this]() {
+            requestSearches();
+        });
+    }
+
     if (m_ipc && m_ipc->isConnected()) {
         m_refreshTimer->setInterval(m_ipc->pollingInterval());
         m_refreshTimer->start();
@@ -209,7 +215,11 @@ void KadPanel::onDisconnectClicked()
 
 void KadPanel::onRecheckFirewall()
 {
-    // ToDo: add RecheckFirewall IPC message if needed
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    IpcMessage msg(IpcMsgType::RecheckFirewall);
+    m_ipc->sendRequest(std::move(msg));
 }
 
 void KadPanel::onSearchSelectionChanged()
@@ -511,8 +521,9 @@ void KadPanel::requestSearches()
             row.name     = m.value(QStringLiteral("name")).toString();
             row.status   = m.value(QStringLiteral("status")).toString();
             row.load     = static_cast<float>(m.value(QStringLiteral("load")).toInteger());
-            row.packetsSent = static_cast<uint32_t>(m.value(QStringLiteral("packetsSent")).toInteger());
-            row.responses   = static_cast<uint32_t>(m.value(QStringLiteral("responses")).toInteger());
+            row.packetsSent    = static_cast<uint32_t>(m.value(QStringLiteral("packetsSent")).toInteger());
+            row.requestAnswers = static_cast<uint32_t>(m.value(QStringLiteral("requestAnswers")).toInteger());
+            row.responses      = static_cast<uint32_t>(m.value(QStringLiteral("responses")).toInteger());
             rows.push_back(std::move(row));
         }
 

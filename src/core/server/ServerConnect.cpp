@@ -5,6 +5,7 @@
 #include "server/ServerList.h"
 #include "server/Server.h"
 #include "app/AppContext.h"
+#include "prefs/Preferences.h"
 #include "net/ServerSocket.h"
 #include "net/UDPSocket.h"
 #include "net/Packet.h"
@@ -87,11 +88,9 @@ void ServerConnect::tryAnotherConnectionRequest()
                     m_tryObfuscated = false;
                     connectToAnyServer(0, true, true, true);
                 } else if (!m_retryTimer.isActive()) {
-                    emit logMessage(QStringLiteral("No more servers to try."),
-                                    LogWarning | LogStatusBar);
-                    emit logMessage(QStringLiteral("Retrying in %1 seconds...")
-                                        .arg(kRetryConnectTimeSec),
-                                    LogInfo);
+                    logInfo(QStringLiteral("Failed to connect to all servers listed. Making another pass."));
+                    logInfo(QStringLiteral("Automatic connection to server will retry in %1 seconds")
+                               .arg(kRetryConnectTimeSec));
                     m_startAutoConnectPos = 0;
                     m_retryTimer.start(kRetryConnectTimeSec * 1000);
                 }
@@ -132,8 +131,7 @@ void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
         if (!anyStatic) {
             m_connecting = false;
             emit stateChanged();
-            emit logMessage(QStringLiteral("No valid servers found (static-only mode)."),
-                            LogError | LogStatusBar);
+            logError(QStringLiteral("No valid servers found (static-only mode)."));
             return;
         }
     }
@@ -145,8 +143,7 @@ void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
     if (m_serverList.serverCount() == 0) {
         m_connecting = false;
         emit stateChanged();
-        emit logMessage(QStringLiteral("No valid servers found."),
-                        LogError | LogStatusBar);
+        logError(QStringLiteral("No valid servers found."));
     } else {
         tryAnotherConnectionRequest();
     }
@@ -187,12 +184,18 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     connect(socket, &ServerSocket::serverMessage, this,
             &ServerConnect::serverMessageReceived);
 
+    connect(socket, &ServerSocket::loginReceived, this,
+            [this, socket](uint32 clientID, uint32 /*tcpFlags*/) {
+                onLoginReceived(socket, clientID);
+            });
+
     connect(socket, &ServerSocket::foundSourcesReceived, this,
             [](const uint8* data, uint32 size, bool obfuscated) {
                 if (theApp.downloadQueue)
                     theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
             });
 
+    socket->initProxySupport(thePrefs.proxySettings());
     socket->connectTo(*server, noCrypt);
 
     qint64 timestamp = m_elapsedTimer.elapsed();
@@ -257,11 +260,10 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
         // TCP connected, send login request
         const Server* cserver = sender->currentServer();
         if (cserver) {
-            emit logMessage(QStringLiteral("Connected to %1 (%2:%3), requesting login...")
-                                .arg(cserver->name())
-                                .arg(cserver->address())
-                                .arg(cserver->port()),
-                            LogInfo);
+            logInfo(QStringLiteral("Connected to %1 (%2:%3), sending login request")
+                       .arg(cserver->name())
+                       .arg(cserver->address())
+                       .arg(cserver->port()));
 
             // Reset failed count on the server list copy
             Server* listServer = m_serverList.findByAddress(cserver->address(), cserver->port());
@@ -278,11 +280,10 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
 
         const Server* cserver = sender->currentServer();
         if (cserver) {
-            emit logMessage(QStringLiteral("Connected to %1 (%2:%3)")
-                                .arg(cserver->name())
-                                .arg(cserver->address())
-                                .arg(cserver->port()),
-                            LogSuccess | LogStatusBar);
+            logInfo(QStringLiteral("Connected to %1 (%2:%3)")
+                       .arg(cserver->name())
+                       .arg(cserver->address())
+                       .arg(cserver->port()));
         }
 
         // Stop other connection attempts now that we're connected
@@ -326,29 +327,35 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     switch (sender->connectionState()) {
     case ServerConnState::FatalError:
-        emit logMessage(QStringLiteral("Fatal connection error"), LogError | LogStatusBar);
+        logError(QStringLiteral("Fatal connection error"));
         break;
 
     case ServerConnState::Disconnected:
         if (cserver) {
-            emit logMessage(QStringLiteral("Lost connection to %1 (%2:%3)")
-                                .arg(cserver->name())
-                                .arg(cserver->address())
-                                .arg(cserver->port()),
-                            LogError | LogStatusBar);
+            logInfo(QStringLiteral("Lost connection to %1 (%2:%3)")
+                        .arg(cserver->name())
+                        .arg(cserver->address())
+                        .arg(cserver->port()));
         }
         break;
 
     case ServerConnState::ServerDead:
         if (cserver) {
-            emit logMessage(QStringLiteral("Server %1 (%2:%3) is dead")
-                                .arg(cserver->name())
-                                .arg(cserver->address())
-                                .arg(cserver->port()),
-                            LogError | LogStatusBar);
+            logInfo(QStringLiteral("Server %1 (%2:%3) is dead")
+                        .arg(cserver->name())
+                        .arg(cserver->address())
+                        .arg(cserver->port()));
         }
-        if (listServer)
+        if (listServer) {
             listServer->incFailedCount();
+            if (thePrefs.deadServerRetries() > 0
+                && listServer->failedCount() >= thePrefs.deadServerRetries()) {
+                logInfo(QStringLiteral("Removing dead server %1 (failed %2 times)")
+                            .arg(listServer->name()).arg(listServer->failedCount()));
+                m_serverList.removeServer(listServer);
+                listServer = nullptr;
+            }
+        }
         break;
 
     case ServerConnState::Error:
@@ -356,11 +363,10 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     case ServerConnState::ServerFull:
         if (cserver) {
-            emit logMessage(QStringLiteral("Server %1 (%2:%3) is full")
-                                .arg(cserver->name())
-                                .arg(cserver->address())
-                                .arg(cserver->port()),
-                            LogError | LogStatusBar);
+            logInfo(QStringLiteral("Server %1 (%2:%3) is full")
+                        .arg(cserver->name())
+                        .arg(cserver->address())
+                        .arg(cserver->port()));
         }
         break;
 
@@ -374,8 +380,8 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
         bool autoretry = m_connecting && !m_singleConnecting;
         stopConnectionTry();
         if (m_config.reconnectOnDisconnect && autoretry && !m_retryTimer.isActive()) {
-            emit logMessage(QStringLiteral("Retrying in %1 seconds...")
-                                .arg(kRetryConnectTimeSec), LogWarning);
+            logInfo(QStringLiteral("Automatic connection to server will retry in %1 seconds")
+                       .arg(kRetryConnectTimeSec));
 
             m_startAutoConnectPos = 0;
             if (listServer) {
@@ -525,11 +531,10 @@ void ServerConnect::checkForTimeout()
         if (curTick >= startTime + timeout) {
             const Server* cserver = socket->currentServer();
             if (cserver) {
-                emit logMessage(QStringLiteral("Connection attempt timed out: %1 (%2:%3)")
-                                    .arg(cserver->name())
-                                    .arg(cserver->address())
-                                    .arg(cserver->port()),
-                                LogWarning);
+                logInfo(QStringLiteral("Connection attempt timed out: %1 (%2:%3)")
+                           .arg(cserver->name())
+                           .arg(cserver->address())
+                           .arg(cserver->port()));
             }
 
             m_connectionAttempts.erase(startTime);
@@ -731,6 +736,45 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
 
     logDebug(QStringLiteral(">>> Sending OP_LoginRequest"));
     sendPacket(std::move(packet), socket);
+}
+
+// ---------------------------------------------------------------------------
+// Smart LowID check — onLoginReceived
+// ---------------------------------------------------------------------------
+
+void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID)
+{
+    setClientID(clientID);
+
+    if (!m_config.smartLowIdCheck)
+        return;
+
+    if (!eMule::isLowID(clientID)) {
+        // Got a HighID — record that we've seen one
+        m_smartIdState = 1;
+        return;
+    }
+
+    // Got a LowID
+    if (m_smartIdState > 0) {
+        // We previously got a HighID but now LowID — try another server
+        if (m_smartIdState >= 2) {
+            m_smartIdState = 0; // give up after 2 retries
+            return;
+        }
+        ++m_smartIdState;
+        if (!m_singleConnecting) {
+            logInfo(QStringLiteral("Smart LowID: got LowID from server, trying another"));
+            // Disconnect and try the next server
+            destroySocket(socket);
+            if (socket == m_connectedSocket) {
+                m_connectedSocket = nullptr;
+                m_connected = false;
+            }
+            m_connecting = true;
+            tryAnotherConnectionRequest();
+        }
+    }
 }
 
 } // namespace eMule

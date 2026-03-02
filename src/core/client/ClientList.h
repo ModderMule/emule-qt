@@ -12,6 +12,7 @@
 #include <QObject>
 
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -88,6 +89,14 @@ public:
     bool doRequestFirewallCheckUDP(const kad::Contact& contact);
 
     // -- Banned clients -----------------------------------------------------
+
+    /// Iterate over all known clients.
+    void forEachClient(const std::function<void(UpDownClient*)>& callback) const;
+
+    /// Periodic cleanup — removes idle clients that serve no purpose.
+    /// Called every ~1s from CoreSession::onTimer().
+    /// Matches MFC CClientList::Process() (srchybrid/ClientList.cpp).
+    void process();
 
     void addBannedClient(uint32 ip);
     [[nodiscard]] bool isBannedClient(uint32 ip) const;
