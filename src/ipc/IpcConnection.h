@@ -35,6 +35,12 @@ public:
     /// Access the underlying socket (e.g. for peer address).
     [[nodiscard]] QTcpSocket* socket() const;
 
+    /// Enable AES-256-CBC encryption for all subsequent messages.
+    void setEncryptionKey(const QByteArray& key);
+
+    /// Returns true if encryption is active.
+    [[nodiscard]] bool isEncrypted() const;
+
 signals:
     /// Emitted for each complete IPC message received.
     void messageReceived(const eMule::Ipc::IpcMessage& msg);
@@ -53,6 +59,7 @@ private slots:
 private:
     QTcpSocket* m_socket;  // Owned by this object (parented)
     QByteArray m_readBuffer;
+    QByteArray m_encryptionKey;  // Empty = no encryption
     bool m_disconnectEmitted = false;
 };
 

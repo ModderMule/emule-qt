@@ -1,6 +1,7 @@
 #include "dialogs/OptionsDialog.h"
 
 #include "app/IpcClient.h"
+#include "panels/StatisticsPanel.h"
 #include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
@@ -8,8 +9,11 @@
 
 #include <QCborArray>
 
+#include <QButtonGroup>
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QFileSystemModel>
 #include <QGroupBox>
@@ -18,7 +22,13 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QFormLayout>
+#include <QMenu>
+#include <QTimeEdit>
 #include <QListWidget>
+#include <QRadioButton>
+#include <QScrollArea>
+#include <QSoundEffect>
 #include <QMessageBox>
 #include <QLocale>
 #include <QPainter>
@@ -29,6 +39,8 @@
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTreeView>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -37,9 +49,11 @@ namespace eMule {
 // Construction
 // ---------------------------------------------------------------------------
 
-OptionsDialog::OptionsDialog(IpcClient* ipc, QWidget* parent)
+OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
+                             QWidget* parent)
     : QDialog(parent)
     , m_ipc(ipc)
+    , m_statsPanel(statsPanel)
 {
     setWindowTitle(tr("Options"));
     resize(800, 640);
@@ -85,7 +99,9 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, QWidget* parent)
     auto* cancelBtn = new QPushButton(tr("Cancel"), this);
     m_applyBtn = new QPushButton(tr("Apply"), this);
     auto* helpBtn = new QPushButton(tr("Help"), this);
-    helpBtn->setEnabled(false); // ToDo: implement help system
+    connect(helpBtn, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://emule-qt.org")));
+    });
     okBtn->setDefault(true);
     btnLayout->addWidget(okBtn);
     btnLayout->addWidget(cancelBtn);
@@ -132,6 +148,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, QWidget* parent)
     connect(m_disableKnownClientListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_disableQueueListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useAutoCompletionCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_useOriginalIconsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Connection page
     connect(m_capacityDownloadSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -148,6 +165,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, QWidget* parent)
     connect(m_maxConnectionsSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_autoConnectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_reconnectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_overheadCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_kadEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ed2kEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
@@ -193,6 +211,119 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, QWidget* parent)
     connect(m_videoPlayerCmdEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerArgsEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_createBackupToPreviewCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+
+    // Notifications page
+    connect(m_noSoundRadio, &QRadioButton::toggled, this, &OptionsDialog::markDirty);
+    connect(m_playSoundRadio, &QRadioButton::toggled, this, &OptionsDialog::markDirty);
+    connect(m_soundFileEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_notifyLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_notifyChatCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_notifyChatMsgCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_notifyDownloadAddedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_notifyDownloadFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_notifyNewVersionCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_notifyUrgentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_emailEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_emailRecipientEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_emailSenderEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+
+    // Messages and Comments page
+    connect(m_messageFilterEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_msgFriendsOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_advancedSpamFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_requireCaptchaCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showSmileysCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_commentFilterEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_indicateRatingsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+
+    // Security page
+    connect(m_filterServersByIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_ipFilterLevelSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_viewSharedGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
+    connect(m_cryptLayerRequestedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_cryptLayerRequiredCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_cryptLayerDisableCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_useSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_enableSearchResultFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+
+    // Extended page
+    connect(m_maxConPerFiveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_maxHalfOpenSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_serverKeepAliveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_useCreditSystemCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_filterLANIPsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showExtControlsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_a4afSaveCpuCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_disableArchPreviewCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_ed2kHostnameEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_checkDiskspaceCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_minFreeDiskSpaceSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_commitFilesGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
+    connect(m_extractMetaDataGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
+    connect(m_logToDiskCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_verboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logLevelSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_verboseLogToDiskCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logSourceExchangeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logBannedClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logRatingDescCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logFilteredIPsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logFileSavingCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logA4AFCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logUlDlEventsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_closeUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_skipWANIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_skipWANPPPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_fileBufferSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_queueSizeSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_dynUpEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_dynUpPingToleranceSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_dynUpPingToleranceMsSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_dynUpRadioPercent, &QRadioButton::toggled, this, &OptionsDialog::markDirty);
+    connect(m_dynUpRadioMs, &QRadioButton::toggled, this, &OptionsDialog::markDirty);
+    connect(m_dynUpGoingUpSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_dynUpGoingDownSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_dynUpNumPingsSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+#ifdef Q_OS_WIN
+    connect(m_autotakeEd2kCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_winFirewallCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_sparsePartFilesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_allocFullFileCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_resolveShellLinksCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_multiUserSharingGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
+#endif
+
+    // IP filter reload button
+    connect(m_reloadIPFilterBtn, &QPushButton::clicked, this, [this]() {
+        if (m_ipc && m_ipc->isConnected()) {
+            m_reloadIPFilterBtn->setEnabled(false);
+            Ipc::IpcMessage req(Ipc::IpcMsgType::ReloadIPFilter);
+            m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+                m_reloadIPFilterBtn->setEnabled(true);
+                if (resp.fieldBool(0)) {
+                    auto count = resp.fieldInt(1);
+                    QMessageBox::information(this, tr("IP Filter"),
+                        tr("IP filter reloaded: %1 entries.").arg(count));
+                }
+            });
+        }
+    });
+
+    // Protocol obfuscation interactive logic
+    connect(m_cryptLayerDisableCheck, &QCheckBox::toggled, this, [this](bool on) {
+        if (on) {
+            m_cryptLayerRequestedCheck->setChecked(false);
+            m_cryptLayerRequiredCheck->setChecked(false);
+        }
+        m_cryptLayerRequestedCheck->setEnabled(!on);
+        m_cryptLayerRequiredCheck->setEnabled(!on && m_cryptLayerRequestedCheck->isChecked());
+    });
+    connect(m_cryptLayerRequestedCheck, &QCheckBox::toggled, this, [this](bool on) {
+        if (!on)
+            m_cryptLayerRequiredCheck->setChecked(false);
+        m_cryptLayerRequiredCheck->setEnabled(on);
+    });
 
     // Proxy enable/disable logic
     connect(m_proxyEnableCheck, &QCheckBox::toggled, this, [this](bool on) {
@@ -260,29 +391,34 @@ void OptionsDialog::setupSidebar()
     struct PageDef {
         const char* label;
         QStyle::StandardPixmap icon;
+        const char* originalIcon;  // resource path when using original eMule icons
     };
 
     static constexpr PageDef pages[] = {
-        {"General",            QStyle::SP_FileDialogDetailedView},
-        {"Display",            QStyle::SP_DesktopIcon},
-        {"Connection",         QStyle::SP_DriveNetIcon},
-        {"Proxy",              QStyle::SP_BrowserReload},
-        {"Server",             QStyle::SP_ComputerIcon},
-        {"Directories",        QStyle::SP_DirIcon},
-        {"Files",              QStyle::SP_FileIcon},
-        {"Notifications",      QStyle::SP_MessageBoxInformation},
-        {"Statistics",         QStyle::SP_DialogHelpButton},
-        {"IRC",                QStyle::SP_DialogApplyButton},
-        {"Messages and Comments", QStyle::SP_MessageBoxQuestion},
-        {"Security",           QStyle::SP_CustomBase},  // placeholder, painted below
-        {"Scheduler",          QStyle::SP_DialogResetButton},
-        {"Web Interface",      QStyle::SP_DriveNetIcon},
-        {"Extended",           QStyle::SP_DialogCancelButton},
+        {"General",               QStyle::SP_FileDialogDetailedView, "Preferences.ico"},
+        {"Display",               QStyle::SP_DesktopIcon,            "Display.ico"},
+        {"Connection",            QStyle::SP_DriveNetIcon,           "Connection.ico"},
+        {"Proxy",                 QStyle::SP_BrowserReload,          "Proxy.ico"},
+        {"Server",                QStyle::SP_ComputerIcon,           "Server.ico"},
+        {"Directories",           QStyle::SP_DirIcon,                "Folders.ico"},
+        {"Files",                 QStyle::SP_FileIcon,               "FileTypeAny.ico"},
+        {"Notifications",         QStyle::SP_MessageBoxInformation,  "Notifications.ico"},
+        {"Statistics",            QStyle::SP_DialogHelpButton,       "Statistics.ico"},
+        {"IRC",                   QStyle::SP_DialogApplyButton,      "IRC.ico"},
+        {"Messages and Comments", QStyle::SP_MessageBoxQuestion,     "Chat.ico"},
+        {"Security",              QStyle::SP_CustomBase,             "Security.ico"},
+        {"Scheduler",             QStyle::SP_DialogResetButton,      "Scheduler.ico"},
+        {"Web Interface",         QStyle::SP_DriveNetIcon,           "Web.ico"},
+        {"Extended",              QStyle::SP_DialogCancelButton,     "Tweak.ico"},
     };
 
-    for (const auto& [label, icon] : pages) {
+    const bool useOriginal = thePrefs.useOriginalIcons();
+
+    for (const auto& [label, icon, resIcon] : pages) {
         QIcon qicon;
-        if (icon == QStyle::SP_CustomBase)
+        if (useOriginal)
+            qicon = QIcon(QStringLiteral(":/icons/") + QLatin1String(resIcon));
+        else if (icon == QStyle::SP_CustomBase)
             qicon = makePadlockIcon();
         else
             qicon = style()->standardIcon(icon);
@@ -318,14 +454,31 @@ void OptionsDialog::setupPages()
     // Files — fully implemented
     m_pages->addWidget(createFilesPage());
 
-    // Placeholder pages for the rest
-    static const char* placeholderNames[] = {
-        "Notifications", "Statistics", "IRC",
-        "Messages and Comments", "Security", "Scheduler",
-        "Web Interface", "Extended"
-    };
+    // Notifications — fully implemented
+    m_pages->addWidget(createNotificationsPage());
+
+    // Statistics — fully implemented
+    m_pages->addWidget(createStatisticsPage());
+
+    // IRC — fully implemented
+    m_pages->addWidget(createIRCPage());
+
+    // Messages and Comments — fully implemented
+    m_pages->addWidget(createMessagesPage());
+
+    // Security — fully implemented
+    m_pages->addWidget(createSecurityPage());
+
+    // Scheduler — fully implemented
+    m_pages->addWidget(createSchedulerPage());
+
+    // Remaining placeholder pages
+    static const char* placeholderNames[] = { "Web Interface" };
     for (const char* name : placeholderNames)
         m_pages->addWidget(createPlaceholderPage(tr(name)));
+
+    // Extended — fully implemented
+    m_pages->addWidget(createExtendedPage());
 }
 
 void OptionsDialog::setupButtons()
@@ -506,6 +659,9 @@ QWidget* OptionsDialog::createDisplayPage()
     m_storeSearchesCheck = new QCheckBox(tr("Remember open searches between restarts"), page);
     layout->addWidget(m_storeSearchesCheck);
 
+    m_useOriginalIconsCheck = new QCheckBox(tr("Use original eMule icons"), page);
+    layout->addWidget(m_useOriginalIconsCheck);
+
     // --- Save CPU & Memory Usage group ---
     auto* cpuGroup = new QGroupBox(tr("Save CPU && Memory Usage"), page);
     auto* cpuLayout = new QVBoxLayout(cpuGroup);
@@ -655,9 +811,8 @@ QWidget* OptionsDialog::createConnectionPage()
     checkLayout->addWidget(m_autoConnectCheck);
     m_reconnectCheck = new QCheckBox(tr("Reconnect on loss"), page);
     checkLayout->addWidget(m_reconnectCheck);
-    auto* overheadCheck = new QCheckBox(tr("Show overhead bandwidth"), page);
-    overheadCheck->setEnabled(false); // ToDo: implement overhead bandwidth display
-    checkLayout->addWidget(overheadCheck);
+    m_overheadCheck = new QCheckBox(tr("Show overhead bandwidth"), page);
+    checkLayout->addWidget(m_overheadCheck);
     auto* wizardBtn = new QPushButton(tr("Wizard..."), page);
     wizardBtn->setEnabled(false); // ToDo: implement connection wizard
     wizardBtn->setFixedWidth(100);
@@ -1131,6 +1286,1463 @@ QWidget* OptionsDialog::createFilesPage()
 }
 
 // ---------------------------------------------------------------------------
+// Notifications page — matches MFC "Options Notifications.png"
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createNotificationsPage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(4, 4, 4, 4);
+
+    // === Pop-up Message group ===
+    auto* popupGroup = new QGroupBox(tr("Pop-up Message"), page);
+    auto* popupLayout = new QVBoxLayout(popupGroup);
+
+    m_soundGroup = new QButtonGroup(this);
+
+    // "No sound" row with "Test" button right-aligned
+    auto* noSoundRow = new QHBoxLayout;
+    m_noSoundRadio = new QRadioButton(tr("No sound"), popupGroup);
+    noSoundRow->addWidget(m_noSoundRadio);
+    noSoundRow->addStretch();
+    m_testSoundBtn = new QPushButton(tr("Test"), popupGroup);
+    m_testSoundBtn->setFixedWidth(80);
+    noSoundRow->addWidget(m_testSoundBtn);
+    popupLayout->addLayout(noSoundRow);
+
+    // "Play sound" radio
+    m_playSoundRadio = new QRadioButton(tr("Play sound"), popupGroup);
+    popupLayout->addWidget(m_playSoundRadio);
+
+    // Indented sound file row
+    auto* soundFileRow = new QHBoxLayout;
+    soundFileRow->setContentsMargins(30, 0, 0, 0);
+    m_soundFileEdit = new QLineEdit(popupGroup);
+    soundFileRow->addWidget(m_soundFileEdit);
+    m_soundBrowseBtn = new QPushButton(popupGroup);
+    m_soundBrowseBtn->setIcon(style()->standardIcon(QStyle::SP_DirOpenIcon));
+    m_soundBrowseBtn->setFixedSize(28, 28);
+    soundFileRow->addWidget(m_soundBrowseBtn);
+    popupLayout->addLayout(soundFileRow);
+
+    // "Speak notification message" radio (disabled — no QTextToSpeech)
+    m_speakRadio = new QRadioButton(tr("Speak notification message"), popupGroup);
+    m_speakRadio->setEnabled(false);
+    popupLayout->addWidget(m_speakRadio);
+
+    m_soundGroup->addButton(m_noSoundRadio, 0);
+    m_soundGroup->addButton(m_playSoundRadio, 1);
+    m_soundGroup->addButton(m_speakRadio, 2);
+    m_noSoundRadio->setChecked(true);
+
+    layout->addWidget(popupGroup);
+
+    // Wire sound radio → enable/disable file controls
+    auto updateSoundControls = [this]() {
+        bool playSoundOn = m_playSoundRadio->isChecked();
+        m_soundFileEdit->setEnabled(playSoundOn);
+        m_soundBrowseBtn->setEnabled(playSoundOn);
+    };
+    connect(m_noSoundRadio, &QRadioButton::toggled, this, updateSoundControls);
+    connect(m_playSoundRadio, &QRadioButton::toggled, this, updateSoundControls);
+    updateSoundControls();
+
+    // Browse for sound file
+    connect(m_soundBrowseBtn, &QPushButton::clicked, this, [this]() {
+        QString file = QFileDialog::getOpenFileName(
+            this, tr("Select Sound File"), m_soundFileEdit->text(),
+            tr("Sound Files (*.wav *.mp3 *.ogg);;All Files (*)"));
+        if (!file.isEmpty())
+            m_soundFileEdit->setText(file);
+    });
+
+    // Test button — play selected sound
+    connect(m_testSoundBtn, &QPushButton::clicked, this, [this]() {
+        if (m_playSoundRadio->isChecked() && !m_soundFileEdit->text().isEmpty()) {
+            auto* effect = new QSoundEffect(this);
+            effect->setSource(QUrl::fromLocalFile(m_soundFileEdit->text()));
+            effect->setVolume(1.0f);
+            effect->play();
+            connect(effect, &QSoundEffect::playingChanged, effect, [effect]() {
+                if (!effect->isPlaying())
+                    effect->deleteLater();
+            });
+        }
+    });
+
+    // === Pop-up when group ===
+    auto* whenGroup = new QGroupBox(tr("Pop-up when"), page);
+    auto* whenLayout = new QVBoxLayout(whenGroup);
+
+    m_notifyLogCheck = new QCheckBox(tr("Log entry added"), whenGroup);
+    whenLayout->addWidget(m_notifyLogCheck);
+
+    m_notifyChatCheck = new QCheckBox(tr("Chat session started"), whenGroup);
+    whenLayout->addWidget(m_notifyChatCheck);
+
+    // Indented "Chat message received"
+    auto* chatMsgLayout = new QVBoxLayout;
+    chatMsgLayout->setContentsMargins(30, 0, 0, 0);
+    m_notifyChatMsgCheck = new QCheckBox(tr("Chat message received"), whenGroup);
+    m_notifyChatMsgCheck->setEnabled(false);
+    chatMsgLayout->addWidget(m_notifyChatMsgCheck);
+    whenLayout->addLayout(chatMsgLayout);
+
+    m_notifyDownloadAddedCheck = new QCheckBox(tr("Download added"), whenGroup);
+    whenLayout->addWidget(m_notifyDownloadAddedCheck);
+
+    m_notifyDownloadFinishedCheck = new QCheckBox(tr("Download finished (*)"), whenGroup);
+    whenLayout->addWidget(m_notifyDownloadFinishedCheck);
+
+    m_notifyNewVersionCheck = new QCheckBox(tr("New eMule version detected"), whenGroup);
+    whenLayout->addWidget(m_notifyNewVersionCheck);
+
+    m_notifyUrgentCheck = new QCheckBox(tr("Urgent: out of disk space, server connection lost (*)"), whenGroup);
+    whenLayout->addWidget(m_notifyUrgentCheck);
+
+    layout->addWidget(whenGroup);
+
+    // Wire Chat started → Chat message received enable
+    connect(m_notifyChatCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_notifyChatMsgCheck->setEnabled(on);
+        if (!on) m_notifyChatMsgCheck->setChecked(false);
+    });
+
+    // === (*) Email Notifications group ===
+    auto* emailGroup = new QGroupBox(tr("(*) Email Notifications"), page);
+    auto* emailLayout = new QVBoxLayout(emailGroup);
+
+    m_emailEnabledCheck = new QCheckBox(tr("Enable email notifications"), emailGroup);
+    emailLayout->addWidget(m_emailEnabledCheck);
+
+    // SMTP server button (centered)
+    auto* smtpRow = new QHBoxLayout;
+    smtpRow->addStretch();
+    m_smtpServerBtn = new QPushButton(tr("SMTP server..."), emailGroup);
+    m_smtpServerBtn->setEnabled(false);
+    smtpRow->addWidget(m_smtpServerBtn);
+    smtpRow->addStretch();
+    emailLayout->addLayout(smtpRow);
+
+    // Recipient address row
+    auto* recipientRow = new QHBoxLayout;
+    auto* recipientLabel = new QLabel(tr("Recipient address:"), emailGroup);
+    recipientLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    recipientLabel->setMinimumWidth(120);
+    recipientRow->addWidget(recipientLabel);
+    m_emailRecipientEdit = new QLineEdit(emailGroup);
+    m_emailRecipientEdit->setEnabled(false);
+    recipientRow->addWidget(m_emailRecipientEdit);
+    emailLayout->addLayout(recipientRow);
+
+    // Sender address row
+    auto* senderRow = new QHBoxLayout;
+    auto* senderLabel = new QLabel(tr("Sender address:"), emailGroup);
+    senderLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    senderLabel->setMinimumWidth(120);
+    senderRow->addWidget(senderLabel);
+    m_emailSenderEdit = new QLineEdit(emailGroup);
+    m_emailSenderEdit->setEnabled(false);
+    senderRow->addWidget(m_emailSenderEdit);
+    emailLayout->addLayout(senderRow);
+
+    layout->addWidget(emailGroup);
+
+    // Wire email enabled → SMTP/recipient/sender
+    connect(m_emailEnabledCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_smtpServerBtn->setEnabled(on);
+        m_emailRecipientEdit->setEnabled(on);
+        m_emailSenderEdit->setEnabled(on);
+    });
+
+    // SMTP server dialog
+    connect(m_smtpServerBtn, &QPushButton::clicked, this, [this]() {
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("SMTP Server Settings"));
+        auto* form = new QFormLayout(&dlg);
+
+        auto* serverEdit = new QLineEdit(m_smtpServer, &dlg);
+        form->addRow(tr("Server:"), serverEdit);
+
+        auto* portSpin = new QSpinBox(&dlg);
+        portSpin->setRange(1, 65535);
+        portSpin->setValue(m_smtpPort);
+        form->addRow(tr("Port:"), portSpin);
+
+        auto* authCombo = new QComboBox(&dlg);
+        authCombo->addItem(tr("None"));    // 0
+        authCombo->addItem(tr("Plain"));   // 1
+        authCombo->setCurrentIndex(m_smtpAuth);
+        form->addRow(tr("Authentication:"), authCombo);
+
+        auto* tlsCheck = new QCheckBox(tr("Use TLS/STARTTLS"), &dlg);
+        tlsCheck->setChecked(m_smtpTls);
+        form->addRow(tlsCheck);
+
+        auto* userEdit = new QLineEdit(m_smtpUser, &dlg);
+        form->addRow(tr("Username:"), userEdit);
+
+        auto* passEdit = new QLineEdit(m_smtpPassword, &dlg);
+        passEdit->setEchoMode(QLineEdit::Password);
+        form->addRow(tr("Password:"), passEdit);
+
+        auto* btnLayout = new QHBoxLayout;
+        auto* okBtn = new QPushButton(tr("OK"), &dlg);
+        auto* cancelBtn = new QPushButton(tr("Cancel"), &dlg);
+        btnLayout->addStretch();
+        btnLayout->addWidget(okBtn);
+        btnLayout->addWidget(cancelBtn);
+        form->addRow(btnLayout);
+
+        connect(okBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
+        connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
+
+        if (dlg.exec() == QDialog::Accepted) {
+            m_smtpServer = serverEdit->text();
+            m_smtpPort = portSpin->value();
+            m_smtpAuth = authCombo->currentIndex();
+            m_smtpTls = tlsCheck->isChecked();
+            m_smtpUser = userEdit->text();
+            m_smtpPassword = passEdit->text();
+            markDirty();
+        }
+    });
+
+    layout->addStretch();
+    return page;
+}
+
+// ---------------------------------------------------------------------------
+// IRC page — matches MFC "Options IRC.png"
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createIRCPage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(4, 4, 4, 4);
+
+    // --- Server group ---
+    auto* serverGroup = new QGroupBox(tr("Server"), page);
+    auto* serverLayout = new QVBoxLayout(serverGroup);
+    m_ircServerEdit = new QLineEdit(serverGroup);
+    m_ircServerEdit->setPlaceholderText(QStringLiteral("irc.mindforge.org:6667"));
+    serverLayout->addWidget(m_ircServerEdit);
+    layout->addWidget(serverGroup);
+
+    // --- Nick group ---
+    auto* nickGroup = new QGroupBox(tr("Nick"), page);
+    auto* nickLayout = new QVBoxLayout(nickGroup);
+    m_ircNickEdit = new QLineEdit(nickGroup);
+    m_ircNickEdit->setMaxLength(25);
+    nickLayout->addWidget(m_ircNickEdit);
+    layout->addWidget(nickGroup);
+
+    // --- Channels group ---
+    auto* channelsGroup = new QGroupBox(tr("Channels"), page);
+    auto* channelsLayout = new QVBoxLayout(channelsGroup);
+    m_ircUseChannelFilterCheck = new QCheckBox(tr("Use channel list filter"), channelsGroup);
+    channelsLayout->addWidget(m_ircUseChannelFilterCheck);
+
+    auto* filterRow = new QHBoxLayout;
+    auto* nameLabel = new QLabel(tr("Name"), channelsGroup);
+    m_ircChannelFilterNameEdit = new QLineEdit(channelsGroup);
+    auto* usersLabel = new QLabel(tr("Users"), channelsGroup);
+    m_ircChannelFilterUsersSpin = new QSpinBox(channelsGroup);
+    m_ircChannelFilterUsersSpin->setRange(0, 99999);
+    m_ircChannelFilterUsersSpin->setValue(0);
+    filterRow->addWidget(nameLabel);
+    filterRow->addWidget(m_ircChannelFilterNameEdit, 1);
+    filterRow->addWidget(usersLabel);
+    filterRow->addWidget(m_ircChannelFilterUsersSpin);
+    channelsLayout->addLayout(filterRow);
+
+    m_ircChannelFilterNameEdit->setEnabled(false);
+    m_ircChannelFilterUsersSpin->setEnabled(false);
+    connect(m_ircUseChannelFilterCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_ircChannelFilterNameEdit->setEnabled(on);
+        m_ircChannelFilterUsersSpin->setEnabled(on);
+    });
+    layout->addWidget(channelsGroup);
+
+    // --- Perform group ---
+    auto* performGroup = new QGroupBox(tr("Perform"), page);
+    auto* performLayout = new QVBoxLayout(performGroup);
+    m_ircUsePerformCheck = new QCheckBox(tr("Use perform string on connect"), performGroup);
+    performLayout->addWidget(m_ircUsePerformCheck);
+    m_ircPerformEdit = new QLineEdit(performGroup);
+    m_ircPerformEdit->setEnabled(false);
+    performLayout->addWidget(m_ircPerformEdit);
+    connect(m_ircUsePerformCheck, &QCheckBox::toggled, m_ircPerformEdit, &QLineEdit::setEnabled);
+    layout->addWidget(performGroup);
+
+    // --- Miscellaneous group ---
+    auto* miscGroup = new QGroupBox(tr("Miscellaneous"), page);
+    auto* miscLayout = new QVBoxLayout(miscGroup);
+    m_ircMiscTree = new QTreeWidget(miscGroup);
+    m_ircMiscTree->setHeaderHidden(true);
+    m_ircMiscTree->setRootIsDecorated(true);
+    m_ircMiscTree->setIndentation(20);
+
+    // Top-level checkable items
+    auto* helpItem = new QTreeWidgetItem(m_ircMiscTree);
+    helpItem->setText(0, tr("Connect to help channel"));
+    helpItem->setFlags(helpItem->flags() | Qt::ItemIsUserCheckable);
+    helpItem->setCheckState(0, Qt::Checked);
+
+    auto* loadListItem = new QTreeWidgetItem(m_ircMiscTree);
+    loadListItem->setText(0, tr("Load server channel list on connect"));
+    loadListItem->setFlags(loadListItem->flags() | Qt::ItemIsUserCheckable);
+    loadListItem->setCheckState(0, Qt::Checked);
+
+    auto* timestampItem = new QTreeWidgetItem(m_ircMiscTree);
+    timestampItem->setText(0, tr("Add timestamp to messages"));
+    timestampItem->setFlags(timestampItem->flags() | Qt::ItemIsUserCheckable);
+    timestampItem->setCheckState(0, Qt::Checked);
+
+    // "Ignore info messages" parent with auto-tristate
+    auto* ignoreParent = new QTreeWidgetItem(m_ircMiscTree);
+    ignoreParent->setText(0, tr("Ignore info messages"));
+    ignoreParent->setFlags(ignoreParent->flags() | Qt::ItemIsAutoTristate | Qt::ItemIsUserCheckable);
+
+    auto* ignoreMisc = new QTreeWidgetItem(ignoreParent);
+    ignoreMisc->setText(0, tr("Ignore misc. info messages"));
+    ignoreMisc->setFlags(ignoreMisc->flags() | Qt::ItemIsUserCheckable);
+    ignoreMisc->setCheckState(0, Qt::Unchecked);
+
+    auto* ignoreJoin = new QTreeWidgetItem(ignoreParent);
+    ignoreJoin->setText(0, tr("Ignore Join info messages"));
+    ignoreJoin->setFlags(ignoreJoin->flags() | Qt::ItemIsUserCheckable);
+    ignoreJoin->setCheckState(0, Qt::Checked);
+
+    auto* ignorePart = new QTreeWidgetItem(ignoreParent);
+    ignorePart->setText(0, tr("Ignore Part info messages"));
+    ignorePart->setFlags(ignorePart->flags() | Qt::ItemIsUserCheckable);
+    ignorePart->setCheckState(0, Qt::Checked);
+
+    auto* ignoreQuit = new QTreeWidgetItem(ignoreParent);
+    ignoreQuit->setText(0, tr("Ignore Quit info messages"));
+    ignoreQuit->setFlags(ignoreQuit->flags() | Qt::ItemIsUserCheckable);
+    ignoreQuit->setCheckState(0, Qt::Checked);
+
+    m_ircMiscTree->expandAll();
+    miscLayout->addWidget(m_ircMiscTree);
+    layout->addWidget(miscGroup);
+
+    layout->addStretch();
+
+    // --- markDirty connections ---
+    connect(m_ircServerEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_ircNickEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_ircUseChannelFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_ircChannelFilterNameEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_ircChannelFilterUsersSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_ircUsePerformCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_ircPerformEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_ircMiscTree, &QTreeWidget::itemChanged, this, [this] { markDirty(); });
+
+    return page;
+}
+
+// ---------------------------------------------------------------------------
+// Messages and Comments page — matches MFC "Options Messages and Comments.png"
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createMessagesPage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(4, 4, 4, 4);
+
+    // --- Messages group ---
+    auto* msgGroup = new QGroupBox(tr("Messages"), page);
+    auto* msgLayout = new QVBoxLayout(msgGroup);
+
+    msgLayout->addWidget(new QLabel(tr("Filter messages containing: (Separator | )"), msgGroup));
+    m_messageFilterEdit = new QLineEdit(msgGroup);
+    msgLayout->addWidget(m_messageFilterEdit);
+
+    m_msgFriendsOnlyCheck = new QCheckBox(tr("Accept from friends only"), msgGroup);
+    msgLayout->addWidget(m_msgFriendsOnlyCheck);
+
+    m_advancedSpamFilterCheck = new QCheckBox(tr("Advanced spam filter"), msgGroup);
+    msgLayout->addWidget(m_advancedSpamFilterCheck);
+
+    // Indented captcha checkbox
+    auto* captchaLayout = new QHBoxLayout;
+    captchaLayout->setContentsMargins(20, 0, 0, 0);
+    m_requireCaptchaCheck = new QCheckBox(tr("Require captcha authentication"), msgGroup);
+    captchaLayout->addWidget(m_requireCaptchaCheck);
+    captchaLayout->addStretch();
+    msgLayout->addLayout(captchaLayout);
+
+    m_showSmileysCheck = new QCheckBox(tr("Show smileys"), msgGroup);
+    msgLayout->addWidget(m_showSmileysCheck);
+
+    layout->addWidget(msgGroup);
+
+    // --- Comments group ---
+    auto* cmtGroup = new QGroupBox(tr("Comments"), page);
+    auto* cmtLayout = new QVBoxLayout(cmtGroup);
+
+    cmtLayout->addWidget(new QLabel(tr("Ignore comments containing: (Separator | )"), cmtGroup));
+    m_commentFilterEdit = new QLineEdit(cmtGroup);
+    cmtLayout->addWidget(m_commentFilterEdit);
+
+    m_indicateRatingsCheck = new QCheckBox(tr("Indicate downloads with comments/rating by icon"), cmtGroup);
+    cmtLayout->addWidget(m_indicateRatingsCheck);
+
+    layout->addWidget(cmtGroup);
+    layout->addStretch();
+
+    // Wire captcha enabled state to spam filter checkbox
+    connect(m_advancedSpamFilterCheck, &QCheckBox::toggled,
+            m_requireCaptchaCheck, &QCheckBox::setEnabled);
+
+    return page;
+}
+
+// ---------------------------------------------------------------------------
+// Security page — matches MFC "Options Security.png"
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createSecurityPage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(4, 4, 4, 4);
+
+    // --- IP Filter group ---
+    auto* ipFilterGroup = new QGroupBox(tr("IP Filter"), page);
+    auto* ipFilterLayout = new QVBoxLayout(ipFilterGroup);
+
+    m_filterServersByIPCheck = new QCheckBox(tr("Filter servers too"), ipFilterGroup);
+    ipFilterLayout->addWidget(m_filterServersByIPCheck);
+
+    // Filter level row: label "Filter level:  <", spin (0-255), Reload button, Edit button
+    auto* filterLevelRow = new QHBoxLayout;
+    filterLevelRow->addSpacing(20);
+    filterLevelRow->addWidget(new QLabel(tr("Filter level:   <"), ipFilterGroup));
+    m_ipFilterLevelSpin = new QSpinBox(ipFilterGroup);
+    m_ipFilterLevelSpin->setRange(0, 255);
+    m_ipFilterLevelSpin->setValue(127);
+    m_ipFilterLevelSpin->setFixedWidth(70);
+    filterLevelRow->addWidget(m_ipFilterLevelSpin);
+    filterLevelRow->addSpacing(10);
+    m_reloadIPFilterBtn = new QPushButton(tr("Reload"), ipFilterGroup);
+    filterLevelRow->addWidget(m_reloadIPFilterBtn);
+    auto* editBtn = new QPushButton(tr("Edit..."), ipFilterGroup);
+    editBtn->setEnabled(false); // ToDo: open ipfilter.dat in external editor
+    filterLevelRow->addWidget(editBtn);
+    filterLevelRow->addStretch();
+    ipFilterLayout->addLayout(filterLevelRow);
+
+    // Update from URL row
+    ipFilterLayout->addWidget(new QLabel(
+        tr("Update from URL: (filter.dat- or PeerGuardian-format)"), ipFilterGroup));
+    auto* urlRow = new QHBoxLayout;
+    auto* urlEdit = new QLineEdit(ipFilterGroup);
+    urlEdit->setEnabled(false); // ToDo: needs ipFilterUpdateUrl pref + download infrastructure
+    urlRow->addWidget(urlEdit);
+    auto* loadBtn = new QPushButton(tr("Load"), ipFilterGroup);
+    loadBtn->setEnabled(false); // ToDo: needs download infrastructure
+    urlRow->addWidget(loadBtn);
+    ipFilterLayout->addLayout(urlRow);
+
+    layout->addWidget(ipFilterGroup);
+
+    // --- See My Shared Files/Directories group ---
+    auto* sharedGroup = new QGroupBox(tr("See My Shared Files/Directories"), page);
+    auto* sharedLayout = new QHBoxLayout(sharedGroup);
+    m_viewSharedGroup = new QButtonGroup(this);
+
+    auto* everybodyRadio = new QRadioButton(tr("Everybody"), sharedGroup);
+    auto* friendsRadio = new QRadioButton(tr("Friends only"), sharedGroup);
+    auto* nobodyRadio = new QRadioButton(tr("Nobody"), sharedGroup);
+
+    m_viewSharedGroup->addButton(everybodyRadio, 2);
+    m_viewSharedGroup->addButton(friendsRadio, 1);
+    m_viewSharedGroup->addButton(nobodyRadio, 0);
+
+    sharedLayout->addWidget(everybodyRadio);
+    sharedLayout->addWidget(friendsRadio);
+    sharedLayout->addWidget(nobodyRadio);
+    sharedLayout->addStretch();
+
+    layout->addWidget(sharedGroup);
+
+    // --- Protocol Obfuscation group ---
+    auto* obfuscGroup = new QGroupBox(tr("Protocol Obfuscation"), page);
+    auto* obfuscLayout = new QVBoxLayout(obfuscGroup);
+
+    m_cryptLayerRequestedCheck = new QCheckBox(tr("Enable protocol obfuscation"), obfuscGroup);
+    obfuscLayout->addWidget(m_cryptLayerRequestedCheck);
+
+    m_cryptLayerRequiredCheck = new QCheckBox(
+        tr("Allow obfuscated connections only (not recommended)"), obfuscGroup);
+    obfuscLayout->addWidget(m_cryptLayerRequiredCheck);
+
+    m_cryptLayerDisableCheck = new QCheckBox(
+        tr("Disable support for obfuscated connections"), obfuscGroup);
+    obfuscLayout->addWidget(m_cryptLayerDisableCheck);
+
+    layout->addWidget(obfuscGroup);
+
+    // --- Miscellaneous group ---
+    auto* miscGroup = new QGroupBox(tr("Miscellaneous"), page);
+    auto* miscLayout = new QVBoxLayout(miscGroup);
+
+    m_useSecureIdentCheck = new QCheckBox(tr("Use secure identification"), miscGroup);
+    miscLayout->addWidget(m_useSecureIdentCheck);
+
+    auto* unprivCheck = new QCheckBox(tr("Run eMule as unprivileged user"), miscGroup);
+    unprivCheck->setEnabled(false); // not applicable to Qt
+    miscLayout->addWidget(unprivCheck);
+
+    m_enableSearchResultFilterCheck = new QCheckBox(
+        tr("Enable spam filter for search results"), miscGroup);
+    miscLayout->addWidget(m_enableSearchResultFilterCheck);
+
+    auto* warnUntrustedCheck = new QCheckBox(
+        tr("Warn when opening untrusted files"), miscGroup);
+    warnUntrustedCheck->setEnabled(false); // ToDo: no pref exists yet
+    miscLayout->addWidget(warnUntrustedCheck);
+
+    layout->addWidget(miscGroup);
+    layout->addStretch();
+
+    return page;
+}
+
+// ---------------------------------------------------------------------------
+// Statistics page
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createStatisticsPage()
+{
+    auto* page = new QWidget(this);
+    auto* mainLayout = new QVBoxLayout(page);
+
+    // Initialize default MFC colors
+    m_statsColors = {{
+        QColor(0, 0, 64),       //  0 Background
+        QColor(192, 192, 255),   //  1 Grid
+        QColor(128, 255, 128),   //  2 DL current
+        QColor(0, 210, 0),       //  3 DL average
+        QColor(0, 128, 0),       //  4 DL session
+        QColor(255, 128, 128),   //  5 UL current
+        QColor(200, 0, 0),       //  6 UL average
+        QColor(140, 0, 0),       //  7 UL session
+        QColor(150, 150, 255),   //  8 Active connections
+        QColor(192, 0, 192),     //  9 Total uploads
+        QColor(255, 255, 128),   // 10 Active uploads
+        QColor(0, 0, 0),         // 11 Icon bar (unused)
+        QColor(255, 255, 255),   // 12 Active downloads
+        QColor(255, 255, 255),   // 13 UL friend slots
+        QColor(255, 190, 190),   // 14 UL slots no overhead
+    }};
+
+    // --- Graphs group ---
+    auto* graphsGroup = new QGroupBox(tr("Graphs"), page);
+    auto* graphsLayout = new QVBoxLayout(graphsGroup);
+
+    // Graph update delay slider
+    m_statsGraphUpdateLabel = new QLabel(tr("Update delay: 3 sec"), graphsGroup);
+    m_statsGraphUpdateSlider = new QSlider(Qt::Horizontal, graphsGroup);
+    m_statsGraphUpdateSlider->setRange(0, 200);
+    m_statsGraphUpdateSlider->setValue(3);
+    m_statsGraphUpdateSlider->setTickInterval(10);
+    m_statsGraphUpdateSlider->setTickPosition(QSlider::TicksBelow);
+    connect(m_statsGraphUpdateSlider, &QSlider::valueChanged, this, [this](int val) {
+        m_statsGraphUpdateLabel->setText(val > 0
+            ? tr("Update delay: %1 sec").arg(val)
+            : tr("Update delay: disabled"));
+        markDirty();
+    });
+    graphsLayout->addWidget(m_statsGraphUpdateLabel);
+    graphsLayout->addWidget(m_statsGraphUpdateSlider);
+
+    // Average time slider
+    m_statsAvgTimeLabel = new QLabel(tr("Time for average graph: 5 mins"), graphsGroup);
+    m_statsAvgTimeSlider = new QSlider(Qt::Horizontal, graphsGroup);
+    m_statsAvgTimeSlider->setRange(1, 100);
+    m_statsAvgTimeSlider->setValue(5);
+    m_statsAvgTimeSlider->setTickInterval(5);
+    m_statsAvgTimeSlider->setTickPosition(QSlider::TicksBelow);
+    connect(m_statsAvgTimeSlider, &QSlider::valueChanged, this, [this](int val) {
+        m_statsAvgTimeLabel->setText(tr("Time for average graph: %1 mins").arg(val));
+        markDirty();
+    });
+    graphsLayout->addWidget(m_statsAvgTimeLabel);
+    graphsLayout->addWidget(m_statsAvgTimeSlider);
+
+    // Colors sub-group
+    auto* colorsGroup = new QGroupBox(tr("Colors"), graphsGroup);
+    auto* colorsLayout = new QVBoxLayout(colorsGroup);
+
+    // Color selector row
+    auto* colorRow = new QHBoxLayout;
+    m_statsColorSelector = new QComboBox(colorsGroup);
+    m_statsColorSelector->addItems({
+        tr("Background"), tr("Grid"),
+        tr("Download Current"), tr("Download Average"), tr("Download Session"),
+        tr("Upload Current"), tr("Upload Average"), tr("Upload Session"),
+        tr("Active Connections"), tr("Total Uploads"), tr("Active Uploads"),
+        tr("Icon Bar"), tr("Active Downloads"),
+        tr("Upload Friend Slots"), tr("Upload Slots (no overhead)")
+    });
+    m_statsColorBtn = new QPushButton(colorsGroup);
+    m_statsColorBtn->setFixedSize(48, 24);
+    m_statsColorBtn->setFlat(true);
+    m_statsColorBtn->setAutoFillBackground(true);
+
+    auto updateColorBtn = [this]() {
+        int idx = m_statsColorSelector->currentIndex();
+        if (idx >= 0 && idx < 15) {
+            QPalette pal = m_statsColorBtn->palette();
+            pal.setColor(QPalette::Button, m_statsColors[static_cast<size_t>(idx)]);
+            m_statsColorBtn->setPalette(pal);
+            m_statsColorBtn->setStyleSheet(
+                QStringLiteral("background-color: %1; border: 1px solid gray;")
+                    .arg(m_statsColors[static_cast<size_t>(idx)].name()));
+        }
+    };
+    connect(m_statsColorSelector, &QComboBox::currentIndexChanged, this, updateColorBtn);
+    connect(m_statsColorBtn, &QPushButton::clicked, this, [this, updateColorBtn]() {
+        int idx = m_statsColorSelector->currentIndex();
+        if (idx < 0 || idx >= 15) return;
+        QColor chosen = QColorDialog::getColor(
+            m_statsColors[static_cast<size_t>(idx)], this, tr("Select Color"));
+        if (chosen.isValid()) {
+            m_statsColors[static_cast<size_t>(idx)] = chosen;
+            updateColorBtn();
+            markDirty();
+        }
+    });
+    colorRow->addWidget(m_statsColorSelector, 1);
+    colorRow->addWidget(m_statsColorBtn);
+    colorsLayout->addLayout(colorRow);
+
+    // Fill graphs checkbox
+    m_statsFillGraphsCheck = new QCheckBox(tr("Draw filled graphs"), colorsGroup);
+    connect(m_statsFillGraphsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    colorsLayout->addWidget(m_statsFillGraphsCheck);
+
+    // Connections Y-axis scale
+    auto* yScaleRow = new QHBoxLayout;
+    yScaleRow->addStretch();
+    yScaleRow->addWidget(new QLabel(tr("Connections statistics Y-axis scale:"), colorsGroup));
+    m_statsYScaleSpin = new QSpinBox(colorsGroup);
+    m_statsYScaleSpin->setRange(0, 1000);
+    m_statsYScaleSpin->setValue(100);
+    connect(m_statsYScaleSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    yScaleRow->addWidget(m_statsYScaleSpin);
+    colorsLayout->addLayout(yScaleRow);
+
+    // Active connections ratio
+    auto* ratioRow = new QHBoxLayout;
+    ratioRow->addStretch();
+    ratioRow->addWidget(new QLabel(tr("Active connections ratio:"), colorsGroup));
+    m_statsRatioCombo = new QComboBox(colorsGroup);
+    m_statsRatioCombo->addItems({
+        QStringLiteral("1:1"), QStringLiteral("1:2"), QStringLiteral("1:3"),
+        QStringLiteral("1:4"), QStringLiteral("1:5"), QStringLiteral("1:10"),
+        QStringLiteral("1:20")
+    });
+    connect(m_statsRatioCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    ratioRow->addWidget(m_statsRatioCombo);
+    colorsLayout->addLayout(ratioRow);
+
+    graphsLayout->addWidget(colorsGroup);
+    mainLayout->addWidget(graphsGroup);
+
+    // --- Statistics Tree group ---
+    auto* treeGroup = new QGroupBox(tr("Statistics Tree"), page);
+    auto* treeLayout = new QVBoxLayout(treeGroup);
+
+    m_statsTreeUpdateLabel = new QLabel(tr("Update delay: 5 sec"), treeGroup);
+    m_statsTreeUpdateSlider = new QSlider(Qt::Horizontal, treeGroup);
+    m_statsTreeUpdateSlider->setRange(0, 200);
+    m_statsTreeUpdateSlider->setValue(5);
+    m_statsTreeUpdateSlider->setTickInterval(10);
+    m_statsTreeUpdateSlider->setTickPosition(QSlider::TicksBelow);
+    connect(m_statsTreeUpdateSlider, &QSlider::valueChanged, this, [this](int val) {
+        m_statsTreeUpdateLabel->setText(val > 0
+            ? tr("Update delay: %1 sec").arg(val)
+            : tr("Update delay: disabled"));
+        markDirty();
+    });
+    treeLayout->addWidget(m_statsTreeUpdateLabel);
+    treeLayout->addWidget(m_statsTreeUpdateSlider);
+
+    mainLayout->addWidget(treeGroup);
+    mainLayout->addStretch();
+
+    // Set initial color button
+    updateColorBtn();
+
+    return page;
+}
+
+// ---------------------------------------------------------------------------
+// Extended page — matches MFC "Options Extended*.png" (PPgTweaks)
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createExtendedPage()
+{
+    auto* page = new QWidget(this);
+    auto* outerLayout = new QVBoxLayout(page);
+    outerLayout->setContentsMargins(4, 4, 4, 4);
+
+    // --- Warning text ---
+    auto* warning = new QLabel(
+        tr("Warning: Do not change these settings unless you know what you "
+           "are doing. Otherwise you can easily make things worse for "
+           "yourself. eMule will run fine without adjusting any of these "
+           "settings."), page);
+    warning->setWordWrap(true);
+    auto warnPal = warning->palette();
+    warnPal.setColor(QPalette::WindowText, QColor(0x80, 0x00, 0x00));
+    warning->setPalette(warnPal);
+    outerLayout->addWidget(warning);
+
+    // --- Scrollable area ---
+    auto* scrollWidget = new QWidget(page);
+    auto* scrollLayout = new QVBoxLayout(scrollWidget);
+    scrollLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto* scrollArea = new QScrollArea(page);
+    scrollArea->setWidget(scrollWidget);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::Box);
+
+    // --- TCP/IP connections group ---
+    auto* tcpGroup = new QGroupBox(tr("TCP/IP connections"), scrollWidget);
+    auto* tcpLayout = new QVBoxLayout(tcpGroup);
+    tcpLayout->setContentsMargins(20, 4, 4, 4);
+
+    auto* tcpRow1 = new QHBoxLayout;
+    tcpRow1->addWidget(new QLabel(tr("Max. new connections / 5 secs.:"), tcpGroup));
+    m_maxConPerFiveSpin = new QSpinBox(tcpGroup);
+    m_maxConPerFiveSpin->setRange(1, 100);
+    tcpRow1->addWidget(m_maxConPerFiveSpin);
+    tcpRow1->addStretch();
+    tcpLayout->addLayout(tcpRow1);
+
+    auto* tcpRow2 = new QHBoxLayout;
+    tcpRow2->addWidget(new QLabel(tr("Max. half-open connections:"), tcpGroup));
+    m_maxHalfOpenSpin = new QSpinBox(tcpGroup);
+    m_maxHalfOpenSpin->setRange(1, 100);
+    tcpRow2->addWidget(m_maxHalfOpenSpin);
+    tcpRow2->addStretch();
+    tcpLayout->addLayout(tcpRow2);
+
+    auto* tcpRow3 = new QHBoxLayout;
+    tcpRow3->addWidget(new QLabel(tr("Server connection refresh interval [min.]:"), tcpGroup));
+    m_serverKeepAliveSpin = new QSpinBox(tcpGroup);
+    m_serverKeepAliveSpin->setRange(0, 60);
+    m_serverKeepAliveSpin->setSpecialValueText(tr("Disabled"));
+    tcpRow3->addWidget(m_serverKeepAliveSpin);
+    tcpRow3->addStretch();
+    tcpLayout->addLayout(tcpRow3);
+
+    scrollLayout->addWidget(tcpGroup);
+
+#ifdef Q_OS_WIN
+    m_autotakeEd2kCheck = new QCheckBox(tr("Autotake eD2K links only during runtime"), scrollWidget);
+    scrollLayout->addWidget(m_autotakeEd2kCheck);
+#endif
+
+    // --- Ungrouped checkboxes ---
+    m_useCreditSystemCheck = new QCheckBox(tr("Use credit system (reward uploaders)"), scrollWidget);
+    scrollLayout->addWidget(m_useCreditSystemCheck);
+
+#ifdef Q_OS_WIN
+    m_winFirewallCheck = new QCheckBox(
+        tr("Open/close ports on WinXP firewall when starting/exiting eMule"), scrollWidget);
+    scrollLayout->addWidget(m_winFirewallCheck);
+#endif
+
+    m_filterLANIPsCheck = new QCheckBox(tr("Filter server and client LAN IPs"), scrollWidget);
+    scrollLayout->addWidget(m_filterLANIPsCheck);
+
+    m_showExtControlsCheck = new QCheckBox(tr("Show more controls (advanced mode controls)"), scrollWidget);
+    scrollLayout->addWidget(m_showExtControlsCheck);
+
+    m_a4afSaveCpuCheck = new QCheckBox(tr("Disable A4AF checks to save CPU"), scrollWidget);
+    scrollLayout->addWidget(m_a4afSaveCpuCheck);
+
+    m_disableArchPreviewCheck = new QCheckBox(
+        tr("Disable automatic archive preview start in file details"), scrollWidget);
+    scrollLayout->addWidget(m_disableArchPreviewCheck);
+
+    auto* hostnameRow = new QHBoxLayout;
+    hostnameRow->addWidget(new QLabel(tr("Host name for own eD2K links:"), scrollWidget));
+    m_ed2kHostnameEdit = new QLineEdit(scrollWidget);
+    hostnameRow->addWidget(m_ed2kHostnameEdit);
+    hostnameRow->addStretch();
+    scrollLayout->addLayout(hostnameRow);
+
+#ifdef Q_OS_WIN
+    m_sparsePartFilesCheck = new QCheckBox(
+        tr("Create new part files as 'sparse' (NTFS only)"), scrollWidget);
+    scrollLayout->addWidget(m_sparsePartFilesCheck);
+
+    m_allocFullFileCheck = new QCheckBox(
+        tr("Allocate full file size for non-sparse part files"), scrollWidget);
+    scrollLayout->addWidget(m_allocFullFileCheck);
+#endif
+
+    // --- Check disk space ---
+    m_checkDiskspaceCheck = new QCheckBox(tr("Check disk space"), scrollWidget);
+    scrollLayout->addWidget(m_checkDiskspaceCheck);
+
+    auto* diskSpaceRow = new QHBoxLayout;
+    diskSpaceRow->setContentsMargins(20, 0, 0, 0);
+    m_minFreeDiskSpaceSpin = new QSpinBox(scrollWidget);
+    m_minFreeDiskSpaceSpin->setRange(0, 999999);
+    diskSpaceRow->addWidget(new QLabel(tr("Min. free disk space [MB]:"), scrollWidget));
+    diskSpaceRow->addWidget(m_minFreeDiskSpaceSpin);
+    diskSpaceRow->addStretch();
+    scrollLayout->addLayout(diskSpaceRow);
+
+    // --- Safe .met/.dat file writing ---
+    auto* commitGroup = new QGroupBox(tr("Safe .met/.dat file writing"), scrollWidget);
+    auto* commitLayout = new QVBoxLayout(commitGroup);
+    commitLayout->setContentsMargins(20, 4, 4, 4);
+    m_commitFilesGroup = new QButtonGroup(this);
+    auto* commitNever = new QRadioButton(tr("Never"), commitGroup);
+    auto* commitShutdown = new QRadioButton(tr("On shutdown"), commitGroup);
+    auto* commitAlways = new QRadioButton(tr("Always"), commitGroup);
+    m_commitFilesGroup->addButton(commitNever, 0);
+    m_commitFilesGroup->addButton(commitShutdown, 1);
+    m_commitFilesGroup->addButton(commitAlways, 2);
+    commitLayout->addWidget(commitNever);
+    commitLayout->addWidget(commitShutdown);
+    commitLayout->addWidget(commitAlways);
+    scrollLayout->addWidget(commitGroup);
+
+    auto* metaGroup = new QGroupBox(tr("Extract meta data"), scrollWidget);
+    auto* metaLayout = new QVBoxLayout(metaGroup);
+    metaLayout->setContentsMargins(20, 4, 4, 4);
+    m_extractMetaDataGroup = new QButtonGroup(this);
+    auto* metaNever = new QRadioButton(tr("Never"), metaGroup);
+    auto* metaLibrary = new QRadioButton(tr("MediaInfo Library"), metaGroup);
+    m_extractMetaDataGroup->addButton(metaNever, 0);
+    m_extractMetaDataGroup->addButton(metaLibrary, 1);
+    metaLayout->addWidget(metaNever);
+    metaLayout->addWidget(metaLibrary);
+    scrollLayout->addWidget(metaGroup);
+
+#ifdef Q_OS_WIN
+    m_resolveShellLinksCheck = new QCheckBox(
+        tr("Resolve shell links in shared directories"), scrollWidget);
+    scrollLayout->addWidget(m_resolveShellLinksCheck);
+#endif
+
+    // --- Save log to disk ---
+    m_logToDiskCheck = new QCheckBox(tr("Save log to disk"), scrollWidget);
+    scrollLayout->addWidget(m_logToDiskCheck);
+
+    // --- Verbose group ---
+    auto* verboseGroup = new QGroupBox(tr("Verbose (additional program feedback)"), scrollWidget);
+    auto* verboseLayout = new QVBoxLayout(verboseGroup);
+    verboseLayout->setContentsMargins(20, 4, 4, 4);
+
+    m_verboseCheck = new QCheckBox(tr("Enabled"), verboseGroup);
+    verboseLayout->addWidget(m_verboseCheck);
+
+    auto* logLevelRow = new QHBoxLayout;
+    logLevelRow->addWidget(new QLabel(tr("Log level:"), verboseGroup));
+    m_logLevelSpin = new QSpinBox(verboseGroup);
+    m_logLevelSpin->setRange(0, 5);
+    logLevelRow->addWidget(m_logLevelSpin);
+    logLevelRow->addStretch();
+    verboseLayout->addLayout(logLevelRow);
+
+    m_verboseLogToDiskCheck = new QCheckBox(tr("Save log to disk"), verboseGroup);
+    verboseLayout->addWidget(m_verboseLogToDiskCheck);
+
+    m_logSourceExchangeCheck = new QCheckBox(
+        tr("Log client source exchange and server source queries/answers"), verboseGroup);
+    verboseLayout->addWidget(m_logSourceExchangeCheck);
+
+    m_logBannedClientsCheck = new QCheckBox(tr("Log banned clients"), verboseGroup);
+    verboseLayout->addWidget(m_logBannedClientsCheck);
+
+    m_logRatingDescCheck = new QCheckBox(
+        tr("Log received file descriptions and ratings"), verboseGroup);
+    verboseLayout->addWidget(m_logRatingDescCheck);
+
+    m_logSecureIdentCheck = new QCheckBox(tr("Log secure ident"), verboseGroup);
+    verboseLayout->addWidget(m_logSecureIdentCheck);
+
+    m_logFilteredIPsCheck = new QCheckBox(
+        tr("Log filtered and/or ignored IPs"), verboseGroup);
+    verboseLayout->addWidget(m_logFilteredIPsCheck);
+
+    m_logFileSavingCheck = new QCheckBox(tr("Log file save actions"), verboseGroup);
+    verboseLayout->addWidget(m_logFileSavingCheck);
+
+    m_logA4AFCheck = new QCheckBox(tr("Log A4AF actions"), verboseGroup);
+    verboseLayout->addWidget(m_logA4AFCheck);
+
+    m_logUlDlEventsCheck = new QCheckBox(tr("Log upload/download events"), verboseGroup);
+    verboseLayout->addWidget(m_logUlDlEventsCheck);
+
+    scrollLayout->addWidget(verboseGroup);
+
+    // --- Upload SpeedSense group ---
+    auto* ussGroup = new QGroupBox(tr("Upload SpeedSense (not recommended)"), scrollWidget);
+    auto* ussLayout = new QVBoxLayout(ussGroup);
+    ussLayout->setContentsMargins(20, 4, 4, 4);
+
+    m_dynUpEnabledCheck = new QCheckBox(tr("Find best upload limit automatically"), ussGroup);
+    ussLayout->addWidget(m_dynUpEnabledCheck);
+
+    auto* pingTolRow = new QHBoxLayout;
+    pingTolRow->addWidget(new QLabel(tr("Ping tolerance (% of lowest ping):"), ussGroup));
+    m_dynUpPingToleranceSpin = new QSpinBox(ussGroup);
+    m_dynUpPingToleranceSpin->setRange(100, 5000);
+    m_dynUpPingToleranceSpin->setSuffix(QStringLiteral("%"));
+    pingTolRow->addWidget(m_dynUpPingToleranceSpin);
+    pingTolRow->addStretch();
+    ussLayout->addLayout(pingTolRow);
+
+    auto* pingTolMsRow = new QHBoxLayout;
+    pingTolMsRow->addWidget(new QLabel(tr("Ping tolerance (ms):"), ussGroup));
+    m_dynUpPingToleranceMsSpin = new QSpinBox(ussGroup);
+    m_dynUpPingToleranceMsSpin->setRange(1, 5000);
+    m_dynUpPingToleranceMsSpin->setSuffix(tr(" ms"));
+    pingTolMsRow->addWidget(m_dynUpPingToleranceMsSpin);
+    pingTolMsRow->addStretch();
+    ussLayout->addLayout(pingTolMsRow);
+
+    auto* methodRow = new QHBoxLayout;
+    methodRow->addWidget(new QLabel(tr("Method for ping tolerance:"), ussGroup));
+    m_dynUpRadioPercent = new QRadioButton(tr("Percent (%)"), ussGroup);
+    m_dynUpRadioMs = new QRadioButton(tr("Milliseconds (ms)"), ussGroup);
+    methodRow->addWidget(m_dynUpRadioPercent);
+    methodRow->addWidget(m_dynUpRadioMs);
+    methodRow->addStretch();
+    ussLayout->addLayout(methodRow);
+
+    auto* goingUpRow = new QHBoxLayout;
+    goingUpRow->addWidget(new QLabel(tr("Going up slowness:"), ussGroup));
+    m_dynUpGoingUpSpin = new QSpinBox(ussGroup);
+    m_dynUpGoingUpSpin->setRange(1, 100000);
+    goingUpRow->addWidget(m_dynUpGoingUpSpin);
+    goingUpRow->addStretch();
+    ussLayout->addLayout(goingUpRow);
+
+    auto* goingDownRow = new QHBoxLayout;
+    goingDownRow->addWidget(new QLabel(tr("Going down slowness:"), ussGroup));
+    m_dynUpGoingDownSpin = new QSpinBox(ussGroup);
+    m_dynUpGoingDownSpin->setRange(1, 100000);
+    goingDownRow->addWidget(m_dynUpGoingDownSpin);
+    goingDownRow->addStretch();
+    ussLayout->addLayout(goingDownRow);
+
+    auto* numPingsRow = new QHBoxLayout;
+    numPingsRow->addWidget(new QLabel(tr("Max number of pings for average:"), ussGroup));
+    m_dynUpNumPingsSpin = new QSpinBox(ussGroup);
+    m_dynUpNumPingsSpin->setRange(1, 100);
+    numPingsRow->addWidget(m_dynUpNumPingsSpin);
+    numPingsRow->addStretch();
+    ussLayout->addLayout(numPingsRow);
+
+    // Enable/disable child controls based on USS checkbox
+    auto updateUssControls = [this](bool on) {
+        m_dynUpPingToleranceSpin->setEnabled(on);
+        m_dynUpPingToleranceMsSpin->setEnabled(on);
+        m_dynUpRadioPercent->setEnabled(on);
+        m_dynUpRadioMs->setEnabled(on);
+        m_dynUpGoingUpSpin->setEnabled(on);
+        m_dynUpGoingDownSpin->setEnabled(on);
+        m_dynUpNumPingsSpin->setEnabled(on);
+    };
+    connect(m_dynUpEnabledCheck, &QCheckBox::toggled, this, updateUssControls);
+
+    scrollLayout->addWidget(ussGroup);
+
+    // --- UPnP group ---
+    auto* upnpGroup = new QGroupBox(tr("UPnP"), scrollWidget);
+    auto* upnpLayout = new QVBoxLayout(upnpGroup);
+    upnpLayout->setContentsMargins(20, 4, 4, 4);
+
+    m_closeUPnPCheck = new QCheckBox(tr("Remove UPnP port forwarding on exit"), upnpGroup);
+    upnpLayout->addWidget(m_closeUPnPCheck);
+
+    m_skipWANIPCheck = new QCheckBox(tr("Skip WAN IP setup"), upnpGroup);
+    upnpLayout->addWidget(m_skipWANIPCheck);
+
+    m_skipWANPPPCheck = new QCheckBox(tr("Skip WAN PPP setup"), upnpGroup);
+    upnpLayout->addWidget(m_skipWANPPPCheck);
+
+    scrollLayout->addWidget(upnpGroup);
+
+#ifdef Q_OS_WIN
+    // --- Sharing eMule with other computer users ---
+    auto* multiUserGroup = new QGroupBox(
+        tr("Sharing eMule with other computer users"), scrollWidget);
+    auto* muLayout = new QVBoxLayout(multiUserGroup);
+    muLayout->setContentsMargins(20, 4, 4, 4);
+    m_multiUserSharingGroup = new QButtonGroup(this);
+    auto* muPerUser = new QRadioButton(
+        tr("Each user has its own configuration and downloads"), multiUserGroup);
+    auto* muShared = new QRadioButton(
+        tr("Everyone has the same configuration and downloads"), multiUserGroup);
+    auto* muProgDir = new QRadioButton(
+        tr("Store config and downloads in the program directory"), multiUserGroup);
+    m_multiUserSharingGroup->addButton(muPerUser, 0);
+    m_multiUserSharingGroup->addButton(muShared, 1);
+    m_multiUserSharingGroup->addButton(muProgDir, 2);
+    muLayout->addWidget(muPerUser);
+    muLayout->addWidget(muShared);
+    muLayout->addWidget(muProgDir);
+    scrollLayout->addWidget(multiUserGroup);
+#endif
+
+    scrollLayout->addStretch();
+    outerLayout->addWidget(scrollArea, 1);
+
+    // --- Bottom fixed area: File buffer size slider ---
+    auto* bufferRow = new QHBoxLayout;
+    m_fileBufferLabel = new QLabel(page);
+    bufferRow->addWidget(m_fileBufferLabel);
+    bufferRow->addStretch();
+    outerLayout->addLayout(bufferRow);
+
+    m_fileBufferSlider = new QSlider(Qt::Horizontal, page);
+    // Range: 16 KB to 64 MB, step 16 KB → slider values 1..4096
+    m_fileBufferSlider->setRange(1, 4096);
+    m_fileBufferSlider->setTickPosition(QSlider::TicksBelow);
+    m_fileBufferSlider->setTickInterval(256);
+    outerLayout->addWidget(m_fileBufferSlider);
+
+    connect(m_fileBufferSlider, &QSlider::valueChanged, this, [this](int v) {
+        auto bytes = static_cast<uint32>(v) * 16384u;
+        m_fileBufferLabel->setText(
+            tr("File buffer size: %1 MB").arg(
+                static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 2));
+    });
+
+    // --- Queue size slider ---
+    auto* queueRow = new QHBoxLayout;
+    m_queueSizeLabel = new QLabel(page);
+    queueRow->addWidget(m_queueSizeLabel);
+    queueRow->addStretch();
+    outerLayout->addLayout(queueRow);
+
+    m_queueSizeSlider = new QSlider(Qt::Horizontal, page);
+    // Range: 2000 to 30000, step 100
+    m_queueSizeSlider->setRange(5, 300);
+    m_queueSizeSlider->setTickPosition(QSlider::TicksBelow);
+    m_queueSizeSlider->setTickInterval(50);
+    outerLayout->addWidget(m_queueSizeSlider);
+
+    connect(m_queueSizeSlider, &QSlider::valueChanged, this, [this](int v) {
+        auto size = static_cast<uint32>(v) * 100u;
+        m_queueSizeLabel->setText(
+            tr("Queue size: %1").arg(QLocale().toString(size)));
+    });
+
+    // --- Enable/disable logic ---
+    // Verbose sub-controls depend on verbose checkbox
+    connect(m_verboseCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_logLevelSpin->setEnabled(on);
+        m_verboseLogToDiskCheck->setEnabled(on);
+        m_logSourceExchangeCheck->setEnabled(on);
+        m_logBannedClientsCheck->setEnabled(on);
+        m_logRatingDescCheck->setEnabled(on);
+        m_logSecureIdentCheck->setEnabled(on);
+        m_logFilteredIPsCheck->setEnabled(on);
+        m_logFileSavingCheck->setEnabled(on);
+        m_logA4AFCheck->setEnabled(on);
+        m_logUlDlEventsCheck->setEnabled(on);
+    });
+
+    // Min free disk space depends on check disk space
+    connect(m_checkDiskspaceCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_minFreeDiskSpaceSpin->setEnabled(on);
+    });
+
+    return page;
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler page — matches MFC "Options Scheduler.png"
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createSchedulerPage()
+{
+    auto* page = new QWidget(this);
+    auto* mainLayout = new QVBoxLayout(page);
+
+    // Top: Enabled checkbox
+    m_schedEnabledCheck = new QCheckBox(tr("Enabled"), page);
+    mainLayout->addWidget(m_schedEnabledCheck);
+
+    // Buttons row: Remove + New (right-aligned)
+    auto* btnRow = new QHBoxLayout;
+    btnRow->addStretch();
+    m_schedRemoveBtn = new QPushButton(tr("Remove"), page);
+    m_schedNewBtn = new QPushButton(tr("New"), page);
+    btnRow->addWidget(m_schedRemoveBtn);
+    btnRow->addWidget(m_schedNewBtn);
+    mainLayout->addLayout(btnRow);
+
+    // Schedule table: Title | Days | Start Time
+    m_schedTable = new QTreeWidget(page);
+    m_schedTable->setHeaderLabels({tr("Title"), tr("Days"), tr("Start Time")});
+    m_schedTable->setRootIsDecorated(false);
+    m_schedTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_schedTable->setColumnCount(3);
+    m_schedTable->header()->setStretchLastSection(true);
+    mainLayout->addWidget(m_schedTable);
+
+    // Details group box
+    auto* detailsGroup = new QGroupBox(tr("Details"), page);
+    auto* detailsLayout = new QVBoxLayout(detailsGroup);
+
+    // Entry enabled checkbox
+    m_schedEntryEnabledCheck = new QCheckBox(tr("Enabled"), detailsGroup);
+    detailsLayout->addWidget(m_schedEntryEnabledCheck);
+
+    // Title
+    auto* titleRow = new QHBoxLayout;
+    titleRow->addWidget(new QLabel(tr("Title"), detailsGroup));
+    m_schedTitleEdit = new QLineEdit(detailsGroup);
+    titleRow->addWidget(m_schedTitleEdit);
+    detailsLayout->addLayout(titleRow);
+
+    // Time row: Day combo + start time - end time + "No end time"
+    auto* timeRow = new QHBoxLayout;
+    timeRow->addWidget(new QLabel(tr("Time"), detailsGroup));
+    m_schedDayCombo = new QComboBox(detailsGroup);
+    m_schedDayCombo->addItems({
+        tr("Daily"), tr("Monday"), tr("Tuesday"), tr("Wednesday"),
+        tr("Thursday"), tr("Friday"), tr("Saturday"), tr("Sunday"),
+        tr("Mon-Fri"), tr("Mon-Sat"), tr("Sat-Sun")
+    });
+    timeRow->addWidget(m_schedDayCombo);
+    detailsLayout->addLayout(timeRow);
+
+    auto* timePickRow = new QHBoxLayout;
+    timePickRow->addSpacing(40); // indent
+    m_schedStartTime = new QTimeEdit(detailsGroup);
+    m_schedStartTime->setDisplayFormat(QStringLiteral("HH:mm"));
+    timePickRow->addWidget(m_schedStartTime);
+    timePickRow->addWidget(new QLabel(QStringLiteral("-"), detailsGroup));
+    m_schedEndTime = new QTimeEdit(detailsGroup);
+    m_schedEndTime->setDisplayFormat(QStringLiteral("HH:mm"));
+    timePickRow->addWidget(m_schedEndTime);
+    m_schedNoEndTimeCheck = new QCheckBox(tr("No end time"), detailsGroup);
+    timePickRow->addWidget(m_schedNoEndTimeCheck);
+    timePickRow->addStretch();
+    detailsLayout->addLayout(timePickRow);
+
+    // Action group
+    auto* actionGroup = new QGroupBox(tr("Action"), detailsGroup);
+    auto* actionLayout = new QVBoxLayout(actionGroup);
+    m_schedActionsTable = new QTreeWidget(actionGroup);
+    m_schedActionsTable->setHeaderLabels({tr("Action"), tr("Value")});
+    m_schedActionsTable->setRootIsDecorated(false);
+    m_schedActionsTable->setColumnCount(2);
+    m_schedActionsTable->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_schedActionsTable->header()->setStretchLastSection(true);
+    actionLayout->addWidget(m_schedActionsTable);
+    detailsLayout->addWidget(actionGroup);
+
+    // Apply button (right-aligned)
+    auto* applyRow = new QHBoxLayout;
+    applyRow->addStretch();
+    m_schedApplyBtn = new QPushButton(tr("Apply"), detailsGroup);
+    applyRow->addWidget(m_schedApplyBtn);
+    detailsLayout->addLayout(applyRow);
+
+    mainLayout->addWidget(detailsGroup);
+
+    // Wire signals
+    connect(m_schedTable, &QTreeWidget::currentItemChanged, this,
+        [this](QTreeWidgetItem* current, QTreeWidgetItem*) {
+            int idx = current ? m_schedTable->indexOfTopLevelItem(current) : -1;
+            populateScheduleDetails(idx);
+        });
+
+    connect(m_schedNewBtn, &QPushButton::clicked, this, [this]() {
+        SchedUiEntry entry;
+        entry.title = tr("New Schedule");
+        entry.enabled = true;
+        auto now = QTime::currentTime();
+        QDateTime dt = QDateTime::currentDateTime();
+        dt.setTime(now);
+        entry.startTime = dt.toSecsSinceEpoch();
+        entry.endTime = entry.startTime;
+        m_schedEntries.push_back(std::move(entry));
+        refreshScheduleTable();
+        m_schedTable->setCurrentItem(
+            m_schedTable->topLevelItem(static_cast<int>(m_schedEntries.size()) - 1));
+        markDirty();
+    });
+
+    connect(m_schedRemoveBtn, &QPushButton::clicked, this, [this]() {
+        if (m_schedSelectedIndex >= 0
+            && m_schedSelectedIndex < static_cast<int>(m_schedEntries.size())) {
+            m_schedEntries.erase(m_schedEntries.begin() + m_schedSelectedIndex);
+            refreshScheduleTable();
+            m_schedSelectedIndex = -1;
+            populateScheduleDetails(-1);
+            markDirty();
+        }
+    });
+
+    connect(m_schedApplyBtn, &QPushButton::clicked, this, [this]() {
+        applyScheduleDetails();
+        markDirty();
+    });
+
+    connect(m_schedNoEndTimeCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        m_schedEndTime->setEnabled(!checked);
+    });
+
+    connect(m_schedActionsTable, &QTreeWidget::customContextMenuRequested,
+            this, &OptionsDialog::showScheduleActionsMenu);
+
+    connect(m_schedEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+
+    return page;
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler helpers
+// ---------------------------------------------------------------------------
+
+void OptionsDialog::refreshScheduleTable()
+{
+    m_schedTable->clear();
+    static const char* dayNames[] = {
+        "Daily", "Monday", "Tuesday", "Wednesday", "Thursday",
+        "Friday", "Saturday", "Sunday", "Mon-Fri", "Mon-Sat", "Sat-Sun"
+    };
+
+    for (const auto& entry : m_schedEntries) {
+        auto* item = new QTreeWidgetItem(m_schedTable);
+        item->setText(0, entry.title);
+        int dayIdx = entry.day;
+        item->setText(1, (dayIdx >= 0 && dayIdx <= 10) ? tr(dayNames[dayIdx]) : tr("Daily"));
+        QDateTime dt = QDateTime::fromSecsSinceEpoch(entry.startTime);
+        item->setText(2, dt.time().toString(QStringLiteral("HH:mm")));
+    }
+}
+
+void OptionsDialog::populateScheduleDetails(int index)
+{
+    m_schedSelectedIndex = index;
+    bool valid = index >= 0 && index < static_cast<int>(m_schedEntries.size());
+
+    m_schedEntryEnabledCheck->setEnabled(valid);
+    m_schedTitleEdit->setEnabled(valid);
+    m_schedDayCombo->setEnabled(valid);
+    m_schedStartTime->setEnabled(valid);
+    m_schedEndTime->setEnabled(valid);
+    m_schedNoEndTimeCheck->setEnabled(valid);
+    m_schedApplyBtn->setEnabled(valid);
+
+    if (!valid) {
+        m_schedEntryEnabledCheck->setChecked(false);
+        m_schedTitleEdit->clear();
+        m_schedDayCombo->setCurrentIndex(0);
+        m_schedActionsTable->clear();
+        return;
+    }
+
+    const auto& entry = m_schedEntries[static_cast<size_t>(index)];
+    m_schedEntryEnabledCheck->setChecked(entry.enabled);
+    m_schedTitleEdit->setText(entry.title);
+    m_schedDayCombo->setCurrentIndex(std::clamp(entry.day, 0, 10));
+
+    QDateTime startDt = QDateTime::fromSecsSinceEpoch(entry.startTime);
+    m_schedStartTime->setTime(startDt.time());
+
+    bool noEnd = (entry.endTime == 0 || entry.endTime == entry.startTime);
+    m_schedNoEndTimeCheck->setChecked(noEnd);
+    m_schedEndTime->setEnabled(!noEnd);
+    if (!noEnd) {
+        QDateTime endDt = QDateTime::fromSecsSinceEpoch(entry.endTime);
+        m_schedEndTime->setTime(endDt.time());
+    } else {
+        m_schedEndTime->setTime(startDt.time());
+    }
+
+    // Populate actions
+    m_schedActionsTable->clear();
+    static const char* actionNames[] = {
+        "None", "Upload Limit", "Download Limit", "Source Limit",
+        "Con/5sec Limit", "Max Connections", "Stop Category", "Resume Category"
+    };
+    for (const auto& act : entry.actions) {
+        if (act.type <= 0 || act.type > 7) continue;
+        auto* item = new QTreeWidgetItem(m_schedActionsTable);
+        item->setText(0, tr(actionNames[act.type]));
+        item->setText(1, act.value);
+        item->setData(0, Qt::UserRole, act.type);
+    }
+}
+
+void OptionsDialog::applyScheduleDetails()
+{
+    if (m_schedSelectedIndex < 0
+        || m_schedSelectedIndex >= static_cast<int>(m_schedEntries.size()))
+        return;
+
+    auto& entry = m_schedEntries[static_cast<size_t>(m_schedSelectedIndex)];
+    entry.enabled = m_schedEntryEnabledCheck->isChecked();
+    entry.title = m_schedTitleEdit->text();
+    entry.day = m_schedDayCombo->currentIndex();
+
+    // Build start/end times: use today's date as base, set time from pickers
+    QDateTime baseDt = QDateTime::currentDateTime();
+    baseDt.setTime(m_schedStartTime->time());
+    entry.startTime = baseDt.toSecsSinceEpoch();
+
+    if (m_schedNoEndTimeCheck->isChecked()) {
+        entry.endTime = 0;
+    } else {
+        QDateTime endDt = QDateTime::currentDateTime();
+        endDt.setTime(m_schedEndTime->time());
+        entry.endTime = endDt.toSecsSinceEpoch();
+    }
+
+    // Collect actions from table
+    entry.actions.clear();
+    for (int i = 0; i < m_schedActionsTable->topLevelItemCount(); ++i) {
+        auto* item = m_schedActionsTable->topLevelItem(i);
+        SchedUiEntry::Action act;
+        act.type = item->data(0, Qt::UserRole).toInt();
+        act.value = item->text(1);
+        entry.actions.push_back(act);
+    }
+
+    refreshScheduleTable();
+    m_schedTable->setCurrentItem(m_schedTable->topLevelItem(m_schedSelectedIndex));
+}
+
+void OptionsDialog::showScheduleActionsMenu(const QPoint& pos)
+{
+    QMenu menu;
+
+    // Add submenu with action types
+    auto* addMenu = menu.addMenu(tr("Add"));
+    static const char* actionNames[] = {
+        nullptr, "Upload Limit", "Download Limit", "Source Limit",
+        "Con/5sec Limit", "Max Connections", "Stop Category", "Resume Category"
+    };
+    for (int i = 1; i <= 7; ++i) {
+        addMenu->addAction(tr(actionNames[i]), this, [this, i]() {
+            bool ok = false;
+            QString value = QInputDialog::getText(this, tr("Action Value"),
+                tr("Enter value:"), QLineEdit::Normal, QString(), &ok);
+            if (!ok) return;
+
+            auto* item = new QTreeWidgetItem(m_schedActionsTable);
+            item->setText(0, tr(actionNames[i]));
+            item->setText(1, value);
+            item->setData(0, Qt::UserRole, i);
+        });
+    }
+
+    auto* current = m_schedActionsTable->currentItem();
+    if (current) {
+        menu.addAction(tr("Edit Value"), this, [this, current]() {
+            bool ok = false;
+            QString value = QInputDialog::getText(this, tr("Edit Value"),
+                tr("Enter value:"), QLineEdit::Normal, current->text(1), &ok);
+            if (ok)
+                current->setText(1, value);
+        });
+        menu.addAction(tr("Remove"), this, [current]() {
+            delete current;
+        });
+    }
+
+    menu.exec(m_schedActionsTable->viewport()->mapToGlobal(pos));
+}
+
+void OptionsDialog::loadSchedulerData()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetSchedules);
+    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+        const QCborMap data = resp.fieldMap(1);
+
+        m_schedEnabledCheck->setChecked(data.value(QStringLiteral("enabled")).toBool());
+
+        m_schedEntries.clear();
+        const QCborArray schedArr = data.value(QStringLiteral("schedules")).toArray();
+        for (const auto& item : schedArr) {
+            const QCborMap m = item.toMap();
+            SchedUiEntry entry;
+            entry.title = m.value(QStringLiteral("title")).toString();
+            entry.startTime = static_cast<time_t>(m.value(QStringLiteral("startTime")).toInteger());
+            entry.endTime = static_cast<time_t>(m.value(QStringLiteral("endTime")).toInteger());
+            entry.day = static_cast<int>(m.value(QStringLiteral("day")).toInteger());
+            entry.enabled = m.value(QStringLiteral("enabled")).toBool();
+
+            const QCborArray actArr = m.value(QStringLiteral("actions")).toArray();
+            for (const auto& actItem : actArr) {
+                const QCborMap actMap = actItem.toMap();
+                SchedUiEntry::Action act;
+                act.type = static_cast<int>(actMap.value(QStringLiteral("action")).toInteger());
+                act.value = actMap.value(QStringLiteral("value")).toString();
+                entry.actions.push_back(act);
+            }
+            m_schedEntries.push_back(std::move(entry));
+        }
+
+        refreshScheduleTable();
+        if (!m_schedEntries.empty())
+            m_schedTable->setCurrentItem(m_schedTable->topLevelItem(0));
+    });
+}
+
+void OptionsDialog::saveSchedulerData()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::SaveSchedules);
+    req.append(m_schedEnabledCheck->isChecked());
+
+    QCborArray schedArr;
+    for (const auto& entry : m_schedEntries) {
+        QCborMap m;
+        m.insert(QStringLiteral("title"), entry.title);
+        m.insert(QStringLiteral("startTime"), static_cast<qint64>(entry.startTime));
+        m.insert(QStringLiteral("endTime"), static_cast<qint64>(entry.endTime));
+        m.insert(QStringLiteral("day"), entry.day);
+        m.insert(QStringLiteral("enabled"), entry.enabled);
+
+        QCborArray actArr;
+        for (const auto& act : entry.actions) {
+            QCborMap actMap;
+            actMap.insert(QStringLiteral("action"), act.type);
+            actMap.insert(QStringLiteral("value"), act.value);
+            actArr.append(actMap);
+        }
+        m.insert(QStringLiteral("actions"), actArr);
+        schedArr.append(m);
+    }
+    req.append(schedArr);
+    m_ipc->sendRequest(std::move(req));
+}
+
+// ---------------------------------------------------------------------------
 // Placeholder page for unimplemented categories
 // ---------------------------------------------------------------------------
 
@@ -1171,6 +2783,8 @@ void OptionsDialog::loadSettings()
     m_disableKnownClientListCheck->setChecked(thePrefs.disableKnownClientList());
     m_disableQueueListCheck->setChecked(thePrefs.disableQueueList());
     m_useAutoCompletionCheck->setChecked(thePrefs.useAutoCompletion());
+    m_useOriginalIconsCheck->setChecked(thePrefs.useOriginalIcons());
+    m_initialUseOriginalIcons = thePrefs.useOriginalIcons();
 
     // Files page (GUI-only)
     m_watchClipboardCheck->setChecked(thePrefs.watchClipboard4ED2KLinks());
@@ -1180,12 +2794,51 @@ void OptionsDialog::loadSettings()
     m_createBackupToPreviewCheck->setChecked(thePrefs.createBackupToPreview());
     m_autoCleanupFilenamesCheck->setChecked(thePrefs.autoCleanupFilenames());
 
+    // Notifications page (GUI-side)
+    m_soundGroup->button(thePrefs.notifySoundType())->setChecked(true);
+    m_soundFileEdit->setText(thePrefs.notifySoundFile());
+    m_soundFileEdit->setEnabled(thePrefs.notifySoundType() == 1);
+    m_soundBrowseBtn->setEnabled(thePrefs.notifySoundType() == 1);
+
+    // IRC page (GUI-local)
+    m_ircServerEdit->setText(thePrefs.ircServer());
+    m_ircNickEdit->setText(thePrefs.ircNick());
+    m_ircUseChannelFilterCheck->setChecked(thePrefs.ircUseChannelFilter());
+    {
+        const QString filter = thePrefs.ircChannelFilter();
+        const auto parts = filter.split(QLatin1Char('|'));
+        m_ircChannelFilterNameEdit->setText(parts.value(0));
+        m_ircChannelFilterUsersSpin->setValue(parts.value(1).toInt());
+    }
+    m_ircChannelFilterNameEdit->setEnabled(thePrefs.ircUseChannelFilter());
+    m_ircChannelFilterUsersSpin->setEnabled(thePrefs.ircUseChannelFilter());
+    m_ircUsePerformCheck->setChecked(thePrefs.ircUsePerform());
+    m_ircPerformEdit->setText(thePrefs.ircPerformString());
+    m_ircPerformEdit->setEnabled(thePrefs.ircUsePerform());
+
+    // Misc tree items: 0=help, 1=loadList, 2=timestamp, 3=ignoreParent->(0=misc,1=join,2=part,3=quit)
+    auto* root = m_ircMiscTree->invisibleRootItem();
+    root->child(0)->setCheckState(0, thePrefs.ircConnectHelpChannel() ? Qt::Checked : Qt::Unchecked);
+    root->child(1)->setCheckState(0, thePrefs.ircLoadChannelList() ? Qt::Checked : Qt::Unchecked);
+    root->child(2)->setCheckState(0, thePrefs.ircAddTimestamp() ? Qt::Checked : Qt::Unchecked);
+    auto* ignoreParent = root->child(3);
+    ignoreParent->child(0)->setCheckState(0, thePrefs.ircIgnoreMiscInfoMessages() ? Qt::Checked : Qt::Unchecked);
+    ignoreParent->child(1)->setCheckState(0, thePrefs.ircIgnoreJoinMessages() ? Qt::Checked : Qt::Unchecked);
+    ignoreParent->child(2)->setCheckState(0, thePrefs.ircIgnorePartMessages() ? Qt::Checked : Qt::Unchecked);
+    ignoreParent->child(3)->setCheckState(0, thePrefs.ircIgnoreQuitMessages() ? Qt::Checked : Qt::Unchecked);
+
+    // Messages page (GUI-only)
+    m_showSmileysCheck->setChecked(thePrefs.showSmileys());
+    m_indicateRatingsCheck->setChecked(thePrefs.indicateRatings());
+
     // Daemon settings — request via IPC
     if (m_ipc && m_ipc->isConnected()) {
         Ipc::IpcMessage req(Ipc::IpcMsgType::GetPreferences);
         m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
-            if (!resp.fieldBool(0))
+            if (!resp.fieldBool(0)) {
+                m_loading = false;
                 return;
+            }
             const QCborMap prefs = resp.fieldMap(1);
 
             // General page
@@ -1229,6 +2882,7 @@ void OptionsDialog::loadSettings()
             m_maxConnectionsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConnections")).toInteger(500)));
             m_autoConnectCheck->setChecked(prefs.value(QStringLiteral("autoConnect")).toBool());
             m_reconnectCheck->setChecked(prefs.value(QStringLiteral("reconnect")).toBool());
+            m_overheadCheck->setChecked(prefs.value(QStringLiteral("showOverhead")).toBool());
             m_kadEnabledCheck->setChecked(prefs.value(QStringLiteral("kadEnabled")).toBool());
             m_ed2kEnabledCheck->setChecked(prefs.value(QStringLiteral("networkED2K")).toBool());
 
@@ -1288,6 +2942,153 @@ void OptionsDialog::loadSettings()
             m_rememberDownloadedCheck->setChecked(prefs.value(QStringLiteral("rememberDownloadedFiles")).toBool(true));
             m_rememberCancelledCheck->setChecked(prefs.value(QStringLiteral("rememberCancelledFiles")).toBool(true));
 
+            // Notifications page (daemon-side)
+            m_notifyLogCheck->setChecked(prefs.value(QStringLiteral("notifyOnLog")).toBool());
+            m_notifyChatCheck->setChecked(prefs.value(QStringLiteral("notifyOnChat")).toBool());
+            m_notifyChatMsgCheck->setChecked(prefs.value(QStringLiteral("notifyOnChatMsg")).toBool());
+            m_notifyChatMsgCheck->setEnabled(m_notifyChatCheck->isChecked());
+            m_notifyDownloadAddedCheck->setChecked(prefs.value(QStringLiteral("notifyOnDownloadAdded")).toBool());
+            m_notifyDownloadFinishedCheck->setChecked(prefs.value(QStringLiteral("notifyOnDownloadFinished")).toBool());
+            m_notifyNewVersionCheck->setChecked(prefs.value(QStringLiteral("notifyOnNewVersion")).toBool());
+            m_notifyUrgentCheck->setChecked(prefs.value(QStringLiteral("notifyOnUrgent")).toBool());
+            m_emailEnabledCheck->setChecked(prefs.value(QStringLiteral("notifyEmailEnabled")).toBool());
+            m_smtpServer = prefs.value(QStringLiteral("notifyEmailSmtpServer")).toString();
+            m_smtpPort = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpPort")).toInteger(25));
+            m_smtpAuth = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpAuth")).toInteger(0));
+            m_smtpTls = prefs.value(QStringLiteral("notifyEmailSmtpTls")).toBool();
+            m_smtpUser = prefs.value(QStringLiteral("notifyEmailSmtpUser")).toString();
+            m_smtpPassword = prefs.value(QStringLiteral("notifyEmailSmtpPassword")).toString();
+            m_emailRecipientEdit->setText(prefs.value(QStringLiteral("notifyEmailRecipient")).toString());
+            m_emailSenderEdit->setText(prefs.value(QStringLiteral("notifyEmailSender")).toString());
+            bool emailOn = m_emailEnabledCheck->isChecked();
+            m_smtpServerBtn->setEnabled(emailOn);
+            m_emailRecipientEdit->setEnabled(emailOn);
+            m_emailSenderEdit->setEnabled(emailOn);
+
+            // Messages and Comments page (daemon-side)
+            m_msgFriendsOnlyCheck->setChecked(prefs.value(QStringLiteral("msgOnlyFriends")).toBool());
+            bool spamOn = prefs.value(QStringLiteral("enableSpamFilter")).toBool();
+            m_advancedSpamFilterCheck->setChecked(spamOn);
+            m_requireCaptchaCheck->setChecked(prefs.value(QStringLiteral("useChatCaptchas")).toBool());
+            m_requireCaptchaCheck->setEnabled(spamOn);
+            m_messageFilterEdit->setText(prefs.value(QStringLiteral("messageFilter")).toString());
+            m_commentFilterEdit->setText(prefs.value(QStringLiteral("commentFilter")).toString());
+
+            // Security page (daemon-side)
+            m_filterServersByIPCheck->setChecked(prefs.value(QStringLiteral("filterServerByIP")).toBool());
+            m_ipFilterLevelSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("ipFilterLevel")).toInteger(127)));
+            m_viewSharedGroup->button(static_cast<int>(prefs.value(QStringLiteral("viewSharedFilesAccess")).toInteger(1)))->setChecked(true);
+            bool cryptSupported = prefs.value(QStringLiteral("cryptLayerSupported")).toBool(true);
+            bool cryptRequested = prefs.value(QStringLiteral("cryptLayerRequested")).toBool(true);
+            bool cryptRequired  = prefs.value(QStringLiteral("cryptLayerRequired")).toBool();
+            m_cryptLayerDisableCheck->setChecked(!cryptSupported);
+            m_cryptLayerRequestedCheck->setChecked(cryptRequested);
+            m_cryptLayerRequestedCheck->setEnabled(cryptSupported);
+            m_cryptLayerRequiredCheck->setChecked(cryptRequired);
+            m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
+            m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
+            m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
+
+            // Statistics page
+            auto graphsSec = static_cast<int>(prefs.value(QStringLiteral("graphsUpdateSec")).toInteger(3));
+            m_statsGraphUpdateSlider->setValue(graphsSec);
+            auto avgMin = static_cast<int>(prefs.value(QStringLiteral("statsAverageMinutes")).toInteger(5));
+            m_statsAvgTimeSlider->setValue(avgMin);
+            m_statsFillGraphsCheck->setChecked(prefs.value(QStringLiteral("fillGraphs")).toBool());
+            m_statsYScaleSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("statsConnectionsMax")).toInteger(100)));
+            auto ratio = static_cast<uint32_t>(prefs.value(QStringLiteral("statsConnectionsRatio")).toInteger(3));
+            // Map ratio value to combo index: 1→0, 2→1, 3→2, 4→3, 5→4, 10→5, 20→6
+            static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
+            int ratioIdx = 2; // default 1:3
+            for (int ri = 0; ri < 7; ++ri) {
+                if (static_cast<uint32_t>(ratioValues[ri]) == ratio) { ratioIdx = ri; break; }
+            }
+            m_statsRatioCombo->setCurrentIndex(ratioIdx);
+            auto statsSec = static_cast<int>(prefs.value(QStringLiteral("statsUpdateSec")).toInteger(5));
+            m_statsTreeUpdateSlider->setValue(statsSec);
+
+            // Extended page
+            m_maxConPerFiveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConsPerFive")).toInteger(20)));
+            m_maxHalfOpenSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxHalfConnections")).toInteger(9)));
+            auto keepAlive = static_cast<int>(prefs.value(QStringLiteral("serverKeepAliveTimeout")).toInteger(0));
+            m_serverKeepAliveSpin->setValue(keepAlive / 60000); // stored in ms, shown in min
+            m_useCreditSystemCheck->setChecked(prefs.value(QStringLiteral("useCreditSystem")).toBool(true));
+            m_filterLANIPsCheck->setChecked(prefs.value(QStringLiteral("filterLANIPs")).toBool(true));
+            m_showExtControlsCheck->setChecked(prefs.value(QStringLiteral("showExtControls")).toBool());
+            m_a4afSaveCpuCheck->setChecked(prefs.value(QStringLiteral("a4afSaveCpu")).toBool());
+            m_disableArchPreviewCheck->setChecked(!prefs.value(QStringLiteral("autoArchivePreviewStart")).toBool(true));
+            m_ed2kHostnameEdit->setText(prefs.value(QStringLiteral("ed2kHostname")).toString());
+            bool diskCheck = prefs.value(QStringLiteral("checkDiskspace")).toBool();
+            m_checkDiskspaceCheck->setChecked(diskCheck);
+            auto minFree = static_cast<int>(prefs.value(QStringLiteral("minFreeDiskSpace")).toInteger(20971520));
+            m_minFreeDiskSpaceSpin->setValue(minFree / (1024 * 1024)); // bytes to MB
+            m_minFreeDiskSpaceSpin->setEnabled(diskCheck);
+            int commit = static_cast<int>(prefs.value(QStringLiteral("commitFiles")).toInteger(1));
+            if (auto* btn = m_commitFilesGroup->button(commit))
+                btn->setChecked(true);
+            int metaMode = static_cast<int>(prefs.value(QStringLiteral("extractMetaData")).toInteger(1));
+            if (auto* btn = m_extractMetaDataGroup->button(metaMode))
+                btn->setChecked(true);
+            m_logToDiskCheck->setChecked(prefs.value(QStringLiteral("logToDisk")).toBool());
+            bool verboseOn = prefs.value(QStringLiteral("verbose")).toBool(true);
+            m_verboseCheck->setChecked(verboseOn);
+            m_logLevelSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("logLevel")).toInteger(5)));
+            m_logLevelSpin->setEnabled(verboseOn);
+            m_verboseLogToDiskCheck->setChecked(prefs.value(QStringLiteral("verboseLogToDisk")).toBool());
+            m_verboseLogToDiskCheck->setEnabled(verboseOn);
+            m_logSourceExchangeCheck->setChecked(prefs.value(QStringLiteral("logSourceExchange")).toBool());
+            m_logSourceExchangeCheck->setEnabled(verboseOn);
+            m_logBannedClientsCheck->setChecked(prefs.value(QStringLiteral("logBannedClients")).toBool(true));
+            m_logBannedClientsCheck->setEnabled(verboseOn);
+            m_logRatingDescCheck->setChecked(prefs.value(QStringLiteral("logRatingDescReceived")).toBool(true));
+            m_logRatingDescCheck->setEnabled(verboseOn);
+            m_logSecureIdentCheck->setChecked(prefs.value(QStringLiteral("logSecureIdent")).toBool(true));
+            m_logSecureIdentCheck->setEnabled(verboseOn);
+            m_logFilteredIPsCheck->setChecked(prefs.value(QStringLiteral("logFilteredIPs")).toBool(true));
+            m_logFilteredIPsCheck->setEnabled(verboseOn);
+            m_logFileSavingCheck->setChecked(prefs.value(QStringLiteral("logFileSaving")).toBool());
+            m_logFileSavingCheck->setEnabled(verboseOn);
+            m_logA4AFCheck->setChecked(prefs.value(QStringLiteral("logA4AF")).toBool());
+            m_logA4AFCheck->setEnabled(verboseOn);
+            m_logUlDlEventsCheck->setChecked(prefs.value(QStringLiteral("logUlDlEvents")).toBool(true));
+            m_logUlDlEventsCheck->setEnabled(verboseOn);
+            // USS
+            bool ussOn = prefs.value(QStringLiteral("dynUpEnabled")).toBool();
+            m_dynUpEnabledCheck->setChecked(ussOn);
+            m_dynUpPingToleranceSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpPingTolerance")).toInteger(500)));
+            m_dynUpPingToleranceSpin->setEnabled(ussOn);
+            m_dynUpPingToleranceMsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpPingToleranceMs")).toInteger(200)));
+            m_dynUpPingToleranceMsSpin->setEnabled(ussOn);
+            bool useMs = prefs.value(QStringLiteral("dynUpUseMillisecondPingTolerance")).toBool();
+            m_dynUpRadioMs->setChecked(useMs);
+            m_dynUpRadioPercent->setChecked(!useMs);
+            m_dynUpRadioPercent->setEnabled(ussOn);
+            m_dynUpRadioMs->setEnabled(ussOn);
+            m_dynUpGoingUpSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpGoingUpDivider")).toInteger(1000)));
+            m_dynUpGoingUpSpin->setEnabled(ussOn);
+            m_dynUpGoingDownSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpGoingDownDivider")).toInteger(1000)));
+            m_dynUpGoingDownSpin->setEnabled(ussOn);
+            m_dynUpNumPingsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpNumberOfPings")).toInteger(1)));
+            m_dynUpNumPingsSpin->setEnabled(ussOn);
+            m_closeUPnPCheck->setChecked(prefs.value(QStringLiteral("closeUPnPOnExit")).toBool(true));
+            m_skipWANIPCheck->setChecked(prefs.value(QStringLiteral("skipWANIPSetup")).toBool());
+            m_skipWANPPPCheck->setChecked(prefs.value(QStringLiteral("skipWANPPPSetup")).toBool());
+            auto bufSize = static_cast<int>(prefs.value(QStringLiteral("fileBufferSize")).toInteger(245760));
+            m_fileBufferSlider->setValue(bufSize / 16384); // bytes to slider units (16KB each)
+            auto qSize = static_cast<int>(prefs.value(QStringLiteral("queueSize")).toInteger(5000));
+            m_queueSizeSlider->setValue(qSize / 100); // to slider units (100 each)
+
+#ifdef Q_OS_WIN
+            m_autotakeEd2kCheck->setChecked(prefs.value(QStringLiteral("autotakeEd2kLinks")).toBool(true));
+            m_winFirewallCheck->setChecked(prefs.value(QStringLiteral("openPortsOnWinFirewall")).toBool());
+            m_sparsePartFilesCheck->setChecked(prefs.value(QStringLiteral("sparsePartFiles")).toBool());
+            m_allocFullFileCheck->setChecked(prefs.value(QStringLiteral("allocFullFile")).toBool());
+            m_resolveShellLinksCheck->setChecked(prefs.value(QStringLiteral("resolveShellLinks")).toBool());
+            int muSharing = static_cast<int>(prefs.value(QStringLiteral("multiUserSharing")).toInteger(2));
+            if (auto* btn = m_multiUserSharingGroup->button(muSharing))
+                btn->setChecked(true);
+#endif
+
             m_loading = false;
             m_applyBtn->setEnabled(false);
         });
@@ -1328,6 +3129,7 @@ void OptionsDialog::loadSettings()
         m_maxConnectionsSpin->setValue(thePrefs.maxConnections());
         m_autoConnectCheck->setChecked(thePrefs.autoConnect());
         m_reconnectCheck->setChecked(thePrefs.reconnect());
+        m_overheadCheck->setChecked(thePrefs.showOverhead());
         m_kadEnabledCheck->setChecked(thePrefs.kadEnabled());
         m_ed2kEnabledCheck->setChecked(thePrefs.networkED2K());
 
@@ -1384,8 +3186,148 @@ void OptionsDialog::loadSettings()
         m_rememberDownloadedCheck->setChecked(thePrefs.rememberDownloadedFiles());
         m_rememberCancelledCheck->setChecked(thePrefs.rememberCancelledFiles());
 
+        // Notifications page (daemon-side) fallback
+        m_notifyLogCheck->setChecked(thePrefs.notifyOnLog());
+        m_notifyChatCheck->setChecked(thePrefs.notifyOnChat());
+        m_notifyChatMsgCheck->setChecked(thePrefs.notifyOnChatMsg());
+        m_notifyChatMsgCheck->setEnabled(m_notifyChatCheck->isChecked());
+        m_notifyDownloadAddedCheck->setChecked(thePrefs.notifyOnDownloadAdded());
+        m_notifyDownloadFinishedCheck->setChecked(thePrefs.notifyOnDownloadFinished());
+        m_notifyNewVersionCheck->setChecked(thePrefs.notifyOnNewVersion());
+        m_notifyUrgentCheck->setChecked(thePrefs.notifyOnUrgent());
+        m_emailEnabledCheck->setChecked(thePrefs.notifyEmailEnabled());
+        m_smtpServer = thePrefs.notifyEmailSmtpServer();
+        m_smtpPort = thePrefs.notifyEmailSmtpPort();
+        m_smtpAuth = thePrefs.notifyEmailSmtpAuth();
+        m_smtpTls = thePrefs.notifyEmailSmtpTls();
+        m_smtpUser = thePrefs.notifyEmailSmtpUser();
+        m_smtpPassword = thePrefs.notifyEmailSmtpPassword();
+        m_emailRecipientEdit->setText(thePrefs.notifyEmailRecipient());
+        m_emailSenderEdit->setText(thePrefs.notifyEmailSender());
+        bool emailOn = m_emailEnabledCheck->isChecked();
+        m_smtpServerBtn->setEnabled(emailOn);
+        m_emailRecipientEdit->setEnabled(emailOn);
+        m_emailSenderEdit->setEnabled(emailOn);
+
+        // Messages and Comments page (daemon-side) fallback
+        m_msgFriendsOnlyCheck->setChecked(thePrefs.msgOnlyFriends());
+        bool spamOn = thePrefs.enableSpamFilter();
+        m_advancedSpamFilterCheck->setChecked(spamOn);
+        m_requireCaptchaCheck->setChecked(thePrefs.useChatCaptchas());
+        m_requireCaptchaCheck->setEnabled(spamOn);
+        m_messageFilterEdit->setText(thePrefs.messageFilter());
+        m_commentFilterEdit->setText(thePrefs.commentFilter());
+
+        // Security page (daemon-side) fallback
+        m_filterServersByIPCheck->setChecked(thePrefs.filterServerByIP());
+        m_ipFilterLevelSpin->setValue(static_cast<int>(thePrefs.ipFilterLevel()));
+        m_viewSharedGroup->button(thePrefs.viewSharedFilesAccess())->setChecked(true);
+        bool cryptSupported = thePrefs.cryptLayerSupported();
+        bool cryptRequested = thePrefs.cryptLayerRequested();
+        bool cryptRequired  = thePrefs.cryptLayerRequired();
+        m_cryptLayerDisableCheck->setChecked(!cryptSupported);
+        m_cryptLayerRequestedCheck->setChecked(cryptRequested);
+        m_cryptLayerRequestedCheck->setEnabled(cryptSupported);
+        m_cryptLayerRequiredCheck->setChecked(cryptRequired);
+        m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
+        m_useSecureIdentCheck->setChecked(thePrefs.useSecureIdent());
+        m_enableSearchResultFilterCheck->setChecked(thePrefs.enableSearchResultFilter());
+
+        // Statistics page fallback
+        m_statsGraphUpdateSlider->setValue(static_cast<int>(thePrefs.graphsUpdateSec()));
+        m_statsAvgTimeSlider->setValue(static_cast<int>(thePrefs.statsAverageMinutes()));
+        m_statsFillGraphsCheck->setChecked(thePrefs.fillGraphs());
+        m_statsYScaleSpin->setValue(static_cast<int>(thePrefs.statsConnectionsMax()));
+        {
+            auto ratio = thePrefs.statsConnectionsRatio();
+            static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
+            int ratioIdx = 2;
+            for (int ri = 0; ri < 7; ++ri) {
+                if (static_cast<uint32_t>(ratioValues[ri]) == ratio) { ratioIdx = ri; break; }
+            }
+            m_statsRatioCombo->setCurrentIndex(ratioIdx);
+        }
+        m_statsTreeUpdateSlider->setValue(static_cast<int>(thePrefs.statsUpdateSec()));
+
+        // Extended page fallback
+        m_maxConPerFiveSpin->setValue(thePrefs.maxConsPerFive());
+        m_maxHalfOpenSpin->setValue(thePrefs.maxHalfConnections());
+        m_serverKeepAliveSpin->setValue(static_cast<int>(thePrefs.serverKeepAliveTimeout()) / 60000);
+        m_useCreditSystemCheck->setChecked(thePrefs.useCreditSystem());
+        m_filterLANIPsCheck->setChecked(thePrefs.filterLANIPs());
+        m_showExtControlsCheck->setChecked(thePrefs.showExtControls());
+        m_a4afSaveCpuCheck->setChecked(thePrefs.a4afSaveCpu());
+        m_disableArchPreviewCheck->setChecked(!thePrefs.autoArchivePreviewStart());
+        m_ed2kHostnameEdit->setText(thePrefs.ed2kHostname());
+        bool diskCheck = thePrefs.checkDiskspace();
+        m_checkDiskspaceCheck->setChecked(diskCheck);
+        m_minFreeDiskSpaceSpin->setValue(static_cast<int>(thePrefs.minFreeDiskSpace() / (1024 * 1024)));
+        m_minFreeDiskSpaceSpin->setEnabled(diskCheck);
+        if (auto* btn = m_commitFilesGroup->button(thePrefs.commitFiles()))
+            btn->setChecked(true);
+        if (auto* btn = m_extractMetaDataGroup->button(thePrefs.extractMetaData()))
+            btn->setChecked(true);
+        m_logToDiskCheck->setChecked(thePrefs.logToDisk());
+        bool verboseOn = thePrefs.verbose();
+        m_verboseCheck->setChecked(verboseOn);
+        m_logLevelSpin->setValue(thePrefs.logLevel());
+        m_logLevelSpin->setEnabled(verboseOn);
+        m_verboseLogToDiskCheck->setChecked(thePrefs.verboseLogToDisk());
+        m_verboseLogToDiskCheck->setEnabled(verboseOn);
+        m_logSourceExchangeCheck->setChecked(thePrefs.logSourceExchange());
+        m_logSourceExchangeCheck->setEnabled(verboseOn);
+        m_logBannedClientsCheck->setChecked(thePrefs.logBannedClients());
+        m_logBannedClientsCheck->setEnabled(verboseOn);
+        m_logRatingDescCheck->setChecked(thePrefs.logRatingDescReceived());
+        m_logRatingDescCheck->setEnabled(verboseOn);
+        m_logSecureIdentCheck->setChecked(thePrefs.logSecureIdent());
+        m_logSecureIdentCheck->setEnabled(verboseOn);
+        m_logFilteredIPsCheck->setChecked(thePrefs.logFilteredIPs());
+        m_logFilteredIPsCheck->setEnabled(verboseOn);
+        m_logFileSavingCheck->setChecked(thePrefs.logFileSaving());
+        m_logFileSavingCheck->setEnabled(verboseOn);
+        m_logA4AFCheck->setChecked(thePrefs.logA4AF());
+        m_logA4AFCheck->setEnabled(verboseOn);
+        m_logUlDlEventsCheck->setChecked(thePrefs.logUlDlEvents());
+        m_logUlDlEventsCheck->setEnabled(verboseOn);
+        // USS
+        bool ussOn = thePrefs.dynUpEnabled();
+        m_dynUpEnabledCheck->setChecked(ussOn);
+        m_dynUpPingToleranceSpin->setValue(thePrefs.dynUpPingTolerance());
+        m_dynUpPingToleranceSpin->setEnabled(ussOn);
+        m_dynUpPingToleranceMsSpin->setValue(thePrefs.dynUpPingToleranceMs());
+        m_dynUpPingToleranceMsSpin->setEnabled(ussOn);
+        bool useMs = thePrefs.dynUpUseMillisecondPingTolerance();
+        m_dynUpRadioMs->setChecked(useMs);
+        m_dynUpRadioPercent->setChecked(!useMs);
+        m_dynUpRadioPercent->setEnabled(ussOn);
+        m_dynUpRadioMs->setEnabled(ussOn);
+        m_dynUpGoingUpSpin->setValue(thePrefs.dynUpGoingUpDivider());
+        m_dynUpGoingUpSpin->setEnabled(ussOn);
+        m_dynUpGoingDownSpin->setValue(thePrefs.dynUpGoingDownDivider());
+        m_dynUpGoingDownSpin->setEnabled(ussOn);
+        m_dynUpNumPingsSpin->setValue(thePrefs.dynUpNumberOfPings());
+        m_dynUpNumPingsSpin->setEnabled(ussOn);
+        m_closeUPnPCheck->setChecked(thePrefs.closeUPnPOnExit());
+        m_skipWANIPCheck->setChecked(thePrefs.skipWANIPSetup());
+        m_skipWANPPPCheck->setChecked(thePrefs.skipWANPPPSetup());
+        m_fileBufferSlider->setValue(static_cast<int>(thePrefs.fileBufferSize()) / 16384);
+        m_queueSizeSlider->setValue(static_cast<int>(thePrefs.queueSize()) / 100);
+
+#ifdef Q_OS_WIN
+        m_autotakeEd2kCheck->setChecked(thePrefs.autotakeEd2kLinks());
+        m_winFirewallCheck->setChecked(thePrefs.openPortsOnWinFirewall());
+        m_sparsePartFilesCheck->setChecked(thePrefs.sparsePartFiles());
+        m_allocFullFileCheck->setChecked(thePrefs.allocFullFile());
+        m_resolveShellLinksCheck->setChecked(thePrefs.resolveShellLinks());
+        if (auto* btn = m_multiUserSharingGroup->button(thePrefs.multiUserSharing()))
+            btn->setChecked(true);
+#endif
+
         m_loading = false;
     }
+
+    loadSchedulerData();
 }
 
 // ---------------------------------------------------------------------------
@@ -1425,6 +3367,15 @@ void OptionsDialog::saveSettings()
     thePrefs.setDisableKnownClientList(m_disableKnownClientListCheck->isChecked());
     thePrefs.setDisableQueueList(m_disableQueueListCheck->isChecked());
     thePrefs.setUseAutoCompletion(m_useAutoCompletionCheck->isChecked());
+    thePrefs.setUseOriginalIcons(m_useOriginalIconsCheck->isChecked());
+    if (m_useOriginalIconsCheck->isChecked() != m_initialUseOriginalIcons) {
+        QMessageBox::information(this, tr("Icons"),
+            tr("The icon change will take effect after restarting the application."));
+        m_initialUseOriginalIcons = m_useOriginalIconsCheck->isChecked();
+    }
+
+    // Connection page (GUI-only display setting)
+    thePrefs.setShowOverhead(m_overheadCheck->isChecked());
 
     // Files page (GUI-only)
     thePrefs.setWatchClipboard4ED2KLinks(m_watchClipboardCheck->isChecked());
@@ -1433,6 +3384,46 @@ void OptionsDialog::saveSettings()
     thePrefs.setVideoPlayerArgs(m_videoPlayerArgsEdit->text());
     thePrefs.setCreateBackupToPreview(m_createBackupToPreviewCheck->isChecked());
     thePrefs.setAutoCleanupFilenames(m_autoCleanupFilenamesCheck->isChecked());
+
+    // Notifications page (GUI-side)
+    thePrefs.setNotifySoundType(m_soundGroup->checkedId());
+    thePrefs.setNotifySoundFile(m_soundFileEdit->text());
+
+    // IRC page (GUI-local)
+    thePrefs.setIrcServer(m_ircServerEdit->text());
+    thePrefs.setIrcNick(m_ircNickEdit->text());
+    thePrefs.setIrcUseChannelFilter(m_ircUseChannelFilterCheck->isChecked());
+    thePrefs.setIrcChannelFilter(
+        m_ircChannelFilterNameEdit->text() + QLatin1Char('|')
+        + QString::number(m_ircChannelFilterUsersSpin->value()));
+    thePrefs.setIrcUsePerform(m_ircUsePerformCheck->isChecked());
+    thePrefs.setIrcPerformString(m_ircPerformEdit->text());
+
+    auto* root = m_ircMiscTree->invisibleRootItem();
+    thePrefs.setIrcConnectHelpChannel(root->child(0)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcLoadChannelList(root->child(1)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcAddTimestamp(root->child(2)->checkState(0) == Qt::Checked);
+    auto* ignoreParent = root->child(3);
+    thePrefs.setIrcIgnoreMiscInfoMessages(ignoreParent->child(0)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcIgnoreJoinMessages(ignoreParent->child(1)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcIgnorePartMessages(ignoreParent->child(2)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcIgnoreQuitMessages(ignoreParent->child(3)->checkState(0) == Qt::Checked);
+
+    // Messages page (GUI-only)
+    thePrefs.setShowSmileys(m_showSmileysCheck->isChecked());
+    thePrefs.setIndicateRatings(m_indicateRatingsCheck->isChecked());
+
+    // Statistics page — always save locally for immediate GUI effect
+    thePrefs.setGraphsUpdateSec(static_cast<uint32>(m_statsGraphUpdateSlider->value()));
+    thePrefs.setStatsAverageMinutes(static_cast<uint32>(m_statsAvgTimeSlider->value()));
+    thePrefs.setStatsUpdateSec(static_cast<uint32>(m_statsTreeUpdateSlider->value()));
+    thePrefs.setFillGraphs(m_statsFillGraphsCheck->isChecked());
+    thePrefs.setStatsConnectionsMax(static_cast<uint32>(m_statsYScaleSpin->value()));
+    {
+        static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
+        int ri = m_statsRatioCombo->currentIndex();
+        thePrefs.setStatsConnectionsRatio(static_cast<uint32>(ri >= 0 && ri < 7 ? ratioValues[ri] : 3));
+    }
 
     thePrefs.save();
 
@@ -1465,8 +3456,12 @@ void OptionsDialog::saveSettings()
         req.append(m_autoConnectCheck->isChecked());
         req.append(QStringLiteral("reconnect"));
         req.append(m_reconnectCheck->isChecked());
+        req.append(QStringLiteral("showOverhead"));
+        req.append(m_overheadCheck->isChecked());
         req.append(QStringLiteral("kadEnabled"));
         req.append(m_kadEnabledCheck->isChecked());
+        req.append(QStringLiteral("schedulerEnabled"));
+        req.append(m_schedEnabledCheck->isChecked());
         req.append(QStringLiteral("networkED2K"));
         req.append(m_ed2kEnabledCheck->isChecked());
 
@@ -1541,6 +3536,180 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("rememberCancelledFiles"));
         req.append(m_rememberCancelledCheck->isChecked());
 
+        // Notifications page (daemon-side)
+        req.append(QStringLiteral("notifyOnLog"));
+        req.append(m_notifyLogCheck->isChecked());
+        req.append(QStringLiteral("notifyOnChat"));
+        req.append(m_notifyChatCheck->isChecked());
+        req.append(QStringLiteral("notifyOnChatMsg"));
+        req.append(m_notifyChatMsgCheck->isChecked());
+        req.append(QStringLiteral("notifyOnDownloadAdded"));
+        req.append(m_notifyDownloadAddedCheck->isChecked());
+        req.append(QStringLiteral("notifyOnDownloadFinished"));
+        req.append(m_notifyDownloadFinishedCheck->isChecked());
+        req.append(QStringLiteral("notifyOnNewVersion"));
+        req.append(m_notifyNewVersionCheck->isChecked());
+        req.append(QStringLiteral("notifyOnUrgent"));
+        req.append(m_notifyUrgentCheck->isChecked());
+        req.append(QStringLiteral("notifyEmailEnabled"));
+        req.append(m_emailEnabledCheck->isChecked());
+        req.append(QStringLiteral("notifyEmailSmtpServer"));
+        req.append(m_smtpServer);
+        req.append(QStringLiteral("notifyEmailSmtpPort"));
+        req.append(static_cast<qint64>(m_smtpPort));
+        req.append(QStringLiteral("notifyEmailSmtpAuth"));
+        req.append(static_cast<qint64>(m_smtpAuth));
+        req.append(QStringLiteral("notifyEmailSmtpTls"));
+        req.append(m_smtpTls);
+        req.append(QStringLiteral("notifyEmailSmtpUser"));
+        req.append(m_smtpUser);
+        req.append(QStringLiteral("notifyEmailSmtpPassword"));
+        req.append(m_smtpPassword);
+        req.append(QStringLiteral("notifyEmailRecipient"));
+        req.append(m_emailRecipientEdit->text());
+        req.append(QStringLiteral("notifyEmailSender"));
+        req.append(m_emailSenderEdit->text());
+
+        // Messages and Comments page (daemon-side)
+        req.append(QStringLiteral("msgOnlyFriends"));
+        req.append(m_msgFriendsOnlyCheck->isChecked());
+        req.append(QStringLiteral("enableSpamFilter"));
+        req.append(m_advancedSpamFilterCheck->isChecked());
+        req.append(QStringLiteral("useChatCaptchas"));
+        req.append(m_requireCaptchaCheck->isChecked());
+        req.append(QStringLiteral("messageFilter"));
+        req.append(m_messageFilterEdit->text());
+        req.append(QStringLiteral("commentFilter"));
+        req.append(m_commentFilterEdit->text());
+
+        // Security page (daemon-side)
+        req.append(QStringLiteral("filterServerByIP"));
+        req.append(m_filterServersByIPCheck->isChecked());
+        req.append(QStringLiteral("ipFilterLevel"));
+        req.append(static_cast<qint64>(m_ipFilterLevelSpin->value()));
+        req.append(QStringLiteral("viewSharedFilesAccess"));
+        req.append(static_cast<qint64>(m_viewSharedGroup->checkedId()));
+        req.append(QStringLiteral("cryptLayerSupported"));
+        req.append(!m_cryptLayerDisableCheck->isChecked());
+        req.append(QStringLiteral("cryptLayerRequested"));
+        req.append(m_cryptLayerRequestedCheck->isChecked());
+        req.append(QStringLiteral("cryptLayerRequired"));
+        req.append(m_cryptLayerRequiredCheck->isChecked());
+        req.append(QStringLiteral("useSecureIdent"));
+        req.append(m_useSecureIdentCheck->isChecked());
+        req.append(QStringLiteral("enableSearchResultFilter"));
+        req.append(m_enableSearchResultFilterCheck->isChecked());
+
+        // Statistics page
+        req.append(QStringLiteral("graphsUpdateSec"));
+        req.append(static_cast<qint64>(m_statsGraphUpdateSlider->value()));
+        req.append(QStringLiteral("statsAverageMinutes"));
+        req.append(static_cast<qint64>(m_statsAvgTimeSlider->value()));
+        req.append(QStringLiteral("statsUpdateSec"));
+        req.append(static_cast<qint64>(m_statsTreeUpdateSlider->value()));
+        req.append(QStringLiteral("fillGraphs"));
+        req.append(m_statsFillGraphsCheck->isChecked());
+        req.append(QStringLiteral("statsConnectionsMax"));
+        req.append(static_cast<qint64>(m_statsYScaleSpin->value()));
+        {
+            static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
+            int ri = m_statsRatioCombo->currentIndex();
+            req.append(QStringLiteral("statsConnectionsRatio"));
+            req.append(static_cast<qint64>(ri >= 0 && ri < 7 ? ratioValues[ri] : 3));
+        }
+
+        // Extended page
+        req.append(QStringLiteral("maxConsPerFive"));
+        req.append(static_cast<qint64>(m_maxConPerFiveSpin->value()));
+        req.append(QStringLiteral("maxHalfConnections"));
+        req.append(static_cast<qint64>(m_maxHalfOpenSpin->value()));
+        req.append(QStringLiteral("serverKeepAliveTimeout"));
+        req.append(static_cast<qint64>(m_serverKeepAliveSpin->value()) * 60000); // min to ms
+        req.append(QStringLiteral("filterLANIPs"));
+        req.append(m_filterLANIPsCheck->isChecked());
+        req.append(QStringLiteral("checkDiskspace"));
+        req.append(m_checkDiskspaceCheck->isChecked());
+        req.append(QStringLiteral("minFreeDiskSpace"));
+        req.append(static_cast<qint64>(m_minFreeDiskSpaceSpin->value()) * 1024 * 1024); // MB to bytes
+        req.append(QStringLiteral("logToDisk"));
+        req.append(m_logToDiskCheck->isChecked());
+        req.append(QStringLiteral("verbose"));
+        req.append(m_verboseCheck->isChecked());
+        req.append(QStringLiteral("closeUPnPOnExit"));
+        req.append(m_closeUPnPCheck->isChecked());
+        req.append(QStringLiteral("skipWANIPSetup"));
+        req.append(m_skipWANIPCheck->isChecked());
+        req.append(QStringLiteral("skipWANPPPSetup"));
+        req.append(m_skipWANPPPCheck->isChecked());
+        req.append(QStringLiteral("fileBufferSize"));
+        req.append(static_cast<qint64>(m_fileBufferSlider->value()) * 16384); // slider to bytes
+        req.append(QStringLiteral("useCreditSystem"));
+        req.append(m_useCreditSystemCheck->isChecked());
+        req.append(QStringLiteral("a4afSaveCpu"));
+        req.append(m_a4afSaveCpuCheck->isChecked());
+        req.append(QStringLiteral("autoArchivePreviewStart"));
+        req.append(!m_disableArchPreviewCheck->isChecked());
+        req.append(QStringLiteral("ed2kHostname"));
+        req.append(m_ed2kHostnameEdit->text());
+        req.append(QStringLiteral("showExtControls"));
+        req.append(m_showExtControlsCheck->isChecked());
+        req.append(QStringLiteral("commitFiles"));
+        req.append(static_cast<qint64>(m_commitFilesGroup->checkedId()));
+        req.append(QStringLiteral("extractMetaData"));
+        req.append(static_cast<qint64>(m_extractMetaDataGroup->checkedId()));
+        req.append(QStringLiteral("logLevel"));
+        req.append(static_cast<qint64>(m_logLevelSpin->value()));
+        req.append(QStringLiteral("verboseLogToDisk"));
+        req.append(m_verboseLogToDiskCheck->isChecked());
+        req.append(QStringLiteral("logSourceExchange"));
+        req.append(m_logSourceExchangeCheck->isChecked());
+        req.append(QStringLiteral("logBannedClients"));
+        req.append(m_logBannedClientsCheck->isChecked());
+        req.append(QStringLiteral("logRatingDescReceived"));
+        req.append(m_logRatingDescCheck->isChecked());
+        req.append(QStringLiteral("logSecureIdent"));
+        req.append(m_logSecureIdentCheck->isChecked());
+        req.append(QStringLiteral("logFilteredIPs"));
+        req.append(m_logFilteredIPsCheck->isChecked());
+        req.append(QStringLiteral("logFileSaving"));
+        req.append(m_logFileSavingCheck->isChecked());
+        req.append(QStringLiteral("logA4AF"));
+        req.append(m_logA4AFCheck->isChecked());
+        req.append(QStringLiteral("logUlDlEvents"));
+        req.append(m_logUlDlEventsCheck->isChecked());
+        // USS
+        req.append(QStringLiteral("dynUpEnabled"));
+        req.append(m_dynUpEnabledCheck->isChecked());
+        req.append(QStringLiteral("dynUpPingTolerance"));
+        req.append(static_cast<qint64>(m_dynUpPingToleranceSpin->value()));
+        req.append(QStringLiteral("dynUpPingToleranceMs"));
+        req.append(static_cast<qint64>(m_dynUpPingToleranceMsSpin->value()));
+        req.append(QStringLiteral("dynUpUseMillisecondPingTolerance"));
+        req.append(m_dynUpRadioMs->isChecked());
+        req.append(QStringLiteral("dynUpGoingUpDivider"));
+        req.append(static_cast<qint64>(m_dynUpGoingUpSpin->value()));
+        req.append(QStringLiteral("dynUpGoingDownDivider"));
+        req.append(static_cast<qint64>(m_dynUpGoingDownSpin->value()));
+        req.append(QStringLiteral("dynUpNumberOfPings"));
+        req.append(static_cast<qint64>(m_dynUpNumPingsSpin->value()));
+        req.append(QStringLiteral("queueSize"));
+        req.append(static_cast<qint64>(m_queueSizeSlider->value()) * 100); // slider to count
+
+#ifdef Q_OS_WIN
+        req.append(QStringLiteral("autotakeEd2kLinks"));
+        req.append(m_autotakeEd2kCheck->isChecked());
+        req.append(QStringLiteral("openPortsOnWinFirewall"));
+        req.append(m_winFirewallCheck->isChecked());
+        req.append(QStringLiteral("sparsePartFiles"));
+        req.append(m_sparsePartFilesCheck->isChecked());
+        req.append(QStringLiteral("allocFullFile"));
+        req.append(m_allocFullFileCheck->isChecked());
+        req.append(QStringLiteral("resolveShellLinks"));
+        req.append(m_resolveShellLinksCheck->isChecked());
+        req.append(QStringLiteral("multiUserSharing"));
+        req.append(static_cast<qint64>(m_multiUserSharingGroup->checkedId()));
+#endif
+
         m_ipc->sendRequest(std::move(req));
     } else {
         // Fallback: save locally
@@ -1556,6 +3725,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setMaxConnections(static_cast<uint16>(m_maxConnectionsSpin->value()));
         thePrefs.setAutoConnect(m_autoConnectCheck->isChecked());
         thePrefs.setReconnect(m_reconnectCheck->isChecked());
+        thePrefs.setShowOverhead(m_overheadCheck->isChecked());
         thePrefs.setKadEnabled(m_kadEnabledCheck->isChecked());
         thePrefs.setNetworkED2K(m_ed2kEnabledCheck->isChecked());
 
@@ -1596,8 +3766,110 @@ void OptionsDialog::saveSettings()
         thePrefs.setRememberDownloadedFiles(m_rememberDownloadedCheck->isChecked());
         thePrefs.setRememberCancelledFiles(m_rememberCancelledCheck->isChecked());
 
+        // Notifications page (daemon-side) fallback
+        thePrefs.setNotifyOnLog(m_notifyLogCheck->isChecked());
+        thePrefs.setNotifyOnChat(m_notifyChatCheck->isChecked());
+        thePrefs.setNotifyOnChatMsg(m_notifyChatMsgCheck->isChecked());
+        thePrefs.setNotifyOnDownloadAdded(m_notifyDownloadAddedCheck->isChecked());
+        thePrefs.setNotifyOnDownloadFinished(m_notifyDownloadFinishedCheck->isChecked());
+        thePrefs.setNotifyOnNewVersion(m_notifyNewVersionCheck->isChecked());
+        thePrefs.setNotifyOnUrgent(m_notifyUrgentCheck->isChecked());
+        thePrefs.setNotifyEmailEnabled(m_emailEnabledCheck->isChecked());
+        thePrefs.setNotifyEmailSmtpServer(m_smtpServer);
+        thePrefs.setNotifyEmailSmtpPort(static_cast<uint16>(m_smtpPort));
+        thePrefs.setNotifyEmailSmtpAuth(m_smtpAuth);
+        thePrefs.setNotifyEmailSmtpTls(m_smtpTls);
+        thePrefs.setNotifyEmailSmtpUser(m_smtpUser);
+        thePrefs.setNotifyEmailSmtpPassword(m_smtpPassword);
+        thePrefs.setNotifyEmailRecipient(m_emailRecipientEdit->text());
+        thePrefs.setNotifyEmailSender(m_emailSenderEdit->text());
+
+        // Messages and Comments page (daemon-side) fallback
+        thePrefs.setMsgOnlyFriends(m_msgFriendsOnlyCheck->isChecked());
+        thePrefs.setEnableSpamFilter(m_advancedSpamFilterCheck->isChecked());
+        thePrefs.setUseChatCaptchas(m_requireCaptchaCheck->isChecked());
+        thePrefs.setMessageFilter(m_messageFilterEdit->text());
+        thePrefs.setCommentFilter(m_commentFilterEdit->text());
+
+        // Security page (daemon-side) fallback
+        thePrefs.setFilterServerByIP(m_filterServersByIPCheck->isChecked());
+        thePrefs.setIpFilterLevel(static_cast<uint32>(m_ipFilterLevelSpin->value()));
+        thePrefs.setViewSharedFilesAccess(m_viewSharedGroup->checkedId());
+        thePrefs.setCryptLayerSupported(!m_cryptLayerDisableCheck->isChecked());
+        thePrefs.setCryptLayerRequested(m_cryptLayerRequestedCheck->isChecked());
+        thePrefs.setCryptLayerRequired(m_cryptLayerRequiredCheck->isChecked());
+        thePrefs.setUseSecureIdent(m_useSecureIdentCheck->isChecked());
+        thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
+
+        // Statistics page fallback
+        thePrefs.setGraphsUpdateSec(static_cast<uint32>(m_statsGraphUpdateSlider->value()));
+        thePrefs.setStatsAverageMinutes(static_cast<uint32>(m_statsAvgTimeSlider->value()));
+        thePrefs.setStatsUpdateSec(static_cast<uint32>(m_statsTreeUpdateSlider->value()));
+        thePrefs.setFillGraphs(m_statsFillGraphsCheck->isChecked());
+        thePrefs.setStatsConnectionsMax(static_cast<uint32>(m_statsYScaleSpin->value()));
+        {
+            static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
+            int ri = m_statsRatioCombo->currentIndex();
+            thePrefs.setStatsConnectionsRatio(static_cast<uint32>(ri >= 0 && ri < 7 ? ratioValues[ri] : 3));
+        }
+
+        // Extended page fallback
+        thePrefs.setMaxConsPerFive(static_cast<uint16>(m_maxConPerFiveSpin->value()));
+        thePrefs.setMaxHalfConnections(static_cast<uint16>(m_maxHalfOpenSpin->value()));
+        thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(m_serverKeepAliveSpin->value()) * 60000);
+        thePrefs.setFilterLANIPs(m_filterLANIPsCheck->isChecked());
+        thePrefs.setCheckDiskspace(m_checkDiskspaceCheck->isChecked());
+        thePrefs.setMinFreeDiskSpace(static_cast<uint64>(m_minFreeDiskSpaceSpin->value()) * 1024 * 1024);
+        thePrefs.setLogToDisk(m_logToDiskCheck->isChecked());
+        thePrefs.setVerbose(m_verboseCheck->isChecked());
+        thePrefs.setCloseUPnPOnExit(m_closeUPnPCheck->isChecked());
+        thePrefs.setSkipWANIPSetup(m_skipWANIPCheck->isChecked());
+        thePrefs.setSkipWANPPPSetup(m_skipWANPPPCheck->isChecked());
+        thePrefs.setFileBufferSize(static_cast<uint32>(m_fileBufferSlider->value()) * 16384);
+        thePrefs.setUseCreditSystem(m_useCreditSystemCheck->isChecked());
+        thePrefs.setA4afSaveCpu(m_a4afSaveCpuCheck->isChecked());
+        thePrefs.setAutoArchivePreviewStart(!m_disableArchPreviewCheck->isChecked());
+        thePrefs.setEd2kHostname(m_ed2kHostnameEdit->text());
+        thePrefs.setShowExtControls(m_showExtControlsCheck->isChecked());
+        thePrefs.setCommitFiles(m_commitFilesGroup->checkedId());
+        thePrefs.setExtractMetaData(m_extractMetaDataGroup->checkedId());
+        thePrefs.setLogLevel(m_logLevelSpin->value());
+        thePrefs.setVerboseLogToDisk(m_verboseLogToDiskCheck->isChecked());
+        thePrefs.setLogSourceExchange(m_logSourceExchangeCheck->isChecked());
+        thePrefs.setLogBannedClients(m_logBannedClientsCheck->isChecked());
+        thePrefs.setLogRatingDescReceived(m_logRatingDescCheck->isChecked());
+        thePrefs.setLogSecureIdent(m_logSecureIdentCheck->isChecked());
+        thePrefs.setLogFilteredIPs(m_logFilteredIPsCheck->isChecked());
+        thePrefs.setLogFileSaving(m_logFileSavingCheck->isChecked());
+        thePrefs.setLogA4AF(m_logA4AFCheck->isChecked());
+        thePrefs.setLogUlDlEvents(m_logUlDlEventsCheck->isChecked());
+        // USS
+        thePrefs.setDynUpEnabled(m_dynUpEnabledCheck->isChecked());
+        thePrefs.setDynUpPingTolerance(m_dynUpPingToleranceSpin->value());
+        thePrefs.setDynUpPingToleranceMs(m_dynUpPingToleranceMsSpin->value());
+        thePrefs.setDynUpUseMillisecondPingTolerance(m_dynUpRadioMs->isChecked());
+        thePrefs.setDynUpGoingUpDivider(m_dynUpGoingUpSpin->value());
+        thePrefs.setDynUpGoingDownDivider(m_dynUpGoingDownSpin->value());
+        thePrefs.setDynUpNumberOfPings(m_dynUpNumPingsSpin->value());
+        thePrefs.setQueueSize(static_cast<uint32>(m_queueSizeSlider->value()) * 100);
+
+#ifdef Q_OS_WIN
+        thePrefs.setAutotakeEd2kLinks(m_autotakeEd2kCheck->isChecked());
+        thePrefs.setOpenPortsOnWinFirewall(m_winFirewallCheck->isChecked());
+        thePrefs.setSparsePartFiles(m_sparsePartFilesCheck->isChecked());
+        thePrefs.setAllocFullFile(m_allocFullFileCheck->isChecked());
+        thePrefs.setResolveShellLinks(m_resolveShellLinksCheck->isChecked());
+        thePrefs.setMultiUserSharing(m_multiUserSharingGroup->checkedId());
+#endif
+
         thePrefs.save();
     }
+
+    saveSchedulerData();
+
+    // Apply settings to live statistics panel
+    if (m_statsPanel)
+        m_statsPanel->applySettings();
 }
 
 // ---------------------------------------------------------------------------

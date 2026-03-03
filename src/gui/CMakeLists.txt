@@ -48,6 +48,7 @@ target_link_libraries(emuleqt
         eMule::Core
         eMule::Ipc
         Qt6::Widgets
+        Qt6::Multimedia
         eMule::CommonSettings
 )
 
@@ -61,7 +62,42 @@ set_target_properties(emuleqt PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
-# ToDo: Add target_precompile_headers(emuleqt REUSE_FROM emulecore) when GUI has more source files
+# -- Precompiled header -------------------------------------------------------
+# Independent PCH for the GUI — cannot REUSE_FROM emulecore because emuleqt
+# links Qt6::Widgets (different include paths / compile flags).
+target_precompile_headers(emuleqt PRIVATE
+    # C++ standard library
+    <algorithm>
+    <vector>
+    # Qt Core
+    <QByteArray>
+    <QCborArray>
+    <QCborMap>
+    <QDateTime>
+    <QList>
+    <QObject>
+    <QString>
+    <QStringList>
+    <QTimer>
+    # Qt Widgets (GUI-specific, high frequency)
+    <QAbstractTableModel>
+    <QApplication>
+    <QDialog>
+    <QFont>
+    <QHBoxLayout>
+    <QHeaderView>
+    <QIcon>
+    <QLabel>
+    <QLineEdit>
+    <QMenu>
+    <QPainter>
+    <QPushButton>
+    <QSortFilterProxyModel>
+    <QSplitter>
+    <QTreeView>
+    <QVBoxLayout>
+    <QWidget>
+)
 
 # -- Translations (i18n) ----------------------------------------------------
 # Compile any .ts files found in lang/ into .qm and copy to build dir.

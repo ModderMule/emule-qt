@@ -60,6 +60,18 @@
         <!-- Shared Files panel icons -->
         <file alias="SharedFilesList.ico">../srchybrid/res/SharedFilesList.ico</file>
         <file alias="HardDisk.ico">../srchybrid/res/HardDisk.ico</file>
+        <!-- Statistics tree icons -->
+        <file alias="StatsGeneric.ico">../srchybrid/res/StatsGeneric.ico</file>
+        <file alias="Connection.ico">../srchybrid/res/Connection.ico</file>
+        <file alias="SharedFiles.ico">../srchybrid/res/SharedFiles.ico</file>
+        <file alias="StatisticsDetail.ico">../srchybrid/res/StatisticsDetail.ico</file>
+        <file alias="StatsCumulative.ico">../srchybrid/res/StatsCumulative.ico</file>
+        <file alias="Records.ico">../srchybrid/res/Records.ico</file>
+        <file alias="StatsTime.ico">../srchybrid/res/StatsTime.ico</file>
+        <file alias="StatsProjected.ico">../srchybrid/res/StatsProjected.ico</file>
+        <file alias="StatsDay.ico">../srchybrid/res/StatsDay.ico</file>
+        <file alias="StatsMonth.ico">../srchybrid/res/StatsMonth.ico</file>
+        <file alias="StatsYear.ico">../srchybrid/res/StatsYear.ico</file>
         <!-- Messages panel icons -->
         <file alias="Messages.ico">../srchybrid/res/Messages.ico</file>
         <file alias="Chat.ico">../srchybrid/res/Chat.ico</file>
@@ -68,6 +80,30 @@
         <file alias="UserDelete.ico">../srchybrid/res/UserDelete.ico</file>
         <file alias="UserMessage.ico">../srchybrid/res/UserMessage.ico</file>
         <file alias="FriendSlot.ico">../srchybrid/res/FriendSlot.ico</file>
+        <!-- Tools menu icons -->
+        <file alias="Tools.ico">../srchybrid/res/Tools.ico</file>
+        <file alias="Incoming.ico">../srchybrid/res/Incoming.ico</file>
+        <file alias="Convert.ico">../srchybrid/res/Convert.ico</file>
+        <file alias="Wizard.ico">../srchybrid/res/Wizard.ico</file>
+        <file alias="IPFilter.ico">../srchybrid/res/IPFilter.ico</file>
+        <file alias="eD2kLinkPaste.ico">../srchybrid/res/eD2kLinkPaste.ico</file>
+        <file alias="Web.ico">../srchybrid/res/Web.ico</file>
+        <file alias="Scheduler.ico">../srchybrid/res/Scheduler.ico</file>
+        <!-- Main toolbar / Options sidebar original eMule icons -->
+        <file alias="ConnectDo.ico">../srchybrid/res/ConnectDo.ico</file>
+        <file alias="ConnectDrop.ico">../srchybrid/res/ConnectDrop.ico</file>
+        <file alias="Kad.ico">../srchybrid/res/Kad.ico</file>
+        <file alias="ServerList.ico">../srchybrid/res/ServerList.ico</file>
+        <file alias="Transfer.ico">../srchybrid/res/Transfer.ico</file>
+        <file alias="Statistics.ico">../srchybrid/res/Statistics.ico</file>
+        <file alias="Preferences.ico">../srchybrid/res/Preferences.ico</file>
+        <file alias="Help.ico">../srchybrid/res/Help.ico</file>
+        <file alias="Display.ico">../srchybrid/res/Display.ico</file>
+        <file alias="Proxy.ico">../srchybrid/res/Proxy.ico</file>
+        <file alias="Folders.ico">../srchybrid/res/Folders.ico</file>
+        <file alias="Notifications.ico">../srchybrid/res/Notifications.ico</file>
+        <file alias="Security.ico">../srchybrid/res/Security.ico</file>
+        <file alias="Tweak.ico">../srchybrid/res/Tweak.ico</file>
         <!-- IRC icons -->
         <file alias="IRC.ico">../srchybrid/res/IRC.ico</file>
         <!-- Smiley icons -->
@@ -88,5 +124,8 @@
         <file alias="Smiley_Ph34r.ico">../srchybrid/res/Smiley_Ph34r.ico</file>
         <file alias="Smiley_lookside.ico">../srchybrid/res/Smiley_lookside.ico</file>
         <file alias="Smiley_Sealed.ico">../srchybrid/res/Smiley_Sealed.ico</file>
+    </qresource>
+    <qresource prefix="/images">
+        <file alias="mule_wiz_hdr.gif">../srchybrid/res/mule_wiz_hdr.gif</file>
     </qresource>
 </RCC>

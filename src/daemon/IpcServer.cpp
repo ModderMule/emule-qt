@@ -70,11 +70,13 @@ void IpcServer::onNewConnection()
         if (!socket)
             continue;
 
-        logInfo(QStringLiteral("IPC client connected from %1:%2")
+        const bool isLocal = socket->peerAddress().isLoopback();
+        logInfo(QStringLiteral("IPC client connected from %1:%2%3")
                     .arg(socket->peerAddress().toString())
-                    .arg(socket->peerPort()));
+                    .arg(socket->peerPort())
+                    .arg(isLocal ? QString() : QStringLiteral(" (remote)")));
 
-        auto handler = std::make_unique<IpcClientHandler>(socket, this);
+        auto handler = std::make_unique<IpcClientHandler>(socket, isLocal, this);
 
         connect(handler.get(), &IpcClientHandler::disconnected,
                 this, &IpcServer::onClientDisconnected);

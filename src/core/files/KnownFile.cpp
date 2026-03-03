@@ -16,6 +16,7 @@
 #include "kademlia/KadMiscUtils.h"
 #include "media/MediaInfo.h"
 #include "net/Packet.h"
+#include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
@@ -463,6 +464,11 @@ static constexpr int kMaxED2KMetaTagLen = 128;
 
 void KnownFile::updateMetaDataTags()
 {
+    if (thePrefs.extractMetaData() == 0) {
+        removeMetaDataTags();
+        return;
+    }
+
     // Remove old media tags first
     removeMetaDataTags();
 

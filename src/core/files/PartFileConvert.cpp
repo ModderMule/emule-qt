@@ -97,7 +97,7 @@ PartFileConvert::~PartFileConvert()
 // scanFolderToAdd — scan folder for convertible files
 // ---------------------------------------------------------------------------
 
-void PartFileConvert::scanFolderToAdd(const QString& folder, bool recursive)
+void PartFileConvert::scanFolderToAdd(const QString& folder, bool recursive, bool removeSource)
 {
     QDir dir(folder);
     if (!dir.exists())
@@ -118,6 +118,7 @@ void PartFileConvert::scanFolderToAdd(const QString& folder, bool recursive)
             job.folder = fi.absolutePath();
             job.filename = fi.fileName();
             job.format = detectFormat(fi.absoluteFilePath());
+            job.removeSource = removeSource;
             if (job.format > 0) {
                 job.state = ConvertStatus::Queued;
                 addJob(std::move(job));
@@ -131,6 +132,7 @@ void PartFileConvert::scanFolderToAdd(const QString& folder, bool recursive)
             job.folder = fi.absolutePath();
             job.filename = fi.fileName();
             job.format = 4; // Shareaza
+            job.removeSource = removeSource;
             job.state = ConvertStatus::Queued;
             addJob(std::move(job));
             continue;
@@ -142,6 +144,7 @@ void PartFileConvert::scanFolderToAdd(const QString& folder, bool recursive)
             job.folder = fi.absolutePath();
             job.filename = fi.fileName();
             job.format = 2; // Splitted
+            job.removeSource = removeSource;
             job.state = ConvertStatus::Queued;
             addJob(std::move(job));
         }
@@ -172,6 +175,18 @@ void PartFileConvert::removeAllJobs()
 {
     QMutexLocker locker(&s_mutex);
     s_jobs.clear();
+}
+
+void PartFileConvert::retryJob(int index)
+{
+    QMutexLocker locker(&s_mutex);
+    if (index < 0 || index >= static_cast<int>(s_jobs.size()))
+        return;
+    auto it = s_jobs.begin();
+    std::advance(it, index);
+    // Only retry terminal-state jobs
+    if (it->state != ConvertStatus::Queued && it->state != ConvertStatus::InProgress)
+        it->state = ConvertStatus::Queued;
 }
 
 int PartFileConvert::jobCount()

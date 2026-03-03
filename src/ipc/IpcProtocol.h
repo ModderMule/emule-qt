@@ -72,6 +72,13 @@ enum class IpcMsgType : int {
     GetKadLookupHistory  = 217,  ///< [searchId: int] — lookup history for a search
     GetNetworkInfo       = 218,  ///< [] — all network info for the Network Information dialog
     RecheckFirewall      = 219,  ///< [] — restart TCP + UDP firewall checks
+    ReloadIPFilter       = 220,  ///< [] — reload IP filter from ipfilter.dat
+    GetSchedules         = 221,  ///< [] — returns schedulerEnabled + full schedule list
+    SaveSchedules        = 222,  ///< [enabled: bool, schedules: CborArray] — replace all
+    ScanImportFolder     = 230,  ///< [folder: string, removeSource: bool] → scan + queue + return jobs
+    GetConvertJobs       = 231,  ///< [] → current job list with statuses
+    RemoveConvertJob     = 232,  ///< [index: int] → remove non-in-progress job
+    RetryConvertJob      = 233,  ///< [index: int] → re-queue a failed job
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -134,5 +141,31 @@ struct DecodeResult {
 /// Returns std::nullopt if insufficient data or invalid framing.
 /// On success, the caller should remove bytesConsumed from the buffer.
 [[nodiscard]] std::optional<DecodeResult> tryDecodeFrame(const QByteArray& buffer);
+
+// ---------------------------------------------------------------------------
+// Raw frame extraction (for encrypted connections)
+// ---------------------------------------------------------------------------
+
+/// Raw frame payload without CBOR parsing.
+struct RawFrameResult {
+    QByteArray payload;
+    int bytesConsumed = 0;
+};
+
+/// Extract one raw frame from the front of @p buffer (no CBOR parsing).
+[[nodiscard]] std::optional<RawFrameResult> tryExtractRawFrame(const QByteArray& buffer);
+
+// ---------------------------------------------------------------------------
+// AES-256-CBC encryption helpers
+// ---------------------------------------------------------------------------
+
+/// Derive a 32-byte AES-256 key from a token string using SHA-256.
+[[nodiscard]] QByteArray deriveAesKey(const QString& token);
+
+/// AES-256-CBC encrypt: returns [16-byte IV][ciphertext].
+[[nodiscard]] QByteArray aesEncryptPayload(const QByteArray& plaintext, const QByteArray& key);
+
+/// AES-256-CBC decrypt: input is [16-byte IV][ciphertext]. Returns plaintext or empty on failure.
+[[nodiscard]] QByteArray aesDecryptPayload(const QByteArray& data, const QByteArray& key);
 
 } // namespace eMule::Ipc

@@ -127,9 +127,11 @@ target_precompile_headers(emulecore PRIVATE
     <algorithm>
     <array>
     <chrono>
+    <cmath>
     <cstdint>
     <cstring>
     <ctime>
+    <deque>
     <functional>
     <memory>
     <mutex>
@@ -137,6 +139,7 @@ target_precompile_headers(emulecore PRIVATE
     <span>
     <string>
     <string_view>
+    <unordered_map>
     <vector>
     # Qt Core (most frequently included across the codebase)
     <QByteArray>
@@ -144,9 +147,15 @@ target_precompile_headers(emulecore PRIVATE
     <QDir>
     <QFile>
     <QFileInfo>
+    <QHostAddress>
     <QIODevice>
+    <QList>
+    <QMutex>
+    <QObject>
     <QString>
     <QStringList>
+    <QThread>
+    <QTimer>
 )
 
 # Source groups for IDE navigation (mirrors directory structure)

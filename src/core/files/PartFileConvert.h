@@ -80,10 +80,11 @@ public:
     explicit PartFileConvert(QObject* parent = nullptr);
     ~PartFileConvert() override;
 
-    static void scanFolderToAdd(const QString& folder, bool recursive = false);
+    static void scanFolderToAdd(const QString& folder, bool recursive = false, bool removeSource = true);
     static void addJob(ConvertJob job);
     static void removeJob(int index);
     static void removeAllJobs();
+    static void retryJob(int index);
 
     static int jobCount();
     static ConvertJob jobAt(int index);

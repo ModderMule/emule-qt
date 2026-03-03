@@ -3,6 +3,9 @@
 
 #include "IpcConnection.h"
 
+#include <QCborValue>
+#include <QtEndian>
+
 namespace eMule::Ipc {
 
 // ---------------------------------------------------------------------------
@@ -31,8 +34,10 @@ void IpcConnection::sendMessage(const IpcMessage& msg)
     if (!m_socket || m_socket->state() != QAbstractSocket::ConnectedState)
         return;
 
-    const QByteArray frame = msg.toFrame();
-    m_socket->write(frame);
+    QByteArray cborBytes = msg.toArray().toCborValue().toCbor();
+    if (!m_encryptionKey.isEmpty())
+        cborBytes = aesEncryptPayload(cborBytes, m_encryptionKey);
+    m_socket->write(encodeFrame(cborBytes));
 }
 
 bool IpcConnection::isConnected() const
@@ -51,6 +56,16 @@ QTcpSocket* IpcConnection::socket() const
     return m_socket;
 }
 
+void IpcConnection::setEncryptionKey(const QByteArray& key)
+{
+    m_encryptionKey = key;
+}
+
+bool IpcConnection::isEncrypted() const
+{
+    return !m_encryptionKey.isEmpty();
+}
+
 // ---------------------------------------------------------------------------
 // Private slots
 // ---------------------------------------------------------------------------
@@ -61,17 +76,47 @@ void IpcConnection::onReadyRead()
 
     // Decode as many complete frames as possible
     for (;;) {
-        auto result = tryDecodeFrame(m_readBuffer);
-        if (!result)
-            break;
+        if (m_encryptionKey.isEmpty()) {
+            // Unencrypted path
+            auto result = tryDecodeFrame(m_readBuffer);
+            if (!result)
+                break;
 
-        m_readBuffer.remove(0, result->bytesConsumed);
+            m_readBuffer.remove(0, result->bytesConsumed);
 
-        IpcMessage msg(std::move(result->message));
-        if (msg.isValid())
-            emit messageReceived(msg);
-        else
-            emit protocolError(QStringLiteral("Invalid IPC message received"));
+            IpcMessage msg(std::move(result->message));
+            if (msg.isValid())
+                emit messageReceived(msg);
+            else
+                emit protocolError(QStringLiteral("Invalid IPC message received"));
+        } else {
+            // Encrypted path
+            auto raw = tryExtractRawFrame(m_readBuffer);
+            if (!raw)
+                break;
+
+            m_readBuffer.remove(0, raw->bytesConsumed);
+
+            QByteArray plain = aesDecryptPayload(raw->payload, m_encryptionKey);
+            if (plain.isEmpty()) {
+                emit protocolError(QStringLiteral("AES decryption failed"));
+                close();
+                return;
+            }
+
+            QCborValue val = QCborValue::fromCbor(plain);
+            if (!val.isArray()) {
+                emit protocolError(QStringLiteral("Invalid CBOR after decryption"));
+                close();
+                return;
+            }
+
+            IpcMessage msg(val.toArray());
+            if (msg.isValid())
+                emit messageReceived(msg);
+            else
+                emit protocolError(QStringLiteral("Invalid IPC message received"));
+        }
     }
 
     // Check for oversized frame in progress

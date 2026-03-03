@@ -47,6 +47,9 @@ public:
     /// Set the remote polling interval (from preferences). Default 1500ms.
     void setRemotePollingMs(int ms);
 
+    /// Set the auth token for non-localhost connections.
+    void setAuthToken(const QString& token);
+
     static constexpr int LocalPollingMs  = 500;
 
     /// Callback type for request responses.
@@ -115,6 +118,7 @@ private:
     int64_t m_lastLogId     = 0;  // Log tab
     int64_t m_lastVerboseId = 0;
     QString m_daemonToken;
+    QString m_authToken;
     std::unordered_map<int, ResponseCallback> m_pendingCallbacks;
     int m_remotePollingMs = 1500;
 

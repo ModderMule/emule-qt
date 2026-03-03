@@ -10,9 +10,11 @@
 
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
+#include "ipfilter/IPFilter.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
+#include "files/PartFileConvert.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "friends/Friend.h"
@@ -27,6 +29,7 @@
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadPrefs.h"
+#include "net/ListenSocket.h"
 #include "prefs/Preferences.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
@@ -36,6 +39,7 @@
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
+#include "transfer/Scheduler.h"
 #include "transfer/UploadQueue.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
@@ -65,9 +69,10 @@ bool hexToHash(const QString& hex, uint8* out)
 // Construction / destruction
 // ---------------------------------------------------------------------------
 
-IpcClientHandler::IpcClientHandler(QTcpSocket* socket, QObject* parent)
+IpcClientHandler::IpcClientHandler(QTcpSocket* socket, bool isLocal, QObject* parent)
     : QObject(parent)
     , m_connection(std::make_unique<IpcConnection>(socket, this))
+    , m_isLocal(isLocal)
 {
     connect(m_connection.get(), &IpcConnection::messageReceived,
             this, &IpcClientHandler::onMessageReceived);
@@ -154,6 +159,13 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::RecheckFirewall:      handleRecheckFirewall(msg); break;
     case IpcMsgType::SyncLogs:             handleSyncLogs(msg); break;
     case IpcMsgType::Shutdown:             handleShutdown(msg); break;
+    case IpcMsgType::ReloadIPFilter:       handleReloadIPFilter(msg); break;
+    case IpcMsgType::GetSchedules:         handleGetSchedules(msg); break;
+    case IpcMsgType::SaveSchedules:        handleSaveSchedules(msg); break;
+    case IpcMsgType::ScanImportFolder:     handleScanImportFolder(msg); break;
+    case IpcMsgType::GetConvertJobs:       handleGetConvertJobs(msg); break;
+    case IpcMsgType::RemoveConvertJob:     handleRemoveConvertJob(msg); break;
+    case IpcMsgType::RetryConvertJob:      handleRetryConvertJob(msg); break;
     default:
         sendMessage(IpcMessage::makeError(msg.seqId(), 400,
             QStringLiteral("Unknown message type: %1").arg(static_cast<int>(msg.type()))));
@@ -175,6 +187,21 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
 {
     const QString version = msg.fieldString(0);
     logInfo(QStringLiteral("IPC handshake from client, version: %1").arg(version));
+
+    // Non-localhost connections require a valid token
+    if (!m_isLocal) {
+        const QString clientToken = msg.fieldString(1);
+        const QStringList tokens = thePrefs.ipcTokens();
+        if (tokens.isEmpty() || !tokens.contains(clientToken)) {
+            logWarning(QStringLiteral("IPC auth failed — invalid token from remote client"));
+            sendMessage(IpcMessage::makeError(msg.seqId(), 403,
+                QStringLiteral("Authentication failed")));
+            m_connection->close();
+            return;
+        }
+        // Enable AES encryption for all subsequent messages
+        m_connection->setEncryptionKey(deriveAesKey(clientToken));
+    }
 
     m_handshaked = true;
 
@@ -768,6 +795,15 @@ void IpcClientHandler::handleReloadSharedFiles(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
+void IpcClientHandler::handleReloadIPFilter(const IpcMessage& msg)
+{
+    int count = 0;
+    if (theApp.ipFilter)
+        count = theApp.ipFilter->loadFromDefaultFile(thePrefs.configDir());
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true,
+        QCborValue(static_cast<qint64>(count))));
+}
+
 void IpcClientHandler::handleGetFriends(const IpcMessage& msg)
 {
     QCborArray friends;
@@ -892,14 +928,175 @@ void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)
 void IpcClientHandler::handleGetStats(const IpcMessage& msg)
 {
     QCborMap stats;
-    if (theApp.statistics) {
+
+    const auto now = static_cast<uint32>(std::time(nullptr));
+
+    if (auto* s = theApp.statistics) {
+        // Session bytes & uptime
         stats.insert(QStringLiteral("sessionSentBytes"),
-                     static_cast<qint64>(theApp.statistics->sessionSentBytes()));
+                     static_cast<qint64>(s->sessionSentBytes()));
         stats.insert(QStringLiteral("sessionReceivedBytes"),
-                     static_cast<qint64>(theApp.statistics->sessionReceivedBytes()));
+                     static_cast<qint64>(s->sessionReceivedBytes()));
+        stats.insert(QStringLiteral("sessionSentBytesToFriend"),
+                     static_cast<qint64>(s->sessionSentBytesToFriend()));
         stats.insert(QStringLiteral("uptime"),
-                     static_cast<qint64>(std::time(nullptr) - theApp.statistics->startTime()));
+                     static_cast<qint64>(now - s->startTime()));
+        stats.insert(QStringLiteral("startTime"),
+                     static_cast<qint64>(s->startTime()));
+
+        // Current rates (KB/s)
+        stats.insert(QStringLiteral("rateDown"), static_cast<double>(s->rateDown()));
+        stats.insert(QStringLiteral("rateUp"), static_cast<double>(s->rateUp()));
+        stats.insert(QStringLiteral("upOverheadRate"),
+                     static_cast<double>(s->upDatarateOverhead()) / 1024.0);
+        stats.insert(QStringLiteral("downOverheadRate"),
+                     static_cast<double>(s->downDatarateOverhead()) / 1024.0);
+        stats.insert(QStringLiteral("maxDown"), static_cast<double>(s->maxDown()));
+        stats.insert(QStringLiteral("maxUp"), static_cast<double>(s->maxUp()));
+        stats.insert(QStringLiteral("maxDownAvg"), static_cast<double>(s->maxDownAvg()));
+        stats.insert(QStringLiteral("maxUpAvg"), static_cast<double>(s->maxUpAvg()));
+
+        // Session averages
+        stats.insert(QStringLiteral("avgDownSession"),
+                     static_cast<double>(s->avgDownloadRate(AverageType::Session)));
+        stats.insert(QStringLiteral("avgUpSession"),
+                     static_cast<double>(s->avgUploadRate(AverageType::Session)));
+        stats.insert(QStringLiteral("avgDownTime"),
+                     static_cast<double>(s->avgDownloadRate(AverageType::Time)));
+        stats.insert(QStringLiteral("avgUpTime"),
+                     static_cast<double>(s->avgUploadRate(AverageType::Time)));
+
+        // Cumulative rates
+        stats.insert(QStringLiteral("cumDownAvg"), static_cast<double>(s->cumDownAvg()));
+        stats.insert(QStringLiteral("cumUpAvg"), static_cast<double>(s->cumUpAvg()));
+        stats.insert(QStringLiteral("maxCumDown"), static_cast<double>(s->maxCumDown()));
+        stats.insert(QStringLiteral("maxCumUp"), static_cast<double>(s->maxCumUp()));
+        stats.insert(QStringLiteral("maxCumDownAvg"), static_cast<double>(s->maxCumDownAvg()));
+        stats.insert(QStringLiteral("maxCumUpAvg"), static_cast<double>(s->maxCumUpAvg()));
+
+        // Transfer times (seconds)
+        stats.insert(QStringLiteral("transferTime"), static_cast<qint64>(s->transferTime()));
+        stats.insert(QStringLiteral("uploadTime"), static_cast<qint64>(s->uploadTime()));
+        stats.insert(QStringLiteral("downloadTime"), static_cast<qint64>(s->downloadTime()));
+        stats.insert(QStringLiteral("serverDuration"), static_cast<qint64>(s->serverDuration()));
+
+        // Global state
+        stats.insert(QStringLiteral("reconnects"), static_cast<qint64>(s->reconnects()));
+        stats.insert(QStringLiteral("filteredClients"), static_cast<qint64>(s->filteredClients()));
+
+        // Download overhead (bytes + packets)
+        stats.insert(QStringLiteral("downOverheadTotal"),
+                     static_cast<qint64>(s->downDataOverheadFileRequest()
+                                         + s->downDataOverheadSourceExchange()
+                                         + s->downDataOverheadServer()
+                                         + s->downDataOverheadKad()
+                                         + s->downDataOverheadOther()));
+        stats.insert(QStringLiteral("downOverheadTotalPackets"),
+                     static_cast<qint64>(s->downDataOverheadFileRequestPackets()
+                                         + s->downDataOverheadSourceExchangePackets()
+                                         + s->downDataOverheadServerPackets()
+                                         + s->downDataOverheadKadPackets()
+                                         + s->downDataOverheadOtherPackets()));
+        stats.insert(QStringLiteral("downOverheadFileReq"),
+                     static_cast<qint64>(s->downDataOverheadFileRequest()));
+        stats.insert(QStringLiteral("downOverheadFileReqPkt"),
+                     static_cast<qint64>(s->downDataOverheadFileRequestPackets()));
+        stats.insert(QStringLiteral("downOverheadSrcExch"),
+                     static_cast<qint64>(s->downDataOverheadSourceExchange()));
+        stats.insert(QStringLiteral("downOverheadSrcExchPkt"),
+                     static_cast<qint64>(s->downDataOverheadSourceExchangePackets()));
+        stats.insert(QStringLiteral("downOverheadServer"),
+                     static_cast<qint64>(s->downDataOverheadServer()));
+        stats.insert(QStringLiteral("downOverheadServerPkt"),
+                     static_cast<qint64>(s->downDataOverheadServerPackets()));
+        stats.insert(QStringLiteral("downOverheadKad"),
+                     static_cast<qint64>(s->downDataOverheadKad()));
+        stats.insert(QStringLiteral("downOverheadKadPkt"),
+                     static_cast<qint64>(s->downDataOverheadKadPackets()));
+
+        // Upload overhead (bytes + packets)
+        stats.insert(QStringLiteral("upOverheadTotal"),
+                     static_cast<qint64>(s->upDataOverheadFileRequest()
+                                         + s->upDataOverheadSourceExchange()
+                                         + s->upDataOverheadServer()
+                                         + s->upDataOverheadKad()
+                                         + s->upDataOverheadOther()));
+        stats.insert(QStringLiteral("upOverheadTotalPackets"),
+                     static_cast<qint64>(s->upDataOverheadFileRequestPackets()
+                                         + s->upDataOverheadSourceExchangePackets()
+                                         + s->upDataOverheadServerPackets()
+                                         + s->upDataOverheadKadPackets()
+                                         + s->upDataOverheadOtherPackets()));
+        stats.insert(QStringLiteral("upOverheadFileReq"),
+                     static_cast<qint64>(s->upDataOverheadFileRequest()));
+        stats.insert(QStringLiteral("upOverheadFileReqPkt"),
+                     static_cast<qint64>(s->upDataOverheadFileRequestPackets()));
+        stats.insert(QStringLiteral("upOverheadSrcExch"),
+                     static_cast<qint64>(s->upDataOverheadSourceExchange()));
+        stats.insert(QStringLiteral("upOverheadSrcExchPkt"),
+                     static_cast<qint64>(s->upDataOverheadSourceExchangePackets()));
+        stats.insert(QStringLiteral("upOverheadServer"),
+                     static_cast<qint64>(s->upDataOverheadServer()));
+        stats.insert(QStringLiteral("upOverheadServerPkt"),
+                     static_cast<qint64>(s->upDataOverheadServerPackets()));
+        stats.insert(QStringLiteral("upOverheadKad"),
+                     static_cast<qint64>(s->upDataOverheadKad()));
+        stats.insert(QStringLiteral("upOverheadKadPkt"),
+                     static_cast<qint64>(s->upDataOverheadKadPackets()));
     }
+
+    // Upload queue stats
+    if (auto* uq = theApp.uploadQueue) {
+        stats.insert(QStringLiteral("upDatarate"), static_cast<qint64>(uq->datarate()));
+        stats.insert(QStringLiteral("upFriendDatarate"), static_cast<qint64>(uq->friendDatarate()));
+        stats.insert(QStringLiteral("upSuccessful"), static_cast<qint64>(uq->successfulUploadCount()));
+        stats.insert(QStringLiteral("upFailed"), static_cast<qint64>(uq->failedUploadCount()));
+        stats.insert(QStringLiteral("upWaiting"), static_cast<qint64>(uq->waitingUserCount()));
+        stats.insert(QStringLiteral("upQueueLength"), static_cast<qint64>(uq->uploadQueueLength()));
+        stats.insert(QStringLiteral("upAvgTime"), static_cast<qint64>(uq->averageUpTime()));
+    }
+
+    // Download queue stats
+    if (auto* dq = theApp.downloadQueue) {
+        stats.insert(QStringLiteral("downDatarate"), static_cast<qint64>(dq->datarate()));
+        stats.insert(QStringLiteral("downFileCount"), static_cast<qint64>(dq->fileCount()));
+    }
+
+    // Connection stats
+    if (auto* ls = theApp.listenSocket) {
+        stats.insert(QStringLiteral("connActive"), static_cast<qint64>(ls->activeConnections()));
+        stats.insert(QStringLiteral("connPeak"), static_cast<qint64>(ls->peakConnections()));
+        stats.insert(QStringLiteral("connMaxReached"), static_cast<qint64>(ls->maxConnectionReached()));
+        stats.insert(QStringLiteral("connAverage"), static_cast<double>(ls->averageConnections()));
+        stats.insert(QStringLiteral("connOpen"), static_cast<qint64>(ls->openSockets()));
+    }
+
+    // Server stats
+    if (auto* sl = theApp.serverList) {
+        auto srvStats = sl->stats();
+        stats.insert(QStringLiteral("srvWorking"),
+                     static_cast<qint64>(srvStats.total - srvStats.failed));
+        stats.insert(QStringLiteral("srvFailed"), static_cast<qint64>(srvStats.failed));
+        stats.insert(QStringLiteral("srvTotal"), static_cast<qint64>(srvStats.total));
+        stats.insert(QStringLiteral("srvUsers"), static_cast<qint64>(srvStats.users));
+        stats.insert(QStringLiteral("srvFiles"), static_cast<qint64>(srvStats.files));
+        stats.insert(QStringLiteral("srvLowIDUsers"), static_cast<qint64>(srvStats.lowIDUsers));
+    }
+
+    // Client stats
+    if (auto* cl = theApp.clientList) {
+        stats.insert(QStringLiteral("knownClients"), static_cast<qint64>(cl->clientCount()));
+        stats.insert(QStringLiteral("bannedClients"), static_cast<qint64>(cl->bannedCount()));
+    }
+
+    // Shared files stats
+    if (auto* sf = theApp.sharedFileList) {
+        uint64 largest = 0;
+        stats.insert(QStringLiteral("sharedCount"), static_cast<qint64>(sf->getCount()));
+        stats.insert(QStringLiteral("sharedSize"), static_cast<qint64>(sf->getDataSize(largest)));
+        stats.insert(QStringLiteral("sharedLargest"), static_cast<qint64>(largest));
+    }
+
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(stats)));
 }
 
@@ -917,8 +1114,10 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("maxSourcesPerFile"), static_cast<qint64>(thePrefs.maxSourcesPerFile()));
     prefs.insert(QStringLiteral("autoConnect"), thePrefs.autoConnect());
     prefs.insert(QStringLiteral("reconnect"), thePrefs.reconnect());
+    prefs.insert(QStringLiteral("showOverhead"), thePrefs.showOverhead());
     prefs.insert(QStringLiteral("networkED2K"), thePrefs.networkED2K());
     prefs.insert(QStringLiteral("kadEnabled"), thePrefs.kadEnabled());
+    prefs.insert(QStringLiteral("schedulerEnabled"), thePrefs.schedulerEnabled());
     prefs.insert(QStringLiteral("enableUPnP"), thePrefs.enableUPnP());
 
     // Server
@@ -952,6 +1151,97 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("startNextPausedFileOnlySameCat"), thePrefs.startNextPausedFileOnlySameCat());
     prefs.insert(QStringLiteral("rememberDownloadedFiles"), thePrefs.rememberDownloadedFiles());
     prefs.insert(QStringLiteral("rememberCancelledFiles"), thePrefs.rememberCancelledFiles());
+
+    // Notifications (daemon-side)
+    prefs.insert(QStringLiteral("notifyOnLog"), thePrefs.notifyOnLog());
+    prefs.insert(QStringLiteral("notifyOnChat"), thePrefs.notifyOnChat());
+    prefs.insert(QStringLiteral("notifyOnChatMsg"), thePrefs.notifyOnChatMsg());
+    prefs.insert(QStringLiteral("notifyOnDownloadAdded"), thePrefs.notifyOnDownloadAdded());
+    prefs.insert(QStringLiteral("notifyOnDownloadFinished"), thePrefs.notifyOnDownloadFinished());
+    prefs.insert(QStringLiteral("notifyOnNewVersion"), thePrefs.notifyOnNewVersion());
+    prefs.insert(QStringLiteral("notifyOnUrgent"), thePrefs.notifyOnUrgent());
+    prefs.insert(QStringLiteral("notifyEmailEnabled"), thePrefs.notifyEmailEnabled());
+    prefs.insert(QStringLiteral("notifyEmailSmtpServer"), thePrefs.notifyEmailSmtpServer());
+    prefs.insert(QStringLiteral("notifyEmailSmtpPort"), static_cast<qint64>(thePrefs.notifyEmailSmtpPort()));
+    prefs.insert(QStringLiteral("notifyEmailSmtpAuth"), thePrefs.notifyEmailSmtpAuth());
+    prefs.insert(QStringLiteral("notifyEmailSmtpTls"), thePrefs.notifyEmailSmtpTls());
+    prefs.insert(QStringLiteral("notifyEmailSmtpUser"), thePrefs.notifyEmailSmtpUser());
+    prefs.insert(QStringLiteral("notifyEmailSmtpPassword"), thePrefs.notifyEmailSmtpPassword());
+    prefs.insert(QStringLiteral("notifyEmailRecipient"), thePrefs.notifyEmailRecipient());
+    prefs.insert(QStringLiteral("notifyEmailSender"), thePrefs.notifyEmailSender());
+
+    // Messages and Comments
+    prefs.insert(QStringLiteral("msgOnlyFriends"), thePrefs.msgOnlyFriends());
+    prefs.insert(QStringLiteral("enableSpamFilter"), thePrefs.enableSpamFilter());
+    prefs.insert(QStringLiteral("useChatCaptchas"), thePrefs.useChatCaptchas());
+    prefs.insert(QStringLiteral("messageFilter"), thePrefs.messageFilter());
+    prefs.insert(QStringLiteral("commentFilter"), thePrefs.commentFilter());
+
+    // Security
+    prefs.insert(QStringLiteral("filterServerByIP"), thePrefs.filterServerByIP());
+    prefs.insert(QStringLiteral("ipFilterLevel"), static_cast<qint64>(thePrefs.ipFilterLevel()));
+    prefs.insert(QStringLiteral("viewSharedFilesAccess"), thePrefs.viewSharedFilesAccess());
+    prefs.insert(QStringLiteral("cryptLayerSupported"), thePrefs.cryptLayerSupported());
+    prefs.insert(QStringLiteral("cryptLayerRequested"), thePrefs.cryptLayerRequested());
+    prefs.insert(QStringLiteral("cryptLayerRequired"), thePrefs.cryptLayerRequired());
+    prefs.insert(QStringLiteral("useSecureIdent"), thePrefs.useSecureIdent());
+    prefs.insert(QStringLiteral("enableSearchResultFilter"), thePrefs.enableSearchResultFilter());
+
+    // Statistics
+    prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(thePrefs.statsAverageMinutes()));
+    prefs.insert(QStringLiteral("graphsUpdateSec"), static_cast<qint64>(thePrefs.graphsUpdateSec()));
+    prefs.insert(QStringLiteral("statsUpdateSec"), static_cast<qint64>(thePrefs.statsUpdateSec()));
+    prefs.insert(QStringLiteral("fillGraphs"), thePrefs.fillGraphs());
+    prefs.insert(QStringLiteral("statsConnectionsMax"), static_cast<qint64>(thePrefs.statsConnectionsMax()));
+    prefs.insert(QStringLiteral("statsConnectionsRatio"), static_cast<qint64>(thePrefs.statsConnectionsRatio()));
+
+    // Extended (PPgTweaks)
+    prefs.insert(QStringLiteral("maxConsPerFive"), static_cast<qint64>(thePrefs.maxConsPerFive()));
+    prefs.insert(QStringLiteral("maxHalfConnections"), static_cast<qint64>(thePrefs.maxHalfConnections()));
+    prefs.insert(QStringLiteral("serverKeepAliveTimeout"), static_cast<qint64>(thePrefs.serverKeepAliveTimeout()));
+    prefs.insert(QStringLiteral("filterLANIPs"), thePrefs.filterLANIPs());
+    prefs.insert(QStringLiteral("checkDiskspace"), thePrefs.checkDiskspace());
+    prefs.insert(QStringLiteral("minFreeDiskSpace"), static_cast<qint64>(thePrefs.minFreeDiskSpace()));
+    prefs.insert(QStringLiteral("logToDisk"), thePrefs.logToDisk());
+    prefs.insert(QStringLiteral("verbose"), thePrefs.verbose());
+    prefs.insert(QStringLiteral("closeUPnPOnExit"), thePrefs.closeUPnPOnExit());
+    prefs.insert(QStringLiteral("skipWANIPSetup"), thePrefs.skipWANIPSetup());
+    prefs.insert(QStringLiteral("skipWANPPPSetup"), thePrefs.skipWANPPPSetup());
+    prefs.insert(QStringLiteral("fileBufferSize"), static_cast<qint64>(thePrefs.fileBufferSize()));
+    prefs.insert(QStringLiteral("useCreditSystem"), thePrefs.useCreditSystem());
+    prefs.insert(QStringLiteral("a4afSaveCpu"), thePrefs.a4afSaveCpu());
+    prefs.insert(QStringLiteral("autoArchivePreviewStart"), thePrefs.autoArchivePreviewStart());
+    prefs.insert(QStringLiteral("ed2kHostname"), thePrefs.ed2kHostname());
+    prefs.insert(QStringLiteral("showExtControls"), thePrefs.showExtControls());
+    prefs.insert(QStringLiteral("commitFiles"), thePrefs.commitFiles());
+    prefs.insert(QStringLiteral("extractMetaData"), thePrefs.extractMetaData());
+    prefs.insert(QStringLiteral("logLevel"), thePrefs.logLevel());
+    prefs.insert(QStringLiteral("verboseLogToDisk"), thePrefs.verboseLogToDisk());
+    prefs.insert(QStringLiteral("logSourceExchange"), thePrefs.logSourceExchange());
+    prefs.insert(QStringLiteral("logBannedClients"), thePrefs.logBannedClients());
+    prefs.insert(QStringLiteral("logRatingDescReceived"), thePrefs.logRatingDescReceived());
+    prefs.insert(QStringLiteral("logSecureIdent"), thePrefs.logSecureIdent());
+    prefs.insert(QStringLiteral("logFilteredIPs"), thePrefs.logFilteredIPs());
+    prefs.insert(QStringLiteral("logFileSaving"), thePrefs.logFileSaving());
+    prefs.insert(QStringLiteral("logA4AF"), thePrefs.logA4AF());
+    prefs.insert(QStringLiteral("logUlDlEvents"), thePrefs.logUlDlEvents());
+    prefs.insert(QStringLiteral("queueSize"), static_cast<qint64>(thePrefs.queueSize()));
+    // USS
+    prefs.insert(QStringLiteral("dynUpEnabled"), thePrefs.dynUpEnabled());
+    prefs.insert(QStringLiteral("dynUpPingTolerance"), static_cast<qint64>(thePrefs.dynUpPingTolerance()));
+    prefs.insert(QStringLiteral("dynUpPingToleranceMs"), static_cast<qint64>(thePrefs.dynUpPingToleranceMs()));
+    prefs.insert(QStringLiteral("dynUpUseMillisecondPingTolerance"), thePrefs.dynUpUseMillisecondPingTolerance());
+    prefs.insert(QStringLiteral("dynUpGoingUpDivider"), static_cast<qint64>(thePrefs.dynUpGoingUpDivider()));
+    prefs.insert(QStringLiteral("dynUpGoingDownDivider"), static_cast<qint64>(thePrefs.dynUpGoingDownDivider()));
+    prefs.insert(QStringLiteral("dynUpNumberOfPings"), static_cast<qint64>(thePrefs.dynUpNumberOfPings()));
+#ifdef Q_OS_WIN
+    prefs.insert(QStringLiteral("autotakeEd2kLinks"), thePrefs.autotakeEd2kLinks());
+    prefs.insert(QStringLiteral("openPortsOnWinFirewall"), thePrefs.openPortsOnWinFirewall());
+    prefs.insert(QStringLiteral("sparsePartFiles"), thePrefs.sparsePartFiles());
+    prefs.insert(QStringLiteral("allocFullFile"), thePrefs.allocFullFile());
+    prefs.insert(QStringLiteral("resolveShellLinks"), thePrefs.resolveShellLinks());
+    prefs.insert(QStringLiteral("multiUserSharing"), thePrefs.multiUserSharing());
+#endif
 
     // Directories
     prefs.insert(QStringLiteral("incomingDir"), thePrefs.incomingDir());
@@ -996,10 +1286,14 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
             thePrefs.setAutoConnect(val.toBool());
         else if (key == QStringLiteral("reconnect"))
             thePrefs.setReconnect(val.toBool());
+        else if (key == QStringLiteral("showOverhead"))
+            thePrefs.setShowOverhead(val.toBool());
         else if (key == QStringLiteral("networkED2K"))
             thePrefs.setNetworkED2K(val.toBool());
         else if (key == QStringLiteral("kadEnabled"))
             thePrefs.setKadEnabled(val.toBool());
+        else if (key == QStringLiteral("schedulerEnabled"))
+            thePrefs.setSchedulerEnabled(val.toBool());
         else if (key == QStringLiteral("enableUPnP"))
             thePrefs.setEnableUPnP(val.toBool());
         // Proxy
@@ -1057,6 +1351,170 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
             thePrefs.setRememberDownloadedFiles(val.toBool());
         else if (key == QStringLiteral("rememberCancelledFiles"))
             thePrefs.setRememberCancelledFiles(val.toBool());
+        // Notifications
+        else if (key == QStringLiteral("notifyOnLog"))
+            thePrefs.setNotifyOnLog(val.toBool());
+        else if (key == QStringLiteral("notifyOnChat"))
+            thePrefs.setNotifyOnChat(val.toBool());
+        else if (key == QStringLiteral("notifyOnChatMsg"))
+            thePrefs.setNotifyOnChatMsg(val.toBool());
+        else if (key == QStringLiteral("notifyOnDownloadAdded"))
+            thePrefs.setNotifyOnDownloadAdded(val.toBool());
+        else if (key == QStringLiteral("notifyOnDownloadFinished"))
+            thePrefs.setNotifyOnDownloadFinished(val.toBool());
+        else if (key == QStringLiteral("notifyOnNewVersion"))
+            thePrefs.setNotifyOnNewVersion(val.toBool());
+        else if (key == QStringLiteral("notifyOnUrgent"))
+            thePrefs.setNotifyOnUrgent(val.toBool());
+        else if (key == QStringLiteral("notifyEmailEnabled"))
+            thePrefs.setNotifyEmailEnabled(val.toBool());
+        else if (key == QStringLiteral("notifyEmailSmtpServer"))
+            thePrefs.setNotifyEmailSmtpServer(val.toString());
+        else if (key == QStringLiteral("notifyEmailSmtpPort"))
+            thePrefs.setNotifyEmailSmtpPort(static_cast<uint16>(val.toInteger()));
+        else if (key == QStringLiteral("notifyEmailSmtpAuth"))
+            thePrefs.setNotifyEmailSmtpAuth(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("notifyEmailSmtpTls"))
+            thePrefs.setNotifyEmailSmtpTls(val.toBool());
+        else if (key == QStringLiteral("notifyEmailSmtpUser"))
+            thePrefs.setNotifyEmailSmtpUser(val.toString());
+        else if (key == QStringLiteral("notifyEmailSmtpPassword"))
+            thePrefs.setNotifyEmailSmtpPassword(val.toString());
+        else if (key == QStringLiteral("notifyEmailRecipient"))
+            thePrefs.setNotifyEmailRecipient(val.toString());
+        else if (key == QStringLiteral("notifyEmailSender"))
+            thePrefs.setNotifyEmailSender(val.toString());
+        // Messages and Comments
+        else if (key == QStringLiteral("msgOnlyFriends"))
+            thePrefs.setMsgOnlyFriends(val.toBool());
+        else if (key == QStringLiteral("enableSpamFilter"))
+            thePrefs.setEnableSpamFilter(val.toBool());
+        else if (key == QStringLiteral("useChatCaptchas"))
+            thePrefs.setUseChatCaptchas(val.toBool());
+        else if (key == QStringLiteral("messageFilter"))
+            thePrefs.setMessageFilter(val.toString());
+        else if (key == QStringLiteral("commentFilter"))
+            thePrefs.setCommentFilter(val.toString());
+        // Security
+        else if (key == QStringLiteral("filterServerByIP"))
+            thePrefs.setFilterServerByIP(val.toBool());
+        else if (key == QStringLiteral("ipFilterLevel"))
+            thePrefs.setIpFilterLevel(static_cast<uint32>(val.toInteger()));
+        else if (key == QStringLiteral("viewSharedFilesAccess"))
+            thePrefs.setViewSharedFilesAccess(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("cryptLayerSupported"))
+            thePrefs.setCryptLayerSupported(val.toBool());
+        else if (key == QStringLiteral("cryptLayerRequested"))
+            thePrefs.setCryptLayerRequested(val.toBool());
+        else if (key == QStringLiteral("cryptLayerRequired"))
+            thePrefs.setCryptLayerRequired(val.toBool());
+        else if (key == QStringLiteral("useSecureIdent"))
+            thePrefs.setUseSecureIdent(val.toBool());
+        else if (key == QStringLiteral("enableSearchResultFilter"))
+            thePrefs.setEnableSearchResultFilter(val.toBool());
+        // Extended (PPgTweaks)
+        else if (key == QStringLiteral("maxConsPerFive"))
+            thePrefs.setMaxConsPerFive(static_cast<uint16>(val.toInteger()));
+        else if (key == QStringLiteral("maxHalfConnections"))
+            thePrefs.setMaxHalfConnections(static_cast<uint16>(val.toInteger()));
+        else if (key == QStringLiteral("serverKeepAliveTimeout"))
+            thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(val.toInteger()));
+        else if (key == QStringLiteral("filterLANIPs"))
+            thePrefs.setFilterLANIPs(val.toBool());
+        else if (key == QStringLiteral("checkDiskspace"))
+            thePrefs.setCheckDiskspace(val.toBool());
+        else if (key == QStringLiteral("minFreeDiskSpace"))
+            thePrefs.setMinFreeDiskSpace(static_cast<uint64>(val.toInteger()));
+        else if (key == QStringLiteral("logToDisk"))
+            thePrefs.setLogToDisk(val.toBool());
+        else if (key == QStringLiteral("verbose"))
+            thePrefs.setVerbose(val.toBool());
+        else if (key == QStringLiteral("closeUPnPOnExit"))
+            thePrefs.setCloseUPnPOnExit(val.toBool());
+        else if (key == QStringLiteral("skipWANIPSetup"))
+            thePrefs.setSkipWANIPSetup(val.toBool());
+        else if (key == QStringLiteral("skipWANPPPSetup"))
+            thePrefs.setSkipWANPPPSetup(val.toBool());
+        else if (key == QStringLiteral("fileBufferSize"))
+            thePrefs.setFileBufferSize(static_cast<uint32>(val.toInteger()));
+        else if (key == QStringLiteral("useCreditSystem"))
+            thePrefs.setUseCreditSystem(val.toBool());
+        else if (key == QStringLiteral("a4afSaveCpu"))
+            thePrefs.setA4afSaveCpu(val.toBool());
+        else if (key == QStringLiteral("autoArchivePreviewStart"))
+            thePrefs.setAutoArchivePreviewStart(val.toBool());
+        else if (key == QStringLiteral("ed2kHostname"))
+            thePrefs.setEd2kHostname(val.toString());
+        else if (key == QStringLiteral("showExtControls"))
+            thePrefs.setShowExtControls(val.toBool());
+        else if (key == QStringLiteral("commitFiles"))
+            thePrefs.setCommitFiles(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("extractMetaData"))
+            thePrefs.setExtractMetaData(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("logLevel"))
+            thePrefs.setLogLevel(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("verboseLogToDisk"))
+            thePrefs.setVerboseLogToDisk(val.toBool());
+        else if (key == QStringLiteral("logSourceExchange"))
+            thePrefs.setLogSourceExchange(val.toBool());
+        else if (key == QStringLiteral("logBannedClients"))
+            thePrefs.setLogBannedClients(val.toBool());
+        else if (key == QStringLiteral("logRatingDescReceived"))
+            thePrefs.setLogRatingDescReceived(val.toBool());
+        else if (key == QStringLiteral("logSecureIdent"))
+            thePrefs.setLogSecureIdent(val.toBool());
+        else if (key == QStringLiteral("logFilteredIPs"))
+            thePrefs.setLogFilteredIPs(val.toBool());
+        else if (key == QStringLiteral("logFileSaving"))
+            thePrefs.setLogFileSaving(val.toBool());
+        else if (key == QStringLiteral("logA4AF"))
+            thePrefs.setLogA4AF(val.toBool());
+        else if (key == QStringLiteral("logUlDlEvents"))
+            thePrefs.setLogUlDlEvents(val.toBool());
+        else if (key == QStringLiteral("queueSize"))
+            thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
+        // USS
+        else if (key == QStringLiteral("dynUpEnabled"))
+            thePrefs.setDynUpEnabled(val.toBool());
+        else if (key == QStringLiteral("dynUpPingTolerance"))
+            thePrefs.setDynUpPingTolerance(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("dynUpPingToleranceMs"))
+            thePrefs.setDynUpPingToleranceMs(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("dynUpUseMillisecondPingTolerance"))
+            thePrefs.setDynUpUseMillisecondPingTolerance(val.toBool());
+        else if (key == QStringLiteral("dynUpGoingUpDivider"))
+            thePrefs.setDynUpGoingUpDivider(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("dynUpGoingDownDivider"))
+            thePrefs.setDynUpGoingDownDivider(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("dynUpNumberOfPings"))
+            thePrefs.setDynUpNumberOfPings(static_cast<int>(val.toInteger()));
+#ifdef Q_OS_WIN
+        else if (key == QStringLiteral("autotakeEd2kLinks"))
+            thePrefs.setAutotakeEd2kLinks(val.toBool());
+        else if (key == QStringLiteral("openPortsOnWinFirewall"))
+            thePrefs.setOpenPortsOnWinFirewall(val.toBool());
+        else if (key == QStringLiteral("sparsePartFiles"))
+            thePrefs.setSparsePartFiles(val.toBool());
+        else if (key == QStringLiteral("allocFullFile"))
+            thePrefs.setAllocFullFile(val.toBool());
+        else if (key == QStringLiteral("resolveShellLinks"))
+            thePrefs.setResolveShellLinks(val.toBool());
+        else if (key == QStringLiteral("multiUserSharing"))
+            thePrefs.setMultiUserSharing(static_cast<int>(val.toInteger()));
+#endif
+        // Statistics
+        else if (key == QStringLiteral("statsAverageMinutes"))
+            thePrefs.setStatsAverageMinutes(static_cast<uint32>(val.toInteger()));
+        else if (key == QStringLiteral("graphsUpdateSec"))
+            thePrefs.setGraphsUpdateSec(static_cast<uint32>(val.toInteger()));
+        else if (key == QStringLiteral("statsUpdateSec"))
+            thePrefs.setStatsUpdateSec(static_cast<uint32>(val.toInteger()));
+        else if (key == QStringLiteral("fillGraphs"))
+            thePrefs.setFillGraphs(val.toBool());
+        else if (key == QStringLiteral("statsConnectionsMax"))
+            thePrefs.setStatsConnectionsMax(static_cast<uint32>(val.toInteger()));
+        else if (key == QStringLiteral("statsConnectionsRatio"))
+            thePrefs.setStatsConnectionsRatio(static_cast<uint32>(val.toInteger()));
         // Directories
         else if (key == QStringLiteral("incomingDir"))
             thePrefs.setIncomingDir(val.toString());
@@ -1422,6 +1880,181 @@ void IpcClientHandler::handleShutdown(const IpcMessage& msg)
     // response frame is flushed to the socket before we tear down.
     QMetaObject::invokeMethod(QCoreApplication::instance(),
                               &QCoreApplication::quit, Qt::QueuedConnection);
+}
+
+// ---------------------------------------------------------------------------
+// handleGetSchedules — return scheduler enabled flag + all schedule entries
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleGetSchedules(const IpcMessage& msg)
+{
+    QCborMap result;
+    result.insert(QStringLiteral("enabled"), thePrefs.schedulerEnabled());
+
+    QCborArray schedArr;
+    if (theApp.scheduler) {
+        for (int i = 0; i < theApp.scheduler->count(); ++i) {
+            auto* entry = theApp.scheduler->schedule(i);
+            if (!entry) continue;
+
+            QCborMap sched;
+            sched.insert(QStringLiteral("title"), entry->title);
+            sched.insert(QStringLiteral("startTime"), static_cast<qint64>(entry->startTime));
+            sched.insert(QStringLiteral("endTime"), static_cast<qint64>(entry->endTime));
+            sched.insert(QStringLiteral("day"), static_cast<int>(entry->day));
+            sched.insert(QStringLiteral("enabled"), entry->enabled);
+
+            QCborArray actArr;
+            for (size_t a = 0; a < 16; ++a) {
+                if (entry->actions[a] == ScheduleAction::None)
+                    break;
+                QCborMap actMap;
+                actMap.insert(QStringLiteral("action"), static_cast<int>(entry->actions[a]));
+                actMap.insert(QStringLiteral("value"), entry->values[a]);
+                actArr.append(actMap);
+            }
+            sched.insert(QStringLiteral("actions"), actArr);
+            schedArr.append(sched);
+        }
+    }
+    result.insert(QStringLiteral("schedules"), schedArr);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(result)));
+}
+
+// ---------------------------------------------------------------------------
+// handleSaveSchedules — replace all schedules from GUI data
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleSaveSchedules(const IpcMessage& msg)
+{
+    bool enabled = msg.fieldBool(0);
+    thePrefs.setSchedulerEnabled(enabled);
+
+    if (theApp.scheduler) {
+        theApp.scheduler->restoreOriginals();
+        theApp.scheduler->removeAll();
+
+        const QCborArray schedArr = msg.fieldArray(1);
+        for (const auto& item : schedArr) {
+            const QCborMap m = item.toMap();
+            auto entry = std::make_unique<ScheduleEntry>();
+            entry->title = m.value(QStringLiteral("title")).toString();
+            entry->startTime = static_cast<time_t>(m.value(QStringLiteral("startTime")).toInteger());
+            entry->endTime = static_cast<time_t>(m.value(QStringLiteral("endTime")).toInteger());
+            entry->day = static_cast<ScheduleDay>(m.value(QStringLiteral("day")).toInteger());
+            entry->enabled = m.value(QStringLiteral("enabled")).toBool();
+
+            const QCborArray actArr = m.value(QStringLiteral("actions")).toArray();
+            for (qsizetype a = 0; a < actArr.size() && a < 16; ++a) {
+                const QCborMap actMap = actArr.at(a).toMap();
+                entry->actions[static_cast<size_t>(a)] = static_cast<ScheduleAction>(actMap.value(QStringLiteral("action")).toInteger());
+                entry->values[static_cast<size_t>(a)] = actMap.value(QStringLiteral("value")).toString();
+            }
+            theApp.scheduler->addSchedule(std::move(entry));
+        }
+
+        theApp.scheduler->saveToFile(thePrefs.configDir());
+        theApp.scheduler->saveOriginals();
+
+        if (enabled)
+            theApp.scheduler->check(true);
+    }
+
+    thePrefs.save();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleScanImportFolder — scan folder for convertible files and return jobs
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleScanImportFolder(const IpcMessage& msg)
+{
+    const QString folder = msg.fieldString(0);
+    const bool removeSource = msg.fieldBool(1);
+
+    PartFileConvert::scanFolderToAdd(folder, /*recursive=*/true, removeSource);
+    PartFileConvert::processQueue();
+
+    // Return the full job list
+    QCborArray arr;
+    const int count = PartFileConvert::jobCount();
+    for (int i = 0; i < count; ++i) {
+        const auto job = PartFileConvert::jobAt(i);
+        QCborMap m;
+        m.insert(QStringLiteral("filename"), job.filename);
+        m.insert(QStringLiteral("folder"), job.folder);
+        m.insert(QStringLiteral("state"), static_cast<int>(job.state));
+        m.insert(QStringLiteral("size"), static_cast<qint64>(job.size));
+        m.insert(QStringLiteral("fileHash"), job.fileHash);
+        m.insert(QStringLiteral("format"), job.format);
+        arr.append(QCborValue(m));
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(arr)));
+}
+
+// ---------------------------------------------------------------------------
+// handleGetConvertJobs — return snapshot of all conversion jobs
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleGetConvertJobs(const IpcMessage& msg)
+{
+    QCborArray arr;
+    const int count = PartFileConvert::jobCount();
+    for (int i = 0; i < count; ++i) {
+        const auto job = PartFileConvert::jobAt(i);
+        QCborMap m;
+        m.insert(QStringLiteral("filename"), job.filename);
+        m.insert(QStringLiteral("folder"), job.folder);
+        m.insert(QStringLiteral("state"), static_cast<int>(job.state));
+        m.insert(QStringLiteral("size"), static_cast<qint64>(job.size));
+        m.insert(QStringLiteral("fileHash"), job.fileHash);
+        m.insert(QStringLiteral("format"), job.format);
+        arr.append(QCborValue(m));
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(arr)));
+}
+
+// ---------------------------------------------------------------------------
+// handleRemoveConvertJob — remove a non-in-progress job by index
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleRemoveConvertJob(const IpcMessage& msg)
+{
+    const int index = static_cast<int>(msg.fieldInt(0));
+    if (index < 0 || index >= PartFileConvert::jobCount()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+            QStringLiteral("Invalid job index: %1").arg(index)));
+        return;
+    }
+
+    const auto job = PartFileConvert::jobAt(index);
+    if (job.state == ConvertStatus::InProgress) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+            QStringLiteral("Cannot remove in-progress job")));
+        return;
+    }
+
+    PartFileConvert::removeJob(index);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleRetryConvertJob — re-queue a failed/completed job by index
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleRetryConvertJob(const IpcMessage& msg)
+{
+    const int index = static_cast<int>(msg.fieldInt(0));
+    if (index < 0 || index >= PartFileConvert::jobCount()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+            QStringLiteral("Invalid job index: %1").arg(index)));
+        return;
+    }
+
+    PartFileConvert::retryJob(index);
+    PartFileConvert::processQueue();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
 } // namespace eMule

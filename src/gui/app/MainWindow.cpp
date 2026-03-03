@@ -4,6 +4,8 @@
 #include "app/UiState.h"
 #include "IpcProtocol.h"
 #include "dialogs/NetworkInfoDialog.h"
+#include "dialogs/ImportDownloadsDialog.h"
+#include "dialogs/FirstStartWizard.h"
 #include "dialogs/OptionsDialog.h"
 #include "panels/IrcPanel.h"
 #include "panels/KadPanel.h"
@@ -11,27 +13,37 @@
 #include "panels/SearchPanel.h"
 #include "panels/ServerPanel.h"
 #include "panels/SharedFilesPanel.h"
+#include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
+
+#include "dialogs/PasteLinksDialog.h"
 
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPainterPath>
+#include <QFile>
+#include <QSoundEffect>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
+#include <QSystemTrayIcon>
 #include <QToolBar>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -49,6 +61,13 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Restore saved window size (default 900×620 if no saved state).
     theUiState.bindMainWindow(this);
+
+    // System tray icon for popup notifications
+    if (QSystemTrayIcon::isSystemTrayAvailable()) {
+        m_trayIcon = new QSystemTrayIcon(windowIcon(), this);
+        m_trayIcon->setToolTip(QStringLiteral("eMule Qt"));
+        m_trayIcon->show();
+    }
 
     // Clipboard monitoring — prompt user when ed2k file links are copied (MFC SearchClipboard)
     connect(QApplication::clipboard(), &QClipboard::dataChanged,
@@ -108,7 +127,7 @@ void MainWindow::onConnectToggle()
 
 void MainWindow::showOptionsDialog(int page)
 {
-    OptionsDialog dlg(m_ipc, this);
+    OptionsDialog dlg(m_ipc, m_statsPanel, this);
     if (page >= 0 && page < OptionsDialog::PageCount)
         dlg.selectPage(page);
     dlg.exec();
@@ -176,6 +195,39 @@ void MainWindow::setNetworkStats(quint32 users, quint32 files)
     m_statusUsersLabel->setText(tr("Users: %1 | Files: %2")
         .arg(QLocale().toString(users))
         .arg(QLocale().toString(files)));
+}
+
+void MainWindow::updateTransferRates(double upKBs, double downKBs,
+                                     double upOH, double downOH)
+{
+    if (thePrefs.showOverhead()) {
+        m_statusUpLabel->setText(QStringLiteral("Up: %1(%2)")
+            .arg(upKBs, 0, 'f', 1).arg(upOH, 0, 'f', 1));
+        m_statusDownLabel->setText(QStringLiteral("Down: %1(%2)")
+            .arg(downKBs, 0, 'f', 1).arg(downOH, 0, 'f', 1));
+    } else {
+        m_statusUpLabel->setText(QStringLiteral("Up: %1").arg(upKBs, 0, 'f', 1));
+        m_statusDownLabel->setText(QStringLiteral("Down: %1").arg(downKBs, 0, 'f', 1));
+    }
+}
+
+void MainWindow::showNotification(const QString& title, const QString& message)
+{
+    // System tray popup
+    if (m_trayIcon && QSystemTrayIcon::supportsMessages())
+        m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 5000);
+
+    // Play notification sound (if configured)
+    if (thePrefs.notifySoundType() == 1) {
+        const QString soundFile = thePrefs.notifySoundFile();
+        if (!soundFile.isEmpty() && QFile::exists(soundFile)) {
+            if (!m_notifySound) {
+                m_notifySound = new QSoundEffect(this);
+            }
+            m_notifySound->setSource(QUrl::fromLocalFile(soundFile));
+            m_notifySound->play();
+        }
+    }
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -263,6 +315,126 @@ void MainWindow::onClipboardChanged()
 }
 
 // ---------------------------------------------------------------------------
+// Tools menu
+// ---------------------------------------------------------------------------
+
+void MainWindow::buildToolsMenu()
+{
+    m_toolsMenu->clear();
+
+    m_toolsMenu->addAction(
+        QIcon(QStringLiteral(":/icons/Incoming.ico")),
+        tr("Open Incoming Folder..."),
+        this, &MainWindow::onOpenIncomingFolder);
+
+    m_toolsMenu->addAction(
+        QIcon(QStringLiteral(":/icons/Convert.ico")),
+        tr("Import Downloads (eM,eD,ON)..."),
+        this, &MainWindow::onImportDownloads);
+
+    m_toolsMenu->addAction(
+        QIcon(QStringLiteral(":/icons/Wizard.ico")),
+        tr("eMule First Runtime Wizard..."),
+        this, &MainWindow::onFirstTimeWizard);
+
+    m_toolsMenu->addAction(
+        QIcon(QStringLiteral(":/icons/IPFilter.ico")),
+        tr("IP Filter..."),
+        this, &MainWindow::onIPFilter);
+
+    m_toolsMenu->addAction(
+        QIcon(QStringLiteral(":/icons/eD2kLinkPaste.ico")),
+        tr("Paste eD2K Links..."),
+        this, &MainWindow::onPasteLinks);
+
+    m_toolsMenu->addSeparator();
+
+    // Links submenu
+    auto* linksMenu = m_toolsMenu->addMenu(
+        QIcon(QStringLiteral(":/icons/Web.ico")), tr("Links"));
+    linksMenu->addAction(tr("eMule Homepage"), this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com")));
+    });
+    linksMenu->addAction(tr("FAQ"), this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com/home/perl/help.cgi")));
+    });
+    linksMenu->addAction(tr("Version Check"), this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com/home/perl/update.cgi")));
+    });
+
+    // Scheduler submenu
+    auto* schedMenu = m_toolsMenu->addMenu(
+        QIcon(QStringLiteral(":/icons/Scheduler.ico")), tr("Scheduler"));
+
+    const bool schedOn = thePrefs.schedulerEnabled();
+    schedMenu->addAction(
+        schedOn ? tr("Disable Scheduler") : tr("Enable Scheduler"),
+        this, &MainWindow::onSchedulerToggle);
+
+    // Fetch schedule entries from daemon and append them
+    if (m_ipc && m_ipc->isConnected()) {
+        Ipc::IpcMessage req(Ipc::IpcMsgType::GetSchedules);
+        m_ipc->sendRequest(std::move(req), [schedMenu](const Ipc::IpcMessage& resp) {
+            if (!resp.fieldBool(0))
+                return;
+            const QCborMap data = resp.fieldMap(1);
+            const QCborArray schedArr = data.value(QStringLiteral("schedules")).toArray();
+            if (schedArr.isEmpty())
+                return;
+            schedMenu->addSeparator();
+            for (const auto& item : schedArr) {
+                const QCborMap m = item.toMap();
+                const QString title = m.value(QStringLiteral("title")).toString();
+                auto* act = schedMenu->addAction(title);
+                act->setEnabled(false);
+            }
+        });
+    }
+}
+
+void MainWindow::onOpenIncomingFolder()
+{
+    QDesktopServices::openUrl(QUrl::fromLocalFile(thePrefs.incomingDir()));
+}
+
+void MainWindow::onImportDownloads()
+{
+    ImportDownloadsDialog dlg(m_ipc, this);
+    dlg.exec();
+}
+
+void MainWindow::onFirstTimeWizard()
+{
+    FirstStartWizard wizard(m_ipc, this);
+    wizard.exec();
+}
+
+void MainWindow::onIPFilter()
+{
+    showOptionsDialog(OptionsDialog::PageSecurity);
+}
+
+void MainWindow::onPasteLinks()
+{
+    PasteLinksDialog dlg(m_ipc, this);
+    dlg.exec();
+}
+
+void MainWindow::onSchedulerToggle()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    const bool newVal = !thePrefs.schedulerEnabled();
+    thePrefs.setSchedulerEnabled(newVal);
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
+    req.append(QStringLiteral("schedulerEnabled"));
+    req.append(newVal);
+    m_ipc->sendRequest(std::move(req));
+}
+
+// ---------------------------------------------------------------------------
 // Private setup helpers
 // ---------------------------------------------------------------------------
 
@@ -274,9 +446,12 @@ void MainWindow::setupToolbar()
     toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     toolbar->setIconSize(QSize(32, 32));
 
+    const bool useOriginal = thePrefs.useOriginalIcons();
+
     // Connect/Disconnect button (not part of tab group)
     m_connectAction = toolbar->addAction(
-        style()->standardIcon(QStyle::SP_MediaStop),
+        useOriginal ? QIcon(QStringLiteral(":/icons/ConnectDrop.ico"))
+                    : style()->standardIcon(QStyle::SP_MediaStop),
         tr("Disconnect"));
     connect(m_connectAction, &QAction::triggered, this, &MainWindow::onConnectToggle);
 
@@ -290,24 +465,26 @@ void MainWindow::setupToolbar()
     struct TabDef {
         const char* label;
         QStyle::StandardPixmap icon;
+        const char* originalIcon;
         Tab tab;
     };
 
-    // ToDo: Replace StandardPixmap icons with proper eMule icons (Module 27)
     static constexpr TabDef tabs[] = {
-        {"Kad",          QStyle::SP_DriveNetIcon,       TabKad},
-        {"Servers",      QStyle::SP_ComputerIcon,       TabServers},
-        {"Transfers",    QStyle::SP_ArrowDown,          TabTransfers},
-        {"Search",       QStyle::SP_FileDialogContentsView, TabSearch},
-        {"Shared Files", QStyle::SP_DirOpenIcon,        TabSharedFiles},
-        {"Messages",     QStyle::SP_MessageBoxInformation, TabMessages},
-        {"IRC",          QStyle::SP_DialogApplyButton,  TabIRC},
-        {"Statistics",   QStyle::SP_DialogHelpButton,   TabStatistics},
+        {"Kad",          QStyle::SP_DriveNetIcon,           "Kad.ico",             TabKad},
+        {"Servers",      QStyle::SP_ComputerIcon,           "ServerList.ico",      TabServers},
+        {"Transfers",    QStyle::SP_ArrowDown,              "Transfer.ico",        TabTransfers},
+        {"Search",       QStyle::SP_FileDialogContentsView, "Search.ico",          TabSearch},
+        {"Shared Files", QStyle::SP_DirOpenIcon,            "SharedFilesList.ico", TabSharedFiles},
+        {"Messages",     QStyle::SP_MessageBoxInformation,  "Messages.ico",        TabMessages},
+        {"IRC",          QStyle::SP_DialogApplyButton,      "IRC.ico",             TabIRC},
+        {"Statistics",   QStyle::SP_DialogHelpButton,       "Statistics.ico",      TabStatistics},
     };
 
-    for (const auto& [label, icon, tab] : tabs) {
-        auto* action = toolbar->addAction(style()->standardIcon(icon),
-                                          tr(label));
+    for (const auto& [label, icon, resIcon, tab] : tabs) {
+        const QIcon qicon = useOriginal
+            ? QIcon(QStringLiteral(":/icons/") + QLatin1String(resIcon))
+            : style()->standardIcon(icon);
+        auto* action = toolbar->addAction(qicon, tr(label));
         action->setCheckable(true);
         action->setData(static_cast<int>(tab));
         m_tabGroup->addAction(action);
@@ -319,32 +496,44 @@ void MainWindow::setupToolbar()
 
     // Options, Tools, Help (non-tab actions)
     auto* optionsAction = toolbar->addAction(
-        style()->standardIcon(QStyle::SP_FileDialogDetailedView),
+        useOriginal ? QIcon(QStringLiteral(":/icons/Preferences.ico"))
+                    : style()->standardIcon(QStyle::SP_FileDialogDetailedView),
         tr("Options"));
     connect(optionsAction, &QAction::triggered, this, &MainWindow::onOptionsClicked);
 
     auto* toolsAction = toolbar->addAction(
-        style()->standardIcon(QStyle::SP_FileDialogListView),
+        QIcon(QStringLiteral(":/icons/Tools.ico")),
         tr("Tools"));
-    Q_UNUSED(toolsAction);
-    // ToDo: Open tools menu
+    m_toolsMenu = new QMenu(this);
+    connect(m_toolsMenu, &QMenu::aboutToShow, this, &MainWindow::buildToolsMenu);
+    if (auto* toolsBtn = qobject_cast<QToolButton*>(toolbar->widgetForAction(toolsAction))) {
+        toolsBtn->setMenu(m_toolsMenu);
+        toolsBtn->setPopupMode(QToolButton::InstantPopup);
+    }
 
     auto* helpAction = toolbar->addAction(
-        style()->standardIcon(QStyle::SP_TitleBarContextHelpButton),
+        useOriginal ? QIcon(QStringLiteral(":/icons/Help.ico"))
+                    : style()->standardIcon(QStyle::SP_TitleBarContextHelpButton),
         tr("Help"));
-    Q_UNUSED(helpAction);
-    // ToDo: Open help
+    connect(helpAction, &QAction::triggered, this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://emule-qt.org")));
+    });
 }
 
 void MainWindow::updateConnectButton()
 {
     const bool anyConnected = m_ed2kConnected || m_kadRunning;
+    const bool useOriginal = thePrefs.useOriginalIcons();
     if (anyConnected) {
         m_connectAction->setText(tr("Disconnect"));
-        m_connectAction->setIcon(style()->standardIcon(QStyle::SP_MediaStop));
+        m_connectAction->setIcon(
+            useOriginal ? QIcon(QStringLiteral(":/icons/ConnectDrop.ico"))
+                        : style()->standardIcon(QStyle::SP_MediaStop));
     } else {
         m_connectAction->setText(tr("Connect"));
-        m_connectAction->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+        m_connectAction->setIcon(
+            useOriginal ? QIcon(QStringLiteral(":/icons/ConnectDo.ico"))
+                        : style()->standardIcon(QStyle::SP_MediaPlay));
     }
 }
 
@@ -457,15 +646,9 @@ void MainWindow::setupPages()
     m_ircPanel = new IrcPanel(this);
     m_pages->addWidget(m_ircPanel);
 
-    // Placeholder widget for unimplemented Statistics tab
-    {
-        auto* placeholder = new QWidget(this);
-        auto* layout = new QVBoxLayout(placeholder);
-        auto* label = new QLabel(tr("Not implemented yet"), placeholder);
-        label->setAlignment(Qt::AlignCenter);
-        layout->addWidget(label);
-        m_pages->addWidget(placeholder);
-    }
+    // Tab 7: Statistics
+    m_statsPanel = new StatisticsPanel(this);
+    m_pages->addWidget(m_statsPanel);
 }
 
 // ---------------------------------------------------------------------------

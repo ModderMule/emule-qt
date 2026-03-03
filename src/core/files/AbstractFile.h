@@ -48,7 +48,7 @@ public:
     [[nodiscard]] bool hasNullHash() const;
 
     // ED2K link generation
-    [[nodiscard]] QString getED2kLink(bool hashset = false, bool html = false) const;
+    [[nodiscard]] QString getED2kLink(bool hashset = false, bool html = false, bool hostname = false) const;
 
     // File size
     [[nodiscard]] EMFileSize fileSize() const { return m_fileSize; }

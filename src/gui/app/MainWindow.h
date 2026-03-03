@@ -16,7 +16,10 @@
 class QAction;
 class QActionGroup;
 class QLabel;
+class QMenu;
+class QSoundEffect;
 class QStackedWidget;
+class QSystemTrayIcon;
 
 namespace eMule {
 
@@ -27,6 +30,7 @@ class MessagesPanel;
 class SearchPanel;
 class ServerPanel;
 class SharedFilesPanel;
+class StatisticsPanel;
 class TransferPanel;
 
 /// Small status bar widget showing a world globe with two arrows:
@@ -96,6 +100,7 @@ public:
     [[nodiscard]] SharedFilesPanel* sharedFilesPanel() const { return m_sharedFilesPanel; }
     [[nodiscard]] MessagesPanel* messagesPanel() const { return m_messagesPanel; }
     [[nodiscard]] IrcPanel* ircPanel() const { return m_ircPanel; }
+    [[nodiscard]] StatisticsPanel* statisticsPanel() const { return m_statsPanel; }
 
     /// Update the eD2K status label in the footer.
     void setEd2kStatus(bool connected, bool connecting, bool firewalled);
@@ -105,6 +110,13 @@ public:
 
     /// Update the Users/Files label in the footer with Kad network estimates.
     void setNetworkStats(quint32 users, quint32 files);
+
+    /// Update the Up/Down rate labels in the status bar (values in KB/s).
+    void updateTransferRates(double upKBs, double downKBs,
+                             double upOverheadKBs, double downOverheadKBs);
+
+    /// Show a system tray notification popup (with optional sound).
+    void showNotification(const QString& title, const QString& message);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -116,6 +128,13 @@ private slots:
     void onOptionsClicked();
     void showNetworkInfo();
     void onClipboardChanged();
+    void buildToolsMenu();
+    void onOpenIncomingFolder();
+    void onImportDownloads();
+    void onFirstTimeWizard();
+    void onIPFilter();
+    void onPasteLinks();
+    void onSchedulerToggle();
 
 private:
     void setupToolbar();
@@ -127,6 +146,7 @@ private:
     QAction* m_connectAction = nullptr;
     QActionGroup* m_tabGroup = nullptr;
     IpcClient* m_ipc = nullptr;
+    QMenu* m_toolsMenu = nullptr;
 
     // Tab panels
     KadPanel* m_kadPanel = nullptr;
@@ -136,7 +156,7 @@ private:
     SharedFilesPanel* m_sharedFilesPanel = nullptr;
     MessagesPanel* m_messagesPanel = nullptr;
     IrcPanel* m_ircPanel = nullptr;
-    // ToDo: Add Statistics panel
+    StatisticsPanel* m_statsPanel = nullptr;
 
     // Status bar labels
     QLabel* m_statusMsg = nullptr;
@@ -151,6 +171,10 @@ private:
 
     // Clipboard monitoring (MFC SearchClipboard equivalent)
     QString m_lastClipboardContents;
+
+    // System tray icon for popup notifications
+    QSystemTrayIcon* m_trayIcon = nullptr;
+    QSoundEffect* m_notifySound = nullptr;
 
     // Cached status for world icon
     bool m_ed2kConnected = false;

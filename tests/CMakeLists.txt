@@ -245,4 +245,12 @@ if(EMULE_LIVE_TESTS)
     emule_add_test(tst_ServerDownloadLive FOLDER "LiveNetwork")
     target_compile_definitions(tst_ServerDownloadLive PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
     set_tests_properties(tst_ServerDownloadLive PROPERTIES LABELS "live" TIMEOUT 120)
+
+    emule_add_test(tst_IrcLiveConnect FOLDER "LiveNetwork")
+    target_compile_definitions(tst_IrcLiveConnect PRIVATE QTEST_FUNCTION_TIMEOUT=30000)
+    set_tests_properties(tst_IrcLiveConnect PROPERTIES LABELS "live" TIMEOUT 30)
+
+    emule_add_test(tst_SmtpSendEmail FOLDER "LiveNetwork")
+    target_compile_definitions(tst_SmtpSendEmail PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
+    set_tests_properties(tst_SmtpSendEmail PROPERTIES LABELS "live" TIMEOUT 60)
 endif()

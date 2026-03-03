@@ -5,8 +5,10 @@
 
 #include "app/CoreSession.h"
 #include "app/AppContext.h"
+#include "ipfilter/IPFilter.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "files/KnownFileList.h"
 #include "friends/FriendList.h"
 #include "files/SharedFileList.h"
@@ -24,9 +26,12 @@
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
+#include "transfer/Scheduler.h"
+#include "net/LastCommonRouteFinder.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
+#include "upnp/UPnPManager.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
@@ -51,9 +56,12 @@ CoreSession::CoreSession(QObject* parent)
 CoreSession::~CoreSession()
 {
     stop();
+    shutdownScheduler();
+    shutdownUPnP();
     shutdownKademlia();
     shutdownServerConnect();
     shutdownClientInfra();
+    shutdownUSS();
     shutdownUploadPipeline();
     shutdownSearch();
 }
@@ -63,10 +71,13 @@ void CoreSession::start()
     logInfo(QStringLiteral("Starting core — TCP port %1, UDP port %2")
                 .arg(thePrefs.port()).arg(thePrefs.udpPort()));
     initUploadPipeline();
+    initUSS();
     initClientInfra();
     initSearch();
     initServerConnect();
     initKademlia();
+    initUPnP();
+    initScheduler();
     m_tickCounter = 0;
     m_timer.start();
 }
@@ -179,6 +190,7 @@ void CoreSession::onTimer()
 
     // Slow path — every 10th tick (~1s)
     if (m_tickCounter % 10 == 0) {
+        updateUSSParams();
         if (theApp.clientCredits) {
             const QString creditsPath = QDir(thePrefs.configDir()).filePath(
                 QStringLiteral("clients.met"));
@@ -198,7 +210,89 @@ void CoreSession::onTimer()
             theApp.serverConnect->checkForTimeout();
             theApp.serverConnect->keepConnectionAlive();
         }
+        if (theApp.scheduler && thePrefs.schedulerEnabled())
+            theApp.scheduler->check();
+
+        // UPnP refresh every ~30s (300 ticks)
+        if (m_upnpManager && m_tickCounter % 300 == 0)
+            m_upnpManager->checkAndRefresh();
     }
+}
+
+// ---------------------------------------------------------------------------
+// initUSS — create and start LastCommonRouteFinder (Upload SpeedSense)
+// ---------------------------------------------------------------------------
+
+void CoreSession::initUSS()
+{
+    if (m_lastCommonRouteFinder)
+        return;
+
+    m_lastCommonRouteFinder = std::make_unique<LastCommonRouteFinder>();
+    theApp.lastCommonRouteFinder = m_lastCommonRouteFinder.get();
+
+    connect(m_lastCommonRouteFinder.get(), &LastCommonRouteFinder::needMoreHosts,
+            this, [this] {
+        std::vector<uint32> ips;
+        if (theApp.serverList) {
+            for (const auto& srv : theApp.serverList->servers()) {
+                if (srv->ip() != 0)
+                    ips.push_back(srv->ip());
+            }
+        }
+        if (theApp.clientList) {
+            theApp.clientList->forEachClient([&ips](UpDownClient* c) {
+                uint32 ip = c->connectIP();
+                if (ip != 0)
+                    ips.push_back(ip);
+            });
+        }
+        if (!ips.empty())
+            m_lastCommonRouteFinder->addHostsToCheck(ips);
+    });
+
+    m_lastCommonRouteFinder->start();
+    logInfo(QStringLiteral("Upload SpeedSense (USS) thread started"));
+}
+
+// ---------------------------------------------------------------------------
+// shutdownUSS — stop and release LastCommonRouteFinder
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownUSS()
+{
+    if (!m_lastCommonRouteFinder)
+        return;
+
+    m_lastCommonRouteFinder->endThread();
+    m_lastCommonRouteFinder->wait();
+
+    if (theApp.lastCommonRouteFinder == m_lastCommonRouteFinder.get())
+        theApp.lastCommonRouteFinder = nullptr;
+    m_lastCommonRouteFinder.reset();
+}
+
+// ---------------------------------------------------------------------------
+// updateUSSParams — feed current prefs to the USS thread each second
+// ---------------------------------------------------------------------------
+
+void CoreSession::updateUSSParams()
+{
+    if (!m_lastCommonRouteFinder)
+        return;
+
+    USSParams p;
+    p.enabled = thePrefs.dynUpEnabled();
+    p.pingTolerance = thePrefs.dynUpPingTolerance() / 100.0;
+    p.pingToleranceMilliseconds = static_cast<uint32>(thePrefs.dynUpPingToleranceMs());
+    p.useMillisecondPingTolerance = thePrefs.dynUpUseMillisecondPingTolerance();
+    p.goingUpDivider = static_cast<uint32>(thePrefs.dynUpGoingUpDivider());
+    p.goingDownDivider = static_cast<uint32>(thePrefs.dynUpGoingDownDivider());
+    p.numberOfPingsForAverage = static_cast<uint32>(thePrefs.dynUpNumberOfPings());
+    p.minUpload = thePrefs.minUpload() * 1024;  // KB/s → bytes/s
+    p.maxUpload = (thePrefs.maxUpload() == 0) ? UINT32_MAX : thePrefs.maxUpload() * 1024;
+    p.curUpload = (thePrefs.maxUpload() == 0) ? UINT32_MAX : thePrefs.maxUpload() * 1024;
+    m_lastCommonRouteFinder->setPrefs(p);
 }
 
 // ---------------------------------------------------------------------------
@@ -354,6 +448,15 @@ void CoreSession::shutdownServerConnect()
 
 void CoreSession::initClientInfra()
 {
+    // Create and load IP filter
+    if (!theApp.ipFilter) {
+        m_ipFilter = std::make_unique<IPFilter>();
+        int count = m_ipFilter->loadFromDefaultFile(thePrefs.configDir());
+        theApp.ipFilter = m_ipFilter.get();
+        if (count > 0)
+            logInfo(QStringLiteral("IP filter loaded: %1 entries").arg(count));
+    }
+
     if (!theApp.clientList) {
         m_clientList = std::make_unique<ClientList>(this);
         theApp.clientList = m_clientList.get();
@@ -404,6 +507,11 @@ void CoreSession::shutdownClientInfra()
     if (m_clientList && theApp.clientList == m_clientList.get())
         theApp.clientList = nullptr;
     m_clientList.reset();
+
+    if (m_ipFilter) {
+        theApp.ipFilter = nullptr;
+        m_ipFilter.reset();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -544,6 +652,88 @@ void CoreSession::shutdownSearch()
     if (m_searchList && theApp.searchList == m_searchList.get())
         theApp.searchList = nullptr;
     m_searchList.reset();
+}
+
+// ---------------------------------------------------------------------------
+// initScheduler — create Scheduler, load schedules, save originals
+// ---------------------------------------------------------------------------
+
+void CoreSession::initScheduler()
+{
+    if (m_scheduler)
+        return;
+
+    m_scheduler = std::make_unique<Scheduler>(this);
+    theApp.scheduler = m_scheduler.get();
+
+    if (theApp.downloadQueue)
+        m_scheduler->setDownloadQueue(theApp.downloadQueue);
+
+    int loaded = m_scheduler->loadFromFile(thePrefs.configDir());
+    if (loaded > 0)
+        logInfo(QStringLiteral("Loaded %1 scheduler entries").arg(loaded));
+
+    m_scheduler->saveOriginals();
+}
+
+// ---------------------------------------------------------------------------
+// shutdownScheduler — restore originals, save, release
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownScheduler()
+{
+    if (!m_scheduler)
+        return;
+
+    m_scheduler->restoreOriginals();
+    m_scheduler->saveToFile(thePrefs.configDir());
+    theApp.scheduler = nullptr;
+    m_scheduler.reset();
+}
+
+// ---------------------------------------------------------------------------
+// initUPnP — create and start UPnP port mapping if enabled
+// ---------------------------------------------------------------------------
+
+void CoreSession::initUPnP()
+{
+    if (!thePrefs.enableUPnP() || m_upnpManager)
+        return;
+
+    m_upnpManager = std::make_unique<UPnPManager>(this);
+    theApp.upnpManager = m_upnpManager.get();
+
+    connect(m_upnpManager.get(), &UPnPManager::discoveryComplete,
+            this, [](bool success) {
+        if (success)
+            logInfo(QStringLiteral("UPnP: port mapping successful"));
+        else
+            logWarning(QStringLiteral("UPnP: port mapping failed — check router settings"));
+    });
+
+    m_upnpManager->startDiscovery(
+        static_cast<uint16>(thePrefs.port()),
+        static_cast<uint16>(thePrefs.udpPort()));
+
+    logInfo(QStringLiteral("UPnP: discovery started for TCP %1 / UDP %2")
+                .arg(thePrefs.port()).arg(thePrefs.udpPort()));
+}
+
+// ---------------------------------------------------------------------------
+// shutdownUPnP — remove port mappings and release manager
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownUPnP()
+{
+    if (!m_upnpManager)
+        return;
+
+    if (thePrefs.closeUPnPOnExit())
+        m_upnpManager->deletePorts();
+
+    if (theApp.upnpManager == m_upnpManager.get())
+        theApp.upnpManager = nullptr;
+    m_upnpManager.reset();
 }
 
 } // namespace eMule

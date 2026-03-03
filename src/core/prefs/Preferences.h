@@ -202,6 +202,36 @@ public:
     [[nodiscard]] uint32 maxLogLines() const;
     void setMaxLogLines(uint32 val);
 
+    [[nodiscard]] int logLevel() const;
+    void setLogLevel(int val);
+
+    [[nodiscard]] bool verboseLogToDisk() const;
+    void setVerboseLogToDisk(bool val);
+
+    [[nodiscard]] bool logSourceExchange() const;
+    void setLogSourceExchange(bool val);
+
+    [[nodiscard]] bool logBannedClients() const;
+    void setLogBannedClients(bool val);
+
+    [[nodiscard]] bool logRatingDescReceived() const;
+    void setLogRatingDescReceived(bool val);
+
+    [[nodiscard]] bool logSecureIdent() const;
+    void setLogSecureIdent(bool val);
+
+    [[nodiscard]] bool logFilteredIPs() const;
+    void setLogFilteredIPs(bool val);
+
+    [[nodiscard]] bool logFileSaving() const;
+    void setLogFileSaving(bool val);
+
+    [[nodiscard]] bool logA4AF() const;
+    void setLogA4AF(bool val);
+
+    [[nodiscard]] bool logUlDlEvents() const;
+    void setLogUlDlEvents(bool val);
+
     // -- Files ----------------------------------------------------------------
 
     [[nodiscard]] uint16 maxSourcesPerFile() const;
@@ -242,6 +272,74 @@ public:
     [[nodiscard]] uint32 fileBufferTimeLimit() const;
     void setFileBufferTimeLimit(uint32 val);
 
+    // -- Extended (PPgTweaks) -------------------------------------------------
+
+    [[nodiscard]] bool useCreditSystem() const;
+    void setUseCreditSystem(bool val);
+
+    [[nodiscard]] bool a4afSaveCpu() const;
+    void setA4afSaveCpu(bool val);
+
+    [[nodiscard]] bool autoArchivePreviewStart() const;
+    void setAutoArchivePreviewStart(bool val);
+
+    [[nodiscard]] QString ed2kHostname() const;
+    void setEd2kHostname(const QString& val);
+
+    [[nodiscard]] bool showExtControls() const;
+    void setShowExtControls(bool val);
+
+    [[nodiscard]] int commitFiles() const;
+    void setCommitFiles(int val);
+
+    [[nodiscard]] int extractMetaData() const;
+    void setExtractMetaData(int val);
+
+    [[nodiscard]] uint32 queueSize() const;
+    void setQueueSize(uint32 val);
+
+    // Upload SpeedSense (USS)
+    [[nodiscard]] bool dynUpEnabled() const;
+    void setDynUpEnabled(bool val);
+
+    [[nodiscard]] int dynUpPingTolerance() const;
+    void setDynUpPingTolerance(int val);
+
+    [[nodiscard]] int dynUpPingToleranceMs() const;
+    void setDynUpPingToleranceMs(int val);
+
+    [[nodiscard]] bool dynUpUseMillisecondPingTolerance() const;
+    void setDynUpUseMillisecondPingTolerance(bool val);
+
+    [[nodiscard]] int dynUpGoingUpDivider() const;
+    void setDynUpGoingUpDivider(int val);
+
+    [[nodiscard]] int dynUpGoingDownDivider() const;
+    void setDynUpGoingDownDivider(int val);
+
+    [[nodiscard]] int dynUpNumberOfPings() const;
+    void setDynUpNumberOfPings(int val);
+
+#ifdef Q_OS_WIN
+    [[nodiscard]] bool autotakeEd2kLinks() const;
+    void setAutotakeEd2kLinks(bool val);
+
+    [[nodiscard]] bool openPortsOnWinFirewall() const;
+    void setOpenPortsOnWinFirewall(bool val);
+
+    [[nodiscard]] bool sparsePartFiles() const;
+    void setSparsePartFiles(bool val);
+
+    [[nodiscard]] bool allocFullFile() const;
+    void setAllocFullFile(bool val);
+
+    [[nodiscard]] bool resolveShellLinks() const;
+    void setResolveShellLinks(bool val);
+
+    [[nodiscard]] int multiUserSharing() const;
+    void setMultiUserSharing(int val);
+#endif
+
     // -- Statistics -----------------------------------------------------------
 
     [[nodiscard]] float connMaxDownRate() const;
@@ -265,6 +363,21 @@ public:
     [[nodiscard]] uint32 statsAverageMinutes() const;
     void setStatsAverageMinutes(uint32 val);
 
+    [[nodiscard]] uint32 graphsUpdateSec() const;
+    void setGraphsUpdateSec(uint32 val);
+
+    [[nodiscard]] uint32 statsUpdateSec() const;
+    void setStatsUpdateSec(uint32 val);
+
+    [[nodiscard]] bool fillGraphs() const;
+    void setFillGraphs(bool val);
+
+    [[nodiscard]] uint32 statsConnectionsMax() const;
+    void setStatsConnectionsMax(uint32 val);
+
+    [[nodiscard]] uint32 statsConnectionsRatio() const;
+    void setStatsConnectionsRatio(uint32 val);
+
     // -- Security -------------------------------------------------------------
 
     [[nodiscard]] uint32 ipFilterLevel() const;
@@ -287,6 +400,33 @@ public:
     [[nodiscard]] QString ircPerformString() const;
     void setIrcPerformString(const QString& val);
 
+    [[nodiscard]] bool ircConnectHelpChannel() const;
+    void setIrcConnectHelpChannel(bool val);
+
+    [[nodiscard]] bool ircLoadChannelList() const;
+    void setIrcLoadChannelList(bool val);
+
+    [[nodiscard]] bool ircAddTimestamp() const;
+    void setIrcAddTimestamp(bool val);
+
+    [[nodiscard]] bool ircIgnoreMiscInfoMessages() const;
+    void setIrcIgnoreMiscInfoMessages(bool val);
+
+    [[nodiscard]] bool ircIgnoreJoinMessages() const;
+    void setIrcIgnoreJoinMessages(bool val);
+
+    [[nodiscard]] bool ircIgnorePartMessages() const;
+    void setIrcIgnorePartMessages(bool val);
+
+    [[nodiscard]] bool ircIgnoreQuitMessages() const;
+    void setIrcIgnoreQuitMessages(bool val);
+
+    [[nodiscard]] bool ircUseChannelFilter() const;
+    void setIrcUseChannelFilter(bool val);
+
+    [[nodiscard]] QString ircChannelFilter() const;
+    void setIrcChannelFilter(const QString& val);
+
     // -- IPC Daemon -----------------------------------------------------------
 
     [[nodiscard]] bool ipcEnabled() const;
@@ -306,6 +446,10 @@ public:
     [[nodiscard]] int ipcRemotePollingMs() const;
     void setIpcRemotePollingMs(int val);
 
+    /// IPC authentication tokens (array for future multi-token support).
+    [[nodiscard]] QStringList ipcTokens() const;
+    void setIpcTokens(const QStringList& val);
+
     // -- Web Server -----------------------------------------------------------
 
     [[nodiscard]] bool webServerEnabled() const;
@@ -320,6 +464,11 @@ public:
     [[nodiscard]] QString webServerListenAddress() const;
     void setWebServerListenAddress(const QString& val);
 
+    // -- Scheduler ------------------------------------------------------------
+
+    [[nodiscard]] bool schedulerEnabled() const;
+    void setSchedulerEnabled(bool val);
+
     // -- Kademlia -------------------------------------------------------------
 
     [[nodiscard]] bool kadEnabled() const;
@@ -332,6 +481,9 @@ public:
 
     [[nodiscard]] uint16 maxConsPerFive() const;
     void setMaxConsPerFive(uint16 val);
+
+    [[nodiscard]] bool showOverhead() const;
+    void setShowOverhead(bool val);
 
     // -- Server management (extended) -----------------------------------------
 
@@ -374,6 +526,18 @@ public:
 
     [[nodiscard]] bool enableSpamFilter() const;
     void setEnableSpamFilter(bool val);
+
+    [[nodiscard]] QString messageFilter() const;
+    void setMessageFilter(const QString& val);
+
+    [[nodiscard]] QString commentFilter() const;
+    void setCommentFilter(const QString& val);
+
+    [[nodiscard]] bool showSmileys() const;
+    void setShowSmileys(bool val);
+
+    [[nodiscard]] bool indicateRatings() const;
+    void setIndicateRatings(bool val);
 
     // -- Security (extended) --------------------------------------------------
 
@@ -464,6 +628,9 @@ public:
     [[nodiscard]] bool useAutoCompletion() const;
     void setUseAutoCompletion(bool val);
 
+    [[nodiscard]] bool useOriginalIcons() const;
+    void setUseOriginalIcons(bool val);
+
     // -- GUI (Files page) -----------------------------------------------------
 
     [[nodiscard]] bool watchClipboard4ED2KLinks() const;
@@ -483,6 +650,48 @@ public:
 
     [[nodiscard]] bool autoCleanupFilenames() const;
     void setAutoCleanupFilenames(bool val);
+
+    // -- Notifications (GUI-side) --------------------------------------------
+
+    [[nodiscard]] int notifySoundType() const;       // 0=noSound, 1=soundFile, 2=speech
+    void setNotifySoundType(int val);
+    [[nodiscard]] QString notifySoundFile() const;
+    void setNotifySoundFile(const QString& val);
+
+    // -- Notifications (daemon-side triggers + email) -------------------------
+
+    [[nodiscard]] bool notifyOnLog() const;
+    void setNotifyOnLog(bool val);
+    [[nodiscard]] bool notifyOnChat() const;
+    void setNotifyOnChat(bool val);
+    [[nodiscard]] bool notifyOnChatMsg() const;
+    void setNotifyOnChatMsg(bool val);
+    [[nodiscard]] bool notifyOnDownloadAdded() const;
+    void setNotifyOnDownloadAdded(bool val);
+    [[nodiscard]] bool notifyOnDownloadFinished() const;
+    void setNotifyOnDownloadFinished(bool val);
+    [[nodiscard]] bool notifyOnNewVersion() const;
+    void setNotifyOnNewVersion(bool val);
+    [[nodiscard]] bool notifyOnUrgent() const;
+    void setNotifyOnUrgent(bool val);
+    [[nodiscard]] bool notifyEmailEnabled() const;
+    void setNotifyEmailEnabled(bool val);
+    [[nodiscard]] QString notifyEmailSmtpServer() const;
+    void setNotifyEmailSmtpServer(const QString& val);
+    [[nodiscard]] uint16 notifyEmailSmtpPort() const;
+    void setNotifyEmailSmtpPort(uint16 val);
+    [[nodiscard]] int notifyEmailSmtpAuth() const;
+    void setNotifyEmailSmtpAuth(int val);
+    [[nodiscard]] bool notifyEmailSmtpTls() const;
+    void setNotifyEmailSmtpTls(bool val);
+    [[nodiscard]] QString notifyEmailSmtpUser() const;
+    void setNotifyEmailSmtpUser(const QString& val);
+    [[nodiscard]] QString notifyEmailSmtpPassword() const;
+    void setNotifyEmailSmtpPassword(const QString& val);
+    [[nodiscard]] QString notifyEmailRecipient() const;
+    void setNotifyEmailRecipient(const QString& val);
+    [[nodiscard]] QString notifyEmailSender() const;
+    void setNotifyEmailSender(const QString& val);
 
     // -- UI State (persisted window layout) -----------------------------------
 
@@ -506,6 +715,9 @@ public:
 
     [[nodiscard]] QList<int> ircSplitSizes() const;
     void setIrcSplitSizes(const QList<int>& val);
+
+    [[nodiscard]] QList<int> statsSplitSizes() const;
+    void setStatsSplitSizes(const QList<int>& val);
 
     [[nodiscard]] int windowWidth() const;
     void setWindowWidth(int val);

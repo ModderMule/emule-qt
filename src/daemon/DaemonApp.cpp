@@ -15,6 +15,8 @@
 #include <QDateTime>
 #include <QUuid>
 
+#include <openssl/rand.h>
+
 #include <cstring>
 
 namespace eMule {
@@ -50,6 +52,18 @@ bool DaemonApp::start()
     // Start core session
     m_coreSession = std::make_unique<CoreSession>(this);
     m_coreSession->start();
+
+    // Generate IPC auth token on first run
+    auto tokens = thePrefs.ipcTokens();
+    if (tokens.isEmpty()) {
+        QByteArray raw(16, Qt::Uninitialized);
+        RAND_bytes(reinterpret_cast<unsigned char*>(raw.data()), 16);
+        QString token = QString::fromLatin1(raw.toHex());  // 32 hex chars
+        tokens.append(token);
+        thePrefs.setIpcTokens(tokens);
+        thePrefs.save();
+    }
+    logInfo(QStringLiteral("IPC auth token: %1").arg(tokens.first()));
 
     // Start IPC server
     m_ipcServer = std::make_unique<IpcServer>(this);

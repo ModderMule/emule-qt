@@ -7,12 +7,16 @@
 #include "IpcMessage.h"
 
 #include "app/AppContext.h"
+#include "net/SmtpClient.h"
+#include "prefs/Preferences.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/PartFile.h"
 #include "friends/FriendList.h"
 #include "utils/OtherFunctions.h"
 #include "kademlia/Kademlia.h"
+#include "upnp/UPnPManager.h"
+#include "utils/Log.h"
 #include "files/SharedFileList.h"
 #include "search/SearchList.h"
 #include "server/ServerConnect.h"
@@ -40,6 +44,8 @@ void CoreNotifierBridge::connectAll()
                 this, &CoreNotifierBridge::onDownloadAdded);
         connect(theApp.downloadQueue, &DownloadQueue::fileRemoved,
                 this, &CoreNotifierBridge::onDownloadRemoved);
+        connect(theApp.downloadQueue, &DownloadQueue::fileCompleted,
+                this, &CoreNotifierBridge::onDownloadCompleted);
 
         // Wire source signals for existing PartFiles (downloading tab)
         for (auto* pf : theApp.downloadQueue->files()) {
@@ -131,6 +137,12 @@ void CoreNotifierBridge::connectAll()
         connect(kad, &kad::Kademlia::statsUpdated,
                 this, [this](uint32_t, uint32_t) { onKadStateChanged(); });
     }
+
+    // UPnP
+    if (theApp.upnpManager) {
+        connect(theApp.upnpManager, &UPnPManager::discoveryComplete,
+                this, &CoreNotifierBridge::onUPnPDiscoveryComplete);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -149,17 +161,40 @@ void CoreNotifierBridge::onDownloadRemoved()
     m_ipcServer->broadcast(msg);
 }
 
+void CoreNotifierBridge::onDownloadCompleted(PartFile* file)
+{
+    // Broadcast IPC event (reuses PushDownloadUpdate)
+    IpcMessage msg(IpcMsgType::PushDownloadUpdate, 0);
+    m_ipcServer->broadcast(msg);
+
+    // Email notification for completed downloads
+    if (thePrefs.notifyOnDownloadFinished() && thePrefs.notifyEmailEnabled()) {
+        QString name = file ? file->fileName() : QStringLiteral("Unknown");
+        sendEmailNotification(
+            QStringLiteral("eMule: Download finished"),
+            QStringLiteral("Download completed: %1").arg(name));
+    }
+}
+
 void CoreNotifierBridge::onServerStateChanged()
 {
     IpcMessage msg(IpcMsgType::PushServerState, 0);
     QCborMap info;
-    info.insert(QStringLiteral("connected"),  theApp.isConnected());
+    bool connected = theApp.isConnected();
+    info.insert(QStringLiteral("connected"),  connected);
     info.insert(QStringLiteral("connecting"),
                 theApp.serverConnect && theApp.serverConnect->isConnecting());
     info.insert(QStringLiteral("firewalled"), theApp.isFirewalled());
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
     msg.append(info);
     m_ipcServer->broadcast(msg);
+
+    // Email notification for urgent: server connection lost
+    if (!connected && thePrefs.notifyOnUrgent() && thePrefs.notifyEmailEnabled()) {
+        sendEmailNotification(
+            QStringLiteral("eMule: Server connection lost"),
+            QStringLiteral("Warning: Server connection has been lost."));
+    }
 }
 
 void CoreNotifierBridge::onStatsUpdated()
@@ -250,6 +285,33 @@ void CoreNotifierBridge::connectClientChatSignal(UpDownClient* client)
 {
     connect(client, &UpDownClient::chatMessageReceived,
             this, &CoreNotifierBridge::onChatMessageReceived);
+}
+
+void CoreNotifierBridge::onUPnPDiscoveryComplete(bool success)
+{
+    logInfo(QStringLiteral("UPnP: discovery %1")
+                .arg(success ? QStringLiteral("succeeded") : QStringLiteral("failed")));
+}
+
+void CoreNotifierBridge::sendEmailNotification(const QString& subject, const QString& body)
+{
+    if (!thePrefs.notifyEmailEnabled())
+        return;
+
+    if (!m_smtp)
+        m_smtp = new SmtpClient(this);
+
+    m_smtp->sendMail(
+        thePrefs.notifyEmailSmtpServer(),
+        thePrefs.notifyEmailSmtpPort(),
+        thePrefs.notifyEmailSmtpTls(),
+        thePrefs.notifyEmailSmtpAuth(),
+        thePrefs.notifyEmailSmtpUser(),
+        thePrefs.notifyEmailSmtpPassword(),
+        thePrefs.notifyEmailSender(),
+        thePrefs.notifyEmailRecipient(),
+        subject,
+        body);
 }
 
 } // namespace eMule

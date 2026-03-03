@@ -2321,22 +2321,24 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
         return;
     }
 
-    // Basic keyword spam filter
-    static const QStringList spamKeywords = {
-        QStringLiteral("http://"), QStringLiteral("https://"),
-        QStringLiteral("www."), QStringLiteral(".com/"),
-        QStringLiteral("download free"), QStringLiteral("click here"),
-    };
-    for (const auto& keyword : spamKeywords) {
-        if (message.contains(keyword, Qt::CaseInsensitive)) {
-            m_isSpammer = true;
-            logDebug(QStringLiteral("Spam detected from %1: %2").arg(userName(), message));
-            return;
+    // Configurable keyword spam filter
+    if (thePrefs.enableSpamFilter()) {
+        const QString filterStr = thePrefs.messageFilter();
+        if (!filterStr.isEmpty()) {
+            const QStringList keywords = filterStr.split(QLatin1Char('|'));
+            for (const auto& keyword : keywords) {
+                const QString trimmed = keyword.trimmed();
+                if (!trimmed.isEmpty() && message.contains(trimmed, Qt::CaseInsensitive)) {
+                    m_isSpammer = true;
+                    logDebug(QStringLiteral("Spam detected from %1: %2").arg(userName(), message));
+                    return;
+                }
+            }
         }
     }
 
     // Captcha challenge for first message from unknown clients
-    if (m_supportsCaptcha && m_messagesReceived == 1 && !m_friend
+    if (thePrefs.useChatCaptchas() && m_supportsCaptcha && m_messagesReceived == 1 && !m_friend
         && m_chatCaptchaState == ChatCaptchaState::None)
     {
         // Generate a simple captcha image using Qt

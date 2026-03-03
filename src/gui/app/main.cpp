@@ -20,6 +20,7 @@
 #include "panels/SearchPanel.h"
 #include "panels/ServerPanel.h"
 #include "panels/SharedFilesPanel.h"
+#include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -196,6 +197,8 @@ int main(int argc, char* argv[])
         const QHostAddress addr(eMule::thePrefs.ipcListenAddress());
         const uint16_t port = eMule::thePrefs.ipcPort();
         ipcClient.setRemotePollingMs(eMule::thePrefs.ipcRemotePollingMs());
+        if (!eMule::thePrefs.ipcTokens().isEmpty())
+            ipcClient.setAuthToken(eMule::thePrefs.ipcTokens().first());
         const QString daemonPath = resolveDaemonPath();
 
         eMule::logInfo(QStringLiteral("Connecting to daemon at %1:%2...")
@@ -209,6 +212,7 @@ int main(int argc, char* argv[])
         mainWindow.searchPanel()->setIpcClient(&ipcClient);
         mainWindow.sharedFilesPanel()->setIpcClient(&ipcClient);
         mainWindow.messagesPanel()->setIpcClient(&ipcClient);
+        mainWindow.statisticsPanel()->setIpcClient(&ipcClient);
 
         // Wire daemon log messages to the LogWidget
         // PushLogMessage format: [logId(0), category(1), severity(2), message(3), timestamp(4)]
@@ -305,13 +309,84 @@ int main(int argc, char* argv[])
                 static_cast<quint32>(info.value(QStringLiteral("files")).toInteger()));
         });
 
+        // Wire notification push events to system tray popups
+        QObject::connect(&ipcClient, &eMule::IpcClient::downloadAdded,
+                         &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage&) {
+            if (eMule::thePrefs.notifyOnDownloadAdded())
+                mainWindow.showNotification(
+                    QObject::tr("Download Added"),
+                    QObject::tr("A new download has been added."));
+        });
+        QObject::connect(&ipcClient, &eMule::IpcClient::chatMessageReceived,
+                         &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
+            if (eMule::thePrefs.notifyOnChat()) {
+                const QString user = msg.fieldString(1);
+                const QString text = msg.fieldString(2);
+                mainWindow.showNotification(
+                    QObject::tr("Chat Message from %1").arg(user), text);
+            }
+        });
+        QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
+                         &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
+            if (eMule::thePrefs.notifyOnLog()) {
+                const auto severity = static_cast<QtMsgType>(msg.fieldInt(2));
+                // Only notify on warnings and above to avoid spamming
+                if (severity >= QtWarningMsg) {
+                    const QString text = msg.fieldString(3);
+                    mainWindow.showNotification(
+                        QObject::tr("Log Entry"), text);
+                }
+            }
+        });
+        QObject::connect(&ipcClient, &eMule::IpcClient::serverStateChanged,
+                         &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
+            if (eMule::thePrefs.notifyOnUrgent()) {
+                const QCborMap info = msg.fieldMap(0);
+                if (!info.value(QStringLiteral("connected")).toBool()
+                    && !info.value(QStringLiteral("connecting")).toBool()) {
+                    mainWindow.showNotification(
+                        QObject::tr("Connection Lost"),
+                        QObject::tr("Server connection has been lost."));
+                }
+            }
+        });
+
         // Reset status when IPC connection to daemon is lost
         QObject::connect(&ipcClient, &eMule::IpcClient::disconnected,
                          &mainWindow, [&mainWindow]() {
             mainWindow.setEd2kStatus(false, false, false);
             mainWindow.setKadStatus(false, false, false);
             mainWindow.setNetworkStats(0, 0);
+            mainWindow.updateTransferRates(0.0, 0.0, 0.0, 0.0);
         });
+
+        // Poll transfer rates for the status bar (1 second interval)
+        auto* rateTimer = new QTimer(&app);
+        rateTimer->setInterval(1000);
+        QObject::connect(rateTimer, &QTimer::timeout, &app,
+                         [&ipcClient, &mainWindow]() {
+            if (!ipcClient.isConnected())
+                return;
+            eMule::Ipc::IpcMessage req(eMule::Ipc::IpcMsgType::GetStats);
+            ipcClient.sendRequest(std::move(req),
+                                  [&mainWindow](const eMule::Ipc::IpcMessage& resp) {
+                if (resp.type() != eMule::Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+                    return;
+                const QCborMap stats = resp.fieldMap(1);
+                auto val = [&](QLatin1StringView k) {
+                    return stats.value(QString(k)).toDouble();
+                };
+                mainWindow.updateTransferRates(
+                    val(QLatin1StringView("rateUp")),
+                    val(QLatin1StringView("rateDown")),
+                    val(QLatin1StringView("upOverheadRate")),
+                    val(QLatin1StringView("downOverheadRate")));
+            });
+        });
+        QObject::connect(&ipcClient, &eMule::IpcClient::connected,
+                         rateTimer, [rateTimer]() { rateTimer->start(); });
+        QObject::connect(&ipcClient, &eMule::IpcClient::disconnected,
+                         rateTimer, [rateTimer]() { rateTimer->stop(); });
 
         // When the GUI closes, shut down the daemon only if we launched it.
         // If the daemon was already running independently, leave it alone.
@@ -367,7 +442,7 @@ int main(int argc, char* argv[])
         QTimer::singleShot(screenshotDelay, &app, [&mainWindow, &screenshotPath, &app, optionsPage]() {
             // If --options was specified, open the dialog and screenshot it
             if (optionsPage >= 0) {
-                eMule::OptionsDialog dlg(nullptr, &mainWindow);
+                eMule::OptionsDialog dlg(nullptr, mainWindow.statisticsPanel(), &mainWindow);
                 dlg.selectPage(optionsPage);
                 dlg.show();
                 dlg.repaint();

@@ -12,6 +12,7 @@
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 
 #include <QApplication>
@@ -319,11 +320,11 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         auto* act = m_downloadMenu->addAction(tr("Preview"));
         act->setEnabled(false); // ToDo: needs IPC support
     }
-    {
+    if (thePrefs.showExtControls()) {
         auto* act = m_downloadMenu->addAction(tr("Details..."));
         act->setEnabled(false); // ToDo: needs IPC support
     }
-    {
+    if (thePrefs.showExtControls()) {
         auto* act = m_downloadMenu->addAction(tr("Comments..."));
         act->setEnabled(false); // ToDo: needs IPC support
     }
@@ -387,7 +388,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // -- 7. Find / Search Related --
     connect(m_downloadMenu->addAction(tr("Find...")),
             &QAction::triggered, this, &TransferPanel::showFindDialog);
-    {
+    if (thePrefs.showExtControls()) {
         auto* act = m_downloadMenu->addAction(tr("Search Related Files"));
         act->setEnabled(false); // ToDo: needs search panel integration
     }
@@ -1193,8 +1194,10 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     QMenu menu(this);
 
     // 1. Details... (ToDo: needs client details dialog)
-    auto* detailsAct = menu.addAction(tr("Details..."));
-    detailsAct->setEnabled(false);
+    if (thePrefs.showExtControls()) {
+        auto* detailsAct = menu.addAction(tr("Details..."));
+        detailsAct->setEnabled(false);
+    }
 
     // 2. Add To Friends
     auto* addFriendAct = menu.addAction(tr("Add To Friends"));

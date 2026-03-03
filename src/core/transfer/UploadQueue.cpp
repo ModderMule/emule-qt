@@ -5,9 +5,11 @@
 /// data rate tracking, and session time-over checks.
 
 #include "transfer/UploadQueue.h"
+#include "app/AppContext.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "client/UpDownClient.h"
+#include "net/LastCommonRouteFinder.h"
 #include "files/KnownFile.h"
 #include "files/SharedFileList.h"
 #include "net/EMSocket.h"
@@ -223,7 +225,11 @@ bool UploadQueue::acceptNewClient(bool addOnNextConnect) const
     if (curUploadSlots >= MAX_UP_CLIENTS_ALLOWED)
         return false;
 
-    uint32 maxSpeed = thePrefs.maxUpload();
+    uint32 maxSpeed;
+    if (thePrefs.dynUpEnabled() && theApp.lastCommonRouteFinder)
+        maxSpeed = theApp.lastCommonRouteFinder->getUpload() / 1024;
+    else
+        maxSpeed = thePrefs.maxUpload();
     uint32 tgtRate = targetClientDataRate(false);
     uint32 minTgtRate = targetClientDataRate(true);
 
@@ -243,6 +249,11 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
     if (!allowEmptyWaitingQueue && m_waitingList.empty())
         return false;
 
+    // USS veto check
+    if (theApp.lastCommonRouteFinder && thePrefs.dynUpEnabled()
+        && !theApp.lastCommonRouteFinder->acceptNewClient())
+        return false;
+
     int curUploadSlots = static_cast<int>(m_uploadingList.size());
     if (curUploadSlots < MIN_UP_CLIENTS_ALLOWED)
         return true;
@@ -254,7 +265,11 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
     if (!acceptNewClient())
         return false;
 
-    uint32 maxSpeed = thePrefs.maxUpload();
+    uint32 maxSpeed;
+    if (thePrefs.dynUpEnabled() && theApp.lastCommonRouteFinder)
+        maxSpeed = theApp.lastCommonRouteFinder->getUpload() / 1024;
+    else
+        maxSpeed = thePrefs.maxUpload();
     uint32 upPerClient = targetClientDataRate(false);
 
     if (maxSpeed > 49) {

@@ -8,6 +8,7 @@
 
 #include "utils/Types.h"
 
+#include <QDateTime>
 #include <QString>
 #include <QStringList>
 
@@ -31,6 +32,9 @@ public:
     [[nodiscard]] int entryCount() const;
     [[nodiscard]] QString entryName(int index) const;
     [[nodiscard]] uint64 entrySize(int index) const;
+    [[nodiscard]] QDateTime entryMtime(int index) const;
+    [[nodiscard]] bool entryIsDir(int index) const;
+    [[nodiscard]] uint16 entryMode(int index) const;
     [[nodiscard]] QStringList entryNames() const;
 
     bool extractEntry(int index, const QString& destPath);

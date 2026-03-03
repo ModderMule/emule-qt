@@ -21,6 +21,9 @@ struct ArchiveReader::Impl {
     struct Entry {
         QString name;
         uint64 size = 0;
+        qint64 mtimeSecs = 0;
+        uint16 mode = 0;
+        bool isDir = false;
     };
 
     std::vector<Entry> entries;
@@ -75,6 +78,9 @@ bool ArchiveReader::open(const QString& filePath)
             pathname = archive_entry_pathname(entry);
         e.name = QString::fromUtf8(pathname);
         e.size = static_cast<uint64>(archive_entry_size(entry));
+        e.mtimeSecs = static_cast<qint64>(archive_entry_mtime(entry));
+        e.mode = static_cast<uint16>(archive_entry_perm(entry));
+        e.isDir = (archive_entry_filetype(entry) == AE_IFDIR);
         m_impl->entries.push_back(std::move(e));
         archive_read_data_skip(ar);
     }
@@ -122,6 +128,28 @@ uint64 ArchiveReader::entrySize(int index) const
     if (index < 0 || index >= static_cast<int>(m_impl->entries.size()))
         return 0;
     return m_impl->entries[static_cast<size_t>(index)].size;
+}
+
+QDateTime ArchiveReader::entryMtime(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_impl->entries.size()))
+        return {};
+    auto secs = m_impl->entries[static_cast<size_t>(index)].mtimeSecs;
+    return (secs > 0) ? QDateTime::fromSecsSinceEpoch(secs) : QDateTime{};
+}
+
+bool ArchiveReader::entryIsDir(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_impl->entries.size()))
+        return false;
+    return m_impl->entries[static_cast<size_t>(index)].isDir;
+}
+
+uint16 ArchiveReader::entryMode(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_impl->entries.size()))
+        return 0;
+    return m_impl->entries[static_cast<size_t>(index)].mode;
 }
 
 QStringList ArchiveReader::entryNames() const

@@ -32,6 +32,7 @@ public:
     void bindSharedVertSplitter(QSplitter* splitter);
     void bindMessagesSplitter(QSplitter* splitter);
     void bindIrcSplitter(QSplitter* splitter);
+    void bindStatsSplitter(QSplitter* splitter);
 
     /// Restore a header view's column widths/sort order, connect it to auto-update.
     void bindHeaderView(QHeaderView* header, const QString& key);
@@ -53,6 +54,7 @@ private:
     QList<int> m_sharedVertSplitSizes;
     QList<int> m_messagesSplitSizes;
     QList<int> m_ircSplitSizes;
+    QList<int> m_statsSplitSizes;
     int  m_windowWidth     = 0;
     int  m_windowHeight    = 0;
     bool m_windowMaximized = false;

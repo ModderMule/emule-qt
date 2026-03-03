@@ -84,3 +84,6 @@ conan/
 # local tools and scripts
 *.local.sh
 
+# Environment secrets
+.env
+

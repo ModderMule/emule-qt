@@ -24,4 +24,5 @@ target_link_libraries(emuleipc
     PUBLIC
         Qt6::Core
         Qt6::Network
+        OpenSSL::Crypto
 )

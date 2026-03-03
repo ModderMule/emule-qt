@@ -247,8 +247,13 @@ void IrcPanel::onIrcLoggedIn()
             m_irc->executePerform(perform);
     }
 
-    // Request channel list
-    m_irc->requestChannelList();
+    // Auto-join help channel if enabled
+    if (thePrefs.ircConnectHelpChannel())
+        m_irc->joinChannel(QStringLiteral("#emule-english"));
+
+    // Request channel list if enabled
+    if (thePrefs.ircLoadChannelList())
+        m_irc->requestChannelList();
 }
 
 void IrcPanel::onIrcDisconnected()
@@ -282,6 +287,8 @@ void IrcPanel::onIrcSocketError(const QString& error)
 
 void IrcPanel::onStatusMessage(const QString& message)
 {
+    if (thePrefs.ircIgnoreMiscInfoMessages())
+        return;
     appendToStatus(formatTimestamp() + QStringLiteral(" ") +
         formatMessage(message));
 }
@@ -349,10 +356,12 @@ void IrcPanel::onUserJoined(const QString& channel, const QString& nick)
             it->nicks.append(nick);
     }
 
-    appendToChannel(key,
-        formatTimestamp() +
-        QStringLiteral(" <font color='#00007F'>* %1 has joined %2</font>")
-            .arg(nick.toHtmlEscaped(), channel.toHtmlEscaped()));
+    if (!thePrefs.ircIgnoreJoinMessages()) {
+        appendToChannel(key,
+            formatTimestamp() +
+            QStringLiteral(" <font color='#00007F'>* %1 has joined %2</font>")
+                .arg(nick.toHtmlEscaped(), channel.toHtmlEscaped()));
+    }
 
     if (activeChannelName() == key)
         updateNickList();
@@ -366,13 +375,15 @@ void IrcPanel::onUserParted(const QString& channel, const QString& nick,
     if (it != m_channels.end())
         it->nicks.removeAll(nick);
 
-    QString msg = formatTimestamp() +
-        QStringLiteral(" <font color='#00007F'>* %1 has left %2")
-            .arg(nick.toHtmlEscaped(), channel.toHtmlEscaped());
-    if (!reason.isEmpty())
-        msg += QStringLiteral(" (%1)").arg(reason.toHtmlEscaped());
-    msg += QStringLiteral("</font>");
-    appendToChannel(key, msg);
+    if (!thePrefs.ircIgnorePartMessages()) {
+        QString msg = formatTimestamp() +
+            QStringLiteral(" <font color='#00007F'>* %1 has left %2")
+                .arg(nick.toHtmlEscaped(), channel.toHtmlEscaped());
+        if (!reason.isEmpty())
+            msg += QStringLiteral(" (%1)").arg(reason.toHtmlEscaped());
+        msg += QStringLiteral("</font>");
+        appendToChannel(key, msg);
+    }
 
     if (activeChannelName() == key)
         updateNickList();
@@ -383,13 +394,15 @@ void IrcPanel::onUserQuit(const QString& nick, const QString& reason)
     // Remove nick from all channels they were in
     for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
         if (it->nicks.removeAll(nick) > 0) {
-            QString msg = formatTimestamp() +
-                QStringLiteral(" <font color='#00007F'>* %1 has quit")
-                    .arg(nick.toHtmlEscaped());
-            if (!reason.isEmpty())
-                msg += QStringLiteral(" (%1)").arg(reason.toHtmlEscaped());
-            msg += QStringLiteral("</font>");
-            appendToChannel(it.key(), msg);
+            if (!thePrefs.ircIgnoreQuitMessages()) {
+                QString msg = formatTimestamp() +
+                    QStringLiteral(" <font color='#00007F'>* %1 has quit")
+                        .arg(nick.toHtmlEscaped());
+                if (!reason.isEmpty())
+                    msg += QStringLiteral(" (%1)").arg(reason.toHtmlEscaped());
+                msg += QStringLiteral("</font>");
+                appendToChannel(it.key(), msg);
+            }
         }
     }
     updateNickList();
@@ -490,6 +503,18 @@ void IrcPanel::onChannelListed(const QString& channel, int userCount,
     if (!m_channelListWidget)
         return;
 
+    // Apply channel list filter if enabled
+    if (thePrefs.ircUseChannelFilter()) {
+        const QString filter = thePrefs.ircChannelFilter();
+        const auto parts = filter.split(QLatin1Char('|'));
+        const QString nameFilter = parts.value(0);
+        const int minUsers = parts.value(1).toInt();
+        if (!nameFilter.isEmpty() && !channel.contains(nameFilter, Qt::CaseInsensitive))
+            return;
+        if (userCount < minUsers)
+            return;
+    }
+
     auto* item = new QTreeWidgetItem(m_channelListWidget);
     item->setText(0, channel);
     item->setText(1, QString::number(userCount));
@@ -588,6 +613,8 @@ void IrcPanel::setupUi()
     m_tabWidget = new QTabWidget(rightWidget);
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setMovable(false);
+    m_tabWidget->setDocumentMode(true);
+    m_tabWidget->tabBar()->setExpanding(false);
     rightLayout->addWidget(m_tabWidget, 1);
 
     connect(m_tabWidget, &QTabWidget::currentChanged, this, &IrcPanel::onTabChanged);
@@ -914,6 +941,8 @@ void IrcPanel::appendToStatus(const QString& html)
 
 QString IrcPanel::formatTimestamp() const
 {
+    if (!thePrefs.ircAddTimestamp())
+        return {};
     return QStringLiteral("<font color='gray'>[%1]</font>")
         .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")));
 }

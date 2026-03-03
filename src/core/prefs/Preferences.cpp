@@ -15,9 +15,85 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+
 #include <random>
 
 namespace eMule {
+
+// ---------------------------------------------------------------------------
+// AES-256-CBC helpers for SMTP password encryption in YAML
+// ---------------------------------------------------------------------------
+
+namespace {
+
+QString aesEncrypt(const QString& plaintext, const QByteArray& key)
+{
+    if (plaintext.isEmpty() || key.size() != 32)
+        return {};
+
+    const QByteArray pt = plaintext.toUtf8();
+    QByteArray iv(16, Qt::Uninitialized);
+    RAND_bytes(reinterpret_cast<unsigned char*>(iv.data()), 16);
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) return {};
+
+    QByteArray ct(pt.size() + 16, Qt::Uninitialized); // room for padding
+    int len = 0, totalLen = 0;
+
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr,
+                       reinterpret_cast<const unsigned char*>(key.constData()),
+                       reinterpret_cast<const unsigned char*>(iv.constData()));
+    EVP_EncryptUpdate(ctx, reinterpret_cast<unsigned char*>(ct.data()), &len,
+                      reinterpret_cast<const unsigned char*>(pt.constData()), static_cast<int>(pt.size()));
+    totalLen = len;
+    EVP_EncryptFinal_ex(ctx, reinterpret_cast<unsigned char*>(ct.data()) + len, &len);
+    totalLen += len;
+    EVP_CIPHER_CTX_free(ctx);
+
+    ct.resize(totalLen);
+    QByteArray combined = iv;
+    combined.append(ct);
+    return QString::fromLatin1(combined.toBase64());
+}
+
+QString aesDecrypt(const QString& ciphertext, const QByteArray& key)
+{
+    if (ciphertext.isEmpty() || key.size() != 32)
+        return {};
+
+    const QByteArray raw = QByteArray::fromBase64(ciphertext.toLatin1());
+    if (raw.size() < 17) return {}; // min: 16-byte IV + 1 byte
+
+    const QByteArray iv = raw.left(16);
+    const QByteArray ct = raw.mid(16);
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) return {};
+
+    QByteArray pt(ct.size() + 16, Qt::Uninitialized);
+    int len = 0, totalLen = 0;
+
+    EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr,
+                       reinterpret_cast<const unsigned char*>(key.constData()),
+                       reinterpret_cast<const unsigned char*>(iv.constData()));
+    EVP_DecryptUpdate(ctx, reinterpret_cast<unsigned char*>(pt.data()), &len,
+                      reinterpret_cast<const unsigned char*>(ct.constData()), static_cast<int>(ct.size()));
+    totalLen = len;
+    if (!EVP_DecryptFinal_ex(ctx, reinterpret_cast<unsigned char*>(pt.data()) + len, &len)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return {};
+    }
+    totalLen += len;
+    EVP_CIPHER_CTX_free(ctx);
+
+    pt.resize(totalLen);
+    return QString::fromUtf8(pt);
+}
+
+} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Data struct — all settings with default values
@@ -25,7 +101,7 @@ namespace eMule {
 
 struct Preferences::Data {
     // General
-    QString nick = QStringLiteral("eMule User");
+    QString nick = QStringLiteral("https://emule-qt.org");
     std::array<uint8, 16> userHash{};
     bool autoConnect = false;
     bool reconnect = true;
@@ -86,6 +162,16 @@ struct Preferences::Data {
     bool verbose = true;
     bool kadVerboseLog = true;
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
+    int logLevel = 5;               // 0-5, higher = more verbose
+    bool verboseLogToDisk = false;
+    bool logSourceExchange = false;
+    bool logBannedClients = true;
+    bool logRatingDescReceived = true;
+    bool logSecureIdent = true;
+    bool logFilteredIPs = true;
+    bool logFileSaving = false;
+    bool logA4AF = false;
+    bool logUlDlEvents = true;
 
     // Files
     uint16 maxSourcesPerFile = 400;
@@ -100,8 +186,37 @@ struct Preferences::Data {
     bool rememberCancelledFiles = true;
 
     // Transfer
-    uint32 fileBufferSize = 245760;     // 240 KB
+    uint32 fileBufferSize = 4194304;    // 4 MB
     uint32 fileBufferTimeLimit = 60;    // seconds
+
+    // Extended (PPgTweaks)
+    bool useCreditSystem = true;     // Reward uploaders
+    bool a4afSaveCpu = false;        // Skip A4AF swap checks
+    bool autoArchivePreviewStart = true; // Auto-scan archive contents in file details
+    QString ed2kHostname;            // Hostname for own eD2K links
+    bool showExtControls = false;    // Show advanced mode controls in context menus
+    int commitFiles = 1;             // 0=never, 1=on shutdown, 2=always
+    int extractMetaData = 1;         // 0=never, 1=MediaInfo library
+    uint32 queueSize = 5000;         // Upload queue size (2000-50000)
+
+    // Upload SpeedSense (USS)
+    bool dynUpEnabled = false;
+    int dynUpPingTolerance = 500;        // % of lowest ping (min 100)
+    int dynUpPingToleranceMs = 200;      // absolute tolerance in ms (min 1)
+    bool dynUpUseMillisecondPingTolerance = false;
+    int dynUpGoingUpDivider = 1000;      // speed increase slowness (min 1)
+    int dynUpGoingDownDivider = 1000;    // speed decrease slowness (min 1)
+    int dynUpNumberOfPings = 1;          // ring buffer size (min 1)
+
+#ifdef Q_OS_WIN
+    // Windows-only Extended (PPgTweaks)
+    bool autotakeEd2kLinks = true;      // Register ed2k:// protocol handler
+    bool openPortsOnWinFirewall = false; // Windows Firewall API
+    bool sparsePartFiles = false;        // NTFS sparse file attribute
+    bool allocFullFile = false;          // Pre-allocate disk space
+    bool resolveShellLinks = false;      // Follow .lnk files in shared dirs
+    int multiUserSharing = 2;            // 0=per-user, 1=shared, 2=program-dir
+#endif
 
     // Statistics (cumulative cross-session rates, KB/s)
     float connMaxDownRate = 0.0f;
@@ -111,16 +226,30 @@ struct Preferences::Data {
     float connMaxAvgUpRate = 0.0f;
     float connMaxUpRate = 0.0f;
     uint32 statsAverageMinutes = 5;  // averaging window for rate history
+    uint32 graphsUpdateSec = 3;      // Graph sampling interval (0=disabled)
+    uint32 statsUpdateSec = 5;       // Statistics tree update interval (0=disabled)
+    bool fillGraphs = false;         // Draw filled graphs
+    uint32 statsConnectionsMax = 100;   // Connections graph Y-axis scale
+    uint32 statsConnectionsRatio = 3;   // Active connections ratio (1,2,3,4,5,10,20)
 
     // Security
     uint32 ipFilterLevel = 100;  // DFLT_FILTER_LEVEL — lower = more restrictive
 
     // IRC
-    QString ircServer = QStringLiteral("irc.emule-project.net:6667");
+    QString ircServer = QStringLiteral("irc.mindforge.org:6667");
     QString ircNick;
     bool ircEnableUTF8 = true;
     bool ircUsePerform = false;
     QString ircPerformString;
+    bool ircConnectHelpChannel = true;
+    bool ircLoadChannelList = true;
+    bool ircAddTimestamp = true;
+    bool ircIgnoreMiscInfoMessages = false;
+    bool ircIgnoreJoinMessages = true;
+    bool ircIgnorePartMessages = true;
+    bool ircIgnoreQuitMessages = true;
+    bool ircUseChannelFilter = false;
+    QString ircChannelFilter;
 
     // IPC Daemon
     bool ipcEnabled = true;
@@ -128,6 +257,7 @@ struct Preferences::Data {
     QString ipcListenAddress = QStringLiteral("127.0.0.1");
     QString ipcDaemonPath;  // Empty = auto-detect next to GUI binary
     int ipcRemotePollingMs = 1500;
+    QStringList ipcTokens;
 
     // Web Server
     bool webServerEnabled = false;
@@ -135,12 +265,16 @@ struct Preferences::Data {
     QString webServerApiKey;
     QString webServerListenAddress;     // Empty = any
 
+    // Scheduler
+    bool schedulerEnabled = false;
+
     // Kademlia
     bool kadEnabled = true;
     uint32 kadUDPKey = 0;  // 0 = generate random on first run
 
     // Connection
     uint16 maxConsPerFive = 20;  // MAXCONPER5SEC — max connections per 5 seconds
+    bool showOverhead = false;   // Show overhead bandwidth in status bar
 
     // Server management (extended)
     bool addServersFromClients = true;  // Accept server list from other clients
@@ -157,8 +291,12 @@ struct Preferences::Data {
     // Chat / Messages
     bool msgOnlyFriends = false;   // Only accept messages from friends
     bool msgSecure = false;        // Only accept messages from secure-identified clients
-    bool useChatCaptchas = false;  // Require captcha for first messages
-    bool enableSpamFilter = false; // Enable keyword-based spam filter
+    bool useChatCaptchas = true;   // Require captcha for first messages
+    bool enableSpamFilter = true;  // Enable keyword-based spam filter
+    QString messageFilter = QStringLiteral("fastest download speed|fastest eMule");
+    QString commentFilter = QStringLiteral("http://|https://|ftp://|www.|ftp.");
+    bool showSmileys = true;
+    bool indicateRatings = true;
 
     // Security (extended)
     bool useSecureIdent = true;  // Enable secure identity (RSA key exchange)
@@ -197,6 +335,7 @@ struct Preferences::Data {
     bool disableKnownClientList = false;
     bool disableQueueList = false;
     bool useAutoCompletion = true;
+    bool useOriginalIcons = false;
 
     // GUI (Files page)
     bool watchClipboard4ED2KLinks = false;
@@ -206,6 +345,29 @@ struct Preferences::Data {
     bool createBackupToPreview = true;
     bool autoCleanupFilenames = false;
 
+    // Notifications (GUI-side)
+    int notifySoundType = 0;         // 0=noSound, 1=soundFile, 2=speech
+    QString notifySoundFile;
+
+    // Notifications (daemon-side)
+    bool notifyOnLog = false;
+    bool notifyOnChat = false;
+    bool notifyOnChatMsg = false;
+    bool notifyOnDownloadAdded = false;
+    bool notifyOnDownloadFinished = false;
+    bool notifyOnNewVersion = false;
+    bool notifyOnUrgent = false;
+    bool notifyEmailEnabled = false;
+    QString notifyEmailSmtpServer;
+    uint16 notifyEmailSmtpPort = 25;
+    int notifyEmailSmtpAuth = 0;     // 0=none, 1=plain
+    bool notifyEmailSmtpTls = false;
+    QString notifyEmailSmtpUser;
+    QString notifyEmailSmtpPassword; // plaintext in memory, AES-encrypted in YAML
+    QString notifyEmailRecipient;
+    QString notifyEmailSender;
+    QByteArray notifyEmailEncKey;    // 32-byte AES key, not exposed via getter
+
     // UI State (GUI-only, persisted across sessions)
     QList<int> serverSplitSizes;
     QList<int> kadSplitSizes;
@@ -214,6 +376,7 @@ struct Preferences::Data {
     QList<int> sharedVertSplitSizes;
     QList<int> messagesSplitSizes;
     QList<int> ircSplitSizes;
+    QList<int> statsSplitSizes;
     int windowWidth = 900;
     int windowHeight = 620;
     bool windowMaximized = false;
@@ -823,6 +986,126 @@ void Preferences::setMaxLogLines(uint32 val)
     m_data->maxLogLines = val;
 }
 
+int Preferences::logLevel() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logLevel;
+}
+
+void Preferences::setLogLevel(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logLevel = val;
+}
+
+bool Preferences::verboseLogToDisk() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->verboseLogToDisk;
+}
+
+void Preferences::setVerboseLogToDisk(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->verboseLogToDisk = val;
+}
+
+bool Preferences::logSourceExchange() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logSourceExchange;
+}
+
+void Preferences::setLogSourceExchange(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logSourceExchange = val;
+}
+
+bool Preferences::logBannedClients() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logBannedClients;
+}
+
+void Preferences::setLogBannedClients(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logBannedClients = val;
+}
+
+bool Preferences::logRatingDescReceived() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logRatingDescReceived;
+}
+
+void Preferences::setLogRatingDescReceived(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logRatingDescReceived = val;
+}
+
+bool Preferences::logSecureIdent() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logSecureIdent;
+}
+
+void Preferences::setLogSecureIdent(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logSecureIdent = val;
+}
+
+bool Preferences::logFilteredIPs() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logFilteredIPs;
+}
+
+void Preferences::setLogFilteredIPs(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logFilteredIPs = val;
+}
+
+bool Preferences::logFileSaving() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logFileSaving;
+}
+
+void Preferences::setLogFileSaving(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logFileSaving = val;
+}
+
+bool Preferences::logA4AF() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logA4AF;
+}
+
+void Preferences::setLogA4AF(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logA4AF = val;
+}
+
+bool Preferences::logUlDlEvents() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logUlDlEvents;
+}
+
+void Preferences::setLogUlDlEvents(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logUlDlEvents = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Files
 // ---------------------------------------------------------------------------
@@ -878,6 +1161,270 @@ void Preferences::setFileBufferTimeLimit(uint32 val)
     QWriteLocker lock(&m_lock);
     m_data->fileBufferTimeLimit = val;
 }
+
+// ---------------------------------------------------------------------------
+// Getters / setters — Extended (PPgTweaks)
+// ---------------------------------------------------------------------------
+
+bool Preferences::useCreditSystem() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->useCreditSystem;
+}
+
+void Preferences::setUseCreditSystem(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->useCreditSystem = val;
+}
+
+bool Preferences::a4afSaveCpu() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->a4afSaveCpu;
+}
+
+void Preferences::setA4afSaveCpu(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->a4afSaveCpu = val;
+}
+
+bool Preferences::autoArchivePreviewStart() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->autoArchivePreviewStart;
+}
+
+void Preferences::setAutoArchivePreviewStart(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->autoArchivePreviewStart = val;
+}
+
+QString Preferences::ed2kHostname() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ed2kHostname;
+}
+
+void Preferences::setEd2kHostname(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ed2kHostname = val;
+}
+
+bool Preferences::showExtControls() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showExtControls;
+}
+
+void Preferences::setShowExtControls(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showExtControls = val;
+}
+
+int Preferences::commitFiles() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->commitFiles;
+}
+
+void Preferences::setCommitFiles(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->commitFiles = val;
+}
+
+int Preferences::extractMetaData() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->extractMetaData;
+}
+
+void Preferences::setExtractMetaData(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->extractMetaData = val;
+}
+
+uint32 Preferences::queueSize() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->queueSize;
+}
+
+void Preferences::setQueueSize(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->queueSize = val;
+}
+
+// ---------------------------------------------------------------------------
+// Getters / setters — Upload SpeedSense (USS)
+// ---------------------------------------------------------------------------
+
+bool Preferences::dynUpEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->dynUpEnabled;
+}
+
+void Preferences::setDynUpEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->dynUpEnabled = val;
+}
+
+int Preferences::dynUpPingTolerance() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->dynUpPingTolerance;
+}
+
+void Preferences::setDynUpPingTolerance(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->dynUpPingTolerance = val;
+}
+
+int Preferences::dynUpPingToleranceMs() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->dynUpPingToleranceMs;
+}
+
+void Preferences::setDynUpPingToleranceMs(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->dynUpPingToleranceMs = val;
+}
+
+bool Preferences::dynUpUseMillisecondPingTolerance() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->dynUpUseMillisecondPingTolerance;
+}
+
+void Preferences::setDynUpUseMillisecondPingTolerance(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->dynUpUseMillisecondPingTolerance = val;
+}
+
+int Preferences::dynUpGoingUpDivider() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->dynUpGoingUpDivider;
+}
+
+void Preferences::setDynUpGoingUpDivider(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->dynUpGoingUpDivider = val;
+}
+
+int Preferences::dynUpGoingDownDivider() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->dynUpGoingDownDivider;
+}
+
+void Preferences::setDynUpGoingDownDivider(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->dynUpGoingDownDivider = val;
+}
+
+int Preferences::dynUpNumberOfPings() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->dynUpNumberOfPings;
+}
+
+void Preferences::setDynUpNumberOfPings(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->dynUpNumberOfPings = val;
+}
+
+#ifdef Q_OS_WIN
+
+bool Preferences::autotakeEd2kLinks() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->autotakeEd2kLinks;
+}
+
+void Preferences::setAutotakeEd2kLinks(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->autotakeEd2kLinks = val;
+}
+
+bool Preferences::openPortsOnWinFirewall() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->openPortsOnWinFirewall;
+}
+
+void Preferences::setOpenPortsOnWinFirewall(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->openPortsOnWinFirewall = val;
+}
+
+bool Preferences::sparsePartFiles() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->sparsePartFiles;
+}
+
+void Preferences::setSparsePartFiles(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->sparsePartFiles = val;
+}
+
+bool Preferences::allocFullFile() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->allocFullFile;
+}
+
+void Preferences::setAllocFullFile(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->allocFullFile = val;
+}
+
+bool Preferences::resolveShellLinks() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->resolveShellLinks;
+}
+
+void Preferences::setResolveShellLinks(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->resolveShellLinks = val;
+}
+
+int Preferences::multiUserSharing() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->multiUserSharing;
+}
+
+void Preferences::setMultiUserSharing(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->multiUserSharing = val;
+}
+
+#endif // Q_OS_WIN
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Statistics
@@ -967,6 +1514,66 @@ void Preferences::setStatsAverageMinutes(uint32 val)
     m_data->statsAverageMinutes = val;
 }
 
+uint32 Preferences::graphsUpdateSec() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->graphsUpdateSec;
+}
+
+void Preferences::setGraphsUpdateSec(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->graphsUpdateSec = val;
+}
+
+uint32 Preferences::statsUpdateSec() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->statsUpdateSec;
+}
+
+void Preferences::setStatsUpdateSec(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->statsUpdateSec = val;
+}
+
+bool Preferences::fillGraphs() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->fillGraphs;
+}
+
+void Preferences::setFillGraphs(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->fillGraphs = val;
+}
+
+uint32 Preferences::statsConnectionsMax() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->statsConnectionsMax;
+}
+
+void Preferences::setStatsConnectionsMax(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->statsConnectionsMax = val;
+}
+
+uint32 Preferences::statsConnectionsRatio() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->statsConnectionsRatio;
+}
+
+void Preferences::setStatsConnectionsRatio(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->statsConnectionsRatio = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Security
 // ---------------------------------------------------------------------------
@@ -1047,6 +1654,114 @@ void Preferences::setIrcPerformString(const QString& val)
     m_data->ircPerformString = val;
 }
 
+bool Preferences::ircConnectHelpChannel() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircConnectHelpChannel;
+}
+
+void Preferences::setIrcConnectHelpChannel(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircConnectHelpChannel = val;
+}
+
+bool Preferences::ircLoadChannelList() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircLoadChannelList;
+}
+
+void Preferences::setIrcLoadChannelList(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircLoadChannelList = val;
+}
+
+bool Preferences::ircAddTimestamp() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircAddTimestamp;
+}
+
+void Preferences::setIrcAddTimestamp(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircAddTimestamp = val;
+}
+
+bool Preferences::ircIgnoreMiscInfoMessages() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircIgnoreMiscInfoMessages;
+}
+
+void Preferences::setIrcIgnoreMiscInfoMessages(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircIgnoreMiscInfoMessages = val;
+}
+
+bool Preferences::ircIgnoreJoinMessages() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircIgnoreJoinMessages;
+}
+
+void Preferences::setIrcIgnoreJoinMessages(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircIgnoreJoinMessages = val;
+}
+
+bool Preferences::ircIgnorePartMessages() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircIgnorePartMessages;
+}
+
+void Preferences::setIrcIgnorePartMessages(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircIgnorePartMessages = val;
+}
+
+bool Preferences::ircIgnoreQuitMessages() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircIgnoreQuitMessages;
+}
+
+void Preferences::setIrcIgnoreQuitMessages(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircIgnoreQuitMessages = val;
+}
+
+bool Preferences::ircUseChannelFilter() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircUseChannelFilter;
+}
+
+void Preferences::setIrcUseChannelFilter(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircUseChannelFilter = val;
+}
+
+QString Preferences::ircChannelFilter() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ircChannelFilter;
+}
+
+void Preferences::setIrcChannelFilter(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ircChannelFilter = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — IPC Daemon
 // ---------------------------------------------------------------------------
@@ -1111,6 +1826,18 @@ void Preferences::setIpcRemotePollingMs(int val)
     m_data->ipcRemotePollingMs = std::clamp(val, 200, 10000);
 }
 
+QStringList Preferences::ipcTokens() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ipcTokens;
+}
+
+void Preferences::setIpcTokens(const QStringList& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ipcTokens = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Web Server
 // ---------------------------------------------------------------------------
@@ -1164,6 +1891,22 @@ void Preferences::setWebServerListenAddress(const QString& val)
 }
 
 // ---------------------------------------------------------------------------
+// Getters / setters — Scheduler
+// ---------------------------------------------------------------------------
+
+bool Preferences::schedulerEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->schedulerEnabled;
+}
+
+void Preferences::setSchedulerEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->schedulerEnabled = val;
+}
+
+// ---------------------------------------------------------------------------
 // Getters / setters — Kademlia
 // ---------------------------------------------------------------------------
 
@@ -1205,6 +1948,18 @@ void Preferences::setMaxConsPerFive(uint16 val)
 {
     QWriteLocker lock(&m_lock);
     m_data->maxConsPerFive = val;
+}
+
+bool Preferences::showOverhead() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showOverhead;
+}
+
+void Preferences::setShowOverhead(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showOverhead = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -1361,6 +2116,54 @@ void Preferences::setEnableSpamFilter(bool val)
 {
     QWriteLocker lock(&m_lock);
     m_data->enableSpamFilter = val;
+}
+
+QString Preferences::messageFilter() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->messageFilter;
+}
+
+void Preferences::setMessageFilter(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->messageFilter = val;
+}
+
+QString Preferences::commentFilter() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->commentFilter;
+}
+
+void Preferences::setCommentFilter(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->commentFilter = val;
+}
+
+bool Preferences::showSmileys() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showSmileys;
+}
+
+void Preferences::setShowSmileys(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showSmileys = val;
+}
+
+bool Preferences::indicateRatings() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->indicateRatings;
+}
+
+void Preferences::setIndicateRatings(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->indicateRatings = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -1783,6 +2586,18 @@ void Preferences::setUseAutoCompletion(bool val)
     m_data->useAutoCompletion = val;
 }
 
+bool Preferences::useOriginalIcons() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->useOriginalIcons;
+}
+
+void Preferences::setUseOriginalIcons(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->useOriginalIcons = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — GUI (Files page)
 // ---------------------------------------------------------------------------
@@ -1857,6 +2672,230 @@ void Preferences::setAutoCleanupFilenames(bool val)
 {
     QWriteLocker lock(&m_lock);
     m_data->autoCleanupFilenames = val;
+}
+
+// ---------------------------------------------------------------------------
+// Getters / setters — Notifications (GUI-side)
+// ---------------------------------------------------------------------------
+
+int Preferences::notifySoundType() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifySoundType;
+}
+
+void Preferences::setNotifySoundType(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifySoundType = val;
+}
+
+QString Preferences::notifySoundFile() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifySoundFile;
+}
+
+void Preferences::setNotifySoundFile(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifySoundFile = val;
+}
+
+// ---------------------------------------------------------------------------
+// Getters / setters — Notifications (daemon-side)
+// ---------------------------------------------------------------------------
+
+bool Preferences::notifyOnLog() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyOnLog;
+}
+
+void Preferences::setNotifyOnLog(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyOnLog = val;
+}
+
+bool Preferences::notifyOnChat() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyOnChat;
+}
+
+void Preferences::setNotifyOnChat(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyOnChat = val;
+}
+
+bool Preferences::notifyOnChatMsg() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyOnChatMsg;
+}
+
+void Preferences::setNotifyOnChatMsg(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyOnChatMsg = val;
+}
+
+bool Preferences::notifyOnDownloadAdded() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyOnDownloadAdded;
+}
+
+void Preferences::setNotifyOnDownloadAdded(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyOnDownloadAdded = val;
+}
+
+bool Preferences::notifyOnDownloadFinished() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyOnDownloadFinished;
+}
+
+void Preferences::setNotifyOnDownloadFinished(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyOnDownloadFinished = val;
+}
+
+bool Preferences::notifyOnNewVersion() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyOnNewVersion;
+}
+
+void Preferences::setNotifyOnNewVersion(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyOnNewVersion = val;
+}
+
+bool Preferences::notifyOnUrgent() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyOnUrgent;
+}
+
+void Preferences::setNotifyOnUrgent(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyOnUrgent = val;
+}
+
+bool Preferences::notifyEmailEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailEnabled;
+}
+
+void Preferences::setNotifyEmailEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailEnabled = val;
+}
+
+QString Preferences::notifyEmailSmtpServer() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailSmtpServer;
+}
+
+void Preferences::setNotifyEmailSmtpServer(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailSmtpServer = val;
+}
+
+uint16 Preferences::notifyEmailSmtpPort() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailSmtpPort;
+}
+
+void Preferences::setNotifyEmailSmtpPort(uint16 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailSmtpPort = val;
+}
+
+int Preferences::notifyEmailSmtpAuth() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailSmtpAuth;
+}
+
+void Preferences::setNotifyEmailSmtpAuth(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailSmtpAuth = val;
+}
+
+bool Preferences::notifyEmailSmtpTls() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailSmtpTls;
+}
+
+void Preferences::setNotifyEmailSmtpTls(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailSmtpTls = val;
+}
+
+QString Preferences::notifyEmailSmtpUser() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailSmtpUser;
+}
+
+void Preferences::setNotifyEmailSmtpUser(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailSmtpUser = val;
+}
+
+QString Preferences::notifyEmailSmtpPassword() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailSmtpPassword;
+}
+
+void Preferences::setNotifyEmailSmtpPassword(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailSmtpPassword = val;
+}
+
+QString Preferences::notifyEmailRecipient() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailRecipient;
+}
+
+void Preferences::setNotifyEmailRecipient(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailRecipient = val;
+}
+
+QString Preferences::notifyEmailSender() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->notifyEmailSender;
+}
+
+void Preferences::setNotifyEmailSender(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->notifyEmailSender = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -1947,6 +2986,18 @@ void Preferences::setIrcSplitSizes(const QList<int>& val)
     m_data->ircSplitSizes = val;
 }
 
+QList<int> Preferences::statsSplitSizes() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->statsSplitSizes;
+}
+
+void Preferences::setStatsSplitSizes(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->statsSplitSizes = val;
+}
+
 int Preferences::windowWidth() const
 {
     QReadLocker lock(&m_lock);
@@ -2001,7 +3052,9 @@ void Preferences::setHeaderState(const QString& key, const QByteArray& val)
 
 void Preferences::validate()
 {
-    // nick: truncate to 50 chars
+    // nick: restore default if empty, truncate to 50 chars
+    if (m_data->nick.isEmpty())
+        m_data->nick = QStringLiteral("https://emule-qt.org");
     if (m_data->nick.size() > 50)
         m_data->nick.truncate(50);
 
@@ -2041,6 +3094,18 @@ void Preferences::validate()
 
     // viewSharedFilesAccess: clamp 0–2
     m_data->viewSharedFilesAccess = std::clamp(m_data->viewSharedFilesAccess, 0, 2);
+
+    // USS: clamp minimums
+    if (m_data->dynUpPingTolerance < 100)
+        m_data->dynUpPingTolerance = 100;
+    if (m_data->dynUpPingToleranceMs < 1)
+        m_data->dynUpPingToleranceMs = 1;
+    if (m_data->dynUpGoingUpDivider < 1)
+        m_data->dynUpGoingUpDivider = 1;
+    if (m_data->dynUpGoingDownDivider < 1)
+        m_data->dynUpGoingDownDivider = 1;
+    if (m_data->dynUpNumberOfPings < 1)
+        m_data->dynUpNumberOfPings = 1;
 
     // kadUDPKey: generate random if 0
     if (m_data->kadUDPKey == 0) {
@@ -2177,6 +3242,7 @@ bool Preferences::load(const QString& filePath)
             m_data->maxHalfConnections = static_cast<uint16>(n["maxHalfConnections"].as<int>(m_data->maxHalfConnections));
             m_data->bindAddress = QString::fromStdString(n["bindAddress"].as<std::string>(m_data->bindAddress.toStdString()));
             m_data->maxConsPerFive = static_cast<uint16>(n["maxConsPerFive"].as<int>(m_data->maxConsPerFive));
+            m_data->showOverhead = n["showOverhead"].as<bool>(m_data->showOverhead);
             m_data->networkED2K = n["networkED2K"].as<bool>(m_data->networkED2K);
             m_data->publicIP = n["publicIP"].as<uint32>(m_data->publicIP);
         }
@@ -2188,6 +3254,13 @@ bool Preferences::load(const QString& filePath)
             m_data->minUpload = b["minUpload"].as<uint32>(m_data->minUpload);
             m_data->maxGraphUploadRate = b["maxGraphUploadRate"].as<uint32>(m_data->maxGraphUploadRate);
             m_data->maxGraphDownloadRate = b["maxGraphDownloadRate"].as<uint32>(m_data->maxGraphDownloadRate);
+            m_data->dynUpEnabled = b["dynUpEnabled"].as<bool>(m_data->dynUpEnabled);
+            m_data->dynUpPingTolerance = b["dynUpPingTolerance"].as<int>(m_data->dynUpPingTolerance);
+            m_data->dynUpPingToleranceMs = b["dynUpPingToleranceMs"].as<int>(m_data->dynUpPingToleranceMs);
+            m_data->dynUpUseMillisecondPingTolerance = b["dynUpUseMillisecondPingTolerance"].as<bool>(m_data->dynUpUseMillisecondPingTolerance);
+            m_data->dynUpGoingUpDivider = b["dynUpGoingUpDivider"].as<int>(m_data->dynUpGoingUpDivider);
+            m_data->dynUpGoingDownDivider = b["dynUpGoingDownDivider"].as<int>(m_data->dynUpGoingDownDivider);
+            m_data->dynUpNumberOfPings = b["dynUpNumberOfPings"].as<int>(m_data->dynUpNumberOfPings);
         }
 
         // Encryption
@@ -2242,6 +3315,16 @@ bool Preferences::load(const QString& filePath)
             m_data->verbose = l["verbose"].as<bool>(m_data->verbose);
             m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
+            m_data->logLevel = l["logLevel"].as<int>(m_data->logLevel);
+            m_data->verboseLogToDisk = l["verboseLogToDisk"].as<bool>(m_data->verboseLogToDisk);
+            m_data->logSourceExchange = l["logSourceExchange"].as<bool>(m_data->logSourceExchange);
+            m_data->logBannedClients = l["logBannedClients"].as<bool>(m_data->logBannedClients);
+            m_data->logRatingDescReceived = l["logRatingDescReceived"].as<bool>(m_data->logRatingDescReceived);
+            m_data->logSecureIdent = l["logSecureIdent"].as<bool>(m_data->logSecureIdent);
+            m_data->logFilteredIPs = l["logFilteredIPs"].as<bool>(m_data->logFilteredIPs);
+            m_data->logFileSaving = l["logFileSaving"].as<bool>(m_data->logFileSaving);
+            m_data->logA4AF = l["logA4AF"].as<bool>(m_data->logA4AF);
+            m_data->logUlDlEvents = l["logUlDlEvents"].as<bool>(m_data->logUlDlEvents);
         }
 
         // Files
@@ -2266,6 +3349,22 @@ bool Preferences::load(const QString& filePath)
             m_data->fileBufferTimeLimit = t["fileBufferTimeLimit"].as<uint32>(m_data->fileBufferTimeLimit);
             m_data->autoDownloadPriority = t["autoDownloadPriority"].as<bool>(m_data->autoDownloadPriority);
             m_data->addNewFilesPaused = t["addNewFilesPaused"].as<bool>(m_data->addNewFilesPaused);
+            m_data->useCreditSystem = t["useCreditSystem"].as<bool>(m_data->useCreditSystem);
+            m_data->a4afSaveCpu = t["a4afSaveCpu"].as<bool>(m_data->a4afSaveCpu);
+            m_data->autoArchivePreviewStart = t["autoArchivePreviewStart"].as<bool>(m_data->autoArchivePreviewStart);
+            m_data->ed2kHostname = QString::fromStdString(t["ed2kHostname"].as<std::string>(m_data->ed2kHostname.toStdString()));
+            m_data->showExtControls = t["showExtControls"].as<bool>(m_data->showExtControls);
+            m_data->commitFiles = t["commitFiles"].as<int>(m_data->commitFiles);
+            m_data->extractMetaData = t["extractMetaData"].as<int>(m_data->extractMetaData);
+            m_data->queueSize = t["queueSize"].as<uint32>(m_data->queueSize);
+#ifdef Q_OS_WIN
+            m_data->autotakeEd2kLinks = t["autotakeEd2kLinks"].as<bool>(m_data->autotakeEd2kLinks);
+            m_data->openPortsOnWinFirewall = t["openPortsOnWinFirewall"].as<bool>(m_data->openPortsOnWinFirewall);
+            m_data->sparsePartFiles = t["sparsePartFiles"].as<bool>(m_data->sparsePartFiles);
+            m_data->allocFullFile = t["allocFullFile"].as<bool>(m_data->allocFullFile);
+            m_data->resolveShellLinks = t["resolveShellLinks"].as<bool>(m_data->resolveShellLinks);
+            m_data->multiUserSharing = t["multiUserSharing"].as<int>(m_data->multiUserSharing);
+#endif
         }
 
         // Statistics
@@ -2277,6 +3376,11 @@ bool Preferences::load(const QString& filePath)
             m_data->connMaxAvgUpRate = st["connMaxAvgUpRate"].as<float>(m_data->connMaxAvgUpRate);
             m_data->connMaxUpRate = st["connMaxUpRate"].as<float>(m_data->connMaxUpRate);
             m_data->statsAverageMinutes = st["statsAverageMinutes"].as<uint32>(m_data->statsAverageMinutes);
+            m_data->graphsUpdateSec = st["graphsUpdateSec"].as<uint32>(m_data->graphsUpdateSec);
+            m_data->statsUpdateSec = st["statsUpdateSec"].as<uint32>(m_data->statsUpdateSec);
+            m_data->fillGraphs = st["fillGraphs"].as<bool>(m_data->fillGraphs);
+            m_data->statsConnectionsMax = st["statsConnectionsMax"].as<uint32>(m_data->statsConnectionsMax);
+            m_data->statsConnectionsRatio = st["statsConnectionsRatio"].as<uint32>(m_data->statsConnectionsRatio);
         }
 
         // Security
@@ -2293,6 +3397,15 @@ bool Preferences::load(const QString& filePath)
             m_data->ircEnableUTF8 = irc["enableUTF8"].as<bool>(m_data->ircEnableUTF8);
             m_data->ircUsePerform = irc["usePerform"].as<bool>(m_data->ircUsePerform);
             m_data->ircPerformString = QString::fromStdString(irc["performString"].as<std::string>(m_data->ircPerformString.toStdString()));
+            m_data->ircConnectHelpChannel = irc["connectHelpChannel"].as<bool>(m_data->ircConnectHelpChannel);
+            m_data->ircLoadChannelList = irc["loadChannelList"].as<bool>(m_data->ircLoadChannelList);
+            m_data->ircAddTimestamp = irc["addTimestamp"].as<bool>(m_data->ircAddTimestamp);
+            m_data->ircIgnoreMiscInfoMessages = irc["ignoreMiscInfoMessages"].as<bool>(m_data->ircIgnoreMiscInfoMessages);
+            m_data->ircIgnoreJoinMessages = irc["ignoreJoinMessages"].as<bool>(m_data->ircIgnoreJoinMessages);
+            m_data->ircIgnorePartMessages = irc["ignorePartMessages"].as<bool>(m_data->ircIgnorePartMessages);
+            m_data->ircIgnoreQuitMessages = irc["ignoreQuitMessages"].as<bool>(m_data->ircIgnoreQuitMessages);
+            m_data->ircUseChannelFilter = irc["useChannelFilter"].as<bool>(m_data->ircUseChannelFilter);
+            m_data->ircChannelFilter = QString::fromStdString(irc["channelFilter"].as<std::string>(m_data->ircChannelFilter.toStdString()));
         }
 
         // Chat / Messages
@@ -2301,6 +3414,12 @@ bool Preferences::load(const QString& filePath)
             m_data->msgSecure = ch["msgSecure"].as<bool>(m_data->msgSecure);
             m_data->useChatCaptchas = ch["useChatCaptchas"].as<bool>(m_data->useChatCaptchas);
             m_data->enableSpamFilter = ch["enableSpamFilter"].as<bool>(m_data->enableSpamFilter);
+            if (ch["messageFilter"])
+                m_data->messageFilter = QString::fromStdString(ch["messageFilter"].as<std::string>());
+            if (ch["commentFilter"])
+                m_data->commentFilter = QString::fromStdString(ch["commentFilter"].as<std::string>());
+            m_data->showSmileys = ch["showSmileys"].as<bool>(m_data->showSmileys);
+            m_data->indicateRatings = ch["indicateRatings"].as<bool>(m_data->indicateRatings);
         }
 
         // Search
@@ -2315,6 +3434,11 @@ bool Preferences::load(const QString& filePath)
             m_data->ipcListenAddress = QString::fromStdString(ipc["listenAddress"].as<std::string>(m_data->ipcListenAddress.toStdString()));
             m_data->ipcDaemonPath = QString::fromStdString(ipc["daemonPath"].as<std::string>(m_data->ipcDaemonPath.toStdString()));
             m_data->ipcRemotePollingMs = std::clamp(ipc["remotePollingMs"].as<int>(m_data->ipcRemotePollingMs), 200, 10000);
+            if (auto tok = ipc["tokens"]) {
+                m_data->ipcTokens.clear();
+                for (std::size_t i = 0; i < tok.size(); ++i)
+                    m_data->ipcTokens.append(QString::fromStdString(tok[i].as<std::string>()));
+            }
         }
 
         // Web Server
@@ -2329,6 +3453,11 @@ bool Preferences::load(const QString& filePath)
         if (auto k = root["kademlia"]) {
             m_data->kadEnabled = k["enabled"].as<bool>(m_data->kadEnabled);
             m_data->kadUDPKey = k["udpKey"].as<uint32>(m_data->kadUDPKey);
+        }
+
+        // Scheduler
+        if (auto s = root["scheduler"]) {
+            m_data->schedulerEnabled = s["enabled"].as<bool>(m_data->schedulerEnabled);
         }
 
         // Display
@@ -2346,12 +3475,45 @@ bool Preferences::load(const QString& filePath)
             m_data->disableKnownClientList = d["disableKnownClientList"].as<bool>(m_data->disableKnownClientList);
             m_data->disableQueueList = d["disableQueueList"].as<bool>(m_data->disableQueueList);
             m_data->useAutoCompletion = d["useAutoCompletion"].as<bool>(m_data->useAutoCompletion);
+            m_data->useOriginalIcons = d["useOriginalIcons"].as<bool>(m_data->useOriginalIcons);
             m_data->watchClipboard4ED2KLinks = d["watchClipboard4ED2KLinks"].as<bool>(m_data->watchClipboard4ED2KLinks);
             m_data->useAdvancedCalcRemainingTime = d["useAdvancedCalcRemainingTime"].as<bool>(m_data->useAdvancedCalcRemainingTime);
             m_data->videoPlayerCommand = QString::fromStdString(d["videoPlayerCommand"].as<std::string>(m_data->videoPlayerCommand.toStdString()));
             m_data->videoPlayerArgs = QString::fromStdString(d["videoPlayerArgs"].as<std::string>(m_data->videoPlayerArgs.toStdString()));
             m_data->createBackupToPreview = d["createBackupToPreview"].as<bool>(m_data->createBackupToPreview);
             m_data->autoCleanupFilenames = d["autoCleanupFilenames"].as<bool>(m_data->autoCleanupFilenames);
+        }
+
+        // Notifications
+        if (auto n = root["notifications"]) {
+            m_data->notifySoundType = n["soundType"].as<int>(m_data->notifySoundType);
+            m_data->notifySoundFile = QString::fromStdString(n["soundFile"].as<std::string>(m_data->notifySoundFile.toStdString()));
+            m_data->notifyOnLog = n["onLog"].as<bool>(m_data->notifyOnLog);
+            m_data->notifyOnChat = n["onChat"].as<bool>(m_data->notifyOnChat);
+            m_data->notifyOnChatMsg = n["onChatMsg"].as<bool>(m_data->notifyOnChatMsg);
+            m_data->notifyOnDownloadAdded = n["onDownloadAdded"].as<bool>(m_data->notifyOnDownloadAdded);
+            m_data->notifyOnDownloadFinished = n["onDownloadFinished"].as<bool>(m_data->notifyOnDownloadFinished);
+            m_data->notifyOnNewVersion = n["onNewVersion"].as<bool>(m_data->notifyOnNewVersion);
+            m_data->notifyOnUrgent = n["onUrgent"].as<bool>(m_data->notifyOnUrgent);
+            m_data->notifyEmailEnabled = n["emailEnabled"].as<bool>(m_data->notifyEmailEnabled);
+            m_data->notifyEmailSmtpServer = QString::fromStdString(n["emailSmtpServer"].as<std::string>(m_data->notifyEmailSmtpServer.toStdString()));
+            m_data->notifyEmailSmtpPort = static_cast<uint16>(n["emailSmtpPort"].as<int>(m_data->notifyEmailSmtpPort));
+            m_data->notifyEmailSmtpAuth = n["emailSmtpAuth"].as<int>(m_data->notifyEmailSmtpAuth);
+            m_data->notifyEmailSmtpTls = n["emailSmtpTls"].as<bool>(m_data->notifyEmailSmtpTls);
+            m_data->notifyEmailSmtpUser = QString::fromStdString(n["emailSmtpUser"].as<std::string>(m_data->notifyEmailSmtpUser.toStdString()));
+            m_data->notifyEmailRecipient = QString::fromStdString(n["emailRecipient"].as<std::string>(m_data->notifyEmailRecipient.toStdString()));
+            m_data->notifyEmailSender = QString::fromStdString(n["emailSender"].as<std::string>(m_data->notifyEmailSender.toStdString()));
+
+            // AES encryption key for SMTP password
+            if (n["emailEncryptionKey"]) {
+                m_data->notifyEmailEncKey = QByteArray::fromHex(
+                    QByteArray::fromStdString(n["emailEncryptionKey"].as<std::string>("")));
+            }
+            // Decrypt SMTP password
+            if (n["emailSmtpPasswordEnc"] && !m_data->notifyEmailEncKey.isEmpty()) {
+                auto enc = QString::fromStdString(n["emailSmtpPasswordEnc"].as<std::string>(""));
+                m_data->notifyEmailSmtpPassword = aesDecrypt(enc, m_data->notifyEmailEncKey);
+            }
         }
 
         // UI State
@@ -2390,6 +3552,11 @@ bool Preferences::load(const QString& filePath)
                 m_data->ircSplitSizes.clear();
                 for (const auto& item : ui["ircSplitSizes"])
                     m_data->ircSplitSizes.append(item.as<int>(0));
+            }
+            if (ui["statsSplitSizes"] && ui["statsSplitSizes"].IsSequence()) {
+                m_data->statsSplitSizes.clear();
+                for (const auto& item : ui["statsSplitSizes"])
+                    m_data->statsSplitSizes.append(item.as<int>(0));
             }
             m_data->windowWidth     = ui["windowWidth"].as<int>(m_data->windowWidth);
             m_data->windowHeight    = ui["windowHeight"].as<int>(m_data->windowHeight);
@@ -2573,6 +3740,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxHalfConnections" << YAML::Value << static_cast<int>(m_data->maxHalfConnections);
     out << YAML::Key << "bindAddress" << YAML::Value << m_data->bindAddress.toStdString();
     out << YAML::Key << "maxConsPerFive" << YAML::Value << static_cast<int>(m_data->maxConsPerFive);
+    out << YAML::Key << "showOverhead" << YAML::Value << m_data->showOverhead;
     out << YAML::Key << "networkED2K" << YAML::Value << m_data->networkED2K;
     out << YAML::Key << "publicIP" << YAML::Value << m_data->publicIP;
     out << YAML::EndMap;
@@ -2584,6 +3752,13 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "minUpload" << YAML::Value << m_data->minUpload;
     out << YAML::Key << "maxGraphUploadRate" << YAML::Value << m_data->maxGraphUploadRate;
     out << YAML::Key << "maxGraphDownloadRate" << YAML::Value << m_data->maxGraphDownloadRate;
+    out << YAML::Key << "dynUpEnabled" << YAML::Value << m_data->dynUpEnabled;
+    out << YAML::Key << "dynUpPingTolerance" << YAML::Value << m_data->dynUpPingTolerance;
+    out << YAML::Key << "dynUpPingToleranceMs" << YAML::Value << m_data->dynUpPingToleranceMs;
+    out << YAML::Key << "dynUpUseMillisecondPingTolerance" << YAML::Value << m_data->dynUpUseMillisecondPingTolerance;
+    out << YAML::Key << "dynUpGoingUpDivider" << YAML::Value << m_data->dynUpGoingUpDivider;
+    out << YAML::Key << "dynUpGoingDownDivider" << YAML::Value << m_data->dynUpGoingDownDivider;
+    out << YAML::Key << "dynUpNumberOfPings" << YAML::Value << m_data->dynUpNumberOfPings;
     out << YAML::EndMap;
 
     // Encryption
@@ -2634,6 +3809,16 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "verbose" << YAML::Value << m_data->verbose;
     out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
+    out << YAML::Key << "logLevel" << YAML::Value << m_data->logLevel;
+    out << YAML::Key << "verboseLogToDisk" << YAML::Value << m_data->verboseLogToDisk;
+    out << YAML::Key << "logSourceExchange" << YAML::Value << m_data->logSourceExchange;
+    out << YAML::Key << "logBannedClients" << YAML::Value << m_data->logBannedClients;
+    out << YAML::Key << "logRatingDescReceived" << YAML::Value << m_data->logRatingDescReceived;
+    out << YAML::Key << "logSecureIdent" << YAML::Value << m_data->logSecureIdent;
+    out << YAML::Key << "logFilteredIPs" << YAML::Value << m_data->logFilteredIPs;
+    out << YAML::Key << "logFileSaving" << YAML::Value << m_data->logFileSaving;
+    out << YAML::Key << "logA4AF" << YAML::Value << m_data->logA4AF;
+    out << YAML::Key << "logUlDlEvents" << YAML::Value << m_data->logUlDlEvents;
     out << YAML::EndMap;
 
     // Files
@@ -2658,6 +3843,22 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "fileBufferTimeLimit" << YAML::Value << m_data->fileBufferTimeLimit;
     out << YAML::Key << "autoDownloadPriority" << YAML::Value << m_data->autoDownloadPriority;
     out << YAML::Key << "addNewFilesPaused" << YAML::Value << m_data->addNewFilesPaused;
+    out << YAML::Key << "useCreditSystem" << YAML::Value << m_data->useCreditSystem;
+    out << YAML::Key << "a4afSaveCpu" << YAML::Value << m_data->a4afSaveCpu;
+    out << YAML::Key << "autoArchivePreviewStart" << YAML::Value << m_data->autoArchivePreviewStart;
+    out << YAML::Key << "ed2kHostname" << YAML::Value << m_data->ed2kHostname.toStdString();
+    out << YAML::Key << "showExtControls" << YAML::Value << m_data->showExtControls;
+    out << YAML::Key << "commitFiles" << YAML::Value << m_data->commitFiles;
+    out << YAML::Key << "extractMetaData" << YAML::Value << m_data->extractMetaData;
+    out << YAML::Key << "queueSize" << YAML::Value << m_data->queueSize;
+#ifdef Q_OS_WIN
+    out << YAML::Key << "autotakeEd2kLinks" << YAML::Value << m_data->autotakeEd2kLinks;
+    out << YAML::Key << "openPortsOnWinFirewall" << YAML::Value << m_data->openPortsOnWinFirewall;
+    out << YAML::Key << "sparsePartFiles" << YAML::Value << m_data->sparsePartFiles;
+    out << YAML::Key << "allocFullFile" << YAML::Value << m_data->allocFullFile;
+    out << YAML::Key << "resolveShellLinks" << YAML::Value << m_data->resolveShellLinks;
+    out << YAML::Key << "multiUserSharing" << YAML::Value << m_data->multiUserSharing;
+#endif
     out << YAML::EndMap;
 
     // Statistics
@@ -2669,6 +3870,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "connMaxAvgUpRate" << YAML::Value << m_data->connMaxAvgUpRate;
     out << YAML::Key << "connMaxUpRate" << YAML::Value << m_data->connMaxUpRate;
     out << YAML::Key << "statsAverageMinutes" << YAML::Value << m_data->statsAverageMinutes;
+    out << YAML::Key << "graphsUpdateSec" << YAML::Value << m_data->graphsUpdateSec;
+    out << YAML::Key << "statsUpdateSec" << YAML::Value << m_data->statsUpdateSec;
+    out << YAML::Key << "fillGraphs" << YAML::Value << m_data->fillGraphs;
+    out << YAML::Key << "statsConnectionsMax" << YAML::Value << m_data->statsConnectionsMax;
+    out << YAML::Key << "statsConnectionsRatio" << YAML::Value << m_data->statsConnectionsRatio;
     out << YAML::EndMap;
 
     // Security
@@ -2685,6 +3891,15 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "enableUTF8" << YAML::Value << m_data->ircEnableUTF8;
     out << YAML::Key << "usePerform" << YAML::Value << m_data->ircUsePerform;
     out << YAML::Key << "performString" << YAML::Value << m_data->ircPerformString.toStdString();
+    out << YAML::Key << "connectHelpChannel" << YAML::Value << m_data->ircConnectHelpChannel;
+    out << YAML::Key << "loadChannelList" << YAML::Value << m_data->ircLoadChannelList;
+    out << YAML::Key << "addTimestamp" << YAML::Value << m_data->ircAddTimestamp;
+    out << YAML::Key << "ignoreMiscInfoMessages" << YAML::Value << m_data->ircIgnoreMiscInfoMessages;
+    out << YAML::Key << "ignoreJoinMessages" << YAML::Value << m_data->ircIgnoreJoinMessages;
+    out << YAML::Key << "ignorePartMessages" << YAML::Value << m_data->ircIgnorePartMessages;
+    out << YAML::Key << "ignoreQuitMessages" << YAML::Value << m_data->ircIgnoreQuitMessages;
+    out << YAML::Key << "useChannelFilter" << YAML::Value << m_data->ircUseChannelFilter;
+    out << YAML::Key << "channelFilter" << YAML::Value << m_data->ircChannelFilter.toStdString();
     out << YAML::EndMap;
 
     // Chat / Messages
@@ -2693,6 +3908,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "msgSecure" << YAML::Value << m_data->msgSecure;
     out << YAML::Key << "useChatCaptchas" << YAML::Value << m_data->useChatCaptchas;
     out << YAML::Key << "enableSpamFilter" << YAML::Value << m_data->enableSpamFilter;
+    out << YAML::Key << "messageFilter" << YAML::Value << m_data->messageFilter.toStdString();
+    out << YAML::Key << "commentFilter" << YAML::Value << m_data->commentFilter.toStdString();
+    out << YAML::Key << "showSmileys" << YAML::Value << m_data->showSmileys;
+    out << YAML::Key << "indicateRatings" << YAML::Value << m_data->indicateRatings;
     out << YAML::EndMap;
 
     // Search
@@ -2707,6 +3926,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "listenAddress" << YAML::Value << m_data->ipcListenAddress.toStdString();
     out << YAML::Key << "daemonPath" << YAML::Value << m_data->ipcDaemonPath.toStdString();
     out << YAML::Key << "remotePollingMs" << YAML::Value << m_data->ipcRemotePollingMs;
+    out << YAML::Key << "tokens" << YAML::Value << YAML::BeginSeq;
+    for (const auto& t : m_data->ipcTokens)
+        out << t.toStdString();
+    out << YAML::EndSeq;
     out << YAML::EndMap;
 
     // Web Server
@@ -2721,6 +3944,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "kademlia" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->kadEnabled;
     out << YAML::Key << "udpKey" << YAML::Value << m_data->kadUDPKey;
+    out << YAML::EndMap;
+
+    // Scheduler
+    out << YAML::Key << "scheduler" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled" << YAML::Value << m_data->schedulerEnabled;
     out << YAML::EndMap;
 
     // Display
@@ -2738,12 +3966,46 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "disableKnownClientList" << YAML::Value << m_data->disableKnownClientList;
     out << YAML::Key << "disableQueueList" << YAML::Value << m_data->disableQueueList;
     out << YAML::Key << "useAutoCompletion" << YAML::Value << m_data->useAutoCompletion;
+    out << YAML::Key << "useOriginalIcons" << YAML::Value << m_data->useOriginalIcons;
     out << YAML::Key << "watchClipboard4ED2KLinks" << YAML::Value << m_data->watchClipboard4ED2KLinks;
     out << YAML::Key << "useAdvancedCalcRemainingTime" << YAML::Value << m_data->useAdvancedCalcRemainingTime;
     out << YAML::Key << "videoPlayerCommand" << YAML::Value << m_data->videoPlayerCommand.toStdString();
     out << YAML::Key << "videoPlayerArgs" << YAML::Value << m_data->videoPlayerArgs.toStdString();
     out << YAML::Key << "createBackupToPreview" << YAML::Value << m_data->createBackupToPreview;
     out << YAML::Key << "autoCleanupFilenames" << YAML::Value << m_data->autoCleanupFilenames;
+    out << YAML::EndMap;
+
+    // Notifications
+    out << YAML::Key << "notifications" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "soundType" << YAML::Value << m_data->notifySoundType;
+    out << YAML::Key << "soundFile" << YAML::Value << m_data->notifySoundFile.toStdString();
+    out << YAML::Key << "onLog" << YAML::Value << m_data->notifyOnLog;
+    out << YAML::Key << "onChat" << YAML::Value << m_data->notifyOnChat;
+    out << YAML::Key << "onChatMsg" << YAML::Value << m_data->notifyOnChatMsg;
+    out << YAML::Key << "onDownloadAdded" << YAML::Value << m_data->notifyOnDownloadAdded;
+    out << YAML::Key << "onDownloadFinished" << YAML::Value << m_data->notifyOnDownloadFinished;
+    out << YAML::Key << "onNewVersion" << YAML::Value << m_data->notifyOnNewVersion;
+    out << YAML::Key << "onUrgent" << YAML::Value << m_data->notifyOnUrgent;
+    out << YAML::Key << "emailEnabled" << YAML::Value << m_data->notifyEmailEnabled;
+    out << YAML::Key << "emailSmtpServer" << YAML::Value << m_data->notifyEmailSmtpServer.toStdString();
+    out << YAML::Key << "emailSmtpPort" << YAML::Value << static_cast<int>(m_data->notifyEmailSmtpPort);
+    out << YAML::Key << "emailSmtpAuth" << YAML::Value << m_data->notifyEmailSmtpAuth;
+    out << YAML::Key << "emailSmtpTls" << YAML::Value << m_data->notifyEmailSmtpTls;
+    out << YAML::Key << "emailSmtpUser" << YAML::Value << m_data->notifyEmailSmtpUser.toStdString();
+    out << YAML::Key << "emailRecipient" << YAML::Value << m_data->notifyEmailRecipient.toStdString();
+    out << YAML::Key << "emailSender" << YAML::Value << m_data->notifyEmailSender.toStdString();
+    // Generate encryption key on first save if needed
+    QByteArray encKey = m_data->notifyEmailEncKey;
+    if (encKey.isEmpty() && !m_data->notifyEmailSmtpPassword.isEmpty()) {
+        encKey.resize(32);
+        RAND_bytes(reinterpret_cast<unsigned char*>(encKey.data()), 32);
+        m_data->notifyEmailEncKey = encKey;
+    }
+    if (!encKey.isEmpty()) {
+        out << YAML::Key << "emailEncryptionKey" << YAML::Value << encKey.toHex().toStdString();
+        out << YAML::Key << "emailSmtpPasswordEnc" << YAML::Value
+            << aesEncrypt(m_data->notifyEmailSmtpPassword, encKey).toStdString();
+    }
     out << YAML::EndMap;
 
     // UI State
@@ -2774,6 +4036,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::EndSeq;
     out << YAML::Key << "ircSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
     for (int sz : m_data->ircSplitSizes)
+        out << sz;
+    out << YAML::EndSeq;
+    out << YAML::Key << "statsSplitSizes" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int sz : m_data->statsSplitSizes)
         out << sz;
     out << YAML::EndSeq;
     out << YAML::Key << "windowWidth"     << YAML::Value << m_data->windowWidth;

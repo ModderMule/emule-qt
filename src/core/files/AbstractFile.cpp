@@ -124,7 +124,7 @@ bool AbstractFile::hasNullHash() const
 // ED2K link
 // ---------------------------------------------------------------------------
 
-QString AbstractFile::getED2kLink(bool hashset, bool html) const
+QString AbstractFile::getED2kLink(bool hashset, bool html, bool hostname) const
 {
     QString link;
     if (html)
@@ -151,7 +151,15 @@ QString AbstractFile::getED2kLink(bool hashset, bool html) const
     if (m_fileIdentifier.hasAICHHash())
         link += QStringLiteral("h=%1|").arg(m_fileIdentifier.getAICHHash().getString());
 
-    link += QChar(u'/');
+    if (hostname) {
+        const auto& hn = thePrefs.ed2kHostname();
+        if (hn.contains(u'.'))
+            link += QStringLiteral("|sources,%1:%2|/").arg(hn).arg(thePrefs.port());
+        else
+            link += QChar(u'/');
+    } else {
+        link += QChar(u'/');
+    }
 
     if (html)
         link += QStringLiteral("\">%1</a>").arg(stripInvalidFilenameChars(m_fileName));

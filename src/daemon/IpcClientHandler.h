@@ -19,7 +19,7 @@ class IpcClientHandler : public QObject {
     Q_OBJECT
 
 public:
-    explicit IpcClientHandler(QTcpSocket* socket, QObject* parent = nullptr);
+    explicit IpcClientHandler(QTcpSocket* socket, bool isLocal, QObject* parent = nullptr);
     ~IpcClientHandler() override;
 
     /// Send a message to this client.
@@ -86,8 +86,16 @@ private:
     void handleRecheckFirewall(const Ipc::IpcMessage& msg);
     void handleSyncLogs(const Ipc::IpcMessage& msg);
     void handleShutdown(const Ipc::IpcMessage& msg);
+    void handleReloadIPFilter(const Ipc::IpcMessage& msg);
+    void handleGetSchedules(const Ipc::IpcMessage& msg);
+    void handleSaveSchedules(const Ipc::IpcMessage& msg);
+    void handleScanImportFolder(const Ipc::IpcMessage& msg);
+    void handleGetConvertJobs(const Ipc::IpcMessage& msg);
+    void handleRemoveConvertJob(const Ipc::IpcMessage& msg);
+    void handleRetryConvertJob(const Ipc::IpcMessage& msg);
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
+    bool m_isLocal = true;
     bool m_handshaked = false;
     int m_subscriptionMask = 0;
 };

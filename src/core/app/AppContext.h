@@ -25,6 +25,9 @@ class ServerConnect;
 class ServerList;
 class SharedFileList;
 class Statistics;
+class Scheduler;
+class LastCommonRouteFinder;
+class UPnPManager;
 class UploadBandwidthThrottler;
 class UploadQueue;
 
@@ -44,6 +47,9 @@ struct AppContext {
     SearchList*      searchList     = nullptr;
     Statistics*      statistics     = nullptr;
     UploadBandwidthThrottler* uploadBandwidthThrottler = nullptr;
+    LastCommonRouteFinder* lastCommonRouteFinder = nullptr;
+    Scheduler*   scheduler      = nullptr;
+    UPnPManager* upnpManager    = nullptr;
 
     /// Returns our server-assigned client ID (0 if not connected).
     [[nodiscard]] uint32 getID() const;

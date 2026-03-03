@@ -24,7 +24,7 @@ private slots:
     void defaults_general()
     {
         Preferences prefs;
-        QCOMPARE(prefs.nick(), QStringLiteral("eMule User"));
+        QCOMPARE(prefs.nick(), QStringLiteral("https://emule-qt.org"));
         QCOMPARE(prefs.autoConnect(), false);
         QCOMPARE(prefs.reconnect(), true);
         QCOMPARE(prefs.filterLANIPs(), true);
@@ -52,6 +52,12 @@ private slots:
         QCOMPARE(prefs.cryptLayerRequested(), true);
         QCOMPARE(prefs.cryptLayerRequired(), false);
         QCOMPARE(prefs.cryptTCPPaddingLength(), static_cast<uint8>(128));
+    }
+
+    void defaults_display()
+    {
+        Preferences prefs;
+        QCOMPARE(prefs.useOriginalIcons(), false);
     }
 
     void defaults_upnp()
@@ -147,7 +153,7 @@ private slots:
         Preferences prefs;
         // Non-existent file → defaults applied, returns true (first run)
         QVERIFY(prefs.load(tmp.filePath(QStringLiteral("does_not_exist.yaml"))));
-        QCOMPARE(prefs.nick(), QStringLiteral("eMule User"));
+        QCOMPARE(prefs.nick(), QStringLiteral("https://emule-qt.org"));
         QCOMPARE(prefs.maxConnections(), static_cast<uint16>(500));
         // User hash should be generated
         auto hash = prefs.userHash();
@@ -170,7 +176,7 @@ private slots:
         Preferences prefs;
         QVERIFY(!prefs.load(file));
         // Should fall back to defaults
-        QCOMPARE(prefs.nick(), QStringLiteral("eMule User"));
+        QCOMPARE(prefs.nick(), QStringLiteral("https://emule-qt.org"));
     }
 
     void load_partialYaml()
@@ -425,8 +431,8 @@ private slots:
         Preferences prefs;
         QCOMPARE(prefs.msgOnlyFriends(), false);
         QCOMPARE(prefs.msgSecure(), false);
-        QCOMPARE(prefs.useChatCaptchas(), false);
-        QCOMPARE(prefs.enableSpamFilter(), false);
+        QCOMPARE(prefs.useChatCaptchas(), true);
+        QCOMPARE(prefs.enableSpamFilter(), true);
     }
 
     void defaults_securityExtended()
