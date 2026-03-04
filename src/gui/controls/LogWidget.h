@@ -40,6 +40,9 @@ public:
     /// Clear all tabs.
     void clearAll();
 
+    /// Set a custom font on all log browser tabs.
+    void setCustomFont(const QFont& font);
+
     /// Install the global message handler to capture core log output.
     void installMessageHandler();
 

@@ -49,8 +49,16 @@ target_link_libraries(emuleqt
         eMule::Ipc
         Qt6::Widgets
         Qt6::Multimedia
+        Qt6::Network
         eMule::CommonSettings
 )
+
+if(APPLE)
+    target_link_libraries(emuleqt PRIVATE "-framework IOKit" "-framework CoreFoundation" "-framework CoreServices")
+elseif(LINUX)
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+    target_link_libraries(emuleqt PRIVATE Qt6::DBus)
+endif()
 
 # macOS bundle settings
 set_target_properties(emuleqt PROPERTIES
@@ -59,6 +67,7 @@ set_target_properties(emuleqt PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER "org.emule.emuleqt"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
     WIN32_EXECUTABLE TRUE
 )
 

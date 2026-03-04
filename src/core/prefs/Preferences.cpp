@@ -3,11 +3,13 @@
 
 #include "prefs/Preferences.h"
 
+#include "app/AppConfig.h"
 #include "net/EMSocket.h"
 #include "net/EncryptedStreamSocket.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QSaveFile>
@@ -264,6 +266,18 @@ struct Preferences::Data {
     uint16 webServerPort = 4711;        // Classic eMule web server port
     QString webServerApiKey;
     QString webServerListenAddress;     // Empty = any
+    bool webServerRestApiEnabled = false;
+    bool webServerGzipEnabled = true;
+    bool webServerUPnP = false;
+    QString webServerTemplatePath;
+    int webServerSessionTimeout = 5;    // minutes
+    bool webServerHttpsEnabled = false;
+    QString webServerCertPath;
+    QString webServerKeyPath;
+    QString webServerAdminPassword;     // SHA-256 hex hash
+    bool webServerAdminAllowHiLevFunc = false;
+    bool webServerGuestEnabled = false;
+    QString webServerGuestPassword;     // SHA-256 hex hash
 
     // Scheduler
     bool schedulerEnabled = false;
@@ -319,7 +333,17 @@ struct Preferences::Data {
     // GUI (General page)
     bool promptOnExit = true;
     bool startMinimized = false;
+    bool showSplashScreen = true;
+    QString language;             // Empty = system locale
+    bool enableOnlineSignature = false;
+    bool enableMiniMule = true;
+    bool preventStandby = false;
+    bool startWithOS = false;
     uint32 startVersion = 0;  // Migration counter: 0=first run, 1+=migrations applied
+    bool versionCheckEnabled = true;
+    int versionCheckDays = 5;          // Check interval in days (1-14)
+    int64_t lastVersionCheck = 0;      // Epoch seconds of last check
+    bool bringToFrontOnLinkClick = true;
 
     // GUI (Display page)
     int depth3D = 0;                        // 0=flat, 5=round
@@ -335,7 +359,8 @@ struct Preferences::Data {
     bool disableKnownClientList = false;
     bool disableQueueList = false;
     bool useAutoCompletion = true;
-    bool useOriginalIcons = false;
+    bool useOriginalIcons = true;
+    QString logFont;  // Empty = system default; QFont::toString() format
 
     // GUI (Files page)
     bool watchClipboard4ED2KLinks = false;
@@ -1890,6 +1915,150 @@ void Preferences::setWebServerListenAddress(const QString& val)
     m_data->webServerListenAddress = val;
 }
 
+bool Preferences::webServerRestApiEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerRestApiEnabled;
+}
+
+void Preferences::setWebServerRestApiEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerRestApiEnabled = val;
+}
+
+bool Preferences::webServerGzipEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerGzipEnabled;
+}
+
+void Preferences::setWebServerGzipEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerGzipEnabled = val;
+}
+
+bool Preferences::webServerUPnP() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerUPnP;
+}
+
+void Preferences::setWebServerUPnP(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerUPnP = val;
+}
+
+QString Preferences::webServerTemplatePath() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerTemplatePath;
+}
+
+void Preferences::setWebServerTemplatePath(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerTemplatePath = val;
+}
+
+int Preferences::webServerSessionTimeout() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerSessionTimeout;
+}
+
+void Preferences::setWebServerSessionTimeout(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerSessionTimeout = val;
+}
+
+bool Preferences::webServerHttpsEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerHttpsEnabled;
+}
+
+void Preferences::setWebServerHttpsEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerHttpsEnabled = val;
+}
+
+QString Preferences::webServerCertPath() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerCertPath;
+}
+
+void Preferences::setWebServerCertPath(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerCertPath = val;
+}
+
+QString Preferences::webServerKeyPath() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerKeyPath;
+}
+
+void Preferences::setWebServerKeyPath(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerKeyPath = val;
+}
+
+QString Preferences::webServerAdminPassword() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerAdminPassword;
+}
+
+void Preferences::setWebServerAdminPassword(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerAdminPassword = val;
+}
+
+bool Preferences::webServerAdminAllowHiLevFunc() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerAdminAllowHiLevFunc;
+}
+
+void Preferences::setWebServerAdminAllowHiLevFunc(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerAdminAllowHiLevFunc = val;
+}
+
+bool Preferences::webServerGuestEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerGuestEnabled;
+}
+
+void Preferences::setWebServerGuestEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerGuestEnabled = val;
+}
+
+QString Preferences::webServerGuestPassword() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->webServerGuestPassword;
+}
+
+void Preferences::setWebServerGuestPassword(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->webServerGuestPassword = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Scheduler
 // ---------------------------------------------------------------------------
@@ -2414,6 +2583,78 @@ void Preferences::setStartMinimized(bool val)
     m_data->startMinimized = val;
 }
 
+bool Preferences::showSplashScreen() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showSplashScreen;
+}
+
+void Preferences::setShowSplashScreen(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showSplashScreen = val;
+}
+
+QString Preferences::language() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->language;
+}
+
+void Preferences::setLanguage(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->language = val;
+}
+
+bool Preferences::enableOnlineSignature() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->enableOnlineSignature;
+}
+
+void Preferences::setEnableOnlineSignature(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->enableOnlineSignature = val;
+}
+
+bool Preferences::enableMiniMule() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->enableMiniMule;
+}
+
+void Preferences::setEnableMiniMule(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->enableMiniMule = val;
+}
+
+bool Preferences::preventStandby() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->preventStandby;
+}
+
+void Preferences::setPreventStandby(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->preventStandby = val;
+}
+
+bool Preferences::startWithOS() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->startWithOS;
+}
+
+void Preferences::setStartWithOS(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->startWithOS = val;
+}
+
 uint32 Preferences::startVersion() const
 {
     QReadLocker lock(&m_lock);
@@ -2424,6 +2665,54 @@ void Preferences::setStartVersion(uint32 val)
 {
     QWriteLocker lock(&m_lock);
     m_data->startVersion = val;
+}
+
+bool Preferences::versionCheckEnabled() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->versionCheckEnabled;
+}
+
+void Preferences::setVersionCheckEnabled(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->versionCheckEnabled = val;
+}
+
+int Preferences::versionCheckDays() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->versionCheckDays;
+}
+
+void Preferences::setVersionCheckDays(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->versionCheckDays = std::clamp(val, 1, 14);
+}
+
+int64_t Preferences::lastVersionCheck() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->lastVersionCheck;
+}
+
+void Preferences::setLastVersionCheck(int64_t val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->lastVersionCheck = val;
+}
+
+bool Preferences::bringToFrontOnLinkClick() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->bringToFrontOnLinkClick;
+}
+
+void Preferences::setBringToFrontOnLinkClick(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->bringToFrontOnLinkClick = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -2596,6 +2885,18 @@ void Preferences::setUseOriginalIcons(bool val)
 {
     QWriteLocker lock(&m_lock);
     m_data->useOriginalIcons = val;
+}
+
+QString Preferences::logFont() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logFont;
+}
+
+void Preferences::setLogFont(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logFont = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -3122,6 +3423,20 @@ void Preferences::resolveDefaultDirectories()
 {
 #ifdef Q_OS_MACOS
     const QString baseDir = QDir::homePath() + QStringLiteral("/eMuleQt");
+#elif defined(Q_OS_WIN)
+    QString baseDir;
+    switch (AppConfig::multiUserSharingMode()) {
+    case 0: // per-user
+        baseDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        break;
+    case 1: // all-users
+        baseDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+                  + QStringLiteral("/eMule/eMule Qt");
+        break;
+    default: // 2 = program-dir (portable)
+        baseDir = QCoreApplication::applicationDirPath();
+        break;
+    }
 #else
     const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
 #endif
@@ -3129,8 +3444,15 @@ void Preferences::resolveDefaultDirectories()
     if (m_data->incomingDir.isEmpty())
         m_data->incomingDir = baseDir + QStringLiteral("/Incoming");
 
-    if (m_data->configDir.isEmpty())
+    if (m_data->configDir.isEmpty()) {
+#ifdef Q_OS_WIN
+        // In program-dir mode use lowercase "config" to match the bundle layout
+        if (AppConfig::multiUserSharingMode() == 2)
+            m_data->configDir = baseDir + QStringLiteral("/config");
+        else
+#endif
         m_data->configDir = baseDir + QStringLiteral("/Config");
+    }
 
     if (m_data->tempDirs.isEmpty())
         m_data->tempDirs.append(baseDir + QStringLiteral("/Temp"));
@@ -3203,7 +3525,17 @@ bool Preferences::load(const QString& filePath)
             m_data->filterLANIPs = g["filterLANIPs"].as<bool>(m_data->filterLANIPs);
             m_data->promptOnExit = g["promptOnExit"].as<bool>(m_data->promptOnExit);
             m_data->startMinimized = g["startMinimized"].as<bool>(m_data->startMinimized);
+            m_data->showSplashScreen = g["showSplashScreen"].as<bool>(m_data->showSplashScreen);
+            m_data->language = QString::fromStdString(g["language"].as<std::string>(m_data->language.toStdString()));
+            m_data->enableOnlineSignature = g["enableOnlineSignature"].as<bool>(m_data->enableOnlineSignature);
+            m_data->enableMiniMule = g["enableMiniMule"].as<bool>(m_data->enableMiniMule);
+            m_data->preventStandby = g["preventStandby"].as<bool>(m_data->preventStandby);
+            m_data->startWithOS = g["startWithOS"].as<bool>(m_data->startWithOS);
             m_data->startVersion = g["startVersion"].as<uint32>(m_data->startVersion);
+            m_data->versionCheckEnabled = g["versionCheckEnabled"].as<bool>(m_data->versionCheckEnabled);
+            m_data->versionCheckDays = std::clamp(g["versionCheckDays"].as<int>(m_data->versionCheckDays), 1, 14);
+            m_data->lastVersionCheck = g["lastVersionCheck"].as<int64_t>(m_data->lastVersionCheck);
+            m_data->bringToFrontOnLinkClick = g["bringToFrontOnLinkClick"].as<bool>(m_data->bringToFrontOnLinkClick);
 
             // userHash: decode from hex
             if (g["userHash"]) {
@@ -3447,6 +3779,18 @@ bool Preferences::load(const QString& filePath)
             m_data->webServerPort = static_cast<uint16>(ws["port"].as<int>(m_data->webServerPort));
             m_data->webServerApiKey = QString::fromStdString(ws["apiKey"].as<std::string>(m_data->webServerApiKey.toStdString()));
             m_data->webServerListenAddress = QString::fromStdString(ws["listenAddress"].as<std::string>(m_data->webServerListenAddress.toStdString()));
+            m_data->webServerRestApiEnabled = ws["restApiEnabled"].as<bool>(m_data->webServerRestApiEnabled);
+            m_data->webServerGzipEnabled = ws["gzipEnabled"].as<bool>(m_data->webServerGzipEnabled);
+            m_data->webServerUPnP = ws["upnp"].as<bool>(m_data->webServerUPnP);
+            m_data->webServerTemplatePath = QString::fromStdString(ws["templatePath"].as<std::string>(m_data->webServerTemplatePath.toStdString()));
+            m_data->webServerSessionTimeout = ws["sessionTimeout"].as<int>(m_data->webServerSessionTimeout);
+            m_data->webServerHttpsEnabled = ws["httpsEnabled"].as<bool>(m_data->webServerHttpsEnabled);
+            m_data->webServerCertPath = QString::fromStdString(ws["certPath"].as<std::string>(m_data->webServerCertPath.toStdString()));
+            m_data->webServerKeyPath = QString::fromStdString(ws["keyPath"].as<std::string>(m_data->webServerKeyPath.toStdString()));
+            m_data->webServerAdminPassword = QString::fromStdString(ws["adminPassword"].as<std::string>(m_data->webServerAdminPassword.toStdString()));
+            m_data->webServerAdminAllowHiLevFunc = ws["adminAllowHiLevFunc"].as<bool>(m_data->webServerAdminAllowHiLevFunc);
+            m_data->webServerGuestEnabled = ws["guestEnabled"].as<bool>(m_data->webServerGuestEnabled);
+            m_data->webServerGuestPassword = QString::fromStdString(ws["guestPassword"].as<std::string>(m_data->webServerGuestPassword.toStdString()));
         }
 
         // Kademlia
@@ -3476,6 +3820,7 @@ bool Preferences::load(const QString& filePath)
             m_data->disableQueueList = d["disableQueueList"].as<bool>(m_data->disableQueueList);
             m_data->useAutoCompletion = d["useAutoCompletion"].as<bool>(m_data->useAutoCompletion);
             m_data->useOriginalIcons = d["useOriginalIcons"].as<bool>(m_data->useOriginalIcons);
+            m_data->logFont = QString::fromStdString(d["logFont"].as<std::string>(m_data->logFont.toStdString()));
             m_data->watchClipboard4ED2KLinks = d["watchClipboard4ED2KLinks"].as<bool>(m_data->watchClipboard4ED2KLinks);
             m_data->useAdvancedCalcRemainingTime = d["useAdvancedCalcRemainingTime"].as<bool>(m_data->useAdvancedCalcRemainingTime);
             m_data->videoPlayerCommand = QString::fromStdString(d["videoPlayerCommand"].as<std::string>(m_data->videoPlayerCommand.toStdString()));
@@ -3711,7 +4056,18 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "filterLANIPs" << YAML::Value << m_data->filterLANIPs;
     out << YAML::Key << "promptOnExit" << YAML::Value << m_data->promptOnExit;
     out << YAML::Key << "startMinimized" << YAML::Value << m_data->startMinimized;
+    out << YAML::Key << "showSplashScreen" << YAML::Value << m_data->showSplashScreen;
+    if (!m_data->language.isEmpty())
+        out << YAML::Key << "language" << YAML::Value << m_data->language.toStdString();
+    out << YAML::Key << "enableOnlineSignature" << YAML::Value << m_data->enableOnlineSignature;
+    out << YAML::Key << "enableMiniMule" << YAML::Value << m_data->enableMiniMule;
+    out << YAML::Key << "preventStandby" << YAML::Value << m_data->preventStandby;
+    out << YAML::Key << "startWithOS" << YAML::Value << m_data->startWithOS;
     out << YAML::Key << "startVersion" << YAML::Value << m_data->startVersion;
+    out << YAML::Key << "versionCheckEnabled" << YAML::Value << m_data->versionCheckEnabled;
+    out << YAML::Key << "versionCheckDays" << YAML::Value << m_data->versionCheckDays;
+    out << YAML::Key << "lastVersionCheck" << YAML::Value << m_data->lastVersionCheck;
+    out << YAML::Key << "bringToFrontOnLinkClick" << YAML::Value << m_data->bringToFrontOnLinkClick;
     out << YAML::EndMap;
 
     // Server connection
@@ -3938,6 +4294,18 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "port" << YAML::Value << static_cast<int>(m_data->webServerPort);
     out << YAML::Key << "apiKey" << YAML::Value << m_data->webServerApiKey.toStdString();
     out << YAML::Key << "listenAddress" << YAML::Value << m_data->webServerListenAddress.toStdString();
+    out << YAML::Key << "restApiEnabled" << YAML::Value << m_data->webServerRestApiEnabled;
+    out << YAML::Key << "gzipEnabled" << YAML::Value << m_data->webServerGzipEnabled;
+    out << YAML::Key << "upnp" << YAML::Value << m_data->webServerUPnP;
+    out << YAML::Key << "templatePath" << YAML::Value << m_data->webServerTemplatePath.toStdString();
+    out << YAML::Key << "sessionTimeout" << YAML::Value << m_data->webServerSessionTimeout;
+    out << YAML::Key << "httpsEnabled" << YAML::Value << m_data->webServerHttpsEnabled;
+    out << YAML::Key << "certPath" << YAML::Value << m_data->webServerCertPath.toStdString();
+    out << YAML::Key << "keyPath" << YAML::Value << m_data->webServerKeyPath.toStdString();
+    out << YAML::Key << "adminPassword" << YAML::Value << m_data->webServerAdminPassword.toStdString();
+    out << YAML::Key << "adminAllowHiLevFunc" << YAML::Value << m_data->webServerAdminAllowHiLevFunc;
+    out << YAML::Key << "guestEnabled" << YAML::Value << m_data->webServerGuestEnabled;
+    out << YAML::Key << "guestPassword" << YAML::Value << m_data->webServerGuestPassword.toStdString();
     out << YAML::EndMap;
 
     // Kademlia
@@ -3967,6 +4335,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "disableQueueList" << YAML::Value << m_data->disableQueueList;
     out << YAML::Key << "useAutoCompletion" << YAML::Value << m_data->useAutoCompletion;
     out << YAML::Key << "useOriginalIcons" << YAML::Value << m_data->useOriginalIcons;
+    if (!m_data->logFont.isEmpty())
+        out << YAML::Key << "logFont" << YAML::Value << m_data->logFont.toStdString();
     out << YAML::Key << "watchClipboard4ED2KLinks" << YAML::Value << m_data->watchClipboard4ED2KLinks;
     out << YAML::Key << "useAdvancedCalcRemainingTime" << YAML::Value << m_data->useAdvancedCalcRemainingTime;
     out << YAML::Key << "videoPlayerCommand" << YAML::Value << m_data->videoPlayerCommand.toStdString();

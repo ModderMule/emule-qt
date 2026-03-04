@@ -118,6 +118,12 @@ void LogWidget::clearAll()
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.0 ready</font>"));
 }
 
+void LogWidget::setCustomFont(const QFont& font)
+{
+    for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser, m_kadBrowser})
+        if (browser) browser->setFont(font);
+}
+
 void LogWidget::installMessageHandler()
 {
     s_instance = this;

@@ -48,6 +48,7 @@
 #include <QFileInfo>
 #include <QHostAddress>
 #include <QSet>
+#include <QStorageInfo>
 
 #include <ctime>
 
@@ -1060,6 +1061,21 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
     if (auto* dq = theApp.downloadQueue) {
         stats.insert(QStringLiteral("downDatarate"), static_cast<qint64>(dq->datarate()));
         stats.insert(QStringLiteral("downFileCount"), static_cast<qint64>(dq->fileCount()));
+
+        // Count completed downloads (for MiniMule)
+        int completedCount = 0;
+        for (const auto* f : dq->files()) {
+            if (f->status() == PartFileStatus::Complete)
+                ++completedCount;
+        }
+        stats.insert(QStringLiteral("completedDownloads"), completedCount);
+    }
+
+    // Free space on incoming directory (for MiniMule)
+    {
+        QStorageInfo storage(thePrefs.incomingDir());
+        if (storage.isValid())
+            stats.insert(QStringLiteral("freeTempSpace"), storage.bytesAvailable());
     }
 
     // Connection stats
@@ -1253,6 +1269,24 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     for (const auto& s : thePrefs.sharedDirs())
         sharedArr.append(s);
     prefs.insert(QStringLiteral("sharedDirs"), sharedArr);
+
+    // Web Server
+    prefs.insert(QStringLiteral("webServerEnabled"), thePrefs.webServerEnabled());
+    prefs.insert(QStringLiteral("webServerPort"), static_cast<qint64>(thePrefs.webServerPort()));
+    prefs.insert(QStringLiteral("webServerApiKey"), thePrefs.webServerApiKey());
+    prefs.insert(QStringLiteral("webServerListenAddress"), thePrefs.webServerListenAddress());
+    prefs.insert(QStringLiteral("webServerRestApiEnabled"), thePrefs.webServerRestApiEnabled());
+    prefs.insert(QStringLiteral("webServerGzipEnabled"), thePrefs.webServerGzipEnabled());
+    prefs.insert(QStringLiteral("webServerUPnP"), thePrefs.webServerUPnP());
+    prefs.insert(QStringLiteral("webServerTemplatePath"), thePrefs.webServerTemplatePath());
+    prefs.insert(QStringLiteral("webServerSessionTimeout"), static_cast<qint64>(thePrefs.webServerSessionTimeout()));
+    prefs.insert(QStringLiteral("webServerHttpsEnabled"), thePrefs.webServerHttpsEnabled());
+    prefs.insert(QStringLiteral("webServerCertPath"), thePrefs.webServerCertPath());
+    prefs.insert(QStringLiteral("webServerKeyPath"), thePrefs.webServerKeyPath());
+    prefs.insert(QStringLiteral("webServerAdminPassword"), thePrefs.webServerAdminPassword());
+    prefs.insert(QStringLiteral("webServerAdminAllowHiLevFunc"), thePrefs.webServerAdminAllowHiLevFunc());
+    prefs.insert(QStringLiteral("webServerGuestEnabled"), thePrefs.webServerGuestEnabled());
+    prefs.insert(QStringLiteral("webServerGuestPassword"), thePrefs.webServerGuestPassword());
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(prefs)));
 }
@@ -1530,8 +1564,44 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
                 dirs.append(item.toString());
             thePrefs.setSharedDirs(dirs);
         }
+        // Web Server
+        else if (key == QStringLiteral("webServerEnabled"))
+            thePrefs.setWebServerEnabled(val.toBool());
+        else if (key == QStringLiteral("webServerPort"))
+            thePrefs.setWebServerPort(static_cast<uint16>(val.toInteger()));
+        else if (key == QStringLiteral("webServerApiKey"))
+            thePrefs.setWebServerApiKey(val.toString());
+        else if (key == QStringLiteral("webServerListenAddress"))
+            thePrefs.setWebServerListenAddress(val.toString());
+        else if (key == QStringLiteral("webServerRestApiEnabled"))
+            thePrefs.setWebServerRestApiEnabled(val.toBool());
+        else if (key == QStringLiteral("webServerGzipEnabled"))
+            thePrefs.setWebServerGzipEnabled(val.toBool());
+        else if (key == QStringLiteral("webServerUPnP"))
+            thePrefs.setWebServerUPnP(val.toBool());
+        else if (key == QStringLiteral("webServerTemplatePath"))
+            thePrefs.setWebServerTemplatePath(val.toString());
+        else if (key == QStringLiteral("webServerSessionTimeout"))
+            thePrefs.setWebServerSessionTimeout(static_cast<int>(val.toInteger()));
+        else if (key == QStringLiteral("webServerHttpsEnabled"))
+            thePrefs.setWebServerHttpsEnabled(val.toBool());
+        else if (key == QStringLiteral("webServerCertPath"))
+            thePrefs.setWebServerCertPath(val.toString());
+        else if (key == QStringLiteral("webServerKeyPath"))
+            thePrefs.setWebServerKeyPath(val.toString());
+        else if (key == QStringLiteral("webServerAdminPassword"))
+            thePrefs.setWebServerAdminPassword(val.toString());
+        else if (key == QStringLiteral("webServerAdminAllowHiLevFunc"))
+            thePrefs.setWebServerAdminAllowHiLevFunc(val.toBool());
+        else if (key == QStringLiteral("webServerGuestEnabled"))
+            thePrefs.setWebServerGuestEnabled(val.toBool());
+        else if (key == QStringLiteral("webServerGuestPassword"))
+            thePrefs.setWebServerGuestPassword(val.toString());
     }
     thePrefs.save();
+
+    // Notify web server config changes
+    emit webServerConfigChanged();
 
     // Propagate config changes to running ServerConnect
     if (theApp.serverConnect) {

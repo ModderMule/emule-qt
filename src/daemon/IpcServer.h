@@ -41,6 +41,10 @@ public:
     /// Number of currently connected clients.
     [[nodiscard]] int clientCount() const;
 
+signals:
+    /// Forwarded from any client's IpcClientHandler::webServerConfigChanged.
+    void webServerConfigChanged();
+
 private slots:
     void onNewConnection();
     void onClientDisconnected(IpcClientHandler* handler);

@@ -94,6 +94,17 @@ IrcPanel::IrcPanel(QWidget* parent)
 
 IrcPanel::~IrcPanel() = default;
 
+void IrcPanel::setCustomFont(const QFont& font)
+{
+    m_customFont = font;
+    if (m_statusBrowser)
+        m_statusBrowser->setFont(font);
+    for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
+        if (auto* browser = qobject_cast<QTextBrowser*>(it->widget))
+            browser->setFont(font);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Event filter — arrow key history on input field
 // ---------------------------------------------------------------------------
@@ -850,6 +861,8 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
     auto* browser = new QTextBrowser(this);
     browser->setOpenExternalLinks(true);
     browser->setReadOnly(true);
+    if (!m_customFont.family().isEmpty())
+        browser->setFont(m_customFont);
     ch.widget = browser;
 
     QString tabLabel = name;

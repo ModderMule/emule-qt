@@ -3,6 +3,7 @@
 
 #include "DaemonApp.h"
 #include "CoreNotifierBridge.h"
+#include "IpcClientHandler.h"
 #include "IpcServer.h"
 
 #include "IpcMessage.h"
@@ -10,6 +11,7 @@
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
 #include "prefs/Preferences.h"
+#include "webserver/WebServer.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -86,6 +88,13 @@ bool DaemonApp::start()
     m_notifierBridge = std::make_unique<CoreNotifierBridge>(m_ipcServer.get(), this);
     m_notifierBridge->connectAll();
 
+    // Connect web server config changes from any IPC client
+    connect(m_ipcServer.get(), &IpcServer::webServerConfigChanged,
+            this, &DaemonApp::restartWebServer);
+
+    // Start web server if enabled
+    startWebServer();
+
     m_running = true;
     logInfo(QStringLiteral("Daemon started — IPC server on %1:%2")
                 .arg(addr.toString()).arg(port));
@@ -96,6 +105,8 @@ void DaemonApp::stop()
 {
     if (!m_running)
         return;
+
+    stopWebServer();
 
     removeLogForwarder();
     m_notifierBridge.reset();
@@ -115,6 +126,62 @@ void DaemonApp::stop()
 bool DaemonApp::isRunning() const
 {
     return m_running;
+}
+
+// ---------------------------------------------------------------------------
+// Web server management
+// ---------------------------------------------------------------------------
+
+void DaemonApp::startWebServer()
+{
+    if (!thePrefs.webServerEnabled())
+        return;
+
+    m_webServer = std::make_unique<WebServer>(this);
+
+    // Inject dependencies from core
+    m_webServer->setDownloadQueue(theApp.downloadQueue);
+    m_webServer->setUploadQueue(theApp.uploadQueue);
+    m_webServer->setServerList(theApp.serverList);
+    m_webServer->setServerConnect(theApp.serverConnect);
+    m_webServer->setSearchList(theApp.searchList);
+    m_webServer->setSharedFileList(theApp.sharedFileList);
+    m_webServer->setFriendList(theApp.friendList);
+    m_webServer->setStatistics(theApp.statistics);
+    m_webServer->setPreferences(&thePrefs);
+
+    WebServerConfig config;
+    config.enabled            = true;
+    config.port               = thePrefs.webServerPort();
+    config.listenAddress      = thePrefs.webServerListenAddress();
+    config.apiKey             = thePrefs.webServerApiKey();
+    config.restApiEnabled     = thePrefs.webServerRestApiEnabled();
+    config.gzipEnabled        = thePrefs.webServerGzipEnabled();
+    config.templatePath       = thePrefs.webServerTemplatePath();
+    config.sessionTimeout     = thePrefs.webServerSessionTimeout();
+    config.httpsEnabled       = thePrefs.webServerHttpsEnabled();
+    config.certPath           = thePrefs.webServerCertPath();
+    config.keyPath            = thePrefs.webServerKeyPath();
+    config.adminPasswordHash  = thePrefs.webServerAdminPassword();
+    config.adminAllowHiLevFunc = thePrefs.webServerAdminAllowHiLevFunc();
+    config.guestEnabled       = thePrefs.webServerGuestEnabled();
+    config.guestPasswordHash  = thePrefs.webServerGuestPassword();
+
+    m_webServer->start(config);
+}
+
+void DaemonApp::stopWebServer()
+{
+    if (m_webServer) {
+        m_webServer->stop();
+        m_webServer.reset();
+    }
+}
+
+void DaemonApp::restartWebServer()
+{
+    stopWebServer();
+    startWebServer();
 }
 
 // ---------------------------------------------------------------------------

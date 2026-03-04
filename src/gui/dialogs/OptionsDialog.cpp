@@ -1,5 +1,8 @@
 #include "dialogs/OptionsDialog.h"
 
+#include "app/AppConfig.h"
+#include "app/AutoStart.h"
+#include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
 #include "panels/StatisticsPanel.h"
 #include "prefs/Preferences.h"
@@ -13,9 +16,12 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QCryptographicHash>
 #include <QDesktopServices>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileSystemModel>
+#include <QFontDialog>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -32,6 +38,7 @@
 #include <QMessageBox>
 #include <QLocale>
 #include <QPainter>
+#include <QProcess>
 #include <QPushButton>
 #include <QSettings>
 #include <QSlider>
@@ -41,6 +48,7 @@
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QDirIterator>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -133,6 +141,12 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_nickEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_promptOnExitCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_startMinimizedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_versionCheckBox, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_versionCheckDaysSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_bringToFrontCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_coreAddressEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_corePortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_coreTokenEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
 
     // Display page
     connect(m_depth3DSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
@@ -472,10 +486,8 @@ void OptionsDialog::setupPages()
     // Scheduler — fully implemented
     m_pages->addWidget(createSchedulerPage());
 
-    // Remaining placeholder pages
-    static const char* placeholderNames[] = { "Web Interface" };
-    for (const char* name : placeholderNames)
-        m_pages->addWidget(createPlaceholderPage(tr(name)));
+    // Web Interface — fully implemented
+    m_pages->addWidget(createWebInterfacePage());
 
     // Extended — fully implemented
     m_pages->addWidget(createExtendedPage());
@@ -510,15 +522,41 @@ QWidget* OptionsDialog::createGeneralPage()
     m_langCombo = new QComboBox(langGroup);
     m_langCombo->addItem(tr("System Default"), QString{});
     m_langCombo->addItem(QStringLiteral("English (United States)"), QStringLiteral("en_US"));
-    m_langCombo->addItem(QStringLiteral("Deutsch (Deutschland)"), QStringLiteral("de_DE"));
-    m_langCombo->addItem(QStringLiteral("Fran\u00e7ais (France)"), QStringLiteral("fr_FR"));
-    m_langCombo->addItem(QStringLiteral("Espa\u00f1ol (Espa\u00f1a)"), QStringLiteral("es_ES"));
-    m_langCombo->addItem(QStringLiteral("Italiano (Italia)"), QStringLiteral("it_IT"));
-    m_langCombo->addItem(QStringLiteral("Portugu\u00eas (Brasil)"), QStringLiteral("pt_BR"));
-    m_langCombo->addItem(QStringLiteral("\u4e2d\u6587 (\u4e2d\u56fd)"), QStringLiteral("zh_CN"));
-    m_langCombo->addItem(QStringLiteral("\u65e5\u672c\u8a9e (\u65e5\u672c)"), QStringLiteral("ja_JP"));
-    m_langCombo->addItem(QStringLiteral("\ud55c\uad6d\uc5b4 (\ub300\ud55c\ubbfc\uad6d)"), QStringLiteral("ko_KR"));
-    m_langCombo->setEnabled(false); // ToDo: implement language switching
+
+    // Discover available translations from .qm files
+    const QStringList langSearchPaths = {
+        QCoreApplication::applicationDirPath() + QStringLiteral("/lang"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/../Resources/lang"),
+#ifdef EMULE_DEV_BUILD
+        QCoreApplication::applicationDirPath() + QStringLiteral("/../../../lang"),
+#endif
+    };
+    QSet<QString> foundLocales;
+    for (const auto& dir : langSearchPaths) {
+        QDirIterator it(dir, {QStringLiteral("emuleqt_*.qm")}, QDir::Files);
+        while (it.hasNext()) {
+            it.next();
+            // Extract locale code from "emuleqt_xx_YY.qm"
+            QString name = it.fileName();
+            name.remove(0, 8);           // strip "emuleqt_"
+            name.chop(3);                // strip ".qm"
+            if (!name.isEmpty() && name != QStringLiteral("en"))
+                foundLocales.insert(name);
+        }
+    }
+    // Add each found locale with its native language name
+    QList<std::pair<QString, QString>> available;
+    for (const auto& code : foundLocales) {
+        QLocale loc(code);
+        QString label = loc.nativeLanguageName();
+        if (!loc.nativeTerritoryName().isEmpty())
+            label += QStringLiteral(" (") + loc.nativeTerritoryName() + u')';
+        available.emplaceBack(label, code);
+    }
+    std::ranges::sort(available, {}, &std::pair<QString, QString>::first);
+    for (const auto& [label, code] : available)
+        m_langCombo->addItem(label, code);
+
     langLayout->addWidget(m_langCombo);
     layout->addWidget(langGroup);
 
@@ -526,31 +564,37 @@ QWidget* OptionsDialog::createGeneralPage()
     auto* miscGroup = new QGroupBox(tr("Miscellaneous"), page);
     auto* miscLayout = new QVBoxLayout(miscGroup);
 
-    auto* bringToFrontCheck = new QCheckBox(tr("Bring to front on link click"), miscGroup);
-    bringToFrontCheck->setEnabled(false); // ToDo: implement eD2K link handling
-    miscLayout->addWidget(bringToFrontCheck);
+    m_bringToFrontCheck = new QCheckBox(tr("Bring to front on link click"), miscGroup);
+    miscLayout->addWidget(m_bringToFrontCheck);
 
     m_promptOnExitCheck = new QCheckBox(tr("Prompt on exit"), miscGroup);
     miscLayout->addWidget(m_promptOnExitCheck);
 
-    auto* onlineSigCheck = new QCheckBox(tr("Enable online signature"), miscGroup);
-    onlineSigCheck->setEnabled(false); // ToDo: implement online signature
-    miscLayout->addWidget(onlineSigCheck);
+    m_enableOnlineSigCheck = new QCheckBox(tr("Enable online signature"), miscGroup);
+    miscLayout->addWidget(m_enableOnlineSigCheck);
 
-    auto* miniMuleCheck = new QCheckBox(tr("Enable MiniMule"), miscGroup);
-    miniMuleCheck->setEnabled(false); // ToDo: not applicable to Qt version
-    miscLayout->addWidget(miniMuleCheck);
+#ifdef Q_OS_WIN
+    m_enableMiniMuleCheck = new QCheckBox(tr("Enable MiniMule"), miscGroup);
+    miscLayout->addWidget(m_enableMiniMuleCheck);
+#endif
 
-    auto* standbyCheck = new QCheckBox(tr("Prevent standby mode while running"), miscGroup);
-    standbyCheck->setEnabled(false); // ToDo: platform-specific power management
-    miscLayout->addWidget(standbyCheck);
+    m_preventStandbyCheck = new QCheckBox(tr("Prevent standby mode while running"), miscGroup);
+    miscLayout->addWidget(m_preventStandbyCheck);
 
     // Button row
     auto* miscBtnLayout = new QHBoxLayout;
     auto* webServicesBtn = new QPushButton(tr("Edit Web Services..."), miscGroup);
-    webServicesBtn->setEnabled(false); // ToDo: implement web services editor
+    connect(webServicesBtn, &QPushButton::clicked, this, [] {
+        QString tmplPath = thePrefs.webServerTemplatePath();
+        if (tmplPath.isEmpty())
+            tmplPath = AppConfig::configDir() + QStringLiteral("/eMule.tmpl");
+        if (QFile::exists(tmplPath))
+            QDesktopServices::openUrl(QUrl::fromLocalFile(tmplPath));
+    });
     auto* ed2kLinksBtn = new QPushButton(tr("Handle eD2K Links"), miscGroup);
-    ed2kLinksBtn->setEnabled(false); // ToDo: implement eD2K link registration
+    connect(ed2kLinksBtn, &QPushButton::clicked, this, [] {
+        eMule::registerEd2kUrlScheme();
+    });
     miscBtnLayout->addWidget(webServicesBtn);
     miscBtnLayout->addWidget(ed2kLinksBtn);
     miscBtnLayout->addStretch();
@@ -563,20 +607,24 @@ QWidget* OptionsDialog::createGeneralPage()
     auto* startupLayout = new QVBoxLayout(startupGroup);
 
     auto* versionCheckRow = new QHBoxLayout;
-    auto* versionCheck = new QCheckBox(tr("Check for new version"), startupGroup);
-    versionCheck->setEnabled(false); // ToDo: implement version checking
-    versionCheckRow->addWidget(versionCheck);
+    m_versionCheckBox = new QCheckBox(tr("Check for new version"), startupGroup);
+    versionCheckRow->addWidget(m_versionCheckBox);
+    m_versionCheckDaysSpin = new QSpinBox(startupGroup);
+    m_versionCheckDaysSpin->setRange(1, 14);
+    m_versionCheckDaysSpin->setSuffix(tr(" Days"));
+    versionCheckRow->addWidget(m_versionCheckDaysSpin);
     versionCheckRow->addStretch();
+    connect(m_versionCheckBox, &QCheckBox::toggled,
+            m_versionCheckDaysSpin, &QWidget::setEnabled);
     startupLayout->addLayout(versionCheckRow);
 
-    auto* splashCheck = new QCheckBox(tr("Show splash screen"), startupGroup);
-    splashCheck->setEnabled(false); // ToDo: implement splash screen
-    startupLayout->addWidget(splashCheck);
+    m_showSplashCheck = new QCheckBox(tr("Show splash screen"), startupGroup);
+    startupLayout->addWidget(m_showSplashCheck);
 
     m_startMinimizedCheck = new QCheckBox(tr("Start minimized"), startupGroup);
     startupLayout->addWidget(m_startMinimizedCheck);
 
-    auto* startWithOSCheck = new QCheckBox(
+    m_startWithOSCheck = new QCheckBox(
 #ifdef Q_OS_MACOS
         tr("Start with macOS")
 #elif defined(Q_OS_WIN)
@@ -585,10 +633,31 @@ QWidget* OptionsDialog::createGeneralPage()
         tr("Start with system")
 #endif
         , startupGroup);
-    startWithOSCheck->setEnabled(false); // ToDo: implement autostart registration
-    startupLayout->addWidget(startWithOSCheck);
+    startupLayout->addWidget(m_startWithOSCheck);
 
     layout->addWidget(startupGroup);
+
+    // --- Core group ---
+    auto* coreGroup = new QGroupBox(tr("Core"), page);
+    auto* coreLayout = new QFormLayout(coreGroup);
+
+    m_coreAddressEdit = new QLineEdit(coreGroup);
+    m_coreAddressEdit->setPlaceholderText(QStringLiteral("127.0.0.1"));
+    coreLayout->addRow(tr("Address:"), m_coreAddressEdit);
+
+    m_corePortSpin = new QSpinBox(coreGroup);
+    m_corePortSpin->setRange(1, 65535);
+    coreLayout->addRow(tr("Port:"), m_corePortSpin);
+
+    m_coreTokenEdit = new QLineEdit(coreGroup);
+    m_coreTokenEdit->setPlaceholderText(tr("authentication token"));
+    coreLayout->addRow(tr("Token:"), m_coreTokenEdit);
+
+    auto* coreNote = new QLabel(tr("Changes require a restart to take effect."), coreGroup);
+    coreNote->setStyleSheet(QStringLiteral("color: gray; font-style: italic;"));
+    coreLayout->addRow(coreNote);
+
+    layout->addWidget(coreGroup);
 
     layout->addStretch();
     return page;
@@ -674,10 +743,24 @@ QWidget* OptionsDialog::createDisplayPage()
     // --- Font group ---
     auto* fontGroup = new QGroupBox(tr("Font for Server-, Message- and IRC-Window"), page);
     auto* fontLayout = new QHBoxLayout(fontGroup);
-    auto* selectFontBtn = new QPushButton(tr("Select Font..."), fontGroup);
-    selectFontBtn->setEnabled(false); // ToDo: implement font selection
-    fontLayout->addWidget(selectFontBtn);
+    m_selectFontBtn = new QPushButton(tr("Select Font..."), fontGroup);
+    fontLayout->addWidget(m_selectFontBtn);
+    m_fontPreviewLabel = new QLabel(fontGroup);
+    m_fontPreviewLabel->setStyleSheet(QStringLiteral("color: gray;"));
+    fontLayout->addWidget(m_fontPreviewLabel);
     fontLayout->addStretch();
+    connect(m_selectFontBtn, &QPushButton::clicked, this, [this] {
+        QFont initial;
+        if (!m_currentLogFont.isEmpty())
+            initial.fromString(m_currentLogFont);
+        bool ok = false;
+        QFont font = QFontDialog::getFont(&ok, initial, this, tr("Select Font"));
+        if (ok) {
+            m_currentLogFont = font.toString();
+            m_fontPreviewLabel->setText(QStringLiteral("%1, %2pt").arg(font.family()).arg(font.pointSize()));
+            markDirty();
+        }
+    });
     layout->addWidget(fontGroup);
 
     // --- Auto completion group ---
@@ -774,7 +857,13 @@ QWidget* OptionsDialog::createConnectionPage()
     portLayout->addWidget(m_udpDisableCheck, 1, 2);
 
     auto* testPortsBtn = new QPushButton(tr("Test Ports"), portGroup);
-    testPortsBtn->setEnabled(false); // ToDo: implement port testing
+    connect(testPortsBtn, &QPushButton::clicked, this, [this] {
+        int tcp = m_tcpPortSpin->value();
+        int udp = m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value();
+        QDesktopServices::openUrl(QUrl(
+            QStringLiteral("https://porttest.emule-project.net/connectiontest.php?tcpport=%1&udpport=%2")
+                .arg(tcp).arg(udp)));
+    });
     portLayout->addWidget(testPortsBtn, 1, 3);
 
     m_upnpCheck = new QCheckBox(tr("Use UPnP to Setup Ports"), portGroup);
@@ -1986,6 +2075,248 @@ QWidget* OptionsDialog::createStatisticsPage()
 }
 
 // ---------------------------------------------------------------------------
+// Web Interface page — matches MFC "Options Web Interface.png"
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createWebInterfacePage()
+{
+    auto* page = new QWidget;
+    auto* layout = new QVBoxLayout(page);
+
+    // --- General group ---
+    auto* generalGroup = new QGroupBox(tr("General"));
+    auto* generalLayout = new QVBoxLayout(generalGroup);
+
+    m_webEnabledCheck = new QCheckBox(tr("Enabled"));
+    generalLayout->addWidget(m_webEnabledCheck);
+
+    m_webRestApiCheck = new QCheckBox(tr("Enable REST API"));
+    generalLayout->addWidget(m_webRestApiCheck);
+
+    m_webGzipCheck = new QCheckBox(tr("Gzip compression"));
+    generalLayout->addWidget(m_webGzipCheck);
+
+    m_webUPnPCheck = new QCheckBox(tr("Include port into UPnP setup"));
+    generalLayout->addWidget(m_webUPnPCheck);
+
+    // Port row
+    auto* portLayout = new QHBoxLayout;
+    portLayout->addWidget(new QLabel(tr("Port:")));
+    m_webPortSpin = new QSpinBox;
+    m_webPortSpin->setRange(1, 65535);
+    m_webPortSpin->setValue(4711);
+    portLayout->addWidget(m_webPortSpin);
+    portLayout->addStretch();
+    generalLayout->addLayout(portLayout);
+
+    // Template row
+    auto* tmplLayout = new QHBoxLayout;
+    tmplLayout->addWidget(new QLabel(tr("Template:")));
+    m_webTemplateEdit = new QLineEdit;
+    tmplLayout->addWidget(m_webTemplateEdit, 1);
+    m_webTemplateBrowseBtn = new QPushButton(tr("..."));
+    m_webTemplateBrowseBtn->setFixedWidth(30);
+    tmplLayout->addWidget(m_webTemplateBrowseBtn);
+    generalLayout->addLayout(tmplLayout);
+
+    // Reload button (right-aligned)
+    auto* reloadLayout = new QHBoxLayout;
+    reloadLayout->addStretch();
+    m_webTemplateReloadBtn = new QPushButton(tr("Reload"));
+    reloadLayout->addWidget(m_webTemplateReloadBtn);
+    generalLayout->addLayout(reloadLayout);
+
+    // Session timeout row
+    auto* sessionLayout = new QHBoxLayout;
+    sessionLayout->addWidget(new QLabel(tr("Session Time out:")));
+    m_webSessionTimeoutSpin = new QSpinBox;
+    m_webSessionTimeoutSpin->setRange(1, 60);
+    m_webSessionTimeoutSpin->setValue(5);
+    sessionLayout->addWidget(m_webSessionTimeoutSpin);
+    sessionLayout->addWidget(new QLabel(tr("minutes")));
+    sessionLayout->addStretch();
+    generalLayout->addLayout(sessionLayout);
+
+    // HTTPS row
+    auto* httpsLayout = new QHBoxLayout;
+    m_webHttpsCheck = new QCheckBox(tr("Use HTTPS"));
+    httpsLayout->addWidget(m_webHttpsCheck);
+    m_webCreateCertBtn = new QPushButton(tr("Create new certificate"));
+    httpsLayout->addWidget(m_webCreateCertBtn);
+    httpsLayout->addStretch();
+    generalLayout->addLayout(httpsLayout);
+
+    // Certificate row
+    auto* certLayout = new QHBoxLayout;
+    certLayout->addWidget(new QLabel(tr("Certificate:")));
+    m_webCertEdit = new QLineEdit;
+    certLayout->addWidget(m_webCertEdit, 1);
+    m_webCertBrowseBtn = new QPushButton(tr("..."));
+    m_webCertBrowseBtn->setFixedWidth(30);
+    certLayout->addWidget(m_webCertBrowseBtn);
+    generalLayout->addLayout(certLayout);
+
+    // Key row
+    auto* keyLayout = new QHBoxLayout;
+    keyLayout->addWidget(new QLabel(tr("Key:")));
+    m_webKeyEdit = new QLineEdit;
+    keyLayout->addWidget(m_webKeyEdit, 1);
+    m_webKeyBrowseBtn = new QPushButton(tr("..."));
+    m_webKeyBrowseBtn->setFixedWidth(30);
+    keyLayout->addWidget(m_webKeyBrowseBtn);
+    generalLayout->addLayout(keyLayout);
+
+    // REST API Key row
+    auto* apiKeyLayout = new QHBoxLayout;
+    apiKeyLayout->addWidget(new QLabel(tr("REST API Key:")));
+    m_webApiKeyEdit = new QLineEdit;
+    apiKeyLayout->addWidget(m_webApiKeyEdit, 1);
+    generalLayout->addLayout(apiKeyLayout);
+
+    layout->addWidget(generalGroup);
+
+    // --- Administrator group ---
+    auto* adminGroup = new QGroupBox(tr("Administrator"));
+    auto* adminLayout = new QVBoxLayout(adminGroup);
+
+    auto* adminPwLayout = new QHBoxLayout;
+    adminPwLayout->addWidget(new QLabel(tr("Password:")));
+    m_webAdminPasswordEdit = new QLineEdit;
+    m_webAdminPasswordEdit->setEchoMode(QLineEdit::Password);
+    adminPwLayout->addWidget(m_webAdminPasswordEdit, 1);
+    adminLayout->addLayout(adminPwLayout);
+
+    m_webAdminHiLevCheck = new QCheckBox(tr("Allow exit eMule, reboot and shutdown"));
+    adminLayout->addWidget(m_webAdminHiLevCheck);
+
+    layout->addWidget(adminGroup);
+
+    // --- Guest group ---
+    auto* guestGroup = new QGroupBox(tr("Guest"));
+    auto* guestLayout = new QVBoxLayout(guestGroup);
+
+    m_webGuestEnabledCheck = new QCheckBox(tr("Enabled"));
+    guestLayout->addWidget(m_webGuestEnabledCheck);
+
+    auto* guestPwLayout = new QHBoxLayout;
+    guestPwLayout->addWidget(new QLabel(tr("Password:")));
+    m_webGuestPasswordEdit = new QLineEdit;
+    m_webGuestPasswordEdit->setEchoMode(QLineEdit::Password);
+    guestPwLayout->addWidget(m_webGuestPasswordEdit, 1);
+    guestLayout->addLayout(guestPwLayout);
+
+    layout->addWidget(guestGroup);
+    layout->addStretch();
+
+    // --- Enable/disable logic ---
+    auto updateWebEnabled = [this] {
+        bool on = m_webEnabledCheck->isChecked();
+        m_webRestApiCheck->setEnabled(on);
+        m_webGzipCheck->setEnabled(on);
+        m_webUPnPCheck->setEnabled(on);
+        m_webPortSpin->setEnabled(on);
+        m_webTemplateEdit->setEnabled(on);
+        m_webTemplateBrowseBtn->setEnabled(on);
+        m_webTemplateReloadBtn->setEnabled(on);
+        m_webSessionTimeoutSpin->setEnabled(on);
+        m_webHttpsCheck->setEnabled(on);
+        m_webCreateCertBtn->setEnabled(on && m_webHttpsCheck->isChecked());
+        m_webCertEdit->setEnabled(on && m_webHttpsCheck->isChecked());
+        m_webCertBrowseBtn->setEnabled(on && m_webHttpsCheck->isChecked());
+        m_webKeyEdit->setEnabled(on && m_webHttpsCheck->isChecked());
+        m_webKeyBrowseBtn->setEnabled(on && m_webHttpsCheck->isChecked());
+        m_webApiKeyEdit->setEnabled(on);
+        m_webAdminPasswordEdit->setEnabled(on);
+        m_webAdminHiLevCheck->setEnabled(on);
+        m_webGuestEnabledCheck->setEnabled(on);
+        m_webGuestPasswordEdit->setEnabled(on && m_webGuestEnabledCheck->isChecked());
+    };
+
+    connect(m_webEnabledCheck, &QCheckBox::toggled, this, [updateWebEnabled, this] {
+        updateWebEnabled();
+        markDirty();
+    });
+    connect(m_webHttpsCheck, &QCheckBox::toggled, this, [updateWebEnabled, this] {
+        updateWebEnabled();
+        markDirty();
+    });
+    connect(m_webGuestEnabledCheck, &QCheckBox::toggled, this, [updateWebEnabled, this] {
+        updateWebEnabled();
+        markDirty();
+    });
+
+    // Browse buttons
+    connect(m_webTemplateBrowseBtn, &QPushButton::clicked, this, [this] {
+        auto path = QFileDialog::getOpenFileName(this, tr("Select Template File"),
+            m_webTemplateEdit->text(), tr("Template files (*.tmpl);;All files (*)"));
+        if (!path.isEmpty()) {
+            m_webTemplateEdit->setText(path);
+            markDirty();
+        }
+    });
+    connect(m_webCertBrowseBtn, &QPushButton::clicked, this, [this] {
+        auto path = QFileDialog::getOpenFileName(this, tr("Select Certificate File"),
+            m_webCertEdit->text(), tr("PEM files (*.pem *.crt);;All files (*)"));
+        if (!path.isEmpty()) {
+            m_webCertEdit->setText(path);
+            markDirty();
+        }
+    });
+    connect(m_webKeyBrowseBtn, &QPushButton::clicked, this, [this] {
+        auto path = QFileDialog::getOpenFileName(this, tr("Select Key File"),
+            m_webKeyEdit->text(), tr("PEM files (*.pem *.key);;All files (*)"));
+        if (!path.isEmpty()) {
+            m_webKeyEdit->setText(path);
+            markDirty();
+        }
+    });
+
+    // Create certificate button
+    connect(m_webCreateCertBtn, &QPushButton::clicked, this, [this] {
+        // Generate a self-signed cert using OpenSSL CLI
+        QString certPath = QFileDialog::getSaveFileName(this, tr("Save Certificate"),
+            QString(), tr("PEM files (*.pem)"));
+        if (certPath.isEmpty())
+            return;
+        QString keyPath = certPath;
+        keyPath.replace(QStringLiteral(".pem"), QStringLiteral("_key.pem"));
+        if (keyPath == certPath)
+            keyPath += QStringLiteral("_key.pem");
+
+        QProcess proc;
+        proc.start(QStringLiteral("openssl"), {
+            QStringLiteral("req"), QStringLiteral("-x509"),
+            QStringLiteral("-newkey"), QStringLiteral("rsa:2048"),
+            QStringLiteral("-keyout"), keyPath,
+            QStringLiteral("-out"), certPath,
+            QStringLiteral("-days"), QStringLiteral("3650"),
+            QStringLiteral("-nodes"),
+            QStringLiteral("-subj"), QStringLiteral("/CN=eMule Web Server")
+        });
+        proc.waitForFinished(10000);
+        if (proc.exitCode() == 0) {
+            m_webCertEdit->setText(certPath);
+            m_webKeyEdit->setText(keyPath);
+            markDirty();
+        }
+    });
+
+    // Mark dirty for all editable controls
+    for (auto* cb : {m_webRestApiCheck, m_webGzipCheck, m_webUPnPCheck, m_webAdminHiLevCheck})
+        connect(cb, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    for (auto* le : {m_webTemplateEdit, m_webCertEdit, m_webKeyEdit, m_webApiKeyEdit,
+                     m_webAdminPasswordEdit, m_webGuestPasswordEdit})
+        connect(le, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    for (auto* sb : {m_webPortSpin, m_webSessionTimeoutSpin})
+        connect(sb, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+
+    // Initial state
+    updateWebEnabled();
+
+    return page;
+}
+
+// ---------------------------------------------------------------------------
 // Extended page — matches MFC "Options Extended*.png" (PPgTweaks)
 // ---------------------------------------------------------------------------
 
@@ -2763,11 +3094,33 @@ QWidget* OptionsDialog::createPlaceholderPage(const QString& title)
 
 void OptionsDialog::loadSettings()
 {
-    m_loading = true;
+
 
     // GUI-only settings from local preferences
     m_promptOnExitCheck->setChecked(thePrefs.promptOnExit());
     m_startMinimizedCheck->setChecked(thePrefs.startMinimized());
+    m_showSplashCheck->setChecked(thePrefs.showSplashScreen());
+    m_enableOnlineSigCheck->setChecked(thePrefs.enableOnlineSignature());
+#ifdef Q_OS_WIN
+    m_enableMiniMuleCheck->setChecked(thePrefs.enableMiniMule());
+#endif
+    m_preventStandbyCheck->setChecked(thePrefs.preventStandby());
+    m_startWithOSCheck->setChecked(thePrefs.startWithOS());
+    m_versionCheckBox->setChecked(thePrefs.versionCheckEnabled());
+    m_versionCheckDaysSpin->setValue(thePrefs.versionCheckDays());
+    m_versionCheckDaysSpin->setEnabled(thePrefs.versionCheckEnabled());
+    m_bringToFrontCheck->setChecked(thePrefs.bringToFrontOnLinkClick());
+    {
+        const QString lang = thePrefs.language();
+        int langIdx = m_langCombo->findData(lang);
+        m_langCombo->setCurrentIndex(langIdx >= 0 ? langIdx : 0);
+    }
+
+    // Core settings
+    m_coreAddressEdit->setText(thePrefs.ipcListenAddress());
+    m_corePortSpin->setValue(thePrefs.ipcPort());
+    if (!thePrefs.ipcTokens().isEmpty())
+        m_coreTokenEdit->setText(thePrefs.ipcTokens().first());
 
     // Display page
     m_depth3DSlider->setValue(thePrefs.depth3D());
@@ -2785,6 +3138,14 @@ void OptionsDialog::loadSettings()
     m_useAutoCompletionCheck->setChecked(thePrefs.useAutoCompletion());
     m_useOriginalIconsCheck->setChecked(thePrefs.useOriginalIcons());
     m_initialUseOriginalIcons = thePrefs.useOriginalIcons();
+
+    // Display - font
+    m_currentLogFont = thePrefs.logFont();
+    if (!m_currentLogFont.isEmpty()) {
+        QFont f;
+        f.fromString(m_currentLogFont);
+        m_fontPreviewLabel->setText(QStringLiteral("%1, %2pt").arg(f.family()).arg(f.pointSize()));
+    }
 
     // Files page (GUI-only)
     m_watchClipboardCheck->setChecked(thePrefs.watchClipboard4ED2KLinks());
@@ -2836,9 +3197,9 @@ void OptionsDialog::loadSettings()
         Ipc::IpcMessage req(Ipc::IpcMsgType::GetPreferences);
         m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
             if (!resp.fieldBool(0)) {
-                m_loading = false;
                 return;
             }
+            m_loading = true;
             const QCborMap prefs = resp.fieldMap(1);
 
             // General page
@@ -2989,6 +3350,45 @@ void OptionsDialog::loadSettings()
             m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
             m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
 
+            // Web Interface page
+            m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());
+            m_webRestApiCheck->setChecked(prefs.value(QStringLiteral("webServerRestApiEnabled")).toBool());
+            m_webGzipCheck->setChecked(prefs.value(QStringLiteral("webServerGzipEnabled")).toBool(true));
+            m_webUPnPCheck->setChecked(prefs.value(QStringLiteral("webServerUPnP")).toBool());
+            m_webPortSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerPort")).toInteger(4711)));
+            m_webTemplateEdit->setText(prefs.value(QStringLiteral("webServerTemplatePath")).toString());
+            m_webSessionTimeoutSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerSessionTimeout")).toInteger(5)));
+            m_webHttpsCheck->setChecked(prefs.value(QStringLiteral("webServerHttpsEnabled")).toBool());
+            m_webCertEdit->setText(prefs.value(QStringLiteral("webServerCertPath")).toString());
+            m_webKeyEdit->setText(prefs.value(QStringLiteral("webServerKeyPath")).toString());
+            m_webApiKeyEdit->setText(prefs.value(QStringLiteral("webServerApiKey")).toString());
+            // Password fields: don't show the hash — leave blank; user types new password to change
+            m_webAdminHiLevCheck->setChecked(prefs.value(QStringLiteral("webServerAdminAllowHiLevFunc")).toBool());
+            m_webGuestEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerGuestEnabled")).toBool());
+            {
+                bool webOn = m_webEnabledCheck->isChecked();
+                m_webRestApiCheck->setEnabled(webOn);
+                m_webGzipCheck->setEnabled(webOn);
+                m_webUPnPCheck->setEnabled(webOn);
+                m_webPortSpin->setEnabled(webOn);
+                m_webTemplateEdit->setEnabled(webOn);
+                m_webTemplateBrowseBtn->setEnabled(webOn);
+                m_webTemplateReloadBtn->setEnabled(webOn);
+                m_webSessionTimeoutSpin->setEnabled(webOn);
+                m_webHttpsCheck->setEnabled(webOn);
+                bool httpsOn = webOn && m_webHttpsCheck->isChecked();
+                m_webCreateCertBtn->setEnabled(httpsOn);
+                m_webCertEdit->setEnabled(httpsOn);
+                m_webCertBrowseBtn->setEnabled(httpsOn);
+                m_webKeyEdit->setEnabled(httpsOn);
+                m_webKeyBrowseBtn->setEnabled(httpsOn);
+                m_webApiKeyEdit->setEnabled(webOn);
+                m_webAdminPasswordEdit->setEnabled(webOn);
+                m_webAdminHiLevCheck->setEnabled(webOn);
+                m_webGuestEnabledCheck->setEnabled(webOn);
+                m_webGuestPasswordEdit->setEnabled(webOn && m_webGuestEnabledCheck->isChecked());
+            }
+
             // Statistics page
             auto graphsSec = static_cast<int>(prefs.value(QStringLiteral("graphsUpdateSec")).toInteger(3));
             m_statsGraphUpdateSlider->setValue(graphsSec);
@@ -3090,6 +3490,7 @@ void OptionsDialog::loadSettings()
 #endif
 
             m_loading = false;
+            m_daemonSettingsLoaded = true;
             m_applyBtn->setEnabled(false);
         });
     } else {
@@ -3324,7 +3725,6 @@ void OptionsDialog::loadSettings()
             btn->setChecked(true);
 #endif
 
-        m_loading = false;
     }
 
     loadSchedulerData();
@@ -3352,6 +3752,54 @@ void OptionsDialog::saveSettings()
     // GUI-only settings — save locally
     thePrefs.setPromptOnExit(m_promptOnExitCheck->isChecked());
     thePrefs.setStartMinimized(m_startMinimizedCheck->isChecked());
+    thePrefs.setShowSplashScreen(m_showSplashCheck->isChecked());
+    thePrefs.setEnableOnlineSignature(m_enableOnlineSigCheck->isChecked());
+#ifdef Q_OS_WIN
+    thePrefs.setEnableMiniMule(m_enableMiniMuleCheck->isChecked());
+#endif
+    thePrefs.setPreventStandby(m_preventStandbyCheck->isChecked());
+    thePrefs.setVersionCheckEnabled(m_versionCheckBox->isChecked());
+    thePrefs.setVersionCheckDays(m_versionCheckDaysSpin->value());
+    thePrefs.setBringToFrontOnLinkClick(m_bringToFrontCheck->isChecked());
+
+    // Language change requires restart
+    {
+        const QString newLang = m_langCombo->currentData().toString();
+        if (newLang != thePrefs.language()) {
+            thePrefs.setLanguage(newLang);
+            QMessageBox::information(this, tr("Language"),
+                tr("The language change will take effect after restarting the application."));
+        }
+    }
+
+    // Start with OS: register/unregister autostart
+    if (m_startWithOSCheck->isChecked() != thePrefs.startWithOS()) {
+        thePrefs.setStartWithOS(m_startWithOSCheck->isChecked());
+        eMule::setAutoStart(m_startWithOSCheck->isChecked());
+    }
+
+    // Core settings — changes require restart
+    {
+        bool coreChanged = false;
+        if (m_coreAddressEdit->text().trimmed() != thePrefs.ipcListenAddress()) {
+            thePrefs.setIpcListenAddress(m_coreAddressEdit->text().trimmed());
+            coreChanged = true;
+        }
+        if (static_cast<uint16_t>(m_corePortSpin->value()) != thePrefs.ipcPort()) {
+            thePrefs.setIpcPort(static_cast<uint16_t>(m_corePortSpin->value()));
+            coreChanged = true;
+        }
+        const QString newToken = m_coreTokenEdit->text().trimmed();
+        const QString oldToken = thePrefs.ipcTokens().isEmpty() ? QString{} : thePrefs.ipcTokens().first();
+        if (newToken != oldToken) {
+            thePrefs.setIpcTokens(newToken.isEmpty() ? QStringList{} : QStringList{newToken});
+            coreChanged = true;
+        }
+        if (coreChanged) {
+            QMessageBox::information(this, tr("Core"),
+                tr("Core connection settings will take effect after restarting the application."));
+        }
+    }
 
     // Display page
     thePrefs.setDepth3D(m_depth3DSlider->value());
@@ -3373,6 +3821,9 @@ void OptionsDialog::saveSettings()
             tr("The icon change will take effect after restarting the application."));
         m_initialUseOriginalIcons = m_useOriginalIconsCheck->isChecked();
     }
+
+    // Display - font
+    thePrefs.setLogFont(m_currentLogFont);
 
     // Connection page (GUI-only display setting)
     thePrefs.setShowOverhead(m_overheadCheck->isChecked());
@@ -3427,8 +3878,8 @@ void OptionsDialog::saveSettings()
 
     thePrefs.save();
 
-    // Daemon settings — send via IPC
-    if (m_ipc && m_ipc->isConnected()) {
+    // Daemon settings — send via IPC (only if we successfully loaded them first)
+    if (m_daemonSettingsLoaded && m_ipc && m_ipc->isConnected()) {
         Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
         req.append(QStringLiteral("nick"));
         req.append(m_nickEdit->text());
@@ -3599,6 +4050,47 @@ void OptionsDialog::saveSettings()
         req.append(m_useSecureIdentCheck->isChecked());
         req.append(QStringLiteral("enableSearchResultFilter"));
         req.append(m_enableSearchResultFilterCheck->isChecked());
+
+        // Web Interface page
+        req.append(QStringLiteral("webServerEnabled"));
+        req.append(m_webEnabledCheck->isChecked());
+        req.append(QStringLiteral("webServerRestApiEnabled"));
+        req.append(m_webRestApiCheck->isChecked());
+        req.append(QStringLiteral("webServerGzipEnabled"));
+        req.append(m_webGzipCheck->isChecked());
+        req.append(QStringLiteral("webServerUPnP"));
+        req.append(m_webUPnPCheck->isChecked());
+        req.append(QStringLiteral("webServerPort"));
+        req.append(static_cast<qint64>(m_webPortSpin->value()));
+        req.append(QStringLiteral("webServerTemplatePath"));
+        req.append(m_webTemplateEdit->text());
+        req.append(QStringLiteral("webServerSessionTimeout"));
+        req.append(static_cast<qint64>(m_webSessionTimeoutSpin->value()));
+        req.append(QStringLiteral("webServerHttpsEnabled"));
+        req.append(m_webHttpsCheck->isChecked());
+        req.append(QStringLiteral("webServerCertPath"));
+        req.append(m_webCertEdit->text());
+        req.append(QStringLiteral("webServerKeyPath"));
+        req.append(m_webKeyEdit->text());
+        req.append(QStringLiteral("webServerApiKey"));
+        req.append(m_webApiKeyEdit->text());
+        // Only send password if user typed something (hash it SHA-256 before sending)
+        if (!m_webAdminPasswordEdit->text().isEmpty()) {
+            QByteArray hash = QCryptographicHash::hash(
+                m_webAdminPasswordEdit->text().toUtf8(), QCryptographicHash::Sha256);
+            req.append(QStringLiteral("webServerAdminPassword"));
+            req.append(QString::fromLatin1(hash.toHex()));
+        }
+        req.append(QStringLiteral("webServerAdminAllowHiLevFunc"));
+        req.append(m_webAdminHiLevCheck->isChecked());
+        req.append(QStringLiteral("webServerGuestEnabled"));
+        req.append(m_webGuestEnabledCheck->isChecked());
+        if (!m_webGuestPasswordEdit->text().isEmpty()) {
+            QByteArray hash = QCryptographicHash::hash(
+                m_webGuestPasswordEdit->text().toUtf8(), QCryptographicHash::Sha256);
+            req.append(QStringLiteral("webServerGuestPassword"));
+            req.append(QString::fromLatin1(hash.toHex()));
+        }
 
         // Statistics page
         req.append(QStringLiteral("graphsUpdateSec"));

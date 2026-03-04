@@ -69,6 +69,12 @@ void MessagesPanel::setIpcClient(IpcClient* client)
         requestFriendList();
 }
 
+void MessagesPanel::setCustomFont(const QFont& font)
+{
+    if (m_chatBrowser)
+        m_chatBrowser->setFont(font);
+}
+
 // ---------------------------------------------------------------------------
 // Private slots
 // ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@
 #include <QWidget>
 #include <QPainter>
 #include <QMouseEvent>
+#include <QSystemTrayIcon>
 
 class QAction;
 class QActionGroup;
@@ -19,12 +20,16 @@ class QLabel;
 class QMenu;
 class QSoundEffect;
 class QStackedWidget;
-class QSystemTrayIcon;
 
 namespace eMule {
 
+#ifdef Q_OS_WIN
+class MiniMuleWidget;
+#endif
+
 class IpcClient;
 class IrcPanel;
+class VersionChecker;
 class KadPanel;
 class MessagesPanel;
 class SearchPanel;
@@ -93,6 +98,9 @@ public:
     /// Set the IPC client (needed for Options dialog).
     void setIpcClient(IpcClient* ipc) { m_ipc = ipc; }
 
+    [[nodiscard]] bool isEd2kConnected() const { return m_ed2kConnected; }
+    [[nodiscard]] bool isKadConnected() const { return m_kadConnected; }
+
     [[nodiscard]] KadPanel* kadPanel() const { return m_kadPanel; }
     [[nodiscard]] ServerPanel* serverPanel() const { return m_serverPanel; }
     [[nodiscard]] TransferPanel* transferPanel() const { return m_transferPanel; }
@@ -118,6 +126,9 @@ public:
     /// Show a system tray notification popup (with optional sound).
     void showNotification(const QString& title, const QString& message);
 
+    /// Update MiniMule popup stats (called from rate polling timer).
+    void updateMiniMule(int completedCount, qint64 freeBytes);
+
 protected:
     void closeEvent(QCloseEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -125,6 +136,7 @@ protected:
 private slots:
     void onToolbarAction(QAction* action);
     void onConnectToggle();
+    void onTrayIconClicked(QSystemTrayIcon::ActivationReason reason);
     void onOptionsClicked();
     void showNetworkInfo();
     void onClipboardChanged();
@@ -169,6 +181,9 @@ private:
     QLabel* m_statusKad = nullptr;
     ConnectionStatusWidget* m_connStatus = nullptr;
 
+    // Version checker
+    VersionChecker* m_versionChecker = nullptr;
+
     // Clipboard monitoring (MFC SearchClipboard equivalent)
     QString m_lastClipboardContents;
 
@@ -182,6 +197,16 @@ private:
     bool m_kadRunning = false;
     bool m_kadConnected = false;
     bool m_kadFirewalled = false;
+
+    // Cached stats for MiniMule popup
+    double m_cachedUpKBs = 0.0;
+    double m_cachedDownKBs = 0.0;
+    int m_cachedCompleted = 0;
+    qint64 m_cachedFreeBytes = 0;
+
+#ifdef Q_OS_WIN
+    MiniMuleWidget* m_miniMule = nullptr;
+#endif
 };
 
 } // namespace eMule

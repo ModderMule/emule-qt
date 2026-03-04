@@ -127,5 +127,6 @@
     </qresource>
     <qresource prefix="/images">
         <file alias="mule_wiz_hdr.gif">../srchybrid/res/mule_wiz_hdr.gif</file>
+        <file alias="Logo.jpg">../srchybrid/res/Logo.jpg</file>
     </qresource>
 </RCC>

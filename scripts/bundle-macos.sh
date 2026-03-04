@@ -18,6 +18,9 @@
 #         emulecored       <- daemon executable
 #       Frameworks/        <- Qt frameworks (if macdeployqt runs)
 #       Resources/
+#         config/          <- default config files (nodes.dat, eMule.tmpl, …)
+#           webserver/     <- web server assets (sprites, CSS, icons)
+#         lang/            <- compiled translation files (.qm)
 #       Info.plist
 # ---------------------------------------------------------------------------
 
@@ -54,6 +57,47 @@ echo "Copying emulecored into app bundle..."
 cp "$DAEMON_BIN" "$MACOS_DIR/emulecored"
 chmod +x "$MACOS_DIR/emulecored"
 echo "  -> $MACOS_DIR/emulecored"
+
+# -- Copy default config data into bundle ------------------------------------
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CONFIG_SRC="$REPO_ROOT/data/config"
+RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
+CONFIG_DST="$RESOURCES_DIR/config"
+
+if [ -d "$CONFIG_SRC" ]; then
+    echo "Copying default config data into bundle..."
+    rm -rf "$CONFIG_DST"
+    cp -R "$CONFIG_SRC" "$CONFIG_DST"
+    echo "  -> $CONFIG_DST  ($(find "$CONFIG_DST" -type f | wc -l | tr -d ' ') files)"
+else
+    echo "Warning: $CONFIG_SRC not found — skipping config data bundling."
+fi
+
+# -- Copy translation files into bundle --------------------------------------
+
+LANG_DST="$RESOURCES_DIR/lang"
+# Prefer build-generated .qm files; fall back to source lang/ directory
+LANG_BUILD_DIR="$BUILD_DIR/src/gui"
+LANG_SRC_DIR="$REPO_ROOT/lang"
+
+mkdir -p "$LANG_DST"
+QM_COUNT=0
+for qm in "$LANG_BUILD_DIR"/emuleqt_*.qm "$LANG_SRC_DIR"/emuleqt_*.qm; do
+    [ -f "$qm" ] || continue
+    base="$(basename "$qm")"
+    # Skip if already copied (build dir takes precedence)
+    [ -f "$LANG_DST/$base" ] && continue
+    cp "$qm" "$LANG_DST/$base"
+    QM_COUNT=$((QM_COUNT + 1))
+done
+
+if [ "$QM_COUNT" -gt 0 ]; then
+    echo "Copied $QM_COUNT translation files into bundle."
+    echo "  -> $LANG_DST"
+else
+    echo "Warning: No .qm translation files found — skipping lang bundling."
+fi
 
 # -- Run macdeployqt (optional) ----------------------------------------------
 

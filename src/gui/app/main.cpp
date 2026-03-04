@@ -1,20 +1,27 @@
 #include <QApplication>
-#include <QDir>
 #include <QFile>
+#include <QFileOpenEvent>
 #include <QFileInfo>
+#include <QFont>
 #include <QLibraryInfo>
 #include <QLocale>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QProcess>
-#include <QStandardPaths>
+#include <QSplashScreen>
+#include <QTextStream>
 #include <QTimer>
 #include <QTranslator>
 
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
+#include "app/PowerManager.h"
+#include "app/VersionChecker.h"
 #include "app/UiState.h"
+#include "dialogs/CoreConnectDialog.h"
 #include "dialogs/OptionsDialog.h"
 #include "controls/LogWidget.h"
+#include "panels/IrcPanel.h"
 #include "panels/KadPanel.h"
 #include "panels/MessagesPanel.h"
 #include "panels/SearchPanel.h"
@@ -22,12 +29,17 @@
 #include "panels/SharedFilesPanel.h"
 #include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
+#include "app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/Types.h"
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "protocol/ED2KLink.h"
+
+using eMule::ED2KFileLink;
+using eMule::parseED2KLink;
 
 namespace {
 
@@ -64,27 +76,56 @@ bool launchDaemon(const QString& daemonPath)
     return QProcess::startDetached(daemonPath, {});
 }
 
-/// Copy bundled nodes.dat into configDir if none exists yet.
-void seedNodesDat(const QString& configDir)
+
+/// Process an ed2k:// link string — prompts user and downloads via IPC.
+void handleEd2kUrl(const QString& urlStr, eMule::MainWindow& mainWindow, eMule::IpcClient& ipcClient)
 {
-    const QString dest = configDir + QStringLiteral("/nodes.dat");
-    if (QFile::exists(dest))
+    if (!urlStr.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive))
+        return;
+    if (!ipcClient.isConnected())
         return;
 
-    // Look for bundled nodes.dat next to the binary, then in known source path
-    const QStringList candidates = {
-        QCoreApplication::applicationDirPath() + QStringLiteral("/nodes.dat"),
-#ifdef EMULE_DEV_BUILD
-        QCoreApplication::applicationDirPath() + QStringLiteral("/../../../data/config/nodes.dat"),
-#endif
-    };
-
-    for (const auto& src : candidates) {
-        if (QFile::exists(src) && QFile::copy(src, dest)) {
-            eMule::logInfo(QStringLiteral("Seeded nodes.dat from %1").arg(src));
-            return;
-        }
+    const QStringList lines = urlStr.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    QStringList fileNames;
+    for (const QString& line : lines) {
+        auto parsed = parseED2KLink(line.trimmed());
+        if (!parsed) continue;
+        if (auto* fl = std::get_if<ED2KFileLink>(&*parsed))
+            fileNames << fl->name;
     }
+    if (fileNames.isEmpty())
+        return;
+
+    if (eMule::thePrefs.bringToFrontOnLinkClick()) {
+        mainWindow.raise();
+        mainWindow.activateWindow();
+    }
+
+    const QString preview = fileNames.join(QLatin1Char('\n'));
+    const auto result = QMessageBox::question(
+        &mainWindow, QObject::tr("eD2K Link"),
+        QObject::tr("Do you want to download the following file(s)?\n\n%1").arg(preview),
+        QMessageBox::Yes | QMessageBox::No);
+    if (result != QMessageBox::Yes)
+        return;
+
+    for (const QString& line : lines) {
+        auto parsed = parseED2KLink(line.trimmed());
+        if (!parsed) continue;
+        auto* fl = std::get_if<ED2KFileLink>(&*parsed);
+        if (!fl) continue;
+
+        QString hashHex;
+        for (uint8_t b : fl->hash)
+            hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
+
+        eMule::Ipc::IpcMessage msg(eMule::Ipc::IpcMsgType::DownloadSearchFile);
+        msg.append(hashHex);
+        msg.append(fl->name);
+        msg.append(static_cast<int64_t>(fl->size));
+        ipcClient.sendRequest(std::move(msg));
+    }
+    mainWindow.switchToTab(eMule::MainWindow::TabTransfers);
 }
 
 } // anonymous namespace
@@ -96,9 +137,19 @@ int main(int argc, char* argv[])
     QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     QApplication::setOrganizationName(QStringLiteral("eMule"));
 
+    // Load preferences early so language setting is available for translators
+    const QString configDir = eMule::AppConfig::configDir();
+    const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
+    eMule::thePrefs.load(prefsPath);
+
+    // Determine locale: user-selected language or system default
+    QLocale appLocale;
+    if (!eMule::thePrefs.language().isEmpty())
+        appLocale = QLocale(eMule::thePrefs.language());
+
     // Load Qt's own translations (dialogs, standard buttons, etc.)
     QTranslator qtTranslator;
-    if (qtTranslator.load(QLocale(), QStringLiteral("qt"), QStringLiteral("_"),
+    if (qtTranslator.load(appLocale, QStringLiteral("qt"), QStringLiteral("_"),
                           QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
         app.installTranslator(&qtTranslator);
 
@@ -112,22 +163,23 @@ int main(int argc, char* argv[])
 #endif
     };
     for (const auto& path : translationPaths) {
-        if (appTranslator.load(QLocale(), QStringLiteral("emuleqt"), QStringLiteral("_"), path)) {
+        if (appTranslator.load(appLocale, QStringLiteral("emuleqt"), QStringLiteral("_"), path)) {
             app.installTranslator(&appTranslator);
             break;
         }
     }
 
-    // Load preferences
-#ifdef Q_OS_MACOS
-    const QString configDir = QDir::homePath() + QStringLiteral("/eMuleQt/Config");
-#else
-    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-#endif
-    QDir().mkpath(configDir);
-    const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
-    eMule::thePrefs.load(prefsPath);
+    // Seed bundled config data (webserver assets, template, nodes.dat)
+    eMule::AppConfig::seedBundledData(configDir);
     eMule::theUiState.load();
+
+    // Splash screen
+    QSplashScreen* splash = nullptr;
+    if (eMule::thePrefs.showSplashScreen()) {
+        splash = new QSplashScreen(QPixmap(QStringLiteral(":/images/Logo.jpg")));
+        splash->show();
+        QApplication::processEvents();
+    }
 
     // Check for --screenshot mode (development aid)
     const bool screenshotMode = app.arguments().contains(QStringLiteral("--screenshot"));
@@ -146,8 +198,25 @@ int main(int argc, char* argv[])
     else
         mainWindow.show();
 
-    // Seed bundled nodes.dat into config directory if not present
-    seedNodesDat(configDir);
+    if (splash) {
+        splash->finish(&mainWindow);
+        delete splash;
+        splash = nullptr;
+    }
+
+    // Apply custom font on startup
+    if (!eMule::thePrefs.logFont().isEmpty()) {
+        QFont f;
+        f.fromString(eMule::thePrefs.logFont());
+        mainWindow.serverPanel()->logWidget()->setCustomFont(f);
+        mainWindow.messagesPanel()->setCustomFont(f);
+        mainWindow.ircPanel()->setCustomFont(f);
+    }
+
+    // Power management — prevent idle sleep if enabled
+    eMule::PowerManager powerManager;
+    if (eMule::thePrefs.preventStandby())
+        powerManager.setPreventStandby(true);
 
     // Parse --tab argument (used by both screenshot and normal mode)
     auto activeTab = eMule::MainWindow::TabKad;
@@ -194,15 +263,48 @@ int main(int argc, char* argv[])
     eMule::IpcClient ipcClient;
 
     if (eMule::thePrefs.ipcEnabled()) {
-        const QHostAddress addr(eMule::thePrefs.ipcListenAddress());
-        const uint16_t port = eMule::thePrefs.ipcPort();
         ipcClient.setRemotePollingMs(eMule::thePrefs.ipcRemotePollingMs());
         if (!eMule::thePrefs.ipcTokens().isEmpty())
             ipcClient.setAuthToken(eMule::thePrefs.ipcTokens().first());
-        const QString daemonPath = resolveDaemonPath();
+
+        // Determine connection target and whether we should manage a local daemon
+        QString connectHost = eMule::thePrefs.ipcListenAddress();
+        uint16_t port = eMule::thePrefs.ipcPort();
+        QString daemonPath;
+        bool isRemote = false;
+
+        const QHostAddress configAddr(connectHost);
+        if (!configAddr.isNull() && !configAddr.isLoopback()
+            && connectHost != QStringLiteral("localhost") && !connectHost.isEmpty()) {
+            // FAST PATH: remote address configured — skip daemon discovery
+            isRemote = true;
+            eMule::logInfo(QStringLiteral("Remote core configured at %1:%2 — skipping local daemon discovery.")
+                               .arg(connectHost).arg(port));
+        } else {
+            // Local path — try to find the daemon binary
+            daemonPath = resolveDaemonPath();
+            if (daemonPath.isEmpty()) {
+                // LAST FALLBACK: no local daemon binary found — show dialog
+                eMule::logWarning(QStringLiteral("No local emulecored binary found."));
+                eMule::CoreConnectDialog dlg(&mainWindow);
+                if (dlg.exec() == QDialog::Rejected)
+                    return 0;  // User chose Exit
+
+                connectHost = dlg.address();
+                port = dlg.port();
+                ipcClient.setAuthToken(dlg.token());
+                isRemote = true;
+
+                // Persist to prefs so next launch uses the remote fast-path
+                eMule::thePrefs.setIpcListenAddress(connectHost);
+                eMule::thePrefs.setIpcPort(port);
+                if (dlg.saveToken())
+                    eMule::thePrefs.setIpcTokens({dlg.token()});
+            }
+        }
 
         eMule::logInfo(QStringLiteral("Connecting to daemon at %1:%2...")
-                           .arg(addr.toString()).arg(port));
+                           .arg(connectHost).arg(port));
 
         // Wire IPC client to main window and panels
         mainWindow.setIpcClient(&ipcClient);
@@ -274,17 +376,30 @@ int main(int argc, char* argv[])
                     info.value(QStringLiteral("connected")).toBool(),
                     info.value(QStringLiteral("firewalled")).toBool());
             });
+
+            // Auto version check after connection is established
+            QTimer::singleShot(2000, &mainWindow, [&mainWindow]() {
+                auto* vc = mainWindow.findChild<eMule::VersionChecker*>();
+                if (vc) vc->check(false);
+            });
         });
 
-        // On first connection failure, try launching the daemon binary.
+        // On first connection failure, try launching the daemon binary (local path only).
         // IpcClient auto-reconnects with exponential backoff regardless.
         auto weOwnDaemon = std::make_shared<bool>(false);
-        QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
-                         &app, [daemonPath, weOwnDaemon](const QString& error) {
-            eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
-            if (!*weOwnDaemon && !daemonPath.isEmpty() && launchDaemon(daemonPath))
-                *weOwnDaemon = true;
-        });
+        if (!isRemote && !daemonPath.isEmpty()) {
+            QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
+                             &app, [daemonPath, weOwnDaemon](const QString& error) {
+                eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
+                if (!*weOwnDaemon && launchDaemon(daemonPath))
+                    *weOwnDaemon = true;
+            });
+        } else {
+            QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
+                             &app, [](const QString& error) {
+                eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
+            });
+        }
 
         // Wire eD2K push events to the status bar
         QObject::connect(&ipcClient, &eMule::IpcClient::serverStateChanged,
@@ -364,23 +479,46 @@ int main(int argc, char* argv[])
         auto* rateTimer = new QTimer(&app);
         rateTimer->setInterval(1000);
         QObject::connect(rateTimer, &QTimer::timeout, &app,
-                         [&ipcClient, &mainWindow]() {
+                         [&ipcClient, &mainWindow, &configDir]() {
             if (!ipcClient.isConnected())
                 return;
             eMule::Ipc::IpcMessage req(eMule::Ipc::IpcMsgType::GetStats);
             ipcClient.sendRequest(std::move(req),
-                                  [&mainWindow](const eMule::Ipc::IpcMessage& resp) {
+                                  [&mainWindow, &configDir](const eMule::Ipc::IpcMessage& resp) {
                 if (resp.type() != eMule::Ipc::IpcMsgType::Result || !resp.fieldBool(0))
                     return;
                 const QCborMap stats = resp.fieldMap(1);
                 auto val = [&](QLatin1StringView k) {
                     return stats.value(QString(k)).toDouble();
                 };
+                const double upRate = val(QLatin1StringView("rateUp"));
+                const double downRate = val(QLatin1StringView("rateDown"));
                 mainWindow.updateTransferRates(
-                    val(QLatin1StringView("rateUp")),
-                    val(QLatin1StringView("rateDown")),
+                    upRate, downRate,
                     val(QLatin1StringView("upOverheadRate")),
                     val(QLatin1StringView("downOverheadRate")));
+
+                // Update MiniMule popup stats
+                const int completedDl = static_cast<int>(
+                    stats.value(QStringLiteral("completedDownloads")).toInteger());
+                const qint64 freeSpace =
+                    stats.value(QStringLiteral("freeTempSpace")).toInteger();
+                mainWindow.updateMiniMule(completedDl, freeSpace);
+
+                // Write online signature file if enabled
+                if (eMule::thePrefs.enableOnlineSignature()) {
+                    int connStatus = 0;
+                    if (mainWindow.isEd2kConnected()) connStatus |= 1;
+                    if (mainWindow.isKadConnected()) connStatus |= 2;
+                    QFile sigFile(configDir + QStringLiteral("/onlinesig.dat"));
+                    if (sigFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                        QTextStream ts(&sigFile);
+                        ts << connStatus << '\n'
+                           << QString::number(upRate, 'f', 1) << '\n'
+                           << QString::number(downRate, 'f', 1) << '\n'
+                           << "0\n";
+                    }
+                }
             });
         });
         QObject::connect(&ipcClient, &eMule::IpcClient::connected,
@@ -400,10 +538,44 @@ int main(int argc, char* argv[])
             }
         });
 
-        // connectToDaemon enables auto-reconnect internally
-        ipcClient.connectToDaemon(addr, port);
+        // Connect using hostname overload (handles both IPs and hostnames)
+        ipcClient.connectToDaemon(connectHost, port);
     } else {
         eMule::logInfo(QStringLiteral("IPC disabled in settings."));
+    }
+
+    // macOS: handle ed2k:// URLs sent via Apple Events (QFileOpenEvent)
+    // Install event filter on QApplication to catch FileOpen events.
+    struct Ed2kEventFilter : public QObject {
+        eMule::MainWindow& mw;
+        eMule::IpcClient& ipc;
+        Ed2kEventFilter(eMule::MainWindow& w, eMule::IpcClient& i, QObject* p)
+            : QObject(p), mw(w), ipc(i) {}
+        bool eventFilter(QObject* obj, QEvent* event) override {
+            if (event->type() == QEvent::FileOpen) {
+                auto* foe = static_cast<QFileOpenEvent*>(event);
+                const QString url = foe->url().toString();
+                if (url.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)) {
+                    QTimer::singleShot(0, &mw, [this, url]() {
+                        handleEd2kUrl(url, mw, ipc);
+                    });
+                    return true;
+                }
+            }
+            return QObject::eventFilter(obj, event);
+        }
+    };
+    app.installEventFilter(new Ed2kEventFilter(mainWindow, ipcClient, &app));
+
+    // Check command-line args for ed2k:// URLs (Linux/Windows: browser passes URL as arg)
+    for (const QString& arg : app.arguments()) {
+        if (arg.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)) {
+            // Delay so IPC connection has time to establish
+            QTimer::singleShot(3000, &mainWindow, [arg, &mainWindow, &ipcClient]() {
+                handleEd2kUrl(arg, mainWindow, ipcClient);
+            });
+            break;
+        }
     }
 
     // Parse --options argument: open Options dialog at a specific page
@@ -464,6 +636,15 @@ int main(int argc, char* argv[])
     }
 
     const int result = QApplication::exec();
+
+    // Write disconnected online signature on exit
+    if (eMule::thePrefs.enableOnlineSignature()) {
+        QFile sigFile(configDir + QStringLiteral("/onlinesig.dat"));
+        if (sigFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream ts(&sigFile);
+            ts << "0\n0.0\n0.0\n0\n";
+        }
+    }
 
     // Save UI state (splitter positions, etc.) to preferences
     eMule::theUiState.save();

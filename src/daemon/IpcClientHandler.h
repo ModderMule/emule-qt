@@ -32,6 +32,9 @@ signals:
     /// Emitted when this client disconnects.
     void disconnected(eMule::IpcClientHandler* handler);
 
+    /// Emitted when web server configuration has changed via SetPreferences.
+    void webServerConfigChanged();
+
 private slots:
     void onMessageReceived(const Ipc::IpcMessage& msg);
     void onConnectionLost();

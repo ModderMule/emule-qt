@@ -66,5 +66,9 @@ if [ "$BUNDLE" = true ]; then
             echo "Running macOS bundle script..."
             "$SCRIPT_DIR/bundle-macos.sh" "$BUILD_DIR"
             ;;
+        MINGW*|MSYS*|CYGWIN*)
+            echo "Running Windows bundle script..."
+            cmd //c "$SCRIPT_DIR/bundle-win.bat" "$BUILD_DIR"
+            ;;
     esac
 fi

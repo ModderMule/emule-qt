@@ -36,6 +36,7 @@ void IpcClient::connectToDaemon(const QHostAddress& address, uint16_t port)
 {
     // Store params for auto-reconnect
     m_address = address;
+    m_hostname.clear();
     m_port = port;
     m_autoReconnect = true;
     m_reconnectDelayMs = 1000;
@@ -51,6 +52,35 @@ void IpcClient::connectToDaemon(const QHostAddress& address, uint16_t port)
             this, &IpcClient::onSocketError);
 
     m_socket->connectToHost(address, port);
+}
+
+void IpcClient::connectToDaemon(const QString& host, uint16_t port)
+{
+    // Try parsing as IP address first — avoids unnecessary DNS lookup
+    QHostAddress addr(host);
+    if (!addr.isNull()) {
+        connectToDaemon(addr, port);
+        return;
+    }
+
+    // Hostname — store for reconnect; QTcpSocket handles DNS internally
+    m_hostname = host;
+    m_address = QHostAddress{};
+    m_port = port;
+    m_autoReconnect = true;
+    m_reconnectDelayMs = 1000;
+    m_reconnectTimer.stop();
+
+    resetConnection();
+
+    m_socket = new QTcpSocket(this);
+
+    connect(m_socket, &QTcpSocket::connected,
+            this, &IpcClient::onSocketConnected);
+    connect(m_socket, &QAbstractSocket::errorOccurred,
+            this, &IpcClient::onSocketError);
+
+    m_socket->connectToHost(host, port);
 }
 
 void IpcClient::disconnectFromDaemon()
@@ -141,6 +171,11 @@ void IpcClient::onSocketConnected()
 {
     // Reset backoff on successful TCP connect
     m_reconnectDelayMs = 1000;
+
+    // When connected by hostname, capture the resolved peer address so that
+    // isLoopback() checks and handshake encryption decisions work correctly.
+    if (!m_hostname.isEmpty() && m_socket)
+        m_address = m_socket->peerAddress();
 
     // Detach the pre-handoff error handler: IpcConnection owns the socket now
     // and handles errors through its own onErrorOccurred → disconnected signal.
@@ -240,8 +275,9 @@ void IpcClient::attemptReconnect()
     if (!m_autoReconnect || m_port == 0)
         return;
 
+    const QString display = m_hostname.isEmpty() ? m_address.toString() : m_hostname;
     logInfo(QStringLiteral("Reconnecting to daemon at %1:%2...")
-                .arg(m_address.toString()).arg(m_port));
+                .arg(display).arg(m_port));
 
     resetConnection();
 
@@ -252,7 +288,10 @@ void IpcClient::attemptReconnect()
     connect(m_socket, &QAbstractSocket::errorOccurred,
             this, &IpcClient::onSocketError);
 
-    m_socket->connectToHost(m_address, m_port);
+    if (m_hostname.isEmpty())
+        m_socket->connectToHost(m_address, m_port);
+    else
+        m_socket->connectToHost(m_hostname, m_port);
 }
 
 // ---------------------------------------------------------------------------

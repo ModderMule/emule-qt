@@ -464,6 +464,42 @@ public:
     [[nodiscard]] QString webServerListenAddress() const;
     void setWebServerListenAddress(const QString& val);
 
+    [[nodiscard]] bool webServerRestApiEnabled() const;
+    void setWebServerRestApiEnabled(bool val);
+
+    [[nodiscard]] bool webServerGzipEnabled() const;
+    void setWebServerGzipEnabled(bool val);
+
+    [[nodiscard]] bool webServerUPnP() const;
+    void setWebServerUPnP(bool val);
+
+    [[nodiscard]] QString webServerTemplatePath() const;
+    void setWebServerTemplatePath(const QString& val);
+
+    [[nodiscard]] int webServerSessionTimeout() const;
+    void setWebServerSessionTimeout(int val);
+
+    [[nodiscard]] bool webServerHttpsEnabled() const;
+    void setWebServerHttpsEnabled(bool val);
+
+    [[nodiscard]] QString webServerCertPath() const;
+    void setWebServerCertPath(const QString& val);
+
+    [[nodiscard]] QString webServerKeyPath() const;
+    void setWebServerKeyPath(const QString& val);
+
+    [[nodiscard]] QString webServerAdminPassword() const;
+    void setWebServerAdminPassword(const QString& val);
+
+    [[nodiscard]] bool webServerAdminAllowHiLevFunc() const;
+    void setWebServerAdminAllowHiLevFunc(bool val);
+
+    [[nodiscard]] bool webServerGuestEnabled() const;
+    void setWebServerGuestEnabled(bool val);
+
+    [[nodiscard]] QString webServerGuestPassword() const;
+    void setWebServerGuestPassword(const QString& val);
+
     // -- Scheduler ------------------------------------------------------------
 
     [[nodiscard]] bool schedulerEnabled() const;
@@ -584,8 +620,38 @@ public:
     [[nodiscard]] bool startMinimized() const;
     void setStartMinimized(bool val);
 
+    [[nodiscard]] bool showSplashScreen() const;
+    void setShowSplashScreen(bool val);
+
+    [[nodiscard]] QString language() const;
+    void setLanguage(const QString& val);
+
+    [[nodiscard]] bool enableOnlineSignature() const;
+    void setEnableOnlineSignature(bool val);
+
+    [[nodiscard]] bool enableMiniMule() const;
+    void setEnableMiniMule(bool val);
+
+    [[nodiscard]] bool preventStandby() const;
+    void setPreventStandby(bool val);
+
+    [[nodiscard]] bool startWithOS() const;
+    void setStartWithOS(bool val);
+
     [[nodiscard]] uint32 startVersion() const;
     void setStartVersion(uint32 val);
+
+    [[nodiscard]] bool versionCheckEnabled() const;
+    void setVersionCheckEnabled(bool val);
+
+    [[nodiscard]] int versionCheckDays() const;
+    void setVersionCheckDays(int val);
+
+    [[nodiscard]] int64_t lastVersionCheck() const;
+    void setLastVersionCheck(int64_t val);
+
+    [[nodiscard]] bool bringToFrontOnLinkClick() const;
+    void setBringToFrontOnLinkClick(bool val);
 
     // -- GUI (Display page) ---------------------------------------------------
 
@@ -630,6 +696,9 @@ public:
 
     [[nodiscard]] bool useOriginalIcons() const;
     void setUseOriginalIcons(bool val);
+
+    [[nodiscard]] QString logFont() const;
+    void setLogFont(const QString& val);
 
     // -- GUI (Files page) -----------------------------------------------------
 

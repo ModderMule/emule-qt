@@ -18,6 +18,7 @@
 namespace eMule {
 
 class CoreSession;
+class WebServer;
 
 class IpcServer;
 class CoreNotifierBridge;
@@ -59,6 +60,10 @@ public:
     static constexpr int MaxLogBuffer = 500;
 
 private:
+    void startWebServer();
+    void stopWebServer();
+    void restartWebServer();
+
     void installLogForwarder();
     void removeLogForwarder();
     static void logMessageHandler(QtMsgType type, const QMessageLogContext& context,
@@ -67,6 +72,7 @@ private:
     std::unique_ptr<CoreSession> m_coreSession;
     std::unique_ptr<IpcServer> m_ipcServer;
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
+    std::unique_ptr<WebServer> m_webServer;
     bool m_running = false;
 
     static DaemonApp* s_instance;

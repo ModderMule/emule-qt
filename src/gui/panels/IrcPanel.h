@@ -8,6 +8,7 @@
 ///   - Right: Tabbed area with Status, Channels, and dynamic channel tabs
 ///   - Bottom: Connect/Close buttons, format toolbar, input field, Send button
 
+#include <QFont>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -48,6 +49,9 @@ class IrcPanel : public QWidget {
 public:
     explicit IrcPanel(QWidget* parent = nullptr);
     ~IrcPanel() override;
+
+    /// Set a custom font on all IRC text browsers.
+    void setCustomFont(const QFont& font);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -150,6 +154,7 @@ private:
     // Channel state
     QMap<QString, IrcChannel> m_channels; // keyed by lowercase name
     QString m_statusKey;                  // key for Status tab in m_channels
+    QFont m_customFont;                   // custom font for text browsers
 
     // Channel list accumulator
     QTreeWidget* m_channelListWidget = nullptr;

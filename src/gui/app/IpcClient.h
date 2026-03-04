@@ -32,6 +32,9 @@ public:
     /// keep retrying with exponential backoff (1s → 2s → 4s … 30s).
     void connectToDaemon(const QHostAddress& address, uint16_t port);
 
+    /// Connect by hostname (DNS resolved by QTcpSocket internally).
+    void connectToDaemon(const QString& host, uint16_t port);
+
     /// Disconnect from the daemon and stop auto-reconnect.
     void disconnectFromDaemon();
 
@@ -108,6 +111,7 @@ private:
     QTcpSocket* m_socket = nullptr;  // Owned by IpcConnection after handoff
     QTimer m_reconnectTimer;
     QHostAddress m_address;
+    QString m_hostname;  // Non-empty when connected by hostname (DNS)
     uint16_t m_port = 0;
     int m_nextSeqId = 1;
     int m_reconnectDelayMs = 1000;

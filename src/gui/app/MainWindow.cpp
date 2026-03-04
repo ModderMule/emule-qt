@@ -1,7 +1,13 @@
 #include "app/MainWindow.h"
 
+#ifdef Q_OS_WIN
+#include "app/MiniMuleWidget.h"
+#endif
 #include "app/IpcClient.h"
+#include "app/PowerManager.h"
+#include "app/VersionChecker.h"
 #include "app/UiState.h"
+#include "controls/LogWidget.h"
 #include "IpcProtocol.h"
 #include "dialogs/NetworkInfoDialog.h"
 #include "dialogs/ImportDownloadsDialog.h"
@@ -28,6 +34,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDesktopServices>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -67,11 +74,30 @@ MainWindow::MainWindow(QWidget* parent)
         m_trayIcon = new QSystemTrayIcon(windowIcon(), this);
         m_trayIcon->setToolTip(QStringLiteral("eMule Qt"));
         m_trayIcon->show();
+        connect(m_trayIcon, &QSystemTrayIcon::activated,
+                this, &MainWindow::onTrayIconClicked);
     }
 
     // Clipboard monitoring — prompt user when ed2k file links are copied (MFC SearchClipboard)
     connect(QApplication::clipboard(), &QClipboard::dataChanged,
             this, &MainWindow::onClipboardChanged);
+
+    // Version checker
+    m_versionChecker = new VersionChecker(this);
+    connect(m_versionChecker, &VersionChecker::newVersionAvailable,
+            this, [this](const QString& version) {
+        const auto result = QMessageBox::question(
+            this, tr("New Version Available"),
+            tr("A new version (%1) of eMule Qt is available.\n\n"
+               "Would you like to open the homepage to download it?").arg(version),
+            QMessageBox::Yes | QMessageBox::No);
+        if (result == QMessageBox::Yes)
+            QDesktopServices::openUrl(QUrl(QStringLiteral("https://emule-qt.org/")));
+    });
+    connect(m_versionChecker, &VersionChecker::upToDate,
+            this, []() {
+        // Only show dialog on manual check
+    });
 }
 
 MainWindow::~MainWindow() = default;
@@ -131,6 +157,15 @@ void MainWindow::showOptionsDialog(int page)
     if (page >= 0 && page < OptionsDialog::PageCount)
         dlg.selectPage(page);
     dlg.exec();
+
+    // Re-apply custom font if changed
+    if (!thePrefs.logFont().isEmpty()) {
+        QFont f;
+        f.fromString(thePrefs.logFont());
+        m_serverPanel->logWidget()->setCustomFont(f);
+        m_messagesPanel->setCustomFont(f);
+        m_ircPanel->setCustomFont(f);
+    }
 }
 
 void MainWindow::onOptionsClicked()
@@ -200,6 +235,9 @@ void MainWindow::setNetworkStats(quint32 users, quint32 files)
 void MainWindow::updateTransferRates(double upKBs, double downKBs,
                                      double upOH, double downOH)
 {
+    m_cachedUpKBs = upKBs;
+    m_cachedDownKBs = downKBs;
+
     if (thePrefs.showOverhead()) {
         m_statusUpLabel->setText(QStringLiteral("Up: %1(%2)")
             .arg(upKBs, 0, 'f', 1).arg(upOH, 0, 'f', 1));
@@ -358,8 +396,8 @@ void MainWindow::buildToolsMenu()
     linksMenu->addAction(tr("FAQ"), this, [] {
         QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com/home/perl/help.cgi")));
     });
-    linksMenu->addAction(tr("Version Check"), this, [] {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com/home/perl/update.cgi")));
+    linksMenu->addAction(tr("Version Check"), this, [this] {
+        m_versionChecker->check(true);
     });
 
     // Scheduler submenu
@@ -432,6 +470,69 @@ void MainWindow::onSchedulerToggle()
     req.append(QStringLiteral("schedulerEnabled"));
     req.append(newVal);
     m_ipc->sendRequest(std::move(req));
+}
+
+// ---------------------------------------------------------------------------
+// Tray icon / MiniMule
+// ---------------------------------------------------------------------------
+
+void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
+{
+    if (reason == QSystemTrayIcon::DoubleClick) {
+        // Double-click: restore the main window
+        showNormal();
+        raise();
+        activateWindow();
+        return;
+    }
+
+#ifdef Q_OS_WIN
+    if (reason == QSystemTrayIcon::Trigger) {
+        if (!thePrefs.enableMiniMule())
+            return;
+
+        // Create MiniMule lazily on first use
+        if (!m_miniMule) {
+            m_miniMule = new MiniMuleWidget(m_trayIcon, this);
+            connect(m_miniMule, &MiniMuleWidget::restoreRequested, this, [this]() {
+                m_miniMule->hide();
+                showNormal();
+                raise();
+                activateWindow();
+            });
+            connect(m_miniMule, &MiniMuleWidget::openIncomingRequested,
+                    this, &MainWindow::onOpenIncomingFolder);
+            connect(m_miniMule, &MiniMuleWidget::optionsRequested,
+                    this, &MainWindow::onOptionsClicked);
+        }
+
+        // Toggle: hide if already visible, otherwise show
+        if (m_miniMule->isVisible()) {
+            m_miniMule->hide();
+        } else {
+            const bool connected = m_ed2kConnected || m_kadConnected;
+            m_miniMule->updateStats(connected, m_cachedUpKBs, m_cachedDownKBs,
+                                    m_cachedCompleted, m_cachedFreeBytes);
+            m_miniMule->showNearTray();
+        }
+    }
+#else
+    Q_UNUSED(reason)
+#endif
+}
+
+void MainWindow::updateMiniMule(int completedCount, qint64 freeBytes)
+{
+    m_cachedCompleted = completedCount;
+    m_cachedFreeBytes = freeBytes;
+
+#ifdef Q_OS_WIN
+    if (m_miniMule && m_miniMule->isVisible()) {
+        const bool connected = m_ed2kConnected || m_kadConnected;
+        m_miniMule->updateStats(connected, m_cachedUpKBs, m_cachedDownKBs,
+                                m_cachedCompleted, m_cachedFreeBytes);
+    }
+#endif
 }
 
 // ---------------------------------------------------------------------------

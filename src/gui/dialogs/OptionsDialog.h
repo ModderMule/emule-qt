@@ -92,6 +92,7 @@ private:
     QWidget* createStatisticsPage();
     QWidget* createSecurityPage();
     QWidget* createSchedulerPage();
+    QWidget* createWebInterfacePage();
     QWidget* createExtendedPage();
     QWidget* createPlaceholderPage(const QString& title);
 
@@ -106,17 +107,33 @@ private:
     static QIcon makePadlockIcon();
 
     IpcClient* m_ipc = nullptr;
-    bool m_loading = false;
     QListWidget* m_sidebar = nullptr;
     QStackedWidget* m_pages = nullptr;
     QLabel* m_pageHeader = nullptr;
     QPushButton* m_applyBtn = nullptr;
+    bool m_loading = false;              // true while IPC callback populates widgets
+    bool m_daemonSettingsLoaded = false;  // true after IPC GetPreferences callback
 
     // General page controls
     QLineEdit* m_nickEdit = nullptr;
     QComboBox* m_langCombo = nullptr;
     QCheckBox* m_promptOnExitCheck = nullptr;
     QCheckBox* m_startMinimizedCheck = nullptr;
+    QCheckBox* m_showSplashCheck = nullptr;
+    QCheckBox* m_enableOnlineSigCheck = nullptr;
+#ifdef Q_OS_WIN
+    QCheckBox* m_enableMiniMuleCheck = nullptr;
+#endif
+    QCheckBox* m_preventStandbyCheck = nullptr;
+    QCheckBox* m_startWithOSCheck = nullptr;
+    QCheckBox* m_versionCheckBox = nullptr;
+    QSpinBox*  m_versionCheckDaysSpin = nullptr;
+    QCheckBox* m_bringToFrontCheck = nullptr;
+
+    // Core (IPC) settings
+    QLineEdit* m_coreAddressEdit = nullptr;
+    QSpinBox*  m_corePortSpin = nullptr;
+    QLineEdit* m_coreTokenEdit = nullptr;
 
     // Display page controls
     QSlider* m_depth3DSlider = nullptr;
@@ -134,6 +151,9 @@ private:
     QCheckBox* m_useAutoCompletionCheck = nullptr;
     QCheckBox* m_useOriginalIconsCheck = nullptr;
     bool m_initialUseOriginalIcons = false;
+    QPushButton* m_selectFontBtn = nullptr;
+    QLabel* m_fontPreviewLabel = nullptr;
+    QString m_currentLogFont;
 
     // Connection page controls
     QSpinBox*  m_capacityDownloadSpin = nullptr;
@@ -346,6 +366,28 @@ private:
     QCheckBox*    m_resolveShellLinksCheck = nullptr;
     QButtonGroup* m_multiUserSharingGroup = nullptr;
 #endif
+
+    // Web Interface page controls
+    QCheckBox*    m_webEnabledCheck = nullptr;
+    QCheckBox*    m_webRestApiCheck = nullptr;
+    QCheckBox*    m_webGzipCheck = nullptr;
+    QCheckBox*    m_webUPnPCheck = nullptr;
+    QSpinBox*     m_webPortSpin = nullptr;
+    QLineEdit*    m_webTemplateEdit = nullptr;
+    QPushButton*  m_webTemplateBrowseBtn = nullptr;
+    QPushButton*  m_webTemplateReloadBtn = nullptr;
+    QSpinBox*     m_webSessionTimeoutSpin = nullptr;
+    QCheckBox*    m_webHttpsCheck = nullptr;
+    QPushButton*  m_webCreateCertBtn = nullptr;
+    QLineEdit*    m_webCertEdit = nullptr;
+    QPushButton*  m_webCertBrowseBtn = nullptr;
+    QLineEdit*    m_webKeyEdit = nullptr;
+    QPushButton*  m_webKeyBrowseBtn = nullptr;
+    QLineEdit*    m_webApiKeyEdit = nullptr;
+    QLineEdit*    m_webAdminPasswordEdit = nullptr;
+    QCheckBox*    m_webAdminHiLevCheck = nullptr;
+    QCheckBox*    m_webGuestEnabledCheck = nullptr;
+    QLineEdit*    m_webGuestPasswordEdit = nullptr;
 
     // SMTP dialog state (not persisted as controls, stored transiently)
     QString m_smtpServer;

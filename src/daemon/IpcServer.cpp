@@ -80,6 +80,8 @@ void IpcServer::onNewConnection()
 
         connect(handler.get(), &IpcClientHandler::disconnected,
                 this, &IpcServer::onClientDisconnected);
+        connect(handler.get(), &IpcClientHandler::webServerConfigChanged,
+                this, &IpcServer::webServerConfigChanged);
 
         m_clients.push_back(std::move(handler));
     }

@@ -83,6 +83,7 @@ conan/
 
 # local tools and scripts
 *.local.sh
+translations_*.json
 
 # Environment secrets
 .env

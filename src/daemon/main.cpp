@@ -3,13 +3,12 @@
 
 #include "DaemonApp.h"
 
+#include "app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QCoreApplication>
-#include <QDir>
 #include <QLoggingCategory>
-#include <QStandardPaths>
 
 #ifndef Q_OS_WIN
 #include <csignal>
@@ -28,14 +27,12 @@ int main(int argc, char* argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("eMule"));
 
     // Load preferences
-#ifdef Q_OS_MACOS
-    const QString configDir = QDir::homePath() + QStringLiteral("/eMuleQt/Config");
-#else
-    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-#endif
-    QDir().mkpath(configDir);
+    const QString configDir = eMule::AppConfig::configDir();
     const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
     eMule::thePrefs.load(prefsPath);
+
+    // Seed bundled config data (webserver assets, template, nodes.dat)
+    eMule::AppConfig::seedBundledData(configDir);
 
     // Enable debug-level output for all emule.* categories so logDebug()
     // messages reach the message handler and are forwarded to the GUI.

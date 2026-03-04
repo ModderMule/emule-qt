@@ -47,6 +47,9 @@ public:
 
     void setIpcClient(IpcClient* client);
 
+    /// Set a custom font on the chat browser.
+    void setCustomFont(const QFont& font);
+
 private slots:
     void onFriendClicked(const QModelIndex& index);
     void onSendClicked();
