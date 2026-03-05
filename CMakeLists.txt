@@ -82,6 +82,16 @@ target_include_directories(emule_generated_config INTERFACE
 # ---------------------------------------------------------------------------
 # Third-party dependencies (optional — found when available)
 # ---------------------------------------------------------------------------
+if(WIN32 AND NOT DEFINED OPENSSL_ROOT_DIR)
+    foreach(_ssl_dir "C:/Program Files/OpenSSL-Win64" "C:/OpenSSL-Win64"
+                     "$ENV{USERPROFILE}/scoop/apps/openssl/current")
+        if(EXISTS "${_ssl_dir}/include/openssl/ssl.h")
+            set(OPENSSL_ROOT_DIR "${_ssl_dir}" CACHE PATH "OpenSSL root")
+            break()
+        endif()
+    endforeach()
+endif()
+
 find_package(ZLIB)
 find_package(OpenSSL REQUIRED)
 
