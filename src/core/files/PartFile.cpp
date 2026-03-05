@@ -30,6 +30,8 @@
 #include "server/ServerConnect.h"
 #include "server/Server.h"
 
+#include "utils/ByteOrder.h"
+
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>

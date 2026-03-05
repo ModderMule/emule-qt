@@ -18,11 +18,7 @@
 #include "utils/SafeFile.h"
 #include "utils/Opcodes.h"
 
-#ifdef Q_OS_WIN
-#include <winsock2.h>
-#else
-#include <arpa/inet.h>
-#endif
+#include "utils/ByteOrder.h"
 
 #include <QDir>
 #include <QFile>

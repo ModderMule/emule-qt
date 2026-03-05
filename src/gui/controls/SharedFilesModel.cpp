@@ -247,10 +247,16 @@ void SharedFilesSortProxy::setFolderFilter(SharedFilterType type, const QString&
 {
     if (m_filterType == type && m_filterPath == path)
         return;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
     beginFilterChange();
     m_filterType = type;
     m_filterPath = path;
     endFilterChange();
+#else
+    m_filterType = type;
+    m_filterPath = path;
+    invalidateFilter();
+#endif
 }
 
 void SharedFilesSortProxy::setIncomingDir(const QString& dir)

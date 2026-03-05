@@ -9,6 +9,8 @@
 #include <cerrno>
 #include <cstring>
 
+#ifndef Q_OS_WIN
+
 // POSIX networking
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -320,3 +322,58 @@ uint16 Pinger::icmpChecksum(const void* data, int len)
 }
 
 } // namespace eMule
+
+#else // Q_OS_WIN
+
+// TODO: Windows implementation using IcmpSendEcho / IcmpSendEcho2
+namespace eMule {
+
+Pinger::Pinger()
+{
+    // Raw ICMP sockets not available on Windows without IcmpSendEcho.
+    // All sockets remain at -1 (disabled).
+    logWarning(QStringLiteral("Pinger: not yet implemented on Windows"));
+}
+
+Pinger::~Pinger() = default;
+
+PingStatus Pinger::ping(uint32 /*addr*/, uint8 /*ttl*/, bool /*useUdp*/)
+{
+    PingStatus result;
+    result.delay = static_cast<float>(kPingTimeoutMs);
+    result.status = kPingTimedOut;
+    result.error = kPingTimedOut;
+    return result;
+}
+
+PingStatus Pinger::pingICMP(uint32 addr, uint8 ttl)
+{
+    return ping(addr, ttl, false);
+}
+
+PingStatus Pinger::pingUDP(uint32 addr, uint8 ttl)
+{
+    return ping(addr, ttl, true);
+}
+
+uint16 Pinger::icmpChecksum(const void* data, int len)
+{
+    uint32 sum = 0;
+    auto* p = static_cast<const uint16*>(data);
+    int remaining = len;
+
+    while (remaining > 1) {
+        sum += *p++;
+        remaining -= 2;
+    }
+    if (remaining == 1)
+        sum += *reinterpret_cast<const uint8*>(p);
+
+    sum = (sum >> 16) + (sum & 0xFFFF);
+    sum += (sum >> 16);
+    return static_cast<uint16>(~sum);
+}
+
+} // namespace eMule
+
+#endif // Q_OS_WIN

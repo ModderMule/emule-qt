@@ -13,6 +13,8 @@
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 
+#include "utils/ByteOrder.h"
+
 #include <QHostAddress>
 
 namespace eMule {

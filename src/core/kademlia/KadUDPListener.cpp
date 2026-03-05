@@ -25,6 +25,8 @@
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
+#include "utils/ByteOrder.h"
+
 #include <QHostAddress>
 #include <QHostInfo>
 
