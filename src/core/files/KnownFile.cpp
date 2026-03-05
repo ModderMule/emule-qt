@@ -865,7 +865,8 @@ void KnownFile::createHash(QIODevice& device, uint64 length,
     }
 
     md4Hasher.finish();
-    md4cpy(md4HashOut, md4Hasher.getHash());
+    if (md4HashOut)
+        md4cpy(md4HashOut, md4Hasher.getHash());
 
     // Flush remaining AICH data
     if (aichTree && hashAlg && aichPos > 0) {

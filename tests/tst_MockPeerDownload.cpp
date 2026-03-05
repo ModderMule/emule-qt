@@ -15,6 +15,8 @@
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "crypto/AICHData.h"
+#include "crypto/AICHHashSet.h"
 #include "crypto/FileIdentifier.h"
 #include "crypto/MD4Hash.h"
 #include "files/KnownFile.h"
@@ -75,6 +77,17 @@ public:
 
     int compressedBlocksSent() const { return m_compressedBlocksSent; }
     int uncompressedBlocksSent() const { return m_uncompressedBlocksSent; }
+    bool corruptionDelivered() const { return m_corruptionDelivered; }
+    int aichRequestsReceived() const { return m_aichRequestsReceived; }
+
+    void setCorruptionConfig(uint32 partNumber, uint32 blockIndex)
+    {
+        m_corruptionEnabled = true;
+        m_corruptPartNumber = partNumber;
+        m_corruptBlockIndex = blockIndex;
+    }
+
+    void setAICHHashSet(AICHRecoveryHashSet* hashSet) { m_aichHashSet = hashSet; }
 
 protected:
     bool packetReceived(Packet* packet) override
@@ -109,6 +122,9 @@ protected:
             break;
         case OP_CANCELTRANSFER:
             // Download finished or cancelled — no-op
+            break;
+        case OP_AICHREQUEST:
+            handleAICHRequest(packet->pBuffer, packet->size);
             break;
         default:
             break;
@@ -314,6 +330,22 @@ private:
             if (static_cast<uint32>(blockData.size()) != blockSize)
                 continue;
 
+            // Corrupt data if configured and this block overlaps the target
+            if (m_corruptionEnabled && !m_corruptionDelivered) {
+                const uint32 partNum = static_cast<uint32>(blockStart / PARTSIZE);
+                if (partNum == m_corruptPartNumber) {
+                    const uint64 partOffset = blockStart - (static_cast<uint64>(partNum) * PARTSIZE);
+                    const uint64 corruptBlockStart = static_cast<uint64>(m_corruptBlockIndex) * EMBLOCKSIZE;
+                    const uint64 corruptBlockEnd = corruptBlockStart + EMBLOCKSIZE;
+                    if (partOffset < corruptBlockEnd && (partOffset + blockSize) > corruptBlockStart) {
+                        const uint64 flipStart = std::max(partOffset, corruptBlockStart) - partOffset;
+                        for (uint32 j = 0; j < 16 && (flipStart + j) < blockSize; ++j)
+                            blockData[static_cast<int>(flipStart + j)] ^= 0xFF;
+                        m_corruptionDelivered = true;
+                    }
+                }
+            }
+
             // Alternate compressed/uncompressed based on block counter
             const bool useCompression = (m_blockCounter % 2 == 0);
             ++m_blockCounter;
@@ -399,6 +431,33 @@ private:
         ++m_compressedBlocksSent;
     }
 
+    void handleAICHRequest(const char* rawData, uint32 size)
+    {
+        if (!rawData || size < 16 + 2 + kAICHHashSize || !m_aichHashSet)
+            return;
+
+        ++m_aichRequestsReceived;
+
+        SafeMemFile file(reinterpret_cast<const uint8*>(rawData), size);
+        uint8 fileHash[16];
+        file.readHash16(fileHash);
+        uint16 partNumber = file.readUInt16();
+        AICHHash masterHash(file);
+
+        // Build response: hash(16) + part(2) + masterHash(20) + recovery data
+        SafeMemFile response;
+        response.writeHash16(fileHash);
+        response.writeUInt16(partNumber);
+        masterHash.write(response);
+
+        if (!m_aichHashSet->createPartRecoveryData(
+                static_cast<uint64>(partNumber) * PARTSIZE, response, true))
+            return;
+
+        auto packet = std::make_unique<Packet>(response, OP_EMULEPROT, OP_AICHANSWER);
+        sendPacket(std::move(packet));
+    }
+
     std::array<uint8, 16> m_fakeUserHash;
     std::array<uint8, 16> m_fileHash;
     std::vector<std::array<uint8, 16>> m_partHashes;
@@ -407,6 +466,14 @@ private:
     uint32 m_blockCounter = 0;
     int m_compressedBlocksSent = 0;
     int m_uncompressedBlocksSent = 0;
+
+    // Corruption support
+    bool m_corruptionEnabled = false;
+    uint32 m_corruptPartNumber = 0;
+    uint32 m_corruptBlockIndex = 2;
+    bool m_corruptionDelivered = false;
+    int m_aichRequestsReceived = 0;
+    AICHRecoveryHashSet* m_aichHashSet = nullptr;
 };
 
 // ---------------------------------------------------------------------------
@@ -443,12 +510,27 @@ public:
     int compressedBlocksSent() const { return m_socket ? m_socket->compressedBlocksSent() : 0; }
     int uncompressedBlocksSent() const { return m_socket ? m_socket->uncompressedBlocksSent() : 0; }
 
+    void setCorruptionConfig(uint32 partNumber, uint32 blockIndex)
+    {
+        m_corruptPartNumber = partNumber;
+        m_corruptBlockIndex = blockIndex;
+        m_corruptionEnabled = true;
+    }
+
+    void setAICHHashSet(AICHRecoveryHashSet* hashSet) { m_aichHashSet = hashSet; }
+
 protected:
     void incomingConnection(qintptr socketDescriptor) override
     {
         m_socket = new MockUploaderSocket(m_fakeUserHash, m_fileHash, m_partHashes,
                                            m_fileSize, m_sourceFilePath, this);
         m_socket->setSocketDescriptor(socketDescriptor);
+
+        // Pass corruption config and AICH hash set to socket
+        if (m_corruptionEnabled)
+            m_socket->setCorruptionConfig(m_corruptPartNumber, m_corruptBlockIndex);
+        if (m_aichHashSet)
+            m_socket->setAICHHashSet(m_aichHashSet);
 
         // Set obfuscation config with the MOCK's user hash — the client derives
         // its RC4 key from the mock's hash, so the server must use the same hash.
@@ -467,6 +549,12 @@ private:
     uint64 m_fileSize = 0;
     QString m_sourceFilePath;
     MockUploaderSocket* m_socket = nullptr;
+
+    // Corruption config — forwarded to socket on accept
+    bool m_corruptionEnabled = false;
+    uint32 m_corruptPartNumber = 0;
+    uint32 m_corruptBlockIndex = 2;
+    AICHRecoveryHashSet* m_aichHashSet = nullptr;
 };
 
 // ---------------------------------------------------------------------------
@@ -479,6 +567,7 @@ class tst_MockPeerDownload : public QObject {
 private slots:
     void initTestCase();
     void downloadFlow_partFileReachesCompletion();
+    void downloadFlow_corruptionDetectedAndRecovered();
     void cleanupTestCase();
 
 private:
@@ -498,6 +587,10 @@ private:
     std::vector<std::array<uint8, 16>> m_partHashes;
     uint64 m_fileSize = 0;
     std::array<uint8, 16> m_mockUserHash{};
+
+    // AICH hash data
+    AICHRecoveryHashSet m_aichHashSet;
+    AICHHash m_aichMasterHash;
 
     // Download objects
     PartFile* m_partFile = nullptr;
@@ -604,6 +697,29 @@ void tst_MockPeerDownload::initTestCase()
     }
 
     // -----------------------------------------------------------------------
+    // Build AICH hash tree for the entire file
+    // -----------------------------------------------------------------------
+    m_aichHashSet = AICHRecoveryHashSet(EMFileSize(m_fileSize));
+    {
+        QFile aichFile(m_testFilePath);
+        QVERIFY(aichFile.open(QIODevice::ReadOnly));
+        uint64 remaining = m_fileSize;
+        for (uint64 part = 0; part < numParts; ++part) {
+            const uint64 partLength = std::min(remaining, partSize);
+            AICHHashTree* partTree = m_aichHashSet.m_hashTree.findHash(
+                part * PARTSIZE, partLength);
+            QVERIFY(partTree);
+            uint8 dummyMd4[16]{};
+            KnownFile::createHash(aichFile, partLength, dummyMd4, partTree);
+            remaining -= partLength;
+        }
+        aichFile.close();
+    }
+    QVERIFY(m_aichHashSet.reCalculateHash(false));
+    m_aichHashSet.setStatus(EAICHStatus::HashSetComplete);
+    m_aichMasterHash = m_aichHashSet.getMasterHash();
+
+    // -----------------------------------------------------------------------
     // Generate a random fake user hash for the mock uploader
     // -----------------------------------------------------------------------
     std::mt19937 rng(std::random_device{}());
@@ -626,6 +742,7 @@ void tst_MockPeerDownload::initTestCase()
     m_partFile->setFileSize(EMFileSize(m_fileSize));
     m_partFile->setFileHash(m_fileHash.data());
     m_partFile->fileIdentifier().setMD4HashSet(m_partHashes);
+    m_partFile->aichRecoveryHashSet().setMasterHash(m_aichMasterHash, EAICHStatus::Trusted);
 
     QVERIFY(m_partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
 
@@ -725,6 +842,115 @@ void tst_MockPeerDownload::downloadFlow_partFileReachesCompletion()
     QCOMPARE(actualBytes.size(), expectedBytes.size());
     QVERIFY2(actualBytes == expectedBytes,
              "First 64KB of downloaded file doesn't match original");
+}
+
+// ---------------------------------------------------------------------------
+// Test: Corruption detected via MD4 mismatch, AICH recovers good blocks
+// ---------------------------------------------------------------------------
+
+void tst_MockPeerDownload::downloadFlow_corruptionDetectedAndRecovered()
+{
+    // 1. Stop previous mock uploader and process timer
+    m_processTimer.stop();
+    if (m_mockUploader) {
+        m_mockUploader->close();
+        delete m_mockUploader;
+        m_mockUploader = nullptr;
+    }
+
+    // 2. Create new MockUploader with corruption enabled
+    auto* corruptMock = new MockUploader(m_mockUserHash, m_fileHash, m_partHashes,
+                                          m_fileSize, m_testFilePath, this);
+    corruptMock->setCorruptionConfig(0 /* part 0 */, 2 /* block 2 within part */);
+    corruptMock->setAICHHashSet(&m_aichHashSet);
+    QVERIFY(corruptMock->startListening());
+    m_mockUploader = corruptMock;
+
+    // 3. Create fresh PartFile in isolated temp dirs
+    const QString tempDir2 = m_tmpDir->filePath(QStringLiteral("temp2"));
+    const QString incoming2 = m_tmpDir->filePath(QStringLiteral("incoming2"));
+    QDir().mkpath(tempDir2);
+    QDir().mkpath(incoming2);
+    thePrefs.setIncomingDir(incoming2);
+    thePrefs.setTempDirs({tempDir2});
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg"));
+    partFile->setFileSize(EMFileSize(m_fileSize));
+    partFile->setFileHash(m_fileHash.data());
+    partFile->fileIdentifier().setMD4HashSet(m_partHashes);
+    partFile->aichRecoveryHashSet().setMasterHash(m_aichMasterHash, EAICHStatus::Trusted);
+
+    QVERIFY(partFile->createPartFile(tempDir2));
+    m_downloadQueue->addDownload(partFile);
+    m_partFile = partFile;
+
+    // 4. Create fresh UpDownClient targeting the new mock
+    auto* client = new UpDownClient(
+        corruptMock->serverPort(), htonl(0x7F000001),
+        0, 0, partFile, true);
+    client->setUserHash(m_mockUserHash.data());
+    client->setConnectOptions(0x03, true, false);
+    partFile->addSource(client);
+    m_client = client;
+
+    // 5. Restart process timer
+    m_processTimer.start(100);
+
+    // 6. Initiate download
+    QVERIFY(client->askForDownload());
+
+    // 7. Wait for connection and encryption handshake
+    QTRY_VERIFY_WITH_TIMEOUT(corruptMock->hasConnection(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(corruptMock->socket()->isEncryptionLayerReady(), 5000);
+
+    // 8. Wait for corruption to be delivered
+    QTRY_VERIFY_WITH_TIMEOUT(corruptMock->socket()->corruptionDelivered(), 30000);
+
+    // 9. Wait for AICH recovery request (proves corruption was detected)
+    QTRY_VERIFY_WITH_TIMEOUT(corruptMock->socket()->aichRequestsReceived() > 0, 60000);
+
+    // 10. Wait for all gaps filled (AICH recovered good blocks, bad block re-downloaded)
+    QTRY_VERIFY_WITH_TIMEOUT(partFile->gapList().empty(), 120000);
+
+    // 11. Wait for completion status
+    QTRY_VERIFY_WITH_TIMEOUT(
+        partFile->status() == PartFileStatus::Completing ||
+        partFile->status() == PartFileStatus::Complete, 30000);
+
+    // 12. Verify completed size
+    QCOMPARE(static_cast<uint64>(partFile->completedSize()), m_fileSize);
+
+    // 13. Verify AICH recovery was invoked
+    QVERIFY(corruptMock->socket()->aichRequestsReceived() > 0);
+
+    // 14. Wait for Complete status (not just Completing) so file is moved
+    QTRY_VERIFY_WITH_TIMEOUT(
+        partFile->status() == PartFileStatus::Complete, 30000);
+
+    // 15. Spot check first 64KB against original
+    QFile original(m_testFilePath);
+    QVERIFY(original.open(QIODevice::ReadOnly));
+    QByteArray expectedBytes = original.read(65536);
+    original.close();
+
+    // Look for completed file in incoming dir, then temp dir
+    QString completedPath;
+    QDir incomingDir(incoming2);
+    QStringList files = incomingDir.entryList(QDir::Files);
+    if (!files.isEmpty()) {
+        completedPath = incomingDir.filePath(files.first());
+    } else {
+        QDir tempDirObj(tempDir2);
+        QStringList partFiles = tempDirObj.entryList({QStringLiteral("*.part")}, QDir::Files);
+        QVERIFY2(!partFiles.isEmpty(),
+                 qPrintable(QStringLiteral("No file in %1 or %2").arg(incoming2, tempDir2)));
+        completedPath = tempDirObj.filePath(partFiles.first());
+    }
+
+    QFile completedFile(completedPath);
+    QVERIFY(completedFile.open(QIODevice::ReadOnly));
+    QCOMPARE(completedFile.read(65536), expectedBytes);
 }
 
 // ---------------------------------------------------------------------------
