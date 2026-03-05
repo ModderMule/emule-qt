@@ -83,8 +83,13 @@ public:
     /// Get the row data snapshot for a given row index (nullptr if out of range).
     [[nodiscard]] const ServerRow* rowAt(int row) const;
 
+    /// Set the currently connected server (0,0 to clear).
+    void setConnectedServer(uint32_t ip, uint16_t port);
+
 private:
     std::vector<ServerRow> m_rows;
+    uint32_t m_connectedIP = 0;
+    uint16_t m_connectedPort = 0;
 };
 
 } // namespace eMule

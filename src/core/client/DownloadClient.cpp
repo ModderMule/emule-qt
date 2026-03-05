@@ -152,8 +152,12 @@ void UpDownClient::sendFileRequest()
         sxData.writeHash16(m_reqUpFileId.data());
 
         uint8 options = 0;
-        // TODO: set options bits as needed (available sources, etc.)
+        // Options byte is reserved (original eMule also sends 0)
         sxData.writeUInt8(options);
+
+        // Append 64-bit filesize for large files so peers can handle >4GB
+        if (m_reqFile && m_reqFile->isLargeFile())
+            sxData.writeUInt64(static_cast<uint64>(m_reqFile->fileSize()));
 
         auto sxPacket = std::make_unique<Packet>(sxData, OP_EMULEPROT, OP_REQUESTSOURCES);
         sendPacket(std::move(sxPacket));

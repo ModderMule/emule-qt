@@ -14,6 +14,7 @@
 class QLabel;
 class QLineEdit;
 class QMenu;
+class QNetworkAccessManager;
 class QPushButton;
 class QSplitter;
 class QTimer;
@@ -69,6 +70,8 @@ private:
     void restoreSelection(const QString& key);
 
     void showFindDialog();
+    void requestKadStatus();
+    void parseAndAddServersFromMet(const QByteArray& data);
 
     // Models
     ServerListModel* m_serverListModel = nullptr;
@@ -107,6 +110,14 @@ private:
     // Core links
     ServerList* m_serverList = nullptr;
     ServerConnect* m_serverConnect = nullptr;
+
+    // Network manager for server.met download
+    QNetworkAccessManager* m_netManager = nullptr;
+
+    // Kad status (updated via IPC push events)
+    bool m_kadRunning    = false;
+    bool m_kadConnected  = false;
+    bool m_kadFirewalled = false;
 };
 
 } // namespace eMule

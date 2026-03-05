@@ -45,10 +45,12 @@
 #include "utils/OtherFunctions.h"
 
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QFileInfo>
 #include <QHostAddress>
 #include <QSet>
 #include <QStorageInfo>
+#include <QUrl>
 
 #include <ctime>
 
@@ -123,6 +125,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetKnownClients:      handleGetKnownClients(msg); break;
     case IpcMsgType::SetDownloadPriority:  handleSetDownloadPriority(msg); break;
     case IpcMsgType::ClearCompleted:       handleClearCompleted(msg); break;
+    case IpcMsgType::GetDownloadSources:   handleGetDownloadSources(msg); break;
     case IpcMsgType::GetServers:           handleGetServers(msg); break;
     case IpcMsgType::RemoveServer:         handleRemoveServer(msg); break;
     case IpcMsgType::RemoveAllServers:     handleRemoveAllServers(msg); break;
@@ -167,6 +170,18 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetConvertJobs:       handleGetConvertJobs(msg); break;
     case IpcMsgType::RemoveConvertJob:     handleRemoveConvertJob(msg); break;
     case IpcMsgType::RetryConvertJob:      handleRetryConvertJob(msg); break;
+    case IpcMsgType::StopDownload:         handleStopDownload(msg); break;
+    case IpcMsgType::OpenDownloadFile:     handleOpenDownloadFile(msg); break;
+    case IpcMsgType::OpenDownloadFolder:   handleOpenDownloadFolder(msg); break;
+    case IpcMsgType::MarkSearchSpam:       handleMarkSearchSpam(msg); break;
+    case IpcMsgType::ResetStats:           handleResetStats(msg); break;
+    case IpcMsgType::RenameSharedFile:     handleRenameSharedFile(msg); break;
+    case IpcMsgType::DeleteSharedFile:     handleDeleteSharedFile(msg); break;
+    case IpcMsgType::UnshareFile:          handleUnshareFile(msg); break;
+    case IpcMsgType::SetDownloadCategory:  handleSetDownloadCategory(msg); break;
+    case IpcMsgType::GetDownloadDetails:   handleGetDownloadDetails(msg); break;
+    case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
+    case IpcMsgType::RequestClientSharedFiles: handleRequestClientSharedFiles(msg); break;
     default:
         sendMessage(IpcMessage::makeError(msg.seqId(), 400,
             QStringLiteral("Unknown message type: %1").arg(static_cast<int>(msg.type()))));
@@ -339,6 +354,31 @@ void IpcClientHandler::handleGetDownloadClients(const IpcMessage& msg)
                 clients.append(toCbor(*c));
         }
     }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(clients)));
+}
+
+void IpcClientHandler::handleGetDownloadSources(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    const auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+
+    QCborArray clients;
+    for (const auto* c : pf->srcList())
+        clients.append(toCbor(*c));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(clients)));
 }
 
@@ -678,7 +718,10 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
     const QString ed2kLink = QStringLiteral("ed2k://|file|%1|%2|%3|/")
         .arg(fileName).arg(fileSize).arg(hash);
 
-    const QString tempDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("Temp"));
+    const QStringList tempDirs = thePrefs.tempDirs();
+    const QString tempDir = tempDirs.isEmpty()
+        ? QDir(thePrefs.configDir()).filePath(QStringLiteral("Temp"))
+        : tempDirs.first();
     const bool ok = theApp.downloadQueue->addDownloadFromED2KLink(ed2kLink, tempDir, 0);
     sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
 }
@@ -1062,13 +1105,16 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
         stats.insert(QStringLiteral("downDatarate"), static_cast<qint64>(dq->datarate()));
         stats.insert(QStringLiteral("downFileCount"), static_cast<qint64>(dq->fileCount()));
 
-        // Count completed downloads (for MiniMule)
+        // Count completed downloads (for MiniMule) + total found sources
         int completedCount = 0;
+        qint64 totalSources = 0;
         for (const auto* f : dq->files()) {
             if (f->status() == PartFileStatus::Complete)
                 ++completedCount;
+            totalSources += f->sourceCount();
         }
         stats.insert(QStringLiteral("completedDownloads"), completedCount);
+        stats.insert(QStringLiteral("downFoundSources"), totalSources);
     }
 
     // Free space on incoming directory (for MiniMule)
@@ -1202,6 +1248,8 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("cryptLayerRequired"), thePrefs.cryptLayerRequired());
     prefs.insert(QStringLiteral("useSecureIdent"), thePrefs.useSecureIdent());
     prefs.insert(QStringLiteral("enableSearchResultFilter"), thePrefs.enableSearchResultFilter());
+    prefs.insert(QStringLiteral("warnUntrustedFiles"), thePrefs.warnUntrustedFiles());
+    prefs.insert(QStringLiteral("ipFilterUpdateUrl"), thePrefs.ipFilterUpdateUrl());
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(thePrefs.statsAverageMinutes()));
@@ -1241,6 +1289,7 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("logFileSaving"), thePrefs.logFileSaving());
     prefs.insert(QStringLiteral("logA4AF"), thePrefs.logA4AF());
     prefs.insert(QStringLiteral("logUlDlEvents"), thePrefs.logUlDlEvents());
+    prefs.insert(QStringLiteral("logRawSocketPackets"), thePrefs.logRawSocketPackets());
     prefs.insert(QStringLiteral("queueSize"), static_cast<qint64>(thePrefs.queueSize()));
     // USS
     prefs.insert(QStringLiteral("dynUpEnabled"), thePrefs.dynUpEnabled());
@@ -1446,6 +1495,10 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
             thePrefs.setUseSecureIdent(val.toBool());
         else if (key == QStringLiteral("enableSearchResultFilter"))
             thePrefs.setEnableSearchResultFilter(val.toBool());
+        else if (key == QStringLiteral("warnUntrustedFiles"))
+            thePrefs.setWarnUntrustedFiles(val.toBool());
+        else if (key == QStringLiteral("ipFilterUpdateUrl"))
+            thePrefs.setIpFilterUpdateUrl(val.toString());
         // Extended (PPgTweaks)
         else if (key == QStringLiteral("maxConsPerFive"))
             thePrefs.setMaxConsPerFive(static_cast<uint16>(val.toInteger()));
@@ -1505,6 +1558,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
             thePrefs.setLogA4AF(val.toBool());
         else if (key == QStringLiteral("logUlDlEvents"))
             thePrefs.setLogUlDlEvents(val.toBool());
+        else if (key == QStringLiteral("logRawSocketPackets"))
+            thePrefs.setLogRawSocketPackets(val.toBool());
         else if (key == QStringLiteral("queueSize"))
             thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
         // USS
@@ -2124,6 +2179,354 @@ void IpcClientHandler::handleRetryConvertJob(const IpcMessage& msg)
 
     PartFileConvert::retryJob(index);
     PartFileConvert::processQueue();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleStopDownload — stop (not pause) a download
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleStopDownload(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+    pf->stopFile(false);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleOpenDownloadFile — open a completed/partial file on daemon host
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleOpenDownloadFile(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    const auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+    const QString path = pf->filePath().isEmpty() ? pf->fullName() : pf->filePath();
+    if (path.isEmpty() || !QFileInfo::exists(path)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("File not found on disk")));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleOpenDownloadFolder — open folder containing a download
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleOpenDownloadFolder(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    const auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+    const QString path = pf->filePath().isEmpty() ? pf->fullName() : pf->filePath();
+    const QString folder = QFileInfo(path).absolutePath();
+    if (folder.isEmpty() || !QFileInfo::exists(folder)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Folder not found")));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleMarkSearchSpam — mark a search result as spam
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleMarkSearchSpam(const IpcMessage& msg)
+{
+    const auto searchID = static_cast<uint32>(msg.fieldInt(0));
+    const QString hash = msg.fieldString(1);
+
+    if (!theApp.searchList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Search list unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* file = theApp.searchList->searchFileByHash(hashBuf, searchID);
+    if (!file) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Search file not found")));
+        return;
+    }
+    theApp.searchList->markFileAsSpam(file, true);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleResetStats — reset session statistics
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleResetStats(const IpcMessage& msg)
+{
+    if (theApp.statistics) {
+        theApp.statistics->resetDownDatarateOverhead();
+        theApp.statistics->resetUpDatarateOverhead();
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleRenameSharedFile — rename a shared file on disk
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleRenameSharedFile(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    const QString newName = msg.fieldString(1);
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared files unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* file = theApp.sharedFileList->getFileByID(hashBuf);
+    if (!file) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Shared file not found")));
+        return;
+    }
+    if (newName.isEmpty()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("New name cannot be empty")));
+        return;
+    }
+    const QString oldPath = file->filePath();
+    const QString dir = QFileInfo(oldPath).absolutePath();
+    const QString newPath = dir + QDir::separator() + newName;
+    if (!QFile::rename(oldPath, newPath)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 500, QStringLiteral("Rename failed")));
+        return;
+    }
+    file->setFileName(newName);
+    file->setFilePath(newPath);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleDeleteSharedFile — delete a shared file from disk
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleDeleteSharedFile(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared files unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* file = theApp.sharedFileList->getFileByID(hashBuf);
+    if (!file) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Shared file not found")));
+        return;
+    }
+    const QString path = file->filePath();
+    theApp.sharedFileList->removeFile(file);
+    QFile::remove(path);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleUnshareFile — remove from shared list but keep on disk
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleUnshareFile(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared files unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* file = theApp.sharedFileList->getFileByID(hashBuf);
+    if (!file) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Shared file not found")));
+        return;
+    }
+    theApp.sharedFileList->removeFile(file);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleSetDownloadCategory — assign a download to a category
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleSetDownloadCategory(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    const auto cat = static_cast<uint32>(msg.fieldInt(1));
+
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+    pf->setCategory(cat);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleGetDownloadDetails — return extended download info
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    const auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+
+    QCborMap details = toCbor(*pf);
+    // Add extended fields
+    const QString path = pf->filePath().isEmpty() ? pf->fullName() : pf->filePath();
+    details.insert(QLatin1StringView("filePath"), path);
+    details.insert(QLatin1StringView("fullName"), pf->fullName());
+    details.insert(QLatin1StringView("a4afSourceCount"), static_cast<qint64>(pf->a4afSourceCount()));
+    details.insert(QLatin1StringView("isComplete"),
+        pf->status() == PartFileStatus::Complete);
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
+}
+
+// ---------------------------------------------------------------------------
+// handlePreviewDownload — open a partially downloaded file for preview
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handlePreviewDownload(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+
+    // For preview to work, the first and last parts must be available
+    const QString path = pf->fullName();
+    if (path.isEmpty() || !QFileInfo::exists(path)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("File not available for preview")));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleRequestClientSharedFiles — ask a client for its shared file list
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleRequestClientSharedFiles(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.clientList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Client list unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* client = theApp.clientList->findByUserHash(hashBuf);
+    if (!client) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Client not found")));
+        return;
+    }
+    client->requestSharedFileList();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 

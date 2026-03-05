@@ -4,7 +4,6 @@
 #include "controls/LogWidget.h"
 #include "controls/ServerListModel.h"
 
-#include "app/AppContext.h"
 #include "app/UiState.h"
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
@@ -18,20 +17,27 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCborArray>
+#include <QCborMap>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDataStream>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFont>
 #include <QFormLayout>
 #include <QFrame>
 #include <QHostAddress>
+#include <QHostInfo>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QUrl>
 #include <QPainter>
 #include <QSortFilterProxyModel>
 #include <QPushButton>
@@ -83,6 +89,7 @@ void ServerPanel::setIpcClient(IpcClient* client)
     if (m_ipc) {
         // Request server list when IPC connects
         connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestServerList);
+        connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestKadStatus);
 
         // Refresh server list and button on server state changes
         connect(m_ipc, &IpcClient::serverStateChanged,
@@ -92,11 +99,27 @@ void ServerPanel::setIpcClient(IpcClient* client)
             updateConnectButton(
                 info.value(QStringLiteral("connected")).toBool(),
                 info.value(QStringLiteral("connecting")).toBool());
+            // Highlight connected server in blue
+            auto srvIP = static_cast<uint32_t>(info.value(QStringLiteral("serverIP")).toInteger());
+            auto srvPort = static_cast<uint16_t>(info.value(QStringLiteral("serverPort")).toInteger());
+            m_serverListModel->setConnectedServer(srvIP, srvPort);
+        });
+
+        // Track Kad status from push events
+        connect(m_ipc, &IpcClient::kadUpdated,
+                this, [this](const Ipc::IpcMessage& msg) {
+            const QCborMap info = msg.fieldMap(0);
+            m_kadRunning    = info.value(QStringLiteral("running")).toBool();
+            m_kadConnected  = info.value(QStringLiteral("connected")).toBool();
+            m_kadFirewalled = info.value(QStringLiteral("firewalled")).toBool();
+            refreshMyInfo();
         });
 
         // If already connected, request immediately
-        if (m_ipc->isConnected())
+        if (m_ipc->isConnected()) {
             requestServerList();
+            requestKadStatus();
+        }
     }
 }
 
@@ -180,11 +203,19 @@ void ServerPanel::onAddServerClicked()
     if (ip.isEmpty() || port == 0)
         return;
 
-    // ToDo: Resolve hostname to IP if needed
-    // For now, parse as numeric IP
-    const QHostAddress addr(ip);
-    if (addr.isNull())
-        return;
+    // Resolve hostname to IP if needed
+    QHostAddress addr(ip);
+    if (addr.isNull()) {
+        const QHostInfo info = QHostInfo::fromName(ip);
+        for (const auto& a : info.addresses()) {
+            if (a.protocol() == QAbstractSocket::IPv4Protocol) {
+                addr = a;
+                break;
+            }
+        }
+        if (addr.isNull())
+            return;
+    }
 
     auto server = std::make_unique<Server>(addr.toIPv4Address(), port);
     if (!name.isEmpty())
@@ -201,7 +232,49 @@ void ServerPanel::onAddServerClicked()
 
 void ServerPanel::onUpdateServerMetClicked()
 {
-    // ToDo: Download server.met from URL and merge into list
+    const QString urlStr = m_updateUrlEdit->text().trimmed();
+    if (urlStr.isEmpty())
+        return;
+
+    const QUrl url(urlStr);
+    if (!url.isValid() || url.scheme().isEmpty()) {
+        m_logWidget->appendServerInfo(tr("Invalid URL: %1").arg(urlStr));
+        return;
+    }
+
+    if (!m_netManager)
+        m_netManager = new QNetworkAccessManager(this);
+
+    m_updateBtn->setEnabled(false);
+    m_logWidget->appendServerInfo(tr("Downloading server.met from %1 ...").arg(urlStr));
+
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+                      QStringLiteral("eMule Qt/1.0"));
+
+    auto* reply = m_netManager->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        m_updateBtn->setEnabled(true);
+
+        if (reply->error() != QNetworkReply::NoError) {
+            m_logWidget->appendServerInfo(
+                tr("Failed to download server.met: %1").arg(reply->errorString()));
+            return;
+        }
+
+        const QByteArray data = reply->readAll();
+        if (data.isEmpty()) {
+            m_logWidget->appendServerInfo(tr("Downloaded empty server.met file."));
+            return;
+        }
+
+        m_logWidget->appendServerInfo(
+            tr("Downloaded server.met (%1 bytes). Parsing...")
+                .arg(data.size()));
+
+        parseAndAddServersFromMet(data);
+    });
 }
 
 void ServerPanel::onRefreshTimer()
@@ -750,11 +823,22 @@ void ServerPanel::refreshMyInfo()
 
     // Kad Network
     html += QStringLiteral("<br><b>") + tr("Kad Network") + QStringLiteral("</b><br>");
-    if (theApp.serverConnect) {
-        // ToDo: Get Kad status from Kademlia instance
-        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" --<br>");
+    if (m_kadRunning) {
+        if (m_kadConnected) {
+            if (m_kadFirewalled) {
+                html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:")
+                    + QStringLiteral(" <font color='orange'>") + tr("Firewalled") + QStringLiteral("</font><br>");
+            } else {
+                html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:")
+                    + QStringLiteral(" <font color='green'>") + tr("Connected") + QStringLiteral("</font><br>");
+            }
+        } else {
+            html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:")
+                + QStringLiteral(" <font color='orange'>") + tr("Connecting...") + QStringLiteral("</font><br>");
+        }
     } else {
-        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" --<br>");
+        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" ")
+            + tr("Disconnected") + QStringLiteral("<br>");
     }
 
     // Network info
@@ -881,6 +965,265 @@ void ServerPanel::showFindDialog()
     });
 
     dlg->exec();
+}
+
+void ServerPanel::requestKadStatus()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetKadStatus);
+    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+        if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+
+        const QCborMap status = resp.fieldMap(1);
+        m_kadRunning    = status.value(QStringLiteral("running")).toBool();
+        m_kadConnected  = status.value(QStringLiteral("connected")).toBool();
+        m_kadFirewalled = status.value(QStringLiteral("firewalled")).toBool();
+        refreshMyInfo();
+    });
+}
+
+// ---------------------------------------------------------------------------
+// server.met binary parser — lightweight GUI-side parser
+// ---------------------------------------------------------------------------
+//
+// Format:
+//   [1 byte: header (0x0E or 0x0F or 0xE0)]
+//   [4 bytes: server count (LE uint32)]
+//   For each server:
+//     [4 bytes: IP (LE uint32)]
+//     [2 bytes: port (LE uint16)]
+//     [4 bytes: tag count (LE uint32)]
+//     For each tag:
+//       [1 byte: type (high bit set → new-format name follows)]
+//       Name: if high bit was set → [1 byte: nameId]
+//              else → [2 bytes: nameLen (LE)] + [nameLen bytes: name string]
+//       Value: depends on type
+//
+// We extract: IP, port, server name (ST_SERVERNAME=0x01), dynamic IP (ST_DYNIP=0x85)
+// ---------------------------------------------------------------------------
+
+void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
+{
+    // Tag type constants (from Opcodes.h)
+    constexpr uint8_t kTagTypeString  = 0x02;
+    constexpr uint8_t kTagTypeUInt32  = 0x03;
+    constexpr uint8_t kTagTypeFloat32 = 0x04;
+    constexpr uint8_t kTagTypeBool    = 0x05;
+    constexpr uint8_t kTagTypeBoolArr = 0x06;
+    constexpr uint8_t kTagTypeBlob    = 0x07;
+    constexpr uint8_t kTagTypeUInt16  = 0x08;
+    constexpr uint8_t kTagTypeUInt8   = 0x09;
+    constexpr uint8_t kTagTypeBSOB    = 0x0A;
+    constexpr uint8_t kTagTypeUInt64  = 0x0B;
+    constexpr uint8_t kTagTypeHash    = 0x01;
+    constexpr uint8_t kTagTypeStr1    = 0x11;
+    constexpr uint8_t kTagTypeStr22   = 0x26;
+
+    // Server tag IDs
+    constexpr uint8_t kStServerName   = 0x01;
+    constexpr uint8_t kStDynIP        = 0x85;
+
+    QDataStream stream(data);
+    stream.setByteOrder(QDataStream::LittleEndian);
+
+    // Read header
+    uint8_t header = 0;
+    stream >> header;
+    if (header != 0x0E && header != 0x0F && header != 0xE0) {
+        m_logWidget->appendServerInfo(
+            tr("Invalid server.met header: 0x%1").arg(header, 2, 16, QChar(u'0')));
+        return;
+    }
+
+    uint32_t serverCount = 0;
+    stream >> serverCount;
+
+    if (serverCount > 10000) {
+        m_logWidget->appendServerInfo(
+            tr("Server count too large: %1").arg(serverCount));
+        return;
+    }
+
+    int addedCount = 0;
+    int skippedCount = 0;
+
+    for (uint32_t s = 0; s < serverCount && stream.status() == QDataStream::Ok; ++s) {
+        uint32_t ip = 0;
+        uint16_t port = 0;
+        stream >> ip >> port;
+
+        uint32_t tagCount = 0;
+        stream >> tagCount;
+
+        if (tagCount > 500) {
+            m_logWidget->appendServerInfo(
+                tr("Corrupt server.met: tag count %1 at server %2").arg(tagCount).arg(s));
+            return;
+        }
+
+        QString serverName;
+        QString dynIP;
+
+        for (uint32_t t = 0; t < tagCount && stream.status() == QDataStream::Ok; ++t) {
+            uint8_t rawType = 0;
+            stream >> rawType;
+
+            // Parse tag name
+            uint8_t nameId = 0;
+            bool newFormat = (rawType & 0x80) != 0;
+            uint8_t tagType = rawType;
+
+            if (newFormat) {
+                tagType = rawType & 0x7F;
+                stream >> nameId;
+            } else {
+                uint16_t nameLen = 0;
+                stream >> nameLen;
+                if (nameLen == 1) {
+                    stream >> nameId;
+                } else if (nameLen > 0) {
+                    // Skip the name string bytes
+                    if (stream.skipRawData(nameLen) != static_cast<int>(nameLen)) {
+                        m_logWidget->appendServerInfo(
+                            tr("Corrupt server.met: truncated tag name"));
+                        return;
+                    }
+                }
+            }
+
+            // Parse tag value — skip what we don't need, capture name/dynIP
+            auto readTagString = [&]() -> QString {
+                uint16_t strLen = 0;
+                stream >> strLen;
+                if (strLen == 0 || strLen > 0x7FFF)
+                    return {};
+                QByteArray raw(strLen, Qt::Uninitialized);
+                if (stream.readRawData(raw.data(), strLen) != strLen)
+                    return {};
+                return QString::fromUtf8(raw);
+            };
+
+            switch (tagType) {
+            case kTagTypeString: {
+                QString val = readTagString();
+                if (nameId == kStServerName && serverName.isEmpty())
+                    serverName = val;
+                else if (nameId == kStDynIP && dynIP.isEmpty())
+                    dynIP = val;
+                break;
+            }
+            case kTagTypeUInt32:
+                stream.skipRawData(4);
+                break;
+            case kTagTypeUInt64:
+                stream.skipRawData(8);
+                break;
+            case kTagTypeUInt16:
+                stream.skipRawData(2);
+                break;
+            case kTagTypeUInt8:
+                stream.skipRawData(1);
+                break;
+            case kTagTypeFloat32:
+                stream.skipRawData(4);
+                break;
+            case kTagTypeBool:
+                stream.skipRawData(1);
+                break;
+            case kTagTypeBoolArr:
+                stream.skipRawData(4); // uint16 count + data? Actually variable — skip count
+                // BoolArray is rarely used in server.met, skip gracefully
+                break;
+            case kTagTypeHash:
+                stream.skipRawData(16);
+                break;
+            case kTagTypeBlob: {
+                uint32_t blobLen = 0;
+                stream >> blobLen;
+                if (blobLen > 0)
+                    stream.skipRawData(static_cast<int>(blobLen));
+                break;
+            }
+            case kTagTypeBSOB: {
+                uint8_t bsobLen = 0;
+                stream >> bsobLen;
+                if (bsobLen > 0)
+                    stream.skipRawData(bsobLen);
+                break;
+            }
+            default:
+                // STR1–STR22 compact string types
+                if (tagType >= kTagTypeStr1 && tagType <= kTagTypeStr22) {
+                    int strLen = tagType - kTagTypeStr1 + 1;
+                    QByteArray raw(strLen, Qt::Uninitialized);
+                    if (stream.readRawData(raw.data(), strLen) == strLen) {
+                        QString val = QString::fromUtf8(raw);
+                        if (nameId == kStServerName && serverName.isEmpty())
+                            serverName = val;
+                        else if (nameId == kStDynIP && dynIP.isEmpty())
+                            dynIP = val;
+                    }
+                } else {
+                    // Unknown tag type — cannot continue safely
+                    m_logWidget->appendServerInfo(
+                        tr("Unknown tag type 0x%1 at server %2, stopping parse")
+                            .arg(tagType, 2, 16, QChar(u'0')).arg(s));
+                    goto done;
+                }
+                break;
+            }
+        }
+
+        // Build address string for AddServer IPC
+        QString address;
+        if (!dynIP.isEmpty()) {
+            address = dynIP;
+        } else if (ip != 0) {
+            address = QHostAddress(ip).toString();
+        }
+
+        if (address.isEmpty() || port == 0) {
+            ++skippedCount;
+            continue;
+        }
+
+        if (serverName.isEmpty())
+            serverName = address;
+
+        // Send AddServer IPC
+        if (m_ipc && m_ipc->isConnected()) {
+            Ipc::IpcMessage req(Ipc::IpcMsgType::AddServer);
+            req.append(address);
+            req.append(static_cast<qint64>(port));
+            req.append(serverName);
+            m_ipc->sendRequest(std::move(req));
+            ++addedCount;
+        } else if (m_serverList) {
+            QHostAddress hostAddr(address);
+            auto server = std::make_unique<Server>(
+                hostAddr.isNull() ? 0u : static_cast<uint32_t>(hostAddr.toIPv4Address()),
+                port);
+            if (hostAddr.isNull())
+                server->setDynIP(address);
+            server->setName(serverName);
+            if (m_serverList->addServer(std::move(server)))
+                ++addedCount;
+            else
+                ++skippedCount;
+        }
+    }
+
+done:
+    m_logWidget->appendServerInfo(
+        tr("server.met processed: %1 servers added, %2 skipped (duplicates/invalid).")
+            .arg(addedCount).arg(skippedCount));
+
+    // Refresh the server list view
+    if (m_ipc && m_ipc->isConnected())
+        requestServerList();
 }
 
 } // namespace eMule

@@ -271,6 +271,8 @@ private:
     QCheckBox*    m_cryptLayerDisableCheck = nullptr;
     QCheckBox*    m_useSecureIdentCheck = nullptr;
     QCheckBox*    m_enableSearchResultFilterCheck = nullptr;
+    QCheckBox*    m_warnUntrustedFilesCheck = nullptr;
+    QLineEdit*    m_ipFilterUpdateUrlEdit = nullptr;
 
     // Scheduler page controls
     QCheckBox*    m_schedEnabledCheck = nullptr;
@@ -337,6 +339,7 @@ private:
     QCheckBox*    m_logFileSavingCheck = nullptr;
     QCheckBox*    m_logA4AFCheck = nullptr;
     QCheckBox*    m_logUlDlEventsCheck = nullptr;
+    QCheckBox*    m_logRawSocketPacketsCheck = nullptr;
     QCheckBox*    m_closeUPnPCheck = nullptr;
     QCheckBox*    m_skipWANIPCheck = nullptr;
     QCheckBox*    m_skipWANPPPCheck = nullptr;

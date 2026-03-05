@@ -22,6 +22,7 @@
 #include <QFileInfo>
 #include <QFont>
 #include <QFormLayout>
+#include <QInputDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -29,6 +30,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
@@ -193,22 +195,65 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     m_contextMenu->addSeparator();
 
-    // Rename (stub)
+    // Rename
     {
-        auto* act = m_contextMenu->addAction(tr("Rename..."));
-        act->setEnabled(false); // ToDo: implement rename
+        auto* act = m_contextMenu->addAction(tr("Rename..."), this, [this, hash, file]() {
+            if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
+                return;
+            bool ok = false;
+            const QString newName = QInputDialog::getText(
+                this, tr("Rename File"), tr("New file name:"),
+                QLineEdit::Normal, file->fileName, &ok);
+            if (!ok || newName.trimmed().isEmpty() || newName.trimmed() == file->fileName)
+                return;
+            IpcMessage msg(IpcMsgType::RenameSharedFile);
+            msg.append(hash);
+            msg.append(newName.trimmed());
+            m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+                requestSharedFiles();
+            });
+        });
+        act->setEnabled(hasSel);
     }
 
-    // Delete From Disk (stub)
+    // Delete From Disk
     {
-        auto* act = m_contextMenu->addAction(tr("Delete From Disk"));
-        act->setEnabled(false); // ToDo: implement delete
+        auto* act = m_contextMenu->addAction(tr("Delete From Disk"), this, [this, hash, file]() {
+            if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
+                return;
+            const auto answer = QMessageBox::warning(
+                this, tr("Delete File"),
+                tr("Are you sure you want to permanently delete \"%1\" from disk?").arg(file->fileName),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (answer != QMessageBox::Yes)
+                return;
+            IpcMessage msg(IpcMsgType::DeleteSharedFile);
+            msg.append(hash);
+            m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+                requestSharedFiles();
+            });
+        });
+        act->setEnabled(hasSel);
     }
 
-    // Unshare (stub)
+    // Unshare
     {
-        auto* act = m_contextMenu->addAction(tr("Unshare"));
-        act->setEnabled(false); // ToDo: implement unshare
+        auto* act = m_contextMenu->addAction(tr("Unshare"), this, [this, hash, file]() {
+            if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
+                return;
+            const auto answer = QMessageBox::question(
+                this, tr("Unshare File"),
+                tr("Remove \"%1\" from the shared files list?\n\nThe file will remain on disk.").arg(file->fileName),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (answer != QMessageBox::Yes)
+                return;
+            IpcMessage msg(IpcMsgType::UnshareFile);
+            msg.append(hash);
+            m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+                requestSharedFiles();
+            });
+        });
+        act->setEnabled(hasSel);
     }
 
     m_contextMenu->addSeparator();

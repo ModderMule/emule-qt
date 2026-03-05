@@ -23,6 +23,12 @@
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadSearchManager.h"
+#include "kademlia/KadSearch.h"
+#include "kademlia/KadUInt128.h"
+#include "server/ServerConnect.h"
+#include "server/Server.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -598,6 +604,13 @@ void PartFile::pauseFile(bool insufficient)
     else
         setStatus(PartFileStatus::Paused);
 
+    if (kadFileSearchID()) {
+        kad::SearchManager::stopSearch(kadFileSearchID(), true);
+        setKadFileSearchID(0);
+    }
+    m_lastSearchTimeKad = 0;
+    m_lastSearchTimeServer = 0;
+
     m_datarate = 0;
     savePartFile();
 }
@@ -632,6 +645,10 @@ void PartFile::stopFile(bool cancel)
     // Flush any buffered data
     if (!m_bufferedData.empty())
         flushBuffer();
+
+    m_lastSearchTimeKad = 0;
+    m_totalSearchesKad = 0;
+    m_lastSearchTimeServer = 0;
 
     m_datarate = 0;
     setStatus(PartFileStatus::Paused);
@@ -1369,6 +1386,68 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         }
 
         ++i;
+    }
+
+    // -- Server TCP source request (MFC PartFile.cpp:2347-2362) --
+    if (theApp.serverConnect && theApp.serverConnect->isConnected()
+        && !m_stopped
+        && sourceCount() < static_cast<int>(thePrefs.maxSourcesPerFile())
+        && curTick >= m_lastSearchTimeServer)
+    {
+        m_lastSearchTimeServer = curTick + SERVERREASKTIME;
+
+        const bool obfu = theApp.serverConnect->currentServer()
+                          && theApp.serverConnect->currentServer()->supportsGetSourcesObfuscation();
+        const uint64 fsize = static_cast<uint64>(fileSize());
+        const bool largeFile = (fsize > UINT32_MAX);
+        const uint32 pktSize = largeFile ? 24u : 20u;
+
+        auto pkt = std::make_unique<Packet>(
+            obfu ? OP_GETSOURCES_OBFU : OP_GETSOURCES,
+            pktSize, OP_EDONKEYPROT);
+        md4cpy(pkt->pBuffer, fileHash());
+        if (largeFile) {
+            std::memcpy(pkt->pBuffer + 16, &fsize, 8);
+        } else {
+            uint32 fsize32 = static_cast<uint32>(fsize);
+            std::memcpy(pkt->pBuffer + 16, &fsize32, 4);
+        }
+        theApp.serverConnect->sendPacket(std::move(pkt));
+    }
+
+    // -- Kad source search (MFC PartFile.cpp:2363-2380) --
+    const int maxSrcUDP = std::min(
+        static_cast<int>(thePrefs.maxSourcesPerFile()) * 3 / 4,
+        static_cast<int>(MAX_SOURCES_FILE_UDP));
+
+    if (maxSrcUDP > sourceCount()) {
+        auto* kad = kad::Kademlia::instance();
+        if (kad && theApp.downloadQueue
+            && theApp.downloadQueue->doKademliaFileRequest()
+            && kad->getTotalFile() < KADEMLIATOTALFILE
+            && curTick >= m_lastSearchTimeKad
+            && kad->isConnected()
+            && kad::SearchManager::getTotalResponsesReceived() > 0
+            && !m_stopped)
+        {
+            theApp.downloadQueue->setLastKademliaFileRequest();
+            if (!kadFileSearchID()) {
+                auto* search = kad::SearchManager::prepareLookup(
+                    kad::SearchType::File, true, kad::UInt128(fileHash()));
+                if (search) {
+                    if (m_totalSearchesKad < 7)
+                        ++m_totalSearchesKad;
+                    m_lastSearchTimeKad = curTick + (KADEMLIAREASKTIME * m_totalSearchesKad);
+                    search->setGUIName(fileName());
+                    setKadFileSearchID(search->getSearchID());
+                } else {
+                    setKadFileSearchID(0);
+                }
+            }
+        }
+    } else if (kadFileSearchID()) {
+        kad::SearchManager::stopSearch(kadFileSearchID(), true);
+        setKadFileSearchID(0);
     }
 
     return m_datarate;

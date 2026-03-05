@@ -19,6 +19,7 @@
 #include "utils/Log.h"
 #include "files/SharedFileList.h"
 #include "search/SearchList.h"
+#include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
@@ -186,6 +187,12 @@ void CoreNotifierBridge::onServerStateChanged()
                 theApp.serverConnect && theApp.serverConnect->isConnecting());
     info.insert(QStringLiteral("firewalled"), theApp.isFirewalled());
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
+    if (connected && theApp.serverConnect) {
+        if (const auto* srv = theApp.serverConnect->currentServer()) {
+            info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ip()));
+            info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
+        }
+    }
     msg.append(info);
     m_ipcServer->broadcast(msg);
 

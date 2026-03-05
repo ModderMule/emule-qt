@@ -1,4 +1,5 @@
 #include "dialogs/OptionsDialog.h"
+#include "dialogs/FirstStartWizard.h"
 
 #include "app/AppConfig.h"
 #include "app/AutoStart.h"
@@ -36,6 +37,9 @@
 #include <QScrollArea>
 #include <QSoundEffect>
 #include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QLocale>
 #include <QPainter>
 #include <QProcess>
@@ -259,6 +263,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_cryptLayerDisableCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableSearchResultFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_warnUntrustedFilesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_ipFilterUpdateUrlEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
 
     // Extended page
     connect(m_maxConPerFiveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -286,6 +292,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logFileSavingCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logA4AFCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logUlDlEventsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logRawSocketPacketsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_closeUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_skipWANIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_skipWANPPPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -903,8 +910,12 @@ QWidget* OptionsDialog::createConnectionPage()
     m_overheadCheck = new QCheckBox(tr("Show overhead bandwidth"), page);
     checkLayout->addWidget(m_overheadCheck);
     auto* wizardBtn = new QPushButton(tr("Wizard..."), page);
-    wizardBtn->setEnabled(false); // ToDo: implement connection wizard
     wizardBtn->setFixedWidth(100);
+    connect(wizardBtn, &QPushButton::clicked, this, [this]() {
+        auto* wizard = new FirstStartWizard(m_ipc, this);
+        wizard->setAttribute(Qt::WA_DeleteOnClose);
+        wizard->show();
+    });
     checkLayout->addWidget(wizardBtn);
     checkLayout->addStretch();
     row4->addLayout(checkLayout);
@@ -1055,8 +1066,9 @@ QWidget* OptionsDialog::createServerPage()
     auto* retriesRow = new QHBoxLayout;
     auto* retriesLabel = new QLabel(tr("Remove dead servers after"), updateGroup);
     m_deadServerRetriesSpin = new QSpinBox(updateGroup);
-    m_deadServerRetriesSpin->setRange(1, 10);
-    m_deadServerRetriesSpin->setValue(1);
+    m_deadServerRetriesSpin->setRange(1, 99);
+    m_deadServerRetriesSpin->setValue(20);
+    m_deadServerRetriesSpin->setMinimumWidth(50);
     auto* retriesSuffix = new QLabel(tr("retries"), updateGroup);
     retriesRow->addSpacing(20);
     retriesRow->addWidget(retriesLabel);
@@ -1290,7 +1302,56 @@ QWidget* OptionsDialog::createFilesPage()
     cleanupRow->addWidget(m_autoCleanupFilenamesCheck);
     cleanupRow->addStretch();
     auto* editCleanupBtn = new QPushButton(tr("Edit..."), initGroup);
-    editCleanupBtn->setEnabled(false); // ToDo: implement cleanup rules editor
+    connect(editCleanupBtn, &QPushButton::clicked, this, [this]() {
+        auto* dlg = new QDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->setWindowTitle(tr("Filename Cleanup Rules"));
+        dlg->setMinimumSize(500, 350);
+        auto* layout = new QVBoxLayout(dlg);
+        layout->addWidget(new QLabel(
+            tr("Define patterns to automatically clean up filenames of new downloads.\n"
+               "Each rule replaces a regex pattern with a replacement string.")));
+
+        auto* table = new QTreeWidget(dlg);
+        table->setHeaderLabels({tr("Pattern"), tr("Replacement"), tr("Enabled")});
+        table->setRootIsDecorated(false);
+        table->setColumnCount(3);
+        table->header()->setStretchLastSection(false);
+        table->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+        table->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+        table->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+        layout->addWidget(table);
+
+        // Default cleanup rules (common in eMule)
+        auto addRule = [table](const QString& pattern, const QString& replacement, bool enabled) {
+            auto* item = new QTreeWidgetItem(table);
+            item->setText(0, pattern);
+            item->setText(1, replacement);
+            item->setCheckState(2, enabled ? Qt::Checked : Qt::Unchecked);
+            item->setFlags(item->flags() | Qt::ItemIsEditable);
+        };
+        addRule(QStringLiteral("\\[www\\..*?\\]"), QString(), true);
+        addRule(QStringLiteral("_"), QStringLiteral(" "), true);
+
+        auto* btnLayout = new QHBoxLayout;
+        auto* addBtn = new QPushButton(tr("Add"), dlg);
+        connect(addBtn, &QPushButton::clicked, dlg, [table, addRule]() {
+            addRule(QString(), QString(), true);
+        });
+        auto* removeBtn = new QPushButton(tr("Remove"), dlg);
+        connect(removeBtn, &QPushButton::clicked, dlg, [table]() {
+            delete table->currentItem();
+        });
+        btnLayout->addWidget(addBtn);
+        btnLayout->addWidget(removeBtn);
+        btnLayout->addStretch();
+        layout->addLayout(btnLayout);
+
+        auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
+        connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
+        layout->addWidget(btnBox);
+        dlg->show();
+    });
     cleanupRow->addWidget(editCleanupBtn);
     initLayout->addLayout(cleanupRow);
 
@@ -1822,7 +1883,15 @@ QWidget* OptionsDialog::createSecurityPage()
     m_reloadIPFilterBtn = new QPushButton(tr("Reload"), ipFilterGroup);
     filterLevelRow->addWidget(m_reloadIPFilterBtn);
     auto* editBtn = new QPushButton(tr("Edit..."), ipFilterGroup);
-    editBtn->setEnabled(false); // ToDo: open ipfilter.dat in external editor
+    connect(editBtn, &QPushButton::clicked, this, []() {
+        const QString path = QDir(thePrefs.configDir()).filePath(QStringLiteral("ipfilter.dat"));
+        if (!QFileInfo::exists(path)) {
+            // Create empty file so the editor can open it
+            QFile f(path);
+            f.open(QIODevice::WriteOnly);
+        }
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    });
     filterLevelRow->addWidget(editBtn);
     filterLevelRow->addStretch();
     ipFilterLayout->addLayout(filterLevelRow);
@@ -1831,11 +1900,41 @@ QWidget* OptionsDialog::createSecurityPage()
     ipFilterLayout->addWidget(new QLabel(
         tr("Update from URL: (filter.dat- or PeerGuardian-format)"), ipFilterGroup));
     auto* urlRow = new QHBoxLayout;
-    auto* urlEdit = new QLineEdit(ipFilterGroup);
-    urlEdit->setEnabled(false); // ToDo: needs ipFilterUpdateUrl pref + download infrastructure
-    urlRow->addWidget(urlEdit);
+    m_ipFilterUpdateUrlEdit = new QLineEdit(ipFilterGroup);
+    m_ipFilterUpdateUrlEdit->setPlaceholderText(tr("http://example.com/ipfilter.dat"));
+    urlRow->addWidget(m_ipFilterUpdateUrlEdit);
     auto* loadBtn = new QPushButton(tr("Load"), ipFilterGroup);
-    loadBtn->setEnabled(false); // ToDo: needs download infrastructure
+    connect(loadBtn, &QPushButton::clicked, this, [this, loadBtn]() {
+        const QString url = m_ipFilterUpdateUrlEdit->text().trimmed();
+        if (url.isEmpty())
+            return;
+        loadBtn->setEnabled(false);
+        loadBtn->setText(tr("Loading..."));
+        auto* nam = new QNetworkAccessManager(this);
+        auto* reply = nam->get(QNetworkRequest(QUrl(url)));
+        connect(reply, &QNetworkReply::finished, this, [this, reply, loadBtn, nam]() {
+            reply->deleteLater();
+            nam->deleteLater();
+            loadBtn->setEnabled(true);
+            loadBtn->setText(tr("Load"));
+            if (reply->error() != QNetworkReply::NoError) {
+                QMessageBox::warning(this, tr("IP Filter"),
+                    tr("Failed to download IP filter: %1").arg(reply->errorString()));
+                return;
+            }
+            const QString path = QDir(thePrefs.configDir()).filePath(QStringLiteral("ipfilter.dat"));
+            QFile f(path);
+            if (f.open(QIODevice::WriteOnly)) {
+                f.write(reply->readAll());
+                f.close();
+                if (m_ipc && m_ipc->isConnected()) {
+                    Ipc::IpcMessage msg(Ipc::IpcMsgType::ReloadIPFilter);
+                    m_ipc->sendRequest(std::move(msg));
+                }
+                QMessageBox::information(this, tr("IP Filter"), tr("IP filter updated and reloaded."));
+            }
+        });
+    });
     urlRow->addWidget(loadBtn);
     ipFilterLayout->addLayout(urlRow);
 
@@ -1893,10 +1992,9 @@ QWidget* OptionsDialog::createSecurityPage()
         tr("Enable spam filter for search results"), miscGroup);
     miscLayout->addWidget(m_enableSearchResultFilterCheck);
 
-    auto* warnUntrustedCheck = new QCheckBox(
+    m_warnUntrustedFilesCheck = new QCheckBox(
         tr("Warn when opening untrusted files"), miscGroup);
-    warnUntrustedCheck->setEnabled(false); // ToDo: no pref exists yet
-    miscLayout->addWidget(warnUntrustedCheck);
+    miscLayout->addWidget(m_warnUntrustedFilesCheck);
 
     layout->addWidget(miscGroup);
     layout->addStretch();
@@ -2522,6 +2620,9 @@ QWidget* OptionsDialog::createExtendedPage()
     m_logUlDlEventsCheck = new QCheckBox(tr("Log upload/download events"), verboseGroup);
     verboseLayout->addWidget(m_logUlDlEventsCheck);
 
+    m_logRawSocketPacketsCheck = new QCheckBox(tr("Log raw socket packets"), verboseGroup);
+    verboseLayout->addWidget(m_logRawSocketPacketsCheck);
+
     scrollLayout->addWidget(verboseGroup);
 
     // --- Upload SpeedSense group ---
@@ -2692,6 +2793,7 @@ QWidget* OptionsDialog::createExtendedPage()
         m_logFileSavingCheck->setEnabled(on);
         m_logA4AFCheck->setEnabled(on);
         m_logUlDlEventsCheck->setEnabled(on);
+        m_logRawSocketPacketsCheck->setEnabled(on);
     });
 
     // Min free disk space depends on check disk space
@@ -3349,6 +3451,8 @@ void OptionsDialog::loadSettings()
             m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
             m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
             m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
+            m_warnUntrustedFilesCheck->setChecked(prefs.value(QStringLiteral("warnUntrustedFiles")).toBool(true));
+            m_ipFilterUpdateUrlEdit->setText(prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString());
 
             // Web Interface page
             m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());
@@ -3357,6 +3461,8 @@ void OptionsDialog::loadSettings()
             m_webUPnPCheck->setChecked(prefs.value(QStringLiteral("webServerUPnP")).toBool());
             m_webPortSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerPort")).toInteger(4711)));
             m_webTemplateEdit->setText(prefs.value(QStringLiteral("webServerTemplatePath")).toString());
+            if (m_webTemplateEdit->text().isEmpty())
+                m_webTemplateEdit->setPlaceholderText(AppConfig::configDir() + QStringLiteral("/eMule.tmpl"));
             m_webSessionTimeoutSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerSessionTimeout")).toInteger(5)));
             m_webHttpsCheck->setChecked(prefs.value(QStringLiteral("webServerHttpsEnabled")).toBool());
             m_webCertEdit->setText(prefs.value(QStringLiteral("webServerCertPath")).toString());
@@ -3452,6 +3558,8 @@ void OptionsDialog::loadSettings()
             m_logA4AFCheck->setEnabled(verboseOn);
             m_logUlDlEventsCheck->setChecked(prefs.value(QStringLiteral("logUlDlEvents")).toBool(true));
             m_logUlDlEventsCheck->setEnabled(verboseOn);
+            m_logRawSocketPacketsCheck->setChecked(prefs.value(QStringLiteral("logRawSocketPackets")).toBool());
+            m_logRawSocketPacketsCheck->setEnabled(verboseOn);
             // USS
             bool ussOn = prefs.value(QStringLiteral("dynUpEnabled")).toBool();
             m_dynUpEnabledCheck->setChecked(ussOn);
@@ -3633,6 +3741,8 @@ void OptionsDialog::loadSettings()
         m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
         m_useSecureIdentCheck->setChecked(thePrefs.useSecureIdent());
         m_enableSearchResultFilterCheck->setChecked(thePrefs.enableSearchResultFilter());
+        m_warnUntrustedFilesCheck->setChecked(thePrefs.warnUntrustedFiles());
+        m_ipFilterUpdateUrlEdit->setText(thePrefs.ipFilterUpdateUrl());
 
         // Statistics page fallback
         m_statsGraphUpdateSlider->setValue(static_cast<int>(thePrefs.graphsUpdateSec()));
@@ -3691,6 +3801,8 @@ void OptionsDialog::loadSettings()
         m_logA4AFCheck->setEnabled(verboseOn);
         m_logUlDlEventsCheck->setChecked(thePrefs.logUlDlEvents());
         m_logUlDlEventsCheck->setEnabled(verboseOn);
+        m_logRawSocketPacketsCheck->setChecked(thePrefs.logRawSocketPackets());
+        m_logRawSocketPacketsCheck->setEnabled(verboseOn);
         // USS
         bool ussOn = thePrefs.dynUpEnabled();
         m_dynUpEnabledCheck->setChecked(ussOn);
@@ -4050,6 +4162,10 @@ void OptionsDialog::saveSettings()
         req.append(m_useSecureIdentCheck->isChecked());
         req.append(QStringLiteral("enableSearchResultFilter"));
         req.append(m_enableSearchResultFilterCheck->isChecked());
+        req.append(QStringLiteral("warnUntrustedFiles"));
+        req.append(m_warnUntrustedFilesCheck->isChecked());
+        req.append(QStringLiteral("ipFilterUpdateUrl"));
+        req.append(m_ipFilterUpdateUrlEdit->text().trimmed());
 
         // Web Interface page
         req.append(QStringLiteral("webServerEnabled"));
@@ -4169,6 +4285,8 @@ void OptionsDialog::saveSettings()
         req.append(m_logA4AFCheck->isChecked());
         req.append(QStringLiteral("logUlDlEvents"));
         req.append(m_logUlDlEventsCheck->isChecked());
+        req.append(QStringLiteral("logRawSocketPackets"));
+        req.append(m_logRawSocketPacketsCheck->isChecked());
         // USS
         req.append(QStringLiteral("dynUpEnabled"));
         req.append(m_dynUpEnabledCheck->isChecked());
@@ -4292,6 +4410,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setCryptLayerRequired(m_cryptLayerRequiredCheck->isChecked());
         thePrefs.setUseSecureIdent(m_useSecureIdentCheck->isChecked());
         thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
+        thePrefs.setWarnUntrustedFiles(m_warnUntrustedFilesCheck->isChecked());
+        thePrefs.setIpFilterUpdateUrl(m_ipFilterUpdateUrlEdit->text().trimmed());
 
         // Statistics page fallback
         thePrefs.setGraphsUpdateSec(static_cast<uint32>(m_statsGraphUpdateSlider->value()));
@@ -4335,6 +4455,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setLogFileSaving(m_logFileSavingCheck->isChecked());
         thePrefs.setLogA4AF(m_logA4AFCheck->isChecked());
         thePrefs.setLogUlDlEvents(m_logUlDlEventsCheck->isChecked());
+        thePrefs.setLogRawSocketPackets(m_logRawSocketPacketsCheck->isChecked());
         // USS
         thePrefs.setDynUpEnabled(m_dynUpEnabledCheck->isChecked());
         thePrefs.setDynUpPingTolerance(m_dynUpPingToleranceSpin->value());

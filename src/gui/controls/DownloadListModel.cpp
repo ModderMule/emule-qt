@@ -1,10 +1,11 @@
 /// @file DownloadListModel.cpp
-/// @brief Table model for the downloads list — implementation.
+/// @brief Tree model for the downloads list — implementation.
 
 #include "controls/DownloadListModel.h"
 
 #include <QDateTime>
 #include <QLocale>
+#include <climits>
 
 namespace eMule {
 
@@ -72,26 +73,194 @@ QString fileTypeDisplay(const QString& type)
     return {};
 }
 
+/// Map SourceFrom enum to display string.
+QString sourceFromDisplay(int sourceFrom)
+{
+    switch (sourceFrom) {
+    case 0:  return QObject::tr("Local Server");
+    case 1:  return QObject::tr("eD2K Server");
+    case 2:  return QObject::tr("Kademlia");
+    case 3:  return QObject::tr("Source Exchange");
+    case 4:  return QObject::tr("Passive");
+    case 5:  return QObject::tr("URL");
+    case 6:  return QObject::tr("SLS");
+    default: return QObject::tr("Unknown");
+    }
+}
+
+/// Map download state string to sort priority (lower = more important).
+int downloadStateSortOrder(const QString& state)
+{
+    if (state == QLatin1String("Downloading"))       return 0;
+    if (state == QLatin1String("OnQueue"))            return 1;
+    if (state == QLatin1String("Connected"))          return 2;
+    if (state == QLatin1String("Connecting"))         return 3;
+    if (state == QLatin1String("ReqHashSet"))         return 4;
+    if (state == QLatin1String("WaitCallback"))       return 5;
+    if (state == QLatin1String("WaitCallbackKad"))    return 6;
+    if (state == QLatin1String("NoNeededParts"))      return 7;
+    if (state == QLatin1String("RemoteQueueFull"))    return 8;
+    if (state == QLatin1String("TooManyConns"))       return 9;
+    if (state == QLatin1String("TooManyConnsKad"))    return 10;
+    if (state == QLatin1String("LowToLowIp"))         return 11;
+    if (state == QLatin1String("Banned"))             return 12;
+    if (state == QLatin1String("Error"))              return 13;
+    if (state == QLatin1String("None"))               return 14;
+    return 15;
+}
+
 } // anonymous namespace
 
 DownloadListModel::DownloadListModel(QObject* parent)
-    : QAbstractTableModel(parent)
+    : QAbstractItemModel(parent)
 {
+}
+
+QModelIndex DownloadListModel::index(int row, int column, const QModelIndex& parent) const
+{
+    if (!hasIndex(row, column, parent))
+        return {};
+
+    if (!parent.isValid()) {
+        // Top-level (download) row — internalId = 0 (no parent row encoded)
+        // We encode the parent row + 1 in internalId so that source rows
+        // can find their parent. Top-level rows use internalId = 0.
+        return createIndex(row, column, quintptr(0));
+    }
+
+    // Child (source) row — encode parent row + 1 in internalId
+    if (parent.internalId() == 0) {
+        // parent is a top-level row
+        return createIndex(row, column, quintptr(parent.row() + 1));
+    }
+
+    // No deeper nesting
+    return {};
+}
+
+QModelIndex DownloadListModel::parent(const QModelIndex& index) const
+{
+    if (!index.isValid())
+        return {};
+
+    const quintptr id = index.internalId();
+    if (id == 0)
+        return {}; // top-level row has no parent
+
+    // Source row — parent is top-level row at (id - 1)
+    const int parentRow = static_cast<int>(id - 1);
+    return createIndex(parentRow, 0, quintptr(0));
 }
 
 int DownloadListModel::rowCount(const QModelIndex& parent) const
 {
-    return parent.isValid() ? 0 : static_cast<int>(m_downloads.size());
+    if (!parent.isValid())
+        return static_cast<int>(m_downloads.size());
+
+    // Only top-level rows (downloads) can have children
+    if (parent.internalId() == 0) {
+        const int row = parent.row();
+        if (row >= 0 && row < static_cast<int>(m_downloads.size()))
+            return static_cast<int>(m_downloads[static_cast<size_t>(row)].sources.size());
+    }
+
+    return 0;
 }
 
-int DownloadListModel::columnCount(const QModelIndex& parent) const
+int DownloadListModel::columnCount(const QModelIndex& /*parent*/) const
 {
-    return parent.isValid() ? 0 : ColCount;
+    return ColCount;
+}
+
+bool DownloadListModel::hasChildren(const QModelIndex& parent) const
+{
+    if (!parent.isValid())
+        return !m_downloads.empty();
+
+    // Top-level rows may have source children
+    if (parent.internalId() == 0) {
+        const int row = parent.row();
+        if (row >= 0 && row < static_cast<int>(m_downloads.size()))
+            return !m_downloads[static_cast<size_t>(row)].sources.empty();
+    }
+
+    return false;
 }
 
 QVariant DownloadListModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || index.row() >= static_cast<int>(m_downloads.size()))
+    if (!index.isValid())
+        return {};
+
+    const quintptr id = index.internalId();
+
+    // --------------- Source (child) row ---------------
+    if (id != 0) {
+        const int parentRow = static_cast<int>(id - 1);
+        if (parentRow < 0 || parentRow >= static_cast<int>(m_downloads.size()))
+            return {};
+        const auto& dl = m_downloads[static_cast<size_t>(parentRow)];
+        if (index.row() < 0 || index.row() >= static_cast<int>(dl.sources.size()))
+            return {};
+        const auto& s = dl.sources[static_cast<size_t>(index.row())];
+
+        if (role == Qt::DisplayRole) {
+            switch (index.column()) {
+            case ColFileName:      return s.userName;
+            case ColSize:          return sourceFromDisplay(s.sourceFrom);
+            case ColCompleted:     return s.sessionDown > 0 ? formatSize(s.sessionDown) : QString{};
+            case ColSpeed:         return formatSpeed(s.datarate);
+            case ColProgress:      return {};
+            case ColSources:
+                if (s.downloadState == QLatin1String("Downloading"))
+                    return tr("Downloading");
+                return s.remoteQueueRank > 0
+                    ? QStringLiteral("QR: %1").arg(s.remoteQueueRank)
+                    : QString{};
+            case ColPriority:      return {};
+            case ColStatus:        return s.downloadState;
+            case ColRemaining:     return {};
+            case ColSeenComplete:
+                return (s.partCount > 0)
+                    ? QStringLiteral("%1 / %2").arg(s.availPartCount).arg(s.partCount)
+                    : QString{};
+            case ColLastReception: return s.software;
+            case ColCategory:      return {};
+            case ColAddedOn:       return {};
+            default: break;
+            }
+        }
+
+        if (role == Qt::UserRole) {
+            switch (index.column()) {
+            case ColFileName:      return s.userName;
+            case ColSize:          return s.sourceFrom;
+            case ColCompleted:     return QVariant::fromValue(s.sessionDown);
+            case ColSpeed:         return QVariant::fromValue(s.datarate);
+            case ColProgress:      return 0.0;
+            case ColSources: {
+                if (s.downloadState == QLatin1String("Downloading"))
+                    return -1;
+                return s.remoteQueueRank > 0 ? s.remoteQueueRank : INT_MAX;
+            }
+            case ColStatus:        return downloadStateSortOrder(s.downloadState);
+            case ColSeenComplete:  return s.availPartCount;
+            case ColLastReception: return s.software;
+            default:               return {};
+            }
+        }
+
+        if (role == PartMapRole && index.column() == ColProgress)
+            return s.partMap;
+
+        if (role == PausedRole && index.column() == ColProgress)
+            return false;
+
+        return {};
+    }
+
+    // --------------- Download (top-level) row ---------------
+    if (index.row() >= static_cast<int>(m_downloads.size()))
         return {};
 
     const auto& d = m_downloads[static_cast<size_t>(index.row())];
@@ -165,6 +334,12 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         }
     }
 
+    if (role == PartMapRole && index.column() == ColProgress)
+        return d.partMap;
+
+    if (role == PausedRole && index.column() == ColProgress)
+        return d.isPaused || d.isStopped;
+
     return {};
 }
 
@@ -193,9 +368,48 @@ QVariant DownloadListModel::headerData(int section, Qt::Orientation orientation,
 
 void DownloadListModel::setDownloads(std::vector<DownloadRow> downloads)
 {
+    // Preserve existing sources for downloads that still exist
+    // Build a map from hash → sources
+    std::unordered_map<std::string, std::vector<SourceRow>> savedSources;
+    for (auto& dl : m_downloads) {
+        if (!dl.sources.empty())
+            savedSources[dl.hash.toStdString()] = std::move(dl.sources);
+    }
+
     beginResetModel();
     m_downloads = std::move(downloads);
+
+    // Restore preserved sources
+    for (auto& dl : m_downloads) {
+        auto it = savedSources.find(dl.hash.toStdString());
+        if (it != savedSources.end())
+            dl.sources = std::move(it->second);
+    }
     endResetModel();
+}
+
+void DownloadListModel::setSources(const QString& hash, std::vector<SourceRow> sources)
+{
+    for (int i = 0; i < static_cast<int>(m_downloads.size()); ++i) {
+        if (m_downloads[static_cast<size_t>(i)].hash == hash) {
+            auto& dl = m_downloads[static_cast<size_t>(i)];
+            const QModelIndex parentIdx = index(i, 0);
+            const int oldCount = static_cast<int>(dl.sources.size());
+            const int newCount = static_cast<int>(sources.size());
+
+            if (oldCount > 0) {
+                beginRemoveRows(parentIdx, 0, oldCount - 1);
+                dl.sources.clear();
+                endRemoveRows();
+            }
+            if (newCount > 0) {
+                beginInsertRows(parentIdx, 0, newCount - 1);
+                dl.sources = std::move(sources);
+                endInsertRows();
+            }
+            return;
+        }
+    }
 }
 
 void DownloadListModel::clear()
@@ -217,6 +431,11 @@ const DownloadRow* DownloadListModel::downloadAt(int row) const
     if (row >= 0 && row < static_cast<int>(m_downloads.size()))
         return &m_downloads[static_cast<size_t>(row)];
     return nullptr;
+}
+
+bool DownloadListModel::isSourceRow(const QModelIndex& index) const
+{
+    return index.isValid() && index.internalId() != 0;
 }
 
 } // namespace eMule

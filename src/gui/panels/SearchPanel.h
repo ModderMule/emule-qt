@@ -52,6 +52,9 @@ public:
     /// Connect this panel to the IPC client for data updates.
     void setIpcClient(IpcClient* client);
 
+    /// Start a search from an external panel (e.g., "Search Related Files").
+    void startSearchFromExternal(const QString& expression);
+
 private slots:
     void onStartSearch();
     void onCancelSearch();

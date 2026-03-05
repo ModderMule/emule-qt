@@ -9,6 +9,7 @@
 ///   - Bottom pane: toolbar2 header with 4 client-view buttons, client stack, queue label
 ///   - Vertical splitter between top and bottom sections
 
+#include <QSet>
 #include <QWidget>
 
 class QAction;
@@ -43,6 +44,10 @@ public:
     /// Switch to a client sub-tab by index (0=Uploading, 1=Downloading, 2=On Queue, 3=Known).
     void switchToSubTab(int index);
 
+signals:
+    /// Emitted when user requests to search for files related to a download.
+    void searchRequested(const QString& expression);
+
 private slots:
     void onRefreshTimer();
     void onDownloadContextMenu(const QPoint& pos);
@@ -55,13 +60,22 @@ private:
     QToolBar* createActionToolbar();
     QTreeView* createClientView(ClientListModel* model, const QString& headerKey);
     void requestDownloads();
+    void requestDownloadSources(const QString& hash);
     void requestUploads();
     void requestDownloadClients();
     void requestKnownClients();
     void sendDownloadAction(const QString& hash, int action);
+    void sendStopDownload(const QString& hash);
+    void sendOpenFile(const QString& hash);
+    void sendOpenFolder(const QString& hash);
+    void sendPreview(const QString& hash);
+    void sendSetCategory(const QString& hash, int category);
     void sendSetPriority(const QString& hash, int priority, bool isAuto);
     void sendClearCompleted();
     void copyEd2kLink(const QString& hash);
+    void showDownloadDetails(const QString& hash);
+    void showComments(const QString& hash);
+    void searchRelated(const QString& fileName);
     [[nodiscard]] QString saveDownloadSelection() const;
     void restoreDownloadSelection(const QString& key);
     void setBottomClientView(int index);
@@ -129,6 +143,9 @@ private:
 
     // Cached category set for change detection
     QSet<int64_t> m_categorySet;
+
+    // Hashes of currently expanded downloads (for source fetching)
+    QSet<QString> m_expandedDownloads;
 };
 
 } // namespace eMule

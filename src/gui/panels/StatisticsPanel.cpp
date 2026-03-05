@@ -483,7 +483,8 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         tr("Active Downloads: %1")
             .arg(cborInt(stats, QLatin1StringView("downFileCount"))));
     m_itemDownFoundSources->setText(0,
-        tr("Found Sources: 0")); // ToDo: expose source count via IPC
+        tr("Found Sources: %1")
+            .arg(cborInt(stats, QLatin1StringView("downFoundSources"))));
 
     // Download overhead
     m_itemDownOverheadTotal->setText(0,
@@ -605,7 +606,14 @@ void StatisticsPanel::onContextMenu(const QPoint& pos)
 
 void StatisticsPanel::resetStats()
 {
-    // ToDo: Send IPC reset stats command when available
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    IpcMessage req(IpcMsgType::ResetStats);
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+        if (resp.type() == IpcMsgType::Result && resp.fieldBool(0))
+            requestStats(); // refresh tree immediately after reset
+    });
 }
 
 void StatisticsPanel::copyBranch()

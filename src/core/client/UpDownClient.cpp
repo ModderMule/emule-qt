@@ -1375,6 +1375,19 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         && kad::Kademlia::instance()->isConnected()
         && ((m_buddyIP != 0 && m_buddyPort != 0) || m_reqFile != nullptr))
     {
+        // Try to find buddy IP from Kad routing table if we don't have it
+        if (m_buddyIP == 0 || m_buddyPort == 0) {
+            kad::UInt128 buddyKadId(m_buddyID.data());
+            if (auto* zone = kad::Kademlia::getInstanceRoutingZone()) {
+                if (auto* contact = zone->getContact(buddyKadId)) {
+                    m_buddyIP = contact->getIPAddress();
+                    m_buddyPort = contact->getUDPPort();
+                    logDebug(QStringLiteral("tryToConnect: found buddy IP from Kad routing table: %1:%2")
+                                 .arg(QHostAddress(ntohl(m_buddyIP)).toString()).arg(m_buddyPort));
+                }
+            }
+        }
+
         if (m_buddyIP != 0 && m_buddyPort != 0 && m_reqFile != nullptr) {
             SafeMemFile data;
             kad::UInt128 buddyKadId(m_buddyID.data());
@@ -1394,7 +1407,6 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
                          .arg(QHostAddress(ntohl(m_buddyIP)).toString()).arg(m_buddyPort));
             return true;
         }
-        // Buddy without known IP — would need FindSource search (TODO)
         logDebug(QStringLiteral("tryToConnect: Kad buddy without known IP for %1").arg(userName()));
         return false;
     }
@@ -2667,7 +2679,8 @@ void UpDownClient::sendFirewallCheckUDPRequest()
 
     const uint16 internPort = kadPrefs->internKadPort();
     const uint16 externPort = kadPrefs->externalKadPort();
-    const uint32 verifyKey = kad::KadPrefs::getUDPVerifyKey(m_connectIP);
+    //const uint32 verifyKey = kad::KadPrefs::getUDPVerifyKey(m_connectIP); // NBO
+    const uint32 verifyKey = kad::KadPrefs::getUDPVerifyKey(ntohl(m_connectIP)); // HBO, m_connectIP is stored in NBO but getUDPVerifyKey() expects HBO
 
     SafeMemFile data;
     data.writeUInt16(internPort);

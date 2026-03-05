@@ -179,8 +179,8 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     uint32 payloadLen = len - 1;
 
     // TODO: remove debug logging
-    logKad(QStringLiteral("Kad: processPacket opcode=0x%1 from %2:%3 len=%4")
-               .arg(opcode, 2, 16, QLatin1Char('0')).arg(ipToString(ip)).arg(udpPort).arg(len));
+    // logKad(QStringLiteral("Kad: processPacket opcode=0x%1 from %2:%3 len=%4")
+    //            .arg(opcode, 2, 16, QLatin1Char('0')).arg(ipToString(ip)).arg(udpPort).arg(len));
 
     switch (opcode) {
     case KADEMLIA2_BOOTSTRAP_REQ:

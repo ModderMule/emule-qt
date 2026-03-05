@@ -4,6 +4,7 @@
 #include "server/ServerList.h"
 
 #include <QCborMap>
+#include <QColor>
 
 namespace eMule {
 
@@ -77,6 +78,12 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColObfuscation: return r.obfuscation ? 1 : 0;
         default:             break;
         }
+    }
+
+    if (role == Qt::ForegroundRole) {
+        if (m_connectedIP != 0 && r.numericIp == m_connectedIP && r.port == m_connectedPort)
+            return QColor(0x33, 0x99, 0xFF);
+        return {};
     }
 
     if (role == Qt::TextAlignmentRole) {
@@ -212,6 +219,16 @@ const ServerRow* ServerListModel::rowAt(int row) const
     if (row < 0 || row >= static_cast<int>(m_rows.size()))
         return nullptr;
     return &m_rows[static_cast<size_t>(row)];
+}
+
+void ServerListModel::setConnectedServer(uint32_t ip, uint16_t port)
+{
+    if (m_connectedIP == ip && m_connectedPort == port)
+        return;
+    m_connectedIP = ip;
+    m_connectedPort = port;
+    if (!m_rows.empty())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, ColCount - 1), {Qt::ForegroundRole});
 }
 
 } // namespace eMule

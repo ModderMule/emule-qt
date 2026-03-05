@@ -2,6 +2,7 @@
 /// @brief Core eMule protocol socket implementation.
 
 #include "net/EMSocket.h"
+#include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
 #include "utils/Log.h"
 
@@ -132,9 +133,10 @@ void EMSocket::onReadyRead()
     if (bytesAvailable <= 0)
         return;
 
-    logDebug(QStringLiteral("EMSocket::onReadyRead — %1 bytes available from %2:%3 cryptState=%4")
-                 .arg(bytesAvailable).arg(peerAddress().toString()).arg(peerPort())
-                 .arg(static_cast<int>(m_streamCryptState)));
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("EMSocket::onReadyRead — %1 bytes available from %2:%3 cryptState=%4")
+                     .arg(bytesAvailable).arg(peerAddress().toString()).arg(peerPort())
+                     .arg(static_cast<int>(m_streamCryptState)));
 
     qint64 toRead = std::min(static_cast<qint64>(readMax), bytesAvailable);
     qint64 ret = read(m_readBuffer.data() + m_pendingHeaderSize, toRead);
@@ -149,25 +151,29 @@ void EMSocket::onReadyRead()
     // This handles the case where sendPacket() queued packets during connection
     // setup but the QTimer fired before the encryption handshake completed.
     if (!wasReady && isEncryptionLayerReady()) {
-        logDebug(QStringLiteral("EMSocket::onReadyRead — encryption just became ready for %1:%2")
-                     .arg(peerAddress().toString()).arg(peerPort()));
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("EMSocket::onReadyRead — encryption just became ready for %1:%2")
+                         .arg(peerAddress().toString()).arg(peerPort()));
         std::lock_guard lock(m_sendLock);
         bool hasQueued = !m_controlQueue.empty() || m_sendBuffer != nullptr;
-        logDebug(QStringLiteral("EMSocket::onReadyRead — controlQueue=%1 sendBuffer=%2")
-                     .arg(m_controlQueue.size()).arg(m_sendBuffer != nullptr));
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("EMSocket::onReadyRead — controlQueue=%1 sendBuffer=%2")
+                         .arg(m_controlQueue.size()).arg(m_sendBuffer != nullptr));
         if (hasQueued) {
             QTimer::singleShot(0, this, [this] {
                 if (m_conState == EMSState::Connected && isEncryptionLayerReady()) {
                     auto result = send(1024 * 64, 0, true);
-                    logDebug(QStringLiteral("EMSocket::onReadyRead — post-enc flush: ctrl=%1 std=%2 success=%3 peer=%4:%5")
-                                 .arg(result.sentBytesControlPackets).arg(result.sentBytesStandardPackets)
-                                 .arg(result.success).arg(peerAddress().toString()).arg(peerPort()));
+                    if (thePrefs.logRawSocketPackets())
+                        logDebug(QStringLiteral("EMSocket::onReadyRead — post-enc flush: ctrl=%1 std=%2 success=%3 peer=%4:%5")
+                                     .arg(result.sentBytesControlPackets).arg(result.sentBytesStandardPackets)
+                                     .arg(result.success).arg(peerAddress().toString()).arg(peerPort()));
                 }
             });
         }
     } else if (!wasReady && !isEncryptionLayerReady()) {
-        logDebug(QStringLiteral("EMSocket::onReadyRead — encryption NOT ready yet after processReceivedData for %1:%2")
-                     .arg(peerAddress().toString()).arg(peerPort()));
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("EMSocket::onReadyRead — encryption NOT ready yet after processReceivedData for %1:%2")
+                         .arg(peerAddress().toString()).arg(peerPort()));
     }
 
     // Update download rate limit
@@ -290,17 +296,19 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
                           uint32 actualPayloadSize, bool forceImmediateSend)
 {
     if (m_conState == EMSState::Disconnected) {
-        logDebug(QStringLiteral("EMSocket::sendPacket — DROPPED (disconnected) opcode=0x%1")
-                     .arg(packet ? packet->opcode : 0, 2, 16, QLatin1Char('0')));
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("EMSocket::sendPacket — DROPPED (disconnected) opcode=0x%1")
+                         .arg(packet ? packet->opcode : 0, 2, 16, QLatin1Char('0')));
         return;
     }
 
     uint8 opcode = packet ? packet->opcode : 0;
     uint32 pktSize = packet ? packet->size : 0;
-    logDebug(QStringLiteral("EMSocket::sendPacket — opcode=0x%1 size=%2 ctrl=%3 force=%4 conState=%5 peer=%6:%7")
-                 .arg(opcode, 2, 16, QLatin1Char('0')).arg(pktSize).arg(controlPacket)
-                 .arg(forceImmediateSend).arg(static_cast<int>(m_conState))
-                 .arg(peerAddress().toString()).arg(peerPort()));
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("EMSocket::sendPacket — opcode=0x%1 size=%2 ctrl=%3 force=%4 conState=%5 peer=%6:%7")
+                     .arg(opcode, 2, 16, QLatin1Char('0')).arg(pktSize).arg(controlPacket)
+                     .arg(forceImmediateSend).arg(static_cast<int>(m_conState))
+                     .arg(peerAddress().toString()).arg(peerPort()));
 
     {
         std::lock_guard lock(m_sendLock);
@@ -317,21 +325,24 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
     }
 
     if (forceImmediateSend) {
-        logDebug(QStringLiteral("EMSocket::sendPacket — forceImmediateSend, calling send() now"));
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("EMSocket::sendPacket — forceImmediateSend, calling send() now"));
         send(1024, 0, true);
     } else if (controlPacket) {
         // Schedule send on the socket's thread. Unlike MFC Winsock which is thread-safe,
         // Qt sockets require write() to be called from the thread that created the socket.
         // Using QTimer::singleShot(0) defers to the next event loop iteration on the correct thread.
         QTimer::singleShot(0, this, [this] {
-            logDebug(QStringLiteral("EMSocket::sendPacket — QTimer fired, conState=%1 encReady=%2 peer=%3:%4")
-                         .arg(static_cast<int>(m_conState)).arg(isEncryptionLayerReady())
-                         .arg(peerAddress().toString()).arg(peerPort()));
+            if (thePrefs.logRawSocketPackets())
+                logDebug(QStringLiteral("EMSocket::sendPacket — QTimer fired, conState=%1 encReady=%2 peer=%3:%4")
+                             .arg(static_cast<int>(m_conState)).arg(isEncryptionLayerReady())
+                             .arg(peerAddress().toString()).arg(peerPort()));
             if (m_conState == EMSState::Connected) {
                 auto result = send(1024 * 64, 0, true);
-                logDebug(QStringLiteral("EMSocket::sendPacket — send() returned ctrl=%1 std=%2 success=%3")
-                             .arg(result.sentBytesControlPackets).arg(result.sentBytesStandardPackets)
-                             .arg(result.success));
+                if (thePrefs.logRawSocketPackets())
+                    logDebug(QStringLiteral("EMSocket::sendPacket — send() returned ctrl=%1 std=%2 success=%3")
+                                 .arg(result.sentBytesControlPackets).arg(result.sentBytesStandardPackets)
+                                 .arg(result.success));
             }
         });
     }
@@ -408,7 +419,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             cryptPrepareSendData(reinterpret_cast<uint8*>(m_sendBuffer), m_sendBufferLen);
 
             // Debug: dump first 16 bytes AFTER encryption
-            {
+            if (thePrefs.logRawSocketPackets()) {
                 int dumpLen = std::min(static_cast<int>(m_sendBufferLen), 16);
                 QString hex;
                 for (int i = 0; i < dumpLen; ++i)

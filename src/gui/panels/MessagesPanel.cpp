@@ -331,9 +331,21 @@ void MessagesPanel::setupUi()
             onFriendClicked(sel);
     });
 
-    // ToDo: View Shared Files — switch to SharedFiles filtered by friend
     auto* viewSharedAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/SharedFilesList.ico")), tr("View Shared Files"));
-    viewSharedAction->setEnabled(false);
+    connect(viewSharedAction, &QAction::triggered, this, [this]() {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        const auto sel = m_friendListView->currentIndex();
+        if (!sel.isValid())
+            return;
+        const auto* row = m_friendModel->rowAt(sel.row());
+        if (!row)
+            return;
+
+        IpcMessage msg(IpcMsgType::RequestClientSharedFiles);
+        msg.append(row->hash);
+        m_ipc->sendRequest(std::move(msg));
+    });
 
     auto* friendSlotAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/FriendSlot.ico")), tr("Establish Friend Slot"));
     friendSlotAction->setCheckable(true);
@@ -362,10 +374,11 @@ void MessagesPanel::setupUi()
 
     // Update context menu state before showing
     connect(m_contextMenu, &QMenu::aboutToShow, this,
-            [this, removeAction, sendMsgAction, friendSlotAction]() {
+            [this, removeAction, sendMsgAction, viewSharedAction, friendSlotAction]() {
         const bool hasSel = m_friendListView->currentIndex().isValid();
         removeAction->setEnabled(hasSel);
         sendMsgAction->setEnabled(hasSel);
+        viewSharedAction->setEnabled(hasSel);
         friendSlotAction->setEnabled(hasSel);
 
         if (hasSel) {

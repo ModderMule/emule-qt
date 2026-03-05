@@ -232,6 +232,9 @@ public:
     [[nodiscard]] bool logUlDlEvents() const;
     void setLogUlDlEvents(bool val);
 
+    [[nodiscard]] bool logRawSocketPackets() const;
+    void setLogRawSocketPackets(bool val);
+
     // -- Files ----------------------------------------------------------------
 
     [[nodiscard]] uint16 maxSourcesPerFile() const;
@@ -382,6 +385,12 @@ public:
 
     [[nodiscard]] uint32 ipFilterLevel() const;
     void setIpFilterLevel(uint32 val);
+
+    [[nodiscard]] bool warnUntrustedFiles() const;
+    void setWarnUntrustedFiles(bool val);
+
+    [[nodiscard]] QString ipFilterUpdateUrl() const;
+    void setIpFilterUpdateUrl(const QString& val);
 
     // -- IRC ------------------------------------------------------------------
 
@@ -818,6 +827,9 @@ public:
 
     /// Generate a 16-byte user hash with eMule markers at [5]=14 and [14]=111.
     [[nodiscard]] static std::array<uint8, 16> generateUserHash();
+
+    /// Generate a 32-char hex REST API key (128-bit random).
+    [[nodiscard]] static QString generateApiKey();
 
 private:
     struct Data;

@@ -18,6 +18,7 @@ namespace eMule {
 
 class ClientList;
 class ClientUDPSocket;
+class DownloadQueue;
 class FriendList;
 class IPFilter;
 class LastCommonRouteFinder;
@@ -59,6 +60,8 @@ private:
 
     void initClientInfra();
     void shutdownClientInfra();
+    void initDownloadQueue();
+    void shutdownDownloadQueue();
     void initKademlia();
     void shutdownKademlia();
     void initUSS();
@@ -75,6 +78,7 @@ private:
     void shutdownUPnP();
 
     // Owned components
+    std::unique_ptr<DownloadQueue> m_downloadQueue;
     std::unique_ptr<IPFilter> m_ipFilter;
     std::unique_ptr<KnownFileList> m_knownFileList;
     std::unique_ptr<SharedFileList> m_sharedFileList;

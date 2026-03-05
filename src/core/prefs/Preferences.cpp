@@ -105,7 +105,7 @@ struct Preferences::Data {
     // General
     QString nick = QStringLiteral("https://emule-qt.org");
     std::array<uint8, 16> userHash{};
-    bool autoConnect = false;
+    bool autoConnect = true;
     bool reconnect = true;
     bool filterLANIPs = true;
 
@@ -174,6 +174,7 @@ struct Preferences::Data {
     bool logFileSaving = false;
     bool logA4AF = false;
     bool logUlDlEvents = true;
+    bool logRawSocketPackets = false;
 
     // Files
     uint16 maxSourcesPerFile = 400;
@@ -236,6 +237,8 @@ struct Preferences::Data {
 
     // Security
     uint32 ipFilterLevel = 100;  // DFLT_FILTER_LEVEL — lower = more restrictive
+    bool warnUntrustedFiles = true;
+    QString ipFilterUpdateUrl;
 
     // IRC
     QString ircServer = QStringLiteral("irc.mindforge.org:6667");
@@ -293,7 +296,7 @@ struct Preferences::Data {
     // Server management (extended)
     bool addServersFromClients = true;  // Accept server list from other clients
     bool filterServerByIP = false;      // Apply IP filter to server addresses
-    uint32 deadServerRetries = 1;       // Remove dead servers after N failed attempts (0 = disabled)
+    uint32 deadServerRetries = 20;      // Remove dead servers after N failed attempts (0 = disabled)
     bool autoUpdateServerList = false;  // Auto-update server list from URL at startup
     QString serverListURL;              // URL for server.met download
     bool smartLowIdCheck = true;        // Try another server if we get a LowID
@@ -1131,6 +1134,18 @@ void Preferences::setLogUlDlEvents(bool val)
     m_data->logUlDlEvents = val;
 }
 
+bool Preferences::logRawSocketPackets() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logRawSocketPackets;
+}
+
+void Preferences::setLogRawSocketPackets(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logRawSocketPackets = val;
+}
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Files
 // ---------------------------------------------------------------------------
@@ -1613,6 +1628,30 @@ void Preferences::setIpFilterLevel(uint32 val)
 {
     QWriteLocker lock(&m_lock);
     m_data->ipFilterLevel = val;
+}
+
+bool Preferences::warnUntrustedFiles() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->warnUntrustedFiles;
+}
+
+void Preferences::setWarnUntrustedFiles(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->warnUntrustedFiles = val;
+}
+
+QString Preferences::ipFilterUpdateUrl() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->ipFilterUpdateUrl;
+}
+
+void Preferences::setIpFilterUpdateUrl(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->ipFilterUpdateUrl = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -3504,6 +3543,7 @@ bool Preferences::load(const QString& filePath)
         resolveDefaultDirectories();
         resolveDefaultVideoPlayer();
         m_data->startVersion = 1;
+        m_data->webServerApiKey = generateApiKey();
 
         // Create directories and persist initial preferences
         QDir().mkpath(m_data->configDir);
@@ -3657,6 +3697,7 @@ bool Preferences::load(const QString& filePath)
             m_data->logFileSaving = l["logFileSaving"].as<bool>(m_data->logFileSaving);
             m_data->logA4AF = l["logA4AF"].as<bool>(m_data->logA4AF);
             m_data->logUlDlEvents = l["logUlDlEvents"].as<bool>(m_data->logUlDlEvents);
+            m_data->logRawSocketPackets = l["logRawSocketPackets"].as<bool>(m_data->logRawSocketPackets);
         }
 
         // Files
@@ -3720,6 +3761,9 @@ bool Preferences::load(const QString& filePath)
             m_data->ipFilterLevel = sec["ipFilterLevel"].as<uint32>(m_data->ipFilterLevel);
             m_data->useSecureIdent = sec["useSecureIdent"].as<bool>(m_data->useSecureIdent);
             m_data->viewSharedFilesAccess = sec["viewSharedFilesAccess"].as<int>(m_data->viewSharedFilesAccess);
+            m_data->warnUntrustedFiles = sec["warnUntrustedFiles"].as<bool>(m_data->warnUntrustedFiles);
+            if (sec["ipFilterUpdateUrl"])
+                m_data->ipFilterUpdateUrl = QString::fromStdString(sec["ipFilterUpdateUrl"].as<std::string>());
         }
 
         // IRC
@@ -3944,6 +3988,12 @@ bool Preferences::load(const QString& filePath)
     validate();
     resolveDefaultDirectories();
 
+    // Generate REST API key if missing (existing installs with empty key)
+    if (m_data->webServerApiKey.isEmpty()) {
+        m_data->webServerApiKey = generateApiKey();
+        saveImpl(m_filePath);
+    }
+
     // One-time migrations keyed by startVersion
     if (m_data->startVersion == 0) {
         resolveDefaultVideoPlayer();
@@ -4033,6 +4083,16 @@ std::array<uint8, 16> Preferences::generateUserHash()
     hash[5] = 14;
     hash[14] = 111;
     return hash;
+}
+
+QString Preferences::generateApiKey()
+{
+    std::uniform_int_distribution<int> dist(0, 255);
+    auto& rng = randomEngine();
+    QByteArray bytes(16, Qt::Uninitialized);
+    for (int i = 0; i < 16; ++i)
+        bytes[i] = static_cast<char>(dist(rng));
+    return QString::fromLatin1(bytes.toHex());
 }
 
 // ---------------------------------------------------------------------------
@@ -4175,6 +4235,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "logFileSaving" << YAML::Value << m_data->logFileSaving;
     out << YAML::Key << "logA4AF" << YAML::Value << m_data->logA4AF;
     out << YAML::Key << "logUlDlEvents" << YAML::Value << m_data->logUlDlEvents;
+    out << YAML::Key << "logRawSocketPackets" << YAML::Value << m_data->logRawSocketPackets;
     out << YAML::EndMap;
 
     // Files
@@ -4238,6 +4299,9 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ipFilterLevel" << YAML::Value << m_data->ipFilterLevel;
     out << YAML::Key << "useSecureIdent" << YAML::Value << m_data->useSecureIdent;
     out << YAML::Key << "viewSharedFilesAccess" << YAML::Value << m_data->viewSharedFilesAccess;
+    out << YAML::Key << "warnUntrustedFiles" << YAML::Value << m_data->warnUntrustedFiles;
+    if (!m_data->ipFilterUpdateUrl.isEmpty())
+        out << YAML::Key << "ipFilterUpdateUrl" << YAML::Value << m_data->ipFilterUpdateUrl.toStdString();
     out << YAML::EndMap;
 
     // IRC

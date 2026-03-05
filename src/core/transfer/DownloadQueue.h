@@ -89,6 +89,11 @@ public:
     void setClientList(ClientList* cl) { m_clientList = cl; }
     void setServerConnect(ServerConnect* sc) { m_serverConnect = sc; }
 
+    // -- Kad file request rate-limiter ----------------------------------------
+
+    [[nodiscard]] bool doKademliaFileRequest() const;
+    void setLastKademliaFileRequest();
+
     // -- Stats ----------------------------------------------------------------
 
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
@@ -113,6 +118,7 @@ private:
     uint32 m_udCounter = 0;
     uint32 m_lastUDPSourceRequestTime = 0;
     uint32 m_lastServerSourceRequestTime = 0;
+    uint32 m_lastKademliaFileRequest = 0;
 };
 
 } // namespace eMule

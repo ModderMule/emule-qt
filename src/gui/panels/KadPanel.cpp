@@ -12,17 +12,25 @@
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
 
+#include "prefs/Preferences.h"
+
 #include <algorithm>
 
 #include <QButtonGroup>
 #include <QCborArray>
 #include <QCborMap>
+#include <QDir>
+#include <QFile>
 #include <QFont>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSortFilterProxyModel>
@@ -165,7 +173,50 @@ void KadPanel::onBootstrapClicked()
         msg.append(int64_t(port));
         m_ipc->sendRequest(std::move(msg));
     } else {
-        // ToDo: Download nodes.dat from URL and bootstrap
+        const QString url = m_urlEdit->text().trimmed();
+        if (url.isEmpty())
+            return;
+
+        m_bootstrapBtn->setEnabled(false);
+        m_bootstrapBtn->setText(tr("Downloading..."));
+
+        auto* nam = new QNetworkAccessManager(this);
+        auto* reply = nam->get(QNetworkRequest(QUrl(url)));
+        connect(reply, &QNetworkReply::finished, this, [this, reply, nam]() {
+            reply->deleteLater();
+            nam->deleteLater();
+            m_bootstrapBtn->setEnabled(true);
+            m_bootstrapBtn->setText(tr("Bootstrap"));
+
+            if (reply->error() != QNetworkReply::NoError) {
+                QMessageBox::warning(this, tr("Kademlia"),
+                    tr("Failed to download nodes.dat: %1").arg(reply->errorString()));
+                return;
+            }
+
+            const QByteArray data = reply->readAll();
+            if (data.isEmpty()) {
+                QMessageBox::warning(this, tr("Kademlia"),
+                    tr("Downloaded nodes.dat is empty."));
+                return;
+            }
+
+            const QString path = QDir(thePrefs.configDir()).filePath(QStringLiteral("nodes.dat"));
+            QFile f(path);
+            if (!f.open(QIODevice::WriteOnly)) {
+                QMessageBox::warning(this, tr("Kademlia"),
+                    tr("Failed to save nodes.dat: %1").arg(f.errorString()));
+                return;
+            }
+            f.write(data);
+            f.close();
+
+            // Bootstrap from the downloaded nodes.dat file
+            IpcMessage msg(IpcMsgType::BootstrapKad);
+            msg.append(QString());   // empty IP = bootstrap from nodes.dat file
+            msg.append(int64_t(0));  // port 0
+            m_ipc->sendRequest(std::move(msg));
+        });
     }
 }
 

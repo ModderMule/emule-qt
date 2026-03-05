@@ -4,6 +4,7 @@
 #include "net/ClientReqSocket.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
+#include "net/ListenSocket.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
@@ -53,6 +54,10 @@ void ClientReqSocket::disconnect(const QString& reason)
 
     logDebug(QStringLiteral("ClientReqSocket::disconnect: %1").arg(reason));
     emit clientDisconnected(reason);
+
+    // Remove from ListenSocket tracking immediately
+    if (theApp.listenSocket)
+        theApp.listenSocket->removeSocket(this);
 
     m_deleteThis = true;
     close();

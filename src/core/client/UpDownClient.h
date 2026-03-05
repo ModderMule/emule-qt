@@ -545,6 +545,7 @@ public:
     [[nodiscard]] bool isUrlClient() const { return !isEd2kClient(); }
 
     [[nodiscard]] const std::list<Pending_Block_Struct*>& pendingBlocks() const { return m_pendingBlocks; }
+    [[nodiscard]] uint64 lastBlockOffset() const { return m_lastBlockOffset; }
 
 signals:
     void uploadStateChanged(UploadState newState);

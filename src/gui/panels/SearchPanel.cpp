@@ -82,6 +82,12 @@ void SearchPanel::setIpcClient(IpcClient* client)
     loadSearches();
 }
 
+void SearchPanel::startSearchFromExternal(const QString& expression)
+{
+    m_nameEdit->setText(expression);
+    onStartSearch();
+}
+
 // ---------------------------------------------------------------------------
 // UI setup
 // ---------------------------------------------------------------------------
@@ -480,9 +486,21 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     m_contextMenu->addSeparator();
 
     // Mark as Spam
-    // ToDo: Implement spam marking via IPC (send to core SearchList::markAsSpam)
     auto* spamAction = m_contextMenu->addAction(tr("Mark as Spam"));
-    spamAction->setEnabled(false);
+    spamAction->setEnabled(hasSelection);
+    connect(spamAction, &QAction::triggered, this, [this] {
+        auto* tab = currentTab();
+        if (!tab || !m_ipc) return;
+        for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+            const auto srcIdx = tab->proxy->mapToSource(i);
+            const auto* result = tab->model->resultAt(srcIdx.row());
+            if (!result) continue;
+            IpcMessage msg(IpcMsgType::MarkSearchSpam);
+            msg.append(static_cast<int64_t>(tab->searchID));
+            msg.append(result->hash);
+            m_ipc->sendRequest(std::move(msg));
+        }
+    });
 
     // Remove (remove from local results list)
     auto* removeAction = m_contextMenu->addAction(tr("Remove"));

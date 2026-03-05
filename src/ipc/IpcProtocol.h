@@ -32,6 +32,7 @@ enum class IpcMsgType : int {
     CancelDownload       = 114,  ///< [hash: string]
     SetDownloadPriority  = 115,  ///< [hash, priority, isAuto]
     ClearCompleted       = 116,  ///< [] — remove completed downloads
+    GetDownloadSources   = 117,  ///< [hash: string] — source clients for one download
     GetUploads           = 120,
     GetDownloadClients   = 121,  ///< [] — source clients we are downloading from
     GetKnownClients      = 122,  ///< [] — all known clients
@@ -80,6 +81,19 @@ enum class IpcMsgType : int {
     RemoveConvertJob     = 232,  ///< [index: int] → remove non-in-progress job
     RetryConvertJob      = 233,  ///< [index: int] → re-queue a failed job
 
+    StopDownload         = 240,  ///< [hash: string] — stop (not pause) a download
+    OpenDownloadFile     = 241,  ///< [hash: string] — open completed file on daemon
+    OpenDownloadFolder   = 242,  ///< [hash: string] — open folder containing file on daemon
+    MarkSearchSpam       = 243,  ///< [searchID: int, hash: string] — mark search result as spam
+    ResetStats           = 244,  ///< [] — reset session statistics
+    RenameSharedFile     = 245,  ///< [hash: string, newName: string]
+    DeleteSharedFile     = 246,  ///< [hash: string] — delete file from disk + shared list
+    UnshareFile          = 247,  ///< [hash: string] — remove from shared list (keep on disk)
+    SetDownloadCategory  = 248,  ///< [hash: string, category: int]
+    GetDownloadDetails   = 249,  ///< [hash: string] → extended info (filePath, comments)
+    PreviewDownload      = 250,  ///< [hash: string] — preview partial file on daemon
+    RequestClientSharedFiles = 251, ///< [clientHash: string] — ask client for shared list
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd]
@@ -102,6 +116,7 @@ enum class IpcMsgType : int {
     PushKnownClientsChanged = 490,
     PushChatMessage       = 500,  ///< [senderHash, senderName, message]
     PushFriendListChanged = 510,  ///< [] — friend list changed
+    PushClientSharedFiles = 520,  ///< [clientHash, CborArray of files] — response to browse
 };
 
 // ---------------------------------------------------------------------------

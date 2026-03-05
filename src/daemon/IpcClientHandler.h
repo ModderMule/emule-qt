@@ -52,6 +52,7 @@ private:
     void handleGetKnownClients(const Ipc::IpcMessage& msg);
     void handleSetDownloadPriority(const Ipc::IpcMessage& msg);
     void handleClearCompleted(const Ipc::IpcMessage& msg);
+    void handleGetDownloadSources(const Ipc::IpcMessage& msg);
     void handleGetServers(const Ipc::IpcMessage& msg);
     void handleRemoveServer(const Ipc::IpcMessage& msg);
     void handleRemoveAllServers(const Ipc::IpcMessage& msg);
@@ -96,6 +97,18 @@ private:
     void handleGetConvertJobs(const Ipc::IpcMessage& msg);
     void handleRemoveConvertJob(const Ipc::IpcMessage& msg);
     void handleRetryConvertJob(const Ipc::IpcMessage& msg);
+    void handleStopDownload(const Ipc::IpcMessage& msg);
+    void handleOpenDownloadFile(const Ipc::IpcMessage& msg);
+    void handleOpenDownloadFolder(const Ipc::IpcMessage& msg);
+    void handleMarkSearchSpam(const Ipc::IpcMessage& msg);
+    void handleResetStats(const Ipc::IpcMessage& msg);
+    void handleRenameSharedFile(const Ipc::IpcMessage& msg);
+    void handleDeleteSharedFile(const Ipc::IpcMessage& msg);
+    void handleUnshareFile(const Ipc::IpcMessage& msg);
+    void handleSetDownloadCategory(const Ipc::IpcMessage& msg);
+    void handleGetDownloadDetails(const Ipc::IpcMessage& msg);
+    void handlePreviewDownload(const Ipc::IpcMessage& msg);
+    void handleRequestClientSharedFiles(const Ipc::IpcMessage& msg);
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;

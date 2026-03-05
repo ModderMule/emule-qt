@@ -125,6 +125,7 @@ void DownloadQueue::addDownload(PartFile* file, bool paused)
     m_fileList.push_back(file);
     sortByPriority();
 
+    logInfo(QStringLiteral("Download started: %1").arg(file->fileName()));
     emit fileAdded(file);
 }
 
@@ -378,7 +379,6 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     }
 
     addDownload(partFile, paused);
-    logInfo(QStringLiteral("addDownloadFromED2KLink: started download: %1").arg(fileLink->name));
     return true;
 }
 
@@ -605,7 +605,16 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     if (!file)
         return;
 
-    logInfo(QStringLiteral("DownloadQueue: file completed: %1").arg(file->fileName()));
+    logInfo(QStringLiteral("Download completed: %1").arg(file->fileName()));
+
+    // Clean up all sources still associated with this file
+    auto sources = file->srcList();
+    for (auto* client : sources) {
+        client->setDownloadState(DownloadState::None);
+        client->setReqFile(nullptr);
+        file->removeSource(client);
+    }
+    file->a4afSrcList().clear();
 
     // Add to KnownFileList
     if (m_knownFileList)
@@ -666,6 +675,20 @@ void DownloadQueue::distributeDownloadLimit()
 
     for (auto* sock : sockets)
         sock->setDownloadLimit(perSocket);
+}
+
+// ===========================================================================
+// Kad file request rate-limiter
+// ===========================================================================
+
+bool DownloadQueue::doKademliaFileRequest() const
+{
+    return static_cast<uint32>(getTickCount()) >= m_lastKademliaFileRequest + KADEMLIAASKTIME;
+}
+
+void DownloadQueue::setLastKademliaFileRequest()
+{
+    m_lastKademliaFileRequest = static_cast<uint32>(getTickCount());
 }
 
 } // namespace eMule

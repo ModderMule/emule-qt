@@ -804,8 +804,10 @@ void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
     // Bootstrap nodes.dat files (v3 edition 1) contain 500-1000+ contacts in v1
     // format (25 bytes each). In the original eMule these are not added to the
     // routing table but kept in a bootstrap list for initial Kad connection.
-    // For simplicity we add them directly to the routing table here.
-    // TODO: implement dedicated bootstrap list for proper bootstrap-only handling
+    // We add them directly to the routing table. A dedicated bootstrap list
+    // would add complexity without meaningful benefit — bootstrap contacts are
+    // created with ipVerified=false and get naturally verified/promoted through
+    // the normal HELLO handshake flow (type 3 → type 2 on HELLO_RES).
 
     uint32 numContacts = sf.readUInt32();
     if (numContacts == 0)

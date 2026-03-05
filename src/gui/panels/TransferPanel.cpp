@@ -20,6 +20,7 @@
 #include <QCborMap>
 #include <QClipboard>
 #include <QComboBox>
+#include <QCursor>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFont>
@@ -27,9 +28,11 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QItemSelectionModel>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -113,8 +116,11 @@ public:
     }
 
 protected:
-    bool filterAcceptsRow(int sourceRow, const QModelIndex& /*sourceParent*/) const override
+    bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override
     {
+        // Always accept child (source) rows — filtering is only on top-level downloads
+        if (sourceParent.isValid())
+            return true;
         if (m_category == 0)
             return true; // "All" — show everything
         auto* model = qobject_cast<DownloadListModel*>(sourceModel());
@@ -220,6 +226,9 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     if (proxyIdx.isValid()) {
         const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
         const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+        // If this is a source (child) row, skip the context menu
+        if (m_downloadModel->isSourceRow(srcIdx))
+            return;
         hash = m_downloadModel->hashAt(srcIdx.row());
         dl = m_downloadModel->downloadAt(srcIdx.row());
     }
@@ -282,8 +291,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     }
     {
         auto* stopAct = m_downloadMenu->addAction(tr("Stop"), this, [this, hash]() {
-            // ToDo: add StopDownload IPC type for full MFC match
-            sendDownloadAction(hash, 0);
+            sendStopDownload(hash);
         });
         if (!hasSel) {
             stopAct->setEnabled(false);
@@ -311,22 +319,31 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     m_downloadMenu->addSeparator();
 
-    // -- 4. Open File / Preview / Details / Comments (ToDo) --
+    // -- 4. Open File / Preview / Details / Comments --
     {
-        auto* act = m_downloadMenu->addAction(tr("Open File"));
-        act->setEnabled(false); // ToDo: needs IPC support
+        auto* act = m_downloadMenu->addAction(tr("Open File"), this, [this, hash]() {
+            sendOpenFile(hash);
+        });
+        const bool isComplete = hasSel && (dl->status == QStringLiteral("complete"));
+        act->setEnabled(isComplete);
     }
     {
-        auto* act = m_downloadMenu->addAction(tr("Preview"));
-        act->setEnabled(false); // ToDo: needs IPC support
+        auto* act = m_downloadMenu->addAction(tr("Preview"), this, [this, hash]() {
+            sendPreview(hash);
+        });
+        act->setEnabled(hasSel && !dl->isPaused && !dl->isStopped);
     }
     if (thePrefs.showExtControls()) {
-        auto* act = m_downloadMenu->addAction(tr("Details..."));
-        act->setEnabled(false); // ToDo: needs IPC support
+        auto* act = m_downloadMenu->addAction(tr("Details..."), this, [this, hash]() {
+            showDownloadDetails(hash);
+        });
+        act->setEnabled(hasSel);
     }
     if (thePrefs.showExtControls()) {
-        auto* act = m_downloadMenu->addAction(tr("Comments..."));
-        act->setEnabled(false); // ToDo: needs IPC support
+        auto* act = m_downloadMenu->addAction(tr("Comments..."), this, [this, hash]() {
+            showComments(hash);
+        });
+        act->setEnabled(hasSel);
     }
 
     m_downloadMenu->addSeparator();
@@ -388,9 +405,12 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // -- 7. Find / Search Related --
     connect(m_downloadMenu->addAction(tr("Find...")),
             &QAction::triggered, this, &TransferPanel::showFindDialog);
-    if (thePrefs.showExtControls()) {
-        auto* act = m_downloadMenu->addAction(tr("Search Related Files"));
-        act->setEnabled(false); // ToDo: needs search panel integration
+    if (thePrefs.showExtControls() && hasSel) {
+        const QString fname = dl->fileName;
+        auto* act = m_downloadMenu->addAction(tr("Search Related Files"), this, [this, fname]() {
+            searchRelated(fname);
+        });
+        act->setEnabled(true);
     }
 
     m_downloadMenu->addSeparator();
@@ -398,7 +418,21 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // -- 8. Assign To Category --
     {
         auto* catMenu = m_downloadMenu->addMenu(tr("Assign To Category"));
-        catMenu->setEnabled(false); // ToDo: needs category assignment
+        // Category 0 = "All" (default)
+        auto* allAct = catMenu->addAction(tr("(All)"), this, [this, hash]() {
+            sendSetCategory(hash, 0);
+        });
+        allAct->setEnabled(hasSel);
+        // Add any user-defined categories from the tab bar
+        for (int i = 1; i < m_categoryTabBar->count(); ++i) {
+            const auto catId = m_categoryTabBar->tabData(i).toLongLong();
+            auto* catAct = catMenu->addAction(m_categoryTabBar->tabText(i), this,
+                [this, hash, catId]() {
+                    sendSetCategory(hash, static_cast<int>(catId));
+                });
+            catAct->setEnabled(hasSel);
+        }
+        catMenu->setEnabled(hasSel && m_categoryTabBar->count() > 1);
     }
 
     m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));
@@ -503,13 +537,14 @@ QWidget* TransferPanel::createDownloadsSection()
 
     m_downloadView = new QTreeView;
     m_downloadView->setModel(m_categoryProxy);
-    m_downloadView->setRootIsDecorated(false);
+    m_downloadView->setRootIsDecorated(true);
     m_downloadView->setAlternatingRowColors(true);
     m_downloadView->setSortingEnabled(true);
     m_downloadView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_downloadView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_downloadView->setUniformRowHeights(true);
     m_downloadView->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_downloadView->setExpandsOnDoubleClick(false); // we handle double-click ourselves
 
     m_downloadView->setItemDelegateForColumn(
         DownloadListModel::ColProgress,
@@ -519,6 +554,51 @@ QWidget* TransferPanel::createDownloadsSection()
             this, &TransferPanel::onDownloadContextMenu);
     connect(m_downloadView->selectionModel(), &QItemSelectionModel::currentChanged,
             this, &TransferPanel::updateActionStates);
+
+    // Double-click toggles expand/collapse for download rows
+    connect(m_downloadView, &QTreeView::doubleClicked, this, [this](const QModelIndex& proxyIdx) {
+        if (!proxyIdx.isValid())
+            return;
+
+        // Check if this is a source row (child) — ignore double-click on children
+        if (proxyIdx.parent().isValid())
+            return;
+
+        // Map through proxy chain to get the source model hash
+        const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
+        const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+        const QString hash = m_downloadModel->hashAt(srcIdx.row());
+        if (hash.isEmpty())
+            return;
+
+        if (m_downloadView->isExpanded(proxyIdx)) {
+            m_downloadView->collapse(proxyIdx);
+            m_expandedDownloads.remove(hash);
+        } else {
+            m_expandedDownloads.insert(hash);
+            requestDownloadSources(hash);
+            m_downloadView->expand(proxyIdx);
+        }
+    });
+
+    // Track collapse via user interaction (clicking the arrow)
+    connect(m_downloadView, &QTreeView::collapsed, this, [this](const QModelIndex& proxyIdx) {
+        const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
+        const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+        const QString hash = m_downloadModel->hashAt(srcIdx.row());
+        m_expandedDownloads.remove(hash);
+    });
+
+    // Track expand via user interaction (clicking the arrow)
+    connect(m_downloadView, &QTreeView::expanded, this, [this](const QModelIndex& proxyIdx) {
+        const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
+        const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+        const QString hash = m_downloadModel->hashAt(srcIdx.row());
+        if (!hash.isEmpty() && !m_expandedDownloads.contains(hash)) {
+            m_expandedDownloads.insert(hash);
+            requestDownloadSources(hash);
+        }
+    });
 
     auto* header = m_downloadView->header();
     header->setStretchLastSection(true);
@@ -629,8 +709,7 @@ QToolBar* TransferPanel::createActionToolbar()
     auto* actStop = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Stop.ico")), tr("Stop"));
     connect(actStop, &QAction::triggered, this, [this]() {
-        // ToDo: add StopDownload IPC type for full MFC match
-        sendDownloadAction(saveDownloadSelection(), 0);
+        sendStopDownload(saveDownloadSelection());
     });
     m_selectionActions.append(actStop);
 
@@ -653,23 +732,38 @@ QToolBar* TransferPanel::createActionToolbar()
     // Group 2: Open File / Open Folder / Preview / Details / Comments / eD2K Links
     auto* actOpenFile = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/FileOpen.ico")), tr("Open File"));
-    actOpenFile->setEnabled(false); // ToDo: needs IPC support
+    connect(actOpenFile, &QAction::triggered, this, [this]() {
+        sendOpenFile(saveDownloadSelection());
+    });
+    m_selectionActions.append(actOpenFile);
 
     auto* actOpenFolder = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/FolderOpen.ico")), tr("Open Folder"));
-    actOpenFolder->setEnabled(false); // ToDo: needs IPC support
+    connect(actOpenFolder, &QAction::triggered, this, [this]() {
+        sendOpenFolder(saveDownloadSelection());
+    });
+    m_selectionActions.append(actOpenFolder);
 
     auto* actPreview = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Preview.ico")), tr("Preview"));
-    actPreview->setEnabled(false); // ToDo: needs IPC support
+    connect(actPreview, &QAction::triggered, this, [this]() {
+        sendPreview(saveDownloadSelection());
+    });
+    m_selectionActions.append(actPreview);
 
     auto* actDetails = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/FileInfo.ico")), tr("Details"));
-    actDetails->setEnabled(false); // ToDo: needs IPC support
+    connect(actDetails, &QAction::triggered, this, [this]() {
+        showDownloadDetails(saveDownloadSelection());
+    });
+    m_selectionActions.append(actDetails);
 
     auto* actComments = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/FileComments.ico")), tr("Comments"));
-    actComments->setEnabled(false); // ToDo: needs IPC support
+    connect(actComments, &QAction::triggered, this, [this]() {
+        showComments(saveDownloadSelection());
+    });
+    m_selectionActions.append(actComments);
 
     auto* actEd2kLinks = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/eD2kLink.ico")), tr("eD2K Links"),
@@ -681,7 +775,21 @@ QToolBar* TransferPanel::createActionToolbar()
     // Group 3: Assign To Category / Clear Completed / Search Related
     auto* actCategory = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Category.ico")), tr("Assign To Category"));
-    actCategory->setEnabled(false); // ToDo: needs category assignment
+    connect(actCategory, &QAction::triggered, this, [this]() {
+        const QString hash = saveDownloadSelection();
+        if (hash.isEmpty())
+            return;
+        // Show category popup at cursor
+        QMenu catMenu(this);
+        catMenu.addAction(tr("(All)"), this, [this, hash]() { sendSetCategory(hash, 0); });
+        for (int i = 1; i < m_categoryTabBar->count(); ++i) {
+            const auto catId = m_categoryTabBar->tabData(i).toLongLong();
+            catMenu.addAction(m_categoryTabBar->tabText(i), this,
+                [this, hash, catId]() { sendSetCategory(hash, static_cast<int>(catId)); });
+        }
+        catMenu.exec(QCursor::pos());
+    });
+    m_selectionActions.append(actCategory);
 
     // Clear Completed — greyed out when no completed downloads exist
     m_clearCompletedAction = toolbar->addAction(
@@ -691,7 +799,17 @@ QToolBar* TransferPanel::createActionToolbar()
 
     auto* actSearchRelated = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/KadFileSearch.ico")), tr("Search Related"));
-    actSearchRelated->setEnabled(false); // ToDo: needs search panel integration
+    connect(actSearchRelated, &QAction::triggered, this, [this]() {
+        const QString hash = saveDownloadSelection();
+        for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+            const auto* dl = m_downloadModel->downloadAt(i);
+            if (dl && dl->hash == hash) {
+                searchRelated(dl->fileName);
+                return;
+            }
+        }
+    });
+    m_selectionActions.append(actSearchRelated);
 
     toolbar->addSeparator();
 
@@ -780,6 +898,11 @@ void TransferPanel::requestDownloads()
             row.requests          = m.value(QStringLiteral("requests")).toInteger();
             row.acceptedRequests  = m.value(QStringLiteral("acceptedReqs")).toInteger();
             row.transferredData   = m.value(QStringLiteral("transferredData")).toInteger();
+            if (auto arr = m.value(QStringLiteral("partMap")).toArray(); !arr.isEmpty()) {
+                row.partMap.resize(static_cast<qsizetype>(arr.size()));
+                for (qsizetype i = 0; i < arr.size(); ++i)
+                    row.partMap[static_cast<qsizetype>(i)] = static_cast<char>(arr[i].toInteger(0));
+            }
             rows.push_back(std::move(row));
         }
 
@@ -787,8 +910,65 @@ void TransferPanel::requestDownloads()
         updateToolbarLabels();
         updateCategoryTabs();
         restoreDownloadSelection(selectedHash);
+
+        // Re-expand previously expanded downloads and refresh their sources
+        for (const QString& expHash : m_expandedDownloads) {
+            for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
+                if (m_downloadModel->hashAt(row) == expHash) {
+                    const QModelIndex srcIdx = m_downloadModel->index(row, 0);
+                    const QModelIndex sortIdx = m_downloadProxy->mapFromSource(srcIdx);
+                    const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
+                    if (catIdx.isValid())
+                        m_downloadView->expand(catIdx);
+                    break;
+                }
+            }
+            requestDownloadSources(expHash);
+        }
+
         updateActionStates();
         updateClearCompletedState();
+    });
+}
+
+void TransferPanel::requestDownloadSources(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+
+    IpcMessage req(IpcMsgType::GetDownloadSources);
+    req.append(hash);
+    m_ipc->sendRequest(std::move(req), [this, hash](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+
+        const QCborArray arr = resp.fieldArray(1);
+        std::vector<SourceRow> sources;
+        sources.reserve(static_cast<size_t>(arr.size()));
+
+        for (const auto& val : arr) {
+            const QCborMap m = val.toMap();
+            SourceRow src;
+            src.userName        = m.value(QStringLiteral("userName")).toString();
+            src.software        = m.value(QStringLiteral("software")).toString();
+            src.downloadState   = m.value(QStringLiteral("downloadState")).toString();
+            src.remoteQueueRank = m.value(QStringLiteral("remoteQueueRank")).toInteger();
+            src.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
+            src.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
+            src.datarate        = m.value(QStringLiteral("datarate")).toInteger();
+            src.availPartCount  = static_cast<int>(m.value(QStringLiteral("availPartCount")).toInteger());
+            src.partCount       = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
+            src.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());
+            src.userHash        = m.value(QStringLiteral("userHash")).toString();
+            if (auto spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
+                src.partMap.resize(static_cast<qsizetype>(spm.size()));
+                for (qsizetype j = 0; j < spm.size(); ++j)
+                    src.partMap[static_cast<qsizetype>(j)] = static_cast<char>(spm[j].toInteger(0));
+            }
+            sources.push_back(std::move(src));
+        }
+
+        m_downloadModel->setSources(hash, std::move(sources));
     });
 }
 
@@ -932,6 +1112,134 @@ void TransferPanel::copyEd2kLink(const QString& hash)
     }
 }
 
+void TransferPanel::sendStopDownload(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::StopDownload);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+        requestDownloads();
+    });
+}
+
+void TransferPanel::sendOpenFile(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::OpenDownloadFile);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg));
+}
+
+void TransferPanel::sendOpenFolder(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::OpenDownloadFolder);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg));
+}
+
+void TransferPanel::sendPreview(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::PreviewDownload);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg));
+}
+
+void TransferPanel::sendSetCategory(const QString& hash, int category)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::SetDownloadCategory);
+    msg.append(hash);
+    msg.append(static_cast<int64_t>(category));
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+        requestDownloads();
+    });
+}
+
+void TransferPanel::showDownloadDetails(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::GetDownloadDetails);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+        const QCborMap details = resp.field(1).toMap();
+        auto* dlg = new QDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->setWindowTitle(tr("Download Details"));
+        dlg->setMinimumSize(450, 350);
+        auto* layout = new QVBoxLayout(dlg);
+
+        auto addRow = [layout](const QString& label, const QString& value) {
+            auto* row = new QHBoxLayout;
+            auto* lbl = new QLabel(QStringLiteral("<b>%1:</b>").arg(label));
+            lbl->setFixedWidth(140);
+            row->addWidget(lbl);
+            row->addWidget(new QLabel(value));
+            row->addStretch();
+            layout->addLayout(row);
+        };
+
+        addRow(tr("File Name"), details.value(QLatin1StringView("fileName")).toString());
+        addRow(tr("Hash"), details.value(QLatin1StringView("hash")).toString());
+        addRow(tr("File Size"), QString::number(details.value(QLatin1StringView("fileSize")).toInteger()));
+        addRow(tr("Status"), details.value(QLatin1StringView("status")).toString());
+        addRow(tr("Priority"), details.value(QLatin1StringView("downPriority")).toString());
+        addRow(tr("Sources"), QString::number(details.value(QLatin1StringView("sourceCount")).toInteger()));
+        addRow(tr("Transferring"), QString::number(details.value(QLatin1StringView("transferringSrcCount")).toInteger()));
+        addRow(tr("A4AF Sources"), QString::number(details.value(QLatin1StringView("a4afSourceCount")).toInteger()));
+        addRow(tr("File Path"), details.value(QLatin1StringView("filePath")).toString());
+
+        auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
+        connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
+        layout->addStretch();
+        layout->addWidget(btnBox);
+        dlg->show();
+    });
+}
+
+void TransferPanel::showComments(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::GetDownloadDetails);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+        const QCborMap details = resp.field(1).toMap();
+        auto* dlg = new QDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->setWindowTitle(tr("Comments"));
+        dlg->setMinimumSize(400, 300);
+        auto* layout = new QVBoxLayout(dlg);
+        layout->addWidget(new QLabel(
+            tr("File: %1").arg(details.value(QLatin1StringView("fileName")).toString())));
+        layout->addWidget(new QLabel(tr("No comments available yet.")));
+        auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
+        connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
+        layout->addStretch();
+        layout->addWidget(btnBox);
+        dlg->show();
+    });
+}
+
+void TransferPanel::searchRelated(const QString& fileName)
+{
+    // Strip extension and emit search request
+    const int dotIdx = fileName.lastIndexOf(QLatin1Char('.'));
+    const QString term = (dotIdx > 0) ? fileName.left(dotIdx) : fileName;
+    emit searchRequested(term);
+}
+
 // ---------------------------------------------------------------------------
 // Selection preservation
 // ---------------------------------------------------------------------------
@@ -945,6 +1253,13 @@ QString TransferPanel::saveDownloadSelection() const
     // Map through category proxy → sort proxy → source model
     const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(sel);
     const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+
+    // If a source (child) row is selected, return the parent download's hash
+    if (m_downloadModel->isSourceRow(srcIdx)) {
+        const QModelIndex parentSrcIdx = srcIdx.parent();
+        return m_downloadModel->hashAt(parentSrcIdx.row());
+    }
+
     return m_downloadModel->hashAt(srcIdx.row());
 }
 
@@ -1193,10 +1508,37 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
 
     QMenu menu(this);
 
-    // 1. Details... (ToDo: needs client details dialog)
-    if (thePrefs.showExtControls()) {
-        auto* detailsAct = menu.addAction(tr("Details..."));
-        detailsAct->setEnabled(false);
+    // 1. Details...
+    if (thePrefs.showExtControls() && client) {
+        const ClientRow c = *client;
+        auto* detailsAct = menu.addAction(tr("Details..."), this, [this, c]() {
+            auto* dlg = new QDialog(this);
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->setWindowTitle(tr("Client Details"));
+            dlg->setMinimumSize(400, 300);
+            auto* layout = new QVBoxLayout(dlg);
+            auto addRow = [layout](const QString& label, const QString& value) {
+                auto* row = new QHBoxLayout;
+                auto* lbl = new QLabel(QStringLiteral("<b>%1:</b>").arg(label));
+                lbl->setFixedWidth(120);
+                row->addWidget(lbl);
+                row->addWidget(new QLabel(value));
+                row->addStretch();
+                layout->addLayout(row);
+            };
+            addRow(tr("User Name"), c.userName);
+            addRow(tr("User Hash"), c.userHash);
+            addRow(tr("Software"), c.software);
+            addRow(tr("IP:Port"), QStringLiteral("%1:%2").arg(c.ip).arg(c.port));
+            addRow(tr("Downloaded"), QString::number(c.transferredDown));
+            addRow(tr("Uploaded"), QString::number(c.transferredUp));
+            auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
+            connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
+            layout->addStretch();
+            layout->addWidget(btnBox);
+            dlg->show();
+        });
+        detailsAct->setEnabled(true);
     }
 
     // 2. Add To Friends
@@ -1219,13 +1561,37 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
         });
     }
 
-    // 3. Send Message (ToDo: no SendMessage IPC type yet)
+    // 3. Send Message
     auto* sendMsgAct = menu.addAction(tr("Send Message"));
-    sendMsgAct->setEnabled(false);
+    sendMsgAct->setEnabled(client != nullptr);
+    if (client) {
+        const QString clientHash = client->userHash;
+        connect(sendMsgAct, &QAction::triggered, this, [this, clientHash]() {
+            bool ok = false;
+            const QString text = QInputDialog::getText(
+                this, tr("Send Message"), tr("Message:"), QLineEdit::Normal, {}, &ok);
+            if (!ok || text.isEmpty() || !m_ipc || !m_ipc->isConnected())
+                return;
+            IpcMessage msg(IpcMsgType::SendChatMessage);
+            msg.append(clientHash);
+            msg.append(text);
+            m_ipc->sendRequest(std::move(msg));
+        });
+    }
 
-    // 4. View Shared Files (ToDo: needs shared files browsing)
+    // 4. View Shared Files
     auto* viewSharedAct = menu.addAction(tr("View Shared Files"));
-    viewSharedAct->setEnabled(false);
+    viewSharedAct->setEnabled(client != nullptr);
+    if (client) {
+        const QString clientHash = client->userHash;
+        connect(viewSharedAct, &QAction::triggered, this, [this, clientHash]() {
+            if (!m_ipc || !m_ipc->isConnected())
+                return;
+            IpcMessage msg(IpcMsgType::RequestClientSharedFiles);
+            msg.append(clientHash);
+            m_ipc->sendRequest(std::move(msg));
+        });
+    }
 
     menu.addSeparator();
 

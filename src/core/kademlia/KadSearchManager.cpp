@@ -22,6 +22,7 @@ namespace eMule::kad {
 // ---------------------------------------------------------------------------
 
 uint32 SearchManager::s_nextID = 1;
+uint32 SearchManager::s_totalResponsesReceived = 0;
 SearchMap SearchManager::s_searches;
 
 // ---------------------------------------------------------------------------
@@ -169,6 +170,7 @@ void SearchManager::processResponse(const UInt128& target, uint32 fromIP, uint16
     }
 
     it->second->processResponse(fromIP, fromPort, results);
+    ++s_totalResponsesReceived;
 }
 
 uint8 SearchManager::getExpectedResponseContactCount(const UInt128& target)

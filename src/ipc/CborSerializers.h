@@ -20,6 +20,8 @@
 #include <QCborArray>
 #include <QCborMap>
 
+#include <set>
+
 namespace eMule::Ipc {
 
 // ---------------------------------------------------------------------------
@@ -57,6 +59,37 @@ namespace eMule::Ipc {
 // Entity serializers — QCborMap output
 // ---------------------------------------------------------------------------
 
+[[nodiscard]] inline QCborArray buildPartMap(const PartFile& f)
+{
+    const uint16 parts = f.partCount();
+    if (parts == 0) return {};
+
+    const auto& freq = f.srcPartFrequency();
+
+    // Mark parts with active download requests
+    std::vector<bool> requested(parts, false);
+    for (const auto* blk : f.requestedBlockList()) {
+        uint32 startPart = static_cast<uint32>(blk->startOffset / PARTSIZE);
+        uint32 endPart   = static_cast<uint32>(blk->endOffset / PARTSIZE);
+        for (uint32 p = startPart; p <= endPart && p < parts; ++p)
+            requested[p] = true;
+    }
+
+    // Encode: 0=complete, 1=gap/no-sources, 2..254=gap/sources(freq), 255=downloading
+    QCborArray arr;
+    for (uint16 p = 0; p < parts; ++p) {
+        if (f.isComplete(p)) {
+            arr.append(0);
+        } else if (requested[p]) {
+            arr.append(255);
+        } else {
+            uint16 avail = (p < freq.size()) ? freq[p] : 0;
+            arr.append(avail == 0 ? 1 : std::clamp<int>(avail + 1, 2, 254));
+        }
+    }
+    return arr;
+}
+
 [[nodiscard]] inline QCborMap toCbor(const PartFile& f)
 {
     return QCborMap{
@@ -81,6 +114,7 @@ namespace eMule::Ipc {
         {QStringLiteral("requests"),            static_cast<qint64>(f.statistic.allTimeRequests())},
         {QStringLiteral("acceptedReqs"),        static_cast<qint64>(f.statistic.allTimeAccepts())},
         {QStringLiteral("transferredData"),     static_cast<qint64>(f.statistic.allTimeTransferred())},
+        {QStringLiteral("partMap"),             buildPartMap(f)},
     };
 }
 
@@ -142,6 +176,43 @@ namespace eMule::Ipc {
     return m;
 }
 
+[[nodiscard]] inline QCborArray buildSourcePartMap(const UpDownClient& c)
+{
+    const auto& partStatus = c.partStatus();
+    const uint16 parts = c.partCount();
+    const auto* reqFile = c.reqFile();
+    if (parts == 0 || partStatus.empty() || !reqFile)
+        return {};
+
+    // Collect parts with pending blocks
+    std::set<uint32> pendingParts;
+    for (const auto* blk : c.pendingBlocks()) {
+        if (blk && blk->block)
+            pendingParts.insert(static_cast<uint32>(blk->block->startOffset / PARTSIZE));
+    }
+
+    // Determine actively downloading part
+    uint32 activePart = UINT32_MAX;
+    if (c.isDownloading() && c.sessionDown() > 0 && c.lastBlockOffset() != UINT64_MAX)
+        activePart = static_cast<uint32>(c.lastBlockOffset() / PARTSIZE);
+
+    QCborArray arr;
+    for (uint16 i = 0; i < parts; ++i) {
+        if (i >= partStatus.size() || !partStatus[i]) {
+            arr.append(0);  // client doesn't have this part
+        } else if (reqFile->isComplete(i)) {
+            arr.append(1);  // both have it
+        } else if (i == activePart) {
+            arr.append(4);  // currently receiving
+        } else if (pendingParts.count(i)) {
+            arr.append(3);  // pending block queued
+        } else {
+            arr.append(2);  // client has, we need
+        }
+    }
+    return arr;
+}
+
 [[nodiscard]] inline QCborMap toCbor(const UpDownClient& c)
 {
     QCborMap m;
@@ -183,6 +254,8 @@ namespace eMule::Ipc {
     }
     if (c.uploadFile())
         m.insert(QStringLiteral("uploadFileName"), c.uploadFile()->fileName());
+    if (auto spm = buildSourcePartMap(c); !spm.isEmpty())
+        m.insert(QStringLiteral("sourcePartMap"), std::move(spm));
     return m;
 }
 

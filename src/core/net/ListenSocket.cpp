@@ -136,8 +136,8 @@ void ListenSocket::process()
                          .arg(static_cast<int>(socket->state()))
                          .arg(socket->socketDescriptor())
                          .arg(socket->errorString()));
-            socket->disconnect(QStringLiteral("Timeout"));
             it = m_socketList.erase(it);
+            socket->disconnect(QStringLiteral("Timeout"));
         } else {
             ++it;
         }

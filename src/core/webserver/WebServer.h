@@ -14,6 +14,7 @@
 #include <QJsonObject>
 #include <QObject>
 
+#include <functional>
 #include <memory>
 
 class QHttpServer;
@@ -76,6 +77,7 @@ public:
     void setFriendList(FriendList* fl);
     void setStatistics(Statistics* stats);
     void setPreferences(Preferences* prefs);
+    void setLogProvider(std::function<QString()> provider) { m_logProvider = std::move(provider); }
 
     bool start(const WebServerConfig& config);
     void stop();
@@ -176,6 +178,9 @@ private:
     FriendList*     m_friendList    = nullptr;
     Statistics*     m_statistics    = nullptr;
     Preferences*    m_preferences   = nullptr;
+
+    // Log provider callback (injected by DaemonApp)
+    std::function<QString()> m_logProvider;
 };
 
 } // namespace eMule

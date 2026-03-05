@@ -6,6 +6,7 @@
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
 
+#include "client/UpDownClient.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
@@ -149,7 +150,8 @@ bool WebServer::start(const WebServerConfig& config)
                     if (body.size() > 256) {
                         auto compressed = gzipCompress(body);
                         if (!compressed.isEmpty() && compressed.size() < body.size()) {
-                            resp = QHttpServerResponse(compressed, resp.statusCode());
+                            auto ct = hdrs.value(QHttpHeaders::WellKnownHeader::ContentType);
+                            resp = QHttpServerResponse(QByteArray(ct.data(), ct.size()), compressed, resp.statusCode());
                             hdrs = resp.headers();
                             hdrs.append(QHttpHeaders::WellKnownHeader::ContentEncoding,
                                         QStringLiteral("gzip"));
@@ -1031,13 +1033,14 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     else
         content = buildTransferPage(isAdmin);
 
-    // Assemble: header + stylesheet + content + footer
+    // Inject stylesheet into header via [StyleSheet] variable, then assemble page
+    headerVars[QStringLiteral("StyleSheet")] =
+        m_templateEngine->section(QStringLiteral("HEADER_STYLESHEET"));
     const QString header = WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("HEADER")), headerVars);
-    const QString stylesheet = m_templateEngine->section(QStringLiteral("HEADER_STYLESHEET"));
     const QString footer = m_templateEngine->section(QStringLiteral("FOOTER"));
 
-    const QString fullPage = header + stylesheet + content + footer;
+    const QString fullPage = header + content + footer;
     return QHttpServerResponse(QByteArrayLiteral("text/html"), fullPage.toUtf8());
 }
 
@@ -1101,23 +1104,23 @@ QString WebServer::buildTransferPage(bool isAdmin)
                 : 0.0;
             lineVars[QStringLiteral("DownloadPercent")] = QString::number(progress, 'f', 1);
 
-            // Status icon
+            // Status icon (CSS sprite class name, no .gif suffix)
             switch (file->status()) {
             case PartFileStatus::Ready:
             case PartFileStatus::Empty:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_downloading.gif");
+                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_downloading");
                 break;
             case PartFileStatus::Paused:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_paused.gif");
+                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_paused");
                 break;
             case PartFileStatus::Complete:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_complete.gif");
+                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_complete");
                 break;
             case PartFileStatus::Error:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_error.gif");
+                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_error");
                 break;
             default:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_waiting.gif");
+                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_waiting");
                 break;
             }
             lineVars[QStringLiteral("DownloadIndex")] = QString::number(index++);
@@ -1128,13 +1131,62 @@ QString WebServer::buildTransferPage(bool isAdmin)
 
     // Build upload list
     QString upLines;
-    // ToDo: iterate upload queue clients for detailed upload list
+    uint32 totalUpSpeed = 0;
+    uint64 totalUpTransferred = 0;
+    if (m_uploadQueue) {
+        const QString lineTmpl = m_templateEngine->section(QStringLiteral("TRANSFER_UP_LINE"));
+        int upIndex = 0;
+        m_uploadQueue->forEachUploading([&](UpDownClient* client) {
+            QHash<QString, QString> lineVars;
+            lineVars[QStringLiteral("1")] = client->userName().toHtmlEscaped();
+            lineVars[QStringLiteral("ClientSoftV")] = client->clientSoftwareStr().toHtmlEscaped();
+            lineVars[QStringLiteral("2")] = client->uploadFile()
+                ? client->uploadFile()->fileName().toHtmlEscaped() : QStringLiteral("?");
+
+            const uint64 transferred = client->sessionUp();
+            const uint32 delay = client->getUpStartTimeDelay();
+            const double speed = delay > 0
+                ? static_cast<double>(transferred) * 1000.0 / static_cast<double>(delay)
+                : 0.0;
+
+            lineVars[QStringLiteral("3")] = QString::number(transferred);
+            lineVars[QStringLiteral("4")] = QString::number(speed, 'f', 1);
+
+            auto softToIcon = [](ClientSoftware soft) -> QString {
+                switch (soft) {
+                case ClientSoftware::eMule:        return QStringLiteral("0");
+                case ClientSoftware::eDonkeyHybrid: return QStringLiteral("h");
+                case ClientSoftware::eDonkey:      return QStringLiteral("0");
+                case ClientSoftware::aMule:        return QStringLiteral("a");
+                case ClientSoftware::MLDonkey:     return QStringLiteral("m");
+                case ClientSoftware::Shareaza:     return QStringLiteral("s");
+                case ClientSoftware::lphant:       return QStringLiteral("l");
+                default:                           return QStringLiteral("u");
+                }
+            };
+
+            lineVars[QStringLiteral("ClientState")] = QStringLiteral("uploading");
+            lineVars[QStringLiteral("ClientSoft")] = softToIcon(client->clientSoft());
+            lineVars[QStringLiteral("ClientExtra")] = QStringLiteral("none");
+            lineVars[QStringLiteral("UserHash")] = md4str(client->userHash());
+            lineVars[QStringLiteral("FileInfo")] = client->uploadFile()
+                ? client->uploadFile()->fileName().toHtmlEscaped() : QString();
+            lineVars[QStringLiteral("admin")] = isAdmin ? QStringLiteral("admin") : QString();
+            lineVars[QStringLiteral("UploadIndex")] = QString::number(upIndex++);
+
+            upLines += WebTemplateEngine::substitute(lineTmpl, lineVars);
+            totalUpTransferred += transferred;
+        });
+        totalUpSpeed = m_uploadQueue->datarate();
+    }
 
     QHash<QString, QString> transferVars;
     transferVars[QStringLiteral("DownloadFilesList")] = downLines;
     transferVars[QStringLiteral("UploadFilesList")] = upLines;
     transferVars[QStringLiteral("DownloadCount")] = m_downloadQueue
         ? QString::number(m_downloadQueue->fileCount()) : QStringLiteral("0");
+    transferVars[QStringLiteral("TotalUpTransferred")] = QString::number(totalUpTransferred);
+    transferVars[QStringLiteral("TotalUpSpeed")] = QString::number(totalUpSpeed);
 
     const QString downHeader = WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("TRANSFER_DOWN_HEADER")), transferVars);
@@ -1250,7 +1302,29 @@ QString WebServer::buildPreferencesPage(bool isAdmin)
 QString WebServer::buildServerInfoPage()
 {
     QHash<QString, QString> vars;
-    // ToDo: add server info/log from ServerConnect
+
+    if (m_serverConnect && m_serverConnect->isConnected()) {
+        Server* srv = m_serverConnect->currentServer();
+        QString info;
+        if (srv) {
+            info += QStringLiteral("Connected to: %1 (%2:%3)\n")
+                .arg(srv->name(), srv->address()).arg(srv->port());
+            info += QStringLiteral("Client ID: %1 (%2)\n")
+                .arg(m_serverConnect->clientID())
+                .arg(m_serverConnect->isLowID() ? QStringLiteral("LowID") : QStringLiteral("HighID"));
+            info += QStringLiteral("Users: %1 | Files: %2\n").arg(srv->users()).arg(srv->files());
+            if (!srv->description().isEmpty())
+                info += QStringLiteral("Description: %1\n").arg(srv->description());
+            if (srv->ping() > 0)
+                info += QStringLiteral("Ping: %1 ms\n").arg(srv->ping());
+        }
+        vars[QStringLiteral("ServerInfo")] = info;
+    } else {
+        vars[QStringLiteral("ServerInfo")] = m_serverConnect && m_serverConnect->isConnecting()
+            ? QStringLiteral("Connecting...")
+            : QStringLiteral("Not connected to any server");
+    }
+
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("SERVERINFO")), vars);
 }
@@ -1258,8 +1332,7 @@ QString WebServer::buildServerInfoPage()
 QString WebServer::buildLogPage()
 {
     QHash<QString, QString> vars;
-    // ToDo: aggregate daemon log buffer
-    vars[QStringLiteral("Log")] = QStringLiteral("");
+    vars[QStringLiteral("Log")] = m_logProvider ? m_logProvider() : QString();
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("LOG")), vars);
 }
@@ -1267,7 +1340,7 @@ QString WebServer::buildLogPage()
 QString WebServer::buildDebugLogPage()
 {
     QHash<QString, QString> vars;
-    vars[QStringLiteral("DebugLog")] = QStringLiteral("");
+    vars[QStringLiteral("DebugLog")] = m_logProvider ? m_logProvider() : QString();
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("DEBUGLOG")), vars);
 }

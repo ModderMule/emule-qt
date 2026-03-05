@@ -256,6 +256,7 @@ public:
     [[nodiscard]] time_t createdDate() const { return m_tCreated; }
     [[nodiscard]] const std::vector<uint16>& srcPartFrequency() const { return m_srcPartFrequency; }
     std::vector<uint16>& srcPartFrequency() { return m_srcPartFrequency; }
+    [[nodiscard]] const std::list<Requested_Block_Struct*>& requestedBlockList() const { return m_requestedBlocks; }
     [[nodiscard]] const std::vector<uint16>& corruptedParts() const { return m_corruptedParts; }
 
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
@@ -349,6 +350,13 @@ private:
 
     // AICH recovery hashset
     AICHRecoveryHashSet m_aichRecoveryHashSet;
+
+    // Server source search state
+    uint32 m_lastSearchTimeServer = 0;
+
+    // Kad source search state
+    uint32 m_lastSearchTimeKad = 0;
+    uint8  m_totalSearchesKad = 0;
 
     // Per-download-state source counts
     std::array<uint32, 17> m_anStates{};

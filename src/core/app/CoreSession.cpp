@@ -60,6 +60,7 @@ CoreSession::~CoreSession()
     shutdownUPnP();
     shutdownKademlia();
     shutdownServerConnect();
+    shutdownDownloadQueue();
     shutdownClientInfra();
     shutdownUSS();
     shutdownUploadPipeline();
@@ -73,6 +74,7 @@ void CoreSession::start()
     initUploadPipeline();
     initUSS();
     initClientInfra();
+    initDownloadQueue();
     initSearch();
     initServerConnect();
     initKademlia();
@@ -345,15 +347,12 @@ void CoreSession::initServerConnect()
     cfg.smartLowIdCheck       = thePrefs.smartLowIdCheck();
     m_serverConnect->setConfig(cfg);
 
-    // 4. Wire SharedFileList to ServerConnect for shared-file announcements
+    // 4. Wire SharedFileList and DownloadQueue to ServerConnect
     if (theApp.sharedFileList)
         theApp.sharedFileList->setServerConnect(theApp.serverConnect);
+    if (theApp.downloadQueue)
+        theApp.downloadQueue->setServerConnect(theApp.serverConnect);
 
-    // 5. Auto-connect to a server if enabled
-    if (thePrefs.autoConnect()) {
-        logInfo(QStringLiteral("Auto-connecting to eD2K server..."));
-        m_serverConnect->connectToAnyServer();
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -515,12 +514,49 @@ void CoreSession::shutdownClientInfra()
 }
 
 // ---------------------------------------------------------------------------
+// initDownloadQueue — create DownloadQueue and load existing .part files
+// ---------------------------------------------------------------------------
+
+void CoreSession::initDownloadQueue()
+{
+    if (theApp.downloadQueue)
+        return;
+
+    m_downloadQueue = std::make_unique<DownloadQueue>(this);
+    theApp.downloadQueue = m_downloadQueue.get();
+
+    // Wire dependencies
+    m_downloadQueue->setSharedFileList(theApp.sharedFileList);
+    m_downloadQueue->setKnownFileList(theApp.knownFileList);
+    m_downloadQueue->setIPFilter(theApp.ipFilter);
+    m_downloadQueue->setClientList(theApp.clientList);
+    m_downloadQueue->setServerConnect(theApp.serverConnect);
+
+    // Load existing .part files from configured temp directories
+    m_downloadQueue->init(thePrefs.tempDirs());
+
+    logInfo(QStringLiteral("DownloadQueue initialized — %1 files loaded")
+                .arg(m_downloadQueue->fileCount()));
+}
+
+// ---------------------------------------------------------------------------
+// shutdownDownloadQueue — save state and release DownloadQueue
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownDownloadQueue()
+{
+    if (m_downloadQueue && theApp.downloadQueue == m_downloadQueue.get())
+        theApp.downloadQueue = nullptr;
+    m_downloadQueue.reset();
+}
+
+// ---------------------------------------------------------------------------
 // initKademlia — create and start Kademlia if enabled
 // ---------------------------------------------------------------------------
 
 void CoreSession::initKademlia()
 {
-    if (!thePrefs.kadEnabled() || m_kademlia)
+    if (!thePrefs.kadEnabled() || !thePrefs.autoConnect() || m_kademlia)
         return;
 
     // 1. Create and bind the shared UDP socket (client + Kad traffic).
@@ -546,6 +582,18 @@ void CoreSession::initKademlia()
             if (theApp.searchList)
                 theApp.searchList->addKadKeywordResult(searchID, fileHash, name, size,
                                                        type, sources, completeSources);
+        });
+
+    // Wire Kad source result callback → DownloadQueue
+    kad::Kademlia::setKadSourceResultCallback(
+        [](uint32 searchID, const uint8* fileHash, uint32 ip, uint16 tcpPort,
+           uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
+           uint8 sourceType, const uint8* buddyHash, const uint8* clientHash) {
+            if (theApp.downloadQueue)
+                theApp.downloadQueue->addKadSourceResult(
+                    searchID, fileHash, ip, tcpPort,
+                    buddyIP, buddyPort, buddyCrypt,
+                    sourceType, buddyHash, clientHash);
         });
 
     m_kademlia->start();
@@ -621,6 +669,7 @@ void CoreSession::initKademlia()
 void CoreSession::shutdownKademlia()
 {
     kad::Kademlia::setKadKeywordResultCallback(nullptr);
+    kad::Kademlia::setKadSourceResultCallback(nullptr);
     kad::Kademlia::setClientList(nullptr);
     if (m_kademlia)
         m_kademlia->stop();

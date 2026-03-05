@@ -303,6 +303,11 @@ bool FileIdentifier::loadAICHHashsetFromFile(FileDataIO& file, bool verify)
     for (uint16 i = 0; i < count; ++i)
         m_aichPartHashSet.emplace_back(file);
 
+    // Single-part files don't need part hashes — clear if loaded from
+    // a .part.met created by a client that stored them anyway
+    if (getTheoreticalAICHPartHashCount() == 0 && !m_aichPartHashSet.empty())
+        m_aichPartHashSet.clear();
+
     if (verify)
         return verifyAICHHashSet();
     return true;

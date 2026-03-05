@@ -735,6 +735,13 @@ void MainWindow::setupPages()
     m_searchPanel = new SearchPanel(this);
     m_pages->addWidget(m_searchPanel);
 
+    // Wire "Search Related Files" from TransferPanel → SearchPanel
+    connect(m_transferPanel, &TransferPanel::searchRequested,
+            this, [this](const QString& expression) {
+        m_searchPanel->startSearchFromExternal(expression);
+        switchToTab(TabSearch);
+    });
+
     // Tab 4: Shared Files
     m_sharedFilesPanel = new SharedFilesPanel(this);
     m_pages->addWidget(m_sharedFilesPanel);

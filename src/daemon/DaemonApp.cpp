@@ -150,6 +150,18 @@ void DaemonApp::startWebServer()
     m_webServer->setStatistics(theApp.statistics);
     m_webServer->setPreferences(&thePrefs);
 
+    m_webServer->setLogProvider([] {
+        auto entries = DaemonApp::logsSince(0);
+        QString text;
+        for (const auto& e : entries) {
+            text += QDateTime::fromSecsSinceEpoch(e.timestamp).toString(QStringLiteral("HH:mm:ss"));
+            text += QLatin1Char(' ');
+            text += e.message;
+            text += QLatin1Char('\n');
+        }
+        return text;
+    });
+
     WebServerConfig config;
     config.enabled            = true;
     config.port               = thePrefs.webServerPort();
