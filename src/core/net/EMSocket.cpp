@@ -44,6 +44,12 @@ EMSocket::EMSocket(QObject* parent)
 
 EMSocket::~EMSocket()
 {
+    // Disconnect all signals BEFORE destroying m_sendLock.
+    // QAbstractSocket::~QAbstractSocket() calls disconnectFromHost() which emits
+    // the 'disconnected' signal. Our onDisconnected() slot locks m_sendLock via
+    // setConState(). If the mutex is already destroyed, this crashes with EINVAL.
+    disconnect(this, nullptr, this, nullptr);
+
     {
         std::lock_guard lock(m_sendLock);
         m_conState = EMSState::Disconnected;

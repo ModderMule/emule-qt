@@ -181,8 +181,10 @@ bool DownloadListModel::hasChildren(const QModelIndex& parent) const
     // Top-level rows may have source children
     if (parent.internalId() == 0) {
         const int row = parent.row();
-        if (row >= 0 && row < static_cast<int>(m_downloads.size()))
-            return !m_downloads[static_cast<size_t>(row)].sources.empty();
+        if (row >= 0 && row < static_cast<int>(m_downloads.size())) {
+            const auto& dl = m_downloads[static_cast<size_t>(row)];
+            return !dl.sources.empty() || dl.sourceCount > 0;
+        }
     }
 
     return false;

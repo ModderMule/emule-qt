@@ -260,7 +260,7 @@ struct Preferences::Data {
     bool ipcEnabled = true;
     uint16 ipcPort = 4712;
     QString ipcListenAddress = QStringLiteral("127.0.0.1");
-    QString ipcDaemonPath;  // Empty = auto-detect next to GUI binary
+    QString ipcDaemonPath;  // Empty = show dialog; "local" = connect to localhost
     int ipcRemotePollingMs = 1500;
     QStringList ipcTokens;
 

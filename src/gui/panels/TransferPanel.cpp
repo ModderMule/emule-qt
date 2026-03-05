@@ -350,9 +350,6 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             showDownloadDetails(hash);
         });
         act->setEnabled(hasSel);
-        QFont f = act->font();
-        f.setBold(true);
-        act->setFont(f);
     }
     {
         auto* act = m_downloadMenu->addAction(ico("FileComments.ico"), tr("Comments..."), this, [this, hash]() {
@@ -948,9 +945,9 @@ void TransferPanel::requestDownloads()
         m_downloadModel->setDownloads(std::move(rows));
         updateToolbarLabels();
         updateCategoryTabs();
-        restoreFullDownloadSelection(selHash, selSource);
 
         // Re-expand previously expanded downloads and refresh their sources
+        // (must happen BEFORE restoring selection so source child rows are visible)
         for (const QString& expHash : m_expandedDownloads) {
             for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
                 if (m_downloadModel->hashAt(row) == expHash) {
@@ -965,6 +962,7 @@ void TransferPanel::requestDownloads()
             requestDownloadSources(expHash);
         }
 
+        restoreFullDownloadSelection(selHash, selSource);
         updateActionStates();
         updateClearCompletedState();
     });

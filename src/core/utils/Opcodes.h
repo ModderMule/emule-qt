@@ -36,6 +36,11 @@
 #define PARTFILE_VERSION_LARGEFILE      0xe2
 #define SOURCEEXCHANGE2_VERSION         4    // replaces the version sent in MISC_OPTIONS flag from SX1
 
+// Version reported in CT_EMULE_VERSION to other clients (compatClient=0, major.minor+update)
+#define SEND_EMULE_VERSION_MJR          0
+#define SEND_EMULE_VERSION_MIN          70
+#define SEND_EMULE_VERSION_UPD          1    // 0=a, 1=b, 2=c, ...
+
 #define CREDITFILE_VERSION              0x12
 #define CREDITFILE_VERSION_29           0x11
 #define COMPILE_DATE                    __DATE__

@@ -1034,8 +1034,10 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     // Write our port
     data.writeUInt16(thePrefs.port());
 
-    // Build tags
-    constexpr uint32 tagCount = 6;
+    // Determine if we need buddy tags (Low-ID + have buddy for Kad callback)
+    const bool sendBuddyTags = theApp.clientList && theApp.clientList->getBuddy()
+                                && theApp.isFirewalled();
+    const uint32 tagCount = sendBuddyTags ? 8 : 6;
     data.writeUInt32(tagCount);
 
     // CT_NAME — our nickname
@@ -1045,13 +1047,26 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     Tag(CT_VERSION, static_cast<uint32>(EDONKEYVERSION)).writeTagToFile(data);
 
     // CT_EMULE_UDPPORTS — (kadPort << 16) | udpPort
+    // MFC: Kad port is 0 when not connected; uses external port when connected + verified
     uint16 kadPortVal = 0;
-    if (auto* kadPrefs = kad::Kademlia::getInstancePrefs())
-        kadPortVal = kadPrefs->internKadPort();
+    if (auto* kadInst = kad::Kademlia::instance(); kadInst && kadInst->isConnected()) {
+        if (auto* kadPrefs = kad::Kademlia::getInstancePrefs()) {
+            if (kadPrefs->externalKadPort() != 0
+                && kadPrefs->useExternKadPort()
+                && kad::UDPFirewallTester::isVerified()) {
+                kadPortVal = kadPrefs->externalKadPort();
+            } else {
+                kadPortVal = kadPrefs->internKadPort();
+            }
+        }
+    }
     const uint32 udpPorts = (static_cast<uint32>(kadPortVal) << 16) | thePrefs.udpPort();
     Tag(CT_EMULE_UDPPORTS, udpPorts).writeTagToFile(data);
 
     // CT_EMULE_MISCOPTIONS1 — capability bits
+    // MFC: NoViewShared = (CanSeeShares() == vsfaNobody), Preview = (CanSeeShares() != vsfaNobody)
+    const bool noViewShared = (thePrefs.viewSharedFilesAccess() == 0); // 0 = nobody
+    const bool supportPreview = (thePrefs.viewSharedFilesAccess() != 0);
     const uint32 miscOpts1 =
         (static_cast<uint32>(1) << 29) | // AICH version = 1
         (static_cast<uint32>(1) << 28) | // Unicode
@@ -1062,12 +1077,18 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
         (static_cast<uint32>(2) <<  8) | // Extended requests
         (static_cast<uint32>(1) <<  4) | // Comments
         (static_cast<uint32>(0) <<  3) | // Peer cache (not supported)
-        (static_cast<uint32>(0) <<  2) | // No view shared
+        (static_cast<uint32>(noViewShared ? 1 : 0) <<  2) | // No view shared (MFC: vsfaNobody)
         (static_cast<uint32>(1) <<  1) | // Multi packet
-        (static_cast<uint32>(1) <<  0);  // Preview
+        (static_cast<uint32>(supportPreview ? 1 : 0) <<  0);  // Preview (MFC: != vsfaNobody)
     Tag(CT_EMULE_MISCOPTIONS1, miscOpts1).writeTagToFile(data);
 
     // CT_EMULE_MISCOPTIONS2 — more capability bits
+    // MFC: DirectUDPCallback = Kad running && firewalled && !firewalled UDP && verified
+    const bool directUDPCallback =
+        kad::Kademlia::instance() && kad::Kademlia::instance()->isRunning()
+        && theApp.isFirewalled()
+        && !kad::UDPFirewallTester::isFirewalledUDP(true)
+        && kad::UDPFirewallTester::isVerified();
     const uint32 miscOpts2 =
         (static_cast<uint32>(KADEMLIA_VERSION) << 0) | // Kad version
         (static_cast<uint32>(1) <<  4) | // Large files
@@ -1078,19 +1099,26 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
         (static_cast<uint32>(thePrefs.cryptLayerRequired()  ? 1 : 0) << 9) |
         (static_cast<uint32>(1) << 10) | // Source exchange 2
         (static_cast<uint32>(1) << 11) | // Captcha
-        (static_cast<uint32>(1) << 12) | // Direct UDP callback
+        (static_cast<uint32>(directUDPCallback ? 1 : 0) << 12) | // Direct UDP callback (MFC: conditional)
         (static_cast<uint32>(1) << 13);  // File identifiers
     Tag(CT_EMULE_MISCOPTIONS2, miscOpts2).writeTagToFile(data);
 
     // CT_EMULE_VERSION — (compatClient << 24) | (majVer << 17) | (minVer << 10) | (upVer << 7)
-    // Report as official eMule 0.50a (SO_EMULE=4) to avoid anti-leecher detection.
-    constexpr uint32 SO_EMULE = 4;
+    // MFC: upper byte (m_byCompatibleClient) is 0 = standard eMule. Non-zero triggers
+    // "eMule Compat" label in other clients' InitClientSoftwareVersion().
     const uint32 emuleVer =
-        (SO_EMULE << 24) |
-        (static_cast<uint32>(0) << 17) |  // major = 0
-        (static_cast<uint32>(50) << 10) | // minor = 50
-        (static_cast<uint32>(0) <<  7);   // update = a (0: a=0, b=1)
+        (static_cast<uint32>(0) << 24) |                          // compatible client = 0 (standard eMule)
+        (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17) |    // major
+        (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10) |    // minor
+        (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);     // update (0=a, 1=b, ...)
     Tag(CT_EMULE_VERSION, emuleVer).writeTagToFile(data);
+
+    // CT_EMULE_BUDDYIP + CT_EMULE_BUDDYUDP — MFC: sent when firewalled with buddy
+    if (sendBuddyTags) {
+        auto* buddy = theApp.clientList->getBuddy();
+        Tag(CT_EMULE_BUDDYIP, buddy->connectIP()).writeTagToFile(data);
+        Tag(CT_EMULE_BUDDYUDP, static_cast<uint32>(buddy->udpPort())).writeTagToFile(data);
+    }
 
     // Write server info
     if (theApp.serverConnect && theApp.serverConnect->isConnected()) {
@@ -1117,7 +1145,7 @@ void UpDownClient::sendMuleInfoPacket(bool answer)
         return;
 
     SafeMemFile data;
-    data.writeUInt8(0x50); // eMule version byte = 0.50
+    data.writeUInt8((SEND_EMULE_VERSION_MJR << 4) | (SEND_EMULE_VERSION_MIN / 10)); // eMule version byte
     data.writeUInt8(EMULE_PROTOCOL); // protocol version
 
     constexpr uint32 tagCount = HAVE_ZLIB ? 7 : 6;
@@ -1128,14 +1156,17 @@ void UpDownClient::sendMuleInfoPacket(bool answer)
 #endif
     Tag(ET_UDPVER, static_cast<uint32>(4)).writeTagToFile(data);
     Tag(ET_UDPPORT, static_cast<uint32>(thePrefs.udpPort())).writeTagToFile(data);
-    Tag(ET_SOURCEEXCHANGE, static_cast<uint32>(SOURCEEXCHANGE2_VERSION)).writeTagToFile(data);
+    Tag(ET_SOURCEEXCHANGE, static_cast<uint32>(3)).writeTagToFile(data); // MFC: hardcodes 3 (legacy compat); MISCOPTIONS1 uses version 4
     Tag(ET_COMMENTS, static_cast<uint32>(1)).writeTagToFile(data);
     Tag(ET_EXTENDEDREQUEST, static_cast<uint32>(2)).writeTagToFile(data);
 
-    // ET_FEATURES — crypto + preview bits
+    // ET_FEATURES — secure ident + preview bits
+    // MFC: bits 0-1 = CryptoAvailable() (RSA key for secure ident), NOT cryptLayerSupported (transport obfuscation)
+    // MFC: bit 7 = preview = (CanSeeShares() != vsfaNobody)
+    const bool previewEnabled = (thePrefs.viewSharedFilesAccess() != 0);
     const uint32 features =
-        (static_cast<uint32>(thePrefs.cryptLayerSupported() ? 3 : 0)) | // sec ident (bits 0-1)
-        (static_cast<uint32>(1) << 7); // preview (bit 7)
+        (static_cast<uint32>((theApp.clientCredits && theApp.clientCredits->cryptoAvailable()) ? 3 : 0)) | // sec ident (bits 0-1)
+        (static_cast<uint32>(previewEnabled ? 1 : 0) << 7); // preview (bit 7)
     Tag(ET_FEATURES, features).writeTagToFile(data);
 
     const uint8 opcode = answer ? OP_EMULEINFOANSWER : OP_EMULEINFO;
@@ -1151,6 +1182,9 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
 {
     SafeMemFile file(data, size);
 
+    // MFC: reset compatible client — stale value from Hello must not leak through
+    m_compatibleClient = 0;
+
     const uint8 prevEmuleVersion = m_emuleVersion;
     m_emuleVersion = file.readUInt8();
     const uint8 protVersion = file.readUInt8();
@@ -1159,17 +1193,20 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
     if (protVersion != EMULE_PROTOCOL)
         return;
 
-    // Set implicit version-based capabilities for old clients
-    if (m_emuleVersion >= 0x20) {
+    // MFC: version fixup — 0x2B is treated as 0x22
+    if (m_emuleVersion == 0x2B)
+        m_emuleVersion = 0x22;
+
+    // Set implicit version-based capabilities for old clients (MFC exact logic)
+    if (m_emuleVersion < 0x25 && m_emuleVersion > 0x22)
+        m_udpVer = 1;
+    if (m_emuleVersion < 0x25 && m_emuleVersion > 0x21)
         m_sourceExchange1Ver = 1;
-    }
-    if (m_emuleVersion >= 0x24) {
-        m_dataCompVer = 1;
+    if (m_emuleVersion == 0x24)
         m_acceptCommentVer = 1;
-    }
-    if (m_emuleVersion >= 0x26) {
-        m_extendedRequestsVer = 1;
-    }
+    // MFC: >= 0x28 && !isMLDonkey → shared dirs
+    if (m_emuleVersion >= 0x28 && !m_isMLDonkey)
+        m_sharedDirectories = true;
 
     // Read tags
     const uint32 tagCount = file.readUInt32();
@@ -3385,9 +3422,7 @@ void UpDownClient::onUploadRequestReceived(const uint8* data, uint32 size)
         return;
 
     // The packet contains the requested file hash (16 bytes)
-    KnownFile* file = nullptr;
-    if (theApp.sharedFileList)
-        file = theApp.sharedFileList->getFileByID(data);
+    KnownFile* file = findUploadFile(data);
 
     if (file) {
         setUploadFileID(file);

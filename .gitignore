@@ -85,6 +85,7 @@ conan/
 *.local.sh
 *.local.log
 translations_*.json
+blog-*.md
 
 # Environment secrets
 .env

@@ -344,6 +344,7 @@ private:
     time_t m_tCreated = 0;
     time_t m_lastPausePurge = 0;
     uint32 m_lastBufferFlushTime = 0;
+    uint32 m_nextMetSaveTime = 0;    // Next scheduled .part.met save (matches MFC m_nNextMetFlushTime)
     uint32 m_lastPurgeTime = 0;
     uint32 m_dlActiveTime = 0;
 

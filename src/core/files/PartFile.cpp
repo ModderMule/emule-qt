@@ -112,6 +112,7 @@ void PartFile::initPartFile()
     m_percentCompleted = 0.0f;
     m_totalBufferData = 0;
     m_lastBufferFlushTime = 0;
+    m_nextMetSaveTime = 0;
     m_dlActiveTime = 0;
     m_tLastModified = 0;
     m_tCreated = std::time(nullptr);
@@ -424,11 +425,11 @@ void PartFile::flushBuffer(bool forceICH)
         return;
     }
 
-    // Periodic save of .part.met
+    // Periodic save of .part.met (separate timer from buffer flush — matches MFC m_nNextMetFlushTime)
     const uint32 curTick = static_cast<uint32>(getTickCount());
-    if (m_lastBufferFlushTime == 0 || (curTick - m_lastBufferFlushTime) > 30000) {
+    if (m_nextMetSaveTime < curTick) {
         savePartFile();
-        m_lastBufferFlushTime = curTick;
+        m_nextMetSaveTime = curTick + 30000; // save every ~30s
     }
 }
 

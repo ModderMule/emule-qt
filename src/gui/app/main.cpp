@@ -62,10 +62,15 @@ using eMule::parseED2KLink;
 namespace {
 
 /// Resolve the daemon binary path.
-/// Priority: 1) explicit ipc.daemonPath setting  2) next to the GUI binary.
+/// Priority: 1) "local" = assume daemon is running  2) explicit path  3) next to GUI binary.
 QString resolveDaemonPath()
 {
     QString path = eMule::thePrefs.ipcDaemonPath();
+
+    // "local" means connect to localhost without binary discovery
+    if (path == QStringLiteral("local"))
+        return path;
+
     if (!path.isEmpty() && QFileInfo::exists(path))
         return path;
 
@@ -284,7 +289,7 @@ int main(int argc, char* argv[])
             // Local path — try to find the daemon binary
             daemonPath = resolveDaemonPath();
             if (daemonPath.isEmpty()) {
-                // LAST FALLBACK: no local daemon binary found — show dialog
+                // No daemon path configured — show connect dialog immediately
                 eMule::logWarning(QStringLiteral("No local emulecored binary found."));
                 eMule::CoreConnectDialog dlg(&mainWindow);
                 if (dlg.exec() == QDialog::Rejected)
@@ -300,6 +305,9 @@ int main(int argc, char* argv[])
                 eMule::thePrefs.setIpcPort(port);
                 if (dlg.saveToken())
                     eMule::thePrefs.setIpcTokens({dlg.token()});
+            } else if (daemonPath == QStringLiteral("local")) {
+                // "local" mode — assume daemon is already running on localhost
+                eMule::logInfo(QStringLiteral("Local mode — connecting to localhost:%1").arg(port));
             }
         }
 
@@ -387,7 +395,27 @@ int main(int argc, char* argv[])
         // On first connection failure, try launching the daemon binary (local path only).
         // IpcClient auto-reconnects with exponential backoff regardless.
         auto weOwnDaemon = std::make_shared<bool>(false);
-        if (!isRemote && !daemonPath.isEmpty()) {
+        if (!isRemote && daemonPath == QStringLiteral("local")) {
+            // "local" mode: daemon should already be running; show dialog on failure
+            auto dialogShown = std::make_shared<bool>(false);
+            QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
+                             &mainWindow, [&mainWindow, &ipcClient, dialogShown](const QString& error) {
+                eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
+                if (*dialogShown)
+                    return;
+                *dialogShown = true;
+
+                eMule::CoreConnectDialog dlg(&mainWindow);
+                if (dlg.exec() == QDialog::Accepted) {
+                    eMule::thePrefs.setIpcListenAddress(dlg.address());
+                    eMule::thePrefs.setIpcPort(dlg.port());
+                    ipcClient.setAuthToken(dlg.token());
+                    if (dlg.saveToken())
+                        eMule::thePrefs.setIpcTokens({dlg.token()});
+                    ipcClient.connectToDaemon(QHostAddress(dlg.address()), dlg.port());
+                }
+            });
+        } else if (!isRemote && !daemonPath.isEmpty()) {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
                              &app, [daemonPath, weOwnDaemon](const QString& error) {
                 eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));

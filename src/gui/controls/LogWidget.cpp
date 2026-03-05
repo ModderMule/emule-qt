@@ -4,7 +4,8 @@
 
 #include <QDateTime>
 #include <QIcon>
-#include <QTabWidget>
+#include <QStackedWidget>
+#include <QTabBar>
 #include <QTextBrowser>
 #include <QTextCursor>
 #include <QVBoxLayout>
@@ -23,8 +24,15 @@ LogWidget::LogWidget(QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
 
-    m_tabs = new QTabWidget;
-    m_tabs->setTabPosition(QTabWidget::North);
+    // Tab bar — left-aligned at top of log area (matching SearchPanel pattern)
+    m_tabBar = new QTabBar(this);
+    m_tabBar->setExpanding(false);
+    layout->addWidget(m_tabBar, 0, Qt::AlignLeft);
+
+    m_stack = new QStackedWidget;
+    layout->addWidget(m_stack);
+
+    connect(m_tabBar, &QTabBar::currentChanged, m_stack, &QStackedWidget::setCurrentIndex);
 
     // Server Info tab
     m_serverInfoBrowser = new QTextBrowser;
@@ -32,35 +40,37 @@ LogWidget::LogWidget(QWidget* parent)
     m_serverInfoBrowser->setOpenExternalLinks(true);
     m_serverInfoBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     if (thePrefs.useOriginalIcons())
-        m_tabs->addTab(m_serverInfoBrowser, QIcon(QStringLiteral(":/icons/ServerInfo.ico")), tr("Server Info"));
+        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/ServerInfo.ico")), tr("Server Info"));
     else
-        m_tabs->addTab(m_serverInfoBrowser, tr("Server Info"));
+        m_tabBar->addTab(tr("Server Info"));
+    m_stack->addWidget(m_serverInfoBrowser);
 
     // Log tab
     m_logBrowser = new QTextBrowser;
     m_logBrowser->setReadOnly(true);
     m_logBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     if (thePrefs.useOriginalIcons())
-        m_tabs->addTab(m_logBrowser, QIcon(QStringLiteral(":/icons/Log.ico")), tr("Log"));
+        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Log.ico")), tr("Log"));
     else
-        m_tabs->addTab(m_logBrowser, tr("Log"));
+        m_tabBar->addTab(tr("Log"));
+    m_stack->addWidget(m_logBrowser);
 
     // Verbose tab
     m_verboseBrowser = new QTextBrowser;
     m_verboseBrowser->setReadOnly(true);
     m_verboseBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabs->addTab(m_verboseBrowser, tr("Verbose"));
+    m_tabBar->addTab(tr("Verbose"));
+    m_stack->addWidget(m_verboseBrowser);
 
     // Kad tab
     m_kadBrowser = new QTextBrowser;
     m_kadBrowser->setReadOnly(true);
     m_kadBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     if (thePrefs.useOriginalIcons())
-        m_tabs->addTab(m_kadBrowser, QIcon(QStringLiteral(":/icons/Kad.ico")), tr("Kad"));
+        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Kad.ico")), tr("Kad"));
     else
-        m_tabs->addTab(m_kadBrowser, tr("Kad"));
-
-    layout->addWidget(m_tabs);
+        m_tabBar->addTab(tr("Kad"));
+    m_stack->addWidget(m_kadBrowser);
 
     // Initial info message
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.0 ready</font>"));

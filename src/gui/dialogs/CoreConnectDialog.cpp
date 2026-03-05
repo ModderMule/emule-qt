@@ -19,8 +19,9 @@ CoreConnectDialog::CoreConnectDialog(QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("Connect to Core"));
-    setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
-    setFixedSize(380, 240);
+    setWindowFlags(Qt::Dialog | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
+    setMinimumSize(380, 280);
+    resize(380, 280);
 
     auto* mainLayout = new QVBoxLayout(this);
 

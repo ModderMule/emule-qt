@@ -10,7 +10,8 @@
 
 #include <cstdint>
 
-class QTabWidget;
+class QTabBar;
+class QStackedWidget;
 class QTextBrowser;
 
 namespace eMule {
@@ -52,7 +53,8 @@ public:
 private:
     /// Remove oldest lines from @p browser if it exceeds the configured limit.
     static void trimToLimit(QTextBrowser* browser);
-    QTabWidget* m_tabs = nullptr;
+    QTabBar* m_tabBar = nullptr;
+    QStackedWidget* m_stack = nullptr;
     QTextBrowser* m_serverInfoBrowser = nullptr;
     QTextBrowser* m_logBrowser = nullptr;
     QTextBrowser* m_verboseBrowser = nullptr;
