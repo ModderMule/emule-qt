@@ -3,6 +3,8 @@
 
 #include "controls/SharedFilesModel.h"
 
+#include <algorithm>
+
 namespace eMule {
 
 namespace {
@@ -177,6 +179,9 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         }
     }
 
+    if (role == SharePartMapRole && index.column() == ColSharedParts)
+        return QVariant::fromValue(f.sharePartMap);
+
     return {};
 }
 
@@ -226,6 +231,12 @@ const SharedFileRow* SharedFilesModel::fileAt(int row) const
     if (row >= 0 && row < static_cast<int>(m_files.size()))
         return &m_files[static_cast<size_t>(row)];
     return nullptr;
+}
+
+bool SharedFilesModel::containsHash(const QString& hexHash) const
+{
+    return std::any_of(m_files.begin(), m_files.end(),
+        [&](const SharedFileRow& r) { return r.hash == hexHash; });
 }
 
 // ---------------------------------------------------------------------------

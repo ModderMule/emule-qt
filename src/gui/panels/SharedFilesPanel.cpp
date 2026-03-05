@@ -6,6 +6,8 @@
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "controls/SharedFilesModel.h"
+#include "controls/SharedPartsDelegate.h"
+#include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
@@ -175,9 +177,15 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     else
         m_contextMenu->clear();
 
+    const bool useOriginal = thePrefs.useOriginalIcons();
+    auto ico = [&](const char* res) -> QIcon {
+        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
+                           : QIcon();
+    };
+
     // Open File
     {
-        auto* act = m_contextMenu->addAction(tr("Open File"), this, [file]() {
+        auto* act = m_contextMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this, [file]() {
             if (file)
                 QDesktopServices::openUrl(QUrl::fromLocalFile(file->filePath));
         });
@@ -186,7 +194,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // Open Folder
     {
-        auto* act = m_contextMenu->addAction(tr("Open Folder"), this, [file]() {
+        auto* act = m_contextMenu->addAction(ico("FolderOpen.ico"), tr("Open Folder"), this, [file]() {
             if (file)
                 QDesktopServices::openUrl(QUrl::fromLocalFile(file->path));
         });
@@ -197,7 +205,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // Rename
     {
-        auto* act = m_contextMenu->addAction(tr("Rename..."), this, [this, hash, file]() {
+        auto* act = m_contextMenu->addAction(ico("Rename.ico"), tr("Rename..."), this, [this, hash, file]() {
             if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
                 return;
             bool ok = false;
@@ -218,7 +226,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // Delete From Disk
     {
-        auto* act = m_contextMenu->addAction(tr("Delete From Disk"), this, [this, hash, file]() {
+        auto* act = m_contextMenu->addAction(ico("Delete.ico"), tr("Delete From Disk"), this, [this, hash, file]() {
             if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
                 return;
             const auto answer = QMessageBox::warning(
@@ -238,7 +246,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // Unshare
     {
-        auto* act = m_contextMenu->addAction(tr("Unshare"), this, [this, hash, file]() {
+        auto* act = m_contextMenu->addAction(ico("ListRemove.ico"), tr("Unshare"), this, [this, hash, file]() {
             if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
                 return;
             const auto answer = QMessageBox::question(
@@ -260,7 +268,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // Priority (Upload) submenu
     {
-        auto* prioMenu = m_contextMenu->addMenu(tr("Priority (Upload)"));
+        auto* prioMenu = m_contextMenu->addMenu(ico("FilePriority.ico"), tr("Priority (Upload)"));
         prioMenu->setEnabled(hasSel);
         if (hasSel) {
             auto addPrioAction = [&](const QString& text, int prio) {
@@ -288,14 +296,14 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // eD2K Links
     {
-        auto* act = m_contextMenu->addAction(tr("eD2K Links..."), this, [this]() {
+        auto* act = m_contextMenu->addAction(ico("eD2kLink.ico"), tr("eD2K Links..."), this, [this]() {
             copyEd2kLink();
         });
         act->setEnabled(hasSel);
     }
 
     // Find
-    connect(m_contextMenu->addAction(tr("Find...")),
+    connect(m_contextMenu->addAction(ico("Search.ico"), tr("Find...")),
             &QAction::triggered, this, &SharedFilesPanel::showFindDialog);
 
     m_contextMenu->popup(m_fileView->viewport()->mapToGlobal(pos));
@@ -449,6 +457,9 @@ QWidget* SharedFilesPanel::createTopSection()
     // Hide Folder column by default (like MFC)
     header->hideSection(SharedFilesModel::ColFolder);
     theUiState.bindHeaderView(header, QStringLiteral("sharedfiles"));
+
+    m_fileView->setItemDelegateForColumn(SharedFilesModel::ColSharedParts,
+                                          new SharedPartsDelegate(m_fileView));
 
     rightLayout->addWidget(m_fileView, 1);
     m_horzSplitter->addWidget(rightWidget);
@@ -665,6 +676,16 @@ void SharedFilesPanel::requestSharedFiles()
             row.uploadingClients  = static_cast<int>(m.value(QStringLiteral("uploadingClients")).toInteger());
             row.partCount         = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
             row.completedSize     = m.value(QStringLiteral("completedSize")).toInteger();
+
+            // Parse per-part availability map
+            const QCborArray partMapArr = m.value(QStringLiteral("sharePartMap")).toArray();
+            if (!partMapArr.isEmpty()) {
+                QByteArray pm;
+                pm.reserve(static_cast<qsizetype>(partMapArr.size()));
+                for (const auto& v : partMapArr)
+                    pm.append(static_cast<char>(v.toInteger()));
+                row.sharePartMap = std::move(pm);
+            }
 
             // Capture incoming directory from first non-partfile
             if (m_incomingDir.isEmpty() && !row.isPartFile)

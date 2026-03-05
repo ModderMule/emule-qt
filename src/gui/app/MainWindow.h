@@ -52,8 +52,8 @@ public:
     void setEd2kState(State s);
     void setKadState(State s);
 
-    [[nodiscard]] QSize sizeHint() const override { return {36, 18}; }
-    [[nodiscard]] QSize minimumSizeHint() const override { return {36, 18}; }
+    [[nodiscard]] QSize sizeHint() const override { return {16, 16}; }
+    [[nodiscard]] QSize minimumSizeHint() const override { return {16, 16}; }
 
 signals:
     void doubleClicked();

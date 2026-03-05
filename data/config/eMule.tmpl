@@ -66,7 +66,7 @@ form { display: inline; }
   <h2>[eMuleAppName]</h2>
   <div class="version">[version] - [WebControl]</div>
   [FailedLogin]
-  <form name="login" action="/login" method="POST">
+  <form name="login" action="/" method="POST">
    <div><input type="password" name="p" placeholder="Password" autofocus></div>
    <div><input type="submit" value="Login"></div>
   </form>
@@ -91,6 +91,60 @@ form { display: inline; }
 <link rel="stylesheet" href="sprites.css">
 <title>[eMuleAppName] [version] - [WebControl]</title>
 [StyleSheet]
+<script>
+var activeMenu=null;
+function showMenu(e,m){hideMenu();m.style.left=e.pageX+'px';m.style.top=e.pageY+'px';m.style.display='block';activeMenu=m;e.preventDefault();}
+function hideMenu(){if(activeMenu){activeMenu.style.display='none';activeMenu=null;}}
+document.addEventListener('click',hideMenu);
+
+function ic(n){return '<span class="icon icon-'+n+'"></span> ';}
+function downmenu(e,ses,hash,st){
+ var m=document.getElementById('downmenu');
+ var h='';
+ var u='?ses='+ses+'&w=transfer&file='+hash+'&op=';
+ if(st==='paused'||st==='stopped')
+  h+='<a class="menuitems" href="'+u+'resume">'+ic('l_resume')+'Resume</a>';
+ if(st==='downloading'||st==='waiting')
+  h+='<a class="menuitems" href="'+u+'pause">'+ic('l_pause')+'Pause</a><a class="menuitems" href="'+u+'stop">'+ic('l_stop')+'Stop</a>';
+ if(st==='paused')
+  h+='<a class="menuitems" href="'+u+'stop">'+ic('l_stop')+'Stop</a>';
+ h+='<div class="menusep"></div>';
+ h+='<a class="menuitems" href="'+u+'cancel" onclick="return confirm(\'Cancel this download?\')">'+ic('l_cancel')+'Cancel</a>';
+ h+='<div class="menusep"></div>';
+ h+='<a class="menuitems" href="'+u+'priolow">'+ic('low')+'Priority: Low</a>';
+ h+='<a class="menuitems" href="'+u+'prionormal">'+ic('l_none')+'Priority: Normal</a>';
+ h+='<a class="menuitems" href="'+u+'priohigh">'+ic('high')+'Priority: High</a>';
+ h+='<a class="menuitems" href="'+u+'prioauto">'+ic('l_none')+'Priority: Auto</a>';
+ h+='<div class="menusep"></div>';
+ h+='<a class="menuitems" href="?ses='+ses+'&w=transfer&op=clearcompleted">'+ic('m_clearcompleted')+'Clear Completed</a>';
+ m.innerHTML=h;
+ showMenu(e,m);
+}
+
+function servermenu(e,ses,ip,port){
+ var m=document.getElementById('servermenu');
+ var u='?ses='+ses+'&w=server&ip='+ip+'&port='+port+'&c=';
+ var h='';
+ h+='<a class="menuitems" href="'+u+'connect">'+ic('l_connect')+'Connect</a>';
+ h+='<a class="menuitems" href="?ses='+ses+'&w=server&c=disconnect">'+ic('l_close')+'Disconnect</a>';
+ h+='<div class="menusep"></div>';
+ h+='<a class="menuitems" href="'+u+'remove">'+ic('l_remove')+'Remove</a>';
+ h+='<a class="menuitems" href="'+u+'addtostatic">'+ic('l_static')+'Add to Static</a>';
+ h+='<a class="menuitems" href="'+u+'removefromstatic">'+ic('l_remove')+'Remove from Static</a>';
+ h+='<div class="menusep"></div>';
+ h+='<a class="menuitems" href="'+u+'priolow">'+ic('low')+'Priority: Low</a>';
+ h+='<a class="menuitems" href="'+u+'prionormal">'+ic('l_none')+'Priority: Normal</a>';
+ h+='<a class="menuitems" href="'+u+'priohigh">'+ic('high')+'Priority: High</a>';
+ m.innerHTML=h;
+ showMenu(e,m);
+}
+
+function sharedmenu(e,link){
+ var m=document.getElementById('sharedmenu');
+ m.innerHTML='<a class="menuitems" href="#" onclick="navigator.clipboard.writeText(\''+link.replace(/'/g,"\\'")+'\');hideMenu();return false;">'+ic('l_ed2klink')+'Copy ED2K Link</a>';
+ showMenu(e,m);
+}
+</script>
 </head>
 <body>
 
@@ -115,22 +169,22 @@ form { display: inline; }
 </div>
 
 <div class="nav">
- <table border="0" cellpadding="0" cellspacing="0">
-  <tr>
-   <td class="nav-tab [Page_transfer]"><a href="?ses=[ses]&amp;w=transfer"><span class="icon icon-h_transfer" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span> Transfer</a></td>
-   <td class="nav-tab [Page_server]"><a href="?ses=[ses]&amp;w=server"><span class="icon icon-h_server" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span> Server</a></td>
-   <td class="nav-tab [Page_search]"><a href="?ses=[ses]&amp;w=search"><span class="icon icon-h_search" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span> Search</a></td>
-   <td class="nav-tab [Page_shared]"><a href="?ses=[ses]&amp;w=shared"><span class="icon icon-h_shared" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span> Shared</a></td>
-   <td class="nav-tab [Page_stats]"><a href="?ses=[ses]&amp;w=stats"><span class="icon icon-h_statistic" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span> Statistics</a></td>
-   <td class="nav-tab [Page_graphs]"><a href="?ses=[ses]&amp;w=graphs"><span class="icon icon-h_graph" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span> Graphs</a></td>
-   <td class="nav-tab [Page_kad]"><a href="?ses=[ses]&amp;w=kad"><span class="icon icon-h_kad" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span> Kad</a></td>
-   <td class="nav-tab [Page_sinfo]"><a href="?ses=[ses]&amp;w=sinfo"><span class="icon icon-h_log" style="vertical-align:middle"></span> Server Info</a></td>
-   <td class="nav-tab [Page_log]"><a href="?ses=[ses]&amp;w=log"><span class="icon icon-h_log" style="vertical-align:middle"></span> Log</a></td>
-   <td class="nav-tab [Page_debuglog]"><a href="?ses=[ses]&amp;w=debuglog"><span class="icon icon-h_log" style="vertical-align:middle"></span> Debug</a></td>
-   <td class="nav-tab [Page_options]"><a href="?ses=[ses]&amp;w=options"><span class="icon icon-l_options" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span> Options</a></td>
-   <td class="nav-tab [Page_myinfo]"><a href="?ses=[ses]&amp;w=myinfo"><span class="icon icon-l_info" style="vertical-align:middle"></span> My Info</a></td>
-  </tr>
- </table>
+ <div class="nav-main">
+  <div class="nav-tab [Page_transfer]"><a href="?ses=[ses]&amp;w=transfer"><span class="icon icon-h_transfer"></span><br>Transfer</a></div>
+  <div class="nav-tab [Page_kad]"><a href="?ses=[ses]&amp;w=kad"><span class="icon icon-h_kad"></span><br>Kad</a></div>
+  <div class="nav-tab [Page_server]"><a href="?ses=[ses]&amp;w=server"><span class="icon icon-h_server"></span><br>Server</a></div>
+  <div class="nav-tab [Page_search]"><a href="?ses=[ses]&amp;w=search"><span class="icon icon-h_search"></span><br>Search</a></div>
+  <div class="nav-tab [Page_shared]"><a href="?ses=[ses]&amp;w=shared"><span class="icon icon-h_shared"></span><br>Shared</a></div>
+  <div class="nav-tab [Page_stats]"><a href="?ses=[ses]&amp;w=stats"><span class="icon icon-h_statistic"></span><br>Statistics</a></div>
+  <div class="nav-tab [Page_graphs]"><a href="?ses=[ses]&amp;w=graphs"><span class="icon icon-h_graph"></span><br>Graphs</a></div>
+  <div class="nav-tab [Page_options]"><a href="?ses=[ses]&amp;w=options"><span class="icon icon-h_preferences"></span><br>Preferences</a></div>
+ </div>
+ <div class="nav-right">
+  <a class="nav-link [Page_sinfo]" href="?ses=[ses]&amp;w=sinfo"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;Server Info</a><br>
+  <a class="nav-link [Page_log]" href="?ses=[ses]&amp;w=log"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;Log</a><br>
+  <a class="nav-link [Page_debuglog]" href="?ses=[ses]&amp;w=debuglog"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;Debug</a><br>
+  <a class="nav-link [Page_myinfo]" href="?ses=[ses]&amp;w=myinfo"><span class="icon icon-l_info" style="vertical-align:middle"></span>&nbsp;My Info</a>
+ </div>
 </div>
 
 <div class="page-content">
@@ -168,21 +222,40 @@ img { border: 0; }
 
 /* === Navigation === */
 .nav {
+  display: flex; align-items: stretch;
   background: #1F76A5;
-  padding: 0 8px;
   border-bottom: 2px solid #003C6E;
+  padding: 0;
+}
+.nav-main {
+  display: flex; align-items: stretch;
+  flex: 1;
 }
 .nav-tab {
-  padding: 5px 10px;
+  padding: 6px 12px 4px;
+  text-align: center;
   white-space: nowrap;
 }
-.nav-tab a { color: #FFFFFF; font-weight: normal; }
+.nav-tab a {
+  display: flex; flex-direction: column; align-items: center;
+  color: #FFFFFF; font-weight: bold; font-size: 7.5pt;
+  text-decoration: none;
+}
 .nav-tab a:hover { color: #FFC412; }
+.nav-tab .icon { margin-bottom: 2px; }
 .nav-tab.active {
   background: #005784;
-  border-bottom: 2px solid #FFC412;
+  border-bottom: 3px solid #FFC412;
 }
-.nav-tab.active a { color: #FFC412; font-weight: bold; }
+.nav-tab.active a { color: #FFC412; }
+.nav-right {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 4px 12px; white-space: nowrap; font-size: 7.5pt;
+  line-height: 1.5;
+}
+.nav-link { color: #FFFFFF; text-decoration: none; }
+.nav-link:hover { color: #FFC412; }
+.nav-link.active { color: #FFC412; font-weight: bold; }
 
 /* === Page content === */
 .page-content { padding: 8px 12px; }
@@ -342,6 +415,21 @@ img { border: 0; }
 
 /* === Misc === */
 .message { font-weight: bold; background: #005784; padding: 4px 8px; }
+
+/* === Context menus === */
+.popmenu {
+  position:absolute; background:#005784; border:1px solid #000;
+  padding:0; z-index:100; display:none; min-width:140px;
+  line-height:18px; font:normal 12px Tahoma;
+}
+.popmenu a, .popmenu a:link, .popmenu a:visited { color:#fff; text-decoration:none; }
+.menuitems {
+  padding:2px 6px; white-space:nowrap; cursor:pointer; display:block;
+  font-size:8pt;
+}
+.menuitems:hover { background:#003C6E; }
+.menuitems .icon { vertical-align:middle; margin-right:4px; background-color:#003C6E; border:2px #003C6E solid; }
+.menusep { border-top:1px solid #003C6E; margin:0; }
 </style>
 <--TMPL_HEADER_STYLESHEET_END-->
 
@@ -352,6 +440,9 @@ img { border: 0; }
 
 <--TMPL_FOOTER-->
 </div>
+<div id="downmenu" class="popmenu"></div>
+<div id="servermenu" class="popmenu"></div>
+<div id="sharedmenu" class="popmenu"></div>
 </body>
 </html>
 <--TMPL_FOOTER_END-->
@@ -386,7 +477,7 @@ img { border: 0; }
 
 
 <--TMPL_SERVER_LINE-->
-<tr class="srv-[ServerStatus]">
+<tr class="srv-[ServerStatus]" oncontextmenu="servermenu(event,'[Session]','[ServerAddr]','[ServerPort]')">
  <td class="left">[ServerName]</td>
  <td class="center">[ServerAddr]</td>
  <td class="center">[ServerPort]</td>
@@ -483,7 +574,7 @@ img { border: 0; }
 
 
 <--TMPL_TRANSFER_DOWN_LINE-->
-<tr>
+<tr oncontextmenu="downmenu(event,'[Session]','[DownloadFileHash]','[DownloadStatusKey]')">
  <td class="left">
   <span class="icon icon-[DownloadStatus]" style="vertical-align:middle"></span>
   &nbsp;
@@ -699,7 +790,7 @@ img { border: 0; }
 
 
 <--TMPL_SHARED_LINE-->
-<tr>
+<tr oncontextmenu="sharedmenu(event,'[SharedED2kLink]')">
  <td class="left">
   <span class="icon icon-file" style="vertical-align:middle"></span>
   &nbsp;[SharedFileName]
@@ -935,7 +1026,16 @@ img { border: 0; }
  </tr>
  <tr>
   <td>Status</td>
-  <td><b>See Statistics page for details</b></td>
+  <td><b>[KadStatus]</b></td>
+ </tr>
+ <tr>
+  <td colspan="2" style="text-align:center; padding:8px;">
+   <a href="?ses=[Session]&amp;w=kad&amp;c=connect" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">Connect</a>
+   &nbsp;
+   <a href="?ses=[Session]&amp;w=kad&amp;c=disconnect" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">Disconnect</a>
+   &nbsp;
+   <a href="?ses=[Session]&amp;w=kad&amp;c=rcfirewall" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">Recheck Firewall</a>
+  </td>
  </tr>
 </table>
 <br>

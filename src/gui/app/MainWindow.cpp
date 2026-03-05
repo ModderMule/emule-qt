@@ -27,6 +27,8 @@
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 
+#include "controls/DownloadListModel.h"
+#include "controls/SharedFilesModel.h"
 #include "dialogs/PasteLinksDialog.h"
 
 #include <QAction>
@@ -54,6 +56,30 @@
 #include <QVBoxLayout>
 
 namespace eMule {
+
+namespace {
+
+/// Convert a raw 16-byte MD4 hash to a lowercase hex string.
+QString hashToHex(const std::array<uint8_t, 16>& hash)
+{
+    QString hex;
+    hex.reserve(32);
+    for (uint8_t b : hash)
+        hex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
+    return hex;
+}
+
+/// Check if a file hash is already known (downloading or shared).
+bool isFileKnown(const QString& hashHex, const TransferPanel* tp, const SharedFilesPanel* sfp)
+{
+    if (tp && tp->downloadModel() && tp->downloadModel()->containsHash(hashHex))
+        return true;
+    if (sfp && sfp->sharedFilesModel() && sfp->sharedFilesModel()->containsHash(hashHex))
+        return true;
+    return false;
+}
+
+} // anonymous namespace
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -307,15 +333,18 @@ void MainWindow::onClipboardChanged()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    // Build preview of file links for the prompt
+    // Build preview of file links for the prompt, skipping already-known files
     const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
     QStringList fileNames;
     for (const QString& line : lines) {
         auto parsed = parseED2KLink(line.trimmed());
         if (!parsed)
             continue;
-        if (auto* fileLink = std::get_if<ED2KFileLink>(&*parsed))
+        if (auto* fileLink = std::get_if<ED2KFileLink>(&*parsed)) {
+            if (isFileKnown(hashToHex(fileLink->hash), m_transferPanel, m_sharedFilesPanel))
+                continue;
             fileNames << fileLink->name;
+        }
     }
     if (fileNames.isEmpty())
         return;
@@ -454,7 +483,10 @@ void MainWindow::onIPFilter()
 
 void MainWindow::onPasteLinks()
 {
-    PasteLinksDialog dlg(m_ipc, this);
+    PasteLinksDialog dlg(m_ipc,
+                         m_transferPanel ? m_transferPanel->downloadModel() : nullptr,
+                         m_sharedFilesPanel ? m_sharedFilesPanel->sharedFilesModel() : nullptr,
+                         this);
     dlg.exec();
 }
 
@@ -572,10 +604,10 @@ void MainWindow::setupToolbar()
 
     static constexpr TabDef tabs[] = {
         {"Kad",          QStyle::SP_DriveNetIcon,           "Kad.ico",             TabKad},
-        {"Servers",      QStyle::SP_ComputerIcon,           "ServerList.ico",      TabServers},
+        {"Servers",      QStyle::SP_ComputerIcon,           "Server.ico",          TabServers},
         {"Transfers",    QStyle::SP_ArrowDown,              "Transfer.ico",        TabTransfers},
         {"Search",       QStyle::SP_FileDialogContentsView, "Search.ico",          TabSearch},
-        {"Shared Files", QStyle::SP_DirOpenIcon,            "SharedFilesList.ico", TabSharedFiles},
+        {"Shared Files", QStyle::SP_DirOpenIcon,            "SharedFiles.ico",     TabSharedFiles},
         {"Messages",     QStyle::SP_MessageBoxInformation,  "Messages.ico",        TabMessages},
         {"IRC",          QStyle::SP_DialogApplyButton,      "IRC.ico",             TabIRC},
         {"Statistics",   QStyle::SP_DialogHelpButton,       "Statistics.ico",      TabStatistics},
@@ -635,6 +667,23 @@ void MainWindow::updateConnectButton()
         m_connectAction->setIcon(
             useOriginal ? QIcon(QStringLiteral(":/icons/ConnectDo.ico"))
                         : style()->standardIcon(QStyle::SP_MediaPlay));
+    }
+
+    // Update tray icon to reflect connection state
+    if (m_trayIcon) {
+        if (useOriginal) {
+            if (m_ed2kConnected || m_kadConnected) {
+                const bool lowId = (m_ed2kConnected && m_ed2kFirewalled)
+                                || (m_kadConnected && m_kadFirewalled);
+                m_trayIcon->setIcon(QIcon(lowId
+                    ? QStringLiteral(":/icons/TrayLowID.ico")
+                    : QStringLiteral(":/icons/TrayConnected.ico")));
+            } else {
+                m_trayIcon->setIcon(QIcon(QStringLiteral(":/icons/TrayDisconnected.ico")));
+            }
+        } else {
+            m_trayIcon->setIcon(windowIcon());
+        }
     }
 }
 
@@ -700,6 +749,7 @@ void MainWindow::setupStatusBar()
 
     // World icon with eD2K/Kad connection arrows
     m_connStatus = new ConnectionStatusWidget(this);
+    m_connStatus->setFixedSize(16, 16);
     m_connStatus->setToolTip(tr("Double-click for Network Information"));
     connect(m_connStatus, &ConnectionStatusWidget::doubleClicked,
             this, &MainWindow::showNetworkInfo);
@@ -798,6 +848,24 @@ QColor ConnectionStatusWidget::colorForState(State s)
 
 void ConnectionStatusWidget::paintEvent(QPaintEvent* /*event*/)
 {
+    // When using original icons, draw one of the 9 ConnectedXY.ico icons
+    if (thePrefs.useOriginalIcons()) {
+        auto stateTag = [](State s) -> QLatin1String {
+            switch (s) {
+            case Connected:    return QLatin1String("High");
+            case Firewalled:   return QLatin1String("Low");
+            case Disconnected: return QLatin1String("Not");
+            }
+            return QLatin1String("Not");
+        };
+        const QString iconName = QStringLiteral(":/icons/Connected%1%2.ico")
+            .arg(stateTag(m_ed2kState)).arg(stateTag(m_kadState));
+        const QPixmap px = QIcon(iconName).pixmap(size());
+        QPainter p(this);
+        p.drawPixmap(rect(), px);
+        return;
+    }
+
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
@@ -805,45 +873,30 @@ void ConnectionStatusWidget::paintEvent(QPaintEvent* /*event*/)
     const int h = height();
     const int cx = w / 2;
     const int cy = h / 2;
-    const int r = qMin(w, h) / 2 - 2;
+    const int r = qMin(w, h) / 2 - 3;  // leave room for indicator dots
 
     // Draw world globe (simple circle with grid lines)
-    p.setPen(QPen(QColor(0x55, 0x77, 0xBB), 1.2));
+    p.setPen(QPen(QColor(0x55, 0x77, 0xBB), 1.0));
     p.setBrush(QColor(0xCC, 0xDD, 0xEE));
     p.drawEllipse(QPoint(cx, cy), r, r);
 
     // Horizontal and vertical grid lines
-    p.setPen(QPen(QColor(0x88, 0xAA, 0xCC), 0.6));
+    p.setPen(QPen(QColor(0x88, 0xAA, 0xCC), 0.5));
     p.drawLine(cx - r, cy, cx + r, cy);
     p.drawLine(cx, cy - r, cx, cy + r);
 
     // Draw ellipse arcs for the globe effect
     p.drawEllipse(QRectF(cx - r * 0.4, cy - r, r * 0.8, r * 2.0));
 
-    // Left arrow (eD2K) — pointing down-left
-    const QColor ed2kColor = colorForState(m_ed2kState);
-    p.setPen(QPen(ed2kColor, 2.0, Qt::SolidLine, Qt::RoundCap));
-    // Arrow shaft going down from top-left of globe
-    const int ax1 = cx - r - 3;
-    const int ay1 = cy - 3;
-    const int ax2 = cx - r - 3;
-    const int ay2 = cy + 5;
-    p.drawLine(ax1, ay1, ax2, ay2);
-    // Arrowhead (pointing down)
-    p.drawLine(ax2, ay2, ax2 - 2, ay2 - 3);
-    p.drawLine(ax2, ay2, ax2 + 2, ay2 - 3);
+    // Colored indicator dots: bottom-left = eD2K, bottom-right = Kad
+    const int dotR = 2;
+    p.setPen(Qt::NoPen);
 
-    // Right arrow (Kad) — pointing up from bottom-right of globe
-    const QColor kadColor = colorForState(m_kadState);
-    p.setPen(QPen(kadColor, 2.0, Qt::SolidLine, Qt::RoundCap));
-    const int bx1 = cx + r + 3;
-    const int by1 = cy + 3;
-    const int bx2 = cx + r + 3;
-    const int by2 = cy - 5;
-    p.drawLine(bx1, by1, bx2, by2);
-    // Arrowhead (pointing up)
-    p.drawLine(bx2, by2, bx2 - 2, by2 + 3);
-    p.drawLine(bx2, by2, bx2 + 2, by2 + 3);
+    p.setBrush(colorForState(m_ed2kState));
+    p.drawEllipse(QPoint(1 + dotR, h - 1 - dotR), dotR, dotR);
+
+    p.setBrush(colorForState(m_kadState));
+    p.drawEllipse(QPoint(w - 1 - dotR, h - 1 - dotR), dotR, dotR);
 }
 
 void ConnectionStatusWidget::mouseDoubleClickEvent(QMouseEvent* /*event*/)

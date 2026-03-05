@@ -380,7 +380,7 @@ void SharedFileList::clearED2KPublishFlags()
 void SharedFileList::publish()
 {
     auto* kad = kad::Kademlia::instance();
-    if (!kad || !kad->isRunning())
+    if (!kad || !kad->isKadReady())
         return;
 
     // --- Source publishing (round-robin by index) ---

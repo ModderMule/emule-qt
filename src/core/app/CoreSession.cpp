@@ -10,6 +10,7 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFileList.h"
+#include "files/PartFile.h"
 #include "friends/FriendList.h"
 #include "files/SharedFileList.h"
 #include "kademlia/Kademlia.h"
@@ -65,12 +66,14 @@ CoreSession::~CoreSession()
     shutdownUSS();
     shutdownUploadPipeline();
     shutdownSearch();
+    shutdownStatistics();
 }
 
 void CoreSession::start()
 {
     logInfo(QStringLiteral("Starting core — TCP port %1, UDP port %2")
                 .arg(thePrefs.port()).arg(thePrefs.udpPort()));
+    initStatistics();
     initUploadPipeline();
     initUSS();
     initClientInfra();
@@ -87,6 +90,30 @@ void CoreSession::start()
 void CoreSession::stop()
 {
     m_timer.stop();
+}
+
+// ---------------------------------------------------------------------------
+// initStatistics — create Statistics so global rates are tracked
+// ---------------------------------------------------------------------------
+
+void CoreSession::initStatistics()
+{
+    if (theApp.statistics)
+        return;
+    m_statistics = std::make_unique<Statistics>(this);
+    m_statistics->init(thePrefs);
+    theApp.statistics = m_statistics.get();
+}
+
+// ---------------------------------------------------------------------------
+// shutdownStatistics — release Statistics
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownStatistics()
+{
+    if (m_statistics && theApp.statistics == m_statistics.get())
+        theApp.statistics = nullptr;
+    m_statistics.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -204,8 +231,13 @@ void CoreSession::onTimer()
             theApp.knownFileList->process();
         if (theApp.sharedFileList)
             theApp.sharedFileList->process();
-        if (theApp.statistics)
-            theApp.statistics->updateConnectionStats(0.0f, 0.0f);
+        if (theApp.statistics) {
+            float downRate = theApp.downloadQueue
+                ? static_cast<float>(theApp.downloadQueue->datarate()) / 1024.0f : 0.0f;
+            float upRate = theApp.uploadQueue
+                ? static_cast<float>(theApp.uploadQueue->datarate()) / 1024.0f : 0.0f;
+            theApp.statistics->updateConnectionStats(upRate, downRate);
+        }
         if (theApp.clientList)
             theApp.clientList->process();
         if (theApp.serverConnect) {
@@ -545,6 +577,16 @@ void CoreSession::initDownloadQueue()
 
 void CoreSession::shutdownDownloadQueue()
 {
+    // Save all active downloads before destruction (matches MFC EmuleDlg::OnClose)
+    if (m_downloadQueue) {
+        for (auto* file : m_downloadQueue->files()) {
+            if (file->status() != PartFileStatus::Complete) {
+                file->flushBuffer();
+                file->savePartFile();
+            }
+        }
+    }
+
     if (m_downloadQueue && theApp.downloadQueue == m_downloadQueue.get())
         theApp.downloadQueue = nullptr;
     m_downloadQueue.reset();
@@ -657,6 +699,38 @@ void CoreSession::initKademlia()
                             hasTarget || (receiverVerifyKey != 0),
                             hasTarget ? targetHash : nullptr,
                             true, receiverVerifyKey);
+        });
+
+    // 5. Direct callback: remote firewalled client asks us to connect back via UDP.
+    connect(udp, &ClientUDPSocket::directCallbackReceived,
+        this, [](uint32 senderIP, uint16 senderPort, const uint8* data, uint32 size) {
+            if (!theApp.clientList)
+                return;
+            // Only accept if we're firewalled and Kad is running
+            auto* kadInst = kad::Kademlia::instance();
+            if (!kadInst || !kadInst->isRunning() || !kadInst->isFirewalled())
+                return;
+            // tcpPort(2) + userHash(16) + connectOptions(1) = 19 bytes minimum
+            if (size < 19)
+                return;
+
+            SafeMemFile io(data, size);
+            uint16 tcpPort = io.readUInt16();
+            uint8 userHash[16];
+            io.readHash16(userHash);
+            uint8 connectOptions = io.readUInt8();
+
+            auto* client = theApp.clientList->findByUserHash(userHash, senderIP, tcpPort);
+            if (!client) {
+                client = new UpDownClient(tcpPort, 0, senderIP, 0, nullptr);
+                client->setUserHash(userHash);
+                theApp.clientList->addClient(client);
+            } else {
+                client->setConnectIP(senderIP);
+                client->setUserPort(tcpPort);
+            }
+            client->setConnectOptions(connectOptions, true, false);
+            client->tryToConnect();
         });
 
     logInfo(QStringLiteral("Kademlia started."));

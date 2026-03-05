@@ -383,6 +383,12 @@ void UpDownClient::setDownloadState(DownloadState state)
             m_socket->setTimeOut(CONNECTION_TIMEOUT * 4);
         }
 
+        // Track downloading sources on the PartFile (MFC DownloadClient.cpp:647-649)
+        if (state == DownloadState::Downloading && m_reqFile)
+            m_reqFile->addDownloadingSource(this);
+        else if (m_downloadState == DownloadState::Downloading && m_reqFile)
+            m_reqFile->removeDownloadingSource(this);
+
         // Clear rate data and reset socket timeout when leaving Downloading
         if (m_downloadState == DownloadState::Downloading) {
             m_downDatarate = 0;
@@ -1145,7 +1151,8 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
 {
     SafeMemFile file(data, size);
 
-    const uint8 emuleVersion = file.readUInt8();
+    const uint8 prevEmuleVersion = m_emuleVersion;
+    m_emuleVersion = file.readUInt8();
     const uint8 protVersion = file.readUInt8();
 
     // Must be our protocol
@@ -1153,14 +1160,14 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
         return;
 
     // Set implicit version-based capabilities for old clients
-    if (emuleVersion >= 0x20) {
+    if (m_emuleVersion >= 0x20) {
         m_sourceExchange1Ver = 1;
     }
-    if (emuleVersion >= 0x24) {
+    if (m_emuleVersion >= 0x24) {
         m_dataCompVer = 1;
         m_acceptCommentVer = 1;
     }
-    if (emuleVersion >= 0x26) {
+    if (m_emuleVersion >= 0x26) {
         m_extendedRequestsVer = 1;
     }
 
@@ -1237,7 +1244,12 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
     m_emuleProtocol = true;
     m_infoPacketsReceived |= InfoPacketState::EMuleProtPack;
 
-    initClientSoftwareVersion();
+    // Only re-parse version if Hello didn't already provide the full version
+    // via CT_EMULE_VERSION (which sets m_emuleVersion=0x99). Re-parsing after
+    // that would corrupt m_clientVersion, which was already converted from
+    // the raw bitfield to makeClientVersion() decimal format.
+    if (prevEmuleVersion != 0x99)
+        initClientSoftwareVersion();
 }
 
 // ===========================================================================

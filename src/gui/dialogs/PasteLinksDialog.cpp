@@ -1,6 +1,8 @@
 #include "dialogs/PasteLinksDialog.h"
 
 #include "app/IpcClient.h"
+#include "controls/DownloadListModel.h"
+#include "controls/SharedFilesModel.h"
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
 #include "protocol/ED2KLink.h"
@@ -13,9 +15,14 @@
 
 namespace eMule {
 
-PasteLinksDialog::PasteLinksDialog(IpcClient* ipc, QWidget* parent)
+PasteLinksDialog::PasteLinksDialog(IpcClient* ipc,
+                                   DownloadListModel* dlModel,
+                                   SharedFilesModel* sfModel,
+                                   QWidget* parent)
     : QDialog(parent)
     , m_ipc(ipc)
+    , m_dlModel(dlModel)
+    , m_sfModel(sfModel)
 {
     setWindowTitle(tr("Paste eD2K Links"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/eD2kLinkPaste.ico")));
@@ -62,6 +69,7 @@ void PasteLinksDialog::onDownload()
     const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
 
     int downloaded = 0;
+    int skipped = 0;
     QStringList invalid;
 
     for (const QString& line : lines) {
@@ -85,6 +93,12 @@ void PasteLinksDialog::onDownload()
         for (uint8 b : fileLink->hash)
             hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
 
+        if ((m_dlModel && m_dlModel->containsHash(hashHex))
+            || (m_sfModel && m_sfModel->containsHash(hashHex))) {
+            ++skipped;
+            continue;
+        }
+
         Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
         msg.append(hashHex);
         msg.append(fileLink->name);
@@ -97,6 +111,11 @@ void PasteLinksDialog::onDownload()
         QMessageBox::warning(this, tr("Invalid Links"),
             tr("The following links could not be parsed:\n\n%1")
                 .arg(invalid.join(QLatin1Char('\n'))));
+    }
+
+    if (skipped > 0) {
+        QMessageBox::information(this, tr("Links Skipped"),
+            tr("%n file(s) skipped (already downloading or shared).", nullptr, skipped));
     }
 
     if (downloaded > 0)

@@ -267,8 +267,10 @@ do_status() {
 
     for ts in $ts_files; do
         local total finished unfinished pct
-        total=$(grep -c '<message' "$ts" 2>/dev/null || echo "0")
-        unfinished=$(grep -c 'type="unfinished"' "$ts" 2>/dev/null || echo "0")
+        total=$(grep -c '<message' "$ts" 2>/dev/null || true)
+        unfinished=$(grep -c 'type="unfinished"' "$ts" 2>/dev/null || true)
+        total=${total:-0}
+        unfinished=${unfinished:-0}
         finished=$((total - unfinished))
         if [ "$total" -gt 0 ]; then
             pct=$((finished * 100 / total))

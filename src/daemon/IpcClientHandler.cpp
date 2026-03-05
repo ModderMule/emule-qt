@@ -5,6 +5,7 @@
 #include "DaemonApp.h"
 
 #include "ipc/CborSerializers.h"
+#include "webserver/WebServer.h"
 
 #include <QDir>
 
@@ -182,6 +183,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetDownloadDetails:   handleGetDownloadDetails(msg); break;
     case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
     case IpcMsgType::RequestClientSharedFiles: handleRequestClientSharedFiles(msg); break;
+    case IpcMsgType::GetClientDetails:   handleGetClientDetails(msg); break;
     default:
         sendMessage(IpcMessage::makeError(msg.seqId(), 400,
             QStringLiteral("Unknown message type: %1").arg(static_cast<int>(msg.type()))));
@@ -756,6 +758,59 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
         m.insert(QStringLiteral("uploadingClients"), kf->uploadingClientCount());
         m.insert(QStringLiteral("partCount"), static_cast<int>(kf->partCount()));
         m.insert(QStringLiteral("completedSize"), completedSz);
+
+        // Build per-part availability map for share status bar
+        {
+            QCborArray partMapArr;
+            const auto& availFreq = kf->availPartFrequency();
+            const int pc = static_cast<int>(kf->partCount());
+
+            if (isPartFile) {
+                auto* pf = static_cast<PartFile*>(kf);
+                const auto& srcFreq = pf->srcPartFrequency();
+                const bool hasSources = kf->hasUploadingClients() || kf->completeSourcesCountHi() > 0;
+
+                if (hasSources || pf->status() != PartFileStatus::Paused) {
+                    const uint16 baseSources = kf->completeSourcesCountLo()
+                                               ? kf->completeSourcesCountLo() - 1 : 0;
+                    for (int i = 0; i < pc; ++i) {
+                        if (!pf->isComplete(static_cast<uint32>(i))) {
+                            partMapArr.append(255); // gap — light grey
+                        } else {
+                            // Use srcPartFrequency when actively downloading, availPartFrequency otherwise
+                            uint16 freq = 0;
+                            if (pf->status() != PartFileStatus::Paused && i < static_cast<int>(srcFreq.size()))
+                                freq = srcFreq[static_cast<size_t>(i)];
+                            else if (i < static_cast<int>(availFreq.size()))
+                                freq = std::max(availFreq[static_cast<size_t>(i)], baseSources);
+                            // Encode: 0 → 1(red), else clamp(freq+1, 2, 254)
+                            partMapArr.append(freq == 0 ? 1 : std::clamp<int>(freq + 1, 2, 254));
+                        }
+                    }
+                } else {
+                    // Paused with no sources — complete=0, incomplete=255
+                    for (int i = 0; i < pc; ++i)
+                        partMapArr.append(pf->isComplete(static_cast<uint32>(i)) ? 0 : 255);
+                }
+            } else {
+                // Complete KnownFile
+                if (kf->hasUploadingClients() || kf->completeSourcesCountHi() > 1) {
+                    const uint16 baseSources = kf->completeSourcesCountLo()
+                                               ? kf->completeSourcesCountLo() - 1 : 0;
+                    for (int i = 0; i < pc; ++i) {
+                        uint16 freq = baseSources;
+                        if (i < static_cast<int>(availFreq.size()))
+                            freq = std::max(availFreq[static_cast<size_t>(i)], baseSources);
+                        partMapArr.append(freq == 0 ? 1 : std::clamp<int>(freq + 1, 2, 254));
+                    }
+                }
+                // else: empty array → delegate draws solid dark grey
+            }
+
+            if (!partMapArr.isEmpty())
+                m.insert(QStringLiteral("sharePartMap"), partMapArr);
+        }
+
         files.append(m);
         addedHashes.insert(hash);
     };
@@ -1157,6 +1212,12 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
         stats.insert(QStringLiteral("sharedCount"), static_cast<qint64>(sf->getCount()));
         stats.insert(QStringLiteral("sharedSize"), static_cast<qint64>(sf->getDataSize(largest)));
         stats.insert(QStringLiteral("sharedLargest"), static_cast<qint64>(largest));
+    }
+
+    // Web server stream token (for GUI preview streaming)
+    if (auto* da = DaemonApp::instance()) {
+        if (auto* ws = da->webServer())
+            stats.insert(QStringLiteral("streamToken"), ws->streamToken());
     }
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(stats)));
@@ -2468,40 +2529,81 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
     details.insert(QLatin1StringView("isComplete"),
         pf->status() == PartFileStatus::Complete);
 
+    // AICH hash (if available)
+    if (pf->aichRecoveryHashSet().hasValidMasterHash())
+        details.insert(QLatin1StringView("aichHash"),
+            pf->aichRecoveryHashSet().getMasterHash().getString());
+
+    // Source names: collect unique filenames with count
+    QCborArray sourceNames;
+    std::unordered_map<QString, int> nameMap;
+    for (const auto* client : pf->srcList()) {
+        if (!client->clientFilename().isEmpty())
+            nameMap[client->clientFilename()]++;
+    }
+    for (const auto& [name, count] : nameMap)
+        sourceNames.append(QCborMap{
+            {QLatin1StringView("name"), name},
+            {QLatin1StringView("count"), count}});
+    details.insert(QLatin1StringView("sourceNames"), sourceNames);
+
+    // Comments: from sources + kad notes
+    QCborArray comments;
+    for (const auto* client : pf->srcList()) {
+        if (!client->fileComment().isEmpty() || client->fileRating() > 0)
+            comments.append(QCborMap{
+                {QLatin1StringView("userName"), client->userName()},
+                {QLatin1StringView("rating"), client->fileRating()},
+                {QLatin1StringView("comment"), client->fileComment()}});
+    }
+    details.insert(QLatin1StringView("comments"), comments);
+
+    // ED2K links (pre-generated variants)
+    details.insert(QLatin1StringView("ed2kLink"),         pf->getED2kLink(false, false, false));
+    details.insert(QLatin1StringView("ed2kLinkHashset"),   pf->getED2kLink(true, false, false));
+    details.insert(QLatin1StringView("ed2kLinkHTML"),      pf->getED2kLink(false, true, false));
+    details.insert(QLatin1StringView("ed2kLinkHostname"),  pf->getED2kLink(false, false, true));
+
+    // Media metadata
+    details.insert(QLatin1StringView("mediaArtist"),  pf->getStrTagValue(FT_MEDIA_ARTIST));
+    details.insert(QLatin1StringView("mediaAlbum"),   pf->getStrTagValue(FT_MEDIA_ALBUM));
+    details.insert(QLatin1StringView("mediaTitle"),   pf->getStrTagValue(FT_MEDIA_TITLE));
+    details.insert(QLatin1StringView("mediaLength"),  static_cast<qint64>(pf->getIntTagValue(FT_MEDIA_LENGTH)));
+    details.insert(QLatin1StringView("mediaBitrate"), static_cast<qint64>(pf->getIntTagValue(FT_MEDIA_BITRATE)));
+    details.insert(QLatin1StringView("mediaCodec"),   pf->getStrTagValue(FT_MEDIA_CODEC));
+
+    // All file tags for metadata tab
+    QCborArray tagArr;
+    for (const auto& tag : pf->tags()) {
+        QCborMap t;
+        if (tag.nameId())
+            t.insert(QLatin1StringView("nameId"), tag.nameId());
+        if (tag.hasName())
+            t.insert(QLatin1StringView("name"), QString::fromLatin1(tag.name()));
+        t.insert(QLatin1StringView("type"), tag.type());
+        if (tag.isStr())
+            t.insert(QLatin1StringView("strValue"), tag.strValue());
+        else if (tag.isInt())
+            t.insert(QLatin1StringView("intValue"), static_cast<qint64>(tag.int64Value()));
+        else if (tag.isFloat())
+            t.insert(QLatin1StringView("floatValue"), static_cast<double>(tag.floatValue()));
+        else if (tag.isHash())
+            t.insert(QLatin1StringView("hashValue"), encodeBase16({tag.hashValue(), 16}));
+        tagArr.append(t);
+    }
+    details.insert(QLatin1StringView("tags"), tagArr);
+
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
 }
 
 // ---------------------------------------------------------------------------
-// handlePreviewDownload — open a partially downloaded file for preview
+// handlePreviewDownload — deprecated, preview is now handled GUI-side via HTTP streaming
 // ---------------------------------------------------------------------------
 
 void IpcClientHandler::handlePreviewDownload(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
-    if (!pf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
-        return;
-    }
-
-    // For preview to work, the first and last parts must be available
-    const QString path = pf->fullName();
-    if (path.isEmpty() || !QFileInfo::exists(path)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("File not available for preview")));
-        return;
-    }
-    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendMessage(IpcMessage::makeError(msg.seqId(), 410,
+        QStringLiteral("Preview is handled GUI-side via HTTP streaming")));
 }
 
 // ---------------------------------------------------------------------------
@@ -2528,6 +2630,33 @@ void IpcClientHandler::handleRequestClientSharedFiles(const IpcMessage& msg)
     }
     client->requestSharedFileList();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleGetClientDetails — extended client info for the detail dialog
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleGetClientDetails(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.clientList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Client list unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* client = theApp.clientList->findByUserHash(hashBuf);
+    if (!client) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Client not found")));
+        return;
+    }
+
+    const QCborMap details = toCborDetailed(*client, theApp);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
 }
 
 } // namespace eMule

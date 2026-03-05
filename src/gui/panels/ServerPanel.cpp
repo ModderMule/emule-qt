@@ -46,27 +46,6 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 
-namespace {
-
-/// Create a small 16×16 icon with a bold colored glyph (for context menus).
-static QIcon makeMenuIcon(const QColor& color, const QString& text)
-{
-    constexpr int sz = 16;
-    QPixmap pm(sz, sz);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(color);
-    QFont f = p.font();
-    f.setPixelSize(13);
-    f.setBold(true);
-    p.setFont(f);
-    p.drawText(QRect(0, 0, sz, sz), Qt::AlignCenter, text);
-    return QIcon(pm);
-}
-
-} // anonymous namespace
-
 namespace eMule {
 
 ServerPanel::ServerPanel(QWidget* parent)
@@ -387,9 +366,15 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     else
         m_serverMenu->clear();
 
+    const bool useOriginal = thePrefs.useOriginalIcons();
+    auto ico = [&](const char* res, QStyle::StandardPixmap sp) -> QIcon {
+        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
+                           : style()->standardIcon(sp);
+    };
+
     // -- Connect To -----------------------------------------------------------
     auto* connectAction = m_serverMenu->addAction(tr("Connect To"));
-    connectAction->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    connectAction->setIcon(ico("ConnectDo.ico", QStyle::SP_MediaPlay));
     connectAction->setEnabled(hasSelection);
     if (hasSelection) {
         const uint32_t ip = row->numericIp;
@@ -411,7 +396,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     // -- Priority submenu -----------------------------------------------------
     auto* prioMenu = m_serverMenu->addMenu(tr("Priority"));
-    prioMenu->setIcon(style()->standardIcon(QStyle::SP_ArrowRight));
+    prioMenu->setIcon(ico("Priority.ico", QStyle::SP_ArrowRight));
     prioMenu->setEnabled(hasSelection);
 
     auto* prioGroup = new QActionGroup(prioMenu);
@@ -472,7 +457,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     // -- Add To Static List ---------------------------------------------------
     auto* addStaticAction = m_serverMenu->addAction(tr("Add To Static List"));
-    addStaticAction->setIcon(makeMenuIcon(QColor(0x22, 0x8B, 0x22), QStringLiteral("+")));
+    addStaticAction->setIcon(ico("ListAdd.ico", QStyle::SP_FileDialogNewFolder));
     addStaticAction->setEnabled(hasSelection && !row->isStatic);
     if (hasSelection) {
         const uint32_t ip = row->numericIp;
@@ -498,7 +483,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     // -- Remove From Static List ----------------------------------------------
     auto* removeStaticAction = m_serverMenu->addAction(tr("Remove From Static List"));
-    removeStaticAction->setIcon(makeMenuIcon(QColor(0x88, 0x88, 0x88), QStringLiteral("\u2212")));
+    removeStaticAction->setIcon(ico("ListRemove.ico", QStyle::SP_TrashIcon));
     removeStaticAction->setEnabled(hasSelection && row->isStatic);
     if (hasSelection) {
         const uint32_t ip = row->numericIp;
@@ -526,7 +511,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     // -- Copy eD2K Links ------------------------------------------------------
     auto* copyLinkAction = m_serverMenu->addAction(tr("Copy eD2K Links"));
-    copyLinkAction->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+    copyLinkAction->setIcon(ico("eD2kLink.ico", QStyle::SP_FileIcon));
     copyLinkAction->setEnabled(hasSelection);
     if (hasSelection) {
         const QString address = row->ip.section(QLatin1Char(':'), 0, 0);
@@ -539,7 +524,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     // -- Paste eD2K Links -----------------------------------------------------
     auto* pasteLinkAction = m_serverMenu->addAction(tr("Paste eD2K Links"));
-    pasteLinkAction->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
+    pasteLinkAction->setIcon(ico("eD2kLinkPaste.ico", QStyle::SP_FileDialogContentsView));
     const QString clipText = QApplication::clipboard()->text().trimmed();
     const bool hasEd2kLink = clipText.startsWith(QStringLiteral("ed2k://|server|"),
                                                   Qt::CaseInsensitive);
@@ -573,7 +558,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     // -- Remove ---------------------------------------------------------------
     auto* removeAction = m_serverMenu->addAction(tr("Remove"));
-    removeAction->setIcon(makeMenuIcon(QColor(0xCC, 0x00, 0x00), QStringLiteral("\u2715")));
+    removeAction->setIcon(ico("Delete.ico", QStyle::SP_DialogDiscardButton));
     removeAction->setEnabled(hasSelection);
     if (hasSelection) {
         const uint32_t ip = row->numericIp;
@@ -596,7 +581,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     // -- Remove All -----------------------------------------------------------
     auto* removeAllAction = m_serverMenu->addAction(tr("Remove All"));
-    removeAllAction->setIcon(makeMenuIcon(QColor(0xCC, 0x00, 0x00), QStringLiteral("\u2715")));
+    removeAllAction->setIcon(ico("DeleteAll.ico", QStyle::SP_DialogDiscardButton));
     removeAllAction->setEnabled(hasItems);
     connect(removeAllAction, &QAction::triggered, this, [this]() {
         if (m_ipc && m_ipc->isConnected()) {
@@ -613,7 +598,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     // -- Find... --------------------------------------------------------------
     auto* findAction = m_serverMenu->addAction(tr("Find..."));
-    findAction->setIcon(makeMenuIcon(QColor(0x44, 0x44, 0x44), QStringLiteral("\u2315")));
+    findAction->setIcon(ico("Search.ico", QStyle::SP_FileDialogContentsView));
     findAction->setEnabled(hasItems);
     connect(findAction, &QAction::triggered, this, &ServerPanel::showFindDialog);
 
@@ -758,7 +743,12 @@ QWidget* ServerPanel::createControlsPanel()
     // Update server.met from URL section
     auto* updateRow = new QHBoxLayout;
     updateRow->setSpacing(4);
-    auto* updateIcon = new QLabel(QStringLiteral("\u21BB")); // ↻ refresh icon
+    auto* updateIcon = new QLabel;
+    if (thePrefs.useOriginalIcons()) {
+        updateIcon->setPixmap(QIcon(QStringLiteral(":/icons/ServersUpdate.ico")).pixmap(16, 16));
+    } else {
+        updateIcon->setText(QStringLiteral("\u21BB")); // ↻ refresh icon
+    }
     updateIcon->setToolTip(tr("Update server.met from URL"));
     updateRow->addWidget(updateIcon);
     updateRow->addWidget(new QLabel(tr("Update server.met from URL:")));

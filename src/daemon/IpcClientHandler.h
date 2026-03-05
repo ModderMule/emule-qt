@@ -109,6 +109,7 @@ private:
     void handleGetDownloadDetails(const Ipc::IpcMessage& msg);
     void handlePreviewDownload(const Ipc::IpcMessage& msg);
     void handleRequestClientSharedFiles(const Ipc::IpcMessage& msg);
+    void handleGetClientDetails(const Ipc::IpcMessage& msg);
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;

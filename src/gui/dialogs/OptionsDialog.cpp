@@ -3,6 +3,7 @@
 
 #include "app/AppConfig.h"
 #include "app/AutoStart.h"
+#include "app/UiState.h"
 #include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
 #include "panels/StatisticsPanel.h"
@@ -131,8 +132,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
     connect(m_applyBtn, &QPushButton::clicked, this, &OptionsDialog::onApply);
 
-    // Select first page
-    m_sidebar->setCurrentRow(PageGeneral);
+    // Restore last selected page
+    m_sidebar->setCurrentRow(theUiState.optionsLastPage());
 
     // Load current settings into controls (before wiring change signals
     // so that loading doesn't immediately mark the dialog dirty).
@@ -386,12 +387,14 @@ void OptionsDialog::onPageChanged(int row)
 
 void OptionsDialog::onOk()
 {
+    theUiState.setOptionsLastPage(m_sidebar->currentRow());
     saveSettings();
     accept();
 }
 
 void OptionsDialog::onApply()
 {
+    theUiState.setOptionsLastPage(m_sidebar->currentRow());
     saveSettings();
     m_applyBtn->setEnabled(false);
 }
@@ -3975,6 +3978,7 @@ void OptionsDialog::saveSettings()
     // Messages page (GUI-only)
     thePrefs.setShowSmileys(m_showSmileysCheck->isChecked());
     thePrefs.setIndicateRatings(m_indicateRatingsCheck->isChecked());
+    thePrefs.setShowExtControls(m_showExtControlsCheck->isChecked());
 
     // Statistics page — always save locally for immediate GUI effect
     thePrefs.setGraphsUpdateSec(static_cast<uint32>(m_statsGraphUpdateSlider->value()));
@@ -4207,6 +4211,21 @@ void OptionsDialog::saveSettings()
             req.append(QStringLiteral("webServerGuestPassword"));
             req.append(QString::fromLatin1(hash.toHex()));
         }
+
+        // Mirror web server settings into local thePrefs so save() doesn't overwrite with defaults
+        thePrefs.setWebServerEnabled(m_webEnabledCheck->isChecked());
+        thePrefs.setWebServerRestApiEnabled(m_webRestApiCheck->isChecked());
+        thePrefs.setWebServerGzipEnabled(m_webGzipCheck->isChecked());
+        thePrefs.setWebServerUPnP(m_webUPnPCheck->isChecked());
+        thePrefs.setWebServerPort(static_cast<uint16>(m_webPortSpin->value()));
+        thePrefs.setWebServerTemplatePath(m_webTemplateEdit->text());
+        thePrefs.setWebServerSessionTimeout(m_webSessionTimeoutSpin->value());
+        thePrefs.setWebServerHttpsEnabled(m_webHttpsCheck->isChecked());
+        thePrefs.setWebServerCertPath(m_webCertEdit->text());
+        thePrefs.setWebServerKeyPath(m_webKeyEdit->text());
+        thePrefs.setWebServerApiKey(m_webApiKeyEdit->text());
+        thePrefs.setWebServerAdminAllowHiLevFunc(m_webAdminHiLevCheck->isChecked());
+        thePrefs.setWebServerGuestEnabled(m_webGuestEnabledCheck->isChecked());
 
         // Statistics page
         req.append(QStringLiteral("graphsUpdateSec"));
@@ -4442,7 +4461,6 @@ void OptionsDialog::saveSettings()
         thePrefs.setA4afSaveCpu(m_a4afSaveCpuCheck->isChecked());
         thePrefs.setAutoArchivePreviewStart(!m_disableArchPreviewCheck->isChecked());
         thePrefs.setEd2kHostname(m_ed2kHostnameEdit->text());
-        thePrefs.setShowExtControls(m_showExtControlsCheck->isChecked());
         thePrefs.setCommitFiles(m_commitFilesGroup->checkedId());
         thePrefs.setExtractMetaData(m_extractMetaDataGroup->checkedId());
         thePrefs.setLogLevel(m_logLevelSpin->value());

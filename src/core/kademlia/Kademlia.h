@@ -56,6 +56,8 @@ public:
 
     [[nodiscard]] bool isRunning() const { return m_running; }
     [[nodiscard]] bool isConnected() const;
+    /// True when Kad is connected AND has received enough responses for searches to be useful.
+    [[nodiscard]] bool isKadReady() const;
     [[nodiscard]] bool isFirewalled() const;
     void recheckFirewalled();
 

@@ -806,6 +806,9 @@ public:
     [[nodiscard]] bool windowMaximized() const;
     void setWindowMaximized(bool val);
 
+    [[nodiscard]] int optionsLastPage() const;
+    void setOptionsLastPage(int val);
+
     [[nodiscard]] QByteArray headerState(const QString& key) const;
     void setHeaderState(const QString& key, const QByteArray& val);
 

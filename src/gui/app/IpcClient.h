@@ -53,6 +53,14 @@ public:
     /// Set the auth token for non-localhost connections.
     void setAuthToken(const QString& token);
 
+    /// Return the daemon host address as a string (hostname or IP).
+    [[nodiscard]] QString daemonHost() const {
+        return m_hostname.isEmpty() ? m_address.toString() : m_hostname;
+    }
+
+    /// Return the daemon port.
+    [[nodiscard]] uint16_t daemonPort() const { return m_port; }
+
     static constexpr int LocalPollingMs  = 500;
 
     /// Callback type for request responses.

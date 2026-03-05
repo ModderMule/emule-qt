@@ -8,8 +8,13 @@
 /// eMule.tmpl, etc.).
 
 #include <QString>
+#include <QLatin1StringView>
 
 namespace eMule {
+
+/// Application version string — single source of truth for daemon, GUI, and web server.
+inline constexpr QLatin1StringView kAppVersion{"0.1.0"};
+
 
 class AppConfig {
 public:

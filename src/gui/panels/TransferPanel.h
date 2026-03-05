@@ -12,6 +12,8 @@
 #include <QSet>
 #include <QWidget>
 
+#include "dialogs/FileDetailDialog.h"
+
 class QAction;
 class QLabel;
 class QMenu;
@@ -27,6 +29,7 @@ namespace eMule {
 
 class ClientListModel;
 class DownloadListModel;
+struct SourceRow;
 class IpcClient;
 class TransferToolbar;
 
@@ -43,6 +46,12 @@ public:
 
     /// Switch to a client sub-tab by index (0=Uploading, 1=Downloading, 2=On Queue, 3=Known).
     void switchToSubTab(int index);
+
+    /// Access the download list model (e.g. for checking known hashes).
+    [[nodiscard]] DownloadListModel* downloadModel() const { return m_downloadModel; }
+
+    /// Set the stream token for preview streaming (received from daemon GetStats).
+    void setStreamToken(const QString& token) { m_streamToken = token; }
 
 signals:
     /// Emitted when user requests to search for files related to a download.
@@ -75,15 +84,22 @@ private:
     void copyEd2kLink(const QString& hash);
     void showDownloadDetails(const QString& hash);
     void showComments(const QString& hash);
+    void fetchAndShowFileDetails(const QString& hash, FileDetailDialog::Tab tab);
+    void fetchAndShowClientDetails(const QString& clientHash);
     void searchRelated(const QString& fileName);
     [[nodiscard]] QString saveDownloadSelection() const;
+    [[nodiscard]] std::pair<QString, QString> saveFullDownloadSelection() const;
     void restoreDownloadSelection(const QString& key);
+    void restoreFullDownloadSelection(const QString& fileHash, const QString& sourceHash);
+    [[nodiscard]] QString saveClientSelection(QTreeView* view, ClientListModel* model) const;
+    void restoreClientSelection(QTreeView* view, ClientListModel* model, const QString& key);
     void setBottomClientView(int index);
     void updateToolbarLabels();
     void updateCategoryTabs();
     void showPriorityMenu();
     void showFindDialog();
     void onClientContextMenu(QTreeView* view, ClientListModel* model, const QPoint& pos);
+    void showSourceContextMenu(const SourceRow& src, const QPoint& globalPos);
     void showClientFindDialog(QTreeView* view);
     void updateClearCompletedState();
 
@@ -146,6 +162,9 @@ private:
 
     // Hashes of currently expanded downloads (for source fetching)
     QSet<QString> m_expandedDownloads;
+
+    // Stream token for preview HTTP streaming (from daemon web server)
+    QString m_streamToken;
 };
 
 } // namespace eMule

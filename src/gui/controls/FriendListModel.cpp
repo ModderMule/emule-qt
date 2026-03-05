@@ -2,6 +2,7 @@
 /// @brief FriendListModel implementation.
 
 #include "controls/FriendListModel.h"
+#include "prefs/Preferences.h"
 
 #include <QCborMap>
 #include <QIcon>
@@ -29,6 +30,14 @@ QVariant FriendListModel::data(const QModelIndex& index, int role) const
     case Qt::DisplayRole:
         return row.name.isEmpty() ? row.hash : row.name;
     case Qt::DecorationRole:
+        if (thePrefs.useOriginalIcons()) {
+            // Friends1 = no client, Friends2 = has client info (offline), Friends3 = connected
+            if (row.ip == 0 && row.kadID.isEmpty())
+                return QIcon(QStringLiteral(":/icons/Friends1.ico"));
+            if (row.lastSeen > 0)
+                return QIcon(QStringLiteral(":/icons/Friends2.ico"));
+            return QIcon(QStringLiteral(":/icons/Friends1.ico"));
+        }
         return QIcon(QStringLiteral(":/icons/User.ico"));
     default:
         return {};

@@ -4,6 +4,10 @@
 Groups GIFs by prefix into horizontal strip PNGs and generates sprites.css.
 Layout images (login_*, main_*, logo.jpg, favicon.ico) are kept as individual files.
 
+NOTE: The source GIF icons have been removed from data/config/webserver/ since
+the sprite PNGs are pre-generated. To regenerate sprites, restore the original
+GIF icons first (e.g. from git history or the eMule source distribution).
+
 Usage: python3 scripts/generate_sprites.py
 """
 
@@ -17,7 +21,7 @@ except ImportError:
     print("Pillow not installed. Install with: pip3 install Pillow")
     sys.exit(1)
 
-WEBSERVER_DIR = Path(__file__).parent.parent / "data" / "webserver"
+WEBSERVER_DIR = Path(__file__).parent.parent / "data" / "config" / "webserver"
 
 # Sprite group definitions: (sprite_filename, list of prefix patterns)
 SPRITE_GROUPS = [

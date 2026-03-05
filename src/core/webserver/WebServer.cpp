@@ -6,6 +6,7 @@
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
 
+#include "app/AppConfig.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
@@ -22,12 +23,14 @@
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
+#include "kademlia/Kademlia.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QHttpServer>
 #include <QHttpServerRequest>
 #include <QHttpServerResponse>
@@ -40,6 +43,7 @@
 #include <QSslServer>
 #include <QTcpServer>
 #include <QUrlQuery>
+#include <QUuid>
 
 namespace eMule {
 
@@ -88,6 +92,7 @@ QHttpServerResponse jsonSuccess(const QJsonArray& data)
 
 WebServer::WebServer(QObject* parent)
     : QObject(parent)
+    , m_streamToken(QUuid::createUuid().toString(QUuid::WithoutBraces).remove(QLatin1Char('-')))
 {
 }
 
@@ -296,15 +301,9 @@ void WebServer::registerRoutes()
 
     // Static files (images, CSS)
     m_server->route(QStringLiteral("/<arg>"), QHttpServerRequest::Method::Get,
-        [this](const QUrl& url, const QHttpServerRequest& req) {
-            const QString path = url.path();
-            // Serve REST API only if enabled
-            if (path.startsWith(QStringLiteral("/api/"))) {
-                // Let the specific API routes handle it below — this is a fallback
+        [this](const QString& file, const QHttpServerRequest& req) {
+            if (file.startsWith(QStringLiteral("api/")))
                 return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
-            }
-            // Strip leading slash
-            const QString file = path.mid(1);
             // Only serve known static file extensions
             if (file.endsWith(QStringLiteral(".gif")) || file.endsWith(QStringLiteral(".jpg")) ||
                 file.endsWith(QStringLiteral(".png")) || file.endsWith(QStringLiteral(".ico")) ||
@@ -312,6 +311,12 @@ void WebServer::registerRoutes()
                 return handleStaticFile(file);
             }
             return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
+        });
+
+    // --- Preview streaming (always available, uses stream token auth) ---
+    m_server->route(QStringLiteral("/api/v1/downloads/<arg>/preview"), QHttpServerRequest::Method::Get,
+        [this](const QString& hash, const QHttpServerRequest& req) {
+            return handlePreviewStream(hash, req);
         });
 
     // --- REST API routes (only if REST API is enabled) ---
@@ -548,6 +553,53 @@ QHttpServerResponse WebServer::handleCancelDownload(const QString& hash)
 
     file->stopFile(/*cancel=*/true);
     return jsonSuccess(QJsonObject{{QStringLiteral("cancelled"), true}});
+}
+
+// ---------------------------------------------------------------------------
+// Preview streaming handler
+// ---------------------------------------------------------------------------
+
+QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QHttpServerRequest& req)
+{
+    // Authenticate via stream token query parameter
+    const QUrlQuery query(req.query());
+    const QString token = query.queryItemValue(QStringLiteral("token"));
+    if (token.isEmpty() || token != m_streamToken)
+        return jsonError(401, QStringLiteral("Invalid or missing stream token"));
+
+    if (!m_downloadQueue)
+        return jsonError(500, QStringLiteral("Download queue not available"));
+
+    std::array<uint8, 16> hashBytes{};
+    if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16)
+        return jsonError(400, QStringLiteral("Invalid hash format"));
+
+    auto* file = m_downloadQueue->fileByID(hashBytes.data());
+    if (!file)
+        return jsonError(404, QStringLiteral("Download not found"));
+
+    const QString path = file->fullName();
+    if (path.isEmpty() || !QFileInfo::exists(path))
+        return jsonError(404, QStringLiteral("Part file not available"));
+
+    QFile partFile(path);
+    if (!partFile.open(QIODevice::ReadOnly))
+        return jsonError(500, QStringLiteral("Cannot open part file"));
+
+    const QByteArray data = partFile.readAll();
+
+    // Derive MIME type from the original filename
+    QMimeDatabase mimeDb;
+    const QMimeType mime = mimeDb.mimeTypeForFile(file->fileName(), QMimeDatabase::MatchExtension);
+    const QByteArray mimeType = mime.name().toUtf8();
+
+    // Build response with Content-Disposition so the player sees the real filename
+    QHttpServerResponse resp(mimeType, data);
+    auto headers = resp.headers();
+    headers.append(QHttpHeaders::WellKnownHeader::ContentDisposition,
+                   QStringLiteral("inline; filename=\"%1\"").arg(file->fileName()));
+    resp.setHeaders(std::move(headers));
+    return resp;
 }
 
 // ---------------------------------------------------------------------------
@@ -854,12 +906,28 @@ QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request)
     const QUrlQuery query(QString::fromUtf8(request.body()));
     const QString password = query.queryItemValue(QStringLiteral("p"));
 
+    // No admin password configured — deny login with clear message
+    if (m_config.adminPasswordHash.isEmpty()
+        && !(m_config.guestEnabled && !m_config.guestPasswordHash.isEmpty())) {
+        QHash<QString, QString> vars;
+        vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
+        vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
+        vars[QStringLiteral("version")] = QString(kAppVersion);
+        vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
+        vars[QStringLiteral("FailedLogin")] = QStringLiteral(
+            "<p class=\"failed\">Access denied &mdash; no password configured. "
+            "Set a password in Options &rarr; Web Interface.</p>");
+        const auto html = WebTemplateEngine::substitute(
+            m_templateEngine->section(QStringLiteral("LOGIN")), vars);
+        return QHttpServerResponse(QByteArrayLiteral("text/html"), html.toUtf8());
+    }
+
     if (password.isEmpty()) {
         // Show login page with no error
         QHash<QString, QString> vars;
         vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
         vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QStringLiteral("0.70b");
+        vars[QStringLiteral("version")] = QString(kAppVersion);
         vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
         vars[QStringLiteral("FailedLogin")] = QString();
         const auto html = WebTemplateEngine::substitute(
@@ -882,7 +950,7 @@ QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request)
         QHash<QString, QString> vars;
         vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
         vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QStringLiteral("0.70b");
+        vars[QStringLiteral("version")] = QString(kAppVersion);
         vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
         vars[QStringLiteral("FailedLogin")] = QStringLiteral("<p class=\"failed\">Login failed</p>");
         const auto html = WebTemplateEngine::substitute(
@@ -907,7 +975,7 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
         QHash<QString, QString> vars;
         vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
         vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QStringLiteral("0.70b");
+        vars[QStringLiteral("version")] = QString(kAppVersion);
         vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
         vars[QStringLiteral("FailedLogin")] = QString();
         const QString loginTmpl = m_templateEngine ? m_templateEngine->section(QStringLiteral("LOGIN")) : QString();
@@ -929,7 +997,7 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
         QHash<QString, QString> vars;
         vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
         vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QStringLiteral("0.70b");
+        vars[QStringLiteral("version")] = QString(kAppVersion);
         vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
         vars[QStringLiteral("FailedLogin")] = QString();
         const auto html = WebTemplateEngine::substitute(
@@ -942,7 +1010,7 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
         QHash<QString, QString> vars;
         vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
         vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QStringLiteral("0.70b");
+        vars[QStringLiteral("version")] = QString(kAppVersion);
         vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
         vars[QStringLiteral("FailedLogin")] = QString();
         const auto html = WebTemplateEngine::substitute(
@@ -950,7 +1018,138 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
         return QHttpServerResponse(QByteArrayLiteral("text/html"), html.toUtf8());
     }
 
-    return renderPage(page.isEmpty() ? QStringLiteral("transfer") : page, ses);
+    // Dispatch actions before rendering (admin only)
+    const QString activePage = page.isEmpty() ? QStringLiteral("transfer") : page;
+    if (m_sessionManager->isAdmin(ses))
+        dispatchActions(query, activePage);
+
+    return renderPage(activePage, ses);
+}
+
+// ---------------------------------------------------------------------------
+// Action dispatch — execute URL param actions before rendering
+// ---------------------------------------------------------------------------
+
+void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
+{
+    // --- Transfer actions (page=transfer, param "op") ---
+    if (page == QStringLiteral("transfer")) {
+        const QString op = query.queryItemValue(QStringLiteral("op"));
+        if (op.isEmpty())
+            return;
+
+        if (op == QStringLiteral("clearcompleted")) {
+            if (m_downloadQueue) {
+                QList<PartFile*> toRemove;
+                for (auto* file : m_downloadQueue->files()) {
+                    if (file->status() == PartFileStatus::Complete)
+                        toRemove.append(file);
+                }
+                for (auto* file : toRemove)
+                    m_downloadQueue->removeFile(file);
+            }
+            return;
+        }
+
+        // All other transfer ops require a file hash
+        const QString hashStr = query.queryItemValue(QStringLiteral("file"));
+        if (hashStr.size() != 32 || !m_downloadQueue)
+            return;
+        std::array<uint8, 16> hash{};
+        if (decodeBase16(hashStr, hash.data(), 16) != 16)
+            return;
+        auto* file = m_downloadQueue->fileByID(hash.data());
+        if (!file)
+            return;
+
+        if (op == QStringLiteral("stop"))
+            file->stopFile();
+        else if (op == QStringLiteral("pause"))
+            file->pauseFile();
+        else if (op == QStringLiteral("resume"))
+            file->resumeFile();
+        else if (op == QStringLiteral("cancel"))
+            file->stopFile(true);
+        else if (op == QStringLiteral("priolow")) {
+            file->setAutoDownPriority(false);
+            file->setDownPriority(kPrLow);
+        } else if (op == QStringLiteral("prionormal")) {
+            file->setAutoDownPriority(false);
+            file->setDownPriority(kPrNormal);
+        } else if (op == QStringLiteral("priohigh")) {
+            file->setAutoDownPriority(false);
+            file->setDownPriority(kPrHigh);
+        } else if (op == QStringLiteral("prioauto")) {
+            file->setAutoDownPriority(true);
+            file->setDownPriority(kPrHigh);
+        }
+        return;
+    }
+
+    // --- Server actions (page=server, param "c") ---
+    if (page == QStringLiteral("server")) {
+        const QString cmd = query.queryItemValue(QStringLiteral("c"));
+        if (cmd.isEmpty())
+            return;
+
+        if (cmd == QStringLiteral("connect")) {
+            const QString ip = query.queryItemValue(QStringLiteral("ip"));
+            const uint16 port = query.queryItemValue(QStringLiteral("port")).toUShort();
+            if (!ip.isEmpty() && port > 0 && m_serverList && m_serverConnect) {
+                if (auto* srv = m_serverList->findByAddress(ip, port))
+                    m_serverConnect->connectToServer(srv);
+            } else if (m_serverConnect) {
+                m_serverConnect->connectToAnyServer();
+            }
+        } else if (cmd == QStringLiteral("disconnect")) {
+            if (m_serverConnect)
+                m_serverConnect->disconnect();
+        } else {
+            // Commands that require a specific server
+            const QString ip = query.queryItemValue(QStringLiteral("ip"));
+            const uint16 port = query.queryItemValue(QStringLiteral("port")).toUShort();
+            if (ip.isEmpty() || port == 0 || !m_serverList)
+                return;
+            auto* srv = m_serverList->findByAddress(ip, port);
+            if (!srv)
+                return;
+
+            if (cmd == QStringLiteral("remove"))
+                m_serverList->removeServer(srv);
+            else if (cmd == QStringLiteral("addtostatic"))
+                srv->setStaticMember(true);
+            else if (cmd == QStringLiteral("removefromstatic"))
+                srv->setStaticMember(false);
+            else if (cmd == QStringLiteral("priolow"))
+                srv->setPreference(ServerPriority::Low);
+            else if (cmd == QStringLiteral("prionormal"))
+                srv->setPreference(ServerPriority::Normal);
+            else if (cmd == QStringLiteral("priohigh"))
+                srv->setPreference(ServerPriority::High);
+        }
+        return;
+    }
+
+    // --- Kad actions (page=kad, param "c") ---
+    if (page == QStringLiteral("kad")) {
+        const QString cmd = query.queryItemValue(QStringLiteral("c"));
+        if (cmd == QStringLiteral("connect")) {
+            if (auto* kadInst = kad::Kademlia::instance())
+                kadInst->start();
+        } else if (cmd == QStringLiteral("disconnect")) {
+            if (auto* kadInst = kad::Kademlia::instance())
+                kadInst->stop();
+        } else if (cmd == QStringLiteral("rcfirewall")) {
+            if (auto* kadInst = kad::Kademlia::instance())
+                kadInst->recheckFirewalled();
+        }
+        return;
+    }
+
+    // --- ED2K link addition (any page, param "ed2k") ---
+    const QString ed2k = query.queryItemValue(QStringLiteral("ed2k"));
+    if (!ed2k.isEmpty() && m_downloadQueue)
+        m_downloadQueue->addDownloadFromED2KLink(ed2k, QString());
 }
 
 QHttpServerResponse WebServer::renderPage(const QString& page, const QString& sessionId)
@@ -961,7 +1160,7 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     QHash<QString, QString> headerVars;
     headerVars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
     headerVars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-    headerVars[QStringLiteral("version")] = QStringLiteral("0.70b");
+    headerVars[QStringLiteral("version")] = QString(kAppVersion);
     headerVars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
     headerVars[QStringLiteral("Session")] = sessionId;
     headerVars[QStringLiteral("ses")] = sessionId;
@@ -1007,13 +1206,13 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     // Build the page content
     QString content;
     if (page == QStringLiteral("transfer"))
-        content = buildTransferPage(isAdmin);
+        content = buildTransferPage(isAdmin, sessionId);
     else if (page == QStringLiteral("server"))
-        content = buildServerListPage(isAdmin);
+        content = buildServerListPage(isAdmin, sessionId);
     else if (page == QStringLiteral("search"))
         content = buildSearchPage(isAdmin);
     else if (page == QStringLiteral("shared"))
-        content = buildSharedFilesPage(isAdmin);
+        content = buildSharedFilesPage(isAdmin, sessionId);
     else if (page == QStringLiteral("stats"))
         content = buildStatisticsPage();
     else if (page == QStringLiteral("graphs"))
@@ -1027,11 +1226,11 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     else if (page == QStringLiteral("debuglog"))
         content = buildDebugLogPage();
     else if (page == QStringLiteral("kad"))
-        content = buildKadPage();
+        content = buildKadPage(sessionId);
     else if (page == QStringLiteral("myinfo"))
         content = buildMyInfoPage();
     else
-        content = buildTransferPage(isAdmin);
+        content = buildTransferPage(isAdmin, sessionId);
 
     // Inject stylesheet into header via [StyleSheet] variable, then assemble page
     headerVars[QStringLiteral("StyleSheet")] =
@@ -1079,10 +1278,9 @@ QHttpServerResponse WebServer::handleStaticFile(const QString& path)
 // Template page builders
 // ---------------------------------------------------------------------------
 
-QString WebServer::buildTransferPage(bool isAdmin)
+QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
 {
     QHash<QString, QString> vars;
-    vars[QStringLiteral("Session")] = QStringLiteral("");  // will be set in renderPage via header
 
     // Build download list
     QString downLines;
@@ -1091,6 +1289,7 @@ QString WebServer::buildTransferPage(bool isAdmin)
         int index = 0;
         for (const auto* file : m_downloadQueue->files()) {
             QHash<QString, QString> lineVars;
+            lineVars[QStringLiteral("Session")] = sessionId;
             lineVars[QStringLiteral("DownloadFileName")] = file->fileName();
             lineVars[QStringLiteral("DownloadFileSize")] = QString::number(file->fileSize());
             lineVars[QStringLiteral("DownloadFileHash")] = md4str(file->fileHash());
@@ -1104,25 +1303,37 @@ QString WebServer::buildTransferPage(bool isAdmin)
                 : 0.0;
             lineVars[QStringLiteral("DownloadPercent")] = QString::number(progress, 'f', 1);
 
-            // Status icon (CSS sprite class name, no .gif suffix)
-            switch (file->status()) {
-            case PartFileStatus::Ready:
-            case PartFileStatus::Empty:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_downloading");
-                break;
-            case PartFileStatus::Paused:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_paused");
-                break;
-            case PartFileStatus::Complete:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_complete");
-                break;
-            case PartFileStatus::Error:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_error");
-                break;
-            default:
-                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_waiting");
-                break;
+            // Status key for context menu JS (simple string for state-aware menu)
+            QString statusKey;
+            if (file->isStopped()) {
+                lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_stopped");
+                statusKey = QStringLiteral("stopped");
+            } else {
+                switch (file->status()) {
+                case PartFileStatus::Ready:
+                case PartFileStatus::Empty:
+                    lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_downloading");
+                    statusKey = QStringLiteral("downloading");
+                    break;
+                case PartFileStatus::Paused:
+                    lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_paused");
+                    statusKey = QStringLiteral("paused");
+                    break;
+                case PartFileStatus::Complete:
+                    lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_complete");
+                    statusKey = QStringLiteral("complete");
+                    break;
+                case PartFileStatus::Error:
+                    lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_error");
+                    statusKey = QStringLiteral("error");
+                    break;
+                default:
+                    lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_waiting");
+                    statusKey = QStringLiteral("waiting");
+                    break;
+                }
             }
+            lineVars[QStringLiteral("DownloadStatusKey")] = statusKey;
             lineVars[QStringLiteral("DownloadIndex")] = QString::number(index++);
 
             downLines += WebTemplateEngine::substitute(lineTmpl, lineVars);
@@ -1201,7 +1412,7 @@ QString WebServer::buildTransferPage(bool isAdmin)
     return downHeader + downLines + downFooter + upHeader + upLines + upFooter;
 }
 
-QString WebServer::buildServerListPage(bool isAdmin)
+QString WebServer::buildServerListPage(bool isAdmin, const QString& sessionId)
 {
     QHash<QString, QString> vars;
     QString serverLines;
@@ -1210,6 +1421,7 @@ QString WebServer::buildServerListPage(bool isAdmin)
         const QString lineTmpl = m_templateEngine->section(QStringLiteral("SERVER_LINE"));
         for (const auto& srv : m_serverList->servers()) {
             QHash<QString, QString> lineVars;
+            lineVars[QStringLiteral("Session")] = sessionId;
             lineVars[QStringLiteral("ServerName")] = srv->name();
             lineVars[QStringLiteral("ServerAddr")] = srv->address();
             lineVars[QStringLiteral("ServerPort")] = QString::number(srv->port());
@@ -1237,7 +1449,7 @@ QString WebServer::buildSearchPage(bool isAdmin)
         m_templateEngine->section(QStringLiteral("SEARCH")), {});
 }
 
-QString WebServer::buildSharedFilesPage(bool isAdmin)
+QString WebServer::buildSharedFilesPage(bool isAdmin, const QString& sessionId)
 {
     QHash<QString, QString> vars;
     QString sharedLines;
@@ -1246,6 +1458,7 @@ QString WebServer::buildSharedFilesPage(bool isAdmin)
         const QString lineTmpl = m_templateEngine->section(QStringLiteral("SHARED_LINE"));
         m_sharedFiles->forEachFile([&](KnownFile* file) {
             QHash<QString, QString> lineVars;
+            lineVars[QStringLiteral("Session")] = sessionId;
             lineVars[QStringLiteral("SharedFileName")] = file->fileName();
             lineVars[QStringLiteral("SharedFileSize")] = QString::number(file->fileSize());
             lineVars[QStringLiteral("SharedFileHash")] = md4str(file->fileHash());
@@ -1253,6 +1466,15 @@ QString WebServer::buildSharedFilesPage(bool isAdmin)
             lineVars[QStringLiteral("SharedAccepted")] = QString::number(file->statistic.accepts());
             lineVars[QStringLiteral("SharedTransferred")] = QString::number(file->statistic.transferred());
             lineVars[QStringLiteral("SharedPriority")] = QString::number(file->upPriority());
+            // ED2K link for Copy ED2K Link context menu
+            // Escape single quotes for JS string embedding in oncontextmenu attr
+            QString safeName = file->fileName();
+            safeName.replace(u'\'', QStringLiteral("\\'"));
+            safeName.replace(u'&', QStringLiteral("&amp;"));
+            lineVars[QStringLiteral("SharedED2kLink")] = QStringLiteral("ed2k://|file|%1|%2|%3|/")
+                .arg(safeName)
+                .arg(file->fileSize())
+                .arg(md4str(file->fileHash()));
             sharedLines += WebTemplateEngine::substitute(lineTmpl, lineVars);
         });
     }
@@ -1345,9 +1567,22 @@ QString WebServer::buildDebugLogPage()
         m_templateEngine->section(QStringLiteral("DEBUGLOG")), vars);
 }
 
-QString WebServer::buildKadPage()
+QString WebServer::buildKadPage(const QString& sessionId)
 {
     QHash<QString, QString> vars;
+    vars[QStringLiteral("Session")] = sessionId;
+
+    QString kadStatus;
+    if (auto* kadInst = kad::Kademlia::instance()) {
+        if (kadInst->isRunning())
+            kadStatus = QStringLiteral("Running");
+        else
+            kadStatus = QStringLiteral("Disconnected");
+    } else {
+        kadStatus = QStringLiteral("Not available");
+    }
+    vars[QStringLiteral("KadStatus")] = kadStatus;
+
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("KADDLG")), vars);
 }

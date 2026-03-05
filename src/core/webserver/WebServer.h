@@ -21,6 +21,7 @@ class QHttpServer;
 class QHttpServerRequest;
 class QSslServer;
 class QTcpServer;
+class QUrlQuery;
 
 namespace eMule {
 
@@ -84,6 +85,10 @@ public:
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] uint16 port() const;
 
+    /// Random token for authenticating preview streaming requests.
+    /// Regenerated every time the web server starts.
+    [[nodiscard]] const QString& streamToken() const { return m_streamToken; }
+
     /// Reload the template file (called from "Reload" button in options).
     void reloadTemplate();
 
@@ -104,6 +109,7 @@ private:
     QHttpServerResponse handlePauseDownload(const QString& hash);
     QHttpServerResponse handleResumeDownload(const QString& hash);
     QHttpServerResponse handleCancelDownload(const QString& hash);
+    QHttpServerResponse handlePreviewStream(const QString& hash, const QHttpServerRequest& req);
 
     // Endpoint handlers — Uploads
     QHttpServerResponse handleGetUploads();
@@ -140,18 +146,19 @@ private:
     QHttpServerResponse handlePage(const QHttpServerRequest& request);
     QHttpServerResponse handleStaticFile(const QString& path);
     QHttpServerResponse renderPage(const QString& page, const QString& sessionId);
+    void dispatchActions(const QUrlQuery& query, const QString& page);
 
     // Template page builders
-    [[nodiscard]] QString buildTransferPage(bool isAdmin);
-    [[nodiscard]] QString buildServerListPage(bool isAdmin);
+    [[nodiscard]] QString buildTransferPage(bool isAdmin, const QString& sessionId);
+    [[nodiscard]] QString buildServerListPage(bool isAdmin, const QString& sessionId);
     [[nodiscard]] QString buildSearchPage(bool isAdmin);
-    [[nodiscard]] QString buildSharedFilesPage(bool isAdmin);
+    [[nodiscard]] QString buildSharedFilesPage(bool isAdmin, const QString& sessionId);
     [[nodiscard]] QString buildStatisticsPage();
     [[nodiscard]] QString buildPreferencesPage(bool isAdmin);
     [[nodiscard]] QString buildServerInfoPage();
     [[nodiscard]] QString buildLogPage();
     [[nodiscard]] QString buildDebugLogPage();
-    [[nodiscard]] QString buildKadPage();
+    [[nodiscard]] QString buildKadPage(const QString& sessionId);
     [[nodiscard]] QString buildMyInfoPage();
     [[nodiscard]] QString buildGraphsPage();
 
@@ -181,6 +188,9 @@ private:
 
     // Log provider callback (injected by DaemonApp)
     std::function<QString()> m_logProvider;
+
+    // Random token for preview streaming authentication
+    QString m_streamToken;
 };
 
 } // namespace eMule

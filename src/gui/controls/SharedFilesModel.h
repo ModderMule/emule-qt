@@ -36,6 +36,7 @@ struct SharedFileRow {
     int     uploadingClients = 0;
     int     partCount = 0;
     int64_t completedSize = 0;
+    QByteArray sharePartMap;    ///< Per-part availability encoding for status bar
 };
 
 /// Table model backing the shared files tree view.
@@ -43,6 +44,9 @@ class SharedFilesModel : public QAbstractTableModel {
     Q_OBJECT
 
 public:
+    /// Custom data role for the per-part availability map.
+    static constexpr int SharePartMapRole = Qt::UserRole + 1;
+
     enum Column {
         ColFileName = 0,
         ColSize,
@@ -78,6 +82,9 @@ public:
 
     /// Get the full row for a row index (nullptr if out of range).
     [[nodiscard]] const SharedFileRow* fileAt(int row) const;
+
+    /// Check if a file with the given hex hash is in the shared files list.
+    [[nodiscard]] bool containsHash(const QString& hexHash) const;
 
 private:
     std::vector<SharedFileRow> m_files;

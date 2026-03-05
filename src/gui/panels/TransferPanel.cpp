@@ -9,10 +9,12 @@
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/TransferToolbar.h"
+#include "dialogs/ClientDetailDialog.h"
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
 #include "prefs/Preferences.h"
+#include "utils/Log.h"
 #include "protocol/ED2KLink.h"
 
 #include <QApplication>
@@ -33,6 +35,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QProcess>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -226,9 +229,12 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     if (proxyIdx.isValid()) {
         const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
         const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
-        // If this is a source (child) row, skip the context menu
-        if (m_downloadModel->isSourceRow(srcIdx))
+        // If this is a source (child) row, show the client context menu instead
+        if (m_downloadModel->isSourceRow(srcIdx)) {
+            if (const auto* src = m_downloadModel->sourceAt(srcIdx))
+                showSourceContextMenu(*src, m_downloadView->viewport()->mapToGlobal(pos));
             return;
+        }
         hash = m_downloadModel->hashAt(srcIdx.row());
         dl = m_downloadModel->downloadAt(srcIdx.row());
     }
@@ -240,8 +246,14 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     else
         m_downloadMenu->clear();
 
+    const bool useOriginal = thePrefs.useOriginalIcons();
+    auto ico = [&](const char* res) -> QIcon {
+        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
+                           : QIcon();
+    };
+
     // -- 1. Priority (Download) submenu --
-    auto* prioMenu = m_downloadMenu->addMenu(tr("Priority (Download)"));
+    auto* prioMenu = m_downloadMenu->addMenu(ico("FilePriority.ico"), tr("Priority (Download)"));
     prioMenu->setEnabled(hasSel);
     if (hasSel) {
         auto prioStr = [](int prio) -> QString {
@@ -279,7 +291,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     // -- 2. Pause / Stop / Resume --
     {
-        auto* pauseAct = m_downloadMenu->addAction(tr("Pause"), this, [this, hash]() {
+        auto* pauseAct = m_downloadMenu->addAction(ico("Pause.ico"), tr("Pause"), this, [this, hash]() {
             sendDownloadAction(hash, 0);
         });
         if (!hasSel) {
@@ -290,7 +302,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         }
     }
     {
-        auto* stopAct = m_downloadMenu->addAction(tr("Stop"), this, [this, hash]() {
+        auto* stopAct = m_downloadMenu->addAction(ico("Stop.ico"), tr("Stop"), this, [this, hash]() {
             sendStopDownload(hash);
         });
         if (!hasSel) {
@@ -301,7 +313,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         }
     }
     {
-        auto* resumeAct = m_downloadMenu->addAction(tr("Resume"), this, [this, hash]() {
+        auto* resumeAct = m_downloadMenu->addAction(ico("Start.ico"), tr("Resume"), this, [this, hash]() {
             sendDownloadAction(hash, 1);
         });
         resumeAct->setEnabled(hasSel && (dl->isPaused || dl->isStopped));
@@ -311,7 +323,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     // -- 3. Cancel --
     {
-        auto* cancelAct = m_downloadMenu->addAction(tr("Cancel"), this, [this, hash]() {
+        auto* cancelAct = m_downloadMenu->addAction(ico("Cancel.ico"), tr("Cancel"), this, [this, hash]() {
             sendDownloadAction(hash, 2);
         });
         cancelAct->setEnabled(hasSel);
@@ -321,26 +333,29 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     // -- 4. Open File / Preview / Details / Comments --
     {
-        auto* act = m_downloadMenu->addAction(tr("Open File"), this, [this, hash]() {
+        auto* act = m_downloadMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this, [this, hash]() {
             sendOpenFile(hash);
         });
         const bool isComplete = hasSel && (dl->status == QStringLiteral("complete"));
         act->setEnabled(isComplete);
     }
     {
-        auto* act = m_downloadMenu->addAction(tr("Preview"), this, [this, hash]() {
+        auto* act = m_downloadMenu->addAction(ico("Preview.ico"), tr("Preview"), this, [this, hash]() {
             sendPreview(hash);
         });
-        act->setEnabled(hasSel && !dl->isPaused && !dl->isStopped);
+        act->setEnabled(hasSel && dl->isPreviewPossible);
     }
-    if (thePrefs.showExtControls()) {
-        auto* act = m_downloadMenu->addAction(tr("Details..."), this, [this, hash]() {
+    {
+        auto* act = m_downloadMenu->addAction(ico("FileInfo.ico"), tr("Details..."), this, [this, hash]() {
             showDownloadDetails(hash);
         });
         act->setEnabled(hasSel);
+        QFont f = act->font();
+        f.setBold(true);
+        act->setFont(f);
     }
-    if (thePrefs.showExtControls()) {
-        auto* act = m_downloadMenu->addAction(tr("Comments..."), this, [this, hash]() {
+    {
+        auto* act = m_downloadMenu->addAction(ico("FileComments.ico"), tr("Comments..."), this, [this, hash]() {
             showComments(hash);
         });
         act->setEnabled(hasSel);
@@ -357,7 +372,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                 break;
             }
         }
-        auto* clearAct = m_downloadMenu->addAction(tr("Clear Completed"), this, [this]() {
+        auto* clearAct = m_downloadMenu->addAction(ico("DeleteAll.ico"), tr("Clear Completed"), this, [this]() {
             sendClearCompleted();
         });
         clearAct->setEnabled(hasCompleted);
@@ -367,13 +382,13 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     // -- 6. eD2K Links / Paste eD2K Links --
     {
-        auto* act = m_downloadMenu->addAction(tr("eD2K Links..."), this, [this, hash]() {
+        auto* act = m_downloadMenu->addAction(ico("eD2kLink.ico"), tr("eD2K Links..."), this, [this, hash]() {
             copyEd2kLink(hash);
         });
         act->setEnabled(hasSel);
     }
     {
-        auto* pasteAct = m_downloadMenu->addAction(tr("Paste eD2K Links"));
+        auto* pasteAct = m_downloadMenu->addAction(ico("eD2kLinkPaste.ico"), tr("Paste eD2K Links"));
         const QString clipText = QApplication::clipboard()->text().trimmed();
         const bool hasFileLink = clipText.contains(
             QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive);
@@ -403,21 +418,23 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     m_downloadMenu->addSeparator();
 
     // -- 7. Find / Search Related --
-    connect(m_downloadMenu->addAction(tr("Find...")),
+    connect(m_downloadMenu->addAction(ico("Search.ico"), tr("Find...")),
             &QAction::triggered, this, &TransferPanel::showFindDialog);
-    if (thePrefs.showExtControls() && hasSel) {
+    if (hasSel) {
         const QString fname = dl->fileName;
-        auto* act = m_downloadMenu->addAction(tr("Search Related Files"), this, [this, fname]() {
+        auto* act = m_downloadMenu->addAction(ico("KadFileSearch.ico"), tr("Search Related Files"), this, [this, fname]() {
             searchRelated(fname);
         });
         act->setEnabled(true);
     }
+    // TODO: Add "Web Services" submenu here — original eMule offers links to external file lookup
+    // services (e.g., bitzi.com file report, Jigle search). Needs URL templates from webservices.dat config file.
 
     m_downloadMenu->addSeparator();
 
     // -- 8. Assign To Category --
     {
-        auto* catMenu = m_downloadMenu->addMenu(tr("Assign To Category"));
+        auto* catMenu = m_downloadMenu->addMenu(ico("Category.ico"), tr("Assign To Category"));
         // Category 0 = "All" (default)
         auto* allAct = catMenu->addAction(tr("(All)"), this, [this, hash]() {
             sendSetCategory(hash, 0);
@@ -560,9 +577,14 @@ QWidget* TransferPanel::createDownloadsSection()
         if (!proxyIdx.isValid())
             return;
 
-        // Check if this is a source row (child) — ignore double-click on children
-        if (proxyIdx.parent().isValid())
+        // If this is a source (child) row, open client details
+        if (proxyIdx.parent().isValid()) {
+            const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
+            const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+            if (const auto* src = m_downloadModel->sourceAt(srcIdx))
+                fetchAndShowClientDetails(src->userHash);
             return;
+        }
 
         // Map through proxy chain to get the source model hash
         const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
@@ -668,6 +690,22 @@ QWidget* TransferPanel::createBottomPane()
             this, [this](const QPoint& p) { onClientContextMenu(m_onQueueView, m_onQueueModel, p); });
     connect(m_knownView, &QTreeView::customContextMenuRequested,
             this, [this](const QPoint& p) { onClientContextMenu(m_knownView, m_knownModel, p); });
+
+    // Wire double-click on all 4 client views to open client details
+    auto connectClientDoubleClick = [this](QTreeView* view, ClientListModel* model) {
+        connect(view, &QTreeView::doubleClicked, this, [this, view, model](const QModelIndex& proxyIdx) {
+            auto* proxy = qobject_cast<QSortFilterProxyModel*>(view->model());
+            if (!proxy) return;
+            const QModelIndex srcIdx = proxy->mapToSource(proxyIdx);
+            const auto* client = model->clientAt(srcIdx.row());
+            if (client)
+                fetchAndShowClientDetails(client->userHash);
+        });
+    };
+    connectClientDoubleClick(m_uploadingView,   m_uploadingModel);
+    connectClientDoubleClick(m_downloadingView, m_downloadingModel);
+    connectClientDoubleClick(m_onQueueView,     m_onQueueModel);
+    connectClientDoubleClick(m_knownView,       m_knownModel);
 
     layout->addWidget(m_bottomClientStack, 1);
 
@@ -868,7 +906,7 @@ void TransferPanel::requestDownloads()
             return;
         }
 
-        const QString selectedHash = saveDownloadSelection();
+        const auto [selHash, selSource] = saveFullDownloadSelection();
 
         const QCborArray arr = resp.fieldArray(1);
         std::vector<DownloadRow> rows;
@@ -898,6 +936,7 @@ void TransferPanel::requestDownloads()
             row.requests          = m.value(QStringLiteral("requests")).toInteger();
             row.acceptedRequests  = m.value(QStringLiteral("acceptedReqs")).toInteger();
             row.transferredData   = m.value(QStringLiteral("transferredData")).toInteger();
+            row.isPreviewPossible = m.value(QStringLiteral("isPreviewPossible")).toBool();
             if (auto arr = m.value(QStringLiteral("partMap")).toArray(); !arr.isEmpty()) {
                 row.partMap.resize(static_cast<qsizetype>(arr.size()));
                 for (qsizetype i = 0; i < arr.size(); ++i)
@@ -909,7 +948,7 @@ void TransferPanel::requestDownloads()
         m_downloadModel->setDownloads(std::move(rows));
         updateToolbarLabels();
         updateCategoryTabs();
-        restoreDownloadSelection(selectedHash);
+        restoreFullDownloadSelection(selHash, selSource);
 
         // Re-expand previously expanded downloads and refresh their sources
         for (const QString& expHash : m_expandedDownloads) {
@@ -960,6 +999,9 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.partCount       = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
             src.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());
             src.userHash        = m.value(QStringLiteral("userHash")).toString();
+            src.ip              = m.value(QStringLiteral("ip")).toInteger();
+            src.port            = m.value(QStringLiteral("port")).toInteger();
+            src.isFriend        = m.value(QStringLiteral("isFriend")).toBool();
             if (auto spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
                 src.partMap.resize(static_cast<qsizetype>(spm.size()));
                 for (qsizetype j = 0; j < spm.size(); ++j)
@@ -998,8 +1040,12 @@ void TransferPanel::requestUploads()
         for (const auto& val : waitingArr)
             waitingRows.push_back(parseClient(val.toMap()));
 
+        const QString selUp = saveClientSelection(m_uploadingView, m_uploadingModel);
+        const QString selQ  = saveClientSelection(m_onQueueView, m_onQueueModel);
         m_uploadingModel->setClients(std::move(uploadingRows));
         m_onQueueModel->setClients(std::move(waitingRows));
+        restoreClientSelection(m_uploadingView, m_uploadingModel, selUp);
+        restoreClientSelection(m_onQueueView, m_onQueueModel, selQ);
         updateToolbarLabels();
     });
 }
@@ -1021,7 +1067,9 @@ void TransferPanel::requestDownloadClients()
         for (const auto& val : arr)
             rows.push_back(parseClient(val.toMap()));
 
+        const QString selDl = saveClientSelection(m_downloadingView, m_downloadingModel);
         m_downloadingModel->setClients(std::move(rows));
+        restoreClientSelection(m_downloadingView, m_downloadingModel, selDl);
         updateToolbarLabels();
     });
 }
@@ -1043,7 +1091,9 @@ void TransferPanel::requestKnownClients()
         for (const auto& val : arr)
             rows.push_back(parseClient(val.toMap()));
 
+        const QString selKn = saveClientSelection(m_knownView, m_knownModel);
         m_knownModel->setClients(std::move(rows));
+        restoreClientSelection(m_knownView, m_knownModel, selKn);
         updateToolbarLabels();
     });
 }
@@ -1145,9 +1195,37 @@ void TransferPanel::sendPreview(const QString& hash)
 {
     if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
         return;
-    IpcMessage msg(IpcMsgType::PreviewDownload);
-    msg.append(hash);
-    m_ipc->sendRequest(std::move(msg));
+
+    if (m_streamToken.isEmpty()) {
+        logWarning(tr("Preview not available — web server is not running or stream token not received."));
+        return;
+    }
+
+    // Construct the streaming URL via the daemon's web server
+    const QString host = m_ipc->daemonHost();
+    const uint16_t wsPort = thePrefs.webServerPort();
+    const QString url = QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
+                            .arg(host).arg(wsPort).arg(hash, m_streamToken);
+
+    // Launch configured video player with the streaming URL
+    const QString playerCmd = thePrefs.videoPlayerCommand();
+    if (playerCmd.isEmpty()) {
+        logWarning(tr("No video player configured. Set it in Options → Files."));
+        return;
+    }
+
+    QString args = thePrefs.videoPlayerArgs();
+    QStringList argList;
+    if (args.contains(QStringLiteral("%1"))) {
+        args.replace(QStringLiteral("%1"), url);
+        argList = QProcess::splitCommand(args);
+    } else {
+        if (!args.isEmpty())
+            argList = QProcess::splitCommand(args);
+        argList.append(url);
+    }
+
+    QProcess::startDetached(playerCmd, argList);
 }
 
 void TransferPanel::sendSetCategory(const QString& hash, int category)
@@ -1164,70 +1242,41 @@ void TransferPanel::sendSetCategory(const QString& hash, int category)
 
 void TransferPanel::showDownloadDetails(const QString& hash)
 {
-    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
-        return;
-    IpcMessage msg(IpcMsgType::GetDownloadDetails);
-    msg.append(hash);
-    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
-        if (!resp.fieldBool(0))
-            return;
-        const QCborMap details = resp.field(1).toMap();
-        auto* dlg = new QDialog(this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->setWindowTitle(tr("Download Details"));
-        dlg->setMinimumSize(450, 350);
-        auto* layout = new QVBoxLayout(dlg);
-
-        auto addRow = [layout](const QString& label, const QString& value) {
-            auto* row = new QHBoxLayout;
-            auto* lbl = new QLabel(QStringLiteral("<b>%1:</b>").arg(label));
-            lbl->setFixedWidth(140);
-            row->addWidget(lbl);
-            row->addWidget(new QLabel(value));
-            row->addStretch();
-            layout->addLayout(row);
-        };
-
-        addRow(tr("File Name"), details.value(QLatin1StringView("fileName")).toString());
-        addRow(tr("Hash"), details.value(QLatin1StringView("hash")).toString());
-        addRow(tr("File Size"), QString::number(details.value(QLatin1StringView("fileSize")).toInteger()));
-        addRow(tr("Status"), details.value(QLatin1StringView("status")).toString());
-        addRow(tr("Priority"), details.value(QLatin1StringView("downPriority")).toString());
-        addRow(tr("Sources"), QString::number(details.value(QLatin1StringView("sourceCount")).toInteger()));
-        addRow(tr("Transferring"), QString::number(details.value(QLatin1StringView("transferringSrcCount")).toInteger()));
-        addRow(tr("A4AF Sources"), QString::number(details.value(QLatin1StringView("a4afSourceCount")).toInteger()));
-        addRow(tr("File Path"), details.value(QLatin1StringView("filePath")).toString());
-
-        auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
-        connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
-        layout->addStretch();
-        layout->addWidget(btnBox);
-        dlg->show();
-    });
+    fetchAndShowFileDetails(hash, FileDetailDialog::General);
 }
 
 void TransferPanel::showComments(const QString& hash)
+{
+    fetchAndShowFileDetails(hash, FileDetailDialog::Comments);
+}
+
+void TransferPanel::fetchAndShowFileDetails(const QString& hash,
+                                             FileDetailDialog::Tab tab)
 {
     if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
         return;
     IpcMessage msg(IpcMsgType::GetDownloadDetails);
     msg.append(hash);
+    m_ipc->sendRequest(std::move(msg), [this, tab](const IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+        const QCborMap details = resp.field(1).toMap();
+        auto* dlg = new FileDetailDialog(details, tab, this);
+        dlg->show();
+    });
+}
+
+void TransferPanel::fetchAndShowClientDetails(const QString& clientHash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || clientHash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::GetClientDetails);
+    msg.append(clientHash);
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;
         const QCborMap details = resp.field(1).toMap();
-        auto* dlg = new QDialog(this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->setWindowTitle(tr("Comments"));
-        dlg->setMinimumSize(400, 300);
-        auto* layout = new QVBoxLayout(dlg);
-        layout->addWidget(new QLabel(
-            tr("File: %1").arg(details.value(QLatin1StringView("fileName")).toString())));
-        layout->addWidget(new QLabel(tr("No comments available yet.")));
-        auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
-        connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
-        layout->addStretch();
-        layout->addWidget(btnBox);
+        auto* dlg = new ClientDetailDialog(details, this);
         dlg->show();
     });
 }
@@ -1263,19 +1312,104 @@ QString TransferPanel::saveDownloadSelection() const
     return m_downloadModel->hashAt(srcIdx.row());
 }
 
+std::pair<QString, QString> TransferPanel::saveFullDownloadSelection() const
+{
+    const auto sel = m_downloadView->selectionModel()->currentIndex();
+    if (!sel.isValid())
+        return {};
+
+    const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(sel);
+    const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+
+    if (m_downloadModel->isSourceRow(srcIdx)) {
+        const QModelIndex parentSrcIdx = srcIdx.parent();
+        const QString fileHash = m_downloadModel->hashAt(parentSrcIdx.row());
+        const auto* src = m_downloadModel->sourceAt(srcIdx);
+        const QString sourceHash = src ? src->userHash : QString{};
+        return {fileHash, sourceHash};
+    }
+
+    return {m_downloadModel->hashAt(srcIdx.row()), {}};
+}
+
 void TransferPanel::restoreDownloadSelection(const QString& key)
+{
+    restoreFullDownloadSelection(key, {});
+}
+
+void TransferPanel::restoreFullDownloadSelection(const QString& fileHash, const QString& sourceHash)
+{
+    if (fileHash.isEmpty())
+        return;
+
+    for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
+        if (m_downloadModel->hashAt(row) != fileHash)
+            continue;
+
+        // Try to restore source-level selection first
+        if (!sourceHash.isEmpty()) {
+            const QModelIndex parentSrcIdx = m_downloadModel->index(row, 0);
+            const int childCount = m_downloadModel->rowCount(parentSrcIdx);
+            for (int c = 0; c < childCount; ++c) {
+                const QModelIndex childSrcIdx = m_downloadModel->index(c, 0, parentSrcIdx);
+                const auto* src = m_downloadModel->sourceAt(childSrcIdx);
+                if (src && src->userHash == sourceHash) {
+                    const QModelIndex sortIdx = m_downloadProxy->mapFromSource(childSrcIdx);
+                    const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
+                    if (catIdx.isValid()) {
+                        m_downloadView->setCurrentIndex(catIdx);
+                        m_downloadView->scrollTo(catIdx);
+                    }
+                    return;
+                }
+            }
+        }
+
+        // Fall back to selecting the parent download row
+        const QModelIndex srcIdx = m_downloadModel->index(row, 0);
+        const QModelIndex sortIdx = m_downloadProxy->mapFromSource(srcIdx);
+        const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
+        if (catIdx.isValid()) {
+            m_downloadView->setCurrentIndex(catIdx);
+            m_downloadView->scrollTo(catIdx);
+        }
+        return;
+    }
+}
+
+QString TransferPanel::saveClientSelection(QTreeView* view, ClientListModel* model) const
+{
+    const auto sel = view->selectionModel()->currentIndex();
+    if (!sel.isValid())
+        return {};
+
+    // Map through proxy to source model
+    const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(view->model());
+    if (!proxy)
+        return {};
+
+    const QModelIndex srcIdx = proxy->mapToSource(sel);
+    const auto* client = model->clientAt(srcIdx.row());
+    return client ? client->userHash : QString{};
+}
+
+void TransferPanel::restoreClientSelection(QTreeView* view, ClientListModel* model, const QString& key)
 {
     if (key.isEmpty())
         return;
 
-    for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
-        if (m_downloadModel->hashAt(row) == key) {
-            const QModelIndex srcIdx = m_downloadModel->index(row, 0);
-            const QModelIndex sortIdx = m_downloadProxy->mapFromSource(srcIdx);
-            const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
-            if (catIdx.isValid()) {
-                m_downloadView->setCurrentIndex(catIdx);
-                m_downloadView->scrollTo(catIdx);
+    const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(view->model());
+    if (!proxy)
+        return;
+
+    for (int row = 0; row < model->clientCount(); ++row) {
+        const auto* client = model->clientAt(row);
+        if (client && client->userHash == key) {
+            const QModelIndex srcIdx = model->index(row, 0);
+            const QModelIndex proxyIdx = proxy->mapFromSource(srcIdx);
+            if (proxyIdx.isValid()) {
+                view->setCurrentIndex(proxyIdx);
+                view->scrollTo(proxyIdx);
             }
             return;
         }
@@ -1508,41 +1642,26 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
 
     QMenu menu(this);
 
+    const bool useOriginal = thePrefs.useOriginalIcons();
+    auto ico = [&](const char* res) -> QIcon {
+        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
+                           : QIcon();
+    };
+
     // 1. Details...
-    if (thePrefs.showExtControls() && client) {
-        const ClientRow c = *client;
-        auto* detailsAct = menu.addAction(tr("Details..."), this, [this, c]() {
-            auto* dlg = new QDialog(this);
-            dlg->setAttribute(Qt::WA_DeleteOnClose);
-            dlg->setWindowTitle(tr("Client Details"));
-            dlg->setMinimumSize(400, 300);
-            auto* layout = new QVBoxLayout(dlg);
-            auto addRow = [layout](const QString& label, const QString& value) {
-                auto* row = new QHBoxLayout;
-                auto* lbl = new QLabel(QStringLiteral("<b>%1:</b>").arg(label));
-                lbl->setFixedWidth(120);
-                row->addWidget(lbl);
-                row->addWidget(new QLabel(value));
-                row->addStretch();
-                layout->addLayout(row);
-            };
-            addRow(tr("User Name"), c.userName);
-            addRow(tr("User Hash"), c.userHash);
-            addRow(tr("Software"), c.software);
-            addRow(tr("IP:Port"), QStringLiteral("%1:%2").arg(c.ip).arg(c.port));
-            addRow(tr("Downloaded"), QString::number(c.transferredDown));
-            addRow(tr("Uploaded"), QString::number(c.transferredUp));
-            auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
-            connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
-            layout->addStretch();
-            layout->addWidget(btnBox);
-            dlg->show();
+    if (client) {
+        const QString clientHash = client->userHash;
+        auto* detailsAct = menu.addAction(ico("UserDetails.ico"), tr("Details..."), this, [this, clientHash]() {
+            fetchAndShowClientDetails(clientHash);
         });
         detailsAct->setEnabled(true);
+        QFont f = detailsAct->font();
+        f.setBold(true);
+        detailsAct->setFont(f);
     }
 
     // 2. Add To Friends
-    auto* addFriendAct = menu.addAction(tr("Add To Friends"));
+    auto* addFriendAct = menu.addAction(ico("UserAdd.ico"), tr("Add To Friends"));
     addFriendAct->setEnabled(client != nullptr && !client->isFriend);
     if (client && !client->isFriend) {
         const QString hash = client->userHash;
@@ -1562,7 +1681,7 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     }
 
     // 3. Send Message
-    auto* sendMsgAct = menu.addAction(tr("Send Message"));
+    auto* sendMsgAct = menu.addAction(ico("UserMessage.ico"), tr("Send Message"));
     sendMsgAct->setEnabled(client != nullptr);
     if (client) {
         const QString clientHash = client->userHash;
@@ -1580,7 +1699,7 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     }
 
     // 4. View Shared Files
-    auto* viewSharedAct = menu.addAction(tr("View Shared Files"));
+    auto* viewSharedAct = menu.addAction(ico("UserFiles.ico"), tr("View Shared Files"));
     viewSharedAct->setEnabled(client != nullptr);
     if (client) {
         const QString clientHash = client->userHash;
@@ -1596,11 +1715,90 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     menu.addSeparator();
 
     // 5. Find...
-    menu.addAction(tr("Find..."), this, [this, view]() {
+    menu.addAction(ico("Search.ico"), tr("Find..."), this, [this, view]() {
         showClientFindDialog(view);
     });
 
     menu.exec(view->viewport()->mapToGlobal(pos));
+}
+
+void TransferPanel::showSourceContextMenu(const SourceRow& src, const QPoint& globalPos)
+{
+    QMenu menu(this);
+
+    const bool useOriginal = thePrefs.useOriginalIcons();
+    auto ico = [&](const char* res) -> QIcon {
+        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
+                           : QIcon();
+    };
+
+    // 1. Details...
+    {
+        const QString srcHash = src.userHash;
+        auto* detailsAct = menu.addAction(ico("UserDetails.ico"), tr("Details..."), this, [this, srcHash]() {
+            fetchAndShowClientDetails(srcHash);
+        });
+        QFont f = detailsAct->font();
+        f.setBold(true);
+        detailsAct->setFont(f);
+    }
+
+    // 2. Add To Friends
+    auto* addFriendAct = menu.addAction(ico("UserAdd.ico"), tr("Add To Friends"));
+    addFriendAct->setEnabled(!src.isFriend);
+    if (!src.isFriend) {
+        const QString hash = src.userHash;
+        const QString name = src.userName;
+        const auto ip   = src.ip;
+        const auto port = src.port;
+        connect(addFriendAct, &QAction::triggered, this, [this, hash, name, ip, port]() {
+            if (!m_ipc || !m_ipc->isConnected())
+                return;
+            IpcMessage msg(IpcMsgType::AddFriend);
+            msg.append(hash);
+            msg.append(name);
+            msg.append(static_cast<int64_t>(ip));
+            msg.append(static_cast<int64_t>(port));
+            m_ipc->sendRequest(std::move(msg));
+        });
+    }
+
+    // 3. Send Message
+    {
+        const QString clientHash = src.userHash;
+        menu.addAction(ico("UserMessage.ico"), tr("Send Message"), this, [this, clientHash]() {
+            bool ok = false;
+            const QString text = QInputDialog::getText(
+                this, tr("Send Message"), tr("Message:"), QLineEdit::Normal, {}, &ok);
+            if (!ok || text.isEmpty() || !m_ipc || !m_ipc->isConnected())
+                return;
+            IpcMessage msg(IpcMsgType::SendChatMessage);
+            msg.append(clientHash);
+            msg.append(text);
+            m_ipc->sendRequest(std::move(msg));
+        });
+    }
+
+    // 4. View Shared Files
+    {
+        const QString clientHash = src.userHash;
+        menu.addAction(ico("UserFiles.ico"), tr("View Shared Files"), this, [this, clientHash]() {
+            if (!m_ipc || !m_ipc->isConnected())
+                return;
+            IpcMessage msg(IpcMsgType::RequestClientSharedFiles);
+            msg.append(clientHash);
+            m_ipc->sendRequest(std::move(msg));
+        });
+    }
+
+    menu.addSeparator();
+
+    // 5. Find...
+    menu.addAction(ico("Search.ico"), tr("Find..."), this, [this]() {
+        showClientFindDialog(m_downloadView);
+    });
+
+    menu.exec(globalPos);
 }
 
 void TransferPanel::showClientFindDialog(QTreeView* view)

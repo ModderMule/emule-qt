@@ -25,6 +25,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -302,7 +303,12 @@ void KadPanel::setupUi()
     // Create the tab widget with Contacts + Search Details tabs
     m_topTabWidget = new QTabWidget;
     m_topTabWidget->setDocumentMode(true);
-    m_topTabWidget->addTab(createContactsPanel(), tr("\u25B8 Contacts (0)"));
+    if (thePrefs.useOriginalIcons()) {
+        m_topTabWidget->addTab(createContactsPanel(),
+            QIcon(QStringLiteral(":/icons/KadContactList.ico")), tr("\u25B8 Contacts (0)"));
+    } else {
+        m_topTabWidget->addTab(createContactsPanel(), tr("\u25B8 Contacts (0)"));
+    }
 
     // Search Details tab with lookup graph
     m_lookupGraph = new KadLookupGraph;
@@ -430,6 +436,8 @@ QWidget* KadPanel::createControlsPanel()
 
     // Bootstrap button — right-aligned, disabled until valid input
     m_bootstrapBtn = new QPushButton(tr("Bootstrap"));
+    if (thePrefs.useOriginalIcons())
+        m_bootstrapBtn->setIcon(QIcon(QStringLiteral(":/icons/KadBootstrap.ico")));
     m_bootstrapBtn->setEnabled(false);
     auto* bsBtnRow = new QHBoxLayout;
     bsBtnRow->addStretch();
@@ -470,11 +478,20 @@ QWidget* KadPanel::createSearchesPanel()
     layout->setSpacing(2);
 
     // Section header matching MFC style
+    auto* searchesHeader = new QHBoxLayout;
+    searchesHeader->setSpacing(4);
+    if (thePrefs.useOriginalIcons()) {
+        auto* searchIcon = new QLabel;
+        searchIcon->setPixmap(QIcon(QStringLiteral(":/icons/KadCurrentSearches.ico")).pixmap(16, 16));
+        searchesHeader->addWidget(searchIcon);
+    }
     m_searchesLabel = new QLabel(tr("\u25B8 Current Searches (0)"));
     QFont boldFont = m_searchesLabel->font();
     boldFont.setBold(true);
     m_searchesLabel->setFont(boldFont);
-    layout->addWidget(m_searchesLabel);
+    searchesHeader->addWidget(m_searchesLabel);
+    searchesHeader->addStretch();
+    layout->addLayout(searchesHeader);
 
     m_searchesModel = new KadSearchesModel(this);
     auto* searchProxy = new QSortFilterProxyModel(this);

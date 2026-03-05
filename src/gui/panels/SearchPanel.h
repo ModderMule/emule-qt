@@ -37,6 +37,7 @@ class SearchResultsModel;
 struct SearchTab {
     uint32_t searchID = 0;
     QString title;
+    int method = 0;  ///< Search method: 0=auto, 1=server, 2=global, 3=kad
     SearchResultsModel* model = nullptr;
     QSortFilterProxyModel* proxy = nullptr;
 };

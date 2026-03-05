@@ -48,6 +48,12 @@ public:
     /// Returns true if both core session and IPC server are running.
     [[nodiscard]] bool isRunning() const;
 
+    /// Access the web server (may be nullptr if not running).
+    [[nodiscard]] WebServer* webServer() const { return m_webServer.get(); }
+
+    /// Access the singleton instance (set during start, cleared on stop).
+    [[nodiscard]] static DaemonApp* instance() { return s_instance; }
+
     /// Return all buffered log entries with id > @p lastLogId.
     [[nodiscard]] static std::vector<LogEntry> logsSince(int64_t lastLogId);
 

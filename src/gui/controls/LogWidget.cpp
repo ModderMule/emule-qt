@@ -3,6 +3,7 @@
 #include "prefs/Preferences.h"
 
 #include <QDateTime>
+#include <QIcon>
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QTextCursor>
@@ -23,20 +24,26 @@ LogWidget::LogWidget(QWidget* parent)
     layout->setSpacing(2);
 
     m_tabs = new QTabWidget;
-    m_tabs->setTabPosition(QTabWidget::South);
+    m_tabs->setTabPosition(QTabWidget::North);
 
     // Server Info tab
     m_serverInfoBrowser = new QTextBrowser;
     m_serverInfoBrowser->setReadOnly(true);
     m_serverInfoBrowser->setOpenExternalLinks(true);
     m_serverInfoBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabs->addTab(m_serverInfoBrowser, tr("Server Info"));
+    if (thePrefs.useOriginalIcons())
+        m_tabs->addTab(m_serverInfoBrowser, QIcon(QStringLiteral(":/icons/ServerInfo.ico")), tr("Server Info"));
+    else
+        m_tabs->addTab(m_serverInfoBrowser, tr("Server Info"));
 
     // Log tab
     m_logBrowser = new QTextBrowser;
     m_logBrowser->setReadOnly(true);
     m_logBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabs->addTab(m_logBrowser, tr("Log"));
+    if (thePrefs.useOriginalIcons())
+        m_tabs->addTab(m_logBrowser, QIcon(QStringLiteral(":/icons/Log.ico")), tr("Log"));
+    else
+        m_tabs->addTab(m_logBrowser, tr("Log"));
 
     // Verbose tab
     m_verboseBrowser = new QTextBrowser;
@@ -48,7 +55,10 @@ LogWidget::LogWidget(QWidget* parent)
     m_kadBrowser = new QTextBrowser;
     m_kadBrowser->setReadOnly(true);
     m_kadBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabs->addTab(m_kadBrowser, tr("Kad"));
+    if (thePrefs.useOriginalIcons())
+        m_tabs->addTab(m_kadBrowser, QIcon(QStringLiteral(":/icons/Kad.ico")), tr("Kad"));
+    else
+        m_tabs->addTab(m_kadBrowser, tr("Kad"));
 
     layout->addWidget(m_tabs);
 

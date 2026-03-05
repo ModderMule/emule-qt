@@ -8,18 +8,34 @@
 #include <QMessageBox>
 #include <QPixmap>
 #include <QProcess>
+#include <QSocketNotifier>
 #include <QSplashScreen>
 #include <QTextStream>
 #include <QTimer>
 #include <QTranslator>
 
+#ifndef Q_OS_WIN
+#include <csignal>
+#include <sys/socket.h>
+#include <unistd.h>
+
+static int s_sigFd[2];
+
+static void unixSignalHandler(int)
+{
+    char a = 1;
+    ::write(s_sigFd[1], &a, sizeof(a));
+}
+#endif
+
+#include "app/AppConfig.h"
+#include "app/CommandLineExec.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
 #include "app/PowerManager.h"
 #include "app/VersionChecker.h"
 #include "app/UiState.h"
 #include "dialogs/CoreConnectDialog.h"
-#include "dialogs/OptionsDialog.h"
 #include "controls/LogWidget.h"
 #include "panels/IrcPanel.h"
 #include "panels/KadPanel.h"
@@ -30,6 +46,8 @@
 #include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
 #include "app/AppConfig.h"
+#include "controls/DownloadListModel.h"
+#include "controls/SharedFilesModel.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/Types.h"
@@ -87,11 +105,20 @@ void handleEd2kUrl(const QString& urlStr, eMule::MainWindow& mainWindow, eMule::
 
     const QStringList lines = urlStr.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
     QStringList fileNames;
+    auto* dlModel = mainWindow.transferPanel()->downloadModel();
+    auto* sfModel = mainWindow.sharedFilesPanel()->sharedFilesModel();
     for (const QString& line : lines) {
         auto parsed = parseED2KLink(line.trimmed());
         if (!parsed) continue;
-        if (auto* fl = std::get_if<ED2KFileLink>(&*parsed))
+        if (auto* fl = std::get_if<ED2KFileLink>(&*parsed)) {
+            QString hashHex;
+            for (uint8_t b : fl->hash)
+                hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
+            if ((dlModel && dlModel->containsHash(hashHex))
+                || (sfModel && sfModel->containsHash(hashHex)))
+                continue;
             fileNames << fl->name;
+        }
     }
     if (fileNames.isEmpty())
         return;
@@ -134,8 +161,29 @@ int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("eMule Qt"));
-    QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QApplication::setApplicationVersion(eMule::kAppVersion);
     QApplication::setOrganizationName(QStringLiteral("eMule"));
+
+#ifndef Q_OS_WIN
+    // Self-pipe trick: convert SIGTERM/SIGINT/SIGHUP into Qt events for graceful shutdown
+    std::signal(SIGPIPE, SIG_IGN);
+    ::socketpair(AF_UNIX, SOCK_STREAM, 0, s_sigFd);
+    QSocketNotifier sigNotifier(s_sigFd[0], QSocketNotifier::Read);
+    QObject::connect(&sigNotifier, &QSocketNotifier::activated, &app, [&]() {
+        char tmp;
+        ::read(s_sigFd[0], &tmp, sizeof(tmp));
+        eMule::logInfo(QStringLiteral("Signal received — shutting down gracefully..."));
+        QCoreApplication::quit();
+    });
+    std::signal(SIGTERM, unixSignalHandler);
+    std::signal(SIGINT,  unixSignalHandler);
+    std::signal(SIGHUP,  unixSignalHandler);
+#endif
+
+    // -- Command-line parsing -------------------------------------------------
+
+    eMule::CommandLineExec cli;
+    cli.parse(app);
 
     // Load preferences early so language setting is available for translators
     const QString configDir = eMule::AppConfig::configDir();
@@ -181,16 +229,6 @@ int main(int argc, char* argv[])
         QApplication::processEvents();
     }
 
-    // Check for --screenshot mode (development aid)
-    const bool screenshotMode = app.arguments().contains(QStringLiteral("--screenshot"));
-    QString screenshotPath;
-    if (screenshotMode) {
-        const auto idx = app.arguments().indexOf(QStringLiteral("--screenshot"));
-        screenshotPath = (idx + 1 < app.arguments().size())
-                             ? app.arguments().at(idx + 1)
-                             : QStringLiteral("/tmp/emuleqt_screenshot.png");
-    }
-
     // Create and show main window
     eMule::MainWindow mainWindow;
     if (eMule::theUiState.isWindowMaximized())
@@ -218,46 +256,8 @@ int main(int argc, char* argv[])
     if (eMule::thePrefs.preventStandby())
         powerManager.setPreventStandby(true);
 
-    // Parse --tab argument (used by both screenshot and normal mode)
-    auto activeTab = eMule::MainWindow::TabKad;
-    const auto tabIdx = app.arguments().indexOf(QStringLiteral("--tab"));
-    if (tabIdx >= 0 && tabIdx + 1 < app.arguments().size()) {
-        const QString tabArg = app.arguments().at(tabIdx + 1).toLower();
-        static const std::pair<QString, eMule::MainWindow::Tab> tabNames[] = {
-            {QStringLiteral("kad"),        eMule::MainWindow::TabKad},
-            {QStringLiteral("servers"),    eMule::MainWindow::TabServers},
-            {QStringLiteral("transfers"),  eMule::MainWindow::TabTransfers},
-            {QStringLiteral("search"),     eMule::MainWindow::TabSearch},
-            {QStringLiteral("shared"),     eMule::MainWindow::TabSharedFiles},
-            {QStringLiteral("messages"),   eMule::MainWindow::TabMessages},
-            {QStringLiteral("irc"),        eMule::MainWindow::TabIRC},
-            {QStringLiteral("statistics"), eMule::MainWindow::TabStatistics},
-        };
-        activeTab = static_cast<eMule::MainWindow::Tab>(tabArg.toInt());
-        for (const auto& [name, value] : tabNames) {
-            if (tabArg == name) {
-                activeTab = value;
-                break;
-            }
-        }
-        mainWindow.switchToTab(activeTab);
-    }
-
-    // Parse --subtab argument: switch to a sub-tab within the active panel
-    const auto subTabIdx = app.arguments().indexOf(QStringLiteral("--subtab"));
-    if (subTabIdx >= 0 && subTabIdx + 1 < app.arguments().size()) {
-        const int subtab = app.arguments().at(subTabIdx + 1).toInt();
-        if (activeTab == eMule::MainWindow::TabKad)
-            mainWindow.kadPanel()->switchToSubTab(subtab);
-        else if (activeTab == eMule::MainWindow::TabTransfers)
-            mainWindow.transferPanel()->switchToSubTab(subtab);
-    }
-
-    // Parse --delay argument: override screenshot delay (default 3000 ms)
-    int screenshotDelay = 3000;
-    const auto delayIdx = app.arguments().indexOf(QStringLiteral("--delay"));
-    if (delayIdx >= 0 && delayIdx + 1 < app.arguments().size())
-        screenshotDelay = app.arguments().at(delayIdx + 1).toInt();
+    // Apply --tab and --subtab arguments
+    cli.applyTabArgs(mainWindow);
 
     // IPC client — always used to connect to the daemon
     eMule::IpcClient ipcClient;
@@ -498,6 +498,10 @@ int main(int argc, char* argv[])
                     val(QLatin1StringView("upOverheadRate")),
                     val(QLatin1StringView("downOverheadRate")));
 
+                // Update stream token for preview streaming
+                if (auto st = stats.value(QStringLiteral("streamToken")); st.isString())
+                    mainWindow.transferPanel()->setStreamToken(st.toString());
+
                 // Update MiniMule popup stats
                 const int completedDl = static_cast<int>(
                     stats.value(QStringLiteral("completedDownloads")).toInteger());
@@ -567,73 +571,9 @@ int main(int argc, char* argv[])
     };
     app.installEventFilter(new Ed2kEventFilter(mainWindow, ipcClient, &app));
 
-    // Check command-line args for ed2k:// URLs (Linux/Windows: browser passes URL as arg)
-    for (const QString& arg : app.arguments()) {
-        if (arg.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)) {
-            // Delay so IPC connection has time to establish
-            QTimer::singleShot(3000, &mainWindow, [arg, &mainWindow, &ipcClient]() {
-                handleEd2kUrl(arg, mainWindow, ipcClient);
-            });
-            break;
-        }
-    }
-
-    // Parse --options argument: open Options dialog at a specific page
-    int optionsPage = -1;
-    const auto optIdx = app.arguments().indexOf(QStringLiteral("--options"));
-    if (optIdx >= 0 && optIdx + 1 < app.arguments().size()) {
-        const QString optArg = app.arguments().at(optIdx + 1).toLower();
-        static const std::pair<QString, int> pageNames[] = {
-            {QStringLiteral("general"),      eMule::OptionsDialog::PageGeneral},
-            {QStringLiteral("display"),      eMule::OptionsDialog::PageDisplay},
-            {QStringLiteral("connection"),   eMule::OptionsDialog::PageConnection},
-            {QStringLiteral("proxy"),        eMule::OptionsDialog::PageProxy},
-            {QStringLiteral("server"),       eMule::OptionsDialog::PageServer},
-            {QStringLiteral("directories"),  eMule::OptionsDialog::PageDirectories},
-            {QStringLiteral("files"),        eMule::OptionsDialog::PageFiles},
-            {QStringLiteral("notifications"),eMule::OptionsDialog::PageNotifications},
-            {QStringLiteral("statistics"),   eMule::OptionsDialog::PageStatistics},
-            {QStringLiteral("irc"),          eMule::OptionsDialog::PageIRC},
-            {QStringLiteral("messages"),     eMule::OptionsDialog::PageMessages},
-            {QStringLiteral("security"),     eMule::OptionsDialog::PageSecurity},
-            {QStringLiteral("scheduler"),    eMule::OptionsDialog::PageScheduler},
-            {QStringLiteral("webinterface"), eMule::OptionsDialog::PageWebInterface},
-            {QStringLiteral("extended"),     eMule::OptionsDialog::PageExtended},
-        };
-        optionsPage = optArg.toInt(); // fallback: numeric index
-        for (const auto& [name, value] : pageNames) {
-            if (optArg == name) {
-                optionsPage = value;
-                break;
-            }
-        }
-    }
-
-    // In screenshot mode, grab the window after a delay and exit
-    if (screenshotMode) {
-        QTimer::singleShot(screenshotDelay, &app, [&mainWindow, &screenshotPath, &app, optionsPage]() {
-            // If --options was specified, open the dialog and screenshot it
-            if (optionsPage >= 0) {
-                eMule::OptionsDialog dlg(nullptr, mainWindow.statisticsPanel(), &mainWindow);
-                dlg.selectPage(optionsPage);
-                dlg.show();
-                dlg.repaint();
-                QApplication::processEvents();
-                QPixmap pixmap = dlg.grab();
-                pixmap.save(screenshotPath);
-            } else {
-                mainWindow.repaint();
-                QApplication::processEvents();
-                QPixmap pixmap = mainWindow.grab();
-                pixmap.save(screenshotPath);
-            }
-            eMule::logInfo(QStringLiteral("Screenshot saved to %1").arg(screenshotPath));
-            app.quit();
-        });
-    } else if (optionsPage >= 0) {
-        // Non-screenshot mode: just open the options dialog
-        mainWindow.showOptionsDialog(optionsPage);
-    }
+    // Handle ed2k:// positional args and --screenshot/--options
+    cli.handleEd2kLinks(mainWindow, ipcClient);
+    cli.setupScreenshotTimer(app, mainWindow);
 
     const int result = QApplication::exec();
 

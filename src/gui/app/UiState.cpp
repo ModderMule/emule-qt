@@ -22,6 +22,7 @@ void UiState::load()
     m_windowWidth      = thePrefs.windowWidth();
     m_windowHeight     = thePrefs.windowHeight();
     m_windowMaximized  = thePrefs.windowMaximized();
+    m_optionsLastPage  = thePrefs.optionsLastPage();
 }
 
 void UiState::save()
@@ -37,6 +38,7 @@ void UiState::save()
     thePrefs.setWindowWidth(m_windowWidth);
     thePrefs.setWindowHeight(m_windowHeight);
     thePrefs.setWindowMaximized(m_windowMaximized);
+    thePrefs.setOptionsLastPage(m_optionsLastPage);
 
     for (auto it = m_headerStates.cbegin(); it != m_headerStates.cend(); ++it)
         thePrefs.setHeaderState(it.key(), it.value());

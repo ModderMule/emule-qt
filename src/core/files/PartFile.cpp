@@ -58,13 +58,36 @@ PartFile::~PartFile()
         flushBuffer();
     }
 
-    // Close the part file handle
+    // Close the part file handle before saving metadata
     if (m_partFileHandle.isOpen())
         m_partFileHandle.close();
+
+    // Save .part.met with final gap list (matches MFC CPartFile destructor)
+    if (!m_partMetFilename.isEmpty() && status() != PartFileStatus::Complete)
+        savePartFile();
 
     // Clear requested blocks list — blocks are owned by clients'
     // Pending_Block_Struct and freed by clearPendingBlockRequest.
     m_requestedBlocks.clear();
+}
+
+// ===========================================================================
+// isPreviewPossible — media file with first part complete
+// ===========================================================================
+
+bool PartFile::isPreviewPossible() const
+{
+    // Must be a media file (Video or Audio)
+    const auto ft = getED2KFileTypeID(fileName());
+    if (ft != ED2KFileType::Video && ft != ED2KFileType::Audio)
+        return false;
+
+    // Must be in a downloadable state (not error, not already complete)
+    if (m_status == PartFileStatus::Error || m_status == PartFileStatus::Complete)
+        return false;
+
+    // First 9.28 MB part must be fully downloaded
+    return isComplete(static_cast<uint32>(0));
 }
 
 // ===========================================================================
@@ -1112,48 +1135,30 @@ bool PartFile::savePartFile()
             }
         }
 
-        // Count tags
+        // Tag count — written as placeholder, patched at the end after all tags
+        // (including buffered-data-as-gaps which we don't know the count of upfront)
         uint32 tagCount = 0;
-        tagCount += 1; // FT_FILENAME
-        tagCount += 1; // FT_FILESIZE
-        if (largeFile)
-            tagCount += 1; // FT_FILESIZE_HI
-        tagCount += 1; // FT_TRANSFERRED
-        tagCount += 1; // FT_DLPRIORITY
-        tagCount += 1; // FT_STATUS
-        tagCount += 1; // FT_CATEGORY
-        if (m_corruptionLoss > 0)
-            tagCount += 1; // FT_CORRUPTED
-        if (m_compressionGain > 0)
-            tagCount += 1; // FT_COMPRESSION
-        if (m_dlActiveTime > 0)
-            tagCount += 1; // FT_DL_ACTIVE_TIME
-        if (!m_corruptedParts.empty())
-            tagCount += 1; // FT_CORRUPTEDPARTS
-        if (fileIdentifier().hasAICHHash())
-            tagCount += 1; // FT_AICH_HASH
-        if (fileIdentifier().hasExpectedAICHHashCount())
-            tagCount += 1; // FT_AICHHASHSET
-
-        // Gap pairs
-        tagCount += static_cast<uint32>(m_gapList.size()) * 2; // start + end per gap
-
-        file.writeUInt32(tagCount);
+        const auto tagCountPos = file.position();
+        file.writeUInt32(0); // placeholder
 
         // -- Write tags --
 
         // Filename
         Tag(FT_FILENAME, fileName()).writeNewEd2kTag(file, UTF8Mode::OptBOM);
+        tagCount++;
 
         // File size
         if (largeFile) {
             Tag(FT_FILESIZE, static_cast<uint32>(static_cast<uint64>(fileSize()) & 0xFFFFFFFFu))
                 .writeNewEd2kTag(file);
+            tagCount++;
             Tag(FT_FILESIZE_HI, static_cast<uint32>(static_cast<uint64>(fileSize()) >> 32))
                 .writeNewEd2kTag(file);
+            tagCount++;
         } else {
             Tag(FT_FILESIZE, static_cast<uint32>(fileSize()))
                 .writeNewEd2kTag(file);
+            tagCount++;
         }
 
         // Transferred
@@ -1164,34 +1169,41 @@ bool PartFile::savePartFile()
             Tag(FT_TRANSFERRED, static_cast<uint32>(m_transferred))
                 .writeNewEd2kTag(file);
         }
+        tagCount++;
 
         // Priority
         Tag(FT_DLPRIORITY,
             static_cast<uint32>(m_autoDownPriority ? kPrAuto : m_downPriority))
             .writeNewEd2kTag(file);
+        tagCount++;
 
         // Status (paused)
         Tag(FT_STATUS, static_cast<uint32>(m_paused ? 1u : 0u))
             .writeNewEd2kTag(file);
+        tagCount++;
 
         // Category
         Tag(FT_CATEGORY, m_category).writeNewEd2kTag(file);
+        tagCount++;
 
         // Corruption loss
         if (m_corruptionLoss > 0) {
             Tag(FT_CORRUPTED, static_cast<uint32>(m_corruptionLoss))
                 .writeNewEd2kTag(file);
+            tagCount++;
         }
 
         // Compression gain
         if (m_compressionGain > 0) {
             Tag(FT_COMPRESSION, static_cast<uint32>(m_compressionGain))
                 .writeNewEd2kTag(file);
+            tagCount++;
         }
 
         // Active download time
         if (m_dlActiveTime > 0) {
             Tag(FT_DL_ACTIVE_TIME, m_dlActiveTime).writeNewEd2kTag(file);
+            tagCount++;
         }
 
         // Corrupted parts list
@@ -1202,12 +1214,14 @@ bool PartFile::savePartFile()
                 partList += QString::number(m_corruptedParts[i]);
             }
             Tag(FT_CORRUPTEDPARTS, partList).writeNewEd2kTag(file, UTF8Mode::Raw);
+            tagCount++;
         }
 
         // AICH hash (base32 encoded)
         if (fileIdentifier().hasAICHHash()) {
             Tag(FT_AICH_HASH, fileIdentifier().getAICHHash().getString())
                 .writeNewEd2kTag(file, UTF8Mode::Raw);
+            tagCount++;
         }
 
         // AICH part hashset (binary blob)
@@ -1215,6 +1229,7 @@ bool PartFile::savePartFile()
             SafeMemFile aichFile;
             fileIdentifier().writeAICHHashsetToFile(aichFile);
             Tag(FT_AICHHASHSET, aichFile.buffer()).writeNewEd2kTag(file);
+            tagCount++;
         }
 
         // Gap pairs as FT_GAPSTART/FT_GAPEND tags
@@ -1226,7 +1241,39 @@ bool PartFile::savePartFile()
                 Tag(FT_GAPSTART, static_cast<uint32>(gap.start)).writeNewEd2kTag(file);
                 Tag(FT_GAPEND, static_cast<uint32>(gap.end)).writeNewEd2kTag(file);
             }
+            tagCount += 2;
         }
+
+        // Write buffered (not-yet-flushed) data ranges as gaps too.
+        // This data exists only in RAM — if we crash before flushing,
+        // the reload must re-request these ranges. (MFC PartFile.cpp:1392-1433)
+        {
+            auto it = m_bufferedData.begin();
+            while (it != m_bufferedData.end()) {
+                uint64 bStart = it->start;
+                uint64 bEnd   = it->end;
+                ++it;
+                // Merge contiguous entries
+                while (it != m_bufferedData.end() && it->start == bEnd + 1) {
+                    bEnd = it->end;
+                    ++it;
+                }
+                if (largeFile) {
+                    Tag(FT_GAPSTART, bStart).writeNewEd2kTag(file);
+                    Tag(FT_GAPEND, bEnd).writeNewEd2kTag(file);
+                } else {
+                    Tag(FT_GAPSTART, static_cast<uint32>(bStart)).writeNewEd2kTag(file);
+                    Tag(FT_GAPEND, static_cast<uint32>(bEnd)).writeNewEd2kTag(file);
+                }
+                tagCount += 2;
+            }
+        }
+
+        // Patch the tag count at the recorded position
+        const auto endPos = file.position();
+        file.seek(tagCountPos, SEEK_SET);
+        file.writeUInt32(tagCount);
+        file.seek(endPos, SEEK_SET);
 
     } catch (const FileException& ex) {
         logError(QStringLiteral("PartFile::savePartFile: error writing %1: %2")
@@ -1426,7 +1473,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
             && theApp.downloadQueue->doKademliaFileRequest()
             && kad->getTotalFile() < KADEMLIATOTALFILE
             && curTick >= m_lastSearchTimeKad
-            && kad->isConnected()
+            && kad->isKadReady()
             && kad::SearchManager::getTotalResponsesReceived() > 0
             && !m_stopped)
         {

@@ -28,6 +28,9 @@ struct SourceRow {
     int partCount = 0;
     int sourceFrom = 0;        // SourceFrom enum
     QString userHash;
+    int64_t ip = 0;
+    int64_t port = 0;
+    bool isFriend = false;
     QByteArray partMap;  // per-part: 0=no, 1=both, 2=client-only, 3=pending, 4=receiving
 };
 
@@ -55,6 +58,7 @@ struct DownloadRow {
     int64_t acceptedRequests = 0;
     int64_t transferredData = 0;
     QByteArray partMap;  // per-part status: 0=done, 1=no-src, 2-254=src-freq, 255=downloading
+    bool isPreviewPossible = false;
 
     std::vector<SourceRow> sources;  // child rows (populated when expanded)
 };
@@ -118,6 +122,12 @@ public:
 
     /// Check if an index represents a source row (child of a download).
     [[nodiscard]] bool isSourceRow(const QModelIndex& index) const;
+
+    /// Get the source row for a child index (nullptr if not a source row or out of range).
+    [[nodiscard]] const SourceRow* sourceAt(const QModelIndex& index) const;
+
+    /// Check if a file with the given hex hash is in the download list.
+    [[nodiscard]] bool containsHash(const QString& hexHash) const;
 
 private:
     std::vector<DownloadRow> m_downloads;

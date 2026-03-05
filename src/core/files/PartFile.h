@@ -269,6 +269,9 @@ public:
     void requestAICHRecovery(uint32 partNumber);
     void aichRecoveryDataAvailable(uint32 partNumber);
 
+    // Preview
+    [[nodiscard]] bool isPreviewPossible() const;
+
     // Archive recovery state
     [[nodiscard]] bool isRecoveringArchive() const { return m_recoveringArchive; }
     void setRecoveringArchive(bool val) { m_recoveringArchive = val; }

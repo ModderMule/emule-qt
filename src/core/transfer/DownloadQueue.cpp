@@ -216,7 +216,8 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
         if (!existing && source->userIP() != 0)
             existing = m_clientList->findByIP(source->userIP(), source->userPort());
         if (existing && existing != source) {
-            // A global client already exists — don't add duplicate source
+            logDebug(QStringLiteral("Source rejected — duplicate in ClientList: IP=%1:%2")
+                         .arg(source->userIP()).arg(source->userPort()));
             return false;
         }
     }
@@ -229,8 +230,11 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
 
         // Compare by user hash if available
         if (existing->hasValidHash() && source->hasValidHash()) {
-            if (md4equ(existing->userHash(), source->userHash()))
+            if (md4equ(existing->userHash(), source->userHash())) {
+                logDebug(QStringLiteral("Source rejected — duplicate hash in file source list: IP=%1:%2")
+                             .arg(source->userIP()).arg(source->userPort()));
                 return false;
+            }
         }
 
         // Compare by IP:port
@@ -238,16 +242,23 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
             existing->userPort() == source->userPort() &&
             existing->userIP() != 0)
         {
+            logDebug(QStringLiteral("Source rejected — duplicate IP:port in file source list: %1:%2")
+                         .arg(source->userIP()).arg(source->userPort()));
             return false;
         }
     }
 
     // Check max sources per file
-    if (file->sourceCount() >= thePrefs.maxSourcesPerFile())
+    if (file->sourceCount() >= thePrefs.maxSourcesPerFile()) {
+        logDebug(QStringLiteral("Source rejected — max sources reached (%1/%2) for %3")
+                     .arg(file->sourceCount()).arg(thePrefs.maxSourcesPerFile()).arg(file->fileName()));
         return false;
+    }
 
     source->setReqFile(file);  // MFC: SetRequestFile(sender)
     file->addSource(source);
+    if (m_clientList)
+        m_clientList->addClient(source, true);  // skipDupTest=true, already checked above
     return true;
 }
 
@@ -607,12 +618,30 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
 
     logInfo(QStringLiteral("Download completed: %1").arg(file->fileName()));
 
-    // Clean up all sources still associated with this file
+    // Phase 1: Active sources — try to swap each to another pending file.
+    // swapToAnotherFile() requires m_reqFile != nullptr, so call before cleanup.
+    // doSwap() mutates srcList, so iterate a copy.
     auto sources = file->srcList();
     for (auto* client : sources) {
-        client->setDownloadState(DownloadState::None);
-        client->setReqFile(nullptr);
-        file->removeSource(client);
+        if (!client->swapToAnotherFile(
+                QStringLiteral("download completed"),
+                /*ignoreNoNeeded=*/true,
+                /*ignoreSuspensions=*/true,
+                /*removeCompletely=*/true))
+        {
+            // No other file available — just disconnect
+            client->setDownloadState(DownloadState::None);
+            client->setReqFile(nullptr);
+            file->removeSource(client);
+        }
+        // Purge completed file from client's other-requests lists
+        client->removeFileFromOtherLists(file);
+    }
+
+    // Phase 2: A4AF sources — already serving another file, just clean stale refs.
+    auto a4afSources = file->a4afSrcList();
+    for (auto* client : a4afSources) {
+        client->removeFileFromOtherLists(file);
     }
     file->a4afSrcList().clear();
 

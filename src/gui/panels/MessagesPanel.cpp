@@ -271,7 +271,7 @@ void MessagesPanel::setupUi()
     auto* inputLayout = new QHBoxLayout;
 
     m_smileyBtn = new QToolButton(rightWidget);
-    m_smileyBtn->setIcon(QIcon(QStringLiteral(":/icons/Smiley_Smile.ico")));
+    m_smileyBtn->setIcon(QIcon(QStringLiteral(":/smileys/Smiley_Smile.ico")));
     m_smileyBtn->setIconSize(QSize(20, 20));
     m_smileyBtn->setAutoRaise(true);
     m_smileyBtn->setToolTip(tr("Smileys"));
@@ -649,7 +649,7 @@ void MessagesPanel::showSmileySelector()
 
     for (int i = 0; i < kSmileyCount; ++i) {
         auto* btn = new QToolButton(gridWidget);
-        btn->setIcon(QIcon(QStringLiteral(":/icons/%1.ico").arg(QLatin1StringView(kSmileys[i].icon))));
+        btn->setIcon(QIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(kSmileys[i].icon))));
         btn->setIconSize(QSize(24, 24));
         btn->setFixedSize(28, 28);
         btn->setAutoRaise(true);
@@ -706,7 +706,7 @@ QString MessagesPanel::renderSmileys(const QString& text) const
 
     for (const auto& entry : sorted) {
         const QString code = QString::fromLatin1(kSmileys[entry.index].code);
-        const QString img = QStringLiteral("<img src=\"qrc:/icons/%1.ico\" width=\"16\" height=\"16\">")
+        const QString img = QStringLiteral("<img src=\"qrc:/smileys/%1.ico\" width=\"16\" height=\"16\">")
                                 .arg(QLatin1StringView(kSmileys[entry.index].icon));
         result.replace(code, img);
     }

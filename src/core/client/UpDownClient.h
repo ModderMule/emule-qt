@@ -502,6 +502,7 @@ public:
     void startDownload();
     void sendHashSetRequest();
     [[nodiscard]] uint32 calculateDownloadRate();
+    [[nodiscard]] uint32 downDatarate() const { return m_downDatarate; }
     virtual void checkDownloadTimeout();
     [[nodiscard]] uint16 availablePartCount() const;
     [[nodiscard]] bool isPartAvailable(uint32 part) const;
@@ -518,6 +519,7 @@ public:
                            PartFile* toFile = nullptr, bool allowSame = true,
                            bool isAboutToAsk = false);
     void dontSwapTo(PartFile* file);
+    void removeFileFromOtherLists(PartFile* file);
     [[nodiscard]] bool isSwapSuspended(const PartFile* file,
                                        bool allowShortReaskTime = false,
                                        bool fileIsNNP = false) const;

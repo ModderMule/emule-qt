@@ -46,6 +46,10 @@ public:
     /// True if the window should be restored maximized.
     [[nodiscard]] bool isWindowMaximized() const { return m_windowMaximized; }
 
+    /// Last selected options dialog page.
+    [[nodiscard]] int optionsLastPage() const { return m_optionsLastPage; }
+    void setOptionsLastPage(int page) { m_optionsLastPage = page; }
+
 private:
     QList<int> m_serverSplitSizes;
     QList<int> m_kadSplitSizes;
@@ -58,6 +62,7 @@ private:
     int  m_windowWidth     = 0;
     int  m_windowHeight    = 0;
     bool m_windowMaximized = false;
+    int  m_optionsLastPage = 0;
     QMap<QString, QByteArray> m_headerStates;
 };
 

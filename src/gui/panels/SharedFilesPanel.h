@@ -39,6 +39,9 @@ public:
     /// Connect this panel to the IPC client for data updates.
     void setIpcClient(IpcClient* client);
 
+    /// Access the shared files model (e.g. for checking known hashes).
+    [[nodiscard]] SharedFilesModel* sharedFilesModel() const { return m_model; }
+
 private slots:
     void onRefreshTimer();
     void onFolderSelectionChanged();

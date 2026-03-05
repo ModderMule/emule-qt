@@ -15,6 +15,7 @@
 #include "friends/Friend.h"
 #include "search/SearchFile.h"
 #include "server/Server.h"
+#include "server/ServerList.h"
 #include "utils/OtherFunctions.h"
 
 #include <QCborArray>
@@ -115,6 +116,7 @@ namespace eMule::Ipc {
         {QStringLiteral("acceptedReqs"),        static_cast<qint64>(f.statistic.allTimeAccepts())},
         {QStringLiteral("transferredData"),     static_cast<qint64>(f.statistic.allTimeTransferred())},
         {QStringLiteral("partMap"),             buildPartMap(f)},
+        {QStringLiteral("isPreviewPossible"),  f.isPreviewPossible()},
     };
 }
 
@@ -181,8 +183,6 @@ namespace eMule::Ipc {
     const auto& partStatus = c.partStatus();
     const uint16 parts = c.partCount();
     const auto* reqFile = c.reqFile();
-    if (parts == 0 || partStatus.empty() || !reqFile)
-        return {};
 
     // Collect parts with pending blocks
     std::set<uint32> pendingParts;
@@ -195,6 +195,28 @@ namespace eMule::Ipc {
     uint32 activePart = UINT32_MAX;
     if (c.isDownloading() && c.sessionDown() > 0 && c.lastBlockOffset() != UINT64_MAX)
         activePart = static_cast<uint32>(c.lastBlockOffset() / PARTSIZE);
+
+    // For complete sources, partStatus is empty but they have all parts
+    if (c.completeSource() && reqFile) {
+        const uint16 fileParts = reqFile->partCount();
+        if (fileParts == 0) return {};
+        QCborArray arr;
+        for (uint16 i = 0; i < fileParts; ++i) {
+            if (reqFile->isComplete(i)) {
+                arr.append(1);  // both have it
+            } else if (i == activePart) {
+                arr.append(4);  // currently receiving
+            } else if (pendingParts.count(i)) {
+                arr.append(3);  // pending block queued
+            } else {
+                arr.append(2);  // client has, we need
+            }
+        }
+        return arr;
+    }
+
+    if (parts == 0 || partStatus.empty() || !reqFile)
+        return {};
 
     QCborArray arr;
     for (uint16 i = 0; i < parts; ++i) {
@@ -231,6 +253,7 @@ namespace eMule::Ipc {
     // Download fields
     m.insert(QStringLiteral("transferredDown"), static_cast<qint64>(c.transferredDown()));
     m.insert(QStringLiteral("sessionDown"),     static_cast<qint64>(c.sessionDown()));
+    m.insert(QStringLiteral("datarate"),        static_cast<qint64>(c.downDatarate()));
     m.insert(QStringLiteral("partCount"),       c.partCount());
     m.insert(QStringLiteral("fileName"),        c.clientFilename());
     m.insert(QStringLiteral("remoteQueueRank"), static_cast<qint64>(c.remoteQueueRank()));
@@ -256,6 +279,79 @@ namespace eMule::Ipc {
         m.insert(QStringLiteral("uploadFileName"), c.uploadFile()->fileName());
     if (auto spm = buildSourcePartMap(c); !spm.isEmpty())
         m.insert(QStringLiteral("sourcePartMap"), std::move(spm));
+    return m;
+}
+
+// ---------------------------------------------------------------------------
+// Extended client serializer for detail dialog
+// ---------------------------------------------------------------------------
+
+} // namespace eMule::Ipc
+
+#include "app/AppContext.h"
+
+namespace eMule::Ipc {
+
+[[nodiscard]] inline QCborMap toCborDetailed(const UpDownClient& c, AppContext& app)
+{
+    QCborMap m = toCbor(c);
+
+    // Low / High ID
+    m.insert(QStringLiteral("hasLowID"), c.hasLowID());
+
+    // Server info
+    m.insert(QStringLiteral("serverIP"),   static_cast<qint64>(c.serverIP()));
+    m.insert(QStringLiteral("serverPort"), static_cast<qint64>(c.serverPort()));
+    if (c.serverIP() != 0 && app.serverList) {
+        if (auto* srv = app.serverList->findByIPTcp(c.serverIP(), c.serverPort()))
+            m.insert(QStringLiteral("serverName"), srv->name());
+    }
+
+    // Kad
+    m.insert(QStringLiteral("kadConnected"), c.kadPort() != 0);
+
+    // Obfuscation
+    QString obfuStr;
+    if (c.isObfuscatedConnectionEstablished())
+        obfuStr = QStringLiteral("Enabled");
+    else if (c.supportsCryptLayer())
+        obfuStr = c.requestsCryptLayer() ? QStringLiteral("Supported (preferred)")
+                                          : QStringLiteral("Supported");
+    else
+        obfuStr = QStringLiteral("Not supported");
+    m.insert(QStringLiteral("obfuscation"), obfuStr);
+
+    // Identification (credits)
+    if (c.credits()) {
+        const auto identState = c.credits()->currentIdentState(c.connectIP());
+        QString identStr;
+        switch (identState) {
+        case IdentState::Identified:   identStr = QStringLiteral("Verified (secure)"); break;
+        case IdentState::IdNeeded:     identStr = QStringLiteral("Not yet checked"); break;
+        case IdentState::IdFailed:     identStr = QStringLiteral("Failed"); break;
+        case IdentState::IdBadGuy:     identStr = QStringLiteral("Bad guy / fake"); break;
+        default:                       identStr = QStringLiteral("Not available"); break;
+        }
+        m.insert(QStringLiteral("identification"), identStr);
+
+        // Credit totals
+        m.insert(QStringLiteral("downloadedTotal"), static_cast<qint64>(c.credits()->downloadedTotal()));
+        m.insert(QStringLiteral("uploadedTotal"),   static_cast<qint64>(c.credits()->uploadedTotal()));
+        m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.connectIP())));
+    } else {
+        m.insert(QStringLiteral("identification"), QStringLiteral("Not available"));
+        m.insert(QStringLiteral("downloadedTotal"), 0);
+        m.insert(QStringLiteral("uploadedTotal"),   0);
+        m.insert(QStringLiteral("scoreRatio"),      1.0);
+    }
+
+    // Queue score
+    m.insert(QStringLiteral("score"),  static_cast<qint64>(c.score(false, c.isDownloading(), false)));
+    m.insert(QStringLiteral("rating"), static_cast<qint64>(c.score(false, c.isDownloading(), true)));
+
+    // Friend slot
+    m.insert(QStringLiteral("friendSlot"), c.friendSlot());
+
     return m;
 }
 

@@ -93,6 +93,7 @@ enum class IpcMsgType : int {
     GetDownloadDetails   = 249,  ///< [hash: string] → extended info (filePath, comments)
     PreviewDownload      = 250,  ///< [hash: string] — preview partial file on daemon
     RequestClientSharedFiles = 251, ///< [clientHash: string] — ask client for shared list
+    GetClientDetails     = 252, ///< [clientHash: string] → extended client info for detail dialog
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 

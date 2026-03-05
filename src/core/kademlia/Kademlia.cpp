@@ -184,6 +184,13 @@ bool Kademlia::isConnected() const
     return m_running && m_prefs && m_prefs->hasHadContact();
 }
 
+bool Kademlia::isKadReady() const
+{
+    return isConnected()
+        && m_udpListener
+        && m_udpListener->totalHellosReceived() >= kMinPacketsForReady;
+}
+
 bool Kademlia::isFirewalled() const
 {
     if (!m_running || !m_prefs)

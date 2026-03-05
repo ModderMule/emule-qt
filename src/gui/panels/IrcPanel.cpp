@@ -677,7 +677,7 @@ void IrcPanel::setupUi()
 
     // Format toolbar
     m_smileyBtn = new QToolButton(this);
-    m_smileyBtn->setIcon(QIcon(QStringLiteral(":/icons/Smiley_Smile.ico")));
+    m_smileyBtn->setIcon(QIcon(QStringLiteral(":/smileys/Smiley_Smile.ico")));
     m_smileyBtn->setIconSize(QSize(20, 20));
     m_smileyBtn->setAutoRaise(true);
     m_smileyBtn->setToolTip(tr("Smileys"));
@@ -685,12 +685,17 @@ void IrcPanel::setupUi()
     bottomLayout->addWidget(m_smileyBtn);
 
     m_boldBtn = new QToolButton(this);
-    m_boldBtn->setText(QStringLiteral("B"));
-    m_boldBtn->setFont([]{
-        QFont f;
-        f.setBold(true);
-        return f;
-    }());
+    if (thePrefs.useOriginalIcons()) {
+        m_boldBtn->setIcon(QIcon(QStringLiteral(":/icons/bold.ico")));
+        m_boldBtn->setIconSize(QSize(20, 20));
+    } else {
+        m_boldBtn->setText(QStringLiteral("B"));
+        m_boldBtn->setFont([]{
+            QFont f;
+            f.setBold(true);
+            return f;
+        }());
+    }
     m_boldBtn->setAutoRaise(true);
     m_boldBtn->setFixedSize(24, 24);
     m_boldBtn->setToolTip(tr("Bold"));
@@ -698,12 +703,17 @@ void IrcPanel::setupUi()
     bottomLayout->addWidget(m_boldBtn);
 
     m_italicBtn = new QToolButton(this);
-    m_italicBtn->setText(QStringLiteral("I"));
-    m_italicBtn->setFont([]{
-        QFont f;
-        f.setItalic(true);
-        return f;
-    }());
+    if (thePrefs.useOriginalIcons()) {
+        m_italicBtn->setIcon(QIcon(QStringLiteral(":/icons/italic.ico")));
+        m_italicBtn->setIconSize(QSize(20, 20));
+    } else {
+        m_italicBtn->setText(QStringLiteral("I"));
+        m_italicBtn->setFont([]{
+            QFont f;
+            f.setItalic(true);
+            return f;
+        }());
+    }
     m_italicBtn->setAutoRaise(true);
     m_italicBtn->setFixedSize(24, 24);
     m_italicBtn->setToolTip(tr("Italic"));
@@ -711,12 +721,17 @@ void IrcPanel::setupUi()
     bottomLayout->addWidget(m_italicBtn);
 
     m_underlineBtn = new QToolButton(this);
-    m_underlineBtn->setText(QStringLiteral("U"));
-    m_underlineBtn->setFont([]{
-        QFont f;
-        f.setUnderline(true);
-        return f;
-    }());
+    if (thePrefs.useOriginalIcons()) {
+        m_underlineBtn->setIcon(QIcon(QStringLiteral(":/icons/underline.ico")));
+        m_underlineBtn->setIconSize(QSize(20, 20));
+    } else {
+        m_underlineBtn->setText(QStringLiteral("U"));
+        m_underlineBtn->setFont([]{
+            QFont f;
+            f.setUnderline(true);
+            return f;
+        }());
+    }
     m_underlineBtn->setAutoRaise(true);
     m_underlineBtn->setFixedSize(24, 24);
     m_underlineBtn->setToolTip(tr("Underline"));
@@ -724,7 +739,12 @@ void IrcPanel::setupUi()
     bottomLayout->addWidget(m_underlineBtn);
 
     m_colorBtn = new QToolButton(this);
-    m_colorBtn->setText(QStringLiteral("\u25A0"));
+    if (thePrefs.useOriginalIcons()) {
+        m_colorBtn->setIcon(QIcon(QStringLiteral(":/icons/colour.ico")));
+        m_colorBtn->setIconSize(QSize(20, 20));
+    } else {
+        m_colorBtn->setText(QStringLiteral("\u25A0"));
+    }
     m_colorBtn->setAutoRaise(true);
     m_colorBtn->setFixedSize(24, 24);
     m_colorBtn->setToolTip(tr("Color"));
@@ -732,7 +752,12 @@ void IrcPanel::setupUi()
     bottomLayout->addWidget(m_colorBtn);
 
     m_resetBtn = new QToolButton(this);
-    m_resetBtn->setText(QStringLiteral("F"));
+    if (thePrefs.useOriginalIcons()) {
+        m_resetBtn->setIcon(QIcon(QStringLiteral(":/icons/resetformat.ico")));
+        m_resetBtn->setIconSize(QSize(20, 20));
+    } else {
+        m_resetBtn->setText(QStringLiteral("F"));
+    }
     m_resetBtn->setAutoRaise(true);
     m_resetBtn->setFixedSize(24, 24);
     m_resetBtn->setToolTip(tr("Reset Formatting"));
@@ -1088,7 +1113,7 @@ QString IrcPanel::renderSmileys(const QString& text) const
 
     for (const auto& entry : sorted) {
         const QString code = QString::fromLatin1(kSmileys[entry.index].code);
-        const QString img = QStringLiteral("<img src=\"qrc:/icons/%1.ico\" width=\"16\" height=\"16\">")
+        const QString img = QStringLiteral("<img src=\"qrc:/smileys/%1.ico\" width=\"16\" height=\"16\">")
                                 .arg(QLatin1StringView(kSmileys[entry.index].icon));
         result.replace(code, img);
     }
@@ -1318,7 +1343,7 @@ void IrcPanel::showSmileySelector()
 
     for (int i = 0; i < kSmileyCount; ++i) {
         auto* btn = new QToolButton(gridWidget);
-        btn->setIcon(QIcon(QStringLiteral(":/icons/%1.ico").arg(QLatin1StringView(kSmileys[i].icon))));
+        btn->setIcon(QIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(kSmileys[i].icon))));
         btn->setIconSize(QSize(24, 24));
         btn->setFixedSize(28, 28);
         btn->setAutoRaise(true);

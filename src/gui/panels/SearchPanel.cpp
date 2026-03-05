@@ -340,7 +340,7 @@ void SearchPanel::onStartSearch()
     msg.append(album);                                    // field 12
     msg.append(artist);                                   // field 13
 
-    m_ipc->sendRequest(std::move(msg), [this, expression](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, expression, method](const IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;
 
@@ -351,13 +351,27 @@ void SearchPanel::onStartSearch()
         SearchTab tab;
         tab.searchID = searchID;
         tab.title = expression;
+        tab.method = method;
         tab.model = new SearchResultsModel(this);
         tab.proxy = new QSortFilterProxyModel(this);
         tab.proxy->setSourceModel(tab.model);
         tab.proxy->setSortRole(Qt::UserRole);
         m_tabs.push_back(tab);
 
-        const int idx = m_tabBar->addTab(QStringLiteral("%1 (0)").arg(expression));
+        int idx;
+        if (thePrefs.useOriginalIcons()) {
+            static constexpr const char* methodIcons[] = {
+                ":/icons/KadServer.ico",   // 0 = Automatic
+                ":/icons/Server.ico",      // 1 = Ed2k Server
+                ":/icons/Global.ico",      // 2 = Ed2k Global
+                ":/icons/SearchKad.ico",   // 3 = Kademlia
+            };
+            const int mi = (method >= 0 && method <= 3) ? method : 0;
+            idx = m_tabBar->addTab(QIcon(QString::fromLatin1(methodIcons[mi])),
+                                   QStringLiteral("%1 (0)").arg(expression));
+        } else {
+            idx = m_tabBar->addTab(QStringLiteral("%1 (0)").arg(expression));
+        }
         m_tabBar->setVisible(true);
         m_tabBar->setCurrentIndex(idx);
         m_cancelBtn->setEnabled(true);
@@ -442,8 +456,14 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                               && m_resultView->selectionModel()->hasSelection();
     m_contextMenu->clear();
 
+    const bool useOriginal = thePrefs.useOriginalIcons();
+    auto ico = [&](const char* res) -> QIcon {
+        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
+                           : QIcon();
+    };
+
     // Download
-    auto* downloadAction = m_contextMenu->addAction(tr("Download"));
+    auto* downloadAction = m_contextMenu->addAction(ico("Download.ico"), tr("Download"));
     downloadAction->setEnabled(hasSelection);
     connect(downloadAction, &QAction::triggered, this, [this] {
         const auto sel = m_resultView->selectionModel()->selectedRows();
@@ -454,7 +474,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     m_contextMenu->addSeparator();
 
     // Copy eD2K Links
-    auto* copyLinkAction = m_contextMenu->addAction(tr("Copy eD2K Links"));
+    auto* copyLinkAction = m_contextMenu->addAction(ico("eD2kLink.ico"), tr("Copy eD2K Links"));
     copyLinkAction->setEnabled(hasSelection);
     connect(copyLinkAction, &QAction::triggered, this, [this] {
         QStringList links;
@@ -465,7 +485,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     });
 
     // Copy eD2K Links (HTML)
-    auto* copyHtmlAction = m_contextMenu->addAction(tr("Copy eD2K Links (HTML)"));
+    auto* copyHtmlAction = m_contextMenu->addAction(ico("Copy.ico"), tr("Copy eD2K Links (HTML)"));
     copyHtmlAction->setEnabled(hasSelection);
     connect(copyHtmlAction, &QAction::triggered, this, [this] {
         QStringList links;
@@ -486,7 +506,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     m_contextMenu->addSeparator();
 
     // Mark as Spam
-    auto* spamAction = m_contextMenu->addAction(tr("Mark as Spam"));
+    auto* spamAction = m_contextMenu->addAction(ico("Spam.ico"), tr("Mark as Spam"));
     spamAction->setEnabled(hasSelection);
     connect(spamAction, &QAction::triggered, this, [this] {
         auto* tab = currentTab();
@@ -503,7 +523,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     });
 
     // Remove (remove from local results list)
-    auto* removeAction = m_contextMenu->addAction(tr("Remove"));
+    auto* removeAction = m_contextMenu->addAction(ico("ListRemove.ico"), tr("Remove"));
     removeAction->setEnabled(hasSelection);
     connect(removeAction, &QAction::triggered, this, [this] {
         auto* tab = currentTab();
@@ -523,7 +543,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     m_contextMenu->addSeparator();
 
     // Close Search Results
-    auto* closeAction = m_contextMenu->addAction(tr("Close Search Results"));
+    auto* closeAction = m_contextMenu->addAction(ico("CloseTab.ico"), tr("Close Search Results"));
     closeAction->setEnabled(m_tabBar->currentIndex() >= 0);
     connect(closeAction, &QAction::triggered, this, [this] {
         if (m_tabBar->currentIndex() >= 0)
@@ -531,7 +551,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     });
 
     // Close All Search Results
-    auto* closeAllAction = m_contextMenu->addAction(tr("Close All Search Results"));
+    auto* closeAllAction = m_contextMenu->addAction(ico("DeleteAll.ico"), tr("Close All Search Results"));
     closeAllAction->setEnabled(!m_tabs.empty());
     connect(closeAllAction, &QAction::triggered, this, &SearchPanel::closeAllSearches);
 

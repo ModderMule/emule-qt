@@ -62,6 +62,7 @@
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+84"/>
         <source>Passive</source>
         <translation type="unfinished"></translation>
     </message>
@@ -77,7 +78,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+56"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="-27"/>
         <source>Never</source>
         <translation type="unfinished"></translation>
     </message>
@@ -130,8 +131,43 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location line="+9"/>
+        <source>Local Server</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>eD2K Server</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Kademlia</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Source Exchange</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>URL</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>SLS</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Unknown</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../src/gui/controls/ClientListModel.cpp" line="-260"/>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+15"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+16"/>
         <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+13"/>
         <source>High</source>
         <translation type="unfinished"></translation>
@@ -159,7 +195,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+106"/>
+        <location filename="../src/gui/app/main.cpp" line="+107"/>
         <source>eD2K Link</source>
         <translation type="unfinished"></translation>
     </message>
@@ -171,7 +207,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+325"/>
+        <location line="+282"/>
         <source>Download Added</source>
         <translation type="unfinished"></translation>
     </message>
@@ -571,7 +607,12 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+40"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+129"/>
+        <source>Downloading</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+63"/>
         <source>Auto [%1]</source>
         <translation type="unfinished"></translation>
     </message>
@@ -588,7 +629,7 @@ Transferred Data:	%8</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+54"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1064,18 +1105,18 @@ Please choose another:</source>
 <context>
     <name>eMule::KadPanel</name>
     <message>
-        <location filename="../src/gui/panels/KadPanel.cpp" line="+103"/>
+        <location filename="../src/gui/panels/KadPanel.cpp" line="+111"/>
         <location line="+12"/>
-        <location line="+139"/>
+        <location line="+182"/>
         <location line="+36"/>
         <location line="+177"/>
         <source>▸ Contacts (0)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-363"/>
+        <location line="-406"/>
         <location line="+12"/>
-        <location line="+306"/>
+        <location line="+349"/>
         <location line="+85"/>
         <source>▸ Current Searches (0)</source>
         <translation type="unfinished"></translation>
@@ -1098,13 +1139,41 @@ Please choose another:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-225"/>
+        <location line="-440"/>
+        <location line="+215"/>
         <location line="+28"/>
         <source>Bootstrap</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-24"/>
+        <location line="-251"/>
+        <source>Downloading...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <location line="+7"/>
+        <location line="+8"/>
+        <source>Kademlia</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-14"/>
+        <source>Failed to download nodes.dat: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Downloaded nodes.dat is empty.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Failed to save nodes.dat: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+200"/>
         <source>IP Address:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1420,12 +1489,12 @@ Would you like to open the homepage to download it?</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+280"/>
+        <location line="+293"/>
         <source>Name:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-279"/>
+        <location line="-292"/>
         <source>Hash:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1490,12 +1559,12 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+7"/>
         <source>View Shared Files</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+16"/>
         <source>Establish Friend Slot</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1505,7 +1574,7 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+30"/>
         <source>Friends (%1)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1653,71 +1722,73 @@ Would you like to open the homepage to download it?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+65"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+71"/>
         <source>Options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+40"/>
-        <location line="+1441"/>
+        <location line="+1533"/>
         <source>OK</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1440"/>
-        <location line="+1441"/>
+        <location line="-1532"/>
+        <location line="+1533"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1440"/>
-        <location line="+2651"/>
+        <location line="-1532"/>
+        <location line="+2784"/>
         <source>Apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2650"/>
+        <location line="-2783"/>
         <source>Help</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+211"/>
-        <location line="+1453"/>
+        <location line="+214"/>
+        <location line="+1542"/>
+        <location line="+54"/>
+        <location line="+13"/>
         <source>IP Filter</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1452"/>
+        <location line="-1608"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+191"/>
+        <location line="+193"/>
         <source>User Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+3217"/>
+        <location line="+3355"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3214"/>
+        <location line="-3352"/>
         <source>System Default</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+14"/>
-        <location line="+529"/>
-        <location line="+201"/>
+        <location line="+41"/>
+        <location line="+540"/>
+        <location line="+250"/>
         <location line="+370"/>
-        <location line="+212"/>
+        <location line="+250"/>
         <source>Miscellaneous</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1309"/>
+        <location line="-1407"/>
         <source>Bring to front on link click</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1793,24 +1864,24 @@ Would you like to open the homepage to download it?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+3152"/>
+        <location line="+3263"/>
         <source>Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3147"/>
+        <location line="-3258"/>
         <source>Address:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+904"/>
-        <location line="+544"/>
+        <location line="+964"/>
+        <location line="+581"/>
         <source>Port:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1445"/>
+        <location line="-1542"/>
         <source>authentication token</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1926,16 +1997,17 @@ Would you like to open the homepage to download it?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1315"/>
+        <location line="+540"/>
+        <location line="+872"/>
         <location line="+108"/>
         <location line="+286"/>
-        <location line="+231"/>
+        <location line="+235"/>
         <location line="+26"/>
         <source>Enabled</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1964"/>
+        <location line="-2065"/>
         <source>Reset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2001,7 +2073,7 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+10"/>
         <source>Use UPnP to Setup Ports</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2046,7 +2118,7 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+11"/>
         <source>Network</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2062,12 +2134,12 @@ Would you like to open the homepage to download it?</source>
     </message>
     <message>
         <location line="+52"/>
-        <location line="+1119"/>
+        <location line="+1206"/>
         <source>General</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1116"/>
+        <location line="-1203"/>
         <source>Enable proxy</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2133,14 +2205,14 @@ Would you like to open the homepage to download it?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+559"/>
-        <location line="+606"/>
+        <location line="+609"/>
+        <location line="+643"/>
         <location line="+19"/>
         <source>Password:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1151"/>
+        <location line="-1238"/>
         <source>Update</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2150,7 +2222,7 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>retries</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2266,12 +2338,33 @@ Would you like to open the homepage to download it?</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+532"/>
+        <location line="+581"/>
         <source>Edit...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-521"/>
+        <location line="-577"/>
+        <source>Filename Cleanup Rules</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Define patterns to automatically clean up filenames of new downloads.
+Each rule replaces a regex pattern with a replacement string.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Pattern</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Replacement</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+48"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2612,22 +2705,43 @@ Would you like to open the homepage to download it?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+303"/>
+        <location line="+340"/>
         <source>Reload</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-293"/>
+        <location line="-322"/>
         <source>Update from URL: (filter.dat- or PeerGuardian-format)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+3"/>
+        <source>http://example.com/ipfilter.dat</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+13"/>
         <source>Load</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-7"/>
+        <source>Loading...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Failed to download IP filter: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>IP filter updated and reloaded.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>See My Shared Files/Directories</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2687,7 +2801,7 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+38"/>
         <source>Graphs</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3128,6 +3242,11 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>Log raw socket packets</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location line="+6"/>
         <source>Upload SpeedSense (not recommended)</source>
         <translation type="unfinished"></translation>
@@ -3233,7 +3352,8 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="-1439"/>
+        <location line="+1482"/>
         <location line="+275"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
@@ -3347,7 +3467,8 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+161"/>
+        <location line="-1572"/>
+        <location line="+1733"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3374,7 +3495,7 @@ Would you like to open the homepage to download it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+663"/>
+        <location line="+673"/>
         <source>Proxy</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3458,7 +3579,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+121"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+127"/>
         <location line="+319"/>
         <source>Download</source>
         <translation type="unfinished"></translation>
@@ -3634,12 +3755,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
         <source>Mark as Spam</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+17"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3732,7 +3853,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+52"/>
         <source>Server Name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3795,39 +3916,64 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+147"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+170"/>
         <location line="+17"/>
-        <location line="+76"/>
+        <location line="+126"/>
         <location line="+12"/>
         <location line="+390"/>
         <source>Connect</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-498"/>
+        <location line="-548"/>
         <location line="+7"/>
         <location line="+16"/>
-        <location line="+109"/>
+        <location line="+159"/>
         <location line="+54"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="-111"/>
-        <location line="+571"/>
+        <location line="+582"/>
         <source>▸ Servers (%1)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-646"/>
-        <location line="+81"/>
+        <location line="-707"/>
+        <location line="+131"/>
         <location line="+23"/>
         <location line="+2"/>
         <source>Disconnect</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-19"/>
+        <location line="-82"/>
+        <source>Invalid URL: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Downloading server.met from %1 ...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Failed to download server.met: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Downloaded empty server.met file.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Downloaded server.met (%1 bytes). Parsing...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+31"/>
         <source>Connected to &lt;b&gt;%1&lt;/b&gt; (%2:%3)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3955,18 +4101,21 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <location line="+2"/>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+7"/>
-        <location line="+2"/>
+        <location line="+8"/>
+        <location line="+3"/>
+        <location line="+4"/>
+        <location line="+4"/>
         <source>Status:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-21"/>
+        <location line="-31"/>
+        <location line="+24"/>
         <source>Connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-22"/>
         <source>Server: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3987,21 +4136,28 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+18"/>
         <source>Connecting...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-16"/>
+        <location line="+20"/>
         <source>Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-16"/>
         <source>Kad Network</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+5"/>
+        <source>Firewalled</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Network</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4090,11 +4246,41 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <source>Search in column:</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location line="+99"/>
+        <source>Invalid server.met header: 0x%1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Server count too large: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Corrupt server.met: tag count %1 at server %2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Corrupt server.met: truncated tag name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+81"/>
+        <source>Unknown tag type 0x%1 at server %2, stopping parse</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+49"/>
+        <source>server.met processed: %1 servers added, %2 skipped (duplicates/invalid).</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>eMule::SharedFilesModel</name>
     <message>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+140"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+143"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4147,15 +4333,15 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+113"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+116"/>
         <location line="+10"/>
-        <location line="+186"/>
-        <location line="+269"/>
+        <location line="+229"/>
+        <location line="+272"/>
         <source>Shared Files (0)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-400"/>
+        <location line="-446"/>
         <source>Open File</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4170,17 +4356,49 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+5"/>
+        <source>Rename File</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>New file name:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <source>Delete From Disk</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+4"/>
+        <source>Delete File</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Are you sure you want to permanently delete &quot;%1&quot; from disk?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Unshare</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+4"/>
+        <source>Unshare File</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove &quot;%1&quot; from the shared files list?
+
+The file will remain on disk.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Priority (Upload)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4231,12 +4449,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+16"/>
-        <location line="+433"/>
+        <location line="+446"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-429"/>
+        <location line="-442"/>
         <source>All Shared Files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4261,7 +4479,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+93"/>
+        <location line="+96"/>
         <source>Current Session</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4330,7 +4548,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+79"/>
+        <location line="+89"/>
         <source>Shared Files (%1)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4576,12 +4794,11 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+214"/>
         <source>Found Sources: 0</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-200"/>
+        <location line="+14"/>
         <source>Connection</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4777,36 +4994,36 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+5"/>
-        <location line="+31"/>
+        <location line="+32"/>
         <source>Total Overhead (Packets): %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-27"/>
-        <location line="+31"/>
+        <location line="-28"/>
+        <location line="+32"/>
         <source>File Request Overhead (Packets): %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-27"/>
-        <location line="+31"/>
+        <location line="-28"/>
+        <location line="+32"/>
         <source>Source Exchange Overhead (Packets): %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-27"/>
-        <location line="+31"/>
+        <location line="-28"/>
+        <location line="+32"/>
         <source>Server Overhead (Packets): %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-27"/>
-        <location line="+31"/>
+        <location line="-28"/>
+        <location line="+32"/>
         <source>Kad Overhead (Packets): %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-25"/>
+        <location line="-26"/>
         <source>Downloaded Data: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4816,7 +5033,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+3"/>
+        <source>Found Sources: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+27"/>
         <source>Active Connections: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4966,7 +5188,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+69"/>
         <source>%1 Bytes</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4974,106 +5196,106 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+595"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+675"/>
         <source>Clients on queue:   0</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-322"/>
-        <location line="+350"/>
+        <location line="-393"/>
+        <location line="+421"/>
         <source>Pause</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-388"/>
+        <location line="-459"/>
         <source>Priority (Download)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+20"/>
-        <location line="+854"/>
+        <location line="+1160"/>
         <source>Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-853"/>
-        <location line="+854"/>
+        <location line="-1159"/>
+        <location line="+1160"/>
         <source>Normal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-853"/>
-        <location line="+854"/>
+        <location line="-1159"/>
+        <location line="+1160"/>
         <source>High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-852"/>
-        <location line="+854"/>
+        <location line="-1158"/>
+        <location line="+1160"/>
         <source>Very Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-853"/>
-        <location line="+854"/>
+        <location line="-1159"/>
+        <location line="+1160"/>
         <source>Very High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-852"/>
-        <location line="+855"/>
+        <location line="-1158"/>
+        <location line="+1161"/>
         <source>Auto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-833"/>
-        <location line="+346"/>
+        <location line="-1139"/>
+        <location line="+417"/>
         <source>Stop</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-334"/>
-        <location line="+342"/>
+        <location line="-406"/>
+        <location line="+413"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-332"/>
-        <location line="+339"/>
+        <location line="-403"/>
+        <location line="+410"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-329"/>
-        <location line="+339"/>
+        <location line="-400"/>
+        <location line="+410"/>
         <source>Open File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-335"/>
-        <location line="+343"/>
+        <location line="-403"/>
+        <location line="+417"/>
         <source>Preview</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-339"/>
-        <location line="+874"/>
+        <location line="-411"/>
+        <location line="+1177"/>
         <source>Details...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-870"/>
+        <location line="-1171"/>
         <source>Comments...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+15"/>
-        <location line="+345"/>
+        <location line="+17"/>
+        <location line="+436"/>
         <source>Clear Completed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-335"/>
+        <location line="-426"/>
         <source>eD2K Links...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5084,23 +5306,29 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+30"/>
-        <location line="+844"/>
+        <location line="+1193"/>
         <source>Find...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-841"/>
+        <location line="-1189"/>
         <source>Search Related Files</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8"/>
-        <location line="+283"/>
+        <location line="+10"/>
+        <location line="+357"/>
         <source>Assign To Category</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-214"/>
+        <location line="-355"/>
+        <location line="+362"/>
+        <source>(All)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-281"/>
         <source>Downloads (0)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5110,7 +5338,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+119"/>
         <source>Uploading (0)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5136,42 +5364,84 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+59"/>
-        <location line="+528"/>
+        <location line="+497"/>
+        <location line="+266"/>
         <source>Priority</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-720"/>
         <source>Open Folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+14"/>
         <source>Details</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+7"/>
+        <location line="+459"/>
         <source>Comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-452"/>
         <source>eD2K Links</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+32"/>
         <source>Search Related</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+17"/>
         <source>Find</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+311"/>
+        <location line="+359"/>
+        <source>Download Details</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Hash</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>File Size</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Transferring</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>A4AF Sources</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>File Path</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+26"/>
+        <source>File: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>No comments available yet.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+100"/>
         <source>Downloads (%1)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5182,18 +5452,19 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+74"/>
-        <location line="+116"/>
+        <location line="+167"/>
         <source>Search</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-110"/>
-        <location line="+116"/>
+        <location line="-161"/>
+        <location line="+167"/>
         <source>Search for:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-113"/>
+        <location line="-428"/>
+        <location line="+264"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5218,12 +5489,14 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-263"/>
+        <location line="+264"/>
         <source>Sources</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-266"/>
+        <location line="+268"/>
         <source>Status</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5249,27 +5522,68 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+110"/>
+        <location line="+161"/>
         <source>Search in column:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-59"/>
+        <location line="-111"/>
+        <source>Client Details</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>User Name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>User Hash</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Software</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>IP:Port</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Downloaded</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Uploaded</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+11"/>
         <source>Add To Friends</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+20"/>
+        <location line="+7"/>
         <source>Send Message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+0"/>
+        <source>Message:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+11"/>
         <source>View Shared Files</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-211"/>
+        <location line="-252"/>
         <source>Uploading (%1)</source>
         <translation type="unfinished"></translation>
     </message>

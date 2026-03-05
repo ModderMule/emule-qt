@@ -5,6 +5,7 @@
 
 #include <QDateTime>
 #include <QLocale>
+#include <algorithm>
 #include <climits>
 
 namespace eMule {
@@ -436,6 +437,25 @@ const DownloadRow* DownloadListModel::downloadAt(int row) const
 bool DownloadListModel::isSourceRow(const QModelIndex& index) const
 {
     return index.isValid() && index.internalId() != 0;
+}
+
+const SourceRow* DownloadListModel::sourceAt(const QModelIndex& index) const
+{
+    if (!isSourceRow(index))
+        return nullptr;
+    const auto parentRow = static_cast<int>(index.internalId() - 1);
+    if (parentRow < 0 || parentRow >= static_cast<int>(m_downloads.size()))
+        return nullptr;
+    const auto& srcs = m_downloads[static_cast<size_t>(parentRow)].sources;
+    if (index.row() < 0 || index.row() >= static_cast<int>(srcs.size()))
+        return nullptr;
+    return &srcs[static_cast<size_t>(index.row())];
+}
+
+bool DownloadListModel::containsHash(const QString& hexHash) const
+{
+    return std::any_of(m_downloads.begin(), m_downloads.end(),
+        [&](const DownloadRow& r) { return r.hash == hexHash; });
 }
 
 } // namespace eMule

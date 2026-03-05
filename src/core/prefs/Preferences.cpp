@@ -197,7 +197,7 @@ struct Preferences::Data {
     bool a4afSaveCpu = false;        // Skip A4AF swap checks
     bool autoArchivePreviewStart = true; // Auto-scan archive contents in file details
     QString ed2kHostname;            // Hostname for own eD2K links
-    bool showExtControls = false;    // Show advanced mode controls in context menus
+    bool showExtControls = true;     // Show advanced mode controls in context menus
     int commitFiles = 1;             // 0=never, 1=on shutdown, 2=always
     int extractMetaData = 1;         // 0=never, 1=MediaInfo library
     uint32 queueSize = 5000;         // Upload queue size (2000-50000)
@@ -408,6 +408,7 @@ struct Preferences::Data {
     int windowWidth = 900;
     int windowHeight = 620;
     bool windowMaximized = false;
+    int optionsLastPage = 0;
     QMap<QString, QByteArray> headerStates;
 };
 
@@ -3374,6 +3375,18 @@ void Preferences::setWindowMaximized(bool val)
     m_data->windowMaximized = val;
 }
 
+int Preferences::optionsLastPage() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->optionsLastPage;
+}
+
+void Preferences::setOptionsLastPage(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->optionsLastPage = val;
+}
+
 QByteArray Preferences::headerState(const QString& key) const
 {
     QReadLocker lock(&m_lock);
@@ -3950,6 +3963,7 @@ bool Preferences::load(const QString& filePath)
             m_data->windowWidth     = ui["windowWidth"].as<int>(m_data->windowWidth);
             m_data->windowHeight    = ui["windowHeight"].as<int>(m_data->windowHeight);
             m_data->windowMaximized = ui["windowMaximized"].as<bool>(m_data->windowMaximized);
+            m_data->optionsLastPage = ui["optionsLastPage"].as<int>(m_data->optionsLastPage);
 
             if (ui["headers"] && ui["headers"].IsMap()) {
                 for (const auto& pair : ui["headers"]) {
@@ -4479,6 +4493,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "windowWidth"     << YAML::Value << m_data->windowWidth;
     out << YAML::Key << "windowHeight"    << YAML::Value << m_data->windowHeight;
     out << YAML::Key << "windowMaximized" << YAML::Value << m_data->windowMaximized;
+    out << YAML::Key << "optionsLastPage" << YAML::Value << m_data->optionsLastPage;
 
     if (!m_data->headerStates.isEmpty()) {
         out << YAML::Key << "headers" << YAML::Value << YAML::BeginMap;

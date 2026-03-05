@@ -61,4 +61,9 @@ inline constexpr uint32_t kSmallTimerInterval           = 60;   // per-zone smal
 // ---------------------------------------------------------------------------
 inline constexpr uint32_t kExternalPortAskIPs = 3;
 
+// ---------------------------------------------------------------------------
+// Bootstrap readiness — minimum HELLO_RES packets before file operations
+// ---------------------------------------------------------------------------
+inline constexpr uint32_t kMinPacketsForReady = 3;
+
 } // namespace eMule::kad

@@ -209,6 +209,12 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
         // Complete file — all parts available
         m_completeSource = true;
         m_partStatus.clear();
+        // Increment source part frequency — addSource() couldn't do this
+        // because completeSource was not yet set at that point.
+        if (file) {
+            for (auto& freq : file->srcPartFrequency())
+                ++freq;
+        }
         return;
     }
 
@@ -1189,6 +1195,14 @@ bool UpDownClient::recentlySwappedForSourceExchange() const
 void UpDownClient::setSwapForSourceExchangeTick()
 {
     m_lastSwapForSourceExchangeTick = static_cast<uint32>(getTickCount());
+}
+
+void UpDownClient::removeFileFromOtherLists(PartFile* file)
+{
+    if (!file)
+        return;
+    m_otherRequests.remove(file);
+    m_otherNoNeeded.remove(file);
 }
 
 // ===========================================================================

@@ -29,6 +29,7 @@ class ServerConnect;
 class ServerList;
 class SharedFileList;
 class Scheduler;
+class Statistics;
 class UPnPManager;
 class UploadBandwidthThrottler;
 class UploadDiskIOThread;
@@ -69,6 +70,8 @@ private:
     void updateUSSParams();
     void initScheduler();
     void shutdownScheduler();
+    void initStatistics();
+    void shutdownStatistics();
     void initSearch();
     void shutdownSearch();
     void initServerConnect();
@@ -95,6 +98,7 @@ private:
     std::unique_ptr<ServerConnect> m_serverConnect;
     std::unique_ptr<LastCommonRouteFinder> m_lastCommonRouteFinder;
     std::unique_ptr<Scheduler> m_scheduler;
+    std::unique_ptr<Statistics> m_statistics;
     std::unique_ptr<UPnPManager> m_upnpManager;
 };
 

@@ -5,6 +5,8 @@
 #include "server/ServerList.h"
 #include "server/Server.h"
 #include "app/AppContext.h"
+#include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "prefs/Preferences.h"
 #include "net/ServerSocket.h"
 #include "net/UDPSocket.h"
@@ -193,6 +195,35 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
             [](const uint8* data, uint32 size, bool obfuscated) {
                 if (theApp.downloadQueue)
                     theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
+            });
+
+    connect(socket, &ServerSocket::callbackRequested, this,
+            [](uint32 clientIP, uint16 clientPort, const uint8* cryptData, uint32 cryptSize) {
+                if (!theApp.clientList)
+                    return;
+                if (theApp.clientList->isBannedClient(clientIP))
+                    return;
+
+                auto* client = theApp.clientList->findByConnIP(clientIP, clientPort);
+                if (!client) {
+                    client = new UpDownClient(clientPort, 0, clientIP, 0, nullptr);
+                    theApp.clientList->addClient(client);
+                }
+
+                // Apply crypt options if present (options[1] + hash[16] = 17 bytes)
+                if (cryptData && cryptSize >= 17) {
+                    uint8 byCryptOptions = cryptData[0];
+                    const uint8* userHash = cryptData + 1;
+                    if (client->hasValidHash()) {
+                        if (md4equ(client->userHash(), userHash))
+                            client->setConnectOptions(byCryptOptions, true, false);
+                    } else {
+                        client->setUserHash(userHash);
+                        client->setConnectOptions(byCryptOptions, true, false);
+                    }
+                }
+
+                client->tryToConnect();
             });
 
     socket->initProxySupport(thePrefs.proxySettings());
