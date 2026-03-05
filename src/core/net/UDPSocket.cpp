@@ -13,6 +13,8 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
+#include "utils/ByteOrder.h"
+
 #include <QHostAddress>
 #include <QNetworkDatagram>
 

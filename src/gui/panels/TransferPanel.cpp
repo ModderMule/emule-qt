@@ -113,9 +113,14 @@ public:
     {
         if (m_category == cat)
             return;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
         beginFilterChange();
         m_category = cat;
         endFilterChange();
+#else
+        m_category = cat;
+        invalidateFilter();
+#endif
     }
 
 protected:

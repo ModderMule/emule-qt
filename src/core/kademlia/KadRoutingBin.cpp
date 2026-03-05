@@ -8,11 +8,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
-#ifdef Q_OS_WIN
-#include <winsock2.h>
-#else
-#include <arpa/inet.h>
-#endif
+#include "utils/ByteOrder.h"
 
 #include <random>
 

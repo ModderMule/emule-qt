@@ -21,6 +21,8 @@
 #include <QHostInfo>
 #include <QNetworkInterface>
 
+#include "utils/ByteOrder.h"
+
 #include <algorithm>
 
 #if __has_include(<zlib.h>)

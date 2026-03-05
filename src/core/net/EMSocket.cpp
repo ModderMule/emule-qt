@@ -12,7 +12,11 @@
 #include <cstring>
 #include <mutex>
 
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
+#endif
 
 namespace eMule {
 
@@ -649,7 +653,8 @@ bool EMSocket::useBigSendBuffer()
         if (fd != -1) {
             constexpr int bigSize = 128 * 1024;
             int optval = bigSize;
-            if (setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_SNDBUF, &optval, sizeof(optval)) == 0)
+            if (setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_SNDBUF,
+                           reinterpret_cast<const char*>(&optval), sizeof(optval)) == 0)
                 m_useBigSendBuffers = true;
         }
     }

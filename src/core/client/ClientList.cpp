@@ -18,11 +18,7 @@
 
 #include <algorithm>
 
-#ifdef Q_OS_WIN
-#include <winsock2.h>
-#else
-#include <arpa/inet.h>  // ntohl
-#endif
+#include "utils/ByteOrder.h"
 
 namespace eMule {
 

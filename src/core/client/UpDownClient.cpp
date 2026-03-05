@@ -47,11 +47,7 @@
 #include <QPainter>
 #include <QRandomGenerator>
 
-#ifdef Q_OS_WIN
-#include <winsock2.h>
-#else
-#include <arpa/inet.h>  // ntohl
-#endif
+#include "utils/ByteOrder.h"
 
 #include <cstring>
 #include <random>
