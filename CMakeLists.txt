@@ -7,9 +7,24 @@ project(eMuleQt
 )
 
 # ---------------------------------------------------------------------------
-# Qt 6 discovery — hint path for local Qt installation
+# Qt 6 discovery — hint paths for local Qt installations
 # ---------------------------------------------------------------------------
-list(PREPEND CMAKE_PREFIX_PATH "$ENV{HOME}/Qt/6.10.2/macos")
+if(WIN32)
+    foreach(_qt_ver 6.10.2 6.10.1 6.10.0 6.9.0 6.8.0)
+        list(APPEND _qt_hints "C:/Qt/${_qt_ver}/msvc2022_64")
+        list(APPEND _qt_hints "$ENV{USERPROFILE}/Qt/${_qt_ver}/msvc2022_64")
+    endforeach()
+elseif(APPLE)
+    list(APPEND _qt_hints "$ENV{HOME}/Qt/6.10.2/macos")
+else()
+    list(APPEND _qt_hints "$ENV{HOME}/Qt/6.10.2/gcc_64")
+endif()
+foreach(_hint IN LISTS _qt_hints)
+    if(EXISTS "${_hint}")
+        list(PREPEND CMAKE_PREFIX_PATH "${_hint}")
+        break()
+    endif()
+endforeach()
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS
     Core
