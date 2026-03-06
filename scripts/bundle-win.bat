@@ -49,8 +49,8 @@ if "%BUILD_DIR%"=="" set "BUILD_DIR=build"
 if "%BUILD_DIR%"=="--no-build" set "BUILD_DIR=build"
 
 REM Make BUILD_DIR absolute (resolve relative paths against PROJECT_DIR)
-echo "%BUILD_DIR%" | findstr /r "^[a-zA-Z]:\\" >nul 2>&1
-if errorlevel 1 set "BUILD_DIR=%PROJECT_DIR%\%BUILD_DIR%"
+set "_BD2=!BUILD_DIR:~1,1!"
+if not "!_BD2!"==":" set "BUILD_DIR=%PROJECT_DIR%\%BUILD_DIR%"
 
 set "DO_BUILD=1"
 for %%A in (%*) do (
@@ -218,7 +218,7 @@ set "DEPLOY_MODE=--release"
 if /i "%CONFIG%"=="Debug" set "DEPLOY_MODE=--debug"
 "%WINDEPLOYQT%" %DEPLOY_MODE% --no-translations --no-system-d3d-compiler --no-opengl-sw "%STAGE_DIR%\emuleqt.exe"
 if errorlevel 1 (
-    echo Warning: windeployqt reported errors (continuing).
+    echo Warning: windeployqt reported errors ^(continuing^).
 )
 
 REM -- Copy OpenSSL DLLs if present -------------------------------------------
