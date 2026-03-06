@@ -5,6 +5,7 @@
 #include "app/MiniMuleWidget.h"
 #endif
 #include "app/IpcClient.h"
+#include "app/TrayMenuManager.h"
 #include "app/PowerManager.h"
 #include "app/VersionChecker.h"
 #include "app/UiState.h"
@@ -24,7 +25,6 @@
 #include "panels/TransferPanel.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 
@@ -37,6 +37,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDesktopServices>
+#include <QCursor>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -54,7 +55,6 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrl>
-#include <QVBoxLayout>
 
 namespace eMule {
 
@@ -103,6 +103,22 @@ MainWindow::MainWindow(QWidget* parent)
         m_trayIcon->show();
         connect(m_trayIcon, &QSystemTrayIcon::activated,
                 this, &MainWindow::onTrayIconClicked);
+
+        m_trayMenu = new TrayMenuManager(this);
+        connect(m_trayMenu, &TrayMenuManager::restoreRequested, this, [this]() {
+            showNormal();
+            raise();
+            activateWindow();
+        });
+        connect(m_trayMenu, &TrayMenuManager::connectToggleRequested,
+                this, &MainWindow::onConnectToggle);
+        connect(m_trayMenu, &TrayMenuManager::optionsRequested,
+                this, &MainWindow::onOptionsClicked);
+        connect(m_trayMenu, &TrayMenuManager::exitRequested,
+                this, &QWidget::close);
+#ifdef Q_OS_MAC
+        m_trayIcon->setContextMenu(m_trayMenu);
+#endif
     }
 
     // Clipboard monitoring — prompt user when ed2k file links are copied (MFC SearchClipboard)
@@ -176,6 +192,13 @@ void MainWindow::onConnectToggle()
         Ipc::IpcMessage reqKad(Ipc::IpcMsgType::BootstrapKad);
         m_ipc->sendRequest(std::move(reqKad));
     }
+}
+
+void MainWindow::setIpcClient(IpcClient* ipc)
+{
+    m_ipc = ipc;
+    if (m_trayMenu)
+        m_trayMenu->setIpcClient(ipc);
 }
 
 void MainWindow::showOptionsDialog(int page)
@@ -511,6 +534,15 @@ void MainWindow::onSchedulerToggle()
 
 void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
 {
+    if (reason == QSystemTrayIcon::Context) {
+        if (m_trayMenu) {
+            m_trayMenu->updateState(m_ed2kConnected, m_kadRunning,
+                                    m_ipc && m_ipc->isConnected());
+            m_trayMenu->popup(QCursor::pos());
+        }
+        return;
+    }
+
     if (reason == QSystemTrayIcon::DoubleClick) {
         // Double-click: restore the main window
         showNormal();
@@ -809,6 +841,7 @@ void MainWindow::setupPages()
     m_statsPanel = new StatisticsPanel(this);
     m_pages->addWidget(m_statsPanel);
 }
+
 
 // ---------------------------------------------------------------------------
 // ConnectionStatusWidget — world icon with eD2K/Kad connection arrows

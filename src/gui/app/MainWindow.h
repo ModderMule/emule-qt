@@ -29,6 +29,7 @@ class MiniMuleWidget;
 
 class IpcClient;
 class IrcPanel;
+class TrayMenuManager;
 class VersionChecker;
 class KadPanel;
 class MessagesPanel;
@@ -96,7 +97,7 @@ public:
     void showOptionsDialog(int page = -1);
 
     /// Set the IPC client (needed for Options dialog).
-    void setIpcClient(IpcClient* ipc) { m_ipc = ipc; }
+    void setIpcClient(IpcClient* ipc);
 
     [[nodiscard]] bool isEd2kConnected() const { return m_ed2kConnected; }
     [[nodiscard]] bool isKadConnected() const { return m_kadConnected; }
@@ -203,6 +204,9 @@ private:
     double m_cachedDownKBs = 0.0;
     int m_cachedCompleted = 0;
     qint64 m_cachedFreeBytes = 0;
+
+    // Tray context menu
+    TrayMenuManager* m_trayMenu = nullptr;
 
 #ifdef Q_OS_WIN
     MiniMuleWidget* m_miniMule = nullptr;

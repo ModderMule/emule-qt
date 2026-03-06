@@ -353,17 +353,17 @@ Replace the MFC application framework with Qt Widgets. The GUI connects to the `
 - [x] Port `ToolbarWnd.cpp/h` / `MuleToolBarCtrl.cpp/h` → `QToolBar` — integrated into `MainWindow` (tab buttons: Kad, Servers, Transfers, Search, SharedFiles, Messages, IRC, Statistics + Connect/Disconnect)
 - [x] Port `MuleStatusBarCtrl.cpp/h` → `QStatusBar` — integrated into `MainWindow` (status message, users, up/down speeds, eD2k, Kad labels)
 - [x] IPC client for daemon communication — `gui/app/IpcClient.h/.cpp` (connects to daemon, request/callback pattern with seqId, push event dispatch, auto-subscribe)
-- [ ] Port `SplashScreen.cpp/h` → `QSplashScreen`
+- [x] Port `SplashScreen.cpp/h` → `QSplashScreen` — implemented in `gui/app/main.cpp` (Logo.jpg splash on startup)
 - [x] Port `Wizard.cpp/h` → `QWizard` — `gui/dialogs/FirstStartWizard.h/.cpp`
 - [x] Port `MiniMule.cpp/h` → `QWidget` (floating info window) — `gui/app/MiniMuleWidget.h/.cpp`
-- [ ] Port `MuleSystrayDlg.cpp/h` → `QSystemTrayIcon`
-- [ ] Port `DialogMinTrayBtn.cpp/h` → use `QSystemTrayIcon` API
-- [ ] Port `TrayDialog.cpp/h` → `QDialog` + `QSystemTrayIcon`
-- [ ] Port `TaskbarNotifier.cpp/h` → `QSystemTrayIcon::showMessage()`
-- [ ] Port `ExitBox.cpp/h` → `QMessageBox`
-- [ ] Port `TrayMenuBtn.cpp/h` → `QMenu`
-- [ ] Port `resource.h` → Qt resource system (`.qrc`)
-- [ ] Migrate icons/bitmaps from `res/` to Qt resource file
+- [x] Port `MuleSystrayDlg.cpp/h` → `QSystemTrayIcon` — integrated into MainWindow (tray icon with connection status icons, double-click restore, single-click MiniMule)
+- [x] Port `DialogMinTrayBtn.cpp/h` → not needed; MainWindow closeEvent + QSystemTrayIcon handles minimize-to-tray
+- [x] Port `TrayDialog.cpp/h` → not needed; MainWindow directly manages QSystemTrayIcon
+- [x] Port `TaskbarNotifier.cpp/h` → `QSystemTrayIcon::showMessage()` — implemented in MainWindow
+- [x] Port `ExitBox.cpp/h` → `QMessageBox` (used in 10 files for confirmations/warnings)
+- [x] Port `TrayMenuBtn.cpp/h` → `QMenu` with `QWidgetAction` speed controls (tray context menu in MainWindow)
+- [x] Port `resource.h` → Qt resource system (`.qrc`) — `resources/emuleqt.qrc` with 200+ icons
+- [x] Migrate icons/bitmaps from `res/` to Qt resource file — all icons in `resources/icons/` and `resources/smileys/`
 - [x] `Ed2kSchemeHandler` — `gui/app/Ed2kSchemeHandler.h/.cpp` (ed2k:// URL scheme handler)
 - [x] `AutoStart` — `gui/app/AutoStart.h/.cpp` (platform-specific autostart registration)
 - [x] `PowerManager` — `gui/app/PowerManager.h/.cpp` (prevents sleep during transfers)
@@ -391,12 +391,12 @@ Replace the MFC application framework with Qt Widgets. The GUI connects to the `
 
 Replace MFC custom controls with Qt equivalents.
 
-- [ ] Port `MuleListCtrl.cpp/h` → `QTreeView` + `QAbstractItemModel` (base list control)
-- [ ] Port `ListCtrlX.cpp/h` → extend Qt model/view
-- [ ] Port `ListCtrlEditable.cpp/h` → `QStyledItemDelegate` with editing
-- [ ] Port `ListCtrlItemWalk.cpp/h` → model-based navigation
+- [x] Port `MuleListCtrl.cpp/h` → not needed; each list uses its own `QTreeView` + `QAbstractItemModel` directly
+- [x] Port `ListCtrlX.cpp/h` → not needed; Qt model/view handles this natively
+- [x] Port `ListCtrlEditable.cpp/h` → not needed; `QStyledItemDelegate` used where editing is required
+- [x] Port `ListCtrlItemWalk.cpp/h` → not needed; model-based navigation handled by Qt selection model
 - [x] Port `DownloadListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/DownloadListModel.h/.cpp`
-- [ ] Port `UploadListCtrl.cpp/h` → `QTreeView` + custom model
+- [x] Port `UploadListCtrl.cpp/h` → `QTreeView` + `ClientListModel(Uploading)` — reuses `ClientListModel` in upload mode (TransferPanel)
 - [x] Port `SharedFilesCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/SharedFilesModel.h/.cpp`
 - [x] Port `ServerListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/ServerListModel.h/.cpp` (columns: Name, IP:Port, Description, Ping, Users, MaxUsers, Preference, Failed, Static, SoftFiles, LowID, Obfuscation; refreshFromServerList + context menu support)
 - [x] Port `ClientListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/ClientListModel.h/.cpp`
@@ -405,38 +405,38 @@ Replace MFC custom controls with Qt equivalents.
 - [x] Port `KadContactListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/KadContactsModel.h/.cpp` (columns: Status icon, ClientId hex, Distance binary; 5 colored circle icons indicating contact quality; Courier New 8pt font)
 - [x] Port `KadContactHistogramCtrl.cpp/h` → `QWidget` with custom paint — `gui/controls/ContactsGraph.h/.cpp` (deque-based bar chart, 120 samples, auto-scaled Y-axis) + `gui/controls/KadContactHistogram.h/.cpp`
 - [x] Port `KadLookupGraph.cpp/h` → `QWidget` with custom paint — `gui/controls/KadLookupGraph.h/.cpp`
-- [ ] Port `DownloadClientsCtrl.cpp/h` → `QTreeView` + custom model
+- [ ] Port `DownloadClientsCtrl.cpp/h` → `QTreeView` + custom model (sources per file)
 - [x] Port `FriendListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/FriendListModel.h/.cpp`
 - [ ] Port `CollectionListCtrl.cpp/h` → `QTreeView` + custom model
 - [ ] Port `CommentListCtrl.cpp/h` → `QTreeView` + custom model
-- [ ] Port `IrcChannelListCtrl.cpp/h` → `QTreeView` + custom model
-- [ ] Port `IrcNickListCtrl.cpp/h` → `QListView` + model
-- [ ] Port `SharedDirsTreeCtrl.cpp/h` → `QTreeView` + `QFileSystemModel`
-- [ ] Port `DirectoryTreeCtrl.cpp/h` → `QTreeView` + `QFileSystemModel`
-- [ ] Port `TabCtrl.cpp/h` / `ClosableTabCtrl.cpp/h` / `ButtonsTabCtrl.cpp/h` → `QTabWidget`
-- [ ] Port `IrcChannelTabCtrl.cpp/h` → `QTabWidget`
+- [x] Port `IrcChannelListCtrl.cpp/h` → `QTreeWidget` in IrcPanel (`m_channelListWidget`)
+- [x] Port `IrcNickListCtrl.cpp/h` → `QListView` + `QStringListModel` in IrcPanel (`m_nickListView`)
+- [x] Port `SharedDirsTreeCtrl.cpp/h` → not needed; SharedFilesPanel uses flat list approach
+- [x] Port `DirectoryTreeCtrl.cpp/h` → `CheckableFileSystemModel` (QFileSystemModel subclass) in OptionsDialog
+- [x] Port `TabCtrl.cpp/h` / `ClosableTabCtrl.cpp/h` / `ButtonsTabCtrl.cpp/h` → `QTabWidget` (used in KadPanel, SharedFilesPanel, IrcPanel, FileDetailDialog)
+- [x] Port `IrcChannelTabCtrl.cpp/h` → `QTabWidget` in IrcPanel
 - [x] Port `OScopeCtrl.cpp/h` → `QWidget` with custom paint — `gui/controls/StatsGraph.h/.cpp`
-- [ ] Port `StatisticsTree.cpp/h` → `QTreeWidget`
+- [x] Port `StatisticsTree.cpp/h` → `QTreeWidget` in StatisticsPanel (`m_tree`)
 - [x] Port `BarShader.cpp/h` → custom `QWidget::paintEvent()` with `QPainter` — `gui/controls/DownloadProgressDelegate.h/.cpp` (progress bar delegate for download list) + `gui/controls/SharedPartsDelegate.h/.cpp` (parts visualization for shared files)
-- [ ] Port `ProgressCtrlX.cpp/h` → `QProgressBar` subclass
-- [ ] Port `SplitterControl.cpp/h` → `QSplitter`
-- [ ] Port `ToolTipCtrlX.cpp/h` → `QToolTip` / custom tooltip widget
+- [x] Port `ProgressCtrlX.cpp/h` → `QProgressBar` used in SharedFilesPanel, FirstStartWizard, ImportDownloadsDialog, ArchivePreviewPanel
+- [x] Port `SplitterControl.cpp/h` → `QSplitter` (used in 18 files across all panels)
+- [x] Port `ToolTipCtrlX.cpp/h` → not needed; Qt native `setToolTip()` used throughout (19 uses in 7 files)
 - [x] Port `HTRichEditCtrl.cpp/h` / `RichEditCtrlX.cpp/h` → `QTextBrowser` — `gui/controls/LogWidget.h/.cpp` (tabbed log display: Server Info, Log, Verbose, Kad; Qt message handler integration; append methods per category)
-- [ ] Port `TreeOptionsCtrl.cpp/h` / `TreeOptionsCtrlEx.cpp/h` → `QTreeWidget` with checkboxes
+- [x] Port `TreeOptionsCtrl.cpp/h` / `TreeOptionsCtrlEx.cpp/h` → not needed; OptionsDialog uses `QListWidget` sidebar + `QStackedWidget`
 - [ ] Port `DropTarget.cpp/h` → Qt drag-and-drop (`QMimeData`, `dragEnterEvent`)
-- [ ] Port `DropDownButton.cpp/h` → `QToolButton` with `QMenu`
-- [ ] Port `ColorButton.cpp/h` → `QPushButton` + `QColorDialog`
-- [ ] Port `BuddyButton.cpp/h` → `QPushButton`
-- [ ] Port `GradientStatic.cpp/h` → `QLabel` with gradient stylesheet
-- [ ] Port `IconStatic.cpp/h` → `QLabel` with `QPixmap`
-- [ ] Port `ComboBoxEx2.cpp/h` → `QComboBox`
+- [x] Port `DropDownButton.cpp/h` → `QToolButton` with `setMenu()`/`setPopupMode()` (used in MainWindow)
+- [x] Port `ColorButton.cpp/h` → `QPushButton` + `QColorDialog` (used in OptionsDialog)
+- [ ] Port `BuddyButton.cpp/h` → `QPushButton` (Kad buddy indicator in prefs pages)
+- [x] Port `GradientStatic.cpp/h` → not needed; was only used in MuleSystrayDlg (now replaced by QSystemTrayIcon)
+- [x] Port `IconStatic.cpp/h` → not needed; Qt panels use `QLabel` with icons / toolbar icons directly
+- [x] Port `ComboBoxEx2.cpp/h` → not needed; `QComboBox` used directly throughout
 - [ ] Port `EditX.cpp/h` / `EditDelayed.cpp/h` → `QLineEdit` with delayed signal
-- [ ] Port `InputBox.cpp/h` → `QInputDialog`
-- [ ] Port `ListBoxST.cpp/h` → `QListWidget`
-- [ ] Port `ListViewSearchDlg.cpp/h` → `QDialog` with `QLineEdit`
-- [ ] Port `SmileySelector.cpp/h` → `QDialog` or popup widget
-- [ ] Port `CustomAutoComplete.cpp/h` → `QCompleter`
-- [ ] Port `ColourPopup.cpp/h` → `QColorDialog` or custom popup
+- [x] Port `InputBox.cpp/h` → `QInputDialog` (used in OptionsDialog, SharedFilesPanel, IrcPanel, TransferPanel, MessagesPanel)
+- [x] Port `ListBoxST.cpp/h` → not needed; no usages beyond itself in original code
+- [x] Port `ListViewSearchDlg.cpp/h` → not needed; Qt model/view has built-in find; was only used in MuleListCtrl base class
+- [x] Port `SmileySelector.cpp/h` → smiley popup in IrcPanel and MessagesPanel
+- [x] Port `CustomAutoComplete.cpp/h` → `QCompleter` (used in SearchPanel)
+- [x] Port `ColourPopup.cpp/h` → `QColorDialog` (used in OptionsDialog)
 - [x] Port `TransferToolbar` — `gui/controls/TransferToolbar.h/.cpp` (transfer panel-specific toolbar)
 
 ---
@@ -471,36 +471,36 @@ Replace MFC custom controls with Qt equivalents.
 
 ### Module 25: GUI — Graphics Utilities
 
-- [ ] Port `MemDC.cpp/h` → not needed (Qt double-buffers by default)
-- [ ] Port `Drawgdix.cpp/h` → `QPainter` helpers
-- [ ] Port `EnBitmap.cpp/h` → `QPixmap` / `QImage`
-- [ ] Port `Quantize.cpp/h` → `QImage` color manipulation
-- [ ] Port `MeterIcon.cpp/h` → `QIcon` with dynamic painting
-- [ ] Port `GDIThread.cpp/h` → likely unnecessary with Qt
-- [ ] Port `LayeredWindowHelperST.cpp/h` → `QWidget::setWindowOpacity()`
-- [ ] Remove `VisualStylesXP.cpp/h` (not needed with Qt)
-- [ ] Remove `dxtrans.cpp/h` (DirectX transitions — not applicable)
+- [x] Port `MemDC.cpp/h` → not needed (Qt double-buffers by default)
+- [x] Port `Drawgdix.cpp/h` → `QPainter` helpers (QPainter used in 18+ files)
+- [x] Port `EnBitmap.cpp/h` → `QPixmap` / `QImage` (Qt native image handling)
+- [x] Port `Quantize.cpp/h` → `QImage` color manipulation (not needed)
+- [x] Port `MeterIcon.cpp/h` → `QIcon` with dynamic painting (not needed)
+- [x] Port `GDIThread.cpp/h` → not needed with Qt
+- [x] Port `LayeredWindowHelperST.cpp/h` → `QWidget::setWindowOpacity()` (used in MiniMuleWidget)
+- [x] Remove `VisualStylesXP.cpp/h` (not needed with Qt)
+- [x] Remove `dxtrans.cpp/h` (DirectX transitions — not applicable)
 
 ---
 
 ### Module 26: Localization
 
-- [ ] Convert `.rc` string tables to Qt `.ts` translation files
-- [ ] Set up `lupdate` / `lrelease` workflow in CMake
-- [ ] Wrap all user-visible strings in `tr()` or `QCoreApplication::translate()`
-- [ ] Migrate 131 language files from `.rc` format to `.ts` format
+- [x] Convert `.rc` string tables to Qt `.ts` translation files — `lang/` directory with 9 languages (en, de_DE, es_ES, fr_FR, it_IT, ja_JP, ko_KR, pt_BR, zh_CN), both `.ts` and compiled `.qm` files
+- [x] Set up `lupdate` / `lrelease` workflow in CMake — `src/gui/CMakeLists.txt` uses `qt_add_translations()` with `QM_FILES_OUTPUT_VARIABLE`, requires `Qt6::LinguistTools`
+- [x] Wrap all user-visible strings in `tr()` or `QCoreApplication::translate()` (1055+ uses across 27+ GUI files)
+- [ ] Migrate remaining language files from `.rc` format to `.ts` format (9 of 131 done)
 - [ ] Port `langids.cpp/h`
 
 ---
 
 ### Module 27: Resource Migration
 
-- [ ] Convert icons from `res/` to Qt resource system (`.qrc`)
-- [ ] Convert toolbar bitmaps to individual icons (PNG/SVG)
-- [ ] Replace `.rc` dialog templates with Qt `.ui` files or C++ widget code
-- [ ] Migrate menu definitions from `.rc` to `QMenuBar` / `QMenu` in code
-- [ ] Migrate accelerator tables to `QShortcut` / `QAction::setShortcut()`
-- [ ] Port `TitleMenu.cpp/h` → `QMenu` with custom title painting
+- [x] Convert icons from `res/` to Qt resource system (`.qrc`) — 200+ icons in `resources/emuleqt.qrc`
+- [x] Convert toolbar bitmaps to individual icons — individual `.ico` files in resource system
+- [x] Replace `.rc` dialog templates with Qt `.ui` files or C++ widget code — all dialogs built in C++ code
+- [x] Migrate menu definitions from `.rc` to `QMenuBar` / `QMenu` in code — QMenu used in 17+ files
+- [ ] Migrate accelerator tables to `QShortcut` / `QAction::setShortcut()` — no keyboard shortcuts implemented yet
+- [ ] Port `TitleMenu.cpp/h` → `QMenu` with custom title painting — context menus exist (13 panels) but lack title headers
 
 ---
 
@@ -527,8 +527,8 @@ signal verification. All test classes inherit `QObject` and use `Q_OBJECT`.
 - [x] Create `tests/` directory with its own `CMakeLists.txt` — auto-discovers `tst_*.cpp` files
 - [x] Add `enable_testing()` and `find_package(Qt6 REQUIRED COMPONENTS Test)` to root CMake
 - [x] Set up CTest integration so `ctest` runs all test suites
-- [ ] Create `tests/TestHelpers.h` — shared utilities (temp dirs, mock data factories, fixture base class)
-- [ ] Create `tests/data/` directory for test fixtures (sample .part files, server.met, known.met, IP filter lists, etc.)
+- [x] Create `tests/TestHelpers.h` — shared utilities (temp dirs, mock data factories, fixture base class)
+- [x] Create `tests/data/` directory for test fixtures — `tests/data/` with `ipfilter_sample.dat`, `ipfilter_peerguardian.txt`
 - [ ] Configure CI pipeline to run tests on Linux, macOS, Windows
 - [ ] Port `SelfTest.cpp/h` → Qt Test as `tst_SelfTest.cpp`
 
@@ -837,13 +837,13 @@ Larger tests that exercise multiple modules together.
 
 ### Module 30: Cleanup & Removal
 
-- [ ] Remove `Mdump.cpp/h` (Windows minidump — replace with platform-agnostic crash reporting or omit)
-- [ ] Remove `VisualStylesXP.cpp/h` (Windows XP theming)
-- [ ] Remove `VistaDefines.h` (Windows Vista constants)
-- [ ] Remove `dxtrans.cpp/h` (DirectX)
-- [ ] Remove `qedit.h` (DirectShow)
-- [ ] Remove `Debug_FileSize.cpp/h` if Windows-specific
-- [ ] Remove `Stdafx.h` / `Stdafx.cpp` (MFC precompiled header)
+- [x] Remove `Mdump.cpp/h` (Windows minidump) — not present in `src/`
+- [x] Remove `VisualStylesXP.cpp/h` (Windows XP theming) — not present in `src/`
+- [x] Remove `VistaDefines.h` (Windows Vista constants) — not present in `src/`
+- [x] Remove `dxtrans.cpp/h` (DirectX) — not present in `src/`
+- [x] Remove `qedit.h` (DirectShow) — not present in `src/`
+- [x] Remove `Debug_FileSize.cpp/h` — not present in `src/`
+- [x] Remove `Stdafx.h` / `Stdafx.cpp` (MFC precompiled header) — not present in `src/`
 - [ ] Remove `.vcxproj`, `.sln`, `.rc` files after migration complete
 
 ---
@@ -917,7 +917,7 @@ MainWindow                           DaemonApp
 | Preferences (get/set) | Working | |
 | Client shared files | Working | RequestClientSharedFiles + PushClientSharedFiles |
 | Reset stats | Working | |
-| Subscription mask | Stubbed | Currently broadcasts to all clients |
+| Subscription mask | Stubbed | `handleSubscribe()` stores mask, but `broadcast()` ignores it |
 
 #### 31c: Core Session (`src/core/app/`)
 
@@ -932,15 +932,15 @@ MainWindow                           DaemonApp
 - [x] GUI directory structure — `src/gui/` with sub-modules: `app/`, `panels/`, `controls/`, `dialogs/`, `graphics/`
 - [x] CMake target `emuleqt` — `src/gui/CMakeLists.txt` (links eMule::Core + eMule::Ipc + Qt6::Widgets)
 - [ ] Remove direct core object access from GUI panels — ServerPanel still uses direct `ServerList*`/`ServerConnect*` pointers alongside IPC; migrate to IPC-only
-- [ ] Implement subscription filtering — IpcServer currently broadcasts all push events to all clients; honor `m_subscriptionMask`
+- [ ] Implement subscription filtering — `handleSubscribe()` stores `m_subscriptionMask` but `IpcServer::broadcast()` still sends to all handshaked clients without filtering
 
 #### 31e: Remaining IPC Work
 
-- [ ] Implement rich push event payloads — current push messages are mostly notifications with minimal data; add full entity snapshots
-- [ ] Complete `SetPreferences` handler — support all preference keys
-- [ ] Remote daemon connection — currently auto-localhost only; add GUI preferences for remote host:port
-- [ ] IPC authentication — secure the daemon connection (API key or challenge-response)
-- [ ] IPC reconnection — auto-reconnect GUI to daemon after connection loss
+- [ ] Implement rich push event payloads — most push messages are bare notifications (e.g. `PushDownloadAdded` has no data); `PushServerState` has a CBOR map; add full entity snapshots to others
+- [x] Complete `SetPreferences` handler — `applyPreferenceA()`/`applyPreferenceB()` handle 140 keys out of ~240 getters; covers all OptionsDialog-settable prefs (connection, server, Kad, directories, web server, security, statistics, display, notifications, IRC)
+- [x] Remote daemon connection — `IpcClient::connectToDaemon(host, port)` supports hostname/IP; `CoreConnectDialog` provides host:port:token input when no local daemon found
+- [ ] IPC authentication — `CoreConnectDialog` has a `token()` field but daemon-side verification not implemented
+- [x] IPC reconnection — `IpcClient` has full auto-reconnect: `onConnectionLost()` → `scheduleReconnect()` with exponential backoff (1s → 30s max), `m_reconnectTimer`, auto re-handshake on reconnect
 
 ---
 
@@ -957,8 +957,8 @@ The modules are ported bottom-up. Phases 1–6 are **complete**; Phase 7 is **we
 | **Phase 5** | 12–19, 29k–29r | **Done** | Queues, Search, IP filter, Stats, Prefs, Chat, Friends, Web + tests |
 | **Phase 6** | 31, 29s2 | **Done** | IPC layer, daemon, GUI/core separation + IPC tests |
 | **Phase 7** | 21–25, 29t | **Mostly done** | All 8 panels done, 10 dialogs done, 16 controls/models done; remaining: minor controls, a few dialogs, graphics utilities, widget tests |
-| **Phase 8** | 20, 26, 27, 28, 29s, 29u | Pending | Media (done), Localization, Resources, Dependencies + tests |
-| **Phase 9** | 29v, 30 | **Partially done** | 8 integration/E2E tests done, cleanup pending |
+| **Phase 8** | 20, 26, 27, 28, 29s, 29u | **Partially done** | Media (done), Localization (9 languages done, lupdate/lrelease configured), Resources (mostly done), Dependencies (done) |
+| **Phase 9** | 29v, 30 | **Mostly done** | 8 integration/E2E tests done, legacy MFC files removed; `.vcxproj`/`.sln`/`.rc` removal pending |
 
 **Testing philosophy:** Write tests for each module immediately after porting it (same phase).
 Module 29v integration tests run after all modules are ported.
@@ -1022,4 +1022,4 @@ Module 29v integration tests run after all modules are ported.
 - **Porting phases:** 9
 - **Core modules (1–20, 28, 31):** Phases 1–6 complete
 - **GUI (Modules 21–25):** Phase 7 mostly complete — all 8 panels, 10 dialogs, 16 controls/models implemented
-- **Remaining:** Minor GUI controls (Module 23 stragglers), remaining dialogs (Module 24), graphics utilities (Module 25), localization (26), resources (27), widget tests (29t), cleanup (30)
+- **Remaining:** Minor GUI controls (Module 23: 6 items), remaining dialogs (Module 24: 8 items), keyboard shortcuts (Module 27), remaining translations (122 of 131 languages), widget tests (29t), IPC polish (31d/31e), `.vcxproj`/`.sln`/`.rc` removal
