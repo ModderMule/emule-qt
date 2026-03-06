@@ -241,6 +241,7 @@
     <ClCompile Include="controls\SharedPartsDelegate.cpp" />
     <ClCompile Include="panels\StatisticsPanel.cpp" />
     <ClCompile Include="controls\StatsGraph.cpp" />
+    <ClCompile Include="app\TrayMenuManager.cpp" />
     <ClCompile Include="panels\TransferPanel.cpp" />
     <ClCompile Include="controls\TransferToolbar.cpp" />
     <ClCompile Include="app\UiState.cpp" />
@@ -288,6 +289,7 @@
     <QtMoc Include="controls\SharedPartsDelegate.h" />
     <QtMoc Include="panels\StatisticsPanel.h" />
     <QtMoc Include="controls\StatsGraph.h" />
+    <QtMoc Include="app\TrayMenuManager.h" />
     <QtMoc Include="panels\TransferPanel.h" />
     <QtMoc Include="controls\TransferToolbar.h" />
     <ClInclude Include="app\UiState.h" />
