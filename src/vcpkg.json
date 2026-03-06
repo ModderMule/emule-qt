@@ -1,0 +1,11 @@
+{
+  "name": "emuleqt",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "zlib",
+    "openssl",
+    "yaml-cpp",
+    "libarchive",
+    "miniupnpc"
+  ]
+}

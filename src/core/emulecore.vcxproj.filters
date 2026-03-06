@@ -1,0 +1,680 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Generated Files">
+      <UniqueIdentifier>{71ED8ED8-ACB9-4CE9-BBE1-E00B30144E11}</UniqueIdentifier>
+      <Extensions>cpp;c;cxx;moc;h;def;odl;idl;res;</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="crypto\AICHData.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\AICHHashSet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\AICHHashTree.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\AICHSyncThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\AbstractFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\AppConfig.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\AppContext.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="archive\ArchiveReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="archive\ArchiveRecovery.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\ClientCredits.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\ClientList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\ClientReqSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\ClientUDPSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\CollectionFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\CoreSession.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\CorruptionBlackBox.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\DeadSourceList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\DebugUtils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\DownloadClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="transfer\DownloadQueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="protocol\ED2KLink.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\EMSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\EncryptedDatagramSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\EncryptedStreamSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\FileIdentifier.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="media\FrameGrabThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="friends\Friend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="friends\FriendList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\HttpClientReqSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ipfilter\IPFilter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="transfer\ImportParts.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="chat\IrcClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadContact.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadEntry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadFirewallTester.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadIO.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadIndexed.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadLog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadLookupHistory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadMiscUtils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadPacketTracking.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadPrefs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadRoutingBin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadRoutingZone.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadSearch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadSearchManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadUDPListener.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadUInt128.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\Kademlia.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\KnownFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\KnownFileList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\LastCommonRouteFinder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\ListenSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\Log.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\MD4Hash.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\MD5Hash.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="media\MediaInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\OtherFunctions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\Packet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\PartFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\PartFileConvert.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\PartFileWriteThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\PathUtils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\PerfLog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\Pinger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="prefs\Preferences.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="media\PreviewApps.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="media\PreviewThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\PublishKeywordList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\SHAHash.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\SafeFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="transfer\Scheduler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="search\SearchExpr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="search\SearchExprParser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="search\SearchFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="search\SearchList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="search\SearchParams.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="server\Server.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="server\ServerConnect.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="server\ServerList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\ServerSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\SettingsUtils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\ShareableFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\SharedFileList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\SmtpClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\StatisticFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stats\Statistics.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\StringUtils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="protocol\Tag.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\UDPSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="upnp\UPnPManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\URLClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\UpDownClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="transfer\UploadBandwidthThrottler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\UploadClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="transfer\UploadDiskIOThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="transfer\UploadQueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\WebServer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\WebSessionManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\WebTemplateEngine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="crypto\AICHData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="crypto\AICHHashSet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="crypto\AICHHashTree.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="crypto\AICHSyncThread.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="files\AbstractFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="app\AppConfig.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="app\AppContext.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="archive\ArchiveReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="archive\ArchiveRecovery.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ByteOrder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client\ClientCredits.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="client\ClientList.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\ClientReqSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="client\ClientStateDefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client\ClientStructs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="net\ClientUDPSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="files\CollectionFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ContainerUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="app\CoreSession.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="client\CorruptionBlackBox.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client\DeadSourceList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\DebugUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="transfer\DownloadQueue.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="protocol\ED2KLink.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="net\EMSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="net\EncryptedDatagramSocket.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="net\EncryptedStreamSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="utils\Exceptions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="crypto\FileIdentifier.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="media\FrameGrabThread.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="friends\Friend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="friends\FriendList.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\HttpClientReqSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="ipfilter\IPFilter.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="transfer\ImportParts.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="chat\IrcClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="chat\IrcMessage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\JsonSerializers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadClientSearcher.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadContact.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadEntry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadError.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadFirewallTester.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadIO.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="kademlia\KadIndexed.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="kademlia\KadLog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadLookupHistory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadMiscUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadPacketTracking.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadPrefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadRoutingBin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="kademlia\KadRoutingZone.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="kademlia\KadSearch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadSearchDefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadSearchManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadUDPKey.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="kademlia\KadUDPListener.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="kademlia\KadUInt128.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="kademlia\Kademlia.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="files\KnownFile.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="files\KnownFileList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="net\LastCommonRouteFinder.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\ListenSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="utils\Log.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="crypto\MD4Hash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="crypto\MD5Hash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\MapKey.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="media\MediaInfo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\OtherFunctions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\Packet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="files\PartFile.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="files\PartFileConvert.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="files\PartFileWriteThread.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="utils\PathUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\PerfLog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\Pinger.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\PlatformUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="prefs\Preferences.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="media\PreviewApps.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="media\PreviewThread.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="files\PublishKeywordList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="crypto\SHAHash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\SafeFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="transfer\Scheduler.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="search\SearchExpr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="search\SearchExprParser.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="search\SearchFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="search\SearchList.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="search\SearchParams.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="server\Server.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="server\ServerConnect.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="server\ServerList.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\ServerSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="utils\SettingsUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="files\ShareableFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="files\SharedFileList.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\SmtpClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="files\StatisticFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="stats\Statistics.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="utils\StringUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="protocol\Tag.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ThreadUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\ThrottledSocket.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\TimeUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\Types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="net\UDPSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="upnp\UPnPManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="client\URLClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="client\UpDownClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="transfer\UploadBandwidthThrottler.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="transfer\UploadDiskIOThread.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="transfer\UploadQueue.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="webserver\WebServer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="webserver\WebSessionManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\WebTemplateEngine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\WinCompat.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="debug\moc_predefs.h.cbt">
+      <Filter>Generated Files</Filter>
+    </CustomBuild>
+    <CustomBuild Include="release\moc_predefs.h.cbt">
+      <Filter>Generated Files</Filter>
+    </CustomBuild>
+  </ItemGroup>
+</Project>

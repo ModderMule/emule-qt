@@ -1,0 +1,56 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "emulecore", "core\emulecore.vcxproj", "{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "emuleipc", "ipc\emuleipc.vcxproj", "{FBDFD081-D65F-39D9-8A1C-72045318CC5B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "emulecored", "daemon\emulecored.vcxproj", "{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}"
+	ProjectSection(ProjectDependencies) = postProject
+		{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B} = {AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}
+		{FBDFD081-D65F-39D9-8A1C-72045318CC5B} = {FBDFD081-D65F-39D9-8A1C-72045318CC5B}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "emuleqt", "gui\emuleqt.vcxproj", "{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}"
+	ProjectSection(ProjectDependencies) = postProject
+		{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B} = {AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}
+		{FBDFD081-D65F-39D9-8A1C-72045318CC5B} = {FBDFD081-D65F-39D9-8A1C-72045318CC5B}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "emuleqt_tests", "..\tests\emuleqt_tests.vcxproj", "{2C8CBF44-CFAF-3A30-AA4B-1B826A227B41}"
+	ProjectSection(ProjectDependencies) = postProject
+		{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B} = {AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}
+		{FBDFD081-D65F-39D9-8A1C-72045318CC5B} = {FBDFD081-D65F-39D9-8A1C-72045318CC5B}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}.Debug|x64.ActiveCfg = Debug|x64
+		{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}.Debug|x64.Build.0 = Debug|x64
+		{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}.Release|x64.ActiveCfg = Release|x64
+		{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}.Release|x64.Build.0 = Release|x64
+		{FBDFD081-D65F-39D9-8A1C-72045318CC5B}.Debug|x64.ActiveCfg = Debug|x64
+		{FBDFD081-D65F-39D9-8A1C-72045318CC5B}.Debug|x64.Build.0 = Debug|x64
+		{FBDFD081-D65F-39D9-8A1C-72045318CC5B}.Release|x64.ActiveCfg = Release|x64
+		{FBDFD081-D65F-39D9-8A1C-72045318CC5B}.Release|x64.Build.0 = Release|x64
+		{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}.Debug|x64.ActiveCfg = Debug|x64
+		{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}.Debug|x64.Build.0 = Debug|x64
+		{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}.Release|x64.ActiveCfg = Release|x64
+		{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}.Release|x64.Build.0 = Release|x64
+		{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}.Debug|x64.ActiveCfg = Debug|x64
+		{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}.Debug|x64.Build.0 = Debug|x64
+		{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}.Release|x64.ActiveCfg = Release|x64
+		{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}.Release|x64.Build.0 = Release|x64
+		{2C8CBF44-CFAF-3A30-AA4B-1B826A227B41}.Debug|x64.ActiveCfg = Debug|x64
+		{2C8CBF44-CFAF-3A30-AA4B-1B826A227B41}.Debug|x64.Build.0 = Debug|x64
+		{2C8CBF44-CFAF-3A30-AA4B-1B826A227B41}.Release|x64.ActiveCfg = Release|x64
+		{2C8CBF44-CFAF-3A30-AA4B-1B826A227B41}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+	EndGlobalSection
+	GlobalSection(ExtensibilityAddIns) = postSolution
+	EndGlobalSection
+EndGlobal
