@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Visual Studio 2022** (v143 toolset)
-- **Qt 6.8.3** for MSVC 2022 x64 (with `httpserver` module)
+- **Qt 6.8.3** (or later) for MSVC 2022 x64 (with `httpserver` module)
 - **Qt VS Tools** extension (v3.04+)
 - **vcpkg** package manager
 
@@ -23,6 +23,8 @@ C:\vcpkg\vcpkg install --triplet x64-windows
 ```
 
 This installs: `zlib`, `openssl`, `yaml-cpp`, `libarchive`, `miniupnpc`.
+
+> **Visual Studio manifest mode:** If you have vcpkg integrated with VS (`vcpkg integrate install`), opening the solution should auto-install dependencies from `src/vcpkg.json`. If it doesn't, run `vcpkg install` manually from `src/` as shown above.
 
 ## Qt Setup
 

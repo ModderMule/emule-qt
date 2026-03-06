@@ -1446,311 +1446,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         const QString key = msg.fieldString(i);
         const QCborValue val = msg.field(i + 1);
 
-        if (key == QStringLiteral("nick"))
-            thePrefs.setNick(val.toString());
-        else if (key == QStringLiteral("port"))
-            thePrefs.setPort(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("udpPort"))
-            thePrefs.setUdpPort(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("maxUpload"))
-            thePrefs.setMaxUpload(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("maxDownload"))
-            thePrefs.setMaxDownload(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("maxGraphDownloadRate"))
-            thePrefs.setMaxGraphDownloadRate(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("maxGraphUploadRate"))
-            thePrefs.setMaxGraphUploadRate(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("maxConnections"))
-            thePrefs.setMaxConnections(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("maxSourcesPerFile"))
-            thePrefs.setMaxSourcesPerFile(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("autoConnect"))
-            thePrefs.setAutoConnect(val.toBool());
-        else if (key == QStringLiteral("reconnect"))
-            thePrefs.setReconnect(val.toBool());
-        else if (key == QStringLiteral("showOverhead"))
-            thePrefs.setShowOverhead(val.toBool());
-        else if (key == QStringLiteral("networkED2K"))
-            thePrefs.setNetworkED2K(val.toBool());
-        else if (key == QStringLiteral("kadEnabled"))
-            thePrefs.setKadEnabled(val.toBool());
-        else if (key == QStringLiteral("schedulerEnabled"))
-            thePrefs.setSchedulerEnabled(val.toBool());
-        else if (key == QStringLiteral("enableUPnP"))
-            thePrefs.setEnableUPnP(val.toBool());
-        // Proxy
-        else if (key == QStringLiteral("proxyType"))
-            thePrefs.setProxyType(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("proxyHost"))
-            thePrefs.setProxyHost(val.toString());
-        else if (key == QStringLiteral("proxyPort"))
-            thePrefs.setProxyPort(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("proxyEnablePassword"))
-            thePrefs.setProxyEnablePassword(val.toBool());
-        else if (key == QStringLiteral("proxyUser"))
-            thePrefs.setProxyUser(val.toString());
-        else if (key == QStringLiteral("proxyPassword"))
-            thePrefs.setProxyPassword(val.toString());
-        // Server
-        else if (key == QStringLiteral("safeServerConnect"))
-            thePrefs.setSafeServerConnect(val.toBool());
-        else if (key == QStringLiteral("autoConnectStaticOnly"))
-            thePrefs.setAutoConnectStaticOnly(val.toBool());
-        else if (key == QStringLiteral("useServerPriorities"))
-            thePrefs.setUseServerPriorities(val.toBool());
-        else if (key == QStringLiteral("addServersFromServer"))
-            thePrefs.setAddServersFromServer(val.toBool());
-        else if (key == QStringLiteral("addServersFromClients"))
-            thePrefs.setAddServersFromClients(val.toBool());
-        else if (key == QStringLiteral("deadServerRetries"))
-            thePrefs.setDeadServerRetries(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("autoUpdateServerList"))
-            thePrefs.setAutoUpdateServerList(val.toBool());
-        else if (key == QStringLiteral("serverListURL"))
-            thePrefs.setServerListURL(val.toString());
-        else if (key == QStringLiteral("smartLowIdCheck"))
-            thePrefs.setSmartLowIdCheck(val.toBool());
-        else if (key == QStringLiteral("manualServerHighPriority"))
-            thePrefs.setManualServerHighPriority(val.toBool());
-        // Files page
-        else if (key == QStringLiteral("addNewFilesPaused"))
-            thePrefs.setAddNewFilesPaused(val.toBool());
-        else if (key == QStringLiteral("autoDownloadPriority"))
-            thePrefs.setAutoDownloadPriority(val.toBool());
-        else if (key == QStringLiteral("autoSharedFilesPriority"))
-            thePrefs.setAutoSharedFilesPriority(val.toBool());
-        else if (key == QStringLiteral("transferFullChunks"))
-            thePrefs.setTransferFullChunks(val.toBool());
-        else if (key == QStringLiteral("previewPrio"))
-            thePrefs.setPreviewPrio(val.toBool());
-        else if (key == QStringLiteral("startNextPausedFile"))
-            thePrefs.setStartNextPausedFile(val.toBool());
-        else if (key == QStringLiteral("startNextPausedFileSameCat"))
-            thePrefs.setStartNextPausedFileSameCat(val.toBool());
-        else if (key == QStringLiteral("startNextPausedFileOnlySameCat"))
-            thePrefs.setStartNextPausedFileOnlySameCat(val.toBool());
-        else if (key == QStringLiteral("rememberDownloadedFiles"))
-            thePrefs.setRememberDownloadedFiles(val.toBool());
-        else if (key == QStringLiteral("rememberCancelledFiles"))
-            thePrefs.setRememberCancelledFiles(val.toBool());
-        // Notifications
-        else if (key == QStringLiteral("notifyOnLog"))
-            thePrefs.setNotifyOnLog(val.toBool());
-        else if (key == QStringLiteral("notifyOnChat"))
-            thePrefs.setNotifyOnChat(val.toBool());
-        else if (key == QStringLiteral("notifyOnChatMsg"))
-            thePrefs.setNotifyOnChatMsg(val.toBool());
-        else if (key == QStringLiteral("notifyOnDownloadAdded"))
-            thePrefs.setNotifyOnDownloadAdded(val.toBool());
-        else if (key == QStringLiteral("notifyOnDownloadFinished"))
-            thePrefs.setNotifyOnDownloadFinished(val.toBool());
-        else if (key == QStringLiteral("notifyOnNewVersion"))
-            thePrefs.setNotifyOnNewVersion(val.toBool());
-        else if (key == QStringLiteral("notifyOnUrgent"))
-            thePrefs.setNotifyOnUrgent(val.toBool());
-        else if (key == QStringLiteral("notifyEmailEnabled"))
-            thePrefs.setNotifyEmailEnabled(val.toBool());
-        else if (key == QStringLiteral("notifyEmailSmtpServer"))
-            thePrefs.setNotifyEmailSmtpServer(val.toString());
-        else if (key == QStringLiteral("notifyEmailSmtpPort"))
-            thePrefs.setNotifyEmailSmtpPort(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("notifyEmailSmtpAuth"))
-            thePrefs.setNotifyEmailSmtpAuth(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("notifyEmailSmtpTls"))
-            thePrefs.setNotifyEmailSmtpTls(val.toBool());
-        else if (key == QStringLiteral("notifyEmailSmtpUser"))
-            thePrefs.setNotifyEmailSmtpUser(val.toString());
-        else if (key == QStringLiteral("notifyEmailSmtpPassword"))
-            thePrefs.setNotifyEmailSmtpPassword(val.toString());
-        else if (key == QStringLiteral("notifyEmailRecipient"))
-            thePrefs.setNotifyEmailRecipient(val.toString());
-        else if (key == QStringLiteral("notifyEmailSender"))
-            thePrefs.setNotifyEmailSender(val.toString());
-        // Messages and Comments
-        else if (key == QStringLiteral("msgOnlyFriends"))
-            thePrefs.setMsgOnlyFriends(val.toBool());
-        else if (key == QStringLiteral("enableSpamFilter"))
-            thePrefs.setEnableSpamFilter(val.toBool());
-        else if (key == QStringLiteral("useChatCaptchas"))
-            thePrefs.setUseChatCaptchas(val.toBool());
-        else if (key == QStringLiteral("messageFilter"))
-            thePrefs.setMessageFilter(val.toString());
-        else if (key == QStringLiteral("commentFilter"))
-            thePrefs.setCommentFilter(val.toString());
-        // Security
-        else if (key == QStringLiteral("filterServerByIP"))
-            thePrefs.setFilterServerByIP(val.toBool());
-        else if (key == QStringLiteral("ipFilterLevel"))
-            thePrefs.setIpFilterLevel(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("viewSharedFilesAccess"))
-            thePrefs.setViewSharedFilesAccess(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("cryptLayerSupported"))
-            thePrefs.setCryptLayerSupported(val.toBool());
-        else if (key == QStringLiteral("cryptLayerRequested"))
-            thePrefs.setCryptLayerRequested(val.toBool());
-        else if (key == QStringLiteral("cryptLayerRequired"))
-            thePrefs.setCryptLayerRequired(val.toBool());
-        else if (key == QStringLiteral("useSecureIdent"))
-            thePrefs.setUseSecureIdent(val.toBool());
-        else if (key == QStringLiteral("enableSearchResultFilter"))
-            thePrefs.setEnableSearchResultFilter(val.toBool());
-        else if (key == QStringLiteral("warnUntrustedFiles"))
-            thePrefs.setWarnUntrustedFiles(val.toBool());
-        else if (key == QStringLiteral("ipFilterUpdateUrl"))
-            thePrefs.setIpFilterUpdateUrl(val.toString());
-        // Extended (PPgTweaks)
-        else if (key == QStringLiteral("maxConsPerFive"))
-            thePrefs.setMaxConsPerFive(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("maxHalfConnections"))
-            thePrefs.setMaxHalfConnections(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("serverKeepAliveTimeout"))
-            thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("filterLANIPs"))
-            thePrefs.setFilterLANIPs(val.toBool());
-        else if (key == QStringLiteral("checkDiskspace"))
-            thePrefs.setCheckDiskspace(val.toBool());
-        else if (key == QStringLiteral("minFreeDiskSpace"))
-            thePrefs.setMinFreeDiskSpace(static_cast<uint64>(val.toInteger()));
-        else if (key == QStringLiteral("logToDisk"))
-            thePrefs.setLogToDisk(val.toBool());
-        else if (key == QStringLiteral("verbose"))
-            thePrefs.setVerbose(val.toBool());
-        else if (key == QStringLiteral("closeUPnPOnExit"))
-            thePrefs.setCloseUPnPOnExit(val.toBool());
-        else if (key == QStringLiteral("skipWANIPSetup"))
-            thePrefs.setSkipWANIPSetup(val.toBool());
-        else if (key == QStringLiteral("skipWANPPPSetup"))
-            thePrefs.setSkipWANPPPSetup(val.toBool());
-        else if (key == QStringLiteral("fileBufferSize"))
-            thePrefs.setFileBufferSize(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("useCreditSystem"))
-            thePrefs.setUseCreditSystem(val.toBool());
-        else if (key == QStringLiteral("a4afSaveCpu"))
-            thePrefs.setA4afSaveCpu(val.toBool());
-        else if (key == QStringLiteral("autoArchivePreviewStart"))
-            thePrefs.setAutoArchivePreviewStart(val.toBool());
-        else if (key == QStringLiteral("ed2kHostname"))
-            thePrefs.setEd2kHostname(val.toString());
-        else if (key == QStringLiteral("showExtControls"))
-            thePrefs.setShowExtControls(val.toBool());
-        else if (key == QStringLiteral("commitFiles"))
-            thePrefs.setCommitFiles(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("extractMetaData"))
-            thePrefs.setExtractMetaData(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("logLevel"))
-            thePrefs.setLogLevel(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("verboseLogToDisk"))
-            thePrefs.setVerboseLogToDisk(val.toBool());
-        else if (key == QStringLiteral("logSourceExchange"))
-            thePrefs.setLogSourceExchange(val.toBool());
-        else if (key == QStringLiteral("logBannedClients"))
-            thePrefs.setLogBannedClients(val.toBool());
-        else if (key == QStringLiteral("logRatingDescReceived"))
-            thePrefs.setLogRatingDescReceived(val.toBool());
-        else if (key == QStringLiteral("logSecureIdent"))
-            thePrefs.setLogSecureIdent(val.toBool());
-        else if (key == QStringLiteral("logFilteredIPs"))
-            thePrefs.setLogFilteredIPs(val.toBool());
-        else if (key == QStringLiteral("logFileSaving"))
-            thePrefs.setLogFileSaving(val.toBool());
-        else if (key == QStringLiteral("logA4AF"))
-            thePrefs.setLogA4AF(val.toBool());
-        else if (key == QStringLiteral("logUlDlEvents"))
-            thePrefs.setLogUlDlEvents(val.toBool());
-        else if (key == QStringLiteral("logRawSocketPackets"))
-            thePrefs.setLogRawSocketPackets(val.toBool());
-        else if (key == QStringLiteral("queueSize"))
-            thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
-        // USS
-        else if (key == QStringLiteral("dynUpEnabled"))
-            thePrefs.setDynUpEnabled(val.toBool());
-        else if (key == QStringLiteral("dynUpPingTolerance"))
-            thePrefs.setDynUpPingTolerance(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("dynUpPingToleranceMs"))
-            thePrefs.setDynUpPingToleranceMs(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("dynUpUseMillisecondPingTolerance"))
-            thePrefs.setDynUpUseMillisecondPingTolerance(val.toBool());
-        else if (key == QStringLiteral("dynUpGoingUpDivider"))
-            thePrefs.setDynUpGoingUpDivider(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("dynUpGoingDownDivider"))
-            thePrefs.setDynUpGoingDownDivider(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("dynUpNumberOfPings"))
-            thePrefs.setDynUpNumberOfPings(static_cast<int>(val.toInteger()));
-#ifdef Q_OS_WIN
-        else if (key == QStringLiteral("autotakeEd2kLinks"))
-            thePrefs.setAutotakeEd2kLinks(val.toBool());
-        else if (key == QStringLiteral("openPortsOnWinFirewall"))
-            thePrefs.setOpenPortsOnWinFirewall(val.toBool());
-        else if (key == QStringLiteral("sparsePartFiles"))
-            thePrefs.setSparsePartFiles(val.toBool());
-        else if (key == QStringLiteral("allocFullFile"))
-            thePrefs.setAllocFullFile(val.toBool());
-        else if (key == QStringLiteral("resolveShellLinks"))
-            thePrefs.setResolveShellLinks(val.toBool());
-        else if (key == QStringLiteral("multiUserSharing"))
-            thePrefs.setMultiUserSharing(static_cast<int>(val.toInteger()));
-#endif
-        // Statistics
-        else if (key == QStringLiteral("statsAverageMinutes"))
-            thePrefs.setStatsAverageMinutes(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("graphsUpdateSec"))
-            thePrefs.setGraphsUpdateSec(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("statsUpdateSec"))
-            thePrefs.setStatsUpdateSec(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("fillGraphs"))
-            thePrefs.setFillGraphs(val.toBool());
-        else if (key == QStringLiteral("statsConnectionsMax"))
-            thePrefs.setStatsConnectionsMax(static_cast<uint32>(val.toInteger()));
-        else if (key == QStringLiteral("statsConnectionsRatio"))
-            thePrefs.setStatsConnectionsRatio(static_cast<uint32>(val.toInteger()));
-        // Directories
-        else if (key == QStringLiteral("incomingDir"))
-            thePrefs.setIncomingDir(val.toString());
-        else if (key == QStringLiteral("tempDirs")) {
-            QStringList dirs;
-            for (const auto& item : val.toArray())
-                dirs.append(item.toString());
-            thePrefs.setTempDirs(dirs);
-        }
-        else if (key == QStringLiteral("sharedDirs")) {
-            QStringList dirs;
-            for (const auto& item : val.toArray())
-                dirs.append(item.toString());
-            thePrefs.setSharedDirs(dirs);
-        }
-        // Web Server
-        else if (key == QStringLiteral("webServerEnabled"))
-            thePrefs.setWebServerEnabled(val.toBool());
-        else if (key == QStringLiteral("webServerPort"))
-            thePrefs.setWebServerPort(static_cast<uint16>(val.toInteger()));
-        else if (key == QStringLiteral("webServerApiKey"))
-            thePrefs.setWebServerApiKey(val.toString());
-        else if (key == QStringLiteral("webServerListenAddress"))
-            thePrefs.setWebServerListenAddress(val.toString());
-        else if (key == QStringLiteral("webServerRestApiEnabled"))
-            thePrefs.setWebServerRestApiEnabled(val.toBool());
-        else if (key == QStringLiteral("webServerGzipEnabled"))
-            thePrefs.setWebServerGzipEnabled(val.toBool());
-        else if (key == QStringLiteral("webServerUPnP"))
-            thePrefs.setWebServerUPnP(val.toBool());
-        else if (key == QStringLiteral("webServerTemplatePath"))
-            thePrefs.setWebServerTemplatePath(val.toString());
-        else if (key == QStringLiteral("webServerSessionTimeout"))
-            thePrefs.setWebServerSessionTimeout(static_cast<int>(val.toInteger()));
-        else if (key == QStringLiteral("webServerHttpsEnabled"))
-            thePrefs.setWebServerHttpsEnabled(val.toBool());
-        else if (key == QStringLiteral("webServerCertPath"))
-            thePrefs.setWebServerCertPath(val.toString());
-        else if (key == QStringLiteral("webServerKeyPath"))
-            thePrefs.setWebServerKeyPath(val.toString());
-        else if (key == QStringLiteral("webServerAdminPassword"))
-            thePrefs.setWebServerAdminPassword(val.toString());
-        else if (key == QStringLiteral("webServerAdminAllowHiLevFunc"))
-            thePrefs.setWebServerAdminAllowHiLevFunc(val.toBool());
-        else if (key == QStringLiteral("webServerGuestEnabled"))
-            thePrefs.setWebServerGuestEnabled(val.toBool());
-        else if (key == QStringLiteral("webServerGuestPassword"))
-            thePrefs.setWebServerGuestPassword(val.toString());
+        if (!applyPreferenceA(key, val))
+            applyPreferenceB(key, val);
     }
     thePrefs.save();
 
@@ -2695,6 +2392,328 @@ void IpcClientHandler::handleGetClientDetails(const IpcMessage& msg)
 
     const QCborMap details = toCborDetailed(*client, theApp);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
+}
+
+// --- Private preference helpers (split to avoid MSVC C1061 nesting limit) ---
+
+bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& val)
+{
+    // General
+    if (key == QStringLiteral("nick"))
+        thePrefs.setNick(val.toString());
+    else if (key == QStringLiteral("port"))
+        thePrefs.setPort(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("udpPort"))
+        thePrefs.setUdpPort(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("maxUpload"))
+        thePrefs.setMaxUpload(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("maxDownload"))
+        thePrefs.setMaxDownload(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("maxGraphDownloadRate"))
+        thePrefs.setMaxGraphDownloadRate(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("maxGraphUploadRate"))
+        thePrefs.setMaxGraphUploadRate(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("maxConnections"))
+        thePrefs.setMaxConnections(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("maxSourcesPerFile"))
+        thePrefs.setMaxSourcesPerFile(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("autoConnect"))
+        thePrefs.setAutoConnect(val.toBool());
+    else if (key == QStringLiteral("reconnect"))
+        thePrefs.setReconnect(val.toBool());
+    else if (key == QStringLiteral("showOverhead"))
+        thePrefs.setShowOverhead(val.toBool());
+    else if (key == QStringLiteral("networkED2K"))
+        thePrefs.setNetworkED2K(val.toBool());
+    else if (key == QStringLiteral("kadEnabled"))
+        thePrefs.setKadEnabled(val.toBool());
+    else if (key == QStringLiteral("schedulerEnabled"))
+        thePrefs.setSchedulerEnabled(val.toBool());
+    else if (key == QStringLiteral("enableUPnP"))
+        thePrefs.setEnableUPnP(val.toBool());
+    // Proxy
+    else if (key == QStringLiteral("proxyType"))
+        thePrefs.setProxyType(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("proxyHost"))
+        thePrefs.setProxyHost(val.toString());
+    else if (key == QStringLiteral("proxyPort"))
+        thePrefs.setProxyPort(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("proxyEnablePassword"))
+        thePrefs.setProxyEnablePassword(val.toBool());
+    else if (key == QStringLiteral("proxyUser"))
+        thePrefs.setProxyUser(val.toString());
+    else if (key == QStringLiteral("proxyPassword"))
+        thePrefs.setProxyPassword(val.toString());
+    // Server
+    else if (key == QStringLiteral("safeServerConnect"))
+        thePrefs.setSafeServerConnect(val.toBool());
+    else if (key == QStringLiteral("autoConnectStaticOnly"))
+        thePrefs.setAutoConnectStaticOnly(val.toBool());
+    else if (key == QStringLiteral("useServerPriorities"))
+        thePrefs.setUseServerPriorities(val.toBool());
+    else if (key == QStringLiteral("addServersFromServer"))
+        thePrefs.setAddServersFromServer(val.toBool());
+    else if (key == QStringLiteral("addServersFromClients"))
+        thePrefs.setAddServersFromClients(val.toBool());
+    else if (key == QStringLiteral("deadServerRetries"))
+        thePrefs.setDeadServerRetries(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("autoUpdateServerList"))
+        thePrefs.setAutoUpdateServerList(val.toBool());
+    else if (key == QStringLiteral("serverListURL"))
+        thePrefs.setServerListURL(val.toString());
+    else if (key == QStringLiteral("smartLowIdCheck"))
+        thePrefs.setSmartLowIdCheck(val.toBool());
+    else if (key == QStringLiteral("manualServerHighPriority"))
+        thePrefs.setManualServerHighPriority(val.toBool());
+    // Files page
+    else if (key == QStringLiteral("addNewFilesPaused"))
+        thePrefs.setAddNewFilesPaused(val.toBool());
+    else if (key == QStringLiteral("autoDownloadPriority"))
+        thePrefs.setAutoDownloadPriority(val.toBool());
+    else if (key == QStringLiteral("autoSharedFilesPriority"))
+        thePrefs.setAutoSharedFilesPriority(val.toBool());
+    else if (key == QStringLiteral("transferFullChunks"))
+        thePrefs.setTransferFullChunks(val.toBool());
+    else if (key == QStringLiteral("previewPrio"))
+        thePrefs.setPreviewPrio(val.toBool());
+    else if (key == QStringLiteral("startNextPausedFile"))
+        thePrefs.setStartNextPausedFile(val.toBool());
+    else if (key == QStringLiteral("startNextPausedFileSameCat"))
+        thePrefs.setStartNextPausedFileSameCat(val.toBool());
+    else if (key == QStringLiteral("startNextPausedFileOnlySameCat"))
+        thePrefs.setStartNextPausedFileOnlySameCat(val.toBool());
+    else if (key == QStringLiteral("rememberDownloadedFiles"))
+        thePrefs.setRememberDownloadedFiles(val.toBool());
+    else if (key == QStringLiteral("rememberCancelledFiles"))
+        thePrefs.setRememberCancelledFiles(val.toBool());
+    // Notifications
+    else if (key == QStringLiteral("notifyOnLog"))
+        thePrefs.setNotifyOnLog(val.toBool());
+    else if (key == QStringLiteral("notifyOnChat"))
+        thePrefs.setNotifyOnChat(val.toBool());
+    else if (key == QStringLiteral("notifyOnChatMsg"))
+        thePrefs.setNotifyOnChatMsg(val.toBool());
+    else if (key == QStringLiteral("notifyOnDownloadAdded"))
+        thePrefs.setNotifyOnDownloadAdded(val.toBool());
+    else if (key == QStringLiteral("notifyOnDownloadFinished"))
+        thePrefs.setNotifyOnDownloadFinished(val.toBool());
+    else if (key == QStringLiteral("notifyOnNewVersion"))
+        thePrefs.setNotifyOnNewVersion(val.toBool());
+    else if (key == QStringLiteral("notifyOnUrgent"))
+        thePrefs.setNotifyOnUrgent(val.toBool());
+    else if (key == QStringLiteral("notifyEmailEnabled"))
+        thePrefs.setNotifyEmailEnabled(val.toBool());
+    else if (key == QStringLiteral("notifyEmailSmtpServer"))
+        thePrefs.setNotifyEmailSmtpServer(val.toString());
+    else if (key == QStringLiteral("notifyEmailSmtpPort"))
+        thePrefs.setNotifyEmailSmtpPort(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("notifyEmailSmtpAuth"))
+        thePrefs.setNotifyEmailSmtpAuth(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("notifyEmailSmtpTls"))
+        thePrefs.setNotifyEmailSmtpTls(val.toBool());
+    else if (key == QStringLiteral("notifyEmailSmtpUser"))
+        thePrefs.setNotifyEmailSmtpUser(val.toString());
+    else if (key == QStringLiteral("notifyEmailSmtpPassword"))
+        thePrefs.setNotifyEmailSmtpPassword(val.toString());
+    else if (key == QStringLiteral("notifyEmailRecipient"))
+        thePrefs.setNotifyEmailRecipient(val.toString());
+    else if (key == QStringLiteral("notifyEmailSender"))
+        thePrefs.setNotifyEmailSender(val.toString());
+    // Messages and Comments
+    else if (key == QStringLiteral("msgOnlyFriends"))
+        thePrefs.setMsgOnlyFriends(val.toBool());
+    else if (key == QStringLiteral("enableSpamFilter"))
+        thePrefs.setEnableSpamFilter(val.toBool());
+    else if (key == QStringLiteral("useChatCaptchas"))
+        thePrefs.setUseChatCaptchas(val.toBool());
+    else if (key == QStringLiteral("messageFilter"))
+        thePrefs.setMessageFilter(val.toString());
+    else if (key == QStringLiteral("commentFilter"))
+        thePrefs.setCommentFilter(val.toString());
+    // Security
+    else if (key == QStringLiteral("filterServerByIP"))
+        thePrefs.setFilterServerByIP(val.toBool());
+    else if (key == QStringLiteral("ipFilterLevel"))
+        thePrefs.setIpFilterLevel(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("viewSharedFilesAccess"))
+        thePrefs.setViewSharedFilesAccess(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("cryptLayerSupported"))
+        thePrefs.setCryptLayerSupported(val.toBool());
+    else if (key == QStringLiteral("cryptLayerRequested"))
+        thePrefs.setCryptLayerRequested(val.toBool());
+    else if (key == QStringLiteral("cryptLayerRequired"))
+        thePrefs.setCryptLayerRequired(val.toBool());
+    else if (key == QStringLiteral("useSecureIdent"))
+        thePrefs.setUseSecureIdent(val.toBool());
+    else if (key == QStringLiteral("enableSearchResultFilter"))
+        thePrefs.setEnableSearchResultFilter(val.toBool());
+    else if (key == QStringLiteral("warnUntrustedFiles"))
+        thePrefs.setWarnUntrustedFiles(val.toBool());
+    else if (key == QStringLiteral("ipFilterUpdateUrl"))
+        thePrefs.setIpFilterUpdateUrl(val.toString());
+    else
+        return false;
+    return true;
+}
+
+bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& val)
+{
+    // Extended (PPgTweaks)
+    if (key == QStringLiteral("maxConsPerFive"))
+        thePrefs.setMaxConsPerFive(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("maxHalfConnections"))
+        thePrefs.setMaxHalfConnections(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("serverKeepAliveTimeout"))
+        thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("filterLANIPs"))
+        thePrefs.setFilterLANIPs(val.toBool());
+    else if (key == QStringLiteral("checkDiskspace"))
+        thePrefs.setCheckDiskspace(val.toBool());
+    else if (key == QStringLiteral("minFreeDiskSpace"))
+        thePrefs.setMinFreeDiskSpace(static_cast<uint64>(val.toInteger()));
+    else if (key == QStringLiteral("logToDisk"))
+        thePrefs.setLogToDisk(val.toBool());
+    else if (key == QStringLiteral("verbose"))
+        thePrefs.setVerbose(val.toBool());
+    else if (key == QStringLiteral("closeUPnPOnExit"))
+        thePrefs.setCloseUPnPOnExit(val.toBool());
+    else if (key == QStringLiteral("skipWANIPSetup"))
+        thePrefs.setSkipWANIPSetup(val.toBool());
+    else if (key == QStringLiteral("skipWANPPPSetup"))
+        thePrefs.setSkipWANPPPSetup(val.toBool());
+    else if (key == QStringLiteral("fileBufferSize"))
+        thePrefs.setFileBufferSize(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("useCreditSystem"))
+        thePrefs.setUseCreditSystem(val.toBool());
+    else if (key == QStringLiteral("a4afSaveCpu"))
+        thePrefs.setA4afSaveCpu(val.toBool());
+    else if (key == QStringLiteral("autoArchivePreviewStart"))
+        thePrefs.setAutoArchivePreviewStart(val.toBool());
+    else if (key == QStringLiteral("ed2kHostname"))
+        thePrefs.setEd2kHostname(val.toString());
+    else if (key == QStringLiteral("showExtControls"))
+        thePrefs.setShowExtControls(val.toBool());
+    else if (key == QStringLiteral("commitFiles"))
+        thePrefs.setCommitFiles(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("extractMetaData"))
+        thePrefs.setExtractMetaData(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("logLevel"))
+        thePrefs.setLogLevel(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("verboseLogToDisk"))
+        thePrefs.setVerboseLogToDisk(val.toBool());
+    else if (key == QStringLiteral("logSourceExchange"))
+        thePrefs.setLogSourceExchange(val.toBool());
+    else if (key == QStringLiteral("logBannedClients"))
+        thePrefs.setLogBannedClients(val.toBool());
+    else if (key == QStringLiteral("logRatingDescReceived"))
+        thePrefs.setLogRatingDescReceived(val.toBool());
+    else if (key == QStringLiteral("logSecureIdent"))
+        thePrefs.setLogSecureIdent(val.toBool());
+    else if (key == QStringLiteral("logFilteredIPs"))
+        thePrefs.setLogFilteredIPs(val.toBool());
+    else if (key == QStringLiteral("logFileSaving"))
+        thePrefs.setLogFileSaving(val.toBool());
+    else if (key == QStringLiteral("logA4AF"))
+        thePrefs.setLogA4AF(val.toBool());
+    else if (key == QStringLiteral("logUlDlEvents"))
+        thePrefs.setLogUlDlEvents(val.toBool());
+    else if (key == QStringLiteral("logRawSocketPackets"))
+        thePrefs.setLogRawSocketPackets(val.toBool());
+    else if (key == QStringLiteral("queueSize"))
+        thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
+    // USS
+    else if (key == QStringLiteral("dynUpEnabled"))
+        thePrefs.setDynUpEnabled(val.toBool());
+    else if (key == QStringLiteral("dynUpPingTolerance"))
+        thePrefs.setDynUpPingTolerance(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("dynUpPingToleranceMs"))
+        thePrefs.setDynUpPingToleranceMs(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("dynUpUseMillisecondPingTolerance"))
+        thePrefs.setDynUpUseMillisecondPingTolerance(val.toBool());
+    else if (key == QStringLiteral("dynUpGoingUpDivider"))
+        thePrefs.setDynUpGoingUpDivider(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("dynUpGoingDownDivider"))
+        thePrefs.setDynUpGoingDownDivider(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("dynUpNumberOfPings"))
+        thePrefs.setDynUpNumberOfPings(static_cast<int>(val.toInteger()));
+#ifdef Q_OS_WIN
+    else if (key == QStringLiteral("autotakeEd2kLinks"))
+        thePrefs.setAutotakeEd2kLinks(val.toBool());
+    else if (key == QStringLiteral("openPortsOnWinFirewall"))
+        thePrefs.setOpenPortsOnWinFirewall(val.toBool());
+    else if (key == QStringLiteral("sparsePartFiles"))
+        thePrefs.setSparsePartFiles(val.toBool());
+    else if (key == QStringLiteral("allocFullFile"))
+        thePrefs.setAllocFullFile(val.toBool());
+    else if (key == QStringLiteral("resolveShellLinks"))
+        thePrefs.setResolveShellLinks(val.toBool());
+    else if (key == QStringLiteral("multiUserSharing"))
+        thePrefs.setMultiUserSharing(static_cast<int>(val.toInteger()));
+#endif
+    // Statistics
+    else if (key == QStringLiteral("statsAverageMinutes"))
+        thePrefs.setStatsAverageMinutes(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("graphsUpdateSec"))
+        thePrefs.setGraphsUpdateSec(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("statsUpdateSec"))
+        thePrefs.setStatsUpdateSec(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("fillGraphs"))
+        thePrefs.setFillGraphs(val.toBool());
+    else if (key == QStringLiteral("statsConnectionsMax"))
+        thePrefs.setStatsConnectionsMax(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("statsConnectionsRatio"))
+        thePrefs.setStatsConnectionsRatio(static_cast<uint32>(val.toInteger()));
+    // Directories
+    else if (key == QStringLiteral("incomingDir"))
+        thePrefs.setIncomingDir(val.toString());
+    else if (key == QStringLiteral("tempDirs")) {
+        QStringList dirs;
+        for (const auto& item : val.toArray())
+            dirs.append(item.toString());
+        thePrefs.setTempDirs(dirs);
+    }
+    else if (key == QStringLiteral("sharedDirs")) {
+        QStringList dirs;
+        for (const auto& item : val.toArray())
+            dirs.append(item.toString());
+        thePrefs.setSharedDirs(dirs);
+    }
+    // Web Server
+    else if (key == QStringLiteral("webServerEnabled"))
+        thePrefs.setWebServerEnabled(val.toBool());
+    else if (key == QStringLiteral("webServerPort"))
+        thePrefs.setWebServerPort(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("webServerApiKey"))
+        thePrefs.setWebServerApiKey(val.toString());
+    else if (key == QStringLiteral("webServerListenAddress"))
+        thePrefs.setWebServerListenAddress(val.toString());
+    else if (key == QStringLiteral("webServerRestApiEnabled"))
+        thePrefs.setWebServerRestApiEnabled(val.toBool());
+    else if (key == QStringLiteral("webServerGzipEnabled"))
+        thePrefs.setWebServerGzipEnabled(val.toBool());
+    else if (key == QStringLiteral("webServerUPnP"))
+        thePrefs.setWebServerUPnP(val.toBool());
+    else if (key == QStringLiteral("webServerTemplatePath"))
+        thePrefs.setWebServerTemplatePath(val.toString());
+    else if (key == QStringLiteral("webServerSessionTimeout"))
+        thePrefs.setWebServerSessionTimeout(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("webServerHttpsEnabled"))
+        thePrefs.setWebServerHttpsEnabled(val.toBool());
+    else if (key == QStringLiteral("webServerCertPath"))
+        thePrefs.setWebServerCertPath(val.toString());
+    else if (key == QStringLiteral("webServerKeyPath"))
+        thePrefs.setWebServerKeyPath(val.toString());
+    else if (key == QStringLiteral("webServerAdminPassword"))
+        thePrefs.setWebServerAdminPassword(val.toString());
+    else if (key == QStringLiteral("webServerAdminAllowHiLevFunc"))
+        thePrefs.setWebServerAdminAllowHiLevFunc(val.toBool());
+    else if (key == QStringLiteral("webServerGuestEnabled"))
+        thePrefs.setWebServerGuestEnabled(val.toBool());
+    else if (key == QStringLiteral("webServerGuestPassword"))
+        thePrefs.setWebServerGuestPassword(val.toString());
+    else
+        return false;
+    return true;
 }
 
 } // namespace eMule
