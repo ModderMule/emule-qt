@@ -1,0 +1,964 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Generated Files">
+      <UniqueIdentifier>{71ED8ED8-ACB9-4CE9-BBE1-E00B30144E11}</UniqueIdentifier>
+      <Extensions>cpp;c;cxx;moc;h;def;odl;idl;res;</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{D9D6E242-F8AF-46E4-B9FD-80ECBC20BA3E}</UniqueIdentifier>
+      <Extensions>qrc;*</Extensions>
+      <ParseFiles>false</ParseFiles>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Translation Files">
+      <UniqueIdentifier>{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}</UniqueIdentifier>
+      <Extensions>ts;xlf</Extensions>
+      <ParseFiles>false</ParseFiles>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="dialogs\AddFriendDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\ArchivePreviewPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\AutoStart.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\ClientDetailDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\ClientListModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\CommandLineExec.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\ContactsGraph.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\CoreConnectDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\DownloadListModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\DownloadProgressDelegate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\Ed2kSchemeHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\FileDetailDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\FirstStartWizard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\FriendListModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\ImportDownloadsDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\IpcClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\IrcPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\KadContactHistogram.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\KadContactsModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\KadLookupGraph.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\KadPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\KadSearchesModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\LogWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\MainWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\MessagesPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\MiniMuleWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\NetworkInfoDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\OptionsDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\PasteLinksDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\PowerManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\SearchPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\SearchResultsModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\ServerListModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\ServerPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\SharedFilesModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\SharedFilesPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\SharedPartsDelegate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\StatisticsPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\StatsGraph.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\TransferPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\TransferToolbar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\UiState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\VersionChecker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="dialogs\AddFriendDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\ArchivePreviewPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="app\AutoStart.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="dialogs\ClientDetailDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\ClientListModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="app\CommandLineExec.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="controls\ContactsGraph.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\CoreConnectDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\DownloadListModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\DownloadProgressDelegate.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="app\Ed2kSchemeHandler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="dialogs\FileDetailDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\FirstStartWizard.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\FriendListModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\ImportDownloadsDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\IpcClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\IrcPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\KadContactHistogram.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\KadContactsModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\KadLookupGraph.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\KadPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\KadSearchesModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\LogWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\MainWindow.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\MessagesPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\MiniMuleWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\NetworkInfoDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\OptionsDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\PasteLinksDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="app\PowerManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="panels\SearchPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\SearchResultsModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\ServerListModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\ServerPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\SharedFilesModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\SharedFilesPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\SharedPartsDelegate.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\StatisticsPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\StatsGraph.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\TransferPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\TransferToolbar.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="app\UiState.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="app\VersionChecker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="debug\moc_predefs.h.cbt">
+      <Filter>Generated Files</Filter>
+    </CustomBuild>
+    <CustomBuild Include="release\moc_predefs.h.cbt">
+      <Filter>Generated Files</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\lang\emuleqt_de_DE.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+    <None Include="..\..\lang\emuleqt_en.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+    <None Include="..\..\lang\emuleqt_es_ES.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+    <None Include="..\..\lang\emuleqt_fr_FR.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+    <None Include="..\..\lang\emuleqt_it_IT.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+    <None Include="..\..\lang\emuleqt_ja_JP.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+    <None Include="..\..\lang\emuleqt_ko_KR.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+    <None Include="..\..\lang\emuleqt_pt_BR.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+    <None Include="..\..\lang\emuleqt_zh_CN.ts">
+      <Filter>Translation Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\resources\icons\ArchivePreview.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Cancel.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Category.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Chat.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Client0.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Client1.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Client2.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Client3.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Client4.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientCompatible.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientCompatiblePlus.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientDefault.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientDefaultPlus.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientMLDonkey.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientMLDonkeyPlus.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientSecureHashOvl.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientShareaza.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientShareazaPlus.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientaMule.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientaMulePlus.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClienteDonkeyHybrid.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClienteDonkeyHybridPlus.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientlPhant.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientlPhantPlus.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientsKnown.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientsOnQueue.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\CloseTab.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Collapse.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectDo.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectDrop.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectStop.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedHighHigh.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedHighLow.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedHighNot.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedLowHigh.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedLowLow.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedLowNot.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedNotHigh.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedNotLow.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ConnectedNotNot.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Connection.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Contact0.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Contact1.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Contact2.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Contact3.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Contact4.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ContentDB.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Convert.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Copy.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\CopySelected.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Delete.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\DeleteAll.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\DeleteSelected.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\DirectDownload.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Display.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Download.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\DownloadFiles.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Empty.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Exit.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ExpandAll.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ExportAll.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileComments.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileInfo.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileOpen.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FilePriority.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileRating0.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileRating1.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileRating2.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileRating3.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileRating4.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileRating5.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileRename.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileSharedKad.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileSharedServer.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileTypeAny.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileTypeArchive.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileTypeAudio.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileTypeCDImage.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileTypeDocument.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileTypePicture.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileTypeProgram.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileTypeVideo.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FolderOpen.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Folders.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Friend.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FriendSlot.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Friends1.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Friends2.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Friends3.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Global.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\HardDisk.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Help.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\IPFilter.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\IRC.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\IRCClipboard.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Incoming.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Info.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Kad.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadBootstrap.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadContactList.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadCurrentSearches.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadFileSearch.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadNodeSearch.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadServer.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadStoreFile.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadStoreWord.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\KadWordSearch.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ListAdd.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ListRemove.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Log.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\images\Logo.jpg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\MediaInfo.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Messages.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\MetaData.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\NavigateBack.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\NavigateForward.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Notifications.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Pause.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Preferences.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Preview.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Priority.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\PriorityAuto.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\PriorityHigh.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\PriorityLow.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\PriorityNormal.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Proxy.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Rating.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\RatingBad.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Records.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Rename.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Scheduler.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Search.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SearchEdit.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SearchGlobalActive.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SearchKad.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SearchKadActive.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SearchResults.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SearchServerActive.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Security.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Server.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ServerAdd.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ServerInfo.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ServerList.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ServerSearch.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ServersUpdate.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SharedFiles.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SharedFilesList.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Cry.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Disgust.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Happy.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Interest.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Laugh.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Love.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Ph34r.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Sad.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Sealed.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Skeptic.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Smile.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Tongue.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_Wink.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_lookside.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_omg.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_sadq.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\smileys\Smiley_smileq.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Spam.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SplitWindow.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Start.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Statistics.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\StatisticsDetail.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\StatsCumulative.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\StatsDay.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\StatsGeneric.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\StatsMonth.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\StatsProjected.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\StatsTime.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\StatsYear.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Stop.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Tools.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Transfer.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\TransferUpDown.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\TrayConnected.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\TrayDisconnected.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\TrayLowID.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Tweak.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Up0down0.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Up0down1.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Up1down0.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Up1down1.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Upload.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\User.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\UserAdd.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\UserDelete.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\UserDetails.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\UserFiles.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\UserMessage.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Web.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Wizard.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\bold.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\colour.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\eD2kLink.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\eD2kLinkPaste.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\emuleCollAdd.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\emuleCollEdit.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\emuleCollSearch.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\emuleCollView.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\emuleCollectionFileType.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <QtRcc Include="..\..\resources\emuleqt.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+    <None Include="..\..\resources\icons\italic.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\images\mule_wiz_hdr.gif">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\resetformat.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\underline.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+</Project>

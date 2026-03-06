@@ -40,6 +40,12 @@ struct UDPServerRecord {
 struct SearchListEntry {
     uint32 searchID = 0;
     std::list<std::unique_ptr<SearchFile>> files;
+
+    SearchListEntry() = default;
+    SearchListEntry(SearchListEntry&&) = default;
+    SearchListEntry& operator=(SearchListEntry&&) = default;
+    SearchListEntry(const SearchListEntry&) = delete;
+    SearchListEntry& operator=(const SearchListEntry&) = delete;
 };
 
 // ---------------------------------------------------------------------------
