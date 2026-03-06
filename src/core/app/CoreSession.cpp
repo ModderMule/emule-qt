@@ -21,6 +21,7 @@
 #include "kademlia/KadUInt128.h"
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
+#include "net/UDPSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "server/ServerConnect.h"
@@ -385,6 +386,28 @@ void CoreSession::initServerConnect()
     if (theApp.downloadQueue)
         theApp.downloadQueue->setServerConnect(theApp.serverConnect);
 
+    // 5. Create and bind server UDP socket
+    m_serverUDP = std::make_unique<UDPSocket>(this);
+    if (!m_serverUDP->create())
+        logWarning(QStringLiteral("Failed to bind server UDP socket"));
+    m_serverConnect->setUDPSocket(m_serverUDP.get());
+
+    // 6. Wire TCP search results → SearchList
+    connect(m_serverConnect.get(), &ServerConnect::searchResultReceived,
+            this, [](const uint8* data, uint32 size, bool /*moreResults*/) {
+                if (!theApp.searchList)
+                    return;
+                auto* srv = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
+                theApp.searchList->processSearchAnswer(data, size, true,
+                    srv ? srv->ip() : 0, srv ? srv->port() : 0);
+            });
+
+    // 7. Wire UDP global search results → SearchList
+    connect(m_serverUDP.get(), &UDPSocket::globalSearchResult,
+            this, [](const uint8* data, uint32 size, uint32 ip, uint16 port) {
+                if (theApp.searchList)
+                    theApp.searchList->processUDPSearchAnswer(data, size, true, ip, port);
+            });
 }
 
 // ---------------------------------------------------------------------------
@@ -450,7 +473,9 @@ void CoreSession::shutdownServerConnect()
     if (m_serverConnect) {
         if (m_serverConnect->isConnected() || m_serverConnect->isConnecting())
             m_serverConnect->disconnect();
+        m_serverConnect->setUDPSocket(nullptr);
     }
+    m_serverUDP.reset();
 
     // Save server.met
     if (m_serverList) {

@@ -177,6 +177,9 @@ signals:
     /// Forwarded server message.
     void serverMessageReceived(const QString& msg);
 
+    /// Forwarded: search results received from connected server.
+    void searchResultReceived(const uint8* data, uint32 size, bool moreResults);
+
 private slots:
     void onRetryTimer();
 

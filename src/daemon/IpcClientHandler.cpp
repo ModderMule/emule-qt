@@ -32,6 +32,9 @@
 #include "kademlia/KadPrefs.h"
 #include "net/ListenSocket.h"
 #include "prefs/Preferences.h"
+#include "net/Packet.h"
+#include "search/SearchExpr.h"
+#include "search/SearchExprParser.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
 #include "search/SearchParams.h"
@@ -53,6 +56,7 @@
 #include <QStorageInfo>
 #include <QUrl>
 
+#include <cstring>
 #include <ctime>
 
 namespace eMule {
@@ -652,7 +656,41 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
             started = kad::SearchManager::startSearch(kadSearch);
         }
     }
-    // ToDo: ED2K server search (Ed2kServer, Ed2kGlobal, Automatic)
+    if (params.type == SearchType::Ed2kServer || params.type == SearchType::Automatic) {
+        if (theApp.serverConnect && theApp.serverConnect->isConnected()) {
+            auto parsed = parseSearchExpression(params.expression);
+            const QByteArray payload = parsed.expr.toBytes();
+            if (!payload.isEmpty()) {
+                auto pkt = std::make_unique<Packet>(OP_SEARCHREQUEST,
+                                                    static_cast<uint32>(payload.size()));
+                pkt->prot = OP_EDONKEYPROT;
+                std::memcpy(pkt->pBuffer, payload.constData(), static_cast<size_t>(payload.size()));
+                theApp.serverConnect->sendPacket(std::move(pkt));
+                started = true;
+            }
+        }
+    }
+
+    if (params.type == SearchType::Ed2kGlobal || params.type == SearchType::Automatic) {
+        if (theApp.serverConnect && theApp.serverList && theApp.searchList) {
+            auto parsed = parseSearchExpression(params.expression);
+            const QByteArray payload = parsed.expr.toBytes();
+            if (!payload.isEmpty()) {
+                const size_t count = theApp.serverList->serverCount();
+                for (size_t i = 0; i < count; ++i) {
+                    Server* srv = theApp.serverList->serverAt(i);
+                    theApp.searchList->addSentUDPRequestIP(srv->ip());
+                    auto pkt = std::make_unique<Packet>(OP_GLOBSEARCHREQ,
+                                                        static_cast<uint32>(payload.size()));
+                    pkt->prot = OP_EDONKEYPROT;
+                    std::memcpy(pkt->pBuffer, payload.constData(), static_cast<size_t>(payload.size()));
+                    const auto udpPort = static_cast<uint16>(srv->port() + 4);
+                    theApp.serverConnect->sendUDPPacket(std::move(pkt), *srv, udpPort);
+                }
+                started = true;
+            }
+        }
+    }
 
     QCborMap result;
     result.insert(QStringLiteral("searchID"), static_cast<qint64>(searchID));
