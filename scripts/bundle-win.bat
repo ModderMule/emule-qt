@@ -42,6 +42,9 @@ pushd "%SCRIPT_DIR%\.."
 set "PROJECT_DIR=%CD%"
 popd
 
+REM Switch to the project drive so relative paths (e.g. build\) resolve there
+cd /d "%PROJECT_DIR%"
+
 REM -- Parse arguments --------------------------------------------------------
 
 set "BUILD_DIR=%~1"
