@@ -190,10 +190,12 @@ mkdir "%LANG_DST%" 2>nul
 
 REM Prefer build-generated .qm files; fall back to source lang\ directory
 set "LANG_COPIED=0"
-for %%G in ("%BUILD_DIR%\src\gui\%CONFIG%\emuleqt_*.qm" "%BUILD_DIR%\src\gui\emuleqt_*.qm" "%PROJECT_DIR%\src\gui\%CONFIG%\emuleqt_*.qm" "%PROJECT_DIR%\lang\emuleqt_*.qm") do (
-    if exist "%%G" (
-        copy /y "%%G" "%LANG_DST%\" >nul 2>&1
-        set "LANG_COPIED=1"
+for %%D in ("%BUILD_DIR%\src\gui\%CONFIG%" "%BUILD_DIR%\src\gui" "%PROJECT_DIR%\src\gui\%CONFIG%" "%PROJECT_DIR%\lang") do (
+    if exist "%%~D\" (
+        dir /b "%%~D\emuleqt_*.qm" >nul 2>&1 && (
+            copy /y "%%~D\emuleqt_*.qm" "%LANG_DST%\" >nul 2>&1
+            set "LANG_COPIED=1"
+        )
     )
 )
 if "%LANG_COPIED%"=="1" (
