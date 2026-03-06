@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file UPnPManager.cpp
 /// @brief UPnP port mapping implementation using miniupnpc.
 

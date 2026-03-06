@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file LastCommonRouteFinder.cpp
 /// @brief Adaptive upload bandwidth control via latency-based route analysis.
 

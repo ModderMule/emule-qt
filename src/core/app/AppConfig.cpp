@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file AppConfig.cpp
 /// @brief Application config directory helpers — implementation.
 

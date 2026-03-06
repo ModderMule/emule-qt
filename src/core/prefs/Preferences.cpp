@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Preferences.cpp
 /// @brief Central preferences with YAML persistence — implementation.
 

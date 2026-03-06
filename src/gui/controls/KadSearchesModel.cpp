@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "controls/KadSearchesModel.h"
 
 namespace eMule {

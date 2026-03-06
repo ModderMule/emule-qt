@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadPacketTracking.cpp
 /// @brief Token bucket rate limiting and challenge tracking implementation.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "dialogs/PasteLinksDialog.h"
 
 #include "app/IpcClient.h"

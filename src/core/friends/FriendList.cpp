@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file FriendList.cpp
 /// @brief Friend list manager implementation.
 

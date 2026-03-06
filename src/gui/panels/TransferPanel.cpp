@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file TransferPanel.cpp
 /// @brief Transfer tab panel — implementation.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file WebServer.cpp
 /// @brief JSON REST API + template web server — implementation.
 

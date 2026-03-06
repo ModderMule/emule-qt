@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file IpcClient.cpp
 /// @brief GUI-side IPC client — implementation.
 

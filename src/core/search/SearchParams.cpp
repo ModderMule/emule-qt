@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SearchParams.cpp
 /// @brief Search query parameters — port of MFC SearchParams.
 

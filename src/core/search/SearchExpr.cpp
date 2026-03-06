@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SearchExpr.cpp
 /// @brief Search expression builder — port of MFC SearchExpr.
 

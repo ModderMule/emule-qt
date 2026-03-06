@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ED2KLink.cpp
 /// @brief ED2K link parsing implementation — port of CED2KLink from MFC.
 

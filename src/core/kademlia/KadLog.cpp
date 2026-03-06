@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadLog.cpp
 /// @brief Kad-specific logging implementation.
 

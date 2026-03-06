@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "controls/KadContactsModel.h"
 
 #include <QFont>

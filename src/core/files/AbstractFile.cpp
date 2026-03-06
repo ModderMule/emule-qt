@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file AbstractFile.cpp
 /// @brief Abstract base class for all file types — replaces MFC CAbstractFile.
 

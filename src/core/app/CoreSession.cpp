@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file CoreSession.cpp
 /// @brief Lightweight timer driver — calls process() on core managers.
 ///

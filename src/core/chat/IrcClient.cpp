@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file IrcClient.cpp
 /// @brief IRC protocol client implementation — replaces MFC CIrcMain + CIrcSocket.
 

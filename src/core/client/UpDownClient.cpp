@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file UpDownClient.cpp
 /// @brief UpDownClient implementation — identity, state, Compare, version, handshake,
 ///        connection management, secure identity, chat, preview, firewall.

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadContactHistogram.cpp
 /// @brief Qt port of MFC CKadContactHistogramCtrl::OnPaint().
 

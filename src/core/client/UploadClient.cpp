@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file UploadClient.cpp
 /// @brief UpDownClient upload methods — scoring, block management, upload statistics.
 ///

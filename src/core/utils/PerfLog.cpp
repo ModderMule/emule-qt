@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file PerfLog.cpp
 /// @brief Performance logging implementation.
 

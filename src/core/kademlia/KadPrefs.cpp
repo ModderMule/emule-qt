@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadPrefs.cpp
 /// @brief Kademlia runtime preferences implementation.
 

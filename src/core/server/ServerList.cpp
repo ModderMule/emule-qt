@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ServerList.cpp
 /// @brief ED2K server collection implementation — port of CServerList from MFC.
 

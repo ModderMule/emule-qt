@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file DebugUtils.cpp
 /// @brief Logging category definitions for eMule Qt.
 

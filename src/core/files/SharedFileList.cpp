@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SharedFileList.cpp
 /// @brief Shared file management — port of MFC CSharedFileList.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SmtpClient.cpp
 /// @brief Simple async SMTP client — implementation.
 

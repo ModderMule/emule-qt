@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file AppContext.cpp
 /// @brief Global application context definition.
 

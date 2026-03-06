@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file StatisticsPanel.cpp
 /// @brief Statistics panel — tree view + oscilloscope graphs — implementation.
 

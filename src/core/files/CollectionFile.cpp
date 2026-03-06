@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file CollectionFile.cpp
 /// @brief Collection file entry — port of MFC CCollectionFile.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file EncryptedStreamSocket.cpp
 /// @brief RC4 obfuscation protocol implementation for TCP sockets.
 ///

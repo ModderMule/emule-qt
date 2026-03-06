@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ImportDownloadsDialog.cpp
 /// @brief Dialog for importing legacy download files — implementation.
 

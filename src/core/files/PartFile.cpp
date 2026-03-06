@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file PartFile.cpp
 /// @brief In-progress download file — port of MFC CPartFile.
 ///

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Kademlia.cpp
 /// @brief Main Kademlia DHT engine implementation.
 

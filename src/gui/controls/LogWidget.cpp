@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "controls/LogWidget.h"
 
 #include "prefs/Preferences.h"

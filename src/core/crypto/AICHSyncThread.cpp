@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file AICHSyncThread.cpp
 /// @brief Background AICH hash synchronization — port of MFC CAICHSyncThread.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file WebSessionManager.cpp
 /// @brief Session management implementation.
 

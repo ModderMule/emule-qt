@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "SHAHash.h"
 #include "utils/OtherFunctions.h"
 

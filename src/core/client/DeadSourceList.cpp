@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file DeadSourceList.cpp
 /// @brief Dead source tracking implementation — replaces MFC CDeadSourceList.
 

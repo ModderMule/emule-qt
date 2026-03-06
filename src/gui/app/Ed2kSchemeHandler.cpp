@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Ed2kSchemeHandler.cpp
 /// @brief Platform-specific ed2k:// URL scheme registration.
 

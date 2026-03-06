@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ClientCredits.cpp
 /// @brief Credit system + clients.met persistence — replaces MFC CClientCredits + CClientCreditsList.
 

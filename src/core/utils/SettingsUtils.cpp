@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SettingsUtils.cpp
 /// @brief Settings class implementation.
 

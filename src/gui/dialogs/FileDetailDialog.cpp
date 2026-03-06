@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file FileDetailDialog.cpp
 /// @brief Tabbed file-detail dialog implementation.
 

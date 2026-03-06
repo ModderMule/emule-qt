@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file FriendListModel.cpp
 /// @brief FriendListModel implementation.
 

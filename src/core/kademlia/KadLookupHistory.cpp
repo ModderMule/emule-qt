@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadLookupHistory.cpp
 /// @brief Search history tracking implementation.
 

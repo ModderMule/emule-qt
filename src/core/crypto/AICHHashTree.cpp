@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "AICHHashTree.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"

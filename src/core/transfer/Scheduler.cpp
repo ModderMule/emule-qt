@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Scheduler.cpp
 /// @brief Time-based scheduling of speed limits — port of MFC Scheduler.cpp.
 ///

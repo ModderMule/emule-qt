@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ClientUDPSocket.cpp
 /// @brief Client-to-client UDP socket — replaces MFC CClientUDPSocket.
 

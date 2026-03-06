@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SearchFile.cpp
 /// @brief Search result file entry — port of MFC CSearchFile.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Pinger.cpp
 /// @brief Cross-platform ICMP/UDP ping — replaces Windows ICMP.DLL Pinger.
 

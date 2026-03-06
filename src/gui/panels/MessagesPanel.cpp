@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file MessagesPanel.cpp
 /// @brief Messages tab panel implementation — matches MFC eMule Messages window.
 

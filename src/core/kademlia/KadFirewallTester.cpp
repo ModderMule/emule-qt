@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadFirewallTester.cpp
 /// @brief UDP firewall detection implementation.
 

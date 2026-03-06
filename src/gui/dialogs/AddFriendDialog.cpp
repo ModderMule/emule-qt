@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file AddFriendDialog.cpp
 /// @brief "Add..." dialog implementation — matches MFC eMule layout.
 

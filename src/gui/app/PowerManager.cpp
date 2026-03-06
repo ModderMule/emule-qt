@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "app/PowerManager.h"
 
 #ifdef Q_OS_MACOS

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ImportParts.cpp
 /// @brief Import completed parts from a source file into a PartFile.
 ///

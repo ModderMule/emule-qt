@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Log.cpp
 /// @brief Logging system implementation.
 

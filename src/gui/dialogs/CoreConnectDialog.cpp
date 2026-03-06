@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file CoreConnectDialog.cpp
 /// @brief Last-resort dialog for connecting to a remote eMule daemon.
 

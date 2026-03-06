@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file StringUtils.cpp
 /// @brief String conversion utility implementations.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file HttpClientReqSocket.cpp
 /// @brief HTTP protocol over EMSocket — replaces MFC CHttpClientReqSocket.
 

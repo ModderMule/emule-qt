@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Packet.cpp
 /// @brief ED2K network packet container implementation.
 

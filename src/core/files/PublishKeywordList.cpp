@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file PublishKeywordList.cpp
 /// @brief Kad keyword publishing list — port of MFC CPublishKeyword/CPublishKeywordList.
 

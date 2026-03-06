@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file IrcPanel.cpp
 /// @brief IRC tab panel implementation — matches MFC eMule IRC window.
 
