@@ -311,8 +311,8 @@ Phase 6 (complete):
 
 - [x] Port `IrcMain.cpp/h` (IRC protocol logic) — `chat/IrcMessage.h` (RFC 2812 parser), `chat/IrcClient.h/.cpp` (QObject signal-based IRC client with auto PING/PONG, CTCP, login sequence, numeric dispatch)
 - [x] Port `IrcSocket.cpp/h` — replaced by `QTcpSocket` inside `IrcClient`, UTF-8/Latin1 encoding, buffered line-based read
-- [ ] Port `ChatWnd.cpp/h` → `QWidget`
-- [ ] Port `ChatSelector.cpp/h` → `QTabWidget`
+- [x] Port `ChatWnd.cpp/h` → `QWidget` — `gui/panels/MessagesPanel.h/.cpp` (friend-based messaging panel)
+- [x] Port `ChatSelector.cpp/h` → `QTabWidget` — integrated into MessagesPanel
 
 ---
 
@@ -325,9 +325,12 @@ Phase 6 (complete):
 
 ### Module 19: Web Server (Built-in HTTP Server)
 
-- [x] Port `WebServer.cpp/h` (172KB — very large) — replaced with JSON REST API using `QHttpServer`
+- [x] Port `WebServer.cpp/h` (172KB — very large) — replaced with JSON REST API using `QHttpServer`, plus classic template engine
 - [x] Port `WebSocket.cpp/h` — subsumed by REST API (React frontend uses fetch, not WebSocket)
 - [x] Consider using `QHttpServer` (Qt 6.4+) as replacement — implemented with `QHttpServer`
+- [x] `WebTemplateEngine` — parses eMule .tmpl files with `<--TMPL_NAME-->` sections, `[Key]` substitution
+- [x] `WebSessionManager` — SHA-256 password login, session timeout, admin/guest roles
+- [x] `JsonSerializers.h` — JSON serializers for REST API responses
 
 ---
 
@@ -351,8 +354,8 @@ Replace the MFC application framework with Qt Widgets. The GUI connects to the `
 - [x] Port `MuleStatusBarCtrl.cpp/h` → `QStatusBar` — integrated into `MainWindow` (status message, users, up/down speeds, eD2k, Kad labels)
 - [x] IPC client for daemon communication — `gui/app/IpcClient.h/.cpp` (connects to daemon, request/callback pattern with seqId, push event dispatch, auto-subscribe)
 - [ ] Port `SplashScreen.cpp/h` → `QSplashScreen`
-- [ ] Port `Wizard.cpp/h` → `QWizard`
-- [ ] Port `MiniMule.cpp/h` → `QWidget` (floating info window)
+- [x] Port `Wizard.cpp/h` → `QWizard` — `gui/dialogs/FirstStartWizard.h/.cpp`
+- [x] Port `MiniMule.cpp/h` → `QWidget` (floating info window) — `gui/app/MiniMuleWidget.h/.cpp`
 - [ ] Port `MuleSystrayDlg.cpp/h` → `QSystemTrayIcon`
 - [ ] Port `DialogMinTrayBtn.cpp/h` → use `QSystemTrayIcon` API
 - [ ] Port `TrayDialog.cpp/h` → `QDialog` + `QSystemTrayIcon`
@@ -361,19 +364,26 @@ Replace the MFC application framework with Qt Widgets. The GUI connects to the `
 - [ ] Port `TrayMenuBtn.cpp/h` → `QMenu`
 - [ ] Port `resource.h` → Qt resource system (`.qrc`)
 - [ ] Migrate icons/bitmaps from `res/` to Qt resource file
+- [x] `Ed2kSchemeHandler` — `gui/app/Ed2kSchemeHandler.h/.cpp` (ed2k:// URL scheme handler)
+- [x] `AutoStart` — `gui/app/AutoStart.h/.cpp` (platform-specific autostart registration)
+- [x] `PowerManager` — `gui/app/PowerManager.h/.cpp` (prevents sleep during transfers)
+- [x] `VersionChecker` — `gui/app/VersionChecker.h/.cpp` (checks for updates)
+- [x] `UiState` — `gui/app/UiState.h/.cpp` (UI state persistence)
+- [x] `CommandLineExec` (GUI) — `gui/app/CommandLineExec.h/.cpp` (CLI argument handling for GUI)
+- [x] `CoreConnectDialog` — `gui/dialogs/CoreConnectDialog.h/.cpp` (daemon connection dialog)
 
 ---
 
 ### Module 22: GUI — Tab/Page Panels
 
-- [ ] Port `TransferDlg.cpp/h` / `TransferWnd.cpp/h` → `QWidget` (Transfers tab)
-- [ ] Port `SearchDlg.cpp/h` / `SearchResultsWnd.cpp/h` / `SearchParamsWnd.cpp/h` → `QWidget` (Search tab)
-- [ ] Port `SharedFilesWnd.cpp/h` → `QWidget` (Shared Files tab)
+- [x] Port `TransferDlg.cpp/h` / `TransferWnd.cpp/h` → `QWidget` (Transfers tab) — `gui/panels/TransferPanel.h/.cpp`
+- [x] Port `SearchDlg.cpp/h` / `SearchResultsWnd.cpp/h` / `SearchParamsWnd.cpp/h` → `QWidget` (Search tab) — `gui/panels/SearchPanel.h/.cpp`
+- [x] Port `SharedFilesWnd.cpp/h` → `QWidget` (Shared Files tab) — `gui/panels/SharedFilesPanel.h/.cpp`
 - [x] Port `ServerWnd.cpp/h` → `QWidget` (Servers tab) — `gui/panels/ServerPanel.h/.cpp` (server list view, connect/disconnect, add server form, update server.met, My Info, LogWidget with Server Info/Log/Verbose tabs; uses both direct core access and IPC)
 - [x] Port `KademliaWnd.cpp/h` → `QWidget` (Kademlia tab) — `gui/panels/KadPanel.h/.cpp` (contacts tree, bootstrap controls, firewall check, ContactsGraph histogram + network graph, searches table; IPC-driven with 2s refresh timer)
-- [ ] Port `StatisticsDlg.cpp/h` → `QWidget` (Statistics tab)
-- [ ] Port `IrcWnd.cpp/h` → `QWidget` (IRC tab)
-- [ ] Port `ChatWnd.cpp/h` → `QWidget` (Messages tab)
+- [x] Port `StatisticsDlg.cpp/h` → `QWidget` (Statistics tab) — `gui/panels/StatisticsPanel.h/.cpp`
+- [x] Port `IrcWnd.cpp/h` → `QWidget` (IRC tab) — `gui/panels/IrcPanel.h/.cpp`
+- [x] Port `ChatWnd.cpp/h` → `QWidget` (Messages tab) — `gui/panels/MessagesPanel.h/.cpp`
 
 ---
 
@@ -385,18 +395,18 @@ Replace MFC custom controls with Qt equivalents.
 - [ ] Port `ListCtrlX.cpp/h` → extend Qt model/view
 - [ ] Port `ListCtrlEditable.cpp/h` → `QStyledItemDelegate` with editing
 - [ ] Port `ListCtrlItemWalk.cpp/h` → model-based navigation
-- [ ] Port `DownloadListCtrl.cpp/h` → `QTreeView` + custom model
+- [x] Port `DownloadListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/DownloadListModel.h/.cpp`
 - [ ] Port `UploadListCtrl.cpp/h` → `QTreeView` + custom model
-- [ ] Port `SharedFilesCtrl.cpp/h` → `QTreeView` + custom model
+- [x] Port `SharedFilesCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/SharedFilesModel.h/.cpp`
 - [x] Port `ServerListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/ServerListModel.h/.cpp` (columns: Name, IP:Port, Description, Ping, Users, MaxUsers, Preference, Failed, Static, SoftFiles, LowID, Obfuscation; refreshFromServerList + context menu support)
-- [ ] Port `ClientListCtrl.cpp/h` → `QTreeView` + custom model
-- [ ] Port `SearchListCtrl.cpp/h` → `QTreeView` + custom model
-- [x] Port `KadSearchListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/KadSearchesModel.h/.cpp` (columns: Number, Key, Type, Name, Status, Load, PacketsSent, Responses; skeleton, not yet fed with IPC data)
+- [x] Port `ClientListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/ClientListModel.h/.cpp`
+- [x] Port `SearchListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/SearchResultsModel.h/.cpp`
+- [x] Port `KadSearchListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/KadSearchesModel.h/.cpp` (columns: Number, Key, Type, Name, Status, Load, PacketsSent, Responses)
 - [x] Port `KadContactListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/KadContactsModel.h/.cpp` (columns: Status icon, ClientId hex, Distance binary; 5 colored circle icons indicating contact quality; Courier New 8pt font)
-- [x] Port `KadContactHistogramCtrl.cpp/h` → `QWidget` with custom paint — `gui/controls/ContactsGraph.h/.cpp` (deque-based bar chart, 120 samples, auto-scaled Y-axis)
-- [ ] Port `KadLookupGraph.cpp/h` → `QWidget` with custom paint
+- [x] Port `KadContactHistogramCtrl.cpp/h` → `QWidget` with custom paint — `gui/controls/ContactsGraph.h/.cpp` (deque-based bar chart, 120 samples, auto-scaled Y-axis) + `gui/controls/KadContactHistogram.h/.cpp`
+- [x] Port `KadLookupGraph.cpp/h` → `QWidget` with custom paint — `gui/controls/KadLookupGraph.h/.cpp`
 - [ ] Port `DownloadClientsCtrl.cpp/h` → `QTreeView` + custom model
-- [ ] Port `FriendListCtrl.cpp/h` → `QTreeView` + custom model
+- [x] Port `FriendListCtrl.cpp/h` → `QTreeView` + custom model — `gui/controls/FriendListModel.h/.cpp`
 - [ ] Port `CollectionListCtrl.cpp/h` → `QTreeView` + custom model
 - [ ] Port `CommentListCtrl.cpp/h` → `QTreeView` + custom model
 - [ ] Port `IrcChannelListCtrl.cpp/h` → `QTreeView` + custom model
@@ -405,9 +415,9 @@ Replace MFC custom controls with Qt equivalents.
 - [ ] Port `DirectoryTreeCtrl.cpp/h` → `QTreeView` + `QFileSystemModel`
 - [ ] Port `TabCtrl.cpp/h` / `ClosableTabCtrl.cpp/h` / `ButtonsTabCtrl.cpp/h` → `QTabWidget`
 - [ ] Port `IrcChannelTabCtrl.cpp/h` → `QTabWidget`
-- [ ] Port `OScopeCtrl.cpp/h` → `QChartView` (Qt Charts) or custom `QWidget`
+- [x] Port `OScopeCtrl.cpp/h` → `QWidget` with custom paint — `gui/controls/StatsGraph.h/.cpp`
 - [ ] Port `StatisticsTree.cpp/h` → `QTreeWidget`
-- [ ] Port `BarShader.cpp/h` → custom `QWidget::paintEvent()` with `QPainter`
+- [x] Port `BarShader.cpp/h` → custom `QWidget::paintEvent()` with `QPainter` — `gui/controls/DownloadProgressDelegate.h/.cpp` (progress bar delegate for download list) + `gui/controls/SharedPartsDelegate.h/.cpp` (parts visualization for shared files)
 - [ ] Port `ProgressCtrlX.cpp/h` → `QProgressBar` subclass
 - [ ] Port `SplitterControl.cpp/h` → `QSplitter`
 - [ ] Port `ToolTipCtrlX.cpp/h` → `QToolTip` / custom tooltip widget
@@ -427,31 +437,35 @@ Replace MFC custom controls with Qt equivalents.
 - [ ] Port `SmileySelector.cpp/h` → `QDialog` or popup widget
 - [ ] Port `CustomAutoComplete.cpp/h` → `QCompleter`
 - [ ] Port `ColourPopup.cpp/h` → `QColorDialog` or custom popup
+- [x] Port `TransferToolbar` — `gui/controls/TransferToolbar.h/.cpp` (transfer panel-specific toolbar)
 
 ---
 
 ### Module 24: GUI — Dialogs
 
-- [ ] Port `PreferencesDlg.cpp/h` → `QDialog` with `QTabWidget` or `QStackedWidget`
-- [ ] Port all `PPg*.cpp/h` (17 preference pages) → `QWidget` pages
-- [ ] Port `FileDetailDialog.cpp/h` + info/name/statistics variants → `QDialog`
-- [ ] Port `FileInfoDialog.cpp/h` → `QDialog`
-- [ ] Port `MetaDataDlg.cpp/h` → `QDialog`
-- [ ] Port `CommentDialog.cpp/h` / `CommentDialogLst.cpp/h` → `QDialog`
-- [ ] Port `ClientDetailDialog.cpp/h` → `QDialog`
+- [x] Port `PreferencesDlg.cpp/h` → `QDialog` with `QStackedWidget` — `gui/dialogs/OptionsDialog.h/.cpp` (left sidebar with category icons, right stacked pages)
+- [x] Port all `PPg*.cpp/h` (17 preference pages) → `QWidget` pages — all integrated into OptionsDialog: General, Display, Connection, Proxy, Server, Directories, Files, Notifications, IRC, Messages/Comments, Security, Scheduler, Statistics, Extended, Web Interface
+- [x] Port `FileDetailDialog.cpp/h` + info/name/statistics variants → `QDialog` — `gui/dialogs/FileDetailDialog.h/.cpp` (7 tabs: General, File Names, Comments, Media Info, Metadata, ED2K Link, Archive Preview)
+- [x] Port `FileInfoDialog.cpp/h` → integrated as Media Info tab in FileDetailDialog
+- [x] Port `MetaDataDlg.cpp/h` → integrated as Metadata tab in FileDetailDialog (ED2K tag table)
+- [x] Port `CommentDialog.cpp/h` / `CommentDialogLst.cpp/h` → integrated as Comments tab in FileDetailDialog
+- [x] Port `ClientDetailDialog.cpp/h` → `QDialog` — `gui/dialogs/ClientDetailDialog.h/.cpp`
 - [ ] Port `CatDialog.cpp/h` → `QDialog` (download categories)
-- [ ] Port `AddFriend.cpp/h` → `QDialog`
+- [x] Port `AddFriend.cpp/h` → `QDialog` — `gui/dialogs/AddFriendDialog.h/.cpp`
 - [ ] Port `AddSourceDlg.cpp/h` → `QDialog`
-- [ ] Port `DirectDownloadDlg.cpp/h` → `QDialog`
-- [ ] Port `NetworkInfoDlg.cpp/h` → `QDialog`
-- [ ] Port `ArchivePreviewDlg.cpp/h` → `QDialog`
+- [x] Port `DirectDownloadDlg.cpp/h` → `QDialog` — `gui/dialogs/PasteLinksDialog.h/.cpp` (paste ed2k links dialog)
+- [x] Port `NetworkInfoDlg.cpp/h` → `QDialog` — `gui/dialogs/NetworkInfoDialog.h/.cpp`
+- [x] Port `ArchivePreviewDlg.cpp/h` → integrated as Archive Preview tab in FileDetailDialog + standalone `gui/dialogs/ArchivePreviewPanel.h/.cpp`
 - [ ] Port `PreviewDlg.cpp/h` → `QDialog`
 - [ ] Port `CollectionCreateDialog.cpp/h` / `CollectionViewDialog.cpp/h` → `QDialog`
 - [ ] Port `CreditsDlg.cpp/h` / `CreditsThread.cpp/h` → `QDialog`
-- [ ] Port `TreePropSheet.cpp/h` / `TreePropSheetPgFrame.cpp/h` → `QDialog` + `QTreeWidget`
+- [x] Port `TreePropSheet.cpp/h` / `TreePropSheetPgFrame.cpp/h` → replaced by OptionsDialog's QListWidget sidebar + QStackedWidget pattern
 - [ ] Port `ListViewWalkerPropertySheet.cpp/h` → `QDialog` with navigation
 - [ ] Port `SMTPdialog.cpp/h` / `SendMail.cpp/h` → `QDialog`
 - [ ] Port `IPFilterDlg.cpp/h` → `QDialog`
+- [x] `ImportDownloadsDialog` — `gui/dialogs/ImportDownloadsDialog.h/.cpp` (import downloads from other clients)
+- [x] `CoreConnectDialog` — `gui/dialogs/CoreConnectDialog.h/.cpp` (daemon connection dialog)
+- [x] `FirstStartWizard` — `gui/dialogs/FirstStartWizard.h/.cpp` (first-run setup wizard)
 
 ---
 
@@ -549,6 +563,7 @@ Verify hash output against known test vectors (RFC 1320 for MD4, RFC 1321 for MD
 - [x] `tst_MD5.cpp` — RFC 1321 test vectors, construct from string/data, hash string format
 - [x] `tst_SHA.cpp` — SHA-1 known vectors, AICHHashAlgo interface, Base32 roundtrip, hashFromString/URN, isNull
 - [x] `tst_AICHHashTree.cpp` — construction, findHash, setBlockHash, reCalculateHash, verifyHashTree valid/corrupt, roundtrip
+- [x] `tst_AICHHashSet.cpp` — AICH hashset load/save, verification
 - [x] `tst_FileIdentifier.cpp` — MD4/AICH get/set, compareRelaxed/Strict, writeIdentifier roundtrip, hashset load/write, calculateMD4ByHashSet, AICH verify, writeHashSetsToPacket roundtrip, FileIdentifierSA readIdentifier, theoretical counts
 - [ ] `tst_CaptchaGenerator.cpp` — deferred (needs Qt6::Gui)
 - [ ] `tst_HashPerformance.cpp` — `QBENCHMARK` for MD4/SHA-256 throughput on 1MB, 10MB, 100MB data
@@ -564,12 +579,17 @@ Use `QTcpServer` / `QTcpSocket` loopback and `QSignalSpy` for async signal testi
 - [x] `tst_EMSocket.cpp` — packet framing, partial reassembly, multiple packets, wrong header/oversized rejection, rate limiting
 - [ ] `tst_ThrottledSocket.cpp` — bandwidth limiter accuracy (measure bytes/sec over time window)
 - [ ] `tst_EncryptedStreamSocket.cpp` — RC4 handshake over loopback, obfuscation roundtrip
-- [x] `tst_EncryptedDatagramSocket.cpp` — ED2K/Kad/Server encrypt-decrypt roundtrips, overhead size, passthrough
-- [ ] `tst_ListenSocket.cpp` — accept incoming connections, max connections limit, port binding
+- [x] `tst_EncryptedDatagram.cpp` — ED2K/Kad/Server encrypt-decrypt roundtrips, overhead size, passthrough
+- [x] `tst_ListenSocket.cpp` — accept incoming connections, port binding
 - [ ] `tst_ProxySocket.cpp` — SOCKS4/SOCKS5/HTTP proxy negotiation (mock proxy server)
 - [ ] `tst_HttpClient.cpp` — `QNetworkAccessManager` GET/POST, redirect following, timeout handling
 - [x] `tst_Pinger.cpp` — ICMP echo to localhost, invalid address handling, sequential pings, PingStatus defaults (uses QSKIP when ICMP socket unavailable)
 - [x] `tst_TcpConnect.cpp` — TCP localhost connectivity test, connection establishment verification
+- [x] `tst_ClientUDPSocket.cpp` — client UDP socket tests
+- [x] `tst_UDPSocket.cpp` — server UDP socket tests
+- [x] `tst_ServerSocket.cpp` — server socket connection tests
+- [x] `tst_HttpClientReqSocket.cpp` — HTTP client request socket tests
+- [x] `tst_LastCommonRouteFinder.cpp` — last common route finder tests
 - [ ] `tst_SocketStress.cpp` — open/close 100 connections rapidly, verify no resource leaks
 
 ---
@@ -599,7 +619,8 @@ Use `QTcpServer` / `QTcpSocket` loopback and `QSignalSpy` for async signal testi
 
 - [x] `tst_Server.cpp` — construct server, get/set properties, serialization to/from `server.met` format
 - [x] `tst_ServerList.cpp` — load/save `server.met`, add/remove servers, duplicate detection, merge lists
-- [ ] `tst_ServerConnect.cpp` — connection state machine transitions (disconnected → connecting → connected → disconnected), timeout, retry logic (use mock socket)
+- [x] `tst_ServerConnect.cpp` — connection state machine transitions, timeout, retry logic
+- [x] `tst_ServerMetData.cpp` — server.met binary data parsing tests
 - [ ] `tst_ServerListURL.cpp` — download server list from HTTP (mock `QNetworkAccessManager`), parse response
 
 ---
@@ -608,10 +629,11 @@ Use `QTcpServer` / `QTcpSocket` loopback and `QSignalSpy` for async signal testi
 
 - [x] `tst_ClientStateDefs.cpp` — enum types, values, protocol constants
 - [x] `tst_ClientCredits.cpp` — credit calculation, score computation, serialization to `clients.met`, identity state machine
-- [ ] `tst_ClientList.cpp` — add/remove/find clients by hash/IP/port, duplicate handling
+- [x] `tst_ClientList.cpp` — add/remove/find clients by hash/IP/port, duplicate handling
 - [x] `tst_DeadSourceList.cpp` — add dead source, expiry timeout, re-addition after timeout
 - [x] `tst_CorruptionBlackBox.cpp` — record corrupted block, identify responsible client, evaluation
-- [ ] `tst_UpdownClient.cpp` — client state transitions (connecting, handshake, requesting, transferring)
+- [x] `tst_UpDownClient.cpp` — client state transitions (connecting, handshake, requesting, transferring)
+- [x] `tst_URLClient.cpp` — URL client (HTTP download) tests
 
 ---
 
@@ -630,10 +652,11 @@ Use `QTcpServer` / `QTcpSocket` loopback and `QSignalSpy` for async signal testi
 - [x] `tst_KadUDPListener.cpp` — packet dispatch, receive handler invocation, protocol message processing
 - [x] `tst_KadPacketTracking.cpp` — track sent packets, detect timeouts, remove acknowledged
 - [x] `tst_KadFirewallTester.cpp` — firewall test state machine, result callback
-- [x] `tst_KadUDPKey.cpp` — key generation, verification, expiry
+- [x] `tst_KadUDPKey.cpp` — key generation, verification, expiry (consolidated into `tst_KadPrefs.cpp`)
 - [x] `tst_KadLookupHistory.cpp` — record lookup steps, retrieve history, max history size
 - [x] `tst_Kademlia.cpp` — engine start/stop, static instance, bootstrap, process timer
 - [x] `tst_KadMiscUtils.cpp` — keyword hashing, word splitting, IP validation
+- [x] `tst_KadNodesData.cpp` — nodes.dat binary data parsing tests
 - [ ] `tst_KadIntegration.cpp` — bootstrap with mock peers, publish keyword, search keyword, find node (integration test with multiple Kademlia instances in-process)
 
 ---
@@ -647,9 +670,11 @@ Use `QTcpServer` / `QTcpSocket` loopback and `QSignalSpy` for async signal testi
 - [x] `tst_KnownFile.cpp` — part count edge cases, priority validation, load/write round-trip, purge check
 - [x] `tst_KnownFileList.cpp` — load/save `known.met`, lookup by hash, duplicates, cancelled.met
 - [x] `tst_SharedFileList.cpp` — scan directory, add/remove shared files, server publish no-ops, Kad publish
+- [x] `tst_SharedFileData.cpp` — shared file data persistence tests
 - [x] `tst_PartFile.cpp` — create new download, gap list management, flush to disk, resume from `.part`/`.part.met` (29 tests)
 - [x] `tst_PartFileConvert.cpp` — format detection, job management, thread start/stop, processQueue
 - [x] `tst_PartFileWriteThread.cpp` — async write correctness, write ordering, flush-on-close
+- [x] `tst_PartFileData.cpp` — part file binary data tests
 - [ ] `tst_Collection.cpp` — create collection, add files, serialize/deserialize `.emulecollection`
 - [x] `tst_ArchiveRecovery.cpp` — ZIP/RAR recovery, async null guard, ISO/ACE detection stubs
 - [x] `tst_ArchiveReader.cpp` — libarchive-based reader, format detection, entry listing
@@ -708,6 +733,7 @@ Use `QTcpServer` / `QTcpSocket` loopback and `QSignalSpy` for async signal testi
 
 - [x] `tst_IrcProtocol.cpp` — 28 tests: parse IRC messages (PRIVMSG, JOIN, PART, NICK, MODE, KICK, NOTICE, CTCP, numerics), isNumeric, numericCode
 - [x] `tst_IrcClient.cpp` — 24 tests: connect/disconnect, login sequence, PING auto-response, channel/private/action messages, user events, CTCP VERSION auto-response, channel list, names, perform, send format — loopback TCP fixture
+- [x] `tst_IrcLiveConnect.cpp` — live IRC server connection test
 - [ ] `tst_ChatMessage.cpp` — message formatting, HTML sanitization, smileys, ed2k link detection in chat
 
 ---
@@ -797,7 +823,14 @@ Larger tests that exercise multiple modules together.
 - [ ] `tst_ConfigPersistence.cpp` — modify preferences → restart application core → verify settings persisted
 - [ ] `tst_IPFilterIntegration.cpp` — load IP filter → attempt connection from filtered IP → verify rejection
 - [ ] `tst_CrossPlatformFileIO.cpp` — write `.part` file on one platform format, read on another (simulate via byte-level comparison)
-- [ ] `tst_ServerDownloadLive.cpp` — live server connection + download test (requires network access, TCP 5662, UDP 5672)
+- [x] `tst_ServerDownloadLive.cpp` — live server connection + download test (requires network access, TCP 5662, UDP 5672)
+- [x] `tst_ServerGlobalSearchLive.cpp` — live server global search test
+- [x] `tst_KadLiveNetwork.cpp` — live Kademlia network connection test
+- [x] `tst_FileDownloadLive.cpp` — live file download test
+- [x] `tst_MockPeerDownload.cpp` — mock peer download cycle test
+- [x] `tst_MockPeerUpload.cpp` — mock peer upload cycle test
+- [x] `tst_SmtpSendEmail.cpp` — SMTP email notification test
+- [x] `tst_Smoke.cpp` — basic smoke test for overall system health
 - [ ] `tst_IpcEndToEnd.cpp` — launch daemon, connect GUI IpcClient, exercise request/response/push lifecycle end-to-end
 
 ---
@@ -846,7 +879,7 @@ MainWindow                           DaemonApp
 - [x] Design length-prefixed CBOR wire protocol — `ipc/IpcProtocol.h/.cpp` (4-byte big-endian uint32 length + CBOR payload, 16 MiB max frame, protocol version "1.0")
 - [x] Implement type-safe message wrapper — `ipc/IpcMessage.h/.cpp` (QCborArray-based, fluent `append()` API, `makeResult()`/`makeError()` factories, field accessors for string/int/bool/map/array)
 - [x] Implement framed TCP connection — `ipc/IpcConnection.h/.cpp` (QObject wrapper over QTcpSocket, read buffer with frame assembly, signals: `messageReceived`, `disconnected`, `protocolError`)
-- [x] Define all IPC message type constants — `ipc/IpcProtocol.h` (requests 100-213, responses 300-302, push events 400-480)
+- [x] Define all IPC message type constants — `ipc/IpcProtocol.h` (requests 100-251, responses 300-302, push events 400-520)
 - [x] Implement CBOR serializers for core entities — `ipc/CborSerializers.h` (toCbor for PartFile, Server, Friend, SearchFile; status/priority string converters)
 - [x] CMake target `libemuleipc` — `src/ipc/CMakeLists.txt` (links Qt6::Core + Qt6::Network only, no core dependency)
 
@@ -854,33 +887,36 @@ MainWindow                           DaemonApp
 
 | Range | Direction | Purpose |
 |-------|-----------|---------|
-| 100–213 | GUI → Core | Requests (Handshake, Get/Set data, actions) |
+| 100–251 | GUI → Core | Requests (Handshake, Get/Set data, actions) |
 | 300–302 | Core → GUI | Responses (HandshakeOk, Result, Error) |
-| 400–480 | Core → GUI | Push events (state changes, seqId=0) |
+| 400–520 | Core → GUI | Push events (state changes, seqId=0) |
 
 #### 31b: Daemon (`src/daemon/`)
 
 - [x] Create `DaemonApp` orchestrator — `daemon/DaemonApp.h/.cpp` (owns CoreSession + IpcServer + CoreNotifierBridge; `start()`/`stop()` lifecycle)
 - [x] Create `IpcServer` — `daemon/IpcServer.h/.cpp` (QTcpServer wrapper, manages IpcClientHandler instances, `broadcast()` to handshaked clients)
-- [x] Create `IpcClientHandler` — `daemon/IpcClientHandler.h/.cpp` (per-connection request dispatcher, handshake enforcement, 26 handle methods for all request types)
+- [x] Create `IpcClientHandler` — `daemon/IpcClientHandler.h/.cpp` (per-connection request dispatcher, handshake enforcement, handle methods for all request types)
 - [x] Create `CoreNotifierBridge` — `daemon/CoreNotifierBridge.h/.cpp` (connects core Qt signals to IPC push events: download add/remove, server state, stats, search results, shared files, uploads, Kad)
 - [x] Create daemon entry point — `daemon/main.cpp` (QCoreApplication, loads preferences, starts DaemonApp, IPC listener)
 - [x] CMake target `emulecored` — `src/daemon/CMakeLists.txt` (links eMule::Core + eMule::Ipc)
+- [x] `CliIpcClient` — `daemon/CliIpcClient.h/.cpp` (CLI IPC client for daemon management)
+- [x] `CommandLineExec` (daemon) — `daemon/CommandLineExec.h/.cpp` (CLI command execution for daemon)
 
 **Request handling status:**
 
 | Category | Status | Notes |
 |----------|--------|-------|
-| Downloads (get/pause/resume/cancel) | Working | Full PartFile serialization via CborSerializers |
+| Downloads (get/pause/resume/cancel/stop/rename/category/details/preview) | Working | Full PartFile serialization via CborSerializers |
 | Servers (list, connect, disconnect) | Working | |
 | Stats | Working | Session bytes sent/received |
 | Friends (list, add, remove) | Working | |
-| Shared files | Working | |
+| Shared files (list, rename, delete, unshare) | Working | |
 | Kad (contacts, status, bootstrap, disconnect) | Working | |
-| Search (start, get results) | Working | Returns searchID, results via forEachResult |
-| Uploads | Stubbed | ToDo: implement GetUploads handler |
-| Preferences (get) | Working | |
-| Preferences (set) | Partial | Only subset of keys supported |
+| Search (start, get results, mark spam) | Working | Returns searchID, results via forEachResult |
+| Uploads | Working | GetUploads handler implemented |
+| Preferences (get/set) | Working | |
+| Client shared files | Working | RequestClientSharedFiles + PushClientSharedFiles |
+| Reset stats | Working | |
 | Subscription mask | Stubbed | Currently broadcasts to all clients |
 
 #### 31c: Core Session (`src/core/app/`)
@@ -901,9 +937,7 @@ MainWindow                           DaemonApp
 #### 31e: Remaining IPC Work
 
 - [ ] Implement rich push event payloads — current push messages are mostly notifications with minimal data; add full entity snapshots
-- [ ] Implement `GetUploads` handler in IpcClientHandler
 - [ ] Complete `SetPreferences` handler — support all preference keys
-- [ ] Wire KadSearchesModel to IPC data — model is defined but not yet fed with search data
 - [ ] Remote daemon connection — currently auto-localhost only; add GUI preferences for remote host:port
 - [ ] IPC authentication — secure the daemon connection (API key or challenge-response)
 - [ ] IPC reconnection — auto-reconnect GUI to daemon after connection loss
@@ -912,7 +946,7 @@ MainWindow                           DaemonApp
 
 ## Recommended Porting Order
 
-The modules are ported bottom-up. Phases 1–5 and the core of Phase 6 (31) are **complete**; remaining work is GUI panels, dialogs, and polish.
+The modules are ported bottom-up. Phases 1–6 are **complete**; Phase 7 is **well underway** with all panels, key controls/models, and several dialogs implemented. Remaining work is mostly minor controls, remaining dialogs, and polish.
 
 | Phase | Modules | Status | Rationale |
 |-------|---------|--------|-----------|
@@ -921,10 +955,10 @@ The modules are ported bottom-up. Phases 1–5 and the core of Phase 6 (31) are 
 | **Phase 3** | 5, 6, 29d, 29e | **Done** | Networking layer + tests |
 | **Phase 4** | 8, 9, 10, 11, 29g–29j | **Done** | Server, Client, Kademlia, Files + tests |
 | **Phase 5** | 12–19, 29k–29r | **Done** | Queues, Search, IP filter, Stats, Prefs, Chat, Friends, Web + tests |
-| **Phase 6** | 31, 29s2 | **Mostly done** | IPC layer, daemon, GUI/core separation + IPC tests |
-| **Phase 7** | 21–25, 29t | **In progress** | GUI shell (done), remaining panels, controls, dialogs, graphics + widget tests |
-| **Phase 8** | 20, 26, 27, 28, 29s, 29u | Pending | Media, Localization, Resources, Dependencies + tests |
-| **Phase 9** | 29v, 30 | Pending | Integration/E2E tests + cleanup |
+| **Phase 6** | 31, 29s2 | **Done** | IPC layer, daemon, GUI/core separation + IPC tests |
+| **Phase 7** | 21–25, 29t | **Mostly done** | All 8 panels done, 10 dialogs done, 16 controls/models done; remaining: minor controls, a few dialogs, graphics utilities, widget tests |
+| **Phase 8** | 20, 26, 27, 28, 29s, 29u | Pending | Media (done), Localization, Resources, Dependencies + tests |
+| **Phase 9** | 29v, 30 | **Partially done** | 8 integration/E2E tests done, cleanup pending |
 
 **Testing philosophy:** Write tests for each module immediately after porting it (same phase).
 Module 29v integration tests run after all modules are ported.
@@ -977,14 +1011,15 @@ Module 29v integration tests run after all modules are ported.
 - **Largest files:** `BaseClient.cpp` (107KB), `WebServer.cpp` (172KB)
 
 ### Ported Qt codebase (current)
-- **Ported source files:** 247 (`.cpp` + `.h` in `src/`)
-  - `src/core/`: 210 files (17 sub-modules)
-  - `src/ipc/`: 7 files (protocol, message, connection, serializers)
-  - `src/daemon/`: 9 files (DaemonApp, IpcServer, IpcClientHandler, CoreNotifierBridge)
-  - `src/gui/`: 19 files (MainWindow, 2 panels, 5 models/controls, IpcClient)
-- **Test files:** 102 (`tst_*.cpp`)
+- **Ported source files:** 333 (`.cpp` + `.h` in `src/`)
+  - `src/core/`: ~224 files (17 sub-modules + webserver)
+  - `src/ipc/`: 11 files (protocol, message, connection, serializers)
+  - `src/daemon/`: 17 files (DaemonApp, IpcServer, IpcClientHandler, CoreNotifierBridge, CliIpcClient, CommandLineExec)
+  - `src/gui/`: 81 files (MainWindow, 8 panels, 16 models/controls/delegates, 10 dialogs, 9 app utilities, IpcClient)
+- **Test files:** 107 (`tst_*.cpp`)
 - **Build targets:** 4 (`libemulecore`, `libemuleipc`, `emulecored`, `emuleqt`)
 - **Porting modules:** 31 (including 23 test sub-modules)
 - **Porting phases:** 9
 - **Core modules (1–20, 28, 31):** Phases 1–6 complete
-- **Remaining:** GUI panels/dialogs/controls (Modules 22–25), localization (26), resources (27), media polish (20), integration tests (29v), cleanup (30)
+- **GUI (Modules 21–25):** Phase 7 mostly complete — all 8 panels, 10 dialogs, 16 controls/models implemented
+- **Remaining:** Minor GUI controls (Module 23 stragglers), remaining dialogs (Module 24), graphics utilities (Module 25), localization (26), resources (27), widget tests (29t), cleanup (30)

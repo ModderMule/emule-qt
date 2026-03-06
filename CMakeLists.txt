@@ -92,7 +92,7 @@ if(WIN32 AND NOT DEFINED OPENSSL_ROOT_DIR)
     endforeach()
 endif()
 
-find_package(ZLIB)
+find_package(ZLIB REQUIRED)
 find_package(OpenSSL REQUIRED)
 
 # ---------------------------------------------------------------------------

@@ -7,10 +7,15 @@ REM Builds the daemon and GUI, bundles Qt runtime DLLs via windeployqt,
 REM copies the default config data, and creates a self-contained zip.
 REM
 REM Usage:
-REM   scripts\bundle-win.bat [build-dir] [qt-dir]
+REM   scripts\bundle-win.bat [build-dir] [qt-dir] [config]
 REM
 REM   build-dir   Path to the CMake build directory (default: build)
 REM   qt-dir      Path to the Qt MSVC kit (default: auto-detect)
+REM   config      Build configuration: Release or Debug (default: Release)
+REM
+REM Examples:
+REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 Release
+REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 Debug
 REM
 REM Layout inside the zip:
 REM   eMule\
@@ -34,6 +39,9 @@ REM -- Parse arguments --------------------------------------------------------
 
 set "BUILD_DIR=%~1"
 if "%BUILD_DIR%"=="" set "BUILD_DIR=build"
+
+set "CONFIG=%~3"
+if "%CONFIG%"=="" set "CONFIG=Release"
 
 set "QT_DIR=%~2"
 if "%QT_DIR%"=="" (
@@ -65,7 +73,7 @@ REM -- Configure & Build ------------------------------------------------------
 
 echo.
 echo === Configuring ===
-cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%QT_DIR%"
+cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -DCMAKE_BUILD_TYPE=%CONFIG% -DCMAKE_PREFIX_PATH="%QT_DIR%"
 if errorlevel 1 (
     echo Error: CMake configure failed.
     exit /b 1
@@ -73,7 +81,7 @@ if errorlevel 1 (
 
 echo.
 echo === Building ===
-cmake --build "%BUILD_DIR%" --config Release --parallel
+cmake --build "%BUILD_DIR%" --config %CONFIG% --parallel
 if errorlevel 1 (
     echo Error: Build failed.
     exit /b 1
@@ -81,24 +89,30 @@ if errorlevel 1 (
 
 REM -- Locate binaries --------------------------------------------------------
 
-REM Multi-config generators (MSVC) put binaries under Release/
-set "GUI_BIN=%BUILD_DIR%\src\gui\Release\emuleqt.exe"
-set "DAEMON_BIN=%BUILD_DIR%\src\daemon\Release\emulecored.exe"
+REM Multi-config generators (MSVC via CMake) put binaries under %CONFIG%/
+set "GUI_BIN=%BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe"
+set "DAEMON_BIN=%BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe"
 
 REM Single-config generators (Ninja) put binaries directly in the target dir
 if not exist "%GUI_BIN%" set "GUI_BIN=%BUILD_DIR%\src\gui\emuleqt.exe"
 if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\emulecored.exe"
 
+REM VS in-source build (.vcxproj OutputDirectory) relative to project root
+if not exist "%GUI_BIN%" set "GUI_BIN=%PROJECT_DIR%\src\gui\%CONFIG%\emuleqt.exe"
+if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%PROJECT_DIR%\src\daemon\%CONFIG%\emulecored.exe"
+
 if not exist "%GUI_BIN%" (
     echo Error: GUI binary not found.
-    echo   Checked: %BUILD_DIR%\src\gui\Release\emuleqt.exe
+    echo   Checked: %BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe
     echo   Checked: %BUILD_DIR%\src\gui\emuleqt.exe
+    echo   Checked: %PROJECT_DIR%\src\gui\%CONFIG%\emuleqt.exe
     exit /b 1
 )
 if not exist "%DAEMON_BIN%" (
     echo Error: Daemon binary not found.
-    echo   Checked: %BUILD_DIR%\src\daemon\Release\emulecored.exe
+    echo   Checked: %BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe
     echo   Checked: %BUILD_DIR%\src\daemon\emulecored.exe
+    echo   Checked: %PROJECT_DIR%\src\daemon\%CONFIG%\emulecored.exe
     exit /b 1
 )
 
@@ -140,7 +154,7 @@ mkdir "%LANG_DST%" 2>nul
 
 REM Prefer build-generated .qm files; fall back to source lang\ directory
 set "LANG_COPIED=0"
-for %%G in ("%BUILD_DIR%\src\gui\Release\emuleqt_*.qm" "%BUILD_DIR%\src\gui\emuleqt_*.qm" "%PROJECT_DIR%\lang\emuleqt_*.qm") do (
+for %%G in ("%BUILD_DIR%\src\gui\%CONFIG%\emuleqt_*.qm" "%BUILD_DIR%\src\gui\emuleqt_*.qm" "%PROJECT_DIR%\src\gui\%CONFIG%\emuleqt_*.qm" "%PROJECT_DIR%\lang\emuleqt_*.qm") do (
     if exist "%%G" (
         copy /y "%%G" "%LANG_DST%\" >nul 2>&1
         set "LANG_COPIED=1"
@@ -158,7 +172,9 @@ REM -- Run windeployqt --------------------------------------------------------
 
 echo.
 echo === Running windeployqt ===
-"%WINDEPLOYQT%" --release --no-translations --no-system-d3d-compiler --no-opengl-sw "%STAGE_DIR%\emuleqt.exe"
+set "DEPLOY_MODE=--release"
+if /i "%CONFIG%"=="Debug" set "DEPLOY_MODE=--debug"
+"%WINDEPLOYQT%" %DEPLOY_MODE% --no-translations --no-system-d3d-compiler --no-opengl-sw "%STAGE_DIR%\emuleqt.exe"
 if errorlevel 1 (
     echo Warning: windeployqt reported errors (continuing).
 )
@@ -176,6 +192,27 @@ for %%D in ("%QT_DIR%\bin" "C:\Program Files\OpenSSL-Win64\bin" "C:\OpenSSL-Win6
             copy /y "%%~D\libcrypto-3-x64.dll" "%STAGE_DIR%\" >nul 2>&1
         )
     )
+)
+
+REM -- Copy vcpkg runtime DLLs if present --------------------------------------
+
+set "VCPKG_BIN_SUFFIX=bin"
+if /i "%CONFIG%"=="Debug" set "VCPKG_BIN_SUFFIX=debug\bin"
+
+set "VCPKG_BIN="
+for %%P in ("%PROJECT_DIR%\src\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%" "%PROJECT_DIR%\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%" "%BUILD_DIR%\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%") do (
+    if "!VCPKG_BIN!"=="" (
+        if exist "%%~P" set "VCPKG_BIN=%%~P"
+    )
+)
+
+if defined VCPKG_BIN (
+    echo.
+    echo === Copying vcpkg DLLs from %VCPKG_BIN% ===
+    copy /y "%VCPKG_BIN%\*.dll" "%STAGE_DIR%\" >nul 2>&1
+    echo   vcpkg DLLs copied
+) else (
+    echo Note: No vcpkg_installed directory found -- skipping vcpkg DLLs.
 )
 
 REM -- Create zip --------------------------------------------------------------
