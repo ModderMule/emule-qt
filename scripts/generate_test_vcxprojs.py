@@ -181,7 +181,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
         </ClCompile>
         <Link>
           <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zlib.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
-          <AdditionalLibraryDirectories>..\\..\\src\\core\\$(Configuration);..\\..\\src\\ipc\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\debug\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+          <AdditionalLibraryDirectories>..\\..\\src\\core\\$(Configuration);..\\..\\src\\ipc\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\debug\\lib;..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
           <GenerateDebugInformation>true</GenerateDebugInformation>
