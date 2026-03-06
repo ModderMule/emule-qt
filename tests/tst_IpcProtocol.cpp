@@ -4,6 +4,7 @@
 #include "IpcProtocol.h"
 
 #include <QCborValue>
+#include <QtEndian>
 #include <QTest>
 
 using namespace eMule::Ipc;

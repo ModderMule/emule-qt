@@ -61,7 +61,9 @@
 #include <atomic>
 #include <memory>
 #include <vector>
+#if __has_include(<zlib.h>)
 #include <zlib.h>
+#endif
 
 using namespace eMule;
 using namespace eMule::kad;

@@ -3,6 +3,7 @@
 
 #include "IpcConnection.h"
 
+#include <QtEndian>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>

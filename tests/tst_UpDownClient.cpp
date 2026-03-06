@@ -16,7 +16,9 @@
 
 #include <cstdint>
 #include <cstring>
+#if __has_include(<zlib.h>)
 #include <zlib.h>
+#endif
 
 using namespace eMule;
 

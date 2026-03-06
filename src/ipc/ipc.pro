@@ -12,6 +12,8 @@ INCLUDEPATH += $$PWD
 # OpenSSL
 unix:  LIBS += -lssl -lcrypto
 win32 {
+    DEFINES += NOMINMAX WIN32_LEAN_AND_MEAN
+
     OPENSSL_DIR = $$(OPENSSL_DIR)
     isEmpty(OPENSSL_DIR): OPENSSL_DIR = "C:/Program Files/OpenSSL-Win64"
     INCLUDEPATH += "$$OPENSSL_DIR/include"

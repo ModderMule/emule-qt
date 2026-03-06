@@ -136,11 +136,11 @@ void tst_SHA::hashFromURN_valid()
     const QString b32 = ShaHasher::hashToString(&original);
 
     Sha1Digest parsed{};
-    QVERIFY(ShaHasher::hashFromURN(u"urn:sha1:" + b32, &parsed));
+    QVERIFY(ShaHasher::hashFromURN(QStringLiteral("urn:sha1:") + b32, &parsed));
     QCOMPARE(original, parsed);
 
     Sha1Digest parsed2{};
-    QVERIFY(ShaHasher::hashFromURN(u"sha1:" + b32, &parsed2));
+    QVERIFY(ShaHasher::hashFromURN(QStringLiteral("sha1:") + b32, &parsed2));
     QCOMPARE(original, parsed2);
 }
 

@@ -17,10 +17,16 @@ unix {
     LIBS += -lssl -lcrypto -lz
 }
 win32 {
+    DEFINES += NOMINMAX WIN32_LEAN_AND_MEAN
+
     OPENSSL_DIR = $$(OPENSSL_DIR)
     isEmpty(OPENSSL_DIR): OPENSSL_DIR = "C:/Program Files/OpenSSL-Win64"
-    INCLUDEPATH += "$$OPENSSL_DIR/include"
-    LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto -lz
+
+    ZLIB_DIR = $$(ZLIB_DIR)
+    isEmpty(ZLIB_DIR): ZLIB_DIR = "C:/Program Files/zlib"
+
+    INCLUDEPATH += "$$OPENSSL_DIR/include" "$$ZLIB_DIR/include"
+    LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto -L"$$ZLIB_DIR/lib" -lz
 }
 
 # Third-party: miniupnpc, yaml-cpp, libarchive
@@ -34,7 +40,20 @@ macx {
     LIBS += -lminiupnpc -lyaml-cpp -larchive
 }
 win32 {
-    LIBS += -lminiupnpc -lyaml-cpp -larchive
+    MINIUPNPC_DIR = $$(MINIUPNPC_DIR)
+    isEmpty(MINIUPNPC_DIR): MINIUPNPC_DIR = "C:/Program Files/miniupnpc"
+
+    YAMLCPP_DIR = $$(YAMLCPP_DIR)
+    isEmpty(YAMLCPP_DIR): YAMLCPP_DIR = "C:/Program Files/yaml-cpp"
+
+    LIBARCHIVE_DIR = $$(LIBARCHIVE_DIR)
+    isEmpty(LIBARCHIVE_DIR): LIBARCHIVE_DIR = "C:/Program Files/libarchive"
+
+    INCLUDEPATH += "$$MINIUPNPC_DIR/include" "$$YAMLCPP_DIR/include" "$$LIBARCHIVE_DIR/include"
+    LIBS += \
+        -L"$$MINIUPNPC_DIR/lib" -lminiupnpc \
+        -L"$$YAMLCPP_DIR/lib" -lyaml-cpp \
+        -L"$$LIBARCHIVE_DIR/lib" -larchive
 }
 
 # macOS frameworks
@@ -85,7 +104,6 @@ SOURCES += \
     kademlia/KadFirewallTester.cpp \
     kademlia/KadIndexed.cpp \
     kademlia/KadIO.cpp \
-    kademlia/KadKeywordSpacePartitioner.cpp \
     kademlia/KadLog.cpp \
     kademlia/KadLookupHistory.cpp \
     kademlia/KadMiscUtils.cpp \

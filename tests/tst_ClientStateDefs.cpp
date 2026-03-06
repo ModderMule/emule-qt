@@ -5,6 +5,7 @@
 #include "client/ClientStateDefs.h"
 
 #include <QTest>
+#include <set>
 #include <type_traits>
 
 using namespace eMule;
