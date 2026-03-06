@@ -12,7 +12,7 @@ using namespace Qt::StringLiterals;
 // Helper: write binary data to a temporary file and return its path.
 static QString writeTempFile(const QByteArray& data, const QString& suffix = {})
 {
-    auto* tmp = new QTemporaryFile(QDir::tempPath() + u"/tst_mediainfo_XXXXXX" + suffix);
+    auto* tmp = new QTemporaryFile(QDir::tempPath() + QStringLiteral("/tst_mediainfo_XXXXXX") + suffix);
     tmp->setAutoRemove(true);
     if (!tmp->open()) {
         delete tmp;

@@ -121,7 +121,7 @@ static QByteArray buildMinimalAVI()
 
 static QString writeTempFile(const QByteArray& data, const QString& suffix)
 {
-    auto* tmp = new QTemporaryFile(QDir::tempPath() + u"/tst_knownfile_XXXXXX" + suffix);
+    auto* tmp = new QTemporaryFile(QDir::tempPath() + QStringLiteral("/tst_knownfile_XXXXXX") + suffix);
     tmp->setAutoRemove(true);
     if (!tmp->open()) {
         delete tmp;

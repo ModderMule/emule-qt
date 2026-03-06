@@ -6,7 +6,11 @@
 
 #include <QTest>
 
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#else
 #include <arpa/inet.h>
+#endif
 
 using namespace eMule;
 

@@ -13,6 +13,7 @@
 #include "IpcProtocol.h"
 
 #include <QCborArray>
+#include <QCoreApplication>
 
 #include <QButtonGroup>
 #include <QCheckBox>
