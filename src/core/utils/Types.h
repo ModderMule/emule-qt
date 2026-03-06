@@ -10,7 +10,13 @@
 #include <cstdint>
 #include <cstddef>
 
-#include <config.h>
+#if __has_include(<config.h>)
+    #include <config.h>
+#elif defined(_WIN32)
+    #include "config_win.h"
+#else
+    #error "config.h not found — run CMake configure first"
+#endif
 
 namespace eMule {
 
