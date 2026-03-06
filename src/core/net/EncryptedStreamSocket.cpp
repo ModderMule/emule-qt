@@ -568,7 +568,7 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
 
         return nRead;
     } catch (const std::exception& ex) {
-        logWarning(QStringLiteral("EncryptedStreamSocket: Exception during negotiation: %1").arg(ex.what()));
+        logWarning(QStringLiteral("EncryptedStreamSocket: Exception during negotiation: %1").arg(QLatin1StringView(ex.what())));
         onError(kErrEncryption);
         m_receiveBuffer.reset();
         return -1;

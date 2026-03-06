@@ -294,7 +294,7 @@ bool ClientCreditsList::loadList(const QString& filePath)
 
         return true;
     } catch (const FileException& e) {
-        logError(QStringLiteral("Error reading credit file: %1").arg(e.what()));
+        logError(QStringLiteral("Error reading credit file: %1").arg(QLatin1StringView(e.what())));
         return false;
     }
 }
@@ -324,7 +324,7 @@ bool ClientCreditsList::saveList(const QString& filePath) const
 
         return true;
     } catch (const FileException& e) {
-        logError(QStringLiteral("Error saving credit file: %1").arg(e.what()));
+        logError(QStringLiteral("Error saving credit file: %1").arg(QLatin1StringView(e.what())));
         return false;
     }
 }
