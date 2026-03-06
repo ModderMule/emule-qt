@@ -2,7 +2,7 @@
 
 **eMule Qt** is a free, open-source peer-to-peer file sharing client for the **ED2K** and **Kademlia** networks — rebuilt from the ground up with **Qt 6** and **modern C++23**.
 
-Cross-platform. No adware. No spyware. Fully compatible with the existing eMule network.
+Cross-platform. Fully compatible with the existing eMule network.
 
 Website: [emule-qt.org](https://emule-qt.org/)
 
@@ -25,15 +25,21 @@ Website: [emule-qt.org](https://emule-qt.org/)
 ## Building
 
 **Requirements:**
-- Qt 6
+- Qt 6.8+
 - CMake 3.25+
 - C++23 compiler (Clang 16+, GCC 13+, MSVC 2022+)
+
+### macOS / Linux
 
 ```bash
 scripts/build.sh
 ```
 
 Binaries are output to `build/`.
+
+### Windows
+
+Open `src/eMuleQt.sln` in Visual Studio 2022 and build. See [docs/windows-build.md](docs/windows-build.md) for dependency setup (should be done by Visual Studio automatically).
 
 ## Running
 
@@ -64,7 +70,6 @@ emuleqt (GUI)  ←—  IPC/CBOR over TCP  —→  emulecored (Daemon)
 - Report bugs and suggest features via [GitHub Issues](https://github.com/ModderMule/emule-qt/issues)
 - Submit pull requests
 - Add translations using Qt Linguist (see `lang/`)
-- Test on your platform and report compatibility
 
 ## License
 
