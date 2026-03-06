@@ -382,7 +382,7 @@ ConvertStatus PartFileConvert::performConvertToeMule(ConvertJob& job)
         int partNum = 1;
         QStringList parts;
         while (true) {
-            QString partPath = QStringLiteral("%1.%2").arg(baseName).arg(partNum, 3, 10, u'0');
+            QString partPath = QStringLiteral("%1.%2").arg(baseName).arg(partNum, 3, 10, QChar(u'0'));
             if (!QFile::exists(partPath))
                 break;
             parts.append(partPath);

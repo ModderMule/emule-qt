@@ -5,6 +5,7 @@
 #include "net/ServerSocket.h"
 #include "net/Packet.h"
 #include "server/Server.h"
+#include "utils/ByteOrder.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 

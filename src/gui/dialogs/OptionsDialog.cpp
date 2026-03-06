@@ -54,6 +54,7 @@
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QDialogButtonBox>
 #include <QDirIterator>
 #include <QVBoxLayout>
 

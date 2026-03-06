@@ -7,6 +7,7 @@
 #include "client/ClientCredits.h"
 #include "files/KnownFile.h"
 #include "protocol/Tag.h"
+#include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
@@ -16,9 +17,7 @@
 
 #include <cstdint>
 #include <cstring>
-#if __has_include(<zlib.h>)
 #include <zlib.h>
-#endif
 
 using namespace eMule;
 

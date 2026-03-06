@@ -5,6 +5,7 @@
 #include "OtherFunctions.h"
 
 #include <QIODevice>
+#include <QStringDecoder>
 
 #include <cstring>
 

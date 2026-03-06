@@ -15,9 +15,7 @@
 #include <algorithm>
 #include <cstring>
 
-#if __has_include(<zlib.h>)
 #include <zlib.h>
-#endif
 
 namespace eMule {
 

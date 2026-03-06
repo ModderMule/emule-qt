@@ -641,7 +641,7 @@ void RoutingZone::readFile(const QString& specialNodesdat)
                    .arg(getNumContacts()));
 
     } catch (const FileException& e) {
-        logKad(QStringLiteral("Failed to read Kad nodes file: %1").arg(e.what()));
+        logKad(QStringLiteral("Failed to read Kad nodes file: %1").arg(QLatin1StringView(e.what())));
     }
 }
 
@@ -682,7 +682,7 @@ void RoutingZone::writeFile()
         }
 
     } catch (const FileException& e) {
-        logKad(QStringLiteral("Failed to write Kad nodes file: %1").arg(e.what()));
+        logKad(QStringLiteral("Failed to write Kad nodes file: %1").arg(QLatin1StringView(e.what())));
     }
 }
 

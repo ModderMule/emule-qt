@@ -430,7 +430,7 @@ QString audioFormatName(uint16 formatTag)
             QString comment = QString::fromLatin1(entry.comment);
             if (!comment.isEmpty()) {
                 if (!name.isEmpty())
-                    return name + u" (" + comment + u')';
+                    return name + QStringLiteral(" (") + comment + QChar(u')');
                 return comment;
             }
             return name;
@@ -561,7 +561,7 @@ static QString audioFormatDisplayName(const QString& codecId)
     for (const auto& entry : s_wavFmtTable) {
         if (codecId.compare(QLatin1StringView(entry.codecId), Qt::CaseInsensitive) == 0) {
             if (entry.fmtTag != 0 && entry.codecId[0] != '\0' && entry.comment[0] != '\0')
-                return QString::fromLatin1(entry.codecId) + u" (" + QString::fromLatin1(entry.comment) + u')';
+                return QString::fromLatin1(entry.codecId) + QStringLiteral(" (") + QString::fromLatin1(entry.comment) + QChar(u')');
             break;
         }
     }
@@ -1005,7 +1005,7 @@ static QString realMediaCodecInfo(const char* codecId)
 
     for (const auto& codec : s_realMediaCodecs) {
         if (std::strncmp(codec.id, codecId, 4) == 0) {
-            display += u" (" + QString::fromLatin1(codec.desc) + u')';
+            display += QStringLiteral(" (") + QString::fromLatin1(codec.desc) + QChar(u')');
             break;
         }
     }

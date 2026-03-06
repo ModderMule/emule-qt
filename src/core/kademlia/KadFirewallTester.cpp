@@ -63,7 +63,7 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
 
     ++s_fwChecksFinished;
     logKad(QStringLiteral("Kad: UDP FW check result — succeeded=%1, finished=%2/%3")
-               .arg(succeeded ? "yes" : "no")
+               .arg(QLatin1StringView(succeeded ? "yes" : "no"))
                .arg(s_fwChecksFinished)
                .arg(kUDPFWCheckClientsNeeded));
 
@@ -81,14 +81,14 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
         s_fwChecksRunning = 0;
         s_firewalledLastStateUDP = s_firewalledUDP;
         logKad(QStringLiteral("Kad: UDP FW check complete — firewalled: %1")
-                   .arg(s_firewalledUDP ? "yes" : "no"));
+                   .arg(QLatin1StringView(s_firewalledUDP ? "yes" : "no")));
     }
 }
 
 void UDPFirewallTester::reCheckFirewallUDP(bool setUnverified)
 {
     logKad(QStringLiteral("Kad: UDP FW recheck requested (setUnverified=%1)")
-               .arg(setUnverified ? "yes" : "no"));
+               .arg(QLatin1StringView(setUnverified ? "yes" : "no")));
     if (setUnverified)
         s_isFWVerifiedUDP = false;
     s_fwChecksRunning = 0;
@@ -180,7 +180,7 @@ void UDPFirewallTester::queryNextClient()
 {
     if (!getUDPCheckClientsNeeded() || s_possibleTestClients.empty()) {
         logKad(QStringLiteral("Kad: UDP FW queryNextClient — needed=%1, pool=%2")
-                   .arg(getUDPCheckClientsNeeded() ? "yes" : "no")
+                   .arg(QLatin1StringView(getUDPCheckClientsNeeded() ? "yes" : "no"))
                    .arg(s_possibleTestClients.size()));
         return;
     }
