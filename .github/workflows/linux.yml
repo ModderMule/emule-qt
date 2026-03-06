@@ -1,0 +1,51 @@
+name: Linux CI
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libssl-dev \
+            libgl1-mesa-dev \
+            libdbus-1-dev \
+            libxkbcommon-dev \
+            zlib1g-dev
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: linux_gcc_64
+          modules: qthttpserver qtmultimedia
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Bundle
+        run: scripts/bundle-linux.sh build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eMuleQt-linux-x86_64
+          path: eMuleQt-linux-x86_64.tar.gz
