@@ -20,6 +20,18 @@ jobs:
           arch: win64_msvc2022_64
           modules: qthttpserver qtwebsockets qtmultimedia
 
+      - name: Ensure Qt WebSockets module
+        shell: pwsh
+        run: |
+          $wsDir = "$env:QT_ROOT_DIR/lib/cmake/Qt6WebSockets"
+          if (-not (Test-Path $wsDir)) {
+            Write-Host "Qt6WebSockets not found, installing via aqt..."
+            pip install aqtinstall
+            aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtwebsockets -O "$env:QT_ROOT_DIR/../../.."
+          } else {
+            Write-Host "Qt6WebSockets already installed at $wsDir"
+          }
+
       - name: Install OpenSSL
         run: choco install openssl -y --no-progress
 
