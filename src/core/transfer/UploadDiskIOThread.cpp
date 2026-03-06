@@ -18,12 +18,7 @@
 
 #include <cstring>
 
-#if __has_include(<zlib.h>)
 #include <zlib.h>
-#define HAVE_ZLIB 1
-#else
-#define HAVE_ZLIB 0
-#endif
 
 namespace eMule {
 
@@ -219,7 +214,6 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createPackedPackets(
     const uint8* fileHash, bool isPartFile,
     uint64 startOffset, uint64 endOffset, const QByteArray& data)
 {
-#if HAVE_ZLIB
     uint32 originalSize = static_cast<uint32>(endOffset - startOffset);
     uLongf compressedSize = originalSize + 300;
     std::vector<uint8> compressed(compressedSize);
@@ -275,10 +269,6 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createPackedPackets(
     }
 
     return packets;
-#else
-    // No zlib — fall back to uncompressed
-    return createStandardPackets(fileHash, isPartFile, startOffset, endOffset, data);
-#endif
 }
 
 } // namespace eMule

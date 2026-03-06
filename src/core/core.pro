@@ -26,7 +26,7 @@ win32 {
     isEmpty(ZLIB_DIR): ZLIB_DIR = "C:/Program Files/zlib"
 
     INCLUDEPATH += "$$OPENSSL_DIR/include" "$$ZLIB_DIR/include"
-    LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto -L"$$ZLIB_DIR/lib" -lz
+    LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto -L"$$ZLIB_DIR/lib" -lzlib
 }
 
 # Third-party: miniupnpc, yaml-cpp, libarchive

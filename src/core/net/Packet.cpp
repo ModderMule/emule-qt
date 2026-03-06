@@ -4,12 +4,7 @@
 #include "net/Packet.h"
 #include "utils/SafeFile.h"
 
-#if __has_include(<zlib.h>)
 #include <zlib.h>
-#define HAVE_ZLIB 1
-#else
-#define HAVE_ZLIB 0
-#endif
 
 #include <algorithm>
 #include <cstring>
@@ -151,7 +146,6 @@ char* Packet::detachPacket()
 
 void Packet::packPacket()
 {
-#if HAVE_ZLIB
     uLongf newsize = size + 300;
     auto* output = new Bytef[newsize];
     int result = compress2(output, &newsize, reinterpret_cast<const Bytef*>(pBuffer), size, Z_BEST_COMPRESSION);
@@ -162,12 +156,10 @@ void Packet::packPacket()
         m_packed = true;
     }
     delete[] output;
-#endif
 }
 
 bool Packet::unPackPacket(uint32 maxDecompressedSize)
 {
-#if HAVE_ZLIB
     uint32 nNewSize = size * 10 + 300;
     if (nNewSize > maxDecompressedSize)
         nNewSize = maxDecompressedSize;
@@ -197,9 +189,6 @@ bool Packet::unPackPacket(uint32 maxDecompressedSize)
         return true;
     }
     delete[] unpack;
-#else
-    Q_UNUSED(maxDecompressedSize);
-#endif
     return false;
 }
 

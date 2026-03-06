@@ -73,7 +73,7 @@ bool ServerList::saveServerMet(const QString& filePath)
 
         file.close();
     } catch (const FileException& ex) {
-        logError(QStringLiteral("Error saving server.met: %1").arg(ex.what()));
+        logError(QStringLiteral("Error saving server.met: %1").arg(QLatin1StringView(ex.what())));
         QFile::remove(tmpPath);
         return false;
     }
@@ -118,7 +118,7 @@ bool ServerList::addServerMetToList(const QString& filePath, bool merge)
             addServer(std::move(srv));
         }
     } catch (const FileException& ex) {
-        logError(QStringLiteral("Error reading server.met: %1").arg(ex.what()));
+        logError(QStringLiteral("Error reading server.met: %1").arg(QLatin1StringView(ex.what())));
         return false;
     }
 

@@ -518,7 +518,7 @@ void Indexed::readFile()
                                .arg(m_totalIndexKeyword));
                 }
             } catch (const FileException& ex) {
-                logKad(QStringLiteral("Kad: Failed to load key_index.dat: %1").arg(ex.what()));
+                logKad(QStringLiteral("Kad: Failed to load key_index.dat: %1").arg(QLatin1StringView(ex.what())));
             }
         }
     }
@@ -561,7 +561,7 @@ void Indexed::readFile()
                                .arg(m_totalIndexSource));
                 }
             } catch (const FileException& ex) {
-                logKad(QStringLiteral("Kad: Failed to load src_index.dat: %1").arg(ex.what()));
+                logKad(QStringLiteral("Kad: Failed to load src_index.dat: %1").arg(QLatin1StringView(ex.what())));
             }
         }
     }
@@ -588,7 +588,7 @@ void Indexed::readFile()
                                .arg(m_totalIndexLoad));
                 }
             } catch (const FileException& ex) {
-                logKad(QStringLiteral("Kad: Failed to load load_index.dat: %1").arg(ex.what()));
+                logKad(QStringLiteral("Kad: Failed to load load_index.dat: %1").arg(QLatin1StringView(ex.what())));
             }
         }
     }

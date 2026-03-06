@@ -17,6 +17,7 @@
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
+#include "utils/ByteOrder.h"
 #include "utils/Log.h"
 
 #include <QHostInfo>

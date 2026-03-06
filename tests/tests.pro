@@ -47,7 +47,7 @@ win32 {
 
     LIBS += \
         -L"$$OPENSSL_DIR/lib" -lssl -lcrypto \
-        -L"$$ZLIB_DIR/lib" -lz \
+        -L"$$ZLIB_DIR/lib" -lzlib \
         -L"$$MINIUPNPC_DIR/lib" -lminiupnpc \
         -L"$$YAMLCPP_DIR/lib" -lyaml-cpp \
         -L"$$LIBARCHIVE_DIR/lib" -larchive \

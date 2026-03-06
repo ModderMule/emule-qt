@@ -25,19 +25,13 @@
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
+#include "utils/ByteOrder.h"
 #include "utils/TimeUtils.h"
-
-
 
 #include <algorithm>
 #include <cstring>
 
-#if __has_include(<zlib.h>)
 #include <zlib.h>
-#define HAVE_ZLIB 1
-#else
-#define HAVE_ZLIB 0
-#endif
 
 namespace eMule {
 
@@ -654,7 +648,6 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         lenWritten = uTransferredFileDataSize;
     } else {
         // --- Compressed data ---
-#if HAVE_ZLIB
         // Allocate initial decompression buffer
         uint32 lenUnzipped = std::min(size * 2, static_cast<uint32>(EMBLOCKSIZE + 300));
         uint8* unzipped = new uint8[lenUnzipped];
@@ -698,10 +691,6 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             curBlock->totalUnzipped = 0;
         }
         delete[] unzipped;
-#else
-        logError(QStringLiteral("Received compressed block but zlib not available"));
-        return;
-#endif
     }
 
     // If data was written, check for block completion and request more
@@ -745,12 +734,10 @@ void UpDownClient::clearPendingBlockRequest(const Pending_Block_Struct* pending)
     if (!pending)
         return;
 
-#if HAVE_ZLIB
     if (pending->zStream) {
         inflateEnd(pending->zStream);
         delete pending->zStream;
     }
-#endif
 
     delete pending->block;
 }
@@ -1457,7 +1444,6 @@ void UpDownClient::processAICHFileHash(SafeMemFile& data, PartFile* file)
 // zS->total_out so that the caller can compute write offsets.
 // ===========================================================================
 
-#if HAVE_ZLIB
 int UpDownClient::unzip(Pending_Block_Struct* block, const uint8* zipped,
                          uint32 lenZipped, uint8** unzipped, uint32* lenUnzipped,
                          int iRecursion)
@@ -1550,15 +1536,5 @@ int UpDownClient::unzip(Pending_Block_Struct* block, const uint8* zipped,
 
     return err;
 }
-#else
-int UpDownClient::unzip(Pending_Block_Struct* /*block*/, const uint8* /*zipped*/,
-                         uint32 /*lenZipped*/, uint8** unzipped, uint32* lenUnzipped,
-                         int /*recursion*/)
-{
-    if (unzipped) *unzipped = nullptr;
-    if (lenUnzipped) *lenUnzipped = 0;
-    return -1; // Z_DATA_ERROR equivalent — zlib not available
-}
-#endif
 
 } // namespace eMule

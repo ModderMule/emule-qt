@@ -52,11 +52,7 @@
 #include <cstring>
 #include <random>
 
-#if __has_include(<zlib.h>)
-#define HAVE_ZLIB 1
-#else
-#define HAVE_ZLIB 0
-#endif
+#include <zlib.h>
 
 namespace eMule {
 
@@ -1067,7 +1063,7 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
         (static_cast<uint32>(1) << 29) | // AICH version = 1
         (static_cast<uint32>(1) << 28) | // Unicode
         (static_cast<uint32>(4) << 24) | // UDP version
-        (static_cast<uint32>(HAVE_ZLIB ? 1 : 0) << 20) | // Data compression
+        (static_cast<uint32>(1) << 20) | // Data compression
         (static_cast<uint32>((theApp.clientCredits && theApp.clientCredits->cryptoAvailable()) ? 3 : 0) << 16) | // Secure ident (MFC: CryptoAvailable() ? 3 : 0)
         (static_cast<uint32>(SOURCEEXCHANGE2_VERSION) << 12) | // Source exchange
         (static_cast<uint32>(2) <<  8) | // Extended requests
@@ -1144,12 +1140,10 @@ void UpDownClient::sendMuleInfoPacket(bool answer)
     data.writeUInt8((SEND_EMULE_VERSION_MJR << 4) | (SEND_EMULE_VERSION_MIN / 10)); // eMule version byte
     data.writeUInt8(EMULE_PROTOCOL); // protocol version
 
-    constexpr uint32 tagCount = HAVE_ZLIB ? 7 : 6;
+    constexpr uint32 tagCount = 7;
     data.writeUInt32(tagCount);
 
-#if HAVE_ZLIB
     Tag(ET_COMPRESSION, static_cast<uint32>(1)).writeTagToFile(data);
-#endif
     Tag(ET_UDPVER, static_cast<uint32>(4)).writeTagToFile(data);
     Tag(ET_UDPPORT, static_cast<uint32>(thePrefs.udpPort())).writeTagToFile(data);
     Tag(ET_SOURCEEXCHANGE, static_cast<uint32>(3)).writeTagToFile(data); // MFC: hardcodes 3 (legacy compat); MISCOPTIONS1 uses version 4
@@ -2293,7 +2287,7 @@ void UpDownClient::processSecIdentStatePacket(const uint8* data, uint32 size)
 
     logDebug(QStringLiteral("processSecIdentStatePacket: state=%1 size=%2 credits=%3 challenge=%4")
                  .arg(state).arg(size)
-                 .arg(m_credits ? "yes" : "null")
+                 .arg(QLatin1StringView(m_credits ? "yes" : "null"))
                  .arg(m_credits ? m_credits->cryptRndChallengeFrom : 0));
 
     // MFC: Set m_secureIdentState to the received value so that

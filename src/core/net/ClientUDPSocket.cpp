@@ -20,12 +20,7 @@
 
 #include "utils/ByteOrder.h"
 
-#if __has_include(<zlib.h>)
 #include <zlib.h>
-#define HAVE_ZLIB 1
-#else
-#define HAVE_ZLIB 0
-#endif
 
 #include <cstring>
 
@@ -358,7 +353,6 @@ void ClientUDPSocket::purgeExpiredPackets()
 
 QByteArray ClientUDPSocket::decompressKadPayload(const uint8* data, int len)
 {
-#if HAVE_ZLIB
     if (len <= 0)
         return {};
 
@@ -380,11 +374,6 @@ QByteArray ClientUDPSocket::decompressKadPayload(const uint8* data, int len)
     } while (result == Z_BUF_ERROR && outSize < kMaxDecompressed);
 
     return {};
-#else
-    Q_UNUSED(data);
-    Q_UNUSED(len);
-    return {};
-#endif
 }
 
 } // namespace eMule

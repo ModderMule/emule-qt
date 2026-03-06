@@ -7,14 +7,14 @@ QString ShaHasher::hashToString(const Sha1Digest* hashIn, bool urn)
 {
     const QString base32 = encodeBase32(
         std::span<const uint8>(hashIn->b.data(), 20));
-    return urn ? u"urn:sha1:" + base32 : base32;
+    return urn ? QStringLiteral("urn:sha1:") + base32 : base32;
 }
 
 QString ShaHasher::hashToHexString(const Sha1Digest* hashIn, bool urn)
 {
     const QString hex = encodeBase16(
         std::span<const uint8>(hashIn->b.data(), 20));
-    return urn ? u"urn:sha1:" + hex : hex;
+    return urn ? QStringLiteral("urn:sha1:") + hex : hex;
 }
 
 bool ShaHasher::hashFromString(const QString& str, Sha1Digest* hashOut)

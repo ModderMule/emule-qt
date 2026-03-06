@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
 
 #include <QSignalSpy>

@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 #include "net/ClientUDPSocket.h"
 #include "net/Packet.h"
+#include "utils/ByteOrder.h"
 #include "utils/Opcodes.h"
 
 #include <QSignalSpy>
