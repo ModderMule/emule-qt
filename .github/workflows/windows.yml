@@ -13,23 +13,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Qt 6
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: "6.8.3"
-          arch: win64_msvc2022_64
-          modules: qthttpserver qtwebsockets qtmultimedia
+      # - name: Install Qt 6
+      #   uses: jurplel/install-qt-action@v4
+      #   with:
+      #     version: "6.8.3"
+      #     arch: win64_msvc2022_64
+      #     modules: qthttpserver qtwebsockets qtmultimedia
 
-      - name: Ensure Qt WebSockets module
+      - name: Install Qt 6
         shell: pwsh
         run: |
-          $wsDir = "$env:QT_ROOT_DIR/lib/cmake/Qt6WebSockets"
-          if (-not (Test-Path $wsDir)) {
-            Write-Host "Qt6WebSockets not found, installing via aqt..."
-            pip install aqtinstall
-            aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtwebsockets -O "$env:QT_ROOT_DIR/../../.."
+          pip install aqtinstall
+          $qtDir = "D:\Qt"
+
+          Write-Host "=== Available modules for 6.8.3 win64_msvc2022_64 ==="
+          aqt list-qt windows desktop --modules 6.8.3 win64_msvc2022_64
+
+          Write-Host "=== Installing Qt base + modules ==="
+          aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qthttpserver qtwebsockets qtmultimedia -O $qtDir
+
+          $root = "$qtDir\6.8.3\msvc2022_64"
+          echo "QT_ROOT_DIR=$root" >> $env:GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$root" >> $env:GITHUB_ENV
+          echo "$root\bin" >> $env:GITHUB_PATH
+
+          Write-Host "=== Verifying Qt6WebSockets ==="
+          if (Test-Path "$root\lib\cmake\Qt6WebSockets") {
+            Write-Host "OK: Qt6WebSockets found"
           } else {
-            Write-Host "Qt6WebSockets already installed at $wsDir"
+            Write-Host "WARN: Qt6WebSockets NOT found, listing cmake dir:"
+            Get-ChildItem "$root\lib\cmake" -Directory | Select-Object Name
           }
 
       - name: Install OpenSSL
