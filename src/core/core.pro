@@ -10,8 +10,7 @@ QT -= gui
 DEFINES += QT_NO_CAST_FROM_ASCII
 
 INCLUDEPATH += \
-    $$PWD \
-    $$PWD/../../build/generated
+    $$PWD
 
 # OpenSSL & zlib
 unix {
