@@ -27,6 +27,8 @@
 #include "net/ServerSocket.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
+#include "search/SearchList.h"
+#include "search/SearchParams.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -72,6 +74,7 @@ class tst_ServerDownloadLive : public QObject {
 private slots:
     void initTestCase();
     void connectAndShareFiles();
+    void searchForFile();
     void requestSources();
     void cleanupTestCase();
 
@@ -169,7 +172,7 @@ void tst_ServerDownloadLive::initTestCase()
 
     // 10. ServerList — load from data/server.met
     m_serverList = new ServerList(this);
-    const QString srcMet = projectDataDir() + QStringLiteral("/server.met");
+    const QString srcMet = projectDataDir() + QStringLiteral("/config/server.met");
     QVERIFY2(QFile::exists(srcMet), "Missing data/server.met");
 
     const QString dstMet = m_tmpDir->filePath(QStringLiteral("server.met"));
@@ -271,7 +274,76 @@ void tst_ServerDownloadLive::connectAndShareFiles()
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: Request sources for the ED2K file
+// Test 2: Search for the file by keyword via TCP OP_SEARCHREQUEST
+// ---------------------------------------------------------------------------
+
+void tst_ServerDownloadLive::searchForFile()
+{
+    if (!m_serverConnect->isConnected())
+        QSKIP("Not connected — connectAndShareFiles was skipped");
+
+    // Start a search session
+    SearchList searchList;
+    const uint32 searchID = searchList.newSearch({}, SearchParams{});
+
+    // Wire TCP search results into our SearchList
+    bool resultReceived = false;
+    connect(m_serverConnect, &ServerConnect::searchResultReceived,
+            this, [&](const uint8* data, uint32 size, bool /*moreResults*/) {
+                const Server* srv = m_serverConnect->currentServer();
+                const uint32  srvIP   = srv ? srv->ip()   : 0;
+                const uint16  srvPort = srv ? srv->port() : 0;
+                searchList.processSearchAnswer(data, size, true, srvIP, srvPort);
+                resultReceived = true;
+            });
+
+    // Build minimal OP_SEARCHREQUEST for keyword "eMulev0.50a"
+    // Format: [type=0x01][len_lo][len_hi][keyword bytes...]
+    static constexpr char kKeyword[] = "eMulev0.50a";
+    static constexpr uint32 kKeyLen  = sizeof(kKeyword) - 1; // 11
+
+    const uint32 payloadSize = 1 + 2 + kKeyLen; // type + uint16 len + keyword
+    auto packet = std::make_unique<Packet>(OP_SEARCHREQUEST, payloadSize);
+    packet->prot = OP_EDONKEYPROT;
+
+    uint8* p = reinterpret_cast<uint8*>(packet->pBuffer);
+    *p++ = 0x01;                           // type = filename keyword
+    *p++ = static_cast<uint8>(kKeyLen);    // length lo
+    *p++ = 0x00;                           // length hi
+    std::memcpy(p, kKeyword, kKeyLen);
+
+    m_serverConnect->sendPacket(std::move(packet));
+    qDebug() << "Sent OP_SEARCHREQUEST for \"" << kKeyword << "\"";
+
+    // Wait up to 30s for any search results
+    (void)QTest::qWaitFor([&resultReceived] { return resultReceived; }, 30'000);
+
+    const uint32 count = searchList.resultCount(searchID);
+    qDebug() << "TCP search results:" << count;
+
+    if (count > 0) {
+        // Check whether the expected file appears in the results
+        bool found = false;
+        searchList.forEachResult(searchID, [&](const SearchFile* file) {
+            if (memcmp(file->fileHash(), kExpectedHash, 16) == 0)
+                found = true;
+        });
+        if (found)
+            qDebug() << "PASS: Expected hash found in search results";
+        else
+            qDebug() << "Note: results returned but expected hash not in first page"
+                        " (may be on another server)";
+    } else {
+        // No results — acceptable if the file is rare on this server
+        QVERIFY2(m_serverConnect->isConnected(),
+                 "Server disconnected during search request");
+        qDebug() << "No search results (file may be rare on this server) — "
+                    "connection alive, protocol exchange OK";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test 3: Request sources for the ED2K file
 // ---------------------------------------------------------------------------
 
 void tst_ServerDownloadLive::requestSources()

@@ -199,6 +199,9 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                     theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
             });
 
+    connect(socket, &ServerSocket::searchResultReceived,
+            this,   &ServerConnect::searchResultReceived);
+
     connect(socket, &ServerSocket::callbackRequested, this,
             [](uint32 clientIP, uint16 clientPort, const uint8* cryptData, uint32 cryptSize) {
                 if (!theApp.clientList)

@@ -30,6 +30,7 @@ class ServerList;
 class SharedFileList;
 class Scheduler;
 class Statistics;
+class UDPSocket;
 class UPnPManager;
 class UploadBandwidthThrottler;
 class UploadDiskIOThread;
@@ -96,6 +97,7 @@ private:
     std::unique_ptr<SearchList> m_searchList;
     std::unique_ptr<ServerList> m_serverList;
     std::unique_ptr<ServerConnect> m_serverConnect;
+    std::unique_ptr<UDPSocket> m_serverUDP;
     std::unique_ptr<LastCommonRouteFinder> m_lastCommonRouteFinder;
     std::unique_ptr<Scheduler> m_scheduler;
     std::unique_ptr<Statistics> m_statistics;

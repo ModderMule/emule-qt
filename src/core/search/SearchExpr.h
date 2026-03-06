@@ -73,6 +73,9 @@ public:
     /// Concatenate another expression's terms.
     void add(const SearchExpr& expr);
 
+    /// Serialize this expression to the binary ED2K search packet payload.
+    [[nodiscard]] QByteArray toBytes() const;
+
     std::vector<SearchAttr> m_expr;
 };
 

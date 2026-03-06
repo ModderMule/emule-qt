@@ -19,3 +19,4 @@
 - kill `emulecored` after testing
 - never disable UDP or TCP encryption as it is required by most peers to connect
 - start the GUI with  `--screenshot` cmd arg to take screenshots
+- local config for debugging is at `$HOME/eMuleQt/Config/preferences.yml`
