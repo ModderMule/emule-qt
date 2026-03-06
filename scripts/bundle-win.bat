@@ -17,7 +17,8 @@ REM
 REM Examples:
 REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 Release
 REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 Debug
-REM   scripts\bundle-win.bat build C:\Qt\6.10.2\msvc2022_64 Release --no-build
+REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 --no-build
+REM   scripts\bundle-win.bat --no-build
 REM
 REM Layout inside the zip:
 REM   eMule\
@@ -41,16 +42,19 @@ REM -- Parse arguments --------------------------------------------------------
 
 set "BUILD_DIR=%~1"
 if "%BUILD_DIR%"=="" set "BUILD_DIR=build"
-
-set "CONFIG=%~3"
-if "%CONFIG%"=="" set "CONFIG=Release"
+if "%BUILD_DIR%"=="--no-build" set "BUILD_DIR=build"
 
 set "DO_BUILD=1"
 for %%A in (%*) do (
     if /i "%%~A"=="--no-build" set "DO_BUILD=0"
 )
 
+set "CONFIG=%~3"
+if "%CONFIG%"=="" set "CONFIG=Release"
+if "%CONFIG%"=="--no-build" set "CONFIG=Release"
+
 set "QT_DIR=%~2"
+if "%QT_DIR%"=="--no-build" set "QT_DIR="
 if "%QT_DIR%"=="" (
     REM Try common Qt install locations
     for %%V in (6.10.2 6.10.1 6.10.0 6.9.0 6.8.0 6.7.0) do (
@@ -80,24 +84,27 @@ REM -- Configure & Build ------------------------------------------------------
 
 if "%DO_BUILD%"=="0" (
     echo.
-    echo === Skipping build (--no-build) ===
-) else (
-    echo.
-    echo === Configuring ===
-    cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -DCMAKE_BUILD_TYPE=%CONFIG% -DCMAKE_PREFIX_PATH="%QT_DIR%"
-    if errorlevel 1 (
-        echo Error: CMake configure failed.
-        exit /b 1
-    )
-
-    echo.
-    echo === Building ===
-    cmake --build "%BUILD_DIR%" --config %CONFIG% --parallel
-    if errorlevel 1 (
-        echo Error: Build failed.
-        exit /b 1
-    )
+    echo === Skipping build ^(--no-build^) ===
+    goto :skip_build
 )
+
+echo.
+echo === Configuring ===
+cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -DCMAKE_BUILD_TYPE=%CONFIG% -DCMAKE_PREFIX_PATH="%QT_DIR%"
+if errorlevel 1 (
+    echo Error: CMake configure failed.
+    exit /b 1
+)
+
+echo.
+echo === Building ===
+cmake --build "%BUILD_DIR%" --config %CONFIG% --parallel
+if errorlevel 1 (
+    echo Error: Build failed.
+    exit /b 1
+)
+
+:skip_build
 
 REM -- Locate binaries --------------------------------------------------------
 
