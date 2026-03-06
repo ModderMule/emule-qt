@@ -162,8 +162,8 @@ echo Daemon binary: %DAEMON_BIN%
 
 REM -- Assemble staging directory ---------------------------------------------
 
-set "STAGE_DIR=%BUILD_DIR%\stage\eMule"
-if exist "%BUILD_DIR%\stage" rmdir /s /q "%BUILD_DIR%\stage"
+set "STAGE_DIR=%PROJECT_DIR%\stage\eMule"
+if exist "%PROJECT_DIR%\stage" rmdir /s /q "%PROJECT_DIR%\stage"
 mkdir "%STAGE_DIR%"
 
 echo(
@@ -265,7 +265,7 @@ if exist "%ZIP_PATH%" del "%ZIP_PATH%"
 
 echo(
 echo === Creating %ZIP_NAME% ===
-pushd "%BUILD_DIR%\stage"
+pushd "%PROJECT_DIR%\stage"
 powershell -NoProfile -Command "Compress-Archive -Path 'eMule' -DestinationPath '%ZIP_PATH%' -Force"
 popd
 
