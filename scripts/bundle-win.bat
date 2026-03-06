@@ -42,14 +42,15 @@ pushd "%SCRIPT_DIR%\.."
 set "PROJECT_DIR=%CD%"
 popd
 
-REM Switch to the project drive so relative paths (e.g. build\) resolve there
-cd /d "%PROJECT_DIR%"
-
 REM -- Parse arguments --------------------------------------------------------
 
 set "BUILD_DIR=%~1"
 if "%BUILD_DIR%"=="" set "BUILD_DIR=build"
 if "%BUILD_DIR%"=="--no-build" set "BUILD_DIR=build"
+
+REM Make BUILD_DIR absolute (resolve relative paths against PROJECT_DIR)
+echo "%BUILD_DIR%" | findstr /r "^[a-zA-Z]:\\" >nul 2>&1
+if errorlevel 1 set "BUILD_DIR=%PROJECT_DIR%\%BUILD_DIR%"
 
 set "DO_BUILD=1"
 for %%A in (%*) do (
@@ -64,13 +65,13 @@ set "QT_DIR=%~2"
 if "%QT_DIR%"=="--no-build" set "QT_DIR="
 if "%QT_DIR%"=="" (
     REM Try common Qt install locations
-    for %%V in (6.10.2 6.10.1 6.10.0 6.9.0 6.8.0 6.7.0) do (
-        if exist "C:\Qt\%%V\msvc2022_64" (
-            set "QT_DIR=C:\Qt\%%V\msvc2022_64"
+    for %%V in ("6.10.2" "6.10.1" "6.10.0" "6.9.0" "6.8.0" "6.7.0") do (
+        if exist "C:\Qt\%%~V\msvc2022_64" (
+            set "QT_DIR=C:\Qt\%%~V\msvc2022_64"
             goto :qt_found
         )
-        if exist "%USERPROFILE%\Qt\%%V\msvc2022_64" (
-            set "QT_DIR=%USERPROFILE%\Qt\%%V\msvc2022_64"
+        if exist "%USERPROFILE%\Qt\%%~V\msvc2022_64" (
+            set "QT_DIR=%USERPROFILE%\Qt\%%~V\msvc2022_64"
             goto :qt_found
         )
     )
@@ -90,12 +91,12 @@ if not exist "%WINDEPLOYQT%" (
 REM -- Configure & Build ------------------------------------------------------
 
 if "%DO_BUILD%"=="0" (
-    echo.
+    echo(
     echo === Skipping build ^(--no-build^) ===
     goto :skip_build
 )
 
-echo.
+echo(
 echo === Configuring ===
 cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -DCMAKE_BUILD_TYPE=%CONFIG% -DCMAKE_PREFIX_PATH="%QT_DIR%"
 if errorlevel 1 (
@@ -103,7 +104,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo.
+echo(
 echo === Building ===
 cmake --build "%BUILD_DIR%" --config %CONFIG% --parallel
 if errorlevel 1 (
@@ -155,7 +156,7 @@ if not exist "%DAEMON_BIN%" (
     exit /b 1
 )
 
-echo.
+echo(
 echo GUI binary:    %GUI_BIN%
 echo Daemon binary: %DAEMON_BIN%
 
@@ -165,7 +166,7 @@ set "STAGE_DIR=%BUILD_DIR%\stage\eMule"
 if exist "%BUILD_DIR%\stage" rmdir /s /q "%BUILD_DIR%\stage"
 mkdir "%STAGE_DIR%"
 
-echo.
+echo(
 echo === Staging binaries ===
 copy /y "%GUI_BIN%" "%STAGE_DIR%\emuleqt.exe" >nul
 copy /y "%DAEMON_BIN%" "%STAGE_DIR%\emulecored.exe" >nul
@@ -178,7 +179,7 @@ set "CONFIG_SRC=%PROJECT_DIR%\data\config"
 set "CONFIG_DST=%STAGE_DIR%\config"
 
 if exist "%CONFIG_SRC%" (
-    echo.
+    echo(
     echo === Copying config data ===
     xcopy /s /e /i /q "%CONFIG_SRC%" "%CONFIG_DST%" >nul
     echo   config\ copied
@@ -202,7 +203,7 @@ for %%D in ("%BUILD_DIR%\src\gui\%CONFIG%" "%BUILD_DIR%\src\gui" "%PROJECT_DIR%\
     )
 )
 if "%LANG_COPIED%"=="1" (
-    echo.
+    echo(
     echo === Copying translation files ===
     echo   lang\ copied
 ) else (
@@ -211,7 +212,7 @@ if "%LANG_COPIED%"=="1" (
 
 REM -- Run windeployqt --------------------------------------------------------
 
-echo.
+echo(
 echo === Running windeployqt ===
 set "DEPLOY_MODE=--release"
 if /i "%CONFIG%"=="Debug" set "DEPLOY_MODE=--debug"
@@ -248,7 +249,7 @@ for %%P in ("%PROJECT_DIR%\src\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%" "
 )
 
 if defined VCPKG_BIN (
-    echo.
+    echo(
     echo === Copying vcpkg DLLs from %VCPKG_BIN% ===
     copy /y "%VCPKG_BIN%\*.dll" "%STAGE_DIR%\" >nul 2>&1
     echo   vcpkg DLLs copied
@@ -262,17 +263,17 @@ set "ZIP_NAME=eMuleQt-win64.zip"
 set "ZIP_PATH=%PROJECT_DIR%\%ZIP_NAME%"
 if exist "%ZIP_PATH%" del "%ZIP_PATH%"
 
-echo.
+echo(
 echo === Creating %ZIP_NAME% ===
 pushd "%BUILD_DIR%\stage"
 powershell -NoProfile -Command "Compress-Archive -Path 'eMule' -DestinationPath '%ZIP_PATH%' -Force"
 popd
 
 if exist "%ZIP_PATH%" (
-    echo.
+    echo(
     echo === Done ===
     echo Package: %ZIP_PATH%
-    echo.
+    echo(
     echo Staging contents:
     dir /b "%STAGE_DIR%"
 ) else (
