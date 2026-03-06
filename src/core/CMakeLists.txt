@@ -113,7 +113,7 @@ target_link_libraries(emulecore
         Qt6::HttpServer
         eMule::CommonSettings
     PRIVATE
-        $<$<TARGET_EXISTS:ZLIB::ZLIB>:ZLIB::ZLIB>
+        ZLIB::ZLIB
         OpenSSL::Crypto
         libminiupnpc-static
         yaml-cpp::yaml-cpp
