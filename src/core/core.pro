@@ -18,7 +18,10 @@ unix {
     LIBS += -lssl -lcrypto -lz
 }
 win32 {
-    LIBS += -lssl -lcrypto -lz
+    OPENSSL_DIR = $$(OPENSSL_DIR)
+    isEmpty(OPENSSL_DIR): OPENSSL_DIR = "C:/Program Files/OpenSSL-Win64"
+    INCLUDEPATH += "$$OPENSSL_DIR/include"
+    LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto -lz
 }
 
 # Third-party: miniupnpc, yaml-cpp, libarchive

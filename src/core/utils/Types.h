@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <cstddef>
 
-#include "config.h"
+#include <config.h>
 
 namespace eMule {
 

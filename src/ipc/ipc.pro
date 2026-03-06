@@ -11,7 +11,12 @@ INCLUDEPATH += $$PWD
 
 # OpenSSL
 unix:  LIBS += -lssl -lcrypto
-win32: LIBS += -lssl -lcrypto
+win32 {
+    OPENSSL_DIR = $$(OPENSSL_DIR)
+    isEmpty(OPENSSL_DIR): OPENSSL_DIR = "C:/Program Files/OpenSSL-Win64"
+    INCLUDEPATH += "$$OPENSSL_DIR/include"
+    LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto
+}
 
 SOURCES += \
     IpcConnection.cpp \
