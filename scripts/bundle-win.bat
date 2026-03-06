@@ -20,6 +20,10 @@ REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64
 REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 --no-build
 REM   scripts\bundle-win.bat --no-build
 REM
+REM VS output directory:
+REM   bin\release\           all .exe and .lib from all four VS projects
+REM   bin\debug\             (same for Debug config)
+REM
 REM Layout inside the zip:
 REM   eMule\
 REM     emuleqt.exe          GUI executable
@@ -108,30 +112,43 @@ if errorlevel 1 (
 
 REM -- Locate binaries --------------------------------------------------------
 
-REM Multi-config generators (MSVC via CMake) put binaries under %CONFIG%/
-set "GUI_BIN=%BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe"
-set "DAEMON_BIN=%BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe"
+REM VS projects output to bin\{debug,release}\ in the project root.
+REM CMake multi-config goes to build\src\{gui,daemon}\%CONFIG%\.
+REM Try VS output first (most common with --no-build), then CMake paths.
 
-REM Single-config generators (Ninja) put binaries directly in the target dir
+set "BIN_DIR=%PROJECT_DIR%\bin\%CONFIG%"
+
+set "GUI_BIN=%BIN_DIR%\emuleqt.exe"
+set "DAEMON_BIN=%BIN_DIR%\emulecored.exe"
+
+REM Fallback: try the other config (e.g. script defaults to Release but VS built Debug)
+if not exist "%GUI_BIN%" (
+    set "ALT_CONFIG=Debug"
+    if /i "%CONFIG%"=="Debug" set "ALT_CONFIG=Release"
+)
+if not exist "%GUI_BIN%" set "GUI_BIN=%PROJECT_DIR%\bin\%ALT_CONFIG%\emuleqt.exe"
+if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%PROJECT_DIR%\bin\%ALT_CONFIG%\emulecored.exe"
+
+REM Fallback: CMake multi-config build directory
+if not exist "%GUI_BIN%" set "GUI_BIN=%BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe"
+if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe"
+
+REM Fallback: CMake single-config (Ninja)
 if not exist "%GUI_BIN%" set "GUI_BIN=%BUILD_DIR%\src\gui\emuleqt.exe"
 if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\emulecored.exe"
 
-REM VS in-source build (.vcxproj OutputDirectory) relative to project root
-if not exist "%GUI_BIN%" set "GUI_BIN=%PROJECT_DIR%\src\gui\%CONFIG%\emuleqt.exe"
-if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%PROJECT_DIR%\src\daemon\%CONFIG%\emulecored.exe"
-
 if not exist "%GUI_BIN%" (
     echo Error: GUI binary not found.
+    echo   Checked: %PROJECT_DIR%\bin\{Release,Debug}\emuleqt.exe
     echo   Checked: %BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe
     echo   Checked: %BUILD_DIR%\src\gui\emuleqt.exe
-    echo   Checked: %PROJECT_DIR%\src\gui\%CONFIG%\emuleqt.exe
     exit /b 1
 )
 if not exist "%DAEMON_BIN%" (
     echo Error: Daemon binary not found.
+    echo   Checked: %PROJECT_DIR%\bin\{Release,Debug}\emulecored.exe
     echo   Checked: %BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe
     echo   Checked: %BUILD_DIR%\src\daemon\emulecored.exe
-    echo   Checked: %PROJECT_DIR%\src\daemon\%CONFIG%\emulecored.exe
     exit /b 1
 )
 
