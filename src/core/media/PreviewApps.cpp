@@ -1,3 +1,4 @@
+#include "pch.h"
 // This file is part of eMule
 // Copyright (C) 2002-2024 Merkur
 // SPDX-License-Identifier: GPL-2.0-or-later

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SearchResultsModel.cpp
 /// @brief Table model for search results — implementation.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Tag.cpp
 /// @brief ED2K tag system implementation — port of CTag from MFC Packets.cpp.
 

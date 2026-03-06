@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "app/MainWindow.h"
 
 #ifdef Q_OS_WIN

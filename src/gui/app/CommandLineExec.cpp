@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file CommandLineExec.cpp
 /// @brief Command-line parsing and execution for the GUI application.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ClientList.cpp
 /// @brief Client list manager implementation — Phase 1.
 ///

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SharedFilesModel.cpp
 /// @brief Table model for the Shared Files list — implementation.
 

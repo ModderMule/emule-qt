@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file DownloadProgressDelegate.cpp
 /// @brief Per-part chunk map progress bar delegate matching MFC eMule style.
 

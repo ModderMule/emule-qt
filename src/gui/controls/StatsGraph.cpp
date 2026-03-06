@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file StatsGraph.cpp
 /// @brief Oscilloscope-style line chart widget — implementation.
 

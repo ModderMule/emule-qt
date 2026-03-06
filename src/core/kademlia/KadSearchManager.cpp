@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadSearchManager.cpp
 /// @brief Kademlia search lifecycle management implementation.
 

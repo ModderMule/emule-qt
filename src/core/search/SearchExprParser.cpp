@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SearchExprParser.cpp
 /// @brief Search expression parser — port of MFC Parser.y + Scanner.l.
 ///

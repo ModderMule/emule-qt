@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file TransferToolbar.cpp
 /// @brief Section header toolbar widget — implementation.
 

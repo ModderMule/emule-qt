@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file UploadQueue.cpp
 /// @brief Upload queue manager — port of MFC UploadQueue.cpp.
 ///

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file DownloadQueue.cpp
 /// @brief Download queue manager — port of MFC CDownloadQueue.
 ///

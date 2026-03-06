@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadSearch.cpp
 /// @brief Kademlia search state machine implementation.
 

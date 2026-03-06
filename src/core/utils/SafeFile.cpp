@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SafeFile.cpp
 /// @brief Portable file I/O class implementations.
 

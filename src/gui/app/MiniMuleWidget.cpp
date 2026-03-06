@@ -1,3 +1,4 @@
+#include "pch.h"
 #ifdef Q_OS_WIN
 
 #include "app/MiniMuleWidget.h"

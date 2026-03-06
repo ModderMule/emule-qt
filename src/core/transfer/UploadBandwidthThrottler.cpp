@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file UploadBandwidthThrottler.cpp
 /// @brief Thread-based per-socket bandwidth allocation — port of MFC UploadBandwidthThrottler.cpp.
 ///

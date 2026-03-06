@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "FileIdentifier.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"

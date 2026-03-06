@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadIndexed.cpp
 /// @brief Keyword/source/notes index implementation.
 

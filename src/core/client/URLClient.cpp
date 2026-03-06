@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file URLClient.cpp
 /// @brief URLClient implementation — HTTP download client.
 ///

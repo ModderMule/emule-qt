@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file PathUtils.cpp
 /// @brief Portable path utility implementations.
 

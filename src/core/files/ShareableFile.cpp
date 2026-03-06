@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ShareableFile.cpp
 /// @brief Shareable file base class — port of MFC CShareableFile.
 

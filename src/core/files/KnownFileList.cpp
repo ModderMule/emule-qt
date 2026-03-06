@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KnownFileList.cpp
 /// @brief Known file database — port of MFC CKnownFileList.
 ///

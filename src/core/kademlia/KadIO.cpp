@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadIO.cpp
 /// @brief Kad-specific I/O implementation.
 

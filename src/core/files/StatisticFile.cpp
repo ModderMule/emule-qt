@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file StatisticFile.cpp
 /// @brief Per-file transfer statistics — port of MFC CStatisticFile.
 

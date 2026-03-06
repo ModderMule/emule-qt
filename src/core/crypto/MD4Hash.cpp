@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "MD4Hash.h"
 
 // MD4Hasher is fully inline in the header; this translation unit ensures

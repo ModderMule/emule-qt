@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadMiscUtils.cpp
 /// @brief Kad utility function implementation.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file EMSocket.cpp
 /// @brief Core eMule protocol socket implementation.
 

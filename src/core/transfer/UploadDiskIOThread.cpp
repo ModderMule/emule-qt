@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file UploadDiskIOThread.cpp
 /// @brief Async disk reads for upload — port of MFC UploadDiskIOThread.cpp.
 ///

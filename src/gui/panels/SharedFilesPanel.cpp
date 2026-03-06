@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SharedFilesPanel.cpp
 /// @brief Shared Files tab panel — implementation.
 

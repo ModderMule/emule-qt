@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file IPFilter.cpp
 /// @brief IP range filter implementation — replaces MFC CIPFilter.
 

@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "panels/ServerPanel.h"
 
 #include "app/IpcClient.h"

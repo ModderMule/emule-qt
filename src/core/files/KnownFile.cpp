@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KnownFile.cpp
 /// @brief Known (completed) file — partial port of MFC CKnownFile.
 ///

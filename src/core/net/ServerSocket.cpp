@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ServerSocket.cpp
 /// @brief TCP connection to an ED2K server — replaces MFC CServerSocket.
 

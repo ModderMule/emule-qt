@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file PartFileWriteThread.cpp
 /// @brief Async buffered I/O thread for PartFile disk writes.
 

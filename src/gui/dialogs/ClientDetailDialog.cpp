@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ClientDetailDialog.cpp
 /// @brief Client detail dialog implementation.
 

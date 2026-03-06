@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Statistics.cpp
 /// @brief Global transfer statistics — implementation.
 

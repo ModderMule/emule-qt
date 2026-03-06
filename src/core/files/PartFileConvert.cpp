@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file PartFileConvert.cpp
 /// @brief Legacy format converter — port of MFC CPartFileConvert.
 

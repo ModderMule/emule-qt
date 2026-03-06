@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "controls/KadLookupGraph.h"
 
 #include <QPainter>

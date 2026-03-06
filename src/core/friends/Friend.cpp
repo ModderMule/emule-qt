@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Friend.cpp
 /// @brief Friend data class implementation.
 

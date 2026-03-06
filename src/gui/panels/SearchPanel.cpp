@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SearchPanel.cpp
 /// @brief Search tab panel — implementation.
 

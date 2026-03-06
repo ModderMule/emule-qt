@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file DownloadClient.cpp
 /// @brief UpDownClient download methods — file requests, block transfer, source swapping.
 ///

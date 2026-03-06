@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ClientReqSocket.cpp
 /// @brief Peer-to-peer TCP socket — replaces MFC CClientReqSocket.
 

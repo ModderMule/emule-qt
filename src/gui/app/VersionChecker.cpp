@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file VersionChecker.cpp
 /// @brief HTTP-based version checker implementation.
 

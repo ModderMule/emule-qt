@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadRoutingZone.cpp
 /// @brief Kademlia routing table tree implementation.
 

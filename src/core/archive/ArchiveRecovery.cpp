@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ArchiveRecovery.cpp
 /// @brief Archive recovery from partial downloads — port of MFC ArchiveRecovery.
 ///

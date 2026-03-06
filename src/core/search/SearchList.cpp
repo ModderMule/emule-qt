@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SearchList.cpp
 /// @brief Search result manager — port of MFC CSearchList.
 

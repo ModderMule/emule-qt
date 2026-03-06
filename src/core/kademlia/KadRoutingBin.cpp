@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadRoutingBin.cpp
 /// @brief Kademlia K-bucket implementation.
 

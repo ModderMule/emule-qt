@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ServerConnect.cpp
 /// @brief ED2K server connection state machine — replaces MFC CServerConnect.
 

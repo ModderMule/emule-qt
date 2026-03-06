@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadContact.cpp
 /// @brief DHT node contact implementation.
 

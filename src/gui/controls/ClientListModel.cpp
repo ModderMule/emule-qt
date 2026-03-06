@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file ClientListModel.cpp
 /// @brief Table model for client lists — implementation.
 

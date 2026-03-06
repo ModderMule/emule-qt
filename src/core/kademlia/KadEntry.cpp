@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file KadEntry.cpp
 /// @brief DHT data entry implementation.
 

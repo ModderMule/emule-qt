@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file CorruptionBlackBox.cpp
 /// @brief Per-part corruption tracking implementation — replaces MFC CCorruptionBlackBox.
 

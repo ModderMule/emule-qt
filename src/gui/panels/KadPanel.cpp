@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "panels/KadPanel.h"
 
 #include "app/IpcClient.h"

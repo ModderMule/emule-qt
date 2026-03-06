@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file UiState.cpp
 /// @brief GUI layout state — implementation.
 

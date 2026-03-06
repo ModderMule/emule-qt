@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file SharedPartsDelegate.cpp
 /// @brief Per-part availability bar delegate matching MFC eMule DrawShareStatusBar().
 

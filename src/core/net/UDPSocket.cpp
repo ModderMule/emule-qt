@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file UDPSocket.cpp
 /// @brief Server UDP communication socket — replaces MFC CUDPSocket.
 

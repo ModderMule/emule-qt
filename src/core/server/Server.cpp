@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file Server.cpp
 /// @brief ED2K server data entity implementation — port of CServer from MFC.
 

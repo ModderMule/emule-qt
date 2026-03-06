@@ -1,3 +1,4 @@
+#include "pch.h"
 /// @file EncryptedDatagramSocket.cpp
 /// @brief UDP packet encryption/obfuscation implementation.
 ///
