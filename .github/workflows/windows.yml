@@ -18,7 +18,7 @@ jobs:
         with:
           version: "6.8.3"
           arch: win64_msvc2022_64
-          modules: qthttpserver qtmultimedia
+          modules: qthttpserver qtwebsockets qtmultimedia
 
       - name: Install OpenSSL
         run: choco install openssl -y --no-progress
