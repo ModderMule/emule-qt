@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QtCore/qglobal.h>
+
 /// @file MiniMuleWidget.h
 /// @brief Compact floating popup showing live stats near the system tray icon.
 ///
