@@ -43,17 +43,17 @@ Open `src/eMuleQt.sln` in Visual Studio 2022 and build. See [docs/windows-build.
 
 ## Running
 
-Start the daemon:
-```bash
-build/emulecored
-```
-
-Start the GUI (connects to the daemon automatically):
+Start the GUI (launches the daemon automatically):
 ```bash
 build/emuleqt
 ```
 
-The daemon can also run headless on a server — connect the GUI remotely over IPC (default port 4712).
+Optionally run the daemon standalone for headless/server use — the GUI can connect remotely over IPC (default port 4712):
+```bash
+build/emulecored
+```
+
+To create a distributable app bundle, use the platform-specific scripts: `scripts/bundle-macos.sh`, `scripts/bundle-linux.sh`, or `scripts/bundle-win.bat`.
 
 ## Architecture
 
