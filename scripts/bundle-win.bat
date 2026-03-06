@@ -7,17 +7,15 @@ REM Builds the daemon and GUI, bundles Qt runtime DLLs via windeployqt,
 REM copies the default config data, and creates a self-contained zip.
 REM
 REM Usage:
-REM   scripts\bundle-win.bat [build-dir] [qt-dir] [config] [--no-build]
+REM   scripts\bundle-win.bat [qt-dir] [config] [--no-build]
 REM
-REM   build-dir   Path to the CMake build directory (default: build)
 REM   qt-dir      Path to the Qt MSVC kit (default: auto-detect)
 REM   config      Build configuration: Release or Debug (default: Release)
 REM   --no-build  Skip CMake configure and build (use existing binaries from VS)
 REM
 REM Examples:
-REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\bin C:\Qt\6.10.2\msvc2022_64 Release
-REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\bin C:\Qt\6.10.2\msvc2022_64 Debug
-REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\bin C:\Qt\6.10.2\msvc2022_64 --no-build
+REM   scripts\bundle-win.bat C:\Qt\6.10.2\msvc2022_64 Release
+REM   scripts\bundle-win.bat C:\Qt\6.10.2\msvc2022_64 --no-build
 REM   scripts\bundle-win.bat --no-build
 REM
 REM VS output directory:
@@ -44,24 +42,18 @@ popd
 
 REM -- Parse arguments --------------------------------------------------------
 
-set "BUILD_DIR=%~1"
-if "%BUILD_DIR%"=="" set "BUILD_DIR=build"
-if "%BUILD_DIR%"=="--no-build" set "BUILD_DIR=build"
-
-REM Make BUILD_DIR absolute (resolve relative paths against PROJECT_DIR)
-set "_BD2=!BUILD_DIR:~1,1!"
-if not "!_BD2!"==":" set "BUILD_DIR=%PROJECT_DIR%\%BUILD_DIR%"
+set "BUILD_DIR=%PROJECT_DIR%\build"
 
 set "DO_BUILD=1"
 for %%A in (%*) do (
     if /i "%%~A"=="--no-build" set "DO_BUILD=0"
 )
 
-set "CONFIG=%~3"
+set "CONFIG=%~2"
 if "%CONFIG%"=="" set "CONFIG=Release"
 if "%CONFIG%"=="--no-build" set "CONFIG=Release"
 
-set "QT_DIR=%~2"
+set "QT_DIR=%~1"
 if "%QT_DIR%"=="--no-build" set "QT_DIR="
 if "%QT_DIR%"=="" (
     REM Try common Qt install locations
@@ -76,7 +68,7 @@ if "%QT_DIR%"=="" (
         )
     )
     echo Error: Qt directory not found. Pass it as second argument.
-    echo Usage: scripts\bundle-win.bat [build-dir] [qt-dir]
+    echo Usage: scripts\bundle-win.bat [qt-dir]
     exit /b 1
 )
 :qt_found
