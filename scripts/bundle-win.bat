@@ -15,9 +15,9 @@ REM   config      Build configuration: Release or Debug (default: Release)
 REM   --no-build  Skip CMake configure and build (use existing binaries from VS)
 REM
 REM Examples:
-REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 Release
-REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 Debug
-REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\build C:\Qt\6.10.2\msvc2022_64 --no-build
+REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\bin C:\Qt\6.10.2\msvc2022_64 Release
+REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\bin C:\Qt\6.10.2\msvc2022_64 Debug
+REM   scripts\bundle-win.bat C:\Projects\eMule-Qt\bin C:\Qt\6.10.2\msvc2022_64 --no-build
 REM   scripts\bundle-win.bat --no-build
 REM
 REM VS output directory:
