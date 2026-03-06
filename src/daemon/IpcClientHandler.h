@@ -111,6 +111,10 @@ private:
     void handleRequestClientSharedFiles(const Ipc::IpcMessage& msg);
     void handleGetClientDetails(const Ipc::IpcMessage& msg);
 
+    // Preference application helpers (split to avoid MSVC C1061 nesting limit)
+    bool applyPreferenceA(const QString& key, const QCborValue& val);
+    bool applyPreferenceB(const QString& key, const QCborValue& val);
+
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;
     bool m_handshaked = false;
