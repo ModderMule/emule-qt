@@ -16,8 +16,9 @@ class QTextBrowser;
 
 namespace eMule {
 
-/// Tabbed log widget with Server Info, Log, Verbose, and Kad tabs.
+/// Tabbed log widget with Server Info, Log, Verbose, Kad, and IPC tabs.
 /// Captures Qt logging category output from the core layer.
+/// The IPC tab is shown only when enableIpcLog preference is true.
 class LogWidget : public QWidget {
     Q_OBJECT
 
@@ -37,6 +38,13 @@ public:
 
     /// Append a message to the Kad tab.
     void appendKad(const QString& msg, const QString& ts = {});
+
+    /// Append an IPC message to the IPC tab.
+    /// @p outgoing: true = GUI→daemon (green), false = daemon→GUI (purple).
+    void appendIpcMessage(const QString& msg, bool outgoing);
+
+    /// Show or hide the IPC tab.
+    void setIpcTabVisible(bool visible);
 
     /// Clear all tabs.
     void clearAll();
@@ -59,6 +67,8 @@ private:
     QTextBrowser* m_logBrowser = nullptr;
     QTextBrowser* m_verboseBrowser = nullptr;
     QTextBrowser* m_kadBrowser = nullptr;
+    QTextBrowser* m_ipcLogBrowser = nullptr;
+    int m_ipcTabIndex = -1;
 
     /// Static instance pointer for the message handler callback.
     static LogWidget* s_instance;

@@ -5,11 +5,109 @@
 #include "app/IpcClient.h"
 
 #include "IpcProtocol.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <algorithm>
 
 namespace eMule {
+
+static QString ipcMsgTypeName(Ipc::IpcMsgType type)
+{
+    using T = Ipc::IpcMsgType;
+    switch (type) {
+    case T::Handshake:            return QStringLiteral("Handshake");
+    case T::Ping:                 return QStringLiteral("Ping");
+    case T::GetDownloads:         return QStringLiteral("GetDownloads");
+    case T::GetDownload:          return QStringLiteral("GetDownload");
+    case T::PauseDownload:        return QStringLiteral("PauseDownload");
+    case T::ResumeDownload:       return QStringLiteral("ResumeDownload");
+    case T::CancelDownload:       return QStringLiteral("CancelDownload");
+    case T::SetDownloadPriority:  return QStringLiteral("SetDownloadPriority");
+    case T::ClearCompleted:       return QStringLiteral("ClearCompleted");
+    case T::GetDownloadSources:   return QStringLiteral("GetDownloadSources");
+    case T::GetUploads:           return QStringLiteral("GetUploads");
+    case T::GetDownloadClients:   return QStringLiteral("GetDownloadClients");
+    case T::GetKnownClients:      return QStringLiteral("GetKnownClients");
+    case T::GetServers:           return QStringLiteral("GetServers");
+    case T::RemoveServer:         return QStringLiteral("RemoveServer");
+    case T::RemoveAllServers:     return QStringLiteral("RemoveAllServers");
+    case T::SetServerPriority:    return QStringLiteral("SetServerPriority");
+    case T::SetServerStatic:      return QStringLiteral("SetServerStatic");
+    case T::AddServer:            return QStringLiteral("AddServer");
+    case T::GetConnection:        return QStringLiteral("GetConnection");
+    case T::ConnectToServer:      return QStringLiteral("ConnectToServer");
+    case T::DisconnectFromServer: return QStringLiteral("DisconnectFromServer");
+    case T::StartSearch:          return QStringLiteral("StartSearch");
+    case T::GetSearchResults:     return QStringLiteral("GetSearchResults");
+    case T::StopSearch:           return QStringLiteral("StopSearch");
+    case T::RemoveSearch:         return QStringLiteral("RemoveSearch");
+    case T::ClearAllSearches:     return QStringLiteral("ClearAllSearches");
+    case T::DownloadSearchFile:   return QStringLiteral("DownloadSearchFile");
+    case T::GetSharedFiles:       return QStringLiteral("GetSharedFiles");
+    case T::SetSharedFilePriority: return QStringLiteral("SetSharedFilePriority");
+    case T::ReloadSharedFiles:    return QStringLiteral("ReloadSharedFiles");
+    case T::GetFriends:           return QStringLiteral("GetFriends");
+    case T::AddFriend:            return QStringLiteral("AddFriend");
+    case T::RemoveFriend:         return QStringLiteral("RemoveFriend");
+    case T::SendChatMessage:      return QStringLiteral("SendChatMessage");
+    case T::SetFriendSlot:        return QStringLiteral("SetFriendSlot");
+    case T::GetStats:             return QStringLiteral("GetStats");
+    case T::GetPreferences:       return QStringLiteral("GetPreferences");
+    case T::SetPreferences:       return QStringLiteral("SetPreferences");
+    case T::Subscribe:            return QStringLiteral("Subscribe");
+    case T::GetKadContacts:       return QStringLiteral("GetKadContacts");
+    case T::GetKadStatus:         return QStringLiteral("GetKadStatus");
+    case T::BootstrapKad:         return QStringLiteral("BootstrapKad");
+    case T::DisconnectKad:        return QStringLiteral("DisconnectKad");
+    case T::SyncLogs:             return QStringLiteral("SyncLogs");
+    case T::Shutdown:             return QStringLiteral("Shutdown");
+    case T::GetKadSearches:       return QStringLiteral("GetKadSearches");
+    case T::GetKadLookupHistory:  return QStringLiteral("GetKadLookupHistory");
+    case T::GetNetworkInfo:       return QStringLiteral("GetNetworkInfo");
+    case T::RecheckFirewall:      return QStringLiteral("RecheckFirewall");
+    case T::ReloadIPFilter:       return QStringLiteral("ReloadIPFilter");
+    case T::GetSchedules:         return QStringLiteral("GetSchedules");
+    case T::SaveSchedules:        return QStringLiteral("SaveSchedules");
+    case T::ScanImportFolder:     return QStringLiteral("ScanImportFolder");
+    case T::GetConvertJobs:       return QStringLiteral("GetConvertJobs");
+    case T::RemoveConvertJob:     return QStringLiteral("RemoveConvertJob");
+    case T::RetryConvertJob:      return QStringLiteral("RetryConvertJob");
+    case T::StopDownload:         return QStringLiteral("StopDownload");
+    case T::OpenDownloadFile:     return QStringLiteral("OpenDownloadFile");
+    case T::OpenDownloadFolder:   return QStringLiteral("OpenDownloadFolder");
+    case T::MarkSearchSpam:       return QStringLiteral("MarkSearchSpam");
+    case T::ResetStats:           return QStringLiteral("ResetStats");
+    case T::RenameSharedFile:     return QStringLiteral("RenameSharedFile");
+    case T::DeleteSharedFile:     return QStringLiteral("DeleteSharedFile");
+    case T::UnshareFile:          return QStringLiteral("UnshareFile");
+    case T::SetDownloadCategory:  return QStringLiteral("SetDownloadCategory");
+    case T::GetDownloadDetails:   return QStringLiteral("GetDownloadDetails");
+    case T::PreviewDownload:      return QStringLiteral("PreviewDownload");
+    case T::RequestClientSharedFiles: return QStringLiteral("RequestClientSharedFiles");
+    case T::GetClientDetails:     return QStringLiteral("GetClientDetails");
+    case T::HandshakeOk:          return QStringLiteral("HandshakeOk");
+    case T::Result:               return QStringLiteral("Result");
+    case T::Error:                return QStringLiteral("Error");
+    case T::PushStatsUpdate:      return QStringLiteral("PushStatsUpdate");
+    case T::PushDownloadUpdate:   return QStringLiteral("PushDownloadUpdate");
+    case T::PushDownloadAdded:    return QStringLiteral("PushDownloadAdded");
+    case T::PushDownloadRemoved:  return QStringLiteral("PushDownloadRemoved");
+    case T::PushServerState:      return QStringLiteral("PushServerState");
+    case T::PushSearchResult:     return QStringLiteral("PushSearchResult");
+    case T::PushLogMessage:       return QStringLiteral("PushLogMessage");
+    case T::PushSharedFileUpdate: return QStringLiteral("PushSharedFileUpdate");
+    case T::PushUploadUpdate:     return QStringLiteral("PushUploadUpdate");
+    case T::PushKadUpdate:        return QStringLiteral("PushKadUpdate");
+    case T::PushKadSearchesChanged: return QStringLiteral("PushKadSearchesChanged");
+    case T::PushKnownClientsChanged: return QStringLiteral("PushKnownClientsChanged");
+    case T::PushChatMessage:      return QStringLiteral("PushChatMessage");
+    case T::PushFriendListChanged: return QStringLiteral("PushFriendListChanged");
+    case T::PushClientSharedFiles: return QStringLiteral("PushClientSharedFiles");
+    default:
+        return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
+    }
+}
 
 using namespace Ipc;
 
@@ -175,6 +273,12 @@ int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
         m_pendingCallbacks[seqId] = std::move(callback);
 
     m_connection->sendMessage(tagged);
+
+    if (thePrefs.enableIpcLog())
+        emit ipcLogMessage(
+            QStringLiteral("%1 [seq=%2]").arg(ipcMsgTypeName(tagged.type())).arg(seqId),
+            /*outgoing=*/true);
+
     return seqId;
 }
 
@@ -214,6 +318,11 @@ void IpcClient::onSocketConnected()
 
 void IpcClient::onMessageReceived(const IpcMessage& msg)
 {
+    if (thePrefs.enableIpcLog())
+        emit ipcLogMessage(
+            QStringLiteral("%1 [seq=%2]").arg(ipcMsgTypeName(msg.type())).arg(msg.seqId()),
+            /*outgoing=*/false);
+
     // Check if this is a handshake response
     if (!m_handshaked && msg.type() == IpcMsgType::HandshakeOk) {
         m_handshakeTimer.stop();

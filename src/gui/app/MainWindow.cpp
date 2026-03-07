@@ -211,6 +211,8 @@ void MainWindow::showOptionsDialog(int page)
         dlg.selectPage(page);
     dlg.exec();
 
+    m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
+
     // Re-apply custom font if changed
     if (!thePrefs.logFont().isEmpty()) {
         QFont f;

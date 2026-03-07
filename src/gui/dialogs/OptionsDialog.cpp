@@ -298,6 +298,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logA4AFCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logUlDlEventsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logRawSocketPacketsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_enableIpcLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_closeUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_skipWANIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_skipWANPPPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -2653,6 +2654,9 @@ QWidget* OptionsDialog::createExtendedPage()
     m_logRawSocketPacketsCheck = new QCheckBox(tr("Log raw socket packets"), verboseGroup);
     verboseLayout->addWidget(m_logRawSocketPacketsCheck);
 
+    m_enableIpcLogCheck = new QCheckBox(tr("Enable IPC log tab"), verboseGroup);
+    verboseLayout->addWidget(m_enableIpcLogCheck);
+
     scrollLayout->addWidget(verboseGroup);
 
     // --- Upload SpeedSense group ---
@@ -3530,6 +3534,7 @@ void OptionsDialog::loadSettings()
         m_logUlDlEventsCheck->setEnabled(verboseOn);
         m_logRawSocketPacketsCheck->setChecked(thePrefs.logRawSocketPackets());
         m_logRawSocketPacketsCheck->setEnabled(verboseOn);
+        m_enableIpcLogCheck->setChecked(thePrefs.enableIpcLog());
         // USS
         bool ussOn = thePrefs.dynUpEnabled();
         m_dynUpEnabledCheck->setChecked(ussOn);
@@ -3976,6 +3981,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setDisableQueueList(m_disableQueueListCheck->isChecked());
     thePrefs.setUseAutoCompletion(m_useAutoCompletionCheck->isChecked());
     thePrefs.setUseOriginalIcons(m_useOriginalIconsCheck->isChecked());
+    thePrefs.setEnableIpcLog(m_enableIpcLogCheck->isChecked());
     if (m_useOriginalIconsCheck->isChecked() != m_initialUseOriginalIcons) {
         QMessageBox::information(this, tr("Icons"),
             tr("The icon change will take effect after restarting the application."));
