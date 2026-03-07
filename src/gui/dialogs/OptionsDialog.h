@@ -134,6 +134,7 @@ private:
     QLineEdit* m_coreAddressEdit = nullptr;
     QSpinBox*  m_corePortSpin = nullptr;
     QLineEdit* m_coreTokenEdit = nullptr;
+    QPushButton* m_shutdownCoreBtn = nullptr;
 
     // Display page controls
     QSlider* m_depth3DSlider = nullptr;

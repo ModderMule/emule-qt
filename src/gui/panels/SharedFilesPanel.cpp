@@ -36,6 +36,7 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -695,10 +696,12 @@ void SharedFilesPanel::requestSharedFiles()
             rows.push_back(std::move(row));
         }
 
+        const int sfScroll = m_fileView->verticalScrollBar()->value();
         m_proxy->setIncomingDir(m_incomingDir);
         m_model->setFiles(std::move(rows));
         m_headerLabel->setText(tr("Shared Files (%1)").arg(m_model->fileCount()));
         restoreSelection(selectedHash);
+        m_fileView->verticalScrollBar()->setValue(sfScroll);
         updateStatsTab();
         updateEd2kTab();
     });

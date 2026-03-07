@@ -37,6 +37,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QProcess>
+#include <QScrollBar>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -948,6 +949,8 @@ void TransferPanel::requestDownloads()
             rows.push_back(std::move(row));
         }
 
+        const int dlScroll = m_downloadView->verticalScrollBar()->value();
+
         m_downloadModel->setDownloads(std::move(rows));
         updateToolbarLabels();
         updateCategoryTabs();
@@ -971,6 +974,7 @@ void TransferPanel::requestDownloads()
         restoreFullDownloadSelection(selHash, selSource);
         updateActionStates();
         updateClearCompletedState();
+        m_downloadView->verticalScrollBar()->setValue(dlScroll);
     });
 }
 
@@ -1044,12 +1048,16 @@ void TransferPanel::requestUploads()
         for (const auto& val : waitingArr)
             waitingRows.push_back(parseClient(val.toMap()));
 
+        const int upScroll = m_uploadingView->verticalScrollBar()->value();
+        const int qScroll  = m_onQueueView->verticalScrollBar()->value();
         const QString selUp = saveClientSelection(m_uploadingView, m_uploadingModel);
         const QString selQ  = saveClientSelection(m_onQueueView, m_onQueueModel);
         m_uploadingModel->setClients(std::move(uploadingRows));
         m_onQueueModel->setClients(std::move(waitingRows));
         restoreClientSelection(m_uploadingView, m_uploadingModel, selUp);
         restoreClientSelection(m_onQueueView, m_onQueueModel, selQ);
+        m_uploadingView->verticalScrollBar()->setValue(upScroll);
+        m_onQueueView->verticalScrollBar()->setValue(qScroll);
         updateToolbarLabels();
     });
 }
@@ -1071,9 +1079,11 @@ void TransferPanel::requestDownloadClients()
         for (const auto& val : arr)
             rows.push_back(parseClient(val.toMap()));
 
+        const int dlClScroll = m_downloadingView->verticalScrollBar()->value();
         const QString selDl = saveClientSelection(m_downloadingView, m_downloadingModel);
         m_downloadingModel->setClients(std::move(rows));
         restoreClientSelection(m_downloadingView, m_downloadingModel, selDl);
+        m_downloadingView->verticalScrollBar()->setValue(dlClScroll);
         updateToolbarLabels();
     });
 }
@@ -1095,9 +1105,11 @@ void TransferPanel::requestKnownClients()
         for (const auto& val : arr)
             rows.push_back(parseClient(val.toMap()));
 
+        const int knScroll = m_knownView->verticalScrollBar()->value();
         const QString selKn = saveClientSelection(m_knownView, m_knownModel);
         m_knownModel->setClients(std::move(rows));
         restoreClientSelection(m_knownView, m_knownModel, selKn);
+        m_knownView->verticalScrollBar()->setValue(knScroll);
         updateToolbarLabels();
     });
 }

@@ -42,6 +42,7 @@
 #include <QPainter>
 #include <QSortFilterProxyModel>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSplitter>
 #include <QTimer>
 #include <QTreeView>
@@ -266,11 +267,13 @@ void ServerPanel::onRefreshTimer()
 
 void ServerPanel::onServerListChanged()
 {
+    const int srvScroll = m_serverListView->verticalScrollBar()->value();
     const QString key = saveSelection();
     m_serverListModel->refreshFromServerList(m_serverList);
     m_serversLabel->setText(
         tr("\u25B8 Servers (%1)").arg(m_serverListModel->rowCount()));
     restoreSelection(key);
+    m_serverListView->verticalScrollBar()->setValue(srvScroll);
 }
 
 void ServerPanel::onConnectedToServer()
@@ -853,10 +856,11 @@ void ServerPanel::requestServerList()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
+    const int srvScroll = m_serverListView->verticalScrollBar()->value();
     const QString key = saveSelection();
 
     Ipc::IpcMessage req(Ipc::IpcMsgType::GetServers);
-    m_ipc->sendRequest(std::move(req), [this, key](const Ipc::IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(req), [this, key, srvScroll](const Ipc::IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;
         const QCborArray servers = resp.fieldArray(1);
@@ -864,6 +868,7 @@ void ServerPanel::requestServerList()
         m_serversLabel->setText(
             tr("\u25B8 Servers (%1)").arg(m_serverListModel->rowCount()));
         restoreSelection(key);
+        m_serverListView->verticalScrollBar()->setValue(srvScroll);
     });
 }
 

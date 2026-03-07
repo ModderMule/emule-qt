@@ -429,6 +429,9 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             // Encrypt the data
             cryptPrepareSendData(reinterpret_cast<uint8*>(m_sendBuffer), m_sendBufferLen);
 
+            // Flush DH delayed response before first payload write
+            flushPendingNegotiationData();
+
             // Debug: dump first 16 bytes AFTER encryption
             if (thePrefs.logRawSocketPackets()) {
                 int dumpLen = std::min(static_cast<int>(m_sendBufferLen), 16);

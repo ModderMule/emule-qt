@@ -330,6 +330,8 @@ void IpcClientHandler::handleCancelDownload(const IpcMessage& msg)
         return;
     }
     pf->stopFile(true);
+    theApp.downloadQueue->removeFile(pf);
+    delete pf;
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -601,7 +603,11 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
         return;
     }
 
-    // No fields — connect to any server (backward compatible)
+    // No fields — connect to any server (only if eD2K network enabled)
+    if (!thePrefs.networkED2K()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 403, QStringLiteral("eD2K network disabled")));
+        return;
+    }
     theApp.serverConnect->connectToAnyServer();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }

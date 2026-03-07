@@ -293,10 +293,12 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
         // TCP connected, send login request
         const Server* cserver = sender->currentServer();
         if (cserver) {
-            logInfo(QStringLiteral("Connected to %1 (%2:%3), sending login request")
+            logInfo(QStringLiteral("Connected to %1 (%2:%3), sending login request (obfuscating=%4 encReady=%5)")
                        .arg(cserver->name())
                        .arg(cserver->address())
-                       .arg(cserver->port()));
+                       .arg(cserver->port())
+                       .arg(sender->isObfuscating())
+                       .arg(sender->isEncryptionLayerReady()));
 
             // Reset failed count on the server list copy
             Server* listServer = m_serverList.findByAddress(cserver->address(), cserver->port());
@@ -374,10 +376,12 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     case ServerConnState::ServerDead:
         if (cserver) {
-            logInfo(QStringLiteral("Server %1 (%2:%3) is dead")
+            logInfo(QStringLiteral("Server %1 (%2:%3) is dead (obfuscating=%4 encReady=%5)")
                         .arg(cserver->name())
                         .arg(cserver->address())
-                        .arg(cserver->port()));
+                        .arg(cserver->port())
+                        .arg(sender->isObfuscating())
+                        .arg(sender->isEncryptionLayerReady()));
         }
         if (listServer) {
             listServer->incFailedCount();
