@@ -299,6 +299,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logUlDlEventsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logRawSocketPacketsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableIpcLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_startCoreWithConsoleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_closeUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_skipWANIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_skipWANPPPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -2657,6 +2658,9 @@ QWidget* OptionsDialog::createExtendedPage()
     m_enableIpcLogCheck = new QCheckBox(tr("Enable IPC log tab"), verboseGroup);
     verboseLayout->addWidget(m_enableIpcLogCheck);
 
+    m_startCoreWithConsoleCheck = new QCheckBox(tr("Start core with console (debug)"), verboseGroup);
+    verboseLayout->addWidget(m_startCoreWithConsoleCheck);
+
     scrollLayout->addWidget(verboseGroup);
 
     // --- Upload SpeedSense group ---
@@ -3535,6 +3539,7 @@ void OptionsDialog::loadSettings()
         m_logRawSocketPacketsCheck->setChecked(thePrefs.logRawSocketPackets());
         m_logRawSocketPacketsCheck->setEnabled(verboseOn);
         m_enableIpcLogCheck->setChecked(thePrefs.enableIpcLog());
+        m_startCoreWithConsoleCheck->setChecked(thePrefs.startCoreWithConsole());
         // USS
         bool ussOn = thePrefs.dynUpEnabled();
         m_dynUpEnabledCheck->setChecked(ussOn);
@@ -3982,6 +3987,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setUseAutoCompletion(m_useAutoCompletionCheck->isChecked());
     thePrefs.setUseOriginalIcons(m_useOriginalIconsCheck->isChecked());
     thePrefs.setEnableIpcLog(m_enableIpcLogCheck->isChecked());
+    thePrefs.setStartCoreWithConsole(m_startCoreWithConsoleCheck->isChecked());
     if (m_useOriginalIconsCheck->isChecked() != m_initialUseOriginalIcons) {
         QMessageBox::information(this, tr("Icons"),
             tr("The icon change will take effect after restarting the application."));
@@ -4359,6 +4365,8 @@ void OptionsDialog::saveSettings()
         req.append(m_logRawSocketPacketsCheck->isChecked());
         req.append(QStringLiteral("enableIpcLog"));
         req.append(m_enableIpcLogCheck->isChecked());
+        req.append(QStringLiteral("startCoreWithConsole"));
+        req.append(m_startCoreWithConsoleCheck->isChecked());
         // USS
         req.append(QStringLiteral("dynUpEnabled"));
         req.append(m_dynUpEnabledCheck->isChecked());

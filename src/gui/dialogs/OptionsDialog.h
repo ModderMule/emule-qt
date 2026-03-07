@@ -342,6 +342,7 @@ private:
     QCheckBox*    m_logUlDlEventsCheck = nullptr;
     QCheckBox*    m_logRawSocketPacketsCheck = nullptr;
     QCheckBox*    m_enableIpcLogCheck = nullptr;
+    QCheckBox*    m_startCoreWithConsoleCheck = nullptr;
     QCheckBox*    m_closeUPnPCheck = nullptr;
     QCheckBox*    m_skipWANIPCheck = nullptr;
     QCheckBox*    m_skipWANPPPCheck = nullptr;
