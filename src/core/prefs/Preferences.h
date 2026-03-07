@@ -11,6 +11,7 @@
 #include "utils/Types.h"
 
 #include <QByteArray>
+#include <QCborMap>
 #include <QList>
 #include <QMap>
 #include <QReadWriteLock>
@@ -811,6 +812,13 @@ public:
 
     [[nodiscard]] QByteArray headerState(const QString& key) const;
     void setHeaderState(const QString& key, const QByteArray& val);
+
+    // -- IPC sync -------------------------------------------------------------
+
+    /// Overwrite all daemon-owned settings from the CBOR map returned by the
+    /// daemon's GetPreferences IPC response.  Called once at IPC connect time
+    /// so the GUI's thePrefs always reflects live daemon values.
+    void updateFromCbor(const QCborMap& prefs);
 
     // -- Factory methods (bridge to existing config structs) -------------------
 

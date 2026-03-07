@@ -71,6 +71,13 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt)
         port = m_curServer->obfuscationPortTCP();
     }
 
+    logInfo(QStringLiteral("Connecting to server %1 (%2:%3) noCrypt=%4 supportsObfuTCP=%5 obfuPort=%6")
+                .arg(m_curServer->name())
+                .arg(addr.toString()).arg(port)
+                .arg(noCrypt)
+                .arg(m_curServer->supportsObfuscationTCP())
+                .arg(m_curServer->obfuscationPortTCP()));
+
     connectToHost(addr, port);
 }
 
@@ -329,7 +336,12 @@ void ServerSocket::setConnectionState(ServerConnState newState)
 
 void ServerSocket::onError(int errorCode)
 {
-    logWarning(QStringLiteral("ServerSocket error: %1").arg(errorCode));
+    logWarning(QStringLiteral("ServerSocket error: %1 server=%2 peer=%3:%4 connState=%5 cryptState=%6")
+                   .arg(errorCode)
+                   .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
+                   .arg(peerAddress().toString()).arg(peerPort())
+                   .arg(static_cast<int>(m_connectionState))
+                   .arg(static_cast<int>(m_streamCryptState)));
 
     if (m_connectionState == ServerConnState::Connecting ||
         m_connectionState == ServerConnState::WaitForLogin) {
@@ -345,6 +357,10 @@ void ServerSocket::onError(int errorCode)
 
 void ServerSocket::onSocketConnected()
 {
+    logInfo(QStringLiteral("ServerSocket connected to %1 (%2:%3) serverCrypt=%4")
+                .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
+                .arg(peerAddress().toString()).arg(peerPort())
+                .arg(isServerCryptEnabledConnection()));
     setConnectionState(ServerConnState::WaitForLogin);
     m_lastTransmission = static_cast<uint32>(m_elapsedTimer.elapsed());
 }
@@ -365,6 +381,13 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
 {
     if (m_isDeleting)
         return;
+
+    logWarning(QStringLiteral("ServerSocket::onSocketError: %1 (%2) server=%3 peer=%4:%5 connState=%6 cryptState=%7")
+                   .arg(static_cast<int>(error)).arg(errorString())
+                   .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
+                   .arg(peerAddress().toString()).arg(peerPort())
+                   .arg(static_cast<int>(m_connectionState))
+                   .arg(static_cast<int>(m_streamCryptState)));
 
     switch (error) {
     case QAbstractSocket::ConnectionRefusedError:

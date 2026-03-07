@@ -85,6 +85,7 @@ conan/
 # local tools and scripts
 *.local.sh
 *.local.log
+*.local.md
 translations_*.json
 blog-*.md
 

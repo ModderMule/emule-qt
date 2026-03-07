@@ -140,6 +140,10 @@ protected:
     /// Called when the socket is connected and ready to send.
     void onSocketConnected();
 
+    /// Flush any pending DH negotiation response before the first payload write.
+    /// @return Number of bytes written, or 0 if nothing pending.
+    int flushPendingNegotiationData();
+
     /// Process received raw data through the encryption layer.
     /// @return Number of decrypted bytes available, or 0 if handshake consumed all data.
     int processReceivedData(void* buf, int len);

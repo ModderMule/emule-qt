@@ -35,6 +35,7 @@
 #include <QNetworkRequest>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QScrollBar>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QTabWidget>
@@ -554,6 +555,7 @@ void KadPanel::requestContacts()
             rows.push_back(std::move(row));
         }
 
+        const int ctScroll = m_contactsView->verticalScrollBar()->value();
         m_kadNetworkGraph->setContacts(rows);
         m_contactsModel->setContacts(std::move(rows));
         const int count = m_contactsModel->contactCount();
@@ -561,6 +563,7 @@ void KadPanel::requestContacts()
 
         // Update the Contacts tab title with count
         m_topTabWidget->setTabText(0, tr("\u25B8 Contacts (%1)").arg(count));
+        m_contactsView->verticalScrollBar()->setValue(ctScroll);
     });
 }
 
@@ -598,6 +601,7 @@ void KadPanel::requestSearches()
 
         // Save selected search ID before model reset clears selection
         const uint32_t prevSelected = selectedSearchId();
+        const int srScroll = m_searchesView->verticalScrollBar()->value();
 
         m_searchesModel->setSearches(std::move(rows));
         const int count = m_searchesModel->searchCount();
@@ -627,6 +631,7 @@ void KadPanel::requestSearches()
                 m_searchesView->model()->index(0, 0),
                 QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
         }
+        m_searchesView->verticalScrollBar()->setValue(srScroll);
     });
 }
 

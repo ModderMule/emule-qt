@@ -10,6 +10,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
+#include <QCborArray>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -3398,6 +3399,197 @@ void Preferences::setHeaderState(const QString& key, const QByteArray& val)
 {
     QWriteLocker lock(&m_lock);
     m_data->headerStates[key] = val;
+}
+
+// ---------------------------------------------------------------------------
+// IPC sync
+// ---------------------------------------------------------------------------
+
+void Preferences::updateFromCbor(const QCborMap& p)
+{
+    QWriteLocker lock(&m_lock);
+    // Connection / General
+    m_data->nick             = p.value(QStringLiteral("nick")).toString();
+    m_data->port             = static_cast<uint16>(p.value(QStringLiteral("port")).toInteger());
+    m_data->udpPort          = static_cast<uint16>(p.value(QStringLiteral("udpPort")).toInteger());
+    m_data->maxUpload        = static_cast<uint32>(p.value(QStringLiteral("maxUpload")).toInteger());
+    m_data->maxDownload      = static_cast<uint32>(p.value(QStringLiteral("maxDownload")).toInteger());
+    m_data->maxGraphDownloadRate = static_cast<uint32>(p.value(QStringLiteral("maxGraphDownloadRate")).toInteger());
+    m_data->maxGraphUploadRate   = static_cast<uint32>(p.value(QStringLiteral("maxGraphUploadRate")).toInteger());
+    m_data->maxConnections   = static_cast<uint16>(p.value(QStringLiteral("maxConnections")).toInteger());
+    m_data->maxSourcesPerFile = static_cast<uint16>(p.value(QStringLiteral("maxSourcesPerFile")).toInteger());
+    m_data->autoConnect      = p.value(QStringLiteral("autoConnect")).toBool();
+    m_data->reconnect        = p.value(QStringLiteral("reconnect")).toBool();
+    m_data->showOverhead     = p.value(QStringLiteral("showOverhead")).toBool();
+    m_data->networkED2K      = p.value(QStringLiteral("networkED2K")).toBool();
+    m_data->kadEnabled       = p.value(QStringLiteral("kadEnabled")).toBool();
+    m_data->schedulerEnabled = p.value(QStringLiteral("schedulerEnabled")).toBool();
+    m_data->enableUPnP       = p.value(QStringLiteral("enableUPnP")).toBool();
+
+    // Server
+    m_data->safeServerConnect       = p.value(QStringLiteral("safeServerConnect")).toBool();
+    m_data->autoConnectStaticOnly   = p.value(QStringLiteral("autoConnectStaticOnly")).toBool();
+    m_data->useServerPriorities     = p.value(QStringLiteral("useServerPriorities")).toBool();
+    m_data->addServersFromServer    = p.value(QStringLiteral("addServersFromServer")).toBool();
+    m_data->addServersFromClients   = p.value(QStringLiteral("addServersFromClients")).toBool();
+    m_data->deadServerRetries       = static_cast<uint32>(p.value(QStringLiteral("deadServerRetries")).toInteger());
+    m_data->autoUpdateServerList    = p.value(QStringLiteral("autoUpdateServerList")).toBool();
+    m_data->serverListURL           = p.value(QStringLiteral("serverListURL")).toString();
+    m_data->smartLowIdCheck         = p.value(QStringLiteral("smartLowIdCheck")).toBool();
+    m_data->manualServerHighPriority = p.value(QStringLiteral("manualServerHighPriority")).toBool();
+
+    // Proxy
+    m_data->proxyType           = static_cast<int>(p.value(QStringLiteral("proxyType")).toInteger());
+    m_data->proxyHost           = p.value(QStringLiteral("proxyHost")).toString();
+    m_data->proxyPort           = static_cast<uint16>(p.value(QStringLiteral("proxyPort")).toInteger());
+    m_data->proxyEnablePassword = p.value(QStringLiteral("proxyEnablePassword")).toBool();
+    m_data->proxyUser           = p.value(QStringLiteral("proxyUser")).toString();
+    m_data->proxyPassword       = p.value(QStringLiteral("proxyPassword")).toString();
+
+    // Files
+    m_data->addNewFilesPaused             = p.value(QStringLiteral("addNewFilesPaused")).toBool();
+    m_data->autoDownloadPriority          = p.value(QStringLiteral("autoDownloadPriority")).toBool();
+    m_data->autoSharedFilesPriority       = p.value(QStringLiteral("autoSharedFilesPriority")).toBool();
+    m_data->transferFullChunks            = p.value(QStringLiteral("transferFullChunks")).toBool();
+    m_data->previewPrio                   = p.value(QStringLiteral("previewPrio")).toBool();
+    m_data->startNextPausedFile           = p.value(QStringLiteral("startNextPausedFile")).toBool();
+    m_data->startNextPausedFileSameCat    = p.value(QStringLiteral("startNextPausedFileSameCat")).toBool();
+    m_data->startNextPausedFileOnlySameCat = p.value(QStringLiteral("startNextPausedFileOnlySameCat")).toBool();
+    m_data->rememberDownloadedFiles       = p.value(QStringLiteral("rememberDownloadedFiles")).toBool();
+    m_data->rememberCancelledFiles        = p.value(QStringLiteral("rememberCancelledFiles")).toBool();
+
+    // Notifications
+    m_data->notifyOnLog              = p.value(QStringLiteral("notifyOnLog")).toBool();
+    m_data->notifyOnChat             = p.value(QStringLiteral("notifyOnChat")).toBool();
+    m_data->notifyOnChatMsg          = p.value(QStringLiteral("notifyOnChatMsg")).toBool();
+    m_data->notifyOnDownloadAdded    = p.value(QStringLiteral("notifyOnDownloadAdded")).toBool();
+    m_data->notifyOnDownloadFinished = p.value(QStringLiteral("notifyOnDownloadFinished")).toBool();
+    m_data->notifyOnNewVersion       = p.value(QStringLiteral("notifyOnNewVersion")).toBool();
+    m_data->notifyOnUrgent           = p.value(QStringLiteral("notifyOnUrgent")).toBool();
+    m_data->notifyEmailEnabled       = p.value(QStringLiteral("notifyEmailEnabled")).toBool();
+    m_data->notifyEmailSmtpServer    = p.value(QStringLiteral("notifyEmailSmtpServer")).toString();
+    m_data->notifyEmailSmtpPort      = static_cast<uint16>(p.value(QStringLiteral("notifyEmailSmtpPort")).toInteger());
+    m_data->notifyEmailSmtpAuth      = static_cast<int>(p.value(QStringLiteral("notifyEmailSmtpAuth")).toInteger());
+    m_data->notifyEmailSmtpTls       = p.value(QStringLiteral("notifyEmailSmtpTls")).toBool();
+    m_data->notifyEmailSmtpUser      = p.value(QStringLiteral("notifyEmailSmtpUser")).toString();
+    m_data->notifyEmailSmtpPassword  = p.value(QStringLiteral("notifyEmailSmtpPassword")).toString();
+    m_data->notifyEmailRecipient     = p.value(QStringLiteral("notifyEmailRecipient")).toString();
+    m_data->notifyEmailSender        = p.value(QStringLiteral("notifyEmailSender")).toString();
+
+    // Messages and Comments
+    m_data->msgOnlyFriends    = p.value(QStringLiteral("msgOnlyFriends")).toBool();
+    m_data->enableSpamFilter  = p.value(QStringLiteral("enableSpamFilter")).toBool();
+    m_data->useChatCaptchas   = p.value(QStringLiteral("useChatCaptchas")).toBool();
+    m_data->messageFilter     = p.value(QStringLiteral("messageFilter")).toString();
+    m_data->commentFilter     = p.value(QStringLiteral("commentFilter")).toString();
+
+    // Security
+    m_data->filterServerByIP          = p.value(QStringLiteral("filterServerByIP")).toBool();
+    m_data->ipFilterLevel             = static_cast<uint32>(p.value(QStringLiteral("ipFilterLevel")).toInteger());
+    m_data->viewSharedFilesAccess     = static_cast<int>(p.value(QStringLiteral("viewSharedFilesAccess")).toInteger());
+    m_data->cryptLayerSupported       = p.value(QStringLiteral("cryptLayerSupported")).toBool();
+    m_data->cryptLayerRequested       = p.value(QStringLiteral("cryptLayerRequested")).toBool();
+    m_data->cryptLayerRequired        = p.value(QStringLiteral("cryptLayerRequired")).toBool();
+    m_data->useSecureIdent            = p.value(QStringLiteral("useSecureIdent")).toBool();
+    m_data->enableSearchResultFilter  = p.value(QStringLiteral("enableSearchResultFilter")).toBool();
+    m_data->warnUntrustedFiles        = p.value(QStringLiteral("warnUntrustedFiles")).toBool();
+    m_data->ipFilterUpdateUrl         = p.value(QStringLiteral("ipFilterUpdateUrl")).toString();
+
+    // Statistics
+    m_data->statsAverageMinutes   = static_cast<uint32>(p.value(QStringLiteral("statsAverageMinutes")).toInteger());
+    m_data->graphsUpdateSec       = static_cast<uint32>(p.value(QStringLiteral("graphsUpdateSec")).toInteger());
+    m_data->statsUpdateSec        = static_cast<uint32>(p.value(QStringLiteral("statsUpdateSec")).toInteger());
+    m_data->fillGraphs            = p.value(QStringLiteral("fillGraphs")).toBool();
+    m_data->statsConnectionsMax   = static_cast<uint32>(p.value(QStringLiteral("statsConnectionsMax")).toInteger());
+    m_data->statsConnectionsRatio = static_cast<uint32>(p.value(QStringLiteral("statsConnectionsRatio")).toInteger());
+
+    // Extended (PPgTweaks)
+    m_data->maxConsPerFive              = static_cast<uint16>(p.value(QStringLiteral("maxConsPerFive")).toInteger());
+    m_data->maxHalfConnections          = static_cast<uint16>(p.value(QStringLiteral("maxHalfConnections")).toInteger());
+    m_data->serverKeepAliveTimeout      = static_cast<uint32>(p.value(QStringLiteral("serverKeepAliveTimeout")).toInteger());
+    m_data->filterLANIPs                = p.value(QStringLiteral("filterLANIPs")).toBool();
+    m_data->checkDiskspace              = p.value(QStringLiteral("checkDiskspace")).toBool();
+    m_data->minFreeDiskSpace            = static_cast<uint64>(p.value(QStringLiteral("minFreeDiskSpace")).toInteger());
+    m_data->logToDisk                   = p.value(QStringLiteral("logToDisk")).toBool();
+    m_data->verbose                     = p.value(QStringLiteral("verbose")).toBool();
+    m_data->closeUPnPOnExit             = p.value(QStringLiteral("closeUPnPOnExit")).toBool();
+    m_data->skipWANIPSetup              = p.value(QStringLiteral("skipWANIPSetup")).toBool();
+    m_data->skipWANPPPSetup             = p.value(QStringLiteral("skipWANPPPSetup")).toBool();
+    m_data->fileBufferSize              = static_cast<uint32>(p.value(QStringLiteral("fileBufferSize")).toInteger());
+    m_data->useCreditSystem             = p.value(QStringLiteral("useCreditSystem")).toBool();
+    m_data->a4afSaveCpu                 = p.value(QStringLiteral("a4afSaveCpu")).toBool();
+    m_data->autoArchivePreviewStart     = p.value(QStringLiteral("autoArchivePreviewStart")).toBool();
+    m_data->ed2kHostname                = p.value(QStringLiteral("ed2kHostname")).toString();
+    m_data->showExtControls             = p.value(QStringLiteral("showExtControls")).toBool();
+    m_data->commitFiles                 = static_cast<int>(p.value(QStringLiteral("commitFiles")).toInteger());
+    m_data->extractMetaData             = static_cast<int>(p.value(QStringLiteral("extractMetaData")).toInteger());
+    m_data->logLevel                    = static_cast<int>(p.value(QStringLiteral("logLevel")).toInteger());
+    m_data->verboseLogToDisk            = p.value(QStringLiteral("verboseLogToDisk")).toBool();
+    m_data->logSourceExchange           = p.value(QStringLiteral("logSourceExchange")).toBool();
+    m_data->logBannedClients            = p.value(QStringLiteral("logBannedClients")).toBool();
+    m_data->logRatingDescReceived       = p.value(QStringLiteral("logRatingDescReceived")).toBool();
+    m_data->logSecureIdent              = p.value(QStringLiteral("logSecureIdent")).toBool();
+    m_data->logFilteredIPs              = p.value(QStringLiteral("logFilteredIPs")).toBool();
+    m_data->logFileSaving               = p.value(QStringLiteral("logFileSaving")).toBool();
+    m_data->logA4AF                     = p.value(QStringLiteral("logA4AF")).toBool();
+    m_data->logUlDlEvents               = p.value(QStringLiteral("logUlDlEvents")).toBool();
+    m_data->logRawSocketPackets         = p.value(QStringLiteral("logRawSocketPackets")).toBool();
+    m_data->queueSize                   = static_cast<uint32>(p.value(QStringLiteral("queueSize")).toInteger());
+
+    // USS
+    m_data->dynUpEnabled                       = p.value(QStringLiteral("dynUpEnabled")).toBool();
+    m_data->dynUpPingTolerance                 = static_cast<int>(p.value(QStringLiteral("dynUpPingTolerance")).toInteger());
+    m_data->dynUpPingToleranceMs               = static_cast<int>(p.value(QStringLiteral("dynUpPingToleranceMs")).toInteger());
+    m_data->dynUpUseMillisecondPingTolerance   = p.value(QStringLiteral("dynUpUseMillisecondPingTolerance")).toBool();
+    m_data->dynUpGoingUpDivider                = static_cast<int>(p.value(QStringLiteral("dynUpGoingUpDivider")).toInteger());
+    m_data->dynUpGoingDownDivider              = static_cast<int>(p.value(QStringLiteral("dynUpGoingDownDivider")).toInteger());
+    m_data->dynUpNumberOfPings                 = static_cast<int>(p.value(QStringLiteral("dynUpNumberOfPings")).toInteger());
+
+#ifdef Q_OS_WIN
+    m_data->autotakeEd2kLinks     = p.value(QStringLiteral("autotakeEd2kLinks")).toBool();
+    m_data->openPortsOnWinFirewall = p.value(QStringLiteral("openPortsOnWinFirewall")).toBool();
+    m_data->sparsePartFiles       = p.value(QStringLiteral("sparsePartFiles")).toBool();
+    m_data->allocFullFile         = p.value(QStringLiteral("allocFullFile")).toBool();
+    m_data->resolveShellLinks     = p.value(QStringLiteral("resolveShellLinks")).toBool();
+    m_data->multiUserSharing      = static_cast<int>(p.value(QStringLiteral("multiUserSharing")).toInteger());
+#endif
+
+    // Directories
+    m_data->incomingDir = p.value(QStringLiteral("incomingDir")).toString();
+    {
+        QStringList temps;
+        const QCborArray arr = p.value(QStringLiteral("tempDirs")).toArray();
+        temps.reserve(static_cast<int>(arr.size()));
+        for (const auto& v : arr)
+            temps.append(v.toString());
+        m_data->tempDirs = std::move(temps);
+    }
+    {
+        QStringList shared;
+        const QCborArray arr = p.value(QStringLiteral("sharedDirs")).toArray();
+        shared.reserve(static_cast<int>(arr.size()));
+        for (const auto& v : arr)
+            shared.append(v.toString());
+        m_data->sharedDirs = std::move(shared);
+    }
+
+    // Web Server
+    m_data->webServerEnabled              = p.value(QStringLiteral("webServerEnabled")).toBool();
+    m_data->webServerPort                 = static_cast<uint16>(p.value(QStringLiteral("webServerPort")).toInteger());
+    m_data->webServerApiKey               = p.value(QStringLiteral("webServerApiKey")).toString();
+    m_data->webServerListenAddress        = p.value(QStringLiteral("webServerListenAddress")).toString();
+    m_data->webServerRestApiEnabled       = p.value(QStringLiteral("webServerRestApiEnabled")).toBool();
+    m_data->webServerGzipEnabled          = p.value(QStringLiteral("webServerGzipEnabled")).toBool();
+    m_data->webServerUPnP                 = p.value(QStringLiteral("webServerUPnP")).toBool();
+    m_data->webServerTemplatePath         = p.value(QStringLiteral("webServerTemplatePath")).toString();
+    m_data->webServerSessionTimeout       = static_cast<int>(p.value(QStringLiteral("webServerSessionTimeout")).toInteger());
+    m_data->webServerHttpsEnabled         = p.value(QStringLiteral("webServerHttpsEnabled")).toBool();
+    m_data->webServerCertPath             = p.value(QStringLiteral("webServerCertPath")).toString();
+    m_data->webServerKeyPath              = p.value(QStringLiteral("webServerKeyPath")).toString();
+    m_data->webServerAdminPassword        = p.value(QStringLiteral("webServerAdminPassword")).toString();
+    m_data->webServerAdminAllowHiLevFunc  = p.value(QStringLiteral("webServerAdminAllowHiLevFunc")).toBool();
+    m_data->webServerGuestEnabled         = p.value(QStringLiteral("webServerGuestEnabled")).toBool();
+    m_data->webServerGuestPassword        = p.value(QStringLiteral("webServerGuestPassword")).toString();
 }
 
 // ---------------------------------------------------------------------------

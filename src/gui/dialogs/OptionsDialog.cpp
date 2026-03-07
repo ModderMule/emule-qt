@@ -14,6 +14,7 @@
 #include "IpcProtocol.h"
 
 #include <QCborArray>
+#include <QApplication>
 #include <QCoreApplication>
 
 #include <QButtonGroup>
@@ -80,7 +81,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     m_sidebar = new QListWidget(this);
     setupSidebar();
     m_sidebar->setFixedWidth(200);
-    m_sidebar->setIconSize(QSize(24, 24));
+    m_sidebar->setIconSize(QSize(16, 16));
     mainLayout->addWidget(m_sidebar);
 
     // Right side: header + pages + buttons
@@ -443,8 +444,9 @@ void OptionsDialog::setupSidebar()
 
     for (const auto& [label, icon, resIcon] : pages) {
         QIcon qicon;
-        if (useOriginal)
+        if (useOriginal) {
             qicon = QIcon(QStringLiteral(":/icons/") + QLatin1String(resIcon));
+        }
         else if (icon == QStyle::SP_CustomBase)
             qicon = makePadlockIcon();
         else
@@ -669,6 +671,28 @@ QWidget* OptionsDialog::createGeneralPage()
     auto* coreNote = new QLabel(tr("Changes require a restart to take effect."), coreGroup);
     coreNote->setStyleSheet(QStringLiteral("color: gray; font-style: italic;"));
     coreLayout->addRow(coreNote);
+
+    m_shutdownCoreBtn = new QPushButton(tr("Shutdown eMule Core"), coreGroup);
+    auto* shutdownBtnLayout = new QHBoxLayout;
+    shutdownBtnLayout->addWidget(m_shutdownCoreBtn);
+    shutdownBtnLayout->addStretch();
+    coreLayout->addRow(shutdownBtnLayout);
+
+    connect(m_shutdownCoreBtn, &QPushButton::clicked, this, [this] {
+        auto result = QMessageBox::warning(
+            this,
+            tr("Shutdown eMule Core"),
+            tr("This will shut down both the eMule Core and the GUI.\n\n"
+               "Are you sure you want to continue?"),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (result != QMessageBox::Yes)
+            return;
+        if (m_ipc) {
+            m_ipc->sendShutdown();
+            QApplication::quit();
+        }
+    });
 
     layout->addWidget(coreGroup);
 

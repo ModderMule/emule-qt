@@ -386,6 +386,15 @@ int main(int argc, char* argv[])
                     info.value(QStringLiteral("firewalled")).toBool());
             });
 
+            // Sync GUI thePrefs with daemon's live values so OptionsDialog
+            // always has correct data even if opened before the async
+            // GetPreferences response inside the dialog arrives.
+            eMule::Ipc::IpcMessage reqPrefs(eMule::Ipc::IpcMsgType::GetPreferences);
+            ipcClient.sendRequest(std::move(reqPrefs),
+                                  [](const eMule::Ipc::IpcMessage& resp) {
+                eMule::thePrefs.updateFromCbor(resp.fieldMap(1));
+            });
+
             // Auto version check after connection is established
             QTimer::singleShot(2000, &mainWindow, [&mainWindow]() {
                 auto* vc = mainWindow.findChild<eMule::VersionChecker*>();

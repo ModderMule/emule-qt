@@ -185,12 +185,15 @@ void MainWindow::onConnectToggle()
             m_ipc->sendRequest(std::move(req));
         }
     } else {
-        // Connect both eD2K and Kad
-        Ipc::IpcMessage reqEd2k(Ipc::IpcMsgType::ConnectToServer);
-        m_ipc->sendRequest(std::move(reqEd2k));
-
-        Ipc::IpcMessage reqKad(Ipc::IpcMsgType::BootstrapKad);
-        m_ipc->sendRequest(std::move(reqKad));
+        // Connect based on enabled networks
+        if (thePrefs.networkED2K()) {
+            Ipc::IpcMessage reqEd2k(Ipc::IpcMsgType::ConnectToServer);
+            m_ipc->sendRequest(std::move(reqEd2k));
+        }
+        if (thePrefs.kadEnabled()) {
+            Ipc::IpcMessage reqKad(Ipc::IpcMsgType::BootstrapKad);
+            m_ipc->sendRequest(std::move(reqKad));
+        }
     }
 }
 

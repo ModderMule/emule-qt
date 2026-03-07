@@ -477,15 +477,13 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
         // Score the part
         int score = 0;
 
-        // Rarity bonus
+        // Rarity bonus — continuous inverse-frequency score
         if (p < m_srcPartFrequency.size()) {
             uint16 freq = m_srcPartFrequency[p];
-            if (freq <= 3)
-                score += 50;    // very rare
-            else if (freq <= 7)
-                score += 25;    // rare
-            else if (freq <= 15)
-                score += 10;    // somewhat rare
+            if (freq > 0)
+                score += std::max(1, 50 - static_cast<int>(freq) * 2);
+            else
+                score += 50; // freq=0 means unknown availability — treat as rare
         }
 
         // Completion bonus — prefer nearly-complete parts
@@ -501,9 +499,14 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
             score += completion / 5;
         }
 
-        // Preview priority — first and last parts
-        if (p == 0 || p == pc - 1)
+        // Preview priority — first and last parts (only when enabled)
+        if (thePrefs.previewPrio() && (p == 0 || p == pc - 1))
             score += 30;
+
+        // Random tie-breaker (0-4) to avoid sequential ordering among equal-score parts
+        static thread_local std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<int> dist(0, 4);
+        score += dist(rng);
 
         candidates.push_back({p, score});
     }
@@ -664,8 +667,6 @@ void PartFile::resumeFile()
 
 void PartFile::stopFile(bool cancel)
 {
-    Q_UNUSED(cancel);
-
     m_paused = true;
     m_stopped = true;
 
@@ -678,8 +679,29 @@ void PartFile::stopFile(bool cancel)
     m_lastSearchTimeServer = 0;
 
     m_datarate = 0;
-    setStatus(PartFileStatus::Paused);
-    savePartFile();
+
+    if (cancel) {
+        // Close file handle before deleting
+        if (m_partFileHandle.isOpen())
+            m_partFileHandle.close();
+
+        // Delete temp files: .part, .part.met, .part.met.bak
+        const QString metPath = m_tmpPath + QDir::separator() + m_partMetFilename;
+        QString partPath = metPath;
+        if (partPath.endsWith(QStringLiteral(".met")))
+            partPath.chop(4);
+
+        QFile::remove(partPath);                              // NNN.part
+        QFile::remove(metPath);                               // NNN.part.met
+        QFile::remove(metPath + QStringLiteral(".bak"));      // NNN.part.met.bak
+
+        // Prevent destructor from saving to deleted files
+        m_partMetFilename.clear();
+        setStatus(PartFileStatus::Error);
+    } else {
+        setStatus(PartFileStatus::Paused);
+        savePartFile();
+    }
 }
 
 // ===========================================================================

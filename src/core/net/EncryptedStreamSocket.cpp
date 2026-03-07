@@ -155,6 +155,31 @@ void EncryptedStreamSocket::onSocketConnected()
     }
 }
 
+int EncryptedStreamSocket::flushPendingNegotiationData()
+{
+    if (!m_sendBuffer)
+        return 0;
+    if (m_streamCryptState != StreamCryptState::Encrypting || !m_serverCrypt)
+        return 0;
+
+    QByteArray pending = m_sendBuffer->takeBuffer();
+    m_sendBuffer.reset();
+
+    if (m_negotiatingState == NegotiatingState::Server_DelayedSending)
+        m_negotiatingState = NegotiatingState::Complete;
+
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("flushPendingNegotiationData: writing %1 bytes DH response to %2:%3")
+                     .arg(pending.size()).arg(peerAddress().toString()).arg(peerPort()));
+
+    qint64 result = write(pending.constData(), pending.size());
+    if (result < pending.size() && result >= 0) {
+        m_sendBuffer = std::make_unique<SafeMemFile>();
+        m_sendBuffer->write(pending.constData() + result, pending.size() - result);
+    }
+    return static_cast<int>(std::max(result, qint64(0)));
+}
+
 int EncryptedStreamSocket::processReceivedData(void* buf, int len)
 {
     m_obfuscatedBytesReceived = len;
@@ -511,11 +536,20 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
 
                 m_negotiatingState = NegotiatingState::Server_MagicValue;
                 m_receiveBytesWanted = 4;
+
+                if (thePrefs.logRawSocketPackets())
+                    logDebug(QStringLiteral("negotiate: Server_DHAnswer — DH keys derived, waiting for magic value from %1:%2")
+                                 .arg(peerAddress().toString()).arg(peerPort()));
                 break;
             }
 
             case NegotiatingState::Server_MagicValue: {
                 uint32 value = m_receiveBuffer->readUInt32();
+                if (thePrefs.logRawSocketPackets())
+                    logDebug(QStringLiteral("negotiate: Server_MagicValue — received 0x%1, expected 0x%2 from %3:%4")
+                                 .arg(value, 8, 16, QLatin1Char('0'))
+                                 .arg(kMagicValueSync, 8, 16, QLatin1Char('0'))
+                                 .arg(peerAddress().toString()).arg(peerPort()));
                 if (value != kMagicValueSync) {
                     logWarning(QStringLiteral("EncryptedStreamSocket: Wrong magic value after DH from server %1").arg(dbgGetIPString()));
                     onError(kErrEncryption);
@@ -549,6 +583,11 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
 
                 m_negotiatingState = NegotiatingState::Server_DelayedSending;
                 const auto& responseBuf = fileResponse.buffer();
+
+                if (thePrefs.logRawSocketPackets())
+                    logDebug(QStringLiteral("negotiate: Server_Padding — queuing %1 bytes DH response (delayed) for %2:%3")
+                                 .arg(responseBuf.size()).arg(peerAddress().toString()).arg(peerPort()));
+
                 sendNegotiatingData(responseBuf.constData(), static_cast<int>(responseBuf.size()), 0, true);
                 m_streamCryptState = StreamCryptState::Encrypting;
                 onEncryptionHandshakeComplete();
