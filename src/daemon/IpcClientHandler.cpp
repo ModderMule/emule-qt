@@ -120,6 +120,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
 
     switch (msg.type()) {
     case IpcMsgType::Handshake:            handleHandshake(msg); break;
+    case IpcMsgType::Ping:
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue{}));
+        break;
     case IpcMsgType::GetDownloads:         handleGetDownloads(msg); break;
     case IpcMsgType::GetDownload:          handleGetDownload(msg); break;
     case IpcMsgType::PauseDownload:        handlePauseDownload(msg); break;
@@ -646,6 +649,16 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
     params.title           = msg.fieldString(11);
     params.album           = msg.fieldString(12);
     params.artist          = msg.fieldString(13);
+
+    // Pre-check: block duplicate Kad keyword searches before creating a session
+    if (params.type == SearchType::Kademlia) {
+        QString activeKw = kad::SearchManager::findActiveKeyword(params.expression);
+        if (!activeKw.isEmpty()) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                QCborValue(tr("A Kad search for \"%1\" is already active.").arg(activeKw))));
+            return;
+        }
+    }
 
     // Create search session in SearchList
     const uint32 searchID = theApp.searchList->newSearch(params.fileType, params);

@@ -22,6 +22,20 @@ IpcClient::IpcClient(QObject* parent)
 {
     m_reconnectTimer.setSingleShot(true);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &IpcClient::attemptReconnect);
+
+    m_handshakeTimer.setSingleShot(true);
+    connect(&m_handshakeTimer, &QTimer::timeout, this, [this]() {
+        logWarning(QStringLiteral("IPC handshake timed out — will retry"));
+        onConnectionLost();
+    });
+
+    connect(&m_keepaliveTimer, &QTimer::timeout, this, &IpcClient::sendKeepalive);
+
+    m_keepaliveTimeoutTimer.setSingleShot(true);
+    connect(&m_keepaliveTimeoutTimer, &QTimer::timeout, this, [this]() {
+        logWarning(QStringLiteral("IPC keepalive timed out — reconnecting"));
+        onConnectionLost();
+    });
 }
 
 IpcClient::~IpcClient()
@@ -195,13 +209,16 @@ void IpcClient::onSocketConnected()
             this, &IpcClient::onConnectionLost);
 
     performHandshake();
+    m_handshakeTimer.start(HandshakeTimeoutMs);
 }
 
 void IpcClient::onMessageReceived(const IpcMessage& msg)
 {
     // Check if this is a handshake response
     if (!m_handshaked && msg.type() == IpcMsgType::HandshakeOk) {
+        m_handshakeTimer.stop();
         m_handshaked = true;
+        m_keepaliveTimer.start(KeepaliveIntervalMs);
         logInfo(QStringLiteral("IPC handshake complete — daemon version: %1")
                     .arg(msg.fieldString(0)));
 
@@ -249,6 +266,9 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
 
 void IpcClient::onConnectionLost()
 {
+    m_handshakeTimer.stop();
+    m_keepaliveTimer.stop();
+    m_keepaliveTimeoutTimer.stop();
     m_handshaked = false;
     m_pendingCallbacks.clear();
     emit disconnected();
@@ -398,6 +418,14 @@ void IpcClient::requestLogSync()
     });
 }
 
+void IpcClient::sendKeepalive()
+{
+    sendRequest(IpcMessage(IpcMsgType::Ping), [this](const IpcMessage&) {
+        m_keepaliveTimeoutTimer.stop();
+    });
+    m_keepaliveTimeoutTimer.start(KeepaliveTimeoutMs);
+}
+
 void IpcClient::scheduleReconnect()
 {
     if (!m_autoReconnect || m_reconnectTimer.isActive())
@@ -412,6 +440,9 @@ void IpcClient::scheduleReconnect()
 
 void IpcClient::resetConnection()
 {
+    m_handshakeTimer.stop();
+    m_keepaliveTimer.stop();
+    m_keepaliveTimeoutTimer.stop();
     m_handshaked = false;
     m_pendingCallbacks.clear();
 

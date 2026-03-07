@@ -39,6 +39,7 @@ public:
     static void processPublishResult(const UInt128& target, uint8 load, bool loadResponse);
     static void updateStats();
     static bool alreadySearchingFor(const UInt128& target);
+    static QString findActiveKeyword(const QString& expression);
 
     static void cancelNodeFWCheckUDPSearch();
     static bool findNodeFWCheckUDP();
