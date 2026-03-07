@@ -28,6 +28,7 @@ LogWidget::LogWidget(QWidget* parent)
     // Tab bar — left-aligned at top of log area (matching SearchPanel pattern)
     m_tabBar = new QTabBar(this);
     m_tabBar->setExpanding(false);
+    m_tabBar->setStyleSheet(QStringLiteral("QTabBar::tab { min-width: 80px; }"));
     layout->addWidget(m_tabBar, 0, Qt::AlignLeft);
 
     m_stack = new QStackedWidget;

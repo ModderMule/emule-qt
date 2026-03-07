@@ -17,6 +17,7 @@ IpcConnection::IpcConnection(QTcpSocket* socket, QObject* parent)
     , m_socket(socket)
 {
     m_socket->setParent(this);
+    m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
 
     connect(m_socket, &QTcpSocket::readyRead, this, &IpcConnection::onReadyRead);
     connect(m_socket, &QTcpSocket::disconnected, this, &IpcConnection::onDisconnected);
@@ -38,6 +39,7 @@ void IpcConnection::sendMessage(const IpcMessage& msg)
     if (!m_encryptionKey.isEmpty())
         cborBytes = aesEncryptPayload(cborBytes, m_encryptionKey);
     m_socket->write(encodeFrame(cborBytes));
+    m_socket->flush();
 }
 
 bool IpcConnection::isConnected() const

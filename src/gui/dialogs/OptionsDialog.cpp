@@ -4357,6 +4357,8 @@ void OptionsDialog::saveSettings()
         req.append(m_logUlDlEventsCheck->isChecked());
         req.append(QStringLiteral("logRawSocketPackets"));
         req.append(m_logRawSocketPacketsCheck->isChecked());
+        req.append(QStringLiteral("enableIpcLog"));
+        req.append(m_enableIpcLogCheck->isChecked());
         // USS
         req.append(QStringLiteral("dynUpEnabled"));
         req.append(m_dynUpEnabledCheck->isChecked());

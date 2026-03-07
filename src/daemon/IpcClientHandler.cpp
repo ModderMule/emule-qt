@@ -2638,6 +2638,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setLogUlDlEvents(val.toBool());
     else if (key == QStringLiteral("logRawSocketPackets"))
         thePrefs.setLogRawSocketPackets(val.toBool());
+    else if (key == QStringLiteral("enableIpcLog"))
+        thePrefs.setEnableIpcLog(val.toBool());
     else if (key == QStringLiteral("queueSize"))
         thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
     // USS

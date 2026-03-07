@@ -369,7 +369,9 @@ int main(int argc, char* argv[])
             // Reload preferences from disk so every reconnect starts from a clean
             // YAML baseline — matching the first-connect flow where thePrefs.load()
             // runs before the async GetPreferences/updateFromCbor overlay.
+            const bool ipcLog = eMule::thePrefs.enableIpcLog();
             eMule::thePrefs.load(prefsPath);
+            eMule::thePrefs.setEnableIpcLog(ipcLog);
 
             // Request initial eD2K connection state
             eMule::Ipc::IpcMessage reqConn(eMule::Ipc::IpcMsgType::GetConnection);
