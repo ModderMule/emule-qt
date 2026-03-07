@@ -50,6 +50,14 @@ elseif(MSVC)
 endif()
 
 # ---------------------------------------------------------------------------
+# Debug info for Release builds (MSVC) — enables useful stack traces
+# ---------------------------------------------------------------------------
+if(MSVC)
+    add_compile_options("$<$<CONFIG:Release>:/Zi>")
+    add_link_options("$<$<CONFIG:Release>:/DEBUG>" "$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
+endif()
+
+# ---------------------------------------------------------------------------
 # Platform definitions
 # ---------------------------------------------------------------------------
 add_library(emule_platform INTERFACE)

@@ -66,8 +66,6 @@ void UPnPManager::startDiscovery(uint16 tcpPort, uint16 udpPort, uint16 webPort)
 
     m_discoveryThread = QThread::create([this] { runDiscovery(); });
     m_discoveryThread->setObjectName(QStringLiteral("UPnP-Discovery"));
-    connect(m_discoveryThread, &QThread::finished,
-            m_discoveryThread, &QObject::deleteLater);
     m_discoveryThread->start();
 }
 
@@ -140,14 +138,17 @@ void UPnPManager::stopDiscovery()
 {
     m_abortDiscovery = true;
 
-    if (m_discoveryThread && m_discoveryThread->isRunning()) {
-        if (!m_discoveryThread->wait(7000)) {
-            logWarning(QStringLiteral("UPnP: discovery thread did not finish in 7s, terminating"));
-            m_discoveryThread->terminate();
-            m_discoveryThread->wait(2000);
+    if (m_discoveryThread) {
+        if (m_discoveryThread->isRunning()) {
+            if (!m_discoveryThread->wait(7000)) {
+                logWarning(QStringLiteral("UPnP: discovery thread did not finish in 7s, terminating"));
+                m_discoveryThread->terminate();
+                m_discoveryThread->wait(2000);
+            }
         }
+        delete m_discoveryThread;
+        m_discoveryThread = nullptr;
     }
-    m_discoveryThread = nullptr;
 }
 
 void UPnPManager::enableWebServerPort(uint16 port)

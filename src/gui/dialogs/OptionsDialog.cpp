@@ -3324,7 +3324,261 @@ void OptionsDialog::loadSettings()
     m_showSmileysCheck->setChecked(thePrefs.showSmileys());
     m_indicateRatingsCheck->setChecked(thePrefs.indicateRatings());
 
-    // Daemon settings — request via IPC
+    // Always populate daemon settings synchronously from thePrefs first
+    // (provides immediate correct display with no visible flash).
+    // If IPC is connected, the async callback overrides with live daemon values.
+    m_loading = true;
+    {
+        // Synchronous fill from local thePrefs
+        m_nickEdit->setText(thePrefs.nick());
+
+        // Connection page
+        m_capacityDownloadSpin->setValue(static_cast<int>(thePrefs.maxGraphDownloadRate()));
+        m_capacityUploadSpin->setValue(static_cast<int>(thePrefs.maxGraphUploadRate()));
+
+        auto maxDown = static_cast<int>(thePrefs.maxDownload());
+        auto maxUp   = static_cast<int>(thePrefs.maxUpload());
+        m_downloadLimitCheck->setChecked(maxDown > 0);
+        m_downloadLimitSlider->setEnabled(maxDown > 0);
+        m_downloadLimitLabel->setEnabled(maxDown > 0);
+        if (maxDown > 0)
+            m_downloadLimitSlider->setValue(maxDown);
+        m_uploadLimitCheck->setChecked(maxUp > 0);
+        m_uploadLimitSlider->setEnabled(maxUp > 0);
+        m_uploadLimitLabel->setEnabled(maxUp > 0);
+        if (maxUp > 0)
+            m_uploadLimitSlider->setValue(maxUp);
+
+        m_tcpPortSpin->setValue(thePrefs.port());
+        auto udpPort = thePrefs.udpPort();
+        if (udpPort == 0) {
+            m_udpDisableCheck->setChecked(true);
+            m_udpPortSpin->setValue(5672);
+            m_udpPortSpin->setEnabled(false);
+        } else {
+            m_udpDisableCheck->setChecked(false);
+            m_udpPortSpin->setValue(udpPort);
+        }
+
+        m_upnpCheck->setChecked(thePrefs.enableUPnP());
+        m_maxSourcesSpin->setValue(thePrefs.maxSourcesPerFile());
+        m_maxConnectionsSpin->setValue(thePrefs.maxConnections());
+        m_autoConnectCheck->setChecked(thePrefs.autoConnect());
+        m_reconnectCheck->setChecked(thePrefs.reconnect());
+        m_overheadCheck->setChecked(thePrefs.showOverhead());
+        m_kadEnabledCheck->setChecked(thePrefs.kadEnabled());
+        m_ed2kEnabledCheck->setChecked(thePrefs.networkED2K());
+
+        // Server page
+        m_safeServerConnectCheck->setChecked(thePrefs.safeServerConnect());
+        m_autoConnectStaticOnlyCheck->setChecked(thePrefs.autoConnectStaticOnly());
+        m_useServerPrioritiesCheck->setChecked(thePrefs.useServerPriorities());
+        m_addServersFromServerCheck->setChecked(thePrefs.addServersFromServer());
+        m_addServersFromClientsCheck->setChecked(thePrefs.addServersFromClients());
+        m_deadServerRetriesSpin->setValue(static_cast<int>(thePrefs.deadServerRetries()));
+        m_autoUpdateServerListCheck->setChecked(thePrefs.autoUpdateServerList());
+        m_serverListURLValue = thePrefs.serverListURL();
+        m_smartLowIdCheck->setChecked(thePrefs.smartLowIdCheck());
+        m_manualHighPrioCheck->setChecked(thePrefs.manualServerHighPriority());
+
+        // Proxy page
+        int proxyType = thePrefs.proxyType();
+        bool proxyOn = (proxyType != 0);
+        m_proxyEnableCheck->setChecked(proxyOn);
+        m_proxyTypeCombo->setCurrentIndex(proxyType);
+        m_proxyHostEdit->setText(thePrefs.proxyHost());
+        m_proxyPortSpin->setValue(thePrefs.proxyPort());
+        bool authOn = thePrefs.proxyEnablePassword();
+        m_proxyAuthCheck->setChecked(authOn);
+        m_proxyUserEdit->setText(thePrefs.proxyUser());
+        m_proxyPasswordEdit->setText(thePrefs.proxyPassword());
+
+        m_proxyTypeCombo->setEnabled(proxyOn);
+        m_proxyHostEdit->setEnabled(proxyOn);
+        m_proxyPortSpin->setEnabled(proxyOn);
+        m_proxyAuthCheck->setEnabled(proxyOn);
+        m_proxyUserEdit->setEnabled(proxyOn && authOn);
+        m_proxyPasswordEdit->setEnabled(proxyOn && authOn);
+
+        // Directories page
+        m_incomingDirEdit->setText(thePrefs.incomingDir());
+        auto tempDirs = thePrefs.tempDirs();
+        if (!tempDirs.isEmpty())
+            m_tempDirEdit->setText(tempDirs.first());
+        static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(thePrefs.sharedDirs());
+
+        // Files page (daemon-side)
+        m_addFilesPausedCheck->setChecked(thePrefs.addNewFilesPaused());
+        m_autoSharedFilesPrioCheck->setChecked(thePrefs.autoSharedFilesPriority());
+        m_autoDownloadPrioCheck->setChecked(thePrefs.autoDownloadPriority());
+        m_transferFullChunksCheck->setChecked(thePrefs.transferFullChunks());
+        m_previewPrioCheck->setChecked(thePrefs.previewPrio());
+        bool startNext = thePrefs.startNextPausedFile();
+        m_startNextPausedCheck->setChecked(startNext);
+        m_preferSameCatCheck->setEnabled(startNext);
+        m_onlySameCatCheck->setEnabled(startNext);
+        m_preferSameCatCheck->setChecked(thePrefs.startNextPausedFileSameCat());
+        m_onlySameCatCheck->setChecked(thePrefs.startNextPausedFileOnlySameCat());
+        m_rememberDownloadedCheck->setChecked(thePrefs.rememberDownloadedFiles());
+        m_rememberCancelledCheck->setChecked(thePrefs.rememberCancelledFiles());
+
+        // Notifications page (daemon-side)
+        m_notifyLogCheck->setChecked(thePrefs.notifyOnLog());
+        m_notifyChatCheck->setChecked(thePrefs.notifyOnChat());
+        m_notifyChatMsgCheck->setChecked(thePrefs.notifyOnChatMsg());
+        m_notifyChatMsgCheck->setEnabled(m_notifyChatCheck->isChecked());
+        m_notifyDownloadAddedCheck->setChecked(thePrefs.notifyOnDownloadAdded());
+        m_notifyDownloadFinishedCheck->setChecked(thePrefs.notifyOnDownloadFinished());
+        m_notifyNewVersionCheck->setChecked(thePrefs.notifyOnNewVersion());
+        m_notifyUrgentCheck->setChecked(thePrefs.notifyOnUrgent());
+        m_emailEnabledCheck->setChecked(thePrefs.notifyEmailEnabled());
+        m_smtpServer = thePrefs.notifyEmailSmtpServer();
+        m_smtpPort = thePrefs.notifyEmailSmtpPort();
+        m_smtpAuth = thePrefs.notifyEmailSmtpAuth();
+        m_smtpTls = thePrefs.notifyEmailSmtpTls();
+        m_smtpUser = thePrefs.notifyEmailSmtpUser();
+        m_smtpPassword = thePrefs.notifyEmailSmtpPassword();
+        m_emailRecipientEdit->setText(thePrefs.notifyEmailRecipient());
+        m_emailSenderEdit->setText(thePrefs.notifyEmailSender());
+        bool emailOn = m_emailEnabledCheck->isChecked();
+        m_smtpServerBtn->setEnabled(emailOn);
+        m_emailRecipientEdit->setEnabled(emailOn);
+        m_emailSenderEdit->setEnabled(emailOn);
+
+        // Messages and Comments page (daemon-side)
+        m_msgFriendsOnlyCheck->setChecked(thePrefs.msgOnlyFriends());
+        bool spamOn = thePrefs.enableSpamFilter();
+        m_advancedSpamFilterCheck->setChecked(spamOn);
+        m_requireCaptchaCheck->setChecked(thePrefs.useChatCaptchas());
+        m_requireCaptchaCheck->setEnabled(spamOn);
+        m_messageFilterEdit->setText(thePrefs.messageFilter());
+        m_commentFilterEdit->setText(thePrefs.commentFilter());
+
+        // Security page (daemon-side)
+        m_filterServersByIPCheck->setChecked(thePrefs.filterServerByIP());
+        m_ipFilterLevelSpin->setValue(static_cast<int>(thePrefs.ipFilterLevel()));
+        m_viewSharedGroup->button(thePrefs.viewSharedFilesAccess())->setChecked(true);
+        bool cryptSupported = thePrefs.cryptLayerSupported();
+        bool cryptRequested = thePrefs.cryptLayerRequested();
+        bool cryptRequired  = thePrefs.cryptLayerRequired();
+        m_cryptLayerDisableCheck->setChecked(!cryptSupported);
+        m_cryptLayerRequestedCheck->setChecked(cryptRequested);
+        m_cryptLayerRequestedCheck->setEnabled(cryptSupported);
+        m_cryptLayerRequiredCheck->setChecked(cryptRequired);
+        m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
+        m_useSecureIdentCheck->setChecked(thePrefs.useSecureIdent());
+        m_enableSearchResultFilterCheck->setChecked(thePrefs.enableSearchResultFilter());
+        m_warnUntrustedFilesCheck->setChecked(thePrefs.warnUntrustedFiles());
+        m_ipFilterUpdateUrlEdit->setText(thePrefs.ipFilterUpdateUrl());
+
+        // Statistics page
+        m_statsGraphUpdateSlider->setValue(static_cast<int>(thePrefs.graphsUpdateSec()));
+        m_statsAvgTimeSlider->setValue(static_cast<int>(thePrefs.statsAverageMinutes()));
+        m_statsFillGraphsCheck->setChecked(thePrefs.fillGraphs());
+        m_statsYScaleSpin->setValue(static_cast<int>(thePrefs.statsConnectionsMax()));
+        {
+            auto ratio = thePrefs.statsConnectionsRatio();
+            static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
+            int ratioIdx = 2;
+            for (int ri = 0; ri < 7; ++ri) {
+                if (static_cast<uint32_t>(ratioValues[ri]) == ratio) { ratioIdx = ri; break; }
+            }
+            m_statsRatioCombo->setCurrentIndex(ratioIdx);
+        }
+        m_statsTreeUpdateSlider->setValue(static_cast<int>(thePrefs.statsUpdateSec()));
+
+        // Extended page
+        m_maxConPerFiveSpin->setValue(thePrefs.maxConsPerFive());
+        m_maxHalfOpenSpin->setValue(thePrefs.maxHalfConnections());
+        m_serverKeepAliveSpin->setValue(static_cast<int>(thePrefs.serverKeepAliveTimeout()) / 60000);
+        m_useCreditSystemCheck->setChecked(thePrefs.useCreditSystem());
+        m_filterLANIPsCheck->setChecked(thePrefs.filterLANIPs());
+        m_showExtControlsCheck->setChecked(thePrefs.showExtControls());
+        m_a4afSaveCpuCheck->setChecked(thePrefs.a4afSaveCpu());
+        m_disableArchPreviewCheck->setChecked(!thePrefs.autoArchivePreviewStart());
+        m_ed2kHostnameEdit->setText(thePrefs.ed2kHostname());
+        bool diskCheck = thePrefs.checkDiskspace();
+        m_checkDiskspaceCheck->setChecked(diskCheck);
+        m_minFreeDiskSpaceSpin->setValue(static_cast<int>(thePrefs.minFreeDiskSpace() / (1024 * 1024)));
+        m_minFreeDiskSpaceSpin->setEnabled(diskCheck);
+        if (auto* btn = m_commitFilesGroup->button(thePrefs.commitFiles()))
+            btn->setChecked(true);
+        if (auto* btn = m_extractMetaDataGroup->button(thePrefs.extractMetaData()))
+            btn->setChecked(true);
+        m_logToDiskCheck->setChecked(thePrefs.logToDisk());
+        bool verboseOn = thePrefs.verbose();
+        m_verboseCheck->setChecked(verboseOn);
+        m_logLevelSpin->setValue(thePrefs.logLevel());
+        m_logLevelSpin->setEnabled(verboseOn);
+        m_verboseLogToDiskCheck->setChecked(thePrefs.verboseLogToDisk());
+        m_verboseLogToDiskCheck->setEnabled(verboseOn);
+        m_logSourceExchangeCheck->setChecked(thePrefs.logSourceExchange());
+        m_logSourceExchangeCheck->setEnabled(verboseOn);
+        m_logBannedClientsCheck->setChecked(thePrefs.logBannedClients());
+        m_logBannedClientsCheck->setEnabled(verboseOn);
+        m_logRatingDescCheck->setChecked(thePrefs.logRatingDescReceived());
+        m_logRatingDescCheck->setEnabled(verboseOn);
+        m_logSecureIdentCheck->setChecked(thePrefs.logSecureIdent());
+        m_logSecureIdentCheck->setEnabled(verboseOn);
+        m_logFilteredIPsCheck->setChecked(thePrefs.logFilteredIPs());
+        m_logFilteredIPsCheck->setEnabled(verboseOn);
+        m_logFileSavingCheck->setChecked(thePrefs.logFileSaving());
+        m_logFileSavingCheck->setEnabled(verboseOn);
+        m_logA4AFCheck->setChecked(thePrefs.logA4AF());
+        m_logA4AFCheck->setEnabled(verboseOn);
+        m_logUlDlEventsCheck->setChecked(thePrefs.logUlDlEvents());
+        m_logUlDlEventsCheck->setEnabled(verboseOn);
+        m_logRawSocketPacketsCheck->setChecked(thePrefs.logRawSocketPackets());
+        m_logRawSocketPacketsCheck->setEnabled(verboseOn);
+        // USS
+        bool ussOn = thePrefs.dynUpEnabled();
+        m_dynUpEnabledCheck->setChecked(ussOn);
+        m_dynUpPingToleranceSpin->setValue(thePrefs.dynUpPingTolerance());
+        m_dynUpPingToleranceSpin->setEnabled(ussOn);
+        m_dynUpPingToleranceMsSpin->setValue(thePrefs.dynUpPingToleranceMs());
+        m_dynUpPingToleranceMsSpin->setEnabled(ussOn);
+        bool useMs = thePrefs.dynUpUseMillisecondPingTolerance();
+        m_dynUpRadioMs->setChecked(useMs);
+        m_dynUpRadioPercent->setChecked(!useMs);
+        m_dynUpRadioPercent->setEnabled(ussOn);
+        m_dynUpRadioMs->setEnabled(ussOn);
+        m_dynUpGoingUpSpin->setValue(thePrefs.dynUpGoingUpDivider());
+        m_dynUpGoingUpSpin->setEnabled(ussOn);
+        m_dynUpGoingDownSpin->setValue(thePrefs.dynUpGoingDownDivider());
+        m_dynUpGoingDownSpin->setEnabled(ussOn);
+        m_dynUpNumPingsSpin->setValue(thePrefs.dynUpNumberOfPings());
+        m_dynUpNumPingsSpin->setEnabled(ussOn);
+        m_closeUPnPCheck->setChecked(thePrefs.closeUPnPOnExit());
+        m_skipWANIPCheck->setChecked(thePrefs.skipWANIPSetup());
+        m_skipWANPPPCheck->setChecked(thePrefs.skipWANPPPSetup());
+        m_fileBufferSlider->setValue(static_cast<int>(thePrefs.fileBufferSize()) / 16384);
+        m_queueSizeSlider->setValue(static_cast<int>(thePrefs.queueSize()) / 100);
+
+#ifdef Q_OS_WIN
+        m_autotakeEd2kCheck->setChecked(thePrefs.autotakeEd2kLinks());
+        m_winFirewallCheck->setChecked(thePrefs.openPortsOnWinFirewall());
+        m_sparsePartFilesCheck->setChecked(thePrefs.sparsePartFiles());
+        m_allocFullFileCheck->setChecked(thePrefs.allocFullFile());
+        m_resolveShellLinksCheck->setChecked(thePrefs.resolveShellLinks());
+        if (auto* btn = m_multiUserSharingGroup->button(thePrefs.multiUserSharing()))
+            btn->setChecked(true);
+#endif
+    }
+    m_loading = false;
+    m_daemonSettingsLoaded = true;
+    m_applyBtn->setEnabled(false);
+
+    // Warn if thePrefs has clearly invalid port values (IPC never connected yet)
+    if (thePrefs.port() <= 1 || thePrefs.udpPort() <= 1) {
+        qWarning() << "Options: preferences not loaded — port values invalid"
+                   << thePrefs.port() << "/" << thePrefs.udpPort();
+        QMessageBox::warning(this,
+            tr("Settings"),
+            tr("Failed to load settings: connection to the daemon has not been established yet.\n"
+               "Please wait a moment and reopen Options."));
+    }
+
+    // Additionally update from IPC if connected (live values override thePrefs)
     if (m_ipc && m_ipc->isConnected()) {
         Ipc::IpcMessage req(Ipc::IpcMsgType::GetPreferences);
         m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
@@ -3631,242 +3885,6 @@ void OptionsDialog::loadSettings()
             m_daemonSettingsLoaded = true;
             m_applyBtn->setEnabled(false);
         });
-    } else {
-        // Fallback: use local preferences copy
-        m_nickEdit->setText(thePrefs.nick());
-
-        // Connection page fallback
-        m_capacityDownloadSpin->setValue(static_cast<int>(thePrefs.maxGraphDownloadRate()));
-        m_capacityUploadSpin->setValue(static_cast<int>(thePrefs.maxGraphUploadRate()));
-
-        auto maxDown = static_cast<int>(thePrefs.maxDownload());
-        auto maxUp   = static_cast<int>(thePrefs.maxUpload());
-        m_downloadLimitCheck->setChecked(maxDown > 0);
-        m_downloadLimitSlider->setEnabled(maxDown > 0);
-        m_downloadLimitLabel->setEnabled(maxDown > 0);
-        if (maxDown > 0)
-            m_downloadLimitSlider->setValue(maxDown);
-        m_uploadLimitCheck->setChecked(maxUp > 0);
-        m_uploadLimitSlider->setEnabled(maxUp > 0);
-        m_uploadLimitLabel->setEnabled(maxUp > 0);
-        if (maxUp > 0)
-            m_uploadLimitSlider->setValue(maxUp);
-
-        m_tcpPortSpin->setValue(thePrefs.port());
-        auto udpPort = thePrefs.udpPort();
-        if (udpPort == 0) {
-            m_udpDisableCheck->setChecked(true);
-            m_udpPortSpin->setValue(5672);
-            m_udpPortSpin->setEnabled(false);
-        } else {
-            m_udpDisableCheck->setChecked(false);
-            m_udpPortSpin->setValue(udpPort);
-        }
-
-        m_upnpCheck->setChecked(thePrefs.enableUPnP());
-        m_maxSourcesSpin->setValue(thePrefs.maxSourcesPerFile());
-        m_maxConnectionsSpin->setValue(thePrefs.maxConnections());
-        m_autoConnectCheck->setChecked(thePrefs.autoConnect());
-        m_reconnectCheck->setChecked(thePrefs.reconnect());
-        m_overheadCheck->setChecked(thePrefs.showOverhead());
-        m_kadEnabledCheck->setChecked(thePrefs.kadEnabled());
-        m_ed2kEnabledCheck->setChecked(thePrefs.networkED2K());
-
-        // Server page fallback
-        m_safeServerConnectCheck->setChecked(thePrefs.safeServerConnect());
-        m_autoConnectStaticOnlyCheck->setChecked(thePrefs.autoConnectStaticOnly());
-        m_useServerPrioritiesCheck->setChecked(thePrefs.useServerPriorities());
-        m_addServersFromServerCheck->setChecked(thePrefs.addServersFromServer());
-        m_addServersFromClientsCheck->setChecked(thePrefs.addServersFromClients());
-        m_deadServerRetriesSpin->setValue(static_cast<int>(thePrefs.deadServerRetries()));
-        m_autoUpdateServerListCheck->setChecked(thePrefs.autoUpdateServerList());
-        m_serverListURLValue = thePrefs.serverListURL();
-        m_smartLowIdCheck->setChecked(thePrefs.smartLowIdCheck());
-        m_manualHighPrioCheck->setChecked(thePrefs.manualServerHighPriority());
-
-        // Proxy page fallback
-        int proxyType = thePrefs.proxyType();
-        bool proxyOn = (proxyType != 0);
-        m_proxyEnableCheck->setChecked(proxyOn);
-        m_proxyTypeCombo->setCurrentIndex(proxyType);
-        m_proxyHostEdit->setText(thePrefs.proxyHost());
-        m_proxyPortSpin->setValue(thePrefs.proxyPort());
-        bool authOn = thePrefs.proxyEnablePassword();
-        m_proxyAuthCheck->setChecked(authOn);
-        m_proxyUserEdit->setText(thePrefs.proxyUser());
-        m_proxyPasswordEdit->setText(thePrefs.proxyPassword());
-
-        m_proxyTypeCombo->setEnabled(proxyOn);
-        m_proxyHostEdit->setEnabled(proxyOn);
-        m_proxyPortSpin->setEnabled(proxyOn);
-        m_proxyAuthCheck->setEnabled(proxyOn);
-        m_proxyUserEdit->setEnabled(proxyOn && authOn);
-        m_proxyPasswordEdit->setEnabled(proxyOn && authOn);
-
-        // Directories page fallback
-        m_incomingDirEdit->setText(thePrefs.incomingDir());
-        auto tempDirs = thePrefs.tempDirs();
-        if (!tempDirs.isEmpty())
-            m_tempDirEdit->setText(tempDirs.first());
-        static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(thePrefs.sharedDirs());
-
-        // Files page (daemon-side) fallback
-        m_addFilesPausedCheck->setChecked(thePrefs.addNewFilesPaused());
-        m_autoSharedFilesPrioCheck->setChecked(thePrefs.autoSharedFilesPriority());
-        m_autoDownloadPrioCheck->setChecked(thePrefs.autoDownloadPriority());
-        m_transferFullChunksCheck->setChecked(thePrefs.transferFullChunks());
-        m_previewPrioCheck->setChecked(thePrefs.previewPrio());
-        bool startNext = thePrefs.startNextPausedFile();
-        m_startNextPausedCheck->setChecked(startNext);
-        m_preferSameCatCheck->setEnabled(startNext);
-        m_onlySameCatCheck->setEnabled(startNext);
-        m_preferSameCatCheck->setChecked(thePrefs.startNextPausedFileSameCat());
-        m_onlySameCatCheck->setChecked(thePrefs.startNextPausedFileOnlySameCat());
-        m_rememberDownloadedCheck->setChecked(thePrefs.rememberDownloadedFiles());
-        m_rememberCancelledCheck->setChecked(thePrefs.rememberCancelledFiles());
-
-        // Notifications page (daemon-side) fallback
-        m_notifyLogCheck->setChecked(thePrefs.notifyOnLog());
-        m_notifyChatCheck->setChecked(thePrefs.notifyOnChat());
-        m_notifyChatMsgCheck->setChecked(thePrefs.notifyOnChatMsg());
-        m_notifyChatMsgCheck->setEnabled(m_notifyChatCheck->isChecked());
-        m_notifyDownloadAddedCheck->setChecked(thePrefs.notifyOnDownloadAdded());
-        m_notifyDownloadFinishedCheck->setChecked(thePrefs.notifyOnDownloadFinished());
-        m_notifyNewVersionCheck->setChecked(thePrefs.notifyOnNewVersion());
-        m_notifyUrgentCheck->setChecked(thePrefs.notifyOnUrgent());
-        m_emailEnabledCheck->setChecked(thePrefs.notifyEmailEnabled());
-        m_smtpServer = thePrefs.notifyEmailSmtpServer();
-        m_smtpPort = thePrefs.notifyEmailSmtpPort();
-        m_smtpAuth = thePrefs.notifyEmailSmtpAuth();
-        m_smtpTls = thePrefs.notifyEmailSmtpTls();
-        m_smtpUser = thePrefs.notifyEmailSmtpUser();
-        m_smtpPassword = thePrefs.notifyEmailSmtpPassword();
-        m_emailRecipientEdit->setText(thePrefs.notifyEmailRecipient());
-        m_emailSenderEdit->setText(thePrefs.notifyEmailSender());
-        bool emailOn = m_emailEnabledCheck->isChecked();
-        m_smtpServerBtn->setEnabled(emailOn);
-        m_emailRecipientEdit->setEnabled(emailOn);
-        m_emailSenderEdit->setEnabled(emailOn);
-
-        // Messages and Comments page (daemon-side) fallback
-        m_msgFriendsOnlyCheck->setChecked(thePrefs.msgOnlyFriends());
-        bool spamOn = thePrefs.enableSpamFilter();
-        m_advancedSpamFilterCheck->setChecked(spamOn);
-        m_requireCaptchaCheck->setChecked(thePrefs.useChatCaptchas());
-        m_requireCaptchaCheck->setEnabled(spamOn);
-        m_messageFilterEdit->setText(thePrefs.messageFilter());
-        m_commentFilterEdit->setText(thePrefs.commentFilter());
-
-        // Security page (daemon-side) fallback
-        m_filterServersByIPCheck->setChecked(thePrefs.filterServerByIP());
-        m_ipFilterLevelSpin->setValue(static_cast<int>(thePrefs.ipFilterLevel()));
-        m_viewSharedGroup->button(thePrefs.viewSharedFilesAccess())->setChecked(true);
-        bool cryptSupported = thePrefs.cryptLayerSupported();
-        bool cryptRequested = thePrefs.cryptLayerRequested();
-        bool cryptRequired  = thePrefs.cryptLayerRequired();
-        m_cryptLayerDisableCheck->setChecked(!cryptSupported);
-        m_cryptLayerRequestedCheck->setChecked(cryptRequested);
-        m_cryptLayerRequestedCheck->setEnabled(cryptSupported);
-        m_cryptLayerRequiredCheck->setChecked(cryptRequired);
-        m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
-        m_useSecureIdentCheck->setChecked(thePrefs.useSecureIdent());
-        m_enableSearchResultFilterCheck->setChecked(thePrefs.enableSearchResultFilter());
-        m_warnUntrustedFilesCheck->setChecked(thePrefs.warnUntrustedFiles());
-        m_ipFilterUpdateUrlEdit->setText(thePrefs.ipFilterUpdateUrl());
-
-        // Statistics page fallback
-        m_statsGraphUpdateSlider->setValue(static_cast<int>(thePrefs.graphsUpdateSec()));
-        m_statsAvgTimeSlider->setValue(static_cast<int>(thePrefs.statsAverageMinutes()));
-        m_statsFillGraphsCheck->setChecked(thePrefs.fillGraphs());
-        m_statsYScaleSpin->setValue(static_cast<int>(thePrefs.statsConnectionsMax()));
-        {
-            auto ratio = thePrefs.statsConnectionsRatio();
-            static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
-            int ratioIdx = 2;
-            for (int ri = 0; ri < 7; ++ri) {
-                if (static_cast<uint32_t>(ratioValues[ri]) == ratio) { ratioIdx = ri; break; }
-            }
-            m_statsRatioCombo->setCurrentIndex(ratioIdx);
-        }
-        m_statsTreeUpdateSlider->setValue(static_cast<int>(thePrefs.statsUpdateSec()));
-
-        // Extended page fallback
-        m_maxConPerFiveSpin->setValue(thePrefs.maxConsPerFive());
-        m_maxHalfOpenSpin->setValue(thePrefs.maxHalfConnections());
-        m_serverKeepAliveSpin->setValue(static_cast<int>(thePrefs.serverKeepAliveTimeout()) / 60000);
-        m_useCreditSystemCheck->setChecked(thePrefs.useCreditSystem());
-        m_filterLANIPsCheck->setChecked(thePrefs.filterLANIPs());
-        m_showExtControlsCheck->setChecked(thePrefs.showExtControls());
-        m_a4afSaveCpuCheck->setChecked(thePrefs.a4afSaveCpu());
-        m_disableArchPreviewCheck->setChecked(!thePrefs.autoArchivePreviewStart());
-        m_ed2kHostnameEdit->setText(thePrefs.ed2kHostname());
-        bool diskCheck = thePrefs.checkDiskspace();
-        m_checkDiskspaceCheck->setChecked(diskCheck);
-        m_minFreeDiskSpaceSpin->setValue(static_cast<int>(thePrefs.minFreeDiskSpace() / (1024 * 1024)));
-        m_minFreeDiskSpaceSpin->setEnabled(diskCheck);
-        if (auto* btn = m_commitFilesGroup->button(thePrefs.commitFiles()))
-            btn->setChecked(true);
-        if (auto* btn = m_extractMetaDataGroup->button(thePrefs.extractMetaData()))
-            btn->setChecked(true);
-        m_logToDiskCheck->setChecked(thePrefs.logToDisk());
-        bool verboseOn = thePrefs.verbose();
-        m_verboseCheck->setChecked(verboseOn);
-        m_logLevelSpin->setValue(thePrefs.logLevel());
-        m_logLevelSpin->setEnabled(verboseOn);
-        m_verboseLogToDiskCheck->setChecked(thePrefs.verboseLogToDisk());
-        m_verboseLogToDiskCheck->setEnabled(verboseOn);
-        m_logSourceExchangeCheck->setChecked(thePrefs.logSourceExchange());
-        m_logSourceExchangeCheck->setEnabled(verboseOn);
-        m_logBannedClientsCheck->setChecked(thePrefs.logBannedClients());
-        m_logBannedClientsCheck->setEnabled(verboseOn);
-        m_logRatingDescCheck->setChecked(thePrefs.logRatingDescReceived());
-        m_logRatingDescCheck->setEnabled(verboseOn);
-        m_logSecureIdentCheck->setChecked(thePrefs.logSecureIdent());
-        m_logSecureIdentCheck->setEnabled(verboseOn);
-        m_logFilteredIPsCheck->setChecked(thePrefs.logFilteredIPs());
-        m_logFilteredIPsCheck->setEnabled(verboseOn);
-        m_logFileSavingCheck->setChecked(thePrefs.logFileSaving());
-        m_logFileSavingCheck->setEnabled(verboseOn);
-        m_logA4AFCheck->setChecked(thePrefs.logA4AF());
-        m_logA4AFCheck->setEnabled(verboseOn);
-        m_logUlDlEventsCheck->setChecked(thePrefs.logUlDlEvents());
-        m_logUlDlEventsCheck->setEnabled(verboseOn);
-        m_logRawSocketPacketsCheck->setChecked(thePrefs.logRawSocketPackets());
-        m_logRawSocketPacketsCheck->setEnabled(verboseOn);
-        // USS
-        bool ussOn = thePrefs.dynUpEnabled();
-        m_dynUpEnabledCheck->setChecked(ussOn);
-        m_dynUpPingToleranceSpin->setValue(thePrefs.dynUpPingTolerance());
-        m_dynUpPingToleranceSpin->setEnabled(ussOn);
-        m_dynUpPingToleranceMsSpin->setValue(thePrefs.dynUpPingToleranceMs());
-        m_dynUpPingToleranceMsSpin->setEnabled(ussOn);
-        bool useMs = thePrefs.dynUpUseMillisecondPingTolerance();
-        m_dynUpRadioMs->setChecked(useMs);
-        m_dynUpRadioPercent->setChecked(!useMs);
-        m_dynUpRadioPercent->setEnabled(ussOn);
-        m_dynUpRadioMs->setEnabled(ussOn);
-        m_dynUpGoingUpSpin->setValue(thePrefs.dynUpGoingUpDivider());
-        m_dynUpGoingUpSpin->setEnabled(ussOn);
-        m_dynUpGoingDownSpin->setValue(thePrefs.dynUpGoingDownDivider());
-        m_dynUpGoingDownSpin->setEnabled(ussOn);
-        m_dynUpNumPingsSpin->setValue(thePrefs.dynUpNumberOfPings());
-        m_dynUpNumPingsSpin->setEnabled(ussOn);
-        m_closeUPnPCheck->setChecked(thePrefs.closeUPnPOnExit());
-        m_skipWANIPCheck->setChecked(thePrefs.skipWANIPSetup());
-        m_skipWANPPPCheck->setChecked(thePrefs.skipWANPPPSetup());
-        m_fileBufferSlider->setValue(static_cast<int>(thePrefs.fileBufferSize()) / 16384);
-        m_queueSizeSlider->setValue(static_cast<int>(thePrefs.queueSize()) / 100);
-
-#ifdef Q_OS_WIN
-        m_autotakeEd2kCheck->setChecked(thePrefs.autotakeEd2kLinks());
-        m_winFirewallCheck->setChecked(thePrefs.openPortsOnWinFirewall());
-        m_sparsePartFilesCheck->setChecked(thePrefs.sparsePartFiles());
-        m_allocFullFileCheck->setChecked(thePrefs.allocFullFile());
-        m_resolveShellLinksCheck->setChecked(thePrefs.resolveShellLinks());
-        if (auto* btn = m_multiUserSharingGroup->button(thePrefs.multiUserSharing()))
-            btn->setChecked(true);
-#endif
-
     }
 
     loadSchedulerData();
