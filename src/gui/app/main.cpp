@@ -328,6 +328,8 @@ int main(int argc, char* argv[])
         // Wire daemon log messages to the LogWidget
         // PushLogMessage format: [logId(0), category(1), severity(2), message(3), timestamp(4)]
         auto* logWidget = mainWindow.serverPanel()->logWidget();
+        QObject::connect(&ipcClient, &eMule::IpcClient::ipcLogMessage,
+                         logWidget, &eMule::LogWidget::appendIpcMessage);
         QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
                          logWidget, [logWidget](const eMule::Ipc::IpcMessage& msg) {
             const QString cat = msg.fieldString(1);

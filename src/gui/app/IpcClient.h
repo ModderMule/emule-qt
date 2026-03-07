@@ -101,6 +101,9 @@ signals:
     void chatMessageReceived(const Ipc::IpcMessage& msg);
     void friendListChanged(const Ipc::IpcMessage& msg);
 
+    /// Emitted for every outgoing request and incoming message when enableIpcLog is on.
+    void ipcLogMessage(const QString& text, bool outgoing);
+
 private slots:
     void onSocketConnected();
     void onMessageReceived(const Ipc::IpcMessage& msg);

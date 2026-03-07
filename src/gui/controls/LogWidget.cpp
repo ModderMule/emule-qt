@@ -73,6 +73,18 @@ LogWidget::LogWidget(QWidget* parent)
         m_tabBar->addTab(tr("Kad"));
     m_stack->addWidget(m_kadBrowser);
 
+    // IPC tab (shown only when enableIpcLog is true)
+    m_ipcLogBrowser = new QTextBrowser;
+    m_ipcLogBrowser->setReadOnly(true);
+    m_ipcLogBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
+    m_ipcTabIndex = m_tabBar->count();
+    if (thePrefs.useOriginalIcons())
+        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Convert.ico")), tr("IPC"));
+    else
+        m_tabBar->addTab(tr("IPC"));
+    m_stack->addWidget(m_ipcLogBrowser);
+    setIpcTabVisible(thePrefs.enableIpcLog());
+
     // Initial info message
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.0 ready</font>"));
 
@@ -130,18 +142,38 @@ void LogWidget::trimToLimit(QTextBrowser* browser)
     cursor.removeSelectedText();
 }
 
+void LogWidget::appendIpcMessage(const QString& msg, bool outgoing)
+{
+    if (!m_ipcLogBrowser) return;
+    const QString color = outgoing ? QStringLiteral("#228B22") : QStringLiteral("#9933CC");
+    const QString arrow = outgoing ? QStringLiteral("→") : QStringLiteral("←");
+    const QString ts = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
+    m_ipcLogBrowser->append(
+        QStringLiteral("<font color='gray'>%1</font> <font color='%2'>%3 %4</font>")
+            .arg(ts, color, arrow, msg.toHtmlEscaped()));
+    trimToLimit(m_ipcLogBrowser);
+}
+
+void LogWidget::setIpcTabVisible(bool visible)
+{
+    if (m_ipcTabIndex >= 0)
+        m_tabBar->setTabVisible(m_ipcTabIndex, visible);
+}
+
 void LogWidget::clearAll()
 {
     m_serverInfoBrowser->clear();
     m_logBrowser->clear();
     m_verboseBrowser->clear();
     m_kadBrowser->clear();
+    if (m_ipcLogBrowser) m_ipcLogBrowser->clear();
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.0 ready</font>"));
 }
 
 void LogWidget::setCustomFont(const QFont& font)
 {
-    for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser, m_kadBrowser})
+    for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser,
+                          m_kadBrowser, m_ipcLogBrowser})
         if (browser) browser->setFont(font);
 }
 

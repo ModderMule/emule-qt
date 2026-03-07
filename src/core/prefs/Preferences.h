@@ -236,6 +236,9 @@ public:
     [[nodiscard]] bool logRawSocketPackets() const;
     void setLogRawSocketPackets(bool val);
 
+    [[nodiscard]] bool enableIpcLog() const;
+    void setEnableIpcLog(bool val);
+
     // -- Files ----------------------------------------------------------------
 
     [[nodiscard]] uint16 maxSourcesPerFile() const;
