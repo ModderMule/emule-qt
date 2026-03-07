@@ -280,6 +280,21 @@ bool SearchManager::alreadySearchingFor(const UInt128& target)
     return s_searches.count(target) > 0;
 }
 
+QString SearchManager::findActiveKeyword(const QString& expression)
+{
+    QString lower = kadTagStrToLower(expression);
+    std::vector<QString> words;
+    getWords(lower, words);
+    if (words.empty())
+        return {};
+
+    UInt128 target;
+    getKeywordHash(words.front(), target);
+    if (alreadySearchingFor(target))
+        return words.front();
+    return {};
+}
+
 void SearchManager::cancelNodeFWCheckUDPSearch()
 {
     for (auto it = s_searches.begin(); it != s_searches.end(); ++it) {

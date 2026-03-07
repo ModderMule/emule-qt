@@ -39,7 +39,7 @@ Binaries are output to `build/`.
 
 ### Windows
 
-Open `src/eMuleQt.sln` in Visual Studio 2022 and build. See [docs/windows-build.md](docs/windows-build.md) for dependency setup (should be done by Visual Studio automatically).
+Open `src/eMuleQt.sln` in Visual Studio 2022 (or later) and build. See [docs/windows-build.md](docs/windows-build.md) for dependency setup (should be done by Visual Studio automatically).
 
 ## Running
 

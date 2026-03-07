@@ -25,6 +25,7 @@ enum class IpcMsgType : int {
     // -- Requests (GUI -> Core) -----------------------------------------------
 
     Handshake            = 100,  ///< [version: string]
+    Ping                 = 101,  ///< [] — keepalive probe; daemon responds with Result(true)
     GetDownloads         = 110,
     GetDownload          = 111,  ///< [hash: string]
     PauseDownload        = 112,  ///< [hash: string]

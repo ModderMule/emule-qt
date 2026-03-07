@@ -107,6 +107,7 @@ private slots:
     void onConnectionLost();
     void onSocketError();
     void attemptReconnect();
+    void sendKeepalive();
 
 private:
     void performHandshake();
@@ -118,6 +119,9 @@ private:
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     QTcpSocket* m_socket = nullptr;  // Owned by IpcConnection after handoff
     QTimer m_reconnectTimer;
+    QTimer m_handshakeTimer;         // Aborts a stalled handshake
+    QTimer m_keepaliveTimer;         // Periodic ping when connected
+    QTimer m_keepaliveTimeoutTimer;  // Window to receive the pong
     QHostAddress m_address;
     QString m_hostname;  // Non-empty when connected by hostname (DNS)
     uint16_t m_port = 0;
@@ -134,7 +138,10 @@ private:
     std::unordered_map<int, ResponseCallback> m_pendingCallbacks;
     int m_remotePollingMs = 1500;
 
-    static constexpr int MaxReconnectDelay = 30000;
+    static constexpr int MaxReconnectDelay      = 10'000;
+    static constexpr int HandshakeTimeoutMs     = 10'000;
+    static constexpr int KeepaliveIntervalMs    = 30'000;
+    static constexpr int KeepaliveTimeoutMs     = 10'000;
 };
 
 } // namespace eMule

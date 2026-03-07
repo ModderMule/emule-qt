@@ -28,6 +28,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMessageBox>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
@@ -38,6 +39,7 @@
 #include <QSpinBox>
 #include <QStringList>
 #include <QStringListModel>
+#include <QStatusBar>
 #include <QTabBar>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -295,8 +297,11 @@ QWidget* SearchPanel::createSearchBar()
 
 void SearchPanel::onStartSearch()
 {
-    if (!m_ipc || !m_ipc->isConnected())
+    if (!m_ipc || !m_ipc->isConnected()) {
+        if (auto* sb = window() ? window()->findChild<QStatusBar*>() : nullptr)
+            sb->showMessage(tr("Not connected to daemon — search cannot be started."), 4000);
         return;
+    }
 
     const QString expression = m_nameEdit->text().trimmed();
     if (expression.isEmpty())
@@ -342,8 +347,12 @@ void SearchPanel::onStartSearch()
     msg.append(artist);                                   // field 13
 
     m_ipc->sendRequest(std::move(msg), [this, expression, method](const IpcMessage& resp) {
-        if (!resp.fieldBool(0))
+        if (!resp.fieldBool(0)) {
+            const QString error = resp.fieldString(1);
+            if (!error.isEmpty())
+                QMessageBox::warning(this, tr("Search"), error);
             return;
+        }
 
         const auto data = resp.fieldMap(1);
         const auto searchID = static_cast<uint32_t>(data.value(QStringLiteral("searchID")).toInteger());

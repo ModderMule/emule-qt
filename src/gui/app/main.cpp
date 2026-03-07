@@ -361,8 +361,13 @@ int main(int argc, char* argv[])
         });
 
         QObject::connect(&ipcClient, &eMule::IpcClient::connected,
-                         &mainWindow, [&ipcClient, &mainWindow]() {
+                         &mainWindow, [&ipcClient, &mainWindow, prefsPath]() {
             eMule::logInfo(QStringLiteral("Connected to daemon via IPC."));
+
+            // Reload preferences from disk so every reconnect starts from a clean
+            // YAML baseline — matching the first-connect flow where thePrefs.load()
+            // runs before the async GetPreferences/updateFromCbor overlay.
+            eMule::thePrefs.load(prefsPath);
 
             // Request initial eD2K connection state
             eMule::Ipc::IpcMessage reqConn(eMule::Ipc::IpcMsgType::GetConnection);

@@ -323,6 +323,18 @@ void MainWindow::showNotification(const QString& title, const QString& message)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    if (thePrefs.promptOnExit()) {
+        auto result = QMessageBox::question(
+            this,
+            tr("Confirm Exit"),
+            tr("Are you sure you want to exit eMule?"),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (result != QMessageBox::Yes) {
+            event->ignore();
+            return;
+        }
+    }
     theUiState.captureMainWindow(this);
     QMainWindow::closeEvent(event);
 }
