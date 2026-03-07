@@ -6,8 +6,9 @@
 # and launch it.  Optionally runs macdeployqt to pull in Qt frameworks.
 #
 # Usage:
-#   ./scripts/bundle-macos.sh [build-dir]
+#   ./scripts/bundle-macos.sh [--dmg] [build-dir]
 #
+#   --dmg       Create a .dmg disk image after bundling
 #   build-dir   Path to the CMake build directory (default: ./build)
 #
 # Layout after bundling:
@@ -26,7 +27,15 @@
 
 set -euo pipefail
 
-BUILD_DIR="${1:-build}"
+CREATE_DMG=false
+BUILD_DIR="build"
+
+for arg in "$@"; do
+    case "$arg" in
+        --dmg) CREATE_DMG=true ;;
+        *)     BUILD_DIR="$arg" ;;
+    esac
+done
 
 APP_BUNDLE="$BUILD_DIR/src/gui/emuleqt.app"
 DAEMON_BIN="$BUILD_DIR/src/daemon/emulecored"
@@ -67,6 +76,7 @@ CONFIG_DST="$RESOURCES_DIR/config"
 
 if [ -d "$CONFIG_SRC" ]; then
     echo "Copying default config data into bundle..."
+    mkdir -p "$RESOURCES_DIR"
     rm -rf "$CONFIG_DST"
     cp -R "$CONFIG_SRC" "$CONFIG_DST"
     echo "  -> $CONFIG_DST  ($(find "$CONFIG_DST" -type f | wc -l | tr -d ' ') files)"
@@ -134,3 +144,35 @@ echo "Bundle contents:"
 ls -lh "$MACOS_DIR/"
 echo ""
 echo "Done. App bundle: $APP_BUNDLE"
+
+# -- Create DMG (optional, --dmg flag) -----------------------------------------
+
+if [ "$CREATE_DMG" = true ]; then
+    DMG_OUTPUT="$BUILD_DIR/emuleqt.dmg"
+    APP_NAME="$(basename "$APP_BUNDLE")"
+
+    if command -v create-dmg &>/dev/null; then
+        echo ""
+        echo "Creating DMG with create-dmg..."
+        rm -f "$DMG_OUTPUT"
+        create-dmg \
+            --volname "eMule Qt" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "$APP_NAME" 150 190 \
+            --app-drop-link 450 190 \
+            "$DMG_OUTPUT" \
+            "$APP_BUNDLE"
+    else
+        echo ""
+        echo "Creating DMG with hdiutil..."
+        rm -f "$DMG_OUTPUT"
+        hdiutil create -volname "eMule Qt" \
+            -srcfolder "$APP_BUNDLE" \
+            -ov -format UDZO \
+            "$DMG_OUTPUT"
+    fi
+
+    echo "  -> $DMG_OUTPUT ($(du -h "$DMG_OUTPUT" | cut -f1))"
+fi
