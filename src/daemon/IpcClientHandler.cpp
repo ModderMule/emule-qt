@@ -98,6 +98,8 @@ IpcClientHandler::~IpcClientHandler() = default;
 void IpcClientHandler::sendMessage(const IpcMessage& msg)
 {
     m_connection->sendMessage(msg);
+    if (auto* sock = m_connection->socket())
+        sock->flush();
 }
 
 bool IpcClientHandler::isHandshaked() const
@@ -1408,6 +1410,7 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("logA4AF"), thePrefs.logA4AF());
     prefs.insert(QStringLiteral("logUlDlEvents"), thePrefs.logUlDlEvents());
     prefs.insert(QStringLiteral("logRawSocketPackets"), thePrefs.logRawSocketPackets());
+    prefs.insert(QStringLiteral("startCoreWithConsole"), thePrefs.startCoreWithConsole());
     prefs.insert(QStringLiteral("queueSize"), static_cast<qint64>(thePrefs.queueSize()));
     // USS
     prefs.insert(QStringLiteral("dynUpEnabled"), thePrefs.dynUpEnabled());
@@ -2640,6 +2643,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setLogRawSocketPackets(val.toBool());
     else if (key == QStringLiteral("enableIpcLog"))
         thePrefs.setEnableIpcLog(val.toBool());
+    else if (key == QStringLiteral("startCoreWithConsole"))
+        thePrefs.setStartCoreWithConsole(val.toBool());
     else if (key == QStringLiteral("queueSize"))
         thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
     // USS

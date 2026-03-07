@@ -239,6 +239,9 @@ public:
     [[nodiscard]] bool enableIpcLog() const;
     void setEnableIpcLog(bool val);
 
+    [[nodiscard]] bool startCoreWithConsole() const;
+    void setStartCoreWithConsole(bool val);
+
     // -- Files ----------------------------------------------------------------
 
     [[nodiscard]] uint16 maxSourcesPerFile() const;

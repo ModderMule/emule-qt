@@ -97,6 +97,19 @@ bool launchDaemon(const QString& daemonPath)
         return false;
 
     eMule::logInfo(QStringLiteral("Launching daemon: %1").arg(daemonPath));
+
+    if (eMule::thePrefs.startCoreWithConsole()) {
+#if defined(Q_OS_MACOS)
+        const QString script = QStringLiteral("tell application \"Terminal\" to do script \"%1\"")
+                                   .arg(daemonPath);
+        return QProcess::startDetached(QStringLiteral("osascript"), {QStringLiteral("-e"), script});
+#elif defined(Q_OS_WIN)
+        return QProcess::startDetached(QStringLiteral("cmd"), {QStringLiteral("/k"), daemonPath});
+#else
+        return QProcess::startDetached(QStringLiteral("xterm"), {QStringLiteral("-e"), daemonPath});
+#endif
+    }
+
     return QProcess::startDetached(daemonPath, {});
 }
 
