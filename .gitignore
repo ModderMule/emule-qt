@@ -82,6 +82,19 @@ conan/
 *.part
 *.part*
 
+# Visual Studio builds
+/src/core/debug
+/src/daemon/debug
+/src/gui/debug
+/src/ipc/debug
+/tests/vs/debug
+
+/src/core/release
+/src/daemon/release
+/src/gui/release
+/src/ipc/release
+/tests/vs/release
+
 # local tools and scripts
 *.local.sh
 *.local.log
