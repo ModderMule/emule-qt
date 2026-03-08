@@ -1,8 +1,8 @@
 name: Windows CI
 
 on:
-  push:
-    tags: ['v*']
+#  push:
+#    tags: ['v*']
   workflow_dispatch:
 
 jobs:

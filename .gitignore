@@ -88,6 +88,7 @@ conan/
 *.local.md
 translations_*.json
 blog-*.md
+windows-3rd.yml
 
 # Environment secrets
 .env

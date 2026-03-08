@@ -21,6 +21,8 @@
 #       lang/            compiled translation files (.qm)
 # ---------------------------------------------------------------------------
 
+# try https://flatpak.org/ ?
+
 set -euo pipefail
 
 BUILD_DIR="${1:-build}"
