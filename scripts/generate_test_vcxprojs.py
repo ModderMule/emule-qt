@@ -73,10 +73,10 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       <Import Project="$(QtMsBuild)\\qt_defaults.props" Condition="Exists('$(QtMsBuild)\\qt_defaults.props')" />
       <Import Project="..\\..\\QtVersion.props" />
       <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-        <QtModules>core;network;test;gui;multimedia;websockets;httpserver;concurrent</QtModules>
+        <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent</QtModules>
       </PropertyGroup>
       <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-        <QtModules>core;network;test;gui;multimedia;websockets;httpserver;concurrent</QtModules>
+        <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent</QtModules>
       </PropertyGroup>
       <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\\qt.targets') OR !Exists('$(QtMsBuild)\\Qt.props')">
         <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
