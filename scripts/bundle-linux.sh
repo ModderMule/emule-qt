@@ -26,6 +26,7 @@ set -euo pipefail
 BUILD_DIR="${1:-build}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION=$(grep -m1 '^ *VERSION [0-9]' "$REPO_ROOT/CMakeLists.txt" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 
 GUI_BIN="$BUILD_DIR/src/gui/emuleqt"
 DAEMON_BIN="$BUILD_DIR/src/daemon/emulecored"
@@ -100,7 +101,7 @@ fi
 
 # -- Create tarball ----------------------------------------------------------
 
-TAR_NAME="eMuleQt-linux-x86_64.tar.gz"
+TAR_NAME="emuleqt-v${VERSION}-linux-x86_64.tar.gz"
 TAR_PATH="$REPO_ROOT/$TAR_NAME"
 
 echo ""

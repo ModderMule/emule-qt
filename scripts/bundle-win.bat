@@ -39,6 +39,7 @@ set "SCRIPT_DIR=%~dp0"
 pushd "%SCRIPT_DIR%\.."
 set "PROJECT_DIR=%CD%"
 popd
+for /f "tokens=2" %%V in ('findstr /r "^ *VERSION [0-9]" "%PROJECT_DIR%\CMakeLists.txt"') do set "APP_VERSION=%%V"
 
 REM -- Parse arguments --------------------------------------------------------
 
@@ -297,7 +298,7 @@ if defined VCPKG_BIN (
 
 REM -- Create zip --------------------------------------------------------------
 
-set "ZIP_NAME=eMuleQt-win64.zip"
+set "ZIP_NAME=emuleqt-v%APP_VERSION%-win64.zip"
 set "ZIP_PATH=%PROJECT_DIR%\%ZIP_NAME%"
 if exist "%ZIP_PATH%" del "%ZIP_PATH%"
 

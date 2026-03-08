@@ -70,6 +70,7 @@ echo "  -> $MACOS_DIR/emulecored"
 # -- Copy default config data into bundle ------------------------------------
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION=$(grep -m1 '^ *VERSION [0-9]' "$REPO_ROOT/CMakeLists.txt" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 CONFIG_SRC="$REPO_ROOT/data/config"
 RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
 CONFIG_DST="$RESOURCES_DIR/config"
@@ -149,7 +150,7 @@ echo "Done. App bundle: $APP_BUNDLE"
 # -- Create DMG (optional, --dmg flag) -----------------------------------------
 
 if [ "$CREATE_DMG" = true ]; then
-    DMG_OUTPUT="$BUILD_DIR/emuleqt.dmg"
+    DMG_OUTPUT="$BUILD_DIR/emuleqt-v${VERSION}.dmg"
     APP_NAME="$(basename "$APP_BUNDLE")"
 
     if command -v create-dmg &>/dev/null; then
