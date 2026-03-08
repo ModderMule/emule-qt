@@ -154,7 +154,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <ExecutionDescription>Moc'ing %(Identity)...</ExecutionDescription>
           <DynamicSource>output</DynamicSource>
           <QtMocDir>$(Configuration)</QtMocDir>
-          <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+          <QtMocFileName>%(Filename).moc</QtMocFileName>
         </QtMoc>
       </ItemDefinitionGroup>
       <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -204,7 +204,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <ExecutionDescription>Moc'ing %(Identity)...</ExecutionDescription>
           <DynamicSource>output</DynamicSource>
           <QtMocDir>$(Configuration)</QtMocDir>
-          <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+          <QtMocFileName>%(Filename).moc</QtMocFileName>
         </QtMoc>
       </ItemDefinitionGroup>
       <ItemGroup>
