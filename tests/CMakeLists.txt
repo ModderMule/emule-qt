@@ -29,8 +29,8 @@ target_link_libraries(emule_test_helpers INTERFACE
 # Test data directory — available to test code via EMULE_TEST_DATA_DIR define
 # Project data directory — available via EMULE_PROJECT_DATA_DIR (server.met, nodes.dat)
 target_compile_definitions(emule_test_helpers INTERFACE
-    EMULE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
-    EMULE_PROJECT_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
+    "EMULE_TEST_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/data"
+    "EMULE_PROJECT_DATA_DIR=${CMAKE_SOURCE_DIR}/data"
 )
 
 # ---------------------------------------------------------------------------

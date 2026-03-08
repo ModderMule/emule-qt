@@ -114,7 +114,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <LanguageStandard>stdcpplatest</LanguageStandard>
           <ObjectFileName>release\\</ObjectFileName>
           <Optimization>MaxSpeed</Optimization>
-          <PreprocessorDefinitions>_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;EMULE_TEST_DATA_DIR=\\"..\\\\..\\\\tests\\\\data\\\\\\";EMULE_PROJECT_DATA_DIR=\\"..\\\\..\\\\data\\\\\\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+          <PreprocessorDefinitions>_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;%(PreprocessorDefinitions)</PreprocessorDefinitions>
           <PreprocessToFile>false</PreprocessToFile>
           <ProgramDataBaseFileName>
           </ProgramDataBaseFileName>
@@ -169,7 +169,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <LanguageStandard>stdcpplatest</LanguageStandard>
           <ObjectFileName>debug\\</ObjectFileName>
           <Optimization>Disabled</Optimization>
-          <PreprocessorDefinitions>_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_TEST_DATA_DIR=\\"..\\\\..\\\\tests\\\\data\\\\\\";EMULE_PROJECT_DATA_DIR=\\"..\\\\..\\\\data\\\\\\";_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+          <PreprocessorDefinitions>_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
           <PreprocessToFile>false</PreprocessToFile>
           <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
           <SuppressStartupBanner>true</SuppressStartupBanner>

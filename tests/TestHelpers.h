@@ -17,6 +17,9 @@
 #include <memory>
 #include <random>
 
+#define EMULE_STRINGIFY_(x) #x
+#define EMULE_STRINGIFY(x) EMULE_STRINGIFY_(x)
+
 namespace eMule::testing {
 
 /// RAII temporary directory that self-cleans on destruction.
@@ -42,13 +45,13 @@ private:
 /// Return the path to the test data directory (set by CMake).
 inline QString testDataDir()
 {
-    return QStringLiteral(EMULE_TEST_DATA_DIR);
+    return QStringLiteral(EMULE_STRINGIFY(EMULE_TEST_DATA_DIR));
 }
 
 /// Return the path to the project-level data/ directory (set by CMake).
 inline QString projectDataDir()
 {
-    return QStringLiteral(EMULE_PROJECT_DATA_DIR);
+    return QStringLiteral(EMULE_STRINGIFY(EMULE_PROJECT_DATA_DIR));
 }
 
 /// Generate a QByteArray filled with random bytes.
@@ -93,7 +96,7 @@ inline QMap<QString, QString> loadEnvFile(const QString& path)
 /// (only if not already set, so explicit env vars still win).
 inline void loadProjectEnv()
 {
-    const auto env = loadEnvFile(QStringLiteral(EMULE_PROJECT_DATA_DIR "/../.env"));
+    const auto env = loadEnvFile(QStringLiteral(EMULE_STRINGIFY(EMULE_PROJECT_DATA_DIR) "/../.env"));
     for (auto it = env.cbegin(); it != env.cend(); ++it) {
         const QByteArray key = it.key().toUtf8();
         if (qEnvironmentVariableIsEmpty(key.constData()))
