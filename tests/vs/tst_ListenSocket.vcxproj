@@ -95,7 +95,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zlib.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\lib\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>..\..\src\core\$(Configuration);..\..\src\ipc\$(Configuration);..\..\src\vcpkg_installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\bin\$(Configuration);..\..\src\vcpkg_installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
       <DataExecutionPrevention>true</DataExecutionPrevention>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -148,7 +148,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zlib.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\lib\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>..\..\src\core\$(Configuration);..\..\src\ipc\$(Configuration);..\..\src\vcpkg_installed\x64-windows\debug\lib;..\..\src\vcpkg_installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\bin\$(Configuration);..\..\src\vcpkg_installed\x64-windows\debug\lib;..\..\src\vcpkg_installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
       <DataExecutionPrevention>true</DataExecutionPrevention>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -177,6 +177,19 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tst_ListenSocket.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\tst_ListenSocket.cpp.moc.cbt">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"$(QTDIR)\bin\moc.exe" "..\tst_ListenSocket.cpp" -o "$(IntDir)tst_ListenSocket.moc" --include "./$(Configuration)/moc_predefs.h" -I".." -I"../../src/core" -I"../../src/ipc" -I"$(QTDIR)/include" -I"$(QTDIR)/include/QtCore" -I"$(QTDIR)/include/QtTest" -I"$(QTDIR)/include/QtNetwork" -I"$(QTDIR)/include/QtGui"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"$(QTDIR)\bin\moc.exe" "..\tst_ListenSocket.cpp" -o "$(IntDir)tst_ListenSocket.moc" --include "./$(Configuration)/moc_predefs.h" -I".." -I"../../src/core" -I"../../src/ipc" -I"$(QTDIR)/include" -I"$(QTDIR)/include/QtCore" -I"$(QTDIR)/include/QtTest" -I"$(QTDIR)/include/QtNetwork" -I"$(QTDIR)/include/QtGui"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Moc'ing tst_ListenSocket.cpp...</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Moc'ing tst_ListenSocket.cpp...</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)tst_ListenSocket.moc;%(Outputs)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)tst_ListenSocket.moc;%(Outputs)</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\tst_ListenSocket.cpp;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\tst_ListenSocket.cpp;%(AdditionalInputs)</AdditionalInputs>
+    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

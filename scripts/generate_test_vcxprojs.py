@@ -127,7 +127,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
         </ClCompile>
         <Link>
           <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zlib.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
-          <AdditionalLibraryDirectories>..\\..\\src\\core\\$(Configuration);..\\..\\src\\ipc\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+          <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
           <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -180,7 +180,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
         </ClCompile>
         <Link>
           <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zlib.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
-          <AdditionalLibraryDirectories>..\\..\\src\\core\\$(Configuration);..\\..\\src\\ipc\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\debug\\lib;..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+          <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\debug\\lib;..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
           <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -209,6 +209,19 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </ItemDefinitionGroup>
       <ItemGroup>
         <ClCompile Include="..\\{name}.cpp" />
+      </ItemGroup>
+      <ItemGroup>
+        <CustomBuild Include="..\\{name}.cpp.moc.cbt">
+          <FileType>Document</FileType>
+          <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"$(QTDIR)\\bin\\moc.exe" "..\\{name}.cpp" -o "$(IntDir){name}.moc" --include "./$(Configuration)/moc_predefs.h" -I".." -I"../../src/core" -I"../../src/ipc" -I"$(QTDIR)/include" -I"$(QTDIR)/include/QtCore" -I"$(QTDIR)/include/QtTest" -I"$(QTDIR)/include/QtNetwork" -I"$(QTDIR)/include/QtGui"</Command>
+          <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"$(QTDIR)\\bin\\moc.exe" "..\\{name}.cpp" -o "$(IntDir){name}.moc" --include "./$(Configuration)/moc_predefs.h" -I".." -I"../../src/core" -I"../../src/ipc" -I"$(QTDIR)/include" -I"$(QTDIR)/include/QtCore" -I"$(QTDIR)/include/QtTest" -I"$(QTDIR)/include/QtNetwork" -I"$(QTDIR)/include/QtGui"</Command>
+          <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Moc'ing {name}.cpp...</Message>
+          <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Moc'ing {name}.cpp...</Message>
+          <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir){name}.moc;%(Outputs)</Outputs>
+          <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir){name}.moc;%(Outputs)</Outputs>
+          <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\\{name}.cpp;%(AdditionalInputs)</AdditionalInputs>
+          <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\\{name}.cpp;%(AdditionalInputs)</AdditionalInputs>
+        </CustomBuild>
       </ItemGroup>
       <ItemGroup>
         <CustomBuild Include="debug\\moc_predefs.h.cbt">
