@@ -39,13 +39,12 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
+  <Import Project="..\..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtInstall>6.8.3_msvc2022_64</QtInstall>
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent</QtModules>
+    <QtModules>core;network;test;gui;multimedia;websockets;httpserver;concurrent</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtInstall>6.8.3_msvc2022_64</QtInstall>
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent</QtModules>
+    <QtModules>core;network;test;gui;multimedia;websockets;httpserver;concurrent</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -83,7 +82,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>release\</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;EMULE_TEST_DATA_DIR=\"../../tests/data/\";EMULE_PROJECT_DATA_DIR=\"../../data/\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;EMULE_TEST_DATA_DIR=\"..\\..\\tests\\data\\\";EMULE_PROJECT_DATA_DIR=\"..\\..\\data\\\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <ProgramDataBaseFileName>
       </ProgramDataBaseFileName>
@@ -138,7 +137,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>debug\</ObjectFileName>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_TEST_DATA_DIR=\"../../tests/data/\";EMULE_PROJECT_DATA_DIR=\"../../data/\";_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_TEST_DATA_DIR=\"..\\..\\tests\\data\\\";EMULE_PROJECT_DATA_DIR=\"..\\..\\data\\\";_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SuppressStartupBanner>true</SuppressStartupBanner>

@@ -71,12 +71,11 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </PropertyGroup>
       <Import Project="$(VCTargetsPath)\\Microsoft.Cpp.props" />
       <Import Project="$(QtMsBuild)\\qt_defaults.props" Condition="Exists('$(QtMsBuild)\\qt_defaults.props')" />
+      <Import Project="..\\..\\..\\QtVersion.props" />
       <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-        <QtInstall>6.8.3_msvc2022_64</QtInstall>
         <QtModules>core;network;test;gui;multimedia;websockets;httpserver;concurrent</QtModules>
       </PropertyGroup>
       <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-        <QtInstall>6.8.3_msvc2022_64</QtInstall>
         <QtModules>core;network;test;gui;multimedia;websockets;httpserver;concurrent</QtModules>
       </PropertyGroup>
       <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\\qt.targets') OR !Exists('$(QtMsBuild)\\Qt.props')">
