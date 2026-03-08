@@ -1,6 +1,6 @@
 {
   "name": "emuleqt",
-  "version-string": "0.1.0",
+  "version-string": "0.1.1",
   "builtin-baseline": "d5ec528843d29e3a52d745a64b469f810b2cedbf",
   "dependencies": [
     "zlib",
