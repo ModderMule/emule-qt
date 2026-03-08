@@ -978,8 +978,11 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
 
     menu.addSeparator();
 
+    const auto dirs = thePrefs.sharedDirs();
+    const bool isShared = dirs.contains(path);
+
     // Share Directory
-    menu.addAction(tr("Share Directory"), this, [this, path]() {
+    auto* shareAct = menu.addAction(tr("Share Directory"), this, [this, path]() {
         if (!m_ipc || !m_ipc->isConnected())
             return;
         auto dirs = thePrefs.sharedDirs();
@@ -987,29 +990,32 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
             dirs.append(path);
         sendShareDirsUpdate(dirs);
     });
+    shareAct->setEnabled(!isShared);
 
     // Share with Subdirectories
-    menu.addAction(tr("Share with Subdirectories"), this, [this, path]() {
+    auto* shareSubAct = menu.addAction(tr("Share with Subdirectories"), this, [this, path]() {
         if (!m_ipc || !m_ipc->isConnected())
             return;
         auto dirs = thePrefs.sharedDirs();
         collectSubdirectories(path, dirs);
         sendShareDirsUpdate(dirs);
     });
+    shareSubAct->setEnabled(!isShared);
 
     menu.addSeparator();
 
     // Unshare Directory
-    menu.addAction(tr("Unshare Directory"), this, [this, path]() {
+    auto* unshareAct = menu.addAction(tr("Unshare Directory"), this, [this, path]() {
         if (!m_ipc || !m_ipc->isConnected())
             return;
         auto dirs = thePrefs.sharedDirs();
         dirs.removeAll(path);
         sendShareDirsUpdate(dirs);
     });
+    unshareAct->setEnabled(isShared);
 
     // Unshare with Subdirectories
-    menu.addAction(tr("Unshare with Subdirectories"), this, [this, path]() {
+    auto* unshareSubAct = menu.addAction(tr("Unshare with Subdirectories"), this, [this, path]() {
         if (!m_ipc || !m_ipc->isConnected())
             return;
         auto dirs = thePrefs.sharedDirs();
@@ -1019,6 +1025,7 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
             dirs.removeAll(d);
         sendShareDirsUpdate(dirs);
     });
+    unshareSubAct->setEnabled(isShared);
 
     menu.exec(m_folderTree->viewport()->mapToGlobal(pos));
 }
