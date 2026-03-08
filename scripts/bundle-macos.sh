@@ -91,6 +91,7 @@ LANG_DST="$RESOURCES_DIR/lang"
 LANG_BUILD_DIR="$BUILD_DIR/src/gui"
 LANG_SRC_DIR="$REPO_ROOT/lang"
 
+rm -rf "$LANG_DST"
 mkdir -p "$LANG_DST"
 QM_COUNT=0
 for qm in "$LANG_BUILD_DIR"/emuleqt_*.qm "$LANG_SRC_DIR"/emuleqt_*.qm; do
