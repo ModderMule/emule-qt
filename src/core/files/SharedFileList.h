@@ -37,16 +37,18 @@ public:
         QString directory;
         QString filename;
         QString sharedDirectory;
+        uint64_t generation = 0;
     };
 
     explicit HashingThread(QObject* parent = nullptr);
 
     void enqueue(Job job);
+    void clearQueue();
     void requestStop();
 
 signals:
-    void hashingFinished(eMule::KnownFile* file);
-    void hashingFailed(const QString& directory, const QString& filename);
+    void hashingFinished(eMule::KnownFile* file, uint64 generation);
+    void hashingFailed(const QString& directory, const QString& filename, uint64 generation);
     void hashingProgress(int percent);
 
 protected:
@@ -117,8 +119,8 @@ private:
     void addFilesFromDirectory(const QString& dir, const QString& sharedDir = {});
     void hashNextFile();
 
-    void onHashingFinished(KnownFile* file);
-    void onHashingFailed(const QString& directory, const QString& filename);
+    void onHashingFinished(KnownFile* file, uint64 generation);
+    void onHashingFailed(const QString& directory, const QString& filename, uint64 generation);
 
     KnownFile* getFileByIndex(uint32 index) const;
 
@@ -130,6 +132,8 @@ private:
     HashingThread* m_hashingThread = nullptr;
     ServerConnect* m_serverConnect = nullptr;
     mutable QMutex m_mutex;
+    uint64 m_generation = 0;
+    bool m_hashingInProgress = false;
 
     // Kad publishing round-robin state
     uint32 m_currFileSrc = 0;

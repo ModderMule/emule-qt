@@ -8,6 +8,8 @@
 
 #include <QTest>
 #include <QDir>
+#include <QFile>
+#include <QMap>
 #include <QTemporaryDir>
 #include <QString>
 #include <QByteArray>
@@ -65,6 +67,38 @@ inline QByteArray randomBytes(int size)
 inline QByteArray fakeHash16(std::uint8_t pattern = 0xAB)
 {
     return QByteArray(16, static_cast<char>(pattern));
+}
+
+/// Parse a simple KEY=VALUE .env file into a QMap.
+inline QMap<QString, QString> loadEnvFile(const QString& path)
+{
+    QMap<QString, QString> env;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return env;
+
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty() || line.startsWith(u'#'))
+            continue;
+        const auto eq = line.indexOf(u'=');
+        if (eq < 1)
+            continue;
+        env.insert(line.left(eq).trimmed(), line.mid(eq + 1).trimmed());
+    }
+    return env;
+}
+
+/// Load the project-root .env file and set each key as a process env var
+/// (only if not already set, so explicit env vars still win).
+inline void loadProjectEnv()
+{
+    const auto env = loadEnvFile(QStringLiteral(EMULE_PROJECT_DATA_DIR "/../.env"));
+    for (auto it = env.cbegin(); it != env.cend(); ++it) {
+        const QByteArray key = it.key().toUtf8();
+        if (qEnvironmentVariableIsEmpty(key.constData()))
+            qputenv(key.constData(), it.value().toUtf8());
+    }
 }
 
 } // namespace eMule::testing

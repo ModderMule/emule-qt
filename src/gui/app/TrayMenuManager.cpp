@@ -34,14 +34,8 @@ void TrayMenuManager::updateState(bool ed2kConnected, bool kadRunning, bool ipcC
 {
     const bool connected = ed2kConnected || kadRunning;
 
-    if (connected) {
-        m_connectAction->setIcon(QIcon(QStringLiteral(":/icons/ConnectDrop.ico")));
-        m_connectAction->setText(tr("Disconnect"));
-    } else {
-        m_connectAction->setIcon(QIcon(QStringLiteral(":/icons/ConnectDo.ico")));
-        m_connectAction->setText(tr("Connect"));
-    }
-    m_connectAction->setEnabled(ipcConnected);
+    m_connectAction->setEnabled(ipcConnected && !connected);
+    m_disconnectAction->setEnabled(ipcConnected && connected);
 
     const int maxUp = static_cast<int>(thePrefs.maxGraphUploadRate());
     const int maxDown = static_cast<int>(thePrefs.maxGraphDownloadRate());
@@ -75,15 +69,13 @@ void TrayMenuManager::updateState(bool ed2kConnected, bool kadRunning, bool ipcC
 
 void TrayMenuManager::buildMenu()
 {
-    // Header
-    auto* header = addAction(QIcon(QStringLiteral(":/icons/Connection.ico")),
+    // Header: Speed.ico, "eMule Speed", bold, disabled (matches MFC)
+    auto* header = addAction(QIcon(QStringLiteral(":/icons/Speed.ico")),
                              tr("eMule Speed"));
     header->setEnabled(false);
     auto headerFont = header->font();
     headerFont.setBold(true);
     header->setFont(headerFont);
-
-    addSeparator();
 
     // Speed controls widget
     auto* speedWidget = new QWidget;
@@ -92,22 +84,7 @@ void TrayMenuManager::buildMenu()
     grid->setHorizontalSpacing(6);
     grid->setVerticalSpacing(4);
 
-    // Upload row
-    auto* upIcon = new QLabel;
-    upIcon->setPixmap(QIcon(QStringLiteral(":/icons/Upload.ico")).pixmap(16, 16));
-    auto* upLabel = new QLabel(tr("Upload:"));
-    m_upSlider = new QSlider(Qt::Horizontal);
-    m_upSlider->setMinimumWidth(120);
-    m_upSpin = new QSpinBox;
-    m_upSpin->setSuffix(tr(" KB/s"));
-    m_upSpin->setSpecialValueText(tr("Unlimited"));
-
-    grid->addWidget(upIcon, 0, 0);
-    grid->addWidget(upLabel, 0, 1);
-    grid->addWidget(m_upSlider, 0, 2);
-    grid->addWidget(m_upSpin, 0, 3);
-
-    // Download row
+    // Download row first (matches MFC order)
     auto* downIcon = new QLabel;
     downIcon->setPixmap(QIcon(QStringLiteral(":/icons/Download.ico")).pixmap(16, 16));
     auto* downLabel = new QLabel(tr("Download:"));
@@ -117,10 +94,25 @@ void TrayMenuManager::buildMenu()
     m_downSpin->setSuffix(tr(" KB/s"));
     m_downSpin->setSpecialValueText(tr("Unlimited"));
 
-    grid->addWidget(downIcon, 1, 0);
-    grid->addWidget(downLabel, 1, 1);
-    grid->addWidget(m_downSlider, 1, 2);
-    grid->addWidget(m_downSpin, 1, 3);
+    grid->addWidget(downIcon, 0, 0);
+    grid->addWidget(downLabel, 0, 1);
+    grid->addWidget(m_downSlider, 0, 2);
+    grid->addWidget(m_downSpin, 0, 3);
+
+    // Upload row second
+    auto* upIcon = new QLabel;
+    upIcon->setPixmap(QIcon(QStringLiteral(":/icons/Upload.ico")).pixmap(16, 16));
+    auto* upLabel = new QLabel(tr("Upload:"));
+    m_upSlider = new QSlider(Qt::Horizontal);
+    m_upSlider->setMinimumWidth(120);
+    m_upSpin = new QSpinBox;
+    m_upSpin->setSuffix(tr(" KB/s"));
+    m_upSpin->setSpecialValueText(tr("Unlimited"));
+
+    grid->addWidget(upIcon, 1, 0);
+    grid->addWidget(upLabel, 1, 1);
+    grid->addWidget(m_upSlider, 1, 2);
+    grid->addWidget(m_upSpin, 1, 3);
 
     auto* speedAction = new QWidgetAction(this);
     speedAction->setDefaultWidget(speedWidget);
@@ -142,21 +134,55 @@ void TrayMenuManager::buildMenu()
     connect(m_upSpin, &QSpinBox::valueChanged, this, startDebounce);
     connect(m_downSpin, &QSpinBox::valueChanged, this, startDebounce);
 
+    // Set Full Up/Down-Speed: restore both to capacity max
+    auto* setFullAction = addAction(
+        QIcon(QStringLiteral(":/icons/SpeedMax.ico")), tr("Set Full Up/Down-Speed"));
+    connect(setFullAction, &QAction::triggered, this, [this]() {
+        const int maxUp = static_cast<int>(thePrefs.maxGraphUploadRate());
+        const int maxDown = static_cast<int>(thePrefs.maxGraphDownloadRate());
+        {
+            QSignalBlocker b1(m_upSlider), b2(m_upSpin);
+            m_upSlider->setValue(maxUp);
+            m_upSpin->setValue(maxUp);
+        }
+        {
+            QSignalBlocker b1(m_downSlider), b2(m_downSpin);
+            m_downSlider->setValue(maxDown);
+            m_downSpin->setValue(maxDown);
+        }
+        sendSpeedChange();
+    });
+
+    // Throttle Up/Down-Speed: set both to 1 KB/s
+    auto* throttleAction = addAction(
+        QIcon(QStringLiteral(":/icons/SpeedMin.ico")), tr("Throttle Up/Down-Speed"));
+    connect(throttleAction, &QAction::triggered, this, [this]() {
+        {
+            QSignalBlocker b1(m_upSlider), b2(m_upSpin);
+            m_upSlider->setValue(1);
+            m_upSpin->setValue(1);
+        }
+        {
+            QSignalBlocker b1(m_downSlider), b2(m_downSpin);
+            m_downSlider->setValue(1);
+            m_downSpin->setValue(1);
+        }
+        sendSpeedChange();
+    });
+
     addSeparator();
 
-    // Restore
-    auto* restoreAction = addAction(
-        QIcon(QStringLiteral(":/icons/Display.ico")), tr("Restore"));
-    auto restoreFont = restoreAction->font();
-    restoreFont.setBold(true);
-    restoreAction->setFont(restoreFont);
-    connect(restoreAction, &QAction::triggered, this, &TrayMenuManager::restoreRequested);
-
-    // Connect / Disconnect
+    // Connect (enabled when disconnected)
     m_connectAction = addAction(
         QIcon(QStringLiteral(":/icons/ConnectDo.ico")), tr("Connect"));
     connect(m_connectAction, &QAction::triggered,
-            this, &TrayMenuManager::connectToggleRequested);
+            this, &TrayMenuManager::connectRequested);
+
+    // Disconnect (enabled when connected)
+    m_disconnectAction = addAction(
+        QIcon(QStringLiteral(":/icons/ConnectDrop.ico")), tr("Disconnect"));
+    connect(m_disconnectAction, &QAction::triggered,
+            this, &TrayMenuManager::disconnectRequested);
 
     addSeparator();
 
@@ -164,6 +190,16 @@ void TrayMenuManager::buildMenu()
     auto* optionsAction = addAction(
         QIcon(QStringLiteral(":/icons/Preferences.ico")), tr("Options"));
     connect(optionsAction, &QAction::triggered, this, &TrayMenuManager::optionsRequested);
+
+    addSeparator();
+
+    // Restore (bold, matches MFC)
+    auto* restoreAction = addAction(
+        QIcon(QStringLiteral(":/icons/Display.ico")), tr("Restore"));
+    auto restoreFont = restoreAction->font();
+    restoreFont.setBold(true);
+    restoreAction->setFont(restoreFont);
+    connect(restoreAction, &QAction::triggered, this, &TrayMenuManager::restoreRequested);
 
     // Exit
     auto* exitAction = addAction(

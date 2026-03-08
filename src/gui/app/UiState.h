@@ -50,6 +50,22 @@ public:
     [[nodiscard]] int optionsLastPage() const { return m_optionsLastPage; }
     void setOptionsLastPage(int page) { m_optionsLastPage = page; }
 
+    /// Toolbar button order (empty = default).
+    [[nodiscard]] const QList<int>& toolbarButtonOrder() const { return m_toolbarButtonOrder; }
+    void setToolbarButtonOrder(const QList<int>& order) { m_toolbarButtonOrder = order; }
+
+    /// Toolbar button style (Qt::ToolButtonStyle values 0-3).
+    [[nodiscard]] int toolbarButtonStyle() const { return m_toolbarButtonStyle; }
+    void setToolbarButtonStyle(int style) { m_toolbarButtonStyle = style; }
+
+    /// Toolbar skin bitmap path (empty = default icons).
+    [[nodiscard]] const QString& toolbarSkinPath() const { return m_toolbarSkinPath; }
+    void setToolbarSkinPath(const QString& path) { m_toolbarSkinPath = path; }
+
+    /// Skin profile INI path (empty = default, no skin).
+    [[nodiscard]] const QString& skinProfilePath() const { return m_skinProfilePath; }
+    void setSkinProfilePath(const QString& path) { m_skinProfilePath = path; }
+
 private:
     QList<int> m_serverSplitSizes;
     QList<int> m_kadSplitSizes;
@@ -63,6 +79,10 @@ private:
     int  m_windowHeight    = 0;
     bool m_windowMaximized = false;
     int  m_optionsLastPage = 0;
+    QList<int> m_toolbarButtonOrder;
+    int  m_toolbarButtonStyle = 3;
+    QString m_toolbarSkinPath;
+    QString m_skinProfilePath;
     QMap<QString, QByteArray> m_headerStates;
 };
 

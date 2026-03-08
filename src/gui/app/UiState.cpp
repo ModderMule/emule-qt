@@ -24,6 +24,10 @@ void UiState::load()
     m_windowHeight     = thePrefs.windowHeight();
     m_windowMaximized  = thePrefs.windowMaximized();
     m_optionsLastPage  = thePrefs.optionsLastPage();
+    m_toolbarButtonOrder = thePrefs.toolbarButtonOrder();
+    m_toolbarButtonStyle = thePrefs.toolbarButtonStyle();
+    m_toolbarSkinPath    = thePrefs.toolbarSkinPath();
+    m_skinProfilePath    = thePrefs.skinProfilePath();
 }
 
 void UiState::save()
@@ -40,6 +44,10 @@ void UiState::save()
     thePrefs.setWindowHeight(m_windowHeight);
     thePrefs.setWindowMaximized(m_windowMaximized);
     thePrefs.setOptionsLastPage(m_optionsLastPage);
+    thePrefs.setToolbarButtonOrder(m_toolbarButtonOrder);
+    thePrefs.setToolbarButtonStyle(m_toolbarButtonStyle);
+    thePrefs.setToolbarSkinPath(m_toolbarSkinPath);
+    thePrefs.setSkinProfilePath(m_skinProfilePath);
 
     for (auto it = m_headerStates.cbegin(); it != m_headerStates.cend(); ++it)
         thePrefs.setHeaderState(it.key(), it.value());

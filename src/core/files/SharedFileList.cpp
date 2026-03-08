@@ -41,6 +41,12 @@ void HashingThread::enqueue(Job job)
     m_condition.wakeOne();
 }
 
+void HashingThread::clearQueue()
+{
+    QMutexLocker locker(&m_mutex);
+    m_queue.clear();
+}
+
 void HashingThread::requestStop()
 {
     QMutexLocker locker(&m_mutex);
@@ -65,6 +71,8 @@ void HashingThread::run()
             m_queue.pop_front();
         }
 
+        logDebug(QStringLiteral("Hashing: %1/%2").arg(job.directory, job.filename));
+
         auto* kf = new KnownFile();
         bool ok = kf->createFromFile(job.directory, job.filename,
                                      [this](int percent) {
@@ -72,12 +80,15 @@ void HashingThread::run()
                                      });
 
         if (ok) {
+            logDebug(QStringLiteral("Hashed OK: %1/%2 (%3 bytes)")
+                         .arg(job.directory, job.filename)
+                         .arg(kf->fileSize()));
             if (!job.sharedDirectory.isEmpty())
                 kf->setSharedDirectory(job.sharedDirectory);
-            emit hashingFinished(kf);
+            emit hashingFinished(kf, job.generation);
         } else {
             delete kf;
-            emit hashingFailed(job.directory, job.filename);
+            emit hashingFailed(job.directory, job.filename, job.generation);
         }
     }
 }
@@ -92,11 +103,9 @@ SharedFileList::SharedFileList(KnownFileList* knownFiles, QObject* parent)
 {
     m_hashingThread = new HashingThread(this);
     connect(m_hashingThread, &HashingThread::hashingFinished,
-            this, &SharedFileList::onHashingFinished,
-            Qt::QueuedConnection);
+            this, &SharedFileList::onHashingFinished, Qt::QueuedConnection);
     connect(m_hashingThread, &HashingThread::hashingFailed,
-            this, &SharedFileList::onHashingFailed,
-            Qt::QueuedConnection);
+            this, &SharedFileList::onHashingFailed, Qt::QueuedConnection);
     m_hashingThread->start();
 }
 
@@ -116,9 +125,13 @@ SharedFileList::~SharedFileList()
 void SharedFileList::reload()
 {
     QMutexLocker locker(&m_mutex);
+    ++m_generation;
+    m_hashingThread->clearQueue();
     m_filesMap.clear();
     m_waitingForHash.clear();
+    m_hashingInProgress = false;
     findSharedFiles();
+    hashNextFile();
 }
 
 // ---------------------------------------------------------------------------
@@ -138,8 +151,11 @@ bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
     if (m_unsharedFiles.contains(key))
         return false;
 
-    if (m_filesMap.contains(key))
+    if (m_filesMap.contains(key)) {
+        logDebug(QStringLiteral("Duplicate hash: \"%1\" has same MD4 as existing \"%2\" — skipped")
+                     .arg(file->fileName(), m_filesMap[key]->fileName()));
         return false;
+    }
 
     m_filesMap[key] = file;
     addKeywords(file);
@@ -548,8 +564,6 @@ void SharedFileList::addFilesFromDirectory(const QString& dir, const QString& sh
         // Queue for hashing
         m_waitingForHash.push_back({fileDir, filename, sharedDir});
     }
-
-    hashNextFile();
 }
 
 // ---------------------------------------------------------------------------
@@ -558,23 +572,36 @@ void SharedFileList::addFilesFromDirectory(const QString& dir, const QString& sh
 
 void SharedFileList::hashNextFile()
 {
-    if (m_waitingForHash.empty() || !m_hashingThread)
+    if (m_waitingForHash.empty() || !m_hashingThread) {
+        m_hashingInProgress = false;
         return;
+    }
 
+    m_hashingInProgress = true;
     auto entry = std::move(m_waitingForHash.front());
     m_waitingForHash.pop_front();
 
-    m_hashingThread->enqueue({entry.directory, entry.filename, entry.sharedDirectory});
+    m_hashingThread->enqueue({entry.directory, entry.filename, entry.sharedDirectory, m_generation});
 }
 
 // ---------------------------------------------------------------------------
 // Hashing callbacks
 // ---------------------------------------------------------------------------
 
-void SharedFileList::onHashingFinished(KnownFile* file)
+void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
 {
     if (!file)
         return;
+
+    QMutexLocker locker(&m_mutex);
+
+    // Reject stale completions from a previous generation
+    if (generation != m_generation) {
+        delete file;
+        return;
+    }
+
+    locker.unlock();
 
     // Add to known files
     if (m_knownFiles)
@@ -584,11 +611,18 @@ void SharedFileList::onHashingFinished(KnownFile* file)
     safeAddKFile(file, true);
 
     // Hash next file in queue
+    QMutexLocker locker2(&m_mutex);
     hashNextFile();
 }
 
-void SharedFileList::onHashingFailed(const QString& directory, const QString& filename)
+void SharedFileList::onHashingFailed(const QString& directory, const QString& filename, uint64 generation)
 {
+    QMutexLocker locker(&m_mutex);
+
+    // Reject stale completions from a previous generation
+    if (generation != m_generation)
+        return;
+
     logWarning(QStringLiteral("Failed to hash file: %1/%2").arg(directory, filename));
 
     // Continue with next file
@@ -605,7 +639,10 @@ void SharedFileList::forEachFile(const std::function<void(KnownFile*)>& callback
 int SharedFileList::getHashingCount() const
 {
     QMutexLocker locker(&m_mutex);
-    return static_cast<int>(m_waitingForHash.size());
+    int count = static_cast<int>(m_waitingForHash.size());
+    if (m_hashingInProgress)
+        ++count;
+    return count;
 }
 
 // ---------------------------------------------------------------------------

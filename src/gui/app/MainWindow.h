@@ -9,6 +9,7 @@
 
 #include <QCloseEvent>
 #include <QMainWindow>
+#include <QMap>
 #include <QWidget>
 #include <QPainter>
 #include <QMouseEvent>
@@ -20,6 +21,7 @@ class QLabel;
 class QMenu;
 class QSoundEffect;
 class QStackedWidget;
+class QToolBar;
 
 namespace eMule {
 
@@ -38,6 +40,15 @@ class ServerPanel;
 class SharedFilesPanel;
 class StatisticsPanel;
 class TransferPanel;
+
+/// Identifies each toolbar button for customization persistence.
+enum class ToolbarButtonId : int {
+    Connect = 0,
+    Separator = 1,
+    Kad = 10, Servers = 11, Transfers = 12, Search = 13,
+    SharedFiles = 14, Messages = 15, IRC = 16, Statistics = 17,
+    Options = 20, Tools = 21, Help = 22,
+};
 
 /// Small status bar widget showing a world globe with two arrows:
 /// left arrow = eD2K status, right arrow = Kad status.
@@ -148,18 +159,26 @@ private slots:
     void onIPFilter();
     void onPasteLinks();
     void onSchedulerToggle();
+    void onToolbarContextMenu(const QPoint& pos);
 
 private:
-    void setupToolbar();
+    void rebuildToolbar();
+    void loadToolbarSkin(const QString& path);
+    void clearToolbarSkin();
+    QString skinsDir() const;
+    void applySkinProfile(const QString& path);
     void setupStatusBar();
     void setupPages();
     void updateConnectButton();
 
     QStackedWidget* m_pages = nullptr;
+    QToolBar* m_toolbar = nullptr;
     QAction* m_connectAction = nullptr;
     QActionGroup* m_tabGroup = nullptr;
     IpcClient* m_ipc = nullptr;
     QMenu* m_toolsMenu = nullptr;
+    QMap<ToolbarButtonId, QAction*> m_toolbarActions;
+    QMap<ToolbarButtonId, QIcon> m_skinIcons;
 
     // Tab panels
     KadPanel* m_kadPanel = nullptr;

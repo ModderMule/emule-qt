@@ -60,6 +60,14 @@ elseif(LINUX)
     target_link_libraries(emuleqt PRIVATE Qt6::DBus)
 endif()
 
+# macOS bundle icon
+if(APPLE)
+    set(MULE_ICNS "${CMAKE_SOURCE_DIR}/resources/icons/Mule.icns")
+    target_sources(emuleqt PRIVATE "${MULE_ICNS}")
+    set_source_files_properties("${MULE_ICNS}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
+endif()
+
 # macOS bundle settings
 set_target_properties(emuleqt PROPERTIES
     MACOSX_BUNDLE TRUE
@@ -68,6 +76,7 @@ set_target_properties(emuleqt PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+    MACOSX_BUNDLE_ICON_FILE "Mule.icns"
     WIN32_EXECUTABLE TRUE
 )
 

@@ -47,6 +47,7 @@ private slots:
     void onFolderSelectionChanged();
     void onFileSelectionChanged();
     void onFileContextMenu(const QPoint& pos);
+    void onFolderContextMenu(const QPoint& pos);
     void onFolderItemExpanded(QTreeWidgetItem* item);
 
 private:
@@ -63,6 +64,9 @@ private:
     void copyEd2kLink();
     [[nodiscard]] QString saveSelection() const;
     void restoreSelection(const QString& key);
+    void fetchAndShowSharedFileDetails(const QString& hash, int tab);
+    void sendShareDirsUpdate(const QStringList& dirs);
+    static void collectSubdirectories(const QString& root, QStringList& list);
 
     // Models
     SharedFilesModel* m_model = nullptr;

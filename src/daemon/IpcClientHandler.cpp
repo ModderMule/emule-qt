@@ -193,6 +193,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
     case IpcMsgType::RequestClientSharedFiles: handleRequestClientSharedFiles(msg); break;
     case IpcMsgType::GetClientDetails:   handleGetClientDetails(msg); break;
+    case IpcMsgType::GetSharedFileDetails: handleGetSharedFileDetails(msg); break;
     default:
         sendMessage(IpcMessage::makeError(msg.seqId(), 400,
             QStringLiteral("Unknown message type: %1").arg(static_cast<int>(msg.type()))));
@@ -1471,6 +1472,18 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         if (!applyPreferenceA(key, val))
             applyPreferenceB(key, val);
     }
+    // Detect whether shared directory settings changed before saving
+    bool sharedDirsChanged = false;
+    for (int i = 0; i + 1 < msg.fieldCount(); i += 2) {
+        const QString k = msg.fieldString(i);
+        if (k == QStringLiteral("incomingDir")
+            || k == QStringLiteral("sharedDirs")
+            || k == QStringLiteral("tempDirs")) {
+            sharedDirsChanged = true;
+            break;
+        }
+    }
+
     thePrefs.save();
 
     // Notify web server config changes
@@ -1494,8 +1507,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         theApp.serverConnect->setConfig(cfg);
     }
 
-    // Rescan shared files if directory settings changed
-    if (theApp.sharedFileList)
+    // Rescan shared files only if directory settings actually changed
+    if (sharedDirsChanged && theApp.sharedFileList)
         theApp.sharedFileList->reload();
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
@@ -2413,6 +2426,85 @@ void IpcClientHandler::handleGetClientDetails(const IpcMessage& msg)
     }
 
     const QCborMap details = toCborDetailed(*client, theApp);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
+}
+
+void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared file list unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* kf = theApp.sharedFileList->getFileByID(hashBuf);
+    if (!kf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Shared file not found")));
+        return;
+    }
+
+    QCborMap details;
+    // Basic info
+    details.insert(QLatin1StringView("hash"), md4str(kf->fileHash()));
+    details.insert(QLatin1StringView("fileName"), kf->fileName());
+    details.insert(QLatin1StringView("fileSize"), static_cast<qint64>(kf->fileSize()));
+    details.insert(QLatin1StringView("fileType"), kf->fileType());
+    details.insert(QLatin1StringView("filePath"), kf->filePath());
+    details.insert(QLatin1StringView("path"), QFileInfo(kf->filePath()).absolutePath());
+
+    // Statistics (session + all-time)
+    details.insert(QLatin1StringView("requests"), static_cast<qint64>(kf->statistic.requests()));
+    details.insert(QLatin1StringView("acceptedUploads"), static_cast<qint64>(kf->statistic.accepts()));
+    details.insert(QLatin1StringView("transferred"), static_cast<qint64>(kf->statistic.transferred()));
+    details.insert(QLatin1StringView("allTimeRequests"), static_cast<qint64>(kf->statistic.allTimeRequests()));
+    details.insert(QLatin1StringView("allTimeAccepted"), static_cast<qint64>(kf->statistic.allTimeAccepts()));
+    details.insert(QLatin1StringView("allTimeTransferred"), static_cast<qint64>(kf->statistic.allTimeTransferred()));
+    details.insert(QLatin1StringView("completeSources"), static_cast<qint64>(kf->completeSourcesCount()));
+
+    // ED2K links (pre-generated variants)
+    details.insert(QLatin1StringView("ed2kLink"),         kf->getED2kLink(false, false, false));
+    details.insert(QLatin1StringView("ed2kLinkHashset"),   kf->getED2kLink(true, false, false));
+    details.insert(QLatin1StringView("ed2kLinkHTML"),      kf->getED2kLink(false, true, false));
+    details.insert(QLatin1StringView("ed2kLinkHostname"),  kf->getED2kLink(false, false, true));
+
+    // Media metadata
+    details.insert(QLatin1StringView("mediaArtist"),  kf->getStrTagValue(FT_MEDIA_ARTIST));
+    details.insert(QLatin1StringView("mediaAlbum"),   kf->getStrTagValue(FT_MEDIA_ALBUM));
+    details.insert(QLatin1StringView("mediaTitle"),   kf->getStrTagValue(FT_MEDIA_TITLE));
+    details.insert(QLatin1StringView("mediaLength"),  static_cast<qint64>(kf->getIntTagValue(FT_MEDIA_LENGTH)));
+    details.insert(QLatin1StringView("mediaBitrate"), static_cast<qint64>(kf->getIntTagValue(FT_MEDIA_BITRATE)));
+    details.insert(QLatin1StringView("mediaCodec"),   kf->getStrTagValue(FT_MEDIA_CODEC));
+
+    // All file tags for Metadata tab
+    QCborArray tagArr;
+    for (const auto& tag : kf->tags()) {
+        QCborMap t;
+        if (tag.nameId())
+            t.insert(QLatin1StringView("nameId"), tag.nameId());
+        if (tag.hasName())
+            t.insert(QLatin1StringView("name"), QString::fromLatin1(tag.name()));
+        t.insert(QLatin1StringView("type"), tag.type());
+        if (tag.isStr())
+            t.insert(QLatin1StringView("strValue"), tag.strValue());
+        else if (tag.isInt())
+            t.insert(QLatin1StringView("intValue"), static_cast<qint64>(tag.int64Value()));
+        else if (tag.isFloat())
+            t.insert(QLatin1StringView("floatValue"), static_cast<double>(tag.floatValue()));
+        else if (tag.isHash())
+            t.insert(QLatin1StringView("hashValue"), encodeBase16({tag.hashValue(), 16}));
+        tagArr.append(t);
+    }
+    details.insert(QLatin1StringView("tags"), tagArr);
+
+    // Comments and sourceNames (empty for shared KnownFiles — dialog expects these fields)
+    details.insert(QLatin1StringView("comments"), QCborArray());
+    details.insert(QLatin1StringView("sourceNames"), QCborArray());
+
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
 }
 

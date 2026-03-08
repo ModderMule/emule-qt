@@ -110,6 +110,7 @@ private:
     void handlePreviewDownload(const Ipc::IpcMessage& msg);
     void handleRequestClientSharedFiles(const Ipc::IpcMessage& msg);
     void handleGetClientDetails(const Ipc::IpcMessage& msg);
+    void handleGetSharedFileDetails(const Ipc::IpcMessage& msg);
 
     // Preference application helpers (split to avoid MSVC C1061 nesting limit)
     bool applyPreferenceA(const QString& key, const QCborValue& val);
