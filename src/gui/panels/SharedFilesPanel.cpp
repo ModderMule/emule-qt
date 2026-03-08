@@ -8,6 +8,7 @@
 #include "app/UiState.h"
 #include "controls/SharedFilesModel.h"
 #include "controls/SharedPartsDelegate.h"
+#include "dialogs/FileDetailDialog.h"
 #include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
@@ -294,7 +295,29 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         }
     }
 
+    // Collection submenu (placeholder)
+    {
+        auto* collMenu = m_contextMenu->addMenu(tr("Collection"));
+        collMenu->setEnabled(false); // ToDo: implement collection management
+    }
+
     m_contextMenu->addSeparator();
+
+    // Details...
+    {
+        auto* act = m_contextMenu->addAction(ico("FileInfo.ico"), tr("Details..."), this, [this, hash]() {
+            fetchAndShowSharedFileDetails(hash, FileDetailDialog::General);
+        });
+        act->setEnabled(hasSel);
+    }
+
+    // Comments...
+    {
+        auto* act = m_contextMenu->addAction(ico("FileComments.ico"), tr("Comments..."), this, [this, hash]() {
+            fetchAndShowSharedFileDetails(hash, FileDetailDialog::Comments);
+        });
+        act->setEnabled(hasSel);
+    }
 
     // eD2K Links
     {
@@ -307,6 +330,12 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     // Find
     connect(m_contextMenu->addAction(ico("Search.ico"), tr("Find...")),
             &QAction::triggered, this, &SharedFilesPanel::showFindDialog);
+
+    // Web Services submenu (placeholder)
+    {
+        auto* webMenu = m_contextMenu->addMenu(tr("Web Services"));
+        webMenu->setEnabled(false); // ToDo: populate from webservices.dat
+    }
 
     m_contextMenu->popup(m_fileView->viewport()->mapToGlobal(pos));
 }
@@ -382,6 +411,8 @@ QWidget* SharedFilesPanel::createTopSection()
     m_horzSplitter = new QSplitter(Qt::Horizontal);
     m_horzSplitter->setHandleWidth(4);
     m_horzSplitter->setChildrenCollapsible(false);
+    m_horzSplitter->setStyleSheet(
+        QStringLiteral("QSplitter::handle { background: palette(mid); }"));
 
     // --- Folder tree ---
     m_folderTree = new QTreeWidget;
@@ -416,6 +447,9 @@ QWidget* SharedFilesPanel::createTopSection()
     m_allSharedItem->setExpanded(true);
     m_folderTree->setCurrentItem(m_allSharedItem);
 
+    m_folderTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_folderTree, &QTreeWidget::customContextMenuRequested,
+            this, &SharedFilesPanel::onFolderContextMenu);
     connect(m_folderTree, &QTreeWidget::itemSelectionChanged,
             this, &SharedFilesPanel::onFolderSelectionChanged);
     connect(m_folderTree, &QTreeWidget::itemExpanded,
@@ -916,6 +950,128 @@ void SharedFilesPanel::restoreSelection(const QString& key)
             }
             return;
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Folder tree context menu
+// ---------------------------------------------------------------------------
+
+void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
+{
+    auto* item = m_folderTree->itemAt(pos);
+    if (!item || !item->data(0, kRoleFsItem).toBool())
+        return;
+
+    const QString path = item->data(0, Qt::UserRole + 1).toString();
+    if (path.isEmpty())
+        return;
+
+    QMenu menu(this);
+
+    // Open Folder (local only)
+    auto* openAct = menu.addAction(QIcon(QStringLiteral(":/icons/FolderOpen.ico")),
+                                    tr("Open Folder"), this, [path]() {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    });
+    openAct->setEnabled(m_ipc && m_ipc->isLocalConnection());
+
+    menu.addSeparator();
+
+    // Share Directory
+    menu.addAction(tr("Share Directory"), this, [this, path]() {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        auto dirs = thePrefs.sharedDirs();
+        if (!dirs.contains(path))
+            dirs.append(path);
+        sendShareDirsUpdate(dirs);
+    });
+
+    // Share with Subdirectories
+    menu.addAction(tr("Share with Subdirectories"), this, [this, path]() {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        auto dirs = thePrefs.sharedDirs();
+        collectSubdirectories(path, dirs);
+        sendShareDirsUpdate(dirs);
+    });
+
+    menu.addSeparator();
+
+    // Unshare Directory
+    menu.addAction(tr("Unshare Directory"), this, [this, path]() {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        auto dirs = thePrefs.sharedDirs();
+        dirs.removeAll(path);
+        sendShareDirsUpdate(dirs);
+    });
+
+    // Unshare with Subdirectories
+    menu.addAction(tr("Unshare with Subdirectories"), this, [this, path]() {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        auto dirs = thePrefs.sharedDirs();
+        QStringList toRemove;
+        collectSubdirectories(path, toRemove);
+        for (const auto& d : toRemove)
+            dirs.removeAll(d);
+        sendShareDirsUpdate(dirs);
+    });
+
+    menu.exec(m_folderTree->viewport()->mapToGlobal(pos));
+}
+
+// ---------------------------------------------------------------------------
+// Shared file details (IPC fetch + dialog)
+// ---------------------------------------------------------------------------
+
+void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int tab)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::GetSharedFileDetails);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg), [this, tab](const IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+        const QCborMap details = resp.field(1).toMap();
+        auto* dlg = new FileDetailDialog(details,
+                                          static_cast<FileDetailDialog::Tab>(tab), this);
+        dlg->show();
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Folder share helpers
+// ---------------------------------------------------------------------------
+
+void SharedFilesPanel::sendShareDirsUpdate(const QStringList& dirs)
+{
+    thePrefs.setSharedDirs(dirs);
+    IpcMessage req(IpcMsgType::SetPreferences);
+    req.append(QStringLiteral("sharedDirs"));
+    QCborArray arr;
+    for (const auto& d : dirs)
+        arr.append(d);
+    req.append(arr);
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage&) {
+        requestSharedFiles();
+    });
+}
+
+void SharedFilesPanel::collectSubdirectories(const QString& root, QStringList& list)
+{
+    if (!list.contains(root))
+        list.append(root);
+    QDir dir(root);
+    const auto entries = dir.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks,
+        QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo& fi : entries) {
+        if (!fi.fileName().startsWith(u'.') && fi.isReadable())
+            collectSubdirectories(fi.absoluteFilePath(), list);
     }
 }
 

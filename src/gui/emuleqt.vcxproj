@@ -231,6 +231,7 @@
     <ClCompile Include="dialogs\NetworkInfoDialog.cpp" />
     <ClCompile Include="dialogs\OptionsDialog.cpp" />
     <ClCompile Include="dialogs\PasteLinksDialog.cpp" />
+    <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp" />
     <ClCompile Include="app\PowerManager.cpp" />
     <ClCompile Include="panels\SearchPanel.cpp" />
     <ClCompile Include="controls\SearchResultsModel.cpp" />
@@ -279,6 +280,7 @@
     <QtMoc Include="dialogs\NetworkInfoDialog.h" />
     <QtMoc Include="dialogs\OptionsDialog.h" />
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
+    <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />
     <ClInclude Include="app\PowerManager.h" />
     <QtMoc Include="panels\SearchPanel.h" />
     <QtMoc Include="controls\SearchResultsModel.h" />

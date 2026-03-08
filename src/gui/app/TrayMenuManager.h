@@ -31,7 +31,8 @@ public:
 
 signals:
     void restoreRequested();
-    void connectToggleRequested();
+    void connectRequested();
+    void disconnectRequested();
     void optionsRequested();
     void exitRequested();
 
@@ -43,6 +44,7 @@ private:
     IpcClient* m_ipc = nullptr;
 
     QAction* m_connectAction = nullptr;
+    QAction* m_disconnectAction = nullptr;
     QSlider* m_upSlider = nullptr;
     QSpinBox* m_upSpin = nullptr;
     QSlider* m_downSlider = nullptr;

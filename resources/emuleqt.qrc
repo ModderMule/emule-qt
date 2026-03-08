@@ -98,6 +98,10 @@
         <file alias="eD2kLinkPaste.ico">icons/eD2kLinkPaste.ico</file>
         <file alias="Web.ico">icons/Web.ico</file>
         <file alias="Scheduler.ico">icons/Scheduler.ico</file>
+        <!-- Tray speed icons -->
+        <file alias="Speed.ico">icons/Speed.ico</file>
+        <file alias="SpeedMax.ico">icons/SpeedMax.ico</file>
+        <file alias="SpeedMin.ico">icons/SpeedMin.ico</file>
         <!-- Main toolbar / Options sidebar original eMule icons -->
         <file alias="ConnectDo.ico">icons/ConnectDo.ico</file>
         <file alias="ConnectDrop.ico">icons/ConnectDrop.ico</file>
@@ -126,6 +130,8 @@
         <file alias="ConnectedNotLow.ico">icons/ConnectedNotLow.ico</file>
         <file alias="ConnectedNotNot.ico">icons/ConnectedNotNot.ico</file>
         <file alias="ConnectStop.ico">icons/ConnectStop.ico</file>
+        <!-- App icon -->
+        <file alias="Mule.ico">icons/Mule.ico</file>
         <!-- Tray icons -->
         <file alias="TrayConnected.ico">icons/TrayConnected.ico</file>
         <file alias="TrayDisconnected.ico">icons/TrayDisconnected.ico</file>

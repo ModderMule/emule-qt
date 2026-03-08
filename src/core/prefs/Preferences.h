@@ -816,6 +816,18 @@ public:
     [[nodiscard]] int optionsLastPage() const;
     void setOptionsLastPage(int val);
 
+    [[nodiscard]] QList<int> toolbarButtonOrder() const;
+    void setToolbarButtonOrder(const QList<int>& val);
+
+    [[nodiscard]] int toolbarButtonStyle() const;
+    void setToolbarButtonStyle(int val);
+
+    [[nodiscard]] QString toolbarSkinPath() const;
+    void setToolbarSkinPath(const QString& val);
+
+    [[nodiscard]] QString skinProfilePath() const;
+    void setSkinProfilePath(const QString& val);
+
     [[nodiscard]] QByteArray headerState(const QString& key) const;
     void setHeaderState(const QString& key, const QByteArray& val);
 

@@ -31,6 +31,7 @@
 #include "controls/DownloadListModel.h"
 #include "controls/SharedFilesModel.h"
 #include "dialogs/PasteLinksDialog.h"
+#include "dialogs/ToolbarCustomizeDialog.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -38,6 +39,8 @@
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QCursor>
+#include <QDir>
+#include <QFileDialog>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -88,7 +91,7 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle(tr("eMule Qt v%1").arg(QApplication::applicationVersion()));
 
     setupPages();
-    setupToolbar();
+    rebuildToolbar();
     setupStatusBar();
 
     switchToTab(TabKad);
@@ -98,7 +101,8 @@ MainWindow::MainWindow(QWidget* parent)
 
     // System tray icon for popup notifications
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
-        m_trayIcon = new QSystemTrayIcon(windowIcon(), this);
+        m_trayIcon = new QSystemTrayIcon(
+            QIcon(QStringLiteral(":/icons/TrayDisconnected.ico")), this);
         m_trayIcon->setToolTip(QStringLiteral("eMule Qt"));
         m_trayIcon->show();
         connect(m_trayIcon, &QSystemTrayIcon::activated,
@@ -110,7 +114,9 @@ MainWindow::MainWindow(QWidget* parent)
             raise();
             activateWindow();
         });
-        connect(m_trayMenu, &TrayMenuManager::connectToggleRequested,
+        connect(m_trayMenu, &TrayMenuManager::connectRequested,
+                this, &MainWindow::onConnectToggle);
+        connect(m_trayMenu, &TrayMenuManager::disconnectRequested,
                 this, &MainWindow::onConnectToggle);
         connect(m_trayMenu, &TrayMenuManager::optionsRequested,
                 this, &MainWindow::onOptionsClicked);
@@ -621,86 +627,351 @@ void MainWindow::updateMiniMule(int completedCount, qint64 freeBytes)
 // Private setup helpers
 // ---------------------------------------------------------------------------
 
-void MainWindow::setupToolbar()
+// ---------------------------------------------------------------------------
+// Toolbar button metadata
+// ---------------------------------------------------------------------------
+
+struct ToolbarButtonDef {
+    ToolbarButtonId id;
+    const char* label;
+    const char* iconResource;
+    QStyle::StandardPixmap fallback;
+    int tabIndex; // -1 if not a tab button
+};
+
+static constexpr ToolbarButtonDef kAllButtons[] = {
+    {ToolbarButtonId::Connect,     "Connect",      "ConnectDrop.ico", QStyle::SP_MediaStop,               -1},
+    {ToolbarButtonId::Kad,         "Kad",           "Kad.ico",        QStyle::SP_DriveNetIcon,             0},
+    {ToolbarButtonId::Servers,     "Servers",       "Server.ico",     QStyle::SP_ComputerIcon,             1},
+    {ToolbarButtonId::Transfers,   "Transfers",     "Transfer.ico",   QStyle::SP_ArrowDown,                2},
+    {ToolbarButtonId::Search,      "Search",        "Search.ico",     QStyle::SP_FileDialogContentsView,   3},
+    {ToolbarButtonId::SharedFiles, "Shared Files",  "SharedFiles.ico",QStyle::SP_DirOpenIcon,              4},
+    {ToolbarButtonId::Messages,    "Messages",      "Messages.ico",   QStyle::SP_MessageBoxInformation,    5},
+    {ToolbarButtonId::IRC,         "IRC",           "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
+    {ToolbarButtonId::Statistics,  "Statistics",     "Statistics.ico", QStyle::SP_DialogHelpButton,         7},
+    {ToolbarButtonId::Options,     "Options",       "Preferences.ico",QStyle::SP_FileDialogDetailedView,  -1},
+    {ToolbarButtonId::Tools,       "Tools",         "Tools.ico",      QStyle::SP_DialogResetButton,       -1},
+    {ToolbarButtonId::Help,        "Help",          "Help.ico",       QStyle::SP_TitleBarContextHelpButton,-1},
+};
+
+static const QList<int> kDefaultToolbarOrder = {
+    0, 1, 10, 11, 12, 13, 14, 15, 16, 17, 1, 20, 21, 22
+};
+
+static const ToolbarButtonDef* findButtonDef(ToolbarButtonId id)
 {
-    auto* toolbar = addToolBar(tr("Main"));
-    toolbar->setObjectName(QStringLiteral("MainToolbar"));
-    toolbar->setMovable(false);
-    toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    toolbar->setIconSize(QSize(32, 32));
+    for (const auto& def : kAllButtons) {
+        if (def.id == id)
+            return &def;
+    }
+    return nullptr;
+}
 
-    const bool useOriginal = thePrefs.useOriginalIcons();
+void MainWindow::rebuildToolbar()
+{
+    // Create toolbar on first call; clear on subsequent calls
+    if (!m_toolbar) {
+        m_toolbar = addToolBar(tr("Main"));
+        m_toolbar->setObjectName(QStringLiteral("MainToolbar"));
+        m_toolbar->setMovable(false);
+        m_toolbar->setIconSize(QSize(32, 32));
+        m_toolbar->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(m_toolbar, &QToolBar::customContextMenuRequested,
+                this, &MainWindow::onToolbarContextMenu);
+    } else {
+        m_toolbar->clear();
+    }
 
-    // Connect/Disconnect button (not part of tab group)
-    m_connectAction = toolbar->addAction(
-        useOriginal ? QIcon(QStringLiteral(":/icons/ConnectDrop.ico"))
-                    : style()->standardIcon(QStyle::SP_MediaStop),
-        tr("Disconnect"));
-    connect(m_connectAction, &QAction::triggered, this, &MainWindow::onConnectToggle);
+    m_toolbarActions.clear();
+    m_connectAction = nullptr;
 
-    toolbar->addSeparator();
-
-    // Tab buttons
+    // Recreate tab group
+    delete m_tabGroup;
     m_tabGroup = new QActionGroup(this);
     m_tabGroup->setExclusive(true);
     connect(m_tabGroup, &QActionGroup::triggered, this, &MainWindow::onToolbarAction);
 
-    struct TabDef {
-        const char* label;
-        QStyle::StandardPixmap icon;
-        const char* originalIcon;
-        Tab tab;
-    };
+    // Determine button order
+    const QList<int>& savedOrder = theUiState.toolbarButtonOrder();
+    const QList<int>& order = savedOrder.isEmpty() ? kDefaultToolbarOrder : savedOrder;
 
-    static constexpr TabDef tabs[] = {
-        {"Kad",          QStyle::SP_DriveNetIcon,           "Kad.ico",             TabKad},
-        {"Servers",      QStyle::SP_ComputerIcon,           "Server.ico",          TabServers},
-        {"Transfers",    QStyle::SP_ArrowDown,              "Transfer.ico",        TabTransfers},
-        {"Search",       QStyle::SP_FileDialogContentsView, "Search.ico",          TabSearch},
-        {"Shared Files", QStyle::SP_DirOpenIcon,            "SharedFiles.ico",     TabSharedFiles},
-        {"Messages",     QStyle::SP_MessageBoxInformation,  "Messages.ico",        TabMessages},
-        {"IRC",          QStyle::SP_DialogApplyButton,      "IRC.ico",             TabIRC},
-        {"Statistics",   QStyle::SP_DialogHelpButton,       "Statistics.ico",      TabStatistics},
-    };
+    // Apply button style
+    m_toolbar->setToolButtonStyle(
+        static_cast<Qt::ToolButtonStyle>(theUiState.toolbarButtonStyle()));
 
-    for (const auto& [label, icon, resIcon, tab] : tabs) {
-        const QIcon qicon = useOriginal
-            ? QIcon(QStringLiteral(":/icons/") + QLatin1String(resIcon))
-            : style()->standardIcon(icon);
-        auto* action = toolbar->addAction(qicon, tr(label));
-        action->setCheckable(true);
-        action->setData(static_cast<int>(tab));
-        m_tabGroup->addAction(action);
-        if (tab == TabKad)
-            action->setChecked(true);
+    // Load skin if configured
+    const QString& skinPath = theUiState.toolbarSkinPath();
+    if (!skinPath.isEmpty() && m_skinIcons.isEmpty())
+        loadToolbarSkin(skinPath);
+
+    const bool useOriginal = thePrefs.useOriginalIcons();
+
+    for (int rawId : order) {
+        auto id = static_cast<ToolbarButtonId>(rawId);
+
+        if (id == ToolbarButtonId::Separator) {
+            m_toolbar->addSeparator();
+            continue;
+        }
+
+        const auto* def = findButtonDef(id);
+        if (!def)
+            continue;
+
+        // Determine icon: skin > resource > fallback
+        QIcon icon;
+        if (m_skinIcons.contains(id)) {
+            icon = m_skinIcons[id];
+        } else if (useOriginal) {
+            icon = QIcon(QStringLiteral(":/icons/") + QLatin1String(def->iconResource));
+        } else {
+            icon = style()->standardIcon(def->fallback);
+        }
+
+        auto* action = m_toolbar->addAction(icon, tr(def->label));
+        m_toolbarActions[id] = action;
+
+        if (def->tabIndex >= 0) {
+            // Tab button
+            action->setCheckable(true);
+            action->setData(def->tabIndex);
+            m_tabGroup->addAction(action);
+            if (def->tabIndex == m_pages->currentIndex())
+                action->setChecked(true);
+        } else if (id == ToolbarButtonId::Connect) {
+            m_connectAction = action;
+            connect(action, &QAction::triggered, this, &MainWindow::onConnectToggle);
+        } else if (id == ToolbarButtonId::Options) {
+            connect(action, &QAction::triggered, this, &MainWindow::onOptionsClicked);
+        } else if (id == ToolbarButtonId::Tools) {
+            if (!m_toolsMenu) {
+                m_toolsMenu = new QMenu(this);
+                connect(m_toolsMenu, &QMenu::aboutToShow, this, &MainWindow::buildToolsMenu);
+            }
+            if (auto* toolsBtn = qobject_cast<QToolButton*>(
+                    m_toolbar->widgetForAction(action))) {
+                toolsBtn->setMenu(m_toolsMenu);
+                toolsBtn->setPopupMode(QToolButton::InstantPopup);
+            }
+        } else if (id == ToolbarButtonId::Help) {
+            connect(action, &QAction::triggered, this, [] {
+                QDesktopServices::openUrl(QUrl(QStringLiteral("https://emule-qt.org")));
+            });
+        }
     }
 
-    toolbar->addSeparator();
+    // Update Connect button state
+    if (m_connectAction)
+        updateConnectButton();
+}
 
-    // Options, Tools, Help (non-tab actions)
-    auto* optionsAction = toolbar->addAction(
-        useOriginal ? QIcon(QStringLiteral(":/icons/Preferences.ico"))
-                    : style()->standardIcon(QStyle::SP_FileDialogDetailedView),
-        tr("Options"));
-    connect(optionsAction, &QAction::triggered, this, &MainWindow::onOptionsClicked);
+void MainWindow::loadToolbarSkin(const QString& path)
+{
+    QPixmap strip(path);
+    if (strip.isNull())
+        return;
 
-    auto* toolsAction = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/Tools.ico")),
-        tr("Tools"));
-    m_toolsMenu = new QMenu(this);
-    connect(m_toolsMenu, &QMenu::aboutToShow, this, &MainWindow::buildToolsMenu);
-    if (auto* toolsBtn = qobject_cast<QToolButton*>(toolbar->widgetForAction(toolsAction))) {
-        toolsBtn->setMenu(m_toolsMenu);
-        toolsBtn->setPopupMode(QToolButton::InstantPopup);
+    m_skinIcons.clear();
+
+    // Skin strip: 32px-wide tiles in fixed order
+    static constexpr ToolbarButtonId kSkinOrder[] = {
+        ToolbarButtonId::Connect, ToolbarButtonId::Kad, ToolbarButtonId::Servers,
+        ToolbarButtonId::Transfers, ToolbarButtonId::Search, ToolbarButtonId::SharedFiles,
+        ToolbarButtonId::Messages, ToolbarButtonId::IRC, ToolbarButtonId::Statistics,
+        ToolbarButtonId::Options, ToolbarButtonId::Tools, ToolbarButtonId::Help,
+    };
+
+    const int tileW = 32;
+    const int h = strip.height();
+
+    for (int i = 0; i < static_cast<int>(std::size(kSkinOrder)); ++i) {
+        if (i * tileW >= strip.width())
+            break;
+        QPixmap tile = strip.copy(i * tileW, 0, tileW, h);
+        if (h != 32)
+            tile = tile.scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        m_skinIcons[kSkinOrder[i]] = QIcon(tile);
     }
+}
 
-    auto* helpAction = toolbar->addAction(
-        useOriginal ? QIcon(QStringLiteral(":/icons/Help.ico"))
-                    : style()->standardIcon(QStyle::SP_TitleBarContextHelpButton),
-        tr("Help"));
-    connect(helpAction, &QAction::triggered, this, [] {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://emule-qt.org")));
+void MainWindow::clearToolbarSkin()
+{
+    m_skinIcons.clear();
+}
+
+void MainWindow::onToolbarContextMenu(const QPoint& pos)
+{
+    QMenu menu(this);
+
+    // --- Toolbar Skins submenu ---
+    auto* skinsMenu = menu.addMenu(tr("Toolbar Skins"));
+
+    skinsMenu->addAction(tr("Select Toolbar Bitmap..."), this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Select Toolbar Bitmap"),
+            QString{},
+            tr("Images (*.bmp *.png *.jpg);;All Files (*)"));
+        if (path.isEmpty())
+            return;
+        theUiState.setToolbarSkinPath(path);
+        clearToolbarSkin();
+        rebuildToolbar();
     });
+
+    skinsMenu->addAction(tr("Select Toolbar Bitmap Directory..."), this, [this]() {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("Select Toolbar Bitmap Directory"));
+        if (dir.isEmpty())
+            return;
+        // Look for first BMP/PNG in directory
+        QDir d(dir);
+        const QStringList filters{QStringLiteral("*.bmp"), QStringLiteral("*.png")};
+        const QStringList files = d.entryList(filters, QDir::Files, QDir::Name);
+        if (!files.isEmpty()) {
+            const QString path = d.filePath(files.first());
+            theUiState.setToolbarSkinPath(path);
+            clearToolbarSkin();
+            rebuildToolbar();
+        }
+    });
+
+    skinsMenu->addSeparator();
+
+    auto* defaultAction = skinsMenu->addAction(tr("Default"), this, [this]() {
+        theUiState.setToolbarSkinPath(QString{});
+        clearToolbarSkin();
+        rebuildToolbar();
+    });
+    defaultAction->setCheckable(true);
+    defaultAction->setChecked(theUiState.toolbarSkinPath().isEmpty());
+
+    // Scan skins directory for *.eMuleToolbar.kad02.{bmp,png,gif} files
+    const QString skDir = skinsDir();
+    if (!skDir.isEmpty()) {
+        QDir d(skDir);
+        const QStringList bmpFiles = d.entryList(
+            {QStringLiteral("*.eMuleToolbar.kad02.bmp"),
+             QStringLiteral("*.eMuleToolbar.kad02.gif"),
+             QStringLiteral("*.eMuleToolbar.kad02.png")},
+            QDir::Files, QDir::Name);
+        for (const QString& fileName : bmpFiles) {
+            QString displayName = fileName;
+            const auto idx = displayName.indexOf(
+                QStringLiteral(".eMuleToolbar.kad02."), 0, Qt::CaseInsensitive);
+            if (idx > 0)
+                displayName.truncate(idx);
+
+            const QString fullPath = d.filePath(fileName);
+            auto* act = skinsMenu->addAction(displayName, this, [this, fullPath]() {
+                theUiState.setToolbarSkinPath(fullPath);
+                clearToolbarSkin();
+                rebuildToolbar();
+            });
+            act->setCheckable(true);
+            act->setChecked(theUiState.toolbarSkinPath() == fullPath);
+        }
+    }
+
+    // --- Skin Profiles submenu ---
+    auto* profilesMenu = menu.addMenu(tr("Skin Profiles"));
+
+    profilesMenu->addAction(tr("Select Skin File..."), this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Select Skin Profile"),
+            skinsDir(),
+            tr("Skin Files (*.eMuleSkin.ini);;All Files (*)"));
+        if (!path.isEmpty())
+            applySkinProfile(path);
+    });
+
+    profilesMenu->addAction(tr("Select Skin Directory..."), this, [this]() {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("Select Skin Directory"));
+        if (dir.isEmpty())
+            return;
+        QDir d(dir);
+        const QStringList iniFiles = d.entryList(
+            {QStringLiteral("*.eMuleSkin.ini")}, QDir::Files, QDir::Name);
+        if (!iniFiles.isEmpty())
+            applySkinProfile(d.filePath(iniFiles.first()));
+    });
+
+    profilesMenu->addSeparator();
+
+    auto* defaultProfile = profilesMenu->addAction(tr("Default"), this, [this]() {
+        applySkinProfile(QString{});
+    });
+    defaultProfile->setCheckable(true);
+    defaultProfile->setChecked(theUiState.skinProfilePath().isEmpty());
+
+    // Scan skins directory for *.eMuleSkin.ini files
+    if (!skDir.isEmpty()) {
+        QDir d(skDir);
+        const QStringList iniFiles = d.entryList(
+            {QStringLiteral("*.eMuleSkin.ini")}, QDir::Files, QDir::Name);
+        for (const QString& fileName : iniFiles) {
+            QString displayName = fileName;
+            const auto idx = displayName.indexOf(
+                QStringLiteral(".eMuleSkin.ini"), 0, Qt::CaseInsensitive);
+            if (idx > 0)
+                displayName.truncate(idx);
+
+            const QString fullPath = d.filePath(fileName);
+            auto* act = profilesMenu->addAction(displayName, this, [this, fullPath]() {
+                applySkinProfile(fullPath);
+            });
+            act->setCheckable(true);
+            act->setChecked(theUiState.skinProfilePath() == fullPath);
+        }
+    }
+
+    // --- Text Label Options submenu ---
+    auto* textMenu = menu.addMenu(tr("Text Label Options"));
+
+    struct StyleOption {
+        const char* label;
+        Qt::ToolButtonStyle style;
+    };
+    static constexpr StyleOption kStyles[] = {
+        {"Icon Only",        Qt::ToolButtonIconOnly},
+        {"Text Only",        Qt::ToolButtonTextOnly},
+        {"Text Beside Icon", Qt::ToolButtonTextBesideIcon},
+        {"Text Under Icon",  Qt::ToolButtonTextUnderIcon},
+    };
+
+    const auto currentStyle = static_cast<Qt::ToolButtonStyle>(theUiState.toolbarButtonStyle());
+    for (const auto& [label, style] : kStyles) {
+        auto* act = textMenu->addAction(tr(label), this, [this, style]() {
+            theUiState.setToolbarButtonStyle(static_cast<int>(style));
+            m_toolbar->setToolButtonStyle(style);
+        });
+        act->setCheckable(true);
+        act->setChecked(style == currentStyle);
+    }
+
+    // --- Customize Toolbar ---
+    menu.addAction(tr("Customize Toolbar..."), this, [this]() {
+        // Build current order as ToolbarButtonId list
+        const QList<int>& savedOrder = theUiState.toolbarButtonOrder();
+        const QList<int>& orderInts = savedOrder.isEmpty() ? kDefaultToolbarOrder : savedOrder;
+
+        QList<ToolbarButtonId> currentOrder;
+        for (int id : orderInts)
+            currentOrder.append(static_cast<ToolbarButtonId>(id));
+
+        ToolbarCustomizeDialog dlg(currentOrder, this);
+        connect(&dlg, &ToolbarCustomizeDialog::orderChanged,
+                this, [this](const QList<ToolbarButtonId>& newOrder) {
+            QList<int> intOrder;
+            for (auto id : newOrder)
+                intOrder.append(static_cast<int>(id));
+            theUiState.setToolbarButtonOrder(intOrder);
+            rebuildToolbar();
+        });
+        dlg.exec();
+    });
+
+    menu.exec(m_toolbar->mapToGlobal(pos));
 }
 
 void MainWindow::updateConnectButton()
@@ -719,20 +990,16 @@ void MainWindow::updateConnectButton()
                         : style()->standardIcon(QStyle::SP_MediaPlay));
     }
 
-    // Update tray icon to reflect connection state
+    // Update tray icon to reflect connection state (always use 3-state icons)
     if (m_trayIcon) {
-        if (useOriginal) {
-            if (m_ed2kConnected || m_kadConnected) {
-                const bool lowId = (m_ed2kConnected && m_ed2kFirewalled)
-                                || (m_kadConnected && m_kadFirewalled);
-                m_trayIcon->setIcon(QIcon(lowId
-                    ? QStringLiteral(":/icons/TrayLowID.ico")
-                    : QStringLiteral(":/icons/TrayConnected.ico")));
-            } else {
-                m_trayIcon->setIcon(QIcon(QStringLiteral(":/icons/TrayDisconnected.ico")));
-            }
+        if (m_ed2kConnected || m_kadConnected) {
+            const bool lowId = (m_ed2kConnected && m_ed2kFirewalled)
+                            || (m_kadConnected && m_kadFirewalled);
+            m_trayIcon->setIcon(QIcon(lowId
+                ? QStringLiteral(":/icons/TrayLowID.ico")
+                : QStringLiteral(":/icons/TrayConnected.ico")));
         } else {
-            m_trayIcon->setIcon(windowIcon());
+            m_trayIcon->setIcon(QIcon(QStringLiteral(":/icons/TrayDisconnected.ico")));
         }
     }
 }
@@ -953,6 +1220,18 @@ void ConnectionStatusWidget::paintEvent(QPaintEvent* /*event*/)
 void ConnectionStatusWidget::mouseDoubleClickEvent(QMouseEvent* /*event*/)
 {
     emit doubleClicked();
+}
+
+QString MainWindow::skinsDir() const
+{
+    const QString dir = thePrefs.configDir() + QStringLiteral("/skins");
+    return QDir(dir).exists() ? dir : QString{};
+}
+
+void MainWindow::applySkinProfile(const QString& path)
+{
+    theUiState.setSkinProfilePath(path);
+    // TODO: Parse INI and apply color/icon overrides when theming engine is implemented
 }
 
 } // namespace eMule

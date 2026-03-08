@@ -11,35 +11,11 @@
 
 #include "net/SmtpClient.h"
 
-#include <QFile>
 #include <QSignalSpy>
 #include <QTest>
 
 using eMule::SmtpClient;
-
-namespace {
-
-/// Parse a simple KEY=VALUE .env file into a QMap.
-QMap<QString, QString> loadEnvFile(const QString& path)
-{
-    QMap<QString, QString> env;
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return env;
-
-    while (!file.atEnd()) {
-        const QString line = QString::fromUtf8(file.readLine()).trimmed();
-        if (line.isEmpty() || line.startsWith(u'#'))
-            continue;
-        const auto eq = line.indexOf(u'=');
-        if (eq < 1)
-            continue;
-        env.insert(line.left(eq).trimmed(), line.mid(eq + 1).trimmed());
-    }
-    return env;
-}
-
-} // anonymous namespace
+using eMule::testing::loadEnvFile;
 
 class tst_SmtpSendEmail : public QObject
 {

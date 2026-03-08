@@ -413,6 +413,10 @@ struct Preferences::Data {
     int windowHeight = 620;
     bool windowMaximized = false;
     int optionsLastPage = 0;
+    QList<int> toolbarButtonOrder;
+    int toolbarButtonStyle = 3;   // Qt::ToolButtonTextUnderIcon
+    QString toolbarSkinPath;
+    QString skinProfilePath;
     QMap<QString, QByteArray> headerStates;
 };
 
@@ -3396,6 +3400,54 @@ void Preferences::setOptionsLastPage(int val)
     m_data->optionsLastPage = val;
 }
 
+QList<int> Preferences::toolbarButtonOrder() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->toolbarButtonOrder;
+}
+
+void Preferences::setToolbarButtonOrder(const QList<int>& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->toolbarButtonOrder = val;
+}
+
+int Preferences::toolbarButtonStyle() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->toolbarButtonStyle;
+}
+
+void Preferences::setToolbarButtonStyle(int val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->toolbarButtonStyle = val;
+}
+
+QString Preferences::toolbarSkinPath() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->toolbarSkinPath;
+}
+
+void Preferences::setToolbarSkinPath(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->toolbarSkinPath = val;
+}
+
+QString Preferences::skinProfilePath() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->skinProfilePath;
+}
+
+void Preferences::setSkinProfilePath(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->skinProfilePath = val;
+}
+
 QByteArray Preferences::headerState(const QString& key) const
 {
     QReadLocker lock(&m_lock);
@@ -4166,6 +4218,16 @@ bool Preferences::load(const QString& filePath)
             m_data->windowHeight    = ui["windowHeight"].as<int>(m_data->windowHeight);
             m_data->windowMaximized = ui["windowMaximized"].as<bool>(m_data->windowMaximized);
             m_data->optionsLastPage = ui["optionsLastPage"].as<int>(m_data->optionsLastPage);
+            m_data->toolbarButtonStyle = ui["toolbarButtonStyle"].as<int>(m_data->toolbarButtonStyle);
+            m_data->toolbarSkinPath = QString::fromStdString(
+                ui["toolbarSkinPath"].as<std::string>(std::string{}));
+            m_data->skinProfilePath = QString::fromStdString(
+                ui["skinProfilePath"].as<std::string>(std::string{}));
+            if (ui["toolbarButtonOrder"] && ui["toolbarButtonOrder"].IsSequence()) {
+                m_data->toolbarButtonOrder.clear();
+                for (const auto& item : ui["toolbarButtonOrder"])
+                    m_data->toolbarButtonOrder.append(item.as<int>(0));
+            }
 
             if (ui["headers"] && ui["headers"].IsMap()) {
                 for (const auto& pair : ui["headers"]) {
@@ -4698,6 +4760,17 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "windowHeight"    << YAML::Value << m_data->windowHeight;
     out << YAML::Key << "windowMaximized" << YAML::Value << m_data->windowMaximized;
     out << YAML::Key << "optionsLastPage" << YAML::Value << m_data->optionsLastPage;
+    out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_data->toolbarButtonStyle;
+    if (!m_data->toolbarSkinPath.isEmpty())
+        out << YAML::Key << "toolbarSkinPath" << YAML::Value << m_data->toolbarSkinPath.toStdString();
+    if (!m_data->skinProfilePath.isEmpty())
+        out << YAML::Key << "skinProfilePath" << YAML::Value << m_data->skinProfilePath.toStdString();
+    if (!m_data->toolbarButtonOrder.isEmpty()) {
+        out << YAML::Key << "toolbarButtonOrder" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+        for (int id : m_data->toolbarButtonOrder)
+            out << id;
+        out << YAML::EndSeq;
+    }
 
     if (!m_data->headerStates.isEmpty()) {
         out << YAML::Key << "headers" << YAML::Value << YAML::BeginMap;

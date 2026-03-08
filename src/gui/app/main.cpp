@@ -182,6 +182,7 @@ int main(int argc, char* argv[])
     QApplication::setApplicationName(QStringLiteral("eMule Qt"));
     QApplication::setApplicationVersion(eMule::kAppVersion);
     QApplication::setOrganizationName(QStringLiteral("eMule"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/Mule.ico")));
 
 #ifndef Q_OS_WIN
     // Self-pipe trick: convert SIGTERM/SIGINT/SIGHUP into Qt events for graceful shutdown

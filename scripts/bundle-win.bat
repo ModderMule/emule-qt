@@ -228,6 +228,52 @@ for %%D in ("%QT_DIR%\bin" "C:\Program Files\OpenSSL-Win64\bin" "C:\OpenSSL-Win6
     )
 )
 
+REM -- Copy MSVC C++ runtime DLLs ----------------------------------------------
+
+REM windeployqt does not bundle the Visual C++ runtime (vcruntime140.dll,
+REM msvcp140.dll, concrt140.dll, etc.).  We locate them from the VS redist
+REM directory and copy them so the app runs without the VC++ Redistributable.
+
+set "VCRT_DIR="
+
+REM 1. VCToolsRedistDir is set by the VS Developer Command Prompt
+if defined VCToolsRedistDir (
+    if exist "%VCToolsRedistDir%x64\Microsoft.VC143.CRT" (
+        set "VCRT_DIR=%VCToolsRedistDir%x64\Microsoft.VC143.CRT"
+    )
+)
+
+REM 2. Fallback: scan VSINSTALLDIR
+if not defined VCRT_DIR if defined VSINSTALLDIR (
+    for /d %%R in ("%VSINSTALLDIR%\VC\Redist\MSVC\*") do (
+        if exist "%%R\x64\Microsoft.VC143.CRT" set "VCRT_DIR=%%R\x64\Microsoft.VC143.CRT"
+    )
+)
+
+REM 3. Fallback: common VS 2022 install paths
+if not defined VCRT_DIR (
+    for %%E in (Enterprise Professional Community BuildTools) do (
+        for /d %%R in ("C:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Redist\MSVC\*") do (
+            if exist "%%R\x64\Microsoft.VC143.CRT" set "VCRT_DIR=%%R\x64\Microsoft.VC143.CRT"
+        )
+    )
+)
+
+if defined VCRT_DIR (
+    echo(
+    echo === Copying MSVC runtime DLLs from %VCRT_DIR% ===
+    copy /y "%VCRT_DIR%\concrt140.dll" "%STAGE_DIR%\" >nul 2>&1
+    copy /y "%VCRT_DIR%\msvcp140.dll" "%STAGE_DIR%\" >nul 2>&1
+    copy /y "%VCRT_DIR%\msvcp140_1.dll" "%STAGE_DIR%\" >nul 2>&1
+    copy /y "%VCRT_DIR%\msvcp140_2.dll" "%STAGE_DIR%\" >nul 2>&1
+    copy /y "%VCRT_DIR%\vcruntime140.dll" "%STAGE_DIR%\" >nul 2>&1
+    copy /y "%VCRT_DIR%\vcruntime140_1.dll" "%STAGE_DIR%\" >nul 2>&1
+    echo   MSVC runtime DLLs copied
+) else (
+    echo Warning: MSVC runtime DLLs not found -- install VC++ Redistributable on target.
+    echo   Checked: %%VCToolsRedistDir%%, %%VSINSTALLDIR%%, common VS 2022 paths.
+)
+
 REM -- Copy vcpkg runtime DLLs if present --------------------------------------
 
 set "VCPKG_BIN_SUFFIX=bin"

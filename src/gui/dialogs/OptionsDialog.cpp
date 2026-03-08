@@ -840,13 +840,13 @@ QWidget* OptionsDialog::createConnectionPage()
 
     capLayout->addWidget(new QLabel(tr("Download"), capGroup), 0, 0);
     m_capacityDownloadSpin = new QSpinBox(capGroup);
-    m_capacityDownloadSpin->setRange(1, 100000);
+    m_capacityDownloadSpin->setRange(1, 1000000);
     m_capacityDownloadSpin->setSuffix(tr(" KB/s"));
     capLayout->addWidget(m_capacityDownloadSpin, 0, 1);
 
     capLayout->addWidget(new QLabel(tr("Upload"), capGroup), 1, 0);
     m_capacityUploadSpin = new QSpinBox(capGroup);
-    m_capacityUploadSpin->setRange(1, 100000);
+    m_capacityUploadSpin->setRange(1, 1000000);
     m_capacityUploadSpin->setSuffix(tr(" KB/s"));
     capLayout->addWidget(m_capacityUploadSpin, 1, 1);
 
