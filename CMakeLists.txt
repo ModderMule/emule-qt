@@ -137,14 +137,28 @@ if(NOT yaml-cpp_FOUND)
     set(YAML_CPP_BUILD_CONTRIB  OFF CACHE BOOL "" FORCE)
     set(YAML_CPP_INSTALL        OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(yaml-cpp)
+    # FetchContent creates "yaml-cpp" target; add namespaced alias so
+    # target_link_libraries(... yaml-cpp::yaml-cpp) works uniformly.
+    if(TARGET yaml-cpp AND NOT TARGET yaml-cpp::yaml-cpp)
+        add_library(yaml-cpp::yaml-cpp ALIAS yaml-cpp)
+    endif()
 endif()
 
 # Suppress warnings from yaml-cpp headers
-get_target_property(_yamlcpp_includes yaml-cpp INTERFACE_INCLUDE_DIRECTORIES)
-if(_yamlcpp_includes)
-    set_target_properties(yaml-cpp PROPERTIES
-        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_yamlcpp_includes}"
-    )
+if(TARGET yaml-cpp)
+    get_target_property(_yamlcpp_includes yaml-cpp INTERFACE_INCLUDE_DIRECTORIES)
+    if(_yamlcpp_includes)
+        set_target_properties(yaml-cpp PROPERTIES
+            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_yamlcpp_includes}"
+        )
+    endif()
+elseif(TARGET yaml-cpp::yaml-cpp)
+    get_target_property(_yamlcpp_includes yaml-cpp::yaml-cpp INTERFACE_INCLUDE_DIRECTORIES)
+    if(_yamlcpp_includes)
+        set_target_properties(yaml-cpp::yaml-cpp PROPERTIES
+            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_yamlcpp_includes}"
+        )
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ out/
 *.exe
 *.app
 emuleqt-*tar.gz
+emuleqt-*.zip
 
 # Logs
 logs/
