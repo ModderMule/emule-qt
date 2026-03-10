@@ -50,6 +50,7 @@ target_link_libraries(emuleqt
         Qt6::Widgets
         Qt6::Multimedia
         Qt6::Network
+        yaml-cpp::yaml-cpp
         eMule::CommonSettings
 )
 

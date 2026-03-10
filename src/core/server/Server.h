@@ -177,6 +177,10 @@ public:
     [[nodiscard]] bool triedCrypt() const               { return m_triedCryptOnce; }
     void setTriedCrypt(bool v)                          { m_triedCryptOnce = v; }
 
+    // -- Identity ---------------------------------------------------------
+
+    [[nodiscard]] uint32 serverId() const               { return m_serverId; }
+
     // -- Aux --------------------------------------------------------------
 
     [[nodiscard]] const QString& auxPortsList() const   { return m_auxPortsList; }
@@ -207,6 +211,9 @@ public:
     uint32 writeTags(FileDataIO& file) const;
 
 private:
+    // Identity
+    uint32  m_serverId = 0;
+
     // Network
     uint32  m_ip = 0;
     uint16  m_port = 0;

@@ -66,23 +66,27 @@ void tst_UploadBandwidthThrottler::sentByteAccounting()
 
 void tst_UploadBandwidthThrottler::slotLimit_calculation()
 {
+    UploadBandwidthThrottler throttler;
+
     // Very low speed — minimum slots
-    QCOMPARE(UploadBandwidthThrottler::getSlotLimit(5 * 1024),
+    QCOMPARE(throttler.getSlotLimit(5 * 1024),
              static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED));
 
     // Medium speed
-    uint32 slots10k = UploadBandwidthThrottler::getSlotLimit(10 * 1024);
+    uint32 slots10k = throttler.getSlotLimit(10 * 1024);
     QVERIFY(slots10k >= MIN_UP_CLIENTS_ALLOWED);
     QVERIFY(slots10k <= MIN_UP_CLIENTS_ALLOWED + 1);
 
     // Higher speed
-    uint32 slots50k = UploadBandwidthThrottler::getSlotLimit(50 * 1024);
+    uint32 slots50k = throttler.getSlotLimit(50 * 1024);
     QVERIFY(slots50k >= MIN_UP_CLIENTS_ALLOWED + 3);
 
     // Very high speed — more slots
-    uint32 slots200k = UploadBandwidthThrottler::getSlotLimit(200 * 1024);
+    uint32 slots200k = throttler.getSlotLimit(200 * 1024);
     QVERIFY(slots200k >= MIN_UP_CLIENTS_ALLOWED + 3);
     QVERIFY(slots200k > slots50k);
+
+    throttler.endThread();
 }
 
 void tst_UploadBandwidthThrottler::pause_resume()

@@ -8,6 +8,7 @@
 #include "files/PartFile.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
+#include "net/EMSocket.h"
 #include "crypto/AICHData.h"
 #include "crypto/AICHHashSet.h"
 #include "crypto/AICHHashTree.h"
@@ -1373,7 +1374,6 @@ void PartFile::completeFile()
 
 uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
 {
-    Q_UNUSED(reduceDownload);
     Q_UNUSED(counter);
 
     if (m_paused || m_stopped)
@@ -1396,10 +1396,33 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         }
     }
 
-    // Calculate datarate from downloading sources
+    // Calculate datarate and apply per-client proportional download limits
+    // (MFC PartFile.cpp lines 2201-2229).
     m_datarate = 0;
     for (auto* client : m_downloadingSources) {
-        m_datarate += client->calculateDownloadRate();
+        if (client->downloadState() == DownloadState::Downloading && client->socket()) {
+            client->checkDownloadTimeout();
+            const uint32 curDatarate = client->calculateDownloadRate();
+            m_datarate += curDatarate;
+
+            if (reduceDownload > 0) {
+                // Proportional limit with graduated floors (MFC lines 2211-2225)
+                uint32 limit = reduceDownload * curDatarate / 1000;
+                if (limit < 1000 && reduceDownload == 200)
+                    limit += 1000;
+                else if (limit < 200 && curDatarate == 0 && reduceDownload >= 100)
+                    limit = 200;
+                else if (limit < 60 && curDatarate < 600 && reduceDownload >= 97)
+                    limit = 60;
+                else if (limit < 20 && curDatarate < 200 && reduceDownload >= 93)
+                    limit = 20;
+                else if (limit < 1)
+                    limit = 1;
+                client->socket()->setDownloadLimit(limit);
+            } else {
+                client->socket()->disableDownloadLimit();
+            }
+        }
     }
 
     // Retry connections to idle sources — MFC PartFile.cpp Process() source loop.

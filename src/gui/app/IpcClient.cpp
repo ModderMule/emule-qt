@@ -333,7 +333,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
 
         // Subscribe to all events
         IpcMessage sub(IpcMsgType::Subscribe, m_nextSeqId++);
-        sub.append(int64_t(0xFFFF));  // Subscribe to all event types
+        sub.append(qint64(0xFFFF));  // Subscribe to all event types
         m_connection->sendMessage(sub);
 
         // Field 2: daemon session token.
@@ -451,7 +451,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushServerState:      emit serverStateChanged(msg); break;
     case IpcMsgType::PushSearchResult:     emit searchResultReceived(msg); break;
     case IpcMsgType::PushLogMessage: {
-        const int64_t logId  = msg.fieldInt(0);
+        const qint64 logId  = msg.fieldInt(0);
         const QString cat    = msg.fieldString(1);
         const auto severity  = static_cast<QtMsgType>(msg.fieldInt(2));
 
@@ -489,7 +489,7 @@ void IpcClient::requestLogSync()
     const int64_t fromId = std::min({m_lastKadId, m_lastServerId,
                                      m_lastLogId,  m_lastVerboseId});
     IpcMessage req(IpcMsgType::SyncLogs);
-    req.append(fromId);
+    req.append(static_cast<qint64>(fromId));
 
     sendRequest(std::move(req), [this](const IpcMessage& resp) {
         const QCborArray entries = resp.fieldArray(1);
@@ -498,7 +498,7 @@ void IpcClient::requestLogSync()
             if (entry.size() < 4)
                 continue;
 
-            const int64_t logId   = entry[0].toInteger();
+            const qint64 logId   = entry[0].toInteger();
             const QString cat     = entry[1].toString();
             const auto severity   = static_cast<QtMsgType>(entry[2].toInteger());
 
@@ -519,9 +519,9 @@ void IpcClient::requestLogSync()
             IpcMessage synth(IpcMsgType::PushLogMessage, 0);
             synth.append(logId);
             synth.append(cat);
-            synth.append(entry[2].toInteger());          // severity
-            synth.append(entry[3].toString());           // message
-            synth.append(entry.size() >= 5 ? entry[4].toInteger() : int64_t(0));
+            synth.append(static_cast<qint64>(entry[2].toInteger()));  // severity
+            synth.append(entry[3].toString());                       // message
+            synth.append(entry.size() >= 5 ? entry[4].toInteger() : qint64(0));
             emit logMessageReceived(synth);
         }
     });

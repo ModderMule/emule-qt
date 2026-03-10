@@ -489,8 +489,8 @@ void MessagesPanel::showAddFriendDialog()
     IpcMessage msg(IpcMsgType::AddFriend);
     msg.append(dlg.friendHash());
     msg.append(dlg.friendName());
-    msg.append(static_cast<int64_t>(0)); // IP will be resolved from string
-    msg.append(static_cast<int64_t>(dlg.port()));
+    msg.append(static_cast<qint64>(0)); // IP will be resolved from string
+    msg.append(static_cast<qint64>(dlg.port()));
 
     // Convert IP string to uint32 for IPC
     QHostAddress addr(dlg.ipAddress());
@@ -499,8 +499,8 @@ void MessagesPanel::showAddFriendDialog()
         IpcMessage msg2(IpcMsgType::AddFriend);
         msg2.append(dlg.friendHash());
         msg2.append(dlg.friendName());
-        msg2.append(static_cast<int64_t>(addr.toIPv4Address()));
-        msg2.append(static_cast<int64_t>(dlg.port()));
+        msg2.append(static_cast<qint64>(addr.toIPv4Address()));
+        msg2.append(static_cast<qint64>(dlg.port()));
         m_ipc->sendRequest(std::move(msg2), [this](const IpcMessage&) {
             requestFriendList();
         });

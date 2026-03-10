@@ -63,7 +63,7 @@ public:
     /// Append a value to the message payload.
     IpcMessage& append(const QCborValue& value);
     IpcMessage& append(const QString& value);
-    IpcMessage& append(int64_t value);
+    IpcMessage& append(qint64 value);
     IpcMessage& append(bool value);
     IpcMessage& append(const QCborMap& value);
     IpcMessage& append(const QCborArray& value);

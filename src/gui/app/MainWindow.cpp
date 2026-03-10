@@ -421,7 +421,7 @@ void MainWindow::onClipboardChanged()
         Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
         msg.append(hashHex);
         msg.append(fileLink->name);
-        msg.append(static_cast<int64_t>(fileLink->size));
+        msg.append(static_cast<qint64>(fileLink->size));
         m_ipc->sendRequest(std::move(msg));
     }
 

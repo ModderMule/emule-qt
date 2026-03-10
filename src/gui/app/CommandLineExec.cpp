@@ -167,7 +167,7 @@ void CommandLineExec::handleEd2kLinks(MainWindow& mainWindow, IpcClient& ipcClie
                 Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
                 msg.append(hashHex);
                 msg.append(fl->name);
-                msg.append(static_cast<int64_t>(fl->size));
+                msg.append(static_cast<qint64>(fl->size));
                 ipcClient.sendRequest(std::move(msg));
                 mainWindow.switchToTab(MainWindow::TabTransfers);
             });

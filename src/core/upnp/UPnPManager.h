@@ -79,6 +79,8 @@ private:
     std::atomic<PortStatus> m_status{PortStatus::Unknown};
     bool m_ready = false;
     bool m_succeededOnce = false;
+    int m_consecutiveRefreshFailures = 0;
+    static constexpr int MaxRefreshRetries = 5;
     QThread* m_discoveryThread = nullptr;
     mutable std::mutex m_mutex;
 };

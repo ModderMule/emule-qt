@@ -15,6 +15,12 @@ out/
 *.dll
 *.exe
 *.app
+emuleqt-*tar.gz
+
+# Logs
+logs/
+*.log
+
 
 # CMake generated files
 CMakeFiles/

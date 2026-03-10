@@ -139,6 +139,7 @@ namespace eMule::Ipc {
         {QStringLiteral("softFiles"),   static_cast<qint64>(s.softFiles())},
         {QStringLiteral("lowIDUsers"),  static_cast<qint64>(s.lowIDUsers())},
         {QStringLiteral("obfuscation"), s.supportsObfuscationTCP()},
+        {QStringLiteral("serverId"),    static_cast<qint64>(s.serverId())},
     };
 }
 
@@ -240,7 +241,7 @@ namespace eMule::Ipc {
     QCborMap m;
     m.insert(QStringLiteral("userName"),        c.userName());
     m.insert(QStringLiteral("userHash"),        md4str(c.userHash()));
-    m.insert(QStringLiteral("software"),        c.clientSoftwareStr());
+    m.insert(QStringLiteral("software"),        c.dbgGetFullClientSoftVer());
     m.insert(QStringLiteral("uploadState"),     c.uploadStateDisplayString());
     m.insert(QStringLiteral("downloadState"),   c.downloadStateDisplayString());
     m.insert(QStringLiteral("sourceFrom"),      static_cast<int>(c.sourceFrom()));

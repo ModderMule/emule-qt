@@ -71,6 +71,7 @@ private:
 
     void showFindDialog();
     void requestKadStatus();
+    void requestServerState();
     void parseAndAddServersFromMet(const QByteArray& data);
 
     // Models

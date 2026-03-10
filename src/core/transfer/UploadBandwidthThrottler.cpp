@@ -8,6 +8,8 @@
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
+#include "app/AppContext.h"
+#include "net/LastCommonRouteFinder.h"
 #include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
@@ -172,9 +174,11 @@ void UploadBandwidthThrottler::pause(bool paused)
         m_pauseCV.notify_all();
 }
 
-uint32 UploadBandwidthThrottler::getSlotLimit(uint32 currentUpSpeed)
+uint32 UploadBandwidthThrottler::getSlotLimit(uint32 currentUpSpeed) const
 {
-    uint32 upPerClient = 3 * 1024; // default 3 KiB/s minimum per client
+    uint32 upPerClient = m_uploadQueue
+        ? m_uploadQueue->targetClientDataRate(true)
+        : 3u * 1024u;
 
     // if throttler doesn't require another slot, go with a slightly more restrictive method
     if (currentUpSpeed > 49 * 1024) {
@@ -231,10 +235,16 @@ void UploadBandwidthThrottler::runInternal()
 
         uint32 timeSinceLastLoop = static_cast<uint32>(getTickCount()) - lastLoopTick;
 
-        // Get current allowed data rate from preferences
-        uint32 allowedDataRate = thePrefs.maxUpload();
-        if (allowedDataRate != UNLIMITED)
-            allowedDataRate *= 1024; // convert KB/s to bytes/s
+        // Get current allowed data rate — prefer USS-aware value
+        uint32 allowedDataRate = 0;
+        if (theApp.lastCommonRouteFinder)
+            allowedDataRate = theApp.lastCommonRouteFinder->getUpload();
+        if (allowedDataRate == 0) {
+            // USS not running or returned 0 — fall back to raw prefs
+            allowedDataRate = thePrefs.maxUpload();
+            if (allowedDataRate != UNLIMITED)
+                allowedDataRate *= 1024;
+        }
 
         // Check busy level for slots
         uint32 nBusy = 0;
@@ -245,7 +255,8 @@ void UploadBandwidthThrottler::runInternal()
             m_dataAvailable.store(false);
             m_socketAvailable.store(false);
 
-            int slotLimit = static_cast<int>(std::max(getSlotLimit(0), 3u));
+            uint32 currentDatarate = m_uploadQueue ? m_uploadQueue->datarate() : 0;
+            int slotLimit = static_cast<int>(std::max(getSlotLimit(currentDatarate), 3u));
             int checkCount = std::min(static_cast<int>(m_standardOrder.size()), slotLimit);
 
             for (int i = checkCount - 1; i >= 0; --i) {
@@ -274,7 +285,9 @@ void UploadBandwidthThrottler::runInternal()
             } else if (static_cast<uint32>(getTickCount()) >= nUploadStartTime + SEC2MS(60)) {
                 if (nEstimatedDataRate == 0) {
                     if (nSlotsBusyLevel >= 250) {
-                        nEstimatedDataRate = allowedDataRate > 0 ? allowedDataRate : 10 * 1024;
+                        nEstimatedDataRate = (m_uploadQueue && m_uploadQueue->datarate() > 0)
+                            ? m_uploadQueue->datarate()
+                            : (allowedDataRate > 0 ? allowedDataRate : 10u * 1024u);
                         nSlotsBusyLevel = -200;
                         changesCount = 0;
                         loopsCount = 0;
@@ -445,7 +458,7 @@ void UploadBandwidthThrottler::runInternal()
 
             // Equal bandwidth for all slots — use actual targetClientDataRate from UploadQueue
             uint32 targetDataRate = m_uploadQueue
-                ? m_uploadQueue->targetClientDataRate(false)
+                ? m_uploadQueue->targetClientDataRate(true)
                 : 3u * 1024u;
             int maxSlot = std::min(listSize,
                 static_cast<int>(allowedDataRate != UNLIMITED ? allowedDataRate / targetDataRate : static_cast<uint32>(listSize)));

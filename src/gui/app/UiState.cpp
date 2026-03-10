@@ -1,57 +1,148 @@
 #include "pch.h"
 /// @file UiState.cpp
-/// @brief GUI layout state — implementation.
+/// @brief GUI layout state — reads/writes its own uistate.yml file.
 
 #include "app/UiState.h"
 
-#include "prefs/Preferences.h"
+#include <QSaveFile>
+
+#include <yaml-cpp/yaml.h>
+
+#include "utils/Log.h"
 
 namespace eMule {
 
 UiState theUiState;
 
-void UiState::load()
+// ---------------------------------------------------------------------------
+// YAML helpers
+// ---------------------------------------------------------------------------
+
+static QList<int> readIntList(const YAML::Node& node, const char* key)
 {
-    m_serverSplitSizes   = thePrefs.serverSplitSizes();
-    m_kadSplitSizes      = thePrefs.kadSplitSizes();
-    m_transferSplitSizes = thePrefs.transferSplitSizes();
-    m_sharedHorzSplitSizes = thePrefs.sharedHorzSplitSizes();
-    m_sharedVertSplitSizes = thePrefs.sharedVertSplitSizes();
-    m_messagesSplitSizes   = thePrefs.messagesSplitSizes();
-    m_ircSplitSizes        = thePrefs.ircSplitSizes();
-    m_statsSplitSizes      = thePrefs.statsSplitSizes();
-    m_windowWidth      = thePrefs.windowWidth();
-    m_windowHeight     = thePrefs.windowHeight();
-    m_windowMaximized  = thePrefs.windowMaximized();
-    m_optionsLastPage  = thePrefs.optionsLastPage();
-    m_toolbarButtonOrder = thePrefs.toolbarButtonOrder();
-    m_toolbarButtonStyle = thePrefs.toolbarButtonStyle();
-    m_toolbarSkinPath    = thePrefs.toolbarSkinPath();
-    m_skinProfilePath    = thePrefs.skinProfilePath();
+    QList<int> result;
+    if (auto n = node[key]; n && n.IsSequence()) {
+        for (const auto& item : n)
+            result.append(item.as<int>(0));
+    }
+    return result;
 }
 
-void UiState::save()
+static void writeIntList(YAML::Emitter& out, const char* key, const QList<int>& list)
 {
-    thePrefs.setServerSplitSizes(m_serverSplitSizes);
-    thePrefs.setKadSplitSizes(m_kadSplitSizes);
-    thePrefs.setTransferSplitSizes(m_transferSplitSizes);
-    thePrefs.setSharedHorzSplitSizes(m_sharedHorzSplitSizes);
-    thePrefs.setSharedVertSplitSizes(m_sharedVertSplitSizes);
-    thePrefs.setMessagesSplitSizes(m_messagesSplitSizes);
-    thePrefs.setIrcSplitSizes(m_ircSplitSizes);
-    thePrefs.setStatsSplitSizes(m_statsSplitSizes);
-    thePrefs.setWindowWidth(m_windowWidth);
-    thePrefs.setWindowHeight(m_windowHeight);
-    thePrefs.setWindowMaximized(m_windowMaximized);
-    thePrefs.setOptionsLastPage(m_optionsLastPage);
-    thePrefs.setToolbarButtonOrder(m_toolbarButtonOrder);
-    thePrefs.setToolbarButtonStyle(m_toolbarButtonStyle);
-    thePrefs.setToolbarSkinPath(m_toolbarSkinPath);
-    thePrefs.setSkinProfilePath(m_skinProfilePath);
-
-    for (auto it = m_headerStates.cbegin(); it != m_headerStates.cend(); ++it)
-        thePrefs.setHeaderState(it.key(), it.value());
+    out << YAML::Key << key << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int v : list)
+        out << v;
+    out << YAML::EndSeq;
 }
+
+// ---------------------------------------------------------------------------
+// load / save
+// ---------------------------------------------------------------------------
+
+void UiState::load(const QString& configDir)
+{
+    const QString path = configDir + QStringLiteral("/uistate.yml");
+
+    try {
+        YAML::Node root = YAML::LoadFile(path.toStdString());
+        if (!root.IsMap())
+            return;
+
+        m_serverSplitSizes     = readIntList(root, "serverSplitSizes");
+        m_kadSplitSizes        = readIntList(root, "kadSplitSizes");
+        m_transferSplitSizes   = readIntList(root, "transferSplitSizes");
+        m_sharedHorzSplitSizes = readIntList(root, "sharedHorzSplitSizes");
+        m_sharedVertSplitSizes = readIntList(root, "sharedVertSplitSizes");
+        m_messagesSplitSizes   = readIntList(root, "messagesSplitSizes");
+        m_ircSplitSizes        = readIntList(root, "ircSplitSizes");
+        m_statsSplitSizes      = readIntList(root, "statsSplitSizes");
+
+        m_windowWidth      = root["windowWidth"].as<int>(m_windowWidth);
+        m_windowHeight     = root["windowHeight"].as<int>(m_windowHeight);
+        m_windowMaximized  = root["windowMaximized"].as<bool>(m_windowMaximized);
+        m_optionsLastPage  = root["optionsLastPage"].as<int>(m_optionsLastPage);
+        m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
+
+        m_toolbarSkinPath = QString::fromStdString(
+            root["toolbarSkinPath"].as<std::string>(std::string{}));
+        m_skinProfilePath = QString::fromStdString(
+            root["skinProfilePath"].as<std::string>(std::string{}));
+
+        m_toolbarButtonOrder = readIntList(root, "toolbarButtonOrder");
+
+        if (auto hdr = root["headers"]; hdr && hdr.IsMap()) {
+            for (const auto& pair : hdr) {
+                auto key = QString::fromStdString(pair.first.as<std::string>());
+                auto val = QByteArray::fromBase64(
+                    QByteArray::fromStdString(pair.second.as<std::string>()));
+                m_headerStates[key] = val;
+            }
+        }
+    } catch (const YAML::BadFile&) {
+        // File doesn't exist yet — use defaults
+    } catch (const YAML::Exception& ex) {
+        logWarning(QStringLiteral("Failed to parse uistate.yml: %1 — using defaults")
+                       .arg(QString::fromStdString(ex.what())));
+    }
+}
+
+void UiState::save(const QString& configDir)
+{
+    const QString path = configDir + QStringLiteral("/uistate.yml");
+
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+
+    writeIntList(out, "serverSplitSizes",     m_serverSplitSizes);
+    writeIntList(out, "kadSplitSizes",        m_kadSplitSizes);
+    writeIntList(out, "transferSplitSizes",   m_transferSplitSizes);
+    writeIntList(out, "sharedHorzSplitSizes", m_sharedHorzSplitSizes);
+    writeIntList(out, "sharedVertSplitSizes", m_sharedVertSplitSizes);
+    writeIntList(out, "messagesSplitSizes",   m_messagesSplitSizes);
+    writeIntList(out, "ircSplitSizes",        m_ircSplitSizes);
+    writeIntList(out, "statsSplitSizes",      m_statsSplitSizes);
+
+    out << YAML::Key << "windowWidth"      << YAML::Value << m_windowWidth;
+    out << YAML::Key << "windowHeight"     << YAML::Value << m_windowHeight;
+    out << YAML::Key << "windowMaximized"  << YAML::Value << m_windowMaximized;
+    out << YAML::Key << "optionsLastPage"  << YAML::Value << m_optionsLastPage;
+    out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
+
+    if (!m_toolbarSkinPath.isEmpty())
+        out << YAML::Key << "toolbarSkinPath" << YAML::Value << m_toolbarSkinPath.toStdString();
+    if (!m_skinProfilePath.isEmpty())
+        out << YAML::Key << "skinProfilePath" << YAML::Value << m_skinProfilePath.toStdString();
+
+    if (!m_toolbarButtonOrder.isEmpty())
+        writeIntList(out, "toolbarButtonOrder", m_toolbarButtonOrder);
+
+    if (!m_headerStates.isEmpty()) {
+        out << YAML::Key << "headers" << YAML::Value << YAML::BeginMap;
+        for (auto it = m_headerStates.cbegin(); it != m_headerStates.cend(); ++it)
+            out << YAML::Key << it.key().toStdString()
+                << YAML::Value << it.value().toBase64().toStdString();
+        out << YAML::EndMap;
+    }
+
+    out << YAML::EndMap;
+
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        logError(QStringLiteral("Failed to open uistate.yml for writing: %1").arg(path));
+        return;
+    }
+
+    file.write(out.c_str(), static_cast<qint64>(out.size()));
+    file.write("\n", 1);
+
+    if (!file.commit())
+        logError(QStringLiteral("Failed to commit uistate.yml: %1").arg(path));
+}
+
+// ---------------------------------------------------------------------------
+// Splitter bindings
+// ---------------------------------------------------------------------------
 
 void UiState::bindServerSplitter(QSplitter* splitter)
 {
@@ -133,6 +224,10 @@ void UiState::bindStatsSplitter(QSplitter* splitter)
     });
 }
 
+// ---------------------------------------------------------------------------
+// Window / header bindings
+// ---------------------------------------------------------------------------
+
 void UiState::bindMainWindow(QMainWindow* window)
 {
     if (m_windowWidth > 0 && m_windowHeight > 0)
@@ -152,9 +247,8 @@ void UiState::captureMainWindow(QMainWindow* window)
 void UiState::bindHeaderView(QHeaderView* header, const QString& key)
 {
     // Restore saved state (overrides hardcoded defaults if available)
-    QByteArray state = thePrefs.headerState(key);
-    if (!state.isEmpty())
-        header->restoreState(state);
+    if (auto it = m_headerStates.constFind(key); it != m_headerStates.constEnd() && !it->isEmpty())
+        header->restoreState(*it);
 
     // Cache current state and auto-update on any change
     m_headerStates[key] = header->saveState();

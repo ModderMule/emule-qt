@@ -168,7 +168,7 @@ void handleEd2kUrl(const QString& urlStr, eMule::MainWindow& mainWindow, eMule::
         eMule::Ipc::IpcMessage msg(eMule::Ipc::IpcMsgType::DownloadSearchFile);
         msg.append(hashHex);
         msg.append(fl->name);
-        msg.append(static_cast<int64_t>(fl->size));
+        msg.append(static_cast<qint64>(fl->size));
         ipcClient.sendRequest(std::move(msg));
     }
     mainWindow.switchToTab(eMule::MainWindow::TabTransfers);
@@ -239,7 +239,7 @@ int main(int argc, char* argv[])
 
     // Seed bundled config data (webserver assets, template, nodes.dat)
     eMule::AppConfig::seedBundledData(configDir);
-    eMule::theUiState.load();
+    eMule::theUiState.load(configDir);
 
     // Splash screen
     QSplashScreen* splash = nullptr;
@@ -647,8 +647,8 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Save UI state (splitter positions, etc.) to preferences
-    eMule::theUiState.save();
+    // Save UI state to its own file (not preferences.yml)
+    eMule::theUiState.save(configDir);
     eMule::thePrefs.save();
 
     return result;

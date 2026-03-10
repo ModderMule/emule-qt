@@ -4400,6 +4400,120 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_multiUserSharingGroup->checkedId()));
 #endif
 
+        // GUI-only settings (synced to daemon for YAML persistence)
+        // General page
+        req.append(QStringLiteral("promptOnExit"));
+        req.append(m_promptOnExitCheck->isChecked());
+        req.append(QStringLiteral("startMinimized"));
+        req.append(m_startMinimizedCheck->isChecked());
+        req.append(QStringLiteral("showSplashScreen"));
+        req.append(m_showSplashCheck->isChecked());
+        req.append(QStringLiteral("enableOnlineSignature"));
+        req.append(m_enableOnlineSigCheck->isChecked());
+#ifdef Q_OS_WIN
+        req.append(QStringLiteral("enableMiniMule"));
+        req.append(m_enableMiniMuleCheck->isChecked());
+#endif
+        req.append(QStringLiteral("preventStandby"));
+        req.append(m_preventStandbyCheck->isChecked());
+        req.append(QStringLiteral("versionCheckEnabled"));
+        req.append(m_versionCheckBox->isChecked());
+        req.append(QStringLiteral("versionCheckDays"));
+        req.append(static_cast<qint64>(m_versionCheckDaysSpin->value()));
+        req.append(QStringLiteral("bringToFrontOnLinkClick"));
+        req.append(m_bringToFrontCheck->isChecked());
+        req.append(QStringLiteral("language"));
+        req.append(m_langCombo->currentData().toString());
+        req.append(QStringLiteral("startWithOS"));
+        req.append(m_startWithOSCheck->isChecked());
+
+        // Display page
+        req.append(QStringLiteral("depth3D"));
+        req.append(static_cast<qint64>(m_depth3DSlider->value()));
+        req.append(QStringLiteral("tooltipDelay"));
+        req.append(static_cast<qint64>(m_tooltipDelaySpin->value()));
+        req.append(QStringLiteral("minimizeToTray"));
+        req.append(m_minimizeToTrayCheck->isChecked());
+        req.append(QStringLiteral("transferDoubleClick"));
+        req.append(m_transferDoubleClickCheck->isChecked());
+        req.append(QStringLiteral("showDwlPercentage"));
+        req.append(m_showDwlPercentageCheck->isChecked());
+        req.append(QStringLiteral("showRatesInTitle"));
+        req.append(m_showRatesInTitleCheck->isChecked());
+        req.append(QStringLiteral("showCatTabInfos"));
+        req.append(m_showCatTabInfosCheck->isChecked());
+        req.append(QStringLiteral("autoRemoveFinishedDownloads"));
+        req.append(m_autoRemoveFinishedCheck->isChecked());
+        req.append(QStringLiteral("showTransToolbar"));
+        req.append(m_showTransToolbarCheck->isChecked());
+        req.append(QStringLiteral("storeSearches"));
+        req.append(m_storeSearchesCheck->isChecked());
+        req.append(QStringLiteral("disableKnownClientList"));
+        req.append(m_disableKnownClientListCheck->isChecked());
+        req.append(QStringLiteral("disableQueueList"));
+        req.append(m_disableQueueListCheck->isChecked());
+        req.append(QStringLiteral("useAutoCompletion"));
+        req.append(m_useAutoCompletionCheck->isChecked());
+        req.append(QStringLiteral("useOriginalIcons"));
+        req.append(m_useOriginalIconsCheck->isChecked());
+        req.append(QStringLiteral("logFont"));
+        req.append(m_currentLogFont);
+
+        // Files page (GUI-only)
+        req.append(QStringLiteral("watchClipboard4ED2KLinks"));
+        req.append(m_watchClipboardCheck->isChecked());
+        req.append(QStringLiteral("useAdvancedCalcRemainingTime"));
+        req.append(m_advancedCalcRemainingCheck->isChecked());
+        req.append(QStringLiteral("videoPlayerCommand"));
+        req.append(m_videoPlayerCmdEdit->text());
+        req.append(QStringLiteral("videoPlayerArgs"));
+        req.append(m_videoPlayerArgsEdit->text());
+        req.append(QStringLiteral("createBackupToPreview"));
+        req.append(m_createBackupToPreviewCheck->isChecked());
+        req.append(QStringLiteral("autoCleanupFilenames"));
+        req.append(m_autoCleanupFilenamesCheck->isChecked());
+
+        // Notifications page (GUI-side)
+        req.append(QStringLiteral("notifySoundType"));
+        req.append(static_cast<qint64>(m_soundGroup->checkedId()));
+        req.append(QStringLiteral("notifySoundFile"));
+        req.append(m_soundFileEdit->text());
+
+        // IRC page
+        req.append(QStringLiteral("ircServer"));
+        req.append(m_ircServerEdit->text());
+        req.append(QStringLiteral("ircNick"));
+        req.append(m_ircNickEdit->text());
+        req.append(QStringLiteral("ircUseChannelFilter"));
+        req.append(m_ircUseChannelFilterCheck->isChecked());
+        req.append(QStringLiteral("ircChannelFilter"));
+        req.append(m_ircChannelFilterNameEdit->text() + QLatin1Char('|')
+            + QString::number(m_ircChannelFilterUsersSpin->value()));
+        req.append(QStringLiteral("ircUsePerform"));
+        req.append(m_ircUsePerformCheck->isChecked());
+        req.append(QStringLiteral("ircPerformString"));
+        req.append(m_ircPerformEdit->text());
+        req.append(QStringLiteral("ircConnectHelpChannel"));
+        req.append(root->child(0)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircLoadChannelList"));
+        req.append(root->child(1)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircAddTimestamp"));
+        req.append(root->child(2)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircIgnoreMiscInfoMessages"));
+        req.append(ignoreParent->child(0)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircIgnoreJoinMessages"));
+        req.append(ignoreParent->child(1)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircIgnorePartMessages"));
+        req.append(ignoreParent->child(2)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircIgnoreQuitMessages"));
+        req.append(ignoreParent->child(3)->checkState(0) == Qt::Checked);
+
+        // Messages page (GUI-only)
+        req.append(QStringLiteral("showSmileys"));
+        req.append(m_showSmileysCheck->isChecked());
+        req.append(QStringLiteral("indicateRatings"));
+        req.append(m_indicateRatingsCheck->isChecked());
+
         m_ipc->sendRequest(std::move(req));
     } else {
         // Fallback: save locally

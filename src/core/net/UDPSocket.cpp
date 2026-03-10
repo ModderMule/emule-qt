@@ -128,6 +128,14 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
         return;
     }
 
+    const bool encrypted = server.serverKeyUDP() != 0 && server.supportsObfuscationUDP();
+    logDebug(QStringLiteral("UDPSocket::sendPacket opcode=0x%1 payload=%2 bytes -> %3:%4 encrypted=%5")
+                 .arg(packet->opcode, 2, 16, QLatin1Char('0'))
+                 .arg(packet->size)
+                 .arg(ipstr(ip))
+                 .arg(port)
+                 .arg(encrypted ? QStringLiteral("yes") : QStringLiteral("no")));
+
     // Send directly
     sendBuffer(ip, port, buf.data() + offset, rawSize);
 }
@@ -234,6 +242,10 @@ bool UDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
 
     switch (opcode) {
     case OP_GLOBSEARCHRES:
+        logDebug(QStringLiteral("UDPSocket: received OP_GLOBSEARCHRES from %1:%2 size=%3")
+                     .arg(ipstr(senderIP))
+                     .arg(senderPort)
+                     .arg(size));
         emit globalSearchResult(packet, size, senderIP, senderPort);
         break;
 

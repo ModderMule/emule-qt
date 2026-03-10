@@ -315,12 +315,8 @@ bool URLClient::processHttpDownResponseBody(const uint8* data, uint32 size)
 
 void URLClient::processHttpBlockPacket(const uint8* data, uint32 size)
 {
-    // Update transfer statistics
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-
-    TransferredData td;
-    td.dataLen = size;
-    td.timestamp = curTick;
+    // Accumulate for rate averaging (drained in calculateDownloadRate)
+    accumulateDownBytes(size);
 
     // Write data to PartFile
     PartFile* file = reqFile();

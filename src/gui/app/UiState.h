@@ -1,10 +1,11 @@
 #pragma once
 
 /// @file UiState.h
-/// @brief GUI layout state — persisted via Preferences to preferences.yml.
+/// @brief GUI layout state — persisted to a separate uistate.yml file.
 ///
-/// Keeps splitter positions and other window geometry in memory,
-/// syncing to the uistate section of the shared preferences file.
+/// Keeps splitter positions, window geometry, header states and other
+/// layout data in memory.  Reads/writes its own file so the daemon
+/// cannot clobber GUI-only state when it saves preferences.yml.
 
 #include <QByteArray>
 #include <QHeaderView>
@@ -18,11 +19,11 @@ namespace eMule {
 
 class UiState {
 public:
-    /// Load saved state from thePrefs.
-    void load();
+    /// Load saved state from {configDir}/uistate.yml.
+    void load(const QString& configDir);
 
-    /// Flush current state to thePrefs (call before thePrefs.save()).
-    void save();
+    /// Write current state to {configDir}/uistate.yml.
+    void save(const QString& configDir);
 
     /// Restore a splitter from saved sizes, connect it to auto-update.
     void bindServerSplitter(QSplitter* splitter);

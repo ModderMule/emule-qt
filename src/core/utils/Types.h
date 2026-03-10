@@ -46,4 +46,10 @@ using isize  = std::ptrdiff_t;
 // File-size type — replaces MFC EMFileSize debug wrapper class
 using EMFileSize = uint64;
 
+/// Rate-sampling datum used by per-client and queue-level averaging.
+struct TransferredData {
+    uint32 dataLen = 0;
+    uint32 timestamp = 0;  // getTickCount() value
+};
+
 } // namespace eMule

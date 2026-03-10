@@ -246,7 +246,7 @@ void DaemonApp::logMessageHandler(QtMsgType type, const QMessageLogContext& cont
 
     // Assign incremental ID and buffer the entry
     const qint64 ts = QDateTime::currentSecsSinceEpoch();
-    int64_t logId;
+    qint64 logId;
     {
         std::lock_guard lock(s_logMutex);
         logId = s_nextLogId++;
@@ -260,9 +260,9 @@ void DaemonApp::logMessageHandler(QtMsgType type, const QMessageLogContext& cont
         return;
 
     IpcMessage push(IpcMsgType::PushLogMessage, 0);
-    push.append(logId);
+    push.append(static_cast<qint64>(logId));
     push.append(QString::fromUtf8(cat));
-    push.append(int64_t(type));
+    push.append(static_cast<qint64>(type));
     push.append(msg);
     push.append(ts);
     s_instance->m_ipcServer->broadcast(push);

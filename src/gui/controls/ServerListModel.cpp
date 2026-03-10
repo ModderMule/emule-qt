@@ -82,7 +82,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ForegroundRole) {
-        if (m_connectedIP != 0 && r.numericIp == m_connectedIP && r.port == m_connectedPort)
+        if (m_connectedServerId != 0 && r.serverId == m_connectedServerId)
             return QColor(0x33, 0x99, 0xFF);
         return {};
     }
@@ -152,6 +152,7 @@ void ServerListModel::refreshFromServerList(const ServerList* serverList)
             row.obfuscation = srv->supportsObfuscationTCP();
             row.files = srv->files();
             row.numericIp = srv->ip();
+            row.serverId = srv->serverId();
             row.serverPtr = srv.get();
             m_rows.push_back(std::move(row));
         }
@@ -194,6 +195,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         }
 
         row.numericIp = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
+        row.serverId  = static_cast<uint32_t>(m.value(QStringLiteral("serverId")).toInteger());
         row.serverPtr = nullptr; // no direct pointer in IPC mode
         m_rows.push_back(std::move(row));
     }
@@ -222,12 +224,11 @@ const ServerRow* ServerListModel::rowAt(int row) const
     return &m_rows[static_cast<size_t>(row)];
 }
 
-void ServerListModel::setConnectedServer(uint32_t ip, uint16_t port)
+void ServerListModel::setConnectedServer(uint32_t serverId)
 {
-    if (m_connectedIP == ip && m_connectedPort == port)
+    if (m_connectedServerId == serverId)
         return;
-    m_connectedIP = ip;
-    m_connectedPort = port;
+    m_connectedServerId = serverId;
     if (!m_rows.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, ColCount - 1), {Qt::ForegroundRole});
 }

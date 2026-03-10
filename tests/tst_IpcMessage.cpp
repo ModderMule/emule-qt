@@ -53,7 +53,7 @@ void tst_IpcMessage::fieldAccess_stringIntBool()
 {
     IpcMessage msg(IpcMsgType::Handshake, 1);
     msg.append(QStringLiteral("1.0"));
-    msg.append(int64_t(4712));
+    msg.append(qint64(4712));
     msg.append(true);
 
     QCOMPARE(msg.fieldString(0), QStringLiteral("1.0"));
@@ -84,7 +84,7 @@ void tst_IpcMessage::fieldAccess_outOfRange()
 
     // No fields appended — accessing field 0 should return empty/default
     QCOMPARE(msg.fieldString(0), QString());
-    QCOMPARE(msg.fieldInt(0), int64_t(0));
+    QCOMPARE(msg.fieldInt(0), qint64(0));
     QCOMPARE(msg.fieldBool(0), false);
     QCOMPARE(msg.fieldString(99), QString());
 }
@@ -92,7 +92,7 @@ void tst_IpcMessage::fieldAccess_outOfRange()
 void tst_IpcMessage::append_chaining()
 {
     IpcMessage msg(IpcMsgType::Subscribe, 5);
-    msg.append(int64_t(0xFF)).append(QStringLiteral("test")).append(true);
+    msg.append(qint64(0xFF)).append(QStringLiteral("test")).append(true);
 
     QCOMPARE(msg.fieldCount(), 3);
     QCOMPARE(msg.fieldInt(0), 0xFF);

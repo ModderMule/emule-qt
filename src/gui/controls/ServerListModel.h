@@ -35,6 +35,9 @@ struct ServerRow {
     // Numeric IP for IPC connect-to-specific-server
     uint32_t numericIp = 0;
 
+    // Unique server identity for connected-server highlighting
+    uint32_t serverId = 0;
+
     // Internal reference for double-click / context menu
     const Server* serverPtr = nullptr;
 };
@@ -83,13 +86,12 @@ public:
     /// Get the row data snapshot for a given row index (nullptr if out of range).
     [[nodiscard]] const ServerRow* rowAt(int row) const;
 
-    /// Set the currently connected server (0,0 to clear).
-    void setConnectedServer(uint32_t ip, uint16_t port);
+    /// Set the currently connected server (0 to clear).
+    void setConnectedServer(uint32_t serverId);
 
 private:
     std::vector<ServerRow> m_rows;
-    uint32_t m_connectedIP = 0;
-    uint16_t m_connectedPort = 0;
+    uint32_t m_connectedServerId = 0;
 };
 
 } // namespace eMule

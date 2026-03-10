@@ -1,0 +1,9 @@
+build/
+build2/
+cmake-build-*/
+out/
+.git/
+*.tar.gz
+*.dmg
+*.zip
+*.app

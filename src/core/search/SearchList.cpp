@@ -190,14 +190,35 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
         return;
 
     SafeMemFile data(packet, size);
-    auto* file = new SearchFile(data, optUTF8, serverIP, serverPort);
-    file->setSearchID(m_currentSearchID);
 
-    // Update UDP server record for spam tracking
-    auto& record = m_udpServerRecords[serverIP];
-    record.totalResults++;
+    // A single UDP datagram can contain multiple concatenated search results,
+    // each separated by an OP_EDONKEYPROT + OP_GLOBSEARCHRES header.
+    // (Matches MFC eMule: srchybrid/UDPSocket.cpp do-while loop)
+    do {
+        auto* file = new SearchFile(data, optUTF8, serverIP, serverPort);
+        file->setSearchID(m_currentSearchID);
 
-    addToList(file, false, serverIP);
+        auto& record = m_udpServerRecords[serverIP];
+        record.totalResults++;
+
+        addToList(file, false, serverIP);
+
+        // Check for another concatenated result (proto + opcode header)
+        qint64 remaining = data.length() - data.position();
+        if (remaining >= 2) {
+            uint8 proto = data.readUInt8();
+            if (proto != OP_EDONKEYPROT) {
+                data.seek(-1, SEEK_CUR);
+                break;
+            }
+            uint8 opcode = data.readUInt8();
+            if (opcode != OP_GLOBSEARCHRES) {
+                data.seek(-2, SEEK_CUR);
+                break;
+            }
+        }
+    } while (data.position() < data.length());
+
     emit tabHeaderUpdated(m_currentSearchID);
 }
 

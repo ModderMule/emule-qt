@@ -96,6 +96,7 @@ enum class IpcMsgType : int {
     RequestClientSharedFiles = 251, ///< [clientHash: string] — ask client for shared list
     GetClientDetails     = 252, ///< [clientHash: string] → extended client info for detail dialog
     GetSharedFileDetails = 253, ///< [hash: string] → extended shared file info for detail dialog
+    GetServerState       = 254, ///< [] → connected/connecting/firewalled/clientID/serverId
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 

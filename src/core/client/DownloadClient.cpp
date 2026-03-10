@@ -594,12 +594,8 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
     m_transferredDown += uTransferredFileDataSize;
     m_curSessionDown += uTransferredFileDataSize;
 
-    // Add to rate averaging
-    TransferredData td;
-    td.dataLen = uTransferredFileDataSize;
-    td.timestamp = m_lastBlockReceived;
-    m_averageDDR.push_back(td);
-    m_sumForAvgDownDataRate += uTransferredFileDataSize;
+    // Accumulate for rate averaging (drained in calculateDownloadRate)
+    m_downDataRateMS += uTransferredFileDataSize;
 
     // Move end back by one (MFC uses inclusive end offset)
     --nEndPos;
@@ -799,13 +795,18 @@ uint32 UpDownClient::calculateDownloadRate()
 {
     const uint32 curTick = static_cast<uint32>(getTickCount());
 
-    // Remove old entries (older than 10 seconds)
-    while (!m_averageDDR.empty() && (curTick - m_averageDDR.front().timestamp) > 10000) {
+    // Drain accumulator into one sample per tick (MFC pattern)
+    m_averageDDR.push_back({m_downDataRateMS, curTick});
+    m_sumForAvgDownDataRate += m_downDataRateMS;
+    m_downDataRateMS = 0;
+
+    // Cap at 500 samples (~50s at 100ms ticks)
+    while (m_averageDDR.size() > 500) {
         m_sumForAvgDownDataRate -= m_averageDDR.front().dataLen;
         m_averageDDR.pop_front();
     }
 
-    if (!m_averageDDR.empty()) {
+    if (m_averageDDR.size() > 1) {
         const uint32 elapsed = curTick - m_averageDDR.front().timestamp;
         if (elapsed > 0)
             m_downDatarate = static_cast<uint32>((m_sumForAvgDownDataRate * 1000) / elapsed);

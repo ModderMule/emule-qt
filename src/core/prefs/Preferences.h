@@ -778,59 +778,6 @@ public:
     [[nodiscard]] QString notifyEmailSender() const;
     void setNotifyEmailSender(const QString& val);
 
-    // -- UI State (persisted window layout) -----------------------------------
-
-    [[nodiscard]] QList<int> serverSplitSizes() const;
-    void setServerSplitSizes(const QList<int>& val);
-
-    [[nodiscard]] QList<int> kadSplitSizes() const;
-    void setKadSplitSizes(const QList<int>& val);
-
-    [[nodiscard]] QList<int> transferSplitSizes() const;
-    void setTransferSplitSizes(const QList<int>& val);
-
-    [[nodiscard]] QList<int> sharedHorzSplitSizes() const;
-    void setSharedHorzSplitSizes(const QList<int>& val);
-
-    [[nodiscard]] QList<int> sharedVertSplitSizes() const;
-    void setSharedVertSplitSizes(const QList<int>& val);
-
-    [[nodiscard]] QList<int> messagesSplitSizes() const;
-    void setMessagesSplitSizes(const QList<int>& val);
-
-    [[nodiscard]] QList<int> ircSplitSizes() const;
-    void setIrcSplitSizes(const QList<int>& val);
-
-    [[nodiscard]] QList<int> statsSplitSizes() const;
-    void setStatsSplitSizes(const QList<int>& val);
-
-    [[nodiscard]] int windowWidth() const;
-    void setWindowWidth(int val);
-
-    [[nodiscard]] int windowHeight() const;
-    void setWindowHeight(int val);
-
-    [[nodiscard]] bool windowMaximized() const;
-    void setWindowMaximized(bool val);
-
-    [[nodiscard]] int optionsLastPage() const;
-    void setOptionsLastPage(int val);
-
-    [[nodiscard]] QList<int> toolbarButtonOrder() const;
-    void setToolbarButtonOrder(const QList<int>& val);
-
-    [[nodiscard]] int toolbarButtonStyle() const;
-    void setToolbarButtonStyle(int val);
-
-    [[nodiscard]] QString toolbarSkinPath() const;
-    void setToolbarSkinPath(const QString& val);
-
-    [[nodiscard]] QString skinProfilePath() const;
-    void setSkinProfilePath(const QString& val);
-
-    [[nodiscard]] QByteArray headerState(const QString& key) const;
-    void setHeaderState(const QString& key, const QByteArray& val);
-
     // -- IPC sync -------------------------------------------------------------
 
     /// Overwrite all daemon-owned settings from the CBOR map returned by the

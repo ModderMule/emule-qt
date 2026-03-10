@@ -245,7 +245,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             case ColSources: {
                 if (s.downloadState == QLatin1String("Downloading"))
                     return -1;
-                return s.remoteQueueRank > 0 ? s.remoteQueueRank : INT_MAX;
+                return s.remoteQueueRank > 0 ? static_cast<qlonglong>(s.remoteQueueRank) : qlonglong(INT_MAX);
             }
             case ColStatus:        return downloadStateSortOrder(s.downloadState);
             case ColSeenComplete:  return s.availPartCount;

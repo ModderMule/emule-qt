@@ -193,17 +193,25 @@ void UpDownClient::updateUploadingStatisticsData()
 {
     const uint32 curTick = static_cast<uint32>(getTickCount());
 
+    uint32 sentBytesCompleteFile = 0;
+    uint32 sentBytesPartFile = 0;
+
     if (m_socket) {
-        const auto sentBytesCompleteFile = m_socket->getSentBytesCompleteFileSinceLastCallAndReset();
-        const auto sentBytesPartFile = m_socket->getSentBytesPartFileSinceLastCallAndReset();
+        sentBytesCompleteFile = m_socket->getSentBytesCompleteFileSinceLastCallAndReset();
+        sentBytesPartFile = m_socket->getSentBytesPartFileSinceLastCallAndReset();
         const auto sentPayload = sentBytesCompleteFile + sentBytesPartFile;
 
-        TransferredData newData;
-        newData.dataLen = sentPayload;
-        newData.timestamp = curTick;
-        m_averageUDR.push_back(newData);
+        m_transferredUp += sentPayload;
+    }
 
-        m_sumForAvgUpDataRate += sentPayload;
+    const uint32 sentBytesFile = sentBytesCompleteFile + sentBytesPartFile;
+
+    // MFC gating: only add sample when data was sent, list is empty, or 1s gap
+    if (sentBytesFile > 0 || m_averageUDR.empty() ||
+        curTick >= m_averageUDR.back().timestamp + 1000)
+    {
+        m_averageUDR.push_back({sentBytesFile, curTick});
+        m_sumForAvgUpDataRate += sentBytesFile;
     }
 
     // Remove entries older than 10 seconds
@@ -212,13 +220,13 @@ void UpDownClient::updateUploadingStatisticsData()
         m_averageUDR.pop_front();
     }
 
-    // Calculate rate
-    if (!m_averageUDR.empty()) {
+    // Calculate rate — require 2s since upload start (MFC guard)
+    if (!m_averageUDR.empty() &&
+        curTick > m_averageUDR.front().timestamp &&
+        getUpStartTimeDelay() > 2000)
+    {
         const uint32 elapsed = curTick - m_averageUDR.front().timestamp;
-        if (elapsed > 0)
-            m_upDatarate = static_cast<uint32>((m_sumForAvgUpDataRate * 1000) / elapsed);
-        else
-            m_upDatarate = 0;
+        m_upDatarate = static_cast<uint32>((m_sumForAvgUpDataRate * 1000) / elapsed);
     } else {
         m_upDatarate = 0;
     }

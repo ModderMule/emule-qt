@@ -44,11 +44,6 @@ class SafeMemFile;
 // Supporting types
 // ---------------------------------------------------------------------------
 
-struct TransferredData {
-    uint32 dataLen = 0;
-    uint32 timestamp = 0;  // getTickCount() value
-};
-
 /// Build a comparable version number from major.minor.update.
 /// Matches MFC MAKE_CLIENT_VERSION(mjr, min, upd).
 constexpr uint32 makeClientVersion(uint32 major, uint32 minor, uint32 update)
@@ -565,6 +560,9 @@ private slots:
     void onHelloReceived(const uint8* data, uint32 size, uint8 opcode);
     void onFileRequestReceived(const uint8* data, uint32 size, uint8 opcode);
     void onUploadRequestReceived(const uint8* data, uint32 size);
+
+protected:
+    void accumulateDownBytes(uint32 bytes) { m_downDataRateMS += bytes; }
 
 private:
     void init();

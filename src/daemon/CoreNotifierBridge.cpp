@@ -80,6 +80,8 @@ void CoreNotifierBridge::connectAll()
     if (theApp.searchList) {
         connect(theApp.searchList, &SearchList::resultAdded,
                 this, &CoreNotifierBridge::onSearchResultAdded);
+        connect(theApp.searchList, &SearchList::resultUpdated,
+                this, &CoreNotifierBridge::onSearchResultAdded);
     }
 
     // SharedFileList
@@ -191,6 +193,7 @@ void CoreNotifierBridge::onServerStateChanged()
         if (const auto* srv = theApp.serverConnect->currentServer()) {
             info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ip()));
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
+            info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
         }
     }
     msg.append(info);
@@ -222,7 +225,7 @@ void CoreNotifierBridge::onSearchResultAdded(SearchFile* file)
 {
     IpcMessage msg(IpcMsgType::PushSearchResult, 0);
     if (file)
-        msg.append(static_cast<int64_t>(file->searchID()));
+        msg.append(static_cast<qint64>(file->searchID()));
     m_ipcServer->broadcast(msg);
 }
 

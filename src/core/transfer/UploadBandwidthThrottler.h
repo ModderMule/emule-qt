@@ -57,8 +57,8 @@ public:
     void setUploadQueue(UploadQueue* uq) { m_uploadQueue = uq; }
     void setDiskIOThread(UploadDiskIOThread* dio) { m_diskIOThread = dio; }
 
-    // Static utility
-    static uint32 getSlotLimit(uint32 currentUpSpeed);
+    // Slot limit calculation
+    uint32 getSlotLimit(uint32 currentUpSpeed) const;
 
 protected:
     void run() override;

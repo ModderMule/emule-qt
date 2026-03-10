@@ -71,6 +71,7 @@ void ServerPanel::setIpcClient(IpcClient* client)
         // Request server list when IPC connects
         connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestServerList);
         connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestKadStatus);
+        connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestServerState);
 
         // Refresh server list and button on server state changes
         connect(m_ipc, &IpcClient::serverStateChanged,
@@ -81,9 +82,8 @@ void ServerPanel::setIpcClient(IpcClient* client)
                 info.value(QStringLiteral("connected")).toBool(),
                 info.value(QStringLiteral("connecting")).toBool());
             // Highlight connected server in blue
-            auto srvIP = static_cast<uint32_t>(info.value(QStringLiteral("serverIP")).toInteger());
-            auto srvPort = static_cast<uint16_t>(info.value(QStringLiteral("serverPort")).toInteger());
-            m_serverListModel->setConnectedServer(srvIP, srvPort);
+            auto serverId = static_cast<uint32_t>(info.value(QStringLiteral("serverId")).toInteger());
+            m_serverListModel->setConnectedServer(serverId);
         });
 
         // Track Kad status from push events
@@ -100,6 +100,7 @@ void ServerPanel::setIpcClient(IpcClient* client)
         if (m_ipc->isConnected()) {
             requestServerList();
             requestKadStatus();
+            requestServerState();
         }
     }
 }
@@ -287,6 +288,7 @@ void ServerPanel::onConnectedToServer()
                 tr("Connected to <b>%1</b> (%2:%3)")
                     .arg(srv->name(), srv->address())
                     .arg(srv->port()));
+            m_serverListModel->setConnectedServer(srv->serverId());
         }
     }
 }
@@ -296,6 +298,7 @@ void ServerPanel::onDisconnectedFromServer()
     m_connectBtn->setText(tr("Connect"));
     refreshMyInfo();
     m_logWidget->appendServerInfo(tr("Disconnected from server."));
+    m_serverListModel->setConnectedServer(0);
 }
 
 void ServerPanel::updateConnectButton(bool connected, bool connecting)
@@ -978,6 +981,25 @@ void ServerPanel::requestKadStatus()
         m_kadConnected  = status.value(QStringLiteral("connected")).toBool();
         m_kadFirewalled = status.value(QStringLiteral("firewalled")).toBool();
         refreshMyInfo();
+    });
+}
+
+void ServerPanel::requestServerState()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetServerState);
+    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+        if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+
+        const QCborMap info = resp.fieldMap(1);
+        updateConnectButton(
+            info.value(QStringLiteral("connected")).toBool(),
+            info.value(QStringLiteral("connecting")).toBool());
+        auto serverId = static_cast<uint32_t>(info.value(QStringLiteral("serverId")).toInteger());
+        m_serverListModel->setConnectedServer(serverId);
     });
 }
 

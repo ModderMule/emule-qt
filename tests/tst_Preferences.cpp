@@ -25,7 +25,7 @@ private slots:
     {
         Preferences prefs;
         QCOMPARE(prefs.nick(), QStringLiteral("https://emule-qt.org"));
-        QCOMPARE(prefs.autoConnect(), false);
+        QCOMPARE(prefs.autoConnect(), true);
         QCOMPARE(prefs.reconnect(), true);
         QCOMPARE(prefs.filterLANIPs(), true);
     }
@@ -57,7 +57,7 @@ private slots:
     void defaults_display()
     {
         Preferences prefs;
-        QCOMPARE(prefs.useOriginalIcons(), false);
+        QCOMPARE(prefs.useOriginalIcons(), true);
     }
 
     void defaults_upnp()

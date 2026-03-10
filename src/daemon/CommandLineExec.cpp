@@ -76,7 +76,7 @@ int CommandLineExec::execCommand(QCoreApplication& app)
         msg = Ipc::IpcMessage(Ipc::IpcMsgType::DownloadSearchFile, 2);
         msg.append(hashHex);
         msg.append(fl->name);
-        msg.append(static_cast<int64_t>(fl->size));
+        msg.append(static_cast<qint64>(fl->size));
 
     } else if (m_parser.isSet(m_connectOption)) {
         msg = Ipc::IpcMessage(Ipc::IpcMsgType::ConnectToServer, 2);

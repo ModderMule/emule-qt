@@ -12,6 +12,7 @@
 #include <QObject>
 #include <QStringList>
 
+#include <deque>
 #include <vector>
 
 namespace eMule {
@@ -106,7 +107,6 @@ signals:
 private:
     void onDownloadCompleted(PartFile* file);
     void connectPartFileSignals(PartFile* file);
-    void distributeDownloadLimit();
 
     std::vector<PartFile*> m_fileList;
     SharedFileList* m_sharedFileList = nullptr;
@@ -115,6 +115,7 @@ private:
     ClientList* m_clientList = nullptr;
     ServerConnect* m_serverConnect = nullptr;
     uint32 m_datarate = 0;
+    std::deque<TransferredData> m_averageDRList;  // 10-second averaging window
     uint32 m_udCounter = 0;
     uint32 m_lastUDPSourceRequestTime = 0;
     uint32 m_lastServerSourceRequestTime = 0;

@@ -96,7 +96,7 @@ IpcMessage& IpcMessage::append(const QString& value)
     return *this;
 }
 
-IpcMessage& IpcMessage::append(int64_t value)
+IpcMessage& IpcMessage::append(qint64 value)
 {
     m_array.append(value);
     return *this;
@@ -158,7 +158,7 @@ IpcMessage IpcMessage::makeResult(int seqId, bool success, const QCborValue& dat
 IpcMessage IpcMessage::makeError(int seqId, int code, const QString& message)
 {
     IpcMessage msg(IpcMsgType::Error, seqId);
-    msg.append(static_cast<int64_t>(code));
+    msg.append(static_cast<qint64>(code));
     msg.append(message);
     return msg;
 }

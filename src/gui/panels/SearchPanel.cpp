@@ -312,10 +312,10 @@ void SearchPanel::onStartSearch()
     // Build search params
     const QString fileType = m_typeCombo->currentData().toString();
     const int method = m_methodCombo->currentData().toInt();
-    const int64_t minSize = m_minSizeSpin->value() > 0
-        ? static_cast<int64_t>(m_minSizeSpin->value()) * 1024 * 1024 : 0;
-    const int64_t maxSize = m_maxSizeSpin->value() > 0
-        ? static_cast<int64_t>(m_maxSizeSpin->value()) * 1024 * 1024 : 0;
+    const qint64 minSize = m_minSizeSpin->value() > 0
+        ? static_cast<qint64>(m_minSizeSpin->value()) * 1024 * 1024 : 0;
+    const qint64 maxSize = m_maxSizeSpin->value() > 0
+        ? static_cast<qint64>(m_maxSizeSpin->value()) * 1024 * 1024 : 0;
     const int avail = m_availSpin->value();
     const QString extension = m_extensionEdit->text().trimmed();
     const int completeSources = m_completeSpin->value();
@@ -333,15 +333,15 @@ void SearchPanel::onStartSearch()
     IpcMessage msg(IpcMsgType::StartSearch);
     msg.append(expression);              // field 0
     msg.append(fileType);                // field 1
-    msg.append(static_cast<int64_t>(method));  // field 2
+    msg.append(static_cast<qint64>(method));  // field 2
     msg.append(minSize);                 // field 3
     msg.append(maxSize);                 // field 4
-    msg.append(static_cast<int64_t>(avail));   // field 5
+    msg.append(static_cast<qint64>(avail));   // field 5
     msg.append(extension);               // field 6
-    msg.append(static_cast<int64_t>(completeSources)); // field 7
+    msg.append(static_cast<qint64>(completeSources)); // field 7
     msg.append(codec);                                    // field 8
-    msg.append(static_cast<int64_t>(minBitrate));         // field 9
-    msg.append(static_cast<int64_t>(minLength));          // field 10
+    msg.append(static_cast<qint64>(minBitrate));         // field 9
+    msg.append(static_cast<qint64>(minLength));          // field 10
     msg.append(title);                                    // field 11
     msg.append(album);                                    // field 12
     msg.append(artist);                                   // field 13
@@ -399,7 +399,7 @@ void SearchPanel::onCancelSearch()
         return;
 
     IpcMessage msg(IpcMsgType::StopSearch);
-    msg.append(static_cast<int64_t>(tab->searchID));
+    msg.append(static_cast<qint64>(tab->searchID));
     m_ipc->sendRequest(std::move(msg));
     m_cancelBtn->setEnabled(false);
 }
@@ -526,7 +526,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             const auto* result = tab->model->resultAt(srcIdx.row());
             if (!result) continue;
             IpcMessage msg(IpcMsgType::MarkSearchSpam);
-            msg.append(static_cast<int64_t>(tab->searchID));
+            msg.append(static_cast<qint64>(tab->searchID));
             msg.append(result->hash);
             m_ipc->sendRequest(std::move(msg));
         }
@@ -588,7 +588,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
         return;
 
     IpcMessage msg(IpcMsgType::GetSearchResults);
-    msg.append(static_cast<int64_t>(searchID));
+    msg.append(static_cast<qint64>(searchID));
 
     m_ipc->sendRequest(std::move(msg), [this, searchID](const IpcMessage& resp) {
         if (!resp.fieldBool(0))
@@ -662,7 +662,7 @@ void SearchPanel::downloadResult(int row)
     IpcMessage msg(IpcMsgType::DownloadSearchFile);
     msg.append(result->hash);
     msg.append(result->fileName);
-    msg.append(static_cast<int64_t>(result->fileSize));
+    msg.append(static_cast<qint64>(result->fileSize));
     m_ipc->sendRequest(std::move(msg));
 }
 
@@ -707,7 +707,7 @@ void SearchPanel::closeSearch(int tabIndex)
     // Send remove request to daemon (skip for stored/passive searches with ID 0)
     if (m_ipc && m_ipc->isConnected() && tab.searchID != 0) {
         IpcMessage msg(IpcMsgType::RemoveSearch);
-        msg.append(static_cast<int64_t>(tab.searchID));
+        msg.append(static_cast<qint64>(tab.searchID));
         m_ipc->sendRequest(std::move(msg));
     }
 
@@ -903,15 +903,15 @@ void SearchPanel::saveSearches()
             rowObj[QStringLiteral("hash")]                = row->hash;
             rowObj[QStringLiteral("fileName")]            = row->fileName;
             rowObj[QStringLiteral("fileType")]            = row->fileType;
-            rowObj[QStringLiteral("fileSize")]            = row->fileSize;
-            rowObj[QStringLiteral("sourceCount")]         = row->sourceCount;
-            rowObj[QStringLiteral("completeSourceCount")] = row->completeSourceCount;
+            rowObj[QStringLiteral("fileSize")]            = static_cast<qint64>(row->fileSize);
+            rowObj[QStringLiteral("sourceCount")]         = static_cast<qint64>(row->sourceCount);
+            rowObj[QStringLiteral("completeSourceCount")] = static_cast<qint64>(row->completeSourceCount);
             rowObj[QStringLiteral("artist")]              = row->artist;
             rowObj[QStringLiteral("album")]               = row->album;
             rowObj[QStringLiteral("title")]               = row->title;
             rowObj[QStringLiteral("codec")]               = row->codec;
-            rowObj[QStringLiteral("length")]              = row->length;
-            rowObj[QStringLiteral("bitrate")]             = row->bitrate;
+            rowObj[QStringLiteral("length")]              = static_cast<qint64>(row->length);
+            rowObj[QStringLiteral("bitrate")]             = static_cast<qint64>(row->bitrate);
             rowObj[QStringLiteral("knownType")]           = row->knownType;
             rowObj[QStringLiteral("isSpam")]              = row->isSpam;
             resultsArr.append(rowObj);
@@ -963,15 +963,15 @@ void SearchPanel::loadSearches()
             row.hash                = r[QStringLiteral("hash")].toString();
             row.fileName            = r[QStringLiteral("fileName")].toString();
             row.fileType            = r[QStringLiteral("fileType")].toString();
-            row.fileSize            = static_cast<int64_t>(r[QStringLiteral("fileSize")].toDouble());
-            row.sourceCount         = static_cast<int64_t>(r[QStringLiteral("sourceCount")].toDouble());
-            row.completeSourceCount = static_cast<int64_t>(r[QStringLiteral("completeSourceCount")].toDouble());
+            row.fileSize            = static_cast<qint64>(r[QStringLiteral("fileSize")].toDouble());
+            row.sourceCount         = static_cast<qint64>(r[QStringLiteral("sourceCount")].toDouble());
+            row.completeSourceCount = static_cast<qint64>(r[QStringLiteral("completeSourceCount")].toDouble());
             row.artist              = r[QStringLiteral("artist")].toString();
             row.album               = r[QStringLiteral("album")].toString();
             row.title               = r[QStringLiteral("title")].toString();
             row.codec               = r[QStringLiteral("codec")].toString();
-            row.length              = static_cast<int64_t>(r[QStringLiteral("length")].toDouble());
-            row.bitrate             = static_cast<int64_t>(r[QStringLiteral("bitrate")].toDouble());
+            row.length              = static_cast<qint64>(r[QStringLiteral("length")].toDouble());
+            row.bitrate             = static_cast<qint64>(r[QStringLiteral("bitrate")].toDouble());
             row.knownType           = r[QStringLiteral("knownType")].toInt();
             row.isSpam              = r[QStringLiteral("isSpam")].toBool();
             rows.push_back(std::move(row));

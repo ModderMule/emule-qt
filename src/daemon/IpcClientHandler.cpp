@@ -194,6 +194,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::RequestClientSharedFiles: handleRequestClientSharedFiles(msg); break;
     case IpcMsgType::GetClientDetails:   handleGetClientDetails(msg); break;
     case IpcMsgType::GetSharedFileDetails: handleGetSharedFileDetails(msg); break;
+    case IpcMsgType::GetServerState:      handleGetServerState(msg); break;
     default:
         sendMessage(IpcMessage::makeError(msg.seqId(), 400,
             QStringLiteral("Unknown message type: %1").arg(static_cast<int>(msg.type()))));
@@ -570,6 +571,25 @@ void IpcClientHandler::handleGetConnection(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
 }
 
+void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
+{
+    QCborMap info;
+    bool connected = theApp.isConnected();
+    info.insert(QStringLiteral("connected"),  connected);
+    info.insert(QStringLiteral("connecting"),
+                theApp.serverConnect && theApp.serverConnect->isConnecting());
+    info.insert(QStringLiteral("firewalled"), theApp.isFirewalled());
+    info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
+    if (connected && theApp.serverConnect) {
+        if (const auto* srv = theApp.serverConnect->currentServer()) {
+            info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ip()));
+            info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
+            info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
+        }
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
+}
+
 void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
 {
     if (!theApp.serverConnect) {
@@ -699,6 +719,9 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
             const QByteArray payload = parsed.expr.toBytes();
             if (!payload.isEmpty()) {
                 const size_t count = theApp.serverList->serverCount();
+                logDebug(QStringLiteral("UDP Global Search: expr=\"%1\", querying %2 servers")
+                               .arg(params.expression)
+                               .arg(count));
                 for (size_t i = 0; i < count; ++i) {
                     Server* srv = theApp.serverList->serverAt(i);
                     theApp.searchList->addSentUDPRequestIP(srv->ip());
@@ -707,6 +730,14 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
                     pkt->prot = OP_EDONKEYPROT;
                     std::memcpy(pkt->pBuffer, payload.constData(), static_cast<size_t>(payload.size()));
                     const auto udpPort = static_cast<uint16>(srv->port() + 4);
+                    const bool encrypted = srv->serverKeyUDP() != 0 && srv->supportsObfuscationUDP();
+                    logDebug(QStringLiteral("  -> %1 (%2:%3) UDP:%4 encrypted=%5 keyUDP=0x%6")
+                                   .arg(srv->name())
+                                   .arg(ipstr(srv->ip()))
+                                   .arg(srv->port())
+                                   .arg(udpPort)
+                                   .arg(encrypted ? QStringLiteral("yes") : QStringLiteral("no"))
+                                   .arg(srv->serverKeyUDP(), 8, 16, QLatin1Char('0')));
                     theApp.serverConnect->sendUDPPacket(std::move(pkt), *srv, udpPort);
                 }
                 started = true;
@@ -817,7 +848,7 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
         m.insert(QStringLiteral("isPartFile"), isPartFile);
         m.insert(QStringLiteral("uploadingClients"), kf->uploadingClientCount());
         m.insert(QStringLiteral("partCount"), static_cast<int>(kf->partCount()));
-        m.insert(QStringLiteral("completedSize"), completedSz);
+        m.insert(QStringLiteral("completedSize"), static_cast<qint64>(completedSz));
 
         // Build per-part availability map for share status bar
         {
@@ -907,12 +938,12 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
 
     QCborMap result;
     result.insert(QStringLiteral("files"), files);
-    result.insert(QStringLiteral("totalRequests"), totalRequests);
-    result.insert(QStringLiteral("totalAccepted"), totalAccepted);
-    result.insert(QStringLiteral("totalTransferred"), totalTransferred);
-    result.insert(QStringLiteral("totalAllTimeRequests"), totalAllTimeReqs);
-    result.insert(QStringLiteral("totalAllTimeAccepted"), totalAllTimeAcc);
-    result.insert(QStringLiteral("totalAllTimeTransferred"), totalAllTimeTx);
+    result.insert(QStringLiteral("totalRequests"), static_cast<qint64>(totalRequests));
+    result.insert(QStringLiteral("totalAccepted"), static_cast<qint64>(totalAccepted));
+    result.insert(QStringLiteral("totalTransferred"), static_cast<qint64>(totalTransferred));
+    result.insert(QStringLiteral("totalAllTimeRequests"), static_cast<qint64>(totalAllTimeReqs));
+    result.insert(QStringLiteral("totalAllTimeAccepted"), static_cast<qint64>(totalAllTimeAcc));
+    result.insert(QStringLiteral("totalAllTimeTransferred"), static_cast<qint64>(totalAllTimeTx));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(result)));
 }
 
@@ -1817,9 +1848,9 @@ void IpcClientHandler::handleSyncLogs(const IpcMessage& msg)
     QCborArray arr;
     for (const auto& e : entries) {
         QCborArray entry;
-        entry.append(e.id);
+        entry.append(static_cast<qint64>(e.id));
         entry.append(e.category);
-        entry.append(static_cast<int64_t>(e.severity));
+        entry.append(static_cast<qint64>(e.severity));
         entry.append(e.message);
         entry.append(e.timestamp);
         arr.append(entry);
@@ -2829,6 +2860,118 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setWebServerGuestEnabled(val.toBool());
     else if (key == QStringLiteral("webServerGuestPassword"))
         thePrefs.setWebServerGuestPassword(val.toString());
+
+    // GUI-only settings (synced for YAML persistence)
+    // General page
+    else if (key == QStringLiteral("promptOnExit"))
+        thePrefs.setPromptOnExit(val.toBool());
+    else if (key == QStringLiteral("startMinimized"))
+        thePrefs.setStartMinimized(val.toBool());
+    else if (key == QStringLiteral("showSplashScreen"))
+        thePrefs.setShowSplashScreen(val.toBool());
+    else if (key == QStringLiteral("enableOnlineSignature"))
+        thePrefs.setEnableOnlineSignature(val.toBool());
+    else if (key == QStringLiteral("enableMiniMule"))
+        thePrefs.setEnableMiniMule(val.toBool());
+    else if (key == QStringLiteral("preventStandby"))
+        thePrefs.setPreventStandby(val.toBool());
+    else if (key == QStringLiteral("versionCheckEnabled"))
+        thePrefs.setVersionCheckEnabled(val.toBool());
+    else if (key == QStringLiteral("versionCheckDays"))
+        thePrefs.setVersionCheckDays(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("bringToFrontOnLinkClick"))
+        thePrefs.setBringToFrontOnLinkClick(val.toBool());
+    else if (key == QStringLiteral("language"))
+        thePrefs.setLanguage(val.toString());
+    else if (key == QStringLiteral("startWithOS"))
+        thePrefs.setStartWithOS(val.toBool());
+
+    // Display page
+    else if (key == QStringLiteral("depth3D"))
+        thePrefs.setDepth3D(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("tooltipDelay"))
+        thePrefs.setTooltipDelay(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("minimizeToTray"))
+        thePrefs.setMinimizeToTray(val.toBool());
+    else if (key == QStringLiteral("transferDoubleClick"))
+        thePrefs.setTransferDoubleClick(val.toBool());
+    else if (key == QStringLiteral("showDwlPercentage"))
+        thePrefs.setShowDwlPercentage(val.toBool());
+    else if (key == QStringLiteral("showRatesInTitle"))
+        thePrefs.setShowRatesInTitle(val.toBool());
+    else if (key == QStringLiteral("showCatTabInfos"))
+        thePrefs.setShowCatTabInfos(val.toBool());
+    else if (key == QStringLiteral("autoRemoveFinishedDownloads"))
+        thePrefs.setAutoRemoveFinishedDownloads(val.toBool());
+    else if (key == QStringLiteral("showTransToolbar"))
+        thePrefs.setShowTransToolbar(val.toBool());
+    else if (key == QStringLiteral("storeSearches"))
+        thePrefs.setStoreSearches(val.toBool());
+    else if (key == QStringLiteral("disableKnownClientList"))
+        thePrefs.setDisableKnownClientList(val.toBool());
+    else if (key == QStringLiteral("disableQueueList"))
+        thePrefs.setDisableQueueList(val.toBool());
+    else if (key == QStringLiteral("useAutoCompletion"))
+        thePrefs.setUseAutoCompletion(val.toBool());
+    else if (key == QStringLiteral("useOriginalIcons"))
+        thePrefs.setUseOriginalIcons(val.toBool());
+    else if (key == QStringLiteral("logFont"))
+        thePrefs.setLogFont(val.toString());
+
+    // Files page (GUI-only)
+    else if (key == QStringLiteral("watchClipboard4ED2KLinks"))
+        thePrefs.setWatchClipboard4ED2KLinks(val.toBool());
+    else if (key == QStringLiteral("useAdvancedCalcRemainingTime"))
+        thePrefs.setUseAdvancedCalcRemainingTime(val.toBool());
+    else if (key == QStringLiteral("videoPlayerCommand"))
+        thePrefs.setVideoPlayerCommand(val.toString());
+    else if (key == QStringLiteral("videoPlayerArgs"))
+        thePrefs.setVideoPlayerArgs(val.toString());
+    else if (key == QStringLiteral("createBackupToPreview"))
+        thePrefs.setCreateBackupToPreview(val.toBool());
+    else if (key == QStringLiteral("autoCleanupFilenames"))
+        thePrefs.setAutoCleanupFilenames(val.toBool());
+
+    // Notifications page (GUI-side)
+    else if (key == QStringLiteral("notifySoundType"))
+        thePrefs.setNotifySoundType(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("notifySoundFile"))
+        thePrefs.setNotifySoundFile(val.toString());
+
+    // IRC page
+    else if (key == QStringLiteral("ircServer"))
+        thePrefs.setIrcServer(val.toString());
+    else if (key == QStringLiteral("ircNick"))
+        thePrefs.setIrcNick(val.toString());
+    else if (key == QStringLiteral("ircUseChannelFilter"))
+        thePrefs.setIrcUseChannelFilter(val.toBool());
+    else if (key == QStringLiteral("ircChannelFilter"))
+        thePrefs.setIrcChannelFilter(val.toString());
+    else if (key == QStringLiteral("ircUsePerform"))
+        thePrefs.setIrcUsePerform(val.toBool());
+    else if (key == QStringLiteral("ircPerformString"))
+        thePrefs.setIrcPerformString(val.toString());
+    else if (key == QStringLiteral("ircConnectHelpChannel"))
+        thePrefs.setIrcConnectHelpChannel(val.toBool());
+    else if (key == QStringLiteral("ircLoadChannelList"))
+        thePrefs.setIrcLoadChannelList(val.toBool());
+    else if (key == QStringLiteral("ircAddTimestamp"))
+        thePrefs.setIrcAddTimestamp(val.toBool());
+    else if (key == QStringLiteral("ircIgnoreMiscInfoMessages"))
+        thePrefs.setIrcIgnoreMiscInfoMessages(val.toBool());
+    else if (key == QStringLiteral("ircIgnoreJoinMessages"))
+        thePrefs.setIrcIgnoreJoinMessages(val.toBool());
+    else if (key == QStringLiteral("ircIgnorePartMessages"))
+        thePrefs.setIrcIgnorePartMessages(val.toBool());
+    else if (key == QStringLiteral("ircIgnoreQuitMessages"))
+        thePrefs.setIrcIgnoreQuitMessages(val.toBool());
+
+    // Messages page (GUI-only)
+    else if (key == QStringLiteral("showSmileys"))
+        thePrefs.setShowSmileys(val.toBool());
+    else if (key == QStringLiteral("indicateRatings"))
+        thePrefs.setIndicateRatings(val.toBool());
+
     else
         return false;
     return true;

@@ -28,7 +28,7 @@ private slots:
 void tst_SmtpSendEmail::sendTestEmail()
 {
     // Load credentials from project-root .env
-    const QString envPath = QStringLiteral(EMULE_PROJECT_DATA_DIR "/../.env");
+    const QString envPath = QStringLiteral(EMULE_STRINGIFY(EMULE_PROJECT_DATA_DIR) "/../.env");
     const auto env = loadEnvFile(envPath);
 
     if (env.isEmpty())

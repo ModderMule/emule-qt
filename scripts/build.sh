@@ -7,6 +7,7 @@
 #
 #   clean       Remove build directory before building
 #   bundle      Run platform-specific bundling after build (e.g. macdeployqt)
+#   deploy-qt   Bundle Qt libraries (Linux only, requires bundle)
 #   build-dir   Path to the CMake build directory (default: ./build)
 # ---------------------------------------------------------------------------
 
@@ -17,6 +18,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 CLEAN=false
 BUNDLE=false
+DEPLOY_QT=false
 BUILD_DIR=""
 
 for arg in "$@"; do
@@ -24,6 +26,8 @@ for arg in "$@"; do
         CLEAN=true
     elif [ "$arg" = "bundle" ]; then
         BUNDLE=true
+    elif [ "$arg" = "deploy-qt" ]; then
+        DEPLOY_QT=true
     elif [ -z "$BUILD_DIR" ]; then
         BUILD_DIR="$arg"
     fi
@@ -65,6 +69,14 @@ if [ "$BUNDLE" = true ]; then
         Darwin)
             echo "Running macOS bundle script..."
             "$SCRIPT_DIR/bundle-macos.sh" "$BUILD_DIR"
+            ;;
+        Linux)
+            echo "Running Linux bundle script..."
+            LINUX_BUNDLE_ARGS=("$BUILD_DIR")
+            if [ "$DEPLOY_QT" = true ]; then
+                LINUX_BUNDLE_ARGS=("deploy-qt" "$BUILD_DIR")
+            fi
+            "$SCRIPT_DIR/bundle-linux.sh" "${LINUX_BUNDLE_ARGS[@]}"
             ;;
         MINGW*|MSYS*|CYGWIN*)
             echo "Running Windows bundle script..."

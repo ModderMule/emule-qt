@@ -738,15 +738,16 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     data.writeUInt32(4);
 
     // Tag: CT_NAME — user nick
-    // Use writeNewEd2kTag (compact format) since we advertise SRVCAP_NEWTAGS.
-    // Sending old-format tags while advertising new-tag support triggers anti-leecher
-    // fingerprinting on some servers (incorrectly identified as Shareaza).
+    // Use old-format tags (writeTagToFile) in the login packet. The server hasn't
+    // seen our SRVCAP_NEWTAGS flag yet when it begins parsing these tags, so it
+    // expects the classic tag format. New-format tags would cause a parse failure
+    // and immediate disconnection on real servers.
     Tag tagName(static_cast<uint8>(CT_NAME), m_config.userNick);
-    tagName.writeNewEd2kTag(data, UTF8Mode::OptBOM);
+    tagName.writeTagToFile(data, UTF8Mode::OptBOM);
 
     // Tag: CT_VERSION — ED2K version
     Tag tagVersion(static_cast<uint8>(CT_VERSION), static_cast<uint32>(EDONKEYVERSION));
-    tagVersion.writeNewEd2kTag(data);
+    tagVersion.writeTagToFile(data);
 
     // Tag: CT_SERVER_FLAGS — our capabilities
     uint32 cryptFlags = 0;
@@ -760,11 +761,11 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     uint32 srvCaps = SRVCAP_NEWTAGS | SRVCAP_LARGEFILES | SRVCAP_UNICODE | cryptFlags;
     srvCaps |= SRVCAP_ZLIB;
     Tag tagFlags(static_cast<uint8>(CT_SERVER_FLAGS), srvCaps);
-    tagFlags.writeNewEd2kTag(data);
+    tagFlags.writeTagToFile(data);
 
     // Tag: CT_EMULE_VERSION
     Tag tagEmuleVer(static_cast<uint8>(CT_EMULE_VERSION), m_config.emuleVersionTag);
-    tagEmuleVer.writeNewEd2kTag(data);
+    tagEmuleVer.writeTagToFile(data);
 
     auto packet = std::make_unique<Packet>(data);
     packet->opcode = OP_LOGINREQUEST;

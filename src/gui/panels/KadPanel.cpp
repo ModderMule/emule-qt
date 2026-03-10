@@ -173,7 +173,7 @@ void KadPanel::onBootstrapClicked()
             return;
         IpcMessage msg(IpcMsgType::BootstrapKad);
         msg.append(ip);
-        msg.append(int64_t(port));
+        msg.append(qint64(port));
         m_ipc->sendRequest(std::move(msg));
     } else {
         const QString url = m_urlEdit->text().trimmed();
@@ -217,7 +217,7 @@ void KadPanel::onBootstrapClicked()
             // Bootstrap from the downloaded nodes.dat file
             IpcMessage msg(IpcMsgType::BootstrapKad);
             msg.append(QString());   // empty IP = bootstrap from nodes.dat file
-            msg.append(int64_t(0));  // port 0
+            msg.append(qint64(0));  // port 0
             m_ipc->sendRequest(std::move(msg));
         });
     }
@@ -262,7 +262,7 @@ void KadPanel::onDisconnectClicked()
         // Connect — bootstrap from known clients / nodes.dat
         IpcMessage msg(IpcMsgType::BootstrapKad);
         msg.append(QString{});
-        msg.append(int64_t(0));
+        msg.append(qint64(0));
         m_ipc->sendRequest(std::move(msg));
     }
 }
@@ -666,7 +666,7 @@ void KadPanel::requestLookupHistory()
     }
 
     IpcMessage req(IpcMsgType::GetKadLookupHistory);
-    req.append(static_cast<int64_t>(searchId));
+    req.append(static_cast<qint64>(searchId));
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_lookupGraph->clear();

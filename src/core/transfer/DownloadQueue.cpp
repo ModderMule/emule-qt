@@ -15,7 +15,6 @@
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "ipfilter/IPFilter.h"
-#include "net/EMSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
@@ -508,26 +507,57 @@ void DownloadQueue::sortByPriority()
 
 void DownloadQueue::process()
 {
-    m_datarate = 0;
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+
+    // Prune samples older than 10 seconds
+    while (!m_averageDRList.empty() &&
+           (curTick - m_averageDRList.front().timestamp) > 10000) {
+        m_averageDRList.pop_front();
+    }
+
+    // Average rates across the window
+    if (m_averageDRList.size() > 1) {
+        uint64 sum = 0;
+        for (const auto& s : m_averageDRList)
+            sum += s.dataLen;
+        m_datarate = static_cast<uint32>(sum / m_averageDRList.size());
+    } else {
+        m_datarate = 0;
+    }
+
     m_udCounter = (m_udCounter + 1) % 10;
+    uint32 curTickRate = 0;
+
+    // MFC CDownloadQueue::Process() lines 348-357: compute proportional
+    // download speed percentage (50-200) based on how close we are to the limit.
+    uint32 downspeed = 0;
+    const uint32 maxDown = thePrefs.maxDownload(); // KB/s, 0 = unlimited
+    if (maxDown > 0 && m_datarate > 1500) {
+        const uint64 maxDownBytes = static_cast<uint64>(maxDown) * 1024;
+        downspeed = static_cast<uint32>(maxDownBytes * 100 / (m_datarate + 1));
+        if (downspeed < 50)
+            downspeed = 50;
+        else if (downspeed > 200)
+            downspeed = 200;
+    }
 
     for (auto* file : m_fileList) {
         if (file->status() != PartFileStatus::Ready &&
             file->status() != PartFileStatus::Empty)
             continue;
 
-        const uint32 rate = file->process(0, m_udCounter);
-        m_datarate += rate;
+        const uint32 rate = file->process(downspeed, m_udCounter);
+        curTickRate += rate;
 
         // Check for completion
         if (file->status() == PartFileStatus::Complete)
             emit fileCompleted(file);
     }
 
-    distributeDownloadLimit();
+    // Add this tick's rate to the averaging window
+    m_averageDRList.push_back({curTickRate, curTick});
 
     // UDP source request batching — send re-ask requests via UDP
-    const uint32 curTick = static_cast<uint32>(getTickCount());
     if (curTick >= m_lastUDPSourceRequestTime + FILEREASKTIME) {
         m_lastUDPSourceRequestTime = curTick;
         for (auto* file : m_fileList) {
@@ -658,49 +688,6 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     }
 
     emit fileCompleted(file);
-}
-
-// ===========================================================================
-// Download bandwidth distribution
-// ===========================================================================
-
-void DownloadQueue::distributeDownloadLimit()
-{
-    const uint32 maxDown = thePrefs.maxDownload(); // KB/s, 0 = unlimited
-    if (maxDown == 0) {
-        // Unlimited — disable per-socket limits on all downloading sockets
-        for (auto* file : m_fileList) {
-            for (auto* client : file->downloadingSources()) {
-                if (auto* sock = client->socket())
-                    sock->disableDownloadLimit();
-            }
-        }
-        return;
-    }
-
-    // Collect all unique downloading sockets
-    std::vector<EMSocket*> sockets;
-    for (auto* file : m_fileList) {
-        for (auto* client : file->downloadingSources()) {
-            if (auto* sock = client->socket())
-                sockets.push_back(sock);
-        }
-    }
-
-    // Deduplicate (a client can only download one file, but be safe)
-    std::ranges::sort(sockets);
-    auto [first, last] = std::ranges::unique(sockets);
-    sockets.erase(first, last);
-
-    if (sockets.empty())
-        return;
-
-    // Budget for this 100ms tick, distributed equally
-    const uint32 tickBudget = maxDown * 1024 / 10;  // bytes per 100ms
-    const uint32 perSocket = std::max(1u, tickBudget / static_cast<uint32>(sockets.size()));
-
-    for (auto* sock : sockets)
-        sock->setDownloadLimit(perSocket);
 }
 
 // ===========================================================================

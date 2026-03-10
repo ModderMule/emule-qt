@@ -163,7 +163,7 @@ void ImportDownloadsDialog::onRetrySelected()
     const int index = items.first()->data(0, Qt::UserRole).toInt();
 
     IpcMessage req(IpcMsgType::RetryConvertJob);
-    req.append(static_cast<int64_t>(index));
+    req.append(static_cast<qint64>(index));
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage&) {
         requestJobs();
     });
@@ -181,7 +181,7 @@ void ImportDownloadsDialog::onRemoveSelected()
     const int index = items.first()->data(0, Qt::UserRole).toInt();
 
     IpcMessage req(IpcMsgType::RemoveConvertJob);
-    req.append(static_cast<int64_t>(index));
+    req.append(static_cast<qint64>(index));
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage&) {
         requestJobs();
     });

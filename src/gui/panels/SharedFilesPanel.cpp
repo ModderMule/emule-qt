@@ -748,7 +748,7 @@ void SharedFilesPanel::sendSetPriority(const QString& hash, int priority, bool i
 
     IpcMessage msg(IpcMsgType::SetSharedFilePriority);
     msg.append(hash);
-    msg.append(static_cast<int64_t>(priority));
+    msg.append(static_cast<qint64>(priority));
     msg.append(isAuto);
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
         requestSharedFiles();

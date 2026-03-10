@@ -229,23 +229,49 @@ void TransferPanel::onRefreshTimer()
 
 void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 {
-    // Resolve item under cursor (may be empty — menu still shown)
-    QString hash;
-    const DownloadRow* dl = nullptr;
+    // Check if the right-click is on a source (child) row — show client menu instead
     const QModelIndex proxyIdx = m_downloadView->indexAt(pos);
     if (proxyIdx.isValid()) {
         const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
         const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
-        // If this is a source (child) row, show the client context menu instead
         if (m_downloadModel->isSourceRow(srcIdx)) {
             if (const auto* src = m_downloadModel->sourceAt(srcIdx))
                 showSourceContextMenu(*src, m_downloadView->viewport()->mapToGlobal(pos));
             return;
         }
-        hash = m_downloadModel->hashAt(srcIdx.row());
-        dl = m_downloadModel->downloadAt(srcIdx.row());
     }
-    const bool hasSel = (dl != nullptr && !hash.isEmpty());
+
+    // Collect all selected download hashes and rows
+    const QStringList allHashes = saveDownloadSelectionMulti();
+    const auto selCount = allHashes.size();
+    const bool hasSel = (selCount > 0);
+    const bool singleSel = (selCount == 1);
+
+    // For single-selection state checks, resolve the first selected download
+    const DownloadRow* dl = nullptr;
+    QString singleHash;
+    if (singleSel) {
+        singleHash = allHashes.first();
+        for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+            if (m_downloadModel->hashAt(i) == singleHash) {
+                dl = m_downloadModel->downloadAt(i);
+                break;
+            }
+        }
+    }
+
+    // For multi-selection state checks, collect all selected download rows
+    std::vector<const DownloadRow*> selectedDls;
+    if (hasSel) {
+        for (const QString& h : allHashes) {
+            for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+                if (m_downloadModel->hashAt(i) == h) {
+                    selectedDls.push_back(m_downloadModel->downloadAt(i));
+                    break;
+                }
+            }
+        }
+    }
 
     // Rebuild menu each time to capture the current state
     if (!m_downloadMenu)
@@ -273,11 +299,20 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             default:         return {};
             }
         };
+        auto allMatchPrio = [&](int prio) {
+            const QString ps = prioStr(prio);
+            return std::all_of(selectedDls.begin(), selectedDls.end(),
+                [&](const DownloadRow* d) { return !d->isAutoDownPriority && d->priority == ps; });
+        };
+        auto allAuto = [&]() {
+            return std::all_of(selectedDls.begin(), selectedDls.end(),
+                [](const DownloadRow* d) { return d->isAutoDownPriority; });
+        };
         auto addPrioAction = [&](const QString& text, int prio) {
-            auto* act = prioMenu->addAction(text, this, [this, hash, prio]() {
-                sendSetPriority(hash, prio, false);
+            auto* act = prioMenu->addAction(text, this, [this, allHashes, prio]() {
+                sendSetPriorityBatch(allHashes, prio, false);
             });
-            if (!dl->isAutoDownPriority && dl->priority == prioStr(prio))
+            if (allMatchPrio(prio))
                 act->setCheckable(true), act->setChecked(true);
         };
         addPrioAction(tr("Low"),    PrLow);
@@ -287,82 +322,87 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         addPrioAction(tr("Very Low"),  PrVeryLow);
         addPrioAction(tr("Very High"), PrVeryHigh);
         prioMenu->addSeparator();
-        auto* autoAct = prioMenu->addAction(tr("Auto"), this, [this, hash]() {
-            sendSetPriority(hash, PrNormal, true);
+        auto* autoAct = prioMenu->addAction(tr("Auto"), this, [this, allHashes]() {
+            sendSetPriorityBatch(allHashes, PrNormal, true);
         });
-        if (dl->isAutoDownPriority)
+        if (allAuto())
             autoAct->setCheckable(true), autoAct->setChecked(true);
     }
 
     m_downloadMenu->addSeparator();
 
-    // -- 2. Pause / Stop / Resume --
+    // -- 2. Pause / Stop / Resume (batch — enabled if ANY selected supports the action) --
     {
-        auto* pauseAct = m_downloadMenu->addAction(ico("Pause.ico"), tr("Pause"), this, [this, hash]() {
-            sendDownloadAction(hash, 0);
+        auto* pauseAct = m_downloadMenu->addAction(ico("Pause.ico"), tr("Pause"), this, [this, allHashes]() {
+            sendDownloadActionBatch(allHashes, 0);
         });
-        if (!hasSel) {
-            pauseAct->setEnabled(false);
-        } else {
-            const bool isComplete = (dl->status == QStringLiteral("complete"));
-            pauseAct->setEnabled(!dl->isPaused && !dl->isStopped && !isComplete);
-        }
+        bool canPause = std::any_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) {
+            return !d->isPaused && !d->isStopped && d->status != QStringLiteral("complete");
+        });
+        pauseAct->setEnabled(hasSel && canPause);
     }
     {
-        auto* stopAct = m_downloadMenu->addAction(ico("Stop.ico"), tr("Stop"), this, [this, hash]() {
-            sendStopDownload(hash);
+        auto* stopAct = m_downloadMenu->addAction(ico("Stop.ico"), tr("Stop"), this, [this, allHashes]() {
+            sendStopDownloadBatch(allHashes);
         });
-        if (!hasSel) {
-            stopAct->setEnabled(false);
-        } else {
-            const bool isComplete = (dl->status == QStringLiteral("complete"));
-            stopAct->setEnabled(!dl->isStopped && !isComplete);
-        }
+        bool canStop = std::any_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) {
+            return !d->isStopped && d->status != QStringLiteral("complete");
+        });
+        stopAct->setEnabled(hasSel && canStop);
     }
     {
-        auto* resumeAct = m_downloadMenu->addAction(ico("Start.ico"), tr("Resume"), this, [this, hash]() {
-            sendDownloadAction(hash, 1);
+        auto* resumeAct = m_downloadMenu->addAction(ico("Start.ico"), tr("Resume"), this, [this, allHashes]() {
+            sendDownloadActionBatch(allHashes, 1);
         });
-        resumeAct->setEnabled(hasSel && (dl->isPaused || dl->isStopped));
+        bool canResume = std::any_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) {
+            return d->isPaused || d->isStopped;
+        });
+        resumeAct->setEnabled(hasSel && canResume);
     }
 
     m_downloadMenu->addSeparator();
 
-    // -- 3. Cancel --
+    // -- 3. Cancel (batch, with confirmation for multiple) --
     {
-        auto* cancelAct = m_downloadMenu->addAction(ico("Cancel.ico"), tr("Cancel"), this, [this, hash]() {
-            sendDownloadAction(hash, 2);
+        auto* cancelAct = m_downloadMenu->addAction(ico("Cancel.ico"), tr("Cancel"), this, [this, allHashes]() {
+            if (allHashes.size() > 1) {
+                if (QMessageBox::question(this, tr("Cancel Downloads"),
+                        tr("Cancel %1 selected downloads?").arg(allHashes.size()),
+                        QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
+                    return;
+            }
+            sendDownloadActionBatch(allHashes, 2);
         });
         cancelAct->setEnabled(hasSel);
     }
 
     m_downloadMenu->addSeparator();
 
-    // -- 4. Open File / Preview / Details / Comments --
+    // -- 4. Open File / Preview / Details / Comments (single-item only) --
     {
-        auto* act = m_downloadMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this, [this, hash]() {
-            sendOpenFile(hash);
+        auto* act = m_downloadMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this, [this, singleHash]() {
+            sendOpenFile(singleHash);
         });
-        const bool isComplete = hasSel && (dl->status == QStringLiteral("complete"));
+        const bool isComplete = singleSel && dl && (dl->status == QStringLiteral("complete"));
         act->setEnabled(isComplete);
     }
     {
-        auto* act = m_downloadMenu->addAction(ico("Preview.ico"), tr("Preview"), this, [this, hash]() {
-            sendPreview(hash);
+        auto* act = m_downloadMenu->addAction(ico("Preview.ico"), tr("Preview"), this, [this, singleHash]() {
+            sendPreview(singleHash);
         });
-        act->setEnabled(hasSel && dl->isPreviewPossible);
+        act->setEnabled(singleSel && dl && dl->isPreviewPossible);
     }
     {
-        auto* act = m_downloadMenu->addAction(ico("FileInfo.ico"), tr("Details..."), this, [this, hash]() {
-            showDownloadDetails(hash);
+        auto* act = m_downloadMenu->addAction(ico("FileInfo.ico"), tr("Details..."), this, [this, singleHash]() {
+            showDownloadDetails(singleHash);
         });
-        act->setEnabled(hasSel);
+        act->setEnabled(singleSel);
     }
     {
-        auto* act = m_downloadMenu->addAction(ico("FileComments.ico"), tr("Comments..."), this, [this, hash]() {
-            showComments(hash);
+        auto* act = m_downloadMenu->addAction(ico("FileComments.ico"), tr("Comments..."), this, [this, singleHash]() {
+            showComments(singleHash);
         });
-        act->setEnabled(hasSel);
+        act->setEnabled(singleSel);
     }
 
     m_downloadMenu->addSeparator();
@@ -386,8 +426,8 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     // -- 6. eD2K Links / Paste eD2K Links --
     {
-        auto* act = m_downloadMenu->addAction(ico("eD2kLink.ico"), tr("eD2K Links..."), this, [this, hash]() {
-            copyEd2kLink(hash);
+        auto* act = m_downloadMenu->addAction(ico("eD2kLink.ico"), tr("eD2K Links..."), this, [this, allHashes]() {
+            copyEd2kLinks(allHashes);
         });
         act->setEnabled(hasSel);
     }
@@ -413,7 +453,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                 Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
                 msg.append(hashHex);
                 msg.append(fileLink->name);
-                msg.append(static_cast<int64_t>(fileLink->size));
+                msg.append(static_cast<qint64>(fileLink->size));
                 m_ipc->sendRequest(std::move(msg));
             }
         });
@@ -424,7 +464,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // -- 7. Find / Search Related --
     connect(m_downloadMenu->addAction(ico("Search.ico"), tr("Find...")),
             &QAction::triggered, this, &TransferPanel::showFindDialog);
-    if (hasSel) {
+    if (singleSel && dl) {
         const QString fname = dl->fileName;
         auto* act = m_downloadMenu->addAction(ico("KadFileSearch.ico"), tr("Search Related Files"), this, [this, fname]() {
             searchRelated(fname);
@@ -436,20 +476,20 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     m_downloadMenu->addSeparator();
 
-    // -- 8. Assign To Category --
+    // -- 8. Assign To Category (batch) --
     {
         auto* catMenu = m_downloadMenu->addMenu(ico("Category.ico"), tr("Assign To Category"));
         // Category 0 = "All" (default)
-        auto* allAct = catMenu->addAction(tr("(All)"), this, [this, hash]() {
-            sendSetCategory(hash, 0);
+        auto* allAct = catMenu->addAction(tr("(All)"), this, [this, allHashes]() {
+            sendSetCategoryBatch(allHashes, 0);
         });
         allAct->setEnabled(hasSel);
         // Add any user-defined categories from the tab bar
         for (int i = 1; i < m_categoryTabBar->count(); ++i) {
             const auto catId = m_categoryTabBar->tabData(i).toLongLong();
             auto* catAct = catMenu->addAction(m_categoryTabBar->tabText(i), this,
-                [this, hash, catId]() {
-                    sendSetCategory(hash, static_cast<int>(catId));
+                [this, allHashes, catId]() {
+                    sendSetCategoryBatch(allHashes, static_cast<int>(catId));
                 });
             catAct->setEnabled(hasSel);
         }
@@ -561,7 +601,7 @@ QWidget* TransferPanel::createDownloadsSection()
     m_downloadView->setRootIsDecorated(true);
     m_downloadView->setAlternatingRowColors(true);
     m_downloadView->setSortingEnabled(true);
-    m_downloadView->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_downloadView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_downloadView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_downloadView->setUniformRowHeights(true);
     m_downloadView->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -573,7 +613,7 @@ QWidget* TransferPanel::createDownloadsSection()
 
     connect(m_downloadView, &QTreeView::customContextMenuRequested,
             this, &TransferPanel::onDownloadContextMenu);
-    connect(m_downloadView->selectionModel(), &QItemSelectionModel::currentChanged,
+    connect(m_downloadView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &TransferPanel::updateActionStates);
 
     // Double-click toggles expand/collapse for download rows
@@ -744,28 +784,37 @@ QToolBar* TransferPanel::createActionToolbar()
     auto* actPause = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Pause.ico")), tr("Pause"));
     connect(actPause, &QAction::triggered, this, [this]() {
-        sendDownloadAction(saveDownloadSelection(), 0);
+        sendDownloadActionBatch(saveDownloadSelectionMulti(), 0);
     });
     m_selectionActions.append(actPause);
 
     auto* actStop = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Stop.ico")), tr("Stop"));
     connect(actStop, &QAction::triggered, this, [this]() {
-        sendStopDownload(saveDownloadSelection());
+        sendStopDownloadBatch(saveDownloadSelectionMulti());
     });
     m_selectionActions.append(actStop);
 
     auto* actResume = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Start.ico")), tr("Resume"));
     connect(actResume, &QAction::triggered, this, [this]() {
-        sendDownloadAction(saveDownloadSelection(), 1);
+        sendDownloadActionBatch(saveDownloadSelectionMulti(), 1);
     });
     m_selectionActions.append(actResume);
 
     auto* actCancel = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Delete.ico")), tr("Cancel"));
     connect(actCancel, &QAction::triggered, this, [this]() {
-        sendDownloadAction(saveDownloadSelection(), 2);
+        const QStringList hashes = saveDownloadSelectionMulti();
+        if (hashes.isEmpty())
+            return;
+        if (hashes.size() > 1) {
+            if (QMessageBox::question(this, tr("Cancel Downloads"),
+                    tr("Cancel %1 selected downloads?").arg(hashes.size()),
+                    QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
+                return;
+        }
+        sendDownloadActionBatch(hashes, 2);
     });
     m_selectionActions.append(actCancel);
 
@@ -809,7 +858,7 @@ QToolBar* TransferPanel::createActionToolbar()
 
     auto* actEd2kLinks = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/eD2kLink.ico")), tr("eD2K Links"),
-        this, [this]() { copyEd2kLink(saveDownloadSelection()); });
+        this, [this]() { copyEd2kLinks(saveDownloadSelectionMulti()); });
     m_selectionActions.append(actEd2kLinks);
 
     toolbar->addSeparator();
@@ -818,16 +867,16 @@ QToolBar* TransferPanel::createActionToolbar()
     auto* actCategory = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Category.ico")), tr("Assign To Category"));
     connect(actCategory, &QAction::triggered, this, [this]() {
-        const QString hash = saveDownloadSelection();
-        if (hash.isEmpty())
+        const QStringList hashes = saveDownloadSelectionMulti();
+        if (hashes.isEmpty())
             return;
         // Show category popup at cursor
         QMenu catMenu(this);
-        catMenu.addAction(tr("(All)"), this, [this, hash]() { sendSetCategory(hash, 0); });
+        catMenu.addAction(tr("(All)"), this, [this, hashes]() { sendSetCategoryBatch(hashes, 0); });
         for (int i = 1; i < m_categoryTabBar->count(); ++i) {
             const auto catId = m_categoryTabBar->tabData(i).toLongLong();
             catMenu.addAction(m_categoryTabBar->tabText(i), this,
-                [this, hash, catId]() { sendSetCategory(hash, static_cast<int>(catId)); });
+                [this, hashes, catId]() { sendSetCategoryBatch(hashes, static_cast<int>(catId)); });
         }
         catMenu.exec(QCursor::pos());
     });
@@ -910,7 +959,7 @@ void TransferPanel::requestDownloads()
             return;
         }
 
-        const auto [selHash, selSource] = saveFullDownloadSelection();
+        const auto savedSels = saveFullDownloadSelectionMulti();
 
         const QCborArray arr = resp.fieldArray(1);
         std::vector<DownloadRow> rows;
@@ -971,7 +1020,7 @@ void TransferPanel::requestDownloads()
             requestDownloadSources(expHash);
         }
 
-        restoreFullDownloadSelection(selHash, selSource);
+        restoreFullDownloadSelectionMulti(savedSels);
         updateActionStates();
         updateClearCompletedState();
         m_downloadView->verticalScrollBar()->setValue(dlScroll);
@@ -1138,6 +1187,30 @@ void TransferPanel::sendDownloadAction(const QString& hash, int action)
     });
 }
 
+void TransferPanel::sendDownloadActionBatch(const QStringList& hashes, int action)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+        return;
+
+    IpcMsgType msgType;
+    switch (action) {
+    case 0: msgType = IpcMsgType::PauseDownload;  break;
+    case 1: msgType = IpcMsgType::ResumeDownload; break;
+    case 2: msgType = IpcMsgType::CancelDownload; break;
+    default: return;
+    }
+
+    auto pending = std::make_shared<int>(hashes.size());
+    for (const QString& hash : hashes) {
+        IpcMessage msg(msgType);
+        msg.append(hash);
+        m_ipc->sendRequest(std::move(msg), [this, pending](const IpcMessage&) {
+            if (--(*pending) == 0)
+                requestDownloads();
+        });
+    }
+}
+
 void TransferPanel::sendSetPriority(const QString& hash, int priority, bool isAuto)
 {
     if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
@@ -1145,11 +1218,28 @@ void TransferPanel::sendSetPriority(const QString& hash, int priority, bool isAu
 
     IpcMessage msg(IpcMsgType::SetDownloadPriority);
     msg.append(hash);
-    msg.append(static_cast<int64_t>(priority));
+    msg.append(static_cast<qint64>(priority));
     msg.append(isAuto);
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
         requestDownloads();
     });
+}
+
+void TransferPanel::sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+        return;
+    auto pending = std::make_shared<int>(hashes.size());
+    for (const QString& hash : hashes) {
+        IpcMessage msg(IpcMsgType::SetDownloadPriority);
+        msg.append(hash);
+        msg.append(static_cast<qint64>(priority));
+        msg.append(isAuto);
+        m_ipc->sendRequest(std::move(msg), [this, pending](const IpcMessage&) {
+            if (--(*pending) == 0)
+                requestDownloads();
+        });
+    }
 }
 
 void TransferPanel::sendClearCompleted()
@@ -1178,6 +1268,25 @@ void TransferPanel::copyEd2kLink(const QString& hash)
     }
 }
 
+void TransferPanel::copyEd2kLinks(const QStringList& hashes)
+{
+    QStringList links;
+    for (const QString& hash : hashes) {
+        for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+            const auto* dl = m_downloadModel->downloadAt(i);
+            if (dl && dl->hash == hash) {
+                links.append(QStringLiteral("ed2k://|file|%1|%2|%3|/")
+                    .arg(dl->fileName)
+                    .arg(dl->fileSize)
+                    .arg(dl->hash));
+                break;
+            }
+        }
+    }
+    if (!links.isEmpty())
+        QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+}
+
 void TransferPanel::sendStopDownload(const QString& hash)
 {
     if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
@@ -1187,6 +1296,21 @@ void TransferPanel::sendStopDownload(const QString& hash)
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
         requestDownloads();
     });
+}
+
+void TransferPanel::sendStopDownloadBatch(const QStringList& hashes)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+        return;
+    auto pending = std::make_shared<int>(hashes.size());
+    for (const QString& hash : hashes) {
+        IpcMessage msg(IpcMsgType::StopDownload);
+        msg.append(hash);
+        m_ipc->sendRequest(std::move(msg), [this, pending](const IpcMessage&) {
+            if (--(*pending) == 0)
+                requestDownloads();
+        });
+    }
 }
 
 void TransferPanel::sendOpenFile(const QString& hash)
@@ -1250,10 +1374,26 @@ void TransferPanel::sendSetCategory(const QString& hash, int category)
         return;
     IpcMessage msg(IpcMsgType::SetDownloadCategory);
     msg.append(hash);
-    msg.append(static_cast<int64_t>(category));
+    msg.append(static_cast<qint64>(category));
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
         requestDownloads();
     });
+}
+
+void TransferPanel::sendSetCategoryBatch(const QStringList& hashes, int category)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+        return;
+    auto pending = std::make_shared<int>(hashes.size());
+    for (const QString& hash : hashes) {
+        IpcMessage msg(IpcMsgType::SetDownloadCategory);
+        msg.append(hash);
+        msg.append(static_cast<qint64>(category));
+        m_ipc->sendRequest(std::move(msg), [this, pending](const IpcMessage&) {
+            if (--(*pending) == 0)
+                requestDownloads();
+        });
+    }
 }
 
 void TransferPanel::showDownloadDetails(const QString& hash)
@@ -1328,6 +1468,35 @@ QString TransferPanel::saveDownloadSelection() const
     return m_downloadModel->hashAt(srcIdx.row());
 }
 
+QStringList TransferPanel::saveDownloadSelectionMulti() const
+{
+    const auto selected = m_downloadView->selectionModel()->selectedRows(0);
+    if (selected.isEmpty())
+        return {};
+
+    QSet<QString> seen;
+    QStringList result;
+    for (const QModelIndex& proxyIdx : selected) {
+        const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
+        const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+
+        QString hash;
+        if (m_downloadModel->isSourceRow(srcIdx)) {
+            // Source (child) row → resolve to parent download hash
+            const QModelIndex parentSrcIdx = srcIdx.parent();
+            hash = m_downloadModel->hashAt(parentSrcIdx.row());
+        } else {
+            hash = m_downloadModel->hashAt(srcIdx.row());
+        }
+
+        if (!hash.isEmpty() && !seen.contains(hash)) {
+            seen.insert(hash);
+            result.append(hash);
+        }
+    }
+    return result;
+}
+
 std::pair<QString, QString> TransferPanel::saveFullDownloadSelection() const
 {
     const auto sel = m_downloadView->selectionModel()->currentIndex();
@@ -1346,6 +1515,28 @@ std::pair<QString, QString> TransferPanel::saveFullDownloadSelection() const
     }
 
     return {m_downloadModel->hashAt(srcIdx.row()), {}};
+}
+
+std::vector<std::pair<QString, QString>> TransferPanel::saveFullDownloadSelectionMulti() const
+{
+    const auto selected = m_downloadView->selectionModel()->selectedRows(0);
+    std::vector<std::pair<QString, QString>> result;
+    result.reserve(static_cast<size_t>(selected.size()));
+
+    for (const QModelIndex& proxyIdx : selected) {
+        const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
+        const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
+
+        if (m_downloadModel->isSourceRow(srcIdx)) {
+            const QModelIndex parentSrcIdx = srcIdx.parent();
+            const QString fileHash = m_downloadModel->hashAt(parentSrcIdx.row());
+            const auto* src = m_downloadModel->sourceAt(srcIdx);
+            result.emplace_back(fileHash, src ? src->userHash : QString{});
+        } else {
+            result.emplace_back(m_downloadModel->hashAt(srcIdx.row()), QString{});
+        }
+    }
+    return result;
 }
 
 void TransferPanel::restoreDownloadSelection(const QString& key)
@@ -1391,6 +1582,61 @@ void TransferPanel::restoreFullDownloadSelection(const QString& fileHash, const 
         }
         return;
     }
+}
+
+void TransferPanel::restoreFullDownloadSelectionMulti(
+    const std::vector<std::pair<QString, QString>>& selections)
+{
+    if (selections.empty())
+        return;
+
+    QItemSelection itemSelection;
+
+    for (const auto& [fileHash, sourceHash] : selections) {
+        if (fileHash.isEmpty())
+            continue;
+
+        for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
+            if (m_downloadModel->hashAt(row) != fileHash)
+                continue;
+
+            // Try source-level restoration
+            if (!sourceHash.isEmpty()) {
+                const QModelIndex parentSrcIdx = m_downloadModel->index(row, 0);
+                const int childCount = m_downloadModel->rowCount(parentSrcIdx);
+                bool found = false;
+                for (int c = 0; c < childCount; ++c) {
+                    const QModelIndex childSrcIdx = m_downloadModel->index(c, 0, parentSrcIdx);
+                    const auto* src = m_downloadModel->sourceAt(childSrcIdx);
+                    if (src && src->userHash == sourceHash) {
+                        const QModelIndex sortIdx = m_downloadProxy->mapFromSource(childSrcIdx);
+                        const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
+                        if (catIdx.isValid())
+                            itemSelection.select(catIdx, catIdx);
+                        found = true;
+                        break;
+                    }
+                }
+                if (found)
+                    break;
+            }
+
+            // Fall back to parent row
+            const QModelIndex srcIdx = m_downloadModel->index(row, 0);
+            const QModelIndex sortIdx = m_downloadProxy->mapFromSource(srcIdx);
+            const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
+            if (catIdx.isValid())
+                itemSelection.select(catIdx, catIdx);
+            break;
+        }
+    }
+
+    m_downloadView->selectionModel()->select(
+        itemSelection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+
+    // Set current index to the first selected item for keyboard navigation
+    if (!itemSelection.isEmpty() && !itemSelection.indexes().isEmpty())
+        m_downloadView->setCurrentIndex(itemSelection.indexes().first());
 }
 
 QString TransferPanel::saveClientSelection(QTreeView* view, ClientListModel* model) const
@@ -1459,7 +1705,7 @@ void TransferPanel::setBottomClientView(int index)
 
 void TransferPanel::updateActionStates()
 {
-    const bool hasSelection = !saveDownloadSelection().isEmpty();
+    const bool hasSelection = !saveDownloadSelectionMulti().isEmpty();
     for (auto* act : m_selectionActions)
         act->setEnabled(hasSelection);
 }
@@ -1536,19 +1782,21 @@ void TransferPanel::updateCategoryTabs()
 
 void TransferPanel::showPriorityMenu()
 {
-    const QString hash = saveDownloadSelection();
-    if (hash.isEmpty())
+    const QStringList hashes = saveDownloadSelectionMulti();
+    if (hashes.isEmpty())
         return;
 
-    // Find the download row for current state
-    const DownloadRow* dl = nullptr;
-    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
-        if (m_downloadModel->hashAt(i) == hash) {
-            dl = m_downloadModel->downloadAt(i);
-            break;
+    // Collect selected download rows for check-mark logic
+    std::vector<const DownloadRow*> selectedDls;
+    for (const QString& h : hashes) {
+        for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+            if (m_downloadModel->hashAt(i) == h) {
+                selectedDls.push_back(m_downloadModel->downloadAt(i));
+                break;
+            }
         }
     }
-    if (!dl)
+    if (selectedDls.empty())
         return;
 
     auto prioStr = [](int prio) -> QString {
@@ -1562,12 +1810,23 @@ void TransferPanel::showPriorityMenu()
         }
     };
 
+    // Only show check marks when all selected items share the same priority
+    auto allMatchPrio = [&](int prio) {
+        const QString ps = prioStr(prio);
+        return std::all_of(selectedDls.begin(), selectedDls.end(),
+            [&](const DownloadRow* d) { return !d->isAutoDownPriority && d->priority == ps; });
+    };
+    auto allAuto = [&]() {
+        return std::all_of(selectedDls.begin(), selectedDls.end(),
+            [](const DownloadRow* d) { return d->isAutoDownPriority; });
+    };
+
     QMenu menu(this);
     auto addPrioAction = [&](const QString& text, int prio) {
-        auto* act = menu.addAction(text, this, [this, hash, prio]() {
-            sendSetPriority(hash, prio, false);
+        auto* act = menu.addAction(text, this, [this, hashes, prio]() {
+            sendSetPriorityBatch(hashes, prio, false);
         });
-        if (!dl->isAutoDownPriority && dl->priority == prioStr(prio))
+        if (allMatchPrio(prio))
             act->setCheckable(true), act->setChecked(true);
     };
 
@@ -1579,10 +1838,10 @@ void TransferPanel::showPriorityMenu()
     addPrioAction(tr("Very High"), PrVeryHigh);
     menu.addSeparator();
     {
-        auto* autoAct = menu.addAction(tr("Auto"), this, [this, hash]() {
-            sendSetPriority(hash, PrNormal, true);
+        auto* autoAct = menu.addAction(tr("Auto"), this, [this, hashes]() {
+            sendSetPriorityBatch(hashes, PrNormal, true);
         });
-        if (dl->isAutoDownPriority)
+        if (allAuto())
             autoAct->setCheckable(true), autoAct->setChecked(true);
     }
 
@@ -1690,8 +1949,8 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
             IpcMessage msg(IpcMsgType::AddFriend);
             msg.append(hash);
             msg.append(name);
-            msg.append(static_cast<int64_t>(ip));
-            msg.append(static_cast<int64_t>(port));
+            msg.append(static_cast<qint64>(ip));
+            msg.append(static_cast<qint64>(port));
             m_ipc->sendRequest(std::move(msg));
         });
     }
@@ -1773,8 +2032,8 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QPoint& gl
             IpcMessage msg(IpcMsgType::AddFriend);
             msg.append(hash);
             msg.append(name);
-            msg.append(static_cast<int64_t>(ip));
-            msg.append(static_cast<int64_t>(port));
+            msg.append(static_cast<qint64>(ip));
+            msg.append(static_cast<qint64>(port));
             m_ipc->sendRequest(std::move(msg));
         });
     }

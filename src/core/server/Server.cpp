@@ -4,23 +4,29 @@
 
 #include "Server.h"
 #include "protocol/Tag.h"
+
+#include <atomic>
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 
 namespace eMule {
 
+static std::atomic<uint32> s_nextServerId{1};
+
 // ---------------------------------------------------------------------------
 // Constructors
 // ---------------------------------------------------------------------------
 
 Server::Server(uint32 ip, uint16 port)
-    : m_ip(ip)
+    : m_serverId(s_nextServerId++)
+    , m_ip(ip)
     , m_port(port)
 {
 }
 
 Server::Server(FileDataIO& data, bool optUTF8)
+    : m_serverId(s_nextServerId++)
 {
     m_ip   = data.readUInt32();
     m_port = data.readUInt16();
@@ -33,7 +39,8 @@ Server::Server(FileDataIO& data, bool optUTF8)
 }
 
 Server::Server(const Server& other)
-    : m_ip(other.m_ip)
+    : m_serverId(other.m_serverId)
+    , m_ip(other.m_ip)
     , m_port(other.m_port)
     , m_dynIP(other.m_dynIP)
     , m_name(other.m_name)

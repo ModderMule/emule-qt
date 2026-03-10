@@ -17,8 +17,15 @@
 #include <memory>
 #include <random>
 
-#define EMULE_STRINGIFY_(x) #x
-#define EMULE_STRINGIFY(x) EMULE_STRINGIFY_(x)
+#ifdef Q_OS_UNIX
+#include <arpa/inet.h>
+#endif
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#endif
+
+#define EMULE_STRINGIFY_(x) #x // stringifies already expanded result
+#define EMULE_STRINGIFY(x) EMULE_STRINGIFY_(x) // force preprocessor to expand x
 
 namespace eMule::testing {
 

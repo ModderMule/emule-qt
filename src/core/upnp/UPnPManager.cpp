@@ -63,6 +63,7 @@ void UPnPManager::startDiscovery(uint16 tcpPort, uint16 udpPort, uint16 webPort)
     }
 
     m_abortDiscovery = false;
+    m_consecutiveRefreshFailures = 0;
 
     m_discoveryThread = QThread::create([this] { runDiscovery(); });
     m_discoveryThread->setObjectName(QStringLiteral("UPnP-Discovery"));
@@ -72,6 +73,9 @@ void UPnPManager::startDiscovery(uint16 tcpPort, uint16 udpPort, uint16 webPort)
 bool UPnPManager::checkAndRefresh()
 {
     std::lock_guard lock(m_mutex);
+
+    if (m_consecutiveRefreshFailures >= MaxRefreshRetries)
+        return false;
 
     if (!m_igd || !m_igd->valid) {
         logDebug(QStringLiteral("UPnP: no valid IGD — cannot refresh"));
@@ -107,10 +111,22 @@ bool UPnPManager::checkAndRefresh()
         }
     }
 
-    if (allGood)
+    if (allGood) {
+        m_consecutiveRefreshFailures = 0;
         setStatus(PortStatus::Forwarded);
-    else
+    } else {
+        ++m_consecutiveRefreshFailures;
+        if (m_consecutiveRefreshFailures >= MaxRefreshRetries) {
+            logWarning(QStringLiteral("UPnP: port mapping failed %1 times in a row, "
+                                      "suspending refresh (UPnP may be disabled on router)")
+                           .arg(m_consecutiveRefreshFailures));
+        } else {
+            logDebug(QStringLiteral("UPnP: refresh failure %1/%2")
+                         .arg(m_consecutiveRefreshFailures)
+                         .arg(MaxRefreshRetries));
+        }
         setStatus(PortStatus::NotForwarded);
+    }
 
     return allGood;
 }

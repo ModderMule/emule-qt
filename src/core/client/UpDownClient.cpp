@@ -1030,7 +1030,7 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     // Determine if we need buddy tags (Low-ID + have buddy for Kad callback)
     const bool sendBuddyTags = theApp.clientList && theApp.clientList->getBuddy()
                                 && theApp.isFirewalled();
-    const uint32 tagCount = sendBuddyTags ? 8 : 6;
+    const uint32 tagCount = sendBuddyTags ? 9 : 7;
     data.writeUInt32(tagCount);
 
     // CT_NAME — our nickname
@@ -1105,6 +1105,9 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
         (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10) |    // minor
         (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);     // update (0=a, 1=b, ...)
     Tag(CT_EMULE_VERSION, emuleVer).writeTagToFile(data);
+
+    // CT_MOD_VERSION — identify ourselves as eMule Qt
+    Tag(CT_MOD_VERSION, QStringLiteral("eMule Qt " EMULE_VERSION_STRING)).writeTagToFile(data);
 
     // CT_EMULE_BUDDYIP + CT_EMULE_BUDDYUDP — MFC: sent when firewalled with buddy
     if (sendBuddyTags) {
