@@ -13,7 +13,7 @@
 namespace eMule {
 
 /// Application version string — single source of truth for daemon, GUI, and web server.
-inline constexpr QLatin1StringView kAppVersion{"0.1.1"};
+inline constexpr QLatin1StringView kAppVersion{"0.1.2"};
 
 
 class AppConfig {

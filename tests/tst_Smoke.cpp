@@ -28,7 +28,7 @@ private slots:
     {
         // Verify config.h was generated and EMULE_VERSION is defined
         QVERIFY(EMULE_VERSION_MAJOR >= 0);
-        QCOMPARE(QString::fromLatin1(EMULE_VERSION_STRING), QStringLiteral("0.1.1"));
+        QCOMPARE(QString::fromLatin1(EMULE_VERSION_STRING), QStringLiteral("0.1.2"));
     }
 
     void testTempDir()
