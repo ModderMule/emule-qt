@@ -112,7 +112,7 @@ target_link_libraries(emulecore
         Qt6::Multimedia
         Qt6::HttpServer
         eMule::CommonSettings
-    PRIVATE
+    PUBLIC
         ZLIB::ZLIB
         OpenSSL::Crypto
         libminiupnpc-static

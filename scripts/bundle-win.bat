@@ -39,7 +39,7 @@ set "SCRIPT_DIR=%~dp0"
 pushd "%SCRIPT_DIR%\.."
 set "PROJECT_DIR=%CD%"
 popd
-for /f "tokens=2" %%V in ('findstr /r "^ *VERSION [0-9]" "%PROJECT_DIR%\CMakeLists.txt"') do set "APP_VERSION=%%V"
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "(Select-String -Path '%PROJECT_DIR%\CMakeLists.txt' -Pattern '^\s+VERSION\s+(\d+\.\d+\.\d+)').Matches[0].Groups[1].Value"`) do set "APP_VERSION=%%V"
 
 REM -- Parse arguments --------------------------------------------------------
 
@@ -91,7 +91,15 @@ if "%DO_BUILD%"=="0" (
 
 echo(
 echo === Configuring ===
-cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -DCMAKE_BUILD_TYPE=%CONFIG% -DCMAKE_PREFIX_PATH="%QT_DIR%"
+set "VCPKG_CMAKE="
+if defined VCPKG_ROOT set "VCPKG_CMAKE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
+if not defined VCPKG_CMAKE if exist "C:\vcpkg\scripts\buildsystems\vcpkg.cmake" set "VCPKG_CMAKE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake"
+
+if defined VCPKG_CMAKE (
+    cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%CONFIG% -DCMAKE_PREFIX_PATH="%QT_DIR%" -DCMAKE_TOOLCHAIN_FILE="%VCPKG_CMAKE%" -DVCPKG_MANIFEST_DIR="%PROJECT_DIR%\src"
+) else (
+    cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%CONFIG% -DCMAKE_PREFIX_PATH="%QT_DIR%"
+)
 if errorlevel 1 (
     echo Error: CMake configure failed.
     exit /b 1
@@ -111,41 +119,65 @@ REM -- Locate binaries --------------------------------------------------------
 
 REM VS projects output to bin\{debug,release}\ in the project root.
 REM CMake multi-config goes to build\src\{gui,daemon}\%CONFIG%\.
-REM Try VS output first (most common with --no-build), then CMake paths.
+REM CMake single-config (Ninja) goes to build\src\{gui,daemon}\.
+REM
+REM When DO_BUILD=1 (CMake build was performed), search CMake output first
+REM to avoid picking up stale/wrong-config binaries from bin\.
+REM When DO_BUILD=0 (--no-build), search VS bin\ output first.
 
-set "BIN_DIR=%PROJECT_DIR%\bin\%CONFIG%"
+set "GUI_BIN="
+set "DAEMON_BIN="
 
-set "GUI_BIN=%BIN_DIR%\emuleqt.exe"
-set "DAEMON_BIN=%BIN_DIR%\emulecored.exe"
-
-REM Fallback: try the other config (e.g. script defaults to Release but VS built Debug)
-if not exist "%GUI_BIN%" (
+if "%DO_BUILD%"=="1" (
+    REM CMake build performed -- prefer CMake output directories
+    REM 1. Ninja single-config (build root)
+    if exist "%BUILD_DIR%\emuleqt.exe" set "GUI_BIN=%BUILD_DIR%\emuleqt.exe"
+    if exist "%BUILD_DIR%\emulecored.exe" set "DAEMON_BIN=%BUILD_DIR%\emulecored.exe"
+    REM 2. Alternate Ninja layout (build\src\{gui,daemon}\)
+    if not defined GUI_BIN if exist "%BUILD_DIR%\src\gui\emuleqt.exe" set "GUI_BIN=%BUILD_DIR%\src\gui\emuleqt.exe"
+    if not defined DAEMON_BIN if exist "%BUILD_DIR%\src\daemon\emulecored.exe" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\emulecored.exe"
+    REM 3. CMake multi-config
+    if not defined GUI_BIN if exist "%BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe" set "GUI_BIN=%BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe"
+    if not defined DAEMON_BIN if exist "%BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe"
+    REM 4. Fallback to VS bin\ output
+    if not defined GUI_BIN if exist "%PROJECT_DIR%\bin\%CONFIG%\emuleqt.exe" set "GUI_BIN=%PROJECT_DIR%\bin\%CONFIG%\emuleqt.exe"
+    if not defined DAEMON_BIN if exist "%PROJECT_DIR%\bin\%CONFIG%\emulecored.exe" set "DAEMON_BIN=%PROJECT_DIR%\bin\%CONFIG%\emulecored.exe"
+) else (
+    REM --no-build: prefer VS bin\ output (most common scenario)
+    REM 1. VS output matching requested config
+    if exist "%PROJECT_DIR%\bin\%CONFIG%\emuleqt.exe" set "GUI_BIN=%PROJECT_DIR%\bin\%CONFIG%\emuleqt.exe"
+    if exist "%PROJECT_DIR%\bin\%CONFIG%\emulecored.exe" set "DAEMON_BIN=%PROJECT_DIR%\bin\%CONFIG%\emulecored.exe"
+    REM 2. VS output alternate config
     set "ALT_CONFIG=Debug"
     if /i "%CONFIG%"=="Debug" set "ALT_CONFIG=Release"
 )
-if not exist "%GUI_BIN%" set "GUI_BIN=%PROJECT_DIR%\bin\%ALT_CONFIG%\emuleqt.exe"
-if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%PROJECT_DIR%\bin\%ALT_CONFIG%\emulecored.exe"
+REM (delayed expansion needed for ALT_CONFIG set inside the if block above)
+if "%DO_BUILD%"=="0" (
+    if not defined GUI_BIN if exist "%PROJECT_DIR%\bin\!ALT_CONFIG!\emuleqt.exe" set "GUI_BIN=%PROJECT_DIR%\bin\!ALT_CONFIG!\emuleqt.exe"
+    if not defined DAEMON_BIN if exist "%PROJECT_DIR%\bin\!ALT_CONFIG!\emulecored.exe" set "DAEMON_BIN=%PROJECT_DIR%\bin\!ALT_CONFIG!\emulecored.exe"
+    REM 3. Fallback to CMake multi-config
+    if not defined GUI_BIN if exist "%BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe" set "GUI_BIN=%BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe"
+    if not defined DAEMON_BIN if exist "%BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe"
+    REM 4. Fallback to CMake single-config (Ninja) -- alternate layout
+    if not defined GUI_BIN if exist "%BUILD_DIR%\src\gui\emuleqt.exe" set "GUI_BIN=%BUILD_DIR%\src\gui\emuleqt.exe"
+    if not defined DAEMON_BIN if exist "%BUILD_DIR%\src\daemon\emulecored.exe" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\emulecored.exe"
+    REM 5. Fallback to CMake single-config (Ninja) -- build root
+    if not defined GUI_BIN if exist "%BUILD_DIR%\emuleqt.exe" set "GUI_BIN=%BUILD_DIR%\emuleqt.exe"
+    if not defined DAEMON_BIN if exist "%BUILD_DIR%\emulecored.exe" set "DAEMON_BIN=%BUILD_DIR%\emulecored.exe"
+)
 
-REM Fallback: CMake multi-config build directory
-if not exist "%GUI_BIN%" set "GUI_BIN=%BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe"
-if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe"
-
-REM Fallback: CMake single-config (Ninja)
-if not exist "%GUI_BIN%" set "GUI_BIN=%BUILD_DIR%\src\gui\emuleqt.exe"
-if not exist "%DAEMON_BIN%" set "DAEMON_BIN=%BUILD_DIR%\src\daemon\emulecored.exe"
-
-if not exist "%GUI_BIN%" (
+if not defined GUI_BIN (
     echo Error: GUI binary not found.
+    echo   Checked: %BUILD_DIR%\emuleqt.exe
+    echo   Checked: %BUILD_DIR%\src\gui\{%CONFIG%,}\emuleqt.exe
     echo   Checked: %PROJECT_DIR%\bin\{Release,Debug}\emuleqt.exe
-    echo   Checked: %BUILD_DIR%\src\gui\%CONFIG%\emuleqt.exe
-    echo   Checked: %BUILD_DIR%\src\gui\emuleqt.exe
     exit /b 1
 )
-if not exist "%DAEMON_BIN%" (
+if not defined DAEMON_BIN (
     echo Error: Daemon binary not found.
+    echo   Checked: %BUILD_DIR%\emulecored.exe
+    echo   Checked: %BUILD_DIR%\src\daemon\{%CONFIG%,}\emulecored.exe
     echo   Checked: %PROJECT_DIR%\bin\{Release,Debug}\emulecored.exe
-    echo   Checked: %BUILD_DIR%\src\daemon\%CONFIG%\emulecored.exe
-    echo   Checked: %BUILD_DIR%\src\daemon\emulecored.exe
     exit /b 1
 )
 
@@ -304,9 +336,7 @@ if exist "%ZIP_PATH%" del "%ZIP_PATH%"
 
 echo(
 echo === Creating %ZIP_NAME% ===
-pushd "%PROJECT_DIR%\stage"
-powershell -NoProfile -Command "Compress-Archive -Path 'eMule' -DestinationPath '%ZIP_PATH%' -Force"
-popd
+powershell -NoProfile -Command "Compress-Archive -Path '%STAGE_DIR%' -DestinationPath '%ZIP_PATH%' -Force"
 
 if exist "%ZIP_PATH%" (
     echo(

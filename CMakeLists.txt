@@ -105,28 +105,39 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 # miniupnpc — UPnP port mapping (Module 6)
 # ---------------------------------------------------------------------------
 include(FetchContent)
-FetchContent_Declare(miniupnpc
-    GIT_REPOSITORY https://github.com/miniupnp/miniupnp.git
-    GIT_TAG        miniupnpc_2_3_0
-    SOURCE_SUBDIR  miniupnpc
-)
-set(UPNPC_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
-set(UPNPC_BUILD_SAMPLE  OFF CACHE BOOL "" FORCE)
-set(UPNPC_BUILD_SHARED  OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(miniupnpc)
+find_package(miniupnpc CONFIG QUIET)
+if(miniupnpc_FOUND)
+    # vcpkg target is miniupnpc::miniupnpc; create alias for FetchContent name
+    if(NOT TARGET libminiupnpc-static)
+        add_library(libminiupnpc-static ALIAS miniupnpc::miniupnpc)
+    endif()
+else()
+    FetchContent_Declare(miniupnpc
+        GIT_REPOSITORY https://github.com/miniupnp/miniupnp.git
+        GIT_TAG        miniupnpc_2_3_0
+        SOURCE_SUBDIR  miniupnpc
+    )
+    set(UPNPC_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
+    set(UPNPC_BUILD_SAMPLE  OFF CACHE BOOL "" FORCE)
+    set(UPNPC_BUILD_SHARED  OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(miniupnpc)
+endif()
 
 # ---------------------------------------------------------------------------
 # yaml-cpp — YAML persistence for preferences (Module 16)
 # ---------------------------------------------------------------------------
-FetchContent_Declare(yaml-cpp
-    GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-    GIT_TAG        0.8.0
-)
-set(YAML_CPP_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(YAML_CPP_BUILD_TOOLS    OFF CACHE BOOL "" FORCE)
-set(YAML_CPP_BUILD_CONTRIB  OFF CACHE BOOL "" FORCE)
-set(YAML_CPP_INSTALL        OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(yaml-cpp)
+find_package(yaml-cpp CONFIG QUIET)
+if(NOT yaml-cpp_FOUND)
+    FetchContent_Declare(yaml-cpp
+        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+        GIT_TAG        0.8.0
+    )
+    set(YAML_CPP_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_TOOLS    OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_CONTRIB  OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_INSTALL        OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(yaml-cpp)
+endif()
 
 # Suppress warnings from yaml-cpp headers
 get_target_property(_yamlcpp_includes yaml-cpp INTERFACE_INCLUDE_DIRECTORIES)
@@ -139,20 +150,32 @@ endif()
 # ---------------------------------------------------------------------------
 # libarchive — unified archive reading (Module 11)
 # ---------------------------------------------------------------------------
-FetchContent_Declare(libarchive
-    GIT_REPOSITORY https://github.com/libarchive/libarchive.git
-    GIT_TAG        v3.7.7
-)
-set(ENABLE_TEST         OFF CACHE BOOL "" FORCE)
-set(ENABLE_INSTALL      OFF CACHE BOOL "" FORCE)
-set(ENABLE_TAR          OFF CACHE BOOL "" FORCE)
-set(ENABLE_CPIO         OFF CACHE BOOL "" FORCE)
-set(ENABLE_CAT          OFF CACHE BOOL "" FORCE)
-set(ENABLE_UNZIP        OFF CACHE BOOL "" FORCE)
-set(ENABLE_LIBXML2      OFF CACHE BOOL "" FORCE)
-set(ENABLE_EXPAT        OFF CACHE BOOL "" FORCE)
-set(ENABLE_PCRE2POSIX   OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(libarchive)
+find_package(LibArchive QUIET)
+if(LibArchive_FOUND)
+    # vcpkg/system provides libarchive — create alias matching FetchContent target name
+    if(NOT TARGET archive)
+        add_library(archive ALIAS LibArchive::LibArchive)
+    endif()
+    if(NOT TARGET archive_static)
+        # GUI/core link against archive_static; point it to the shared lib
+        add_library(archive_static ALIAS LibArchive::LibArchive)
+    endif()
+else()
+    FetchContent_Declare(libarchive
+        GIT_REPOSITORY https://github.com/libarchive/libarchive.git
+        GIT_TAG        v3.7.7
+    )
+    set(ENABLE_TEST         OFF CACHE BOOL "" FORCE)
+    set(ENABLE_INSTALL      OFF CACHE BOOL "" FORCE)
+    set(ENABLE_TAR          OFF CACHE BOOL "" FORCE)
+    set(ENABLE_CPIO         OFF CACHE BOOL "" FORCE)
+    set(ENABLE_CAT          OFF CACHE BOOL "" FORCE)
+    set(ENABLE_UNZIP        OFF CACHE BOOL "" FORCE)
+    set(ENABLE_LIBXML2      OFF CACHE BOOL "" FORCE)
+    set(ENABLE_EXPAT        OFF CACHE BOOL "" FORCE)
+    set(ENABLE_PCRE2POSIX   OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(libarchive)
+endif()
 
 # ---------------------------------------------------------------------------
 # Subdirectories

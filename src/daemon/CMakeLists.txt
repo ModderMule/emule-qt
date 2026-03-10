@@ -5,7 +5,7 @@
 # Runs as a QCoreApplication (no GUI).
 # ---------------------------------------------------------------------------
 
-file(GLOB_RECURSE DAEMON_SOURCES CONFIGURE_DEPENDS "*.cpp" "*.h")
+file(GLOB DAEMON_SOURCES CONFIGURE_DEPENDS "*.cpp" "*.h")
 
 qt_add_executable(emulecored ${DAEMON_SOURCES})
 
