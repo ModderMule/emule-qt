@@ -175,14 +175,30 @@ void ServerPanel::onConnectClicked()
 
 void ServerPanel::onAddServerClicked()
 {
-    if (!m_serverList)
-        return;
-
     const QString ip = m_newServerIp->text().trimmed();
     const uint16_t port = m_newServerPort->text().trimmed().toUShort();
     const QString name = m_newServerName->text().trimmed();
 
     if (ip.isEmpty() || port == 0)
+        return;
+
+    if (m_ipc && m_ipc->isConnected()) {
+        Ipc::IpcMessage req(Ipc::IpcMsgType::AddServer);
+        req.append(ip);
+        req.append(static_cast<qint64>(port));
+        req.append(name);
+        m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+            if (resp.fieldBool(0)) {
+                m_newServerIp->clear();
+                m_newServerPort->setText(QStringLiteral("4661"));
+                m_newServerName->clear();
+                requestServerList();
+            }
+        });
+        return;
+    }
+
+    if (!m_serverList)
         return;
 
     // Resolve hostname to IP if needed

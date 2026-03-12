@@ -8,6 +8,7 @@
 #include "webserver/WebServer.h"
 
 #include <QDir>
+#include <QHostInfo>
 
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
@@ -539,7 +540,16 @@ void IpcClientHandler::handleAddServer(const IpcMessage& msg)
     const auto port = static_cast<uint16>(msg.fieldInt(1));
     const QString name = msg.fieldString(2);
 
-    const QHostAddress addr(address);
+    QHostAddress addr(address);
+    if (addr.isNull()) {
+        const QHostInfo info = QHostInfo::fromName(address);
+        for (const auto& a : info.addresses()) {
+            if (a.protocol() == QAbstractSocket::IPv4Protocol) {
+                addr = a;
+                break;
+            }
+        }
+    }
     if (addr.isNull() || port == 0) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid address or port")));
         return;

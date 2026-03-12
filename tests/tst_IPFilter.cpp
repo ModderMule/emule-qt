@@ -30,6 +30,8 @@ private slots:
     void sortAndMerge_adjacent_differentLevel();
     void sortAndMerge_duplicate_keepsLowestLevel();
     void saveAndLoad_roundTrip();
+    void loadFromFile_realWorld_filterDat();
+    void loadFromFile_realWorld_peerGuardian();
 };
 
 void tst_IPFilter::construct_default()
@@ -208,6 +210,30 @@ void tst_IPFilter::saveAndLoad_roundTrip()
         QCOMPARE(entries[1].end, static_cast<uint32>(0x0A0000FF));
         QCOMPARE(entries[1].level, static_cast<uint32>(50));
     }
+}
+
+void tst_IPFilter::loadFromFile_realWorld_filterDat()
+{
+    const QString path = eMule::testing::projectDataDir()
+                         + QStringLiteral("/ipfilter.dat");
+    QVERIFY2(QFile::exists(path), qPrintable(QStringLiteral("Missing: %1").arg(path)));
+
+    IPFilter filter;
+    const int count = filter.loadFromFile(path);
+    QVERIFY2(count > 200000,
+             qPrintable(QStringLiteral("Expected >200000 entries, got %1").arg(count)));
+}
+
+void tst_IPFilter::loadFromFile_realWorld_peerGuardian()
+{
+    const QString path = eMule::testing::projectDataDir()
+                         + QStringLiteral("/guarding.p2p");
+    QVERIFY2(QFile::exists(path), qPrintable(QStringLiteral("Missing: %1").arg(path)));
+
+    IPFilter filter;
+    const int count = filter.loadFromFile(path);
+    QVERIFY2(count > 150000,
+             qPrintable(QStringLiteral("Expected >150000 entries, got %1").arg(count)));
 }
 
 QTEST_GUILESS_MAIN(tst_IPFilter)

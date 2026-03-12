@@ -127,7 +127,7 @@ int IPFilter::loadFromFile(const QString& filePath)
             if (line.empty() || line[0] == '#' || line[0] == '/' || line.size() < 15)
                 continue;
 
-            // Auto-detect format if unknown
+            // Auto-detect format if unknown — keep trying on each line until detected
             if (fileType == FileType::Unknown) {
                 // Strip HTML tags if present
                 auto gt = line.find('>');
@@ -153,6 +153,9 @@ int IPFilter::loadFromFile(const QString& filePath)
                         }
                     }
                 }
+                // Format still unknown — skip this line and try detection on the next
+                if (fileType == FileType::Unknown)
+                    continue;
             }
 
             uint32 start = 0, end = 0, level = 0;
@@ -163,6 +166,13 @@ int IPFilter::loadFromFile(const QString& filePath)
                 valid = parseFilterDatLine(line, start, end, level, desc);
             else if (fileType == FileType::PeerGuardian)
                 valid = parsePeerGuardianLine(line, start, end, level, desc);
+
+            // If extension-based format fails on the first qualifying line,
+            // reset to Unknown so auto-detection retries on the next line
+            if (!valid && foundRanges == 0 && fileType != FileType::Unknown) {
+                fileType = FileType::Unknown;
+                continue;
+            }
 
             if (valid) {
                 addIPRange(start, end, level, desc);

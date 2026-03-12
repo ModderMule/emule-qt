@@ -168,7 +168,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
     m_rows.reserve(static_cast<size_t>(servers.size()));
 
     static constexpr std::pair<int, const char*> prefNames[] = {
-        {0, "Low"}, {1, "Normal"}, {2, "High"},
+        {0, "Normal"}, {1, "High"}, {2, "Low"},
     };
 
     for (const auto& val : servers) {

@@ -164,6 +164,10 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
         disconnect();
     }
 
+    // Reset triedCrypt so both encrypted and fallback attempts are tried each cycle
+    if (!noCrypt)
+        server->setTriedCrypt(false);
+
     m_connecting = true;
     m_singleConnecting = !multiconnect;
     emit stateChanged();
