@@ -399,6 +399,12 @@ public:
     [[nodiscard]] QString ipFilterUpdateUrl() const;
     void setIpFilterUpdateUrl(const QString& val);
 
+    [[nodiscard]] QString appToken() const;
+    void setAppToken(const QString& val);
+
+    [[nodiscard]] QString bugReportApiKey() const;
+    [[nodiscard]] QString bugReportDomain() const;
+
     // -- IRC ------------------------------------------------------------------
 
     [[nodiscard]] QString ircServer() const;

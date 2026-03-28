@@ -160,6 +160,7 @@ private slots:
     void onPasteLinks();
     void onSchedulerToggle();
     void onToolbarContextMenu(const QPoint& pos);
+    void onSubmitBugReport();
 
 private:
     void rebuildToolbar();

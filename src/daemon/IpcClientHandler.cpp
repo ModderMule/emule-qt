@@ -1412,6 +1412,7 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("enableSearchResultFilter"), thePrefs.enableSearchResultFilter());
     prefs.insert(QStringLiteral("warnUntrustedFiles"), thePrefs.warnUntrustedFiles());
     prefs.insert(QStringLiteral("ipFilterUpdateUrl"), thePrefs.ipFilterUpdateUrl());
+    prefs.insert(QStringLiteral("appToken"), thePrefs.appToken());
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(thePrefs.statsAverageMinutes()));
@@ -2706,6 +2707,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setWarnUntrustedFiles(val.toBool());
     else if (key == QStringLiteral("ipFilterUpdateUrl"))
         thePrefs.setIpFilterUpdateUrl(val.toString());
+    else if (key == QStringLiteral("appToken"))
+        thePrefs.setAppToken(val.toString());
     else
         return false;
     return true;

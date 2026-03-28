@@ -243,6 +243,9 @@ struct Preferences::Data {
     uint32 ipFilterLevel = 100;  // DFLT_FILTER_LEVEL — lower = more restrictive
     bool warnUntrustedFiles = true;
     QString ipFilterUpdateUrl;
+    QString appToken;
+    QString bugReportApiKey;
+    QString bugReportDomain;
 
     // IRC
     QString ircServer = QStringLiteral("irc.mindforge.org:6667");
@@ -1648,6 +1651,30 @@ void Preferences::setIpFilterUpdateUrl(const QString& val)
 {
     QWriteLocker lock(&m_lock);
     m_data->ipFilterUpdateUrl = val;
+}
+
+QString Preferences::appToken() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->appToken;
+}
+
+void Preferences::setAppToken(const QString& val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->appToken = val;
+}
+
+QString Preferences::bugReportApiKey() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->bugReportApiKey;
+}
+
+QString Preferences::bugReportDomain() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->bugReportDomain;
 }
 
 // ---------------------------------------------------------------------------
@@ -3327,6 +3354,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->enableSearchResultFilter  = p.value(QStringLiteral("enableSearchResultFilter")).toBool();
     m_data->warnUntrustedFiles        = p.value(QStringLiteral("warnUntrustedFiles")).toBool();
     m_data->ipFilterUpdateUrl         = p.value(QStringLiteral("ipFilterUpdateUrl")).toString();
+    m_data->appToken                  = p.value(QStringLiteral("appToken")).toString();
 
     // Statistics
     m_data->statsAverageMinutes   = static_cast<uint32>(p.value(QStringLiteral("statsAverageMinutes")).toInteger());
@@ -3615,6 +3643,8 @@ bool Preferences::load(const QString& filePath)
             m_data->versionCheckDays = std::clamp(g["versionCheckDays"].as<int>(m_data->versionCheckDays), 1, 14);
             m_data->lastVersionCheck = g["lastVersionCheck"].as<int64_t>(m_data->lastVersionCheck);
             m_data->bringToFrontOnLinkClick = g["bringToFrontOnLinkClick"].as<bool>(m_data->bringToFrontOnLinkClick);
+            if (g["appToken"])
+                m_data->appToken = QString::fromStdString(g["appToken"].as<std::string>());
 
             // userHash: decode from hex
             if (g["userHash"]) {
@@ -3803,6 +3833,10 @@ bool Preferences::load(const QString& filePath)
             m_data->warnUntrustedFiles = sec["warnUntrustedFiles"].as<bool>(m_data->warnUntrustedFiles);
             if (sec["ipFilterUpdateUrl"])
                 m_data->ipFilterUpdateUrl = QString::fromStdString(sec["ipFilterUpdateUrl"].as<std::string>());
+            if (sec["bugReportApiKey"])
+                m_data->bugReportApiKey = QString::fromStdString(sec["bugReportApiKey"].as<std::string>());
+            if (sec["bugReportDomain"])
+                m_data->bugReportDomain = QString::fromStdString(sec["bugReportDomain"].as<std::string>());
         }
 
         // IRC
@@ -4115,6 +4149,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "versionCheckDays" << YAML::Value << m_data->versionCheckDays;
     out << YAML::Key << "lastVersionCheck" << YAML::Value << m_data->lastVersionCheck;
     out << YAML::Key << "bringToFrontOnLinkClick" << YAML::Value << m_data->bringToFrontOnLinkClick;
+    if (!m_data->appToken.isEmpty())
+        out << YAML::Key << "appToken" << YAML::Value << m_data->appToken.toStdString();
     out << YAML::EndMap;
 
     // Server connection
@@ -4289,6 +4325,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "warnUntrustedFiles" << YAML::Value << m_data->warnUntrustedFiles;
     if (!m_data->ipFilterUpdateUrl.isEmpty())
         out << YAML::Key << "ipFilterUpdateUrl" << YAML::Value << m_data->ipFilterUpdateUrl.toStdString();
+    if (!m_data->bugReportApiKey.isEmpty())
+        out << YAML::Key << "bugReportApiKey" << YAML::Value << m_data->bugReportApiKey.toStdString();
+    if (!m_data->bugReportDomain.isEmpty())
+        out << YAML::Key << "bugReportDomain" << YAML::Value << m_data->bugReportDomain.toStdString();
     out << YAML::EndMap;
 
     // IRC

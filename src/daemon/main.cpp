@@ -10,6 +10,7 @@
 
 #include "app/AppConfig.h"
 #include "prefs/Preferences.h"
+#include "utils/CrashHandler.h"
 #include "utils/Log.h"
 
 #include <QCoreApplication>
@@ -64,6 +65,8 @@ int main(int argc, char* argv[])
     // -- Load preferences (needed for IPC port in both modes) -----------------
 
     const QString configDir = eMule::AppConfig::configDir();
+    eMule::CrashHandler::install(configDir + QStringLiteral("/crashes"));
+
     const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
     eMule::thePrefs.load(prefsPath);
 

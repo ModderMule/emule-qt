@@ -100,6 +100,7 @@ signals:
     void knownClientsChanged(const Ipc::IpcMessage& msg);
     void chatMessageReceived(const Ipc::IpcMessage& msg);
     void friendListChanged(const Ipc::IpcMessage& msg);
+    void clientSharedFilesReceived(const Ipc::IpcMessage& msg);
 
     /// Emitted for every outgoing request and incoming message when enableIpcLog is on.
     void ipcLogMessage(const QString& text, bool outgoing);

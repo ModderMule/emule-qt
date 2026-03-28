@@ -14,6 +14,7 @@
 #include "client/ClientStructs.h"
 #include "utils/Types.h"
 
+#include <QCborArray>
 #include <QImage>
 #include <QObject>
 #include <QString>
@@ -548,6 +549,9 @@ signals:
     void uploadStateChanged(UploadState newState);
     void downloadStateChanged(DownloadState newState);
     void chatMessageReceived(const QString& fromUser, const QString& message);
+    void sharedFileListReceived(const QByteArray& userHash,
+                                const QString& userName,
+                                const QCborArray& files);
     void captchaRequestReceived(const QString& fromUser, const QImage& captchaImage);
     void previewAnswerReceived(const std::array<uint8, 16>& fileHash,
                                const std::vector<QImage>& images);

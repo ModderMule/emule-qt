@@ -49,6 +49,11 @@ public:
     /// Clear all tabs.
     void clearAll();
 
+    /// Plain text accessors for bug report submission.
+    [[nodiscard]] QString logText() const;
+    [[nodiscard]] QString verboseText() const;
+    [[nodiscard]] QString kadText() const;
+
     /// Set a custom font on all log browser tabs.
     void setCustomFont(const QFont& font);
 

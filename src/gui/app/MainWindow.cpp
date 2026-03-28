@@ -14,6 +14,7 @@
 #include "dialogs/NetworkInfoDialog.h"
 #include "dialogs/ImportDownloadsDialog.h"
 #include "dialogs/FirstStartWizard.h"
+#include "dialogs/BugReportDialog.h"
 #include "dialogs/OptionsDialog.h"
 #include "panels/IrcPanel.h"
 #include "panels/KadPanel.h"
@@ -463,6 +464,13 @@ void MainWindow::buildToolsMenu()
 
     m_toolsMenu->addSeparator();
 
+    m_toolsMenu->addAction(
+        QIcon(QStringLiteral(":/icons/Web.ico")),
+        tr("Submit Bug Report..."),
+        this, &MainWindow::onSubmitBugReport);
+
+    m_toolsMenu->addSeparator();
+
     // Links submenu
     auto* linksMenu = m_toolsMenu->addMenu(
         QIcon(QStringLiteral(":/icons/Web.ico")), tr("Links"));
@@ -549,6 +557,12 @@ void MainWindow::onSchedulerToggle()
     req.append(QStringLiteral("schedulerEnabled"));
     req.append(newVal);
     m_ipc->sendRequest(std::move(req));
+}
+
+void MainWindow::onSubmitBugReport()
+{
+    BugReportDialog dlg(m_serverPanel->logWidget(), this);
+    dlg.exec();
 }
 
 // ---------------------------------------------------------------------------

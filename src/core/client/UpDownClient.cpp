@@ -44,6 +44,8 @@
 #include "utils/Log.h"
 
 #include <QBuffer>
+#include <QCborArray>
+#include <QCborMap>
 #include <QImage>
 #include <QPainter>
 #include <QRandomGenerator>
@@ -1922,6 +1924,30 @@ void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const Q
         theApp.searchList->processSearchAnswer(data, size,
                                                 m_unicodeSupport,
                                                 m_serverIP, m_serverPort);
+    }
+
+    // Build CBOR array of files and emit signal for the GUI
+    {
+        SafeMemFile smf(data, size);
+        const uint32 count = smf.readUInt32();
+        QCborArray filesArr;
+        for (uint32 i = 0; i < count; ++i) {
+            try {
+                SearchFile sf(smf, m_unicodeSupport);
+                QCborMap entry;
+                entry.insert(QStringLiteral("hash"), md4str(sf.fileHash()));
+                entry.insert(QStringLiteral("fileName"), sf.fileName());
+                entry.insert(QStringLiteral("fileSize"), static_cast<qint64>(static_cast<uint64>(sf.fileSize())));
+                filesArr.append(entry);
+            } catch (...) {
+                break;
+            }
+        }
+        if (!filesArr.isEmpty()) {
+            emit sharedFileListReceived(
+                QByteArray(reinterpret_cast<const char*>(m_userHash.data()), 16),
+                userName(), filesArr);
+        }
     }
 }
 

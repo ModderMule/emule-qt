@@ -476,6 +476,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushKnownClientsChanged: emit knownClientsChanged(msg); break;
     case IpcMsgType::PushChatMessage:        emit chatMessageReceived(msg); break;
     case IpcMsgType::PushFriendListChanged:  emit friendListChanged(msg); break;
+    case IpcMsgType::PushClientSharedFiles:  emit clientSharedFilesReceived(msg); break;
     default: break;
     }
 }

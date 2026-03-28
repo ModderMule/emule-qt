@@ -6,6 +6,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/DownloadListModel.h"
 #include "controls/SearchResultsModel.h"
 #include "prefs/Preferences.h"
 
@@ -14,6 +15,7 @@
 
 #include <QApplication>
 #include <QCborArray>
+#include <QCborMap>
 #include <QCborMap>
 #include <QClipboard>
 #include <QComboBox>
@@ -30,6 +32,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QLineEdit>
+#include <QProcess>
 #include <QMenu>
 #include <QPushButton>
 #include <QScrollArea>
@@ -513,6 +516,32 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             QApplication::clipboard()->setText(links.join(QStringLiteral("<br>\n")));
     });
 
+    // Preview (single selection, must match an active download that is previewable)
+    {
+        const auto sel = m_resultView->selectionModel()
+                             ? m_resultView->selectionModel()->selectedRows()
+                             : QModelIndexList{};
+        bool canPreview = false;
+        QString previewHash;
+        if (sel.size() == 1 && m_downloadModel && !m_streamToken.isEmpty()) {
+            auto* tab = currentTab();
+            if (tab) {
+                const auto srcIdx = tab->proxy->mapToSource(sel.first());
+                const auto* result = tab->model->resultAt(srcIdx.row());
+                if (result) {
+                    previewHash = result->hash;
+                    const auto* dl = m_downloadModel->findByHash(previewHash);
+                    canPreview = dl && dl->isPreviewPossible;
+                }
+            }
+        }
+        auto* previewAction = m_contextMenu->addAction(ico("Preview.ico"), tr("Preview"));
+        previewAction->setEnabled(canPreview);
+        connect(previewAction, &QAction::triggered, this, [this, previewHash]() {
+            sendPreview(previewHash);
+        });
+    }
+
     m_contextMenu->addSeparator();
 
     // Mark as Spam
@@ -994,6 +1023,47 @@ void SearchPanel::loadSearches()
         m_tabBar->setVisible(true);
         m_tabBar->setCurrentIndex(0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Preview a search result via HTTP streaming
+// ---------------------------------------------------------------------------
+
+void SearchPanel::sendPreview(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+
+    if (m_streamToken.isEmpty()) {
+        QMessageBox::warning(this, tr("Preview"),
+            tr("Preview not available — web server is not running or stream token not received."));
+        return;
+    }
+
+    const QString host = m_ipc->daemonHost();
+    const uint16_t wsPort = thePrefs.webServerPort();
+    const QString url = QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
+                            .arg(host).arg(wsPort).arg(hash, m_streamToken);
+
+    const QString playerCmd = thePrefs.videoPlayerCommand();
+    if (playerCmd.isEmpty()) {
+        QMessageBox::warning(this, tr("Preview"),
+            tr("No video player configured. Set it in Options → Files."));
+        return;
+    }
+
+    QString args = thePrefs.videoPlayerArgs();
+    QStringList argList;
+    if (args.contains(QStringLiteral("%1"))) {
+        args.replace(QStringLiteral("%1"), url);
+        argList = QProcess::splitCommand(args);
+    } else {
+        if (!args.isEmpty())
+            argList = QProcess::splitCommand(args);
+        argList.append(url);
+    }
+
+    QProcess::startDetached(playerCmd, argList);
 }
 
 } // namespace eMule

@@ -75,6 +75,8 @@
         <!-- Messages panel icons -->
         <file alias="Messages.ico">icons/Messages.ico</file>
         <file alias="Chat.ico">icons/Chat.ico</file>
+        <file alias="Message.ico">icons/Message.ico</file>
+        <file alias="MessagePending.ico">icons/MessagePending.ico</file>
         <!-- Context menu icons -->
         <file alias="Rename.ico">icons/Rename.ico</file>
         <file alias="Cancel.ico">icons/Cancel.ico</file>
@@ -82,6 +84,8 @@
         <file alias="Copy.ico">icons/Copy.ico</file>
         <file alias="ListRemove.ico">icons/ListRemove.ico</file>
         <file alias="CloseTab.ico">icons/CloseTab.ico</file>
+        <file alias="CloseTabSelected.ico">icons/CloseTabSelected.ico</file>
+        <file alias="CopyVisible.ico">icons/CopyVisible.ico</file>
         <file alias="UserFiles.ico">icons/UserFiles.ico</file>
         <file alias="PriorityAuto.ico">icons/PriorityAuto.ico</file>
         <!-- Messages context menu icons -->
@@ -191,6 +195,7 @@
         <file alias="CopySelected.ico">icons/CopySelected.ico</file>
         <file alias="ExportAll.ico">icons/ExportAll.ico</file>
         <file alias="ExpandAll.ico">icons/ExpandAll.ico</file>
+        <file alias="ExpandAll2.ico">icons/ExpandAll2.ico</file>
         <file alias="Collapse.ico">icons/Collapse.ico</file>
         <file alias="Log.ico">icons/Log.ico</file>
         <file alias="Info.ico">icons/Info.ico</file>
@@ -222,6 +227,28 @@
         <file alias="DirectDownload.ico">icons/DirectDownload.ico</file>
         <file alias="ClientSecureHashOvl.ico">icons/ClientSecureHashOvl.ico</file>
         <file alias="UserDetails.ico">icons/UserDetails.ico</file>
+        <!-- File overlays -->
+        <file alias="FileCommentsOvl.ico">icons/FileCommentsOvl.ico</file>
+        <file alias="FileImportParts.ico">icons/FileImportParts.ico</file>
+        <file alias="SharedFolderOvl.ico">icons/SharedFolderOvl.ico</file>
+        <file alias="NoAccessFolderOvl.ico">icons/NoAccessFolderOvl.ico</file>
+        <!-- Import -->
+        <file alias="Import.ico">icons/Import.ico</file>
+        <!-- Search -->
+        <file alias="SearchParams.ico">icons/SearchParams.ico</file>
+        <!-- Tray / window restore -->
+        <file alias="Restore.ico">icons/Restore.ico</file>
+        <file alias="RestoreWindow.ico">icons/RestoreWindow.ico</file>
+        <!-- Browse shared files -->
+        <file alias="Browse8.ico">icons/Browse8.ico</file>
+        <!-- Filter states -->
+        <file alias="all.ico">icons/all.ico</file>
+        <file alias="incomplete.ico">icons/incomplete.ico</file>
+        <!-- Clear buttons -->
+        <file alias="clear1.ico">icons/clear1.ico</file>
+        <file alias="clear2.ico">icons/clear2.ico</file>
+        <!-- Email -->
+        <file alias="email.ico">icons/email.ico</file>
     </qresource>
     <qresource prefix="/smileys">
         <file alias="Smiley_Smile.ico">smileys/Smiley_Smile.ico</file>

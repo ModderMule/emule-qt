@@ -7,6 +7,7 @@
 /// SearchList, SharedFileList, and UploadQueue, then broadcasts
 /// corresponding IPC push messages to all connected GUI clients.
 
+#include <QCborArray>
 #include <QObject>
 
 namespace eMule {
@@ -64,11 +65,17 @@ private slots:
     // Chat signals
     void onChatMessageReceived(const QString& fromUser, const QString& message);
 
+    // Client shared files signals
+    void onClientSharedFilesReceived(const QByteArray& userHash,
+                                     const QString& userName,
+                                     const QCborArray& files);
+
     // UPnP signals
     void onUPnPDiscoveryComplete(bool success);
 
 private:
     void connectClientChatSignal(eMule::UpDownClient* client);
+    void connectClientSharedFilesSignal(eMule::UpDownClient* client);
     void sendEmailNotification(const QString& subject, const QString& body);
 
     IpcServer* m_ipcServer;

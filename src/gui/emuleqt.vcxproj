@@ -203,8 +203,10 @@
     </ClCompile>
     <ClCompile Include="dialogs\AddFriendDialog.cpp" />
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp" />
+    <ClCompile Include="dialogs\BugReportDialog.cpp" />
     <ClCompile Include="app\AutoStart.cpp" />
     <ClCompile Include="dialogs\ClientDetailDialog.cpp" />
+    <ClCompile Include="dialogs\ClientSharedFilesDialog.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
     <ClCompile Include="controls\ContactsGraph.cpp" />
@@ -252,8 +254,10 @@
     <ClInclude Include="pch.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
     <QtMoc Include="dialogs\ArchivePreviewPanel.h" />
+    <QtMoc Include="dialogs\BugReportDialog.h" />
     <ClInclude Include="app\AutoStart.h" />
     <QtMoc Include="dialogs\ClientDetailDialog.h" />
+    <QtMoc Include="dialogs\ClientSharedFilesDialog.h" />
     <QtMoc Include="controls\ClientListModel.h" />
     <ClInclude Include="app\CommandLineExec.h" />
     <QtMoc Include="controls\ContactsGraph.h" />
@@ -535,6 +539,25 @@
     <None Include="..\..\resources\images\mule_wiz_hdr.gif" />
     <None Include="..\..\resources\icons\resetformat.ico" />
     <None Include="..\..\resources\icons\underline.ico" />
+    <None Include="..\..\resources\icons\Message.ico" />
+    <None Include="..\..\resources\icons\MessagePending.ico" />
+    <None Include="..\..\resources\icons\FileCommentsOvl.ico" />
+    <None Include="..\..\resources\icons\FileImportParts.ico" />
+    <None Include="..\..\resources\icons\Import.ico" />
+    <None Include="..\..\resources\icons\SearchParams.ico" />
+    <None Include="..\..\resources\icons\Restore.ico" />
+    <None Include="..\..\resources\icons\RestoreWindow.ico" />
+    <None Include="..\..\resources\icons\Browse8.ico" />
+    <None Include="..\..\resources\icons\CloseTabSelected.ico" />
+    <None Include="..\..\resources\icons\CopyVisible.ico" />
+    <None Include="..\..\resources\icons\ExpandAll2.ico" />
+    <None Include="..\..\resources\icons\SharedFolderOvl.ico" />
+    <None Include="..\..\resources\icons\NoAccessFolderOvl.ico" />
+    <None Include="..\..\resources\icons\all.ico" />
+    <None Include="..\..\resources\icons\incomplete.ico" />
+    <None Include="..\..\resources\icons\clear1.ico" />
+    <None Include="..\..\resources\icons\clear2.ico" />
+    <None Include="..\..\resources\icons\email.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(QtMsBuild)\qt.targets" Condition="Exists('$(QtMsBuild)\qt.targets')" />

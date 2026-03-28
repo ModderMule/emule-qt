@@ -461,4 +461,11 @@ bool DownloadListModel::containsHash(const QString& hexHash) const
         [&](const DownloadRow& r) { return r.hash == hexHash; });
 }
 
+const DownloadRow* DownloadListModel::findByHash(const QString& hexHash) const
+{
+    auto it = std::find_if(m_downloads.begin(), m_downloads.end(),
+        [&](const DownloadRow& r) { return r.hash == hexHash; });
+    return (it != m_downloads.end()) ? &(*it) : nullptr;
+}
+
 } // namespace eMule

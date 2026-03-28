@@ -129,6 +129,9 @@ public:
     /// Check if a file with the given hex hash is in the download list.
     [[nodiscard]] bool containsHash(const QString& hexHash) const;
 
+    /// Find a download row by its hex hash (nullptr if not found).
+    [[nodiscard]] const DownloadRow* findByHash(const QString& hexHash) const;
+
 private:
     std::vector<DownloadRow> m_downloads;
 };

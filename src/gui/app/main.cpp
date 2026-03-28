@@ -36,6 +36,7 @@ static void unixSignalHandler(int)
 #include "app/PowerManager.h"
 #include "app/VersionChecker.h"
 #include "app/UiState.h"
+#include "dialogs/ClientSharedFilesDialog.h"
 #include "dialogs/CoreConnectDialog.h"
 #include "controls/LogWidget.h"
 #include "panels/IrcPanel.h"
@@ -50,6 +51,7 @@ static void unixSignalHandler(int)
 #include "controls/DownloadListModel.h"
 #include "controls/SharedFilesModel.h"
 #include "prefs/Preferences.h"
+#include "utils/CrashHandler.h"
 #include "utils/Log.h"
 #include "utils/Types.h"
 
@@ -207,6 +209,8 @@ int main(int argc, char* argv[])
 
     // Load preferences early so language setting is available for translators
     const QString configDir = eMule::AppConfig::configDir();
+    eMule::CrashHandler::install(configDir + QStringLiteral("/crashes"));
+
     const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
     eMule::thePrefs.load(prefsPath);
 
@@ -335,6 +339,7 @@ int main(int argc, char* argv[])
         mainWindow.serverPanel()->setIpcClient(&ipcClient);
         mainWindow.transferPanel()->setIpcClient(&ipcClient);
         mainWindow.searchPanel()->setIpcClient(&ipcClient);
+        mainWindow.searchPanel()->setDownloadModel(mainWindow.transferPanel()->downloadModel());
         mainWindow.sharedFilesPanel()->setIpcClient(&ipcClient);
         mainWindow.messagesPanel()->setIpcClient(&ipcClient);
         mainWindow.statisticsPanel()->setIpcClient(&ipcClient);
@@ -502,6 +507,15 @@ int main(int argc, char* argv[])
                     QObject::tr("Chat Message from %1").arg(user), text);
             }
         });
+        // Client shared files response → show dialog
+        QObject::connect(&ipcClient, &eMule::IpcClient::clientSharedFilesReceived,
+                         &mainWindow, [&mainWindow, &ipcClient](const eMule::Ipc::IpcMessage& msg) {
+            const QString clientName = msg.fieldString(1);
+            const QCborArray files = msg.fieldArray(2);
+            auto* dlg = new eMule::ClientSharedFilesDialog(clientName, files, &ipcClient, &mainWindow);
+            dlg->show();
+        });
+
         QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
                          &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
             if (eMule::thePrefs.notifyOnLog()) {
@@ -560,8 +574,10 @@ int main(int argc, char* argv[])
                     val(QLatin1StringView("downOverheadRate")));
 
                 // Update stream token for preview streaming
-                if (auto st = stats.value(QStringLiteral("streamToken")); st.isString())
+                if (auto st = stats.value(QStringLiteral("streamToken")); st.isString()) {
                     mainWindow.transferPanel()->setStreamToken(st.toString());
+                    mainWindow.searchPanel()->setStreamToken(st.toString());
+                }
 
                 // Update MiniMule popup stats
                 const int completedDl = static_cast<int>(

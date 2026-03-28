@@ -113,3 +113,6 @@ windows-3rd.yml
 # Environment secrets
 .env
 
+# Dev automation workspace
+dev/
+

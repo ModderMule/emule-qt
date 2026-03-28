@@ -112,10 +112,13 @@ void CoreNotifierBridge::connectAll()
         // Wire chat signals for existing clients
         theApp.clientList->forEachClient([this](UpDownClient* c) {
             connectClientChatSignal(c);
+            connectClientSharedFilesSignal(c);
         });
         // Wire chat signals for newly added clients
         connect(theApp.clientList, &ClientList::clientAdded,
                 this, &CoreNotifierBridge::connectClientChatSignal);
+        connect(theApp.clientList, &ClientList::clientAdded,
+                this, &CoreNotifierBridge::connectClientSharedFilesSignal);
     }
 
     // FriendList
@@ -295,6 +298,23 @@ void CoreNotifierBridge::connectClientChatSignal(UpDownClient* client)
 {
     connect(client, &UpDownClient::chatMessageReceived,
             this, &CoreNotifierBridge::onChatMessageReceived);
+}
+
+void CoreNotifierBridge::connectClientSharedFilesSignal(UpDownClient* client)
+{
+    connect(client, &UpDownClient::sharedFileListReceived,
+            this, &CoreNotifierBridge::onClientSharedFilesReceived);
+}
+
+void CoreNotifierBridge::onClientSharedFilesReceived(const QByteArray& userHash,
+                                                      const QString& userName,
+                                                      const QCborArray& files)
+{
+    IpcMessage msg(IpcMsgType::PushClientSharedFiles, 0);
+    msg.append(md4str(reinterpret_cast<const uint8*>(userHash.constData())));
+    msg.append(userName);
+    msg.append(files);
+    m_ipcServer->broadcast(msg);
 }
 
 void CoreNotifierBridge::onUPnPDiscoveryComplete(bool success)

@@ -218,6 +218,7 @@
     <ClCompile Include="files\KnownFileList.cpp" />
     <ClCompile Include="net\LastCommonRouteFinder.cpp" />
     <ClCompile Include="net\ListenSocket.cpp" />
+    <ClCompile Include="utils\CrashHandler.cpp" />
     <ClCompile Include="utils\Log.cpp" />
     <ClCompile Include="crypto\MD4Hash.cpp" />
     <ClCompile Include="crypto\MD5Hash.cpp" />
@@ -332,6 +333,7 @@
     <ClInclude Include="files\KnownFileList.h" />
     <QtMoc Include="net\LastCommonRouteFinder.h" />
     <QtMoc Include="net\ListenSocket.h" />
+    <ClInclude Include="utils\CrashHandler.h" />
     <ClInclude Include="utils\Log.h" />
     <ClInclude Include="crypto\MD4Hash.h" />
     <ClInclude Include="crypto\MD5Hash.h" />

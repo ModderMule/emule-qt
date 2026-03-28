@@ -171,6 +171,10 @@ void LogWidget::clearAll()
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.2 ready</font>"));
 }
 
+QString LogWidget::logText() const { return m_logBrowser->toPlainText(); }
+QString LogWidget::verboseText() const { return m_verboseBrowser->toPlainText(); }
+QString LogWidget::kadText() const { return m_kadBrowser->toPlainText(); }
+
 void LogWidget::setCustomFont(const QFont& font)
 {
     for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser,

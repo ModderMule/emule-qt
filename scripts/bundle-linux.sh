@@ -103,6 +103,7 @@ if [ "$DEPLOY_QT" = true ]; then
     # Under QEMU emulation the AppImage runtime itself may fail (exit 127),
     # so we fall back to unsquashfs which extracts the embedded squashfs
     # by finding the offset past the ELF header.
+    # Flatpak better OS integration but less portable.
     extract_appimage() {
         local appimage="$1" dest="$2"
         # Try native --appimage-extract first

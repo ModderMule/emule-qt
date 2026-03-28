@@ -960,5 +960,62 @@
     <None Include="..\..\resources\icons\underline.ico">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="..\..\resources\icons\Message.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\MessagePending.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileCommentsOvl.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\FileImportParts.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Import.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SearchParams.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Restore.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\RestoreWindow.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Browse8.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\CloseTabSelected.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\CopyVisible.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ExpandAll2.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\SharedFolderOvl.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\NoAccessFolderOvl.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\all.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\incomplete.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\clear1.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\clear2.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\email.ico">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

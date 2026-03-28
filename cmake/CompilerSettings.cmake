@@ -50,11 +50,17 @@ elseif(MSVC)
 endif()
 
 # ---------------------------------------------------------------------------
-# Debug info for Release builds (MSVC) — enables useful stack traces
+# Debug info for Release builds — enables useful crash dump stack traces
 # ---------------------------------------------------------------------------
-if(MSVC)
-    add_compile_options("$<$<CONFIG:Release>:/Zi>")
-    add_link_options("$<$<CONFIG:Release>:/DEBUG>" "$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
+option(EMULE_RELEASE_DEBUG_INFO "Include debug symbols in Release builds (for crash dumps)" ON)
+
+if(EMULE_RELEASE_DEBUG_INFO)
+    if(MSVC)
+        add_compile_options("$<$<CONFIG:Release>:/Zi>")
+        add_link_options("$<$<CONFIG:Release>:/DEBUG>" "$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        add_compile_options("$<$<CONFIG:Release>:-g>")
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------

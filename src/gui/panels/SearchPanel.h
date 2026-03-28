@@ -30,6 +30,7 @@ class QTreeView;
 
 namespace eMule {
 
+class DownloadListModel;
 class IpcClient;
 class SearchResultsModel;
 
@@ -55,6 +56,12 @@ public:
 
     /// Start a search from an external panel (e.g., "Search Related Files").
     void startSearchFromExternal(const QString& expression);
+
+    /// Set the stream token for preview streaming (received from daemon GetStats).
+    void setStreamToken(const QString& token) { m_streamToken = token; }
+
+    /// Set the download model for preview-eligibility checks.
+    void setDownloadModel(DownloadListModel* model) { m_downloadModel = model; }
 
 private slots:
     void onStartSearch();
@@ -84,6 +91,7 @@ private:
     void loadSearches();
     void setupAutoComplete();
     void addToSearchHistory(const QString& expression);
+    void sendPreview(const QString& hash);
 
     // Search controls
     QLineEdit* m_nameEdit = nullptr;
@@ -122,6 +130,10 @@ private:
 
     // IPC
     IpcClient* m_ipc = nullptr;
+
+    // Preview support
+    QString m_streamToken;
+    DownloadListModel* m_downloadModel = nullptr;
 
     // Autocomplete
     QCompleter* m_completer = nullptr;
