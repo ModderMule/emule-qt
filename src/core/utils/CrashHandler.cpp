@@ -5,9 +5,6 @@
 
 #include <QDir>
 
-#include <climits>
-#include <cstring>
-#include <ctime>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096

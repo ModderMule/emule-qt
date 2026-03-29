@@ -8,8 +8,6 @@
 #include <QPainter>
 #include <QPaintEvent>
 
-#include <algorithm>
-#include <cmath>
 
 namespace eMule {
 

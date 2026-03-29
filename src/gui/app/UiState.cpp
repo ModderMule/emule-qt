@@ -79,6 +79,11 @@ void UiState::load(const QString& configDir)
                 m_headerStates[key] = val;
             }
         }
+
+        if (auto ste = root["statsTreeExpanded"]; ste && ste.IsSequence()) {
+            for (const auto& item : ste)
+                m_statsTreeExpanded.insert(QString::fromStdString(item.as<std::string>()));
+        }
     } catch (const YAML::BadFile&) {
         // File doesn't exist yet — use defaults
     } catch (const YAML::Exception& ex) {
@@ -123,6 +128,15 @@ void UiState::save(const QString& configDir)
             out << YAML::Key << it.key().toStdString()
                 << YAML::Value << it.value().toBase64().toStdString();
         out << YAML::EndMap;
+    }
+
+    if (!m_statsTreeExpanded.isEmpty()) {
+        out << YAML::Key << "statsTreeExpanded" << YAML::Value << YAML::BeginSeq;
+        QList<QString> sorted(m_statsTreeExpanded.cbegin(), m_statsTreeExpanded.cend());
+        sorted.sort();
+        for (const auto& s : sorted)
+            out << s.toStdString();
+        out << YAML::EndSeq;
     }
 
     out << YAML::EndMap;
@@ -221,6 +235,63 @@ void UiState::bindStatsSplitter(QSplitter* splitter)
 
     QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
         m_statsSplitSizes = splitter->sizes();
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Stats tree expansion state
+// ---------------------------------------------------------------------------
+
+/// Compute a path key for a tree item (e.g. "Transfer/Uploads/Session").
+static QString itemPath(QTreeWidgetItem* item)
+{
+    QStringList parts;
+    for (auto* cur = item; cur; cur = cur->parent())
+        parts.prepend(cur->text(0));
+    return parts.join(QLatin1Char('/'));
+}
+
+/// Depth of a tree item (0 = top-level).
+static int itemDepth(QTreeWidgetItem* item)
+{
+    int d = 0;
+    for (auto* cur = item->parent(); cur; cur = cur->parent())
+        ++d;
+    return d;
+}
+
+void UiState::bindStatsTree(QTreeWidget* tree)
+{
+    // Apply defaults on first run
+    if (m_statsTreeExpanded.isEmpty()) {
+        m_statsTreeExpanded = {
+            QStringLiteral("Transfer"),
+            QStringLiteral("Connection"),
+            QStringLiteral("Time Statistics")
+        };
+    }
+
+    // Restore: walk top-level and first-level items
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        auto* top = tree->topLevelItem(i);
+        const QString topPath = top->text(0);
+        top->setExpanded(m_statsTreeExpanded.contains(topPath));
+
+        for (int j = 0; j < top->childCount(); ++j) {
+            auto* child = top->child(j);
+            const QString childPath = topPath + QLatin1Char('/') + child->text(0);
+            child->setExpanded(m_statsTreeExpanded.contains(childPath));
+        }
+    }
+
+    // Auto-capture on expand/collapse (depth 0 and 1 only)
+    QObject::connect(tree, &QTreeWidget::itemExpanded, tree, [this](QTreeWidgetItem* item) {
+        if (itemDepth(item) <= 1)
+            m_statsTreeExpanded.insert(itemPath(item));
+    });
+    QObject::connect(tree, &QTreeWidget::itemCollapsed, tree, [this](QTreeWidgetItem* item) {
+        if (itemDepth(item) <= 1)
+            m_statsTreeExpanded.remove(itemPath(item));
     });
 }
 

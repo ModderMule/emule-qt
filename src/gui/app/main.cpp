@@ -53,10 +53,8 @@ static void unixSignalHandler(int)
 #include "prefs/Preferences.h"
 #include "utils/CrashHandler.h"
 #include "utils/Log.h"
-#include "utils/Types.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 #include "protocol/ED2KLink.h"
 
 using eMule::ED2KFileLink;

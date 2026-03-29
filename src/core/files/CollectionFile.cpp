@@ -5,9 +5,6 @@
 #include "files/CollectionFile.h"
 #include "protocol/ED2KLink.h"
 #include "protocol/Tag.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
-#include "utils/SafeFile.h"
 
 namespace eMule {
 

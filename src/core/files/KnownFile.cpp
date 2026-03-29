@@ -20,15 +20,11 @@
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "utils/Log.h"
-#include "utils/SafeFile.h"
 
 #include <QBuffer>
 #include <QFile>
 #include <QFileInfo>
 
-#include <algorithm>
-#include <cstring>
-#include <ctime>
 
 namespace eMule {
 

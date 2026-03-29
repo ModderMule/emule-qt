@@ -13,7 +13,6 @@
 #include "dialogs/ClientDetailDialog.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "protocol/ED2KLink.h"
@@ -29,7 +28,6 @@
 #include <QFont>
 #include <QFormLayout>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QInputDialog>
 #include <QLabel>
@@ -364,8 +362,14 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     // -- 3. Cancel (batch, with confirmation for multiple) --
     {
-        auto* cancelAct = m_downloadMenu->addAction(ico("Cancel.ico"), tr("Cancel"), this, [this, allHashes]() {
-            if (allHashes.size() > 1) {
+        auto* cancelAct = m_downloadMenu->addAction(ico("Cancel.ico"), tr("Cancel"), this, [this, allHashes, dl]() {
+            if (allHashes.size() == 1) {
+                const QString name = dl ? dl->fileName : allHashes.first();
+                if (QMessageBox::question(this, tr("Cancel Download"),
+                        tr("Cancel download \"%1\"?").arg(name),
+                        QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
+                    return;
+            } else {
                 if (QMessageBox::question(this, tr("Cancel Downloads"),
                         tr("Cancel %1 selected downloads?").arg(allHashes.size()),
                         QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
@@ -781,34 +785,44 @@ QToolBar* TransferPanel::createActionToolbar()
     connect(actPriority, &QAction::triggered, this, &TransferPanel::showPriorityMenu);
     m_selectionActions.append(actPriority);
 
-    auto* actPause = toolbar->addAction(
+    m_actPause = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Pause.ico")), tr("Pause"));
-    connect(actPause, &QAction::triggered, this, [this]() {
+    connect(m_actPause, &QAction::triggered, this, [this]() {
         sendDownloadActionBatch(saveDownloadSelectionMulti(), 0);
     });
-    m_selectionActions.append(actPause);
 
-    auto* actStop = toolbar->addAction(
+    m_actStop = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Stop.ico")), tr("Stop"));
-    connect(actStop, &QAction::triggered, this, [this]() {
+    connect(m_actStop, &QAction::triggered, this, [this]() {
         sendStopDownloadBatch(saveDownloadSelectionMulti());
     });
-    m_selectionActions.append(actStop);
 
-    auto* actResume = toolbar->addAction(
+    m_actResume = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Start.ico")), tr("Resume"));
-    connect(actResume, &QAction::triggered, this, [this]() {
+    connect(m_actResume, &QAction::triggered, this, [this]() {
         sendDownloadActionBatch(saveDownloadSelectionMulti(), 1);
     });
-    m_selectionActions.append(actResume);
 
-    auto* actCancel = toolbar->addAction(
+    m_actCancel = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Delete.ico")), tr("Cancel"));
-    connect(actCancel, &QAction::triggered, this, [this]() {
+    connect(m_actCancel, &QAction::triggered, this, [this]() {
         const QStringList hashes = saveDownloadSelectionMulti();
         if (hashes.isEmpty())
             return;
-        if (hashes.size() > 1) {
+        if (hashes.size() == 1) {
+            // Find file name for single-download confirmation
+            QString fileName;
+            for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+                if (m_downloadModel->hashAt(i) == hashes.first()) {
+                    fileName = m_downloadModel->downloadAt(i)->fileName;
+                    break;
+                }
+            }
+            if (QMessageBox::question(this, tr("Cancel Download"),
+                    tr("Cancel download \"%1\"?").arg(fileName),
+                    QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
+                return;
+        } else {
             if (QMessageBox::question(this, tr("Cancel Downloads"),
                     tr("Cancel %1 selected downloads?").arg(hashes.size()),
                     QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
@@ -816,7 +830,6 @@ QToolBar* TransferPanel::createActionToolbar()
         }
         sendDownloadActionBatch(hashes, 2);
     });
-    m_selectionActions.append(actCancel);
 
     toolbar->addSeparator();
 
@@ -912,6 +925,10 @@ QToolBar* TransferPanel::createActionToolbar()
     // Start with all selection-dependent actions disabled (nothing selected)
     for (auto* act : m_selectionActions)
         act->setEnabled(false);
+    m_actPause->setEnabled(false);
+    m_actStop->setEnabled(false);
+    m_actResume->setEnabled(false);
+    m_actCancel->setEnabled(false);
 
     return toolbar;
 }
@@ -1003,6 +1020,7 @@ void TransferPanel::requestDownloads()
         m_downloadModel->setDownloads(std::move(rows));
         updateToolbarLabels();
         updateCategoryTabs();
+        updateActionStates();
 
         // Re-expand previously expanded downloads and refresh their sources
         // (must happen BEFORE restoring selection so source child rows are visible)
@@ -1705,9 +1723,40 @@ void TransferPanel::setBottomClientView(int index)
 
 void TransferPanel::updateActionStates()
 {
-    const bool hasSelection = !saveDownloadSelectionMulti().isEmpty();
+    const QStringList hashes = saveDownloadSelectionMulti();
+    const bool hasSelection = !hashes.isEmpty();
+
+    // Generic selection-dependent actions (priority, open file, details, etc.)
     for (auto* act : m_selectionActions)
         act->setEnabled(hasSelection);
+
+    // State-dependent actions: collect selected download rows
+    std::vector<const DownloadRow*> selectedDls;
+    if (hasSelection) {
+        for (const QString& h : hashes) {
+            for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+                if (m_downloadModel->hashAt(i) == h) {
+                    selectedDls.push_back(m_downloadModel->downloadAt(i));
+                    break;
+                }
+            }
+        }
+    }
+
+    const bool canPause = std::any_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) {
+        return !d->isPaused && !d->isStopped && d->status != QStringLiteral("complete");
+    });
+    const bool canStop = std::any_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) {
+        return !d->isStopped && d->status != QStringLiteral("complete");
+    });
+    const bool canResume = std::any_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) {
+        return d->isPaused || d->isStopped;
+    });
+
+    m_actPause->setEnabled(hasSelection && canPause);
+    m_actStop->setEnabled(hasSelection && canStop);
+    m_actResume->setEnabled(hasSelection && canResume);
+    m_actCancel->setEnabled(hasSelection);
 }
 
 void TransferPanel::updateToolbarLabels()

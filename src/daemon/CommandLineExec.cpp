@@ -5,13 +5,11 @@
 #include "CliIpcClient.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 
 #include <QCoreApplication>
 
-#include <cstdio>
 
 namespace eMule {
 

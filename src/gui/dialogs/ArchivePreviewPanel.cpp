@@ -4,7 +4,6 @@
 
 #include "dialogs/ArchivePreviewPanel.h"
 #include "archive/ArchiveReader.h"
-#include "utils/Log.h"
 
 #include <QHeaderView>
 #include <QLabel>

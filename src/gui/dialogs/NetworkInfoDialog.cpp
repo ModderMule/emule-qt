@@ -7,7 +7,6 @@
 #include "app/IpcClient.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 
 #include <QCborMap>
 #include <QDialogButtonBox>

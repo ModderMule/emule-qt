@@ -3,7 +3,6 @@
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 #include "prefs/Preferences.h"
 
 #include <QCheckBox>

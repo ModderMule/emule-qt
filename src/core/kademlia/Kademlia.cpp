@@ -5,7 +5,6 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadClientSearcher.h"
-#include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIndexed.h"
@@ -18,13 +17,9 @@
 #include "prefs/Preferences.h"
 #include "ipfilter/IPFilter.h"
 #include "utils/Log.h"
-#include "utils/Opcodes.h"
 
 #include <QDir>
 
-#include <algorithm>
-#include <ctime>
-#include <limits>
 
 namespace eMule::kad {
 

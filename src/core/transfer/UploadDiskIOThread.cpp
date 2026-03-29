@@ -6,18 +6,14 @@
 /// Creates standard and compressed (zlib) packets for sending file data.
 
 #include "transfer/UploadDiskIOThread.h"
-#include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "net/Packet.h"
-#include "utils/Opcodes.h"
-#include "utils/OtherFunctions.h"
 
 #include "utils/Log.h"
 
 #include <QFile>
 #include <QFileInfo>
 
-#include <cstring>
 
 #include <zlib.h>
 

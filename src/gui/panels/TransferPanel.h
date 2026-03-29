@@ -162,6 +162,12 @@ private:
     // Actions that require a selected download (greyed out when nothing selected)
     QList<QAction*> m_selectionActions;
 
+    // Toolbar actions with state-dependent enable/disable
+    QAction* m_actPause = nullptr;
+    QAction* m_actStop = nullptr;
+    QAction* m_actResume = nullptr;
+    QAction* m_actCancel = nullptr;
+
     // Toolbar "Clear Completed" action (greyed when no completed downloads)
     QAction* m_clearCompletedAction = nullptr;
 

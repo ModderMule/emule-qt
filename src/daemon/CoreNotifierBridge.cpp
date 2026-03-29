@@ -13,7 +13,6 @@
 #include "client/UpDownClient.h"
 #include "files/PartFile.h"
 #include "friends/FriendList.h"
-#include "utils/OtherFunctions.h"
 #include "kademlia/Kademlia.h"
 #include "upnp/UPnPManager.h"
 #include "utils/Log.h"

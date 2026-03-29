@@ -5,16 +5,13 @@
 #include "ServerList.h"
 #include "protocol/ED2KLink.h"
 #include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
-#include <QDir>
 #include <QFile>
 #include <QHostAddress>
 #include <QTextStream>
 
-#include <algorithm>
 
 namespace eMule {
 

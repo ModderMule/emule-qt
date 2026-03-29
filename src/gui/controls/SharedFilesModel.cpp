@@ -4,7 +4,6 @@
 
 #include "controls/SharedFilesModel.h"
 
-#include <algorithm>
 
 namespace eMule {
 

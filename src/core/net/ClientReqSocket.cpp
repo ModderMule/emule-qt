@@ -6,11 +6,10 @@
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "net/ListenSocket.h"
+#include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 
-#include <QHostAddress>
 
 namespace eMule {
 
@@ -126,11 +125,12 @@ void ClientReqSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPac
 
 bool ClientReqSocket::packetReceived(Packet* packet)
 {
-    logDebug(QStringLiteral("ClientReqSocket::packetReceived — proto=0x%1 opcode=0x%2 size=%3 peer=%4:%5")
-                 .arg(packet->prot, 2, 16, QLatin1Char('0'))
-                 .arg(packet->opcode, 2, 16, QLatin1Char('0'))
-                 .arg(packet->size)
-                 .arg(peerAddress().toString()).arg(peerPort()));
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("ClientReqSocket::packetReceived — proto=0x%1 opcode=0x%2 size=%3 peer=%4:%5")
+                     .arg(packet->prot, 2, 16, QLatin1Char('0'))
+                     .arg(packet->opcode, 2, 16, QLatin1Char('0'))
+                     .arg(packet->size)
+                     .arg(peerAddress().toString()).arg(peerPort()));
     resetTimeOutTimer();
 
     if (auto* stats = theApp.statistics)
@@ -150,8 +150,9 @@ bool ClientReqSocket::packetReceived(Packet* packet)
         return processExtPacket(data, size, opcode);
     }
 
-    logDebug(QStringLiteral("ClientReqSocket: Unknown protocol 0x%1")
-                 .arg(protocol, 2, 16, QLatin1Char('0')));
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("ClientReqSocket: Unknown protocol 0x%1")
+                     .arg(protocol, 2, 16, QLatin1Char('0')));
     return false;
 }
 

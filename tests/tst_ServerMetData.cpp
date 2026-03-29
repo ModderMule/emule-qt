@@ -31,7 +31,7 @@ private slots:
 
 void tst_ServerMetData::loadServerMet_fromProjectData()
 {
-    const QString srcPath = projectDataDir() + QStringLiteral("/server.met");
+    const QString srcPath = projectDataDir() + QStringLiteral("/config/server.met");
     QVERIFY2(QFile::exists(srcPath),
              qPrintable(QStringLiteral("Missing test fixture: %1").arg(srcPath)));
 
@@ -52,7 +52,7 @@ void tst_ServerMetData::loadServerMet_fromProjectData()
 
 void tst_ServerMetData::serverMet_hasExpectedServers()
 {
-    const QString srcPath = projectDataDir() + QStringLiteral("/server.met");
+    const QString srcPath = projectDataDir() + QStringLiteral("/config/server.met");
     TempDir configDir;
     const QString dstPath = configDir.filePath(QStringLiteral("server.met"));
     QVERIFY(QFile::copy(srcPath, dstPath));
@@ -91,7 +91,7 @@ void tst_ServerMetData::serverMet_hasExpectedServers()
 
 void tst_ServerMetData::serverMet_serverProperties()
 {
-    const QString srcPath = projectDataDir() + QStringLiteral("/server.met");
+    const QString srcPath = projectDataDir() + QStringLiteral("/config/server.met");
     TempDir configDir;
     const QString dstPath = configDir.filePath(QStringLiteral("server.met"));
     QVERIFY(QFile::copy(srcPath, dstPath));

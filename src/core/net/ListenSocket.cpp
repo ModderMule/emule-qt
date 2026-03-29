@@ -9,7 +9,6 @@
 
 #include <QHostAddress>
 
-#include <algorithm>
 
 namespace eMule {
 

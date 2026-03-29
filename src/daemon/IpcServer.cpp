@@ -6,7 +6,6 @@
 
 #include "utils/Log.h"
 
-#include <algorithm>
 
 namespace eMule {
 

@@ -8,18 +8,13 @@
 #include "client/UpDownClient.h"
 #include "app/AppContext.h"
 #include "net/ClientReqSocket.h"
-#include "kademlia/KadContact.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
 #include "transfer/UploadQueue.h"
-#include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
-#include "utils/Opcodes.h"
 
-#include <algorithm>
 
-#include "utils/ByteOrder.h"
 
 namespace eMule {
 

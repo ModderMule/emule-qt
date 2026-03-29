@@ -94,4 +94,4 @@ RUN scripts/build.sh \
 
 # === Stage 2: Export tarball =================================================
 FROM scratch
-COPY --from=builder /src/emuleqt-v*-linux-x86_64.tar.gz /
+COPY --from=builder /src/build/emuleqt-v*-linux-x86_64.tar.gz /

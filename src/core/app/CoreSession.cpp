@@ -19,7 +19,6 @@
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUDPListener.h"
-#include "kademlia/KadUInt128.h"
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
 #include "net/UDPSocket.h"
@@ -36,7 +35,6 @@
 #include "transfer/UploadQueue.h"
 #include "upnp/UPnPManager.h"
 #include "utils/Log.h"
-#include "utils/Opcodes.h"
 
 #include <QDir>
 #include <QEventLoop>
@@ -45,7 +43,6 @@
 #include <QNetworkReply>
 #include <QTimer>
 
-#include <cstring>
 
 namespace eMule {
 

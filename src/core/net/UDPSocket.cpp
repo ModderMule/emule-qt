@@ -14,7 +14,6 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
-#include "utils/ByteOrder.h"
 
 #include <QHostAddress>
 #include <QNetworkDatagram>
@@ -41,6 +40,8 @@ UDPSocket::UDPSocket(QObject* parent)
 
 UDPSocket::~UDPSocket()
 {
+    if (auto* throttler = theApp.uploadBandwidthThrottler)
+        throttler->removeFromAllQueues(static_cast<ThrottledControlSocket*>(this));
     m_socket.close();
 }
 

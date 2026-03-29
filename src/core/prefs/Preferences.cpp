@@ -6,9 +6,7 @@
 
 #include "app/AppConfig.h"
 #include "net/EMSocket.h"
-#include "net/EncryptedStreamSocket.h"
 #include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 
 #include <QCborArray>
 #include <QCoreApplication>
@@ -19,10 +17,8 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include <openssl/evp.h>
 #include <openssl/rand.h>
 
-#include <random>
 
 namespace eMule {
 
@@ -238,6 +234,94 @@ struct Preferences::Data {
     bool fillGraphs = false;         // Draw filled graphs
     uint32 statsConnectionsMax = 100;   // Connections graph Y-axis scale
     uint32 statsConnectionsRatio = 3;   // Active connections ratio (1,2,3,4,5,10,20)
+
+    // Cumulative Statistics
+    uint64 cumTotalUploaded = 0;
+    uint64 cumTotalDownloaded = 0;
+    uint64 cumTotalUploadedToFriend = 0;
+
+    uint32 cumUpSuccessfulSessions = 0;
+    uint32 cumUpFailedSessions = 0;
+    uint32 cumUpAvgTime = 0;
+
+    uint32 cumDownSuccessfulSessions = 0;
+    uint32 cumDownFailedSessions = 0;
+    uint32 cumDownCompletedFiles = 0;
+    uint32 cumDownAvgTime = 0;
+
+    uint64 cumUpOverheadTotal = 0;
+    uint64 cumUpOverheadTotalPackets = 0;
+    uint64 cumUpOverheadFileReq = 0;
+    uint64 cumUpOverheadFileReqPackets = 0;
+    uint64 cumUpOverheadSrcExch = 0;
+    uint64 cumUpOverheadSrcExchPackets = 0;
+    uint64 cumUpOverheadServer = 0;
+    uint64 cumUpOverheadServerPackets = 0;
+    uint64 cumUpOverheadKad = 0;
+    uint64 cumUpOverheadKadPackets = 0;
+
+    uint64 cumDownOverheadTotal = 0;
+    uint64 cumDownOverheadTotalPackets = 0;
+    uint64 cumDownOverheadFileReq = 0;
+    uint64 cumDownOverheadFileReqPackets = 0;
+    uint64 cumDownOverheadSrcExch = 0;
+    uint64 cumDownOverheadSrcExchPackets = 0;
+    uint64 cumDownOverheadServer = 0;
+    uint64 cumDownOverheadServerPackets = 0;
+    uint64 cumDownOverheadKad = 0;
+    uint64 cumDownOverheadKadPackets = 0;
+
+    uint32 cumConnPeak = 0;
+    uint32 cumConnMaxLimitReached = 0;
+    uint32 cumConnReconnects = 0;
+
+    uint64 cumRunTime = 0;
+    uint64 cumTransferTime = 0;
+    uint64 cumUploadTime = 0;
+    uint64 cumDownloadTime = 0;
+    uint64 cumServerDuration = 0;
+
+    uint64 cumCompressionGain = 0;
+    uint64 cumCorruptionLoss = 0;
+    uint32 cumIchPartsSaved = 0;
+
+    // Per-client cumulative upload bytes
+    uint64 cumUpEmule = 0;
+    uint64 cumUpEDHybrid = 0;
+    uint64 cumUpEDonkey = 0;
+    uint64 cumUpAMule = 0;
+    uint64 cumUpMLdonkey = 0;
+    uint64 cumUpShareaza = 0;
+    uint64 cumUpEMCompat = 0;
+
+    // Per-client cumulative download bytes
+    uint64 cumDownEmule = 0;
+    uint64 cumDownEDHybrid = 0;
+    uint64 cumDownEDonkey = 0;
+    uint64 cumDownAMule = 0;
+    uint64 cumDownMLdonkey = 0;
+    uint64 cumDownShareaza = 0;
+    uint64 cumDownEMCompat = 0;
+    uint64 cumDownURL = 0;
+
+    // Per-port cumulative bytes
+    uint64 cumUpPort4662 = 0;
+    uint64 cumUpPortOther = 0;
+    uint64 cumDownPort4662 = 0;
+    uint64 cumDownPortOther = 0;
+
+    // Per-source cumulative upload bytes
+    uint64 cumUpFromFile = 0;
+    uint64 cumUpFromPartfile = 0;
+
+    // Records
+    uint32 recMaxWorkingServers = 0;
+    uint32 recMaxUsersOnline = 0;
+    uint32 recMaxFilesAvail = 0;
+    uint64 recMaxSharedFiles = 0;
+    uint64 recMaxSharedSize = 0;
+    uint64 recMaxAvgFileSize = 0;
+    uint64 recMaxLargestFile = 0;
 
     // Security
     uint32 ipFilterLevel = 100;  // DFLT_FILTER_LEVEL — lower = more restrictive
@@ -1612,6 +1696,117 @@ void Preferences::setStatsConnectionsRatio(uint32 val)
     QWriteLocker lock(&m_lock);
     m_data->statsConnectionsRatio = val;
 }
+
+// ---------------------------------------------------------------------------
+// Getters / setters — Cumulative Statistics
+// ---------------------------------------------------------------------------
+
+// Macro to reduce boilerplate for trivial getter/setter pairs.
+#define PREF_GET_SET(Type, Name)                           \
+    Type Preferences::Name() const {                       \
+        QReadLocker lock(&m_lock);                         \
+        return m_data->Name;                               \
+    }                                                      \
+    void Preferences::set##Name(Type val) {                \
+        QWriteLocker lock(&m_lock);                        \
+        m_data->Name = val;                                \
+    }
+
+// Helper with capital first letter for setter name
+#define PREF_GS(Type, name, Name)                          \
+    Type Preferences::name() const {                       \
+        QReadLocker lock(&m_lock);                         \
+        return m_data->name;                               \
+    }                                                      \
+    void Preferences::set##Name(Type val) {                \
+        QWriteLocker lock(&m_lock);                        \
+        m_data->name = val;                                \
+    }
+
+PREF_GS(uint64, cumTotalUploaded, CumTotalUploaded)
+PREF_GS(uint64, cumTotalDownloaded, CumTotalDownloaded)
+PREF_GS(uint64, cumTotalUploadedToFriend, CumTotalUploadedToFriend)
+
+PREF_GS(uint32, cumUpSuccessfulSessions, CumUpSuccessfulSessions)
+PREF_GS(uint32, cumUpFailedSessions, CumUpFailedSessions)
+PREF_GS(uint32, cumUpAvgTime, CumUpAvgTime)
+
+PREF_GS(uint32, cumDownSuccessfulSessions, CumDownSuccessfulSessions)
+PREF_GS(uint32, cumDownFailedSessions, CumDownFailedSessions)
+PREF_GS(uint32, cumDownCompletedFiles, CumDownCompletedFiles)
+PREF_GS(uint32, cumDownAvgTime, CumDownAvgTime)
+
+PREF_GS(uint64, cumUpOverheadTotal, CumUpOverheadTotal)
+PREF_GS(uint64, cumUpOverheadTotalPackets, CumUpOverheadTotalPackets)
+PREF_GS(uint64, cumUpOverheadFileReq, CumUpOverheadFileReq)
+PREF_GS(uint64, cumUpOverheadFileReqPackets, CumUpOverheadFileReqPackets)
+PREF_GS(uint64, cumUpOverheadSrcExch, CumUpOverheadSrcExch)
+PREF_GS(uint64, cumUpOverheadSrcExchPackets, CumUpOverheadSrcExchPackets)
+PREF_GS(uint64, cumUpOverheadServer, CumUpOverheadServer)
+PREF_GS(uint64, cumUpOverheadServerPackets, CumUpOverheadServerPackets)
+PREF_GS(uint64, cumUpOverheadKad, CumUpOverheadKad)
+PREF_GS(uint64, cumUpOverheadKadPackets, CumUpOverheadKadPackets)
+
+PREF_GS(uint64, cumDownOverheadTotal, CumDownOverheadTotal)
+PREF_GS(uint64, cumDownOverheadTotalPackets, CumDownOverheadTotalPackets)
+PREF_GS(uint64, cumDownOverheadFileReq, CumDownOverheadFileReq)
+PREF_GS(uint64, cumDownOverheadFileReqPackets, CumDownOverheadFileReqPackets)
+PREF_GS(uint64, cumDownOverheadSrcExch, CumDownOverheadSrcExch)
+PREF_GS(uint64, cumDownOverheadSrcExchPackets, CumDownOverheadSrcExchPackets)
+PREF_GS(uint64, cumDownOverheadServer, CumDownOverheadServer)
+PREF_GS(uint64, cumDownOverheadServerPackets, CumDownOverheadServerPackets)
+PREF_GS(uint64, cumDownOverheadKad, CumDownOverheadKad)
+PREF_GS(uint64, cumDownOverheadKadPackets, CumDownOverheadKadPackets)
+
+PREF_GS(uint32, cumConnPeak, CumConnPeak)
+PREF_GS(uint32, cumConnMaxLimitReached, CumConnMaxLimitReached)
+PREF_GS(uint32, cumConnReconnects, CumConnReconnects)
+
+PREF_GS(uint64, cumRunTime, CumRunTime)
+PREF_GS(uint64, cumTransferTime, CumTransferTime)
+PREF_GS(uint64, cumUploadTime, CumUploadTime)
+PREF_GS(uint64, cumDownloadTime, CumDownloadTime)
+PREF_GS(uint64, cumServerDuration, CumServerDuration)
+
+PREF_GS(uint64, cumCompressionGain, CumCompressionGain)
+PREF_GS(uint64, cumCorruptionLoss, CumCorruptionLoss)
+PREF_GS(uint32, cumIchPartsSaved, CumIchPartsSaved)
+
+PREF_GS(uint64, cumUpEmule, CumUpEmule)
+PREF_GS(uint64, cumUpEDHybrid, CumUpEDHybrid)
+PREF_GS(uint64, cumUpEDonkey, CumUpEDonkey)
+PREF_GS(uint64, cumUpAMule, CumUpAMule)
+PREF_GS(uint64, cumUpMLdonkey, CumUpMLdonkey)
+PREF_GS(uint64, cumUpShareaza, CumUpShareaza)
+PREF_GS(uint64, cumUpEMCompat, CumUpEMCompat)
+
+PREF_GS(uint64, cumDownEmule, CumDownEmule)
+PREF_GS(uint64, cumDownEDHybrid, CumDownEDHybrid)
+PREF_GS(uint64, cumDownEDonkey, CumDownEDonkey)
+PREF_GS(uint64, cumDownAMule, CumDownAMule)
+PREF_GS(uint64, cumDownMLdonkey, CumDownMLdonkey)
+PREF_GS(uint64, cumDownShareaza, CumDownShareaza)
+PREF_GS(uint64, cumDownEMCompat, CumDownEMCompat)
+PREF_GS(uint64, cumDownURL, CumDownURL)
+
+PREF_GS(uint64, cumUpPort4662, CumUpPort4662)
+PREF_GS(uint64, cumUpPortOther, CumUpPortOther)
+PREF_GS(uint64, cumDownPort4662, CumDownPort4662)
+PREF_GS(uint64, cumDownPortOther, CumDownPortOther)
+
+PREF_GS(uint64, cumUpFromFile, CumUpFromFile)
+PREF_GS(uint64, cumUpFromPartfile, CumUpFromPartfile)
+
+PREF_GS(uint32, recMaxWorkingServers, RecMaxWorkingServers)
+PREF_GS(uint32, recMaxUsersOnline, RecMaxUsersOnline)
+PREF_GS(uint32, recMaxFilesAvail, RecMaxFilesAvail)
+PREF_GS(uint64, recMaxSharedFiles, RecMaxSharedFiles)
+PREF_GS(uint64, recMaxSharedSize, RecMaxSharedSize)
+PREF_GS(uint64, recMaxAvgFileSize, RecMaxAvgFileSize)
+PREF_GS(uint64, recMaxLargestFile, RecMaxLargestFile)
+
+#undef PREF_GET_SET
+#undef PREF_GS
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Security
@@ -3823,6 +4018,101 @@ bool Preferences::load(const QString& filePath)
             m_data->fillGraphs = st["fillGraphs"].as<bool>(m_data->fillGraphs);
             m_data->statsConnectionsMax = st["statsConnectionsMax"].as<uint32>(m_data->statsConnectionsMax);
             m_data->statsConnectionsRatio = st["statsConnectionsRatio"].as<uint32>(m_data->statsConnectionsRatio);
+
+            // Cumulative transfer totals
+            m_data->cumTotalUploaded = st["cumTotalUploaded"].as<uint64>(m_data->cumTotalUploaded);
+            m_data->cumTotalDownloaded = st["cumTotalDownloaded"].as<uint64>(m_data->cumTotalDownloaded);
+            m_data->cumTotalUploadedToFriend = st["cumTotalUploadedToFriend"].as<uint64>(m_data->cumTotalUploadedToFriend);
+
+            // Cumulative upload sessions
+            m_data->cumUpSuccessfulSessions = st["cumUpSuccessfulSessions"].as<uint32>(m_data->cumUpSuccessfulSessions);
+            m_data->cumUpFailedSessions = st["cumUpFailedSessions"].as<uint32>(m_data->cumUpFailedSessions);
+            m_data->cumUpAvgTime = st["cumUpAvgTime"].as<uint32>(m_data->cumUpAvgTime);
+
+            // Cumulative download sessions
+            m_data->cumDownSuccessfulSessions = st["cumDownSuccessfulSessions"].as<uint32>(m_data->cumDownSuccessfulSessions);
+            m_data->cumDownFailedSessions = st["cumDownFailedSessions"].as<uint32>(m_data->cumDownFailedSessions);
+            m_data->cumDownCompletedFiles = st["cumDownCompletedFiles"].as<uint32>(m_data->cumDownCompletedFiles);
+            m_data->cumDownAvgTime = st["cumDownAvgTime"].as<uint32>(m_data->cumDownAvgTime);
+
+            // Cumulative overhead — upload
+            m_data->cumUpOverheadTotal = st["cumUpOverheadTotal"].as<uint64>(m_data->cumUpOverheadTotal);
+            m_data->cumUpOverheadTotalPackets = st["cumUpOverheadTotalPackets"].as<uint64>(m_data->cumUpOverheadTotalPackets);
+            m_data->cumUpOverheadFileReq = st["cumUpOverheadFileReq"].as<uint64>(m_data->cumUpOverheadFileReq);
+            m_data->cumUpOverheadFileReqPackets = st["cumUpOverheadFileReqPackets"].as<uint64>(m_data->cumUpOverheadFileReqPackets);
+            m_data->cumUpOverheadSrcExch = st["cumUpOverheadSrcExch"].as<uint64>(m_data->cumUpOverheadSrcExch);
+            m_data->cumUpOverheadSrcExchPackets = st["cumUpOverheadSrcExchPackets"].as<uint64>(m_data->cumUpOverheadSrcExchPackets);
+            m_data->cumUpOverheadServer = st["cumUpOverheadServer"].as<uint64>(m_data->cumUpOverheadServer);
+            m_data->cumUpOverheadServerPackets = st["cumUpOverheadServerPackets"].as<uint64>(m_data->cumUpOverheadServerPackets);
+            m_data->cumUpOverheadKad = st["cumUpOverheadKad"].as<uint64>(m_data->cumUpOverheadKad);
+            m_data->cumUpOverheadKadPackets = st["cumUpOverheadKadPackets"].as<uint64>(m_data->cumUpOverheadKadPackets);
+
+            // Cumulative overhead — download
+            m_data->cumDownOverheadTotal = st["cumDownOverheadTotal"].as<uint64>(m_data->cumDownOverheadTotal);
+            m_data->cumDownOverheadTotalPackets = st["cumDownOverheadTotalPackets"].as<uint64>(m_data->cumDownOverheadTotalPackets);
+            m_data->cumDownOverheadFileReq = st["cumDownOverheadFileReq"].as<uint64>(m_data->cumDownOverheadFileReq);
+            m_data->cumDownOverheadFileReqPackets = st["cumDownOverheadFileReqPackets"].as<uint64>(m_data->cumDownOverheadFileReqPackets);
+            m_data->cumDownOverheadSrcExch = st["cumDownOverheadSrcExch"].as<uint64>(m_data->cumDownOverheadSrcExch);
+            m_data->cumDownOverheadSrcExchPackets = st["cumDownOverheadSrcExchPackets"].as<uint64>(m_data->cumDownOverheadSrcExchPackets);
+            m_data->cumDownOverheadServer = st["cumDownOverheadServer"].as<uint64>(m_data->cumDownOverheadServer);
+            m_data->cumDownOverheadServerPackets = st["cumDownOverheadServerPackets"].as<uint64>(m_data->cumDownOverheadServerPackets);
+            m_data->cumDownOverheadKad = st["cumDownOverheadKad"].as<uint64>(m_data->cumDownOverheadKad);
+            m_data->cumDownOverheadKadPackets = st["cumDownOverheadKadPackets"].as<uint64>(m_data->cumDownOverheadKadPackets);
+
+            // Cumulative connection stats
+            m_data->cumConnPeak = st["cumConnPeak"].as<uint32>(m_data->cumConnPeak);
+            m_data->cumConnMaxLimitReached = st["cumConnMaxLimitReached"].as<uint32>(m_data->cumConnMaxLimitReached);
+            m_data->cumConnReconnects = st["cumConnReconnects"].as<uint32>(m_data->cumConnReconnects);
+
+            // Cumulative times
+            m_data->cumRunTime = st["cumRunTime"].as<uint64>(m_data->cumRunTime);
+            m_data->cumTransferTime = st["cumTransferTime"].as<uint64>(m_data->cumTransferTime);
+            m_data->cumUploadTime = st["cumUploadTime"].as<uint64>(m_data->cumUploadTime);
+            m_data->cumDownloadTime = st["cumDownloadTime"].as<uint64>(m_data->cumDownloadTime);
+            m_data->cumServerDuration = st["cumServerDuration"].as<uint64>(m_data->cumServerDuration);
+
+            // Cumulative quality stats
+            m_data->cumCompressionGain = st["cumCompressionGain"].as<uint64>(m_data->cumCompressionGain);
+            m_data->cumCorruptionLoss = st["cumCorruptionLoss"].as<uint64>(m_data->cumCorruptionLoss);
+            m_data->cumIchPartsSaved = st["cumIchPartsSaved"].as<uint32>(m_data->cumIchPartsSaved);
+
+            // Per-client cumulative upload
+            m_data->cumUpEmule = st["cumUpEmule"].as<uint64>(m_data->cumUpEmule);
+            m_data->cumUpEDHybrid = st["cumUpEDHybrid"].as<uint64>(m_data->cumUpEDHybrid);
+            m_data->cumUpEDonkey = st["cumUpEDonkey"].as<uint64>(m_data->cumUpEDonkey);
+            m_data->cumUpAMule = st["cumUpAMule"].as<uint64>(m_data->cumUpAMule);
+            m_data->cumUpMLdonkey = st["cumUpMLdonkey"].as<uint64>(m_data->cumUpMLdonkey);
+            m_data->cumUpShareaza = st["cumUpShareaza"].as<uint64>(m_data->cumUpShareaza);
+            m_data->cumUpEMCompat = st["cumUpEMCompat"].as<uint64>(m_data->cumUpEMCompat);
+
+            // Per-client cumulative download
+            m_data->cumDownEmule = st["cumDownEmule"].as<uint64>(m_data->cumDownEmule);
+            m_data->cumDownEDHybrid = st["cumDownEDHybrid"].as<uint64>(m_data->cumDownEDHybrid);
+            m_data->cumDownEDonkey = st["cumDownEDonkey"].as<uint64>(m_data->cumDownEDonkey);
+            m_data->cumDownAMule = st["cumDownAMule"].as<uint64>(m_data->cumDownAMule);
+            m_data->cumDownMLdonkey = st["cumDownMLdonkey"].as<uint64>(m_data->cumDownMLdonkey);
+            m_data->cumDownShareaza = st["cumDownShareaza"].as<uint64>(m_data->cumDownShareaza);
+            m_data->cumDownEMCompat = st["cumDownEMCompat"].as<uint64>(m_data->cumDownEMCompat);
+            m_data->cumDownURL = st["cumDownURL"].as<uint64>(m_data->cumDownURL);
+
+            // Per-port cumulative
+            m_data->cumUpPort4662 = st["cumUpPort4662"].as<uint64>(m_data->cumUpPort4662);
+            m_data->cumUpPortOther = st["cumUpPortOther"].as<uint64>(m_data->cumUpPortOther);
+            m_data->cumDownPort4662 = st["cumDownPort4662"].as<uint64>(m_data->cumDownPort4662);
+            m_data->cumDownPortOther = st["cumDownPortOther"].as<uint64>(m_data->cumDownPortOther);
+
+            // Per-source cumulative
+            m_data->cumUpFromFile = st["cumUpFromFile"].as<uint64>(m_data->cumUpFromFile);
+            m_data->cumUpFromPartfile = st["cumUpFromPartfile"].as<uint64>(m_data->cumUpFromPartfile);
+
+            // Records
+            m_data->recMaxWorkingServers = st["recMaxWorkingServers"].as<uint32>(m_data->recMaxWorkingServers);
+            m_data->recMaxUsersOnline = st["recMaxUsersOnline"].as<uint32>(m_data->recMaxUsersOnline);
+            m_data->recMaxFilesAvail = st["recMaxFilesAvail"].as<uint32>(m_data->recMaxFilesAvail);
+            m_data->recMaxSharedFiles = st["recMaxSharedFiles"].as<uint64>(m_data->recMaxSharedFiles);
+            m_data->recMaxSharedSize = st["recMaxSharedSize"].as<uint64>(m_data->recMaxSharedSize);
+            m_data->recMaxAvgFileSize = st["recMaxAvgFileSize"].as<uint64>(m_data->recMaxAvgFileSize);
+            m_data->recMaxLargestFile = st["recMaxLargestFile"].as<uint64>(m_data->recMaxLargestFile);
         }
 
         // Security
@@ -4315,6 +4605,101 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "fillGraphs" << YAML::Value << m_data->fillGraphs;
     out << YAML::Key << "statsConnectionsMax" << YAML::Value << m_data->statsConnectionsMax;
     out << YAML::Key << "statsConnectionsRatio" << YAML::Value << m_data->statsConnectionsRatio;
+
+    // Cumulative transfer totals
+    out << YAML::Key << "cumTotalUploaded" << YAML::Value << m_data->cumTotalUploaded;
+    out << YAML::Key << "cumTotalDownloaded" << YAML::Value << m_data->cumTotalDownloaded;
+    out << YAML::Key << "cumTotalUploadedToFriend" << YAML::Value << m_data->cumTotalUploadedToFriend;
+
+    // Cumulative upload sessions
+    out << YAML::Key << "cumUpSuccessfulSessions" << YAML::Value << m_data->cumUpSuccessfulSessions;
+    out << YAML::Key << "cumUpFailedSessions" << YAML::Value << m_data->cumUpFailedSessions;
+    out << YAML::Key << "cumUpAvgTime" << YAML::Value << m_data->cumUpAvgTime;
+
+    // Cumulative download sessions
+    out << YAML::Key << "cumDownSuccessfulSessions" << YAML::Value << m_data->cumDownSuccessfulSessions;
+    out << YAML::Key << "cumDownFailedSessions" << YAML::Value << m_data->cumDownFailedSessions;
+    out << YAML::Key << "cumDownCompletedFiles" << YAML::Value << m_data->cumDownCompletedFiles;
+    out << YAML::Key << "cumDownAvgTime" << YAML::Value << m_data->cumDownAvgTime;
+
+    // Cumulative overhead — upload
+    out << YAML::Key << "cumUpOverheadTotal" << YAML::Value << m_data->cumUpOverheadTotal;
+    out << YAML::Key << "cumUpOverheadTotalPackets" << YAML::Value << m_data->cumUpOverheadTotalPackets;
+    out << YAML::Key << "cumUpOverheadFileReq" << YAML::Value << m_data->cumUpOverheadFileReq;
+    out << YAML::Key << "cumUpOverheadFileReqPackets" << YAML::Value << m_data->cumUpOverheadFileReqPackets;
+    out << YAML::Key << "cumUpOverheadSrcExch" << YAML::Value << m_data->cumUpOverheadSrcExch;
+    out << YAML::Key << "cumUpOverheadSrcExchPackets" << YAML::Value << m_data->cumUpOverheadSrcExchPackets;
+    out << YAML::Key << "cumUpOverheadServer" << YAML::Value << m_data->cumUpOverheadServer;
+    out << YAML::Key << "cumUpOverheadServerPackets" << YAML::Value << m_data->cumUpOverheadServerPackets;
+    out << YAML::Key << "cumUpOverheadKad" << YAML::Value << m_data->cumUpOverheadKad;
+    out << YAML::Key << "cumUpOverheadKadPackets" << YAML::Value << m_data->cumUpOverheadKadPackets;
+
+    // Cumulative overhead — download
+    out << YAML::Key << "cumDownOverheadTotal" << YAML::Value << m_data->cumDownOverheadTotal;
+    out << YAML::Key << "cumDownOverheadTotalPackets" << YAML::Value << m_data->cumDownOverheadTotalPackets;
+    out << YAML::Key << "cumDownOverheadFileReq" << YAML::Value << m_data->cumDownOverheadFileReq;
+    out << YAML::Key << "cumDownOverheadFileReqPackets" << YAML::Value << m_data->cumDownOverheadFileReqPackets;
+    out << YAML::Key << "cumDownOverheadSrcExch" << YAML::Value << m_data->cumDownOverheadSrcExch;
+    out << YAML::Key << "cumDownOverheadSrcExchPackets" << YAML::Value << m_data->cumDownOverheadSrcExchPackets;
+    out << YAML::Key << "cumDownOverheadServer" << YAML::Value << m_data->cumDownOverheadServer;
+    out << YAML::Key << "cumDownOverheadServerPackets" << YAML::Value << m_data->cumDownOverheadServerPackets;
+    out << YAML::Key << "cumDownOverheadKad" << YAML::Value << m_data->cumDownOverheadKad;
+    out << YAML::Key << "cumDownOverheadKadPackets" << YAML::Value << m_data->cumDownOverheadKadPackets;
+
+    // Cumulative connection stats
+    out << YAML::Key << "cumConnPeak" << YAML::Value << m_data->cumConnPeak;
+    out << YAML::Key << "cumConnMaxLimitReached" << YAML::Value << m_data->cumConnMaxLimitReached;
+    out << YAML::Key << "cumConnReconnects" << YAML::Value << m_data->cumConnReconnects;
+
+    // Cumulative times
+    out << YAML::Key << "cumRunTime" << YAML::Value << m_data->cumRunTime;
+    out << YAML::Key << "cumTransferTime" << YAML::Value << m_data->cumTransferTime;
+    out << YAML::Key << "cumUploadTime" << YAML::Value << m_data->cumUploadTime;
+    out << YAML::Key << "cumDownloadTime" << YAML::Value << m_data->cumDownloadTime;
+    out << YAML::Key << "cumServerDuration" << YAML::Value << m_data->cumServerDuration;
+
+    // Cumulative quality stats
+    out << YAML::Key << "cumCompressionGain" << YAML::Value << m_data->cumCompressionGain;
+    out << YAML::Key << "cumCorruptionLoss" << YAML::Value << m_data->cumCorruptionLoss;
+    out << YAML::Key << "cumIchPartsSaved" << YAML::Value << m_data->cumIchPartsSaved;
+
+    // Per-client cumulative upload
+    out << YAML::Key << "cumUpEmule" << YAML::Value << m_data->cumUpEmule;
+    out << YAML::Key << "cumUpEDHybrid" << YAML::Value << m_data->cumUpEDHybrid;
+    out << YAML::Key << "cumUpEDonkey" << YAML::Value << m_data->cumUpEDonkey;
+    out << YAML::Key << "cumUpAMule" << YAML::Value << m_data->cumUpAMule;
+    out << YAML::Key << "cumUpMLdonkey" << YAML::Value << m_data->cumUpMLdonkey;
+    out << YAML::Key << "cumUpShareaza" << YAML::Value << m_data->cumUpShareaza;
+    out << YAML::Key << "cumUpEMCompat" << YAML::Value << m_data->cumUpEMCompat;
+
+    // Per-client cumulative download
+    out << YAML::Key << "cumDownEmule" << YAML::Value << m_data->cumDownEmule;
+    out << YAML::Key << "cumDownEDHybrid" << YAML::Value << m_data->cumDownEDHybrid;
+    out << YAML::Key << "cumDownEDonkey" << YAML::Value << m_data->cumDownEDonkey;
+    out << YAML::Key << "cumDownAMule" << YAML::Value << m_data->cumDownAMule;
+    out << YAML::Key << "cumDownMLdonkey" << YAML::Value << m_data->cumDownMLdonkey;
+    out << YAML::Key << "cumDownShareaza" << YAML::Value << m_data->cumDownShareaza;
+    out << YAML::Key << "cumDownEMCompat" << YAML::Value << m_data->cumDownEMCompat;
+    out << YAML::Key << "cumDownURL" << YAML::Value << m_data->cumDownURL;
+
+    // Per-port cumulative
+    out << YAML::Key << "cumUpPort4662" << YAML::Value << m_data->cumUpPort4662;
+    out << YAML::Key << "cumUpPortOther" << YAML::Value << m_data->cumUpPortOther;
+    out << YAML::Key << "cumDownPort4662" << YAML::Value << m_data->cumDownPort4662;
+    out << YAML::Key << "cumDownPortOther" << YAML::Value << m_data->cumDownPortOther;
+
+    // Per-source cumulative
+    out << YAML::Key << "cumUpFromFile" << YAML::Value << m_data->cumUpFromFile;
+    out << YAML::Key << "cumUpFromPartfile" << YAML::Value << m_data->cumUpFromPartfile;
+
+    // Records
+    out << YAML::Key << "recMaxWorkingServers" << YAML::Value << m_data->recMaxWorkingServers;
+    out << YAML::Key << "recMaxUsersOnline" << YAML::Value << m_data->recMaxUsersOnline;
+    out << YAML::Key << "recMaxFilesAvail" << YAML::Value << m_data->recMaxFilesAvail;
+    out << YAML::Key << "recMaxSharedFiles" << YAML::Value << m_data->recMaxSharedFiles;
+    out << YAML::Key << "recMaxSharedSize" << YAML::Value << m_data->recMaxSharedSize;
+    out << YAML::Key << "recMaxAvgFileSize" << YAML::Value << m_data->recMaxAvgFileSize;
+    out << YAML::Key << "recMaxLargestFile" << YAML::Value << m_data->recMaxLargestFile;
     out << YAML::EndMap;
 
     // Security

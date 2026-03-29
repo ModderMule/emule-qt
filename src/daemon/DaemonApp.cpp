@@ -3,7 +3,6 @@
 
 #include "DaemonApp.h"
 #include "CoreNotifierBridge.h"
-#include "IpcClientHandler.h"
 #include "IpcServer.h"
 
 #include "IpcMessage.h"
@@ -11,6 +10,8 @@
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
 #include "prefs/Preferences.h"
+#include "stats/Statistics.h"
+#include "transfer/UploadQueue.h"
 #include "webserver/WebServer.h"
 #include "utils/Log.h"
 
@@ -19,7 +20,6 @@
 
 #include <openssl/rand.h>
 
-#include <cstring>
 
 namespace eMule {
 
@@ -105,6 +105,19 @@ void DaemonApp::stop()
 {
     if (!m_running)
         return;
+
+    // Save cumulative statistics before tearing down
+    if (theApp.statistics) {
+        theApp.statistics->saveCumulativeToPrefs(thePrefs);
+        // Also save upload session counts
+        if (theApp.uploadQueue) {
+            thePrefs.setCumUpSuccessfulSessions(
+                thePrefs.cumUpSuccessfulSessions() + theApp.uploadQueue->successfulUploadCount());
+            thePrefs.setCumUpFailedSessions(
+                thePrefs.cumUpFailedSessions() + theApp.uploadQueue->failedUploadCount());
+        }
+        thePrefs.save();
+    }
 
     stopWebServer();
 

@@ -7,8 +7,6 @@
 #include <QRadialGradient>
 #include <QToolTip>
 
-#include <algorithm>
-#include <cmath>
 
 namespace eMule {
 

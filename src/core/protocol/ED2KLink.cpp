@@ -3,7 +3,6 @@
 /// @brief ED2K link parsing implementation — port of CED2KLink from MFC.
 
 #include "ED2KLink.h"
-#include "utils/OtherFunctions.h"
 
 #include <QHostAddress>
 #include <QUrl>

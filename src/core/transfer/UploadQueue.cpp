@@ -16,12 +16,9 @@
 #include "net/EMSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
-#include "utils/Opcodes.h"
-#include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
 
 
-#include <algorithm>
 
 namespace eMule {
 

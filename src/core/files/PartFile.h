@@ -161,6 +161,8 @@ public:
     [[nodiscard]] uint64 totalGapSizeInPart(uint32 part) const;
     [[nodiscard]] EMFileSize completedSize() const { return m_completedSize; }
     [[nodiscard]] float percentCompleted() const { return m_percentCompleted; }
+    [[nodiscard]] uint64 compressionGain() const { return m_compressionGain; }
+    [[nodiscard]] uint64 corruptionLoss() const { return m_corruptionLoss; }
     void updateCompletedInfos();
     [[nodiscard]] const std::list<Gap>& gapList() const { return m_gapList; }
 

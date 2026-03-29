@@ -11,8 +11,6 @@
 #include <QByteArray>
 #include <QString>
 
-#include <cctype>
-#include <cstring>
 
 namespace eMule {
 

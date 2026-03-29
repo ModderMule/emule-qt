@@ -5,9 +5,7 @@
 #include "friends/Friend.h"
 #include "protocol/Tag.h"
 #include "utils/OtherFunctions.h"
-#include "utils/SafeFile.h"
 
-#include <cstring>
 
 namespace eMule {
 

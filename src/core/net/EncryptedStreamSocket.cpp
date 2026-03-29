@@ -26,7 +26,6 @@
 
 #include <openssl/bn.h>
 
-#include <cstring>
 
 namespace eMule {
 

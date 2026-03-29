@@ -3,12 +3,10 @@
 /// @brief Portable file I/O class implementations.
 
 #include "SafeFile.h"
-#include "OtherFunctions.h"
 
 #include <QIODevice>
 #include <QStringDecoder>
 
-#include <cstring>
 
 namespace eMule {
 

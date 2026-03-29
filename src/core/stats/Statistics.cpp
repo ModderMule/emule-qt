@@ -4,6 +4,7 @@
 
 #include "stats/Statistics.h"
 
+#include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
@@ -421,6 +422,144 @@ void Statistics::resetUpDatarateOverhead()
     m_upDataRateMSOverhead.store(0, std::memory_order_relaxed);
     m_upDatarateOverhead = 0;
     m_sumAvgUDRO = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Per-client / port / source transfer tracking
+// ---------------------------------------------------------------------------
+
+int Statistics::clientIndex(ClientSoftware cs)
+{
+    // Map sparse ClientSoftware enum → compact index 0..7
+    switch (cs) {
+    case ClientSoftware::eMule:
+    case ClientSoftware::OldEMule:     return 0; // eMule
+    case ClientSoftware::eDonkeyHybrid: return 1; // eD Hybrid
+    case ClientSoftware::eDonkey:       return 2; // eDonkey
+    case ClientSoftware::aMule:         return 3; // aMule
+    case ClientSoftware::MLDonkey:      return 4; // MLdonkey
+    case ClientSoftware::Shareaza:      return 5; // Shareaza
+    case ClientSoftware::cDonkey:
+    case ClientSoftware::xMule:
+    case ClientSoftware::lphant:        return 6; // eM Compat
+    case ClientSoftware::URL:           return 7; // URL (download only)
+    default:                            return 6; // unknown → compat
+    }
+}
+
+void Statistics::addTransferData(ClientSoftware clientType, uint16 port,
+                                  bool isPartFile, bool isUpload, uint64 bytes)
+{
+    if (bytes == 0)
+        return;
+
+    const int idx = clientIndex(clientType);
+    const bool defaultPort = (port == 4662);
+
+    if (isUpload) {
+        if (idx < kUpClientCount)
+            m_sesUpByClient[static_cast<size_t>(idx)].fetch_add(bytes, std::memory_order_relaxed);
+        if (defaultPort)
+            m_sesUpPort4662.fetch_add(bytes, std::memory_order_relaxed);
+        else
+            m_sesUpPortOther.fetch_add(bytes, std::memory_order_relaxed);
+        if (isPartFile)
+            m_sesUpFromPartfile.fetch_add(bytes, std::memory_order_relaxed);
+        else
+            m_sesUpFromFile.fetch_add(bytes, std::memory_order_relaxed);
+    } else {
+        if (idx < kDownClientCount)
+            m_sesDownByClient[static_cast<size_t>(idx)].fetch_add(bytes, std::memory_order_relaxed);
+        if (defaultPort)
+            m_sesDownPort4662.fetch_add(bytes, std::memory_order_relaxed);
+        else
+            m_sesDownPortOther.fetch_add(bytes, std::memory_order_relaxed);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Save cumulative stats to Preferences on shutdown
+// ---------------------------------------------------------------------------
+
+void Statistics::saveCumulativeToPrefs(Preferences& prefs) const
+{
+    // Transfer totals
+    prefs.setCumTotalUploaded(prefs.cumTotalUploaded() + m_sessionSentBytes.load());
+    prefs.setCumTotalDownloaded(prefs.cumTotalDownloaded() + m_sessionReceivedBytes.load());
+    prefs.setCumTotalUploadedToFriend(prefs.cumTotalUploadedToFriend() + m_sessionSentBytesToFriend.load());
+
+    // Connection stats
+    prefs.setCumConnReconnects(prefs.cumConnReconnects() + m_reconnects);
+
+    // Times
+    const uint32 uptime = (m_startTime > 0)
+        ? (static_cast<uint32>(getTickCount()) - m_startTime) / SEC2MS(1) : 0;
+    prefs.setCumRunTime(prefs.cumRunTime() + uptime);
+    prefs.setCumTransferTime(prefs.cumTransferTime() + transferTime());
+    prefs.setCumUploadTime(prefs.cumUploadTime() + uploadTime());
+    prefs.setCumDownloadTime(prefs.cumDownloadTime() + downloadTime());
+    prefs.setCumServerDuration(prefs.cumServerDuration() + serverDuration());
+
+    // Overhead — upload
+    prefs.setCumUpOverheadTotal(prefs.cumUpOverheadTotal()
+        + m_upOverheadFileRequest.load() + m_upOverheadSourceExchange.load()
+        + m_upOverheadServer.load() + m_upOverheadKad.load() + m_upOverheadOther.load());
+    prefs.setCumUpOverheadTotalPackets(prefs.cumUpOverheadTotalPackets()
+        + m_upOverheadFileRequestPackets.load() + m_upOverheadSourceExchangePackets.load()
+        + m_upOverheadServerPackets.load() + m_upOverheadKadPackets.load() + m_upOverheadOtherPackets.load());
+    prefs.setCumUpOverheadFileReq(prefs.cumUpOverheadFileReq() + m_upOverheadFileRequest.load());
+    prefs.setCumUpOverheadFileReqPackets(prefs.cumUpOverheadFileReqPackets() + m_upOverheadFileRequestPackets.load());
+    prefs.setCumUpOverheadSrcExch(prefs.cumUpOverheadSrcExch() + m_upOverheadSourceExchange.load());
+    prefs.setCumUpOverheadSrcExchPackets(prefs.cumUpOverheadSrcExchPackets() + m_upOverheadSourceExchangePackets.load());
+    prefs.setCumUpOverheadServer(prefs.cumUpOverheadServer() + m_upOverheadServer.load());
+    prefs.setCumUpOverheadServerPackets(prefs.cumUpOverheadServerPackets() + m_upOverheadServerPackets.load());
+    prefs.setCumUpOverheadKad(prefs.cumUpOverheadKad() + m_upOverheadKad.load());
+    prefs.setCumUpOverheadKadPackets(prefs.cumUpOverheadKadPackets() + m_upOverheadKadPackets.load());
+
+    // Overhead — download
+    prefs.setCumDownOverheadTotal(prefs.cumDownOverheadTotal()
+        + m_downOverheadFileRequest.load() + m_downOverheadSourceExchange.load()
+        + m_downOverheadServer.load() + m_downOverheadKad.load() + m_downOverheadOther.load());
+    prefs.setCumDownOverheadTotalPackets(prefs.cumDownOverheadTotalPackets()
+        + m_downOverheadFileRequestPackets.load() + m_downOverheadSourceExchangePackets.load()
+        + m_downOverheadServerPackets.load() + m_downOverheadKadPackets.load() + m_downOverheadOtherPackets.load());
+    prefs.setCumDownOverheadFileReq(prefs.cumDownOverheadFileReq() + m_downOverheadFileRequest.load());
+    prefs.setCumDownOverheadFileReqPackets(prefs.cumDownOverheadFileReqPackets() + m_downOverheadFileRequestPackets.load());
+    prefs.setCumDownOverheadSrcExch(prefs.cumDownOverheadSrcExch() + m_downOverheadSourceExchange.load());
+    prefs.setCumDownOverheadSrcExchPackets(prefs.cumDownOverheadSrcExchPackets() + m_downOverheadSourceExchangePackets.load());
+    prefs.setCumDownOverheadServer(prefs.cumDownOverheadServer() + m_downOverheadServer.load());
+    prefs.setCumDownOverheadServerPackets(prefs.cumDownOverheadServerPackets() + m_downOverheadServerPackets.load());
+    prefs.setCumDownOverheadKad(prefs.cumDownOverheadKad() + m_downOverheadKad.load());
+    prefs.setCumDownOverheadKadPackets(prefs.cumDownOverheadKadPackets() + m_downOverheadKadPackets.load());
+
+    // Per-client — upload
+    prefs.setCumUpEmule(prefs.cumUpEmule() + m_sesUpByClient[0].load());
+    prefs.setCumUpEDHybrid(prefs.cumUpEDHybrid() + m_sesUpByClient[1].load());
+    prefs.setCumUpEDonkey(prefs.cumUpEDonkey() + m_sesUpByClient[2].load());
+    prefs.setCumUpAMule(prefs.cumUpAMule() + m_sesUpByClient[3].load());
+    prefs.setCumUpMLdonkey(prefs.cumUpMLdonkey() + m_sesUpByClient[4].load());
+    prefs.setCumUpShareaza(prefs.cumUpShareaza() + m_sesUpByClient[5].load());
+    prefs.setCumUpEMCompat(prefs.cumUpEMCompat() + m_sesUpByClient[6].load());
+
+    // Per-client — download
+    prefs.setCumDownEmule(prefs.cumDownEmule() + m_sesDownByClient[0].load());
+    prefs.setCumDownEDHybrid(prefs.cumDownEDHybrid() + m_sesDownByClient[1].load());
+    prefs.setCumDownEDonkey(prefs.cumDownEDonkey() + m_sesDownByClient[2].load());
+    prefs.setCumDownAMule(prefs.cumDownAMule() + m_sesDownByClient[3].load());
+    prefs.setCumDownMLdonkey(prefs.cumDownMLdonkey() + m_sesDownByClient[4].load());
+    prefs.setCumDownShareaza(prefs.cumDownShareaza() + m_sesDownByClient[5].load());
+    prefs.setCumDownEMCompat(prefs.cumDownEMCompat() + m_sesDownByClient[6].load());
+    prefs.setCumDownURL(prefs.cumDownURL() + m_sesDownByClient[7].load());
+
+    // Per-port
+    prefs.setCumUpPort4662(prefs.cumUpPort4662() + m_sesUpPort4662.load());
+    prefs.setCumUpPortOther(prefs.cumUpPortOther() + m_sesUpPortOther.load());
+    prefs.setCumDownPort4662(prefs.cumDownPort4662() + m_sesDownPort4662.load());
+    prefs.setCumDownPortOther(prefs.cumDownPortOther() + m_sesDownPortOther.load());
+
+    // Per-source
+    prefs.setCumUpFromFile(prefs.cumUpFromFile() + m_sesUpFromFile.load());
+    prefs.setCumUpFromPartfile(prefs.cumUpFromPartfile() + m_sesUpFromPartfile.load());
 }
 
 } // namespace eMule

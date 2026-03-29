@@ -10,12 +10,11 @@
 #include <QDir>
 #include <QHostInfo>
 
-#include "app/AppContext.h"
-#include "app/CoreSession.h"
 #include "ipfilter/IPFilter.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
+#include "files/KnownFileList.h"
 #include "files/PartFileConvert.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
@@ -47,7 +46,6 @@
 #include "transfer/Scheduler.h"
 #include "transfer/UploadQueue.h"
 #include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 
 #include <QCoreApplication>
 #include <QDesktopServices>
@@ -57,14 +55,27 @@
 #include <QStorageInfo>
 #include <QUrl>
 
-#include <cstring>
-#include <ctime>
 
 namespace eMule {
 
 using namespace Ipc;
 
 namespace {
+
+/// Determine the KnownType for a search result by checking live subsystems.
+/// Priority matches MFC eMule: downloading > shared > downloaded > cancelled.
+SearchFile::KnownType determineKnownType(const uint8* hash)
+{
+    if (theApp.downloadQueue && theApp.downloadQueue->fileByID(hash))
+        return SearchFile::KnownType::Downloading;
+    if (theApp.sharedFileList && theApp.sharedFileList->getFileByID(hash))
+        return SearchFile::KnownType::Shared;
+    if (theApp.knownFileList && theApp.knownFileList->findKnownFileByID(hash))
+        return SearchFile::KnownType::Downloaded;
+    if (theApp.knownFileList && theApp.knownFileList->isCancelledFileByID(hash))
+        return SearchFile::KnownType::Cancelled;
+    return SearchFile::KnownType::Unknown;
+}
 
 /// Helper: decode a hex hash string to a 16-byte array, returns false on error.
 bool hexToHash(const QString& hex, uint8* out)
@@ -152,6 +163,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::RemoveSearch:         handleRemoveSearch(msg); break;
     case IpcMsgType::ClearAllSearches:     handleClearAllSearches(msg); break;
     case IpcMsgType::DownloadSearchFile:   handleDownloadSearchFile(msg); break;
+    case IpcMsgType::GetKnownTypes:        handleGetKnownTypes(msg); break;
     case IpcMsgType::GetSharedFiles:       handleGetSharedFiles(msg); break;
     case IpcMsgType::SetSharedFilePriority: handleSetSharedFilePriority(msg); break;
     case IpcMsgType::ReloadSharedFiles: handleReloadSharedFiles(msg); break;
@@ -337,6 +349,8 @@ void IpcClientHandler::handleCancelDownload(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
         return;
     }
+    if (thePrefs.rememberCancelledFiles() && theApp.knownFileList)
+        theApp.knownFileList->addCancelledFileID(pf->fileHash());
     pf->stopFile(true);
     theApp.downloadQueue->removeFile(pf);
     delete pf;
@@ -771,7 +785,10 @@ void IpcClientHandler::handleGetSearchResults(const IpcMessage& msg)
     const auto searchID = static_cast<uint32>(msg.fieldInt(0));
     QCborArray results;
     theApp.searchList->forEachResult(searchID, [&results](const SearchFile* sf) {
-        results.append(toCbor(*sf));
+        QCborMap m = toCbor(*sf);
+        m.insert(QStringLiteral("knownType"),
+                 static_cast<int>(determineKnownType(sf->fileHash())));
+        results.append(m);
     });
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(results)));
 }
@@ -827,6 +844,22 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
         : tempDirs.first();
     const bool ok = theApp.downloadQueue->addDownloadFromED2KLink(ed2kLink, tempDir, 0);
     sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
+}
+
+void IpcClientHandler::handleGetKnownTypes(const IpcMessage& msg)
+{
+    const auto hashes = msg.fieldArray(0);
+    QCborArray types;
+    uint8 hashBuf[16]{};
+
+    for (const auto& val : hashes) {
+        const QString hashStr = val.toString();
+        if (hexToHash(hashStr, hashBuf))
+            types.append(static_cast<int>(determineKnownType(hashBuf)));
+        else
+            types.append(0);
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(types)));
 }
 
 void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
@@ -1305,6 +1338,134 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
     if (auto* cl = theApp.clientList) {
         stats.insert(QStringLiteral("knownClients"), static_cast<qint64>(cl->clientCount()));
         stats.insert(QStringLiteral("bannedClients"), static_cast<qint64>(cl->bannedCount()));
+
+        // Client software / version / mod breakdown
+        // Outer: clientSoft → { count, versions: { ver → { count, mods: { modStr → count } } } }
+        struct ModInfo {
+            QMap<QString, int> mods;   // mod string → count
+            int count = 0;
+        };
+        struct SoftInfo {
+            QMap<uint32, ModInfo> versions; // version → mod breakdown
+            int count = 0;
+        };
+        QMap<int, SoftInfo> softMap; // clientSoft enum → info
+
+        cl->forEachClient([&](UpDownClient* c) {
+            const int sw = static_cast<int>(c->clientSoft());
+            auto& si = softMap[sw];
+            ++si.count;
+
+            const uint32 ver = c->clientVersion();
+            auto& vi = si.versions[ver];
+            ++vi.count;
+
+            // Mod strings only for eMule-family clients
+            const auto cs = c->clientSoft();
+            if (cs == ClientSoftware::eMule || cs == ClientSoftware::OldEMule
+                || cs == ClientSoftware::cDonkey || cs == ClientSoftware::xMule
+                || cs == ClientSoftware::lphant || cs == ClientSoftware::aMule) {
+                const QString& mod = c->modVersion();
+                ++vi.mods[mod.isEmpty() ? QStringLiteral("Official") : mod];
+            }
+        });
+
+        // Version label formatter
+        auto fmtVer = [](uint32 ver) -> QString {
+            const uint32 maj = ver / (100 * 10 * 100);
+            const uint32 mn = (ver - maj * 100 * 10 * 100) / (100 * 10);
+            const uint32 upd = (ver - maj * 100 * 10 * 100 - mn * 100 * 10) / 100;
+            if (upd == 0 && ver < makeClientVersion(0, 40, 0))
+                return QStringLiteral("v%1.%2").arg(maj).arg(mn);
+            if (upd < 26)
+                return QStringLiteral("v%1.%2%3").arg(maj).arg(mn).arg(QChar('a' + upd));
+            return QStringLiteral("v%1.%2.%3").arg(maj).arg(mn).arg(upd);
+        };
+
+        // Software type name mapping
+        auto softName = [](int sw) -> QString {
+            switch (static_cast<ClientSoftware>(sw)) {
+            case ClientSoftware::eMule:
+            case ClientSoftware::OldEMule:      return QStringLiteral("eMule");
+            case ClientSoftware::eDonkeyHybrid: return QStringLiteral("eD Hybrid");
+            case ClientSoftware::eDonkey:       return QStringLiteral("eDonkey");
+            case ClientSoftware::aMule:         return QStringLiteral("aMule");
+            case ClientSoftware::MLDonkey:      return QStringLiteral("MLdonkey");
+            case ClientSoftware::Shareaza:      return QStringLiteral("Shareaza");
+            case ClientSoftware::cDonkey:
+            case ClientSoftware::xMule:
+            case ClientSoftware::lphant:        return QStringLiteral("eM Compat");
+            case ClientSoftware::URL:           return QStringLiteral("URL");
+            default:                            return QStringLiteral("Unknown");
+            }
+        };
+
+        // Merge eMule + OldEMule, and compat types
+        QMap<QString, SoftInfo> mergedSoft;
+        for (auto it = softMap.cbegin(); it != softMap.cend(); ++it) {
+            const QString name = softName(it.key());
+            auto& merged = mergedSoft[name];
+            merged.count += it->count;
+            for (auto vit = it->versions.cbegin(); vit != it->versions.cend(); ++vit) {
+                auto& mv = merged.versions[vit.key()];
+                mv.count += vit->count;
+                for (auto mit = vit->mods.cbegin(); mit != vit->mods.cend(); ++mit)
+                    mv.mods[mit.key()] += mit.value();
+            }
+        }
+
+        // Build CBOR array sorted by count descending
+        QCborArray softArr;
+
+        // Sort by count desc
+        std::vector<std::pair<QString, const SoftInfo*>> sortedSoft;
+        for (auto it = mergedSoft.cbegin(); it != mergedSoft.cend(); ++it)
+            sortedSoft.emplace_back(it.key(), &it.value());
+        std::sort(sortedSoft.begin(), sortedSoft.end(),
+                  [](const auto& a, const auto& b) { return a.second->count > b.second->count; });
+
+        for (const auto& [name, siPtr] : sortedSoft) {
+            const auto& si = *siPtr;
+            QCborMap softEntry;
+            softEntry.insert(QStringLiteral("n"), name);
+            softEntry.insert(QStringLiteral("c"), si.count);
+
+            // Sort versions by count descending
+            std::vector<std::pair<uint32, const ModInfo*>> sortedVers;
+            for (auto vit = si.versions.cbegin(); vit != si.versions.cend(); ++vit)
+                sortedVers.emplace_back(vit.key(), &vit.value());
+            std::sort(sortedVers.begin(), sortedVers.end(),
+                      [](const auto& a, const auto& b) { return a.second->count > b.second->count; });
+
+            QCborArray verArr;
+            for (const auto& [ver, viPtr] : sortedVers) {
+                const auto& vi = *viPtr;
+                QCborMap verEntry;
+                verEntry.insert(QStringLiteral("l"), fmtVer(ver));
+                verEntry.insert(QStringLiteral("c"), vi.count);
+
+                if (!vi.mods.isEmpty()) {
+                    std::vector<std::pair<QString, int>> sortedMods;
+                    for (auto mit = vi.mods.cbegin(); mit != vi.mods.cend(); ++mit)
+                        sortedMods.emplace_back(mit.key(), mit.value());
+                    std::sort(sortedMods.begin(), sortedMods.end(),
+                              [](const auto& a, const auto& b) { return a.second > b.second; });
+
+                    QCborArray modArr;
+                    for (const auto& [modName, modCount] : sortedMods) {
+                        QCborMap modEntry;
+                        modEntry.insert(QStringLiteral("n"), modName);
+                        modEntry.insert(QStringLiteral("c"), modCount);
+                        modArr.append(modEntry);
+                    }
+                    verEntry.insert(QStringLiteral("m"), modArr);
+                }
+                verArr.append(verEntry);
+            }
+            softEntry.insert(QStringLiteral("v"), verArr);
+            softArr.append(softEntry);
+        }
+        stats.insert(QStringLiteral("clientSoftwareStats"), softArr);
     }
 
     // Shared files stats
@@ -1320,6 +1481,251 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
         if (auto* ws = da->webServer())
             stats.insert(QStringLiteral("streamToken"), ws->streamToken());
     }
+
+    // -----------------------------------------------------------------------
+    // Cumulative statistics (stored prefs + current session)
+    // -----------------------------------------------------------------------
+    if (auto* s = theApp.statistics) {
+        const auto uptime = static_cast<qint64>(now - s->startTime());
+
+        // Cumulative transfer totals
+        stats.insert(QStringLiteral("cumTotalUp"),
+                     static_cast<qint64>(thePrefs.cumTotalUploaded() + s->sessionSentBytes()));
+        stats.insert(QStringLiteral("cumTotalDown"),
+                     static_cast<qint64>(thePrefs.cumTotalDownloaded() + s->sessionReceivedBytes()));
+        stats.insert(QStringLiteral("cumTotalUpFriend"),
+                     static_cast<qint64>(thePrefs.cumTotalUploadedToFriend() + s->sessionSentBytesToFriend()));
+
+        // Per-client session bytes — uploads
+        static const char* const upClientKeys[] = {
+            "sesUpEmule", "sesUpEDHybrid", "sesUpEDonkey", "sesUpAMule",
+            "sesUpMLdonkey", "sesUpShareaza", "sesUpEMCompat"
+        };
+        for (int i = 0; i < Statistics::kUpClientCount; ++i)
+            stats.insert(QString::fromLatin1(upClientKeys[i]),
+                         static_cast<qint64>(s->sesUpByClient(i)));
+
+        // Per-client session bytes — downloads
+        static const char* const downClientKeys[] = {
+            "sesDownEmule", "sesDownEDHybrid", "sesDownEDonkey", "sesDownAMule",
+            "sesDownMLdonkey", "sesDownShareaza", "sesDownEMCompat", "sesDownURL"
+        };
+        for (int i = 0; i < Statistics::kDownClientCount; ++i)
+            stats.insert(QString::fromLatin1(downClientKeys[i]),
+                         static_cast<qint64>(s->sesDownByClient(i)));
+
+        // Per-client cumulative bytes — uploads
+        static const char* const cumUpClientKeys[] = {
+            "cumUpEmule", "cumUpEDHybrid", "cumUpEDonkey", "cumUpAMule",
+            "cumUpMLdonkey", "cumUpShareaza", "cumUpEMCompat"
+        };
+        const uint64 cumUpClient[] = {
+            thePrefs.cumUpEmule(), thePrefs.cumUpEDHybrid(), thePrefs.cumUpEDonkey(),
+            thePrefs.cumUpAMule(), thePrefs.cumUpMLdonkey(), thePrefs.cumUpShareaza(),
+            thePrefs.cumUpEMCompat()
+        };
+        for (int i = 0; i < Statistics::kUpClientCount; ++i)
+            stats.insert(QString::fromLatin1(cumUpClientKeys[i]),
+                         static_cast<qint64>(cumUpClient[i] + s->sesUpByClient(i)));
+
+        // Per-client cumulative bytes — downloads
+        static const char* const cumDownClientKeys[] = {
+            "cumDownEmule", "cumDownEDHybrid", "cumDownEDonkey", "cumDownAMule",
+            "cumDownMLdonkey", "cumDownShareaza", "cumDownEMCompat", "cumDownURL"
+        };
+        const uint64 cumDownClient[] = {
+            thePrefs.cumDownEmule(), thePrefs.cumDownEDHybrid(), thePrefs.cumDownEDonkey(),
+            thePrefs.cumDownAMule(), thePrefs.cumDownMLdonkey(), thePrefs.cumDownShareaza(),
+            thePrefs.cumDownEMCompat(), thePrefs.cumDownURL()
+        };
+        for (int i = 0; i < Statistics::kDownClientCount; ++i)
+            stats.insert(QString::fromLatin1(cumDownClientKeys[i]),
+                         static_cast<qint64>(cumDownClient[i] + s->sesDownByClient(i)));
+
+        // Per-port session + cumulative
+        stats.insert(QStringLiteral("sesUpPort4662"), static_cast<qint64>(s->sesUpPort4662()));
+        stats.insert(QStringLiteral("sesUpPortOther"), static_cast<qint64>(s->sesUpPortOther()));
+        stats.insert(QStringLiteral("sesDownPort4662"), static_cast<qint64>(s->sesDownPort4662()));
+        stats.insert(QStringLiteral("sesDownPortOther"), static_cast<qint64>(s->sesDownPortOther()));
+        stats.insert(QStringLiteral("cumUpPort4662"),
+                     static_cast<qint64>(thePrefs.cumUpPort4662() + s->sesUpPort4662()));
+        stats.insert(QStringLiteral("cumUpPortOther"),
+                     static_cast<qint64>(thePrefs.cumUpPortOther() + s->sesUpPortOther()));
+        stats.insert(QStringLiteral("cumDownPort4662"),
+                     static_cast<qint64>(thePrefs.cumDownPort4662() + s->sesDownPort4662()));
+        stats.insert(QStringLiteral("cumDownPortOther"),
+                     static_cast<qint64>(thePrefs.cumDownPortOther() + s->sesDownPortOther()));
+
+        // Per-source session + cumulative (upload only)
+        stats.insert(QStringLiteral("sesUpFromFile"), static_cast<qint64>(s->sesUpFromFile()));
+        stats.insert(QStringLiteral("sesUpFromPartfile"), static_cast<qint64>(s->sesUpFromPartfile()));
+        stats.insert(QStringLiteral("cumUpFromFile"),
+                     static_cast<qint64>(thePrefs.cumUpFromFile() + s->sesUpFromFile()));
+        stats.insert(QStringLiteral("cumUpFromPartfile"),
+                     static_cast<qint64>(thePrefs.cumUpFromPartfile() + s->sesUpFromPartfile()));
+
+        // Cumulative upload sessions
+        const uint32 sesUpSucc = theApp.uploadQueue ? theApp.uploadQueue->successfulUploadCount() : 0;
+        const uint32 sesUpFail = theApp.uploadQueue ? theApp.uploadQueue->failedUploadCount() : 0;
+        stats.insert(QStringLiteral("cumUpSuccessful"),
+                     static_cast<qint64>(thePrefs.cumUpSuccessfulSessions() + sesUpSucc));
+        stats.insert(QStringLiteral("cumUpFailed"),
+                     static_cast<qint64>(thePrefs.cumUpFailedSessions() + sesUpFail));
+        stats.insert(QStringLiteral("cumUpAvgTime"),
+                     static_cast<qint64>(theApp.uploadQueue ? theApp.uploadQueue->averageUpTime() : 0));
+
+        // Cumulative download sessions (TODO: add counters to DownloadQueue)
+        stats.insert(QStringLiteral("cumDownCompletedFiles"),
+                     static_cast<qint64>(thePrefs.cumDownCompletedFiles()));
+
+        // Cumulative overhead — upload
+        const auto sesUpOhFR = s->upDataOverheadFileRequest();
+        const auto sesUpOhSE = s->upDataOverheadSourceExchange();
+        const auto sesUpOhSv = s->upDataOverheadServer();
+        const auto sesUpOhKd = s->upDataOverheadKad();
+        const auto sesUpOhOt = s->upDataOverheadOther();
+        stats.insert(QStringLiteral("cumUpOhTotal"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadTotal() + sesUpOhFR + sesUpOhSE + sesUpOhSv + sesUpOhKd + sesUpOhOt));
+        stats.insert(QStringLiteral("cumUpOhTotalPkt"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadTotalPackets()
+                         + s->upDataOverheadFileRequestPackets() + s->upDataOverheadSourceExchangePackets()
+                         + s->upDataOverheadServerPackets() + s->upDataOverheadKadPackets() + s->upDataOverheadOtherPackets()));
+        stats.insert(QStringLiteral("cumUpOhFileReq"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadFileReq() + sesUpOhFR));
+        stats.insert(QStringLiteral("cumUpOhFileReqPkt"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadFileReqPackets() + s->upDataOverheadFileRequestPackets()));
+        stats.insert(QStringLiteral("cumUpOhSrcExch"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadSrcExch() + sesUpOhSE));
+        stats.insert(QStringLiteral("cumUpOhSrcExchPkt"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadSrcExchPackets() + s->upDataOverheadSourceExchangePackets()));
+        stats.insert(QStringLiteral("cumUpOhServer"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadServer() + sesUpOhSv));
+        stats.insert(QStringLiteral("cumUpOhServerPkt"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadServerPackets() + s->upDataOverheadServerPackets()));
+        stats.insert(QStringLiteral("cumUpOhKad"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadKad() + sesUpOhKd));
+        stats.insert(QStringLiteral("cumUpOhKadPkt"),
+                     static_cast<qint64>(thePrefs.cumUpOverheadKadPackets() + s->upDataOverheadKadPackets()));
+
+        // Cumulative overhead — download
+        const auto sesDownOhFR = s->downDataOverheadFileRequest();
+        const auto sesDownOhSE = s->downDataOverheadSourceExchange();
+        const auto sesDownOhSv = s->downDataOverheadServer();
+        const auto sesDownOhKd = s->downDataOverheadKad();
+        const auto sesDownOhOt = s->downDataOverheadOther();
+        stats.insert(QStringLiteral("cumDownOhTotal"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadTotal() + sesDownOhFR + sesDownOhSE + sesDownOhSv + sesDownOhKd + sesDownOhOt));
+        stats.insert(QStringLiteral("cumDownOhTotalPkt"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadTotalPackets()
+                         + s->downDataOverheadFileRequestPackets() + s->downDataOverheadSourceExchangePackets()
+                         + s->downDataOverheadServerPackets() + s->downDataOverheadKadPackets() + s->downDataOverheadOtherPackets()));
+        stats.insert(QStringLiteral("cumDownOhFileReq"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadFileReq() + sesDownOhFR));
+        stats.insert(QStringLiteral("cumDownOhFileReqPkt"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadFileReqPackets() + s->downDataOverheadFileRequestPackets()));
+        stats.insert(QStringLiteral("cumDownOhSrcExch"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadSrcExch() + sesDownOhSE));
+        stats.insert(QStringLiteral("cumDownOhSrcExchPkt"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadSrcExchPackets() + s->downDataOverheadSourceExchangePackets()));
+        stats.insert(QStringLiteral("cumDownOhServer"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadServer() + sesDownOhSv));
+        stats.insert(QStringLiteral("cumDownOhServerPkt"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadServerPackets() + s->downDataOverheadServerPackets()));
+        stats.insert(QStringLiteral("cumDownOhKad"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadKad() + sesDownOhKd));
+        stats.insert(QStringLiteral("cumDownOhKadPkt"),
+                     static_cast<qint64>(thePrefs.cumDownOverheadKadPackets() + s->downDataOverheadKadPackets()));
+
+        // Cumulative connection stats
+        const uint32 sesConnPeak = theApp.listenSocket ? theApp.listenSocket->peakConnections() : 0;
+        const uint32 sesConnMaxReached = theApp.listenSocket ? theApp.listenSocket->maxConnectionReached() : 0;
+        stats.insert(QStringLiteral("cumConnPeak"),
+                     static_cast<qint64>(std::max(thePrefs.cumConnPeak(), sesConnPeak)));
+        stats.insert(QStringLiteral("cumConnMaxLimitReached"),
+                     static_cast<qint64>(thePrefs.cumConnMaxLimitReached() + sesConnMaxReached));
+        stats.insert(QStringLiteral("cumConnReconnects"),
+                     static_cast<qint64>(thePrefs.cumConnReconnects() + s->reconnects()));
+
+        // Cumulative times
+        stats.insert(QStringLiteral("cumRunTime"),
+                     static_cast<qint64>(thePrefs.cumRunTime() + uptime));
+        stats.insert(QStringLiteral("cumTransferTime"),
+                     static_cast<qint64>(thePrefs.cumTransferTime() + s->transferTime()));
+        stats.insert(QStringLiteral("cumUploadTime"),
+                     static_cast<qint64>(thePrefs.cumUploadTime() + s->uploadTime()));
+        stats.insert(QStringLiteral("cumDownloadTime"),
+                     static_cast<qint64>(thePrefs.cumDownloadTime() + s->downloadTime()));
+        stats.insert(QStringLiteral("cumServerDuration"),
+                     static_cast<qint64>(thePrefs.cumServerDuration() + s->serverDuration()));
+
+        // Cumulative compression/corruption/ICH — sum across all PartFiles
+        uint64 sesCompression = 0, sesCorruption = 0;
+        if (auto* dq = theApp.downloadQueue) {
+            for (const auto* f : dq->files()) {
+                sesCompression += f->compressionGain();
+                sesCorruption += f->corruptionLoss();
+            }
+        }
+        stats.insert(QStringLiteral("sesCompressionGain"), static_cast<qint64>(sesCompression));
+        stats.insert(QStringLiteral("sesCorruptionLoss"), static_cast<qint64>(sesCorruption));
+        stats.insert(QStringLiteral("cumCompressionGain"),
+                     static_cast<qint64>(thePrefs.cumCompressionGain() + sesCompression));
+        stats.insert(QStringLiteral("cumCorruptionLoss"),
+                     static_cast<qint64>(thePrefs.cumCorruptionLoss() + sesCorruption));
+        stats.insert(QStringLiteral("cumIchPartsSaved"),
+                     static_cast<qint64>(thePrefs.cumIchPartsSaved()));
+    }
+
+    // Total Downloads section — sums across download queue
+    if (auto* dq = theApp.downloadQueue) {
+        qint64 totalSize = 0, totalDone = 0, totalLeft = 0;
+        int totalCount = 0;
+        for (const auto* f : dq->files()) {
+            ++totalCount;
+            const auto fs = static_cast<qint64>(f->fileSize());
+            const auto cs = static_cast<qint64>(f->completedSize());
+            totalSize += fs;
+            totalDone += cs;
+            totalLeft += fs - cs;
+        }
+        stats.insert(QStringLiteral("totalDownCount"), totalCount);
+        stats.insert(QStringLiteral("totalDownSize"), totalSize);
+        stats.insert(QStringLiteral("totalDownDone"), totalDone);
+        stats.insert(QStringLiteral("totalDownLeft"), totalLeft);
+    }
+
+    // Records — update if current values exceed stored records
+    if (auto* sl = theApp.serverList) {
+        auto srvStats = sl->stats();
+        uint32 working = srvStats.total - srvStats.failed;
+        if (working > thePrefs.recMaxWorkingServers())
+            thePrefs.setRecMaxWorkingServers(working);
+        if (srvStats.users > thePrefs.recMaxUsersOnline())
+            thePrefs.setRecMaxUsersOnline(static_cast<uint32>(srvStats.users));
+        if (srvStats.files > thePrefs.recMaxFilesAvail())
+            thePrefs.setRecMaxFilesAvail(static_cast<uint32>(srvStats.files));
+    }
+    if (auto* sf = theApp.sharedFileList) {
+        uint64 largest = 0;
+        auto totalSize = static_cast<uint64>(sf->getDataSize(largest));
+        auto count = static_cast<uint64>(sf->getCount());
+        if (count > thePrefs.recMaxSharedFiles())
+            thePrefs.setRecMaxSharedFiles(count);
+        if (totalSize > thePrefs.recMaxSharedSize())
+            thePrefs.setRecMaxSharedSize(totalSize);
+        if (count > 0 && totalSize / count > thePrefs.recMaxAvgFileSize())
+            thePrefs.setRecMaxAvgFileSize(totalSize / count);
+        if (largest > thePrefs.recMaxLargestFile())
+            thePrefs.setRecMaxLargestFile(largest);
+    }
+
+    stats.insert(QStringLiteral("recMaxWorkingServers"), static_cast<qint64>(thePrefs.recMaxWorkingServers()));
+    stats.insert(QStringLiteral("recMaxUsersOnline"), static_cast<qint64>(thePrefs.recMaxUsersOnline()));
+    stats.insert(QStringLiteral("recMaxFilesAvail"), static_cast<qint64>(thePrefs.recMaxFilesAvail()));
+    stats.insert(QStringLiteral("recMaxSharedFiles"), static_cast<qint64>(thePrefs.recMaxSharedFiles()));
+    stats.insert(QStringLiteral("recMaxSharedSize"), static_cast<qint64>(thePrefs.recMaxSharedSize()));
+    stats.insert(QStringLiteral("recMaxAvgFileSize"), static_cast<qint64>(thePrefs.recMaxAvgFileSize()));
+    stats.insert(QStringLiteral("recMaxLargestFile"), static_cast<qint64>(thePrefs.recMaxLargestFile()));
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(stats)));
 }

@@ -15,8 +15,6 @@
 #include "utils/TimeUtils.h"
 
 
-#include <algorithm>
-#include <cmath>
 
 namespace eMule {
 

@@ -41,6 +41,8 @@ namespace eMule {
 
 static constexpr auto kBugReportApiKey = "tKBLaiRDQ8QA5Sp5HxSfpA2zo4xdI9Zr"; // live tKBLaiRDQ8QA5Sp5HxSfpA2zo4xdI9Zr // local 1YwgLj72qVYs71CGSFFUWmSihF1zYcxb
 static constexpr int kMaxLogChars = 60000; // MySQL TEXT column limit is 65,535 bytes; leave margin for UTF-8
+static constexpr auto kBaseUrl = "https://emule-qt.org";
+static constexpr auto kBugReportWebUrl = "https://emule-qt.org/submit-bug-report/";
 
 BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
     : QDialog(parent)
@@ -129,6 +131,14 @@ BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
     m_progressBar->setRange(0, 0); // indeterminate
     m_progressBar->hide();
     mainLayout->addWidget(m_progressBar);
+
+    // Web link alternative
+    auto* webLink = new QLabel(
+        tr("Alternatively, you can submit bug reports at "
+           "<a href=\"%1\">emule-qt.org/submit-bug-report</a>").arg(QLatin1StringView(kBugReportWebUrl)),
+        this);
+    webLink->setOpenExternalLinks(true);
+    mainLayout->addWidget(webLink);
 
     // Buttons
     auto* buttonBox = new QDialogButtonBox(this);
@@ -273,7 +283,7 @@ void BugReportDialog::onSubmitClicked()
     const QString apiKey = thePrefs.bugReportApiKey().isEmpty()
                                ? QLatin1StringView(kBugReportApiKey) : thePrefs.bugReportApiKey();
     const QString baseUrl = thePrefs.bugReportDomain().isEmpty()
-                                ? QStringLiteral("https://emule-qt.org") : thePrefs.bugReportDomain();
+                                ? QString::fromLatin1(kBaseUrl) : thePrefs.bugReportDomain();
 
     QNetworkRequest req(QUrl(QStringLiteral("%1/wp-json/emqt/v1/report").arg(baseUrl)));
     req.setRawHeader("X-Api-Key", apiKey.toUtf8());

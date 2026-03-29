@@ -9,18 +9,14 @@
 #include "controls/FriendListModel.h"
 #include "dialogs/AddFriendDialog.h"
 
-#include "IpcProtocol.h"
 
 #include <QAction>
 #include <QCborArray>
-#include <QCborValue>
-#include <QCborMap>
 #include <QDateTime>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHostAddress>
-#include <QHeaderView>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>

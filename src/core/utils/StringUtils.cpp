@@ -6,7 +6,6 @@
 
 #include <QLocale>
 
-#include <array>
 
 namespace eMule {
 

@@ -6,7 +6,6 @@
 #include "files/KnownFile.h"
 #include "kademlia/KadMiscUtils.h"
 
-#include <algorithm>
 
 namespace eMule {
 

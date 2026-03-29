@@ -5,7 +5,6 @@
 #include "controls/DownloadListModel.h"
 #include "controls/SharedFilesModel.h"
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 #include "protocol/ED2KLink.h"
 
 #include <QLabel>

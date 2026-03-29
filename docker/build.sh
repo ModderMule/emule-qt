@@ -6,7 +6,7 @@
 #   docker/build.sh              — build without bundled Qt
 #   docker/build.sh --deploy-qt  — bundle Qt libraries (self-contained)
 #
-# Output: emuleqt-v*-linux-x86_64.tar.gz in the project root.
+# Output: emuleqt-v*-linux-x86_64.tar.gz in the build/ directory.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -21,6 +21,6 @@ fi
 docker build \
     --platform linux/amd64 \
     --build-arg DEPLOY_QT="$DEPLOY_QT" \
-    --output="$PROJECT_ROOT" \
+    --output="$PROJECT_ROOT/build" \
     -f "$SCRIPT_DIR/Dockerfile" \
     "$PROJECT_ROOT"

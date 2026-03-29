@@ -3,13 +3,9 @@
 
 #include "IpcProtocol.h"
 
-#include <QCborStreamReader>
-#include <QCborStreamWriter>
 #include <QCborValue>
 #include <QCryptographicHash>
-#include <QtEndian>
 
-#include <openssl/evp.h>
 #include <openssl/rand.h>
 
 namespace eMule::Ipc {

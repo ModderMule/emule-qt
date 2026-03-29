@@ -5,10 +5,8 @@
 #include "Server.h"
 #include "protocol/Tag.h"
 
-#include <atomic>
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
-#include "utils/Opcodes.h"
 
 namespace eMule {
 

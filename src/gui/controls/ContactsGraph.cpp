@@ -1,11 +1,9 @@
 #include "pch.h"
 #include "controls/ContactsGraph.h"
 
-#include <QFontMetrics>
 #include <QPainter>
 #include <QPaintEvent>
 
-#include <algorithm>
 
 namespace eMule {
 

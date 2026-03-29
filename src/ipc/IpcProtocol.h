@@ -52,6 +52,7 @@ enum class IpcMsgType : int {
     RemoveSearch         = 153,  ///< [searchID: int]
     ClearAllSearches     = 154,  ///< []
     DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64]
+    GetKnownTypes        = 156,  ///< [hashes: QCborArray of strings] → [types: QCborArray of ints]
     GetSharedFiles       = 160,
     SetSharedFilePriority = 161, ///< [hash: string, priority: int, isAuto: bool]
     ReloadSharedFiles    = 162, ///< [] — rescan shared directories from disk

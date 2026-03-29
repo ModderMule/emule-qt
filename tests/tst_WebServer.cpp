@@ -137,6 +137,7 @@ void tst_WebServer::initTestCase()
 
     WebServerConfig config;
     config.enabled = true;
+    config.restApiEnabled = true;
     config.port = 0;
     config.apiKey = m_apiKey;
 

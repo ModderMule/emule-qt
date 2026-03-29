@@ -11,7 +11,6 @@
 
 #include <QThread>
 
-#include <cstring>
 
 namespace eMule {
 

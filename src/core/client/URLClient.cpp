@@ -10,21 +10,14 @@
 #include "prefs/Preferences.h"
 #include "files/PartFile.h"
 #include "net/ClientReqSocket.h"
-#include "net/EMSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
-#include "utils/OtherFunctions.h"
-#include "utils/Opcodes.h"
-#include "utils/SafeFile.h"
-#include "utils/TimeUtils.h"
 
-#include "utils/ByteOrder.h"
 #include "utils/Log.h"
 
 #include <QHostInfo>
 #include <QUrl>
 
-#include <cstring>
 
 namespace eMule {
 

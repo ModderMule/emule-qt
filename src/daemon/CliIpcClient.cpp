@@ -2,11 +2,9 @@
 /// @brief One-shot IPC client for CLI commands to a running daemon.
 
 #include "CliIpcClient.h"
-#include "IpcProtocol.h"
 
 #include <QCoreApplication>
 
-#include <cstdio>
 
 namespace eMule {
 

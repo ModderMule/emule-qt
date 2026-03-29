@@ -7,7 +7,6 @@
 
 #include "app/UiState.h"
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 #include "prefs/Preferences.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
@@ -31,7 +30,6 @@
 #include <QHostInfo>
 #include <QGroupBox>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -39,7 +37,6 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QUrl>
-#include <QPainter>
 #include <QSortFilterProxyModel>
 #include <QPushButton>
 #include <QScrollBar>

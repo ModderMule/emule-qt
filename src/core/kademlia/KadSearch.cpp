@@ -5,8 +5,6 @@
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadClientSearcher.h"
 #include "kademlia/Kademlia.h"
-#include "kademlia/KadContact.h"
-#include "kademlia/KadDefines.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLog.h"
@@ -14,7 +12,6 @@
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
-#include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadUDPListener.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
@@ -25,11 +22,7 @@
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
 #include "protocol/Tag.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
 
-#include <algorithm>
-#include <ctime>
 
 namespace eMule::kad {
 

@@ -12,8 +12,10 @@
 #include <QList>
 #include <QMainWindow>
 #include <QMap>
+#include <QSet>
 #include <QSplitter>
 #include <QString>
+#include <QTreeWidget>
 
 namespace eMule {
 
@@ -34,6 +36,10 @@ public:
     void bindMessagesSplitter(QSplitter* splitter);
     void bindIrcSplitter(QSplitter* splitter);
     void bindStatsSplitter(QSplitter* splitter);
+
+    /// Restore stats tree expansion state, connect to auto-capture on expand/collapse.
+    /// Tracks root and first-level sub-items only.
+    void bindStatsTree(QTreeWidget* tree);
 
     /// Restore a header view's column widths/sort order, connect it to auto-update.
     void bindHeaderView(QHeaderView* header, const QString& key);
@@ -85,6 +91,7 @@ private:
     QString m_toolbarSkinPath;
     QString m_skinProfilePath;
     QMap<QString, QByteArray> m_headerStates;
+    QSet<QString> m_statsTreeExpanded;
 };
 
 /// Global UI state instance (GUI process only).

@@ -9,8 +9,6 @@
 
 #include <QElapsedTimer>
 
-#include <algorithm>
-#include <cmath>
 
 using namespace std::chrono_literals;
 

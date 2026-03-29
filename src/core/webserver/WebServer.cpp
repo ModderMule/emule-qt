@@ -26,10 +26,8 @@
 #include "transfer/UploadQueue.h"
 #include "kademlia/Kademlia.h"
 #include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 
 #include <QCryptographicHash>
-#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHttpServer>

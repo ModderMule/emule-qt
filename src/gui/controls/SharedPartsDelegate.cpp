@@ -7,7 +7,6 @@
 
 #include <QPainter>
 
-#include <algorithm>
 
 namespace eMule {
 

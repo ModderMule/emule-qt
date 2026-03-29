@@ -92,6 +92,7 @@ private:
     void setupAutoComplete();
     void addToSearchHistory(const QString& expression);
     void sendPreview(const QString& hash);
+    void refreshKnownTypes();
 
     // Search controls
     QLineEdit* m_nameEdit = nullptr;

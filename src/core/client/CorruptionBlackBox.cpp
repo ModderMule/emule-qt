@@ -4,10 +4,7 @@
 
 #include "client/CorruptionBlackBox.h"
 #include "utils/Opcodes.h"
-#include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 
-#include <algorithm>
 
 namespace eMule {
 

@@ -14,16 +14,13 @@
 #include "stats/Statistics.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 
 #include <QHostAddress>
 #include <QNetworkDatagram>
 
-#include "utils/ByteOrder.h"
 
 #include <zlib.h>
 
-#include <cstring>
 
 namespace eMule {
 
@@ -46,6 +43,8 @@ ClientUDPSocket::ClientUDPSocket(QObject* parent)
 
 ClientUDPSocket::~ClientUDPSocket()
 {
+    if (auto* throttler = theApp.uploadBandwidthThrottler)
+        throttler->removeFromAllQueues(static_cast<ThrottledControlSocket*>(this));
     m_socket.close();
 }
 

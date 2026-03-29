@@ -7,7 +7,6 @@
 
 #include <QMutexLocker>
 
-#include <algorithm>
 
 namespace eMule {
 

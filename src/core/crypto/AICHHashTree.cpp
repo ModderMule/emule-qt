@@ -3,7 +3,6 @@
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
-#include <algorithm>
 
 namespace eMule {
 

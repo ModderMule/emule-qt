@@ -8,20 +8,17 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
-#include "kademlia/KadUInt128.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "utils/Log.h"
-#include "utils/SafeFile.h"
 
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
 
-#include <algorithm>
 
 namespace eMule {
 

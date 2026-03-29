@@ -4,11 +4,9 @@
 
 #include "app/IpcClient.h"
 
-#include "IpcProtocol.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
-#include <algorithm>
 
 namespace eMule {
 

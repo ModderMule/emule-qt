@@ -7,9 +7,6 @@
 
 #include <zlib.h>
 
-#include <algorithm>
-#include <cstring>
-#include <new>
 
 namespace eMule {
 

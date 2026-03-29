@@ -13,20 +13,16 @@
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
+#include "stats/Statistics.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
-#include "utils/OtherFunctions.h"
-#include "utils/Opcodes.h"
-#include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
 #include "utils/Log.h"
 
-#include <algorithm>
-#include <cstring>
 
 namespace eMule {
 
@@ -202,6 +198,16 @@ void UpDownClient::updateUploadingStatisticsData()
         const auto sentPayload = sentBytesCompleteFile + sentBytesPartFile;
 
         m_transferredUp += sentPayload;
+
+        // Per-client/port/source breakdown tracking
+        if (sentPayload > 0 && theApp.statistics) {
+            if (sentBytesCompleteFile > 0)
+                theApp.statistics->addTransferData(clientSoft(), userPort(),
+                                                   false, true, sentBytesCompleteFile);
+            if (sentBytesPartFile > 0)
+                theApp.statistics->addTransferData(clientSoft(), userPort(),
+                                                   true, true, sentBytesPartFile);
+        }
     }
 
     const uint32 sentBytesFile = sentBytesCompleteFile + sentBytesPartFile;

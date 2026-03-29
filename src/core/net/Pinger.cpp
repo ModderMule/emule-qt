@@ -7,8 +7,6 @@
 
 #include <QElapsedTimer>
 
-#include <cerrno>
-#include <cstring>
 
 #ifndef Q_OS_WIN
 

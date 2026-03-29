@@ -20,6 +20,9 @@
 #include <unordered_map>
 #include <vector>
 
+// Platform / byte-order
+#include "utils/ByteOrder.h"
+
 // Qt Core
 #include <QByteArray>
 #include <QDebug>

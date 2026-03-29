@@ -8,12 +8,10 @@
 #include "chat/IrcClient.h"
 #include "prefs/Preferences.h"
 
-#include <QAction>
 #include <QDateTime>
 #include <QEvent>
 #include <QGridLayout>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QIcon>
 #include <QInputDialog>
 #include <QKeyEvent>

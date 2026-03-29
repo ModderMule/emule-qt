@@ -188,6 +188,7 @@ public:
     [[nodiscard]] uint8 emuleVersion() const { return m_emuleVersion; }
 
     // Version fields — set by hello packet processing
+    [[nodiscard]] uint32 clientVersion() const { return m_clientVersion; }
     void setEmuleVersion(uint8 v) { m_emuleVersion = v; }
     void setClientVersion(uint32 v) { m_clientVersion = v; }
     void setCompatibleClient(uint8 v) { m_compatibleClient = v; }

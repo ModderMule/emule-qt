@@ -5,7 +5,6 @@
 
 #include <QCryptographicHash>
 
-#include <algorithm>
 
 namespace eMule {
 

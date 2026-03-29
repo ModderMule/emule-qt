@@ -24,7 +24,6 @@
 #include "kademlia/KadUDPListener.h"
 #include "net/ClientReqSocket.h"
 #include "net/ClientUDPSocket.h"
-#include "net/EMSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
@@ -36,10 +35,7 @@
 #include "server/ServerList.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
-#include "utils/OtherFunctions.h"
-#include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
-#include "utils/Opcodes.h"
 
 #include "utils/Log.h"
 
@@ -50,12 +46,8 @@
 #include <QPainter>
 #include <QRandomGenerator>
 
-#include "utils/ByteOrder.h"
 
-#include <cstring>
-#include <random>
 
-#include <zlib.h>
 
 namespace eMule {
 

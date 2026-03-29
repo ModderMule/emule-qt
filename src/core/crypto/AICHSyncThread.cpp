@@ -3,18 +3,14 @@
 /// @brief Background AICH hash synchronization — port of MFC CAICHSyncThread.
 
 #include "AICHSyncThread.h"
-#include "AICHData.h"
 #include "AICHHashSet.h"
 #include "FileIdentifier.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
-#include "utils/DebugUtils.h"
 #include "utils/Log.h"
-#include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
-#include <QDir>
 #include <QFile>
 #include <QMutexLocker>
 

@@ -3,7 +3,6 @@
 /// @brief Async buffered I/O thread for PartFile disk writes.
 
 #include "files/PartFileWriteThread.h"
-#include "utils/Log.h"
 
 #include <QFile>
 

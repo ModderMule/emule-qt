@@ -4,6 +4,7 @@
 /// @brief Table model for search results in the Search window.
 
 #include <QAbstractTableModel>
+#include <QHash>
 #include <QString>
 
 #include <cstdint>
@@ -74,6 +75,12 @@ public:
 
     /// Get the full result row for a row index (nullptr if out of range).
     [[nodiscard]] const SearchResultRow* resultAt(int row) const;
+
+    /// Update the knownType for a specific row (triggers dataChanged).
+    void setKnownType(int row, int knownType);
+
+    /// Batch-update knownType by hash. Map: hash → knownType.
+    void updateKnownTypes(const QHash<QString, int>& typesByHash);
 
 private:
     std::vector<SearchResultRow> m_results;

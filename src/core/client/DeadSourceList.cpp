@@ -3,7 +3,6 @@
 /// @brief Dead source tracking implementation — replaces MFC CDeadSourceList.
 
 #include "client/DeadSourceList.h"
-#include "utils/Opcodes.h"
 
 namespace eMule {
 

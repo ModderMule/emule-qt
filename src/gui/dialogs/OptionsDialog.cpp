@@ -11,7 +11,6 @@
 #include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 
 #include <QCborArray>
 #include <QApplication>

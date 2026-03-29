@@ -10,7 +10,6 @@
 #include "utils/DebugUtils.h"
 
 #include <QFile>
-#include <QFileInfo>
 #include <QTextStream>
 
 namespace eMule {

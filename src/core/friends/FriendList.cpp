@@ -10,7 +10,6 @@
 
 #include <QDir>
 
-#include <algorithm>
 
 namespace eMule {
 

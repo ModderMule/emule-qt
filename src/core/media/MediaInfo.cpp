@@ -8,7 +8,6 @@
 
 #include "MediaInfo.h"
 #include "utils/OtherFunctions.h"
-#include "utils/Log.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -16,10 +15,6 @@
 #include <QMimeDatabase>
 #include <QtEndian>
 
-#include <algorithm>
-#include <cctype>
-#include <cmath>
-#include <cstring>
 
 namespace eMule {
 

@@ -6,18 +6,11 @@
 
 #include "files/KnownFileList.h"
 #include "files/KnownFile.h"
-#include "crypto/MD4Hash.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
 
-#include <QDir>
 #include <QFile>
-#include <QFileInfo>
 
-#include <algorithm>
-#include <cstring>
-#include <ctime>
-#include <random>
 
 namespace eMule {
 

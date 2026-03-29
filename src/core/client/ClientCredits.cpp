@@ -6,24 +6,18 @@
 #include "prefs/Preferences.h"
 #include "server/ServerConnect.h"
 #include "app/AppContext.h"
-#include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
-#include "utils/Opcodes.h"
 #include "utils/Log.h"
 
 #include <openssl/evp.h>
-#include <openssl/rsa.h>
 #include <openssl/pem.h>
+#include <openssl/rsa.h>
 #include <openssl/err.h>
 
 #include <QDir>
 #include <QFile>
 #include <QString>
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
-#include <ctime>
 
 namespace eMule {
 

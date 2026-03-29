@@ -7,16 +7,12 @@
 /// parts to the PartFile.
 
 #include "transfer/ImportParts.h"
-#include "crypto/FileIdentifier.h"
 #include "crypto/MD4Hash.h"
 #include "files/PartFile.h"
-#include "utils/Opcodes.h"
-#include "utils/OtherFunctions.h"
 
 #include <QFile>
 #include <QFileInfo>
 
-#include <cstring>
 
 namespace eMule {
 

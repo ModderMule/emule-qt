@@ -8,13 +8,9 @@
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearchManager.h"
-#include "kademlia/KadUDPListener.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
 
-#include <ctime>
 
 namespace eMule::kad {
 

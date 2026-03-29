@@ -7,7 +7,6 @@
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
-#include <ctime>
 
 namespace eMule::kad {
 

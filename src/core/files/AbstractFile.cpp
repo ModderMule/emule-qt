@@ -4,12 +4,10 @@
 
 #include "files/AbstractFile.h"
 #include "prefs/Preferences.h"
-#include "utils/Log.h"
 
 #include <QObject>
 #include <QSettings>
 
-#include <algorithm>
 
 namespace eMule {
 

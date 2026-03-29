@@ -68,6 +68,7 @@ private:
     void handleRemoveSearch(const Ipc::IpcMessage& msg);
     void handleClearAllSearches(const Ipc::IpcMessage& msg);
     void handleDownloadSearchFile(const Ipc::IpcMessage& msg);
+    void handleGetKnownTypes(const Ipc::IpcMessage& msg);
     void handleGetSharedFiles(const Ipc::IpcMessage& msg);
     void handleSetSharedFilePriority(const Ipc::IpcMessage& msg);
     void handleReloadSharedFiles(const Ipc::IpcMessage& msg);

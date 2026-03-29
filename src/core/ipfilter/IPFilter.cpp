@@ -12,11 +12,7 @@
 #include <QFileInfo>
 #include <QSaveFile>
 
-#include <algorithm>
-#include <cstdio>
-#include <cstring>
 
-#include "utils/ByteOrder.h"
 
 namespace eMule {
 

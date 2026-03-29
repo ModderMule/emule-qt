@@ -160,15 +160,15 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         }
     }
 
-    // Color coding: red for spam, blue for downloading, gray for shared/downloaded
+    // Color coding matching MFC eMule: red = already have/downloading, green = known/cancelled
     if (role == Qt::ForegroundRole) {
         if (r.isSpam)
-            return QColor(0xCC, 0x00, 0x00); // red
+            return QColor(0xCC, 0x00, 0x00); // red — spam
         switch (r.knownType) {
-        case 1: return QColor(0x80, 0x80, 0x80); // Shared — gray
-        case 2: return QColor(0x00, 0x66, 0xCC); // Downloading — blue
-        case 3: return QColor(0x00, 0x88, 0x00); // Downloaded — green
-        case 4: return QColor(0x80, 0x80, 0x80); // Cancelled — gray
+        case 1: return QColor(0xFF, 0x00, 0x00); // Shared — red
+        case 2: return QColor(0xFF, 0x00, 0x00); // Downloading — red
+        case 3: return QColor(0x00, 0x80, 0x00); // Downloaded — green
+        case 4: return QColor(0x00, 0x80, 0x00); // Cancelled — green
         default: break;
         }
     }
@@ -224,6 +224,28 @@ const SearchResultRow* SearchResultsModel::resultAt(int row) const
     if (row >= 0 && row < static_cast<int>(m_results.size()))
         return &m_results[static_cast<size_t>(row)];
     return nullptr;
+}
+
+void SearchResultsModel::setKnownType(int row, int knownType)
+{
+    if (row < 0 || row >= static_cast<int>(m_results.size()))
+        return;
+    auto& r = m_results[static_cast<size_t>(row)];
+    if (r.knownType == knownType)
+        return;
+    r.knownType = knownType;
+    emit dataChanged(index(row, 0), index(row, ColCount - 1));
+}
+
+void SearchResultsModel::updateKnownTypes(const QHash<QString, int>& typesByHash)
+{
+    for (int i = 0; i < static_cast<int>(m_results.size()); ++i) {
+        auto it = typesByHash.find(m_results[static_cast<size_t>(i)].hash);
+        if (it != typesByHash.end() && m_results[static_cast<size_t>(i)].knownType != it.value()) {
+            m_results[static_cast<size_t>(i)].knownType = it.value();
+            emit dataChanged(index(i, 0), index(i, ColCount - 1));
+        }
+    }
 }
 
 void SearchResultsModel::removeRow(int row)

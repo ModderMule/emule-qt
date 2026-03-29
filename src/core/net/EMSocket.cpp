@@ -3,15 +3,13 @@
 /// @brief Core eMule protocol socket implementation.
 
 #include "net/EMSocket.h"
+#include "app/AppContext.h"
 #include "prefs/Preferences.h"
-#include "utils/Opcodes.h"
+#include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Log.h"
 
 #include <QTimer>
 
-#include <algorithm>
-#include <cstring>
-#include <mutex>
 
 #ifdef Q_OS_WIN
 #include <winsock2.h>
@@ -49,6 +47,11 @@ EMSocket::EMSocket(QObject* parent)
 
 EMSocket::~EMSocket()
 {
+    // Remove from bandwidth throttler before destruction to prevent dangling
+    // pointer access from the throttler thread (SIGSEGV in runInternal).
+    if (auto* throttler = theApp.uploadBandwidthThrottler)
+        throttler->removeFromAllQueues(this);
+
     // Disconnect all signals BEFORE destroying m_sendLock.
     // QAbstractSocket::~QAbstractSocket() calls disconnectFromHost() which emits
     // the 'disconnected' signal. Our onDisconnected() slot locks m_sendLock via

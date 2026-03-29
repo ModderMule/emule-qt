@@ -5,9 +5,9 @@
 #include "dialogs/ImportDownloadsDialog.h"
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 
 #include <QCborArray>
+#include <QPointer>
 #include <QCborMap>
 #include <QFileDialog>
 #include <QGroupBox>
@@ -143,8 +143,8 @@ void ImportDownloadsDialog::onAddImports()
     IpcMessage req(IpcMsgType::ScanImportFolder);
     req.append(folder);
     req.append(true); // removeSource
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
-        if (!resp.fieldBool(0))
+    m_ipc->sendRequest(std::move(req), [this, guard = QPointer(this)](const IpcMessage& resp) {
+        if (!guard || !resp.fieldBool(0))
             return;
         const QCborArray jobs = resp.fieldArray(1);
         updateJobList(jobs);
@@ -164,7 +164,8 @@ void ImportDownloadsDialog::onRetrySelected()
 
     IpcMessage req(IpcMsgType::RetryConvertJob);
     req.append(static_cast<qint64>(index));
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage&) {
+    m_ipc->sendRequest(std::move(req), [this, guard = QPointer(this)](const IpcMessage&) {
+        if (!guard) return;
         requestJobs();
     });
 }
@@ -182,7 +183,8 @@ void ImportDownloadsDialog::onRemoveSelected()
 
     IpcMessage req(IpcMsgType::RemoveConvertJob);
     req.append(static_cast<qint64>(index));
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage&) {
+    m_ipc->sendRequest(std::move(req), [this, guard = QPointer(this)](const IpcMessage&) {
+        if (!guard) return;
         requestJobs();
     });
 }
@@ -202,8 +204,8 @@ void ImportDownloadsDialog::requestJobs()
         return;
 
     IpcMessage req(IpcMsgType::GetConvertJobs);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
-        if (!resp.fieldBool(0))
+    m_ipc->sendRequest(std::move(req), [this, guard = QPointer(this)](const IpcMessage& resp) {
+        if (!guard || !resp.fieldBool(0))
             return;
         const QCborArray jobs = resp.fieldArray(1);
         updateJobList(jobs);

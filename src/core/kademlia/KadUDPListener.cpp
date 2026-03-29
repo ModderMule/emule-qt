@@ -3,11 +3,11 @@
 /// @brief Kademlia UDP packet handler implementation.
 
 #include "kademlia/KadUDPListener.h"
-#include "kademlia/KadClientSearcher.h"
-#include "kademlia/Kademlia.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadEntry.h"
+#include "kademlia/KadClientSearcher.h"
+#include "kademlia/Kademlia.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLog.h"
@@ -16,23 +16,16 @@
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "prefs/Preferences.h"
-#include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
 
-#include "utils/ByteOrder.h"
 
-#include <QHostAddress>
 #include <QHostInfo>
 
-#include <cstring>
-#include <ctime>
 
 namespace eMule::kad {
 

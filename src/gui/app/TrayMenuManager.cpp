@@ -3,7 +3,6 @@
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 #include "prefs/Preferences.h"
 
 #include <QGridLayout>
@@ -21,9 +20,6 @@ TrayMenuManager::TrayMenuManager(QWidget* parent)
     : QMenu(parent)
 {
     buildMenu();
-    connect(this, &QMenu::aboutToShow, this, [this]() {
-        // Let the owner call updateState() explicitly; this is a fallback.
-    });
 }
 
 // ---------------------------------------------------------------------------

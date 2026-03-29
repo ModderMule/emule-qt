@@ -12,7 +12,6 @@
 #include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -29,7 +28,6 @@
 #include <QInputDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
@@ -38,8 +36,6 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollBar>
-#include <QSettings>
-#include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTextEdit>

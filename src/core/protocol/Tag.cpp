@@ -5,7 +5,6 @@
 #include "Tag.h"
 #include "utils/Log.h"
 
-#include <cstring>
 
 namespace eMule {
 

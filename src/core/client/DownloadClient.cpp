@@ -6,31 +6,23 @@
 /// Methods of UpDownClient related to download functionality.
 
 #include "client/UpDownClient.h"
-#include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "client/DeadSourceList.h"
 #include "app/AppContext.h"
-#include "crypto/AICHData.h"
 #include "crypto/AICHHashSet.h"
 #include "crypto/FileIdentifier.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "net/ClientUDPSocket.h"
-#include "net/EMSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
+#include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
-#include "utils/OtherFunctions.h"
-#include "utils/Opcodes.h"
-#include "utils/SafeFile.h"
-#include "utils/ByteOrder.h"
 #include "utils/TimeUtils.h"
 
-#include <algorithm>
-#include <cstring>
 
 #include <zlib.h>
 
@@ -593,6 +585,11 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
     // Update transfer statistics
     m_transferredDown += uTransferredFileDataSize;
     m_curSessionDown += uTransferredFileDataSize;
+
+    // Per-client/port breakdown tracking
+    if (uTransferredFileDataSize > 0 && theApp.statistics)
+        theApp.statistics->addTransferData(clientSoft(), userPort(),
+                                           false, false, uTransferredFileDataSize);
 
     // Accumulate for rate averaging (drained in calculateDownloadRate)
     m_downDataRateMS += uTransferredFileDataSize;

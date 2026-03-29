@@ -5,12 +5,7 @@
 #include "kademlia/KadEntry.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadMiscUtils.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
 
-#include <algorithm>
-#include <ctime>
-#include <cmath>
 
 namespace eMule::kad {
 

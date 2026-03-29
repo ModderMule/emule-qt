@@ -6,11 +6,9 @@
 #endif
 #include "app/IpcClient.h"
 #include "app/TrayMenuManager.h"
-#include "app/PowerManager.h"
 #include "app/VersionChecker.h"
 #include "app/UiState.h"
 #include "controls/LogWidget.h"
-#include "IpcProtocol.h"
 #include "dialogs/NetworkInfoDialog.h"
 #include "dialogs/ImportDownloadsDialog.h"
 #include "dialogs/FirstStartWizard.h"
@@ -49,7 +47,6 @@
 #include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
-#include <QPainterPath>
 #include <QFile>
 #include <QSoundEffect>
 #include <QStackedWidget>
@@ -110,6 +107,10 @@ MainWindow::MainWindow(QWidget* parent)
                 this, &MainWindow::onTrayIconClicked);
 
         m_trayMenu = new TrayMenuManager(this);
+        connect(m_trayMenu, &QMenu::aboutToShow, this, [this]() {
+            m_trayMenu->updateState(m_ed2kConnected, m_kadRunning,
+                                    m_ipc && m_ipc->isConnected());
+        });
         connect(m_trayMenu, &TrayMenuManager::restoreRequested, this, [this]() {
             showNormal();
             raise();

@@ -4,16 +4,10 @@
 
 #include "search/SearchList.h"
 #include "protocol/Tag.h"
-#include "utils/Log.h"
-#include "utils/OtherFunctions.h"
-#include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
 #include <QRegularExpression>
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
 
 namespace eMule {
 

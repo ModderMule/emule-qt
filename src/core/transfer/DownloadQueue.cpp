@@ -10,7 +10,6 @@
 #include "client/ClientList.h"
 #include "client/DeadSourceList.h"
 #include "client/UpDownClient.h"
-#include "crypto/FileIdentifier.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
@@ -22,19 +21,12 @@
 #include "server/ServerList.h"
 #include "server/Server.h"
 #include "utils/Log.h"
-#include "utils/Opcodes.h"
-#include "utils/OtherFunctions.h"
-#include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
 #include <QDir>
 #include <QDirIterator>
-#include <QStorageInfo>
 
-#include <algorithm>
-#include <cstring>
 
-#include "utils/ByteOrder.h"
 
 namespace eMule {
 
@@ -680,12 +672,9 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     if (m_sharedFileList)
         m_sharedFileList->safeAddKFile(file);
 
-    // Remove from download queue
-    auto it = std::ranges::find(m_fileList, file);
-    if (it != m_fileList.end()) {
-        m_fileList.erase(it);
-        sortByPriority();
-    }
+    // Keep completed file in the queue so it remains visible in the UI.
+    // It will be skipped by process() loops (status != Ready/Empty).
+    // Explicit removal happens via "Clear Completed" → removeFile().
 
     emit fileCompleted(file);
 }

@@ -5,11 +5,8 @@
 #include "OtherFunctions.h"
 #include "Opcodes.h"
 
-#include <QLocale>
 #include <QUrl>
 
-#include <algorithm>
-#include <vector>
 
 namespace eMule {
 

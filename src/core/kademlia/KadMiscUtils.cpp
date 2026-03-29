@@ -5,7 +5,6 @@
 #include "kademlia/KadMiscUtils.h"
 #include "crypto/MD4Hash.h"
 
-#include <QStringList>
 
 namespace eMule::kad {
 

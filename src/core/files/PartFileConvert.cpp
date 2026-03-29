@@ -6,7 +6,6 @@
 #include "files/PartFile.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
-#include "utils/Opcodes.h"
 
 #include <QDir>
 #include <QDirIterator>

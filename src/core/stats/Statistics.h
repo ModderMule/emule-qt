@@ -11,12 +11,14 @@
 
 #include <QObject>
 
+#include <array>
 #include <atomic>
 #include <list>
 
 namespace eMule {
 
 class Preferences;
+enum class ClientSoftware : uint8;
 
 /// Averaging mode for download/upload rate calculation.
 enum class AverageType : uint8 {
@@ -153,6 +155,39 @@ public:
     [[nodiscard]] uint32 serverConnectTime() const { return m_serverConnectTime; }
     void setServerConnectTime(uint32 val) { m_serverConnectTime = val; }
 
+    // --- Per-client/port/source transfer breakdown ---
+
+    /// Record a data transfer for per-client-type, per-port, per-source tracking.
+    /// Called from upload/download client code after each block transfer.
+    void addTransferData(ClientSoftware clientType, uint16 port,
+                         bool isPartFile, bool isUpload, uint64 bytes);
+
+    /// Map ClientSoftware enum to compact array index 0-7.
+    [[nodiscard]] static int clientIndex(ClientSoftware cs);
+
+    /// Number of client types tracked for uploads (eMule..eMCompat).
+    static constexpr int kUpClientCount = 7;
+    /// Number of client types tracked for downloads (eMule..URL).
+    static constexpr int kDownClientCount = 8;
+
+    /// Per-client session bytes — upload
+    [[nodiscard]] uint64 sesUpByClient(int idx) const { return (idx >= 0 && idx < kUpClientCount) ? m_sesUpByClient[static_cast<size_t>(idx)].load() : 0; }
+    /// Per-client session bytes — download
+    [[nodiscard]] uint64 sesDownByClient(int idx) const { return (idx >= 0 && idx < kDownClientCount) ? m_sesDownByClient[static_cast<size_t>(idx)].load() : 0; }
+
+    /// Per-port session bytes
+    [[nodiscard]] uint64 sesUpPort4662() const { return m_sesUpPort4662.load(); }
+    [[nodiscard]] uint64 sesUpPortOther() const { return m_sesUpPortOther.load(); }
+    [[nodiscard]] uint64 sesDownPort4662() const { return m_sesDownPort4662.load(); }
+    [[nodiscard]] uint64 sesDownPortOther() const { return m_sesDownPortOther.load(); }
+
+    /// Per-source session bytes (upload only)
+    [[nodiscard]] uint64 sesUpFromFile() const { return m_sesUpFromFile.load(); }
+    [[nodiscard]] uint64 sesUpFromPartfile() const { return m_sesUpFromPartfile.load(); }
+
+    /// Save current session cumulative values into Preferences and persist.
+    void saveCumulativeToPrefs(Preferences& prefs) const;
+
     // --- Global progress (for taskbar / status) ---
 
     [[nodiscard]] float globalDone() const { return m_globalDone; }
@@ -268,6 +303,20 @@ private:
     uint64 m_sumAvgUDRO = 0;
     std::list<RateEntry> m_avgDDROList;
     std::list<RateEntry> m_avgUDROList;
+
+    // Per-client session breakdown (atomic for thread safety)
+    std::array<std::atomic<uint64>, kUpClientCount> m_sesUpByClient{};
+    std::array<std::atomic<uint64>, kDownClientCount> m_sesDownByClient{};
+
+    // Per-port session breakdown
+    std::atomic<uint64> m_sesUpPort4662{0};
+    std::atomic<uint64> m_sesUpPortOther{0};
+    std::atomic<uint64> m_sesDownPort4662{0};
+    std::atomic<uint64> m_sesDownPortOther{0};
+
+    // Per-source session breakdown (upload only)
+    std::atomic<uint64> m_sesUpFromFile{0};
+    std::atomic<uint64> m_sesUpFromPartfile{0};
 };
 
 } // namespace eMule

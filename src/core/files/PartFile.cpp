@@ -8,40 +8,28 @@
 #include "files/PartFile.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
-#include "net/EMSocket.h"
-#include "crypto/AICHData.h"
 #include "crypto/AICHHashSet.h"
 #include "crypto/AICHHashTree.h"
 #include "crypto/FileIdentifier.h"
 #include "crypto/MD4Hash.h"
-#include "crypto/SHAHash.h"
 #include "ipfilter/IPFilter.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
-#include "utils/Opcodes.h"
-#include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadSearch.h"
-#include "kademlia/KadUInt128.h"
 #include "server/ServerConnect.h"
 #include "server/Server.h"
 
-#include "utils/ByteOrder.h"
 
 #include <QDir>
-#include <QDirIterator>
 #include <QFileInfo>
 
-#include <algorithm>
-#include <cstring>
-#include <numeric>
-#include <random>
 
 namespace eMule {
 
@@ -69,6 +57,17 @@ PartFile::~PartFile()
     // Save .part.met with final gap list (matches MFC CPartFile destructor)
     if (!m_partMetFilename.isEmpty() && status() != PartFileStatus::Complete)
         savePartFile();
+
+    // Null out m_reqFile in any sources still referencing this file,
+    // so late socket-error callbacks don't dereference a dangling pointer.
+    for (auto* client : m_srcList) {
+        if (client->reqFile() == this)
+            client->setReqFile(nullptr);
+    }
+    for (auto* client : m_a4afSrcList) {
+        if (client->reqFile() == this)
+            client->setReqFile(nullptr);
+    }
 
     // Clear requested blocks list — blocks are owned by clients'
     // Pending_Block_Struct and freed by clearPendingBlockRequest.
@@ -500,8 +499,14 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
             score += completion / 5;
         }
 
-        // Preview priority — first and last parts (only when enabled)
-        if (thePrefs.previewPrio() && (p == 0 || p == pc - 1))
+        // Preview priority — first and last parts for previewable media files
+        if (thePrefs.previewPrio()
+            && fs > 2 * PARTSIZE
+            && (getED2KFileTypeID(fileName()) == ED2KFileType::Video
+                || getED2KFileTypeID(fileName()) == ED2KFileType::Audio)
+            && (p == 0
+                || p == pc - 1
+                || (p == pc - 2 && fs - (static_cast<uint64>(pc - 1) * PARTSIZE) < PARTSIZE / 3)))
             score += 30;
 
         // Random tie-breaker (0-4) to avoid sequential ordering among equal-score parts
@@ -841,15 +846,22 @@ bool PartFile::createPartFile(const QString& tempDir)
     if (!dir.exists())
         dir.mkpath(QStringLiteral("."));
 
-    // Generate unique NNN.part filename
+    // Generate unique NNN.part filename — skip existing files to avoid
+    // overwriting downloads from previous sessions (counter resets to 0 on restart)
     static std::atomic<uint32> counter{0};
-    const uint32 num = counter.fetch_add(1);
-    m_partMetFilename = QStringLiteral("%1.part.met").arg(num, 3, 10, QChar(u'0'));
-    m_fullName = tempDir + QDir::separator() + m_partMetFilename;
+    uint32 num;
+    QString partMetFilename;
+    QString partPath;
+    do {
+        num = counter.fetch_add(1);
+        partMetFilename = QStringLiteral("%1.part.met").arg(num, 3, 10, QChar(u'0'));
+        partPath = tempDir + QDir::separator()
+                   + QStringLiteral("%1.part").arg(num, 3, 10, QChar(u'0'));
+    } while (QFile::exists(tempDir + QDir::separator() + partMetFilename)
+             || QFile::exists(partPath));
 
-    // Create the .part file
-    const QString partPath = tempDir + QDir::separator()
-                              + QStringLiteral("%1.part").arg(num, 3, 10, QChar(u'0'));
+    m_partMetFilename = partMetFilename;
+    m_fullName = tempDir + QDir::separator() + m_partMetFilename;
     m_partFileHandle.setFileName(partPath);
     if (!m_partFileHandle.open(QIODevice::ReadWrite)) {
         logError(QStringLiteral("PartFile::createPartFile: failed to create %1").arg(partPath));
@@ -1399,28 +1411,31 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
     // Calculate datarate and apply per-client proportional download limits
     // (MFC PartFile.cpp lines 2201-2229).
     m_datarate = 0;
-    for (auto* client : m_downloadingSources) {
+    const auto downloadingCopy = m_downloadingSources; // copy: checkDownloadTimeout may modify vector
+    for (auto* client : downloadingCopy) {
         if (client->downloadState() == DownloadState::Downloading && client->socket()) {
             client->checkDownloadTimeout();
             const uint32 curDatarate = client->calculateDownloadRate();
             m_datarate += curDatarate;
 
-            if (reduceDownload > 0) {
-                // Proportional limit with graduated floors (MFC lines 2211-2225)
-                uint32 limit = reduceDownload * curDatarate / 1000;
-                if (limit < 1000 && reduceDownload == 200)
-                    limit += 1000;
-                else if (limit < 200 && curDatarate == 0 && reduceDownload >= 100)
-                    limit = 200;
-                else if (limit < 60 && curDatarate < 600 && reduceDownload >= 97)
-                    limit = 60;
-                else if (limit < 20 && curDatarate < 200 && reduceDownload >= 93)
-                    limit = 20;
-                else if (limit < 1)
-                    limit = 1;
-                client->socket()->setDownloadLimit(limit);
-            } else {
-                client->socket()->disableDownloadLimit();
+            if (auto* sock = client->socket()) { // re-check: checkDownloadTimeout may disconnect
+                if (reduceDownload > 0) {
+                    // Proportional limit with graduated floors (MFC lines 2211-2225)
+                    uint32 limit = reduceDownload * curDatarate / 1000;
+                    if (limit < 1000 && reduceDownload == 200)
+                        limit += 1000;
+                    else if (limit < 200 && curDatarate == 0 && reduceDownload >= 100)
+                        limit = 200;
+                    else if (limit < 60 && curDatarate < 600 && reduceDownload >= 97)
+                        limit = 60;
+                    else if (limit < 20 && curDatarate < 200 && reduceDownload >= 93)
+                        limit = 20;
+                    else if (limit < 1)
+                        limit = 1;
+                    sock->setDownloadLimit(limit);
+                } else {
+                    sock->disableDownloadLimit();
+                }
             }
         }
     }

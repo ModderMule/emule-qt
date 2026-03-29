@@ -4,7 +4,6 @@
 
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/Kademlia.h"
-#include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadLog.h"
@@ -14,18 +13,12 @@
 #include "kademlia/KadUDPListener.h"
 #include "ipfilter/IPFilter.h"
 #include "prefs/Preferences.h"
-#include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
-#include "utils/Opcodes.h"
 
-#include "utils/ByteOrder.h"
 
 #include <QDir>
 #include <QFile>
 
-#include <algorithm>
-#include <random>
 
 namespace eMule::kad {
 

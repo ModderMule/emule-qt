@@ -15,18 +15,12 @@
 #include "protocol/Tag.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
-#include "utils/OtherFunctions.h"
-#include "utils/SafeFile.h"
 
 #include <QHostAddress>
-#include <QHostInfo>
 #include <QNetworkInterface>
 
-#include "utils/ByteOrder.h"
 
-#include <algorithm>
 
-#include <zlib.h>
 
 namespace eMule {
 

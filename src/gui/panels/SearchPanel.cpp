@@ -11,12 +11,8 @@
 #include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 
 #include <QApplication>
-#include <QCborArray>
-#include <QCborMap>
-#include <QCborMap>
 #include <QClipboard>
 #include <QComboBox>
 #include <QCompleter>
@@ -24,7 +20,6 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
-#include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -37,7 +32,6 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
-#include <QSizePolicy>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
 #include <QStringList>
@@ -78,6 +72,8 @@ void SearchPanel::setIpcClient(IpcClient* client)
         return;
 
     connect(m_ipc, &IpcClient::searchResultReceived, this, &SearchPanel::onSearchResultPush);
+    connect(m_ipc, &IpcClient::downloadAdded, this, [this]{ refreshKnownTypes(); });
+    connect(m_ipc, &IpcClient::downloadRemoved, this, [this]{ refreshKnownTypes(); });
 
     // Restore last-used search method from settings (default: Kademlia = index 1)
     QSettings settings;
@@ -86,6 +82,7 @@ void SearchPanel::setIpcClient(IpcClient* client)
         m_methodCombo->setCurrentIndex(lastMethod);
 
     loadSearches();
+    refreshKnownTypes();
 }
 
 void SearchPanel::startSearchFromExternal(const QString& expression)
@@ -688,11 +685,18 @@ void SearchPanel::downloadResult(int row)
     if (!result)
         return;
 
+    const int srcRow = srcIdx.row();
+
     IpcMessage msg(IpcMsgType::DownloadSearchFile);
     msg.append(result->hash);
     msg.append(result->fileName);
     msg.append(static_cast<qint64>(result->fileSize));
-    m_ipc->sendRequest(std::move(msg));
+    const int tabIdx = m_tabBar->currentIndex();
+    m_ipc->sendRequest(std::move(msg), [this, tabIdx, srcRow](const IpcMessage& resp) {
+        if (resp.fieldBool(0) && tabIdx >= 0
+            && tabIdx < static_cast<int>(m_tabs.size()))
+            m_tabs[static_cast<size_t>(tabIdx)].model->setKnownType(srcRow, 2); // Downloading
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -748,7 +752,9 @@ void SearchPanel::closeSearch(int tabIndex)
 
     if (m_tabs.empty()) {
         m_tabBar->setVisible(false);
+        const auto hdrState = m_resultView->header()->saveState();
         m_resultView->setModel(nullptr);
+        m_resultView->header()->restoreState(hdrState);
         m_statusLabel->clear();
         m_cancelBtn->setEnabled(false);
     }
@@ -774,7 +780,9 @@ void SearchPanel::closeAllSearches()
     while (m_tabBar->count() > 0)
         m_tabBar->removeTab(0);
     m_tabBar->setVisible(false);
+    const auto hdrState = m_resultView->header()->saveState();
     m_resultView->setModel(nullptr);
+    m_resultView->header()->restoreState(hdrState);
     m_statusLabel->clear();
     m_cancelBtn->setEnabled(false);
 }
@@ -786,13 +794,17 @@ void SearchPanel::closeAllSearches()
 void SearchPanel::switchToTab(int index)
 {
     if (index < 0 || index >= static_cast<int>(m_tabs.size())) {
+        const auto hdrState = m_resultView->header()->saveState();
         m_resultView->setModel(nullptr);
+        m_resultView->header()->restoreState(hdrState);
         m_downloadBtn->setEnabled(false);
         return;
     }
 
+    const auto hdrState = m_resultView->header()->saveState();
     auto& tab = m_tabs[static_cast<size_t>(index)];
     m_resultView->setModel(tab.proxy);
+    m_resultView->header()->restoreState(hdrState);
     connect(m_resultView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &SearchPanel::updateDownloadButton);
     updateDownloadButton();
@@ -1064,6 +1076,50 @@ void SearchPanel::sendPreview(const QString& hash)
     }
 
     QProcess::startDetached(playerCmd, argList);
+}
+
+// ---------------------------------------------------------------------------
+// Refresh knownType for all results in all tabs via daemon lookup
+// ---------------------------------------------------------------------------
+
+void SearchPanel::refreshKnownTypes()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    for (size_t ti = 0; ti < m_tabs.size(); ++ti) {
+        auto* tab = &m_tabs[ti];
+        const int count = tab->model->resultCount();
+        if (count == 0)
+            continue;
+
+        QCborArray hashes;
+        for (int r = 0; r < count; ++r) {
+            const auto* row = tab->model->resultAt(r);
+            if (row)
+                hashes.append(row->hash);
+        }
+
+        IpcMessage msg(IpcMsgType::GetKnownTypes);
+        msg.append(QCborValue(hashes));
+
+        m_ipc->sendRequest(std::move(msg), [this, ti](const IpcMessage& resp) {
+            if (!resp.fieldBool(0) || ti >= m_tabs.size())
+                return;
+
+            auto* model = m_tabs[ti].model;
+            const auto types = resp.fieldArray(1);
+            const int count = std::min(static_cast<int>(types.size()), model->resultCount());
+
+            QHash<QString, int> typesByHash;
+            for (int i = 0; i < count; ++i) {
+                const auto* row = model->resultAt(i);
+                if (row)
+                    typesByHash.insert(row->hash, static_cast<int>(types.at(i).toInteger()));
+            }
+            model->updateKnownTypes(typesByHash);
+        });
+    }
 }
 
 } // namespace eMule

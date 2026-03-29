@@ -11,11 +11,9 @@
 #include "app/UiState.h"
 
 #include "IpcMessage.h"
-#include "IpcProtocol.h"
 
 #include "prefs/Preferences.h"
 
-#include <algorithm>
 
 #include <QButtonGroup>
 #include <QCborArray>
@@ -25,7 +23,6 @@
 #include <QFont>
 #include <QFrame>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>

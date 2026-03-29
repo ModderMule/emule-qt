@@ -11,16 +11,10 @@
 #include "client/ClientList.h"
 #include "crypto/MD5Hash.h"
 #include "prefs/Preferences.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
 
-#include <QDir>
 #include <QFile>
 #include <QSaveFile>
 
-#include <algorithm>
-#include <cstring>
-#include <ctime>
 
 namespace eMule::kad {
 

@@ -5,9 +5,7 @@
 #include "kademlia/KadContact.h"
 #include "utils/Opcodes.h"
 
-#include <ctime>
 
-#include "utils/ByteOrder.h"
 
 namespace eMule::kad {
 

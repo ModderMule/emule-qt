@@ -4,10 +4,7 @@
 
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLog.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
 
-#include <cstring>
 
 namespace eMule::kad::io {
 

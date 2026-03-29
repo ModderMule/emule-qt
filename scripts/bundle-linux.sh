@@ -288,7 +288,7 @@ fi
 # -- Create tarball ----------------------------------------------------------
 
 TAR_NAME="emuleqt-v${VERSION}-linux-x86_64.tar.gz"
-TAR_PATH="$REPO_ROOT/$TAR_NAME"
+TAR_PATH="$BUILD_DIR/$TAR_NAME"
 
 echo ""
 echo "=== Creating $TAR_NAME ==="

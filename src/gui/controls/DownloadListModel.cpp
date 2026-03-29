@@ -5,9 +5,6 @@
 #include "controls/DownloadListModel.h"
 
 #include <QDateTime>
-#include <QLocale>
-#include <algorithm>
-#include <climits>
 
 namespace eMule {
 
@@ -302,14 +299,22 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         return tr(
             "File Name:\t%1\n"
             "ED2K Hash:\t%2\n"
-            "Type:\t%3\n"
-            "Status:\t%4\n"
-            "Priority:\t%5\n"
-            "Requests:\t%6\n"
-            "Accepted Requests:\t%7\n"
-            "Transferred Data:\t%8")
-            .arg(d.fileName, d.hash, fileTypeDisplay(d.fileType),
-                 d.status, d.priority)
+            "Size:\t%3\n"
+            "Completed:\t%4 (%5%)\n"
+            "Type:\t%6\n"
+            "Status:\t%7\n"
+            "Priority:\t%8\n"
+            "Sources:\t%9\n"
+            "Requests:\t%10\n"
+            "Accepted Requests:\t%11\n"
+            "Transferred Data:\t%12")
+            .arg(d.fileName, d.hash,
+                 formatSize(d.fileSize),
+                 formatSize(d.completedSize),
+                 QString::number(d.percentCompleted, 'f', 1))
+            .arg(fileTypeDisplay(d.fileType),
+                 d.status, d.priority,
+                 QStringLiteral("%1 / %2").arg(d.transferringSrcCount).arg(d.sourceCount))
             .arg(d.requests).arg(d.acceptedRequests)
             .arg(formatSize(d.transferredData));
     }

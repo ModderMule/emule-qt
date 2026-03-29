@@ -5,7 +5,6 @@
 #include "kademlia/KadLookupHistory.h"
 #include "kademlia/KadContact.h"
 
-#include <ctime>
 
 namespace eMule::kad {
 

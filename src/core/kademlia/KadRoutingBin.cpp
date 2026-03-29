@@ -6,12 +6,8 @@
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadLog.h"
-#include "utils/Log.h"
-#include "utils/OtherFunctions.h"
 
-#include "utils/ByteOrder.h"
 
-#include <random>
 
 namespace eMule::kad {
 

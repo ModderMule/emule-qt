@@ -4,17 +4,11 @@
 
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/Kademlia.h"
-#include "kademlia/KadContact.h"
-#include "kademlia/KadDefines.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
 
-#include <algorithm>
-#include <ctime>
 
 namespace eMule::kad {
 

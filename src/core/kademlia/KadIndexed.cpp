@@ -6,18 +6,13 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLog.h"
-#include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadUDPListener.h"
-#include "utils/Log.h"
-#include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
 #include <QDir>
 #include <QFile>
 
-#include <algorithm>
-#include <ctime>
 
 namespace eMule::kad {
 

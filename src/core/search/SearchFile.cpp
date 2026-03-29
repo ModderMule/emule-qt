@@ -4,13 +4,7 @@
 
 #include "search/SearchFile.h"
 #include "protocol/Tag.h"
-#include "utils/Log.h"
-#include "utils/OtherFunctions.h"
-#include "utils/Opcodes.h"
-#include "utils/SafeFile.h"
 
-#include <algorithm>
-#include <cstring>
 
 namespace eMule {
 

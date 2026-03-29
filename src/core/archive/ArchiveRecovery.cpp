@@ -8,15 +8,9 @@
 #include "files/PartFile.h"
 #include "utils/Log.h"
 
-#include <QDir>
-#include <QFileInfo>
-#include <QTemporaryFile>
 #include <QThread>
 
-#include <algorithm>
-#include <cstring>
 
-#include <zlib.h>
 
 namespace eMule {
 

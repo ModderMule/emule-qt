@@ -388,6 +388,172 @@ public:
     [[nodiscard]] uint32 statsConnectionsRatio() const;
     void setStatsConnectionsRatio(uint32 val);
 
+    // -- Cumulative Statistics ------------------------------------------------
+
+    // Transfer totals
+    [[nodiscard]] uint64 cumTotalUploaded() const;
+    void setCumTotalUploaded(uint64 val);
+    [[nodiscard]] uint64 cumTotalDownloaded() const;
+    void setCumTotalDownloaded(uint64 val);
+    [[nodiscard]] uint64 cumTotalUploadedToFriend() const;
+    void setCumTotalUploadedToFriend(uint64 val);
+
+    // Upload sessions
+    [[nodiscard]] uint32 cumUpSuccessfulSessions() const;
+    void setCumUpSuccessfulSessions(uint32 val);
+    [[nodiscard]] uint32 cumUpFailedSessions() const;
+    void setCumUpFailedSessions(uint32 val);
+    [[nodiscard]] uint32 cumUpAvgTime() const;
+    void setCumUpAvgTime(uint32 val);
+
+    // Download sessions
+    [[nodiscard]] uint32 cumDownSuccessfulSessions() const;
+    void setCumDownSuccessfulSessions(uint32 val);
+    [[nodiscard]] uint32 cumDownFailedSessions() const;
+    void setCumDownFailedSessions(uint32 val);
+    [[nodiscard]] uint32 cumDownCompletedFiles() const;
+    void setCumDownCompletedFiles(uint32 val);
+    [[nodiscard]] uint32 cumDownAvgTime() const;
+    void setCumDownAvgTime(uint32 val);
+
+    // Cumulative overhead — upload (bytes + packets)
+    [[nodiscard]] uint64 cumUpOverheadTotal() const;
+    void setCumUpOverheadTotal(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadTotalPackets() const;
+    void setCumUpOverheadTotalPackets(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadFileReq() const;
+    void setCumUpOverheadFileReq(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadFileReqPackets() const;
+    void setCumUpOverheadFileReqPackets(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadSrcExch() const;
+    void setCumUpOverheadSrcExch(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadSrcExchPackets() const;
+    void setCumUpOverheadSrcExchPackets(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadServer() const;
+    void setCumUpOverheadServer(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadServerPackets() const;
+    void setCumUpOverheadServerPackets(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadKad() const;
+    void setCumUpOverheadKad(uint64 val);
+    [[nodiscard]] uint64 cumUpOverheadKadPackets() const;
+    void setCumUpOverheadKadPackets(uint64 val);
+
+    // Cumulative overhead — download (bytes + packets)
+    [[nodiscard]] uint64 cumDownOverheadTotal() const;
+    void setCumDownOverheadTotal(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadTotalPackets() const;
+    void setCumDownOverheadTotalPackets(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadFileReq() const;
+    void setCumDownOverheadFileReq(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadFileReqPackets() const;
+    void setCumDownOverheadFileReqPackets(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadSrcExch() const;
+    void setCumDownOverheadSrcExch(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadSrcExchPackets() const;
+    void setCumDownOverheadSrcExchPackets(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadServer() const;
+    void setCumDownOverheadServer(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadServerPackets() const;
+    void setCumDownOverheadServerPackets(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadKad() const;
+    void setCumDownOverheadKad(uint64 val);
+    [[nodiscard]] uint64 cumDownOverheadKadPackets() const;
+    void setCumDownOverheadKadPackets(uint64 val);
+
+    // Cumulative connection stats
+    [[nodiscard]] uint32 cumConnPeak() const;
+    void setCumConnPeak(uint32 val);
+    [[nodiscard]] uint32 cumConnMaxLimitReached() const;
+    void setCumConnMaxLimitReached(uint32 val);
+    [[nodiscard]] uint32 cumConnReconnects() const;
+    void setCumConnReconnects(uint32 val);
+
+    // Cumulative times
+    [[nodiscard]] uint64 cumRunTime() const;
+    void setCumRunTime(uint64 val);
+    [[nodiscard]] uint64 cumTransferTime() const;
+    void setCumTransferTime(uint64 val);
+    [[nodiscard]] uint64 cumUploadTime() const;
+    void setCumUploadTime(uint64 val);
+    [[nodiscard]] uint64 cumDownloadTime() const;
+    void setCumDownloadTime(uint64 val);
+    [[nodiscard]] uint64 cumServerDuration() const;
+    void setCumServerDuration(uint64 val);
+
+    // Cumulative quality stats
+    [[nodiscard]] uint64 cumCompressionGain() const;
+    void setCumCompressionGain(uint64 val);
+    [[nodiscard]] uint64 cumCorruptionLoss() const;
+    void setCumCorruptionLoss(uint64 val);
+    [[nodiscard]] uint32 cumIchPartsSaved() const;
+    void setCumIchPartsSaved(uint32 val);
+
+    // Per-client breakdown — cumulative upload bytes
+    [[nodiscard]] uint64 cumUpEmule() const;
+    void setCumUpEmule(uint64 val);
+    [[nodiscard]] uint64 cumUpEDHybrid() const;
+    void setCumUpEDHybrid(uint64 val);
+    [[nodiscard]] uint64 cumUpEDonkey() const;
+    void setCumUpEDonkey(uint64 val);
+    [[nodiscard]] uint64 cumUpAMule() const;
+    void setCumUpAMule(uint64 val);
+    [[nodiscard]] uint64 cumUpMLdonkey() const;
+    void setCumUpMLdonkey(uint64 val);
+    [[nodiscard]] uint64 cumUpShareaza() const;
+    void setCumUpShareaza(uint64 val);
+    [[nodiscard]] uint64 cumUpEMCompat() const;
+    void setCumUpEMCompat(uint64 val);
+
+    // Per-client breakdown — cumulative download bytes
+    [[nodiscard]] uint64 cumDownEmule() const;
+    void setCumDownEmule(uint64 val);
+    [[nodiscard]] uint64 cumDownEDHybrid() const;
+    void setCumDownEDHybrid(uint64 val);
+    [[nodiscard]] uint64 cumDownEDonkey() const;
+    void setCumDownEDonkey(uint64 val);
+    [[nodiscard]] uint64 cumDownAMule() const;
+    void setCumDownAMule(uint64 val);
+    [[nodiscard]] uint64 cumDownMLdonkey() const;
+    void setCumDownMLdonkey(uint64 val);
+    [[nodiscard]] uint64 cumDownShareaza() const;
+    void setCumDownShareaza(uint64 val);
+    [[nodiscard]] uint64 cumDownEMCompat() const;
+    void setCumDownEMCompat(uint64 val);
+    [[nodiscard]] uint64 cumDownURL() const;
+    void setCumDownURL(uint64 val);
+
+    // Per-port breakdown — cumulative bytes
+    [[nodiscard]] uint64 cumUpPort4662() const;
+    void setCumUpPort4662(uint64 val);
+    [[nodiscard]] uint64 cumUpPortOther() const;
+    void setCumUpPortOther(uint64 val);
+    [[nodiscard]] uint64 cumDownPort4662() const;
+    void setCumDownPort4662(uint64 val);
+    [[nodiscard]] uint64 cumDownPortOther() const;
+    void setCumDownPortOther(uint64 val);
+
+    // Per-source breakdown — cumulative upload bytes
+    [[nodiscard]] uint64 cumUpFromFile() const;
+    void setCumUpFromFile(uint64 val);
+    [[nodiscard]] uint64 cumUpFromPartfile() const;
+    void setCumUpFromPartfile(uint64 val);
+
+    // Records
+    [[nodiscard]] uint32 recMaxWorkingServers() const;
+    void setRecMaxWorkingServers(uint32 val);
+    [[nodiscard]] uint32 recMaxUsersOnline() const;
+    void setRecMaxUsersOnline(uint32 val);
+    [[nodiscard]] uint32 recMaxFilesAvail() const;
+    void setRecMaxFilesAvail(uint32 val);
+    [[nodiscard]] uint64 recMaxSharedFiles() const;
+    void setRecMaxSharedFiles(uint64 val);
+    [[nodiscard]] uint64 recMaxSharedSize() const;
+    void setRecMaxSharedSize(uint64 val);
+    [[nodiscard]] uint64 recMaxAvgFileSize() const;
+    void setRecMaxAvgFileSize(uint64 val);
+    [[nodiscard]] uint64 recMaxLargestFile() const;
+    void setRecMaxLargestFile(uint64 val);
+
     // -- Security -------------------------------------------------------------
 
     [[nodiscard]] uint32 ipFilterLevel() const;
