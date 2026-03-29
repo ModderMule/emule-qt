@@ -157,6 +157,21 @@
     <ClCompile Include="app\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\BugReportDialog.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\ClientSharedFilesDialog.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\TrayMenuManager.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="dialogs\AddFriendDialog.h">
@@ -287,6 +302,18 @@
     </ClInclude>
     <QtMoc Include="app\VersionChecker.h">
       <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\BugReportDialog.h">
+      <Filter>Generated Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\ClientSharedFilesDialog.h">
+      <Filter>Generated Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\ToolbarCustomizeDialog.h">
+      <Filter>Generated Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\TrayMenuManager.h">
+      <Filter>Generated Files</Filter>
     </QtMoc>
   </ItemGroup>
   <ItemGroup>
@@ -1017,5 +1044,10 @@
     <None Include="..\..\resources\icons\email.ico">
       <Filter>Resource Files</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
