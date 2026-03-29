@@ -331,7 +331,7 @@ if defined VCPKG_BIN (
 REM -- Create zip --------------------------------------------------------------
 
 set "ZIP_NAME=emuleqt-v%APP_VERSION%-win64.zip"
-set "ZIP_PATH=%PROJECT_DIR%\%ZIP_NAME%"
+set "ZIP_PATH=%BUILD_DIR%\%ZIP_NAME%"
 if exist "%ZIP_PATH%" del "%ZIP_PATH%"
 
 echo(
