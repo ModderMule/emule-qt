@@ -126,6 +126,14 @@ bool KnownFileList::safeAddKFile(KnownFile* file)
     return true;
 }
 
+void KnownFileList::remove(const KnownFile* file)
+{
+    if (!file)
+        return;
+    MD4Key key(file->fileHash());
+    m_filesMap.erase(key);
+}
+
 // ---------------------------------------------------------------------------
 // Lookup methods
 // ---------------------------------------------------------------------------
@@ -210,6 +218,9 @@ bool KnownFileList::loadKnownFiles()
 
     if (!QFile::exists(filePath))
         return true; // first run — no file is fine
+
+    if (QFileInfo(filePath).size() == 0)
+        return true; // empty file — treat as first run
 
     try {
         SafeFile file(filePath, QIODevice::ReadOnly);

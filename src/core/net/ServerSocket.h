@@ -123,6 +123,7 @@ signals:
 protected:
     bool packetReceived(Packet* packet) override;
     void onError(int errorCode) override;
+    void onEncryptionHandshakeComplete() override;
 
 private:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode);
@@ -143,6 +144,7 @@ private:
     bool m_startNewMessageLog = true;
     bool m_isDeleting = false;
     bool m_noCrypt = false;
+    bool m_pendingLogin = false;
 
     QElapsedTimer m_elapsedTimer;
 };

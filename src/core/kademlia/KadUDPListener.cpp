@@ -637,7 +637,7 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
     // The contact data starts with 16 bytes KadID + 2 bytes TCP port.
     // Matches MFC KademliaUDPListener.cpp:461-474.
     if (len >= 18 && !m_fetchNodeIDRequests.empty()) {
-        uint16 tcpPort = static_cast<uint16>(data[16]) | (static_cast<uint16>(data[17]) << 8);
+        uint16 tcpPort = static_cast<uint16>(static_cast<uint16>(data[16]) | (static_cast<uint16>(data[17]) << 8));
         uint8 nodeIDBytes[16];
         contactID.toByteArray(nodeIDBytes);
 

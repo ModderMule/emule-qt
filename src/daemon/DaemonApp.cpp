@@ -147,9 +147,6 @@ bool DaemonApp::isRunning() const
 
 void DaemonApp::startWebServer()
 {
-    if (!thePrefs.webServerEnabled())
-        return;
-
     m_webServer = std::make_unique<WebServer>(this);
 
     // Inject dependencies from core
@@ -176,21 +173,30 @@ void DaemonApp::startWebServer()
     });
 
     WebServerConfig config;
-    config.enabled            = true;
-    config.port               = thePrefs.webServerPort();
-    config.listenAddress      = thePrefs.webServerListenAddress();
-    config.apiKey             = thePrefs.webServerApiKey();
-    config.restApiEnabled     = thePrefs.webServerRestApiEnabled();
-    config.gzipEnabled        = thePrefs.webServerGzipEnabled();
-    config.templatePath       = thePrefs.webServerTemplatePath();
-    config.sessionTimeout     = thePrefs.webServerSessionTimeout();
-    config.httpsEnabled       = thePrefs.webServerHttpsEnabled();
-    config.certPath           = thePrefs.webServerCertPath();
-    config.keyPath            = thePrefs.webServerKeyPath();
-    config.adminPasswordHash  = thePrefs.webServerAdminPassword();
-    config.adminAllowHiLevFunc = thePrefs.webServerAdminAllowHiLevFunc();
-    config.guestEnabled       = thePrefs.webServerGuestEnabled();
-    config.guestPasswordHash  = thePrefs.webServerGuestPassword();
+    config.enabled = true;
+    config.port    = thePrefs.webServerPort();
+
+    if (thePrefs.webServerEnabled()) {
+        // Full web interface — use configured listen address
+        config.listenAddress       = thePrefs.webServerListenAddress();
+        config.apiKey              = thePrefs.webServerApiKey();
+        config.restApiEnabled      = thePrefs.webServerRestApiEnabled();
+        config.gzipEnabled         = thePrefs.webServerGzipEnabled();
+        config.templatePath        = thePrefs.webServerTemplatePath();
+        config.sessionTimeout      = thePrefs.webServerSessionTimeout();
+        config.httpsEnabled        = thePrefs.webServerHttpsEnabled();
+        config.certPath            = thePrefs.webServerCertPath();
+        config.keyPath             = thePrefs.webServerKeyPath();
+        config.adminPasswordHash   = thePrefs.webServerAdminPassword();
+        config.adminAllowHiLevFunc = thePrefs.webServerAdminAllowHiLevFunc();
+        config.guestEnabled        = thePrefs.webServerGuestEnabled();
+        config.guestPasswordHash   = thePrefs.webServerGuestPassword();
+    } else {
+        // Preview-only mode — localhost only, no REST API or web UI
+        config.listenAddress  = QStringLiteral("127.0.0.1");
+        config.restApiEnabled = false;
+        config.guestEnabled   = false;
+    }
 
     m_webServer->start(config);
 }

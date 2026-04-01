@@ -18,10 +18,10 @@ QString formatSize(int64_t bytes)
     if (bytes < 1024)
         return QStringLiteral("%1 B").arg(bytes);
     if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(bytes / 1024.0, 0, 'f', 1);
+        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
     if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB").arg(bytes / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
+        return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
+    return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
 }
 
 /// Format a speed value (bytes/sec) for display.
@@ -31,7 +31,7 @@ QString formatSpeed(int64_t bytesPerSec)
         return {};
     if (bytesPerSec < 1024)
         return QStringLiteral("%1 B/s").arg(bytesPerSec);
-    return QStringLiteral("%1 KiB/s").arg(bytesPerSec / 1024.0, 0, 'f', 1);
+    return QStringLiteral("%1 KiB/s").arg(static_cast<double>(bytesPerSec) / 1024.0, 0, 'f', 1);
 }
 
 /// Estimate remaining time from size and speed.
@@ -375,26 +375,56 @@ QVariant DownloadListModel::headerData(int section, Qt::Orientation orientation,
     }
 }
 
-void DownloadListModel::setDownloads(std::vector<DownloadRow> downloads)
+void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
 {
-    // Preserve existing sources for downloads that still exist
-    // Build a map from hash → sources
-    std::unordered_map<std::string, std::vector<SourceRow>> savedSources;
-    for (auto& dl : m_downloads) {
-        if (!dl.sources.empty())
-            savedSources[dl.hash.toStdString()] = std::move(dl.sources);
+    // Incremental update: avoids beginResetModel()/endResetModel() so that
+    // the view's selection, expansion, and scroll state are preserved.
+
+    // 1. Build lookup of incoming hashes
+    QHash<QString, size_t> incomingByHash;
+    incomingByHash.reserve(static_cast<qsizetype>(incoming.size()));
+    for (size_t i = 0; i < incoming.size(); ++i)
+        incomingByHash.insert(incoming[i].hash, i);
+
+    // 2. Remove departed downloads (reverse order keeps indices stable for
+    //    rows below the removal point, preserving internalId encoding)
+    for (int i = static_cast<int>(m_downloads.size()) - 1; i >= 0; --i) {
+        if (!incomingByHash.contains(m_downloads[static_cast<size_t>(i)].hash)) {
+            beginRemoveRows({}, i, i);
+            m_downloads.erase(m_downloads.begin() + i);
+            endRemoveRows();
+        }
     }
 
-    beginResetModel();
-    m_downloads = std::move(downloads);
-
-    // Restore preserved sources
-    for (auto& dl : m_downloads) {
-        auto it = savedSources.find(dl.hash.toStdString());
-        if (it != savedSources.end())
-            dl.sources = std::move(it->second);
+    // 3. Update surviving rows in-place (preserve existing sources)
+    QSet<QString> existingHashes;
+    existingHashes.reserve(static_cast<qsizetype>(m_downloads.size()));
+    for (size_t i = 0; i < m_downloads.size(); ++i) {
+        auto& existing = m_downloads[i];
+        existingHashes.insert(existing.hash);
+        if (auto it = incomingByHash.constFind(existing.hash); it != incomingByHash.cend()) {
+            auto& fresh = incoming[it.value()];
+            fresh.sources = std::move(existing.sources); // preserve child rows
+            existing = std::move(fresh);
+        }
     }
-    endResetModel();
+    if (!m_downloads.empty())
+        emit dataChanged(index(0, 0), index(static_cast<int>(m_downloads.size()) - 1, ColCount - 1));
+
+    // 4. Append new downloads in one batch
+    std::vector<DownloadRow> toInsert;
+    for (auto& row : incoming) {
+        if (!row.hash.isEmpty() && !existingHashes.contains(row.hash))
+            toInsert.push_back(std::move(row));
+    }
+    if (!toInsert.empty()) {
+        const int first = static_cast<int>(m_downloads.size());
+        const int last  = first + static_cast<int>(toInsert.size()) - 1;
+        beginInsertRows({}, first, last);
+        for (auto& r : toInsert)
+            m_downloads.push_back(std::move(r));
+        endInsertRows();
+    }
 }
 
 void DownloadListModel::setSources(const QString& hash, std::vector<SourceRow> sources)

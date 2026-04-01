@@ -201,6 +201,11 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
     }
 
     endResetModel();
+
+    // Force repaint of foreground color after model reset so the connected
+    // server row reliably shows blue through the sort proxy model.
+    if (m_connectedServerId != 0 && !m_rows.empty())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole});
 }
 
 void ServerListModel::clear()
@@ -230,7 +235,7 @@ void ServerListModel::setConnectedServer(uint32_t serverId)
         return;
     m_connectedServerId = serverId;
     if (!m_rows.empty())
-        emit dataChanged(index(0, 0), index(rowCount() - 1, ColCount - 1), {Qt::ForegroundRole});
+        emit layoutChanged();
 }
 
 } // namespace eMule

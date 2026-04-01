@@ -157,8 +157,8 @@ void tst_ServerDownloadLive::initTestCase()
 
     m_sharedDmg = new KnownFile();
     QVERIFY2(m_sharedDmg->createFromFile(dataIncoming,
-                 QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg")),
-             "Failed to create KnownFile from qt-online-installer");
+                 QStringLiteral("eMuleQt-testfile-20MB.bin")),
+             "Failed to create KnownFile from eMuleQt-testfile-20MB.bin");
     QVERIFY(m_sharedFiles->safeAddKFile(m_sharedDmg));
 
     qDebug() << "Shared files:" << m_sharedFiles->getCount();

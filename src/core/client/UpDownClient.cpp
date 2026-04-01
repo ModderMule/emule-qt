@@ -2110,7 +2110,7 @@ void UpDownClient::sendPublicKeyPacket()
 
     auto packet = std::make_unique<Packet>(OP_PUBLICKEY, 1 + keyLen);
     packet->prot = OP_EMULEPROT;
-    packet->pBuffer[0] = keyLen;
+    packet->pBuffer[0] = static_cast<char>(keyLen);
     std::memcpy(packet->pBuffer + 1, theApp.clientCredits->publicKey(), keyLen);
     sendPacket(std::move(packet));
 
@@ -2173,11 +2173,11 @@ void UpDownClient::sendSignaturePacket()
     const uint32 packetSize = (chaIPKind != kCryptCipNoneClient) ? 1 + sigLen + 1 : 1 + sigLen;
     auto packet = std::make_unique<Packet>(OP_SIGNATURE, packetSize);
     packet->prot = OP_EMULEPROT;
-    packet->pBuffer[0] = sigLen;
+    packet->pBuffer[0] = static_cast<char>(sigLen);
     std::memcpy(packet->pBuffer + 1, sig, sigLen);
 
     if (chaIPKind != kCryptCipNoneClient)
-        packet->pBuffer[1 + sigLen] = chaIPKind;
+        packet->pBuffer[1 + sigLen] = static_cast<char>(chaIPKind);
 
     sendPacket(std::move(packet));
     m_secureIdentState = SecureIdentState::AllRequestsSend;
@@ -2496,7 +2496,7 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
 
     // Decode BMP using QImage
     QImage captchaImg;
-    if (!captchaImg.loadFromData(imgData.data(), imgSize, "BMP")) {
+    if (!captchaImg.loadFromData(imgData.data(), static_cast<int>(imgSize), "BMP")) {
         logDebug(QStringLiteral("processCaptchaRequest: failed to decode BMP captcha"));
         m_chatCaptchaState = ChatCaptchaState::None;
         return;
@@ -2680,7 +2680,7 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
 
         // Decode PNG using QImage (replaces CxImage)
         QImage image;
-        if (image.loadFromData(imgData.data(), imgSize, "PNG") && !image.isNull()) {
+        if (image.loadFromData(imgData.data(), static_cast<int>(imgSize), "PNG") && !image.isNull()) {
             previewImages.push_back(std::move(image));
         } else {
             logDebug(QStringLiteral("processPreviewAnswer: failed to decode frame %1").arg(i));
@@ -3440,6 +3440,10 @@ void UpDownClient::onUploadRequestReceived(const uint8* data, uint32 size)
         setUploadFileID(file);
         if (theApp.uploadQueue)
             theApp.uploadQueue->addClientToQueue(this);
+    } else {
+        logDebug(QStringLiteral("onUploadRequestReceived: file not found for %1")
+                     .arg(userName()));
+        sendFileNotFound(data);
     }
 }
 

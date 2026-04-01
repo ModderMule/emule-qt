@@ -283,6 +283,7 @@ int main(int argc, char* argv[])
 
     // IPC client — always used to connect to the daemon
     eMule::IpcClient ipcClient;
+    bool isRemote = false;  // true when connected to a non-localhost daemon
 
     if (eMule::thePrefs.ipcEnabled()) {
         ipcClient.setRemotePollingMs(eMule::thePrefs.ipcRemotePollingMs());
@@ -293,7 +294,6 @@ int main(int argc, char* argv[])
         QString connectHost = eMule::thePrefs.ipcListenAddress();
         uint16_t port = eMule::thePrefs.ipcPort();
         QString daemonPath;
-        bool isRemote = false;
 
         const QHostAddress configAddr(connectHost);
         if (!configAddr.isNull() && !configAddr.isLoopback()
@@ -368,15 +368,16 @@ int main(int argc, char* argv[])
             else
                 colored = QStringLiteral("<font color='#3399FF'>%1</font>").arg(text.toHtmlEscaped());
 
-            // Route to the correct tab
+            // Route to the correct tab (pass epoch timestamp as seqId for sorted insertion)
+            const qint64 seqId = ts > 0 ? static_cast<qint64>(ts) : 0;
             if (cat == QStringLiteral("emule.kad"))
-                logWidget->appendKad(colored, timestamp);
+                logWidget->appendKad(colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.server"))
                 logWidget->appendServerInfo(colored);
             else if (severity == QtDebugMsg || severity == QtWarningMsg)
-                logWidget->appendVerbose(colored, timestamp);
+                logWidget->appendVerbose(colored, timestamp, seqId);
             else
-                logWidget->appendLog(colored, timestamp);
+                logWidget->appendLog(colored, timestamp, seqId);
         });
 
         QObject::connect(&ipcClient, &eMule::IpcClient::connected,
@@ -457,6 +458,14 @@ int main(int argc, char* argv[])
                 eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
                 if (!*weOwnDaemon && launchDaemon(daemonPath))
                     *weOwnDaemon = true;
+            });
+            // When the daemon we launched crashes, reset the flag so the
+            // connectionFailed handler above will relaunch it on the next
+            // failed reconnect attempt.
+            QObject::connect(&ipcClient, &eMule::IpcClient::disconnected,
+                             &app, [weOwnDaemon]() {
+                if (*weOwnDaemon)
+                    *weOwnDaemon = false;
             });
         } else {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
@@ -641,6 +650,12 @@ int main(int argc, char* argv[])
                     return true;
                 }
             }
+            // macOS: clicking the dock icon when the window is hidden should restore it
+            if (event->type() == QEvent::ApplicationActivate && !mw.isVisible()) {
+                mw.showNormal();
+                mw.raise();
+                mw.activateWindow();
+            }
             return QObject::eventFilter(obj, event);
         }
     };
@@ -663,7 +678,12 @@ int main(int argc, char* argv[])
 
     // Save UI state to its own file (not preferences.yml)
     eMule::theUiState.save(configDir);
-    eMule::thePrefs.save();
+
+    // Only save preferences when connected to a remote daemon — the GUI owns
+    // its local copy in that scenario.  When connected to a local daemon we
+    // launched, the daemon is the sole writer of preferences.yml.
+    if (isRemote)
+        eMule::thePrefs.save();
 
     return result;
 }

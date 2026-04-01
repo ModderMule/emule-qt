@@ -929,7 +929,7 @@ void UpDownClient::udpReaskForDownload()
 
     // Include complete source count if extended requests
     if (m_extendedRequestsVer >= 2) {
-        data.writeUInt16(m_reqFile->sourceCount());
+        data.writeUInt16(static_cast<uint16>(m_reqFile->sourceCount()));
     }
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);

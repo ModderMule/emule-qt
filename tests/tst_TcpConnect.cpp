@@ -203,14 +203,14 @@ void tst_TcpConnect::initTestCase()
              "Failed to create KnownFile from eMule0.50a.zip");
     QVERIFY(m_sharedFiles->safeAddKFile(m_sharedZipFile));
 
-    // 16. Create KnownFile from data/incoming/qt-online-installer and share it
-    const QString dmgName = QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg");
+    // 16. Create KnownFile from data/incoming/eMuleQt-testfile-20MB.bin and share it
+    const QString dmgName = QStringLiteral("eMuleQt-testfile-20MB.bin");
     QVERIFY2(QFile::exists(dataIncoming + QDir::separator() + dmgName),
-             "Missing data/incoming/qt-online-installer-macOS-x64-4.10.0.dmg");
+             "Missing data/incoming/eMuleQt-testfile-20MB.bin");
 
     m_sharedDmgFile = new KnownFile();
     QVERIFY2(m_sharedDmgFile->createFromFile(dataIncoming, dmgName),
-             "Failed to create KnownFile from qt-online-installer DMG");
+             "Failed to create KnownFile from testfile-20MB");
     QVERIFY(m_sharedFiles->safeAddKFile(m_sharedDmgFile));
 }
 
@@ -558,12 +558,12 @@ void tst_TcpConnect::download_askedForAnotherFile()
 
     m_downloadQueue->addDownload(partFileB);
 
-    // -- Setup: create PartFile C (qt-online-installer DMG) as A4AF ----------
+    // -- Setup: create PartFile C (testfile-20MB) as A4AF ----------
     const uint8* hashC = m_sharedDmgFile->fileHash();
     const uint64 sizeC = static_cast<uint64>(m_sharedDmgFile->fileSize());
 
     auto* partFileC = new PartFile();
-    partFileC->setFileName(QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg"));
+    partFileC->setFileName(QStringLiteral("eMuleQt-testfile-20MB.bin"));
     partFileC->setFileSize(static_cast<EMFileSize>(sizeC));
     partFileC->setFileHash(hashC);
 
@@ -631,7 +631,7 @@ void tst_TcpConnect::download_askedForAnotherFile()
     client->sendStartupLoadReq();
 
     // ========================================================================
-    // File C (qt-online-installer DMG, ~23 MB, multi-part) — uploader
+    // File C (testfile-20MB, 20 MB, multi-part) — uploader
     // switches to this file; hashset is exchanged automatically for files
     // larger than PARTSIZE (~9.7 MB)
     // ========================================================================
@@ -655,7 +655,7 @@ void tst_TcpConnect::download_askedForAnotherFile()
     QCOMPARE(static_cast<uint64>(fiB.size()), sizeB);
 
     const QString downloadedC = thePrefs.incomingDir() + QDir::separator()
-                                + QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg");
+                                + QStringLiteral("eMuleQt-testfile-20MB.bin");
     QVERIFY2(QFile::exists(downloadedC),
              qPrintable(QStringLiteral("Downloaded DMG not found at %1").arg(downloadedC)));
     QFileInfo fiC(downloadedC);
@@ -679,7 +679,7 @@ void tst_TcpConnect::download_askedForAnotherFile()
         QCOMPARE(downloaded.readAll(), original.readAll());
     }
     {
-        QFile original(dataIncoming + QStringLiteral("/qt-online-installer-macOS-x64-4.10.0.dmg"));
+        QFile original(dataIncoming + QStringLiteral("/eMuleQt-testfile-20MB.bin"));
         QVERIFY(original.open(QIODevice::ReadOnly));
         QFile downloaded(downloadedC);
         QVERIFY(downloaded.open(QIODevice::ReadOnly));

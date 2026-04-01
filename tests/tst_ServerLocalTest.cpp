@@ -121,7 +121,7 @@ private:
     // Shared file hashes (MD4, 16 bytes each)
     QByteArray m_readmeHash;
     QByteArray m_zipHash;
-    QByteArray m_dmgHash;
+    QByteArray m_testfileHash;
 };
 
 // ---------------------------------------------------------------------------
@@ -394,7 +394,7 @@ void tst_ServerLocalTest::addSearchData()
 
     QTest::newRow("readme")              << QStringLiteral("readme")              << m_readmeHash;
     QTest::newRow("eMule")               << QStringLiteral("eMule")               << m_zipHash;
-    QTest::newRow("qt-online-installer") << QStringLiteral("qt-online-installer") << m_dmgHash;
+    QTest::newRow("testfile")            << QStringLiteral("testfile")            << m_testfileHash;
 }
 
 // ---------------------------------------------------------------------------
@@ -484,17 +484,17 @@ void tst_ServerLocalTest::initTestCase()
     QVERIFY(m_sharedFiles->safeAddKFile(sharedZip));
     m_zipHash = QByteArray(reinterpret_cast<const char*>(sharedZip->fileHash()), 16);
 
-    auto* sharedDmg = new KnownFile();
-    QVERIFY2(sharedDmg->createFromFile(dataIncoming,
-                 QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg")),
-             "Failed to create KnownFile from qt-online-installer");
-    QVERIFY(m_sharedFiles->safeAddKFile(sharedDmg));
-    m_dmgHash = QByteArray(reinterpret_cast<const char*>(sharedDmg->fileHash()), 16);
+    auto* sharedTestfile = new KnownFile();
+    QVERIFY2(sharedTestfile->createFromFile(dataIncoming,
+                 QStringLiteral("eMuleQt-testfile-20MB.bin")),
+             "Failed to create KnownFile from eMuleQt-testfile-20MB.bin");
+    QVERIFY(m_sharedFiles->safeAddKFile(sharedTestfile));
+    m_testfileHash = QByteArray(reinterpret_cast<const char*>(sharedTestfile->fileHash()), 16);
 
     qDebug() << "Shared files:" << m_sharedFiles->getCount();
     qDebug() << "readme.txt hash:" << m_readmeHash.toHex();
     qDebug() << "eMule0.50a.zip hash:" << m_zipHash.toHex();
-    qDebug() << "qt-online-installer hash:" << m_dmgHash.toHex();
+    qDebug() << "eMuleQt-testfile-20MB.bin hash:" << m_testfileHash.toHex();
 
     // 6. DownloadQueue
     m_downloadQueue = new DownloadQueue(this);

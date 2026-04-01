@@ -76,6 +76,7 @@ public:
     KnownFile* findKnownFileByPath(const QString& path) const;
     bool isKnownFile(const KnownFile* file) const;
     bool isFilePtrInList(const KnownFile* file) const;
+    void remove(const KnownFile* file);
 
     void addCancelledFileID(const uint8* hash);
     bool isCancelledFileByID(const uint8* hash) const;

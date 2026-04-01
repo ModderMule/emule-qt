@@ -31,13 +31,14 @@ public:
 
     /// Append a message to the Log tab.
     /// If @p ts is non-empty it is used as the timestamp; otherwise current time.
-    void appendLog(const QString& msg, const QString& ts = {});
+    /// @p seqId orders entries (epoch seconds); 0 = use current time.
+    void appendLog(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
 
     /// Append a message to the Verbose tab.
-    void appendVerbose(const QString& msg, const QString& ts = {});
+    void appendVerbose(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
 
     /// Append a message to the Kad tab.
-    void appendKad(const QString& msg, const QString& ts = {});
+    void appendKad(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
 
     /// Append an IPC message to the IPC tab.
     /// @p outgoing: true = GUI→daemon (green), false = daemon→GUI (purple).
@@ -64,7 +65,14 @@ public:
     void removeMessageHandler();
 
 private:
+    /// Insert a formatted log line into @p browser in sequence-order.
+    /// If seqId >= the last entry's seqId, appends (fast path).
+    /// Otherwise binary-searches for the correct position.
+    void insertSorted(QTextBrowser* browser, QList<qint64>& seqIds,
+                      qint64 seqId, const QString& html);
+
     /// Remove oldest lines from @p browser if it exceeds the configured limit.
+    void trimToLimit(QTextBrowser* browser, QList<qint64>& seqIds);
     static void trimToLimit(QTextBrowser* browser);
     QTabBar* m_tabBar = nullptr;
     QStackedWidget* m_stack = nullptr;
@@ -74,6 +82,11 @@ private:
     QTextBrowser* m_kadBrowser = nullptr;
     QTextBrowser* m_ipcLogBrowser = nullptr;
     int m_ipcTabIndex = -1;
+
+    /// Parallel sequence-ID lists (one per sorted browser) for ordered insertion.
+    QList<qint64> m_logSeqIds;
+    QList<qint64> m_verboseSeqIds;
+    QList<qint64> m_kadSeqIds;
 
     /// Static instance pointer for the message handler callback.
     static LogWidget* s_instance;

@@ -161,6 +161,7 @@ private slots:
     void onSchedulerToggle();
     void onToolbarContextMenu(const QPoint& pos);
     void onSubmitBugReport();
+    void forceQuit();
 
 private:
     void rebuildToolbar();
@@ -227,6 +228,7 @@ private:
 
     // Tray context menu
     TrayMenuManager* m_trayMenu = nullptr;
+    bool m_forceQuit = false;
 
 #ifdef Q_OS_WIN
     MiniMuleWidget* m_miniMule = nullptr;

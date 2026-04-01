@@ -212,7 +212,7 @@ void ClientUDPSocket::onReadyRead()
         }
 
         auto* buf = reinterpret_cast<uint8*>(data.data());
-        int bufLen = data.size();
+        qsizetype bufLen = data.size();
 
         uint8 protoByte = buf[0];
 
@@ -229,7 +229,7 @@ void ClientUDPSocket::onReadyRead()
         } else if (protoByte == OP_KADEMLIAPACKEDPROT) {
             // Compressed Kademlia packet — decompress before forwarding
             uint8 opcode = buf[1];
-            QByteArray decompressed = decompressKadPayload(buf + 2, bufLen - 2);
+            QByteArray decompressed = decompressKadPayload(buf + 2, static_cast<int>(bufLen - 2));
             if (!decompressed.isEmpty()) {
                 emit kadPacketReceived(opcode,
                                        reinterpret_cast<const uint8*>(decompressed.constData()),
@@ -249,7 +249,7 @@ void ClientUDPSocket::onReadyRead()
                 kadRecvKey = kadPrefs->getUDPVerifyKey(senderIP);
             }
             DecryptResult dr = EncryptedDatagramSocket::decryptReceivedClient(
-                buf, bufLen, senderIP, userHash.data(), kadIDPtr, kadRecvKey);
+                buf, static_cast<int>(bufLen), senderIP, userHash.data(), kadIDPtr, kadRecvKey);
 
             if (dr.length > 1 && dr.data != nullptr) {
                 uint8 innerProto = dr.data[0];
@@ -318,7 +318,8 @@ bool ClientUDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
         break;
 
     case OP_PORTTEST:
-        emit portTestReceived(senderIP, senderPort);
+        if (size == 1 && packet[0] == 0x12)
+            emit portTestReceived(senderIP, senderPort);
         break;
 
     default:

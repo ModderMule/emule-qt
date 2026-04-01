@@ -11,6 +11,7 @@
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/TransferToolbar.h"
 #include "dialogs/ClientDetailDialog.h"
+#include "utils/PreviewLauncher.h"
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
@@ -976,8 +977,6 @@ void TransferPanel::requestDownloads()
             return;
         }
 
-        const auto savedSels = saveFullDownloadSelectionMulti();
-
         const QCborArray arr = resp.fieldArray(1);
         std::vector<DownloadRow> rows;
         rows.reserve(static_cast<size_t>(arr.size()));
@@ -1015,33 +1014,16 @@ void TransferPanel::requestDownloads()
             rows.push_back(std::move(row));
         }
 
-        const int dlScroll = m_downloadView->verticalScrollBar()->value();
-
+        // Incremental update preserves selection, expansion, and scroll natively
         m_downloadModel->setDownloads(std::move(rows));
         updateToolbarLabels();
         updateCategoryTabs();
         updateActionStates();
-
-        // Re-expand previously expanded downloads and refresh their sources
-        // (must happen BEFORE restoring selection so source child rows are visible)
-        for (const QString& expHash : m_expandedDownloads) {
-            for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
-                if (m_downloadModel->hashAt(row) == expHash) {
-                    const QModelIndex srcIdx = m_downloadModel->index(row, 0);
-                    const QModelIndex sortIdx = m_downloadProxy->mapFromSource(srcIdx);
-                    const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
-                    if (catIdx.isValid())
-                        m_downloadView->expand(catIdx);
-                    break;
-                }
-            }
-            requestDownloadSources(expHash);
-        }
-
-        restoreFullDownloadSelectionMulti(savedSels);
-        updateActionStates();
         updateClearCompletedState();
-        m_downloadView->verticalScrollBar()->setValue(dlScroll);
+
+        // Refresh sources for expanded downloads
+        for (const QString& expHash : m_expandedDownloads)
+            requestDownloadSources(expHash);
     });
 }
 
@@ -1365,25 +1347,7 @@ void TransferPanel::sendPreview(const QString& hash)
     const QString url = QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
                             .arg(host).arg(wsPort).arg(hash, m_streamToken);
 
-    // Launch configured video player with the streaming URL
-    const QString playerCmd = thePrefs.videoPlayerCommand();
-    if (playerCmd.isEmpty()) {
-        logWarning(tr("No video player configured. Set it in Options → Files."));
-        return;
-    }
-
-    QString args = thePrefs.videoPlayerArgs();
-    QStringList argList;
-    if (args.contains(QStringLiteral("%1"))) {
-        args.replace(QStringLiteral("%1"), url);
-        argList = QProcess::splitCommand(args);
-    } else {
-        if (!args.isEmpty())
-            argList = QProcess::splitCommand(args);
-        argList.append(url);
-    }
-
-    QProcess::startDetached(playerCmd, argList);
+    launchPreview(url);
 }
 
 void TransferPanel::sendSetCategory(const QString& hash, int category)
@@ -1458,7 +1422,7 @@ void TransferPanel::fetchAndShowClientDetails(const QString& clientHash)
 void TransferPanel::searchRelated(const QString& fileName)
 {
     // Strip extension and emit search request
-    const int dotIdx = fileName.lastIndexOf(QLatin1Char('.'));
+    const qsizetype dotIdx = fileName.lastIndexOf(QLatin1Char('.'));
     const QString term = (dotIdx > 0) ? fileName.left(dotIdx) : fileName;
     emit searchRequested(term);
 }
@@ -1513,148 +1477,6 @@ QStringList TransferPanel::saveDownloadSelectionMulti() const
         }
     }
     return result;
-}
-
-std::pair<QString, QString> TransferPanel::saveFullDownloadSelection() const
-{
-    const auto sel = m_downloadView->selectionModel()->currentIndex();
-    if (!sel.isValid())
-        return {};
-
-    const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(sel);
-    const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
-
-    if (m_downloadModel->isSourceRow(srcIdx)) {
-        const QModelIndex parentSrcIdx = srcIdx.parent();
-        const QString fileHash = m_downloadModel->hashAt(parentSrcIdx.row());
-        const auto* src = m_downloadModel->sourceAt(srcIdx);
-        const QString sourceHash = src ? src->userHash : QString{};
-        return {fileHash, sourceHash};
-    }
-
-    return {m_downloadModel->hashAt(srcIdx.row()), {}};
-}
-
-std::vector<std::pair<QString, QString>> TransferPanel::saveFullDownloadSelectionMulti() const
-{
-    const auto selected = m_downloadView->selectionModel()->selectedRows(0);
-    std::vector<std::pair<QString, QString>> result;
-    result.reserve(static_cast<size_t>(selected.size()));
-
-    for (const QModelIndex& proxyIdx : selected) {
-        const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
-        const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
-
-        if (m_downloadModel->isSourceRow(srcIdx)) {
-            const QModelIndex parentSrcIdx = srcIdx.parent();
-            const QString fileHash = m_downloadModel->hashAt(parentSrcIdx.row());
-            const auto* src = m_downloadModel->sourceAt(srcIdx);
-            result.emplace_back(fileHash, src ? src->userHash : QString{});
-        } else {
-            result.emplace_back(m_downloadModel->hashAt(srcIdx.row()), QString{});
-        }
-    }
-    return result;
-}
-
-void TransferPanel::restoreDownloadSelection(const QString& key)
-{
-    restoreFullDownloadSelection(key, {});
-}
-
-void TransferPanel::restoreFullDownloadSelection(const QString& fileHash, const QString& sourceHash)
-{
-    if (fileHash.isEmpty())
-        return;
-
-    for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
-        if (m_downloadModel->hashAt(row) != fileHash)
-            continue;
-
-        // Try to restore source-level selection first
-        if (!sourceHash.isEmpty()) {
-            const QModelIndex parentSrcIdx = m_downloadModel->index(row, 0);
-            const int childCount = m_downloadModel->rowCount(parentSrcIdx);
-            for (int c = 0; c < childCount; ++c) {
-                const QModelIndex childSrcIdx = m_downloadModel->index(c, 0, parentSrcIdx);
-                const auto* src = m_downloadModel->sourceAt(childSrcIdx);
-                if (src && src->userHash == sourceHash) {
-                    const QModelIndex sortIdx = m_downloadProxy->mapFromSource(childSrcIdx);
-                    const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
-                    if (catIdx.isValid()) {
-                        m_downloadView->setCurrentIndex(catIdx);
-                        m_downloadView->scrollTo(catIdx);
-                    }
-                    return;
-                }
-            }
-        }
-
-        // Fall back to selecting the parent download row
-        const QModelIndex srcIdx = m_downloadModel->index(row, 0);
-        const QModelIndex sortIdx = m_downloadProxy->mapFromSource(srcIdx);
-        const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
-        if (catIdx.isValid()) {
-            m_downloadView->setCurrentIndex(catIdx);
-            m_downloadView->scrollTo(catIdx);
-        }
-        return;
-    }
-}
-
-void TransferPanel::restoreFullDownloadSelectionMulti(
-    const std::vector<std::pair<QString, QString>>& selections)
-{
-    if (selections.empty())
-        return;
-
-    QItemSelection itemSelection;
-
-    for (const auto& [fileHash, sourceHash] : selections) {
-        if (fileHash.isEmpty())
-            continue;
-
-        for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
-            if (m_downloadModel->hashAt(row) != fileHash)
-                continue;
-
-            // Try source-level restoration
-            if (!sourceHash.isEmpty()) {
-                const QModelIndex parentSrcIdx = m_downloadModel->index(row, 0);
-                const int childCount = m_downloadModel->rowCount(parentSrcIdx);
-                bool found = false;
-                for (int c = 0; c < childCount; ++c) {
-                    const QModelIndex childSrcIdx = m_downloadModel->index(c, 0, parentSrcIdx);
-                    const auto* src = m_downloadModel->sourceAt(childSrcIdx);
-                    if (src && src->userHash == sourceHash) {
-                        const QModelIndex sortIdx = m_downloadProxy->mapFromSource(childSrcIdx);
-                        const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
-                        if (catIdx.isValid())
-                            itemSelection.select(catIdx, catIdx);
-                        found = true;
-                        break;
-                    }
-                }
-                if (found)
-                    break;
-            }
-
-            // Fall back to parent row
-            const QModelIndex srcIdx = m_downloadModel->index(row, 0);
-            const QModelIndex sortIdx = m_downloadProxy->mapFromSource(srcIdx);
-            const QModelIndex catIdx = m_categoryProxy->mapFromSource(sortIdx);
-            if (catIdx.isValid())
-                itemSelection.select(catIdx, catIdx);
-            break;
-        }
-    }
-
-    m_downloadView->selectionModel()->select(
-        itemSelection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-
-    // Set current index to the first selected item for keyboard navigation
-    if (!itemSelection.isEmpty() && !itemSelection.indexes().isEmpty())
-        m_downloadView->setCurrentIndex(itemSelection.indexes().first());
 }
 
 QString TransferPanel::saveClientSelection(QTreeView* view, ClientListModel* model) const

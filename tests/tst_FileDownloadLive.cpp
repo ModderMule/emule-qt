@@ -234,13 +234,10 @@ void tst_FileDownloadLive::initTestCase()
     thePrefs.setTempDirs({tempDir});
 
     // 2. Copy nodes.dat for Kad bootstrap
-    const QString srcNodes = projectDataDir() + QStringLiteral("/nodes.dat");
+    const QString srcNodes = projectDataDir() + QStringLiteral("/config/nodes.dat");
     QVERIFY2(QFile::exists(srcNodes), "Missing data/nodes.dat bootstrap file");
 
-    const QString dstNodes = QDir::tempPath() + QStringLiteral("/nodes.dat");
-    if (QFile::exists(dstNodes))
-        QFile::remove(dstNodes);
-    QVERIFY(QFile::copy(srcNodes, dstNodes));
+    // (actual copy deferred until configDir is set — see step 3b below)
 
     // 3. Port configuration
     const int envTcpPort = qEnvironmentVariableIntValue("EMULE_TCP_PORT");
@@ -257,6 +254,13 @@ void tst_FileDownloadLive::initTestCase()
     // 3b. Client credits — needed for SecureIdent (public key + signature exchange)
     //     Set configDir so RSA key file can be created in the temp directory.
     thePrefs.setConfigDir(m_tmpDir->path());
+
+    // Copy nodes.dat into configDir so Kademlia::start() finds it
+    const QString dstNodes = m_tmpDir->path() + QStringLiteral("/nodes.dat");
+    if (QFile::exists(dstNodes))
+        QFile::remove(dstNodes);
+    QVERIFY(QFile::copy(srcNodes, dstNodes));
+
     auto* creditsList = new ClientCreditsList();
     theApp.clientCredits = creditsList;
 
@@ -591,7 +595,14 @@ void tst_FileDownloadLive::download_completesAndIsShared()
         QFileInfo fi(expectedPath);
         QCOMPARE(static_cast<uint64>(fi.size()), kExpectedSize);
 
-        // File should no longer be in the download queue
+        // Clear completed downloads (same as "Clear Completed" context menu action)
+        std::vector<PartFile*> completed;
+        for (auto* f : m_downloadQueue->files()) {
+            if (f->status() == PartFileStatus::Complete)
+                completed.push_back(f);
+        }
+        for (auto* f : completed)
+            m_downloadQueue->removeFile(f);
         QCOMPARE(m_downloadQueue->fileCount(), 0);
         return;
     }

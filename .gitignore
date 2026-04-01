@@ -17,6 +17,7 @@ out/
 *.app
 emuleqt-*tar.gz
 emuleqt-*.zip
+.cache
 
 # Logs
 logs/
@@ -88,6 +89,7 @@ conan/
 # eMule
 *.part
 *.part*
+*-testfile-*.bin
 
 # Visual Studio builds
 /src/core/debug
@@ -109,6 +111,8 @@ conan/
 translations_*.json
 blog-*.md
 windows-3rd.yml
+docker/kad/docker-compose.kadnet.yml
+docker/kad/nodes.dat
 
 # Environment secrets
 .env

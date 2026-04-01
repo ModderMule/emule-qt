@@ -98,6 +98,8 @@ private:
 
     void loadSettings();
     void saveSettings();
+    void fillDaemonSettings(const QCborMap& prefs);
+    void fillDaemonSettingsFromPrefs();
     void loadSchedulerData();
     void saveSchedulerData();
     void refreshScheduleTable();
@@ -341,6 +343,7 @@ private:
     QCheckBox*    m_logA4AFCheck = nullptr;
     QCheckBox*    m_logUlDlEventsCheck = nullptr;
     QCheckBox*    m_logRawSocketPacketsCheck = nullptr;
+    QCheckBox*    m_logWebServerCheck = nullptr;
     QCheckBox*    m_enableIpcLogCheck = nullptr;
     QCheckBox*    m_startCoreWithConsoleCheck = nullptr;
     QCheckBox*    m_closeUPnPCheck = nullptr;

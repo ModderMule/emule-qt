@@ -77,6 +77,11 @@ signals:
     void uploadStarted(eMule::UpDownClient* client);
     void uploadEnded(eMule::UpDownClient* client);
 
+public slots:
+    /// Handle OP_REASKFILEPING from ClientUDPSocket.
+    void onReaskFilePing(uint32 senderIP, uint16 senderPort,
+                         const uint8* data, uint32 size);
+
 private slots:
     void onBlockPacketsReady(eMule::UpDownClient* client,
                              QList<std::shared_ptr<eMule::Packet>> packets);

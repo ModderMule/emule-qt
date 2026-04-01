@@ -198,7 +198,7 @@ void UDPSocket::onReadyRead()
         }
 
         auto* buf = reinterpret_cast<uint8*>(data.data());
-        int bufLen = data.size();
+        qsizetype bufLen = data.size();
 
         // Look up the server to get its UDP key for decryption
         uint32 serverKeyUDP = 0;
@@ -216,7 +216,7 @@ void UDPSocket::onReadyRead()
             processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderIP, senderPort);
         } else {
             // May be encrypted — try decryption with server key
-            DecryptResult dr = EncryptedDatagramSocket::decryptReceivedServer(buf, bufLen, serverKeyUDP);
+            DecryptResult dr = EncryptedDatagramSocket::decryptReceivedServer(buf, static_cast<int>(bufLen), serverKeyUDP);
             if (dr.length > 1 && dr.data != nullptr) {
                 uint8 opcode = dr.data[1];
                 processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2), opcode, senderIP, senderPort);

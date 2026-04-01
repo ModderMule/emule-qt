@@ -8,6 +8,7 @@
 #include "app/UiState.h"
 #include "controls/DownloadListModel.h"
 #include "controls/SearchResultsModel.h"
+#include "utils/PreviewLauncher.h"
 #include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
@@ -106,7 +107,8 @@ void SearchPanel::setupUi()
     // Tab bar for multiple searches
     m_tabBar = new QTabBar(this);
     m_tabBar->setTabsClosable(true);
-    m_tabBar->setExpanding(false);
+    m_tabBar->setExpanding(true);
+    m_tabBar->setElideMode(Qt::ElideRight);
     m_tabBar->setVisible(false);
     connect(m_tabBar, &QTabBar::currentChanged, this, &SearchPanel::onTabChanged);
     connect(m_tabBar, &QTabBar::tabCloseRequested, this, &SearchPanel::onTabCloseRequested);
@@ -1057,25 +1059,7 @@ void SearchPanel::sendPreview(const QString& hash)
     const QString url = QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
                             .arg(host).arg(wsPort).arg(hash, m_streamToken);
 
-    const QString playerCmd = thePrefs.videoPlayerCommand();
-    if (playerCmd.isEmpty()) {
-        QMessageBox::warning(this, tr("Preview"),
-            tr("No video player configured. Set it in Options → Files."));
-        return;
-    }
-
-    QString args = thePrefs.videoPlayerArgs();
-    QStringList argList;
-    if (args.contains(QStringLiteral("%1"))) {
-        args.replace(QStringLiteral("%1"), url);
-        argList = QProcess::splitCommand(args);
-    } else {
-        if (!args.isEmpty())
-            argList = QProcess::splitCommand(args);
-        argList.append(url);
-    }
-
-    QProcess::startDetached(playerCmd, argList);
+    launchPreview(url);
 }
 
 // ---------------------------------------------------------------------------

@@ -46,6 +46,7 @@
 #include <QLabel>
 #include <QLocale>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QFile>
 #include <QSoundEffect>
@@ -123,11 +124,19 @@ MainWindow::MainWindow(QWidget* parent)
         connect(m_trayMenu, &TrayMenuManager::optionsRequested,
                 this, &MainWindow::onOptionsClicked);
         connect(m_trayMenu, &TrayMenuManager::exitRequested,
-                this, &QWidget::close);
+                this, &MainWindow::forceQuit);
 #ifdef Q_OS_MAC
         m_trayIcon->setContextMenu(m_trayMenu);
 #endif
     }
+
+#ifdef Q_OS_MAC
+    // Ensure Cmd+Q always quits (bypasses minimize-to-tray)
+    auto* quitAction = new QAction(tr("Quit eMule Qt"), this);
+    quitAction->setMenuRole(QAction::QuitRole);
+    connect(quitAction, &QAction::triggered, this, &MainWindow::forceQuit);
+    menuBar()->addAction(quitAction);
+#endif
 
     // Clipboard monitoring — prompt user when ed2k file links are copied (MFC SearchClipboard)
     connect(QApplication::clipboard(), &QClipboard::dataChanged,
@@ -333,6 +342,13 @@ void MainWindow::showNotification(const QString& title, const QString& message)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    // Minimize to tray instead of exiting (unless force-quit via Exit action / Cmd+Q)
+    if (!m_forceQuit && m_trayIcon && thePrefs.minimizeToTray()) {
+        event->ignore();
+        hide();
+        return;
+    }
+
     if (thePrefs.promptOnExit()) {
         auto result = QMessageBox::question(
             this,
@@ -347,6 +363,15 @@ void MainWindow::closeEvent(QCloseEvent* event)
     }
     theUiState.captureMainWindow(this);
     QMainWindow::closeEvent(event);
+    // Explicit quit — on macOS the QSystemTrayIcon keeps the event loop alive
+    // even after the last window is closed, preventing aboutToQuit from firing.
+    QApplication::quit();
+}
+
+void MainWindow::forceQuit()
+{
+    m_forceQuit = true;
+    close();
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)

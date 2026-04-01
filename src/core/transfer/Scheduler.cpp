@@ -160,6 +160,17 @@ int Scheduler::check(bool forceCheck)
     if (count() == 0)
         return -1;
 
+    // Only act when at least one schedule entry is enabled
+    bool anyEnabled = false;
+    for (int i = 0; i < count(); ++i) {
+        if (auto* e = schedule(i); e && e->enabled) {
+            anyEnabled = true;
+            break;
+        }
+    }
+    if (!anyEnabled)
+        return -1;
+
     const QDateTime now = QDateTime::currentDateTime();
     const int currentMinute = now.time().minute();
 

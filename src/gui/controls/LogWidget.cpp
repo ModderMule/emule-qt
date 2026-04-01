@@ -7,9 +7,12 @@
 #include <QIcon>
 #include <QStackedWidget>
 #include <QTabBar>
+#include <QTextBlock>
 #include <QTextBrowser>
 #include <QTextCursor>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 
 namespace eMule {
@@ -102,31 +105,89 @@ void LogWidget::appendServerInfo(const QString& msg)
     m_serverInfoBrowser->append(msg);
 }
 
-void LogWidget::appendLog(const QString& msg, const QString& ts)
+void LogWidget::appendLog(const QString& msg, const QString& ts, qint64 seqId)
 {
     const QString timestamp = ts.isEmpty()
         ? QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"))
         : ts;
-    m_logBrowser->append(QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg));
-    trimToLimit(m_logBrowser);
+    if (seqId == 0)
+        seqId = QDateTime::currentDateTime().toSecsSinceEpoch();
+    const QString html = QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg);
+    insertSorted(m_logBrowser, m_logSeqIds, seqId, html);
+    trimToLimit(m_logBrowser, m_logSeqIds);
 }
 
-void LogWidget::appendVerbose(const QString& msg, const QString& ts)
+void LogWidget::appendVerbose(const QString& msg, const QString& ts, qint64 seqId)
 {
     const QString timestamp = ts.isEmpty()
         ? QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"))
         : ts;
-    m_verboseBrowser->append(QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg));
-    trimToLimit(m_verboseBrowser);
+    if (seqId == 0)
+        seqId = QDateTime::currentDateTime().toSecsSinceEpoch();
+    const QString html = QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg);
+    insertSorted(m_verboseBrowser, m_verboseSeqIds, seqId, html);
+    trimToLimit(m_verboseBrowser, m_verboseSeqIds);
 }
 
-void LogWidget::appendKad(const QString& msg, const QString& ts)
+void LogWidget::appendKad(const QString& msg, const QString& ts, qint64 seqId)
 {
     const QString timestamp = ts.isEmpty()
         ? QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"))
         : ts;
-    m_kadBrowser->append(QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg));
-    trimToLimit(m_kadBrowser);
+    if (seqId == 0)
+        seqId = QDateTime::currentDateTime().toSecsSinceEpoch();
+    const QString html = QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg);
+    insertSorted(m_kadBrowser, m_kadSeqIds, seqId, html);
+    trimToLimit(m_kadBrowser, m_kadSeqIds);
+}
+
+void LogWidget::insertSorted(QTextBrowser* browser, QList<qint64>& seqIds,
+                              qint64 seqId, const QString& html)
+{
+    // Fast path: new entry is in order (most common case)
+    if (seqIds.isEmpty() || seqId >= seqIds.last()) {
+        browser->append(html);
+        seqIds.append(seqId);
+        return;
+    }
+
+    // Binary search for the insertion point
+    auto it = std::lower_bound(seqIds.begin(), seqIds.end(), seqId);
+    const int pos = static_cast<int>(it - seqIds.begin());
+    seqIds.insert(pos, seqId);
+
+    // Insert into the QTextBrowser at the corresponding block position.
+    // Each append() creates one block, so block index == seqIds index.
+    QTextDocument* doc = browser->document();
+    QTextCursor cursor(doc);
+
+    if (pos == 0) {
+        cursor.movePosition(QTextCursor::Start);
+    } else {
+        // Move to the end of the block before insertion point
+        QTextBlock block = doc->findBlockByNumber(pos - 1);
+        cursor.setPosition(block.position() + block.length() - 1);
+    }
+
+    cursor.insertBlock();
+    cursor.insertHtml(html);
+}
+
+void LogWidget::trimToLimit(QTextBrowser* browser, QList<qint64>& seqIds)
+{
+    const int limit = static_cast<int>(thePrefs.maxLogLines());
+    QTextDocument* doc = browser->document();
+    const int excess = doc->blockCount() - limit;
+    if (excess <= 0)
+        return;
+    QTextCursor cursor(doc);
+    cursor.movePosition(QTextCursor::Start);
+    cursor.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor, excess);
+    cursor.removeSelectedText();
+
+    // Keep seqIds in sync
+    if (excess <= seqIds.size())
+        seqIds.remove(0, excess);
 }
 
 void LogWidget::trimToLimit(QTextBrowser* browser)
@@ -167,6 +228,9 @@ void LogWidget::clearAll()
     m_verboseBrowser->clear();
     m_kadBrowser->clear();
     if (m_ipcLogBrowser) m_ipcLogBrowser->clear();
+    m_logSeqIds.clear();
+    m_verboseSeqIds.clear();
+    m_kadSeqIds.clear();
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.3 ready</font>"));
 }
 

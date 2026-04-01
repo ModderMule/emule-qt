@@ -61,6 +61,7 @@ void ClientReqSocket::disconnect(const QString& reason)
 
     m_deleteThis = true;
     close();
+    deleteLater();
 }
 
 void ClientReqSocket::waitForOnConnect()
@@ -88,6 +89,12 @@ bool ClientReqSocket::checkTimeOut()
             now < m_client->downStartTime() + 4 * CONNECTION_TIMEOUT)
         {
             timeout += 4 * CONNECTION_TIMEOUT;
+        }
+        // Extend timeout for uploading clients during slow-start phase
+        if (m_client->uploadState() == UploadState::Uploading) {
+            uint32 uploadTime = m_client->getUpStartTimeDelay();
+            if (uploadTime < 4 * CONNECTION_TIMEOUT)
+                timeout += 4 * CONNECTION_TIMEOUT;
         }
     }
 
@@ -243,6 +250,17 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_HASHSETREQUEST2:
     case OP_HASHSETANSWER2:
         emit extPacketReceived(packet, size, opcode);
+        break;
+
+    case OP_PORTTEST:
+        // Port test probe from porttest.emule-project.net — mark this socket
+        // so the UDP handler can later find it for the final reply.
+        m_portTestCon = true;
+        {
+            auto reply = std::make_unique<Packet>(OP_PORTTEST, 1);
+            reply->pBuffer[0] = 0x12;
+            sendPacket(std::move(reply), true, 0, true);
+        }
         break;
 
     default:

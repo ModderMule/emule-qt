@@ -236,6 +236,9 @@ public:
     [[nodiscard]] bool logRawSocketPackets() const;
     void setLogRawSocketPackets(bool val);
 
+    [[nodiscard]] bool logWebServer() const;
+    void setLogWebServer(bool val);
+
     [[nodiscard]] bool enableIpcLog() const;
     void setEnableIpcLog(bool val);
 

@@ -80,6 +80,7 @@ private:
     void autoUpdateServerList();
     void initUPnP();
     void shutdownUPnP();
+    void stopWorkerThreads();
 
     // Owned components
     std::unique_ptr<DownloadQueue> m_downloadQueue;

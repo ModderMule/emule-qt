@@ -176,7 +176,8 @@ bool ListenSocket::sendPortTestReply(char result, bool doDisconnect)
     // Find the port test socket
     for (auto* socket : m_socketList) {
         if (socket->isPortTestConnection()) {
-            auto pkt = std::make_unique<Packet>(static_cast<uint8>(result), 0, OP_EDONKEYPROT);
+            auto pkt = std::make_unique<Packet>(OP_PORTTEST, 1);
+            pkt->pBuffer[0] = result;
             socket->sendPacket(std::move(pkt), true, 0, true);
             if (doDisconnect)
                 socket->disconnect(QStringLiteral("Port test complete"));

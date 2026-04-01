@@ -88,7 +88,7 @@ int importParts(PartFile* partFile, const QString& sourceFilePath,
 
         // Compute MD4 hash of the read data
         MD4Hasher hasher;
-        hasher.add(reinterpret_cast<const uint8*>(data.constData()), data.size());
+        hasher.add(reinterpret_cast<const uint8*>(data.constData()), static_cast<size_t>(data.size()));
         hasher.finish();
 
         // Compare with expected hash

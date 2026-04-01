@@ -7,7 +7,7 @@
 /// and verifies that the download pipeline (PartFile gap management, block requests,
 /// data reception, hash verification, file completion) works correctly.
 ///
-/// Test file: data/incoming/qt-online-installer-macOS-x64-4.10.0.dmg
+/// Test file: data/incoming/eMuleQt-testfile-20MB.bin
 
 #include "TestHelpers.h"
 
@@ -238,7 +238,7 @@ private:
         {
             SafeMemFile data;
             data.writeHash16(reqHash);
-            data.writeString(QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg"), UTF8Mode::OptBOM);
+            data.writeString(QStringLiteral("eMuleQt-testfile-20MB.bin"), UTF8Mode::OptBOM);
             auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_REQFILENAMEANSWER);
             sendPacket(std::move(packet));
         }
@@ -655,7 +655,7 @@ void tst_MockPeerDownload::initTestCase()
     // Hash the DMG file synchronously
     // -----------------------------------------------------------------------
 
-    m_testFilePath = projectDataDir() + QStringLiteral("/incoming/qt-online-installer-macOS-x64-4.10.0.dmg");
+    m_testFilePath = projectDataDir() + QStringLiteral("/incoming/eMuleQt-testfile-20MB.bin");
     QVERIFY2(QFile::exists(m_testFilePath),
              qPrintable(QStringLiteral("Test file not found: %1").arg(m_testFilePath)));
 
@@ -738,7 +738,7 @@ void tst_MockPeerDownload::initTestCase()
     // Create PartFile for download
     // -----------------------------------------------------------------------
     m_partFile = new PartFile();
-    m_partFile->setFileName(QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg"));
+    m_partFile->setFileName(QStringLiteral("eMuleQt-testfile-20MB.bin"));
     m_partFile->setFileSize(EMFileSize(m_fileSize));
     m_partFile->setFileHash(m_fileHash.data());
     m_partFile->fileIdentifier().setMD4HashSet(m_partHashes);
@@ -823,7 +823,7 @@ void tst_MockPeerDownload::downloadFlow_partFileReachesCompletion()
     QString completedPath;
     QDir incomingDir(m_tmpDir->filePath(QStringLiteral("incoming")));
     QStringList incomingFiles = incomingDir.entryList(
-        {QStringLiteral("*.dmg")}, QDir::Files);
+        {QStringLiteral("*.bin")}, QDir::Files);
     if (!incomingFiles.isEmpty()) {
         completedPath = incomingDir.filePath(incomingFiles.first());
     } else {
@@ -875,7 +875,7 @@ void tst_MockPeerDownload::downloadFlow_corruptionDetectedAndRecovered()
     thePrefs.setTempDirs({tempDir2});
 
     auto* partFile = new PartFile();
-    partFile->setFileName(QStringLiteral("qt-online-installer-macOS-x64-4.10.0.dmg"));
+    partFile->setFileName(QStringLiteral("eMuleQt-testfile-20MB.bin"));
     partFile->setFileSize(EMFileSize(m_fileSize));
     partFile->setFileHash(m_fileHash.data());
     partFile->fileIdentifier().setMD4HashSet(m_partHashes);
@@ -964,12 +964,35 @@ void tst_MockPeerDownload::cleanupTestCase()
     if (m_listenSocket)
         m_listenSocket->stopListening();
 
-    // Reset all globals
+    // Completed PartFiles live in both DownloadQueue and KnownFileList.
+    // Remove completed PartFiles from KnownFileList before DownloadQueue
+    // deletes them, so KnownFileList won't double-free.
+    if (m_downloadQueue && m_knownFiles) {
+        for (auto* f : m_downloadQueue->files())
+            m_knownFiles->remove(f);
+    }
+
+    // Delete all QObject children explicitly in dependency order before
+    // destroying the non-QObject resources they reference. Otherwise Qt's
+    // ~QObject::deleteChildren() destroys them after globals are gone → SIGSEGV.
+    delete m_downloadQueue;
+    m_downloadQueue = nullptr;
+    delete m_sharedFiles;
+    m_sharedFiles = nullptr;
+    delete m_mockUploader;
+    m_mockUploader = nullptr;
+    delete m_clientList;
+    m_clientList = nullptr;
+    delete m_listenSocket;
+    m_listenSocket = nullptr;
+
+    // Reset all globals before deleting remaining non-QObject resources
     theApp.downloadQueue = nullptr;
     theApp.sharedFileList = nullptr;
     theApp.knownFileList = nullptr;
     theApp.clientList = nullptr;
     theApp.listenSocket = nullptr;
+    theApp.ipFilter = nullptr;
     delete theApp.clientCredits;
     theApp.clientCredits = nullptr;
 

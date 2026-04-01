@@ -297,6 +297,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logA4AFCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logUlDlEventsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logRawSocketPacketsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logWebServerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableIpcLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_startCoreWithConsoleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_closeUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -2654,6 +2655,9 @@ QWidget* OptionsDialog::createExtendedPage()
     m_logRawSocketPacketsCheck = new QCheckBox(tr("Log raw socket packets"), verboseGroup);
     verboseLayout->addWidget(m_logRawSocketPacketsCheck);
 
+    m_logWebServerCheck = new QCheckBox(tr("Log web server requests"), verboseGroup);
+    verboseLayout->addWidget(m_logWebServerCheck);
+
     m_enableIpcLogCheck = new QCheckBox(tr("Enable IPC log tab"), verboseGroup);
     verboseLayout->addWidget(m_enableIpcLogCheck);
 
@@ -2831,6 +2835,7 @@ QWidget* OptionsDialog::createExtendedPage()
         m_logA4AFCheck->setEnabled(on);
         m_logUlDlEventsCheck->setEnabled(on);
         m_logRawSocketPacketsCheck->setEnabled(on);
+        m_logWebServerCheck->setEnabled(on);
     });
 
     // Min free disk space depends on check disk space
@@ -3331,571 +3336,33 @@ void OptionsDialog::loadSettings()
     m_showSmileysCheck->setChecked(thePrefs.showSmileys());
     m_indicateRatingsCheck->setChecked(thePrefs.indicateRatings());
 
-    // Always populate daemon settings synchronously from thePrefs first
-    // (provides immediate correct display with no visible flash).
-    // If IPC is connected, the async callback overrides with live daemon values.
+    // Load daemon-owned settings: fetch synchronously from daemon if connected,
+    // otherwise fall back to local thePrefs.
     m_loading = true;
-    {
-        // Synchronous fill from local thePrefs
-        m_nickEdit->setText(thePrefs.nick());
-
-        // Connection page
-        m_capacityDownloadSpin->setValue(static_cast<int>(thePrefs.maxGraphDownloadRate()));
-        m_capacityUploadSpin->setValue(static_cast<int>(thePrefs.maxGraphUploadRate()));
-
-        auto maxDown = static_cast<int>(thePrefs.maxDownload());
-        auto maxUp   = static_cast<int>(thePrefs.maxUpload());
-        m_downloadLimitCheck->setChecked(maxDown > 0);
-        m_downloadLimitSlider->setEnabled(maxDown > 0);
-        m_downloadLimitLabel->setEnabled(maxDown > 0);
-        if (maxDown > 0)
-            m_downloadLimitSlider->setValue(maxDown);
-        m_uploadLimitCheck->setChecked(maxUp > 0);
-        m_uploadLimitSlider->setEnabled(maxUp > 0);
-        m_uploadLimitLabel->setEnabled(maxUp > 0);
-        if (maxUp > 0)
-            m_uploadLimitSlider->setValue(maxUp);
-
-        m_tcpPortSpin->setValue(thePrefs.port());
-        auto udpPort = thePrefs.udpPort();
-        if (udpPort == 0) {
-            m_udpDisableCheck->setChecked(true);
-            m_udpPortSpin->setValue(5672);
-            m_udpPortSpin->setEnabled(false);
-        } else {
-            m_udpDisableCheck->setChecked(false);
-            m_udpPortSpin->setValue(udpPort);
-        }
-
-        m_upnpCheck->setChecked(thePrefs.enableUPnP());
-        m_maxSourcesSpin->setValue(thePrefs.maxSourcesPerFile());
-        m_maxConnectionsSpin->setValue(thePrefs.maxConnections());
-        m_autoConnectCheck->setChecked(thePrefs.autoConnect());
-        m_reconnectCheck->setChecked(thePrefs.reconnect());
-        m_overheadCheck->setChecked(thePrefs.showOverhead());
-        m_kadEnabledCheck->setChecked(thePrefs.kadEnabled());
-        m_ed2kEnabledCheck->setChecked(thePrefs.networkED2K());
-
-        // Server page
-        m_safeServerConnectCheck->setChecked(thePrefs.safeServerConnect());
-        m_autoConnectStaticOnlyCheck->setChecked(thePrefs.autoConnectStaticOnly());
-        m_useServerPrioritiesCheck->setChecked(thePrefs.useServerPriorities());
-        m_addServersFromServerCheck->setChecked(thePrefs.addServersFromServer());
-        m_addServersFromClientsCheck->setChecked(thePrefs.addServersFromClients());
-        m_deadServerRetriesSpin->setValue(static_cast<int>(thePrefs.deadServerRetries()));
-        m_autoUpdateServerListCheck->setChecked(thePrefs.autoUpdateServerList());
-        m_serverListURLValue = thePrefs.serverListURL();
-        m_smartLowIdCheck->setChecked(thePrefs.smartLowIdCheck());
-        m_manualHighPrioCheck->setChecked(thePrefs.manualServerHighPriority());
-
-        // Proxy page
-        int proxyType = thePrefs.proxyType();
-        bool proxyOn = (proxyType != 0);
-        m_proxyEnableCheck->setChecked(proxyOn);
-        m_proxyTypeCombo->setCurrentIndex(proxyType);
-        m_proxyHostEdit->setText(thePrefs.proxyHost());
-        m_proxyPortSpin->setValue(thePrefs.proxyPort());
-        bool authOn = thePrefs.proxyEnablePassword();
-        m_proxyAuthCheck->setChecked(authOn);
-        m_proxyUserEdit->setText(thePrefs.proxyUser());
-        m_proxyPasswordEdit->setText(thePrefs.proxyPassword());
-
-        m_proxyTypeCombo->setEnabled(proxyOn);
-        m_proxyHostEdit->setEnabled(proxyOn);
-        m_proxyPortSpin->setEnabled(proxyOn);
-        m_proxyAuthCheck->setEnabled(proxyOn);
-        m_proxyUserEdit->setEnabled(proxyOn && authOn);
-        m_proxyPasswordEdit->setEnabled(proxyOn && authOn);
-
-        // Directories page
-        m_incomingDirEdit->setText(thePrefs.incomingDir());
-        auto tempDirs = thePrefs.tempDirs();
-        if (!tempDirs.isEmpty())
-            m_tempDirEdit->setText(tempDirs.first());
-        static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(thePrefs.sharedDirs());
-
-        // Files page (daemon-side)
-        m_addFilesPausedCheck->setChecked(thePrefs.addNewFilesPaused());
-        m_autoSharedFilesPrioCheck->setChecked(thePrefs.autoSharedFilesPriority());
-        m_autoDownloadPrioCheck->setChecked(thePrefs.autoDownloadPriority());
-        m_transferFullChunksCheck->setChecked(thePrefs.transferFullChunks());
-        m_previewPrioCheck->setChecked(thePrefs.previewPrio());
-        bool startNext = thePrefs.startNextPausedFile();
-        m_startNextPausedCheck->setChecked(startNext);
-        m_preferSameCatCheck->setEnabled(startNext);
-        m_onlySameCatCheck->setEnabled(startNext);
-        m_preferSameCatCheck->setChecked(thePrefs.startNextPausedFileSameCat());
-        m_onlySameCatCheck->setChecked(thePrefs.startNextPausedFileOnlySameCat());
-        m_rememberDownloadedCheck->setChecked(thePrefs.rememberDownloadedFiles());
-        m_rememberCancelledCheck->setChecked(thePrefs.rememberCancelledFiles());
-
-        // Notifications page (daemon-side)
-        m_notifyLogCheck->setChecked(thePrefs.notifyOnLog());
-        m_notifyChatCheck->setChecked(thePrefs.notifyOnChat());
-        m_notifyChatMsgCheck->setChecked(thePrefs.notifyOnChatMsg());
-        m_notifyChatMsgCheck->setEnabled(m_notifyChatCheck->isChecked());
-        m_notifyDownloadAddedCheck->setChecked(thePrefs.notifyOnDownloadAdded());
-        m_notifyDownloadFinishedCheck->setChecked(thePrefs.notifyOnDownloadFinished());
-        m_notifyNewVersionCheck->setChecked(thePrefs.notifyOnNewVersion());
-        m_notifyUrgentCheck->setChecked(thePrefs.notifyOnUrgent());
-        m_emailEnabledCheck->setChecked(thePrefs.notifyEmailEnabled());
-        m_smtpServer = thePrefs.notifyEmailSmtpServer();
-        m_smtpPort = thePrefs.notifyEmailSmtpPort();
-        m_smtpAuth = thePrefs.notifyEmailSmtpAuth();
-        m_smtpTls = thePrefs.notifyEmailSmtpTls();
-        m_smtpUser = thePrefs.notifyEmailSmtpUser();
-        m_smtpPassword = thePrefs.notifyEmailSmtpPassword();
-        m_emailRecipientEdit->setText(thePrefs.notifyEmailRecipient());
-        m_emailSenderEdit->setText(thePrefs.notifyEmailSender());
-        bool emailOn = m_emailEnabledCheck->isChecked();
-        m_smtpServerBtn->setEnabled(emailOn);
-        m_emailRecipientEdit->setEnabled(emailOn);
-        m_emailSenderEdit->setEnabled(emailOn);
-
-        // Messages and Comments page (daemon-side)
-        m_msgFriendsOnlyCheck->setChecked(thePrefs.msgOnlyFriends());
-        bool spamOn = thePrefs.enableSpamFilter();
-        m_advancedSpamFilterCheck->setChecked(spamOn);
-        m_requireCaptchaCheck->setChecked(thePrefs.useChatCaptchas());
-        m_requireCaptchaCheck->setEnabled(spamOn);
-        m_messageFilterEdit->setText(thePrefs.messageFilter());
-        m_commentFilterEdit->setText(thePrefs.commentFilter());
-
-        // Security page (daemon-side)
-        m_filterServersByIPCheck->setChecked(thePrefs.filterServerByIP());
-        m_ipFilterLevelSpin->setValue(static_cast<int>(thePrefs.ipFilterLevel()));
-        m_viewSharedGroup->button(thePrefs.viewSharedFilesAccess())->setChecked(true);
-        bool cryptSupported = thePrefs.cryptLayerSupported();
-        bool cryptRequested = thePrefs.cryptLayerRequested();
-        bool cryptRequired  = thePrefs.cryptLayerRequired();
-        m_cryptLayerDisableCheck->setChecked(!cryptSupported);
-        m_cryptLayerRequestedCheck->setChecked(cryptRequested);
-        m_cryptLayerRequestedCheck->setEnabled(cryptSupported);
-        m_cryptLayerRequiredCheck->setChecked(cryptRequired);
-        m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
-        m_useSecureIdentCheck->setChecked(thePrefs.useSecureIdent());
-        m_enableSearchResultFilterCheck->setChecked(thePrefs.enableSearchResultFilter());
-        m_warnUntrustedFilesCheck->setChecked(thePrefs.warnUntrustedFiles());
-        m_ipFilterUpdateUrlEdit->setText(thePrefs.ipFilterUpdateUrl());
-
-        // Statistics page
-        m_statsGraphUpdateSlider->setValue(static_cast<int>(thePrefs.graphsUpdateSec()));
-        m_statsAvgTimeSlider->setValue(static_cast<int>(thePrefs.statsAverageMinutes()));
-        m_statsFillGraphsCheck->setChecked(thePrefs.fillGraphs());
-        m_statsYScaleSpin->setValue(static_cast<int>(thePrefs.statsConnectionsMax()));
-        {
-            auto ratio = thePrefs.statsConnectionsRatio();
-            static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
-            int ratioIdx = 2;
-            for (int ri = 0; ri < 7; ++ri) {
-                if (static_cast<uint32_t>(ratioValues[ri]) == ratio) { ratioIdx = ri; break; }
-            }
-            m_statsRatioCombo->setCurrentIndex(ratioIdx);
-        }
-        m_statsTreeUpdateSlider->setValue(static_cast<int>(thePrefs.statsUpdateSec()));
-
-        // Extended page
-        m_maxConPerFiveSpin->setValue(thePrefs.maxConsPerFive());
-        m_maxHalfOpenSpin->setValue(thePrefs.maxHalfConnections());
-        m_serverKeepAliveSpin->setValue(static_cast<int>(thePrefs.serverKeepAliveTimeout()) / 60000);
-        m_useCreditSystemCheck->setChecked(thePrefs.useCreditSystem());
-        m_filterLANIPsCheck->setChecked(thePrefs.filterLANIPs());
-        m_showExtControlsCheck->setChecked(thePrefs.showExtControls());
-        m_a4afSaveCpuCheck->setChecked(thePrefs.a4afSaveCpu());
-        m_disableArchPreviewCheck->setChecked(!thePrefs.autoArchivePreviewStart());
-        m_ed2kHostnameEdit->setText(thePrefs.ed2kHostname());
-        bool diskCheck = thePrefs.checkDiskspace();
-        m_checkDiskspaceCheck->setChecked(diskCheck);
-        m_minFreeDiskSpaceSpin->setValue(static_cast<int>(thePrefs.minFreeDiskSpace() / (1024 * 1024)));
-        m_minFreeDiskSpaceSpin->setEnabled(diskCheck);
-        if (auto* btn = m_commitFilesGroup->button(thePrefs.commitFiles()))
-            btn->setChecked(true);
-        if (auto* btn = m_extractMetaDataGroup->button(thePrefs.extractMetaData()))
-            btn->setChecked(true);
-        m_logToDiskCheck->setChecked(thePrefs.logToDisk());
-        bool verboseOn = thePrefs.verbose();
-        m_verboseCheck->setChecked(verboseOn);
-        m_logLevelSpin->setValue(thePrefs.logLevel());
-        m_logLevelSpin->setEnabled(verboseOn);
-        m_verboseLogToDiskCheck->setChecked(thePrefs.verboseLogToDisk());
-        m_verboseLogToDiskCheck->setEnabled(verboseOn);
-        m_logSourceExchangeCheck->setChecked(thePrefs.logSourceExchange());
-        m_logSourceExchangeCheck->setEnabled(verboseOn);
-        m_logBannedClientsCheck->setChecked(thePrefs.logBannedClients());
-        m_logBannedClientsCheck->setEnabled(verboseOn);
-        m_logRatingDescCheck->setChecked(thePrefs.logRatingDescReceived());
-        m_logRatingDescCheck->setEnabled(verboseOn);
-        m_logSecureIdentCheck->setChecked(thePrefs.logSecureIdent());
-        m_logSecureIdentCheck->setEnabled(verboseOn);
-        m_logFilteredIPsCheck->setChecked(thePrefs.logFilteredIPs());
-        m_logFilteredIPsCheck->setEnabled(verboseOn);
-        m_logFileSavingCheck->setChecked(thePrefs.logFileSaving());
-        m_logFileSavingCheck->setEnabled(verboseOn);
-        m_logA4AFCheck->setChecked(thePrefs.logA4AF());
-        m_logA4AFCheck->setEnabled(verboseOn);
-        m_logUlDlEventsCheck->setChecked(thePrefs.logUlDlEvents());
-        m_logUlDlEventsCheck->setEnabled(verboseOn);
-        m_logRawSocketPacketsCheck->setChecked(thePrefs.logRawSocketPackets());
-        m_logRawSocketPacketsCheck->setEnabled(verboseOn);
-        m_enableIpcLogCheck->setChecked(thePrefs.enableIpcLog());
-        m_startCoreWithConsoleCheck->setChecked(thePrefs.startCoreWithConsole());
-        // USS
-        bool ussOn = thePrefs.dynUpEnabled();
-        m_dynUpEnabledCheck->setChecked(ussOn);
-        m_dynUpPingToleranceSpin->setValue(thePrefs.dynUpPingTolerance());
-        m_dynUpPingToleranceSpin->setEnabled(ussOn);
-        m_dynUpPingToleranceMsSpin->setValue(thePrefs.dynUpPingToleranceMs());
-        m_dynUpPingToleranceMsSpin->setEnabled(ussOn);
-        bool useMs = thePrefs.dynUpUseMillisecondPingTolerance();
-        m_dynUpRadioMs->setChecked(useMs);
-        m_dynUpRadioPercent->setChecked(!useMs);
-        m_dynUpRadioPercent->setEnabled(ussOn);
-        m_dynUpRadioMs->setEnabled(ussOn);
-        m_dynUpGoingUpSpin->setValue(thePrefs.dynUpGoingUpDivider());
-        m_dynUpGoingUpSpin->setEnabled(ussOn);
-        m_dynUpGoingDownSpin->setValue(thePrefs.dynUpGoingDownDivider());
-        m_dynUpGoingDownSpin->setEnabled(ussOn);
-        m_dynUpNumPingsSpin->setValue(thePrefs.dynUpNumberOfPings());
-        m_dynUpNumPingsSpin->setEnabled(ussOn);
-        m_closeUPnPCheck->setChecked(thePrefs.closeUPnPOnExit());
-        m_skipWANIPCheck->setChecked(thePrefs.skipWANIPSetup());
-        m_skipWANPPPCheck->setChecked(thePrefs.skipWANPPPSetup());
-        m_fileBufferSlider->setValue(static_cast<int>(thePrefs.fileBufferSize()) / 16384);
-        m_queueSizeSlider->setValue(static_cast<int>(thePrefs.queueSize()) / 100);
-
-#ifdef Q_OS_WIN
-        m_autotakeEd2kCheck->setChecked(thePrefs.autotakeEd2kLinks());
-        m_winFirewallCheck->setChecked(thePrefs.openPortsOnWinFirewall());
-        m_sparsePartFilesCheck->setChecked(thePrefs.sparsePartFiles());
-        m_allocFullFileCheck->setChecked(thePrefs.allocFullFile());
-        m_resolveShellLinksCheck->setChecked(thePrefs.resolveShellLinks());
-        if (auto* btn = m_multiUserSharingGroup->button(thePrefs.multiUserSharing()))
-            btn->setChecked(true);
-#endif
+    if (m_ipc && m_ipc->isConnected()) {
+        QCborMap prefs;
+        QEventLoop loop;
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        timeout.start(3000);
+        QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        Ipc::IpcMessage req(Ipc::IpcMsgType::GetPreferences);
+        m_ipc->sendRequest(std::move(req), [&](const Ipc::IpcMessage& resp) {
+            if (resp.fieldBool(0))
+                prefs = resp.fieldMap(1);
+            loop.quit();
+        });
+        loop.exec();
+        if (!prefs.isEmpty())
+            fillDaemonSettings(prefs);
+        else
+            fillDaemonSettingsFromPrefs();
+    } else {
+        fillDaemonSettingsFromPrefs();
     }
     m_loading = false;
     m_daemonSettingsLoaded = true;
     m_applyBtn->setEnabled(false);
-
-    // Warn if thePrefs has clearly invalid port values (IPC never connected yet)
-    if (thePrefs.port() <= 1 || thePrefs.udpPort() <= 1) {
-        qWarning() << "Options: preferences not loaded — port values invalid"
-                   << thePrefs.port() << "/" << thePrefs.udpPort();
-        QMessageBox::warning(this,
-            tr("Settings"),
-            tr("Failed to load settings: connection to the daemon has not been established yet.\n"
-               "Please wait a moment and reopen Options."));
-    }
-
-    // Additionally update from IPC if connected (live values override thePrefs)
-    if (m_ipc && m_ipc->isConnected()) {
-        Ipc::IpcMessage req(Ipc::IpcMsgType::GetPreferences);
-        m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
-            if (!resp.fieldBool(0)) {
-                return;
-            }
-            m_loading = true;
-            const QCborMap prefs = resp.fieldMap(1);
-
-            // General page
-            m_nickEdit->setText(prefs.value(QStringLiteral("nick")).toString());
-
-            // Connection page
-            auto capDown = static_cast<int>(prefs.value(QStringLiteral("maxGraphDownloadRate")).toInteger(100));
-            auto capUp   = static_cast<int>(prefs.value(QStringLiteral("maxGraphUploadRate")).toInteger(100));
-            m_capacityDownloadSpin->setValue(capDown);
-            m_capacityUploadSpin->setValue(capUp);
-
-            auto maxDown = static_cast<int>(prefs.value(QStringLiteral("maxDownload")).toInteger(0));
-            auto maxUp   = static_cast<int>(prefs.value(QStringLiteral("maxUpload")).toInteger(0));
-            m_downloadLimitCheck->setChecked(maxDown > 0);
-            m_downloadLimitSlider->setEnabled(maxDown > 0);
-            m_downloadLimitLabel->setEnabled(maxDown > 0);
-            if (maxDown > 0) {
-                m_downloadLimitSlider->setValue(maxDown);
-            }
-            m_uploadLimitCheck->setChecked(maxUp > 0);
-            m_uploadLimitSlider->setEnabled(maxUp > 0);
-            m_uploadLimitLabel->setEnabled(maxUp > 0);
-            if (maxUp > 0) {
-                m_uploadLimitSlider->setValue(maxUp);
-            }
-
-            auto tcpPort = static_cast<int>(prefs.value(QStringLiteral("port")).toInteger(5662));
-            auto udpPort = static_cast<int>(prefs.value(QStringLiteral("udpPort")).toInteger(5672));
-            m_tcpPortSpin->setValue(tcpPort);
-            if (udpPort == 0) {
-                m_udpDisableCheck->setChecked(true);
-                m_udpPortSpin->setValue(5672);
-                m_udpPortSpin->setEnabled(false);
-            } else {
-                m_udpDisableCheck->setChecked(false);
-                m_udpPortSpin->setValue(udpPort);
-            }
-
-            m_upnpCheck->setChecked(prefs.value(QStringLiteral("enableUPnP")).toBool());
-            m_maxSourcesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxSourcesPerFile")).toInteger(400)));
-            m_maxConnectionsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConnections")).toInteger(500)));
-            m_autoConnectCheck->setChecked(prefs.value(QStringLiteral("autoConnect")).toBool());
-            m_reconnectCheck->setChecked(prefs.value(QStringLiteral("reconnect")).toBool());
-            m_overheadCheck->setChecked(prefs.value(QStringLiteral("showOverhead")).toBool());
-            m_kadEnabledCheck->setChecked(prefs.value(QStringLiteral("kadEnabled")).toBool());
-            m_ed2kEnabledCheck->setChecked(prefs.value(QStringLiteral("networkED2K")).toBool());
-
-            // Server page
-            m_safeServerConnectCheck->setChecked(prefs.value(QStringLiteral("safeServerConnect")).toBool());
-            m_autoConnectStaticOnlyCheck->setChecked(prefs.value(QStringLiteral("autoConnectStaticOnly")).toBool());
-            m_useServerPrioritiesCheck->setChecked(prefs.value(QStringLiteral("useServerPriorities")).toBool());
-            m_addServersFromServerCheck->setChecked(prefs.value(QStringLiteral("addServersFromServer")).toBool());
-            m_addServersFromClientsCheck->setChecked(prefs.value(QStringLiteral("addServersFromClients")).toBool());
-            m_deadServerRetriesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("deadServerRetries")).toInteger(1)));
-            m_autoUpdateServerListCheck->setChecked(prefs.value(QStringLiteral("autoUpdateServerList")).toBool());
-            m_serverListURLValue = prefs.value(QStringLiteral("serverListURL")).toString();
-            m_smartLowIdCheck->setChecked(prefs.value(QStringLiteral("smartLowIdCheck")).toBool(true));
-            m_manualHighPrioCheck->setChecked(prefs.value(QStringLiteral("manualServerHighPriority")).toBool());
-
-            // Proxy page
-            auto proxyType = static_cast<int>(prefs.value(QStringLiteral("proxyType")).toInteger(0));
-            bool proxyOn = (proxyType != 0);
-            m_proxyEnableCheck->setChecked(proxyOn);
-            m_proxyTypeCombo->setCurrentIndex(proxyType);
-            m_proxyHostEdit->setText(prefs.value(QStringLiteral("proxyHost")).toString());
-            m_proxyPortSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("proxyPort")).toInteger(1080)));
-            bool authOn = prefs.value(QStringLiteral("proxyEnablePassword")).toBool();
-            m_proxyAuthCheck->setChecked(authOn);
-            m_proxyUserEdit->setText(prefs.value(QStringLiteral("proxyUser")).toString());
-            m_proxyPasswordEdit->setText(prefs.value(QStringLiteral("proxyPassword")).toString());
-
-            m_proxyTypeCombo->setEnabled(proxyOn);
-            m_proxyHostEdit->setEnabled(proxyOn);
-            m_proxyPortSpin->setEnabled(proxyOn);
-            m_proxyAuthCheck->setEnabled(proxyOn);
-            m_proxyUserEdit->setEnabled(proxyOn && authOn);
-            m_proxyPasswordEdit->setEnabled(proxyOn && authOn);
-
-            // Directories page
-            m_incomingDirEdit->setText(prefs.value(QStringLiteral("incomingDir")).toString());
-            auto tempDirsArr = prefs.value(QStringLiteral("tempDirs")).toArray();
-            if (!tempDirsArr.isEmpty())
-                m_tempDirEdit->setText(tempDirsArr.first().toString());
-            QStringList sharedPaths;
-            for (const auto& item : prefs.value(QStringLiteral("sharedDirs")).toArray())
-                sharedPaths.append(item.toString());
-            static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(sharedPaths);
-
-            // Files page (daemon-side)
-            m_addFilesPausedCheck->setChecked(prefs.value(QStringLiteral("addNewFilesPaused")).toBool());
-            m_autoSharedFilesPrioCheck->setChecked(prefs.value(QStringLiteral("autoSharedFilesPriority")).toBool(true));
-            m_autoDownloadPrioCheck->setChecked(prefs.value(QStringLiteral("autoDownloadPriority")).toBool(true));
-            m_transferFullChunksCheck->setChecked(prefs.value(QStringLiteral("transferFullChunks")).toBool(true));
-            m_previewPrioCheck->setChecked(prefs.value(QStringLiteral("previewPrio")).toBool());
-            bool startNext = prefs.value(QStringLiteral("startNextPausedFile")).toBool();
-            m_startNextPausedCheck->setChecked(startNext);
-            m_preferSameCatCheck->setEnabled(startNext);
-            m_onlySameCatCheck->setEnabled(startNext);
-            m_preferSameCatCheck->setChecked(prefs.value(QStringLiteral("startNextPausedFileSameCat")).toBool());
-            m_onlySameCatCheck->setChecked(prefs.value(QStringLiteral("startNextPausedFileOnlySameCat")).toBool());
-            m_rememberDownloadedCheck->setChecked(prefs.value(QStringLiteral("rememberDownloadedFiles")).toBool(true));
-            m_rememberCancelledCheck->setChecked(prefs.value(QStringLiteral("rememberCancelledFiles")).toBool(true));
-
-            // Notifications page (daemon-side)
-            m_notifyLogCheck->setChecked(prefs.value(QStringLiteral("notifyOnLog")).toBool());
-            m_notifyChatCheck->setChecked(prefs.value(QStringLiteral("notifyOnChat")).toBool());
-            m_notifyChatMsgCheck->setChecked(prefs.value(QStringLiteral("notifyOnChatMsg")).toBool());
-            m_notifyChatMsgCheck->setEnabled(m_notifyChatCheck->isChecked());
-            m_notifyDownloadAddedCheck->setChecked(prefs.value(QStringLiteral("notifyOnDownloadAdded")).toBool());
-            m_notifyDownloadFinishedCheck->setChecked(prefs.value(QStringLiteral("notifyOnDownloadFinished")).toBool());
-            m_notifyNewVersionCheck->setChecked(prefs.value(QStringLiteral("notifyOnNewVersion")).toBool());
-            m_notifyUrgentCheck->setChecked(prefs.value(QStringLiteral("notifyOnUrgent")).toBool());
-            m_emailEnabledCheck->setChecked(prefs.value(QStringLiteral("notifyEmailEnabled")).toBool());
-            m_smtpServer = prefs.value(QStringLiteral("notifyEmailSmtpServer")).toString();
-            m_smtpPort = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpPort")).toInteger(25));
-            m_smtpAuth = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpAuth")).toInteger(0));
-            m_smtpTls = prefs.value(QStringLiteral("notifyEmailSmtpTls")).toBool();
-            m_smtpUser = prefs.value(QStringLiteral("notifyEmailSmtpUser")).toString();
-            m_smtpPassword = prefs.value(QStringLiteral("notifyEmailSmtpPassword")).toString();
-            m_emailRecipientEdit->setText(prefs.value(QStringLiteral("notifyEmailRecipient")).toString());
-            m_emailSenderEdit->setText(prefs.value(QStringLiteral("notifyEmailSender")).toString());
-            bool emailOn = m_emailEnabledCheck->isChecked();
-            m_smtpServerBtn->setEnabled(emailOn);
-            m_emailRecipientEdit->setEnabled(emailOn);
-            m_emailSenderEdit->setEnabled(emailOn);
-
-            // Messages and Comments page (daemon-side)
-            m_msgFriendsOnlyCheck->setChecked(prefs.value(QStringLiteral("msgOnlyFriends")).toBool());
-            bool spamOn = prefs.value(QStringLiteral("enableSpamFilter")).toBool();
-            m_advancedSpamFilterCheck->setChecked(spamOn);
-            m_requireCaptchaCheck->setChecked(prefs.value(QStringLiteral("useChatCaptchas")).toBool());
-            m_requireCaptchaCheck->setEnabled(spamOn);
-            m_messageFilterEdit->setText(prefs.value(QStringLiteral("messageFilter")).toString());
-            m_commentFilterEdit->setText(prefs.value(QStringLiteral("commentFilter")).toString());
-
-            // Security page (daemon-side)
-            m_filterServersByIPCheck->setChecked(prefs.value(QStringLiteral("filterServerByIP")).toBool());
-            m_ipFilterLevelSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("ipFilterLevel")).toInteger(127)));
-            m_viewSharedGroup->button(static_cast<int>(prefs.value(QStringLiteral("viewSharedFilesAccess")).toInteger(1)))->setChecked(true);
-            bool cryptSupported = prefs.value(QStringLiteral("cryptLayerSupported")).toBool(true);
-            bool cryptRequested = prefs.value(QStringLiteral("cryptLayerRequested")).toBool(true);
-            bool cryptRequired  = prefs.value(QStringLiteral("cryptLayerRequired")).toBool();
-            m_cryptLayerDisableCheck->setChecked(!cryptSupported);
-            m_cryptLayerRequestedCheck->setChecked(cryptRequested);
-            m_cryptLayerRequestedCheck->setEnabled(cryptSupported);
-            m_cryptLayerRequiredCheck->setChecked(cryptRequired);
-            m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
-            m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
-            m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
-            m_warnUntrustedFilesCheck->setChecked(prefs.value(QStringLiteral("warnUntrustedFiles")).toBool(true));
-            m_ipFilterUpdateUrlEdit->setText(prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString());
-
-            // Web Interface page
-            m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());
-            m_webRestApiCheck->setChecked(prefs.value(QStringLiteral("webServerRestApiEnabled")).toBool());
-            m_webGzipCheck->setChecked(prefs.value(QStringLiteral("webServerGzipEnabled")).toBool(true));
-            m_webUPnPCheck->setChecked(prefs.value(QStringLiteral("webServerUPnP")).toBool());
-            m_webPortSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerPort")).toInteger(4711)));
-            m_webTemplateEdit->setText(prefs.value(QStringLiteral("webServerTemplatePath")).toString());
-            if (m_webTemplateEdit->text().isEmpty())
-                m_webTemplateEdit->setPlaceholderText(AppConfig::configDir() + QStringLiteral("/eMule.tmpl"));
-            m_webSessionTimeoutSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerSessionTimeout")).toInteger(5)));
-            m_webHttpsCheck->setChecked(prefs.value(QStringLiteral("webServerHttpsEnabled")).toBool());
-            m_webCertEdit->setText(prefs.value(QStringLiteral("webServerCertPath")).toString());
-            m_webKeyEdit->setText(prefs.value(QStringLiteral("webServerKeyPath")).toString());
-            m_webApiKeyEdit->setText(prefs.value(QStringLiteral("webServerApiKey")).toString());
-            // Password fields: don't show the hash — leave blank; user types new password to change
-            m_webAdminHiLevCheck->setChecked(prefs.value(QStringLiteral("webServerAdminAllowHiLevFunc")).toBool());
-            m_webGuestEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerGuestEnabled")).toBool());
-            {
-                bool webOn = m_webEnabledCheck->isChecked();
-                m_webRestApiCheck->setEnabled(webOn);
-                m_webGzipCheck->setEnabled(webOn);
-                m_webUPnPCheck->setEnabled(webOn);
-                m_webPortSpin->setEnabled(webOn);
-                m_webTemplateEdit->setEnabled(webOn);
-                m_webTemplateBrowseBtn->setEnabled(webOn);
-                m_webTemplateReloadBtn->setEnabled(webOn);
-                m_webSessionTimeoutSpin->setEnabled(webOn);
-                m_webHttpsCheck->setEnabled(webOn);
-                bool httpsOn = webOn && m_webHttpsCheck->isChecked();
-                m_webCreateCertBtn->setEnabled(httpsOn);
-                m_webCertEdit->setEnabled(httpsOn);
-                m_webCertBrowseBtn->setEnabled(httpsOn);
-                m_webKeyEdit->setEnabled(httpsOn);
-                m_webKeyBrowseBtn->setEnabled(httpsOn);
-                m_webApiKeyEdit->setEnabled(webOn);
-                m_webAdminPasswordEdit->setEnabled(webOn);
-                m_webAdminHiLevCheck->setEnabled(webOn);
-                m_webGuestEnabledCheck->setEnabled(webOn);
-                m_webGuestPasswordEdit->setEnabled(webOn && m_webGuestEnabledCheck->isChecked());
-            }
-
-            // Statistics page
-            auto graphsSec = static_cast<int>(prefs.value(QStringLiteral("graphsUpdateSec")).toInteger(3));
-            m_statsGraphUpdateSlider->setValue(graphsSec);
-            auto avgMin = static_cast<int>(prefs.value(QStringLiteral("statsAverageMinutes")).toInteger(5));
-            m_statsAvgTimeSlider->setValue(avgMin);
-            m_statsFillGraphsCheck->setChecked(prefs.value(QStringLiteral("fillGraphs")).toBool());
-            m_statsYScaleSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("statsConnectionsMax")).toInteger(100)));
-            auto ratio = static_cast<uint32_t>(prefs.value(QStringLiteral("statsConnectionsRatio")).toInteger(3));
-            // Map ratio value to combo index: 1→0, 2→1, 3→2, 4→3, 5→4, 10→5, 20→6
-            static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
-            int ratioIdx = 2; // default 1:3
-            for (int ri = 0; ri < 7; ++ri) {
-                if (static_cast<uint32_t>(ratioValues[ri]) == ratio) { ratioIdx = ri; break; }
-            }
-            m_statsRatioCombo->setCurrentIndex(ratioIdx);
-            auto statsSec = static_cast<int>(prefs.value(QStringLiteral("statsUpdateSec")).toInteger(5));
-            m_statsTreeUpdateSlider->setValue(statsSec);
-
-            // Extended page
-            m_maxConPerFiveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConsPerFive")).toInteger(20)));
-            m_maxHalfOpenSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxHalfConnections")).toInteger(9)));
-            auto keepAlive = static_cast<int>(prefs.value(QStringLiteral("serverKeepAliveTimeout")).toInteger(0));
-            m_serverKeepAliveSpin->setValue(keepAlive / 60000); // stored in ms, shown in min
-            m_useCreditSystemCheck->setChecked(prefs.value(QStringLiteral("useCreditSystem")).toBool(true));
-            m_filterLANIPsCheck->setChecked(prefs.value(QStringLiteral("filterLANIPs")).toBool(true));
-            m_showExtControlsCheck->setChecked(prefs.value(QStringLiteral("showExtControls")).toBool());
-            m_a4afSaveCpuCheck->setChecked(prefs.value(QStringLiteral("a4afSaveCpu")).toBool());
-            m_disableArchPreviewCheck->setChecked(!prefs.value(QStringLiteral("autoArchivePreviewStart")).toBool(true));
-            m_ed2kHostnameEdit->setText(prefs.value(QStringLiteral("ed2kHostname")).toString());
-            bool diskCheck = prefs.value(QStringLiteral("checkDiskspace")).toBool();
-            m_checkDiskspaceCheck->setChecked(diskCheck);
-            auto minFree = static_cast<int>(prefs.value(QStringLiteral("minFreeDiskSpace")).toInteger(20971520));
-            m_minFreeDiskSpaceSpin->setValue(minFree / (1024 * 1024)); // bytes to MB
-            m_minFreeDiskSpaceSpin->setEnabled(diskCheck);
-            int commit = static_cast<int>(prefs.value(QStringLiteral("commitFiles")).toInteger(1));
-            if (auto* btn = m_commitFilesGroup->button(commit))
-                btn->setChecked(true);
-            int metaMode = static_cast<int>(prefs.value(QStringLiteral("extractMetaData")).toInteger(1));
-            if (auto* btn = m_extractMetaDataGroup->button(metaMode))
-                btn->setChecked(true);
-            m_logToDiskCheck->setChecked(prefs.value(QStringLiteral("logToDisk")).toBool());
-            bool verboseOn = prefs.value(QStringLiteral("verbose")).toBool(true);
-            m_verboseCheck->setChecked(verboseOn);
-            m_logLevelSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("logLevel")).toInteger(5)));
-            m_logLevelSpin->setEnabled(verboseOn);
-            m_verboseLogToDiskCheck->setChecked(prefs.value(QStringLiteral("verboseLogToDisk")).toBool());
-            m_verboseLogToDiskCheck->setEnabled(verboseOn);
-            m_logSourceExchangeCheck->setChecked(prefs.value(QStringLiteral("logSourceExchange")).toBool());
-            m_logSourceExchangeCheck->setEnabled(verboseOn);
-            m_logBannedClientsCheck->setChecked(prefs.value(QStringLiteral("logBannedClients")).toBool(true));
-            m_logBannedClientsCheck->setEnabled(verboseOn);
-            m_logRatingDescCheck->setChecked(prefs.value(QStringLiteral("logRatingDescReceived")).toBool(true));
-            m_logRatingDescCheck->setEnabled(verboseOn);
-            m_logSecureIdentCheck->setChecked(prefs.value(QStringLiteral("logSecureIdent")).toBool(true));
-            m_logSecureIdentCheck->setEnabled(verboseOn);
-            m_logFilteredIPsCheck->setChecked(prefs.value(QStringLiteral("logFilteredIPs")).toBool(true));
-            m_logFilteredIPsCheck->setEnabled(verboseOn);
-            m_logFileSavingCheck->setChecked(prefs.value(QStringLiteral("logFileSaving")).toBool());
-            m_logFileSavingCheck->setEnabled(verboseOn);
-            m_logA4AFCheck->setChecked(prefs.value(QStringLiteral("logA4AF")).toBool());
-            m_logA4AFCheck->setEnabled(verboseOn);
-            m_logUlDlEventsCheck->setChecked(prefs.value(QStringLiteral("logUlDlEvents")).toBool(true));
-            m_logUlDlEventsCheck->setEnabled(verboseOn);
-            m_logRawSocketPacketsCheck->setChecked(prefs.value(QStringLiteral("logRawSocketPackets")).toBool());
-            m_logRawSocketPacketsCheck->setEnabled(verboseOn);
-            // USS
-            bool ussOn = prefs.value(QStringLiteral("dynUpEnabled")).toBool();
-            m_dynUpEnabledCheck->setChecked(ussOn);
-            m_dynUpPingToleranceSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpPingTolerance")).toInteger(500)));
-            m_dynUpPingToleranceSpin->setEnabled(ussOn);
-            m_dynUpPingToleranceMsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpPingToleranceMs")).toInteger(200)));
-            m_dynUpPingToleranceMsSpin->setEnabled(ussOn);
-            bool useMs = prefs.value(QStringLiteral("dynUpUseMillisecondPingTolerance")).toBool();
-            m_dynUpRadioMs->setChecked(useMs);
-            m_dynUpRadioPercent->setChecked(!useMs);
-            m_dynUpRadioPercent->setEnabled(ussOn);
-            m_dynUpRadioMs->setEnabled(ussOn);
-            m_dynUpGoingUpSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpGoingUpDivider")).toInteger(1000)));
-            m_dynUpGoingUpSpin->setEnabled(ussOn);
-            m_dynUpGoingDownSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpGoingDownDivider")).toInteger(1000)));
-            m_dynUpGoingDownSpin->setEnabled(ussOn);
-            m_dynUpNumPingsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpNumberOfPings")).toInteger(1)));
-            m_dynUpNumPingsSpin->setEnabled(ussOn);
-            m_closeUPnPCheck->setChecked(prefs.value(QStringLiteral("closeUPnPOnExit")).toBool(true));
-            m_skipWANIPCheck->setChecked(prefs.value(QStringLiteral("skipWANIPSetup")).toBool());
-            m_skipWANPPPCheck->setChecked(prefs.value(QStringLiteral("skipWANPPPSetup")).toBool());
-            auto bufSize = static_cast<int>(prefs.value(QStringLiteral("fileBufferSize")).toInteger(245760));
-            m_fileBufferSlider->setValue(bufSize / 16384); // bytes to slider units (16KB each)
-            auto qSize = static_cast<int>(prefs.value(QStringLiteral("queueSize")).toInteger(5000));
-            m_queueSizeSlider->setValue(qSize / 100); // to slider units (100 each)
-
-#ifdef Q_OS_WIN
-            m_autotakeEd2kCheck->setChecked(prefs.value(QStringLiteral("autotakeEd2kLinks")).toBool(true));
-            m_winFirewallCheck->setChecked(prefs.value(QStringLiteral("openPortsOnWinFirewall")).toBool());
-            m_sparsePartFilesCheck->setChecked(prefs.value(QStringLiteral("sparsePartFiles")).toBool());
-            m_allocFullFileCheck->setChecked(prefs.value(QStringLiteral("allocFullFile")).toBool());
-            m_resolveShellLinksCheck->setChecked(prefs.value(QStringLiteral("resolveShellLinks")).toBool());
-            int muSharing = static_cast<int>(prefs.value(QStringLiteral("multiUserSharing")).toInteger(2));
-            if (auto* btn = m_multiUserSharingGroup->button(muSharing))
-                btn->setChecked(true);
-#endif
-
-            m_loading = false;
-            m_daemonSettingsLoaded = true;
-            m_applyBtn->setEnabled(false);
-        });
-    }
-
     loadSchedulerData();
 }
 
@@ -4047,8 +3514,6 @@ void OptionsDialog::saveSettings()
         int ri = m_statsRatioCombo->currentIndex();
         thePrefs.setStatsConnectionsRatio(static_cast<uint32>(ri >= 0 && ri < 7 ? ratioValues[ri] : 3));
     }
-
-    thePrefs.save();
 
     // Daemon settings — send via IPC (only if we successfully loaded them first)
     if (m_daemonSettingsLoaded && m_ipc && m_ipc->isConnected()) {
@@ -4268,21 +3733,6 @@ void OptionsDialog::saveSettings()
             req.append(QString::fromLatin1(hash.toHex()));
         }
 
-        // Mirror web server settings into local thePrefs so save() doesn't overwrite with defaults
-        thePrefs.setWebServerEnabled(m_webEnabledCheck->isChecked());
-        thePrefs.setWebServerRestApiEnabled(m_webRestApiCheck->isChecked());
-        thePrefs.setWebServerGzipEnabled(m_webGzipCheck->isChecked());
-        thePrefs.setWebServerUPnP(m_webUPnPCheck->isChecked());
-        thePrefs.setWebServerPort(static_cast<uint16>(m_webPortSpin->value()));
-        thePrefs.setWebServerTemplatePath(m_webTemplateEdit->text());
-        thePrefs.setWebServerSessionTimeout(m_webSessionTimeoutSpin->value());
-        thePrefs.setWebServerHttpsEnabled(m_webHttpsCheck->isChecked());
-        thePrefs.setWebServerCertPath(m_webCertEdit->text());
-        thePrefs.setWebServerKeyPath(m_webKeyEdit->text());
-        thePrefs.setWebServerApiKey(m_webApiKeyEdit->text());
-        thePrefs.setWebServerAdminAllowHiLevFunc(m_webAdminHiLevCheck->isChecked());
-        thePrefs.setWebServerGuestEnabled(m_webGuestEnabledCheck->isChecked());
-
         // Statistics page
         req.append(QStringLiteral("graphsUpdateSec"));
         req.append(static_cast<qint64>(m_statsGraphUpdateSlider->value()));
@@ -4362,6 +3812,8 @@ void OptionsDialog::saveSettings()
         req.append(m_logUlDlEventsCheck->isChecked());
         req.append(QStringLiteral("logRawSocketPackets"));
         req.append(m_logRawSocketPacketsCheck->isChecked());
+        req.append(QStringLiteral("logWebServer"));
+        req.append(m_logWebServerCheck->isChecked());
         req.append(QStringLiteral("enableIpcLog"));
         req.append(m_enableIpcLogCheck->isChecked());
         req.append(QStringLiteral("startCoreWithConsole"));
@@ -4648,6 +4100,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setLogA4AF(m_logA4AFCheck->isChecked());
         thePrefs.setLogUlDlEvents(m_logUlDlEventsCheck->isChecked());
         thePrefs.setLogRawSocketPackets(m_logRawSocketPacketsCheck->isChecked());
+        thePrefs.setLogWebServer(m_logWebServerCheck->isChecked());
         // USS
         thePrefs.setDynUpEnabled(m_dynUpEnabledCheck->isChecked());
         thePrefs.setDynUpPingTolerance(m_dynUpPingToleranceSpin->value());
@@ -4667,7 +4120,11 @@ void OptionsDialog::saveSettings()
         thePrefs.setMultiUserSharing(m_multiUserSharingGroup->checkedId());
 #endif
 
-        thePrefs.save();
+        // Only persist locally when there is no daemon at all (not just
+        // a temporary disconnect).  If a daemon was configured (m_ipc != null)
+        // it is the sole owner of preferences.yml.
+        if (!m_ipc)
+            thePrefs.save();
     }
 
     saveSchedulerData();
@@ -4675,6 +4132,353 @@ void OptionsDialog::saveSettings()
     // Apply settings to live statistics panel
     if (m_statsPanel)
         m_statsPanel->applySettings();
+}
+
+// ---------------------------------------------------------------------------
+// Private: fill daemon-owned widgets from IPC response (QCborMap)
+// ---------------------------------------------------------------------------
+
+void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
+{
+    m_nickEdit->setText(prefs.value(QStringLiteral("nick")).toString());
+
+    // Connection page
+    auto capDown = static_cast<int>(prefs.value(QStringLiteral("maxGraphDownloadRate")).toInteger(100));
+    auto capUp   = static_cast<int>(prefs.value(QStringLiteral("maxGraphUploadRate")).toInteger(100));
+    m_capacityDownloadSpin->setValue(capDown);
+    m_capacityUploadSpin->setValue(capUp);
+
+    auto maxDown = static_cast<int>(prefs.value(QStringLiteral("maxDownload")).toInteger(0));
+    auto maxUp   = static_cast<int>(prefs.value(QStringLiteral("maxUpload")).toInteger(0));
+    m_downloadLimitCheck->setChecked(maxDown > 0);
+    m_downloadLimitSlider->setEnabled(maxDown > 0);
+    m_downloadLimitLabel->setEnabled(maxDown > 0);
+    if (maxDown > 0)
+        m_downloadLimitSlider->setValue(maxDown);
+    m_uploadLimitCheck->setChecked(maxUp > 0);
+    m_uploadLimitSlider->setEnabled(maxUp > 0);
+    m_uploadLimitLabel->setEnabled(maxUp > 0);
+    if (maxUp > 0)
+        m_uploadLimitSlider->setValue(maxUp);
+
+    auto tcpPort = static_cast<int>(prefs.value(QStringLiteral("port")).toInteger(5662));
+    auto udpPort = static_cast<int>(prefs.value(QStringLiteral("udpPort")).toInteger(5672));
+    m_tcpPortSpin->setValue(tcpPort);
+    if (udpPort == 0) {
+        m_udpDisableCheck->setChecked(true);
+        m_udpPortSpin->setValue(5672);
+        m_udpPortSpin->setEnabled(false);
+    } else {
+        m_udpDisableCheck->setChecked(false);
+        m_udpPortSpin->setValue(udpPort);
+    }
+
+    m_upnpCheck->setChecked(prefs.value(QStringLiteral("enableUPnP")).toBool());
+    m_maxSourcesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxSourcesPerFile")).toInteger(400)));
+    m_maxConnectionsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConnections")).toInteger(500)));
+    m_autoConnectCheck->setChecked(prefs.value(QStringLiteral("autoConnect")).toBool());
+    m_reconnectCheck->setChecked(prefs.value(QStringLiteral("reconnect")).toBool());
+    m_overheadCheck->setChecked(prefs.value(QStringLiteral("showOverhead")).toBool());
+    m_kadEnabledCheck->setChecked(prefs.value(QStringLiteral("kadEnabled")).toBool());
+    m_ed2kEnabledCheck->setChecked(prefs.value(QStringLiteral("networkED2K")).toBool());
+
+    // Server page
+    m_safeServerConnectCheck->setChecked(prefs.value(QStringLiteral("safeServerConnect")).toBool());
+    m_autoConnectStaticOnlyCheck->setChecked(prefs.value(QStringLiteral("autoConnectStaticOnly")).toBool());
+    m_useServerPrioritiesCheck->setChecked(prefs.value(QStringLiteral("useServerPriorities")).toBool());
+    m_addServersFromServerCheck->setChecked(prefs.value(QStringLiteral("addServersFromServer")).toBool());
+    m_addServersFromClientsCheck->setChecked(prefs.value(QStringLiteral("addServersFromClients")).toBool());
+    m_deadServerRetriesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("deadServerRetries")).toInteger(1)));
+    m_autoUpdateServerListCheck->setChecked(prefs.value(QStringLiteral("autoUpdateServerList")).toBool());
+    m_serverListURLValue = prefs.value(QStringLiteral("serverListURL")).toString();
+    m_smartLowIdCheck->setChecked(prefs.value(QStringLiteral("smartLowIdCheck")).toBool(true));
+    m_manualHighPrioCheck->setChecked(prefs.value(QStringLiteral("manualServerHighPriority")).toBool());
+
+    // Proxy page
+    auto proxyType = static_cast<int>(prefs.value(QStringLiteral("proxyType")).toInteger(0));
+    bool proxyOn = (proxyType != 0);
+    m_proxyEnableCheck->setChecked(proxyOn);
+    m_proxyTypeCombo->setCurrentIndex(proxyType);
+    m_proxyHostEdit->setText(prefs.value(QStringLiteral("proxyHost")).toString());
+    m_proxyPortSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("proxyPort")).toInteger(1080)));
+    bool authOn = prefs.value(QStringLiteral("proxyEnablePassword")).toBool();
+    m_proxyAuthCheck->setChecked(authOn);
+    m_proxyUserEdit->setText(prefs.value(QStringLiteral("proxyUser")).toString());
+    m_proxyPasswordEdit->setText(prefs.value(QStringLiteral("proxyPassword")).toString());
+    m_proxyTypeCombo->setEnabled(proxyOn);
+    m_proxyHostEdit->setEnabled(proxyOn);
+    m_proxyPortSpin->setEnabled(proxyOn);
+    m_proxyAuthCheck->setEnabled(proxyOn);
+    m_proxyUserEdit->setEnabled(proxyOn && authOn);
+    m_proxyPasswordEdit->setEnabled(proxyOn && authOn);
+
+    // Directories page
+    m_incomingDirEdit->setText(prefs.value(QStringLiteral("incomingDir")).toString());
+    auto tempDirsArr = prefs.value(QStringLiteral("tempDirs")).toArray();
+    if (!tempDirsArr.isEmpty())
+        m_tempDirEdit->setText(tempDirsArr.first().toString());
+    QStringList sharedPaths;
+    for (const auto& item : prefs.value(QStringLiteral("sharedDirs")).toArray())
+        sharedPaths.append(item.toString());
+    static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(sharedPaths);
+
+    // Files page (daemon-side)
+    m_addFilesPausedCheck->setChecked(prefs.value(QStringLiteral("addNewFilesPaused")).toBool());
+    m_autoSharedFilesPrioCheck->setChecked(prefs.value(QStringLiteral("autoSharedFilesPriority")).toBool(true));
+    m_autoDownloadPrioCheck->setChecked(prefs.value(QStringLiteral("autoDownloadPriority")).toBool(true));
+    m_transferFullChunksCheck->setChecked(prefs.value(QStringLiteral("transferFullChunks")).toBool(true));
+    m_previewPrioCheck->setChecked(prefs.value(QStringLiteral("previewPrio")).toBool());
+    bool startNext = prefs.value(QStringLiteral("startNextPausedFile")).toBool();
+    m_startNextPausedCheck->setChecked(startNext);
+    m_preferSameCatCheck->setEnabled(startNext);
+    m_onlySameCatCheck->setEnabled(startNext);
+    m_preferSameCatCheck->setChecked(prefs.value(QStringLiteral("startNextPausedFileSameCat")).toBool());
+    m_onlySameCatCheck->setChecked(prefs.value(QStringLiteral("startNextPausedFileOnlySameCat")).toBool());
+    m_rememberDownloadedCheck->setChecked(prefs.value(QStringLiteral("rememberDownloadedFiles")).toBool(true));
+    m_rememberCancelledCheck->setChecked(prefs.value(QStringLiteral("rememberCancelledFiles")).toBool(true));
+
+    // Notifications page (daemon-side)
+    m_notifyLogCheck->setChecked(prefs.value(QStringLiteral("notifyOnLog")).toBool());
+    m_notifyChatCheck->setChecked(prefs.value(QStringLiteral("notifyOnChat")).toBool());
+    m_notifyChatMsgCheck->setChecked(prefs.value(QStringLiteral("notifyOnChatMsg")).toBool());
+    m_notifyChatMsgCheck->setEnabled(m_notifyChatCheck->isChecked());
+    m_notifyDownloadAddedCheck->setChecked(prefs.value(QStringLiteral("notifyOnDownloadAdded")).toBool());
+    m_notifyDownloadFinishedCheck->setChecked(prefs.value(QStringLiteral("notifyOnDownloadFinished")).toBool());
+    m_notifyNewVersionCheck->setChecked(prefs.value(QStringLiteral("notifyOnNewVersion")).toBool());
+    m_notifyUrgentCheck->setChecked(prefs.value(QStringLiteral("notifyOnUrgent")).toBool());
+    m_emailEnabledCheck->setChecked(prefs.value(QStringLiteral("notifyEmailEnabled")).toBool());
+    m_smtpServer = prefs.value(QStringLiteral("notifyEmailSmtpServer")).toString();
+    m_smtpPort = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpPort")).toInteger(25));
+    m_smtpAuth = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpAuth")).toInteger(0));
+    m_smtpTls = prefs.value(QStringLiteral("notifyEmailSmtpTls")).toBool();
+    m_smtpUser = prefs.value(QStringLiteral("notifyEmailSmtpUser")).toString();
+    m_smtpPassword = prefs.value(QStringLiteral("notifyEmailSmtpPassword")).toString();
+    m_emailRecipientEdit->setText(prefs.value(QStringLiteral("notifyEmailRecipient")).toString());
+    m_emailSenderEdit->setText(prefs.value(QStringLiteral("notifyEmailSender")).toString());
+    bool emailOn = m_emailEnabledCheck->isChecked();
+    m_smtpServerBtn->setEnabled(emailOn);
+    m_emailRecipientEdit->setEnabled(emailOn);
+    m_emailSenderEdit->setEnabled(emailOn);
+
+    // Messages and Comments page (daemon-side)
+    m_msgFriendsOnlyCheck->setChecked(prefs.value(QStringLiteral("msgOnlyFriends")).toBool());
+    bool spamOn = prefs.value(QStringLiteral("enableSpamFilter")).toBool();
+    m_advancedSpamFilterCheck->setChecked(spamOn);
+    m_requireCaptchaCheck->setChecked(prefs.value(QStringLiteral("useChatCaptchas")).toBool());
+    m_requireCaptchaCheck->setEnabled(spamOn);
+    m_messageFilterEdit->setText(prefs.value(QStringLiteral("messageFilter")).toString());
+    m_commentFilterEdit->setText(prefs.value(QStringLiteral("commentFilter")).toString());
+
+    // Security page (daemon-side)
+    m_filterServersByIPCheck->setChecked(prefs.value(QStringLiteral("filterServerByIP")).toBool());
+    m_ipFilterLevelSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("ipFilterLevel")).toInteger(127)));
+    m_viewSharedGroup->button(static_cast<int>(prefs.value(QStringLiteral("viewSharedFilesAccess")).toInteger(1)))->setChecked(true);
+    bool cryptSupported = prefs.value(QStringLiteral("cryptLayerSupported")).toBool(true);
+    bool cryptRequested = prefs.value(QStringLiteral("cryptLayerRequested")).toBool(true);
+    bool cryptRequired  = prefs.value(QStringLiteral("cryptLayerRequired")).toBool();
+    m_cryptLayerDisableCheck->setChecked(!cryptSupported);
+    m_cryptLayerRequestedCheck->setChecked(cryptRequested);
+    m_cryptLayerRequestedCheck->setEnabled(cryptSupported);
+    m_cryptLayerRequiredCheck->setChecked(cryptRequired);
+    m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
+    m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
+    m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
+    m_warnUntrustedFilesCheck->setChecked(prefs.value(QStringLiteral("warnUntrustedFiles")).toBool(true));
+    m_ipFilterUpdateUrlEdit->setText(prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString());
+
+    // Web Interface page
+    m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());
+    m_webRestApiCheck->setChecked(prefs.value(QStringLiteral("webServerRestApiEnabled")).toBool());
+    m_webGzipCheck->setChecked(prefs.value(QStringLiteral("webServerGzipEnabled")).toBool(true));
+    m_webUPnPCheck->setChecked(prefs.value(QStringLiteral("webServerUPnP")).toBool());
+    m_webPortSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerPort")).toInteger(4711)));
+    m_webTemplateEdit->setText(prefs.value(QStringLiteral("webServerTemplatePath")).toString());
+    if (m_webTemplateEdit->text().isEmpty())
+        m_webTemplateEdit->setPlaceholderText(AppConfig::configDir() + QStringLiteral("/eMule.tmpl"));
+    m_webSessionTimeoutSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerSessionTimeout")).toInteger(5)));
+    m_webHttpsCheck->setChecked(prefs.value(QStringLiteral("webServerHttpsEnabled")).toBool());
+    m_webCertEdit->setText(prefs.value(QStringLiteral("webServerCertPath")).toString());
+    m_webKeyEdit->setText(prefs.value(QStringLiteral("webServerKeyPath")).toString());
+    m_webApiKeyEdit->setText(prefs.value(QStringLiteral("webServerApiKey")).toString());
+    m_webAdminHiLevCheck->setChecked(prefs.value(QStringLiteral("webServerAdminAllowHiLevFunc")).toBool());
+    m_webGuestEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerGuestEnabled")).toBool());
+    {
+        bool webOn = m_webEnabledCheck->isChecked();
+        m_webRestApiCheck->setEnabled(webOn);
+        m_webGzipCheck->setEnabled(webOn);
+        m_webUPnPCheck->setEnabled(webOn);
+        m_webPortSpin->setEnabled(webOn);
+        m_webTemplateEdit->setEnabled(webOn);
+        m_webTemplateBrowseBtn->setEnabled(webOn);
+        m_webTemplateReloadBtn->setEnabled(webOn);
+        m_webSessionTimeoutSpin->setEnabled(webOn);
+        m_webHttpsCheck->setEnabled(webOn);
+        bool httpsOn = webOn && m_webHttpsCheck->isChecked();
+        m_webCreateCertBtn->setEnabled(httpsOn);
+        m_webCertEdit->setEnabled(httpsOn);
+        m_webCertBrowseBtn->setEnabled(httpsOn);
+        m_webKeyEdit->setEnabled(httpsOn);
+        m_webKeyBrowseBtn->setEnabled(httpsOn);
+        m_webApiKeyEdit->setEnabled(webOn);
+        m_webAdminPasswordEdit->setEnabled(webOn);
+        m_webAdminHiLevCheck->setEnabled(webOn);
+        m_webGuestEnabledCheck->setEnabled(webOn);
+        m_webGuestPasswordEdit->setEnabled(webOn && m_webGuestEnabledCheck->isChecked());
+    }
+
+    // Statistics page
+    m_statsGraphUpdateSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("graphsUpdateSec")).toInteger(3)));
+    m_statsAvgTimeSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("statsAverageMinutes")).toInteger(5)));
+    m_statsFillGraphsCheck->setChecked(prefs.value(QStringLiteral("fillGraphs")).toBool());
+    m_statsYScaleSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("statsConnectionsMax")).toInteger(100)));
+    {
+        auto ratio = static_cast<uint32_t>(prefs.value(QStringLiteral("statsConnectionsRatio")).toInteger(3));
+        static constexpr int ratioValues[] = {1, 2, 3, 4, 5, 10, 20};
+        int ratioIdx = 2;
+        for (int ri = 0; ri < 7; ++ri) {
+            if (static_cast<uint32_t>(ratioValues[ri]) == ratio) { ratioIdx = ri; break; }
+        }
+        m_statsRatioCombo->setCurrentIndex(ratioIdx);
+    }
+    m_statsTreeUpdateSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("statsUpdateSec")).toInteger(5)));
+
+    // Extended page
+    m_maxConPerFiveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConsPerFive")).toInteger(20)));
+    m_maxHalfOpenSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxHalfConnections")).toInteger(9)));
+    m_serverKeepAliveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("serverKeepAliveTimeout")).toInteger(0)) / 60000);
+    m_useCreditSystemCheck->setChecked(prefs.value(QStringLiteral("useCreditSystem")).toBool(true));
+    m_filterLANIPsCheck->setChecked(prefs.value(QStringLiteral("filterLANIPs")).toBool(true));
+    m_showExtControlsCheck->setChecked(prefs.value(QStringLiteral("showExtControls")).toBool());
+    m_a4afSaveCpuCheck->setChecked(prefs.value(QStringLiteral("a4afSaveCpu")).toBool());
+    m_disableArchPreviewCheck->setChecked(!prefs.value(QStringLiteral("autoArchivePreviewStart")).toBool(true));
+    m_ed2kHostnameEdit->setText(prefs.value(QStringLiteral("ed2kHostname")).toString());
+    bool diskCheck = prefs.value(QStringLiteral("checkDiskspace")).toBool();
+    m_checkDiskspaceCheck->setChecked(diskCheck);
+    m_minFreeDiskSpaceSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("minFreeDiskSpace")).toInteger(20971520)) / (1024 * 1024));
+    m_minFreeDiskSpaceSpin->setEnabled(diskCheck);
+    if (auto* btn = m_commitFilesGroup->button(static_cast<int>(prefs.value(QStringLiteral("commitFiles")).toInteger(1))))
+        btn->setChecked(true);
+    if (auto* btn = m_extractMetaDataGroup->button(static_cast<int>(prefs.value(QStringLiteral("extractMetaData")).toInteger(1))))
+        btn->setChecked(true);
+    m_logToDiskCheck->setChecked(prefs.value(QStringLiteral("logToDisk")).toBool());
+    bool verboseOn = prefs.value(QStringLiteral("verbose")).toBool(true);
+    m_verboseCheck->setChecked(verboseOn);
+    m_logLevelSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("logLevel")).toInteger(5)));
+    m_logLevelSpin->setEnabled(verboseOn);
+    m_verboseLogToDiskCheck->setChecked(prefs.value(QStringLiteral("verboseLogToDisk")).toBool());
+    m_verboseLogToDiskCheck->setEnabled(verboseOn);
+    m_logSourceExchangeCheck->setChecked(prefs.value(QStringLiteral("logSourceExchange")).toBool());
+    m_logSourceExchangeCheck->setEnabled(verboseOn);
+    m_logBannedClientsCheck->setChecked(prefs.value(QStringLiteral("logBannedClients")).toBool(true));
+    m_logBannedClientsCheck->setEnabled(verboseOn);
+    m_logRatingDescCheck->setChecked(prefs.value(QStringLiteral("logRatingDescReceived")).toBool(true));
+    m_logRatingDescCheck->setEnabled(verboseOn);
+    m_logSecureIdentCheck->setChecked(prefs.value(QStringLiteral("logSecureIdent")).toBool(true));
+    m_logSecureIdentCheck->setEnabled(verboseOn);
+    m_logFilteredIPsCheck->setChecked(prefs.value(QStringLiteral("logFilteredIPs")).toBool(true));
+    m_logFilteredIPsCheck->setEnabled(verboseOn);
+    m_logFileSavingCheck->setChecked(prefs.value(QStringLiteral("logFileSaving")).toBool());
+    m_logFileSavingCheck->setEnabled(verboseOn);
+    m_logA4AFCheck->setChecked(prefs.value(QStringLiteral("logA4AF")).toBool());
+    m_logA4AFCheck->setEnabled(verboseOn);
+    m_logUlDlEventsCheck->setChecked(prefs.value(QStringLiteral("logUlDlEvents")).toBool(true));
+    m_logUlDlEventsCheck->setEnabled(verboseOn);
+    m_logRawSocketPacketsCheck->setChecked(prefs.value(QStringLiteral("logRawSocketPackets")).toBool());
+    m_logRawSocketPacketsCheck->setEnabled(verboseOn);
+    m_logWebServerCheck->setChecked(prefs.value(QStringLiteral("logWebServer")).toBool());
+    m_logWebServerCheck->setEnabled(verboseOn);
+    m_enableIpcLogCheck->setChecked(prefs.value(QStringLiteral("enableIpcLog")).toBool());
+    m_startCoreWithConsoleCheck->setChecked(prefs.value(QStringLiteral("startCoreWithConsole")).toBool());
+    // USS
+    bool ussOn = prefs.value(QStringLiteral("dynUpEnabled")).toBool();
+    m_dynUpEnabledCheck->setChecked(ussOn);
+    m_dynUpPingToleranceSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpPingTolerance")).toInteger(500)));
+    m_dynUpPingToleranceSpin->setEnabled(ussOn);
+    m_dynUpPingToleranceMsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpPingToleranceMs")).toInteger(200)));
+    m_dynUpPingToleranceMsSpin->setEnabled(ussOn);
+    bool useMs = prefs.value(QStringLiteral("dynUpUseMillisecondPingTolerance")).toBool();
+    m_dynUpRadioMs->setChecked(useMs);
+    m_dynUpRadioPercent->setChecked(!useMs);
+    m_dynUpRadioPercent->setEnabled(ussOn);
+    m_dynUpRadioMs->setEnabled(ussOn);
+    m_dynUpGoingUpSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpGoingUpDivider")).toInteger(1000)));
+    m_dynUpGoingUpSpin->setEnabled(ussOn);
+    m_dynUpGoingDownSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpGoingDownDivider")).toInteger(1000)));
+    m_dynUpGoingDownSpin->setEnabled(ussOn);
+    m_dynUpNumPingsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpNumberOfPings")).toInteger(1)));
+    m_dynUpNumPingsSpin->setEnabled(ussOn);
+    m_closeUPnPCheck->setChecked(prefs.value(QStringLiteral("closeUPnPOnExit")).toBool(true));
+    m_skipWANIPCheck->setChecked(prefs.value(QStringLiteral("skipWANIPSetup")).toBool());
+    m_skipWANPPPCheck->setChecked(prefs.value(QStringLiteral("skipWANPPPSetup")).toBool());
+    m_fileBufferSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("fileBufferSize")).toInteger(245760)) / 16384);
+    m_queueSizeSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("queueSize")).toInteger(5000)) / 100);
+
+#ifdef Q_OS_WIN
+    m_autotakeEd2kCheck->setChecked(prefs.value(QStringLiteral("autotakeEd2kLinks")).toBool(true));
+    m_winFirewallCheck->setChecked(prefs.value(QStringLiteral("openPortsOnWinFirewall")).toBool());
+    m_sparsePartFilesCheck->setChecked(prefs.value(QStringLiteral("sparsePartFiles")).toBool());
+    m_allocFullFileCheck->setChecked(prefs.value(QStringLiteral("allocFullFile")).toBool());
+    m_resolveShellLinksCheck->setChecked(prefs.value(QStringLiteral("resolveShellLinks")).toBool());
+    if (auto* btn = m_multiUserSharingGroup->button(static_cast<int>(prefs.value(QStringLiteral("multiUserSharing")).toInteger(2))))
+        btn->setChecked(true);
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Private: fill daemon-owned widgets from local thePrefs (fallback)
+// ---------------------------------------------------------------------------
+
+void OptionsDialog::fillDaemonSettingsFromPrefs()
+{
+    // Build a QCborMap from thePrefs and delegate to fillDaemonSettings.
+    // This avoids duplicating the widget-setting code.
+    QCborMap p;
+    p.insert(QStringLiteral("nick"), thePrefs.nick());
+    p.insert(QStringLiteral("maxGraphDownloadRate"), static_cast<qint64>(thePrefs.maxGraphDownloadRate()));
+    p.insert(QStringLiteral("maxGraphUploadRate"), static_cast<qint64>(thePrefs.maxGraphUploadRate()));
+    p.insert(QStringLiteral("maxDownload"), static_cast<qint64>(thePrefs.maxDownload()));
+    p.insert(QStringLiteral("maxUpload"), static_cast<qint64>(thePrefs.maxUpload()));
+    p.insert(QStringLiteral("port"), static_cast<qint64>(thePrefs.port()));
+    p.insert(QStringLiteral("udpPort"), static_cast<qint64>(thePrefs.udpPort()));
+    p.insert(QStringLiteral("enableUPnP"), thePrefs.enableUPnP());
+    p.insert(QStringLiteral("maxSourcesPerFile"), static_cast<qint64>(thePrefs.maxSourcesPerFile()));
+    p.insert(QStringLiteral("maxConnections"), static_cast<qint64>(thePrefs.maxConnections()));
+    p.insert(QStringLiteral("autoConnect"), thePrefs.autoConnect());
+    p.insert(QStringLiteral("reconnect"), thePrefs.reconnect());
+    p.insert(QStringLiteral("showOverhead"), thePrefs.showOverhead());
+    p.insert(QStringLiteral("kadEnabled"), thePrefs.kadEnabled());
+    p.insert(QStringLiteral("networkED2K"), thePrefs.networkED2K());
+    p.insert(QStringLiteral("safeServerConnect"), thePrefs.safeServerConnect());
+    p.insert(QStringLiteral("autoConnectStaticOnly"), thePrefs.autoConnectStaticOnly());
+    p.insert(QStringLiteral("useServerPriorities"), thePrefs.useServerPriorities());
+    p.insert(QStringLiteral("addServersFromServer"), thePrefs.addServersFromServer());
+    p.insert(QStringLiteral("addServersFromClients"), thePrefs.addServersFromClients());
+    p.insert(QStringLiteral("deadServerRetries"), static_cast<qint64>(thePrefs.deadServerRetries()));
+    p.insert(QStringLiteral("autoUpdateServerList"), thePrefs.autoUpdateServerList());
+    p.insert(QStringLiteral("serverListURL"), thePrefs.serverListURL());
+    p.insert(QStringLiteral("smartLowIdCheck"), thePrefs.smartLowIdCheck());
+    p.insert(QStringLiteral("manualServerHighPriority"), thePrefs.manualServerHighPriority());
+    p.insert(QStringLiteral("proxyType"), static_cast<qint64>(thePrefs.proxyType()));
+    p.insert(QStringLiteral("proxyHost"), thePrefs.proxyHost());
+    p.insert(QStringLiteral("proxyPort"), static_cast<qint64>(thePrefs.proxyPort()));
+    p.insert(QStringLiteral("proxyEnablePassword"), thePrefs.proxyEnablePassword());
+    p.insert(QStringLiteral("proxyUser"), thePrefs.proxyUser());
+    p.insert(QStringLiteral("proxyPassword"), thePrefs.proxyPassword());
+    p.insert(QStringLiteral("incomingDir"), thePrefs.incomingDir());
+    { QCborArray arr; for (const auto& d : thePrefs.tempDirs()) arr.append(d); p.insert(QStringLiteral("tempDirs"), arr); }
+    { QCborArray arr; for (const auto& d : thePrefs.sharedDirs()) arr.append(d); p.insert(QStringLiteral("sharedDirs"), arr); }
+    p.insert(QStringLiteral("addNewFilesPaused"), thePrefs.addNewFilesPaused());
+    p.insert(QStringLiteral("autoSharedFilesPriority"), thePrefs.autoSharedFilesPriority());
+    p.insert(QStringLiteral("autoDownloadPriority"), thePrefs.autoDownloadPriority());
+    p.insert(QStringLiteral("transferFullChunks"), thePrefs.transferFullChunks());
+    p.insert(QStringLiteral("previewPrio"), thePrefs.previewPrio());
+    p.insert(QStringLiteral("startNextPausedFile"), thePrefs.startNextPausedFile());
+    p.insert(QStringLiteral("startNextPausedFileSameCat"), thePrefs.startNextPausedFileSameCat());
+    p.insert(QStringLiteral("startNextPausedFileOnlySameCat"), thePrefs.startNextPausedFileOnlySameCat());
+    p.insert(QStringLiteral("rememberDownloadedFiles"), thePrefs.rememberDownloadedFiles());
+    p.insert(QStringLiteral("rememberCancelledFiles"), thePrefs.rememberCancelledFiles());
+    // Reuse fillDaemonSettings — remaining fields use defaults from toInteger/toBool
+    fillDaemonSettings(p);
 }
 
 // ---------------------------------------------------------------------------

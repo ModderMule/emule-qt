@@ -523,6 +523,9 @@ void IpcClientHandler::handleSetServerPriority(const IpcMessage& msg)
         return;
     }
     srv->setPreference(static_cast<ServerPriority>(prio));
+    if (srv->isStaticMember())
+        theApp.serverList->saveStaticServers(
+            QDir(thePrefs.configDir()).filePath(QStringLiteral("staticservers.dat")));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -541,6 +544,8 @@ void IpcClientHandler::handleSetServerStatic(const IpcMessage& msg)
         return;
     }
     srv->setStaticMember(isStatic);
+    theApp.serverList->saveStaticServers(
+        QDir(thePrefs.configDir()).filePath(QStringLiteral("staticservers.dat")));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -573,8 +578,19 @@ void IpcClientHandler::handleAddServer(const IpcMessage& msg)
         server->setName(name);
     if (thePrefs.manualServerHighPriority())
         server->setPreference(ServerPriority::High);
-    theApp.serverList->addServer(std::move(server));
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    const auto ip4 = addr.toIPv4Address();
+    Server* added = theApp.serverList->addServer(std::move(server));
+    if (added) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    } else {
+        // MFC parity: update name on existing duplicate if name is meaningful
+        if (!name.isEmpty() && !name.startsWith(QStringLiteral("Server"))) {
+            auto* existing = theApp.serverList->findByIPTcp(ip4, port);
+            if (existing)
+                existing->setName(name);
+        }
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false));
+    }
 }
 
 void IpcClientHandler::handleGetConnection(const IpcMessage& msg)
@@ -609,6 +625,7 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
             info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ip()));
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
+            info.insert(QStringLiteral("serverName"), srv->name());
         }
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
@@ -1648,7 +1665,7 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
 
         // Cumulative times
         stats.insert(QStringLiteral("cumRunTime"),
-                     static_cast<qint64>(thePrefs.cumRunTime() + uptime));
+                     static_cast<qint64>(thePrefs.cumRunTime() + static_cast<uint64>(uptime)));
         stats.insert(QStringLiteral("cumTransferTime"),
                      static_cast<qint64>(thePrefs.cumTransferTime() + s->transferTime()));
         stats.insert(QStringLiteral("cumUploadTime"),
@@ -1859,6 +1876,7 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("logA4AF"), thePrefs.logA4AF());
     prefs.insert(QStringLiteral("logUlDlEvents"), thePrefs.logUlDlEvents());
     prefs.insert(QStringLiteral("logRawSocketPackets"), thePrefs.logRawSocketPackets());
+    prefs.insert(QStringLiteral("logWebServer"), thePrefs.logWebServer());
     prefs.insert(QStringLiteral("startCoreWithConsole"), thePrefs.startCoreWithConsole());
     prefs.insert(QStringLiteral("queueSize"), static_cast<qint64>(thePrefs.queueSize()));
     // USS
@@ -1933,6 +1951,10 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
     }
 
     thePrefs.save();
+
+    // Update scheduler baselines so restoreOriginals() doesn't revert these changes
+    if (theApp.scheduler)
+        theApp.scheduler->saveOriginals();
 
     // Notify web server config changes
     emit webServerConfigChanged();
@@ -3183,6 +3205,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setLogUlDlEvents(val.toBool());
     else if (key == QStringLiteral("logRawSocketPackets"))
         thePrefs.setLogRawSocketPackets(val.toBool());
+    else if (key == QStringLiteral("logWebServer"))
+        thePrefs.setLogWebServer(val.toBool());
     else if (key == QStringLiteral("enableIpcLog"))
         thePrefs.setEnableIpcLog(val.toBool());
     else if (key == QStringLiteral("startCoreWithConsole"))

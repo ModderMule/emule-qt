@@ -9,13 +9,19 @@
 #include "app/AppContext.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
+#include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "net/ClientUDPSocket.h"
 #include "net/LastCommonRouteFinder.h"
+#include "transfer/DownloadQueue.h"
 #include "files/KnownFile.h"
+#include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
+#include "utils/Log.h"
+#include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
 
@@ -63,7 +69,7 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client,
     for (const auto& pkt : packets) {
         if (pkt) {
             // EMSocket takes ownership via unique_ptr; copy from shared_ptr
-            sock->sendPacket(std::make_unique<Packet>(*pkt), false);
+            sock->sendPacket(std::make_unique<Packet>(*pkt), false, pkt->statsPayload);
         }
     }
 }
@@ -329,6 +335,7 @@ void UploadQueue::addUpNextClient(UpDownClient* directadd)
     }
 
     newClient->resetSessionUp();
+    newClient->resetQueueSessionPayloadUp();
 
     // Add to throttler
     if (m_throttler && sock)
@@ -363,8 +370,11 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
     if (!ignoreTimeLimit)
         client->addRequestCount(client->reqUpFileId());
 
-    if (client->isBanned())
+    if (client->isBanned()) {
+        logDebug(QStringLiteral("addClientToQueue: rejected banned client %1")
+                     .arg(client->userName()));
         return false;
+    }
 
     // Check for duplicates and IP limits
     uint16 sameIPCount = 0;
@@ -382,15 +392,19 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
             return true;
         }
         if (client->compare(cur)) {
-            // Duplicate client detected — skip
+            logDebug(QStringLiteral("addClientToQueue: rejected duplicate client %1")
+                         .arg(client->userName()));
             return false;
         }
         if (client->userIP() == cur->userIP())
             ++sameIPCount;
     }
 
-    if (sameIPCount >= 3)
+    if (sameIPCount >= 3) {
+        logDebug(QStringLiteral("addClientToQueue: rejected %1 — 3+ clients from same IP")
+                     .arg(client->userName()));
         return false;
+    }
 
     // If already downloading, just send accept
     if (isDownloading(client)) {
@@ -627,6 +641,89 @@ void UploadQueue::process()
     }
 
     updateDatarates();
+}
+
+// ===========================================================================
+// onReaskFilePing — handle OP_REASKFILEPING from ClientUDPSocket
+//
+// MFC: CClientUDPSocket::ProcessPacket — OP_REASKFILEPING case
+// Packet payload: <filehash 16>
+// ===========================================================================
+
+void UploadQueue::onReaskFilePing(uint32 senderIP, uint16 senderPort,
+                                   const uint8* data, uint32 size)
+{
+    if (!data || size < 16)
+        return;
+
+    // Look up the requesting client by IP + UDP port
+    UpDownClient* sender = nullptr;
+    if (theApp.clientList)
+        sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+
+    // Look up the requested file by hash
+    KnownFile* reqFile = nullptr;
+    if (theApp.sharedFileList)
+        reqFile = theApp.sharedFileList->getFileByID(data);
+
+    if (!reqFile) {
+        // Not in shared files — check incomplete downloads with >= 1 complete part
+        if (theApp.downloadQueue) {
+            auto* partFile = theApp.downloadQueue->fileByID(data);
+            if (partFile && static_cast<uint64>(partFile->completedSize()) >= PARTSIZE)
+                reqFile = partFile;
+        }
+    }
+
+    if (!reqFile) {
+        if (theApp.clientUDP) {
+            auto pkt = std::make_unique<Packet>(OP_FILENOTFOUND, 0, OP_EMULEPROT);
+            if (sender)
+                theApp.clientUDP->sendPacket(std::move(pkt), senderIP, senderPort,
+                                              sender->shouldReceiveCryptUDPPackets(),
+                                              sender->userHash(), false, 0);
+            else
+                theApp.clientUDP->sendPacket(std::move(pkt), senderIP, senderPort,
+                                              false, nullptr, false, 0);
+        }
+        return;
+    }
+
+    if (sender) {
+        sender->incAskedCount();
+
+        // Re-add to queue (updates position, handles reconnect)
+        addClientToQueue(sender);
+
+        // Build reask ACK with part status + queue rank
+        SafeMemFile dataOut;
+
+        if (sender->udpVer() > 3) {
+            if (reqFile->isPartFile())
+                static_cast<PartFile*>(reqFile)->writePartStatus(dataOut);
+            else
+                dataOut.writeUInt16(0);
+        }
+
+        const uint16 queueRank = static_cast<uint16>(waitingPosition(sender));
+        dataOut.writeUInt16(queueRank);
+
+        auto response = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_REASKACK);
+        if (theApp.clientUDP) {
+            theApp.clientUDP->sendPacket(std::move(response), senderIP, senderPort,
+                                          sender->shouldReceiveCryptUDPPackets(),
+                                          sender->userHash(), false, 0);
+        }
+    } else {
+        // Unknown client — check if queue is full
+        if (theApp.clientUDP) {
+            if (waitingUserCount() + 50 > 200) {
+                auto pkt = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
+                theApp.clientUDP->sendPacket(std::move(pkt), senderIP, senderPort,
+                                              false, nullptr, false, 0);
+            }
+        }
+    }
 }
 
 } // namespace eMule

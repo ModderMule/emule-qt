@@ -11,6 +11,7 @@
 #include "server/Server.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
+#include "utils/OtherFunctions.h"
 
 
 #include <QHostAddress>
@@ -100,6 +101,15 @@ bool ServerSocket::packetReceived(Packet* packet)
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadServer(packet->size);
 
+    // Decompress zlib-packed server packets (PR_ZLIB / OP_PACKEDPROT)
+    if (packet->prot == OP_PACKEDPROT) {
+        if (!packet->unPackPacket()) {
+            logWarning(QStringLiteral("ServerSocket: Failed to decompress packed packet (opcode 0x%1)")
+                           .arg(packet->opcode, 2, 16, QLatin1Char('0')));
+            return false;
+        }
+    }
+
     const auto* data = reinterpret_cast<const uint8*>(packet->pBuffer);
     return processPacket(data, packet->size, packet->opcode);
 }
@@ -151,6 +161,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         emit loginReceived(clientID, tcpFlags);
 
         logInfo(QStringLiteral("New client ID is %1").arg(clientID));
+        if (isLowID(clientID))
+            logWarning(QStringLiteral("You have a Low ID. Please check your port forwarding and firewall settings."));
         break;
     }
 
@@ -358,8 +370,23 @@ void ServerSocket::onSocketConnected()
                 .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
                 .arg(peerAddress().toString()).arg(peerPort())
                 .arg(isServerCryptEnabledConnection()));
-    setConnectionState(ServerConnState::WaitForLogin);
     m_lastTransmission = static_cast<uint32>(m_elapsedTimer.elapsed());
+
+    if (isServerCryptEnabledConnection()) {
+        // Defer WaitForLogin until DH handshake completes —
+        // onEncryptionHandshakeComplete() will trigger it.
+        m_pendingLogin = true;
+    } else {
+        setConnectionState(ServerConnState::WaitForLogin);
+    }
+}
+
+void ServerSocket::onEncryptionHandshakeComplete()
+{
+    if (m_pendingLogin) {
+        m_pendingLogin = false;
+        setConnectionState(ServerConnState::WaitForLogin);
+    }
 }
 
 void ServerSocket::onSocketDisconnected()

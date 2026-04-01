@@ -137,12 +137,17 @@ protected:
     /// Called when raw data is received in raw data mode.
     virtual void dataReceived(const uint8* data, uint32 size);
 
+    /// Called after the throttler successfully writes data to the socket.
+    /// Override in subclasses to reset timeout timers, etc.
+    virtual void onSendProgress() {}
+
     uint32 m_timeOut = CONNECTION_TIMEOUT;
     EMSState m_conState = EMSState::NotConnected;
 
 private:
     // --- Internal send implementation ---
     SocketSentBytes send(uint32 maxNumberOfBytesToSend, uint32 minFragSize, bool onlyControlPackets);
+    void scheduleRetryIfNeeded();
 
     static uint32 getNextFragSize(uint32 current, uint32 minFragSize);
 
@@ -192,6 +197,16 @@ private:
     bool m_busy = false;
     bool m_hasSent = false;
     bool m_useBigSendBuffers = false;
+    bool m_retryScheduled = false;
+
+    /// Cached value of bytesToWrite() for thread-safe congestion detection.
+    /// Qt's write() buffers internally unlike MFC Winsock, so we use buffer
+    /// pressure as a proxy for socket busyness.
+    std::atomic<qint64> m_cachedBytesToWrite{0};
+
+    /// Threshold above which the socket is considered congested (128 KB,
+    /// matching the SO_SNDBUF size set by useBigSendBuffer()).
+    static constexpr qint64 kBusyThreshold = 1024 * 1024;
 
     // Read buffer
     std::vector<char> m_readBuffer;

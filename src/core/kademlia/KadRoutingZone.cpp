@@ -70,8 +70,8 @@ void RoutingZone::init(RoutingZone* superZone, uint32 level, const UInt128& zone
     m_bin = new RoutingBin();
 
     time_t now = time(nullptr);
-    // MFC staggers small timers via zone index: time(NULL) + m_uZoneIndex.Get32BitChunk(3)
-    m_nextSmallTimer = now + m_zoneIndex.get32BitChunk(3);
+    // MFC staggers small timers via zone index: time(NULL) + SEC(m_uZoneIndex.Get32BitChunk(3)) // can add  % 10 to have max delay
+    m_nextSmallTimer = now + static_cast<time_t>(m_zoneIndex.get32BitChunk(3));
     // MFC: m_tNextBigTimer = time(NULL) + SEC(10) in StartTimer()
     m_nextBigTimer = now + SEC(10);
 
@@ -115,8 +115,8 @@ bool RoutingZone::add(const UInt128& id, uint32 ip, uint16 udpPort, uint16 tcpPo
     if (version <= KADEMLIA_VERSION1_46c)
         return false;
 
-    // Validate IP
-    if (!isGoodIP(htonl(ip)))
+    // Validate IP (allow LAN IPs when filterLANIPs is disabled)
+    if (!isGoodIP(htonl(ip), !thePrefs.filterLANIPs()))
         return false;
 
     // Reject port 0
@@ -525,12 +525,16 @@ bool RoutingZone::hasOnlyLANNodes() const
 void RoutingZone::readFile(const QString& specialNodesdat)
 {
     QString filename = specialNodesdat.isEmpty() ? s_nodesFilename : specialNodesdat;
-    if (filename.isEmpty())
+    if (filename.isEmpty()) {
+        logKad(QStringLiteral("Kad: No nodes.dat path configured"));
         return;
+    }
 
     SafeFile sf;
-    if (!sf.open(filename, QIODevice::ReadOnly))
+    if (!sf.open(filename, QIODevice::ReadOnly)) {
+        logKad(QStringLiteral("Kad: Could not open nodes.dat at %1").arg(filename));
         return;
+    }
 
     try {
         uint32 numContacts = sf.readUInt32();
@@ -598,8 +602,8 @@ void RoutingZone::readFile(const QString& specialNodesdat)
                 ipVerified = sf.readUInt8() != 0;
             }
 
-            // Validate
-            if (!isGoodIP(htonl(ip)))
+            // Validate (allow LAN IPs when filterLANIPs is disabled)
+            if (!isGoodIP(htonl(ip), !thePrefs.filterLANIPs()))
                 continue;
             if (udpPort == 0)
                 continue;
@@ -631,8 +635,12 @@ void RoutingZone::readFile(const QString& specialNodesdat)
             }
         }
 
-        logKad(QStringLiteral("Kad: Loaded nodes.dat — %1 contacts")
-                   .arg(getNumContacts()));
+        uint32 loaded = getNumContacts();
+        if (loaded == 0)
+            logKad(QStringLiteral("Kad: nodes.dat loaded but 0 contacts added (file had %1 entries)")
+                       .arg(numContacts));
+        else
+            logKad(QStringLiteral("Kad: Loaded nodes.dat — %1 contacts").arg(loaded));
 
     } catch (const FileException& e) {
         logKad(QStringLiteral("Failed to read Kad nodes file: %1").arg(QLatin1StringView(e.what())));
@@ -817,7 +825,7 @@ void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
         uint16 tcpPort = sf.readUInt16();
         uint8 contactVersion = sf.readUInt8();
 
-        if (!isGoodIP(htonl(ip)))
+        if (!isGoodIP(htonl(ip), !thePrefs.filterLANIPs()))
             continue;
         if (udpPort == 0)
             continue;

@@ -65,9 +65,9 @@ void VersionChecker::onReplyFinished(QNetworkReply* reply)
         return;
     }
 
-    const QString remoteStr = doc.object().value(QStringLiteral("version")).toString();
+    const QString remoteStr = doc.object().value(QStringLiteral("latest")).toString();
     if (remoteStr.isEmpty()) {
-        logWarning(QStringLiteral("Version check: no version field in response"));
+        logWarning(QStringLiteral("Version check: no 'latest' field in response"));
         emit checkFailed();
         return;
     }

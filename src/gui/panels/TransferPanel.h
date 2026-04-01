@@ -94,11 +94,6 @@ private:
     void searchRelated(const QString& fileName);
     [[nodiscard]] QString saveDownloadSelection() const;
     [[nodiscard]] QStringList saveDownloadSelectionMulti() const;
-    [[nodiscard]] std::pair<QString, QString> saveFullDownloadSelection() const;
-    [[nodiscard]] std::vector<std::pair<QString, QString>> saveFullDownloadSelectionMulti() const;
-    void restoreDownloadSelection(const QString& key);
-    void restoreFullDownloadSelection(const QString& fileHash, const QString& sourceHash);
-    void restoreFullDownloadSelectionMulti(const std::vector<std::pair<QString, QString>>& selections);
     [[nodiscard]] QString saveClientSelection(QTreeView* view, ClientListModel* model) const;
     void restoreClientSelection(QTreeView* view, ClientListModel* model, const QString& key);
     void setBottomClientView(int index);

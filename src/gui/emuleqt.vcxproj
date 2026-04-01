@@ -249,9 +249,11 @@
     <ClCompile Include="app\UiState.cpp" />
     <ClCompile Include="app\VersionChecker.cpp" />
     <ClCompile Include="app\main.cpp" />
+    <ClCompile Include="utils\PreviewLauncher.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="utils\PreviewLauncher.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
     <QtMoc Include="dialogs\ArchivePreviewPanel.h" />
     <QtMoc Include="dialogs\BugReportDialog.h" />

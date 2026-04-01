@@ -193,11 +193,12 @@ void UpDownClient::updateUploadingStatisticsData()
     uint32 sentBytesPartFile = 0;
 
     if (m_socket) {
-        sentBytesCompleteFile = m_socket->getSentBytesCompleteFileSinceLastCallAndReset();
-        sentBytesPartFile = m_socket->getSentBytesPartFileSinceLastCallAndReset();
+        sentBytesCompleteFile = static_cast<uint32>(m_socket->getSentBytesCompleteFileSinceLastCallAndReset());
+        sentBytesPartFile = static_cast<uint32>(m_socket->getSentBytesPartFileSinceLastCallAndReset());
         const auto sentPayload = sentBytesCompleteFile + sentBytesPartFile;
 
         m_transferredUp += sentPayload;
+        m_curQueueSessionPayloadUp += sentPayload;
 
         // Per-client/port/source breakdown tracking
         if (sentPayload > 0 && theApp.statistics) {
@@ -547,12 +548,12 @@ void UpDownClient::processRequestParts(const uint8* data, uint32 size, bool i64O
     std::array<uint64, 3> starts{};
     std::array<uint64, 3> ends{};
 
-    for (int i = 0; i < 3; ++i)
+    for (size_t i = 0; i < 3; ++i)
         starts[i] = i64Offsets ? io.readUInt64() : io.readUInt32();
-    for (int i = 0; i < 3; ++i)
+    for (size_t i = 0; i < 3; ++i)
         ends[i] = i64Offsets ? io.readUInt64() : io.readUInt32();
 
-    for (int i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < 3; ++i) {
         if (starts[i] < ends[i]) {
             auto* reqBlock = new Requested_Block_Struct;
             reqBlock->startOffset = starts[i];

@@ -210,6 +210,7 @@ void UploadBandwidthThrottler::runInternal()
 {
     int64 realBytesToSpend = 0;
     int rememberedSlotCounter = 0;
+    bool recentlySentData = false;
 
     uint32 nEstimatedDataRate = 0;
     int nSlotsBusyLevel = 0;
@@ -342,7 +343,7 @@ void UploadBandwidthThrottler::runInternal()
             sleepTime = kTimeBetweenUploadLoops;
         } else {
             if (allowedDataRate > 0)
-                sleepTime = static_cast<uint32>(std::ceil((1000.0 - realBytesToSpend) / static_cast<double>(allowedDataRate)));
+                sleepTime = static_cast<uint32>(std::ceil((1000.0 - static_cast<double>(realBytesToSpend)) / static_cast<double>(allowedDataRate)));
             else
                 sleepTime = static_cast<uint32>(std::ceil((doubleSendSize * 1000.0) / static_cast<double>(nEstimatedDataRate)));
             if (sleepTime < kTimeBetweenUploadLoops)
@@ -351,11 +352,12 @@ void UploadBandwidthThrottler::runInternal()
 
         if (timeSinceLastLoop < sleepTime) {
             uint32 dwSleep = sleepTime - timeSinceLastLoop;
-            if (nCanSend == 0) {
+            if (nCanSend == 0 && !recentlySentData) {
+                // No active sockets and nothing sent recently — wait for new data
                 std::unique_lock lock(m_dataAvailableMutex);
                 m_dataAvailableCV.wait_for(lock, std::chrono::milliseconds(dwSleep),
                     [this] { return m_dataAvailable.load() || !m_run.load(); });
-            } else if (nCanSend == nBusy) {
+            } else if (nCanSend == nBusy && nCanSend > 0) {
                 std::unique_lock lock(m_socketAvailableMutex);
                 m_socketAvailableCV.wait_for(lock, std::chrono::milliseconds(dwSleep),
                     [this] { return m_socketAvailable.load() || !m_run.load(); });
@@ -532,6 +534,10 @@ void UploadBandwidthThrottler::runInternal()
             // Signal disk IO thread to prepare more data when buffers are running low
             if (bNeedMoreData && m_diskIOThread)
                 m_diskIOThread->wakeUp();
+
+            recentlySentData = (spentBytes > 0);
+        } else {
+            recentlySentData = false;
         }
     }
 

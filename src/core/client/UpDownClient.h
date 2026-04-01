@@ -224,6 +224,7 @@ public:
 
     [[nodiscard]] uint64 queueSessionPayloadUp() const { return m_curQueueSessionPayloadUp; }
     void addQueueSessionPayloadUp(uint64 bytes) { m_curQueueSessionPayloadUp += bytes; }
+    void resetQueueSessionPayloadUp() { m_curQueueSessionPayloadUp = 0; }
 
     [[nodiscard]] uint64 transferredUp() const { return m_transferredUp; }
     [[nodiscard]] uint64 transferredDown() const { return m_transferredDown; }

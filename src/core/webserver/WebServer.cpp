@@ -37,6 +37,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMimeDatabase>
+#include <QRegularExpression>
 #include <QSslConfiguration>
 #include <QSslKey>
 #include <QSslServer>
@@ -151,7 +152,7 @@ bool WebServer::start(const WebServerConfig& config)
                     QByteArrayLiteral("Accept-Encoding"));
                 if (accept.contains("gzip")) {
                     auto body = resp.data();
-                    if (body.size() > 256) {
+                    if (body.size() > 256 && resp.statusCode() == QHttpServerResponse::StatusCode::Ok) {
                         auto compressed = gzipCompress(body);
                         if (!compressed.isEmpty() && compressed.size() < body.size()) {
                             auto ct = hdrs.value(QHttpHeaders::WellKnownHeader::ContentType);
@@ -560,44 +561,153 @@ QHttpServerResponse WebServer::handleCancelDownload(const QString& hash)
 
 QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QHttpServerRequest& req)
 {
+    const bool dbg = m_preferences && m_preferences->logWebServer();
+
+    if (dbg) {
+        logDebug(QStringLiteral("Preview: GET %1").arg(req.url().toString()));
+        const auto reqHeaders = req.headers();
+        for (qsizetype i = 0; i < reqHeaders.size(); ++i) {
+            logDebug(QStringLiteral("Preview request header: %1: %2")
+                .arg(QString::fromLatin1(reqHeaders.nameAt(i)),
+                     QString::fromLatin1(reqHeaders.valueAt(i))));
+        }
+    }
+
     // Authenticate via stream token query parameter
     const QUrlQuery query(req.query());
     const QString token = query.queryItemValue(QStringLiteral("token"));
-    if (token.isEmpty() || token != m_streamToken)
+    if (token.isEmpty() || token != m_streamToken) {
+        logWarning(QStringLiteral("Preview: 401 — invalid or missing stream token"));
         return jsonError(401, QStringLiteral("Invalid or missing stream token"));
+    }
 
-    if (!m_downloadQueue)
+    if (!m_downloadQueue) {
+        logWarning(QStringLiteral("Preview: 500 — download queue not available"));
         return jsonError(500, QStringLiteral("Download queue not available"));
+    }
 
     std::array<uint8, 16> hashBytes{};
-    if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16)
+    if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16) {
+        logWarning(QStringLiteral("Preview: 400 — invalid hash format: %1").arg(hash));
         return jsonError(400, QStringLiteral("Invalid hash format"));
+    }
 
     auto* file = m_downloadQueue->fileByID(hashBytes.data());
-    if (!file)
+    if (!file) {
+        logWarning(QStringLiteral("Preview: 404 — download not found for hash %1").arg(hash));
         return jsonError(404, QStringLiteral("Download not found"));
+    }
 
-    const QString path = file->fullName();
-    if (path.isEmpty() || !QFileInfo::exists(path))
+    // fullName() returns the .part.met metadata path — strip .met to get the data file
+    QString path = file->fullName();
+    if (path.endsWith(QStringLiteral(".met")))
+        path.chop(4);
+    if (path.isEmpty() || !QFileInfo::exists(path)) {
+        logWarning(QStringLiteral("Preview: 404 — part file not available: %1").arg(path));
         return jsonError(404, QStringLiteral("Part file not available"));
+    }
 
     QFile partFile(path);
-    if (!partFile.open(QIODevice::ReadOnly))
+    if (!partFile.open(QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("Preview: 500 — cannot open part file: %1").arg(path));
         return jsonError(500, QStringLiteral("Cannot open part file"));
+    }
 
-    const QByteArray data = partFile.readAll();
+    const qint64 fileSize = partFile.size();
 
     // Derive MIME type from the original filename
     QMimeDatabase mimeDb;
     const QMimeType mime = mimeDb.mimeTypeForFile(file->fileName(), QMimeDatabase::MatchExtension);
     const QByteArray mimeType = mime.name().toUtf8();
 
-    // Build response with Content-Disposition so the player sees the real filename
-    QHttpServerResponse resp(mimeType, data);
+    if (dbg)
+        logDebug(QStringLiteral("Preview: file=%1  partPath=%2  size=%3  mime=%4")
+            .arg(file->fileName(), path).arg(fileSize).arg(QString::fromUtf8(mimeType)));
+
+    // --- Parse Range header for seeking support (required by VLC et al.) ---
+    const auto rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
+    qint64 rangeStart = 0;
+    qint64 rangeEnd   = fileSize - 1;
+    bool   hasRange   = false;
+
+    if (!rangeHeader.isEmpty()) {
+        if (dbg)
+            logDebug(QStringLiteral("Preview: Range header: %1").arg(QString::fromLatin1(rangeHeader)));
+
+        static const QRegularExpression rx(QStringLiteral("^bytes=(\\d+)-(\\d*)$"));
+        const auto m = rx.match(QString::fromLatin1(rangeHeader));
+        if (!m.hasMatch()) {
+            logWarning(QStringLiteral("Preview: 416 — malformed Range header: %1")
+                .arg(QString::fromLatin1(rangeHeader)));
+            QHttpServerResponse err(QByteArrayLiteral("text/plain"),
+                QByteArrayLiteral("Range Not Satisfiable"),
+                static_cast<QHttpServerResponse::StatusCode>(416));
+            auto h = err.headers();
+            h.append(QByteArrayLiteral("Content-Range"),
+                     QStringLiteral("bytes */%1").arg(fileSize));
+            err.setHeaders(std::move(h));
+            return err;
+        }
+        rangeStart = m.captured(1).toLongLong();
+        rangeEnd   = m.captured(2).isEmpty() ? fileSize - 1
+                                             : m.captured(2).toLongLong();
+        // RFC 7233 §2.1: clamp last-byte-pos to file size
+        if (rangeEnd >= fileSize)
+            rangeEnd = fileSize - 1;
+        if (rangeStart >= fileSize || rangeStart > rangeEnd) {
+            logWarning(QStringLiteral("Preview: 416 — out of bounds: start=%1 end=%2 fileSize=%3")
+                .arg(rangeStart).arg(rangeEnd).arg(fileSize));
+            QHttpServerResponse err(QByteArrayLiteral("text/plain"),
+                QByteArrayLiteral("Range Not Satisfiable"),
+                static_cast<QHttpServerResponse::StatusCode>(416));
+            auto h = err.headers();
+            h.append(QByteArrayLiteral("Content-Range"),
+                     QStringLiteral("bytes */%1").arg(fileSize));
+            err.setHeaders(std::move(h));
+            return err;
+        }
+        hasRange = true;
+    } else {
+        if (dbg)
+            logDebug(QStringLiteral("Preview: no Range header — serving full file"));
+    }
+
+    // Read only the requested byte range
+    partFile.seek(rangeStart);
+    const qint64 contentLength = rangeEnd - rangeStart + 1;
+    const QByteArray data = partFile.read(contentLength);
+
+    if (dbg)
+        logDebug(QStringLiteral("Preview: serving %1 bytes [%2-%3/%4]  hasRange=%5  bytesRead=%6")
+            .arg(contentLength).arg(rangeStart).arg(rangeEnd).arg(fileSize)
+            .arg(hasRange).arg(data.size()));
+
+    const auto statusCode = hasRange
+        ? static_cast<QHttpServerResponse::StatusCode>(206)
+        : QHttpServerResponse::StatusCode::Ok;
+
+    QHttpServerResponse resp(mimeType, data, statusCode);
     auto headers = resp.headers();
+    headers.append(QByteArrayLiteral("Accept-Ranges"), QStringLiteral("bytes"));
+    if (hasRange) {
+        headers.append(QByteArrayLiteral("Content-Range"),
+                       QStringLiteral("bytes %1-%2/%3").arg(rangeStart).arg(rangeEnd).arg(fileSize));
+    }
     headers.append(QHttpHeaders::WellKnownHeader::ContentDisposition,
                    QStringLiteral("inline; filename=\"%1\"").arg(file->fileName()));
     resp.setHeaders(std::move(headers));
+
+    if (dbg) {
+        const auto respHeaders = resp.headers();
+        for (qsizetype i = 0; i < respHeaders.size(); ++i) {
+            logDebug(QStringLiteral("Preview response header: %1: %2")
+                .arg(QString::fromLatin1(respHeaders.nameAt(i)),
+                     QString::fromLatin1(respHeaders.valueAt(i))));
+        }
+        logDebug(QStringLiteral("Preview: responding %1  body=%2 bytes")
+            .arg(static_cast<int>(statusCode)).arg(data.size()));
+    }
+
     return resp;
 }
 

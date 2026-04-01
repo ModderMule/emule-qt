@@ -85,17 +85,17 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
 
     // Layer 1: Part map (full bar height)
     if (!partMap.isEmpty()) {
-        const int partCount = partMap.size();
-        const double partWidth = static_cast<double>(barRect.width()) / partCount;
+        const qsizetype partCount = partMap.size();
+        const double partWidth = static_cast<double>(barRect.width()) / static_cast<double>(partCount);
 
-        for (int i = 0; i < partCount; ++i) {
+        for (qsizetype i = 0; i < partCount; ++i) {
             const auto status = static_cast<uint8_t>(partMap[i]);
             const QColor color = isSourceRow ? sourcePartColor(status)
                                : paused     ? partColorPaused(status)
                                             : partColorActive(status);
 
-            int x0 = barRect.left() + static_cast<int>(i * partWidth);
-            int x1 = barRect.left() + static_cast<int>((i + 1) * partWidth);
+            int x0 = barRect.left() + static_cast<int>(static_cast<double>(i) * partWidth);
+            int x1 = barRect.left() + static_cast<int>(static_cast<double>(i + 1) * partWidth);
             if (i == partCount - 1)
                 x1 = barRect.right() + 1;  // fill to edge
 

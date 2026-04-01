@@ -104,6 +104,7 @@ protected:
     bool packetReceived(Packet* packet) override;
     void onError(int errorCode) override;
     void onEncryptionHandshakeComplete() override;
+    void onSendProgress() override { resetTimeOutTimer(); }
 
     /// Process ED2K standard protocol packet.
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode);

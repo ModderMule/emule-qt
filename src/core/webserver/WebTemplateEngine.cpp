@@ -62,8 +62,8 @@ void WebTemplateEngine::parseSections(const QString& rawContent)
     // First pass: find all section boundaries
     struct SectionRange {
         QString name;
-        int contentStart;
-        int contentEnd;
+        qsizetype contentStart;
+        qsizetype contentEnd;
     };
     QList<SectionRange> ranges;
 
@@ -71,11 +71,11 @@ void WebTemplateEngine::parseSections(const QString& rawContent)
     while (startIt.hasNext()) {
         auto match = startIt.next();
         const QString name = match.captured(1);
-        const int contentStart = match.capturedEnd();
+        const qsizetype contentStart = match.capturedEnd();
 
         // Find the matching end tag
         const QString endTag = QStringLiteral("<--TMPL_") + name + QStringLiteral("_END-->");
-        const int endPos = rawContent.indexOf(endTag, contentStart);
+        const qsizetype endPos = rawContent.indexOf(endTag, contentStart);
         if (endPos >= 0) {
             ranges.append({name, contentStart, endPos});
         }

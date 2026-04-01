@@ -173,6 +173,7 @@ struct Preferences::Data {
     bool logA4AF = false;
     bool logUlDlEvents = true;
     bool logRawSocketPackets = false;
+    bool logWebServer = false;
     bool enableIpcLog = false;        // GUI-only: show IPC tab in LogWidget
     bool startCoreWithConsole = false; // GUI-only: launch daemon in terminal window
 
@@ -1222,6 +1223,18 @@ void Preferences::setLogRawSocketPackets(bool val)
 {
     QWriteLocker lock(&m_lock);
     m_data->logRawSocketPackets = val;
+}
+
+bool Preferences::logWebServer() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logWebServer;
+}
+
+void Preferences::setLogWebServer(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logWebServer = val;
 }
 
 bool Preferences::enableIpcLog() const { QReadLocker lock(&m_lock); return m_data->enableIpcLog; }
@@ -3590,6 +3603,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logA4AF                     = p.value(QStringLiteral("logA4AF")).toBool();
     m_data->logUlDlEvents               = p.value(QStringLiteral("logUlDlEvents")).toBool();
     m_data->logRawSocketPackets         = p.value(QStringLiteral("logRawSocketPackets")).toBool();
+    m_data->logWebServer                = p.value(QStringLiteral("logWebServer")).toBool();
     m_data->queueSize                   = static_cast<uint32>(p.value(QStringLiteral("queueSize")).toInteger());
 
     // USS
@@ -3962,6 +3976,7 @@ bool Preferences::load(const QString& filePath)
             m_data->logA4AF = l["logA4AF"].as<bool>(m_data->logA4AF);
             m_data->logUlDlEvents = l["logUlDlEvents"].as<bool>(m_data->logUlDlEvents);
             m_data->logRawSocketPackets = l["logRawSocketPackets"].as<bool>(m_data->logRawSocketPackets);
+            m_data->logWebServer = l["logWebServer"].as<bool>(m_data->logWebServer);
         }
 
         // Files
@@ -4549,6 +4564,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "logA4AF" << YAML::Value << m_data->logA4AF;
     out << YAML::Key << "logUlDlEvents" << YAML::Value << m_data->logUlDlEvents;
     out << YAML::Key << "logRawSocketPackets" << YAML::Value << m_data->logRawSocketPackets;
+    out << YAML::Key << "logWebServer" << YAML::Value << m_data->logWebServer;
     out << YAML::EndMap;
 
     // Files

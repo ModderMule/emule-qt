@@ -37,6 +37,7 @@ void IpcConnection::sendMessage(const IpcMessage& msg)
     if (!m_encryptionKey.isEmpty())
         cborBytes = aesEncryptPayload(cborBytes, m_encryptionKey);
     m_socket->write(encodeFrame(cborBytes));
+    m_socket->flush();
 }
 
 bool IpcConnection::isConnected() const

@@ -119,6 +119,13 @@ private:
     bool m_kadRunning    = false;
     bool m_kadConnected  = false;
     bool m_kadFirewalled = false;
+
+    // eD2K status (updated via IPC push events)
+    bool m_ed2kConnected  = false;
+    bool m_ed2kConnecting = false;
+    bool m_ed2kFirewalled = false;
+    uint32_t m_ed2kClientID = 0;
+    QString m_ed2kServerName;
 };
 
 } // namespace eMule

@@ -21,6 +21,9 @@ file(GLOB_RECURSE DIALOG_SOURCES   CONFIGURE_DEPENDS "dialogs/*.cpp"  "dialogs/*
 # Module 25: Graphics utilities
 file(GLOB_RECURSE GFX_SOURCES      CONFIGURE_DEPENDS "graphics/*.cpp" "graphics/*.h")
 
+# Module 26: GUI utilities
+file(GLOB_RECURSE GUI_UTIL_SOURCES  CONFIGURE_DEPENDS "utils/*.cpp"    "utils/*.h")
+
 # -- Qt resources -----------------------------------------------------------
 
 set(RESOURCES
@@ -35,6 +38,7 @@ qt_add_executable(emuleqt
     ${CONTROL_SOURCES}
     ${DIALOG_SOURCES}
     ${GFX_SOURCES}
+    ${GUI_UTIL_SOURCES}
     ${RESOURCES}
 )
 
@@ -134,5 +138,5 @@ endif()
 # Source groups for IDE navigation
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
     ${APP_SOURCES} ${PANEL_SOURCES} ${CONTROL_SOURCES}
-    ${DIALOG_SOURCES} ${GFX_SOURCES}
+    ${DIALOG_SOURCES} ${GFX_SOURCES} ${GUI_UTIL_SOURCES}
 )

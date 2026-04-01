@@ -56,6 +56,7 @@ CoreSession::CoreSession(QObject* parent)
 CoreSession::~CoreSession()
 {
     stop();
+    stopWorkerThreads();
     shutdownScheduler();
     shutdownUPnP();
     shutdownKademlia();
@@ -89,6 +90,25 @@ void CoreSession::start()
 void CoreSession::stop()
 {
     m_timer.stop();
+}
+
+void CoreSession::stopWorkerThreads()
+{
+    // Stop all worker threads BEFORE destroying any objects they reference.
+    // The throttler thread calls sendFileAndControlData()/sendControlData() on
+    // sockets; if those sockets are destroyed first we get use-after-free.
+    if (m_uploadThrottler) {
+        m_uploadThrottler->endThread();
+        m_uploadThrottler->wait();
+    }
+    if (m_uploadDiskIO) {
+        m_uploadDiskIO->endThread();
+        m_uploadDiskIO->wait();
+    }
+    if (m_lastCommonRouteFinder) {
+        m_lastCommonRouteFinder->endThread();
+        m_lastCommonRouteFinder->wait();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -322,8 +342,8 @@ void CoreSession::updateUSSParams()
     p.goingUpDivider = static_cast<uint32>(thePrefs.dynUpGoingUpDivider());
     p.goingDownDivider = static_cast<uint32>(thePrefs.dynUpGoingDownDivider());
     p.numberOfPingsForAverage = static_cast<uint32>(thePrefs.dynUpNumberOfPings());
-    p.minUpload = thePrefs.minUpload() * 1024;  // KB/s → bytes/s
-    p.maxUpload = (thePrefs.maxUpload() == 0) ? UINT32_MAX : thePrefs.maxUpload() * 1024;
+    p.minUpload = thePrefs.minUpload();  // KB/s — setPrefs() converts to bytes/s
+    p.maxUpload = (thePrefs.maxUpload() == 0) ? UINT32_MAX : thePrefs.maxUpload();
     p.curUpload = (thePrefs.maxUpload() == 0) ? UINT32_MAX : thePrefs.maxUpload() * 1024;
     m_lastCommonRouteFinder->setPrefs(p);
 }
@@ -344,13 +364,17 @@ void CoreSession::initServerConnect()
     const QString serverMetPath = QDir(thePrefs.configDir()).filePath(
         QStringLiteral("server.met"));
     if (QFile::exists(serverMetPath)) {
-        if (m_serverList->loadServerMet(serverMetPath))
-            logInfo(QStringLiteral("Loaded %1 servers from server.met")
-                        .arg(m_serverList->serverCount()));
-        else
-            logWarning(QStringLiteral("Failed to load server.met"));
+        if (m_serverList->loadServerMet(serverMetPath)) {
+            if (m_serverList->serverCount() == 0)
+                logWarning(QStringLiteral("server.met loaded but contains 0 servers"));
+            else
+                logInfo(QStringLiteral("Loaded %1 servers from server.met")
+                            .arg(m_serverList->serverCount()));
+        } else {
+            logWarning(QStringLiteral("Failed to load server.met at %1").arg(serverMetPath));
+        }
     } else {
-        logInfo(QStringLiteral("No server.met found — server list is empty"));
+        logWarning(QStringLiteral("No server.met found at %1 — server list is empty").arg(serverMetPath));
     }
 
     // 1b. Auto-update server list from URL if configured
@@ -376,6 +400,9 @@ void CoreSession::initServerConnect()
     cfg.userNick              = thePrefs.nick();
     cfg.listenPort            = thePrefs.port();
     cfg.smartLowIdCheck       = thePrefs.smartLowIdCheck();
+    cfg.emuleVersionTag       = (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17)
+                              | (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10)
+                              | (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);
     m_serverConnect->setConfig(cfg);
 
     // 4. Wire SharedFileList and DownloadQueue to ServerConnect
@@ -636,6 +663,12 @@ void CoreSession::initKademlia()
     theApp.clientUDP = m_clientUDP.get();
     logInfo(QStringLiteral("Client UDP socket bound on port %1").arg(udpPort));
 
+    // Wire client UDP reask signals to upload queue
+    if (theApp.uploadQueue) {
+        connect(m_clientUDP.get(), &ClientUDPSocket::reaskFilePingReceived,
+                theApp.uploadQueue, &UploadQueue::onReaskFilePing);
+    }
+
     // 2. Create and start Kademlia (no internal socket binding).
     m_kademlia = std::make_unique<kad::Kademlia>();
     kad::Kademlia::setClientList(theApp.clientList);
@@ -754,6 +787,13 @@ void CoreSession::initKademlia()
             }
             client->setConnectOptions(connectOptions, true, false);
             client->tryToConnect();
+        });
+
+    // 6. UDP port test → send reply on TCP port-test connection
+    connect(udp, &ClientUDPSocket::portTestReceived,
+        this, [this](uint32, uint16) {
+            if (m_listenSocket)
+                m_listenSocket->sendPortTestReply('1', true);
         });
 
     logInfo(QStringLiteral("Kademlia started."));

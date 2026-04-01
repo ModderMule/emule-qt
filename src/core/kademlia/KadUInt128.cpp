@@ -43,7 +43,7 @@ UInt128::UInt128(const UInt128& value, uint32 numBits)
 {
     setValue(value);
     auto& rng = randomEngine();
-    std::uniform_int_distribution<int> dist(0, 1);
+    std::uniform_int_distribution<uint32> dist(0, 1);
     while (numBits < 128)
         setBitNumber(numBits++, dist(rng));
 }
@@ -238,7 +238,7 @@ QString UInt128::toBinaryString(bool trim) const
 {
     QString str;
     str.reserve(128);
-    for (int i = 0; i < 128; ++i) {
+    for (uint32 i = 0; i < 128; ++i) {
         uint32 bit = getBitNumber(i);
         if (!trim || bit) {
             str += QChar(u'0' + bit);

@@ -75,12 +75,16 @@ void ServerPanel::setIpcClient(IpcClient* client)
                 this, [this](const Ipc::IpcMessage& msg) {
             requestServerList();
             const QCborMap info = msg.fieldMap(0);
-            updateConnectButton(
-                info.value(QStringLiteral("connected")).toBool(),
-                info.value(QStringLiteral("connecting")).toBool());
+            m_ed2kConnected  = info.value(QStringLiteral("connected")).toBool();
+            m_ed2kConnecting = info.value(QStringLiteral("connecting")).toBool();
+            m_ed2kFirewalled = info.value(QStringLiteral("firewalled")).toBool();
+            m_ed2kClientID   = static_cast<uint32_t>(info.value(QStringLiteral("clientID")).toInteger());
+            m_ed2kServerName = info.value(QStringLiteral("serverName")).toString();
+            updateConnectButton(m_ed2kConnected, m_ed2kConnecting);
             // Highlight connected server in blue
             auto serverId = static_cast<uint32_t>(info.value(QStringLiteral("serverId")).toInteger());
             m_serverListModel->setConnectedServer(serverId);
+            refreshMyInfo();
         });
 
         // Track Kad status from push events
@@ -815,17 +819,27 @@ void ServerPanel::refreshMyInfo()
 
     // eD2K Network
     html += QStringLiteral("<b>") + tr("eD2K Network") + QStringLiteral("</b><br>");
-    if (m_serverConnect && m_serverConnect->isConnected()) {
+    const bool ed2kConn    = m_serverConnect ? m_serverConnect->isConnected()  : m_ed2kConnected;
+    const bool ed2kConning = m_serverConnect ? m_serverConnect->isConnecting() : m_ed2kConnecting;
+    if (ed2kConn) {
         html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" <font color='green'>") + tr("Connected") + QStringLiteral("</font><br>");
-        if (auto* srv = m_serverConnect->currentServer()) {
-            html += QStringLiteral("&nbsp;&nbsp;") + tr("Server: %1").arg(srv->name()) + QStringLiteral("<br>");
+        QString srvName;
+        if (m_serverConnect) {
+            if (auto* srv = m_serverConnect->currentServer())
+                srvName = srv->name();
+        } else {
+            srvName = m_ed2kServerName;
         }
-        html += QStringLiteral("&nbsp;&nbsp;") + tr("Client ID: %1").arg(m_serverConnect->clientID()) + QStringLiteral("<br>");
+        if (!srvName.isEmpty())
+            html += QStringLiteral("&nbsp;&nbsp;") + tr("Server: %1").arg(srvName) + QStringLiteral("<br>");
+        const uint32_t clientId = m_serverConnect ? m_serverConnect->clientID() : m_ed2kClientID;
+        html += QStringLiteral("&nbsp;&nbsp;") + tr("Client ID: %1").arg(clientId) + QStringLiteral("<br>");
+        const bool lowId = m_serverConnect ? m_serverConnect->isLowID() : m_ed2kFirewalled;
         html += QStringLiteral("&nbsp;&nbsp;%1<br>")
-                    .arg(m_serverConnect->isLowID()
+                    .arg(lowId
                              ? QStringLiteral("<font color='orange'>") + tr("Low ID (Firewalled)") + QStringLiteral("</font>")
                              : QStringLiteral("<font color='green'>") + tr("High ID") + QStringLiteral("</font>"));
-    } else if (m_serverConnect && m_serverConnect->isConnecting()) {
+    } else if (ed2kConning) {
         html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" <font color='orange'>") + tr("Connecting...") + QStringLiteral("</font><br>");
     } else {
         html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" ") + tr("Disconnected") + QStringLiteral("<br>");
@@ -1008,11 +1022,15 @@ void ServerPanel::requestServerState()
             return;
 
         const QCborMap info = resp.fieldMap(1);
-        updateConnectButton(
-            info.value(QStringLiteral("connected")).toBool(),
-            info.value(QStringLiteral("connecting")).toBool());
+        m_ed2kConnected  = info.value(QStringLiteral("connected")).toBool();
+        m_ed2kConnecting = info.value(QStringLiteral("connecting")).toBool();
+        m_ed2kFirewalled = info.value(QStringLiteral("firewalled")).toBool();
+        m_ed2kClientID   = static_cast<uint32_t>(info.value(QStringLiteral("clientID")).toInteger());
+        m_ed2kServerName = info.value(QStringLiteral("serverName")).toString();
+        updateConnectButton(m_ed2kConnected, m_ed2kConnecting);
         auto serverId = static_cast<uint32_t>(info.value(QStringLiteral("serverId")).toInteger());
         m_serverListModel->setConnectedServer(serverId);
+        refreshMyInfo();
     });
 }
 

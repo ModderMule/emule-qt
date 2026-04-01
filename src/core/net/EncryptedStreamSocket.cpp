@@ -587,7 +587,11 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
                     logDebug(QStringLiteral("negotiate: Server_Padding — queuing %1 bytes DH response (delayed) for %2:%3")
                                  .arg(responseBuf.size()).arg(peerAddress().toString()).arg(peerPort()));
 
-                sendNegotiatingData(responseBuf.constData(), static_cast<int>(responseBuf.size()), 0, true);
+                // delaySend=false: write DH response immediately. Original eMule
+                // used delaySend=true because MFC sends were synchronous; in Qt,
+                // deferred sends via QTimer cause the response to arrive too late
+                // (server times out before our DH response is flushed).
+                sendNegotiatingData(responseBuf.constData(), static_cast<int>(responseBuf.size()), 0, false);
                 m_streamCryptState = StreamCryptState::Encrypting;
                 onEncryptionHandshakeComplete();
                 break;

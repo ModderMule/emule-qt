@@ -15,6 +15,11 @@
 #include <winsock2.h>
 #else
 #include <sys/socket.h>
+#include <cerrno>
+#endif
+
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
 #endif
 
 namespace eMule {
@@ -116,8 +121,13 @@ void EMSocket::onSocketError(QAbstractSocket::SocketError /*error*/)
 
 void EMSocket::onBytesWritten(qint64 /*bytes*/)
 {
-    m_busy = false;
-    // If we have more queued data, the throttler will call sendControlData/sendFileAndControlData
+    bool wasBusy = m_busy;
+    m_cachedBytesToWrite.store(bytesToWrite(), std::memory_order_relaxed);
+    m_busy = (m_cachedBytesToWrite.load(std::memory_order_relaxed) >= kBusyThreshold);
+
+    // Wake the throttler when transitioning from busy to available
+    if (wasBusy && !m_busy && theApp.uploadBandwidthThrottler)
+        theApp.uploadBandwidthThrottler->socketAvailable();
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +334,7 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
                      .arg(forceImmediateSend).arg(static_cast<int>(m_conState))
                      .arg(peerAddress().toString()).arg(peerPort()));
 
+    bool wakeThrottler = false;
     {
         std::lock_guard lock(m_sendLock);
         if (controlPacket) {
@@ -335,13 +346,20 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
                 m_lastFinishedStandard = static_cast<uint32>(m_elapsedTimer.elapsed());
                 m_accelerateUpload = true;
             }
+            wakeThrottler = true;
         }
     }
+
+    // Wake the throttler AFTER releasing m_sendLock to avoid contention
+    // with the throttler's send() which also acquires m_sendLock.
+    if (wakeThrottler && theApp.uploadBandwidthThrottler)
+        theApp.uploadBandwidthThrottler->newUploadDataAvailable();
 
     if (forceImmediateSend) {
         if (thePrefs.logRawSocketPackets())
             logDebug(QStringLiteral("EMSocket::sendPacket — forceImmediateSend, calling send() now"));
         send(1024, 0, true);
+        scheduleRetryIfNeeded();
     } else if (controlPacket) {
         // Schedule send on the socket's thread. Unlike MFC Winsock which is thread-safe,
         // Qt sockets require write() to be called from the thread that created the socket.
@@ -357,6 +375,7 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
                     logDebug(QStringLiteral("EMSocket::sendPacket — send() returned ctrl=%1 std=%2 success=%3")
                                  .arg(result.sentBytesControlPackets).arg(result.sentBytesStandardPackets)
                                  .arg(result.success));
+                scheduleRetryIfNeeded();
             }
         });
     }
@@ -471,18 +490,53 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
 
             m_lastSent = static_cast<uint32>(m_elapsedTimer.elapsed());
 
-            qint64 result = write(m_sendBuffer + m_sent, toSend);
-            if (result < 0) {
-                m_busy = true;
-                return ret;
+            // Use native ::send() when called from the throttler's background
+            // thread (Qt's write() is not thread-safe from non-owner threads).
+            // Use Qt's write() when called from the socket's owning thread to
+            // preserve Qt's event notification system (readyRead on the peer).
+            qint64 result;
+            if (QThread::currentThread() != thread()) {
+                // Background thread (throttler) — bypass Qt's write buffer
+                auto fd = socketDescriptor();
+                if (fd == -1) {
+                    m_busy = true;
+                    return ret;
+                }
+#ifdef Q_OS_WIN
+                result = ::send(static_cast<SOCKET>(fd), m_sendBuffer + m_sent, static_cast<int>(toSend), 0);
+#else
+                result = ::send(static_cast<int>(fd), m_sendBuffer + m_sent, toSend, MSG_NOSIGNAL);
+#endif
+                if (result <= 0) {
+#ifdef Q_OS_WIN
+                    int err = WSAGetLastError();
+                    if (err == WSAEWOULDBLOCK) {
+#else
+                    int err = errno;
+                    if (err == EAGAIN || err == EWOULDBLOCK) {
+#endif
+                        return ret;
+                    }
+                    ret.success = false;
+                    return ret;
+                }
+            } else {
+                // Owner thread — use Qt's write() for proper event handling
+                result = write(m_sendBuffer + m_sent, toSend);
+                if (result <= 0) {
+                    m_busy = true;
+                    return ret;
+                }
             }
 
-            m_busy = false;
+            m_cachedBytesToWrite.store(bytesToWrite(), std::memory_order_relaxed);
+            m_busy = (m_cachedBytesToWrite.load(std::memory_order_relaxed) >= kBusyThreshold);
             m_hasSent = true;
             auto written = static_cast<uint32>(result);
 
             m_sent += written;
             sentBytes += written;
+            onSendProgress();
 
             if (!m_currentPacketIsControl) {
                 ret.sentBytesStandardPackets += written;
@@ -512,6 +566,41 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
     }
 
     return ret;
+}
+
+// ---------------------------------------------------------------------------
+// scheduleRetryIfNeeded — retry sending when ::send() hit EAGAIN
+//
+// With native ::send() we bypass Qt's write buffer and write notifier.
+// When the kernel socket buffer is full, ::send() returns EAGAIN and the
+// data stays in m_sendBuffer.  Without this retry, that data is stuck
+// forever — especially control packets sent via QTimer::singleShot which
+// fire only once.  This replaces Qt's automatic write-notifier retry.
+// ---------------------------------------------------------------------------
+
+void EMSocket::scheduleRetryIfNeeded()
+{
+    if (m_retryScheduled || m_conState != EMSState::Connected)
+        return;
+
+    bool hasPending;
+    {
+        std::lock_guard lock(m_sendLock);
+        hasPending = (m_sendBuffer != nullptr) || !m_controlQueue.empty();
+    }
+
+    if (hasPending) {
+        m_retryScheduled = true;
+        QTimer::singleShot(10, this, [this] {
+            m_retryScheduled = false;
+            if (m_conState == EMSState::Connected) {
+                // Only retry control packets — standard (file data) packets
+                // are sent by the UploadBandwidthThrottler on its own thread.
+                send(1024 * 64, 0, true);
+                scheduleRetryIfNeeded();
+            }
+        });
+    }
 }
 
 uint32 EMSocket::getNextFragSize(uint32 current, uint32 minFragSize)
@@ -596,7 +685,7 @@ uint32 EMSocket::getNeededBytes()
     uint32 now = static_cast<uint32>(m_elapsedTimer.elapsed());
     uint32 timeSinceLastFinished = now - m_lastFinishedStandard;
     uint32 timeSinceLastSend = now - m_lastCalledSend;
-    uint32 timeTotal = SEC2MS(m_accelerateUpload ? 45 : 90);
+    uint32 timeTotal = SEC2MS(m_accelerateUpload ? 3 : 5);
     uint64 sizeLeft, sizeTotal;
 
     if (!isControl) {
@@ -658,7 +747,7 @@ bool EMSocket::useBigSendBuffer()
         // Try to increase the send buffer
         auto fd = socketDescriptor();
         if (fd != -1) {
-            constexpr int bigSize = 128 * 1024;
+            constexpr int bigSize = 1024 * 1024;
             int optval = bigSize;
             if (setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_SNDBUF,
                            reinterpret_cast<const char*>(&optval), sizeof(optval)) == 0)

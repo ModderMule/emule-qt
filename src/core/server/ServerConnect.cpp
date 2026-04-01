@@ -75,8 +75,29 @@ void ServerConnect::setUDPSocket(UDPSocket* socket)
 void ServerConnect::tryAnotherConnectionRequest()
 {
     if (static_cast<int>(m_connectionAttempts.size()) < m_maxSimCons) {
-        Server* nextServer = m_serverList.nextServer(m_tryObfuscated);
-        if (!nextServer) {
+        // Try up to serverCount candidates to find one not already being connected to
+        Server* next = nullptr;
+        const size_t maxTries = m_serverList.serverCount();
+        for (size_t attempt = 0; attempt < maxTries; ++attempt) {
+            Server* candidate = m_serverList.nextServer(m_tryObfuscated);
+            if (!candidate)
+                break;
+
+            bool alreadyConnecting = false;
+            for (const auto& [ts, sock] : m_connectionAttempts) {
+                const Server* cs = sock ? sock->currentServer() : nullptr;
+                if (cs && cs->ip() == candidate->ip() && cs->port() == candidate->port()) {
+                    alreadyConnecting = true;
+                    break;
+                }
+            }
+            if (!alreadyConnecting) {
+                next = candidate;
+                break;
+            }
+        }
+
+        if (!next) {
             if (m_connectionAttempts.empty()) {
                 if (m_tryObfuscated && !m_config.cryptLayerRequired) {
                     // Retry all servers on the non-obfuscated port
@@ -92,8 +113,8 @@ void ServerConnect::tryAnotherConnectionRequest()
             }
         } else {
             // Only auto-connect to static servers if configured
-            if (!m_config.autoConnectStaticOnly || nextServer->isStaticMember())
-                connectToServer(nextServer, true, !m_tryObfuscated);
+            if (!m_config.autoConnectStaticOnly || next->isStaticMember())
+                connectToServer(next, true, !m_tryObfuscated);
         }
     }
 }
@@ -741,7 +762,7 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     // expects the classic tag format. New-format tags would cause a parse failure
     // and immediate disconnection on real servers.
     Tag tagName(static_cast<uint8>(CT_NAME), m_config.userNick);
-    tagName.writeTagToFile(data, UTF8Mode::OptBOM);
+    tagName.writeTagToFile(data, UTF8Mode::OptBOM); // TODO default UTF8Mode::None, matching MFC ?
 
     // Tag: CT_VERSION — ED2K version
     Tag tagVersion(static_cast<uint8>(CT_VERSION), static_cast<uint32>(EDONKEYVERSION));
@@ -769,7 +790,12 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     packet->opcode = OP_LOGINREQUEST;
 
     logDebug(QStringLiteral(">>> Sending OP_LoginRequest"));
-    sendPacket(std::move(packet), socket);
+    // forceImmediateSend=true: write the login to the socket NOW rather than
+    // deferring via QTimer::singleShot(0).  After a DH handshake the login
+    // must reach the server in the same event-loop iteration, otherwise
+    // servers with short timeouts close the connection before the deferred
+    // send fires.
+    socket->sendPacket(std::move(packet), true /*controlPacket*/, 0, true /*forceImmediateSend*/);
 }
 
 // ---------------------------------------------------------------------------

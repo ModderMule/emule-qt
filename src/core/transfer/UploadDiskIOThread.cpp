@@ -72,29 +72,19 @@ bool UploadDiskIOThread::shouldCompressFile(const QString& fileName)
 void UploadDiskIOThread::run()
 {
     while (m_run.load()) {
-        std::unique_lock lock(m_mutex);
-        m_condition.wait(lock, [this] {
-            return !m_requestQueue.empty() || !m_run.load();
-        });
-
-        if (!m_run.load())
-            break;
-
-        processRequests();
-    }
-}
-
-void UploadDiskIOThread::processRequests()
-{
-    // Process all queued requests while holding the lock briefly per request
-    while (!m_requestQueue.empty() && m_run.load()) {
-        BlockReadRequest req = std::move(m_requestQueue.front());
-        m_requestQueue.pop_front();
-
-        // Release the lock while doing disk I/O
-        // (we re-acquire in the run() loop)
-        // Actually we need to not hold the lock during readBlock
-        // so let's use a different pattern:
+        BlockReadRequest req;
+        {
+            std::unique_lock lock(m_mutex);
+            m_condition.wait(lock, [this] {
+                return !m_requestQueue.empty() || !m_run.load();
+            });
+            if (!m_run.load())
+                break;
+            req = std::move(m_requestQueue.front());
+            m_requestQueue.pop_front();
+        }
+        // Disk I/O + signal emission WITHOUT holding the mutex —
+        // allows queueBlockRead() to proceed concurrently.
         readBlock(req);
     }
 }

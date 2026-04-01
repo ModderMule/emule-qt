@@ -258,10 +258,10 @@ void tst_KadLiveNetwork::initTestCase()
     thePrefs.load(m_tmpDir->filePath(QStringLiteral("prefs.yaml")));
 
     // 2. Copy nodes.dat to temp path where Kademlia::start() reads it
-    const QString srcNodes = projectDataDir() + QStringLiteral("/nodes.dat");
+    const QString srcNodes = projectDataDir() + QStringLiteral("/config/nodes.dat");
     QVERIFY2(QFile::exists(srcNodes), "Missing data/nodes.dat bootstrap file");
 
-    const QString dstNodes = QDir::tempPath() + QStringLiteral("/nodes.dat");
+    const QString dstNodes = thePrefs.configDir() + QStringLiteral("/nodes.dat");
     if (QFile::exists(dstNodes))
         QFile::remove(dstNodes);
     QVERIFY(QFile::copy(srcNodes, dstNodes));

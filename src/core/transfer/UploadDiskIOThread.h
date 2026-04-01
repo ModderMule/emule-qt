@@ -62,7 +62,6 @@ protected:
     void run() override;
 
 private:
-    void processRequests();
     void readBlock(const BlockReadRequest& req);
 
     static QList<std::shared_ptr<Packet>> createStandardPackets(
