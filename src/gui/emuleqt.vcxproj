@@ -203,6 +203,7 @@
     </ClCompile>
     <ClCompile Include="dialogs\AddFriendDialog.cpp" />
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp" />
+    <ClCompile Include="dialogs\MediaInfoPanel.cpp" />
     <ClCompile Include="dialogs\BugReportDialog.cpp" />
     <ClCompile Include="app\AutoStart.cpp" />
     <ClCompile Include="dialogs\ClientDetailDialog.cpp" />
@@ -214,6 +215,8 @@
     <ClCompile Include="controls\DownloadListModel.cpp" />
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
     <ClCompile Include="app\Ed2kSchemeHandler.cpp" />
+    <ClCompile Include="dialogs\CollectionCreateDialog.cpp" />
+    <ClCompile Include="dialogs\CollectionViewDialog.cpp" />
     <ClCompile Include="dialogs\FileDetailDialog.cpp" />
     <ClCompile Include="dialogs\FirstStartWizard.cpp" />
     <ClCompile Include="controls\FriendListModel.cpp" />
@@ -248,14 +251,19 @@
     <ClCompile Include="controls\TransferToolbar.cpp" />
     <ClCompile Include="app\UiState.cpp" />
     <ClCompile Include="app\VersionChecker.cpp" />
+    <ClCompile Include="app\SkinEngine.cpp" />
     <ClCompile Include="app\main.cpp" />
     <ClCompile Include="utils\PreviewLauncher.cpp" />
+    <ClCompile Include="utils\WebServices.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="utils\PreviewLauncher.h" />
+    <ClInclude Include="utils\WebServices.h" />
+    <ClInclude Include="app\SkinEngine.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
     <QtMoc Include="dialogs\ArchivePreviewPanel.h" />
+    <QtMoc Include="dialogs\MediaInfoPanel.h" />
     <QtMoc Include="dialogs\BugReportDialog.h" />
     <ClInclude Include="app\AutoStart.h" />
     <QtMoc Include="dialogs\ClientDetailDialog.h" />
@@ -267,6 +275,8 @@
     <QtMoc Include="controls\DownloadListModel.h" />
     <QtMoc Include="controls\DownloadProgressDelegate.h" />
     <ClInclude Include="app\Ed2kSchemeHandler.h" />
+    <QtMoc Include="dialogs\CollectionCreateDialog.h" />
+    <QtMoc Include="dialogs\CollectionViewDialog.h" />
     <QtMoc Include="dialogs\FileDetailDialog.h" />
     <QtMoc Include="dialogs\FirstStartWizard.h" />
     <QtMoc Include="controls\FriendListModel.h" />

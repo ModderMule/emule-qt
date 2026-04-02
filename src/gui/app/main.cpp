@@ -179,7 +179,11 @@ void handleEd2kUrl(const QString& urlStr, eMule::MainWindow& mainWindow, eMule::
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+#ifdef Q_OS_LINUX
+    QApplication::setApplicationName(QStringLiteral("GUI"));
+#else
     QApplication::setApplicationName(QStringLiteral("eMule Qt"));
+#endif
     QApplication::setApplicationVersion(eMule::kAppVersion);
     QApplication::setOrganizationName(QStringLiteral("eMule"));
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/Mule.ico")));
@@ -287,10 +291,15 @@ int main(int argc, char* argv[])
 
     if (eMule::thePrefs.ipcEnabled()) {
         ipcClient.setRemotePollingMs(eMule::thePrefs.ipcRemotePollingMs());
-        if (!eMule::thePrefs.ipcTokens().isEmpty())
-            ipcClient.setAuthToken(eMule::thePrefs.ipcTokens().first());
-
-        // Determine connection target and whether we should manage a local daemon
+        // Determine connection target and whether we should manage a local daemon.
+        //
+        // Connection modes (isRemote / daemonPath):
+        //   isRemote=true,  daemonPath=""       — remote address configured or chosen via dialog
+        //   isRemote=false, daemonPath="local"  — daemon already running on localhost (e.g. Docker)
+        //   isRemote=false, daemonPath="/path"  — GUI discovers and launches local emulecored
+        //   isRemote=false, daemonPath=""        — no binary found → connect dialog (becomes remote)
+        //
+        // Auth token is sent only when we don't own the daemon (isRemote or "local").
         QString connectHost = eMule::thePrefs.ipcListenAddress();
         uint16_t port = eMule::thePrefs.ipcPort();
         QString daemonPath;
@@ -326,6 +335,12 @@ int main(int argc, char* argv[])
                 // "local" mode — assume daemon is already running on localhost
                 eMule::logInfo(QStringLiteral("Local mode — connecting to localhost:%1").arg(port));
             }
+        }
+
+        // Send auth token only when we don't own the daemon process
+        if (isRemote || daemonPath == QStringLiteral("local")) {
+            if (!eMule::thePrefs.ipcTokens().isEmpty())
+                ipcClient.setAuthToken(eMule::thePrefs.ipcTokens().first());
         }
 
         eMule::logInfo(QStringLiteral("Connecting to daemon at %1:%2...")
@@ -450,7 +465,13 @@ int main(int argc, char* argv[])
                     if (dlg.saveToken())
                         eMule::thePrefs.setIpcTokens({dlg.token()});
                     ipcClient.connectToDaemon(QHostAddress(dlg.address()), dlg.port());
+                } else {
+                    mainWindow.forceQuit();
                 }
+            });
+            QObject::connect(&ipcClient, &eMule::IpcClient::connected,
+                             &mainWindow, [dialogShown]() {
+                *dialogShown = false;
             });
         } else if (!isRemote && !daemonPath.isEmpty()) {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,

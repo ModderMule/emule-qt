@@ -111,7 +111,7 @@ public:
 
     // -- Connect options ------------------------------------------------------
 
-    [[nodiscard]] uint8 myConnectOptions() const;
+    [[nodiscard]] uint8 myConnectOptions(bool encryption = true, bool callback = true) const;
 
     // -- Firewall stats -------------------------------------------------------
 

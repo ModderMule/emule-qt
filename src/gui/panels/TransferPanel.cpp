@@ -12,6 +12,7 @@
 #include "controls/TransferToolbar.h"
 #include "dialogs/ClientDetailDialog.h"
 #include "utils/PreviewLauncher.h"
+#include "utils/WebServices.h"
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
@@ -476,8 +477,14 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         });
         act->setEnabled(true);
     }
-    // TODO: Add "Web Services" submenu here — original eMule offers links to external file lookup
-    // services (e.g., bitzi.com file report, Jigle search). Needs URL templates from webservices.dat config file.
+    // Web Services submenu — external file lookup links from webservices.dat
+    if (singleSel && dl) {
+        auto* webMenu = m_downloadMenu->addMenu(ico("Web.ico"), tr("Web Services"));
+        WebServices::instance().populateFileMenu(webMenu, dl->hash, dl->fileName,
+                                                  static_cast<uint64_t>(dl->fileSize));
+        if (webMenu->isEmpty())
+            webMenu->setEnabled(false);
+    }
 
     m_downloadMenu->addSeparator();
 
@@ -1006,10 +1013,10 @@ void TransferPanel::requestDownloads()
             row.acceptedRequests  = m.value(QStringLiteral("acceptedReqs")).toInteger();
             row.transferredData   = m.value(QStringLiteral("transferredData")).toInteger();
             row.isPreviewPossible = m.value(QStringLiteral("isPreviewPossible")).toBool();
-            if (auto arr = m.value(QStringLiteral("partMap")).toArray(); !arr.isEmpty()) {
-                row.partMap.resize(static_cast<qsizetype>(arr.size()));
-                for (qsizetype i = 0; i < arr.size(); ++i)
-                    row.partMap[static_cast<qsizetype>(i)] = static_cast<char>(arr[i].toInteger(0));
+            if (auto partArr = m.value(QStringLiteral("partMap")).toArray(); !partArr.isEmpty()) {
+                row.partMap.resize(static_cast<qsizetype>(partArr.size()));
+                for (qsizetype i = 0; i < partArr.size(); ++i)
+                    row.partMap[static_cast<qsizetype>(i)] = static_cast<char>(partArr[i].toInteger(0));
             }
             rows.push_back(std::move(row));
         }
@@ -1400,6 +1407,13 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
             return;
         const QCborMap details = resp.field(1).toMap();
         auto* dlg = new FileDetailDialog(details, tab, this);
+        connect(dlg, &FileDetailDialog::searchKadNotes, this, [this](const QString& fileHash) {
+            if (m_ipc && m_ipc->isConnected()) {
+                IpcMessage kadMsg(IpcMsgType::SearchKadNotes);
+                kadMsg.append(fileHash);
+                m_ipc->sendRequest(std::move(kadMsg), [](const IpcMessage&) {});
+            }
+        });
         dlg->show();
     });
 }

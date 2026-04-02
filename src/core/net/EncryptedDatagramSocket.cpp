@@ -42,7 +42,6 @@ constexpr int kCryptHeaderKad = kCryptHeaderSize + 4 + 4; // + receiverKey + sen
 constexpr uint8 kMagicValueUDP = 91;
 constexpr uint32 kMagicValueUDPSyncClient = 0x395F2EC1u;
 constexpr uint32 kMagicValueUDPSyncServer = 0x13EF24D5u;
-constexpr uint8 kMagicValueUDPServerClient = 0xA5;
 constexpr uint8 kMagicValueUDPClientServer = 0x6B;
 
 /// Check if a byte matches a known protocol header (not encrypted).

@@ -98,6 +98,11 @@ enum class IpcMsgType : int {
     GetClientDetails     = 252, ///< [clientHash: string] → extended client info for detail dialog
     GetSharedFileDetails = 253, ///< [hash: string] → extended shared file info for detail dialog
     GetServerState       = 254, ///< [] → connected/connecting/firewalled/clientID/serverId
+    SearchKadNotes       = 255, ///< [hash: string] — trigger Kad notes lookup for file
+
+    GetCollectionInfo       = 256, ///< [hash: string] → collection metadata for shared file
+    SaveCollection          = 257, ///< [name, fileHashes[], textFormat, sign] → create & share
+    SearchAuthorCollections = 258, ///< [fileHash: string] → initiate Kad author search
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 

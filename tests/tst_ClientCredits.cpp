@@ -45,8 +45,14 @@ private slots:
 
     // RSA crypto
     void crypto_keyPairGeneration();
+    void crypto_keySize384();
+    void crypto_keyPersistence();
     void crypto_signVerifyRoundTrip();
     void crypto_signVerifyTampered();
+    void crypto_signVerifyWithLocalIP();
+    void crypto_signVerifyIPMismatch();
+    void crypto_signVerifyMixedIPKinds();
+    void crypto_twoPartyCrossVerify();
     void cryptoAvailable_afterInit();
 };
 
@@ -406,6 +412,47 @@ void tst_ClientCredits::crypto_keyPairGeneration()
     QVERIFY(fi.size() > 0);
 }
 
+void tst_ClientCredits::crypto_keySize384()
+{
+    // Verify the generated key is 384-bit and the X.509 public key fits in kMaxPubKeySize
+    TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    ClientCreditsList list;
+    QVERIFY(list.cryptoAvailable());
+
+    // Public key must be X.509 SubjectPublicKeyInfo for 384-bit RSA (~78 bytes)
+    QVERIFY2(list.pubKeyLen() >= 76 && list.pubKeyLen() <= 80,
+             qPrintable(QStringLiteral("Expected 76-80 byte pub key, got %1").arg(list.pubKeyLen())));
+    QVERIFY(list.pubKeyLen() <= kMaxPubKeySize);
+}
+
+void tst_ClientCredits::crypto_keyPersistence()
+{
+    // Generate a key, reload from file, verify same public key
+    TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    QByteArray originalPubKey;
+    uint8 originalPubKeyLen;
+
+    {
+        ClientCreditsList list;
+        QVERIFY(list.cryptoAvailable());
+        originalPubKeyLen = list.pubKeyLen();
+        originalPubKey = QByteArray(reinterpret_cast<const char*>(list.publicKey()), originalPubKeyLen);
+    }
+
+    // Reload from the same config dir
+    {
+        ClientCreditsList list2;
+        QVERIFY(list2.cryptoAvailable());
+        QCOMPARE(list2.pubKeyLen(), originalPubKeyLen);
+        QByteArray reloadedPubKey(reinterpret_cast<const char*>(list2.publicKey()), list2.pubKeyLen());
+        QCOMPARE(reloadedPubKey, originalPubKey);
+    }
+}
+
 void tst_ClientCredits::crypto_signVerifyRoundTrip()
 {
     // Mirrors original eMule Debug_CheckCrypting():
@@ -430,11 +477,11 @@ void tst_ClientCredits::crypto_signVerifyRoundTrip()
 
     // Sign (as if sending to peer)
     uint8 sig[200];
-    uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), 0, kCryptCipNoneClient);
+    uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), 0, 0);
     QVERIFY(sigLen > 0);
 
-    // Verify (as if peer received our signature)
-    bool verified = list.verifyIdent(peer, sig, sigLen, 0x01020304, kCryptCipNoneClient);
+    // Verify (as if peer received our signature) — chaIPKind=0 means v1 (no IP binding)
+    bool verified = list.verifyIdent(peer, sig, sigLen, 0x01020304, 0);
     QVERIFY(verified);
     QCOMPARE(peer->currentIdentState(0x01020304), IdentState::Identified);
 }
@@ -455,16 +502,157 @@ void tst_ClientCredits::crypto_signVerifyTampered()
 
     // Create a valid signature
     uint8 sig[200];
-    uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), 0, kCryptCipNoneClient);
+    uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), 0, 0);
     QVERIFY(sigLen > 0);
 
     // Tamper with the signature
     sig[0] ^= 0xFF;
 
-    // Verification should fail
-    bool verified = list.verifyIdent(peer, sig, sigLen, 0x01020304, kCryptCipNoneClient);
+    // Verification should fail — chaIPKind=0 means v1 (no IP binding)
+    bool verified = list.verifyIdent(peer, sig, sigLen, 0x01020304, 0);
     QVERIFY(!verified);
     QCOMPARE(peer->currentIdentState(0x01020304), IdentState::IdFailed);
+}
+
+void tst_ClientCredits::crypto_signVerifyWithLocalIP()
+{
+    // V2 signature round-trip with kCryptCipLocalClient and a pseudo IP.
+    // Exercises the IP-bound code path in createSignature / verifyIdent
+    // that is used in production but not covered by the v1 (NoneClient) tests.
+    TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    ClientCreditsList list;
+    QVERIFY(list.cryptoAvailable());
+
+    auto* peer = list.getCredit(testHash);
+    peer->setSecureIdent(list.publicKey(), list.pubKeyLen());
+
+    peer->cryptRndChallengeFrom = 0x12345678;
+    peer->cryptRndChallengeFor  = 0x12345678;
+
+    const uint32 pseudoIP = 0xC0A80101; // 192.168.1.1
+
+    uint8 sig[200];
+    uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), pseudoIP, kCryptCipLocalClient);
+    QVERIFY2(sigLen > 0, "createSignature with LocalClient IP failed");
+
+    bool verified = list.verifyIdent(peer, sig, sigLen, pseudoIP, kCryptCipLocalClient);
+    QVERIFY2(verified, "verifyIdent with matching pseudo IP should succeed");
+    QCOMPARE(peer->currentIdentState(pseudoIP), IdentState::Identified);
+}
+
+void tst_ClientCredits::crypto_signVerifyIPMismatch()
+{
+    // Sign with IP_A, verify with IP_B — must fail.
+    // Proves IP binding prevents cross-IP signature replay.
+    TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    ClientCreditsList list;
+    QVERIFY(list.cryptoAvailable());
+
+    auto* peer = list.getCredit(testHash2);
+    peer->setSecureIdent(list.publicKey(), list.pubKeyLen());
+
+    peer->cryptRndChallengeFrom = 0xAABBCCDD;
+    peer->cryptRndChallengeFor  = 0xAABBCCDD;
+
+    const uint32 ipA = 0xC0A80101; // 192.168.1.1
+    const uint32 ipB = 0x0A000001; // 10.0.0.1
+
+    uint8 sig[200];
+    uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), ipA, kCryptCipLocalClient);
+    QVERIFY(sigLen > 0);
+
+    // Verify with different IP — signature covers ipA, but verifier builds message with ipB
+    bool verified = list.verifyIdent(peer, sig, sigLen, ipB, kCryptCipLocalClient);
+    QVERIFY2(!verified, "verifyIdent with mismatched IP must fail");
+    QCOMPARE(peer->currentIdentState(ipB), IdentState::IdFailed);
+}
+
+void tst_ClientCredits::crypto_signVerifyMixedIPKinds()
+{
+    // Sign with chaIPKind=0 (v1, no IP), verify with kCryptCipLocalClient (v2, with IP).
+    // Message formats differ → verification must fail.
+    TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    ClientCreditsList list;
+    QVERIFY(list.cryptoAvailable());
+
+    auto* peer = list.getCredit(testHash);
+    peer->setSecureIdent(list.publicKey(), list.pubKeyLen());
+
+    peer->cryptRndChallengeFrom = 0xFEEDFACE;
+    peer->cryptRndChallengeFor  = 0xFEEDFACE;
+
+    const uint32 pseudoIP = 0xAC100164; // 172.16.1.100
+
+    // Sign without IP (v1)
+    uint8 sig[200];
+    uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), 0, 0);
+    QVERIFY(sigLen > 0);
+
+    // Verify expecting IP (v2) — message buffer mismatch
+    bool verified = list.verifyIdent(peer, sig, sigLen, pseudoIP, kCryptCipLocalClient);
+    QVERIFY2(!verified, "v1 signature must not verify as v2 (different message format)");
+}
+
+void tst_ClientCredits::crypto_twoPartyCrossVerify()
+{
+    // Simulate two separate eMule clients exchanging SUI signatures.
+    // Each has its own ClientCreditsList (key pair) and credits for the other.
+    TempDir tmpA, tmpB;
+    thePrefs.setConfigDir(tmpA.path());
+    ClientCreditsList listA;
+    QVERIFY(listA.cryptoAvailable());
+
+    thePrefs.setConfigDir(tmpB.path());
+    ClientCreditsList listB;
+    QVERIFY(listB.cryptoAvailable());
+
+    // Each creates a credit entry for the other, storing the other's public key
+    auto* creditA = listA.getCredit(testHash);   // A's view of B
+    auto* creditB = listB.getCredit(testHash2);   // B's view of A
+
+    // Exchange public keys (simulates OP_PUBLICKEY)
+    QVERIFY(creditA->setSecureIdent(listB.publicKey(), listB.pubKeyLen()));
+    QVERIFY(creditB->setSecureIdent(listA.publicKey(), listA.pubKeyLen()));
+
+    // Set matching challenges (simulates OP_SECIDENTSTATE exchange)
+    const uint32 challengeAtoB = 0xAAAA1111; // A sends this, B signs it
+    const uint32 challengeBtoA = 0xBBBB2222; // B sends this, A signs it
+
+    // A's challenge for B
+    creditA->cryptRndChallengeFor = challengeAtoB;
+    // B receives A's challenge
+    creditB->cryptRndChallengeFrom = challengeAtoB;
+
+    // B's challenge for A
+    creditB->cryptRndChallengeFor = challengeBtoA;
+    // A receives B's challenge
+    creditA->cryptRndChallengeFrom = challengeBtoA;
+
+    // B signs for A (using challenge A gave B, and B's private key)
+    uint8 sigBtoA[200];
+    uint8 sigBtoALen = listB.createSignature(creditB, sigBtoA, sizeof(sigBtoA), 0, 0);
+    QVERIFY2(sigBtoALen > 0, "B's signature creation failed");
+
+    // A verifies B's signature (using challenge A gave B, and B's public key)
+    bool verifiedB = listA.verifyIdent(creditA, sigBtoA, sigBtoALen, 0x01020304, 0);
+    QVERIFY2(verifiedB, "A should verify B's signature successfully");
+    QCOMPARE(creditA->currentIdentState(0x01020304), IdentState::Identified);
+
+    // A signs for B (using challenge B gave A, and A's private key)
+    uint8 sigAtoB[200];
+    uint8 sigAtoBLen = listA.createSignature(creditA, sigAtoB, sizeof(sigAtoB), 0, 0);
+    QVERIFY2(sigAtoBLen > 0, "A's signature creation failed");
+
+    // B verifies A's signature
+    bool verifiedA = listB.verifyIdent(creditB, sigAtoB, sigAtoBLen, 0x01020304, 0);
+    QVERIFY2(verifiedA, "B should verify A's signature successfully");
+    QCOMPARE(creditB->currentIdentState(0x01020304), IdentState::Identified);
 }
 
 QTEST_MAIN(tst_ClientCredits)

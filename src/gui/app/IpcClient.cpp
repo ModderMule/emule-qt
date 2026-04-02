@@ -430,12 +430,12 @@ void IpcClient::performHandshake()
 {
     IpcMessage handshake(IpcMsgType::Handshake, m_nextSeqId++);
     handshake.append(QString::fromLatin1(ProtocolVersion));
-    if (!m_address.isLoopback() && !m_authToken.isEmpty())
+    if (!m_authToken.isEmpty())
         handshake.append(m_authToken);
     m_connection->sendMessage(handshake);
 
     // Enable encryption BEFORE the response arrives so we can decrypt HandshakeOk
-    if (!m_address.isLoopback() && !m_authToken.isEmpty())
+    if (!m_authToken.isEmpty())
         m_connection->setEncryptionKey(deriveAesKey(m_authToken));
 }
 

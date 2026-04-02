@@ -7,6 +7,8 @@
 /// for switching between tab pages (Kad, Servers, Transfers, etc.),
 /// a stacked widget holding the page content, and a status bar at the bottom.
 
+#include "app/SkinEngine.h"
+
 #include <QCloseEvent>
 #include <QMainWindow>
 #include <QMap>
@@ -141,6 +143,9 @@ public:
     /// Update MiniMule popup stats (called from rate polling timer).
     void updateMiniMule(int completedCount, qint64 freeBytes);
 
+    /// Bypass minimize-to-tray and promptOnExit, then close and quit.
+    void forceQuit();
+
 protected:
     void closeEvent(QCloseEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -161,7 +166,6 @@ private slots:
     void onSchedulerToggle();
     void onToolbarContextMenu(const QPoint& pos);
     void onSubmitBugReport();
-    void forceQuit();
 
 private:
     void rebuildToolbar();
@@ -219,6 +223,9 @@ private:
     bool m_kadRunning = false;
     bool m_kadConnected = false;
     bool m_kadFirewalled = false;
+
+    // Skin engine
+    SkinEngine m_skinEngine;
 
     // Cached stats for MiniMule popup
     double m_cachedUpKBs = 0.0;

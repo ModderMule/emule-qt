@@ -191,6 +191,8 @@ bool Kademlia::isFirewalled() const
 {
     if (!m_running || !m_prefs)
         return true;
+    if (shouldSkipFirewallChecks())
+        return false;
     return m_prefs->firewalled();
 }
 
@@ -211,7 +213,7 @@ void Kademlia::recheckFirewalled()
     // based on stale firewalled status.
     if (m_nextFindBuddy < now + MIN2S(5))
         m_nextFindBuddy = now + MIN2S(5);
-    m_nextFirewallCheck = static_cast<time_t>(time(nullptr));  // Fire on next tick
+    m_nextFirewallCheck = now + HR2S(1);
 }
 
 uint32 Kademlia::getKademliaUsers(bool newMethod) const
@@ -223,6 +225,9 @@ uint32 Kademlia::getKademliaUsers(bool newMethod) const
     return m_prefs->kademliaUsers();
 }
 
+// Helpers returning the currently running searches per type.
+// For total stored counts per type at our node see Indexed class.
+
 uint32 Kademlia::getKademliaFiles() const
 {
     if (!m_running || !m_prefs)
@@ -232,17 +237,17 @@ uint32 Kademlia::getKademliaFiles() const
 
 uint32 Kademlia::getTotalStoreKey() const
 {
-    return m_indexed ? m_indexed->m_totalIndexKeyword : 0;
+    return m_prefs ? m_prefs->totalStoreKey() : 0;
 }
 
 uint32 Kademlia::getTotalStoreSrc() const
 {
-    return m_indexed ? m_indexed->m_totalIndexSource : 0;
+    return m_prefs ? m_prefs->totalStoreSrc() : 0;
 }
 
 uint32 Kademlia::getTotalStoreNotes() const
 {
-    return m_indexed ? m_indexed->m_totalIndexNotes : 0;
+    return m_prefs ? m_prefs->totalStoreNotes() : 0;
 }
 
 uint32 Kademlia::getTotalFile() const
@@ -330,6 +335,12 @@ bool Kademlia::isRunningInLANMode() const
         }
     }
     return m_lanMode;
+}
+
+bool Kademlia::shouldSkipFirewallChecks()
+{
+    return thePrefs.skipFirewalledChecksInLanMode()
+        && instance() && instance()->isRunningInLANMode();
 }
 
 bool Kademlia::findNodeIDByIP(KadClientSearcher& requester, uint32 ip, uint16 tcpPort, uint16 udpPort)
@@ -428,8 +439,11 @@ void Kademlia::process()
     }
 
     // 5. Firewall recheck (hourly, matching MFC Kademlia.cpp:216-217)
+    //    Also triggers UDPFirewallTester::connected() which starts the
+    //    NodeFwCheckUDP search if needed.  connected() has its own guard
+    //    (!s_nodeSearchStarted && getUDPCheckClientsNeeded()).
     if (now >= m_nextFirewallCheck) {
-        m_nextFirewallCheck = now + HR2S(1);
+        recheckFirewalled();
         UDPFirewallTester::connected();
     }
 
@@ -505,9 +519,16 @@ void Kademlia::process()
         m_wasConnected = nowConnected;
         if (nowConnected) {
             m_bootstrapping = false;
-            // Schedule firewall check 15s after initial bootstrap (MFC: SEC(15))
-            // so random lookups and self-lookup start first.
-            m_nextFirewallCheck = now + SEC(15);
+            const uint32 numContacts = m_routingZone ? m_routingZone->getNumContacts() : 0;
+            logKad(QStringLiteral("Kad: Bootstrap complete — connected to the network (%1 nodes in routing table)")
+                       .arg(numContacts));
+            // Trigger first firewall check 10s after connect so the
+            // NodeFwCheckUDP search isn't the very first search (ID=1).
+            m_nextFirewallCheck = now + SEC(10);
+            // In LAN mode, start self-lookup sooner (30s vs 3min) since
+            // the network is small and populates quickly.
+            if (isRunningInLANMode())
+                m_nextSelfLookup = now + SEC(30);
             emit connected();
         }
     }

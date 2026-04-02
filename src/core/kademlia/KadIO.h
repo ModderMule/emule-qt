@@ -37,6 +37,7 @@ void writeStringUTF8(FileDataIO& f, const QString& str);
 // -- Kad tags -----------------------------------------------------------------
 Tag readKadTag(FileDataIO& f, bool optACP = false);
 void writeKadTag(FileDataIO& f, const Tag& tag);
+void writeKadTagBsob(FileDataIO& f, const QByteArray& tagName, const QByteArray& bsobData);
 std::vector<Tag> readKadTagList(FileDataIO& f, bool optACP = false);
 void writeKadTagList(FileDataIO& f, const std::vector<Tag>& tags);
 

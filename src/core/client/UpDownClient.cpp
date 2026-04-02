@@ -21,6 +21,8 @@
 #include "kademlia/KadIO.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
+#include "kademlia/KadSearch.h"
+#include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
 #include "net/ClientReqSocket.h"
 #include "net/ClientUDPSocket.h"
@@ -1060,7 +1062,10 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
         (static_cast<uint32>(4) << 24) | // UDP version
         (static_cast<uint32>(1) << 20) | // Data compression
         (static_cast<uint32>((theApp.clientCredits && theApp.clientCredits->cryptoAvailable()) ? 3 : 0) << 16) | // Secure ident (MFC: CryptoAvailable() ? 3 : 0)
-        (static_cast<uint32>(SOURCEEXCHANGE2_VERSION) << 12) | // Source exchange
+        // MFC: deprecated - hardcode 4 (was SOURCEEXCHANGE2_VERSION), will be set back
+        // to 3 with next release due to bug in earlier eMule versions.
+        // Use SupportsSourceEx2 and new opcodes instead.
+        (static_cast<uint32>(4) << 12) | // Source exchange
         (static_cast<uint32>(2) <<  8) | // Extended requests
         (static_cast<uint32>(1) <<  4) | // Comments
         (static_cast<uint32>(0) <<  3) | // Peer cache (not supported)
@@ -1370,7 +1375,9 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     }
 
     if (m_connectIP != 0) {
-        // Transition Kad UDP FW check state before connecting
+        // Transition Kad FW check states before connecting
+        if (m_kadState == KadState::QueuedFwCheck)
+            setKadState(KadState::ConnectingFwCheck);
         if (m_kadState == KadState::QueuedFwCheckUDP)
             setKadState(KadState::ConnectingFwCheckUDP);
 
@@ -1444,6 +1451,32 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
                          .arg(QHostAddress(ntohl(m_buddyIP)).toString()).arg(m_buddyPort));
             return true;
         }
+        // Buddy IP not in routing table — fall back to FindSource search
+        // to locate the buddy on the DHT. Matches MFC BaseClient.cpp:1450-1471.
+        if (m_reqFile != nullptr) {
+            kad::UInt128 buddyKadId(m_buddyID.data());
+            if (kad::Kademlia::instance()->getPrefs()->totalSource() > 0
+                || kad::SearchManager::alreadySearchingFor(buddyKadId))
+            {
+                logWarning(QStringLiteral("tryToConnect: Buddy without known IP, FindSource lookup currently impossible"));
+                return true;
+            }
+            auto* findSource = new kad::Search;
+            findSource->setSearchType(kad::SearchType::FindSource);
+            findSource->setTargetID(buddyKadId);
+            // the payload we look for
+            findSource->addFileID(kad::UInt128(m_reqFile->fileHash()));
+            findSource->setGUIName(m_reqFile->fileName());
+            if (kad::SearchManager::startSearch(findSource)) {
+                m_connectingState = ConnectingState::KadCallback;
+                setDownloadState(DownloadState::WaitCallbackKad);
+                logDebug(QStringLiteral("tryToConnect: started FindSource lookup for buddy of %1")
+                             .arg(userName()));
+            } else {
+                delete findSource;
+            }
+            return true;
+        }
         logDebug(QStringLiteral("tryToConnect: Kad buddy without known IP for %1").arg(userName()));
         return false;
     }
@@ -1504,7 +1537,7 @@ void UpDownClient::connect()
 
     // Monitor all QAbstractSocket state changes for debugging
     QObject::connect(reqSocket, &QAbstractSocket::stateChanged,
-                     this, [this, reqSocket](QAbstractSocket::SocketState state) {
+                     this, [reqSocket](QAbstractSocket::SocketState state) {
         static const char* stateNames[] = {
             "UnconnectedState", "HostLookupState", "ConnectingState",
             "ConnectedState", "BoundState", "ListeningState", "ClosingState"
@@ -1794,11 +1827,13 @@ void UpDownClient::onInfoPacketsReceived()
         theApp.clientList->setBuddy(this, BuddyStatus::Connected);
     }
 
-    // Send SecureIdent state packet exactly once per connection.
-    // Called from both onHelloReceived and processMuleInfoPacket — the
-    // m_secIdentSent flag prevents duplicate SECIDENTSTATE packets that
-    // were confusing some remote peers.
-    if (m_supportSecIdent != 0 && m_credits && !m_secIdentSent) {
+    // Send SecureIdent state packet once per connection, only after BOTH
+    // eDonkey and eMule info packets have been received.  MFC checks
+    // GetInfoPacketsReceived() == IP_BOTH at every call site before calling
+    // InfoPacketsReceived().  The m_secIdentSent flag still guards against
+    // duplicate sends across the multiple call sites.
+    if (checkHandshakeFinished() &&
+        m_supportSecIdent != 0 && m_credits && !m_secIdentSent) {
         m_secIdentSent = true;
         sendSecIdentStatePacket();
     }
@@ -1822,18 +1857,13 @@ bool UpDownClient::isBanned() const
 
 void UpDownClient::processEmuleQueueRank(const uint8* data, uint32 size)
 {
-    if (size < 2)
+    // MFC: strict 12-byte packet (uint16 rank + 10 bytes padding)
+    if (size != 12)
         return;
 
-    SafeMemFile file(data, size);
-    const uint16 rank = file.readUInt16();
-    setRemoteQueueRank(rank);
-
-    // Receiving a queue rank means we're on the remote's upload queue
-    if (m_downloadState != DownloadState::OnQueue
-        && m_downloadState != DownloadState::Downloading) {
-        setDownloadState(DownloadState::OnQueue);
-    }
+    const uint16 rank = peekUInt16(data);
+    setRemoteQueueFull(false);
+    setRemoteQueueRank(rank, m_downloadState == DownloadState::OnQueue);
     checkQueueRankFlood();
 }
 
@@ -1848,13 +1878,7 @@ void UpDownClient::processEdonkeyQueueRank(const uint8* data, uint32 size)
 
     SafeMemFile file(data, size);
     const uint32 rank = file.readUInt32();
-    setRemoteQueueRank(rank);
-
-    // Receiving a queue rank means we're on the remote's upload queue
-    if (m_downloadState != DownloadState::OnQueue
-        && m_downloadState != DownloadState::Downloading) {
-        setDownloadState(DownloadState::OnQueue);
-    }
+    setRemoteQueueRank(rank, m_downloadState == DownloadState::OnQueue);
     checkQueueRankFlood();
 }
 
@@ -2114,6 +2138,9 @@ void UpDownClient::sendPublicKeyPacket()
     std::memcpy(packet->pBuffer + 1, theApp.clientCredits->publicKey(), keyLen);
     sendPacket(std::move(packet));
 
+    if (thePrefs.logSecureIdent())
+        logDebug(QStringLiteral("sendPublicKeyPacket: keyLen=%1 to %2").arg(keyLen).arg(userName()));
+
     m_secureIdentState = SecureIdentState::SignatureNeeded;
 }
 
@@ -2143,19 +2170,21 @@ void UpDownClient::sendSignaturePacket()
     }
 
     // Determine signature version and IP challenge
+    // MFC: v2 if bit 0 is NOT set. We will use v1 as default, except if only v2 is supported.
+    const bool useV2 = !(m_supportSecIdent & 1);
     uint32 challengeIP = 0;
     uint8 chaIPKind = kCryptCipNoneClient;
 
-    // v2 signatures include IP to prevent replay across IPs
-    if (m_supportSecIdent > 1) {
+    if (useV2) {
         if (theApp.serverConnect) {
             uint32 myID = theApp.serverConnect->clientID();
             if (myID == 0 || theApp.serverConnect->isLowID()) {
-                challengeIP = theApp.serverConnect->localIP();
-                chaIPKind = kCryptCipLocalClient;
+                // MFC: use the remote client's IP when we're low-ID
+                challengeIP = userIP();
+                chaIPKind = kCryptCipRemoteClient;
             } else {
                 challengeIP = myID;
-                chaIPKind = kCryptCipRemoteClient;
+                chaIPKind = kCryptCipLocalClient;
             }
         }
     }
@@ -2170,13 +2199,13 @@ void UpDownClient::sendSignaturePacket()
     }
 
     // Build OP_SIGNATURE packet: [sigLen:1][sigData:sigLen] + optional [ipKind:1] for v2
-    const uint32 packetSize = (chaIPKind != kCryptCipNoneClient) ? 1 + sigLen + 1 : 1 + sigLen;
-    auto packet = std::make_unique<Packet>(OP_SIGNATURE, packetSize);
-    packet->prot = OP_EMULEPROT;
+    // MFC: siglen + 1 + static_cast<int>(bUseV2)
+    const uint32 packetSize = sigLen + 1 + static_cast<uint32>(useV2);
+    auto packet = std::make_unique<Packet>(OP_SIGNATURE, packetSize, OP_EMULEPROT);
     packet->pBuffer[0] = static_cast<char>(sigLen);
     std::memcpy(packet->pBuffer + 1, sig, sigLen);
 
-    if (chaIPKind != kCryptCipNoneClient)
+    if (useV2)
         packet->pBuffer[1 + sigLen] = static_cast<char>(chaIPKind);
 
     sendPacket(std::move(packet));
@@ -2189,20 +2218,26 @@ void UpDownClient::sendSignaturePacket()
 
 void UpDownClient::processPublicKeyPacket(const uint8* data, uint32 size)
 {
-    if (!data || size < 1 || !m_credits)
+    // MFC: strict validation — keyLen must fill entire packet, size 10-250
+    if (!m_socket || !m_credits || !data || data[0] != size - 1 || size < 10 || size > 250)
         return;
 
-    const uint8 keyLen = data[0];
-    if (keyLen + 1 > size || keyLen == 0)
+    if (!theApp.clientCredits || !theApp.clientCredits->cryptoAvailable())
         return;
 
-    if (m_credits->setSecureIdent(data + 1, keyLen)) {
+    if (m_credits->setSecureIdent(data + 1, data[0])) {
+        if (thePrefs.logSecureIdent())
+            logDebug(QStringLiteral("processPublicKeyPacket: stored %1-byte key from %2, state=%3")
+                         .arg(data[0]).arg(userName()).arg(static_cast<int>(m_secureIdentState)));
         // MFC: If we were waiting to send our signature (deferred because we
         // didn't have the remote's public key yet), send it now.
-        if (m_secureIdentState == SecureIdentState::SignatureNeeded) {
-            logDebug(QStringLiteral("processPublicKeyPacket: got remote key, sending deferred signature to %1").arg(userName()));
+        if (m_secureIdentState == SecureIdentState::SignatureNeeded)
             sendSignaturePacket();
-        }
+        else if (m_secureIdentState == SecureIdentState::KeyAndSigNeeded)
+            logDebug(QStringLiteral("processPublicKeyPacket: invalid state IS_KEYANDSIGNEEDED"));
+    } else {
+        logDebug(QStringLiteral("processPublicKeyPacket: setSecureIdent failed for %1 (keyLen=%2)")
+                     .arg(userName()).arg(data[0]));
     }
 }
 
@@ -2212,18 +2247,30 @@ void UpDownClient::processPublicKeyPacket(const uint8* data, uint32 size)
 
 void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
 {
-    if (!data || size < 1 || !m_credits)
+    // MFC: strict size validation
+    if (!m_socket || !m_credits || !data || size > 250 || size < 10)
         return;
 
-    // Prevent duplicate signatures from the same IP
-    if (m_lastSignatureIP == m_connectIP) {
-        logDebug(QStringLiteral("processSignaturePacket: duplicate signature from %1").arg(userName()));
+    // MFC: exact V1/V2 detection based on packet structure
+    uint8 chaIPKind;
+    if (data[0] == size - 1) {
+        // V1: sigLen fills the rest of the packet
+        chaIPKind = 0;
+    } else if (data[0] == size - 2 && (m_supportSecIdent & 2) > 0) {
+        // V2: sigLen + 1 byte for IP kind at end
+        chaIPKind = data[size - 1];
+    } else {
         return;
     }
 
-    const uint8 sigLen = data[0];
-    if (sigLen + 1 > size || sigLen == 0 || sigLen > 200)
+    if (!theApp.clientCredits || !theApp.clientCredits->cryptoAvailable())
         return;
+
+    // Prevent duplicate signatures from the same IP (MFC uses GetIP())
+    if (m_lastSignatureIP == userIP()) {
+        logDebug(QStringLiteral("processSignaturePacket: duplicate signature from %1").arg(userName()));
+        return;
+    }
 
     // Must have their public key
     if (m_credits->secIDKeyLen() == 0) {
@@ -2237,17 +2284,12 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
         return;
     }
 
-    m_lastSignatureIP = m_connectIP;
+    m_lastSignatureIP = userIP();
 
-    if (!theApp.clientCredits || !theApp.clientCredits->cryptoAvailable())
-        return;
-
-    // Determine signature version from packet: v2 has an extra byte after signature
-    uint8 chaIPKind = kCryptCipNoneClient;
-    if (static_cast<uint32>(sigLen + 1 + 1) <= size)
-        chaIPKind = data[1 + sigLen];
-
-    theApp.clientCredits->verifyIdent(m_credits, data + 1, sigLen, m_connectIP, chaIPKind);
+    bool verified = theApp.clientCredits->verifyIdent(m_credits, data + 1, data[0], userIP(), chaIPKind);
+    if (thePrefs.logSecureIdent())
+        logDebug(QStringLiteral("processSignaturePacket: sigLen=%1 chaIPKind=%2 verified=%3 for %4")
+                     .arg(data[0]).arg(chaIPKind).arg(verified).arg(userName()));
 }
 
 // ===========================================================================
@@ -2256,38 +2298,40 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
 
 void UpDownClient::sendSecIdentStatePacket()
 {
+    // MFC: SendSecIdentStatePacket() — BaseClient.cpp:1977-2006
     if (!m_socket || !extProtocolAvailable())
         return;
+    if (!theApp.clientCredits || !theApp.clientCredits->cryptoAvailable())
+        return;
+    if (!m_credits)
+        return;
 
-    SafeMemFile data;
-
+    // MFC state logic: need key → KeyAndSigNeeded, need sig → SignatureNeeded,
+    // already verified from this IP → skip entirely (don't send Unavailable).
     uint8 state;
-    if (!m_credits) {
-        state = static_cast<uint8>(SecureIdentState::Unavailable);
-    } else if (m_credits->currentIdentState(m_connectIP) == IdentState::Identified) {
-        state = static_cast<uint8>(SecureIdentState::AllRequestsSend);
-    } else if (m_credits->secIDKeyLen() > 0) {
-        // We already have their public key, just need a signature
+    if (m_credits->secIDKeyLen() == 0) {
+        state = static_cast<uint8>(SecureIdentState::KeyAndSigNeeded);
+    } else if (m_lastSignatureIP != userIP()) {
         state = static_cast<uint8>(SecureIdentState::SignatureNeeded);
     } else {
-        // We need both their public key and a signature
-        state = static_cast<uint8>(SecureIdentState::KeyAndSigNeeded);
+        // Already verified from this IP — MFC returns without sending.
+        return;
     }
 
+    SafeMemFile data;
     data.writeUInt8(state);
 
-    // Write our random challenge for the remote to sign
-    // (MFC: PokeUInt32(packet->GetDataBuffer()+1, m_dwCryptRndChallengeFor))
-    if (m_credits) {
-        if (m_credits->cryptRndChallengeFor == 0)
-            m_credits->cryptRndChallengeFor = getRandomUInt32();
-        data.writeUInt32(m_credits->cryptRndChallengeFor);
-    } else {
-        data.writeUInt32(0);
-    }
+    // MFC always regenerates the challenge: dwRandom = rand() + 1
+    // We must do the same to avoid stale challenges from previous connections.
+    m_credits->cryptRndChallengeFor = getRandomUInt32() | 1; // ensure non-zero
+    data.writeUInt32(m_credits->cryptRndChallengeFor);
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_SECIDENTSTATE);
     sendPacket(std::move(packet));
+
+    if (thePrefs.logSecureIdent())
+        logDebug(QStringLiteral("sendSecIdentStatePacket: state=%1 challenge=%2 to %3")
+                     .arg(state).arg(m_credits->cryptRndChallengeFor).arg(userName()));
 }
 
 // ===========================================================================
@@ -2296,36 +2340,36 @@ void UpDownClient::sendSecIdentStatePacket()
 
 void UpDownClient::processSecIdentStatePacket(const uint8* data, uint32 size)
 {
-    if (!data || size < 1)
+    // MFC: exact 5 bytes required
+    if (size != 5)
         return;
 
-    const uint8 state = data[0];
+    if (!m_credits)
+        return;
 
     // Extract the 4-byte random challenge the remote wants us to sign
-    // (MFC: credits->m_dwCryptRndChallengeFrom = PeekUInt32(pachPacket+1))
-    if (size >= 5 && m_credits) {
-        m_credits->cryptRndChallengeFrom = peekUInt32(data + 1);
+    m_credits->cryptRndChallengeFrom = peekUInt32(data + 1);
+
+    if (thePrefs.logSecureIdent()) {
+        logDebug(QStringLiteral("processSecIdentStatePacket: state=%1 size=%2 credits=%3 challenge=%4")
+                     .arg(data[0]).arg(size)
+                     .arg(QLatin1StringView(m_credits ? "yes" : "null"))
+                     .arg(m_credits->cryptRndChallengeFrom));
     }
 
-    logDebug(QStringLiteral("processSecIdentStatePacket: state=%1 size=%2 credits=%3 challenge=%4")
-                 .arg(state).arg(size)
-                 .arg(QLatin1StringView(m_credits ? "yes" : "null"))
-                 .arg(m_credits ? m_credits->cryptRndChallengeFrom : 0));
-
-    // MFC: Set m_secureIdentState to the received value so that
-    // processPublicKeyPacket can trigger deferred sendSignaturePacket
-    switch (state) {
-    case static_cast<uint8>(SecureIdentState::KeyAndSigNeeded):
-        m_secureIdentState = SecureIdentState::KeyAndSigNeeded;
-        sendPublicKeyPacket();
-        sendSignaturePacket();  // may defer if remote key not yet available
+    // MFC state mapping: 0→Unavailable, 1→SignatureNeeded, 2→KeyAndSigNeeded
+    switch (data[0]) {
+    case 0:
+        m_secureIdentState = SecureIdentState::Unavailable;
         break;
-    case static_cast<uint8>(SecureIdentState::SignatureNeeded):
+    case 1:
         m_secureIdentState = SecureIdentState::SignatureNeeded;
         sendSignaturePacket();  // may defer if remote key not yet available
         break;
-    case 0:
-        m_secureIdentState = SecureIdentState::Unavailable;
+    case 2:
+        m_secureIdentState = SecureIdentState::KeyAndSigNeeded;
+        sendPublicKeyPacket();
+        sendSignaturePacket();  // may defer if remote key not yet available
         break;
     default:
         break;
@@ -2429,12 +2473,12 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
             buffer.close();
 
             if (!bmpData.isEmpty()) {
-                SafeMemFile data;
+                SafeMemFile smf;
                 // Write captcha tag with BMP data
-                data.writeUInt8(static_cast<uint8>(bmpData.size() & 0xFF));
-                data.write(bmpData.constData(), bmpData.size());
+                smf.writeUInt8(static_cast<uint8>(bmpData.size() & 0xFF));
+                smf.write(bmpData.constData(), bmpData.size());
 
-                auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_CHATCAPTCHAREQ);
+                auto packet = std::make_unique<Packet>(smf, OP_EMULEPROT, OP_CHATCAPTCHAREQ);
                 sendPacket(std::move(packet));
                 m_chatCaptchaState = ChatCaptchaState::ChallengeSent;
                 return;
@@ -2659,11 +2703,6 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
         logDebug(QStringLiteral("processPreviewAnswer: remote sent 0 frames"));
         return;
     }
-
-    // Look up the search file for this hash
-    SearchFile* searchFile = nullptr;
-    if (theApp.searchList)
-        searchFile = theApp.searchList->searchFileByHash(fileHash.data(), m_searchID);
 
     std::vector<QImage> previewImages;
     previewImages.reserve(frameCount);
@@ -3099,8 +3138,16 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         processMuleCommentPacket(data, size);
         break;
 
+    case OP_REQUESTSOURCES:
+        processRequestSources(data, size);
+        break;
+
     case OP_REQUESTSOURCES2:
         processRequestSources2(data, size);
+        break;
+
+    case OP_ANSWERSOURCES:
+        processAnswerSources(data, size);
         break;
 
     case OP_ANSWERSOURCES2:
@@ -3302,6 +3349,10 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
     SafeMemFile io(data, size);
 
     if (opcode == OP_HELLO) {
+        if (thePrefs.verbose())
+            logDebug(QStringLiteral("onHelloReceived: OP_HELLO from %1:%2")
+                         .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("?"))
+                         .arg(m_socket ? m_socket->peerPort() : 0));
         // OP_HELLO has a 1-byte hash-size prefix (always 16) before the
         // user hash — must be consumed before processHelloTypePacket,
         // matching processHelloPacket() (MFC BaseClient.cpp:340-355).
@@ -3313,8 +3364,16 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
         sendHelloTypePacket(response);
         auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_HELLOANSWER);
         sendPacket(std::move(packet));
+        if (thePrefs.verbose())
+            logDebug(QStringLiteral("onHelloReceived: sent OP_HELLOANSWER to %1:%2")
+                         .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("?"))
+                         .arg(m_socket ? m_socket->peerPort() : 0));
         onInfoPacketsReceived();
     } else if (opcode == OP_HELLOANSWER) {
+        if (thePrefs.verbose())
+            logDebug(QStringLiteral("onHelloReceived: OP_HELLOANSWER from %1:%2")
+                         .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("?"))
+                         .arg(m_socket ? m_socket->peerPort() : 0));
         m_helloAnswerPending = false;
         const bool isMule = processHelloTypePacket(io);
 
@@ -3531,6 +3590,81 @@ void UpDownClient::setLastAskedForSourcesTime()
 }
 
 // ===========================================================================
+// processRequestSources — handle OP_REQUESTSOURCES v1 (peer requests sources)
+// MFC ListenSocket.cpp OP_REQUESTSOURCES case
+// ===========================================================================
+
+void UpDownClient::processRequestSources(const uint8* data, uint32 size)
+{
+    if (!data || size < 16)
+        return;
+
+    // v1: just a 16-byte file hash, no version/options
+    if (m_sourceExchange1Ver <= 1)
+        return;
+
+    SafeMemFile io(data, size);
+    uint8 fileHash[16];
+    io.readHash16(fileHash);
+
+    // Look up in shared files first, then download queue
+    KnownFile* file = nullptr;
+    if (theApp.sharedFileList)
+        file = theApp.sharedFileList->getFileByID(fileHash);
+    if (!file && theApp.downloadQueue)
+        file = theApp.downloadQueue->fileByID(fileHash);
+
+    if (!file)
+        return;
+
+    // Rate-limit source requests (same logic as v2)
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    if (m_lastSourceRequest != 0) {
+        const int srcCount = file->isPartFile()
+            ? static_cast<PartFile*>(file)->sourceCount()
+            : file->uploadingClientCount();
+        const uint32 interval = (srcCount <= RARE_FILE)
+            ? SOURCECLIENTREASKS
+            : SOURCECLIENTREASKS * MINCOMMONPENALTY;
+        if ((curTick - m_lastSourceRequest) < (interval - CONNECTION_LATENCY))
+            return;
+    }
+    m_lastSourceRequest = curTick;
+
+    // Respond with v1 format (version=0, options=0)
+    auto packet = file->createSrcInfoPacket(this, 0, 0);
+    if (packet)
+        sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// processAnswerSources — handle OP_ANSWERSOURCES v1 (peer sends us sources)
+// MFC ListenSocket.cpp OP_ANSWERSOURCES case
+// ===========================================================================
+
+void UpDownClient::processAnswerSources(const uint8* data, uint32 size)
+{
+    if (!data || size < 16)
+        return;
+
+    SafeMemFile io(data, size);
+    uint8 fileHash[16];
+    io.readHash16(fileHash);
+
+    if (!theApp.downloadQueue)
+        return;
+
+    auto* file = theApp.downloadQueue->fileByID(fileHash);
+    if (!file)
+        return;
+
+    m_lastSourceAnswer = static_cast<uint32>(getTickCount());
+    file->setLastAnsweredTime();
+
+    file->addClientSources(io, m_sourceExchange1Ver, this);
+}
+
+// ===========================================================================
 // processRequestSources2 — handle OP_REQUESTSOURCES2 (peer requests sources)
 // ===========================================================================
 
@@ -3601,6 +3735,7 @@ void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
         return;
 
     m_lastSourceAnswer = static_cast<uint32>(getTickCount());
+    file->setLastAnsweredTime();
 
     file->addClientSources(io, version, this);
 }

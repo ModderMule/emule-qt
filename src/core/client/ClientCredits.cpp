@@ -9,9 +9,11 @@
 #include "utils/SafeFile.h"
 #include "utils/Log.h"
 
+#include <openssl/bn.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
+#include <openssl/sha.h>
 #include <openssl/err.h>
 
 #include <QDir>
@@ -365,49 +367,92 @@ ClientCreditsList::~ClientCreditsList() = default;
 
 bool ClientCreditsList::createKeyPair(const QString& keyPath)
 {
-    // Original eMule uses RSA-384 (RSAKEYSIZE) via Crypto++. OpenSSL 3.x has a
-    // hard-coded minimum of 512 bits (RSA_MIN_MODULUS_BITS) that cannot be
-    // overridden. We try 384 first for Crypto++-built peers, then fall back to
-    // 512 which still fits within kMaxPubKeySize (80 bytes, RSA-512 DER ≈ 74).
-    // Peers verify with generic RSA, so either key size is wire-compatible.
-    static constexpr int kFallbackKeySize = 512;
-    int keyBits = RSAKEYSIZE;
-    EVP_PKEY* rawKey = nullptr;
+    // Generate 384-bit RSA key (RSAKEYSIZE) matching original eMule / CryptoPP.
+    // OpenSSL 3.x rejects keys < 512 bits via all standard generation APIs
+    // (EVP_PKEY_keygen and RSA_generate_key_ex both fail).  We bypass this by
+    // generating primes directly with the BIGNUM API and assembling the RSA
+    // key manually.
+    constexpr int kHalfBits = RSAKEYSIZE / 2; // 192
 
-    for (int attempt = 0; attempt < 2; ++attempt) {
-        EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr);
-        if (!ctx)
-            return false;
+    BIGNUM* p    = BN_new();
+    BIGNUM* q    = BN_new();
+    BIGNUM* n    = BN_new();
+    BIGNUM* d    = BN_new();
+    BIGNUM* e    = BN_new();
+    BIGNUM* p1   = BN_new();
+    BIGNUM* q1   = BN_new();
+    BIGNUM* phi  = BN_new();
+    BIGNUM* dp   = BN_new();
+    BIGNUM* dq   = BN_new();
+    BIGNUM* qinv = BN_new();
+    BN_CTX* ctx  = BN_CTX_new();
+    BN_set_word(e, RSA_F4); // 65537
 
-        bool ok = EVP_PKEY_keygen_init(ctx) > 0
-               && EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, keyBits) > 0
-               && EVP_PKEY_keygen(ctx, &rawKey) > 0;
-        EVP_PKEY_CTX_free(ctx);
+    auto cleanup = [&] {
+        BN_free(p);  BN_free(q);  BN_free(n);  BN_free(d);  BN_free(e);
+        BN_free(p1); BN_free(q1); BN_free(phi);
+        BN_free(dp); BN_free(dq); BN_free(qinv);
+        BN_CTX_free(ctx);
+    };
 
-        if (ok && rawKey)
-            break;
-
-        EVP_PKEY_free(rawKey);
-        rawKey = nullptr;
-
-        if (keyBits == kFallbackKeySize) {
-            logError(QStringLiteral("Failed to generate RSA key pair"));
-            return false;
-        }
-        keyBits = kFallbackKeySize;
+    bool ok = false;
+    for (int attempt = 0; attempt < 100 && !ok; ++attempt) {
+        if (!BN_generate_prime_ex(p, kHalfBits, 0, nullptr, nullptr, nullptr))
+            continue;
+        if (!BN_generate_prime_ex(q, kHalfBits, 0, nullptr, nullptr, nullptr))
+            continue;
+        if (BN_cmp(p, q) == 0)
+            continue;
+        BN_mul(n, p, q, ctx);
+        if (BN_num_bits(n) < RSAKEYSIZE)
+            continue;
+        // phi = (p-1)(q-1)
+        BN_copy(p1, p); BN_sub_word(p1, 1);
+        BN_copy(q1, q); BN_sub_word(q1, 1);
+        BN_mul(phi, p1, q1, ctx);
+        // d = e^(-1) mod phi
+        if (BN_mod_inverse(d, e, phi, ctx))
+            ok = true;
     }
 
+    if (!ok) {
+        logError(QStringLiteral("Failed to generate %1-bit RSA key pair").arg(RSAKEYSIZE));
+        cleanup();
+        return false;
+    }
+
+    // CRT parameters for efficient private-key operations
+    BN_mod(dp, d, p1, ctx);
+    BN_mod(dq, d, q1, ctx);
+    BN_mod_inverse(qinv, q, p, ctx);
+
+    // Assemble into legacy RSA struct (takes ownership of BN_dup'd values)
+    RSA* rsa = RSA_new();
+    RSA_set0_key(rsa, BN_dup(n), BN_dup(e), BN_dup(d));
+    RSA_set0_factors(rsa, BN_dup(p), BN_dup(q));
+    RSA_set0_crt_params(rsa, BN_dup(dp), BN_dup(dq), BN_dup(qinv));
+    cleanup();
+
+    EVP_PKEY* pkey = EVP_PKEY_new();
+    if (!pkey || EVP_PKEY_assign_RSA(pkey, rsa) <= 0) {
+        logError(QStringLiteral("EVP_PKEY_assign_RSA failed"));
+        EVP_PKEY_free(pkey);
+        RSA_free(rsa);
+        return false;
+    }
+    // rsa now owned by pkey
+
     // DER-encode the private key
-    int derLen = i2d_PrivateKey(rawKey, nullptr);
+    int derLen = i2d_PrivateKey(pkey, nullptr);
     if (derLen <= 0) {
-        EVP_PKEY_free(rawKey);
+        EVP_PKEY_free(pkey);
         return false;
     }
 
     std::vector<uint8> derBuf(static_cast<std::size_t>(derLen));
     uint8* derPtr = derBuf.data();
-    i2d_PrivateKey(rawKey, &derPtr);
-    EVP_PKEY_free(rawKey);
+    i2d_PrivateKey(pkey, &derPtr);
+    EVP_PKEY_free(pkey);
 
     // Base64-encode and write to file (matching Crypto++ format)
     QByteArray derData(reinterpret_cast<const char*>(derBuf.data()), derLen);
@@ -421,7 +466,8 @@ bool ClientCreditsList::createKeyPair(const QString& keyPath)
     file.write(base64);
     file.close();
 
-    logInfo(QStringLiteral("RSA key pair generated and saved to %1").arg(keyPath));
+    logInfo(QStringLiteral("RSA %1-bit key pair generated and saved to %2")
+                .arg(RSAKEYSIZE).arg(keyPath));
     return true;
 }
 
@@ -467,14 +513,33 @@ void ClientCreditsList::initializeCrypting()
     const uint8* derPtr = reinterpret_cast<const uint8*>(derData.constData());
     EVP_PKEY* rawKey = d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &derPtr, derData.size());
     if (!rawKey) {
-        logError(QStringLiteral("Failed to load RSA private key from %1").arg(keyPath));
-        return;
+        // OpenSSL 3.x rejects RSA keys < 512 bits via the provider layer.
+        // Fall back to legacy decoder for existing 384-bit cryptkey.dat files.
+        ERR_clear_error();
+        derPtr = reinterpret_cast<const uint8*>(derData.constData());
+        RSA* rsa = d2i_RSAPrivateKey(nullptr, &derPtr, derData.size());
+        if (rsa) {
+            rawKey = EVP_PKEY_new();
+            if (rawKey && EVP_PKEY_assign_RSA(rawKey, rsa) > 0) {
+                // rsa now owned by rawKey
+            } else {
+                EVP_PKEY_free(rawKey);
+                RSA_free(rsa);
+                rawKey = nullptr;
+            }
+        }
+        if (!rawKey) {
+            logError(QStringLiteral("Failed to load RSA private key from %1").arg(keyPath));
+            return;
+        }
     }
 
     m_signKey.reset(rawKey);
 
-    // Extract the public key in DER format
-    int pubLen = i2d_PublicKey(m_signKey.get(), nullptr);
+    // Extract the public key in X.509 SubjectPublicKeyInfo format, matching
+    // CryptoPP's X509PublicKey::Save() used by MFC eMule.  For 384-bit RSA
+    // this is ~78 bytes, well within kMaxPubKeySize (80).
+    int pubLen = i2d_PUBKEY(m_signKey.get(), nullptr);
     if (pubLen <= 0 || pubLen > kMaxPubKeySize) {
         logError(QStringLiteral("RSA public key size %1 exceeds maximum %2")
                      .arg(pubLen).arg(kMaxPubKeySize));
@@ -483,7 +548,7 @@ void ClientCreditsList::initializeCrypting()
     }
 
     uint8* pubPtr = m_myPublicKey.data();
-    i2d_PublicKey(m_signKey.get(), &pubPtr);
+    i2d_PUBKEY(m_signKey.get(), &pubPtr);
     m_myPublicKeyLen = static_cast<uint8>(pubLen);
 
     logInfo(QStringLiteral("RSA secure identification initialized (public key: %1 bytes)")
@@ -510,33 +575,38 @@ uint8 ClientCreditsList::createSignature(ClientCredits* target, uint8* output, u
     msgLen += 4;
 
     // Append IP + kind for v2 signatures
-    if (chaIPKind != kCryptCipNoneClient) {
+    // MFC checks byChaIPKind == 0 (literal) for v1; kCryptCipNoneClient (30) is
+    // NOT the v1 sentinel — ProcessSignaturePacket sets chaIPKind=0 for v1.
+    if (chaIPKind != 0) {
         pokeUInt32(msgBuf.data() + msgLen, challengeIP);
         msgLen += 4;
         msgBuf[msgLen] = chaIPKind;
         msgLen += 1;
     }
 
-    // Sign with SHA-1 + RSA PKCS1 v1.5 (matching original RSASSA_PKCS1v15_SHA)
-    EVP_MD_CTX* mdCtx = EVP_MD_CTX_new();
-    if (!mdCtx)
+    // Sign with SHA-1 + RSA PKCS1 v1.5 (matching original RSASSA_PKCS1v15_SHA).
+    // Use legacy RSA_sign API directly — OpenSSL 3.x provider layer rejects
+    // EVP_DigestSign operations on RSA keys < 512 bits, but RSA_sign has no
+    // such restriction.
+    uint8 hash[SHA_DIGEST_LENGTH];
+    SHA1(msgBuf.data(), msgLen, hash);
+
+    const RSA* rsa = EVP_PKEY_get0_RSA(m_signKey.get());
+    if (!rsa)
         return 0;
 
-    std::size_t sigLen = 0;
-    bool ok = EVP_DigestSignInit(mdCtx, nullptr, EVP_sha1(), nullptr, m_signKey.get()) > 0
-           && EVP_DigestSignUpdate(mdCtx, msgBuf.data(), msgLen) > 0
-           && EVP_DigestSignFinal(mdCtx, nullptr, &sigLen) > 0;
-
-    if (!ok || sigLen > maxSize) {
-        EVP_MD_CTX_free(mdCtx);
+    unsigned int rsaSigLen = 0;
+    if (RSA_sign(NID_sha1, hash, SHA_DIGEST_LENGTH,
+                 output, &rsaSigLen, const_cast<RSA*>(rsa)) != 1) {
+        logWarning(QStringLiteral("createSignature: RSA_sign failed — %1")
+                       .arg(QLatin1StringView(ERR_reason_error_string(ERR_peek_last_error()))));
         return 0;
     }
 
-    std::size_t actualSigLen = sigLen;
-    ok = EVP_DigestSignFinal(mdCtx, output, &actualSigLen) > 0;
-    EVP_MD_CTX_free(mdCtx);
+    if (rsaSigLen > maxSize)
+        return 0;
 
-    return ok ? static_cast<uint8>(actualSigLen) : 0;
+    return static_cast<uint8>(rsaSigLen);
 }
 
 bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signature, uint8 sigSize,
@@ -545,12 +615,63 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
     if (!target || target->secIDKeyLen() == 0)
         return false;
 
-    // Load target's public key from their stored identity
+    // Load target's public key from their stored identity.
+    // MFC/CryptoPP exports keys in X.509 SubjectPublicKeyInfo format (via
+    // X509PublicKey::Save), so try d2i_PUBKEY first.  Our own Qt clients may
+    // use PKCS#1 RSAPublicKey (i2d_PublicKey) when the X.509 encoding exceeds
+    // kMaxPubKeySize (512-bit keys), so fall back to that as well.
     const uint8* pubKeyData = target->secureIdent();
     const uint8* pubPtr = pubKeyData;
-    EVP_PKEY* peerKey = d2i_PublicKey(EVP_PKEY_RSA, nullptr, &pubPtr, target->secIDKeyLen());
-    if (!peerKey)
+
+    // Load the peer's public key and ensure it's legacy-backed (RSA struct).
+    // d2i_PUBKEY may create a provider-backed EVP_PKEY under OpenSSL 3.x, which
+    // can cause RSA_verify to fail for keys < 512 bits.  We always re-wrap via
+    // EVP_PKEY_assign_RSA to guarantee a legacy-backed key.
+    EVP_PKEY* tmpKey = d2i_PUBKEY(nullptr, &pubPtr, target->secIDKeyLen());
+    if (!tmpKey) {
+        ERR_clear_error();
+        pubPtr = pubKeyData;
+        tmpKey = d2i_PublicKey(EVP_PKEY_RSA, nullptr, &pubPtr, target->secIDKeyLen());
+    }
+
+    // Extract RSA components and rebuild as a guaranteed-legacy EVP_PKEY
+    EVP_PKEY* peerKey = nullptr;
+    if (tmpKey) {
+        RSA* provRsa = const_cast<RSA*>(EVP_PKEY_get0_RSA(tmpKey));
+        if (provRsa) {
+            RSA* legacyRsa = RSAPublicKey_dup(provRsa);
+            if (legacyRsa) {
+                peerKey = EVP_PKEY_new();
+                if (!peerKey || EVP_PKEY_assign_RSA(peerKey, legacyRsa) <= 0) {
+                    EVP_PKEY_free(peerKey);
+                    RSA_free(legacyRsa);
+                    peerKey = nullptr;
+                }
+            }
+        }
+        EVP_PKEY_free(tmpKey);
+    }
+
+    if (!peerKey) {
+        // Last resort: try legacy RSA decoder directly
+        ERR_clear_error();
+        pubPtr = pubKeyData;
+        RSA* rsa = d2i_RSAPublicKey(nullptr, &pubPtr, target->secIDKeyLen());
+        if (rsa) {
+            peerKey = EVP_PKEY_new();
+            if (!peerKey || EVP_PKEY_assign_RSA(peerKey, rsa) <= 0) {
+                EVP_PKEY_free(peerKey);
+                RSA_free(rsa);
+                peerKey = nullptr;
+            }
+        }
+    }
+
+    if (!peerKey) {
+        logWarning(QStringLiteral("verifyIdent: all key decoders failed for %1-byte key")
+                       .arg(target->secIDKeyLen()));
         return false;
+    }
 
     // Build message buffer: [our_pubkey][4-byte challenge_for][optional 5-byte IP+kind]
     std::array<uint8, kMaxPubKeySize + 4 + 4 + 1> msgBuf{};
@@ -565,7 +686,8 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
     msgLen += 4;
 
     // IP + kind for v2 signatures
-    if (chaIPKind != kCryptCipNoneClient) {
+    // MFC checks byChaIPKind == 0 (literal) for v1; must match createSignature.
+    if (chaIPKind != 0) {
         uint32 ip = 0;
         if (chaIPKind == kCryptCipLocalClient) {
             ip = forIP;
@@ -582,18 +704,34 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
         msgLen += 1;
     }
 
-    // Verify with SHA-1 + RSA PKCS1 v1.5
-    EVP_MD_CTX* mdCtx = EVP_MD_CTX_new();
-    if (!mdCtx) {
-        EVP_PKEY_free(peerKey);
-        return false;
+    // Verify with SHA-1 + RSA PKCS1 v1.5.
+    // Use legacy RSA_verify API directly — OpenSSL 3.x provider layer rejects
+    // EVP_DigestVerify operations on RSA keys < 512 bits.
+    uint8 hash[SHA_DIGEST_LENGTH];
+    SHA1(msgBuf.data(), msgLen, hash);
+
+    // Hex dump for debugging
+    {
+        QString hashHex;
+        for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
+            hashHex += QStringLiteral("%1").arg(hash[i], 2, 16, QLatin1Char('0'));
+        QString sigHex;
+        for (uint8 i = 0; i < std::min<uint8>(sigSize, 8); ++i)
+            sigHex += QStringLiteral("%1").arg(signature[i], 2, 16, QLatin1Char('0'));
+        logDebug(QStringLiteral("verifyIdent: msgLen=%1 challenge=%2 sha1=%3 sig8=%4")
+                     .arg(msgLen).arg(target->cryptRndChallengeFor).arg(hashHex).arg(sigHex));
     }
 
-    bool ok = EVP_DigestVerifyInit(mdCtx, nullptr, EVP_sha1(), nullptr, peerKey) > 0
-           && EVP_DigestVerifyUpdate(mdCtx, msgBuf.data(), msgLen) > 0
-           && EVP_DigestVerifyFinal(mdCtx, signature, sigSize) > 0;
+    const RSA* rsa = EVP_PKEY_get0_RSA(peerKey);
+    bool ok = rsa && RSA_verify(NID_sha1, hash, SHA_DIGEST_LENGTH,
+                                signature, sigSize, const_cast<RSA*>(rsa)) == 1;
 
-    EVP_MD_CTX_free(mdCtx);
+    if (!ok) {
+        unsigned long err = ERR_peek_last_error();
+        logWarning(QStringLiteral("verifyIdent: RSA_verify failed — %1")
+                       .arg(QLatin1StringView(ERR_reason_error_string(err))));
+    }
+
     EVP_PKEY_free(peerKey);
 
     if (ok) {

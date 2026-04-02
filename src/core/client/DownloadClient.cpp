@@ -66,16 +66,26 @@ bool UpDownClient::isSourceRequestAllowed() const
 
 bool UpDownClient::isSourceRequestAllowed(PartFile* partFile, bool sourceExchangeCheck) const
 {
-    Q_UNUSED(partFile);
-
     if (m_sourceExchange1Ver == 0)
         return false;
 
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint32 curTick = static_cast<uint32>(getTickCount()) + CONNECTION_LATENCY;
 
-    // Don't request sources too often
-    if (m_lastAskedForSources != 0 && (curTick - m_lastAskedForSources) < SOURCECLIENTREASKS)
-        return false;
+    // Per-client rate limit
+    const uint32 nTimePassedClient = curTick - m_lastAskedForSources;
+    const bool neverAskedBefore = (m_lastAskedForSources == 0);
+
+    // MFC: per-file rate limit (DownloadClient.cpp:221)
+    if (partFile) {
+        const uint32 nTimePassedFile = curTick - partFile->lastAnsweredTime();
+        if (!neverAskedBefore && nTimePassedClient < SOURCECLIENTREASKS)
+            return false;
+        if (partFile->lastAnsweredTime() != 0 && nTimePassedFile < SOURCECLIENTREASKS)
+            return false;
+    } else {
+        if (!neverAskedBefore && nTimePassedClient < SOURCECLIENTREASKS)
+            return false;
+    }
 
     if (sourceExchangeCheck) {
         if (partFile && partFile->sourceCount() >= thePrefs.maxSourcesPerFile())
@@ -94,61 +104,125 @@ void UpDownClient::sendFileRequest()
     if (!m_socket || !m_reqFile)
         return;
 
-    // MFC: Mark the time of this file request so PartFile::process() and UDP
-    // reask logic know when we last asked this source.
+    // MFC: swap to another file first, in case a better A4AF is available
+    swapToAnotherFile(QStringLiteral("A4AF check before TCP file re-ask. sendFileRequest()"),
+                      true, false, false, nullptr, true, true);
+    if (!m_reqFile)
+        return;
+
+    // MFC: Mark the time of this file request
     setLastAskedTime();
 
     logDebug(QStringLiteral("sendFileRequest: reqFile=%1")
                  .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
 
-    // OP_SETREQFILEID — set the file context on the remote (MFC DownloadClient.cpp)
-    {
+    if (supportMultiPacket() || supportsFileIdentifiers()) {
+        // --- Multipacket path (MFC DownloadClient.cpp SendFileRequest) ---
         SafeMemFile data;
-        data.writeHash16(m_reqUpFileId.data());
-        auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_SETREQFILEID);
-        sendPacket(std::move(packet));
-    }
+        uint8 opcode;
 
-    // OP_REQUESTFILENAME — MFC DownloadClient.cpp SendFileRequest()
-    // We advertise extReqVer=2 in CT_EMULE_MISCOPTIONS1 (our HELLO).
-    // The remote uses OUR extReqVer to parse this packet, so we must
-    // include the extended fields the remote expects:
-    //   extReqVer >= 1: 16-byte file hash
-    //   extReqVer >= 2: + partStatus bitmap + uint16 completeSources
-    {
-        SafeMemFile fnData;
-        fnData.writeHash16(m_reqUpFileId.data());
-
-        // extReqVer >= 2: include our part status + complete sources
-        if (m_reqFile) {
-            m_reqFile->writePartStatus(fnData);
-            fnData.writeUInt16(static_cast<uint16>(
-                m_reqFile->completeSourcesCount()));
+        if (supportsFileIdentifiers()) {
+            m_reqFile->fileIdentifier().writeIdentifier(data);
+            opcode = OP_MULTIPACKET_EXT2;
+        } else {
+            data.writeHash16(m_reqUpFileId.data());
+            if (supportExtMultiPacket()) {
+                data.writeUInt64(static_cast<uint64>(m_reqFile->fileSize()));
+                opcode = OP_MULTIPACKET_EXT;
+            } else {
+                opcode = OP_MULTIPACKET;
+            }
         }
 
-        auto fnPacket = std::make_unique<Packet>(fnData, OP_EDONKEYPROT, OP_REQUESTFILENAME);
-        sendPacket(std::move(fnPacket));
-    }
+        // Sub-request: OP_REQUESTFILENAME + extended info
+        data.writeUInt8(OP_REQUESTFILENAME);
+        if (extendedRequestsVer() > 0) {
+            m_reqFile->writePartStatus(data);
+            if (extendedRequestsVer() > 1)
+                m_reqFile->writeCompleteSourcesCount(data);
+        }
 
-    // Source Exchange 2: request sources from this peer
-    // MFC uses OP_REQUESTSOURCES (0x81) in eMule proto for SX2 when
-    // source exchange version >= 4. The data format is:
-    //   [16-byte hash][1-byte options][optional 8-byte filesize]
-    if (isSourceRequestAllowed()) {
-        SafeMemFile sxData;
-        sxData.writeHash16(m_reqUpFileId.data());
+        // Sub-request: OP_SETREQFILEID (if multi-part file)
+        if (m_reqFile->partCount() > 1)
+            data.writeUInt8(OP_SETREQFILEID);
 
-        uint8 options = 0;
-        // Options byte is reserved (original eMule also sends 0)
-        sxData.writeUInt8(options);
+        if (isEmuleClient()) {
+            setRemoteQueueFull(true);
+            setRemoteQueueRank(0);
+        }
 
-        // Append 64-bit filesize for large files so peers can handle >4GB
-        if (m_reqFile && m_reqFile->isLargeFile())
-            sxData.writeUInt64(static_cast<uint64>(m_reqFile->fileSize()));
+        // Sub-request: OP_REQUESTSOURCES / OP_REQUESTSOURCES2
+        if (isSourceRequestAllowed()) {
+            if (supportsSourceExchange2()) {
+                data.writeUInt8(OP_REQUESTSOURCES2);
+                data.writeUInt8(SOURCEEXCHANGE2_VERSION);
+                const uint16 sxOptions = 0;
+                data.writeUInt16(sxOptions);
+            } else {
+                data.writeUInt8(OP_REQUESTSOURCES);
+            }
+            m_reqFile->setLastAnsweredTimeTimeout();
+            setLastAskedForSourcesTime();
+        }
 
-        auto sxPacket = std::make_unique<Packet>(sxData, OP_EMULEPROT, OP_REQUESTSOURCES);
-        sendPacket(std::move(sxPacket));
-        setLastAskedForSourcesTime();
+        // Sub-request: OP_AICHFILEHASHREQ (deprecated with file identifiers)
+        if (isSupportingAICH() && !supportsFileIdentifiers())
+            data.writeUInt8(OP_AICHFILEHASHREQ);
+
+        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, opcode);
+        sendPacket(std::move(packet));
+    } else {
+        // --- Old separate-packets path (non-multipacket clients) ---
+
+        // OP_REQUESTFILENAME with extended info
+        {
+            SafeMemFile fnData;
+            fnData.writeHash16(m_reqUpFileId.data());
+            if (extendedRequestsVer() > 0) {
+                m_reqFile->writePartStatus(fnData);
+                if (extendedRequestsVer() > 1)
+                    m_reqFile->writeCompleteSourcesCount(fnData);
+            }
+            auto fnPacket = std::make_unique<Packet>(fnData, OP_EDONKEYPROT, OP_REQUESTFILENAME);
+            sendPacket(std::move(fnPacket));
+        }
+
+        // OP_SETREQFILEID (only for multi-part files)
+        if (m_reqFile->partCount() > 1) {
+            SafeMemFile idData;
+            idData.writeHash16(m_reqUpFileId.data());
+            auto idPacket = std::make_unique<Packet>(idData, OP_EDONKEYPROT, OP_SETREQFILEID);
+            sendPacket(std::move(idPacket));
+        }
+
+        if (isEmuleClient()) {
+            setRemoteQueueFull(true);
+            setRemoteQueueRank(0);
+        }
+
+        // Source exchange
+        if (isSourceRequestAllowed()) {
+            if (supportsSourceExchange2()) {
+                auto sxPacket = std::make_unique<Packet>(OP_REQUESTSOURCES2, 19, OP_EMULEPROT);
+                sxPacket->pBuffer[0] = static_cast<char>(SOURCEEXCHANGE2_VERSION);
+                pokeUInt16(reinterpret_cast<uint8*>(sxPacket->pBuffer + 1), 0);
+                std::memcpy(sxPacket->pBuffer + 3, m_reqUpFileId.data(), 16);
+                sendPacket(std::move(sxPacket));
+            } else {
+                auto sxPacket = std::make_unique<Packet>(OP_REQUESTSOURCES, 16, OP_EMULEPROT);
+                std::memcpy(sxPacket->pBuffer, m_reqUpFileId.data(), 16);
+                sendPacket(std::move(sxPacket));
+            }
+            m_reqFile->setLastAnsweredTimeTimeout();
+            setLastAskedForSourcesTime();
+        }
+
+        // AICH file hash request
+        if (isSupportingAICH()) {
+            auto aichPacket = std::make_unique<Packet>(OP_AICHFILEHASHREQ, 16, OP_EMULEPROT);
+            std::memcpy(aichPacket->pBuffer, m_reqUpFileId.data(), 16);
+            sendPacket(std::move(aichPacket));
+        }
     }
 }
 
@@ -158,13 +232,14 @@ void UpDownClient::sendFileRequest()
 
 void UpDownClient::sendStartupLoadReq()
 {
-    if (!m_socket)
+    if (!m_socket || !m_reqFile)
         return;
 
     auto packet = std::make_unique<Packet>(OP_STARTUPLOADREQ, 16);
     std::memcpy(packet->pBuffer, m_reqUpFileId.data(), 16);
     packet->prot = OP_EDONKEYPROT;
     sendPacket(std::move(packet));
+    setDownloadState(DownloadState::OnQueue);
 }
 
 // ===========================================================================
@@ -202,6 +277,14 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
             for (auto& freq : file->srcPartFrequency())
                 ++freq;
         }
+        return;
+    }
+
+    // MFC: validate partCount against file's expected ED2K part count
+    if (file && file->ed2kPartCount() != partCount) {
+        logWarning(QStringLiteral("processFileStatus: wrong part count recv=%1 expected=%2")
+                       .arg(partCount).arg(file->ed2kPartCount()));
+        m_partCount = 0;
         return;
     }
 
@@ -256,6 +339,14 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
             swapToAnotherFile(
                 QStringLiteral("A4AF for NNP file. processFileStatus() TCP"),
                 true, false, false, nullptr, true, true);
+        } else if (file->isMD4HashsetNeeded()
+                   || (file->isAICHPartHashsetNeeded() && supportsFileIdentifiers()
+                       && reqFileAICHHash() != nullptr
+                       && *reqFileAICHHash() == file->fileIdentifier().getAICHHash())) {
+            // MFC: If we need hashsets, request them now
+            sendHashSetRequest();
+        } else {
+            sendStartupLoadReq();
         }
     }
 }
@@ -697,7 +788,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             // For compressed: complete when zStream ended (set to null by unzip on Z_STREAM_END)
             complete = (curBlock->zStream == nullptr && !curBlock->zStreamError);
         } else {
-            complete = (nEndPos >= curBlock->block->endOffset);
+            complete = (nEndPos == curBlock->block->endOffset);
         }
 
         if (complete) {
@@ -768,20 +859,48 @@ void UpDownClient::startDownload()
 
 void UpDownClient::sendHashSetRequest()
 {
-    if (!m_socket)
+    if (!m_socket || !m_reqFile)
         return;
 
     if (m_hashsetRequestingMD4 || m_hashsetRequestingAICH)
         return;
 
-    m_hashsetRequestingMD4 = true;
+    if (supportsFileIdentifiers()) {
+        // MFC: v2 path — OP_HASHSETREQUEST2 with FileIdentifier + options byte
+        SafeMemFile data;
+        m_reqFile->fileIdentifier().writeIdentifier(data);
+
+        uint8 options = 0;
+        if (m_reqFile->isMD4HashsetNeeded()) {
+            m_hashsetRequestingMD4 = true;
+            options |= 0x01;
+            m_reqFile->setMD4HashsetNeeded(false);
+        }
+        if (m_reqFile->isAICHPartHashsetNeeded()
+            && reqFileAICHHash() != nullptr
+            && *reqFileAICHHash() == m_reqFile->fileIdentifier().getAICHHash()) {
+            m_hashsetRequestingAICH = true;
+            options |= 0x02;
+            m_reqFile->setAICHPartHashsetNeeded(false);
+        }
+        if (options == 0)
+            return;
+
+        data.writeUInt8(options);
+        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_HASHSETREQUEST2);
+        sendPacket(std::move(packet));
+    } else {
+        // v1 path — OP_HASHSETREQUEST with MD4 hash only
+        m_hashsetRequestingMD4 = true;
+        m_reqFile->setMD4HashsetNeeded(false);
+
+        SafeMemFile data;
+        data.writeHash16(m_reqUpFileId.data());
+        auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HASHSETREQUEST);
+        sendPacket(std::move(packet));
+    }
+
     setDownloadState(DownloadState::ReqHashSet);
-
-    SafeMemFile data;
-    data.writeHash16(m_reqUpFileId.data());
-
-    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HASHSETREQUEST);
-    sendPacket(std::move(packet));
 }
 
 // ===========================================================================

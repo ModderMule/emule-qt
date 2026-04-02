@@ -182,10 +182,10 @@ void tst_KadLiveNetwork::onReadyRead()
         }
 
         // TODO: remove debug — log encrypted attempt
-        qDebug() << "  encrypted? from" << QHostAddress(senderIP).toString()
-                 << "len" << bufLen
-                 << QStringLiteral("proto=0x%1").arg(proto, 2, 16, QLatin1Char('0'))
-                 << "kadRecvKey" << kadRecvKey;
+        // qDebug() << "  encrypted? from" << QHostAddress(senderIP).toString()
+        //          << "len" << bufLen
+        //          << QStringLiteral("proto=0x%1").arg(proto, 2, 16, QLatin1Char('0'))
+        //          << "kadRecvKey" << kadRecvKey;
 
         auto dr = EncryptedDatagramSocket::decryptReceivedClient(
             const_cast<uint8*>(buf), static_cast<int>(bufLen),
@@ -197,8 +197,8 @@ void tst_KadLiveNetwork::onReadyRead()
         if (!decrypted) {
             m_decryptFailed.fetch_add(1, std::memory_order_relaxed);
             // TODO: remove debug
-            qDebug() << "  DECRYPT FAILED from" << QHostAddress(senderIP).toString()
-                     << "len" << bufLen;
+            // qDebug() << "  DECRYPT FAILED from" << QHostAddress(senderIP).toString()
+            //          << "len" << bufLen;
         }
         if (dr.length > 1 && dr.data && decrypted) {
             uint8 innerProto = dr.data[0];
@@ -337,15 +337,15 @@ void tst_KadLiveNetwork::initTestCase()
         m_kadPacketsSent.fetch_add(1, std::memory_order_relaxed);
 
         // TODO: remove debug — log outgoing opcode
-        uint8 outOpcode = data.isEmpty() ? 0 : static_cast<uint8>(data[0]);
-        if (outOpcode == KADEMLIA2_REQ || outOpcode == KADEMLIA2_SEARCH_KEY_REQ
-            || outOpcode == KADEMLIA2_SEARCH_SOURCE_REQ
-            || outOpcode == KADEMLIA2_PUBLISH_SOURCE_REQ) {
-            qDebug() << "  >> SEND"
-                     << QStringLiteral("opcode=0x%1").arg(outOpcode, 2, 16, QLatin1Char('0'))
-                     << "to" << QHostAddress(destIP).toString() << ":" << destPort
-                     << "encrypted:" << !(cryptTargetID == UInt128(uint32{0}));
-        }
+        // uint8 outOpcode = data.isEmpty() ? 0 : static_cast<uint8>(data[0]);
+        // if (outOpcode == KADEMLIA2_REQ || outOpcode == KADEMLIA2_SEARCH_KEY_REQ
+        //     || outOpcode == KADEMLIA2_SEARCH_SOURCE_REQ
+        //     || outOpcode == KADEMLIA2_PUBLISH_SOURCE_REQ) {
+        //     qDebug() << "  >> SEND"
+        //              << QStringLiteral("opcode=0x%1").arg(outOpcode, 2, 16, QLatin1Char('0'))
+        //              << "to" << QHostAddress(destIP).toString() << ":" << destPort
+        //              << "encrypted:" << !(cryptTargetID == UInt128(uint32{0}));
+        // }
 
         // Build the plain Kad packet: [proto | opcode | payload...]
         const auto plainLen = static_cast<int>(data.size()) + 1;

@@ -188,7 +188,12 @@ void writeKadTag(FileDataIO& f, const Tag& tag)
     // Kad format: type byte, uint16 name length, name bytes, value
     // TAGTYPE_UINT auto-sizes to smallest uint type
 
-    const QByteArray& tagName = tag.name();
+    // Numeric-ID tags (created via Tag(uint8, ...)) have m_name empty but
+    // m_nameId set.  Kad wire format requires the ID as a 1-byte name.
+    // MFC always stores the ID byte in m_name; we reconstruct it here.
+    QByteArray tagName = tag.name();
+    if (tagName.isEmpty() && tag.nameId() > 0)
+        tagName = QByteArray(1, static_cast<char>(tag.nameId()));
 
     if (tag.isStr()) {
         f.writeUInt8(TAGTYPE_STRING);
@@ -253,6 +258,15 @@ void writeKadTag(FileDataIO& f, const Tag& tag)
             f.write(tagName.constData(), tagName.size());
         f.writeUInt32(0);
     }
+}
+
+void writeKadTagBsob(FileDataIO& f, const QByteArray& tagName, const QByteArray& bsobData)
+{
+    f.writeUInt8(TAGTYPE_BSOB);
+    f.writeUInt16(static_cast<uint16>(tagName.size()));
+    if (!tagName.isEmpty())
+        f.write(tagName.constData(), tagName.size());
+    writeBsob(f, bsobData);
 }
 
 // ---------------------------------------------------------------------------

@@ -313,7 +313,15 @@ QWidget* FileDetailDialog::createCommentsTab(const QCborMap& d)
 
     layout->addWidget(tree);
 
-    // TODO: Add "Search Kad" button for Kad notes search
+    // "Search Kad" button — triggers a Kad notes lookup for this file
+    const QString fileHash = d.value(QLatin1StringView("hash")).toString();
+    auto* searchKadBtn = new QPushButton(tr("Search Kad"));
+    searchKadBtn->setIcon(QIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
+    connect(searchKadBtn, &QPushButton::clicked, this, [this, fileHash]() {
+        emit searchKadNotes(fileHash);
+    });
+    layout->addWidget(searchKadBtn);
+
     return page;
 }
 

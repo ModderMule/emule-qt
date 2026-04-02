@@ -18,6 +18,9 @@ fi
 pkill -f emulecored 2>/dev/null || true
 sleep 0.5
 
+# Symlink daemon next to the GUI so resolveDaemonPath() finds it
+#ln -sf "$(pwd)/build/src/daemon/emulecored" ./build/src/gui/emuleqt.app/Contents/MacOS/emulecored
+
 # Start daemon in background
 ./build/src/daemon/emulecored &
 DAEMON_PID=$!

@@ -54,6 +54,9 @@ public:
     /// Access the singleton instance (set during start, cleared on stop).
     [[nodiscard]] static DaemonApp* instance() { return s_instance; }
 
+    /// Access the core session (nullptr if not started).
+    [[nodiscard]] CoreSession* coreSession() const { return m_coreSession.get(); }
+
     /// Return all buffered log entries with id > @p lastLogId.
     [[nodiscard]] static std::vector<LogEntry> logsSince(int64_t lastLogId);
 

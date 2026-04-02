@@ -16,6 +16,7 @@
 #include <QElapsedTimer>
 #include <QNetworkProxy>
 
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -81,8 +82,8 @@ public:
 
     // --- Connection state ---
 
-    [[nodiscard]] bool isConnected() const { return m_conState == EMSState::Connected; }
-    [[nodiscard]] EMSState getConState() const { return m_conState; }
+    [[nodiscard]] bool isConnected() const { return m_conState.load(std::memory_order_acquire) == EMSState::Connected; }
+    [[nodiscard]] EMSState getConState() const { return m_conState.load(std::memory_order_acquire); }
     void setConState(EMSState val);
 
     /// Whether this socket is in raw data mode (for HTTP subclass).
@@ -142,7 +143,7 @@ protected:
     virtual void onSendProgress() {}
 
     uint32 m_timeOut = CONNECTION_TIMEOUT;
-    EMSState m_conState = EMSState::NotConnected;
+    std::atomic<EMSState> m_conState{EMSState::NotConnected};
 
 private:
     // --- Internal send implementation ---
@@ -195,7 +196,6 @@ private:
     bool m_currentPackageIsFromPartFile = false;
     bool m_accelerateUpload = false;
     bool m_busy = false;
-    bool m_hasSent = false;
     bool m_useBigSendBuffers = false;
     bool m_retryScheduled = false;
 

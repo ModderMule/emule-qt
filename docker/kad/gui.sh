@@ -20,15 +20,9 @@ PREFS_DIR="$HOME/eMuleQt/Config"
 PREFS_FILE="$PREFS_DIR/preferences.yml"
 PREFS_BACKUP="$PREFS_DIR/preferences.yml.gui-backup"
 
-# Detect host LAN IP (non-loopback required for IPC auth)
-# Use route to find the default interface, works regardless of interface name
-HOST_IP=$(route -n get default 2>/dev/null | awk '/interface:/{iface=$2} END{if(iface) system("ipconfig getifaddr " iface)}' 2>/dev/null || true)
-if [ -z "$HOST_IP" ]; then
-    echo "ERROR: Could not detect host LAN IP. Connect manually via the GUI dialog."
-    echo "  Port:  $IPC_PORT"
-    echo "  Token: $IPC_TOKEN"
-    exit 1
-fi
+# Docker maps container IPC ports to localhost
+HOST_IP="127.0.0.1"
+# HOST_IP=$(route -n get default 2>/dev/null | awk '/interface:/{iface=$2} END{if(iface) system("ipconfig getifaddr " iface)}' 2>/dev/null || true)
 
 if [ ! -x "$GUI_BIN" ]; then
     echo "ERROR: GUI binary not found at $GUI_BIN"
@@ -36,9 +30,11 @@ if [ ! -x "$GUI_BIN" ]; then
     exit 1
 fi
 
-# Backup existing preferences
+# Backup existing preferences (skip if a backup from a crashed run already exists)
 mkdir -p "$PREFS_DIR"
-if [ -f "$PREFS_FILE" ]; then
+if [ -f "$PREFS_BACKUP" ]; then
+    echo "[gui.sh] Found stale backup from previous run — keeping it as the restore source"
+elif [ -f "$PREFS_FILE" ]; then
     cp "$PREFS_FILE" "$PREFS_BACKUP"
 fi
 
@@ -65,6 +61,7 @@ ipc:
   enabled: true
   port: ${IPC_PORT}
   listenAddress: "${HOST_IP}"
+  daemonPath: "local"
   tokens:
     - "${IPC_TOKEN}"
 EOF

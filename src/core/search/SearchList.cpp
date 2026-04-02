@@ -26,10 +26,17 @@ SearchList::~SearchList() = default;
 // Session management
 // ---------------------------------------------------------------------------
 
-uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& /*params*/)
+uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& /*params*/,
+                             uint32 forcedID)
 {
     m_resultFileType = resultFileType;
-    m_currentSearchID = m_nextSearchID++;
+    if (forcedID != 0) {
+        m_currentSearchID = forcedID;
+        if (m_nextSearchID <= forcedID)
+            m_nextSearchID = forcedID + 1;
+    } else {
+        m_currentSearchID = m_nextSearchID++;
+    }
 
     SearchListEntry entry;
     entry.searchID = m_currentSearchID;

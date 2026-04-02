@@ -7,6 +7,7 @@
 /// via FileNotifier signal emissions.
 
 #include "files/KnownFile.h"
+#include "files/Collection.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHHashSet.h"
@@ -40,6 +41,8 @@ KnownFile::KnownFile()
     m_completeSourcesCountHi = 1;
 }
 
+KnownFile::~KnownFile() = default;
+
 // ---------------------------------------------------------------------------
 // setFileSize — computes data part count and ED2K part count
 // ---------------------------------------------------------------------------
@@ -71,9 +74,27 @@ void KnownFile::setFileName(const QString& name,
 {
     ShareableFile::setFileName(name, replaceInvalidChars, autoSetFileType, removeControlChars);
 
-    // Rebuild Kad keyword list from new filename
+    // Rebuild Kad keyword list — include collection author key for Kad publishing
     m_kadKeywords.clear();
-    kad::getWords(fileName(), m_kadKeywords);
+    if (m_collection && !m_collection->m_authorKey.isEmpty()) {
+        const QString keywordsStr = m_collection->authorKeyString() + u' ' + fileName();
+        kad::getWords(keywordsStr, m_kadKeywords);
+    } else {
+        kad::getWords(fileName(), m_kadKeywords);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// setCollection
+// ---------------------------------------------------------------------------
+
+void KnownFile::setCollection(std::unique_ptr<Collection> coll)
+{
+    m_collection = std::move(coll);
+    if (m_collection && !m_collection->m_authorKey.isEmpty()) {
+        // Re-trigger keyword rebuild to include author key
+        setFileName(fileName(), false, false, false);
+    }
 }
 
 // ---------------------------------------------------------------------------

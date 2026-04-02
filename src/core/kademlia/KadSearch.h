@@ -39,7 +39,6 @@ public:
     Search& operator=(const Search&) = delete;
 
     [[nodiscard]] uint32 getSearchID() const { return m_searchID; }
-    void setSearchID(uint32 id) { m_searchID = id; }
     [[nodiscard]] SearchType getSearchType() const { return m_type; }
     void setSearchType(SearchType type);
     void setTargetID(const UInt128& target);
@@ -80,8 +79,11 @@ private:
 
     WordList m_words;
     UIntList m_fileIDs;
-    std::map<UInt128, bool> m_responded;
-    ContactMap m_possible, m_tried, m_best, m_inUse;
+    std::map<UInt128, bool> m_responded;  // distance → provided closer contacts (MFC m_mapResponded)
+    ContactMap m_possible;  // untried candidates, sorted by distance
+    ContactMap m_tried;     // ALL contacted nodes (responded + not), sorted by distance
+    ContactMap m_best;      // top ALPHA_QUERY closest contacts for auto-query (MFC m_mapBest)
+    ContactMap m_inUse;     // refcount tracking
     ContactArray m_deleteList;
     UInt128 m_target;
     UInt128 m_closestDistantFound;

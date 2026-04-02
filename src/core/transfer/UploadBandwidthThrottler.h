@@ -41,7 +41,7 @@ public:
     int standardListSize() const;
     void addToStandardList(int index, ThrottledFileSocket* socket);
     bool removeFromStandardList(ThrottledFileSocket* socket);
-    void queueForSendingControlPacket(ThrottledControlSocket* socket, bool hasSent = false);
+    void queueForSendingControlPacket(ThrottledControlSocket* socket);
     void removeFromAllQueues(ThrottledFileSocket* socket);
     void removeFromAllQueues(ThrottledControlSocket* socket);
 
@@ -71,12 +71,10 @@ private:
 
     // Socket queues (guarded by m_sendMutex)
     std::list<ThrottledControlSocket*> m_controlQueue;
-    std::list<ThrottledControlSocket*> m_controlQueueFirst;
     std::vector<ThrottledFileSocket*> m_standardOrder;
 
     // Temp queues (guarded by m_tempMutex) — loose coupling
     std::list<ThrottledControlSocket*> m_tempControlQueue;
-    std::list<ThrottledControlSocket*> m_tempControlQueueFirst;
 
     // Synchronization
     mutable std::mutex m_sendMutex;

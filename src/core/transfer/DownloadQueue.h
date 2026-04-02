@@ -62,12 +62,12 @@ public:
 
     /// Add a Kad-discovered file source. Finds the matching PartFile by hash
     /// and stores the source info for later connection.
-    /// sourceType: 1/2=High-ID (direct TCP), 4=Low-ID (Kad buddy callback).
+    /// sourceType: 1/4=non-firewalled, 3/5=firewalled+buddy, 6=direct UDP callback.
     void addKadSourceResult(uint32 searchID, const uint8* fileHash,
                             uint32 ip, uint16 tcpPort,
                             uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
                             uint8 sourceType, const uint8* buddyHash,
-                            const uint8* clientHash);
+                            const uint8* clientHash, uint16 udpPort);
 
     /// Process OP_FOUNDSOURCES / OP_FOUNDSOURCES_OBFU from the connected server.
     void addServerSourceResult(const uint8* data, uint32 size, bool obfuscated);
@@ -98,6 +98,9 @@ public:
     // -- Stats ----------------------------------------------------------------
 
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
+    [[nodiscard]] uint32 successfulDownloadCount() const { return m_successfulDownCount; }
+    [[nodiscard]] uint32 failedDownloadCount() const { return m_failedDownCount; }
+    [[nodiscard]] uint32 averageDownTime() const;
 
 signals:
     void fileAdded(eMule::PartFile* file);
@@ -115,6 +118,9 @@ private:
     ClientList* m_clientList = nullptr;
     ServerConnect* m_serverConnect = nullptr;
     uint32 m_datarate = 0;
+    uint32 m_successfulDownCount = 0;
+    uint32 m_failedDownCount = 0;
+    uint64 m_totalDownTime = 0;  // seconds
     std::deque<TransferredData> m_averageDRList;  // 10-second averaging window
     uint32 m_udCounter = 0;
     uint32 m_lastUDPSourceRequestTime = 0;

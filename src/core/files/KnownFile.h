@@ -22,6 +22,7 @@
 namespace eMule {
 
 class AICHHashTree;
+class Collection;
 class FileDataIO;
 class Packet;
 class UpDownClient;
@@ -60,7 +61,7 @@ inline constexpr uint8 kPrAuto     = 5;
 class KnownFile : public ShareableFile {
 public:
     KnownFile();
-    ~KnownFile() override = default;
+    ~KnownFile() override;
 
     // Signal emitter — GUI connects here (not QObject inheritance)
     [[nodiscard]] FileNotifier* notifier() { return &m_notifier; }
@@ -177,12 +178,17 @@ public:
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
     void updatePartsInfo();
 
+    // Collection support (for .emulecollection files shared on the network)
+    [[nodiscard]] Collection* collection() const { return m_collection.get(); }
+    void setCollection(std::unique_ptr<Collection> coll);
+
 protected:
     bool loadTagsFromFile(FileDataIO& file);
     bool loadDateFromFile(FileDataIO& file);
 
 private:
     FileNotifier m_notifier;
+    std::unique_ptr<Collection> m_collection;
     std::vector<UpDownClient*> m_uploadingClients;
     std::vector<uint16> m_availPartFrequency;
     std::vector<QString> m_kadKeywords;

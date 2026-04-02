@@ -10,11 +10,14 @@
 
 #include <QWidget>
 
+class QCheckBox;
+class QGroupBox;
 class QLabel;
 class QMenu;
 class QProgressBar;
 class QPushButton;
 class QSplitter;
+class QStackedWidget;
 class QTabWidget;
 class QTextEdit;
 class QTimer;
@@ -24,7 +27,10 @@ class QTreeWidgetItem;
 
 namespace eMule {
 
+class ArchivePreviewPanel;
 class IpcClient;
+struct SharedFileRow;
+class MediaInfoPanel;
 class SharedFilesModel;
 class SharedFilesSortProxy;
 
@@ -57,11 +63,17 @@ private:
     void requestSharedFiles();
     void sendSetPriority(const QString& hash, int priority, bool isAuto);
     void updateStatsTab();
+    void updateContentTab();
     void updateEd2kTab();
+    [[nodiscard]] static bool isArchiveFile(const QString& fileType, const QString& fileName);
     void onReloadClicked();
     void showPriorityMenu();
     void showFindDialog();
     void copyEd2kLink();
+    void rebuildEd2kLink();
+    [[nodiscard]] const SharedFileRow* selectedFile() const;
+    [[nodiscard]] int computePopularityRank(int64_t value,
+                                            int64_t (SharedFileRow::*field)) const;
     [[nodiscard]] QString saveSelection() const;
     void restoreSelection(const QString& key);
     void fetchAndShowSharedFileDetails(const QString& hash, int tab);
@@ -91,6 +103,7 @@ private:
     QLabel* m_statTotalAccepted = nullptr;
     QLabel* m_statTotalTransferred = nullptr;
     QLabel* m_statPopularity = nullptr;
+    QLabel* m_statPopularity2 = nullptr;
     QLabel* m_statOnQueue = nullptr;
     QLabel* m_statUploading = nullptr;
 
@@ -110,9 +123,20 @@ private:
     int64_t m_totalAllTimeAccepted = 0;
     int64_t m_totalAllTimeTransferred = 0;
 
+    // Content tab (archive preview / media info)
+    QStackedWidget* m_contentStack = nullptr;
+    ArchivePreviewPanel* m_archivePreview = nullptr;
+    MediaInfoPanel* m_mediaInfoPanel = nullptr;
+
     // eD2K Links tab
     QTextEdit* m_ed2kText = nullptr;
     QPushButton* m_copyButton = nullptr;
+    QGroupBox* m_ed2kBasicGroup = nullptr;
+    QGroupBox* m_ed2kAdvancedGroup = nullptr;
+    QCheckBox* m_ed2kSourceCheck = nullptr;
+    QCheckBox* m_ed2kHtmlCheck = nullptr;
+    QCheckBox* m_ed2kHashsetCheck = nullptr;
+    QCheckBox* m_ed2kHostnameCheck = nullptr;
 
     // Splitters
     QSplitter* m_horzSplitter = nullptr;

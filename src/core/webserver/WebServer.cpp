@@ -301,7 +301,7 @@ void WebServer::registerRoutes()
 
     // Static files (images, CSS)
     m_server->route(QStringLiteral("/<arg>"), QHttpServerRequest::Method::Get,
-        [this](const QString& file, const QHttpServerRequest& req) {
+        [this](const QString& file, const QHttpServerRequest& /*req*/) {
             if (file.startsWith(QStringLiteral("api/")))
                 return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
             // Only serve known static file extensions
@@ -908,7 +908,7 @@ QHttpServerResponse WebServer::handlePostFriend(const QJsonObject& body)
     std::array<uint8, 16> hashBytes{};
 
     if (hasHash)
-        decodeBase16(hashStr, hashBytes.data(), 16);
+        hasHash = decodeBase16(hashStr, hashBytes.data(), 16) > 0;
 
     auto* f = m_friendList->addFriend(hasHash ? hashBytes.data() : nullptr,
                                        ip, friendPort, name, hasHash);
@@ -1521,7 +1521,7 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
     return downHeader + downLines + downFooter + upHeader + upLines + upFooter;
 }
 
-QString WebServer::buildServerListPage(bool isAdmin, const QString& sessionId)
+QString WebServer::buildServerListPage(bool /*isAdmin*/, const QString& sessionId)
 {
     QHash<QString, QString> vars;
     QString serverLines;
@@ -1552,13 +1552,13 @@ QString WebServer::buildServerListPage(bool isAdmin, const QString& sessionId)
         m_templateEngine->section(QStringLiteral("SERVER_LIST")), vars);
 }
 
-QString WebServer::buildSearchPage(bool isAdmin)
+QString WebServer::buildSearchPage(bool /*isAdmin*/)
 {
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("SEARCH")), {});
 }
 
-QString WebServer::buildSharedFilesPage(bool isAdmin, const QString& sessionId)
+QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& sessionId)
 {
     QHash<QString, QString> vars;
     QString sharedLines;
@@ -1616,7 +1616,7 @@ QString WebServer::buildGraphsPage()
         m_templateEngine->section(QStringLiteral("GRAPHS")), {});
 }
 
-QString WebServer::buildPreferencesPage(bool isAdmin)
+QString WebServer::buildPreferencesPage(bool /*isAdmin*/)
 {
     QHash<QString, QString> vars;
     if (m_preferences) {

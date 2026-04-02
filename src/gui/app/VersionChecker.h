@@ -21,7 +21,7 @@ public:
     void check(bool manual = false);
 
 signals:
-    void newVersionAvailable(const QString& version);
+    void newVersionAvailable(const QString& version, const QString& downloadUrl);
     void upToDate();
     void checkFailed();
 

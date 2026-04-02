@@ -143,6 +143,7 @@ emule_add_test(tst_URLClient          FOLDER "Client")
 emule_add_test(tst_AbstractFile       FOLDER "Files")
 emule_add_test(tst_ShareableFile      FOLDER "Files")
 emule_add_test(tst_StatisticFile      FOLDER "Files")
+emule_add_test(tst_Collection         FOLDER "Files")
 emule_add_test(tst_CollectionFile     FOLDER "Files")
 emule_add_test(tst_KnownFile          FOLDER "Files")
 
@@ -242,6 +243,12 @@ emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
 emule_add_test(tst_KadNodesData   FOLDER "DataFiles")
 emule_add_test(tst_PartFileData   FOLDER "DataFiles")
 emule_add_test(tst_SharedFileData FOLDER "DataFiles")
+emule_add_test(tst_WebServicesData FOLDER "DataFiles"
+    SOURCES tst_WebServicesData.cpp "${CMAKE_SOURCE_DIR}/src/gui/utils/WebServices.cpp")
+target_include_directories(tst_WebServicesData PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_WebServicesData PRIVATE Qt6::Widgets)
 
 # Live network integration tests (requires real network connectivity)
 if(EMULE_LIVE_TESTS)

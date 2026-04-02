@@ -116,8 +116,11 @@ bool RoutingZone::add(const UInt128& id, uint32 ip, uint16 udpPort, uint16 tcpPo
         return false;
 
     // Validate IP (allow LAN IPs when filterLANIPs is disabled)
-    if (!isGoodIP(htonl(ip), !thePrefs.filterLANIPs()))
+    if (!isGoodIP(htonl(ip), !thePrefs.filterLANIPs())) {
+        logKad(QStringLiteral("Kad: Rejected contact %1 — isGoodIP failed (filterLAN=%2)")
+                   .arg(QHostAddress(ip).toString()).arg(thePrefs.filterLANIPs()));
         return false;
+    }
 
     // Reject port 0
     if (udpPort == 0)
@@ -202,12 +205,18 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
                 emit contactUpdated(existing);
             } else {
                 // IP or port changed — verify UDP key before accepting
-                // Accept change if: new key is empty (unverified), or key values match for our public IP
+                // If existing contact has a verified key, the new contact must provide a matching key
+                // This prevents hijacking of verified routing table entries (matches original eMule behavior)
                 uint32 publicIP = thePrefs.publicIP();
-                bool keyAcceptable = contact->getUDPKey().isEmpty()
-                    || existing->getUDPKey().isEmpty()
-                    || contact->getUDPKey().getKeyValue(publicIP) == existing->getUDPKey().getKeyValue(publicIP);
-                if (keyAcceptable && m_bin->changeContactIPAddress(existing, contact->getIPAddress())) {
+                uint32 existingKeyVal = existing->getUDPKey().getKeyValue(publicIP);
+                uint32 newKeyVal = contact->getUDPKey().getKeyValue(publicIP);
+                bool keyAcceptable = (existingKeyVal == 0) || (existingKeyVal == newKeyVal);
+                if (!keyAcceptable) {
+                    logKad(QStringLiteral("Kad: %1 tried to update contact %2 but failed to provide proper sender key (sent empty: %3) — denying")
+                               .arg(QHostAddress(contact->getIPAddress()).toString(),
+                                    QHostAddress(existing->getIPAddress()).toString(),
+                                    newKeyVal == 0 ? u"yes" : u"no"));
+                } else if (m_bin->changeContactIPAddress(existing, contact->getIPAddress())) {
                     existing->setUDPPort(contact->getUDPPort());
                     existing->setTCPPort(contact->getTCPPort());
                     existing->setVersion(contact->getVersion());
@@ -637,10 +646,11 @@ void RoutingZone::readFile(const QString& specialNodesdat)
 
         uint32 loaded = getNumContacts();
         if (loaded == 0)
-            logKad(QStringLiteral("Kad: nodes.dat loaded but 0 contacts added (file had %1 entries)")
-                       .arg(numContacts));
+            logKad(QStringLiteral("Kad: nodes.dat loaded but 0 contacts added (file had %1 entries, filterLANIPs=%2)")
+                       .arg(numContacts).arg(thePrefs.filterLANIPs()));
         else
-            logKad(QStringLiteral("Kad: Loaded nodes.dat — %1 contacts").arg(loaded));
+            logKad(QStringLiteral("Kad: Loaded nodes.dat — %1 contacts (filterLANIPs=%2)")
+                       .arg(loaded).arg(thePrefs.filterLANIPs()));
 
     } catch (const FileException& e) {
         logKad(QStringLiteral("Failed to read Kad nodes file: %1").arg(QLatin1StringView(e.what())));

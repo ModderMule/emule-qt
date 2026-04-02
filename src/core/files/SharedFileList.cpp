@@ -3,6 +3,7 @@
 /// @brief Shared file management — port of MFC CSharedFileList.
 
 #include "files/SharedFileList.h"
+#include "files/Collection.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "kademlia/Kademlia.h"
@@ -156,6 +157,15 @@ bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
 
     m_filesMap[key] = file;
     addKeywords(file);
+
+    // Auto-detect .emulecollection files and attach parsed collection
+    if (!file->isPartFile() && !file->collection()
+        && Collection::hasCollectionExtension(file->fileName()))
+    {
+        auto coll = std::make_unique<Collection>();
+        if (coll->initFromFile(file->filePath(), file->fileName()))
+            file->setCollection(std::move(coll));
+    }
 
     if (!onlyAdd) {
         file->setLastSeen(std::time(nullptr));
@@ -397,6 +407,11 @@ void SharedFileList::publish()
     if (!kad || !kad->isKadReady())
         return;
 
+    // Don't publish until self-lookup (NodeComplete) finishes populating
+    // the routing table.  Matches MFC SharedFileList.cpp:1247.
+    if (!kad->getPublish())
+        return;
+
     // --- Source publishing (round-robin by index) ---
     if (kad->getTotalStoreSrc() < KADEMLIATOTALSTORESRC) {
         QMutexLocker locker(&m_mutex);
@@ -409,9 +424,11 @@ void SharedFileList::publish()
                     kad::UInt128 target;
                     target.setValueBE(file->fileHash());
                     auto* search = kad::SearchManager::prepareLookup(
-                        kad::SearchType::StoreFile, true, target);
-                    if (search)
-                        kad::SearchManager::startSearch(search);
+                            kad::SearchType::StoreFile, true, target);
+                    if (!search)
+                        file->setLastPublishTimeKadSrc(0, 0);
+                    else
+                        search->setGUIName(file->fileName());
                     m_currFileSrc = (idx + 1) % fileCount;
                     break;
                 }
@@ -431,9 +448,11 @@ void SharedFileList::publish()
                     kad::UInt128 target;
                     target.setValueBE(file->fileHash());
                     auto* search = kad::SearchManager::prepareLookup(
-                        kad::SearchType::StoreNotes, true, target);
-                    if (search)
-                        kad::SearchManager::startSearch(search);
+                            kad::SearchType::StoreNotes, true, target);
+                    if (!search)
+                        file->setLastPublishTimeKadNotes(0);
+                    else
+                        search->setGUIName(file->fileName());
                     m_currFileNotes = (idx + 1) % fileCount;
                     break;
                 }
@@ -460,6 +479,7 @@ void SharedFileList::publish()
                     kad::SearchType::StoreKeyword, false, kw->kadID());
 
                 if (search) {
+                    search->setGUIName(kw->keyword());
                     // Add file IDs (max 150 per keyword, rotate after)
                     constexpr int kMaxFilesPerKeyword = 150;
                     int added = 0;

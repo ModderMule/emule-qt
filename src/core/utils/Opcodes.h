@@ -432,21 +432,33 @@
 #define TAG_MEDIA_CODEC             "\xD5"
 
 // Misc tags
+#define FT_KADMISCOPTIONS           0xF2
 #define TAG_KADMISCOPTIONS          "\xF2"
+#define FT_ENCRYPTION               0xF3
 #define TAG_ENCRYPTION              "\xF3"
+#define FT_USER_COUNT               0xF4
 #define TAG_USER_COUNT              "\xF4"
+#define FT_FILE_COUNT               0xF5
 #define TAG_FILE_COUNT              "\xF5"
 #define FT_FILECOMMENT              0xF6
 #define TAG_FILECOMMENT             "\xF6"
 #define FT_FILERATING               0xF7
 #define TAG_FILERATING              "\xF7"
+#define FT_BUDDYHASH                0xF8
 #define TAG_BUDDYHASH               "\xF8"
+#define FT_CLIENTLOWID              0xF9
 #define TAG_CLIENTLOWID             "\xF9"
+#define FT_SERVERPORT               0xFA
 #define TAG_SERVERPORT              "\xFA"
+#define FT_SERVERIP                 0xFB
 #define TAG_SERVERIP                "\xFB"
+#define FT_SOURCEUPORT              0xFC
 #define TAG_SOURCEUPORT             "\xFC"
+#define FT_SOURCEPORT               0xFD
 #define TAG_SOURCEPORT              "\xFD"
+#define FT_SOURCEIP                 0xFE
 #define TAG_SOURCEIP                "\xFE"
+#define FT_SOURCETYPE               0xFF
 #define TAG_SOURCETYPE              "\xFF"
 
 // ---------------------------------------------------------------------------

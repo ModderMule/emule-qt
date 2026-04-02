@@ -44,8 +44,6 @@ public:
     static void cancelNodeFWCheckUDPSearch();
     static bool findNodeFWCheckUDP();
     static bool isFWCheckUDPSearch(const UInt128& target);
-    static void setNextSearchID(uint32 nextID);
-
     static const SearchMap& getSearches() { return s_searches; }
     static uint32 getTotalResponsesReceived() { return s_totalResponsesReceived; }
 
@@ -59,7 +57,6 @@ private:
     static void jumpStart();
     static void notifySearchesChanged();
 
-    static uint32 s_nextID;
     static uint32 s_totalResponsesReceived;
     static SearchMap s_searches;
 };

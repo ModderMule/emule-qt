@@ -1610,8 +1610,6 @@ void PartFile::getFilledArray(std::vector<Gap>& filled) const
 }
 
 // ===========================================================================
-// Stubs
-// ===========================================================================
 
 void PartFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
 {

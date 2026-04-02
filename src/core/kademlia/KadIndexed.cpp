@@ -289,58 +289,86 @@ void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* sea
     if (it == m_keywords.end())
         return;
 
-    // Collect matching entries
     KeyHash* keyHash = it->second;
 
-    // Build response packet: senderKadID + target + count + entries
-    // MFC includes the sender's Kad ID before the target in KADEMLIA2_SEARCH_RES.
-    SafeMemFile packet;
-    io::writeUInt128(packet, Kademlia::getInstancePrefs()->kadId());
-    io::writeUInt128(packet, keyID);
-    // Placeholder for count — we'll update it after
-    auto countPos = packet.position();
-    packet.writeUInt16(0);
+    // Helper: write packet header (kadID + target + count placeholder)
+    auto writeHeader = [&](SafeMemFile& pkt) -> qint64 {
+        io::writeUInt128(pkt, Kademlia::getInstancePrefs()->kadId());
+        io::writeUInt128(pkt, keyID);
+        auto pos = pkt.position();
+        pkt.writeUInt16(0);
+        return pos;
+    };
 
-    uint16 matchCount = 0;
-    uint16 skipped = 0;
-    constexpr uint16 kMaxResults = 300;
+    auto packet = std::make_unique<SafeMemFile>();
+    auto countPos = writeHeader(*packet);
 
-    for (auto& [srcKey, source] : keyHash->mapSource) {
-        if (matchCount >= kMaxResults)
-            break;
-        for (auto* entry : source->entryList) {
-            if (matchCount >= kMaxResults)
+    constexpr int kMaxResults = 300;
+    int count = -static_cast<int>(startPosition); // negative = skip entries for pagination
+    uint16 unsentCount = 0;
+
+    // Two-pass loop: first send only trusted entries (trust >= 1.0), then untrusted.
+    // This ensures the 300 result cap isn't filled with spam (MFC lines 634-676).
+    for (bool onlyTrusted = true; count < kMaxResults; onlyTrusted = false) {
+        for (auto& [srcKey, source] : keyHash->mapSource) {
+            if (count >= kMaxResults)
                 break;
-            if (entry->isKeyEntry()) {
+            for (auto* entry : source->entryList) {
+                if (count >= kMaxResults)
+                    break;
+                if (!entry->isKeyEntry())
+                    continue;
                 auto* keyEntry = static_cast<KeyEntry*>(entry);
-                if (!searchTerms || keyEntry->startSearchTermsMatch(*searchTerms)) {
-                    // Handle pagination via startPosition
-                    if (skipped < startPosition) {
-                        ++skipped;
-                        continue;
-                    }
-                    // Write source ID + tag list
-                    io::writeUInt128(packet, source->sourceID);
-                    entry->writeTagList(packet);
-                    ++matchCount;
+                // XOR filter: in pass 1 skip untrusted, in pass 2 skip trusted
+                if (onlyTrusted == (keyEntry->getTrustValue() < 1.0f))
+                    continue;
+                if (searchTerms && !keyEntry->startSearchTermsMatch(*searchTerms))
+                    continue;
+                if (count < 0) {
+                    ++count;
+                    continue;
                 }
+                ++count;
+
+                // Write this result to a temp buffer to check size
+                SafeMemFile tmpBuf;
+                io::writeUInt128(tmpBuf, source->sourceID);
+                keyEntry->writeTagListWithPublishInfo(tmpBuf);
+
+                // Anti-fragmentation: if adding this result exceeds MTU, send current packet first
+                if (packet->length() + tmpBuf.length() > UDP_KAD_MAXFRAGMENT && unsentCount > 0) {
+                    auto endPos = packet->position();
+                    packet->seek(countPos, 0);
+                    packet->writeUInt16(unsentCount);
+                    packet->seek(endPos, 0);
+                    udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+
+                    // Start new packet
+                    packet = std::make_unique<SafeMemFile>();
+                    countPos = writeHeader(*packet);
+                    unsentCount = 0;
+                }
+
+                const auto& buf = tmpBuf.buffer();
+                packet->write(buf.constData(), tmpBuf.length());
+                ++unsentCount;
             }
         }
+        if (!onlyTrusted)
+            break;
     }
 
-    if (matchCount > 0) {
-        // Update the count field
-        auto endPos = packet.position();
-        packet.seek(countPos, 0);
-        packet.writeUInt16(matchCount);
-        packet.seek(endPos, 0);
-
-        udpListener->sendPacket(packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+    if (unsentCount > 0) {
+        auto endPos = packet->position();
+        packet->seek(countPos, 0);
+        packet->writeUInt16(unsentCount);
+        packet->seek(endPos, 0);
+        udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
     }
 }
 
 void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port,
-                                     uint16 startPosition, uint64 /*fileSize*/,
+                                     uint16 startPosition, uint64 fileSize,
                                      const KadUDPKey& senderKey)
 {
     QMutexLocker lock(&m_mutex);
@@ -356,45 +384,68 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
 
     SrcHash* srcHash = it->second;
 
-    // MFC format: senderKadID + target + uint16 count + results
-    SafeMemFile packet;
-    io::writeUInt128(packet, Kademlia::getInstancePrefs()->kadId());
-    io::writeUInt128(packet, keyID);
-    auto countPos = packet.position();
-    packet.writeUInt16(0);
+    auto writeHeader = [&](SafeMemFile& pkt) -> qint64 {
+        io::writeUInt128(pkt, Kademlia::getInstancePrefs()->kadId());
+        io::writeUInt128(pkt, keyID);
+        auto pos = pkt.position();
+        pkt.writeUInt16(0);
+        return pos;
+    };
 
-    uint16 matchCount = 0;
-    uint16 skipped = 0;
-    constexpr uint16 kMaxResults = 300;
+    auto packet = std::make_unique<SafeMemFile>();
+    auto countPos = writeHeader(*packet);
+
+    int count = -static_cast<int>(startPosition);
+    uint16 unsentCount = 0;
+    constexpr int kMaxResults = 300;
 
     for (auto* source : srcHash->sourceList) {
-        if (matchCount >= kMaxResults)
+        if (count >= kMaxResults)
             break;
-        for (auto* entry : source->entryList) {
-            if (matchCount >= kMaxResults)
-                break;
-            if (skipped < startPosition) {
-                ++skipped;
-                continue;
-            }
-            io::writeUInt128(packet, source->sourceID);
-            entry->writeTagList(packet);
-            ++matchCount;
+        if (source->entryList.empty())
+            continue;
+        auto* entry = source->entryList.front();
+        // MFC fileSize filter: match exact size or accept if either is 0
+        if (fileSize && entry->m_size && entry->m_size != fileSize)
+            continue;
+        if (count < 0) {
+            ++count;
+            continue;
         }
+        ++count;
+
+        SafeMemFile tmpBuf;
+        io::writeUInt128(tmpBuf, source->sourceID);
+        entry->writeTagList(tmpBuf);
+
+        // Anti-fragmentation
+        if (packet->length() + tmpBuf.length() > UDP_KAD_MAXFRAGMENT && unsentCount > 0) {
+            auto endPos = packet->position();
+            packet->seek(countPos, 0);
+            packet->writeUInt16(unsentCount);
+            packet->seek(endPos, 0);
+            udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+            packet = std::make_unique<SafeMemFile>();
+            countPos = writeHeader(*packet);
+            unsentCount = 0;
+        }
+
+        const auto& buf = tmpBuf.buffer();
+        packet->write(buf.constData(), tmpBuf.length());
+        ++unsentCount;
     }
 
-    if (matchCount > 0) {
-        auto endPos = packet.position();
-        packet.seek(countPos, 0);
-        packet.writeUInt16(matchCount);
-        packet.seek(endPos, 0);
-
-        udpListener->sendPacket(packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+    if (unsentCount > 0) {
+        auto endPos = packet->position();
+        packet->seek(countPos, 0);
+        packet->writeUInt16(unsentCount);
+        packet->seek(endPos, 0);
+        udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
     }
 }
 
 void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
-                                   uint64 /*fileSize*/, const KadUDPKey& senderKey)
+                                   uint64 fileSize, const KadUDPKey& senderKey)
 {
     QMutexLocker lock(&m_mutex);
 
@@ -409,35 +460,60 @@ void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
 
     SrcHash* srcHash = it->second;
 
-    // MFC format: senderKadID + target + uint16 count + results
-    SafeMemFile packet;
-    io::writeUInt128(packet, Kademlia::getInstancePrefs()->kadId());
-    io::writeUInt128(packet, keyID);
-    auto countPos = packet.position();
-    packet.writeUInt16(0);
+    auto writeHeader = [&](SafeMemFile& pkt) -> qint64 {
+        io::writeUInt128(pkt, Kademlia::getInstancePrefs()->kadId());
+        io::writeUInt128(pkt, keyID);
+        auto pos = pkt.position();
+        pkt.writeUInt16(0);
+        return pos;
+    };
 
-    uint16 matchCount = 0;
+    auto packet = std::make_unique<SafeMemFile>();
+    auto countPos = writeHeader(*packet);
+
+    uint16 unsentCount = 0;
     constexpr uint16 kMaxResults = 150;
+    uint16 totalCount = 0;
 
     for (auto* source : srcHash->sourceList) {
-        if (matchCount >= kMaxResults)
+        if (totalCount >= kMaxResults)
             break;
         for (auto* entry : source->entryList) {
-            if (matchCount >= kMaxResults)
+            if (totalCount >= kMaxResults)
                 break;
-            io::writeUInt128(packet, source->sourceID);
-            entry->writeTagList(packet);
-            ++matchCount;
+            // MFC fileSize filter
+            if (fileSize && entry->m_size && entry->m_size != fileSize)
+                continue;
+
+            SafeMemFile tmpBuf;
+            io::writeUInt128(tmpBuf, source->sourceID);
+            entry->writeTagList(tmpBuf);
+
+            // Anti-fragmentation
+            if (packet->length() + tmpBuf.length() > UDP_KAD_MAXFRAGMENT && unsentCount > 0) {
+                auto endPos = packet->position();
+                packet->seek(countPos, 0);
+                packet->writeUInt16(unsentCount);
+                packet->seek(endPos, 0);
+                udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+                packet = std::make_unique<SafeMemFile>();
+                countPos = writeHeader(*packet);
+                unsentCount = 0;
+            }
+
+            const auto& buf = tmpBuf.buffer();
+            packet->write(buf.constData(), tmpBuf.length());
+            ++unsentCount;
+            ++totalCount;
         }
     }
 
-    if (matchCount > 0) {
-        auto endPos = packet.position();
-        packet.seek(countPos, 0);
-        packet.writeUInt16(matchCount);
-        packet.seek(endPos, 0);
-
-        udpListener->sendPacket(packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+    if (unsentCount > 0) {
+        auto endPos = packet->position();
+        packet->seek(countPos, 0);
+        packet->writeUInt16(unsentCount);
+        packet->seek(endPos, 0);
+        udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
     }
 }
 
@@ -500,8 +576,18 @@ void Indexed::readFile()
                                         auto* entry = new KeyEntry();
                                         entry->m_keyID = keyID;
                                         entry->m_sourceID = sourceID;
-                                        for (auto& tag : tags)
-                                            entry->addTag(std::move(tag));
+                                        for (auto& tag : tags) {
+                                            if (tag.nameId() == FT_FILENAME && tag.isStr()) {
+                                                if (entry->getCommonFileName().isEmpty())
+                                                    entry->setFileName(tag.strValue());
+                                            } else if (tag.nameId() == FT_FILESIZE) {
+                                                if (entry->m_size == 0)
+                                                    entry->m_size = tag.isInt() ? tag.intValue()
+                                                                  : tag.isInt64(false) ? tag.int64Value() : 0;
+                                            } else {
+                                                entry->addTag(std::move(tag));
+                                            }
+                                        }
                                         uint8 load = 0;
                                         if (!addKeyword(keyID, sourceID, entry, load))
                                             delete entry;

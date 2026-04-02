@@ -5,6 +5,7 @@
 #include "kademlia/KadEntry.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadMiscUtils.h"
+#include "utils/SafeFile.h"
 
 
 namespace eMule::kad {
@@ -345,12 +346,44 @@ void KeyEntry::dirtyDeletePublishData()
 
 void KeyEntry::writeTagListWithPublishInfo(FileDataIO& data)
 {
-    // Write tags plus an additional tag for trust value
-    writeTagListInc(data, 1);
+    // MFC WriteTagListWithPublishInfo: adds TAG_PUBLISHINFO + optional TAG_KADAICHHASHRESULT
+    uint32 nAdditionalTags = 1 + static_cast<uint32>(!m_aichHashes.empty());
+    writeTagListInc(data, nAdditionalTags);
 
-    // Write trust value as a special tag
-    Tag trustTag(QByteArrayLiteral("\xF0"), static_cast<uint32>(getTrustValue() * 100.0f));
-    io::writeKadTag(data, trustTag);
+    // TAG_PUBLISHINFO (0x33): packed uint32 = (nameCount<<24)|(publishers<<16)|(trust*100)
+    uint32 trust = static_cast<uint32>(static_cast<uint16>(getTrustValue() * 100.0f));
+    uint32 publishers = m_publishingIPs
+        ? static_cast<uint32>(m_publishingIPs->size() % 256) : 0;
+    uint32 names = static_cast<uint32>(m_fileNames.size() % 256);
+    uint32 tagValue = (names << 24) | (publishers << 16) | trust;
+    Tag publishTag(QByteArrayLiteral(TAG_PUBLISHINFO), tagValue);
+    io::writeKadTag(data, publishTag);
+
+    // TAG_KADAICHHASHRESULT (0x37): BSOB with popularity + hash pairs
+    if (!m_aichHashes.empty()) {
+        SafeMemFile aichBuf;
+        uint8 count = 0;
+        // Count hashes with popularity > 0, limit to ~12 (255 byte BSOB limit)
+        for (size_t i = 0; i < m_aichHashes.size(); ++i) {
+            if (i < m_aichHashPopularity.size() && m_aichHashPopularity[i] > 0) {
+                ++count;
+                // 1 + (hashSize * (count+1)) + (1 * (count+1)) > 250 → truncate
+                if (1 + (m_aichHashes[i].size() * (count + 1)) + (count + 1) > 250)
+                    break;
+            }
+        }
+        aichBuf.writeUInt8(count);
+        uint8 written = 0;
+        for (size_t i = 0; written < count && i < m_aichHashes.size(); ++i) {
+            if (i < m_aichHashPopularity.size() && m_aichHashPopularity[i] > 0) {
+                aichBuf.writeUInt8(m_aichHashPopularity[i]);
+                aichBuf.write(m_aichHashes[i].constData(), m_aichHashes[i].size());
+                ++written;
+            }
+        }
+        QByteArray bsob = aichBuf.buffer().left(static_cast<qsizetype>(aichBuf.length()));
+        io::writeKadTagBsob(data, QByteArrayLiteral(TAG_KADAICHHASHRESULT), bsob);
+    }
 }
 
 void KeyEntry::resetGlobalTrackingMap()

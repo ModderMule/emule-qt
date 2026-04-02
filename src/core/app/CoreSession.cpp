@@ -9,6 +9,7 @@
 #include "ipfilter/IPFilter.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
+#include "files/CollectionKeys.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
@@ -543,6 +544,15 @@ void CoreSession::initClientInfra()
         theApp.clientList = m_clientList.get();
     }
 
+    if (!theApp.clientCredits) {
+        m_clientCredits = std::make_unique<ClientCreditsList>();
+        const QString creditsPath = QDir(thePrefs.configDir()).filePath(
+            QStringLiteral("clients.met"));
+        if (QFile::exists(creditsPath))
+            m_clientCredits->loadList(creditsPath);
+        theApp.clientCredits = m_clientCredits.get();
+    }
+
     if (!theApp.friendList) {
         m_friendList = std::make_unique<FriendList>(this);
         m_friendList->load(thePrefs.configDir());
@@ -566,6 +576,12 @@ void CoreSession::initClientInfra()
         connect(theApp.listenSocket, &ListenSocket::newClientConnection,
                 theApp.clientList, &ClientList::handleIncomingConnection);
     }
+
+    // Initialize collection signing keys
+    if (!m_collectionKeys) {
+        m_collectionKeys = std::make_unique<CollectionKeys>(thePrefs.configDir());
+        m_collectionKeys->initialize();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -574,6 +590,15 @@ void CoreSession::initClientInfra()
 
 void CoreSession::shutdownClientInfra()
 {
+    if (m_clientCredits) {
+        const QString creditsPath = QDir(thePrefs.configDir()).filePath(
+            QStringLiteral("clients.met"));
+        m_clientCredits->saveList(creditsPath);
+        if (theApp.clientCredits == m_clientCredits.get())
+            theApp.clientCredits = nullptr;
+        m_clientCredits.reset();
+    }
+
     if (m_friendList) {
         m_friendList->save(thePrefs.configDir());
         if (theApp.friendList == m_friendList.get())
@@ -686,12 +711,13 @@ void CoreSession::initKademlia()
     kad::Kademlia::setKadSourceResultCallback(
         [](uint32 searchID, const uint8* fileHash, uint32 ip, uint16 tcpPort,
            uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
-           uint8 sourceType, const uint8* buddyHash, const uint8* clientHash) {
+           uint8 sourceType, const uint8* buddyHash, const uint8* clientHash,
+           uint16 udpPort) {
             if (theApp.downloadQueue)
                 theApp.downloadQueue->addKadSourceResult(
                     searchID, fileHash, ip, tcpPort,
                     buddyIP, buddyPort, buddyCrypt,
-                    sourceType, buddyHash, clientHash);
+                    sourceType, buddyHash, clientHash, udpPort);
         });
 
     m_kademlia->start();
@@ -759,7 +785,7 @@ void CoreSession::initKademlia()
 
     // 5. Direct callback: remote firewalled client asks us to connect back via UDP.
     connect(udp, &ClientUDPSocket::directCallbackReceived,
-        this, [](uint32 senderIP, uint16 senderPort, const uint8* data, uint32 size) {
+        this, [](uint32 senderIP, uint16 /*senderPort*/, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
             // Only accept if we're firewalled and Kad is running

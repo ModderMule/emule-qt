@@ -1,0 +1,23 @@
+#########################################
+# Webservices Configuration File 
+# input one service per line 
+# 
+# Format: Name,URL
+#
+# Placeholders
+# ------------
+# #filename       -> name of the file
+# #cleanfilename  -> cleaned up name of the file
+# #name           -> name of the file without extension
+# #cleanname      -> cleaned up name of the file without extension
+# #hashid         -> hashid of the file
+# #filesize       -> size of the file
+#
+# Example 
+# -------
+# eMule Homepage,http://www.emule-project.net
+# Testservice,http://www.webservice.com/search?p=ed2k:#filesize:#hashid
+#
+# Comment lines begin with # or /
+
+eMule FAQ,http://www.emule-project.org/faq/

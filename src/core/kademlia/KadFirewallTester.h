@@ -25,7 +25,9 @@ public:
     static void addPossibleTestContact(const UInt128& clientID, uint32 ip,
                                         uint16 udpPort, uint16 tcpPort,
                                         const UInt128& target, uint8 version,
-                                        const KadUDPKey& udpKey, bool ipVerified);
+                                        const KadUDPKey& udpKey, bool ipVerified,
+                                        uint8 connectOptions = 0,
+                                        const UInt128& clientHash = UInt128());
     static bool needsMoreTestContacts();
     static void reset();
     static void connected();

@@ -113,6 +113,10 @@ private:
     void handleGetClientDetails(const Ipc::IpcMessage& msg);
     void handleGetSharedFileDetails(const Ipc::IpcMessage& msg);
     void handleGetServerState(const Ipc::IpcMessage& msg);
+    void handleSearchKadNotes(const Ipc::IpcMessage& msg);
+    void handleGetCollectionInfo(const Ipc::IpcMessage& msg);
+    void handleSaveCollection(const Ipc::IpcMessage& msg);
+    void handleSearchAuthorCollections(const Ipc::IpcMessage& msg);
 
     // Preference application helpers (split to avoid MSVC C1061 nesting limit)
     bool applyPreferenceA(const QString& key, const QCborValue& val);

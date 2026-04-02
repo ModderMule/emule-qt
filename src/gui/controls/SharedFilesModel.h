@@ -34,9 +34,15 @@ struct SharedFileRow {
     QString ed2kLink;
     bool    isPartFile = false;
     int     uploadingClients = 0;
+    int     queuedClients = 0;
     int     partCount = 0;
     int64_t completedSize = 0;
     QByteArray sharePartMap;    ///< Per-part availability encoding for status bar
+    bool isCollection = false;
+    bool hasCollectionAuthorKey = false;
+    QString partHashesStr;              ///< "p=HASH1:HASH2:...|" or empty (for ed2k link building)
+    QString aichHashStr;                ///< "h=AICHHASH|" or empty (for ed2k link building)
+    int64_t uploadDataRate = 0;         ///< bytes/sec upload rate for this file
 };
 
 /// Table model backing the shared files tree view.

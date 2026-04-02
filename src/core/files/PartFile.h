@@ -10,6 +10,8 @@
 #include "files/KnownFile.h"
 #include "crypto/AICHHashSet.h"
 #include "client/ClientStructs.h"
+#include "utils/Opcodes.h"
+#include "utils/TimeUtils.h"
 
 #include <QFile>
 #include <QObject>
@@ -195,6 +197,7 @@ public:
     void resumeFile();
     void stopFile(bool cancel = false);
     [[nodiscard]] bool completionError() const { return m_completionError; }
+    [[nodiscard]] uint32 dlActiveTime() const { return m_dlActiveTime; }
 
     // -- Priority -------------------------------------------------------------
 
@@ -210,6 +213,11 @@ public:
 
     [[nodiscard]] int sourceCount() const { return static_cast<int>(m_srcList.size()); }
     [[nodiscard]] int a4afSourceCount() const { return static_cast<int>(m_a4afSrcList.size()); }
+
+    // MFC: m_ClientSrcAnswered — file-level timestamp for source exchange throttling
+    [[nodiscard]] uint32 lastAnsweredTime() const { return m_clientSrcAnswered; }
+    void setLastAnsweredTime() { m_clientSrcAnswered = static_cast<uint32>(getTickCount()); }
+    void setLastAnsweredTimeTimeout() { m_clientSrcAnswered = static_cast<uint32>(getTickCount()) + 2 * CONNECTION_LATENCY - SOURCECLIENTREASKS; }
     [[nodiscard]] const std::vector<UpDownClient*>& srcList() const { return m_srcList; }
     [[nodiscard]] std::vector<UpDownClient*>& srcList() { return m_srcList; }
     [[nodiscard]] const std::vector<UpDownClient*>& a4afSrcList() const { return m_a4afSrcList; }
@@ -266,6 +274,8 @@ public:
     // AICH recovery
     [[nodiscard]] AICHRecoveryHashSet& aichRecoveryHashSet() { return m_aichRecoveryHashSet; }
     [[nodiscard]] const AICHRecoveryHashSet& aichRecoveryHashSet() const { return m_aichRecoveryHashSet; }
+    [[nodiscard]] bool isMD4HashsetNeeded() const { return m_md4HashsetNeeded; }
+    void setMD4HashsetNeeded(bool val) { m_md4HashsetNeeded = val; }
     [[nodiscard]] bool isAICHPartHashsetNeeded() const { return m_aichPartHashsetNeeded; }
     void setAICHPartHashsetNeeded(bool val) { m_aichPartHashsetNeeded = val; }
     void requestAICHRecovery(uint32 partNumber);
@@ -349,6 +359,7 @@ private:
     uint32 m_nextMetSaveTime = 0;    // Next scheduled .part.met save (matches MFC m_nNextMetFlushTime)
     uint32 m_lastPurgeTime = 0;
     uint32 m_dlActiveTime = 0;
+    uint32 m_clientSrcAnswered = 0;  // MFC: m_ClientSrcAnswered
 
     // Hashset
     bool m_md4HashsetNeeded = true;

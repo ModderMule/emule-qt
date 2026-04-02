@@ -116,6 +116,11 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, uint32 ip, uint
 
 SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, uint32 /*minFragSize*/)
 {
+    // Called from the UploadBandwidthThrottler thread.
+    // We must NOT call m_socket.writeDatagram() here — QUdpSocket belongs to
+    // the main thread and Qt's QSocketNotifier is not thread-safe.
+    // Instead, prepare datagrams and queue them for flushSendQueue() which
+    // runs on the socket's owning thread.
     std::lock_guard lock(m_sendLock);
 
     SocketSentBytes result;
@@ -142,10 +147,6 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
             std::memcpy(buf.data() + offset + 2, pkt->pBuffer, pkt->size);
 
         // Encrypt if requested.
-        // encryptSendClient writes a crypto header at buf[0..overhead-1]
-        // and expects the plaintext payload at buf[overhead..overhead+len-1].
-        // We placed the plaintext at buf.data()+offset, so pass
-        // buf.data()+offset-overhead so the header goes into the reserved area.
         if (pack.encrypt) {
             uint32 publicIP = thePrefs.publicIP();
             uint32 cryptOverhead = static_cast<uint32>(
@@ -160,22 +161,43 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
             offset = actualStart;
         }
 
-        qint64 sent = m_socket.writeDatagram(
-            reinterpret_cast<const char*>(buf.data() + offset),
-            static_cast<qint64>(rawSize),
-            QHostAddress(pack.ip),
-            pack.port);
+        PreparedDatagram dg;
+        dg.data = QByteArray(reinterpret_cast<const char*>(buf.data() + offset),
+                             static_cast<qsizetype>(rawSize));
+        dg.ip = pack.ip;
+        dg.port = pack.port;
 
-        if (sent < 0) {
-            m_wouldBlock = true;
-            break;
-        }
-
-        result.sentBytesControlPackets += static_cast<uint32>(sent);
+        result.sentBytesControlPackets += rawSize;
+        m_sendReadyQueue.push_back(std::move(dg));
         m_controlQueue.pop_front();
     }
 
+    // Signal the main thread to flush the prepared datagrams.
+    if (!m_sendReadyQueue.empty())
+        QMetaObject::invokeMethod(this, &ClientUDPSocket::flushSendQueue, Qt::QueuedConnection);
+
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// flushSendQueue — runs on the socket's owning thread
+// ---------------------------------------------------------------------------
+
+void ClientUDPSocket::flushSendQueue()
+{
+    std::deque<PreparedDatagram> toSend;
+    {
+        std::lock_guard lock(m_sendLock);
+        toSend.swap(m_sendReadyQueue);
+    }
+
+    for (auto& dg : toSend) {
+        qint64 sent = m_socket.writeDatagram(dg.data, QHostAddress(dg.ip), dg.port);
+        if (sent < 0) {
+            logWarning(QStringLiteral("UDP send failed to %1:%2 — %3")
+                .arg(QHostAddress(dg.ip).toString()).arg(dg.port).arg(m_socket.errorString()));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +237,10 @@ void ClientUDPSocket::onReadyRead()
         qsizetype bufLen = data.size();
 
         uint8 protoByte = buf[0];
+
+        // logDebug(QStringLiteral("UDP recv %1 bytes from %2:%3 proto=0x%4")
+        //     .arg(data.size()).arg(senderAddr.toString()).arg(senderPort)
+        //     .arg(protoByte, 2, 16, QLatin1Char('0')));
 
         if (protoByte == OP_EMULEPROT) {
             // Unencrypted eMule client UDP packet

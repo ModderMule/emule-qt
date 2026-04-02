@@ -41,6 +41,8 @@ std::list<UDPFirewallTester::UsedClient> UDPFirewallTester::s_usedTestClients;
 
 bool UDPFirewallTester::isFirewalledUDP(bool lastStateIfTesting)
 {
+    if (Kademlia::shouldSkipFirewallChecks())
+        return false;
     if (lastStateIfTesting && isFWCheckUDPRunning())
         return s_firewalledLastStateUDP;
     return s_firewalledUDP;
@@ -129,7 +131,9 @@ bool UDPFirewallTester::needsMoreTestContacts()
 void UDPFirewallTester::addPossibleTestContact(const UInt128& clientID, uint32 ip,
                                                 uint16 udpPort, uint16 tcpPort,
                                                 const UInt128& target, uint8 version,
-                                                const KadUDPKey& udpKey, bool ipVerified)
+                                                const KadUDPKey& udpKey, bool ipVerified,
+                                                uint8 connectOptions,
+                                                const UInt128& clientHash)
 {
     // Only accept Kad2 contacts with sufficient version
     if (version < KADEMLIA_VERSION8_49b) {
@@ -143,6 +147,8 @@ void UDPFirewallTester::addPossibleTestContact(const UInt128& clientID, uint32 i
         return;
 
     Contact contact(clientID, ip, udpPort, tcpPort, target, version, udpKey, ipVerified);
+    contact.setConnectOptions(connectOptions);
+    contact.setClientHash(clientHash);
     s_possibleTestClients.push_back(std::move(contact));
     logKad(QStringLiteral("Kad: UDP FW test contact added — pool size %1")
                .arg(s_possibleTestClients.size()));

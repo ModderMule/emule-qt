@@ -55,7 +55,11 @@ int main(int argc, char* argv[])
     std::signal(SIGINT,  unixSignalHandler);
     std::signal(SIGHUP,  unixSignalHandler);
 #endif
+#ifdef Q_OS_LINUX
+    QCoreApplication::setApplicationName(QStringLiteral("Core"));
+#else
     QCoreApplication::setApplicationName(QStringLiteral("eMule Qt Core"));
+#endif
     QCoreApplication::setApplicationVersion(eMule::kAppVersion);
     QCoreApplication::setOrganizationName(QStringLiteral("eMule"));
 

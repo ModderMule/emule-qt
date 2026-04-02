@@ -22,6 +22,7 @@
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
 #include "protocol/Tag.h"
+#include "utils/OtherFunctions.h"
 
 
 namespace eMule::kad {
@@ -103,38 +104,72 @@ void Search::addFileID(const UInt128& id)
     m_fileIDs.push_back(id);
 }
 
-void Search::preparePacketForTags(SafeMemFile& packet, KnownFile* file, uint8 /*targetKadVersion*/)
+void Search::preparePacketForTags(SafeMemFile& packet, KnownFile* file, uint8 targetKadVersion)
 {
     if (!file) {
-        packet.writeUInt32(0);
+        packet.writeUInt8(0);
         return;
     }
 
-    // Count tags first
-    uint32 tagCount = 0;
-    if (!file->fileName().isEmpty())        ++tagCount; // FT_FILENAME
-    ++tagCount;                                          // FT_FILESIZE (always)
-    if (file->fileSize() > 0xFFFFFFFFULL)   ++tagCount; // FT_FILESIZE_HI
-    if (!file->fileType().isEmpty())        ++tagCount;  // FT_FILETYPE
-    if (file->getFileRating() > 0)          ++tagCount;  // FT_FILERATING
+    // Build tag list matching MFC PreparePacketForTags.
+    // We write manually (count + tags) instead of writeKadTagList because
+    // the AICH tag requires BSOB format which writeKadTag doesn't handle.
+    std::vector<Tag> tags;
 
-    packet.writeUInt32(tagCount);
+    // TAG_FILENAME (0x01) — always included (MFC line 1338)
+    tags.emplace_back(FT_FILENAME, file->fileName());
 
-    // Write tags using new ed2k format
-    if (!file->fileName().isEmpty())
-        Tag(FT_FILENAME, file->fileName()).writeNewEd2kTag(packet);
+    // TAG_FILESIZE (0x02) — single uint64 tag (MFC uses CKadTagUInt with uint64)
+    tags.emplace_back(FT_FILESIZE, static_cast<uint64>(file->fileSize()));
 
-    auto sz = static_cast<uint64>(file->fileSize());
-    Tag(FT_FILESIZE, static_cast<uint32>(sz & 0xFFFFFFFF)).writeNewEd2kTag(packet);
+    // TAG_SOURCES (0x15) — complete sources count
+    tags.emplace_back(QByteArrayLiteral(TAG_SOURCES), static_cast<uint32>(file->completeSourcesCount()));
 
-    if (sz > 0xFFFFFFFFULL)
-        Tag(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32)).writeNewEd2kTag(packet);
+    // TAG_KADAICHHASHPUB (0x36) — AICH hash as BSOB (MFC: Kad >= v9)
+    bool hasAICH = targetKadVersion >= KADEMLIA_VERSION9_50a
+                   && file->fileIdentifier().hasAICHHash();
 
+    // TAG_FILETYPE (0x03)
     if (!file->fileType().isEmpty())
-        Tag(FT_FILETYPE, file->fileType()).writeNewEd2kTag(packet);
+        tags.emplace_back(FT_FILETYPE, file->fileType());
 
+    // TAG_FILERATING (0xF7)
     if (file->getFileRating() > 0)
-        Tag(FT_FILERATING, file->getFileRating()).writeNewEd2kTag(packet);
+        tags.emplace_back(FT_FILERATING, file->getFileRating());
+
+    // Media metadata tags (MFC: only if verified metadata exists)
+    if (file->metaDataVer() > 0) {
+        constexpr uint8 metaTags[] = {
+            FT_MEDIA_ARTIST, FT_MEDIA_ALBUM, FT_MEDIA_TITLE,
+            FT_MEDIA_LENGTH, FT_MEDIA_BITRATE, FT_MEDIA_CODEC
+        };
+        for (uint8 id : metaTags) {
+            if (const Tag* t = file->getTag(id)) {
+                // Skip empty strings and zero integers (MFC behavior)
+                if (t->isStr() && t->strValue().isEmpty())
+                    continue;
+                if (t->isInt() && t->intValue() == 0)
+                    continue;
+                tags.push_back(*t);
+            }
+        }
+    }
+
+    // Write count (regular tags + AICH BSOB if present)
+    uint8 totalCount = static_cast<uint8>(tags.size()) + (hasAICH ? 1 : 0);
+    packet.writeUInt8(totalCount);
+
+    // Write regular tags
+    for (const auto& tag : tags)
+        io::writeKadTag(packet, tag);
+
+    // Write AICH BSOB tag separately (writeKadTag can't write BSOB)
+    if (hasAICH) {
+        const auto& aich = file->fileIdentifier().getAICHHash();
+        QByteArray hashData(reinterpret_cast<const char*>(aich.getRawHash()),
+                            static_cast<qsizetype>(AICHHash::getHashSize()));
+        io::writeKadTagBsob(packet, QByteArrayLiteral(TAG_KADAICHHASHPUB), hashData);
+    }
 }
 
 void Search::updateNodeLoad(uint8 load)
@@ -167,31 +202,33 @@ void Search::go(uint32 maxToSend)
     // haven't responded to HELLO yet).  If still empty, just return without
     // stopping — JumpStart will retry later.
     if (m_possible.empty()) {
-        logKad(QStringLiteral("Kad search %1: go() — possible map empty, repopulating from routing table")
-                   .arg(m_searchID));
+        uint32 rtContacts = 0;
+        if (auto* rz = Kademlia::getInstanceRoutingZone())
+            rtContacts = rz->getNumContacts();
+        logKad(QStringLiteral("Kad search %1: go() — possible map empty, routing table has %2 contacts")
+                   .arg(m_searchID).arg(rtContacts));
         UInt128 distance(RoutingZone::localKadId());
         distance.xorWith(m_target);
         if (auto* rz = Kademlia::getInstanceRoutingZone())
             rz->getClosestTo(3, m_target, distance, 50, m_possible, true, false);
+        // Remove contacts already in m_tried to avoid resending
+        for (auto it = m_possible.begin(); it != m_possible.end(); ) {
+            if (m_tried.count(it->first) > 0)
+                it = m_possible.erase(it);
+            else
+                ++it;
+        }
         if (m_possible.empty())
             return;  // Still empty — just return, don't stop (MFC behavior)
     }
 
-    // Convergence detection: when enough close contacts have responded
-    // (m_best >= K), check whether the closest untried contact is farther
-    // than the closest contact that already responded.  If so, the iterative
-    // lookup has converged — no closer contacts exist in the network.
-    // Transition immediately to the action phase (storePacket / search
-    // request) instead of waiting for the full lifetime to expire.
-    // Note: m_tried may still contain non-responsive contacts — we don't
-    // require m_tried to be empty because offline contacts would block
-    // convergence indefinitely.
-    if (!m_possible.empty() && m_best.size() >= kK) {
-        UInt128 closestBest = m_best.begin()->first;
+    // Convergence detection: when K contacts have responded (m_responded >= K),
+    // check whether the closest untried contact is farther than the closest
+    // responded contact.  If so, the iterative lookup has converged.
+    if (!m_possible.empty() && m_responded.size() >= kK) {
+        UInt128 closestResponded = m_responded.begin()->first;
         UInt128 closestPossible = m_possible.begin()->first;
-        if (!(closestPossible < closestBest)) {
-            // All remaining candidates are at least as far as our closest
-            // responded contact — the lookup has converged.
+        if (!(closestPossible < closestResponded)) {
             logKad(QStringLiteral("Kad search %1: converged — best=%2 responded=%3 possible=%4 tried=%5")
                        .arg(m_searchID).arg(m_best.size()).arg(m_responded.size())
                        .arg(m_possible.size()).arg(m_tried.size()));
@@ -218,15 +255,30 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
 {
     m_lastResponse = time(nullptr);
 
-    // Record the responding contact: move from m_tried → m_best, mark in m_responded.
-    // Without this, storePacket() would find m_responded empty and skip the store phase.
+    // Validate response size (MFC Search.cpp:341-344).
+    // Reject nodes sending more contacts than requested (protocol violation / malicious).
+    {
+        uint8 expected = getRequestContactCount();
+        if (results.size() > expected
+            && !(m_requestedMoreNodesContact != nullptr
+                 && results.size() <= KADEMLIA_FIND_VALUE_MORE)) {
+            logKad(QStringLiteral("Kad search %1: node %2:%3 sent %4 contacts (expected <= %5), ignoring")
+                       .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort)
+                       .arg(results.size()).arg(expected));
+            return;
+        }
+    }
+
+    // Find the responding contact in m_tried and record in m_responded.
+    // MFC keeps responders in m_tried; m_responded tracks who replied (keyed by distance).
     bool foundSender = false;
+    UInt128 uFromDistance;
+    Contact* pFromContact = nullptr;
     for (auto it = m_tried.begin(); it != m_tried.end(); ++it) {
         Contact* c = it->second;
         if (c->getIPAddress() == fromIP && c->getUDPPort() == fromPort) {
-            m_best[it->first] = c;
-            m_responded[c->getClientID()] = true;
-            m_tried.erase(it);
+            uFromDistance = it->first;
+            pFromContact = c;
             foundSender = true;
             break;
         }
@@ -247,37 +299,108 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
                 contact->getClientID(), contact->getIPAddress(),
                 contact->getUDPPort(), contact->getTCPPort(),
                 m_target, contact->getVersion(),
-                contact->getUDPKey(), contact->isIpVerified());
+                contact->getUDPKey(), contact->isIpVerified(),
+                contact->connectOptions(), contact->clientHash());
         }
         UDPFirewallTester::queryNextClient();
     }
 
+    // Anti-spam: reject duplicate IPs and limit to 2 per /24 subnet (MFC Search.cpp:379-423).
+    std::map<uint32, uint32> receivedIPs;
+    std::map<uint32, uint32> receivedSubnets;
+    receivedIPs[fromIP] = 1;             // node must not answer with itself
+    receivedSubnets[fromIP & ~0xFFu] = 1;
+
+    bool providedCloserContacts = false;
+
     for (auto* contact : results) {
-        // Dedup by distance key for distance-keyed maps (m_best, m_tried, m_possible),
-        // by clientID for clientID-keyed map (m_responded). Matches MFC ProcessResponse().
+        // Dedup by distance key (MFC Search.cpp:399-400).
+        // m_tried contains ALL contacted nodes (responded or not), so checking
+        // m_tried + m_possible covers everything. m_best entries are always also
+        // in m_tried, so no separate m_best check needed.
         UInt128 dist = contact->getDistance();
-        if (m_best.count(dist) > 0 ||
-            m_tried.count(dist) > 0 ||
-            m_responded.count(contact->getClientID()) > 0 ||
-            m_possible.count(dist) > 0) {
+        if (m_tried.count(dist) > 0 || m_possible.count(dist) > 0) {
             delete contact;
             continue;
         }
+
+        // Reject duplicate IPs (MFC Search.cpp:403-407)
+        if (receivedIPs.count(contact->getIPAddress()) > 0) {
+            delete contact;
+            continue;
+        }
+        receivedIPs[contact->getIPAddress()] = 1;
+
+        // Limit to 2 IPs per /24 subnet (MFC Search.cpp:412-423)
+        uint32 subnetIP = contact->getIPAddress() & ~0xFFu;
+        if (!isLanIP(contact->getNetIP())) {
+            auto sit = receivedSubnets.find(subnetIP);
+            if (sit != receivedSubnets.end()) {
+                if (sit->second >= 2) {
+                    delete contact;
+                    continue;
+                }
+                ++sit->second;
+            } else {
+                receivedSubnets[subnetIP] = 1;
+            }
+        }
+
+        if (foundSender && dist < uFromDistance)
+            providedCloserContacts = true;
 
         // Add to possible contacts
         m_possible[contact->getDistance()] = contact;
 
         // Track in lookup history
         if (m_lookupHistory) {
-            // Find the from-contact
             bool closer = contact->getDistance() < m_closestDistantFound;
-            m_lookupHistory->contactReceived(contact, nullptr, contact->getDistance(), closer);
+            m_lookupHistory->contactReceived(contact, pFromContact, contact->getDistance(), closer);
             if (closer)
                 m_closestDistantFound = contact->getDistance();
         }
     }
 
+    // Record response in m_responded (keyed by distance, matching MFC m_mapResponded).
+    if (foundSender)
+        m_responded[uFromDistance] = providedCloserContacts;
+
     ++m_totalRequestAnswers;
+
+    // Auto-query closer contacts using persistent m_best (MFC Search.cpp:429-452).
+    // m_best tracks the top ALPHA_QUERY closest contacts discovered so far.
+    // When a new contact closer than the responder makes it into the top set,
+    // it's immediately queried — dramatically speeding up convergence.
+    if (pFromContact != nullptr && !m_stopping) {
+        // Collect contacts to auto-query first, then erase from m_possible
+        // (avoid iterator invalidation during range-for).
+        ContactMap toAutoQuery;
+        for (auto& [dist, contact] : m_possible) {
+            if (!(dist < uFromDistance))
+                break;  // m_possible sorted by distance; stop once past responder
+            if (m_tried.count(dist) > 0)
+                continue;  // already tried
+
+            // Check if this contact fits in the top ALPHA_QUERY (MFC m_mapBest)
+            bool isTop = (m_best.size() < kAlphaQuery);
+            if (!isTop) {
+                auto itLast = std::prev(m_best.end());
+                if (dist < itLast->first) {
+                    m_best.erase(itLast);
+                    isTop = true;
+                }
+            }
+            if (isTop) {
+                m_best[dist] = contact;
+                toAutoQuery[dist] = contact;
+            }
+        }
+        for (auto& [dist, contact] : toAutoQuery) {
+            m_tried[dist] = contact;
+            m_possible.erase(dist);
+            sendFindValue(contact);
+        }
+    }
 
     // NodeSpecial: check if exact match (distance 0) was found among results.
     // Matches MFC Search.cpp:878-885.
@@ -316,12 +439,10 @@ void Search::processResult(const UInt128& answer, TagList& info, uint32 fromIP, 
 
 void Search::processResultFile(const UInt128& answer, TagList& info)
 {
-    ++m_answers;
-
-    // Extract source information from tags
+    // Extract source information from tags (MFC Search.cpp:915-948)
     uint32 sourceIP = 0;
     uint16 sourcePort = 0;
-    uint16 sourceUPort = 0;
+    uint16 udpPort = 0;
     uint8 sourceType = 0;
     uint32 buddyIP = 0;
     uint16 buddyPort = 0;
@@ -332,36 +453,54 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
         if (!tag.isInt())
             continue;
         switch (tag.nameId()) {
-        case 0xFE: sourceIP      = tag.intValue();                    break; // TAG_SOURCEIP
-        case 0xFD: sourcePort    = static_cast<uint16>(tag.intValue()); break; // TAG_SOURCEPORT
-        case 0xFC: sourceUPort   = static_cast<uint16>(tag.intValue()); break; // TAG_SOURCEUPORT
-        case 0xFF: sourceType    = static_cast<uint8>(tag.intValue());  break; // TAG_SOURCETYPE
-        case 0xFB: buddyIP       = tag.intValue();                    break; // TAG_BUDDYIP
-        case 0xFA: buddyPort     = static_cast<uint16>(tag.intValue()); break; // TAG_BUDDYPORT
-        case 0xF3: cryptOptions  = static_cast<uint8>(tag.intValue());  break; // TAG_ENCRYPTION
+        case FT_SOURCEIP:    sourceIP      = tag.intValue();                      break;
+        case FT_SOURCEPORT:  sourcePort    = static_cast<uint16>(tag.intValue()); break;
+        case FT_SOURCEUPORT: udpPort       = static_cast<uint16>(tag.intValue()); break;
+        case FT_SOURCETYPE:  sourceType    = static_cast<uint8>(tag.intValue());  break;
+        case FT_SERVERIP:    buddyIP       = tag.intValue();                      break;
+        case FT_SERVERPORT:  buddyPort     = static_cast<uint16>(tag.intValue()); break;
+        case FT_ENCRYPTION:  cryptOptions  = static_cast<uint8>(tag.intValue());  break;
         default: break;
         }
     }
 
-    // Handle source types — MFC SearchManager.cpp ProcessResult().
+    // FT_BUDDYHASH is a string tag (hex MD4), not int — parse separately (MFC Search.cpp:941-946)
+    uint8 parsedBuddyHash[16]{};
+    bool hasBuddyHash = false;
+    for (const auto& tag : info) {
+        if (tag.isStr() && tag.nameId() == FT_BUDDYHASH) {
+            if (strmd4(tag.strValue(), parsedBuddyHash))
+                hasBuddyHash = true;
+            break;
+        }
+    }
+
+    // Handle source types — MFC Search.cpp:952-962, DownloadQueue.cpp:1529-1601
     uint8 buddyHash[16]{};
     switch (sourceType) {
-    case 1: // High-ID, UDP firewalled
-    case 2: // High-ID, UDP open
-        break; // Use sourceIP and sourcePort as-is
-    case 4: { // Firewalled Kad source — needs buddy callback
-        // The answer (source's Kad node ID) serves as its buddy ID.
-        answer.toByteArray(buddyHash);
-        sourceIP = 0;
-        sourcePort = 0;
+    case 4:
+    case 1:
+        // Non-firewalled users (MFC DownloadQueue.cpp:1530-1548)
         break;
-    }
-    case 3: // Firewalled, needs server callback — not useable from Kad
+    case 5:
+    case 3:
+        // Firewalled with buddy callback (MFC DownloadQueue.cpp:1553-1582)
+        if (hasBuddyHash)
+            std::memcpy(buddyHash, parsedBuddyHash, 16);
+        break;
+    case 6:
+        // Direct UDP callback (MFC DownloadQueue.cpp:1584-1601)
+        break;
+    case 2:
+        // MFC DownloadQueue.cpp:1550: "Don't use this type... Some clients will process it wrong."
+        return;
     default:
-        logKad(QStringLiteral("Kad search %1: skipping unuseable source type %2 from %3")
+        logKad(QStringLiteral("Kad search %1: skipping unknown source type %2 from %3")
                    .arg(m_searchID).arg(sourceType).arg(answer.toHexString()));
         return;
     }
+
+    ++m_answers; // Only count accepted types (MFC Search.cpp:958)
 
     // Report via callback to DownloadQueue
     const auto& cb = Kademlia::kadSourceResultCallback();
@@ -375,7 +514,7 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
         uint8 sourceClientHash[16];
         answer.toByteArray(sourceClientHash);
         cb(m_searchID, fileHash, sourceIP, sourcePort, buddyIP, buddyPort, cryptOptions,
-           sourceType, buddyHash, sourceClientHash);
+           sourceType, buddyHash, sourceClientHash, udpPort);
     }
 
     logKad(QStringLiteral("Kad search %1: got file source %2, type=%3 IP=%4:%5 buddy=%6:%7")
@@ -504,11 +643,45 @@ void Search::jumpStart()
     if ((now - m_lastResponse) < static_cast<time_t>(kSearchJumpstartCooldown))
         return;
 
+    // If we ran out of contacts, stop search (MFC Search.cpp:268-270).
+    if (m_possible.empty()) {
+        prepareToStop();
+        return;
+    }
+
+    // Dead-node detection (MFC Search.cpp:277-293):
+    // For FIND_VALUE searches (return 2 contacts), if the closest tried contacts
+    // are all dead, ask a responding contact for MORE nodes (11 instead of 2/4).
+    // m_tried contains ALL contacted nodes; m_responded tracks which ones replied.
+    if (m_requestedMoreNodesContact == nullptr
+        && getRequestContactCount() == KADEMLIA_FIND_VALUE
+        && m_tried.size() >= 3u * KADEMLIA_FIND_VALUE) {
+        auto itTried = m_tried.begin();
+        bool closestAreDead = true;
+        for (int i = 0; i < KADEMLIA_FIND_VALUE && itTried != m_tried.end(); ++i, ++itTried) {
+            if (m_responded.count(itTried->first) > 0) {
+                closestAreDead = false;
+                break;
+            }
+        }
+        if (closestAreDead) {
+            // Find first responded contact further out to re-ask for more
+            for (; itTried != m_tried.end(); ++itTried) {
+                if (m_responded.count(itTried->first) > 0) {
+                    logKad(QStringLiteral("Kad search %1: closest FIND_VALUE nodes dead, re-asking for more")
+                               .arg(m_searchID));
+                    sendFindValue(itTried->second, true);
+                    return;
+                }
+            }
+        }
+    }
+
     // Send a single packet to unstick a stalled search (MFC sends 1 per jumpstart).
     go(kJumpstartMaxSend);
 }
 
-void Search::sendFindValue(Contact* contact, bool /*reAskMore*/)
+void Search::sendFindValue(Contact* contact, bool reAskMore)
 {
     if (!contact || m_stopping)
         return;
@@ -531,10 +704,21 @@ void Search::sendFindValue(Contact* contact, bool /*reAskMore*/)
     {
         SafeMemFile packet;
         // Type byte determines how many contacts the receiver returns
+        // Must match MFC GetRequestContactCount() mapping
         uint8 searchType = KADEMLIA_FIND_NODE;
         if (m_type == SearchType::File || m_type == SearchType::Keyword ||
-            m_type == SearchType::Notes)
+            m_type == SearchType::FindSource || m_type == SearchType::Notes)
             searchType = KADEMLIA_FIND_VALUE;
+        else if (m_type == SearchType::StoreFile || m_type == SearchType::StoreKeyword ||
+                 m_type == SearchType::StoreNotes || m_type == SearchType::FindBuddy)
+            searchType = KADEMLIA_STORE;
+
+        // Dead-node recovery: ask for more contacts (MFC Search.cpp:291).
+        if (reAskMore && m_requestedMoreNodesContact == nullptr) {
+            m_requestedMoreNodesContact = contact;
+            searchType = KADEMLIA_FIND_VALUE_MORE;
+        }
+
         packet.writeUInt8(searchType);
         io::writeUInt128(packet, m_target);
         // Third field: the contact's Kad ID — the receiver checks this
@@ -555,6 +739,11 @@ void Search::prepareToStop()
 
     m_stopping = true;
     m_storePhaseStarted = time(nullptr);
+
+    // Adjust m_created so the search expires within ~15 seconds.
+    // MFC: m_tCreated = time(NULL) - uBaseTime + SEC(15);
+    // This lets SearchManager::jumpStart() delete it on the next cycle.
+    m_created = time(nullptr) - static_cast<time_t>(getLifetime()) + 15;
 
     if (m_lookupHistory)
         m_lookupHistory->setSearchStopped();
@@ -600,14 +789,19 @@ void Search::storePacket()
     default: break;
     }
 
-    // Collect the best responded contacts from m_best
+    // Send to the closest responded contacts from m_tried (MFC iterates m_mapPossible
+    // for responded entries; we iterate m_tried which is sorted by distance).
     uint32 storeCount = 0;
-    for (auto& [dist, contact] : m_best) {
+    for (auto& [dist, contact] : m_tried) {
         if (!contact || storeCount >= maxStore)
             break;
 
         // Only store to contacts that responded
-        if (m_responded.count(contact->getClientID()) == 0)
+        if (m_responded.count(dist) == 0)
+            continue;
+
+        // Distance tolerance: skip contacts too far from target (MFC Search.cpp:479-482).
+        if (dist.get32BitChunk(0) > kSearchTolerance && !isLanIP(contact->getNetIP())) // or always bypass in LAN mode? && !(Kademlia::instance() && Kademlia::instance()->isRunningInLANMode())
             continue;
 
         switch (m_type) {
@@ -676,10 +870,6 @@ void Search::storePacket()
             break;
         }
         case SearchType::StoreKeyword: {
-            // Build keyword publish packet: targetID + fileCount + [fileID + tags]*
-            SafeMemFile packet;
-            io::writeUInt128(packet, m_target);
-
             // Collect files that are still shared
             std::vector<std::pair<UInt128, KnownFile*>> validFiles;
             for (const auto& fileID : m_fileIDs) {
@@ -691,13 +881,29 @@ void Search::storePacket()
                     validFiles.emplace_back(fileID, file);
             }
 
-            packet.writeUInt16(static_cast<uint16>(validFiles.size()));
-            for (const auto& [fileID, file] : validFiles) {
-                io::writeUInt128(packet, fileID);
-                preparePacketForTags(packet, file, KADEMLIA_VERSION);
-            }
+            // MFC batches up to 50 files per PUBLISH_KEY_REQ packet
+            constexpr size_t kMaxFilesPerPacket = 50;
+            size_t totalFiles = std::min(validFiles.size(), size_t{150});
 
-            {
+            for (size_t i = 0; i < totalFiles; ) {
+                SafeMemFile packet;
+                io::writeUInt128(packet, m_target);
+                auto countPos = packet.position();
+                packet.writeUInt16(0); // placeholder
+
+                uint16 packetFileCount = 0;
+                for (; packetFileCount < kMaxFilesPerPacket && i < totalFiles; ++i) {
+                    io::writeUInt128(packet, validFiles[i].first);
+                    preparePacketForTags(packet, validFiles[i].second, KADEMLIA_VERSION);
+                    ++packetFileCount;
+                }
+
+                // Fix up file count
+                auto endPos = packet.position();
+                packet.seek(countPos, 0);
+                packet.writeUInt16(packetFileCount);
+                packet.seek(endPos, 0);
+
                 UInt128 pubKeyClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_KEY_REQ,
                                         contact->getIPAddress(), contact->getUDPPort(),
@@ -711,19 +917,14 @@ void Search::storePacket()
             SafeMemFile packet;
             io::writeUInt128(packet, m_target);
             auto* prefs = Kademlia::getInstancePrefs();
-            // MFC uses GetClientHash() (ED2K user hash) for source publishing,
-            // NOT GetKadID().  The receiver stores this as the source's client hash
-            // and uses it for encryption key derivation when connecting back.
+            // MFC uses GetClientHash() (ED2K user hash) for source publishing
             io::writeUInt128(packet, prefs ? prefs->clientHash() : RoutingZone::localKadId());
 
-            // Build source tags matching MFC format.  The receiver (MFC
-            // Process_KADEMLIA2_PUBLISH_SOURCE_REQ) requires TAG_SOURCETYPE
-            // to be present — without it, m_bSource stays false and the
-            // publish is silently dropped.  TAG_SOURCEIP is NOT sent; the
-            // receiver adds it from the sender's actual IP address.
+            // Build source tags matching MFC StorePacket format
+            // Source types: 1=HighID, 3=FW+buddy(<=4GB), 4=HighID(>4GB),
+            //               5=FW+buddy(>4GB), 6=FW+directUDP
             std::vector<Tag> tags;
 
-            // Look up file for size information
             uint8 targetHash[16];
             m_target.toByteArray(targetHash);
             auto* pubFile = theApp.sharedFileList
@@ -732,50 +933,73 @@ void Search::storePacket()
 
             auto* kadInst = Kademlia::instance();
             if (kadInst && kadInst->isFirewalled()) {
-                auto* clientList = Kademlia::getClientList();
-                auto* buddy = clientList ? clientList->getBuddy() : nullptr;
-                if (buddy) {
-                    // Source type 3 (firewalled) or 5 (firewalled, >4GB)
-                    tags.emplace_back(QByteArray(TAG_SOURCETYPE, 1),
-                                      static_cast<uint32>(largeFile ? 5 : 3));
-                    tags.emplace_back(QByteArray(TAG_SERVERIP, 1), buddy->userIP());
-                    tags.emplace_back(QByteArray(TAG_SERVERPORT, 1),
-                                      static_cast<uint32>(buddy->userPort()));
-                    tags.emplace_back(QByteArray(TAG_BUDDYHASH, 1), buddy->userHash());
-                    tags.emplace_back(QByteArray(TAG_SOURCEPORT, 1),
-                                      static_cast<uint32>(thePrefs.port()));
-                    tags.emplace_back(QByteArray(TAG_SOURCEUPORT, 1),
-                                      static_cast<uint32>(thePrefs.udpPort()));
-                    if (pubFile)
-                        tags.emplace_back(QByteArray(TAG_FILESIZE, 1),
-                                          static_cast<uint64>(pubFile->fileSize()));
+                // Check for direct UDP callback (source type 6)
+                bool directCallback = kadInst->isRunning()
+                    && !UDPFirewallTester::isFirewalledUDP(true)
+                    && UDPFirewallTester::isVerified();
 
-                    uint8 byCrypt = 0;
-                    if (buddy->supportsCryptLayer())  byCrypt |= 0x01;
-                    if (buddy->requestsCryptLayer())  byCrypt |= 0x02;
-                    if (buddy->requiresCryptLayer())  byCrypt |= 0x04;
-                    tags.emplace_back(QByteArray(TAG_ENCRYPTION, 1),
-                                      static_cast<uint32>(byCrypt));
+                if (directCallback) {
+                    // Source type 6: firewalled but direct UDP callback possible
+                    tags.emplace_back(FT_SOURCETYPE,
+                                      static_cast<uint32>(6));
+                    tags.emplace_back(FT_SOURCEPORT,
+                                      static_cast<uint32>(thePrefs.port()));
+                    if (prefs && !prefs->useExternKadPort())
+                        tags.emplace_back(FT_SOURCEUPORT,
+                                          static_cast<uint32>(prefs->internKadPort()));
+                    if (pubFile)
+                        tags.emplace_back(FT_FILESIZE,
+                                          static_cast<uint64>(pubFile->fileSize()));
+                } else {
+                    auto* clientList = Kademlia::getClientList();
+                    auto* buddy = clientList ? clientList->getBuddy() : nullptr;
+                    if (!buddy) {
+                        // Firewalled, no direct callback, no buddy — can't publish
+                        prepareToStop();
+                        break;
+                    }
+                    // Source type 3 (firewalled <=4GB) or 5 (firewalled >4GB)
+                    tags.emplace_back(FT_SOURCETYPE,
+                                      static_cast<uint32>(largeFile ? 5 : 3));
+                    tags.emplace_back(FT_SERVERIP,
+                                      static_cast<uint32>(buddy->userIP()));
+                    tags.emplace_back(FT_SERVERPORT,
+                                      static_cast<uint32>(buddy->userPort()));
+                    // FT_BUDDYHASH: hex string of KadID XOR (MFC: md4str(uBuddyID))
+                    UInt128 buddyID(true);
+                    buddyID.xorWith(prefs ? prefs->kadId() : RoutingZone::localKadId());
+                    tags.emplace_back(FT_BUDDYHASH,
+                                      buddyID.toHexString());
+                    tags.emplace_back(FT_SOURCEPORT,
+                                      static_cast<uint32>(thePrefs.port()));
+                    if (prefs && !prefs->useExternKadPort())
+                        tags.emplace_back(FT_SOURCEUPORT,
+                                          static_cast<uint32>(prefs->internKadPort()));
+                    if (pubFile)
+                        tags.emplace_back(FT_FILESIZE,
+                                          static_cast<uint64>(pubFile->fileSize()));
                 }
             } else {
                 // Not firewalled: source type 1 (normal) or 4 (>4GB)
-                tags.emplace_back(QByteArray(TAG_SOURCETYPE, 1),
+                tags.emplace_back(FT_SOURCETYPE,
                                   static_cast<uint32>(largeFile ? 4 : 1));
-                tags.emplace_back(QByteArray(TAG_SOURCEPORT, 1),
+                tags.emplace_back(FT_SOURCEPORT,
                                   static_cast<uint32>(thePrefs.port()));
-                tags.emplace_back(QByteArray(TAG_SOURCEUPORT, 1),
-                                  static_cast<uint32>(thePrefs.udpPort()));
+                if (prefs && !prefs->useExternKadPort())
+                    tags.emplace_back(FT_SOURCEUPORT,
+                                      static_cast<uint32>(prefs->internKadPort()));
                 if (pubFile)
-                    tags.emplace_back(QByteArray(TAG_FILESIZE, 1),
+                    tags.emplace_back(FT_FILESIZE,
                                       static_cast<uint64>(pubFile->fileSize()));
-                // TAG_ENCRYPTION: connect options for non-firewalled sources
-                uint8 byCrypt = 0;
-                if (thePrefs.cryptLayerSupported())  byCrypt |= 0x01;
-                if (thePrefs.cryptLayerRequested())  byCrypt |= 0x02;
-                if (thePrefs.cryptLayerRequired())   byCrypt |= 0x04;
-                tags.emplace_back(QByteArray(TAG_ENCRYPTION, 1),
-                                  static_cast<uint32>(byCrypt));
             }
+
+            // FT_ENCRYPTION: connect options (MFC: CKadTagUInt8)
+            uint8 byCrypt = 0;
+            if (thePrefs.cryptLayerSupported())  byCrypt |= 0x01;
+            if (thePrefs.cryptLayerRequested())  byCrypt |= 0x02;
+            if (thePrefs.cryptLayerRequired())   byCrypt |= 0x04;
+            tags.emplace_back(FT_ENCRYPTION,
+                              static_cast<uint32>(byCrypt));
 
             io::writeKadTagList(packet, tags);
             logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ pktLen=%1 tags=%2 srcType=%3")
@@ -809,6 +1033,7 @@ void Search::storePacket()
                     ? theApp.sharedFileList->getFileByID(hash) : nullptr;
             }
             if (noteFile) {
+                // MFC STORENOTES: TAG_FILENAME, TAG_FILERATING, TAG_DESCRIPTION, TAG_FILESIZE
                 if (!noteFile->fileName().isEmpty())
                     tags.emplace_back(FT_FILENAME, noteFile->fileName());
                 uint32 rating = noteFile->getFileRating();
@@ -816,13 +1041,9 @@ void Search::storePacket()
                     tags.emplace_back(FT_FILERATING, rating);
                 QString comment = noteFile->getFileComment();
                 if (!comment.isEmpty())
-                    tags.emplace_back(FT_FILECOMMENT, comment);
-                auto sz = static_cast<uint64>(noteFile->fileSize());
-                tags.emplace_back(FT_FILESIZE,
-                                  static_cast<uint32>(sz & 0xFFFFFFFF));
-                if (sz > 0xFFFFFFFFULL)
-                    tags.emplace_back(FT_FILESIZE_HI,
-                                      static_cast<uint32>(sz >> 32));
+                    tags.emplace_back(QByteArrayLiteral(TAG_DESCRIPTION), comment); // 0x0B, not FT_FILECOMMENT
+                // Single uint64 filesize tag (MFC: CKadTagUInt(TAG_FILESIZE, pFile->GetFileSize()))
+                tags.emplace_back(FT_FILESIZE, static_cast<uint64>(noteFile->fileSize()));
             }
 
             io::writeKadTagList(packet, tags);
@@ -900,14 +1121,20 @@ void Search::storePacket()
 
 uint8 Search::getRequestContactCount() const
 {
+    // Must match MFC GetRequestContactCount() (Search.cpp:1510-1534).
     switch (m_type) {
     case SearchType::Node:
     case SearchType::NodeComplete:
     case SearchType::NodeSpecial:
     case SearchType::NodeFwCheckUDP:
-        return 11; // KADEMLIA_FIND_NODE returns more contacts
+        return KADEMLIA_FIND_NODE;  // 11
+    case SearchType::StoreFile:
+    case SearchType::StoreKeyword:
+    case SearchType::StoreNotes:
+    case SearchType::FindBuddy:
+        return KADEMLIA_STORE;      // 4
     default:
-        return 2;  // KADEMLIA_FIND_VALUE returns fewer
+        return KADEMLIA_FIND_VALUE; // 2
     }
 }
 

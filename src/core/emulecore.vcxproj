@@ -178,7 +178,9 @@
     <ClCompile Include="client\ClientList.cpp" />
     <ClCompile Include="net\ClientReqSocket.cpp" />
     <ClCompile Include="net\ClientUDPSocket.cpp" />
+    <ClCompile Include="files\Collection.cpp" />
     <ClCompile Include="files\CollectionFile.cpp" />
+    <ClCompile Include="files\CollectionKeys.cpp" />
     <ClCompile Include="app\CoreSession.cpp" />
     <ClCompile Include="client\CorruptionBlackBox.cpp" />
     <ClCompile Include="client\DeadSourceList.cpp" />
@@ -285,7 +287,9 @@
     <ClInclude Include="client\ClientStateDefs.h" />
     <ClInclude Include="client\ClientStructs.h" />
     <QtMoc Include="net\ClientUDPSocket.h" />
+    <ClInclude Include="files\Collection.h" />
     <ClInclude Include="files\CollectionFile.h" />
+    <ClInclude Include="files\CollectionKeys.h" />
     <ClInclude Include="utils\ContainerUtils.h" />
     <QtMoc Include="app\CoreSession.h" />
     <ClInclude Include="client\CorruptionBlackBox.h" />

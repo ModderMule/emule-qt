@@ -78,11 +78,11 @@ void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
         // Kad v2 (v7+): extended request with client hash + connect options for obfuscation support
         SafeMemFile packet;
         packet.writeUInt16(tcpPort);
-        io::writeUInt128(packet, prefs ? prefs->clientHash() : UInt128());
-        packet.writeUInt8(prefs ? prefs->myConnectOptions() : uint8{0});
+        io::writeUInt128(packet, prefs ? prefs->kadId() : UInt128());
+        packet.writeUInt8(prefs ? prefs->myConnectOptions(true, false) : uint8{0});
         sendPacket(packet, KADEMLIA_FIREWALLED2_REQ, ip, udpPort, senderKey, nullptr);
         logKad(QStringLiteral("Kad: Sent FIREWALLED2_REQ (v2) to %1:%2, tcpPort=%3")
-                   .arg(ip).arg(udpPort).arg(tcpPort));
+                   .arg(ipToString(ip)).arg(udpPort).arg(tcpPort));
     } else {
         // Kad v1 compat (v2–v6): legacy request with port only
         SafeMemFile packet;
@@ -109,14 +109,59 @@ void KademliaUDPListener::sendMyDetails(uint8 opcode, uint32 ip, uint16 udpPort,
     // Write our KadID
     io::writeUInt128(packet, RoutingZone::localKadId());
 
-    // Write our ED2K TCP port (MFC: thePrefs.GetPort(), line 115)
+    // Write our ED2K TCP port
     packet.writeUInt16(thePrefs.port());
 
     // Write version
     packet.writeUInt8(KADEMLIA_VERSION);
 
-    // Write tags count (0 for minimal hello)
-    packet.writeUInt8(0);
+    // Determine which tags to send (matching MFC SendMyDetails)
+    auto* prefs = Kademlia::getInstancePrefs();
+    bool sendSourceUPort = prefs && !prefs->useExternKadPort();
+    bool sendMiscOptions = false;
+    bool sendCrypto = false;
+    if (kadVersion >= KADEMLIA_VERSION8_49b) {
+        bool tcpFW = prefs ? prefs->firewalled() : false;
+        bool udpFW = UDPFirewallTester::isFirewalledUDP(true);
+        if (requestAck || tcpFW || udpFW)
+            sendMiscOptions = true;
+        // Send connect options + client hash so peers can encrypt TCP connections to us
+        if (prefs && thePrefs.cryptLayerSupported())
+            sendCrypto = true;
+    }
+
+    uint8 tagCount = (sendSourceUPort ? 1 : 0) + (sendMiscOptions ? 1 : 0)
+                     + (sendCrypto ? 2 : 0);
+    packet.writeUInt8(tagCount);
+
+    if (sendSourceUPort) {
+        // TAG_SOURCEUPORT — internal Kad UDP port when it differs from external
+        Tag sourceUPort(FT_SOURCEUPORT, static_cast<uint32>(prefs->internKadPort()));
+        io::writeKadTag(packet, sourceUPort);
+    }
+
+    if (sendMiscOptions) {
+        // TAG_KADMISCOPTIONS — bit0=UDP-FW, bit1=TCP-FW, bit2=requestACK
+        uint8 udpFW = UDPFirewallTester::isFirewalledUDP(true) ? 1 : 0;
+        uint8 tcpFW = (prefs && prefs->firewalled()) ? 1 : 0;
+        uint8 reqACK = requestAck ? 1 : 0;
+        uint8 miscOptions = static_cast<uint8>((reqACK << 2) | (tcpFW << 1) | (udpFW << 0));
+        Tag miscTag(FT_KADMISCOPTIONS, static_cast<uint32>(miscOptions));
+        io::writeKadTag(packet, miscTag);
+    }
+
+    if (sendCrypto) {
+        // TAG_ENCRYPTION — connect options: bit0=support, bit1=request, bit2=require
+        Tag cryptTag(FT_ENCRYPTION,
+                     static_cast<uint32>(prefs->myConnectOptions(true, false)));
+        io::writeKadTag(packet, cryptTag);
+
+        // Client hash (FT_USER_COUNT) — our ED2K user hash so peers can encrypt TCP to us
+        uint8 hashBytes[16];
+        prefs->clientHash().toByteArray(hashBytes);
+        Tag hashTag(FT_USER_COUNT, hashBytes);
+        io::writeKadTag(packet, hashTag);
+    }
 
     if (opcode == KADEMLIA2_HELLO_REQ) {
         m_hellosSent.fetch_add(1, std::memory_order_relaxed);
@@ -331,9 +376,10 @@ void KademliaUDPListener::expireClientSearch(const KadClientSearcher* expireImme
             // Caller is destructing — remove silently without callback
             it = m_fetchNodeIDRequests.erase(it);
         } else if (it->expire < now) {
-            // Timed out — notify the requester before removal
-            it->requester->kadSearchNodeIDByIPResult(KadClientSearchResult::Timeout, nullptr);
+            // Erase before callback — the callback may re-enter m_fetchNodeIDRequests
+            auto* requester = it->requester;
             it = m_fetchNodeIDRequests.erase(it);
+            requester->kadSearchNodeIDByIPResult(KadClientSearchResult::Timeout, nullptr);
         } else {
             ++it;
         }
@@ -350,7 +396,7 @@ bool KademliaUDPListener::addContact_KADEMLIA2(const uint8* data, uint32 len, ui
                                                  bool update, bool fromHelloReq,
                                                  bool* outRequestsACK, UInt128* outContactID)
 {
-    if (len < 25) // 16 (ID) + 2 (TCP port) + 1 (version) + minimum
+    if (len < 19) // 16 (ID) + 2 (TCP port) + 1 (version)
         return false;
 
     SafeMemFile io(data, len);
@@ -363,18 +409,37 @@ bool KademliaUDPListener::addContact_KADEMLIA2(const uint8* data, uint32 len, ui
     if (outContactID)
         *outContactID = contactID;
 
-    // Read tags (if any remaining data)
+    // Read tags (if any remaining data) — MFC AddContact_KADEMLIA2
     uint8 tagCount = 0;
     if (io.position() < io.length())
         tagCount = io.readUInt8();
 
+    bool bUDPFirewalled = false;
+    bool bTCPFirewalled = false;
     bool reqACK = false;
+    uint8 peerConnectOptions = 0;
+    UInt128 peerClientHash;
     for (uint8 i = 0; i < tagCount; ++i) {
         try {
             Tag tag = io::readKadTag(io);
-            // Check for misc options tag
-            if (tag.isInt() && tag.nameId() == 0xF7) { // TAG_KADMISCOPTIONS
-                reqACK = (tag.intValue() & 0x01) != 0;
+            if (tag.isInt() && tag.nameId() == FT_SOURCEUPORT) {
+                // TAG_SOURCEUPORT — update UDP port from internal port tag
+                uint16 port = static_cast<uint16>(tag.intValue());
+                if (port > 0)
+                    udpPort = port;
+            } else if (tag.isInt() && tag.nameId() == FT_KADMISCOPTIONS) {
+                // TAG_KADMISCOPTIONS — bit0=UDP-FW, bit1=TCP-FW, bit2=requestACK
+                uint32 val = tag.intValue();
+                bUDPFirewalled = (val & 0x01) != 0;
+                bTCPFirewalled = (val & 0x02) != 0;
+                if ((val & 0x04) != 0 && version >= KADEMLIA_VERSION8_49b)
+                    reqACK = true;
+            } else if (tag.isInt() && tag.nameId() == FT_ENCRYPTION) {
+                // TAG_ENCRYPTION — connect options: bit0=support, bit1=request, bit2=require
+                peerConnectOptions = static_cast<uint8>(tag.intValue());
+            } else if (tag.isHash() && tag.nameId() == FT_USER_COUNT) {
+                // Client hash — peer's ED2K user hash for TCP encryption
+                peerClientHash.setValueBE(tag.hashValue());
             }
         } catch (...) {
             break;
@@ -383,10 +448,32 @@ bool KademliaUDPListener::addContact_KADEMLIA2(const uint8* data, uint32 len, ui
     if (outRequestsACK)
         *outRequestsACK = reqACK;
 
+    // Firewall statistics from HELLO_REQ (MFC: lines 470-476)
+    if (fromHelloReq && version >= KADEMLIA_VERSION8_49b) {
+        if (auto* prefs = Kademlia::getInstancePrefs()) {
+            prefs->statsIncUDPFirewalledNodes(bUDPFirewalled);
+            prefs->statsIncTCPFirewalledNodes(bTCPFirewalled);
+        }
+    }
+
+    // Do not add UDP-firewalled contacts to routing table (MFC: line 485)
+    if (bUDPFirewalled)
+        return false;
+
     // Add to routing table
     if (auto* rz = Kademlia::getInstanceRoutingZone()) {
         if (update)
             rz->addOrUpdateContact(contactID, ip, udpPort, tcpPort, version, udpKey, ipVerified);
+
+        // Store crypto info on the contact (from TAG_ENCRYPTION / client hash tags)
+        if (peerConnectOptions || !(peerClientHash == 0u)) {
+            if (auto* c = rz->getContact(contactID)) {
+                if (peerConnectOptions)
+                    c->setConnectOptions(peerConnectOptions);
+                if (!(peerClientHash == 0u))
+                    c->setClientHash(peerClientHash);
+            }
+        }
     }
 
     return true;
@@ -405,8 +492,8 @@ void KademliaUDPListener::sendLegacyChallenge(uint32 ip, uint16 udpPort, const U
 
 std::unique_ptr<SearchTerm> KademliaUDPListener::createSearchExpressionTree(SafeMemFile& io, int level)
 {
-    // Prevent excessive recursion
-    if (level > 24)
+    // Prevent excessive recursion (MFC: depth limit 24)
+    if (level >= 24)
         return nullptr;
 
     if (io.position() >= io.length())
@@ -416,35 +503,32 @@ std::unique_ptr<SearchTerm> KademliaUDPListener::createSearchExpressionTree(Safe
     auto term = std::make_unique<SearchTerm>();
 
     switch (op) {
-    case 0x00: // AND
-        term->type = SearchTerm::Type::AND;
+    case 0x00: {
+        // Boolean operator — read sub-byte for operation type (MFC format)
+        if (io.position() >= io.length())
+            return nullptr;
+        uint8 boolOp = io.readUInt8();
+        switch (boolOp) {
+        case 0x00: term->type = SearchTerm::Type::AND; break;
+        case 0x01: term->type = SearchTerm::Type::OR; break;
+        case 0x02: term->type = SearchTerm::Type::NOT; break;
+        default:
+            return nullptr;
+        }
         term->left = createSearchExpressionTree(io, level + 1);
         term->right = createSearchExpressionTree(io, level + 1);
         if (!term->left || !term->right)
             return nullptr;
         break;
-    case 0x01: // OR
-        term->type = SearchTerm::Type::OR;
-        term->left = createSearchExpressionTree(io, level + 1);
-        term->right = createSearchExpressionTree(io, level + 1);
-        if (!term->left || !term->right)
-            return nullptr;
-        break;
-    case 0x02: // NOT
-        term->type = SearchTerm::Type::NOT;
-        term->left = createSearchExpressionTree(io, level + 1);
-        term->right = createSearchExpressionTree(io, level + 1);
-        if (!term->left || !term->right)
-            return nullptr;
-        break;
-    case 0x03: { // String
+    }
+    case 0x01: { // String
         term->type = SearchTerm::Type::String;
         QString str = io::readStringUTF8(io);
         if (!str.isEmpty())
             term->strings.push_back(str.toLower());
         break;
     }
-    case 0x04: { // MetaTag (string)
+    case 0x02: { // MetaTag (string)
         term->type = SearchTerm::Type::MetaTag;
         QString val = io::readStringUTF8(io);
         uint16 nameLen = io.readUInt16();
@@ -454,25 +538,25 @@ std::unique_ptr<SearchTerm> KademliaUDPListener::createSearchExpressionTree(Safe
         term->tag = Tag(std::move(name), val);
         break;
     }
-    case 0x05:   // >=
-    case 0x06:   // <=
-    case 0x07:   // >
-    case 0x08:   // <
-    case 0x09:   // =
-    case 0x0A: { // !=
-        uint64 val = io.readUInt64();
+    case 0x03:   // Numeric Relation 32-bit
+    case 0x08: { // Numeric Relation 64-bit
+        // MFC: value + mmop byte + tag name
+        uint64 val = (op == 0x03) ? io.readUInt32() : io.readUInt64();
+        uint8 mmop = io.readUInt8();
         uint16 nameLen = io.readUInt16();
         QByteArray name(nameLen, Qt::Uninitialized);
         if (nameLen > 0)
             io.read(name.data(), nameLen);
         term->tag = Tag(std::move(name), val);
-        switch (op) {
-        case 0x05: term->type = SearchTerm::Type::OpGreaterEqual; break;
-        case 0x06: term->type = SearchTerm::Type::OpLessEqual; break;
-        case 0x07: term->type = SearchTerm::Type::OpGreater; break;
-        case 0x08: term->type = SearchTerm::Type::OpLess; break;
-        case 0x09: term->type = SearchTerm::Type::OpEqual; break;
-        case 0x0A: term->type = SearchTerm::Type::OpNotEqual; break;
+        // mmop: 0=Equal, 1=Greater, 2=Less, 3=GreaterEqual, 4=LessEqual, 5=NotEqual
+        switch (mmop) {
+        case 0x00: term->type = SearchTerm::Type::OpEqual; break;
+        case 0x01: term->type = SearchTerm::Type::OpGreater; break;
+        case 0x02: term->type = SearchTerm::Type::OpLess; break;
+        case 0x03: term->type = SearchTerm::Type::OpGreaterEqual; break;
+        case 0x04: term->type = SearchTerm::Type::OpLessEqual; break;
+        case 0x05: term->type = SearchTerm::Type::OpNotEqual; break;
+        default:   return nullptr;
         }
         break;
     }
@@ -595,14 +679,19 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
     if (requestsACK && version >= KADEMLIA_VERSION8_49b) {
         SafeMemFile ackPacket;
         io::writeUInt128(ackPacket, contactID);
+        ackPacket.writeUInt8(0); // tag count = 0 (MFC expects ≥17 bytes)
         sendPacket(ackPacket, KADEMLIA2_HELLO_RES_ACK, ip, udpPort, senderKey, &contactID);
     }
 
     // Check if firewalled — ask this node to report our external IP
+    // Note: recheckIP() counts received responses, not sent requests.
+    // Multiple HELLO_RES can arrive before any FIREWALLED_RES, causing
+    // more than KADEMLIAFIREWALLCHECKS requests to be sent.
+    // This matches original MFC eMule behavior.
     if (auto* prefs = Kademlia::getInstancePrefs()) {
-        if (prefs->recheckIP()) {
+        if (prefs->recheckIP() && !Kademlia::shouldSkipFirewallChecks()) {
             logKad(QStringLiteral("Kad: HELLO_REQ_ACK triggered firewall check to %1:%2")
-                       .arg(ip).arg(udpPort));
+                       .arg(ipToString(ip)).arg(udpPort));
             firewalledCheck(ip, udpPort, senderKey, version);
         }
     }
@@ -643,8 +732,10 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
 
         for (auto it = m_fetchNodeIDRequests.begin(); it != m_fetchNodeIDRequests.end(); ++it) {
             if (it->ip == ip && it->tcpPort == tcpPort) {
-                it->requester->kadSearchNodeIDByIPResult(KadClientSearchResult::Succeeded, nodeIDBytes);
+                // Erase before callback — the callback may re-enter m_fetchNodeIDRequests
+                auto* requester = it->requester;
                 m_fetchNodeIDRequests.erase(it);
+                requester->kadSearchNodeIDByIPResult(KadClientSearchResult::Succeeded, nodeIDBytes);
                 break;
             }
         }
@@ -655,10 +746,14 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
         prefs->setLastContact();
 
     // Check if firewalled — ask this node to report our external IP
+    // Note: recheckIP() counts received responses, not sent requests.
+    // Multiple HELLO_RES can arrive before any FIREWALLED_RES, causing
+    // more than KADEMLIAFIREWALLCHECKS requests to be sent.
+    // This matches original MFC eMule behavior.
     if (auto* prefs = Kademlia::getInstancePrefs()) {
-        if (prefs->recheckIP()) {
+        if (prefs->recheckIP() && !Kademlia::shouldSkipFirewallChecks()) {
             logKad(QStringLiteral("Kad: HELLO_RES triggered firewall check to %1:%2")
-                       .arg(ip).arg(udpPort));
+                       .arg(ipToString(ip)).arg(udpPort));
             firewalledCheck(ip, udpPort, senderKey, version);
         }
     }
@@ -711,10 +806,13 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
     UInt128 distance(RoutingZone::localKadId());
     distance.xorWith(target);
 
-    // Get closest contacts — maxType=2 (alive/recent/seen-recently),
-    // maxRequired=type (contact count requested by sender).
+    // Get closest contacts — maxRequired=type (contact count requested by sender).
+    // In LAN mode, include type-3 (uncontacted) contacts so newly discovered nodes
+    // are shared immediately — otherwise they stay invisible until HELLO'd, preventing
+    // routing table growth beyond the initial seed set.
+    const uint32 maxType = (Kademlia::instance() && Kademlia::instance()->isRunningInLANMode()) ? 3 : 2;
     ContactMap results;
-    rz->getClosestTo(2, target, distance, static_cast<uint32>(type), results, true, false);
+    rz->getClosestTo(maxType, target, distance, static_cast<uint32>(type), results, true, false);
 
     // Build response packet
     SafeMemFile resPacket;
@@ -734,10 +832,20 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
     }
 
     sendPacket(resPacket, KADEMLIA2_RES, ip, udpPort, senderKey, nullptr);
+
+    // In LAN mode with a small routing table, proactively discover the requester.
+    // The REQ packet lacks the sender's KadID, so we send a HELLO_REQ to learn it.
+    // The HELLO_RES handler will add them to our routing table automatically.
+    if (Kademlia::instance() && Kademlia::instance()->isRunningInLANMode()
+        && rz->getNumContacts() < 100 && !rz->getContact(ip, udpPort, false))
+    {
+        sendMyDetails(KADEMLIA2_HELLO_REQ, ip, udpPort,
+                      KADEMLIA_VERSION, senderKey, nullptr, true);
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, uint32 ip,
-                                                  uint16 udpPort, const KadUDPKey& senderKey)
+                                                  uint16 udpPort, const KadUDPKey& /*senderKey*/)
 {
     if (!isOnOutTrackList(ip, KADEMLIA2_REQ)) {
         logKad(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2 dropped — not on track list")
@@ -754,6 +862,10 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
     UInt128 target = io::readUInt128(io);
     uint8 numContacts = io.readUInt8();
 
+    // MFC: firewall check searches skip routing table add — those contacts
+    // must remain un-contacted for the UDP firewall test to be valid.
+    const bool isFWCheckSearch = SearchManager::isFWCheckUDPSearch(target);
+
     ContactArray results;
     // Each contact entry: 16 (KadID) + 4 (IP) + 2 (UDP) + 2 (TCP) + 1 (ver) = 25 bytes
     for (uint8 i = 0; i < numContacts && io.length() - io.position() >= 25; ++i) {
@@ -765,12 +877,21 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
 
         auto* contact = new Contact(contactID, contactIP, contactUDP, contactTCP,
                                      target, contactVersion, KadUDPKey(0), false);
+
+        // Add to routing table — matches MFC Process_KADEMLIA2_RES behavior.
+        // Skip for firewall check searches (MFC: contacts must stay un-contacted).
+        if (!isFWCheckSearch) {
+            if (auto* rz = Kademlia::getInstanceRoutingZone())
+                rz->addOrUpdateContact(contactID, contactIP, contactUDP, contactTCP,
+                                       contactVersion, KadUDPKey(0), false);
+        }
+
         results.push_back(contact);
     }
 
     // If this is a firewall check search, feed contacts to the UDP firewall tester
     // (skip entirely when the tester already has enough candidates).
-    if (SearchManager::isFWCheckUDPSearch(target) && UDPFirewallTester::needsMoreTestContacts()) {
+    if (isFWCheckSearch && UDPFirewallTester::needsMoreTestContacts()) {
         logKad(QStringLiteral("Kad: FW check search response — feeding %1 contacts to UDP FW tester")
                    .arg(results.size()));
         for (const auto* contact : results) {
@@ -780,7 +901,8 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
                 contact->getClientID(), contact->getIPAddress(),
                 contact->getUDPPort(), contact->getTCPPort(),
                 target, contact->getVersion(),
-                contact->getUDPKey(), contact->isIpVerified());
+                contact->getUDPKey(), contact->isIpVerified(),
+                contact->connectOptions(), contact->clientHash());
         }
         UDPFirewallTester::queryNextClient();
     }
@@ -801,11 +923,15 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_KEY_REQ(const uint8* data, ui
 
     SafeMemFile io(data, len);
     UInt128 target = io::readUInt128(io);
-    uint16 startPos = (io.position() < io.length()) ? io.readUInt16() : 0;
+    uint16 startPos = (io.position() + 2 <= io.length()) ? io.readUInt16() : 0;
 
-    // Parse search expression if present
+    // MFC: bit 15 of startPos signals a restrictive search with expression tree
+    bool restrictive = (startPos & 0x8000) != 0;
+    startPos &= static_cast<uint16>(~0x8000);
+
+    // Parse search expression only if restrictive bit is set
     std::unique_ptr<SearchTerm> searchTerms;
-    if (io.position() < io.length())
+    if (restrictive && io.position() < io.length())
         searchTerms = createSearchExpressionTree(io, 0);
 
     // Serve keyword results from local index
@@ -833,7 +959,7 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_SOURCE_REQ(const uint8* data,
 }
 
 void KademliaUDPListener::process_KADEMLIA2_SEARCH_RES(const uint8* data, uint32 len,
-                                                        const KadUDPKey& senderKey,
+                                                        const KadUDPKey& /*senderKey*/,
                                                         uint32 ip, uint16 udpPort)
 {
     // Kad2 format: UInt128 source + UInt128 target + uint16 count + results
@@ -889,8 +1015,21 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
                 entry->m_keyID = keyID;
                 entry->m_sourceID = sourceID;
                 entry->m_ip = ip;
-                for (auto& tag : tags)
-                    entry->addTag(std::move(tag));
+                // Extract known tags to dedicated fields (MFC lines 1217-1249).
+                // Filename → m_fileNames (for search term matching),
+                // Filesize → m_size; remaining tags → m_tags.
+                for (auto& tag : tags) {
+                    if (tag.nameId() == FT_FILENAME && tag.isStr()) {
+                        if (entry->getCommonFileName().isEmpty())
+                            entry->setFileName(tag.strValue());
+                    } else if (tag.nameId() == FT_FILESIZE) {
+                        if (entry->m_size == 0)
+                            entry->m_size = tag.isInt() ? tag.intValue()
+                                          : tag.isInt64(false) ? tag.int64Value() : 0;
+                    } else {
+                        entry->addTag(std::move(tag));
+                    }
+                }
 
                 uint8 load = 0;
                 if (!indexed->addKeyword(keyID, sourceID, entry, load))
@@ -1025,6 +1164,21 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
 // Process handlers — Firewall
 // ---------------------------------------------------------------------------
 
+/// In LAN mode the routing table holds every peer, so we can propagate
+/// their ED2K user hash and connect-options to enable encrypted TCP.
+/// On the public internet the requesting node is almost never in our
+/// routing zone, so this is a no-op there.
+void KademliaUDPListener::propagateLanCryptoInfo(UpDownClient* client, const Contact* contact)
+{
+    if (!contact || !(Kademlia::instance() && Kademlia::instance()->isRunningInLANMode()))
+        return;
+    client->setConnectOptions(contact->connectOptions(), true, false);
+    uint8 hashBytes[16];
+    contact->clientHash().toByteArray(hashBytes);
+    if (!isnulmd4(hashBytes))
+        client->setUserHash(hashBytes);
+}
+
 /// Kad v1 compat: handles legacy KADEMLIA_FIREWALLED_REQ from older clients.
 /// We always send KADEMLIA_FIREWALLED2_REQ for our own firewall checks.
 void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uint32 len,
@@ -1047,6 +1201,8 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
     client->setConnectIP(htonl(ip));  // Kad IPs are host BO; m_connectIP is network BO
     client->setKadState(KadState::QueuedFwCheck);
+    if (auto* rz = Kademlia::getInstanceRoutingZone())
+        propagateLanCryptoInfo(client, rz->getContact(ip, udpPort, false));
     if (theApp.clientList)
         theApp.clientList->addClient(client);
     client->tryToConnect();
@@ -1077,6 +1233,8 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
     client->setConnectIP(htonl(ip));  // Kad IPs are host BO; m_connectIP is network BO
     client->setKadState(KadState::QueuedFwCheck);
     client->setConnectOptions(options, true, true);
+    if (auto* rz = Kademlia::getInstanceRoutingZone())
+        propagateLanCryptoInfo(client, rz->getContact(contactID));
     if (theApp.clientList)
         theApp.clientList->addClient(client);
     client->tryToConnect();
@@ -1109,7 +1267,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_RES(const uint8* data, uin
                .arg(ipToString(ip)).arg(ipToString(externalIP)));
 }
 
-void KademliaUDPListener::process_KADEMLIA_FIREWALLED_ACK_RES(uint32 len)
+void KademliaUDPListener::process_KADEMLIA_FIREWALLED_ACK_RES(uint32 /*len*/)
 {
     // The remote node successfully TCP-connected to our listen port,
     // confirming we are reachable.  Increment the firewall counter so
@@ -1181,7 +1339,7 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
 
 void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint32 len,
                                                           uint32 ip, uint16 udpPort,
-                                                          const KadUDPKey& senderKey)
+                                                          const KadUDPKey& /*senderKey*/)
 {
     // Matches MFC KademliaUDPListener.cpp:1725-1761
     if (len < 34) // 16 (checkID) + 16 (clientHash) + 2 (tcpPort)
@@ -1224,7 +1382,7 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint
 }
 
 void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint32 len,
-                                                         uint32 ip, const KadUDPKey& senderKey)
+                                                         uint32 ip, const KadUDPKey& /*senderKey*/)
 {
     // We are a buddy relay node. A firewalled client wants us to relay a
     // callback to our buddy (another firewalled client).
@@ -1283,8 +1441,8 @@ void KademliaUDPListener::process_KADEMLIA2_PING(uint32 ip, uint16 udpPort,
 }
 
 void KademliaUDPListener::process_KADEMLIA2_PONG(const uint8* data, uint32 len,
-                                                  uint32 ip, uint16 udpPort,
-                                                  const KadUDPKey& senderKey)
+                                                  uint32 ip, uint16 /*udpPort*/,
+                                                  const KadUDPKey& /*senderKey*/)
 {
     if (!isOnOutTrackList(ip, KADEMLIA2_PING))
         return;
@@ -1301,7 +1459,7 @@ void KademliaUDPListener::process_KADEMLIA2_PONG(const uint8* data, uint32 len,
 }
 
 void KademliaUDPListener::process_KADEMLIA2_FIREWALLUDP(const uint8* data, uint32 len,
-                                                         uint32 ip, const KadUDPKey& senderKey)
+                                                         uint32 ip, const KadUDPKey& /*senderKey*/)
 {
     if (len < 3) // 1 (error code) + 2 (port)
         return;

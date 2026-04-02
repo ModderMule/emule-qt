@@ -57,7 +57,7 @@ struct AppContext {
     /// Returns true when connected to an ED2K server.
     [[nodiscard]] bool isConnected() const;
 
-    /// Returns true when we have a low (firewalled) ID on the server.
+    /// Returns true when we are firewalled on all connected networks (ed2k + Kad).
     [[nodiscard]] bool isFirewalled() const;
 };
 

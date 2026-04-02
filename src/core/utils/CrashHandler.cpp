@@ -3,6 +3,8 @@
 
 #include "utils/CrashHandler.h"
 
+#include "utils/Log.h"
+
 #include <QDir>
 
 
@@ -21,7 +23,9 @@ static char s_crashDirQString[PATH_MAX] = {};
 
 #ifndef Q_OS_WIN
 
+#ifdef HAVE_EXECINFO_H
 #include <execinfo.h>
+#endif
 #include <fcntl.h>
 #include <unistd.h>
 #include <csignal>
@@ -145,9 +149,13 @@ void crashSignalHandler(int sig)
     writeStr(fd, "\n\nStack trace:\n");
 
     // Capture stack trace
+#ifdef HAVE_EXECINFO_H
     void* frames[128];
     int count = backtrace(frames, 128);
     backtrace_symbols_fd(frames, count, fd);
+#else
+    writeStr(fd, "(no backtrace — execinfo.h not available)\n");
+#endif
 
     writeStr(fd, "\n--- End of crash report ---\n");
     close(fd);
@@ -259,6 +267,8 @@ void CrashHandler::install(const QString& crashDir)
 #else
     SetUnhandledExceptionFilter(crashExceptionFilter);
 #endif
+
+    logInfo(QStringLiteral("CrashHandler installed — dumps will be written to %1").arg(crashDir));
 }
 
 QString CrashHandler::crashDir()

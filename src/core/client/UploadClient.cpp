@@ -248,13 +248,14 @@ void UpDownClient::sendOutOfPartReqsAndAddToWaitingQueue()
     if (m_sentOutOfPartReqs)
         return;
 
-    m_sentOutOfPartReqs = true;
-
     if (m_socket) {
         auto packet = std::make_unique<Packet>(OP_OUTOFPARTREQS, 0);
         packet->prot = OP_EDONKEYPROT;
         sendPacket(std::move(packet));
     }
+
+    // MFC: set flag AFTER sending packet
+    m_sentOutOfPartReqs = true;
 
     if (theApp.uploadQueue)
         theApp.uploadQueue->addClientToQueue(this);
@@ -325,13 +326,16 @@ void UpDownClient::sendRankingInfo()
     if (!m_socket || !extProtocolAvailable())
         return;
 
-    SafeMemFile data;
     uint16 rank = 0;
     if (theApp.uploadQueue)
         rank = static_cast<uint16>(theApp.uploadQueue->waitingPosition(this));
-    data.writeUInt16(rank);
+    if (!rank)
+        return;
 
-    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_QUEUERANKING);
+    // MFC: fixed 12-byte packet: uint16(rank) + 10 bytes padding
+    auto packet = std::make_unique<Packet>(OP_QUEUERANKING, 12, OP_EMULEPROT);
+    pokeUInt16(reinterpret_cast<uint8*>(packet->pBuffer), rank);
+    std::memset(packet->pBuffer + 2, 0, 10);
     sendPacket(std::move(packet));
 }
 
@@ -341,20 +345,18 @@ void UpDownClient::sendRankingInfo()
 
 void UpDownClient::sendCommentInfo(const KnownFile* file)
 {
-    if (!m_socket || !file || m_acceptCommentVer == 0)
+    if (!m_commentDirty || !m_socket || !file || m_acceptCommentVer < 1)
+        return;
+    m_commentDirty = false;
+
+    const uint8 rating = static_cast<uint8>(const_cast<KnownFile*>(file)->getFileRating());
+    const QString& comment = const_cast<KnownFile*>(file)->getFileComment();
+    if (rating == 0 && comment.isEmpty())
         return;
 
     SafeMemFile data;
-    data.writeUInt8(static_cast<uint8>(const_cast<KnownFile*>(file)->getFileRating()));
-
-    const QString& comment = const_cast<KnownFile*>(file)->getFileComment();
-    if (!comment.isEmpty()) {
-        const QByteArray utf8 = comment.toUtf8();
-        data.writeUInt32(static_cast<uint32>(utf8.size()));
-        data.write(utf8.constData(), utf8.size());
-    } else {
-        data.writeUInt32(0);
-    }
+    data.writeUInt8(rating);
+    data.writeLongString(comment, m_unicodeSupport ? UTF8Mode::Raw : UTF8Mode::None);
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_FILEDESC);
     sendPacket(std::move(packet));

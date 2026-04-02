@@ -65,7 +65,7 @@ EMSocket::~EMSocket()
 
     {
         std::lock_guard lock(m_sendLock);
-        m_conState = EMSState::Disconnected;
+        m_conState.store(EMSState::Disconnected, std::memory_order_release);
     }
     clearQueues();
 }
@@ -77,7 +77,7 @@ EMSocket::~EMSocket()
 void EMSocket::setConState(EMSState val)
 {
     std::lock_guard lock(m_sendLock);
-    m_conState = val;
+    m_conState.store(val, std::memory_order_release);
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ void EMSocket::onConnected()
 {
     logDebug(QStringLiteral("EMSocket::onConnected — peer=%1:%2 fd=%3")
                  .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()));
-    m_conState = EMSState::Connected;
+    m_conState.store(EMSState::Connected, std::memory_order_release);
     onSocketConnected(); // trigger encryption handshake if needed
 }
 
@@ -136,10 +136,10 @@ void EMSocket::onBytesWritten(qint64 /*bytes*/)
 
 void EMSocket::onReadyRead()
 {
-    if (m_conState == EMSState::Disconnected)
+    if (m_conState.load(std::memory_order_acquire) == EMSState::Disconnected)
         return;
 
-    m_conState = EMSState::Connected;
+    m_conState.store(EMSState::Connected, std::memory_order_release);
 
     // Check download rate limit
     if (m_downloadLimitEnable && m_downloadLimit == 0) {
@@ -164,7 +164,7 @@ void EMSocket::onReadyRead()
 
     qint64 toRead = std::min(static_cast<qint64>(readMax), bytesAvailable);
     qint64 ret = read(m_readBuffer.data() + m_pendingHeaderSize, toRead);
-    if (ret <= 0 || m_conState == EMSState::Disconnected)
+    if (ret <= 0 || m_conState.load(std::memory_order_acquire) == EMSState::Disconnected)
         return;
 
     // Process through encryption layer
@@ -185,7 +185,7 @@ void EMSocket::onReadyRead()
                          .arg(m_controlQueue.size()).arg(m_sendBuffer != nullptr));
         if (hasQueued) {
             QTimer::singleShot(0, this, [this] {
-                if (m_conState == EMSState::Connected && isEncryptionLayerReady()) {
+                if (m_conState.load(std::memory_order_acquire) == EMSState::Connected && isEncryptionLayerReady()) {
                     auto result = send(1024 * 64, 0, true);
                     if (thePrefs.logRawSocketPackets())
                         logDebug(QStringLiteral("EMSocket::onReadyRead — post-enc flush: ctrl=%1 std=%2 success=%3 peer=%4:%5")
@@ -230,59 +230,69 @@ void EMSocket::onReadyRead()
     const char* rptr = m_readBuffer.data();
     const char* rend = m_readBuffer.data() + ret;
 
-    while (rend >= rptr + static_cast<ptrdiff_t>(kPacketHeaderSize)
-           || (m_pendingPacket && rend > rptr)) {
+    try {
+        while (rend >= rptr + static_cast<ptrdiff_t>(kPacketHeaderSize)
+               || (m_pendingPacket && rend > rptr)) {
 
-        if (!m_pendingPacket) {
-            // Check protocol byte
-            const auto* hdr = reinterpret_cast<const HeaderStruct*>(rptr);
-            switch (hdr->eDonkeyID) {
-            case OP_EDONKEYPROT:
-            case OP_PACKEDPROT:
-            case OP_EMULEPROT:
-                break;
-            default: {
-                // Debug: dump first bytes for diagnosis
-                int dumpLen = std::min(static_cast<int>(rend - rptr), 32);
-                QString hex;
-                for (int i = 0; i < dumpLen; ++i)
-                    hex += QStringLiteral("%1 ").arg(static_cast<uint8>(rptr[i]), 2, 16, QLatin1Char('0'));
-                logWarning(QStringLiteral("EMSocket: kErrWrongHeader — first %1 bytes: %2 (peer %3:%4)")
-                               .arg(dumpLen).arg(hex)
-                               .arg(peerAddress().toString()).arg(peerPort()));
-                onError(kErrWrongHeader);
-                return;
-            }
+            if (!m_pendingPacket) {
+                // Check protocol byte
+                const auto* hdr = reinterpret_cast<const HeaderStruct*>(rptr);
+                switch (hdr->eDonkeyID) {
+                case OP_EDONKEYPROT:
+                case OP_PACKEDPROT:
+                case OP_EMULEPROT:
+                    break;
+                default: {
+                    // Debug: dump first bytes for diagnosis
+                    int dumpLen = std::min(static_cast<int>(rend - rptr), 32);
+                    QString hex;
+                    for (int i = 0; i < dumpLen; ++i)
+                        hex += QStringLiteral("%1 ").arg(static_cast<uint8>(rptr[i]), 2, 16, QLatin1Char('0'));
+                    logWarning(QStringLiteral("EMSocket: kErrWrongHeader — first %1 bytes: %2 (peer %3:%4)")
+                                   .arg(dumpLen).arg(hex)
+                                   .arg(peerAddress().toString()).arg(peerPort()));
+                    onError(kErrWrongHeader);
+                    return;
+                }
+                }
+
+                // Check for oversized packets (2MB limit)
+                if (hdr->packetLength - 1 > kMaxReadBuffer) {
+                    onError(kErrTooBig);
+                    return;
+                }
+
+                m_pendingPacket = std::make_unique<Packet>(const_cast<char*>(rptr));
+                rptr += kPacketHeaderSize;
+                m_pendingPacket->pBuffer = new char[m_pendingPacket->size + 1];
+                m_pendingPacketSize = 0;
             }
 
-            // Check for oversized packets (2MB limit)
-            if (hdr->packetLength - 1 > kMaxReadBuffer) {
-                onError(kErrTooBig);
-                return;
-            }
+            // Copy available data into the pending packet
+            uint32 toCopy = std::min(m_pendingPacket->size - m_pendingPacketSize,
+                                     static_cast<uint32>(rend - rptr));
+            std::memcpy(&m_pendingPacket->pBuffer[m_pendingPacketSize], rptr, toCopy);
+            m_pendingPacketSize += toCopy;
+            rptr += toCopy;
 
-            m_pendingPacket = std::make_unique<Packet>(const_cast<char*>(rptr));
-            rptr += kPacketHeaderSize;
-            m_pendingPacket->pBuffer = new char[m_pendingPacket->size + 1];
-            m_pendingPacketSize = 0;
+            // Check if packet is complete
+            if (m_pendingPacket->size == m_pendingPacketSize) {
+                bool result = packetReceived(m_pendingPacket.get());
+                m_pendingPacket.reset();
+                m_pendingPacketSize = 0;
+
+                if (!result)
+                    return;
+            }
         }
-
-        // Copy available data into the pending packet
-        uint32 toCopy = std::min(m_pendingPacket->size - m_pendingPacketSize,
-                                 static_cast<uint32>(rend - rptr));
-        std::memcpy(&m_pendingPacket->pBuffer[m_pendingPacketSize], rptr, toCopy);
-        m_pendingPacketSize += toCopy;
-        rptr += toCopy;
-
-        // Check if packet is complete
-        if (m_pendingPacket->size == m_pendingPacketSize) {
-            bool result = packetReceived(m_pendingPacket.get());
-            m_pendingPacket.reset();
-            m_pendingPacketSize = 0;
-
-            if (!result)
-                return;
-        }
+    } catch (const std::exception& ex) {
+        logWarning(QStringLiteral("EMSocket::onReadyRead — exception in packet processing: %1 (peer %2:%3)")
+                       .arg(QLatin1String(ex.what()))
+                       .arg(peerAddress().toString()).arg(peerPort()));
+        m_pendingPacket.reset();
+        m_pendingPacketSize = 0;
+        onError(kErrWrongHeader);
+        return;
     }
 
     // Save any leftover bytes (partial header) for next read
@@ -319,7 +329,7 @@ void EMSocket::disableDownloadLimit()
 void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
                           uint32 actualPayloadSize, bool forceImmediateSend)
 {
-    if (m_conState == EMSState::Disconnected) {
+    if (m_conState.load(std::memory_order_acquire) == EMSState::Disconnected) {
         if (thePrefs.logRawSocketPackets())
             logDebug(QStringLiteral("EMSocket::sendPacket — DROPPED (disconnected) opcode=0x%1")
                          .arg(packet ? packet->opcode : 0, 2, 16, QLatin1Char('0')));
@@ -331,7 +341,7 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
     if (thePrefs.logRawSocketPackets())
         logDebug(QStringLiteral("EMSocket::sendPacket — opcode=0x%1 size=%2 ctrl=%3 force=%4 conState=%5 peer=%6:%7")
                      .arg(opcode, 2, 16, QLatin1Char('0')).arg(pktSize).arg(controlPacket)
-                     .arg(forceImmediateSend).arg(static_cast<int>(m_conState))
+                     .arg(forceImmediateSend).arg(static_cast<int>(m_conState.load(std::memory_order_relaxed)))
                      .arg(peerAddress().toString()).arg(peerPort()));
 
     bool wakeThrottler = false;
@@ -367,9 +377,9 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
         QTimer::singleShot(0, this, [this] {
             if (thePrefs.logRawSocketPackets())
                 logDebug(QStringLiteral("EMSocket::sendPacket — QTimer fired, conState=%1 encReady=%2 peer=%3:%4")
-                             .arg(static_cast<int>(m_conState)).arg(isEncryptionLayerReady())
+                             .arg(static_cast<int>(m_conState.load(std::memory_order_relaxed))).arg(isEncryptionLayerReady())
                              .arg(peerAddress().toString()).arg(peerPort()));
-            if (m_conState == EMSState::Connected) {
+            if (m_conState.load(std::memory_order_acquire) == EMSState::Connected) {
                 auto result = send(1024 * 64, 0, true);
                 if (thePrefs.logRawSocketPackets())
                     logDebug(QStringLiteral("EMSocket::sendPacket — send() returned ctrl=%1 std=%2 success=%3")
@@ -404,7 +414,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
     SocketSentBytes ret{0, 0, true};
 
     std::lock_guard lock(m_sendLock);
-    if (m_conState != EMSState::Connected || !isEncryptionLayerReady())
+    if (m_conState.load(std::memory_order_relaxed) != EMSState::Connected || !isEncryptionLayerReady())
         return ret;
 
     if (minFragSize < 1)
@@ -531,7 +541,6 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
 
             m_cachedBytesToWrite.store(bytesToWrite(), std::memory_order_relaxed);
             m_busy = (m_cachedBytesToWrite.load(std::memory_order_relaxed) >= kBusyThreshold);
-            m_hasSent = true;
             auto written = static_cast<uint32>(result);
 
             m_sent += written;
@@ -580,7 +589,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
 
 void EMSocket::scheduleRetryIfNeeded()
 {
-    if (m_retryScheduled || m_conState != EMSState::Connected)
+    if (m_retryScheduled || m_conState.load(std::memory_order_acquire) != EMSState::Connected)
         return;
 
     bool hasPending;
@@ -593,7 +602,7 @@ void EMSocket::scheduleRetryIfNeeded()
         m_retryScheduled = true;
         QTimer::singleShot(10, this, [this] {
             m_retryScheduled = false;
-            if (m_conState == EMSState::Connected) {
+            if (m_conState.load(std::memory_order_acquire) == EMSState::Connected) {
                 // Only retry control packets — standard (file data) packets
                 // are sent by the UploadBandwidthThrottler on its own thread.
                 send(1024 * 64, 0, true);
@@ -672,7 +681,7 @@ uint32 EMSocket::getSentPayloadSinceLastCall(bool reset)
 uint32 EMSocket::getNeededBytes()
 {
     std::lock_guard lock(m_sendLock);
-    if (m_conState == EMSState::Disconnected)
+    if (m_conState.load(std::memory_order_relaxed) == EMSState::Disconnected)
         return 0;
 
     bool isControl = (m_sendBuffer == nullptr) || m_currentPacketIsControl;
@@ -692,7 +701,10 @@ uint32 EMSocket::getNeededBytes()
         sizeLeft = m_sendBufferLen - m_sent;
         sizeTotal = m_sendBufferLen;
     } else {
-        sizeLeft = sizeTotal = m_standardQueue.front().packet->getRealPacketSize();
+        const auto& front = m_standardQueue.front();
+        if (!front.packet)
+            return 0;
+        sizeLeft = sizeTotal = front.packet->getRealPacketSize();
     }
 
     if (timeSinceLastFinished >= timeTotal)

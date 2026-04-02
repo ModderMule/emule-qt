@@ -31,6 +31,9 @@
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\MediaInfoPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\AutoStart.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -178,6 +181,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\ArchivePreviewPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\MediaInfoPanel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="app\AutoStart.h">

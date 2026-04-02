@@ -16,8 +16,10 @@
 
 namespace eMule {
 
+class ClientCreditsList;
 class ClientList;
 class ClientUDPSocket;
+class CollectionKeys;
 class DownloadQueue;
 class FriendList;
 class IPFilter;
@@ -49,6 +51,7 @@ public:
     void stop();
 
     [[nodiscard]] kad::Kademlia* kademlia() const { return m_kademlia.get(); }
+    [[nodiscard]] CollectionKeys* collectionKeys() const { return m_collectionKeys.get(); }
 
 private slots:
     void onTimer();
@@ -92,6 +95,7 @@ private:
     std::unique_ptr<UploadDiskIOThread> m_uploadDiskIO;
     std::unique_ptr<kad::Kademlia> m_kademlia;
     std::unique_ptr<ClientUDPSocket> m_clientUDP;
+    std::unique_ptr<ClientCreditsList> m_clientCredits;
     std::unique_ptr<ClientList> m_clientList;
     std::unique_ptr<FriendList> m_friendList;
     std::unique_ptr<ListenSocket> m_listenSocket;
@@ -103,6 +107,7 @@ private:
     std::unique_ptr<Scheduler> m_scheduler;
     std::unique_ptr<Statistics> m_statistics;
     std::unique_ptr<UPnPManager> m_upnpManager;
+    std::unique_ptr<CollectionKeys> m_collectionKeys;
 };
 
 } // namespace eMule

@@ -93,16 +93,13 @@ bool UploadBandwidthThrottler::removeFromStandardListNoLock(ThrottledFileSocket*
     return false;
 }
 
-void UploadBandwidthThrottler::queueForSendingControlPacket(ThrottledControlSocket* socket, bool hasSent)
+void UploadBandwidthThrottler::queueForSendingControlPacket(ThrottledControlSocket* socket)
 {
     if (!m_run.load())
         return;
 
     std::lock_guard lock(m_tempMutex);
-    if (hasSent)
-        m_tempControlQueueFirst.push_back(socket);
-    else
-        m_tempControlQueue.push_back(socket);
+    m_tempControlQueue.push_back(socket);
 }
 
 void UploadBandwidthThrottler::removeFromAllQueuesNoLock(ThrottledControlSocket* socket)
@@ -112,13 +109,11 @@ void UploadBandwidthThrottler::removeFromAllQueuesNoLock(ThrottledControlSocket*
 
     // Remove from main control queues
     m_controlQueue.remove(socket);
-    m_controlQueueFirst.remove(socket);
 
     // Remove from temp control queues
     {
         std::lock_guard lock(m_tempMutex);
         m_tempControlQueue.remove(socket);
-        m_tempControlQueueFirst.remove(socket);
     }
 }
 
@@ -397,10 +392,6 @@ void UploadBandwidthThrottler::runInternal()
             // Move temp queues to main queues
             {
                 std::lock_guard tempLock(m_tempMutex);
-                while (!m_tempControlQueueFirst.empty()) {
-                    m_controlQueueFirst.push_back(m_tempControlQueueFirst.front());
-                    m_tempControlQueueFirst.pop_front();
-                }
                 while (!m_tempControlQueue.empty()) {
                     m_controlQueue.push_back(m_tempControlQueue.front());
                     m_tempControlQueue.pop_front();
@@ -414,16 +405,10 @@ void UploadBandwidthThrottler::runInternal()
             // Send control packets first
             while ((bytesToSpend > 0 && spentBytes < static_cast<uint64>(bytesToSpend)) ||
                    (allowedDataRate == 0 && spentBytes < 500)) {
-                ThrottledControlSocket* socket = nullptr;
-                if (!m_controlQueueFirst.empty()) {
-                    socket = m_controlQueueFirst.front();
-                    m_controlQueueFirst.pop_front();
-                } else if (!m_controlQueue.empty()) {
-                    socket = m_controlQueue.front();
-                    m_controlQueue.pop_front();
-                } else {
+                if (m_controlQueue.empty())
                     break;
-                }
+                ThrottledControlSocket* socket = m_controlQueue.front();
+                m_controlQueue.pop_front();
 
                 if (socket) {
                     uint32 sendLimit = allowedDataRate > 0
@@ -546,9 +531,7 @@ void UploadBandwidthThrottler::runInternal()
         std::lock_guard lock(m_sendMutex);
         std::lock_guard tempLock(m_tempMutex);
         m_tempControlQueue.clear();
-        m_tempControlQueueFirst.clear();
         m_controlQueue.clear();
-        m_controlQueueFirst.clear();
         m_standardOrder.clear();
     }
 }

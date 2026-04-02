@@ -33,6 +33,9 @@ public:
                               Tab initialTab = General,
                               QWidget* parent = nullptr);
 
+signals:
+    void searchKadNotes(const QString& fileHash);
+
 private:
     QWidget* createGeneralTab(const QCborMap& details);
     QWidget* createFileNamesTab(const QCborMap& details);

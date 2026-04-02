@@ -23,6 +23,8 @@
 #include <list>
 #include <memory>
 
+namespace eMule { class UpDownClient; }
+
 namespace eMule::kad {
 
 class Contact;
@@ -105,6 +107,7 @@ private:
                                              const KadUDPKey& senderKey);
     void process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                               const KadUDPKey& senderKey);
+    static void propagateLanCryptoInfo(eMule::UpDownClient* client, const Contact* contact);
     void process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                           const KadUDPKey& senderKey);
     void process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,

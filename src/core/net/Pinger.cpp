@@ -324,35 +324,96 @@ uint16 Pinger::icmpChecksum(const void* data, int len)
 
 #else // Q_OS_WIN
 
-// TODO: Windows implementation using IcmpSendEcho / IcmpSendEcho2
+// Windows implementation using IcmpSendEcho from the IP Helper API.
+
+#include <winsock2.h>
+#include <iphlpapi.h>
+#include <icmpapi.h>
+
 namespace eMule {
+
+static constexpr DWORD kWinPingTimeout = 3000;  // 3 seconds
+static constexpr WORD  kReplyBufSize   = sizeof(ICMP_ECHO_REPLY) + 32;
 
 Pinger::Pinger()
 {
-    // Raw ICMP sockets not available on Windows without IcmpSendEcho.
-    // All sockets remain at -1 (disabled).
-    logWarning(QStringLiteral("Pinger: not yet implemented on Windows"));
+    HANDLE h = IcmpCreateFile();
+    if (h == INVALID_HANDLE_VALUE) {
+        logWarning(QStringLiteral("Pinger: IcmpCreateFile() failed, error %1")
+                       .arg(::GetLastError()));
+    } else {
+        m_icmpHandle = h;
+    }
 }
 
-Pinger::~Pinger() = default;
-
-PingStatus Pinger::ping(uint32 /*addr*/, uint8 /*ttl*/, bool /*useUdp*/)
+Pinger::~Pinger()
 {
-    PingStatus result;
-    result.delay = static_cast<float>(kPingTimeoutMs);
-    result.status = kPingTimedOut;
-    result.error = kPingTimedOut;
-    return result;
+    if (m_icmpHandle) {
+        IcmpCloseHandle(static_cast<HANDLE>(m_icmpHandle));
+        m_icmpHandle = nullptr;
+    }
+}
+
+PingStatus Pinger::ping(uint32 addr, uint8 ttl, bool /*useUdp*/)
+{
+    // Windows always uses ICMP via IcmpSendEcho (UDP traceroute not implemented)
+    return pingICMP(addr, ttl);
 }
 
 PingStatus Pinger::pingICMP(uint32 addr, uint8 ttl)
 {
-    return ping(addr, ttl, false);
+    PingStatus result;
+    result.delay = static_cast<float>(kWinPingTimeout);
+    result.status = kPingTimedOut;
+    result.error = kPingTimedOut;
+
+    if (!m_icmpHandle) {
+        result.error = 1;
+        return result;
+    }
+
+    char replyBuf[kReplyBufSize]{};
+
+    IP_OPTION_INFORMATION ipInfo{};
+    ipInfo.Ttl = ttl;
+
+    QElapsedTimer timer;
+    timer.start();
+
+    DWORD replyCount = IcmpSendEcho(
+        static_cast<HANDLE>(m_icmpHandle),
+        addr,
+        nullptr, 0,      // no payload
+        &ipInfo,
+        replyBuf, kReplyBufSize,
+        kWinPingTimeout);
+
+    const float elapsed = static_cast<float>(timer.nsecsElapsed()) / 1'000'000.0f;
+
+    if (replyCount > 0) {
+        const auto& reply = *reinterpret_cast<const ICMP_ECHO_REPLY*>(replyBuf);
+        const auto rtt = static_cast<float>(reply.RoundTripTime);
+
+        // Use high-res timer when Windows RoundTripTime is coarse (<=20ms or multiple of 10)
+        result.delay = (rtt <= 20.0f || static_cast<long>(rtt) % 10 == 0)
+            ? elapsed : rtt;
+        result.destinationAddress = reply.Address;
+        result.status = reply.Status;
+        result.error = 0;
+        result.ttl = (reply.Status == IP_SUCCESS) ? reply.Options.Ttl : ttl;
+        result.success = true;
+    } else {
+        result.error = ::GetLastError();
+        result.success = false;
+    }
+
+    return result;
 }
 
 PingStatus Pinger::pingUDP(uint32 addr, uint8 ttl)
 {
-    return ping(addr, ttl, true);
+    // UDP traceroute not implemented on Windows — fall back to ICMP
+    return pingICMP(addr, ttl);
 }
 
 uint16 Pinger::icmpChecksum(const void* data, int len)

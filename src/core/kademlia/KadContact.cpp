@@ -165,8 +165,10 @@ void Contact::copy(const Contact& from)
     m_netIp              = from.m_netIp;
     m_tcpPort            = from.m_tcpPort;
     m_udpPort            = from.m_udpPort;
+    m_clientHash         = from.m_clientHash;
     m_version            = from.m_version;
     m_type               = from.m_type;
+    m_connectOptions     = from.m_connectOptions;
     m_ipVerified         = from.m_ipVerified;
     m_receivedHelloPacket = from.m_receivedHelloPacket;
     m_bootstrapContact   = from.m_bootstrapContact;

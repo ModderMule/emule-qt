@@ -51,7 +51,7 @@ ENV LD_LIBRARY_PATH=/opt/Qt/6.10.2/gcc_64/lib
 WORKDIR /src
 COPY . .
 
-RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     && cmake --build build --target emulecored --parallel "$(nproc)"
 
 # === Stage 2: Minimal runtime ===============================================
@@ -76,6 +76,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxkbcommon0 \
         libegl1 \
         libgssapi-krb5-2 \
+        binutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Qt shared libs from builder

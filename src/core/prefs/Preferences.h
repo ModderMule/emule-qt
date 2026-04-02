@@ -67,6 +67,9 @@ public:
     [[nodiscard]] bool filterLANIPs() const;
     void setFilterLANIPs(bool val);
 
+    [[nodiscard]] bool skipFirewalledChecksInLanMode() const;
+    void setSkipFirewalledChecksInLanMode(bool val);
+
     // -- Server connection ----------------------------------------------------
 
     [[nodiscard]] bool safeServerConnect() const;

@@ -106,6 +106,7 @@ struct Preferences::Data {
     bool autoConnect = true;
     bool reconnect = true;
     bool filterLANIPs = true;
+    bool skipFirewalledChecksInLanMode = false;
 
     // Server connection
     bool safeServerConnect = true;      // Limit to 1 concurrent connection attempt
@@ -579,6 +580,18 @@ void Preferences::setFilterLANIPs(bool val)
 {
     QWriteLocker lock(&m_lock);
     m_data->filterLANIPs = val;
+}
+
+bool Preferences::skipFirewalledChecksInLanMode() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->skipFirewalledChecksInLanMode;
+}
+
+void Preferences::setSkipFirewalledChecksInLanMode(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->skipFirewalledChecksInLanMode = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -3577,6 +3590,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->maxHalfConnections          = static_cast<uint16>(p.value(QStringLiteral("maxHalfConnections")).toInteger());
     m_data->serverKeepAliveTimeout      = static_cast<uint32>(p.value(QStringLiteral("serverKeepAliveTimeout")).toInteger());
     m_data->filterLANIPs                = p.value(QStringLiteral("filterLANIPs")).toBool();
+    m_data->skipFirewalledChecksInLanMode = p.value(QStringLiteral("skipFirewalledChecksInLanMode")).toBool();
     m_data->checkDiskspace              = p.value(QStringLiteral("checkDiskspace")).toBool();
     m_data->minFreeDiskSpace            = static_cast<uint64>(p.value(QStringLiteral("minFreeDiskSpace")).toInteger());
     m_data->logToDisk                   = p.value(QStringLiteral("logToDisk")).toBool();
@@ -3839,6 +3853,7 @@ bool Preferences::load(const QString& filePath)
             m_data->autoConnect = g["autoConnect"].as<bool>(m_data->autoConnect);
             m_data->reconnect = g["reconnect"].as<bool>(m_data->reconnect);
             m_data->filterLANIPs = g["filterLANIPs"].as<bool>(m_data->filterLANIPs);
+            m_data->skipFirewalledChecksInLanMode = g["skipFirewalledChecksInLanMode"].as<bool>(m_data->skipFirewalledChecksInLanMode);
             m_data->promptOnExit = g["promptOnExit"].as<bool>(m_data->promptOnExit);
             m_data->startMinimized = g["startMinimized"].as<bool>(m_data->startMinimized);
             m_data->showSplashScreen = g["showSplashScreen"].as<bool>(m_data->showSplashScreen);
@@ -4440,6 +4455,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "autoConnect" << YAML::Value << m_data->autoConnect;
     out << YAML::Key << "reconnect" << YAML::Value << m_data->reconnect;
     out << YAML::Key << "filterLANIPs" << YAML::Value << m_data->filterLANIPs;
+    out << YAML::Key << "skipFirewalledChecksInLanMode" << YAML::Value << m_data->skipFirewalledChecksInLanMode;
     out << YAML::Key << "promptOnExit" << YAML::Value << m_data->promptOnExit;
     out << YAML::Key << "startMinimized" << YAML::Value << m_data->startMinimized;
     out << YAML::Key << "showSplashScreen" << YAML::Value << m_data->showSplashScreen;

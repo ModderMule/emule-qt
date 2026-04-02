@@ -1298,9 +1298,38 @@ QWidget* OptionsDialog::createDirectoriesPage()
     sharedLayout->addWidget(m_sharedDirsTree);
     layout->addWidget(sharedGroup, 1);  // stretch factor for the tree
 
-    // --- Add UNC share button (disabled, not applicable on macOS) ---
+    // --- Add UNC share button (Windows only) ---
     auto* uncBtn = new QPushButton(tr("Add UNC share"), page);
-    uncBtn->setEnabled(false);  // ToDo: implement UNC share support
+#ifdef Q_OS_WIN
+    connect(uncBtn, &QPushButton::clicked, this, [this]() {
+        bool ok = false;
+        QString uncPath = QInputDialog::getText(this, tr("Add UNC Share"),
+            tr("Enter UNC path (e.g., \\\\server\\share):"),
+            QLineEdit::Normal, QStringLiteral("\\\\"), &ok);
+        if (!ok || uncPath.isEmpty())
+            return;
+        uncPath = uncPath.trimmed();
+        if (!uncPath.startsWith(QStringLiteral("\\\\"))) {
+            QMessageBox::warning(this, tr("Invalid Path"),
+                tr("A UNC path must start with \\\\."));
+            return;
+        }
+        // Ensure trailing separator
+        if (!uncPath.endsWith(QLatin1Char('/')) && !uncPath.endsWith(QLatin1Char('\\')))
+            uncPath += QLatin1Char('\\');
+        auto* fsModel = static_cast<CheckableFileSystemModel*>(m_sharedDirsModel);
+        if (fsModel->checkedPaths().contains(uncPath))
+            return;
+        fsModel->setData(fsModel->index(0, 0), Qt::Checked, Qt::CheckStateRole); // trigger change
+        // Directly add to checked set via setCheckedPaths
+        auto paths = fsModel->checkedPaths();
+        paths.append(uncPath);
+        fsModel->setCheckedPaths(paths);
+    });
+#else
+    uncBtn->setEnabled(false);
+    uncBtn->setToolTip(tr("UNC shares are only supported on Windows"));
+#endif
     layout->addWidget(uncBtn, 0, Qt::AlignLeft);
 
     return page;
@@ -1367,7 +1396,7 @@ QWidget* OptionsDialog::createFilesPage()
 
         auto* btnLayout = new QHBoxLayout;
         auto* addBtn = new QPushButton(tr("Add"), dlg);
-        connect(addBtn, &QPushButton::clicked, dlg, [table, addRule]() {
+        connect(addBtn, &QPushButton::clicked, dlg, [addRule]() {
             addRule(QString(), QString(), true);
         });
         auto* removeBtn = new QPushButton(tr("Remove"), dlg);
@@ -1920,7 +1949,8 @@ QWidget* OptionsDialog::createSecurityPage()
         if (!QFileInfo::exists(path)) {
             // Create empty file so the editor can open it
             QFile f(path);
-            f.open(QIODevice::WriteOnly);
+            if (!f.open(QIODevice::WriteOnly))
+                return;
         }
         QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     });

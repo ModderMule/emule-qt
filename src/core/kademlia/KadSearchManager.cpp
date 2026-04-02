@@ -4,8 +4,10 @@
 
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadContact.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadMiscUtils.h"
+#include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
 
@@ -16,7 +18,6 @@ namespace eMule::kad {
 // Static data
 // ---------------------------------------------------------------------------
 
-uint32 SearchManager::s_nextID = 1;
 uint32 SearchManager::s_totalResponsesReceived = 0;
 SearchMap SearchManager::s_searches;
 
@@ -128,7 +129,6 @@ bool SearchManager::startSearch(Search* search)
     UInt128 distance(RoutingZone::localKadId());
     distance.xorWith(search->getTarget());
 
-    auto* kadInst = Kademlia::instance();
     //uint32 maxType = (kadInst && !kadInst->isConnected()) ? 3 : KADEMLIA_FIND_VALUE; // MFC always 3
     uint32 maxType = 3;
 
@@ -217,56 +217,38 @@ void SearchManager::processPublishResult(const UInt128& target, uint8 load, bool
 
 void SearchManager::updateStats()
 {
-    // Remove expired searches — by time or by answer count (MFC compat)
-    time_t now = time(nullptr);
-    bool anyRemoved = false;
-    auto it = s_searches.begin();
-    while (it != s_searches.end()) {
-        Search* search = it->second;
-        uint32 lifetime = search->getLifetime();
-        bool expired = (now - search->m_created) > static_cast<time_t>(lifetime);
+    // Count active searches by type so Kademlia knows whether it can start
+    // new publish/search operations.  Matches MFC CSearchManager::UpdateStats().
+    // Deletion is handled by jumpStart() which runs every ~1s.
+    auto* prefs = Kademlia::getInstancePrefs();
+    if (!prefs)
+        return;
 
-        // Keyword/File/Notes searches enter the store phase when the find
-        // phase converges, then wait for SEARCH_RES responses.  Give them
-        // at least 30 extra seconds after the store phase starts so that
-        // remote nodes have time to send back results.
-        if (expired && search->stopping() && search->m_storePhaseStarted > 0) {
-            auto type = search->getSearchType();
-            bool needsResults = (type == SearchType::Keyword
-                                 || type == SearchType::File
-                                 || type == SearchType::Notes);
-            if (needsResults && (now - search->m_storePhaseStarted) < 30)
-                expired = false;
-        }
+    uint8 totalFile = 0;
+    uint8 totalStoreSrc = 0;
+    uint8 totalStoreKey = 0;
+    uint8 totalSource = 0;
+    uint8 totalNotes = 0;
+    uint8 totalStoreNotes = 0;
 
-        // Store searches also complete when enough responses arrive
-        if (!expired) {
-            uint32 maxAnswers = 0;
-            switch (search->getSearchType()) {
-            case SearchType::StoreFile:    maxAnswers = kSearchStoreFileTotal; break;
-            case SearchType::StoreKeyword: maxAnswers = kSearchStoreKeywordTotal; break;
-            case SearchType::StoreNotes:   maxAnswers = kSearchStoreNotesTotal; break;
-            default: break;
-            }
-            if (maxAnswers > 0 && search->getAnswers() >= maxAnswers)
-                expired = true;
-        }
-
-        if (expired) {
-            logKad(QStringLiteral("Kad: updateStats removing search %1 (type=%2 age=%3s answers=%4)")
-                       .arg(search->getSearchID()).arg(static_cast<int>(search->getSearchType()))
-                       .arg(now - search->m_created).arg(search->getAnswers()));
-            search->prepareToStop();
-            delete search;
-            it = s_searches.erase(it);
-            anyRemoved = true;
-        } else {
-            ++it;
+    for (const auto& [target, search] : s_searches) {
+        switch (search->getSearchType()) {
+        case SearchType::File:         ++totalFile;      break;
+        case SearchType::StoreFile:    ++totalStoreSrc;  break;
+        case SearchType::StoreKeyword: ++totalStoreKey;  break;
+        case SearchType::FindSource:   ++totalSource;    break;
+        case SearchType::Notes:        ++totalNotes;     break;
+        case SearchType::StoreNotes:   ++totalStoreNotes; break;
+        default: break;
         }
     }
 
-    if (anyRemoved)
-        notifySearchesChanged();
+    prefs->setTotalFile(totalFile);
+    prefs->setTotalStoreSrc(totalStoreSrc);
+    prefs->setTotalStoreKey(totalStoreKey);
+    prefs->setTotalSource(totalSource);
+    prefs->setTotalNotes(totalNotes);
+    prefs->setTotalStoreNotes(totalStoreNotes);
 }
 
 bool SearchManager::alreadySearchingFor(const UInt128& target)
@@ -318,11 +300,6 @@ bool SearchManager::isFWCheckUDPSearch(const UInt128& target)
     return false;
 }
 
-void SearchManager::setNextSearchID(uint32 nextID)
-{
-    s_nextID = nextID;
-}
-
 // ---------------------------------------------------------------------------
 // Private methods
 // ---------------------------------------------------------------------------
@@ -358,12 +335,118 @@ void SearchManager::cancelNodeSpecial(const KadClientSearcher* requester)
 
 void SearchManager::jumpStart()
 {
-    // Jump-start all searches including stopped ones — matches MFC behavior.
-    // MFC JumpStart() always calls pSearch->JumpStart() unconditionally.
-    // Stopped searches remain in s_searches until updateStats() removes them.
-    for (auto it = s_searches.begin(); it != s_searches.end(); ++it) {
-        it->second->jumpStart();
+    // Find stalled searches and jump-start them; also prune expired ones.
+    // Matches MFC CSearchManager::JumpStart() which is the main deletion path.
+    time_t now = time(nullptr);
+    bool anyRemoved = false;
+
+    for (auto it = s_searches.begin(); it != s_searches.end();) {
+        Search* search = it->second;
+        bool del = false;
+        bool stop = false;
+
+        switch (search->getSearchType()) {
+        case SearchType::File:
+            if (now >= search->m_created + kSearchFileLifetime)
+                del = true;
+            else if (search->getAnswers() >= kSearchFileTotal
+                     || now >= search->m_created + kSearchFileLifetime - 20)
+                stop = true;
+            break;
+        case SearchType::Keyword:
+            if (now >= search->m_created + kSearchKeywordLifetime)
+                del = true;
+            else if (search->getAnswers() >= kSearchKeywordTotal
+                     || now >= search->m_created + kSearchKeywordLifetime - 20)
+                stop = true;
+            break;
+        case SearchType::Notes:
+            if (now >= search->m_created + kSearchNotesLifetime)
+                del = true;
+            else if (search->getAnswers() >= kSearchNotesTotal
+                     || now >= search->m_created + kSearchNotesLifetime - 20)
+                stop = true;
+            break;
+        case SearchType::FindBuddy:
+            if (now >= search->m_created + kSearchFindBuddyLifetime)
+                del = true;
+            else if (search->getAnswers() >= kSearchFindBuddyTotal
+                     || now >= search->m_created + kSearchFindBuddyLifetime - 20)
+                stop = true;
+            break;
+        case SearchType::FindSource:
+            if (now >= search->m_created + kSearchFindSourceLifetime)
+                del = true;
+            else if (search->getAnswers() >= kSearchFindSourceTotal
+                     || now >= search->m_created + kSearchFindSourceLifetime - 20)
+                stop = true;
+            break;
+        case SearchType::Node:
+        case SearchType::NodeSpecial:
+        case SearchType::NodeFwCheckUDP:
+            if (now >= search->m_created + kSearchNodeLifetime)
+                del = true;
+            break;
+        case SearchType::NodeComplete:
+        {
+            // In LAN mode, allow publishing after just 1 response since the
+            // network is small and we don't need 10 answers to populate the table.
+            const uint32_t minAnswers =
+                (Kademlia::instance() && Kademlia::instance()->isRunningInLANMode())
+                    ? 1 : kSearchNodeCompTotal;
+            if (now >= search->m_created + kSearchNodeLifetime
+                || (now >= search->m_created + kSearchNodeCompLifetime
+                    && search->getAnswers() >= minAnswers))
+            {
+                del = true;
+                // Tell Kad that it can start publishing.
+                // Matches MFC SearchManager.cpp:315
+                if (auto* prefs = Kademlia::getInstancePrefs())
+                    prefs->setPublish(true);
+            }
+            break;
+        }
+        case SearchType::StoreFile:
+            if (now >= search->m_created + kSearchStoreFileLifetime)
+                del = true;
+            else if (search->getAnswers() >= kSearchStoreFileTotal
+                     || now >= search->m_created + kSearchStoreFileLifetime - 20)
+                stop = true;
+            break;
+        case SearchType::StoreKeyword:
+            if (now >= search->m_created + kSearchStoreKeywordLifetime)
+                del = true;
+            else if (search->getAnswers() >= kSearchStoreKeywordTotal
+                     || now >= search->m_created + kSearchStoreKeywordLifetime - 20)
+                stop = true;
+            break;
+        case SearchType::StoreNotes:
+            if (now >= search->m_created + kSearchStoreNotesLifetime)
+                del = true;
+            else if (search->getAnswers() >= kSearchStoreNotesTotal
+                     || now >= search->m_created + kSearchStoreNotesLifetime - 20)
+                stop = true;
+            break;
+        default:
+            if (now >= search->m_created + kSearchLifetime)
+                del = true;
+        }
+
+        if (del) {
+            delete search;
+            it = s_searches.erase(it);
+            anyRemoved = true;
+        } else {
+            if (stop)
+                search->prepareToStop();
+            else
+                search->jumpStart();
+            ++it;
+        }
     }
+
+    if (anyRemoved)
+        notifySearchesChanged();
 }
 
 void SearchManager::notifySearchesChanged()

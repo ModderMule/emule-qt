@@ -427,27 +427,59 @@ void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
     }
 }
 
-void DownloadListModel::setSources(const QString& hash, std::vector<SourceRow> sources)
+void DownloadListModel::setSources(const QString& hash, std::vector<SourceRow> incoming)
 {
     for (int i = 0; i < static_cast<int>(m_downloads.size()); ++i) {
-        if (m_downloads[static_cast<size_t>(i)].hash == hash) {
-            auto& dl = m_downloads[static_cast<size_t>(i)];
-            const QModelIndex parentIdx = index(i, 0);
-            const int oldCount = static_cast<int>(dl.sources.size());
-            const int newCount = static_cast<int>(sources.size());
+        if (m_downloads[static_cast<size_t>(i)].hash != hash)
+            continue;
 
-            if (oldCount > 0) {
-                beginRemoveRows(parentIdx, 0, oldCount - 1);
-                dl.sources.clear();
+        auto& dl = m_downloads[static_cast<size_t>(i)];
+        const QModelIndex parentIdx = index(i, 0);
+
+        // Incremental update keyed by userHash — preserves selection & scroll.
+
+        // 1. Build lookup of incoming sources by userHash
+        QHash<QString, size_t> incomingByHash;
+        incomingByHash.reserve(static_cast<qsizetype>(incoming.size()));
+        for (size_t j = 0; j < incoming.size(); ++j)
+            incomingByHash.insert(incoming[j].userHash, j);
+
+        // 2. Remove departed sources (reverse order keeps indices stable)
+        for (int j = static_cast<int>(dl.sources.size()) - 1; j >= 0; --j) {
+            if (!incomingByHash.contains(dl.sources[static_cast<size_t>(j)].userHash)) {
+                beginRemoveRows(parentIdx, j, j);
+                dl.sources.erase(dl.sources.begin() + j);
                 endRemoveRows();
             }
-            if (newCount > 0) {
-                beginInsertRows(parentIdx, 0, newCount - 1);
-                dl.sources = std::move(sources);
-                endInsertRows();
-            }
-            return;
         }
+
+        // 3. Update surviving sources in-place
+        QSet<QString> existingHashes;
+        existingHashes.reserve(static_cast<qsizetype>(dl.sources.size()));
+        for (size_t j = 0; j < dl.sources.size(); ++j) {
+            existingHashes.insert(dl.sources[j].userHash);
+            if (auto it = incomingByHash.constFind(dl.sources[j].userHash); it != incomingByHash.cend())
+                dl.sources[j] = std::move(incoming[it.value()]);
+        }
+        if (!dl.sources.empty())
+            emit dataChanged(index(0, 0, parentIdx),
+                             index(static_cast<int>(dl.sources.size()) - 1, ColCount - 1, parentIdx));
+
+        // 4. Append new sources in one batch
+        std::vector<SourceRow> toInsert;
+        for (auto& src : incoming) {
+            if (!src.userHash.isEmpty() && !existingHashes.contains(src.userHash))
+                toInsert.push_back(std::move(src));
+        }
+        if (!toInsert.empty()) {
+            const int first = static_cast<int>(dl.sources.size());
+            const int last  = first + static_cast<int>(toInsert.size()) - 1;
+            beginInsertRows(parentIdx, first, last);
+            for (auto& s : toInsert)
+                dl.sources.push_back(std::move(s));
+            endInsertRows();
+        }
+        return;
     }
 }
 

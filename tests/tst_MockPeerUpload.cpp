@@ -577,7 +577,6 @@ void tst_MockPeerUpload::uploadFlow_longDurationRateLimited()
     //    Each OP_REQUESTPARTS carries 3 blocks = 30KB.
     //    At ~10 KB/s this takes ~3 seconds per round.
     constexpr uint64 blockSize = 10240;     // 10 KB per block
-    constexpr uint64 bytesPerRound = blockSize * 3;  // 30 KB
 
     uint64 nextOffset = 0;
     int roundsSent = 0;
@@ -729,7 +728,7 @@ void tst_MockPeerUpload::uploadFlow_throttlerEnforcesSpeedLimit()
     uint64 prevMockBytes = 0;
 
     QTimer processTimer;
-    connect(&processTimer, &QTimer::timeout, this, [this, &mock, &nextOffset, &prevMockBytes, blockSize, fileSize] {
+    connect(&processTimer, &QTimer::timeout, this, [this, &mock, &nextOffset, &prevMockBytes, fileSize] {
         m_uploadQueue->process();
         m_listenSocket->process();
 

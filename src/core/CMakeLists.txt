@@ -120,6 +120,10 @@ target_link_libraries(emulecore
         archive_static
 )
 
+if(WIN32)
+    target_link_libraries(emulecore PRIVATE iphlpapi)
+endif()
+
 # -- Precompiled header (replaces old Stdafx.h) --------------------------------
 # Stable headers that rarely change — speeds up incremental builds significantly.
 target_precompile_headers(emulecore PRIVATE

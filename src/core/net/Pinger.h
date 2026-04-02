@@ -135,8 +135,12 @@ public:
     /// @return true if the UDP traceroute sockets were successfully opened.
     [[nodiscard]] bool isUdpAvailable() const { return m_udpStarted; }
 
-    /// @return true if the ICMP echo socket was successfully opened.
+    /// @return true if the ICMP echo socket/handle was successfully opened.
+#ifdef Q_OS_WIN
+    [[nodiscard]] bool isIcmpAvailable() const { return m_icmpHandle != nullptr; }
+#else
     [[nodiscard]] bool isIcmpAvailable() const { return m_icmpSocket >= 0; }
+#endif
 
 private:
     PingStatus pingICMP(uint32 addr, uint8 ttl);
@@ -144,12 +148,17 @@ private:
 
     static uint16 icmpChecksum(const void* data, int len);
 
+#ifdef Q_OS_WIN
+    void*  m_icmpHandle = nullptr;  ///< HANDLE from IcmpCreateFile().
+    bool   m_udpStarted = false;
+#else
     int  m_icmpSocket = -1;  ///< SOCK_DGRAM + IPPROTO_ICMP (unprivileged ICMP echo).
     int  m_rawSocket  = -1;  ///< SOCK_RAW + IPPROTO_ICMP (for reading TTL_EXPIRED).
     int  m_udpSocket  = -1;  ///< SOCK_DGRAM + IPPROTO_UDP (for sending traceroute probes).
     bool m_udpStarted = false;
 
     uint16 m_icmpSeq = 0;    ///< Incrementing ICMP sequence number.
+#endif
 };
 
 } // namespace eMule

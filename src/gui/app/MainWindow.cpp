@@ -145,14 +145,19 @@ MainWindow::MainWindow(QWidget* parent)
     // Version checker
     m_versionChecker = new VersionChecker(this);
     connect(m_versionChecker, &VersionChecker::newVersionAvailable,
-            this, [this](const QString& version) {
+            this, [this](const QString& version, const QString& downloadUrl) {
         const auto result = QMessageBox::question(
             this, tr("New Version Available"),
             tr("A new version (%1) of eMule Qt is available.\n\n"
-               "Would you like to open the homepage to download it?").arg(version),
+               "Would you like to open the download page?").arg(version),
             QMessageBox::Yes | QMessageBox::No);
-        if (result == QMessageBox::Yes)
-            QDesktopServices::openUrl(QUrl(QStringLiteral("https://emule-qt.org/")));
+        if (result == QMessageBox::Yes) {
+            const QUrl parsed(downloadUrl);
+            const bool validUrl = parsed.isValid()
+                && (parsed.scheme() == QStringLiteral("https") || parsed.scheme() == QStringLiteral("http"));
+            const QUrl url = validUrl ? parsed : QUrl(QStringLiteral("https://emule-qt.org/"));
+            QDesktopServices::openUrl(url);
+        }
     });
     connect(m_versionChecker, &VersionChecker::upToDate,
             this, []() {
@@ -1271,7 +1276,15 @@ QString MainWindow::skinsDir() const
 void MainWindow::applySkinProfile(const QString& path)
 {
     theUiState.setSkinProfilePath(path);
-    // TODO: Parse INI and apply color/icon overrides when theming engine is implemented
+
+    if (path.isEmpty()) {
+        m_skinEngine.clear();
+    } else {
+        m_skinEngine.loadProfile(path);
+    }
+
+    // Re-apply toolbar icons from skin overrides
+    rebuildToolbar();
 }
 
 } // namespace eMule

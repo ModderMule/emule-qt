@@ -82,6 +82,13 @@ public:
     [[nodiscard]] bool     isIpVerified() const      { return m_ipVerified; }
     void setIpVerified(bool verified)                { m_ipVerified = verified; }
 
+    // -- Crypto / connect options --------------------------------------------
+    [[nodiscard]] uint8    connectOptions() const     { return m_connectOptions; }
+    void setConnectOptions(uint8 opts)                { m_connectOptions = opts; }
+
+    [[nodiscard]] UInt128  clientHash() const          { return m_clientHash; }
+    void setClientHash(const UInt128& hash)            { m_clientHash = hash; }
+
     // -- Bootstrap -----------------------------------------------------------
     [[nodiscard]] bool     isBootstrapContact() const { return m_bootstrapContact; }
     void setBootstrapContact()                       { m_bootstrapContact = true; }
@@ -101,8 +108,10 @@ private:
     uint32     m_netIp       = 0;
     uint16     m_tcpPort     = 0;
     uint16     m_udpPort     = 0;
+    UInt128    m_clientHash;
     uint8      m_version     = 0;
     uint8      m_type        = 3;
+    uint8      m_connectOptions = 0;
     bool       m_ipVerified  = false;
     bool       m_receivedHelloPacket = false;
     bool       m_bootstrapContact   = false;

@@ -8,23 +8,34 @@
 #include "app/UiState.h"
 #include "controls/SharedFilesModel.h"
 #include "controls/SharedPartsDelegate.h"
+#include "dialogs/ArchivePreviewPanel.h"
 #include "dialogs/FileDetailDialog.h"
+#include "dialogs/MediaInfoPanel.h"
 #include "prefs/Preferences.h"
+#include "utils/WebServices.h"
+#include "dialogs/CollectionCreateDialog.h"
+#include "dialogs/CollectionViewDialog.h"
+
+#include "files/Collection.h"
+#include "files/CollectionFile.h"
 
 #include "IpcMessage.h"
 
 #include <QApplication>
 #include <QCborArray>
+#include <QCheckBox>
 #include <QCborMap>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QFileDialog>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QFont>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QInputDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -37,6 +48,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QTimer>
@@ -73,6 +85,18 @@ QString formatSize(int64_t bytes)
     if (bytes < 1024LL * 1024 * 1024)
         return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
     return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
+}
+
+/// Format a data rate in bytes/sec for display (matching MFC CastItoXBytes with rate flag).
+QString formatSpeed(int64_t bytesPerSec)
+{
+    if (bytesPerSec <= 0)
+        return QStringLiteral("0 B/s");
+    if (bytesPerSec < 1024)
+        return QStringLiteral("%1 B/s").arg(bytesPerSec);
+    if (bytesPerSec < 1024 * 1024)
+        return QStringLiteral("%1 KB/s").arg(static_cast<double>(bytesPerSec) / 1024.0, 0, 'f', 1);
+    return QStringLiteral("%1 MB/s").arg(static_cast<double>(bytesPerSec) / (1024.0 * 1024.0), 0, 'f', 1);
 }
 
 } // anonymous namespace
@@ -154,6 +178,7 @@ void SharedFilesPanel::onFolderSelectionChanged()
 void SharedFilesPanel::onFileSelectionChanged()
 {
     updateStatsTab();
+    updateContentTab();
     updateEd2kTab();
 }
 
@@ -291,10 +316,101 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         }
     }
 
-    // Collection submenu (placeholder)
+    // Collection submenu
     {
-        auto* collMenu = m_contextMenu->addMenu(tr("Collection"));
-        collMenu->setEnabled(false); // ToDo: implement collection management
+        const bool singleSel = hasSel && m_fileView->selectionModel()->selectedRows().size() == 1;
+        const bool isColl = singleSel && file && file->isCollection;
+        const bool hasAuthorKey = isColl && file->hasCollectionAuthorKey;
+
+        auto* collMenu = m_contextMenu->addMenu(ico("SharedFilesList.ico"), tr("Collection"));
+
+        // Create Collection...
+        auto* createAct = collMenu->addAction(tr("Create Collection..."), this, [this]() {
+            QStringList hashes;
+            const auto selRows = m_fileView->selectionModel()->selectedRows();
+            for (const auto& idx : selRows) {
+                const QModelIndex srcIdx = m_proxy->mapToSource(idx);
+                hashes.append(m_model->hashAt(srcIdx.row()));
+            }
+            auto* dlg = new CollectionCreateDialog(m_ipc, hashes, this);
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->show();
+        });
+        createAct->setEnabled(hasSel);
+
+        // Modify Collection...
+        auto* modifyAct = collMenu->addAction(tr("Modify Collection..."), this, [this, hash]() {
+            Ipc::IpcMessage msg(Ipc::IpcMsgType::GetCollectionInfo);
+            msg.append(hash);
+            m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+                if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+                    return;
+                const QCborMap data = resp.fieldMap(1);
+                const QString name = data.value(QStringLiteral("name")).toString();
+                const bool textFmt = data.value(QStringLiteral("textFormat")).toBool();
+                const QCborArray filesArr = data.value(QStringLiteral("files")).toArray();
+
+                QList<QVariantMap> files;
+                for (const auto& v : filesArr) {
+                    const QCborMap fm = v.toMap();
+                    QVariantMap row;
+                    row[QStringLiteral("hash")] = fm.value(QStringLiteral("hash")).toString();
+                    row[QStringLiteral("fileName")] = fm.value(QStringLiteral("fileName")).toString();
+                    row[QStringLiteral("fileSize")] = fm.value(QStringLiteral("fileSize")).toInteger();
+                    files.append(row);
+                }
+
+                auto* dlg = new CollectionCreateDialog(m_ipc, {}, this);
+                dlg->loadExistingCollection({}, name, files, textFmt);
+                dlg->setAttribute(Qt::WA_DeleteOnClose);
+                dlg->show();
+            });
+        });
+        modifyAct->setEnabled(isColl);
+
+        // View Collection...
+        auto* viewAct = collMenu->addAction(tr("View Collection..."), this, [this, hash]() {
+            Ipc::IpcMessage msg(Ipc::IpcMsgType::GetCollectionInfo);
+            msg.append(hash);
+            m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+                if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+                    return;
+                const QCborMap data = resp.fieldMap(1);
+
+                // Build a temporary Collection from IPC data
+                auto* coll = new Collection;
+                coll->m_name = data.value(QStringLiteral("name")).toString();
+                coll->m_authorName = data.value(QStringLiteral("authorName")).toString();
+
+                const QCborArray filesArr = data.value(QStringLiteral("files")).toArray();
+                for (const auto& v : filesArr) {
+                    const QCborMap fm = v.toMap();
+                    auto cf = std::make_unique<CollectionFile>();
+                    const QString cfHash = fm.value(QStringLiteral("hash")).toString();
+                    const QByteArray hashBytes = QByteArray::fromHex(cfHash.toLatin1());
+                    if (hashBytes.size() == 16)
+                        cf->setFileHash(reinterpret_cast<const uint8*>(hashBytes.constData()));
+                    cf->setFileSize(fm.value(QStringLiteral("fileSize")).toInteger());
+                    cf->setFileName(fm.value(QStringLiteral("fileName")).toString(), true);
+                    coll->addFile(cf.get(), true);
+                }
+
+                auto* dlg = new CollectionViewDialog(*coll, m_ipc, this);
+                dlg->setAttribute(Qt::WA_DeleteOnClose);
+                // Transfer ownership of collection to dialog
+                connect(dlg, &QDialog::destroyed, dlg, [coll]() { delete coll; });
+                dlg->show();
+            });
+        });
+        viewAct->setEnabled(isColl);
+
+        // Search Author's Collections...
+        auto* searchAct = collMenu->addAction(tr("Search Author's Collections..."), this, [this, hash]() {
+            Ipc::IpcMessage msg(Ipc::IpcMsgType::SearchAuthorCollections);
+            msg.append(hash);
+            m_ipc->sendRequest(std::move(msg), [](const Ipc::IpcMessage&) {});
+        });
+        searchAct->setEnabled(hasAuthorKey);
     }
 
     m_contextMenu->addSeparator();
@@ -327,10 +443,15 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     connect(m_contextMenu->addAction(ico("Search.ico"), tr("Find...")),
             &QAction::triggered, this, &SharedFilesPanel::showFindDialog);
 
-    // Web Services submenu (placeholder)
+    // Web Services submenu
     {
-        auto* webMenu = m_contextMenu->addMenu(tr("Web Services"));
-        webMenu->setEnabled(false); // ToDo: populate from webservices.dat
+        auto* webMenu = m_contextMenu->addMenu(ico("Web.ico"), tr("Web Services"));
+        if (hasSel) {
+            WebServices::instance().populateFileMenu(webMenu, file->hash, file->fileName,
+                                                      static_cast<uint64_t>(file->fileSize));
+        }
+        if (webMenu->isEmpty())
+            webMenu->setEnabled(false);
     }
 
     m_contextMenu->popup(m_fileView->viewport()->mapToGlobal(pos));
@@ -519,13 +640,21 @@ QWidget* SharedFilesPanel::createBottomTabs()
 
     // Column layout: [label 0] [value 1] [bar 2] [right-label 3] [right-value 4]
 
-    auto makeBar = [](QProgressBar*& bar) {
+    // MFC uses yellow gradient bars with blue percentage text
+    static const QString barStyle = QStringLiteral(
+        "QProgressBar { border: 1px solid #999; background: #FFFFF0;"
+        "  text-align: center; color: #1446FF; font-size: 10px; }"
+        "QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "  stop:0 #FFFFF0, stop:1 #FFFF00); }");
+
+    auto makeBar = [&](QProgressBar*& bar) {
         bar = new QProgressBar;
         bar->setRange(0, 100);
         bar->setValue(0);
         bar->setTextVisible(true);
         bar->setFormat(QStringLiteral("%p%"));
         bar->setFixedHeight(16);
+        bar->setStyleSheet(barStyle);
     };
 
     int row = 0;
@@ -581,6 +710,11 @@ QWidget* SharedFilesPanel::createBottomTabs()
     auto* totalHeader = new QLabel(tr("Total"));
     totalHeader->setFont(boldFont);
     grid->addWidget(totalHeader, row, 0, 1, 3);
+
+    // Right side: Total Popularity Rank (matching MFC IDC_FS_POPULARITY2)
+    grid->addWidget(new QLabel(tr("Popularity Rank:")), row, 3);
+    m_statPopularity2 = new QLabel(QStringLiteral("-"));
+    grid->addWidget(m_statPopularity2, row, 4);
     ++row;
 
     // Total — Requests
@@ -614,35 +748,68 @@ QWidget* SharedFilesPanel::createBottomTabs()
     m_bottomTabs->addTab(statsWidget, QIcon(QStringLiteral(":/icons/FileInfo.ico")),
                          tr("Statistics"));
 
-    // --- Content tab (placeholder) ---
-    auto* contentWidget = new QWidget;
-    auto* contentLayout = new QVBoxLayout(contentWidget);
-    auto* contentLabel = new QLabel(tr("General / Video / Audio metadata displayed here"));
-    contentLabel->setAlignment(Qt::AlignCenter);
-    contentLayout->addWidget(contentLabel);
-    m_bottomTabs->addTab(contentWidget, QIcon(QStringLiteral(":/icons/FileInfo.ico")),
+    // --- Content tab (archive preview / media info) ---
+    m_contentStack = new QStackedWidget;
+    m_mediaInfoPanel = new MediaInfoPanel;
+    m_archivePreview = new ArchivePreviewPanel;
+    m_contentStack->addWidget(m_mediaInfoPanel);   // index 0
+    m_contentStack->addWidget(m_archivePreview);   // index 1
+    m_bottomTabs->addTab(m_contentStack, QIcon(QStringLiteral(":/icons/FileInfo.ico")),
                          tr("Content"));
 
-    // --- eD2K Links tab ---
+    // --- eD2K Links tab (matching MFC CED2kLinkDlg layout) ---
     auto* ed2kWidget = new QWidget;
     auto* ed2kLayout = new QVBoxLayout(ed2kWidget);
     ed2kLayout->setContentsMargins(4, 4, 4, 4);
 
-    auto* ed2kHeader = new QLabel(tr("eD2K Links"));
-    ed2kHeader->setFont(boldFont);
-    ed2kLayout->addWidget(ed2kHeader);
-
+    // Link text area
     m_ed2kText = new QTextEdit;
     m_ed2kText->setReadOnly(true);
     m_ed2kText->setLineWrapMode(QTextEdit::NoWrap);
     ed2kLayout->addWidget(m_ed2kText, 1);
 
+    // Basic Options group (MFC IDC_LD_BASICGROUP)
+    m_ed2kBasicGroup = new QGroupBox(tr("Basic Options"));
+    auto* basicLayout = new QHBoxLayout(m_ed2kBasicGroup);
+    basicLayout->setContentsMargins(6, 2, 6, 2);
+    m_ed2kSourceCheck = new QCheckBox(tr("Add Source"));
+    m_ed2kSourceCheck->setEnabled(false); // requires public IP + not firewalled
+    m_ed2kSourceCheck->setToolTip(tr("Not available (requires public IP and open firewall)"));
+    basicLayout->addWidget(m_ed2kSourceCheck);
+    basicLayout->addStretch(1);
+    ed2kLayout->addWidget(m_ed2kBasicGroup);
+
+    // Advanced Options group (MFC IDC_LD_ADVANCEDGROUP)
+    m_ed2kAdvancedGroup = new QGroupBox(tr("Advanced Options"));
+    auto* advLayout = new QHBoxLayout(m_ed2kAdvancedGroup);
+    advLayout->setContentsMargins(6, 2, 6, 2);
+    m_ed2kHtmlCheck = new QCheckBox(tr("Add HTML"));
+    m_ed2kHashsetCheck = new QCheckBox(tr("Add Hashset"));
+    m_ed2kHostnameCheck = new QCheckBox(tr("Hostname"));
+    advLayout->addWidget(m_ed2kHtmlCheck);
+    advLayout->addWidget(m_ed2kHashsetCheck);
+    advLayout->addWidget(m_ed2kHostnameCheck);
+    advLayout->addStretch(1);
+    ed2kLayout->addWidget(m_ed2kAdvancedGroup);
+
+    // Copy button row
     auto* buttonRow = new QHBoxLayout;
     buttonRow->addStretch(1);
     m_copyButton = new QPushButton(tr("Copy"));
     connect(m_copyButton, &QPushButton::clicked, this, &SharedFilesPanel::copyEd2kLink);
     buttonRow->addWidget(m_copyButton);
     ed2kLayout->addLayout(buttonRow);
+
+    // Connect checkboxes to link rebuild
+    connect(m_ed2kHtmlCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
+    connect(m_ed2kHashsetCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
+    connect(m_ed2kHostnameCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
+
+    // Hostname enabled only if configured
+    const bool hostnameOk = thePrefs.ed2kHostname().contains(u'.');
+    m_ed2kHostnameCheck->setEnabled(hostnameOk);
+    if (!hostnameOk)
+        m_ed2kHostnameCheck->setToolTip(tr("Requires a hostname configured in Preferences"));
 
     m_bottomTabs->addTab(ed2kWidget, QIcon(QStringLiteral(":/icons/eD2kLink.ico")),
                          tr("eD2K Links"));
@@ -706,6 +873,7 @@ void SharedFilesPanel::requestSharedFiles()
             row.ed2kLink          = m.value(QStringLiteral("ed2kLink")).toString();
             row.isPartFile        = m.value(QStringLiteral("isPartFile")).toBool();
             row.uploadingClients  = static_cast<int>(m.value(QStringLiteral("uploadingClients")).toInteger());
+            row.queuedClients     = static_cast<int>(m.value(QStringLiteral("queuedClients")).toInteger());
             row.partCount         = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
             row.completedSize     = m.value(QStringLiteral("completedSize")).toInteger();
 
@@ -718,6 +886,15 @@ void SharedFilesPanel::requestSharedFiles()
                     pm.append(static_cast<char>(v.toInteger()));
                 row.sharePartMap = std::move(pm);
             }
+
+            // Collection metadata
+            row.isCollection           = m.value(QStringLiteral("isCollection")).toBool();
+            row.hasCollectionAuthorKey = m.value(QStringLiteral("hasCollectionAuthorKey")).toBool();
+
+            // ED2K link building components
+            row.partHashesStr  = m.value(QStringLiteral("partHashesStr")).toString();
+            row.aichHashStr    = m.value(QStringLiteral("aichHashStr")).toString();
+            row.uploadDataRate = m.value(QStringLiteral("uploadDataRate")).toInteger();
 
             // Capture incoming directory from first non-partfile
             if (m_incomingDir.isEmpty() && !row.isPartFile)
@@ -775,8 +952,9 @@ void SharedFilesPanel::updateStatsTab()
         m_statTotalAccepted->setText(QStringLiteral("0"));
         m_statTotalTransferred->setText(QStringLiteral("0 B"));
         m_statPopularity->setText(QStringLiteral("-"));
+        m_statPopularity2->setText(QStringLiteral("-"));
         m_statOnQueue->setText(QStringLiteral("0"));
-        m_statUploading->setText(QStringLiteral("0"));
+        m_statUploading->setText(QStringLiteral("0 B/s"));
         clearBars();
         return;
     }
@@ -792,9 +970,15 @@ void SharedFilesPanel::updateStatsTab()
     m_statTotalRequests->setText(QString::number(f->allTimeRequests));
     m_statTotalAccepted->setText(QString::number(f->allTimeAccepted));
     m_statTotalTransferred->setText(formatSize(f->allTimeTransferred));
-    m_statPopularity->setText(f->allTimeRequests > 0 ? QString::number(f->allTimeRequests) : QStringLiteral("-"));
-    m_statOnQueue->setText(QStringLiteral("0")); // ToDo: populate when queue data available
-    m_statUploading->setText(QString::number(f->uploadingClients));
+
+    // Popularity rank: file's position among all shared files sorted by request count
+    const int sessionRank = computePopularityRank(f->requests, &SharedFileRow::requests);
+    const int totalRank = computePopularityRank(f->allTimeRequests, &SharedFileRow::allTimeRequests);
+    m_statPopularity->setText(sessionRank > 0 ? QString::number(sessionRank) : QStringLiteral("-"));
+    m_statPopularity2->setText(totalRank > 0 ? QString::number(totalRank) : QStringLiteral("-"));
+
+    m_statOnQueue->setText(QString::number(f->queuedClients));
+    m_statUploading->setText(formatSpeed(f->uploadDataRate));
 
     // Compute percentage bars using cached aggregate totals
     auto pct = [](int64_t part, int64_t total) -> int {
@@ -811,20 +995,143 @@ void SharedFilesPanel::updateStatsTab()
 
 void SharedFilesPanel::updateEd2kTab()
 {
+    const auto* f = selectedFile();
+    if (!f) {
+        m_ed2kText->clear();
+        m_ed2kHashsetCheck->setEnabled(false);
+        return;
+    }
+
+    // Enable/disable checkboxes based on file capabilities
+    m_ed2kHashsetCheck->setEnabled(!f->partHashesStr.isEmpty());
+    if (f->partHashesStr.isEmpty())
+        m_ed2kHashsetCheck->setChecked(false);
+
+    rebuildEd2kLink();
+}
+
+void SharedFilesPanel::rebuildEd2kLink()
+{
+    const auto* f = selectedFile();
+    if (!f) {
+        m_ed2kText->clear();
+        return;
+    }
+
+    // Build ed2k link from components, matching AbstractFile::getED2kLink()
+    // The basic ed2kLink contains: ed2k://|file|NAME|SIZE|HASH|[h=AICH|]/
+    // We rebuild with optional parts based on checkbox state
+
+    // Parse base components from the existing basic link
+    // Format: ed2k://|file|ENCODED_NAME|SIZE|HASH|[h=AICH|]/
+    const QString& base = f->ed2kLink;
+    // Find the hash field (4th pipe-delimited segment)
+    // ed2k://|file|NAME|SIZE|HASH|.../
+    int pipeCount = 0;
+    int hashStart = -1;
+    int hashEnd = -1;
+    for (int i = 0; i < base.size(); ++i) {
+        if (base[i] == u'|') {
+            ++pipeCount;
+            if (pipeCount == 4)
+                hashStart = i + 1;
+            else if (pipeCount == 5) {
+                hashEnd = i;
+                break;
+            }
+        }
+    }
+
+    if (hashStart < 0 || hashEnd < 0) {
+        m_ed2kText->setPlainText(base);
+        return;
+    }
+
+    // Extract components from the base link
+    // "ed2k://|file|" is 14 chars
+    const QString encodedName = base.mid(14, base.indexOf(u'|', 14) - 14);
+    const auto nameEnd = 14 + encodedName.size();
+    const QString sizeStr = base.mid(nameEnd + 1, base.indexOf(u'|', nameEnd + 1) - nameEnd - 1);
+    const QString hashStr = base.mid(hashStart, hashEnd - hashStart);
+
+    // Reconstruct link
+    QString link = QStringLiteral("ed2k://|file|%1|%2|%3|").arg(encodedName, sizeStr, hashStr);
+
+    // Optional hashset (part hashes)
+    if (m_ed2kHashsetCheck->isChecked() && !f->partHashesStr.isEmpty())
+        link += f->partHashesStr;
+
+    // AICH hash (always include if available)
+    if (!f->aichHashStr.isEmpty())
+        link += f->aichHashStr;
+
+    // Hostname source
+    if (m_ed2kHostnameCheck->isChecked()) {
+        const QString& hostname = thePrefs.ed2kHostname();
+        if (hostname.contains(u'.'))
+            link += QStringLiteral("|sources,%1:%2|/").arg(hostname).arg(thePrefs.port());
+        else
+            link += QChar(u'/');
+    } else {
+        link += QChar(u'/');
+    }
+
+    // HTML wrapping
+    if (m_ed2kHtmlCheck->isChecked()) {
+        const QString fileName = f->fileName;
+        link = QStringLiteral("<a href=\"%1\">%2</a>").arg(link, fileName);
+    }
+
+    m_ed2kText->setPlainText(link);
+}
+
+// ---------------------------------------------------------------------------
+// Content tab — archive preview or media info
+// ---------------------------------------------------------------------------
+
+bool SharedFilesPanel::isArchiveFile(const QString& fileType, const QString& fileName)
+{
+    if (fileType == QLatin1String("Arc") || fileType == QLatin1String("Iso"))
+        return true;
+
+    const QString ext = fileName.section(u'.', -1).toLower();
+    static const QSet<QString> archiveExts = {
+        QStringLiteral("zip"), QStringLiteral("rar"), QStringLiteral("7z"),
+        QStringLiteral("iso"), QStringLiteral("ace"), QStringLiteral("tar"),
+        QStringLiteral("gz"),  QStringLiteral("bz2"), QStringLiteral("cab"),
+        QStringLiteral("nrg"),
+    };
+    return archiveExts.contains(ext);
+}
+
+void SharedFilesPanel::updateContentTab()
+{
     const QModelIndex proxyIdx = m_fileView->selectionModel()->currentIndex();
     if (!proxyIdx.isValid()) {
-        m_ed2kText->clear();
+        m_archivePreview->clear();
+        m_mediaInfoPanel->clear();
+        m_contentStack->setCurrentIndex(0);
         return;
     }
 
     const QModelIndex srcIdx = m_proxy->mapToSource(proxyIdx);
     const auto* f = m_model->fileAt(srcIdx.row());
     if (!f) {
-        m_ed2kText->clear();
+        m_archivePreview->clear();
+        m_mediaInfoPanel->clear();
         return;
     }
 
-    m_ed2kText->setPlainText(f->ed2kLink);
+    if (isArchiveFile(f->fileType, f->fileName)) {
+        m_contentStack->setCurrentIndex(1);
+        m_archivePreview->setFile(f->filePath, static_cast<uint64_t>(f->fileSize));
+        m_archivePreview->setAutoScan(true);
+        m_mediaInfoPanel->clear();
+    } else {
+        m_contentStack->setCurrentIndex(0);
+        m_mediaInfoPanel->setFile(f->filePath, f->fileSize);
+        m_archivePreview->clear();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -907,14 +1214,33 @@ void SharedFilesPanel::showFindDialog()
 
 void SharedFilesPanel::copyEd2kLink()
 {
+    const QString text = m_ed2kText->toPlainText();
+    if (!text.isEmpty())
+        QApplication::clipboard()->setText(text);
+}
+
+const SharedFileRow* SharedFilesPanel::selectedFile() const
+{
     const QModelIndex proxyIdx = m_fileView->selectionModel()->currentIndex();
     if (!proxyIdx.isValid())
-        return;
-
+        return nullptr;
     const QModelIndex srcIdx = m_proxy->mapToSource(proxyIdx);
-    const auto* f = m_model->fileAt(srcIdx.row());
-    if (f && !f->ed2kLink.isEmpty())
-        QApplication::clipboard()->setText(f->ed2kLink);
+    return m_model->fileAt(srcIdx.row());
+}
+
+int SharedFilesPanel::computePopularityRank(int64_t value,
+                                             int64_t (SharedFileRow::*field)) const
+{
+    if (value <= 0)
+        return 0; // no rank when no requests
+    int rank = 1;
+    const int count = m_model->fileCount();
+    for (int i = 0; i < count; ++i) {
+        const auto* row = m_model->fileAt(i);
+        if (row && row->*field > value)
+            ++rank;
+    }
+    return rank;
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,6 +1368,13 @@ void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int ta
         const QCborMap details = resp.field(1).toMap();
         auto* dlg = new FileDetailDialog(details,
                                           static_cast<FileDetailDialog::Tab>(tab), this);
+        connect(dlg, &FileDetailDialog::searchKadNotes, this, [this](const QString& fileHash) {
+            if (m_ipc && m_ipc->isConnected()) {
+                IpcMessage kadMsg(IpcMsgType::SearchKadNotes);
+                kadMsg.append(fileHash);
+                m_ipc->sendRequest(std::move(kadMsg), [](const IpcMessage&) {});
+            }
+        });
         dlg->show();
     });
 }

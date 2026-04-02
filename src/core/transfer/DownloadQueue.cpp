@@ -8,6 +8,7 @@
 #include "transfer/DownloadQueue.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
+#include "kademlia/Kademlia.h"
 #include "client/DeadSourceList.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFileList.h"
@@ -124,6 +125,8 @@ void DownloadQueue::removeFile(PartFile* file)
 
     auto it = std::ranges::find(m_fileList, file);
     if (it != m_fileList.end()) {
+        if (file->status() != PartFileStatus::Complete)
+            ++m_failedDownCount;
         m_fileList.erase(it);
         sortByPriority();
         emit fileRemoved(file);
@@ -264,73 +267,127 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
                                         uint32 buddyIP, uint16 buddyPort,
                                         uint8 buddyCrypt, uint8 sourceType,
                                         const uint8* buddyHash,
-                                        const uint8* clientHash)
+                                        const uint8* clientHash, uint16 udpPort)
 {
     Q_UNUSED(searchID);
 
+    // Safety: file must be in download queue (MFC DownloadQueue.cpp:1512-1513)
     PartFile* file = fileByID(fileHash);
     if (!file)
         return;
 
-    // Don't exceed max sources per file
-    if (file->sourceCount() >= thePrefs.maxSourcesPerFile())
+    // Don't add sources to stopped files or beyond max (MFC:1516)
+    if (file->isStopped() || file->sourceCount() >= thePrefs.maxSourcesPerFile())
         return;
 
-    // Create a new client for this Kad source
-    auto* client = new UpDownClient(tcpPort, 0, 0, 0, file);
-    client->setSourceFrom(SourceFrom::Kademlia);
+    // IP filter on source IP (MFC:1519-1524)
+    uint32 ed2kIP = htonl(ip);
+    if (m_ipFilter && ip != 0 && m_ipFilter->isFiltered(ed2kIP)) {
+        logDebug(QStringLiteral("addKadSourceResult: IP %1 filtered").arg(ip));
+        return;
+    }
 
-    // MFC publishes GetClientHash() (the ED2K user hash) as the source ID,
-    // NOT GetKadID().  So clientHash here IS the correct user hash.
-    // Setting it enables encrypted connection setup (connectionEstablished
-    // checks hasValidHash() before enabling encryption).
-    if (clientHash)
-        client->setUserHash(clientHash);
+    // Self-loop check (MFC:1525-1526)
+    auto* kadInst = kad::Kademlia::instance();
+    if (kadInst && ip == kadInst->getIPAddress() && tcpPort == thePrefs.port())
+        return;
 
-    if (sourceType == 4) {
-        // Low-ID source — uses Kad buddy callback, not direct TCP.
-        // Don't set the client IP; tryToConnect() uses the Kad callback path
-        // when m_connectIP == 0 and hasValidBuddyID().
+    // Common finalization: checkAndAddSource + tryToConnect or delete
+    auto finalizeSource = [&](UpDownClient* client) {
+        if (checkAndAddSource(file, client)) {
+            logDebug(QStringLiteral("addKadSourceResult: source ADDED type=%1 file=%2 totalSources=%3")
+                         .arg(sourceType).arg(file->fileName()).arg(file->sourceCount()));
+            client->tryToConnect();
+        } else {
+            logDebug(QStringLiteral("addKadSourceResult: source REJECTED type=%1 IP=%2:%3")
+                         .arg(sourceType).arg(ip).arg(tcpPort));
+            delete client;
+        }
+    };
+
+    switch (sourceType) {
+    case 4:
+    case 1: {
+        // Non-firewalled users (MFC DownloadQueue.cpp:1530-1548)
+        if (tcpPort == 0) {
+            logDebug(QStringLiteral("addKadSourceResult: ignored type %1 — no TCP port, IP=%2")
+                         .arg(sourceType).arg(ip));
+            return;
+        }
+        auto* client = new UpDownClient(tcpPort, ip, 0, 0, file);
+        client->setSourceFrom(SourceFrom::Kademlia);
+        client->setKadPort(udpPort);
+        if (clientHash)
+            client->setUserHash(clientHash);
+        client->setIP(htonl(ip));
+        client->setConnectOptions(buddyCrypt, true, false);
+        logDebug(QStringLiteral("Kad HighID source for %1: type=%2 IP=%3:%4 crypt=0x%5")
+                     .arg(file->fileName()).arg(sourceType).arg(ip).arg(tcpPort)
+                     .arg(buddyCrypt, 2, 16, QLatin1Char('0')));
+        finalizeSource(client);
+        break;
+    }
+
+    case 5:
+    case 3: {
+        // Firewalled with buddy callback (MFC DownloadQueue.cpp:1553-1582)
+        if (theApp.isFirewalled()) {
+            logDebug(QStringLiteral("addKadSourceResult: skipping FW source type %1 — we are firewalled")
+                         .arg(sourceType));
+            return;
+        }
+        if (m_ipFilter && m_ipFilter->isFiltered(htonl(buddyIP))) {
+            logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 filtered").arg(buddyIP));
+            return;
+        }
+        if (m_clientList && m_clientList->isBannedClient(htonl(buddyIP))) {
+            logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 banned").arg(buddyIP));
+            return;
+        }
+        // clientID=1: "We set the clientID to 1 as a Kad user only has 1 buddy" (MFC:1570)
+        auto* client = new UpDownClient(tcpPort, 1, 0, 0, file);
+        client->setSourceFrom(SourceFrom::Kademlia);
+        client->setKadPort(udpPort);
+        if (clientHash)
+            client->setUserHash(clientHash);
         if (buddyHash)
             client->setBuddyID(buddyHash);
         client->setBuddyIP(htonl(buddyIP));
         client->setBuddyPort(buddyPort);
         client->setConnectOptions(buddyCrypt, true, true);
-        logDebug(QStringLiteral("Kad LowID source for %1: buddy=%2:%3")
-                     .arg(file->fileName())
-                     .arg(buddyIP).arg(buddyPort));
-    } else {
-        // High-ID source (type 1/2) — direct TCP connection.
-        client->setIP(htonl(ip));  // Kad IPs are host BO; setIP sets both m_userIP and m_connectIP
-        client->setConnectOptions(buddyCrypt, true, false);
-        {
-            QString hashHex;
-            for (int i = 0; i < 16; ++i)
-                hashHex += QStringLiteral("%1").arg(clientHash ? clientHash[i] : 0, 2, 16, QLatin1Char('0'));
-            logDebug(QStringLiteral("Kad HighID source for %1: IP=%2:%3 crypt=0x%4 hash=%5 hasValid=%6")
-                         .arg(file->fileName())
-                         .arg(ip).arg(tcpPort)
-                         .arg(buddyCrypt, 2, 16, QLatin1Char('0'))
-                         .arg(hashHex)
-                         .arg(client->hasValidHash()));
-        }
+        logDebug(QStringLiteral("Kad FW source for %1: type=%2 buddy=%3:%4")
+                     .arg(file->fileName()).arg(sourceType).arg(buddyIP).arg(buddyPort));
+        finalizeSource(client);
+        break;
     }
 
-    // IPFilter + dead source + dedup checks
-    if (checkAndAddSource(file, client)) {
-        logDebug(QStringLiteral("addKadSourceResult: source ADDED, calling tryToConnect — "
-                                "type=%1 connectIP=0x%2 port=%3 file=%4 totalSources=%5")
-                     .arg(sourceType)
-                     .arg(client->connectIP(), 8, 16, QLatin1Char('0'))
-                     .arg(tcpPort)
-                     .arg(file->fileName())
-                     .arg(file->sourceCount()));
-        client->tryToConnect();
-    } else {
-        logDebug(QStringLiteral("addKadSourceResult: source REJECTED by checkAndAddSource — "
-                                "type=%1 IP=%2:%3")
-                     .arg(sourceType).arg(ip).arg(tcpPort));
-        delete client;
+    case 6: {
+        // Direct UDP callback (MFC DownloadQueue.cpp:1584-1601)
+        if (theApp.isFirewalled()) {
+            logDebug(QStringLiteral("addKadSourceResult: skipping type 6 — we are firewalled"));
+            return;
+        }
+        if ((buddyCrypt & 0x08) == 0) {
+            logDebug(QStringLiteral("addKadSourceResult: type 6 direct callback flag not set (crypt=0x%1)")
+                         .arg(buddyCrypt, 2, 16, QLatin1Char('0')));
+            return;
+        }
+        auto* client = new UpDownClient(tcpPort, 1, 0, 0, file);
+        client->setSourceFrom(SourceFrom::Kademlia);
+        client->setKadPort(udpPort);
+        client->setConnectIP(htonl(ip));  // IP for UDP, not TCP (MFC:1596)
+        if (clientHash)
+            client->setUserHash(clientHash);
+        client->setConnectOptions(buddyCrypt, true, false);
+        logDebug(QStringLiteral("Kad UDP callback source for %1: type=6 IP=%2:%3")
+                     .arg(file->fileName()).arg(ip).arg(tcpPort));
+        finalizeSource(client);
+        break;
+    }
+
+    default:
+        logDebug(QStringLiteral("addKadSourceResult: unknown source type %1").arg(sourceType));
+        return;
     }
 }
 
@@ -630,10 +687,20 @@ void DownloadQueue::setCatStatus(uint32 category, bool paused)
     }
 }
 
+uint32 DownloadQueue::averageDownTime() const
+{
+    return m_successfulDownCount > 0
+        ? static_cast<uint32>(m_totalDownTime / m_successfulDownCount)
+        : 0;
+}
+
 void DownloadQueue::onDownloadCompleted(PartFile* file)
 {
     if (!file)
         return;
+
+    ++m_successfulDownCount;
+    m_totalDownTime += file->dlActiveTime();
 
     logInfo(QStringLiteral("Download completed: %1").arg(file->fileName()));
 

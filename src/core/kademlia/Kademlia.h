@@ -80,6 +80,7 @@ public:
 
     void storeClosestDistance(const UInt128& distance);
     [[nodiscard]] bool isRunningInLANMode() const;
+    [[nodiscard]] static bool shouldSkipFirewallChecks();
 
     bool findNodeIDByIP(KadClientSearcher& requester, uint32 ip, uint16 tcpPort, uint16 udpPort);
     bool findIPByNodeID(KadClientSearcher& requester, const uint8* nodeID);
@@ -98,13 +99,13 @@ public:
         const QString& type, uint32 sources, uint32 completeSources)>;
     /// Callback type for Kad source results (file sources found via DHT).
     /// Parameters: searchID, fileHash (16 bytes), sourceIP, sourcePort,
-    ///   buddyIP, buddyPort, cryptOptions, sourceType, buddyHash (16 bytes),
-    ///   clientHash (16 bytes — ED2K user hash published by the source)
+    ///   buddyIP, buddyPort, cryptOptions, sourceType (1/3/4/5/6),
+    ///   buddyHash (16 bytes), clientHash (16 bytes — ED2K user hash), udpPort
     using KadSourceResultCallback = std::function<void(uint32 searchID,
         const uint8* fileHash, uint32 ip, uint16 tcpPort,
         uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
         uint8 sourceType, const uint8* buddyHash,
-        const uint8* clientHash)>;
+        const uint8* clientHash, uint16 udpPort)>;
     /// Callback type for Kad notes results.
     using KadNotesResultCallback = std::function<void(uint32 searchID,
         const uint8* fileHash, const QString& name, uint8 rating,

@@ -9,6 +9,9 @@
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
+#include "utils/SafeFile.h"
+
+#include <stdexcept>
 
 
 namespace eMule {
@@ -132,6 +135,9 @@ void ClientReqSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPac
 
 bool ClientReqSocket::packetReceived(Packet* packet)
 {
+    if (m_deleteThis)
+        return false;
+
     if (thePrefs.logRawSocketPackets())
         logDebug(QStringLiteral("ClientReqSocket::packetReceived — proto=0x%1 opcode=0x%2 size=%3 peer=%4:%5")
                      .arg(packet->prot, 2, 16, QLatin1Char('0'))
@@ -148,13 +154,32 @@ bool ClientReqSocket::packetReceived(Packet* packet)
     uint8 opcode = packet->opcode;
     uint8 protocol = packet->prot;
 
-    if (protocol == OP_EDONKEYPROT) {
-        return processPacket(data, size, opcode);
-    } else if (protocol == OP_EMULEPROT) {
-        return processExtPacket(data, size, opcode);
-    } else if (protocol == OP_PACKEDPROT) {
-        // Compressed eMule packet — decompress handled by EMSocket
-        return processExtPacket(data, size, opcode);
+    try {
+        if (protocol == OP_EDONKEYPROT) {
+            return processPacket(data, size, opcode);
+        } else if (protocol == OP_EMULEPROT) {
+            return processExtPacket(data, size, opcode);
+        } else if (protocol == OP_PACKEDPROT) {
+            // Compressed eMule packet — decompress handled by EMSocket
+            return processExtPacket(data, size, opcode);
+        }
+    } catch (const FileException& ex) {
+        logWarning(QStringLiteral("ClientReqSocket::packetReceived — malformed packet: %1 "
+                                  "(proto=0x%2 opcode=0x%3 size=%4 peer=%5:%6)")
+                       .arg(QLatin1String(ex.what()))
+                       .arg(protocol, 2, 16, QLatin1Char('0'))
+                       .arg(opcode, 2, 16, QLatin1Char('0'))
+                       .arg(size)
+                       .arg(peerAddress().toString()).arg(peerPort()));
+        return false;
+    } catch (const std::exception& ex) {
+        logWarning(QStringLiteral("ClientReqSocket::packetReceived — exception: %1 "
+                                  "(proto=0x%2 opcode=0x%3 size=%4)")
+                       .arg(QLatin1String(ex.what()))
+                       .arg(protocol, 2, 16, QLatin1Char('0'))
+                       .arg(opcode, 2, 16, QLatin1Char('0'))
+                       .arg(size));
+        return false;
     }
 
     if (thePrefs.logRawSocketPackets())
@@ -226,6 +251,8 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_REQUESTPARTS_I64:
     case OP_QUEUERANKING:
     case OP_FILEDESC:
+    case OP_REQUESTSOURCES:
+    case OP_ANSWERSOURCES:
     case OP_REQUESTSOURCES2:
     case OP_ANSWERSOURCES2:
     case OP_PUBLICKEY:

@@ -62,7 +62,8 @@ public:
     // --- Session management ---
 
     /// Start a new search. Returns the assigned search ID.
-    uint32 newSearch(const QString& resultFileType, const SearchParams& params);
+    uint32 newSearch(const QString& resultFileType, const SearchParams& params,
+                     uint32 forcedID = 0);
 
     /// Clear all searches.
     void clear();

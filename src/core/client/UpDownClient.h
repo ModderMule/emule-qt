@@ -255,6 +255,8 @@ public:
     [[nodiscard]] const uint8* reqUpFileId() const { return m_reqUpFileId.data(); }
     void setReqUpFileId(const uint8* id);
 
+    [[nodiscard]] uint32 upDatarate() const { return m_upDatarate; }
+
     [[nodiscard]] uint16 upPartCount() const { return m_upPartCount; }
     [[nodiscard]] const std::vector<uint8>& upPartStatus() const { return m_upPartStatus; }
     [[nodiscard]] uint16 upCompleteSourcesCount() const { return m_upCompleteSourcesCount; }
@@ -527,10 +529,12 @@ public:
     void setLastAskedTime();
     void updateDisplayedInfo(bool force = false);
 
-    // -- Source exchange (SX2) ------------------------------------------------
+    // -- Source exchange -------------------------------------------------------
 
-    void processRequestSources2(const uint8* data, uint32 size);
-    void processAnswerSources2(const uint8* data, uint32 size);
+    void processRequestSources(const uint8* data, uint32 size);   // v1
+    void processAnswerSources(const uint8* data, uint32 size);    // v1
+    void processRequestSources2(const uint8* data, uint32 size);  // v2
+    void processAnswerSources2(const uint8* data, uint32 size);   // v2
 
     // AICH
     [[nodiscard]] bool isSupportingAICH() const { return m_supportsAICH > 0; }

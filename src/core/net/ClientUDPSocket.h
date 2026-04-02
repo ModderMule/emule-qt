@@ -119,6 +119,7 @@ signals:
 
 private slots:
     void onReadyRead();
+    void flushSendQueue();
 
 private:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode,
@@ -128,8 +129,15 @@ private:
 
     void purgeExpiredPackets();
 
+    struct PreparedDatagram {
+        QByteArray data;
+        uint32 ip = 0;
+        uint16 port = 0;
+    };
+
     QUdpSocket m_socket;
     std::deque<UDPPack> m_controlQueue;
+    std::deque<PreparedDatagram> m_sendReadyQueue;
     mutable std::mutex m_sendLock;
     uint16 m_port = 0;
     bool m_wouldBlock = false;

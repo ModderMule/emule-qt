@@ -112,7 +112,8 @@ translations_*.json
 blog-*.md
 windows-3rd.yml
 docker/kad/docker-compose.kadnet.yml
-docker/kad/nodes.dat
+docker/kad/seed/
+docker/kad/crashes/
 
 # Environment secrets
 .env

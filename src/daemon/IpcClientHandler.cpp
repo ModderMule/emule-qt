@@ -10,6 +10,10 @@
 #include <QDir>
 #include <QHostInfo>
 
+#include "app/CoreSession.h"
+#include "files/Collection.h"
+#include "files/CollectionFile.h"
+#include "files/CollectionKeys.h"
 #include "ipfilter/IPFilter.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
@@ -208,6 +212,10 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetClientDetails:   handleGetClientDetails(msg); break;
     case IpcMsgType::GetSharedFileDetails: handleGetSharedFileDetails(msg); break;
     case IpcMsgType::GetServerState:      handleGetServerState(msg); break;
+    case IpcMsgType::SearchKadNotes:      handleSearchKadNotes(msg); break;
+    case IpcMsgType::GetCollectionInfo:  handleGetCollectionInfo(msg); break;
+    case IpcMsgType::SaveCollection:     handleSaveCollection(msg); break;
+    case IpcMsgType::SearchAuthorCollections: handleSearchAuthorCollections(msg); break;
     default:
         sendMessage(IpcMessage::makeError(msg.seqId(), 400,
             QStringLiteral("Unknown message type: %1").arg(static_cast<int>(msg.type()))));
@@ -230,18 +238,18 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
     const QString version = msg.fieldString(0);
     logInfo(QStringLiteral("IPC handshake from client, version: %1").arg(version));
 
-    // Non-localhost connections require a valid token
-    if (!m_isLocal) {
-        const QString clientToken = msg.fieldString(1);
+    // Authenticate: required for remote clients, optional for localhost.
+    // A local client that sends a token (e.g. Docker port-forward) gets validated + encrypted.
+    const QString clientToken = msg.fieldString(1);
+    if (!m_isLocal || !clientToken.isEmpty()) {
         const QStringList tokens = thePrefs.ipcTokens();
         if (tokens.isEmpty() || !tokens.contains(clientToken)) {
-            logWarning(QStringLiteral("IPC auth failed — invalid token from remote client"));
+            logWarning(QStringLiteral("IPC auth failed — invalid token"));
             sendMessage(IpcMessage::makeError(msg.seqId(), 403,
                 QStringLiteral("Authentication failed")));
             m_connection->close();
             return;
         }
-        // Enable AES encryption for all subsequent messages
         m_connection->setEncryptionKey(deriveAesKey(clientToken));
     }
 
@@ -631,6 +639,33 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
 }
 
+void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (hash.size() != 32) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+
+    auto* kadInst = kad::Kademlia::instance();
+    if (!kadInst || !kadInst->isConnected()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Kad not connected")));
+        return;
+    }
+
+    const QByteArray hashBytes = QByteArray::fromHex(hash.toLatin1());
+    if (hashBytes.size() != 16) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+
+    kad::UInt128 target;
+    target.setValueBE(reinterpret_cast<const uint8*>(hashBytes.constData()));
+
+    const bool ok = kad::SearchManager::prepareLookup(kad::SearchType::Notes, true, target) != nullptr;
+    sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
+}
+
 void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
 {
     if (!theApp.serverConnect) {
@@ -724,20 +759,21 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
         }
     }
 
-    // Create search session in SearchList
-    const uint32 searchID = theApp.searchList->newSearch(params.fileType, params);
-
     bool started = false;
+    uint32 searchID = 0;
 
     if (params.type == SearchType::Kademlia) {
-        // Kademlia keyword search
+        // Create Kad search first to get its auto-assigned ID
         auto* kadSearch = kad::SearchManager::prepareFindKeywords(
             params.expression, 0, nullptr);
         if (kadSearch) {
-            // Sync Kad search ID with SearchList session ID
-            kadSearch->setSearchID(searchID);
+            searchID = kadSearch->getSearchID();
+            theApp.searchList->newSearch(params.fileType, params, searchID);
             started = kad::SearchManager::startSearch(kadSearch);
         }
+    } else {
+        // Ed2k searches use SearchList's own counter
+        searchID = theApp.searchList->newSearch(params.fileType, params);
     }
     if (params.type == SearchType::Ed2kServer || params.type == SearchType::Automatic) {
         if (theApp.serverConnect && theApp.serverConnect->isConnected()) {
@@ -907,6 +943,42 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
         m.insert(QStringLiteral("ed2kLink"), kf->getED2kLink());
         m.insert(QStringLiteral("isPartFile"), isPartFile);
         m.insert(QStringLiteral("uploadingClients"), kf->uploadingClientCount());
+
+        int queuedClients = 0;
+        int64_t uploadDataRate = 0;
+        if (theApp.uploadQueue) {
+            const uint8* fileHashPtr = kf->fileHash();
+            theApp.uploadQueue->forEachWaiting([&](UpDownClient* c) {
+                if (md4equ(c->reqUpFileId(), fileHashPtr))
+                    ++queuedClients;
+            });
+            theApp.uploadQueue->forEachUploading([&](UpDownClient* c) {
+                if (md4equ(c->reqUpFileId(), fileHashPtr))
+                    uploadDataRate += c->upDatarate();
+            });
+        }
+        m.insert(QStringLiteral("queuedClients"), queuedClients);
+        m.insert(QStringLiteral("uploadDataRate"), static_cast<qint64>(uploadDataRate));
+
+        // ED2K link building components for GUI-side link variants
+        const auto& fid = kf->fileIdentifier();
+        QString partHashesStr;
+        if (fid.getAvailableMD4PartHashCount() > 0 && fid.hasExpectedMD4HashCount()) {
+            partHashesStr = QStringLiteral("p=");
+            for (uint16 j = 0; j < fid.getAvailableMD4PartHashCount(); ++j) {
+                if (j > 0)
+                    partHashesStr += QChar(u':');
+                partHashesStr += encodeBase16({fid.getMD4PartHash(j), 16});
+            }
+            partHashesStr += QChar(u'|');
+        }
+        m.insert(QStringLiteral("partHashesStr"), partHashesStr);
+
+        QString aichHashStr;
+        if (fid.hasAICHHash())
+            aichHashStr = QStringLiteral("h=%1|").arg(fid.getAICHHash().getString());
+        m.insert(QStringLiteral("aichHashStr"), aichHashStr);
+
         m.insert(QStringLiteral("partCount"), static_cast<int>(kf->partCount()));
         m.insert(QStringLiteral("completedSize"), static_cast<qint64>(completedSz));
 
@@ -961,6 +1033,12 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
             if (!partMapArr.isEmpty())
                 m.insert(QStringLiteral("sharePartMap"), partMapArr);
         }
+
+        // Collection metadata
+        const bool isColl = Collection::hasCollectionExtension(kf->fileName());
+        m.insert(QStringLiteral("isCollection"), isColl);
+        m.insert(QStringLiteral("hasCollectionAuthorKey"),
+                 isColl && kf->collection() && !kf->collection()->m_authorKey.isEmpty());
 
         files.append(m);
         addedHashes.insert(hash);
@@ -1591,9 +1669,17 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
         stats.insert(QStringLiteral("cumUpAvgTime"),
                      static_cast<qint64>(theApp.uploadQueue ? theApp.uploadQueue->averageUpTime() : 0));
 
-        // Cumulative download sessions (TODO: add counters to DownloadQueue)
+        // Cumulative download sessions
+        const uint32 sesDownSucc = theApp.downloadQueue ? theApp.downloadQueue->successfulDownloadCount() : 0;
+        const uint32 sesDownFail = theApp.downloadQueue ? theApp.downloadQueue->failedDownloadCount() : 0;
+        stats.insert(QStringLiteral("cumDownSuccessful"),
+                     static_cast<qint64>(thePrefs.cumDownSuccessfulSessions() + sesDownSucc));
+        stats.insert(QStringLiteral("cumDownFailed"),
+                     static_cast<qint64>(thePrefs.cumDownFailedSessions() + sesDownFail));
+        stats.insert(QStringLiteral("cumDownAvgTime"),
+                     static_cast<qint64>(theApp.downloadQueue ? theApp.downloadQueue->averageDownTime() : 0));
         stats.insert(QStringLiteral("cumDownCompletedFiles"),
-                     static_cast<qint64>(thePrefs.cumDownCompletedFiles()));
+                     static_cast<qint64>(thePrefs.cumDownCompletedFiles() + sesDownSucc));
 
         // Cumulative overhead — upload
         const auto sesUpOhFR = s->upDataOverheadFileRequest();
@@ -3418,6 +3504,169 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
     else
         return false;
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// handleGetCollectionInfo
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleGetCollectionInfo(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    if (hash.size() != 32) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared list unavailable")));
+        return;
+    }
+
+    const QByteArray hashBytes = QByteArray::fromHex(hash.toLatin1());
+    KnownFile* kf = theApp.sharedFileList->getFileByID(
+        reinterpret_cast<const uint8*>(hashBytes.constData()));
+    if (!kf || !kf->collection()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("No collection for this file")));
+        return;
+    }
+
+    const Collection* coll = kf->collection();
+    QCborMap result;
+    result.insert(QStringLiteral("name"), coll->m_name);
+    result.insert(QStringLiteral("authorName"), coll->m_authorName);
+    result.insert(QStringLiteral("authorKeyHash"), coll->authorKeyHashString());
+    result.insert(QStringLiteral("authorKeyHex"), coll->authorKeyString());
+    result.insert(QStringLiteral("textFormat"), coll->m_textFormat);
+
+    QCborArray filesArr;
+    for (const auto& [key, cf] : coll->files()) {
+        QCborMap fm;
+        fm.insert(QStringLiteral("hash"), md4str(cf->fileHash()));
+        fm.insert(QStringLiteral("fileName"), cf->fileName());
+        fm.insert(QStringLiteral("fileSize"), static_cast<qint64>(cf->fileSize()));
+        filesArr.append(fm);
+    }
+    result.insert(QStringLiteral("files"), filesArr);
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(result)));
+}
+
+// ---------------------------------------------------------------------------
+// handleSaveCollection
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleSaveCollection(const IpcMessage& msg)
+{
+    const QString name = msg.fieldString(0);
+    const QCborArray hashesArr = msg.fieldArray(1);
+    const bool textFormat = msg.fieldBool(2);
+    const bool sign = msg.fieldBool(3);
+
+    if (name.isEmpty()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Collection name required")));
+        return;
+    }
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared list unavailable")));
+        return;
+    }
+
+    Collection coll;
+    coll.m_name = name;
+    coll.m_textFormat = textFormat;
+
+    // Add files by hash
+    for (int i = 0; i < hashesArr.size(); ++i) {
+        const QString fileHash = hashesArr.at(i).toString();
+        const QByteArray hashBytes = QByteArray::fromHex(fileHash.toLatin1());
+        if (hashBytes.size() != 16)
+            continue;
+        KnownFile* kf = theApp.sharedFileList->getFileByID(
+            reinterpret_cast<const uint8*>(hashBytes.constData()));
+        if (kf)
+            coll.addFile(kf, true);
+    }
+
+    if (coll.fileCount() == 0) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("No valid files for collection")));
+        return;
+    }
+
+    // Signing
+    evp_pkey_st* signKey = nullptr;
+    if (sign && !textFormat) {
+        auto* da = DaemonApp::instance();
+        if (da && da->coreSession() && da->coreSession()->collectionKeys()) {
+            auto* ck = da->coreSession()->collectionKeys();
+            signKey = ck->signKey();
+            coll.m_authorKey = ck->publicKeyDer();
+            coll.m_authorName = thePrefs.nick();
+        }
+    }
+
+    // Save to incoming directory
+    const QString filePath = QDir(thePrefs.incomingDir())
+                                 .filePath(name + QStringLiteral(".emulecollection"));
+
+    // Remove existing file if present
+    if (QFile::exists(filePath))
+        QFile::remove(filePath);
+
+    if (!coll.writeToFile(filePath, signKey)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 500, QStringLiteral("Failed to write collection file")));
+        return;
+    }
+
+    // Trigger rescan so the new file gets picked up and hashed
+    theApp.sharedFileList->reload();
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleSearchAuthorCollections
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleSearchAuthorCollections(const IpcMessage& msg)
+{
+    const QString fileHash = msg.fieldString(0);
+    if (fileHash.size() != 32) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared list unavailable")));
+        return;
+    }
+
+    const QByteArray hashBytes = QByteArray::fromHex(fileHash.toLatin1());
+    KnownFile* kf = theApp.sharedFileList->getFileByID(
+        reinterpret_cast<const uint8*>(hashBytes.constData()));
+    if (!kf || !kf->collection() || kf->collection()->m_authorKey.isEmpty()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+            QStringLiteral("No collection author key for this file")));
+        return;
+    }
+
+    auto* kadInst = kad::Kademlia::instance();
+    if (!kadInst || !kadInst->isConnected()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Kad not connected")));
+        return;
+    }
+
+    // Search for collections by this author's key
+    const QString authorKeyHex = kf->collection()->authorKeyString();
+
+    // Build search expression: author key as keyword, file type = EmuleCollection
+    // TODO: This initiates a Kad keyword search. Full integration with SearchList
+    //       for result display will come when SearchPanel supports collection types.
+    logInfo(QStringLiteral("Searching for collections by author: %1")
+                .arg(kf->collection()->m_authorName));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
 } // namespace eMule

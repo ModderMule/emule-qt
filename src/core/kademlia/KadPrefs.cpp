@@ -8,6 +8,7 @@
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadRoutingZone.h"
+#include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "crypto/MD5Hash.h"
 #include "prefs/Preferences.h"
@@ -144,10 +145,11 @@ time_t KadPrefs::lastContact() const
 bool KadPrefs::firewalled() const
 {
     if (m_firewallCounter < 2) {
-        // Not enough checks yet — use recheck + last known state
-        if (!recheckIP())
-            return m_lastFirewallState;
-        return true;  // Assume firewalled during recheck
+        // Not enough peers confirmed we are reachable.
+        // If still rechecking, use last known state to avoid false lowID.
+        // If done rechecking with < 2 confirmations, we are firewalled.
+        // Matches MFC: return !GetRecheckIP() || m_bLastFirewallState;
+        return !recheckIP() || m_lastFirewallState;
     }
     return false;
 }
@@ -308,19 +310,31 @@ uint16 KadPrefs::internKadPort() const
 // Public methods — Connect options
 // ---------------------------------------------------------------------------
 
-uint8 KadPrefs::myConnectOptions() const
+uint8 KadPrefs::myConnectOptions(bool encryption, bool callback) const
 {
-    // Bit 0: TCP open (not firewalled)
-    // Bit 1: UDP open (not UDP firewalled)
-    // Bit 2: has buddy
+    // Connect options byte — MFC: OtherFunctions.cpp GetMyConnectOptions()
+    // Bit 0: CryptLayer Supported
+    // Bit 1: CryptLayer Requested
+    // Bit 2: CryptLayer Required
+    // Bit 3: Direct UDP Callback
+    // Bits 4-7: Reserved
     uint8 options = 0;
-    if (!firewalled())
-        options |= 0x01;
-    if (!UDPFirewallTester::isFirewalledUDP(true))
-        options |= 0x02;
-    if (auto* clientList = Kademlia::getClientList()) {
-        if (clientList->buddyStatus() == eMule::BuddyStatus::Connected)
+    if (encryption) {
+        if (thePrefs.cryptLayerSupported())
+            options |= 0x01;
+        if (thePrefs.cryptLayerRequested())
+            options |= 0x02;
+        if (thePrefs.cryptLayerRequired())
             options |= 0x04;
+    }
+    // Direct callback: only when ed2k-firewalled (low ID from server),
+    // Kad running, UDP verified open — allows bypassing TCP via UDP relay.
+    auto* kadInst = Kademlia::instance();
+    if (callback && theApp.isFirewalled()
+        && kadInst && kadInst->isRunning()
+        && !UDPFirewallTester::isFirewalledUDP(true)
+        && UDPFirewallTester::isVerified()) {
+        options |= 0x08;
     }
     return options;
 }

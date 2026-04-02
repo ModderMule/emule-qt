@@ -7,6 +7,7 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "app/AppContext.h"
+#include "utils/OtherFunctions.h"
 #include "net/ClientReqSocket.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
@@ -269,6 +270,13 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
     client->setKadVersion(contact.getVersion());
     client->setKadPort(contact.getUDPPort());
     client->setKadState(KadState::QueuedFwCheckUDP);
+
+    // Propagate crypto info from the Kad contact so the TCP connection can be encrypted
+    client->setConnectOptions(contact.connectOptions(), true, false);
+    uint8 hashBytes[16];
+    contact.clientHash().toByteArray(hashBytes);
+    if (!isnulmd4(hashBytes))
+        client->setUserHash(hashBytes);
 
     addClient(client);
     client->tryToConnect();

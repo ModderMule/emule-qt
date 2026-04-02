@@ -318,13 +318,13 @@ void tst_FileDownloadLive::initTestCase()
                uint32 ip, uint16 tcpPort,
                uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
                uint8 sourceType, const uint8* buddyHash,
-               const uint8* clientHash) {
+               const uint8* clientHash, uint16 udpPort) {
             m_kadSourcesFound.fetch_add(1, std::memory_order_relaxed);
             m_downloadQueue->addKadSourceResult(searchID, fileHash,
                                                  ip, tcpPort,
                                                  buddyIP, buddyPort, buddyCrypt,
                                                  sourceType, buddyHash,
-                                                 clientHash);
+                                                 clientHash, udpPort);
         });
 
     // 8. Start Kademlia

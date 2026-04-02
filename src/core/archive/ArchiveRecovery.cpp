@@ -412,7 +412,7 @@ bool ArchiveRecovery::recoverRar(QFile& input, QFile& output,
 }
 
 // ---------------------------------------------------------------------------
-// recoverISO — stub for ISO 9660 recovery
+// recoverISO — ISO 9660 recovery
 // ---------------------------------------------------------------------------
 
 bool ArchiveRecovery::recoverISO(QFile& input, QFile& output,
@@ -488,7 +488,7 @@ bool ArchiveRecovery::recoverISO(QFile& input, QFile& output,
 }
 
 // ---------------------------------------------------------------------------
-// recoverACE — stub for ACE archive recovery
+// recoverACE — ACE archive recovery
 // ---------------------------------------------------------------------------
 
 bool ArchiveRecovery::recoverACE(QFile& input, QFile& output,

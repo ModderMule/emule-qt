@@ -762,7 +762,7 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     // expects the classic tag format. New-format tags would cause a parse failure
     // and immediate disconnection on real servers.
     Tag tagName(static_cast<uint8>(CT_NAME), m_config.userNick);
-    tagName.writeTagToFile(data, UTF8Mode::OptBOM); // TODO default UTF8Mode::None, matching MFC ?
+    tagName.writeTagToFile(data);
 
     // Tag: CT_VERSION — ED2K version
     Tag tagVersion(static_cast<uint8>(CT_VERSION), static_cast<uint32>(EDONKEYVERSION));

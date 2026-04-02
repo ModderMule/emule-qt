@@ -14,9 +14,9 @@ Usage:
 """
 
 import argparse
+import hashlib
 import ipaddress
 import os
-import random
 import struct
 import subprocess
 import sys
@@ -24,7 +24,8 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 COMPOSE_FILE = os.path.join(SCRIPT_DIR, "docker-compose.kadnet.yml")
-NODES_DAT_FILE = os.path.join(SCRIPT_DIR, "nodes.dat")
+SEED_DIR = os.path.join(SCRIPT_DIR, "seed")
+NODES_DAT_FILE = os.path.join(SEED_DIR, "nodes.dat")
 DOCKERFILE = os.path.join(SCRIPT_DIR, "Dockerfile")
 IMAGE_NAME = "emuleqt-daemon:latest"
 
@@ -44,15 +45,50 @@ def ip_to_host_order_uint32(ip_str: str) -> int:
     return int(ipaddress.IPv4Address(ip_str))
 
 
-def generate_nodes_dat(seed_ips: list[str], tcp_port: int, udp_port: int, path: str):
-    """Generate a nodes.dat v2 file with seed contacts."""
+def generate_kad_id(node_index: int) -> bytes:
+    """Generate a deterministic 128-bit KadID for a node.
+
+    Uses SHA-256 of a fixed seed + node index, truncated to 16 bytes.
+    Deterministic so that re-running kadnet.py produces the same IDs.
+    """
+    h = hashlib.sha256(f"kadnet-node-{node_index}".encode()).digest()
+    return h[:16]
+
+
+def generate_user_hash(node_index: int) -> str:
+    """Generate a deterministic 16-byte eMule user hash for a node.
+
+    Returns a 32-char lowercase hex string.  Bytes 5 and 14 are set to the
+    eMule client markers (0x0E and 0x6F) required by servers and anti-leecher
+    checks.
+    """
+    h = bytearray(hashlib.sha256(f"kadnet-userhash-{node_index}".encode()).digest()[:16])
+    h[5] = 0x0E   # eMule client marker
+    h[14] = 0x6F  # eMule magic value
+    return h.hex()
+
+
+def generate_preferences_kad_dat(kad_id: bytes, ip_str: str, path: str):
+    """Write a preferencesKad.dat file matching the daemon's binary format.
+
+    Format: uint32 IP (LE) | uint16 reserved (LE) | 16-byte KadID | uint8 tagCount
+    """
+    ip_val = ip_to_host_order_uint32(ip_str)
+    with open(path, "wb") as f:
+        f.write(struct.pack("<I", ip_val))   # IP
+        f.write(struct.pack("<H", 0))        # reserved
+        f.write(kad_id)                      # 16-byte KadID
+        f.write(struct.pack("<B", 0))        # tag count
+
+
+def generate_nodes_dat(seed_ips: list[str], kad_ids: list[bytes],
+                       tcp_port: int, udp_port: int, path: str):
+    """Generate a nodes.dat v2 file with seed contacts using real KadIDs."""
     num_contacts = len(seed_ips)
     with open(path, "wb") as f:
         # Header
         f.write(struct.pack("<II", NODES_FILE_VERSION2, num_contacts))
-        for ip_str in seed_ips:
-            # Random 128-bit KadID (will be corrected on first HELLO exchange)
-            kad_id = random.randbytes(16)
+        for ip_str, kad_id in zip(seed_ips, kad_ids):
             ip_val = ip_to_host_order_uint32(ip_str)
             f.write(kad_id)
             f.write(struct.pack("<I", ip_val))      # IP (host-order uint32)
@@ -86,6 +122,7 @@ def generate_compose(
         volume_name = f"node-{i}-config"
 
         host_ipc_port = ipc_port + i - 1
+        user_hash = generate_user_hash(i)
         services[service_name] = {
             "image": IMAGE_NAME,
             "container_name": f"kadnet-node-{i}",
@@ -95,11 +132,14 @@ def generate_compose(
                 "UDP_PORT": str(udp_port),
                 "IPC_PORT": str(ipc_port),
                 "IPC_TOKEN": ipc_token,
+                "USER_HASH": user_hash,
             },
             "ports": [f"{host_ipc_port}:{ipc_port}"],
             "volumes": [
-                f"{volume_name}:/root/.config/eMule/eMule Qt Core",
-                "./nodes.dat:/seed/nodes.dat:ro",
+                f"{volume_name}:/root/.config/eMule/Core",
+                "./seed/nodes.dat:/seed/nodes.dat:ro",
+                f"./seed/node-{i}-preferencesKad.dat:/seed/preferencesKad.dat:ro",
+                f"./crashes/node-{i}:/root/.config/eMule/Core/crashes",
             ],
             "networks": {
                 "kadnet": {"ipv4_address": node_ip},
@@ -166,11 +206,7 @@ def docker_compose(*args):
     """Run docker compose with the generated file."""
     cmd = ["docker", "compose", "-f", COMPOSE_FILE, *args]
     print(f"$ {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, cwd=SCRIPT_DIR, check=True)
-    except KeyboardInterrupt:
-        print("\nInterrupted.")
-        sys.exit(0)
+    subprocess.run(cmd, cwd=SCRIPT_DIR, check=True)
 
 
 def main():
@@ -240,12 +276,27 @@ def main():
             check=True,
         )
 
-    # Compute IPs
+    # Compute IPs and KadIDs
     ips = node_ips(args.nodes, args.subnet, args.base_ip_offset)
+    kad_ids = [generate_kad_id(i + 1) for i in range(args.nodes)]
+
+    # Create per-node crash dump directories on host for bind mounts
+    crashes_dir = os.path.join(SCRIPT_DIR, "crashes")
+    for i in range(1, args.nodes + 1):
+        os.makedirs(os.path.join(crashes_dir, f"node-{i}"), exist_ok=True)
+
+    # Generate per-node preferencesKad.dat files (so each daemon starts
+    # with a known KadID that matches the entries in nodes.dat)
+    os.makedirs(SEED_DIR, exist_ok=True)
+    for i in range(args.nodes):
+        pref_path = os.path.join(SEED_DIR, f"node-{i + 1}-preferencesKad.dat")
+        generate_preferences_kad_dat(kad_ids[i], ips[i], pref_path)
+    print(f"Generated {args.nodes} preferencesKad.dat files in {SEED_DIR}")
 
     # Generate seed nodes.dat (use first 10 nodes or all if fewer)
     seed_count = min(10, args.nodes)
-    generate_nodes_dat(ips[:seed_count], args.tcp_port, args.udp_port, NODES_DAT_FILE)
+    generate_nodes_dat(ips[:seed_count], kad_ids[:seed_count],
+                       args.tcp_port, args.udp_port, NODES_DAT_FILE)
 
     # Generate docker-compose
     generate_compose(
@@ -274,4 +325,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        sys.exit(0)

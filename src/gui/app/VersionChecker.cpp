@@ -65,12 +65,15 @@ void VersionChecker::onReplyFinished(QNetworkReply* reply)
         return;
     }
 
-    const QString remoteStr = doc.object().value(QStringLiteral("latest")).toString();
+    const QJsonObject obj = doc.object();
+    const QString remoteStr = obj.value(QStringLiteral("latest")).toString();
     if (remoteStr.isEmpty()) {
         logWarning(QStringLiteral("Version check: no 'latest' field in response"));
         emit checkFailed();
         return;
     }
+
+    const QString downloadUrl = obj.value(QStringLiteral("downloadUrl")).toString();
 
     // Update last check timestamp
     thePrefs.setLastVersionCheck(QDateTime::currentSecsSinceEpoch());
@@ -81,14 +84,12 @@ void VersionChecker::onReplyFinished(QNetworkReply* reply)
     if (remote > local) {
         logInfo(QStringLiteral("New version available: %1 (current: %2)")
                     .arg(remoteStr, QApplication::applicationVersion()));
-        emit newVersionAvailable(remoteStr);
+        emit newVersionAvailable(remoteStr, downloadUrl);
     } else {
         if (m_manual)
             logInfo(QStringLiteral("eMule Qt is up to date (v%1)").arg(QApplication::applicationVersion()));
         emit upToDate();
     }
-
-    // ToDo: auto installer support
 }
 
 } // namespace eMule
