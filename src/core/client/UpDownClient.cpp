@@ -2173,19 +2173,18 @@ void UpDownClient::sendSignaturePacket()
     // MFC: v2 if bit 0 is NOT set. We will use v1 as default, except if only v2 is supported.
     const bool useV2 = !(m_supportSecIdent & 1);
     uint32 challengeIP = 0;
-    uint8 chaIPKind = kCryptCipNoneClient;
+    uint8 chaIPKind = 0;  // V1 default: no IP binding (MFC: byChaIPKind = 0)
 
     if (useV2) {
-        if (theApp.serverConnect) {
-            uint32 myID = theApp.serverConnect->clientID();
-            if (myID == 0 || theApp.serverConnect->isLowID()) {
-                // MFC: use the remote client's IP when we're low-ID
-                challengeIP = userIP();
-                chaIPKind = kCryptCipRemoteClient;
-            } else {
-                challengeIP = myID;
-                chaIPKind = kCryptCipLocalClient;
-            }
+        // MFC: when clientID is 0 or low-ID, use remote client's IP.
+        // Also handles serverConnect == null (Kad-only mode).
+        if (theApp.serverConnect && !theApp.serverConnect->isLowID()
+            && theApp.serverConnect->clientID() != 0) {
+            challengeIP = theApp.serverConnect->clientID();
+            chaIPKind = kCryptCipLocalClient;
+        } else {
+            challengeIP = userIP();
+            chaIPKind = kCryptCipRemoteClient;
         }
     }
 

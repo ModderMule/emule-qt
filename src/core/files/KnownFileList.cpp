@@ -257,6 +257,15 @@ bool KnownFileList::loadKnownFiles()
         return true;
     } catch (const std::exception& e) {
         logError(QStringLiteral("known.met load error: %1").arg(QString::fromUtf8(e.what())));
+
+        // Try .bak fallback
+        const QString bakPath = filePath + QStringLiteral(".bak");
+        if (QFile::exists(bakPath)) {
+            logInfo(QStringLiteral("Trying known.met.bak fallback..."));
+            QFile::remove(filePath);
+            if (QFile::copy(bakPath, filePath))
+                return loadKnownFiles(); // retry with restored backup
+        }
         return false;
     }
 }

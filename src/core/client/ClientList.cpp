@@ -271,7 +271,15 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
     client->setKadPort(contact.getUDPPort());
     client->setKadState(KadState::QueuedFwCheckUDP);
 
-    // Propagate crypto info from the Kad contact so the TCP connection can be encrypted
+    // Propagate crypto info from the Kad contact so the TCP connection can be encrypted.
+    // NOTE: The client hash (ED2K user hash) is usually unavailable here because FW check
+    // contacts come from KADEMLIA2_RES responses which only carry basic info (KadID, IP,
+    // ports, version) — no tags, no FT_USER_COUNT hash.  The hash is only exchanged in
+    // HELLO_REQ/RES packets, but FW check contacts are deliberately never HELLO'd (they
+    // must remain un-contacted for the test to be valid).
+    // MFC has the same limitation (ClientList.cpp:773-776) and never sets the hash
+    // here at all.  We improve on MFC by using the hash when it happens to be available,
+    // but in practice most UDP FW check TCP connections will be unencrypted.
     client->setConnectOptions(contact.connectOptions(), true, false);
     uint8 hashBytes[16];
     contact.clientHash().toByteArray(hashBytes);

@@ -32,6 +32,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMenu>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -80,6 +81,14 @@ void ServerPanel::setIpcClient(IpcClient* client)
             m_ed2kFirewalled = info.value(QStringLiteral("firewalled")).toBool();
             m_ed2kClientID   = static_cast<uint32_t>(info.value(QStringLiteral("clientID")).toInteger());
             m_ed2kServerName = info.value(QStringLiteral("serverName")).toString();
+            m_ed2kPublicIP   = static_cast<uint32_t>(info.value(QStringLiteral("publicIP")).toInteger());
+            m_ed2kObfuscated = info.value(QStringLiteral("obfuscated")).toBool();
+            m_ed2kServerDesc    = info.value(QStringLiteral("serverDescription")).toString();
+            m_ed2kServerAddr    = info.value(QStringLiteral("serverAddress")).toString();
+            m_ed2kServerPort    = static_cast<uint16_t>(info.value(QStringLiteral("serverPort")).toInteger());
+            m_ed2kServerVersion = info.value(QStringLiteral("serverVersion")).toString();
+            m_ed2kServerUsers   = static_cast<uint32_t>(info.value(QStringLiteral("serverUsers")).toInteger());
+            m_ed2kServerFiles   = static_cast<uint32_t>(info.value(QStringLiteral("serverFiles")).toInteger());
             updateConnectButton(m_ed2kConnected, m_ed2kConnecting);
             // Highlight connected server in blue
             auto serverId = static_cast<uint32_t>(info.value(QStringLiteral("serverId")).toInteger());
@@ -94,6 +103,15 @@ void ServerPanel::setIpcClient(IpcClient* client)
             m_kadRunning    = info.value(QStringLiteral("running")).toBool();
             m_kadConnected  = info.value(QStringLiteral("connected")).toBool();
             m_kadFirewalled = info.value(QStringLiteral("firewalled")).toBool();
+            m_kadUdpFirewalled = info.value(QStringLiteral("udpFirewalled")).toBool();
+            m_kadUdpVerified   = info.value(QStringLiteral("udpVerified")).toBool();
+            m_kadIP         = static_cast<uint32_t>(info.value(QStringLiteral("ip")).toInteger());
+            m_kadId         = static_cast<uint32_t>(info.value(QStringLiteral("id")).toInteger());
+            m_kadInternPort = static_cast<uint16_t>(info.value(QStringLiteral("internPort")).toInteger());
+            m_kadExternPort = static_cast<uint16_t>(info.value(QStringLiteral("externPort")).toInteger());
+            m_kadUsers      = static_cast<uint32_t>(info.value(QStringLiteral("users")).toInteger());
+            m_kadUsersExp   = static_cast<uint32_t>(info.value(QStringLiteral("usersExperimental")).toInteger());
+            m_kadFiles      = static_cast<uint32_t>(info.value(QStringLiteral("files")).toInteger());
             refreshMyInfo();
         });
 
@@ -814,65 +832,144 @@ QWidget* ServerPanel::createControlsPanel()
 
 void ServerPanel::refreshMyInfo()
 {
+    // Format network-byte-order IP to dotted string
+    auto fmtIP = [](uint32_t ip) -> QString {
+        return QHostAddress(static_cast<quint32>(ip)).toString();
+    };
+    // Format host-byte-order IP (like Kad ipAddress) to dotted string
+    auto fmtIPHost = [](uint32_t ip) -> QString {
+        const quint32 net = ((ip & 0xFF) << 24) | ((ip & 0xFF00) << 8)
+                          | ((ip >> 8) & 0xFF00) | ((ip >> 24) & 0xFF);
+        return QHostAddress(net).toString();
+    };
+    auto fmtNum = [](uint32_t n) -> QString {
+        return QLocale().toString(n);
+    };
+    const auto sp = QStringLiteral("&nbsp;&nbsp;");
+
     QString html;
     html += QStringLiteral("<b>") + tr("My Info") + QStringLiteral("</b><br>");
 
-    // eD2K Network
+    // ---- eD2K Network -------------------------------------------------------
     html += QStringLiteral("<b>") + tr("eD2K Network") + QStringLiteral("</b><br>");
     const bool ed2kConn    = m_serverConnect ? m_serverConnect->isConnected()  : m_ed2kConnected;
     const bool ed2kConning = m_serverConnect ? m_serverConnect->isConnecting() : m_ed2kConnecting;
     if (ed2kConn) {
-        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" <font color='green'>") + tr("Connected") + QStringLiteral("</font><br>");
-        QString srvName;
-        if (m_serverConnect) {
-            if (auto* srv = m_serverConnect->currentServer())
-                srvName = srv->name();
-        } else {
-            srvName = m_ed2kServerName;
-        }
-        if (!srvName.isEmpty())
-            html += QStringLiteral("&nbsp;&nbsp;") + tr("Server: %1").arg(srvName) + QStringLiteral("<br>");
-        const uint32_t clientId = m_serverConnect ? m_serverConnect->clientID() : m_ed2kClientID;
-        html += QStringLiteral("&nbsp;&nbsp;") + tr("Client ID: %1").arg(clientId) + QStringLiteral("<br>");
+        html += sp + tr("Status:") + QStringLiteral(" <font color='green'>") + tr("Connected") + QStringLiteral("</font><br>");
+
+        // IP:Port (public IP from server, or Unknown if low ID and no public IP)
+        const uint32_t pubIP = m_serverConnect ? thePrefs.publicIP() : m_ed2kPublicIP;
         const bool lowId = m_serverConnect ? m_serverConnect->isLowID() : m_ed2kFirewalled;
-        html += QStringLiteral("&nbsp;&nbsp;%1<br>")
+        if (lowId && pubIP == 0)
+            html += sp + tr("IP:Port:") + QStringLiteral("\t") + tr("Unknown") + QStringLiteral("<br>");
+        else
+            html += sp + tr("IP:Port:") + QStringLiteral("\t") + QStringLiteral("%1:%2").arg(fmtIP(pubIP)).arg(thePrefs.port()) + QStringLiteral("<br>");
+
+        // Client ID
+        const uint32_t clientId = m_serverConnect ? m_serverConnect->clientID() : m_ed2kClientID;
+        html += sp + tr("ID:") + QStringLiteral("\t%1<br>").arg(clientId);
+        html += sp + QStringLiteral("\t%1<br>")
                     .arg(lowId
-                             ? QStringLiteral("<font color='orange'>") + tr("Low ID (Firewalled)") + QStringLiteral("</font>")
+                             ? QStringLiteral("<font color='orange'>") + tr("Low ID") + QStringLiteral("</font>")
                              : QStringLiteral("<font color='green'>") + tr("High ID") + QStringLiteral("</font>"));
+
+        // eD2K Server details
+        QString srvName, srvDesc, srvAddr, srvVersion;
+        uint16_t srvPort = 0;
+        uint32_t srvUsers = 0, srvFiles = 0;
+        bool obfuscated = false;
+        if (m_serverConnect) {
+            if (auto* srv = m_serverConnect->currentServer()) {
+                srvName    = srv->name();
+                srvDesc    = srv->description();
+                srvAddr    = srv->address();
+                srvPort    = srv->port();
+                srvVersion = srv->version();
+                srvUsers   = srv->users();
+                srvFiles   = srv->files();
+                obfuscated = m_serverConnect->isConnectedObfuscated();
+            }
+        } else {
+            srvName    = m_ed2kServerName;
+            srvDesc    = m_ed2kServerDesc;
+            srvAddr    = m_ed2kServerAddr;
+            srvPort    = m_ed2kServerPort;
+            srvVersion = m_ed2kServerVersion;
+            srvUsers   = m_ed2kServerUsers;
+            srvFiles   = m_ed2kServerFiles;
+            obfuscated = m_ed2kObfuscated;
+        }
+        if (!srvName.isEmpty()) {
+            html += QStringLiteral("<br>") + sp + QStringLiteral("<b>") + tr("eD2K Server") + QStringLiteral("</b><br>");
+            html += sp + tr("Name:") + QStringLiteral("\t") + srvName + QStringLiteral("<br>");
+            if (!srvDesc.isEmpty())
+                html += sp + tr("Description:") + QStringLiteral("\t") + srvDesc + QStringLiteral("<br>");
+            html += sp + tr("IP:Port:") + QStringLiteral("\t%1:%2<br>").arg(srvAddr).arg(srvPort);
+            if (!srvVersion.isEmpty())
+                html += sp + tr("Version:") + QStringLiteral("\t") + srvVersion + QStringLiteral("<br>");
+            html += sp + tr("Users:") + QStringLiteral("\t") + fmtNum(srvUsers) + QStringLiteral("<br>");
+            html += sp + tr("Files:") + QStringLiteral("\t") + fmtNum(srvFiles) + QStringLiteral("<br>");
+            html += sp + tr("Connection:") + QStringLiteral("\t")
+                    + (obfuscated ? tr("Obfuscated") : tr("Normal")) + QStringLiteral("<br>");
+        }
     } else if (ed2kConning) {
-        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" <font color='orange'>") + tr("Connecting...") + QStringLiteral("</font><br>");
+        html += sp + tr("Status:") + QStringLiteral(" <font color='orange'>") + tr("Connecting...") + QStringLiteral("</font><br>");
     } else {
-        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" ") + tr("Disconnected") + QStringLiteral("<br>");
+        html += sp + tr("Status:") + QStringLiteral(" ") + tr("Disconnected") + QStringLiteral("<br>");
     }
 
-    // Kad Network
+    // ---- Kad Network --------------------------------------------------------
     html += QStringLiteral("<br><b>") + tr("Kad Network") + QStringLiteral("</b><br>");
     if (m_kadRunning) {
         if (m_kadConnected) {
+            // Status: Open / Firewalled
             if (m_kadFirewalled) {
-                html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:")
-                    + QStringLiteral(" <font color='orange'>") + tr("Firewalled") + QStringLiteral("</font><br>");
+                html += sp + tr("Status:") + QStringLiteral("\t")
+                    + QStringLiteral("<font color='orange'>") + tr("Firewalled") + QStringLiteral("</font><br>");
             } else {
-                html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:")
-                    + QStringLiteral(" <font color='green'>") + tr("Connected") + QStringLiteral("</font><br>");
+                html += sp + tr("Status:") + QStringLiteral("\t")
+                    + QStringLiteral("<font color='green'>") + tr("Open") + QStringLiteral("</font><br>");
             }
+            // UDP Status
+            if (m_kadUdpFirewalled) {
+                html += sp + tr("UDP Status:") + QStringLiteral("\t")
+                    + QStringLiteral("<font color='orange'>") + tr("Firewalled") + QStringLiteral("</font><br>");
+            } else {
+                QString udpText = tr("Open");
+                if (!m_kadUdpVerified)
+                    udpText += QStringLiteral(" (") + tr("unverified") + QStringLiteral(")");
+                html += sp + tr("UDP Status:") + QStringLiteral("\t")
+                    + QStringLiteral("<font color='green'>") + udpText + QStringLiteral("</font><br>");
+            }
+            // IP:Port (Kad IP is host-byte-order)
+            if (m_kadIP != 0) {
+                html += sp + tr("IP:Port:") + QStringLiteral("\t%1:%2<br>")
+                        .arg(fmtIPHost(m_kadIP)).arg(thePrefs.udpPort());
+            }
+            // ID (numeric)
+            if (m_kadId != 0)
+                html += sp + tr("ID:") + QStringLiteral("\t%1<br>").arg(m_kadId);
+            // External UDP port (only if different from internal)
+            if (m_kadExternPort != 0 && m_kadExternPort != m_kadInternPort) {
+                html += sp + tr("Extern UDP Port:") + QStringLiteral("\t%1<br>").arg(m_kadExternPort);
+            }
+            // Users and Files
+            if (m_kadUsers > 0)
+                html += sp + tr("Users:") + QStringLiteral("\t") + fmtNum(m_kadUsers) + QStringLiteral("<br>");
+            if (m_kadFiles > 0)
+                html += sp + tr("Files:") + QStringLiteral("\t") + fmtNum(m_kadFiles) + QStringLiteral("<br>");
         } else {
-            html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:")
-                + QStringLiteral(" <font color='orange'>") + tr("Connecting...") + QStringLiteral("</font><br>");
+            html += sp + tr("Status:") + QStringLiteral("\t")
+                + QStringLiteral("<font color='orange'>") + tr("Connecting...") + QStringLiteral("</font><br>");
         }
     } else {
-        html += QStringLiteral("&nbsp;&nbsp;") + tr("Status:") + QStringLiteral(" ")
-            + tr("Disconnected") + QStringLiteral("<br>");
+        html += sp + tr("Status:") + QStringLiteral("\t") + tr("Disconnected") + QStringLiteral("<br>");
     }
 
-    // Network info
-    html += QStringLiteral("<br><b>") + tr("Network") + QStringLiteral("</b><br>");
-    html += QStringLiteral("&nbsp;&nbsp;") + tr("IP:Port: %1:%2")
-                .arg(thePrefs.bindAddress().isEmpty()
-                         ? QStringLiteral("0.0.0.0")
-                         : thePrefs.bindAddress())
-                .arg(thePrefs.port()) + QStringLiteral("<br>");
-    html += QStringLiteral("&nbsp;&nbsp;") + tr("UDP Port: %1").arg(thePrefs.udpPort()) + QStringLiteral("<br>");
+    // ---- Web Interface ------------------------------------------------------
+    html += QStringLiteral("<br><b>") + tr("Web Interface") + QStringLiteral("</b><br>");
+    html += sp + tr("Status:") + QStringLiteral("\t")
+        + (thePrefs.webServerEnabled() ? tr("Enabled") : tr("Disabled")) + QStringLiteral("<br>");
 
     m_infoLabel->setText(html);
 }
@@ -1007,6 +1104,15 @@ void ServerPanel::requestKadStatus()
         m_kadRunning    = status.value(QStringLiteral("running")).toBool();
         m_kadConnected  = status.value(QStringLiteral("connected")).toBool();
         m_kadFirewalled = status.value(QStringLiteral("firewalled")).toBool();
+        m_kadUdpFirewalled = status.value(QStringLiteral("udpFirewalled")).toBool();
+        m_kadUdpVerified   = status.value(QStringLiteral("udpVerified")).toBool();
+        m_kadIP         = static_cast<uint32_t>(status.value(QStringLiteral("ip")).toInteger());
+        m_kadId         = static_cast<uint32_t>(status.value(QStringLiteral("id")).toInteger());
+        m_kadInternPort = static_cast<uint16_t>(status.value(QStringLiteral("internPort")).toInteger());
+        m_kadExternPort = static_cast<uint16_t>(status.value(QStringLiteral("externPort")).toInteger());
+        m_kadUsers      = static_cast<uint32_t>(status.value(QStringLiteral("users")).toInteger());
+        m_kadUsersExp   = static_cast<uint32_t>(status.value(QStringLiteral("usersExperimental")).toInteger());
+        m_kadFiles      = static_cast<uint32_t>(status.value(QStringLiteral("files")).toInteger());
         refreshMyInfo();
     });
 }
@@ -1027,6 +1133,14 @@ void ServerPanel::requestServerState()
         m_ed2kFirewalled = info.value(QStringLiteral("firewalled")).toBool();
         m_ed2kClientID   = static_cast<uint32_t>(info.value(QStringLiteral("clientID")).toInteger());
         m_ed2kServerName = info.value(QStringLiteral("serverName")).toString();
+        m_ed2kPublicIP   = static_cast<uint32_t>(info.value(QStringLiteral("publicIP")).toInteger());
+        m_ed2kObfuscated = info.value(QStringLiteral("obfuscated")).toBool();
+        m_ed2kServerDesc    = info.value(QStringLiteral("serverDescription")).toString();
+        m_ed2kServerAddr    = info.value(QStringLiteral("serverAddress")).toString();
+        m_ed2kServerPort    = static_cast<uint16_t>(info.value(QStringLiteral("serverPort")).toInteger());
+        m_ed2kServerVersion = info.value(QStringLiteral("serverVersion")).toString();
+        m_ed2kServerUsers   = static_cast<uint32_t>(info.value(QStringLiteral("serverUsers")).toInteger());
+        m_ed2kServerFiles   = static_cast<uint32_t>(info.value(QStringLiteral("serverFiles")).toInteger());
         updateConnectButton(m_ed2kConnected, m_ed2kConnecting);
         auto serverId = static_cast<uint32_t>(info.value(QStringLiteral("serverId")).toInteger());
         m_serverListModel->setConnectedServer(serverId);

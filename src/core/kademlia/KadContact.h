@@ -37,7 +37,7 @@ public:
     // -- ID / distance -------------------------------------------------------
     [[nodiscard]] UInt128  getClientID() const       { return m_clientId; }
     [[nodiscard]] UInt128  getDistance() const        { return m_distance; }
-    void setClientID(const UInt128& clientId, const UInt128& localKadId);
+    void setClientID(const UInt128& clientId, const UInt128& localKadId); // different from userHash (UpDownClient)
 
     // -- Network -------------------------------------------------------------
     [[nodiscard]] uint32   getIPAddress() const      { return m_ip; }

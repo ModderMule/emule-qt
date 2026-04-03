@@ -32,6 +32,9 @@ public:
     /// Options page index, or -1 if not set.
     [[nodiscard]] int optionsPage() const { return m_optionsPage; }
 
+    /// Config directory override from --config, or empty if not set.
+    [[nodiscard]] QString configOverride() const;
+
     /// Apply --tab and --subtab to the main window.
     void applyTabArgs(MainWindow& mainWindow) const;
 
@@ -70,6 +73,11 @@ private:
         QStringLiteral("options"),
         QStringLiteral("Open Options dialog at page (general, display, connection, ...)."),
         QStringLiteral("page")};
+
+    QCommandLineOption m_configOption{
+        QStringLiteral("config"),
+        QStringLiteral("Override config directory (default: platform-specific)."),
+        QStringLiteral("path")};
 
     // Cached parsed values
     bool m_screenshotMode = false;

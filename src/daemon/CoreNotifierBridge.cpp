@@ -14,6 +14,8 @@
 #include "files/PartFile.h"
 #include "friends/FriendList.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadFirewallTester.h"
+#include "kademlia/KadPrefs.h"
 #include "upnp/UPnPManager.h"
 #include "utils/Log.h"
 #include "files/SharedFileList.h"
@@ -192,11 +194,20 @@ void CoreNotifierBridge::onServerStateChanged()
     info.insert(QStringLiteral("firewalled"), theApp.isFirewalled());
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
     if (connected && theApp.serverConnect) {
+        info.insert(QStringLiteral("publicIP"),
+                    static_cast<qint64>(thePrefs.publicIP()));
+        info.insert(QStringLiteral("obfuscated"),
+                    theApp.serverConnect->isConnectedObfuscated());
         if (const auto* srv = theApp.serverConnect->currentServer()) {
             info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ip()));
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
+            info.insert(QStringLiteral("serverDescription"), srv->description());
+            info.insert(QStringLiteral("serverAddress"), srv->address());
+            info.insert(QStringLiteral("serverVersion"), srv->version());
+            info.insert(QStringLiteral("serverUsers"), static_cast<qint64>(srv->users()));
+            info.insert(QStringLiteral("serverFiles"), static_cast<qint64>(srv->files()));
         }
     }
     msg.append(info);
@@ -249,11 +260,32 @@ void CoreNotifierBridge::onKadStateChanged()
     IpcMessage msg(IpcMsgType::PushKadUpdate, 0);
     auto* kad = kad::Kademlia::instance();
     QCborMap info;
-    info.insert(QStringLiteral("running"),    kad && kad->isRunning());
-    info.insert(QStringLiteral("connected"),  kad && kad->isConnected());
+    const bool kadRunning   = kad && kad->isRunning();
+    const bool kadConnected = kad && kad->isConnected();
+    info.insert(QStringLiteral("running"),    kadRunning);
+    info.insert(QStringLiteral("connected"),  kadConnected);
     info.insert(QStringLiteral("firewalled"), kad && kad->isFirewalled());
     info.insert(QStringLiteral("users"),  static_cast<qint64>(kad ? kad->getKademliaUsers() : 0));
     info.insert(QStringLiteral("files"),  static_cast<qint64>(kad ? kad->getKademliaFiles() : 0));
+    if (kadConnected && kad) {
+        info.insert(QStringLiteral("usersExperimental"),
+                    static_cast<qint64>(kad->getKademliaUsers(true)));
+        info.insert(QStringLiteral("udpFirewalled"),
+                    kad::UDPFirewallTester::isFirewalledUDP(true));
+        info.insert(QStringLiteral("udpVerified"),
+                    kad::UDPFirewallTester::isVerified());
+        auto* prefs = kad->getPrefs();
+        if (prefs) {
+            info.insert(QStringLiteral("ip"),
+                        static_cast<qint64>(prefs->ipAddress()));
+            info.insert(QStringLiteral("id"),
+                        static_cast<qint64>(prefs->ipAddress()));
+            info.insert(QStringLiteral("internPort"), prefs->internKadPort());
+            info.insert(QStringLiteral("externPort"),
+                        prefs->useExternKadPort()
+                            ? prefs->externalKadPort() : 0);
+        }
+    }
     msg.append(info);
     m_ipcServer->broadcast(msg);
 }

@@ -78,7 +78,7 @@ void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
         // Kad v2 (v7+): extended request with client hash + connect options for obfuscation support
         SafeMemFile packet;
         packet.writeUInt16(tcpPort);
-        io::writeUInt128(packet, prefs ? prefs->kadId() : UInt128());
+        io::writeUInt128(packet, prefs ? prefs->clientHash() : UInt128());
         packet.writeUInt8(prefs ? prefs->myConnectOptions(true, false) : uint8{0});
         sendPacket(packet, KADEMLIA_FIREWALLED2_REQ, ip, udpPort, senderKey, nullptr);
         logKad(QStringLiteral("Kad: Sent FIREWALLED2_REQ (v2) to %1:%2, tcpPort=%3")
@@ -219,7 +219,6 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     const uint8* payload = data + 1;
     uint32 payloadLen = len - 1;
 
-    // TODO: remove debug logging
     // logKad(QStringLiteral("Kad: processPacket opcode=0x%1 from %2:%3 len=%4")
     //            .arg(opcode, 2, 16, QLatin1Char('0')).arg(ipToString(ip)).arg(udpPort).arg(len));
 
@@ -1215,26 +1214,31 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
                                                             uint32 ip, uint16 udpPort,
                                                             const KadUDPKey& senderKey)
 {
-    if (len < 19) // 2 (TCP) + 16 (ID) + 1 (options)
+    if (len < 19) // 2 (TCP) + 16 (hash) + 1 (options)
         return;
 
     SafeMemFile io(data, len);
     uint16 tcpPort = io.readUInt16();
-    UInt128 contactID = io::readUInt128(io);
+    UInt128 senderHash = io::readUInt128(io);  // sender's ED2K user hash for TCP encryption
     uint8 options = io.readUInt8();
 
-    // Respond with their external IP
+    // Respond with their external IP (no crypto target — matches SrcHybrid)
     SafeMemFile resPacket;
     resPacket.writeUInt32(ip);
-    sendPacket(resPacket, KADEMLIA_FIREWALLED_RES, ip, udpPort, senderKey, &contactID);
+    sendPacket(resPacket, KADEMLIA_FIREWALLED_RES, ip, udpPort, senderKey, nullptr);
 
     // Attempt TCP verification: connect to their TCP port to verify it's open
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
     client->setConnectIP(htonl(ip));  // Kad IPs are host BO; m_connectIP is network BO
     client->setKadState(KadState::QueuedFwCheck);
     client->setConnectOptions(options, true, true);
-    if (auto* rz = Kademlia::getInstanceRoutingZone())
-        propagateLanCryptoInfo(client, rz->getContact(contactID));
+
+    // Use sender's hash from packet directly for TCP encryption (matches SrcHybrid RequestTCP)
+    uint8 hashBytes[16];
+    senderHash.toByteArray(hashBytes);
+    if (!isnulmd4(hashBytes))
+        client->setUserHash(hashBytes);
+
     if (theApp.clientList)
         theApp.clientList->addClient(client);
     client->tryToConnect();

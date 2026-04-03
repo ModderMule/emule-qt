@@ -68,6 +68,8 @@ int main(int argc, char* argv[])
 
     // -- Load preferences (needed for IPC port in both modes) -----------------
 
+    if (!cli.configOverride().isEmpty())
+        eMule::AppConfig::setConfigDirOverride(cli.configOverride());
     const QString configDir = eMule::AppConfig::configDir();
     eMule::CrashHandler::install(configDir + QStringLiteral("/crashes"));
 

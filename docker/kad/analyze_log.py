@@ -311,6 +311,99 @@ def analyze_connections(lines: list[str], nodes: set[str]):
             print("  (hasValidHash=0 means peer's user hash not known at connect time)")
 
 
+def analyze_secure_ident(lines: list[str], nodes: set[str]):
+    section("SECURE IDENTIFICATION")
+
+    # --- Initialization ---
+    rsa_init = {n for l in lines if "RSA secure identification initialized" in l and (n := parse_node(l))}
+    rsa_disabled = {n for l in lines if "Secure identification disabled" in l and (n := parse_node(l))}
+    rsa_failed = {n for l in lines if "key pair generation failed" in l and (n := parse_node(l))}
+
+    subsection("Initialization")
+    print(f"RSA initialized:        {len(rsa_init)} / {len(nodes)}")
+    if rsa_disabled:
+        print(f"SecureIdent disabled:   {len(rsa_disabled)}")
+    if rsa_failed:
+        print(f"Key generation failed:  {len(rsa_failed)}")
+
+    # --- Handshake flow ---
+    send_state = defaultdict(int)
+    recv_state = defaultdict(int)
+    recv_credits = Counter()
+    send_pubkey = defaultdict(int)
+    recv_pubkey = defaultdict(int)
+    send_sig_deferred = defaultdict(int)
+    recv_sig = defaultdict(int)
+    verified_ok = defaultdict(int)
+    verified_fail = defaultdict(int)
+    verify_calls = 0
+    rsa_verify_failed = 0
+    key_decode_failed = 0
+
+    for l in lines:
+        n = parse_node(l)
+        if not n:
+            continue
+
+        if "sendSecIdentStatePacket:" in l:
+            send_state[n] += 1
+        elif "processSecIdentStatePacket:" in l:
+            recv_state[n] += 1
+            m = re.search(r"credits=(\w+)", l)
+            if m:
+                recv_credits[m.group(1)] += 1
+        elif "sendPublicKeyPacket:" in l:
+            send_pubkey[n] += 1
+        elif "processPublicKeyPacket:" in l:
+            recv_pubkey[n] += 1
+        elif "no remote public key yet" in l:
+            send_sig_deferred[n] += 1
+        elif "processSignaturePacket:" in l:
+            recv_sig[n] += 1
+            m = re.search(r"verified=(\d)", l)
+            if m:
+                if m.group(1) == "1":
+                    verified_ok[n] += 1
+                else:
+                    verified_fail[n] += 1
+        elif "verifyIdent:" in l:
+            verify_calls += 1
+            if "RSA_verify failed" in l:
+                rsa_verify_failed += 1
+            elif "all key decoders failed" in l:
+                key_decode_failed += 1
+
+    subsection("Handshake flow")
+    print(f"sendSecIdentState:      {sum(send_state.values()):>5}  ({len(send_state)} nodes)")
+    print(f"processSecIdentState:   {sum(recv_state.values()):>5}  ({len(recv_state)} nodes)")
+    if recv_credits:
+        parts = ", ".join(f"{k}={v}" for k, v in sorted(recv_credits.items()))
+        print(f"  credits:              {parts}")
+    print(f"sendPublicKey:          {sum(send_pubkey.values()):>5}  ({len(send_pubkey)} nodes)")
+    print(f"processPublicKey:       {sum(recv_pubkey.values()):>5}  ({len(recv_pubkey)} nodes)")
+    print(f"sendSignature deferred: {sum(send_sig_deferred.values()):>5}  ({len(send_sig_deferred)} nodes)")
+
+    subsection("Verification")
+    total_verified = sum(verified_ok.values()) + sum(verified_fail.values())
+    ok = sum(verified_ok.values())
+    fail = sum(verified_fail.values())
+    rate = (ok / total_verified * 100) if total_verified > 0 else 0
+
+    print(f"processSignaturePacket: {sum(recv_sig.values()):>5}  ({len(recv_sig)} nodes)")
+    print(f"  verified=1 (success): {ok}")
+    print(f"  verified=0 (failure): {fail}")
+    print(f"verifyIdent calls:      {verify_calls}")
+    print(f"  RSA_verify failed:    {rsa_verify_failed}")
+    if key_decode_failed:
+        print(f"  key decode failed:    {key_decode_failed}")
+    print(f"\nSuccess rate:           {ok}/{total_verified} ({rate:.0f}%)")
+
+    if total_verified > 0 and ok == 0:
+        print("\nCRITICAL: Every identity verification failed!")
+        print("  All nodes exchange keys but RSA_verify rejects every signature.")
+        print("  Likely cause: signing/verification mismatch (message format, padding, or endianness)")
+
+
 def analyze_errors(lines: list[str]):
     section("ERRORS & WARNINGS")
 
@@ -442,6 +535,15 @@ def analyze_summary(lines: list[str], nodes: set[str]):
     if len(fw_complete) < len(nodes) * 0.3:
         issues.append(f"SIGNIFICANT: Only {len(fw_complete)}/{len(nodes)} nodes completed UDP FW check")
 
+    # Check SecureIdent
+    sig_ok = sum(1 for l in lines if "verified=1" in l and "processSignaturePacket:" in l)
+    sig_fail = sum(1 for l in lines if "verified=0" in l and "processSignaturePacket:" in l)
+    sig_total = sig_ok + sig_fail
+    if sig_total > 0 and sig_ok == 0:
+        issues.append(f"CRITICAL: SecureIdent — all identity verifications failed ({sig_fail}/{sig_total})")
+    elif sig_total > 0 and sig_ok / sig_total < 0.8:
+        issues.append(f"SIGNIFICANT: SecureIdent success rate only {sig_ok/sig_total*100:.0f}% ({sig_ok}/{sig_total})")
+
     # Check unencrypted
     unenc = sum(1 for l in lines if "encrypted=0" in l and "connectToHost" in l)
     total_tcp = sum(1 for l in lines if "connectToHost" in l and "encrypted=" in l)
@@ -506,6 +608,7 @@ def main():
     analyze_publish(lines, nodes)
     analyze_routing_table(lines, nodes)
     analyze_connections(lines, nodes)
+    analyze_secure_ident(lines, nodes)
     analyze_errors(lines)
     analyze_timing(lines, nodes)
     analyze_summary(lines, nodes)

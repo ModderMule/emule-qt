@@ -27,6 +27,9 @@ public:
     ///   Other:  QStandardPaths::AppConfigLocation
     [[nodiscard]] static QString configDir();
 
+    /// Override the config directory. Must be called before configDir().
+    static void setConfigDirOverride(const QString& path);
+
 #ifdef Q_OS_WIN
     /// Returns the cached multiUserSharing value (0=per-user, 1=all-users,
     /// 2=program-dir).  Determined once on first call to configDir() by

@@ -616,59 +616,44 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
         return false;
 
     // Load target's public key from their stored identity.
-    // MFC/CryptoPP exports keys in X.509 SubjectPublicKeyInfo format (via
-    // X509PublicKey::Save), so try d2i_PUBKEY first.  Our own Qt clients may
-    // use PKCS#1 RSAPublicKey (i2d_PublicKey) when the X.509 encoding exceeds
-    // kMaxPubKeySize (512-bit keys), so fall back to that as well.
-    const uint8* pubKeyData = target->secureIdent();
-    const uint8* pubPtr = pubKeyData;
-
-    // Load the peer's public key and ensure it's legacy-backed (RSA struct).
-    // d2i_PUBKEY may create a provider-backed EVP_PKEY under OpenSSL 3.x, which
-    // can cause RSA_verify to fail for keys < 512 bits.  We always re-wrap via
-    // EVP_PKEY_assign_RSA to guarantee a legacy-backed key.
+    // Both MFC/CryptoPP (X509PublicKey::Save) and our OpenSSL (i2d_PUBKEY) export
+    // keys in X.509 SubjectPublicKeyInfo format — d2i_PUBKEY handles both.
+    // On OpenSSL 3.x the result may be provider-backed; we extract raw BIGNUMs
+    // to guarantee a legacy RSA struct that RSA_verify can use for sub-512-bit keys.
+    const uint8* pubPtr = target->secureIdent();
     EVP_PKEY* tmpKey = d2i_PUBKEY(nullptr, &pubPtr, target->secIDKeyLen());
-    if (!tmpKey) {
-        ERR_clear_error();
-        pubPtr = pubKeyData;
-        tmpKey = d2i_PublicKey(EVP_PKEY_RSA, nullptr, &pubPtr, target->secIDKeyLen());
-    }
 
-    // Extract RSA components and rebuild as a guaranteed-legacy EVP_PKEY
+    // Extract raw RSA components (n, e) and rebuild as a guaranteed-legacy key.
     EVP_PKEY* peerKey = nullptr;
     if (tmpKey) {
-        RSA* provRsa = const_cast<RSA*>(EVP_PKEY_get0_RSA(tmpKey));
-        if (provRsa) {
-            RSA* legacyRsa = RSAPublicKey_dup(provRsa);
-            if (legacyRsa) {
+        BIGNUM* n = nullptr;
+        BIGNUM* e = nullptr;
+        if (EVP_PKEY_get_bn_param(tmpKey, "n", &n) > 0 &&
+            EVP_PKEY_get_bn_param(tmpKey, "e", &e) > 0) {
+            RSA* legacyRsa = RSA_new();
+            if (legacyRsa && RSA_set0_key(legacyRsa, n, e, nullptr) > 0) {
+                // n, e ownership transferred to legacyRsa
                 peerKey = EVP_PKEY_new();
                 if (!peerKey || EVP_PKEY_assign_RSA(peerKey, legacyRsa) <= 0) {
                     EVP_PKEY_free(peerKey);
                     RSA_free(legacyRsa);
                     peerKey = nullptr;
                 }
+            } else {
+                BN_free(n);
+                BN_free(e);
+                RSA_free(legacyRsa);
             }
+        } else {
+            BN_free(n);
+            BN_free(e);
         }
         EVP_PKEY_free(tmpKey);
     }
 
     if (!peerKey) {
-        // Last resort: try legacy RSA decoder directly
         ERR_clear_error();
-        pubPtr = pubKeyData;
-        RSA* rsa = d2i_RSAPublicKey(nullptr, &pubPtr, target->secIDKeyLen());
-        if (rsa) {
-            peerKey = EVP_PKEY_new();
-            if (!peerKey || EVP_PKEY_assign_RSA(peerKey, rsa) <= 0) {
-                EVP_PKEY_free(peerKey);
-                RSA_free(rsa);
-                peerKey = nullptr;
-            }
-        }
-    }
-
-    if (!peerKey) {
-        logWarning(QStringLiteral("verifyIdent: all key decoders failed for %1-byte key")
+        logWarning(QStringLiteral("verifyIdent: d2i_PUBKEY failed for %1-byte key")
                        .arg(target->secIDKeyLen()));
         return false;
     }
@@ -727,9 +712,14 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
                                 signature, sigSize, const_cast<RSA*>(rsa)) == 1;
 
     if (!ok) {
-        unsigned long err = ERR_peek_last_error();
-        logWarning(QStringLiteral("verifyIdent: RSA_verify failed — %1")
-                       .arg(QLatin1StringView(ERR_reason_error_string(err))));
+        // Peer likely has a stale copy of our public key in their clients.met
+        // (from a previous session with a different cryptkey.dat).  MFC eMule's
+        // SetSecureIdent rejects key updates once nKeySize > 0, so peers that
+        // previously verified us with an old key can never update it.
+        // This is self-correcting as stale credit entries expire (~5 months).
+        ERR_clear_error();
+        if (thePrefs.logSecureIdent())
+            logDebug(QStringLiteral("verifyIdent: RSA_verify failed — peer may have stale public key"));
     }
 
     EVP_PKEY_free(peerKey);

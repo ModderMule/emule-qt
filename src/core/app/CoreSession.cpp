@@ -720,6 +720,10 @@ void CoreSession::initKademlia()
                     sourceType, buddyHash, clientHash, udpPort);
         });
 
+    // Re-wire UDP↔listener bridges each time Kad starts (including restarts).
+    connect(m_kademlia.get(), &kad::Kademlia::started,
+            this, &CoreSession::wireKadListener);
+
     m_kademlia->start();
 
     if (!m_kademlia->isRunning()) {
@@ -729,10 +733,66 @@ void CoreSession::initKademlia()
         return;
     }
 
+    // 5. Direct callback: remote firewalled client asks us to connect back via UDP.
+    connect(m_clientUDP.get(), &ClientUDPSocket::directCallbackReceived,
+        this, [](uint32 senderIP, uint16 /*senderPort*/, const uint8* data, uint32 size) {
+            if (!theApp.clientList)
+                return;
+            // Only accept if we're firewalled and Kad is running
+            auto* kadInst = kad::Kademlia::instance();
+            if (!kadInst || !kadInst->isRunning() || !kadInst->isFirewalled())
+                return;
+            // tcpPort(2) + userHash(16) + connectOptions(1) = 19 bytes minimum
+            if (size < 19)
+                return;
+
+            SafeMemFile io(data, size);
+            uint16 tcpPort = io.readUInt16();
+            uint8 userHash[16];
+            io.readHash16(userHash);
+            uint8 connectOptions = io.readUInt8();
+
+            auto* client = theApp.clientList->findByUserHash(userHash, senderIP, tcpPort);
+            if (!client) {
+                client = new UpDownClient(tcpPort, 0, senderIP, 0, nullptr);
+                client->setUserHash(userHash);
+                theApp.clientList->addClient(client);
+            } else {
+                client->setConnectIP(senderIP);
+                client->setUserPort(tcpPort);
+            }
+            client->setConnectOptions(connectOptions, true, false);
+            client->tryToConnect();
+        });
+
+    // 6. UDP port test → send reply on TCP port-test connection
+    connect(m_clientUDP.get(), &ClientUDPSocket::portTestReceived,
+        this, [this](uint32, uint16) {
+            if (m_listenSocket)
+                m_listenSocket->sendPortTestReply('1', true);
+        });
+
+    logInfo(QStringLiteral("Kademlia started."));
+}
+
+// ---------------------------------------------------------------------------
+// wireKadListener — connect ClientUDPSocket ↔ KademliaUDPListener bridges
+// ---------------------------------------------------------------------------
+// Called each time Kademlia::started is emitted (including after reconnect).
+// Old connections are automatically cleaned up when the previous listener
+// was deleted in Kademlia::stop().
+
+void CoreSession::wireKadListener()
+{
+    if (!m_kademlia || !m_clientUDP)
+        return;
+
     auto* listener = m_kademlia->getUDPListener();
     auto* udp = m_clientUDP.get();
+    if (!listener || !udp)
+        return;
 
-    // 3. Receive bridge: ClientUDPSocket → KademliaUDPListener
+    // Receive bridge: ClientUDPSocket → KademliaUDPListener
     //    Reconstruct [opcode][payload] buffer for processPacket().
     connect(udp, &ClientUDPSocket::kadPacketReceived,
         listener, [listener](uint8 opcode, const uint8* data, uint32 size,
@@ -749,7 +809,7 @@ void CoreSession::initKademlia()
                                     kad::KadUDPKey(receiverVerifyKey, senderIP));
         });
 
-    // 4. Send bridge: KademliaUDPListener → ClientUDPSocket
+    // Send bridge: KademliaUDPListener → ClientUDPSocket
     //    Build a Packet from the raw [opcode][payload] and queue it for sending.
     connect(listener, &kad::KademliaUDPListener::packetToSend,
         udp, [udp](QByteArray data, uint32 destIP, uint16 destPort,
@@ -782,47 +842,6 @@ void CoreSession::initKademlia()
                             hasTarget ? targetHash : nullptr,
                             true, receiverVerifyKey);
         });
-
-    // 5. Direct callback: remote firewalled client asks us to connect back via UDP.
-    connect(udp, &ClientUDPSocket::directCallbackReceived,
-        this, [](uint32 senderIP, uint16 /*senderPort*/, const uint8* data, uint32 size) {
-            if (!theApp.clientList)
-                return;
-            // Only accept if we're firewalled and Kad is running
-            auto* kadInst = kad::Kademlia::instance();
-            if (!kadInst || !kadInst->isRunning() || !kadInst->isFirewalled())
-                return;
-            // tcpPort(2) + userHash(16) + connectOptions(1) = 19 bytes minimum
-            if (size < 19)
-                return;
-
-            SafeMemFile io(data, size);
-            uint16 tcpPort = io.readUInt16();
-            uint8 userHash[16];
-            io.readHash16(userHash);
-            uint8 connectOptions = io.readUInt8();
-
-            auto* client = theApp.clientList->findByUserHash(userHash, senderIP, tcpPort);
-            if (!client) {
-                client = new UpDownClient(tcpPort, 0, senderIP, 0, nullptr);
-                client->setUserHash(userHash);
-                theApp.clientList->addClient(client);
-            } else {
-                client->setConnectIP(senderIP);
-                client->setUserPort(tcpPort);
-            }
-            client->setConnectOptions(connectOptions, true, false);
-            client->tryToConnect();
-        });
-
-    // 6. UDP port test → send reply on TCP port-test connection
-    connect(udp, &ClientUDPSocket::portTestReceived,
-        this, [this](uint32, uint16) {
-            if (m_listenSocket)
-                m_listenSocket->sendPortTestReply('1', true);
-        });
-
-    logInfo(QStringLiteral("Kademlia started."));
 }
 
 // ---------------------------------------------------------------------------

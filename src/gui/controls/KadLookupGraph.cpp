@@ -369,17 +369,21 @@ int KadLookupGraph::hitTest(const QPoint& pos) const
 
 QColor KadLookupGraph::nodeColor(const LookupEntry& entry) const
 {
-    // MFC-style colors: gold for responded, red for timed out / no response
+    // MFC icon indices: 0=green (responded+closer), 1=blue (responded), 2=yellow (waiting), 3=red (timed out)
     if (entry.askedContactsTime > 0) {
         if (entry.respondedContact > 0)
-            return entry.providedCloser ? QColor(220, 190, 30)   // gold - responded with closer
-                                        : QColor(200, 180, 50);  // muted gold - responded
-        else
-            return QColor(200, 50, 50); // red - asked, no response (offline/timed out)
+            return entry.providedCloser ? QColor(0, 180, 0)      // green - responded with closer nodes
+                                        : QColor(50, 120, 220);  // blue - responded without closer nodes
+        else {
+            // MFC: yellow if still waiting (< 3s), red if timed out
+            auto now = static_cast<uint32_t>(time(nullptr));
+            return (now < entry.askedContactsTime + 3) ? QColor(220, 190, 30)  // yellow - still waiting
+                                                       : QColor(200, 50, 50);  // red - timed out
+        }
     }
     if (entry.forcedInteresting)
-        return QColor(210, 150, 30); // darker gold - forced interesting
-    return QColor(220, 190, 30); // default gold - not yet asked
+        return QColor(220, 190, 30); // yellow - forced interesting, not yet asked
+    return QColor(0, 180, 0); // green - default (matches MFC assert case)
 }
 
 } // namespace eMule

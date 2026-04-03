@@ -27,6 +27,9 @@ public:
     /// Port override from --port, or 0 if not set.
     [[nodiscard]] uint16_t portOverride() const;
 
+    /// Config directory override from --config, or empty if not set.
+    [[nodiscard]] QString configOverride() const;
+
 private:
     QCommandLineParser m_parser;
 
@@ -55,6 +58,11 @@ private:
     QCommandLineOption m_disconnectKadOption{
         QStringLiteral("disconnect-kad"),
         QStringLiteral("Stop Kademlia.")};
+
+    QCommandLineOption m_configOption{
+        QStringLiteral("config"),
+        QStringLiteral("Override config directory (default: platform-specific)."),
+        QStringLiteral("path")};
 };
 
 } // namespace eMule

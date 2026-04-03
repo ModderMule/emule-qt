@@ -629,11 +629,20 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
     info.insert(QStringLiteral("firewalled"), theApp.isFirewalled());
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
     if (connected && theApp.serverConnect) {
+        info.insert(QStringLiteral("publicIP"),
+                    static_cast<qint64>(thePrefs.publicIP()));
+        info.insert(QStringLiteral("obfuscated"),
+                    theApp.serverConnect->isConnectedObfuscated());
         if (const auto* srv = theApp.serverConnect->currentServer()) {
             info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ip()));
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
+            info.insert(QStringLiteral("serverDescription"), srv->description());
+            info.insert(QStringLiteral("serverAddress"), srv->address());
+            info.insert(QStringLiteral("serverVersion"), srv->version());
+            info.insert(QStringLiteral("serverUsers"), static_cast<qint64>(srv->users()));
+            info.insert(QStringLiteral("serverFiles"), static_cast<qint64>(srv->files()));
         }
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
@@ -2123,6 +2132,29 @@ void IpcClientHandler::handleGetKadStatus(const IpcMessage& msg)
                           static_cast<qint64>(udp->totalHellosSent()));
             status.insert(QStringLiteral("hellosReceived"),
                           static_cast<qint64>(udp->totalHellosReceived()));
+        }
+        status.insert(QStringLiteral("users"),
+                      static_cast<qint64>(kad->getKademliaUsers()));
+        status.insert(QStringLiteral("usersExperimental"),
+                      static_cast<qint64>(kad->getKademliaUsers(true)));
+        status.insert(QStringLiteral("files"),
+                      static_cast<qint64>(kad->getKademliaFiles()));
+    }
+    if (kad && kad->isConnected()) {
+        status.insert(QStringLiteral("udpFirewalled"),
+                      kad::UDPFirewallTester::isFirewalledUDP(true));
+        status.insert(QStringLiteral("udpVerified"),
+                      kad::UDPFirewallTester::isVerified());
+        auto* prefs = kad->getPrefs();
+        if (prefs) {
+            status.insert(QStringLiteral("ip"),
+                          static_cast<qint64>(prefs->ipAddress()));
+            status.insert(QStringLiteral("id"),
+                          static_cast<qint64>(prefs->ipAddress()));
+            status.insert(QStringLiteral("internPort"), prefs->internKadPort());
+            status.insert(QStringLiteral("externPort"),
+                          prefs->useExternKadPort()
+                              ? prefs->externalKadPort() : 0);
         }
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(status)));

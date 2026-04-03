@@ -30,6 +30,7 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_subtabOption);
     m_parser.addOption(m_delayOption);
     m_parser.addOption(m_optionsOption);
+    m_parser.addOption(m_configOption);
 
     m_parser.addPositionalArgument(
         QStringLiteral("links"),
@@ -174,6 +175,13 @@ void CommandLineExec::handleEd2kLinks(MainWindow& mainWindow, IpcClient& ipcClie
             break;
         }
     }
+}
+
+QString CommandLineExec::configOverride() const
+{
+    if (m_parser.isSet(m_configOption))
+        return m_parser.value(m_configOption);
+    return {};
 }
 
 } // namespace eMule

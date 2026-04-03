@@ -85,11 +85,51 @@ QVariant KadSearchesModel::headerData(int section, Qt::Orientation orientation, 
     }
 }
 
-void KadSearchesModel::setSearches(std::vector<KadSearchRow> searches)
+void KadSearchesModel::setSearches(std::vector<KadSearchRow> incoming)
 {
-    beginResetModel();
-    m_searches = std::move(searches);
-    endResetModel();
+    // Incremental update: avoids beginResetModel()/endResetModel() so that
+    // the view's selection, scroll, and sort state are preserved.
+
+    // 1. Build lookup of incoming searches by searchId
+    QHash<uint32_t, size_t> incomingById;
+    incomingById.reserve(static_cast<qsizetype>(incoming.size()));
+    for (size_t i = 0; i < incoming.size(); ++i)
+        incomingById.insert(incoming[i].searchId, i);
+
+    // 2. Remove departed searches (reverse order keeps indices stable)
+    for (int i = static_cast<int>(m_searches.size()) - 1; i >= 0; --i) {
+        if (!incomingById.contains(m_searches[static_cast<size_t>(i)].searchId)) {
+            beginRemoveRows({}, i, i);
+            m_searches.erase(m_searches.begin() + i);
+            endRemoveRows();
+        }
+    }
+
+    // 3. Update surviving rows in-place
+    QSet<uint32_t> existingIds;
+    existingIds.reserve(static_cast<qsizetype>(m_searches.size()));
+    for (size_t i = 0; i < m_searches.size(); ++i) {
+        existingIds.insert(m_searches[i].searchId);
+        if (auto it = incomingById.constFind(m_searches[i].searchId); it != incomingById.cend())
+            m_searches[i] = std::move(incoming[it.value()]);
+    }
+    if (!m_searches.empty())
+        emit dataChanged(index(0, 0), index(static_cast<int>(m_searches.size()) - 1, ColCount - 1));
+
+    // 4. Append new searches in one batch
+    std::vector<KadSearchRow> toInsert;
+    for (auto& row : incoming) {
+        if (row.searchId != 0 && !existingIds.contains(row.searchId))
+            toInsert.push_back(std::move(row));
+    }
+    if (!toInsert.empty()) {
+        const int first = static_cast<int>(m_searches.size());
+        const int last  = first + static_cast<int>(toInsert.size()) - 1;
+        beginInsertRows({}, first, last);
+        for (auto& r : toInsert)
+            m_searches.push_back(std::move(r));
+        endInsertRows();
+    }
 }
 
 void KadSearchesModel::clear()

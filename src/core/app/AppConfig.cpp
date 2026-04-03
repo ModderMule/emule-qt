@@ -59,12 +59,25 @@ int AppConfig::multiUserSharingMode()
 
 #endif // Q_OS_WIN
 
+namespace {
+    QString s_configDirOverride;
+}
+
+void AppConfig::setConfigDirOverride(const QString& path)
+{
+    s_configDirOverride = path;
+}
+
 // ---------------------------------------------------------------------------
 // configDir
 // ---------------------------------------------------------------------------
 
 QString AppConfig::configDir()
 {
+    if (!s_configDirOverride.isEmpty()) {
+        QDir().mkpath(s_configDirOverride);
+        return s_configDirOverride;
+    }
 #ifdef Q_OS_MACOS
     const QString dir = QDir::homePath() + QStringLiteral("/eMuleQt/Config");
 #elif defined(Q_OS_WIN)

@@ -210,6 +210,8 @@ int main(int argc, char* argv[])
     cli.parse(app);
 
     // Load preferences early so language setting is available for translators
+    if (!cli.configOverride().isEmpty())
+        eMule::AppConfig::setConfigDirOverride(cli.configOverride());
     const QString configDir = eMule::AppConfig::configDir();
     eMule::CrashHandler::install(configDir + QStringLiteral("/crashes"));
 

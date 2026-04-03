@@ -126,6 +126,25 @@ private:
     bool m_ed2kFirewalled = false;
     uint32_t m_ed2kClientID = 0;
     QString m_ed2kServerName;
+    uint32_t m_ed2kPublicIP = 0;
+    QString m_ed2kServerDesc;
+    QString m_ed2kServerAddr;
+    uint16_t m_ed2kServerPort = 0;
+    QString m_ed2kServerVersion;
+    uint32_t m_ed2kServerUsers = 0;
+    uint32_t m_ed2kServerFiles = 0;
+    bool m_ed2kObfuscated = false;
+
+    // Kad extended status
+    bool m_kadUdpFirewalled = false;
+    bool m_kadUdpVerified = false;
+    uint32_t m_kadIP = 0;
+    uint16_t m_kadInternPort = 0;
+    uint16_t m_kadExternPort = 0;
+    uint32_t m_kadId = 0;
+    uint32_t m_kadUsers = 0;
+    uint32_t m_kadUsersExp = 0;
+    uint32_t m_kadFiles = 0;
 };
 
 } // namespace eMule

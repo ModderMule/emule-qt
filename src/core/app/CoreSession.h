@@ -68,6 +68,7 @@ private:
     void initDownloadQueue();
     void shutdownDownloadQueue();
     void initKademlia();
+    void wireKadListener();
     void shutdownKademlia();
     void initUSS();
     void shutdownUSS();

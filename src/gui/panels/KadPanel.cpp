@@ -596,31 +596,9 @@ void KadPanel::requestSearches()
             rows.push_back(std::move(row));
         }
 
-        // Save selected search ID before model reset clears selection
-        const uint32_t prevSelected = selectedSearchId();
-        const int srScroll = m_searchesView->verticalScrollBar()->value();
-
         m_searchesModel->setSearches(std::move(rows));
         const int count = m_searchesModel->searchCount();
         m_searchesLabel->setText(tr("\u25B8 Current Searches (%1)").arg(count));
-
-        // Restore selection: find the row matching the previous search ID
-        if (prevSelected != 0 && count > 0) {
-            const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(m_searchesView->model());
-            for (int r = 0; r < count; ++r) {
-                const uint32_t rowId = m_searchesModel->data(
-                    m_searchesModel->index(r, KadSearchesModel::ColNumber),
-                    Qt::UserRole).toUInt();
-                if (rowId == prevSelected) {
-                    const auto srcIdx = m_searchesModel->index(r, 0);
-                    const auto proxyIdx = proxy ? proxy->mapFromSource(srcIdx) : srcIdx;
-                    m_searchesView->selectionModel()->select(
-                        proxyIdx,
-                        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-                    break;
-                }
-            }
-        }
 
         // Auto-select first search if nothing is selected (initial load)
         if (m_searchesView->selectionModel()->selectedRows().isEmpty() && count > 0) {
@@ -628,7 +606,6 @@ void KadPanel::requestSearches()
                 m_searchesView->model()->index(0, 0),
                 QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
         }
-        m_searchesView->verticalScrollBar()->setValue(srScroll);
     });
 }
 

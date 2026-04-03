@@ -63,20 +63,17 @@ void DownloadQueue::init(const QStringList& tempDirs)
             it.next();
             const QString filename = it.fileName();
             const QString directory = QFileInfo(it.filePath()).absolutePath();
+            const QString metPath = directory + QDir::separator() + filename;
+
+            // Restore from .bak before first load attempt to avoid duplicate error logs
+            const QString bakPath = metPath + QStringLiteral(".bak");
+            if (QFile::exists(bakPath)) {
+                QFile::remove(metPath);
+                QFile::copy(bakPath, metPath);
+            }
 
             auto* partFile = new PartFile;
             auto result = partFile->loadPartFile(directory, filename);
-
-            if (result != PartFileLoadResult::LoadSuccess) {
-                // Try .bak backup
-                const QString bakFile = filename + QStringLiteral(".bak");
-                if (QFile::exists(directory + QDir::separator() + bakFile)) {
-                    // Restore from backup
-                    QFile::copy(directory + QDir::separator() + bakFile,
-                                directory + QDir::separator() + filename);
-                    result = partFile->loadPartFile(directory, filename);
-                }
-            }
 
             if (result == PartFileLoadResult::LoadSuccess) {
                 connectPartFileSignals(partFile);
