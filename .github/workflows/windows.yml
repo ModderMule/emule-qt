@@ -65,10 +65,10 @@ jobs:
 #        run: ctest --test-dir build --build-config Release --output-on-failure --parallel
 
       - name: Bundle
-        run: scripts\bundle-win.bat build "$env:QT_ROOT_DIR"
+        run: scripts\bundle-win.bat "$env:QT_ROOT_DIR" Release --no-build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: eMuleQt-win64
-          path: eMuleQt-win64.zip
+          path: build/emuleqt-v*-win64.zip
