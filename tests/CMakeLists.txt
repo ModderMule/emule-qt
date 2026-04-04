@@ -53,7 +53,7 @@ function(emule_add_test TEST_NAME)
 
     # Default source file: <TEST_NAME>.cpp
     if(NOT ARG_SOURCES)
-        set(ARG_SOURCES "${TEST_NAME}.cpp")
+        set(ARG_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/${TEST_NAME}.cpp")
     endif()
 
     qt_add_executable(${TEST_NAME} ${ARG_SOURCES})
