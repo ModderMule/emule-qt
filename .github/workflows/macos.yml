@@ -57,10 +57,10 @@ jobs:
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Bundle
-        run: scripts/bundle-macos.sh build
+        run: scripts/bundle-macos.sh --dmg build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
           name: eMuleQt-v${{ env.APP_VERSION }}-macOS
-          path: build/src/gui/emuleqt.app
+          path: build/emuleqt-v${{ env.APP_VERSION }}.dmg
