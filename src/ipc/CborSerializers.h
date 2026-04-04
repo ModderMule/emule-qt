@@ -100,7 +100,7 @@ namespace eMule::Ipc {
         {QStringLiteral("completedSize"),        static_cast<qint64>(f.completedSize())},
         {QStringLiteral("percentCompleted"),     static_cast<double>(f.percentCompleted())},
         {QStringLiteral("status"),               statusToString(f.status())},
-        {QStringLiteral("datarate"),             static_cast<qint64>(f.datarate())},
+        {QStringLiteral("datarate"),             f.status() == PartFileStatus::Complete ? 0 : static_cast<qint64>(f.datarate())},
         {QStringLiteral("sourceCount"),          f.sourceCount()},
         {QStringLiteral("transferringSrcCount"), f.transferringSrcCount()},
         {QStringLiteral("downPriority"),         priorityToString(f.downPriority())},

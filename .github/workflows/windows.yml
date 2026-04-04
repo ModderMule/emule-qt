@@ -30,7 +30,7 @@ jobs:
           aqt list-qt windows desktop --modules 6.10.3 win64_msvc2022_64
 
           Write-Host "=== Installing Qt base + modules ==="
-          aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -m qthttpserver qtwebsockets qtmultimedia -O $qtDir --base https://ftp.fau.de/qtproject/ --fallbackmirror https://download.qt.io/
+          aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -m qthttpserver qtwebsockets qtmultimedia -O $qtDir --base https://ftp.fau.de/qtproject/
 
           $root = "$qtDir\6.10.3\msvc2022_64"
           echo "QT_ROOT_DIR=$root" >> $env:GITHUB_ENV
