@@ -267,7 +267,7 @@ for libname in libssl.so.3 libcrypto.so.3 libz.so.1; do
     fi
 
     # Find the library path via ldd
-    libpath=$(ldd "$PROBE_BIN" 2>/dev/null | grep "$libname" | awk '{print $3}')
+    libpath=$(ldd "$PROBE_BIN" 2>/dev/null | grep "$libname" | awk '{print $3}' || true)
 
     if [ -n "$libpath" ] && [ -f "$libpath" ]; then
         cp "$libpath" "$STAGE_DIR/lib/$libname"
