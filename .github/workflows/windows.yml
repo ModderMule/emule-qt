@@ -45,11 +45,15 @@ jobs:
             Get-ChildItem "$root\lib\cmake" -Directory | Select-Object Name
           }
 
-      - name: Install OpenSSL
-        run: choco install openssl -y --no-progress
+      - name: Install dependencies (vcpkg)
+        run: vcpkg install zlib openssl --triplet x64-windows
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+        shell: pwsh
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config Release --parallel
