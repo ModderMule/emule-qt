@@ -222,10 +222,15 @@ if [ "$CREATE_DMG" = true ]; then
         echo ""
         echo "Creating DMG with hdiutil..."
         rm -f "$DMG_OUTPUT"
+        STAGING_DIR=$(mktemp -d)
+        cp -R "$APP_BUNDLE" "$STAGING_DIR/"
+        sync
+        sleep 2
         hdiutil create -volname "eMule Qt" \
-            -srcfolder "$APP_BUNDLE" \
+            -srcfolder "$STAGING_DIR/$(basename "$APP_BUNDLE")" \
             -ov -format UDZO \
             "$DMG_OUTPUT"
+        rm -rf "$STAGING_DIR"
     fi
 
     echo "  -> $DMG_OUTPUT ($(du -h "$DMG_OUTPUT" | cut -f1))"
