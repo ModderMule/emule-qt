@@ -699,7 +699,7 @@ void tst_MockPeerUpload::uploadFlow_throttlerEnforcesSpeedLimit()
     {
         int rcvBuf = 4 * 1024 * 1024;
         ::setsockopt(static_cast<int>(mock.socketDescriptor()), SOL_SOCKET, SO_RCVBUF,
-                     &rcvBuf, sizeof(rcvBuf));
+                     reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
     }
 
     QTRY_VERIFY_WITH_TIMEOUT(mock.isEncryptionLayerReady(), 5000);

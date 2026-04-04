@@ -189,6 +189,11 @@ else()
     set(ENABLE_EXPAT        OFF CACHE BOOL "" FORCE)
     set(ENABLE_PCRE2POSIX   OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(libarchive)
+    # archive_static sets LIBARCHIVE_STATIC only PRIVATE; consumers on Windows
+    # need it too so the headers don't use __declspec(dllimport).
+    if(WIN32 AND TARGET archive_static)
+        target_compile_definitions(archive_static PUBLIC LIBARCHIVE_STATIC)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
