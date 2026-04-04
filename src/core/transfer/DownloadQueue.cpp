@@ -63,17 +63,25 @@ void DownloadQueue::init(const QStringList& tempDirs)
             it.next();
             const QString filename = it.fileName();
             const QString directory = QFileInfo(it.filePath()).absolutePath();
-            const QString metPath = directory + QDir::separator() + filename;
-
-            // Restore from .bak before first load attempt to avoid duplicate error logs
-            const QString bakPath = metPath + QStringLiteral(".bak");
-            if (QFile::exists(bakPath)) {
-                QFile::remove(metPath);
-                QFile::copy(bakPath, metPath);
-            }
 
             auto* partFile = new PartFile;
             auto result = partFile->loadPartFile(directory, filename);
+
+            // MFC CDownloadQueue::Init: if .met is corrupt, try .bak backup
+            if (result != PartFileLoadResult::LoadSuccess) {
+                const QString metPath = directory + QDir::separator() + filename;
+                const QString bakPath = metPath + QStringLiteral(".bak");
+                if (QFile::exists(bakPath)) {
+                    logInfo(QStringLiteral("Trying backup for: %1").arg(filename));
+                    QFile::remove(metPath);
+                    QFile::copy(bakPath, metPath);
+                    delete partFile;
+                    partFile = new PartFile;
+                    result = partFile->loadPartFile(directory, filename);
+                    if (result == PartFileLoadResult::LoadSuccess)
+                        partFile->savePartFile();
+                }
+            }
 
             if (result == PartFileLoadResult::LoadSuccess) {
                 connectPartFileSignals(partFile);

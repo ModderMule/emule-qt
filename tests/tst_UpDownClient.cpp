@@ -1159,9 +1159,11 @@ void tst_UpDownClient::processEmuleQueueRank_setsRank()
 {
     UpDownClient client;
 
-    // Build a packet with a uint16 rank value
+    // Build a strict 12-byte packet: uint16 rank + 10 bytes padding (MFC format)
     SafeMemFile data;
     data.writeUInt16(42);
+    for (int i = 0; i < 10; ++i)
+        data.writeUInt8(0);
     const auto& buf = data.buffer();
 
     client.processEmuleQueueRank(

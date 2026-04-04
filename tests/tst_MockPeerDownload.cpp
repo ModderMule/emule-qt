@@ -30,6 +30,7 @@
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "transfer/DownloadQueue.h"
+#include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
@@ -65,6 +66,7 @@ public:
                                 const std::vector<std::array<uint8, 16>>& partHashes,
                                 uint64 fileSize,
                                 const QString& sourceFilePath,
+                                uint16 listeningPort,
                                 QObject* parent = nullptr)
         : EMSocket(parent)
         , m_fakeUserHash(fakeUserHash)
@@ -72,6 +74,7 @@ public:
         , m_partHashes(partHashes)
         , m_fileSize(fileSize)
         , m_sourceFilePath(sourceFilePath)
+        , m_listeningPort(listeningPort)
     {
     }
 
@@ -126,6 +129,12 @@ protected:
         case OP_AICHREQUEST:
             handleAICHRequest(packet->pBuffer, packet->size);
             break;
+        case OP_MULTIPACKET_EXT2:
+            handleMultiPacketExt2(reinterpret_cast<const uint8*>(packet->pBuffer), packet->size);
+            break;
+        case OP_HASHSETREQUEST2:
+            handleHashSetRequest2(reinterpret_cast<const uint8*>(packet->pBuffer), packet->size);
+            break;
         default:
             break;
         }
@@ -149,8 +158,8 @@ private:
         // Client ID (high ID: 127.0.0.1)
         data.writeUInt32(0x7F000001);
 
-        // Port
-        data.writeUInt16(4662);
+        // Port — must match our actual listening port for reconnection
+        data.writeUInt16(m_listeningPort);
 
         // Tag count
         data.writeUInt32(6);
@@ -202,7 +211,7 @@ private:
         data.writeUInt16(0);
 
         auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HELLOANSWER);
-        sendPacket(std::move(packet));
+        sendPacket(std::move(packet), true);
     }
 
     void handleEmuleInfo()
@@ -223,7 +232,7 @@ private:
         Tag(static_cast<uint8>(ET_EXTENDEDREQUEST), static_cast<uint32>(2)).writeTagToFile(data);
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_EMULEINFOANSWER);
-        sendPacket(std::move(packet));
+        sendPacket(std::move(packet), true);
     }
 
     void handleRequestFileName(Packet* reqPacket)
@@ -240,7 +249,7 @@ private:
             data.writeHash16(reqHash);
             data.writeString(QStringLiteral("eMuleQt-testfile-20MB.bin"), UTF8Mode::OptBOM);
             auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_REQFILENAMEANSWER);
-            sendPacket(std::move(packet));
+            sendPacket(std::move(packet), true);
         }
 
         // Send OP_FILESTATUS: hash(16) + partCount(uint16=0) → 0 means complete source
@@ -249,7 +258,7 @@ private:
             data.writeHash16(reqHash);
             data.writeUInt16(0); // 0 = complete source
             auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_FILESTATUS);
-            sendPacket(std::move(packet));
+            sendPacket(std::move(packet), true);
         }
     }
 
@@ -263,7 +272,7 @@ private:
             data.writeHash16(ph.data());
 
         auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HASHSETANSWER);
-        sendPacket(std::move(packet));
+        sendPacket(std::move(packet), true);
     }
 
     void handleStartUploadReq()
@@ -271,7 +280,7 @@ private:
         // OP_ACCEPTUPLOADREQ: empty payload
         auto packet = std::make_unique<Packet>(OP_ACCEPTUPLOADREQ, 0);
         packet->prot = OP_EDONKEYPROT;
-        sendPacket(std::move(packet));
+        sendPacket(std::move(packet), true);
     }
 
     void handleRequestParts(const char* rawData, uint32 size, bool i64Offsets)
@@ -455,7 +464,117 @@ private:
             return;
 
         auto packet = std::make_unique<Packet>(response, OP_EMULEPROT, OP_AICHANSWER);
-        sendPacket(std::move(packet));
+        sendPacket(std::move(packet), true);
+    }
+
+    void handleHashSetRequest2(const uint8* data, uint32 size)
+    {
+        if (!data || size < 1)
+            return;
+
+        SafeMemFile dataIn(data, size);
+
+        // Skip file identifier (desc + optional MD4/size/AICH)
+        const uint8 desc = dataIn.readUInt8();
+        if (desc & 0x01) { uint8 h[16]; dataIn.readHash16(h); }
+        if (desc & 0x02) dataIn.readUInt64();
+        if (desc & 0x04) dataIn.seek(kAICHHashSize, SEEK_CUR);
+
+        const uint8 options = dataIn.readUInt8(); // 0x01=MD4, 0x02=AICH
+
+        // Build response: options(1) + MD4 hashset data (matches writeHashSetsToPacket format)
+        SafeMemFile dataOut;
+        uint8 respOptions = (options & 0x01) ? 0x01 : 0x00;
+        dataOut.writeUInt8(respOptions);
+
+        if (respOptions & 0x01) {
+            // MD4 hashset: hash(16) + count(uint16) + N×hash(16)
+            dataOut.writeHash16(m_fileHash.data());
+            dataOut.writeUInt16(static_cast<uint16>(m_partHashes.size()));
+            for (const auto& ph : m_partHashes)
+                dataOut.writeHash16(ph.data());
+        }
+
+        auto packet = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_HASHSETANSWER2);
+        sendPacket(std::move(packet), true);
+    }
+
+    void handleMultiPacketExt2(const uint8* data, uint32 size)
+    {
+        if (!data || size < 1)
+            return;
+
+        SafeMemFile dataIn(data, size);
+
+        // Read file identifier: descriptor byte + optional fields
+        const uint8 desc = dataIn.readUInt8();
+        const bool hasMD4  = (desc & 0x01) != 0;
+        const bool hasSize = (desc & 0x02) != 0;
+        const bool hasAICH = (desc & 0x04) != 0;
+
+        uint8 reqHash[16] = {};
+        if (hasMD4)
+            dataIn.readHash16(reqHash);
+        if (hasSize)
+            dataIn.readUInt64(); // file size — ignore
+        if (hasAICH) {
+            uint8 aichBuf[kAICHHashSize];
+            dataIn.read(aichBuf, kAICHHashSize);
+        }
+
+        // Build response with our file identifier
+        SafeMemFile dataOut;
+        const uint8 respDesc = 0x01 | 0x02; // hasMD4 + hasSize
+        dataOut.writeUInt8(respDesc);
+        dataOut.writeHash16(m_fileHash.data());
+        dataOut.writeUInt64(m_fileSize);
+
+        bool hasResponse = false;
+
+        // Process sub-opcodes
+        while (dataIn.position() < dataIn.length()) {
+            const uint8 subOp = dataIn.readUInt8();
+            switch (subOp) {
+            case OP_REQUESTFILENAME:
+                // Skip extended info (part status + complete source count)
+                if (dataIn.position() < dataIn.length()) {
+                    const uint16 parts = dataIn.readUInt16();
+                    if (parts > 0)
+                        dataIn.seek(static_cast<qint64>((parts + 7) / 8), SEEK_CUR);
+                    if (dataIn.position() < dataIn.length())
+                        dataIn.readUInt16(); // complete source count
+                }
+                dataOut.writeUInt8(OP_REQFILENAMEANSWER);
+                dataOut.writeString(QStringLiteral("eMuleQt-testfile-20MB.bin"), UTF8Mode::Raw);
+                hasResponse = true;
+                break;
+
+            case OP_SETREQFILEID:
+                dataOut.writeUInt8(OP_FILESTATUS);
+                dataOut.writeUInt16(0); // 0 = complete source
+                hasResponse = true;
+                break;
+
+            case OP_REQUESTSOURCES2:
+                if (dataIn.position() + 3 <= dataIn.length()) {
+                    dataIn.readUInt8();  // version
+                    dataIn.readUInt16(); // options
+                }
+                break;
+
+            case OP_REQUESTSOURCES:
+            case OP_AICHFILEHASHREQ:
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        if (hasResponse) {
+            auto packet = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_MULTIPACKETANSWER_EXT2);
+            sendPacket(std::move(packet), true);
+        }
     }
 
     std::array<uint8, 16> m_fakeUserHash;
@@ -463,6 +582,7 @@ private:
     std::vector<std::array<uint8, 16>> m_partHashes;
     uint64 m_fileSize = 0;
     QString m_sourceFilePath;
+    uint16 m_listeningPort = 0;
     uint32 m_blockCounter = 0;
     int m_compressedBlocksSent = 0;
     int m_uncompressedBlocksSent = 0;
@@ -523,10 +643,12 @@ protected:
     void incomingConnection(qintptr socketDescriptor) override
     {
         m_socket = new MockUploaderSocket(m_fakeUserHash, m_fileHash, m_partHashes,
-                                           m_fileSize, m_sourceFilePath, this);
+                                           m_fileSize, m_sourceFilePath,
+                                           serverPort(), this);
         m_socket->setSocketDescriptor(socketDescriptor);
-
-        // Pass corruption config and AICH hash set to socket
+        // Socket accepted via descriptor is already connected — QTcpSocket
+        // won't emit connected(), so set EMSocket state manually.
+        m_socket->setConState(EMSState::Connected);
         if (m_corruptionEnabled)
             m_socket->setCorruptionConfig(m_corruptPartNumber, m_corruptBlockIndex);
         if (m_aichHashSet)
@@ -573,6 +695,7 @@ private slots:
 private:
     // Infrastructure
     TempDir* m_tmpDir = nullptr;
+    UploadBandwidthThrottler* m_throttler = nullptr;
     ListenSocket* m_listenSocket = nullptr;
     ClientList* m_clientList = nullptr;
     KnownFileList* m_knownFiles = nullptr;
@@ -650,6 +773,12 @@ void tst_MockPeerDownload::initTestCase()
     m_downloadQueue->setSharedFileList(m_sharedFiles);
     m_downloadQueue->setKnownFileList(m_knownFiles);
     theApp.downloadQueue = m_downloadQueue;
+
+    // 8. Upload bandwidth throttler — kept idle (not started), present so
+    //    theApp.uploadBandwidthThrottler is non-null. The process timer
+    //    flushes both sockets via sendFileAndControlData() from the main thread.
+    m_throttler = new UploadBandwidthThrottler(this);
+    theApp.uploadBandwidthThrottler = m_throttler;
 
     // -----------------------------------------------------------------------
     // Hash the DMG file synchronously
@@ -988,6 +1117,7 @@ void tst_MockPeerDownload::cleanupTestCase()
 
     // Reset all globals before deleting remaining non-QObject resources
     theApp.downloadQueue = nullptr;
+    theApp.uploadBandwidthThrottler = nullptr;
     theApp.sharedFileList = nullptr;
     theApp.knownFileList = nullptr;
     theApp.clientList = nullptr;

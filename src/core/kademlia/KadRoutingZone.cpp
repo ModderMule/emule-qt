@@ -668,33 +668,55 @@ void RoutingZone::writeFile()
     if (contacts.empty())
         return;
 
+    const QString tmpPath = s_nodesFilename + QStringLiteral(".tmp");
+    const QString bakPath = s_nodesFilename + QStringLiteral(".bak");
+
     try {
         // Ensure parent directory exists
         QDir().mkpath(QFileInfo(s_nodesFilename).absolutePath());
 
-        SafeFile sf;
-        if (!sf.open(s_nodesFilename, QIODevice::WriteOnly | QIODevice::Truncate))
-            return;
+        QFile::remove(tmpPath);
 
-        // Write v2 header
-        sf.writeUInt32(kNodesFileVersionTag);
-        sf.writeUInt32(static_cast<uint32>(contacts.size()));
+        {
+            SafeFile sf;
+            if (!sf.open(tmpPath, QIODevice::WriteOnly))
+                return;
 
-        for (auto* contact : contacts) {
-            // MFC uses WriteUInt128 → GetData() (raw host-order bytes).
-            sf.writeHash16(contact->getClientID().getData());
+            // Write v2 header
+            sf.writeUInt32(kNodesFileVersionTag);
+            sf.writeUInt32(static_cast<uint32>(contacts.size()));
 
-            sf.writeUInt32(contact->getIPAddress());
-            sf.writeUInt16(contact->getUDPPort());
-            sf.writeUInt16(contact->getTCPPort());
-            sf.writeUInt8(contact->getVersion());
+            for (auto* contact : contacts) {
+                // MFC uses WriteUInt128 → GetData() (raw host-order bytes).
+                sf.writeHash16(contact->getClientID().getData());
 
-            contact->getUDPKey().storeToFile(sf);
-            sf.writeUInt8(contact->isIpVerified() ? 1 : 0);
+                sf.writeUInt32(contact->getIPAddress());
+                sf.writeUInt16(contact->getUDPPort());
+                sf.writeUInt16(contact->getTCPPort());
+                sf.writeUInt8(contact->getVersion());
+
+                contact->getUDPKey().storeToFile(sf);
+                sf.writeUInt8(contact->isIpVerified() ? 1 : 0);
+            }
+        } // file closed before rename
+
+        // Rotate: current → .bak
+        QFile::remove(bakPath);
+        if (QFile::exists(s_nodesFilename)) {
+            if (!QFile::rename(s_nodesFilename, bakPath))
+                QFile::remove(s_nodesFilename);
+        }
+
+        // Rename temp → final
+        if (!QFile::rename(tmpPath, s_nodesFilename)) {
+            logKad(QStringLiteral("Failed to rename tmp → nodes.dat"));
+            if (QFile::exists(bakPath))
+                QFile::rename(bakPath, s_nodesFilename);
         }
 
     } catch (const FileException& e) {
         logKad(QStringLiteral("Failed to write Kad nodes file: %1").arg(QLatin1StringView(e.what())));
+        QFile::remove(tmpPath);
     }
 }
 

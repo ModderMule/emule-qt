@@ -68,6 +68,10 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
     if (!packet)
         return;
 
+    if (auto* stats = theApp.statistics)
+        stats->addUpDataOverheadServer(packet->size);
+
+
     cleanupStaleDNSRequests();
 
     // Build raw UDP packet: 2-byte header (prot + opcode) + payload

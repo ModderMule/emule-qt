@@ -86,6 +86,9 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt)
 void ServerSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
                               uint32 actualPayloadSize, bool forceImmediateSend)
 {
+    if (auto* stats = theApp.statistics)
+        stats->addUpDataOverheadServer(packet->size);
+
     m_lastTransmission = static_cast<uint32>(m_elapsedTimer.elapsed());
     EMSocket::sendPacket(std::move(packet), controlPacket, actualPayloadSize, forceImmediateSend);
 }

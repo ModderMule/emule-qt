@@ -308,6 +308,7 @@ void ClientList::forEachClient(const std::function<void(UpDownClient*)>& callbac
 void ClientList::process()
 {
     cleanUpBannedList();
+    processConnectingClients();
 
     // Remove clients that serve no purpose — matches MFC CClientList::Process()
     for (auto it = m_clients.begin(); it != m_clients.end(); ) {
@@ -337,6 +338,44 @@ void ClientList::process()
         it = m_clients.erase(it);
         emit clientRemoved(client);
         client->deleteLater();
+    }
+}
+
+// ===========================================================================
+// Connecting client timeout — MFC CClientList (srchybrid/ClientList.cpp:865-901)
+// ===========================================================================
+
+void ClientList::addConnectingClient(UpDownClient* client)
+{
+    // Don't add duplicates
+    for (const auto& cc : m_connectingClients) {
+        if (cc.client == client)
+            return;
+    }
+    m_connectingClients.push_back({client, static_cast<uint32>(getTickCount())});
+}
+
+void ClientList::removeConnectingClient(const UpDownClient* client)
+{
+    std::erase_if(m_connectingClients, [client](const ConnectingClient& cc) {
+        return cc.client == client;
+    });
+}
+
+void ClientList::processConnectingClients()
+{
+    // Time out clients that have been connecting for > 45 seconds.
+    // Matches MFC ProcessConnectingClientsList() (srchybrid/ClientList.cpp:877-891).
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    for (auto it = m_connectingClients.begin(); it != m_connectingClients.end(); ) {
+        if (curTick >= it->insertedTick + 45000u) {
+            auto* client = it->client;
+            it = m_connectingClients.erase(it);
+            if (isValidClient(client))
+                client->disconnected(QStringLiteral("Connection try timeout"));
+        } else {
+            ++it;
+        }
     }
 }
 

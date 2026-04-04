@@ -142,9 +142,10 @@ void UpDownClient::sendFileRequest()
                 m_reqFile->writeCompleteSourcesCount(data);
         }
 
-        // Sub-request: OP_SETREQFILEID (if multi-part file)
-        if (m_reqFile->partCount() > 1)
-            data.writeUInt8(OP_SETREQFILEID);
+        // Sub-request: OP_SETREQFILEID — always include so the server sends
+        // back OP_FILESTATUS (needed to set m_completeSource/m_partStatus).
+        // MFC: unconditionally included when PeerCache is not active.
+        data.writeUInt8(OP_SETREQFILEID);
 
         if (isEmuleClient()) {
             setRemoteQueueFull(true);
@@ -187,8 +188,9 @@ void UpDownClient::sendFileRequest()
             sendPacket(std::move(fnPacket));
         }
 
-        // OP_SETREQFILEID (only for multi-part files)
-        if (m_reqFile->partCount() > 1) {
+        // OP_SETREQFILEID — always send so we receive OP_FILESTATUS back.
+        // MFC: unconditionally included when PeerCache is not active.
+        {
             SafeMemFile idData;
             idData.writeHash16(m_reqUpFileId.data());
             auto idPacket = std::make_unique<Packet>(idData, OP_EDONKEYPROT, OP_SETREQFILEID);
@@ -277,77 +279,86 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
             for (auto& freq : file->srcPartFrequency())
                 ++freq;
         }
-        return;
-    }
-
-    // MFC: validate partCount against file's expected ED2K part count
-    if (file && file->ed2kPartCount() != partCount) {
-        logWarning(QStringLiteral("processFileStatus: wrong part count recv=%1 expected=%2")
-                       .arg(partCount).arg(file->ed2kPartCount()));
-        m_partCount = 0;
-        return;
-    }
-
-    m_completeSource = false;
-    m_partStatus.resize(partCount);
-
-    // Read availability bitmap
-    const uint16 byteCount = (partCount + 7) / 8;
-    if (data.length() - data.position() < byteCount) {
-        // Malformed packet — not enough data for bitmap
-        m_completeSource = true;   // assume complete if bitmap missing
-        m_partStatus.clear();
-        m_partCount = 0;
-        return;
-    }
-    std::vector<uint8> bitmap(byteCount);
-    data.read(bitmap.data(), byteCount);
-
-    bool allAvailable = true;
-    for (uint16 i = 0; i < partCount; ++i) {
-        m_partStatus[i] = (bitmap[i / 8] & (1 << (i % 8))) ? 1 : 0;
-        if (!m_partStatus[i])
-            allAvailable = false;
-    }
-
-    if (allAvailable)
-        m_completeSource = true;
-
-    // Update PartFile source part frequency
-    if (file) {
-        auto& freq = file->srcPartFrequency();
-        if (freq.size() == partCount) {
-            for (uint16 i = 0; i < partCount; ++i) {
-                if (m_partStatus[i])
-                    freq[i]++;
-            }
+    } else {
+        // MFC: validate partCount against file's expected ED2K part count
+        if (file && file->ed2kPartCount() != partCount) {
+            logWarning(QStringLiteral("processFileStatus: wrong part count recv=%1 expected=%2")
+                           .arg(partCount).arg(file->ed2kPartCount()));
+            m_partCount = 0;
+            return;
         }
 
-        // MFC: Check if this source has any parts we still need
-        bool partsNeeded = m_completeSource;
-        if (!partsNeeded) {
-            for (uint16 i = 0; i < partCount; ++i) {
-                if (m_partStatus[i] && !file->isComplete(i)) {
-                    partsNeeded = true;
-                    break;
+        m_completeSource = false;
+        m_partStatus.resize(partCount);
+
+        // Read availability bitmap
+        const uint16 byteCount = (partCount + 7) / 8;
+        if (data.length() - data.position() < byteCount) {
+            // Malformed packet — not enough data for bitmap
+            m_completeSource = true;
+            m_partStatus.clear();
+            m_partCount = 0;
+            return;
+        }
+        std::vector<uint8> bitmap(byteCount);
+        data.read(bitmap.data(), byteCount);
+
+        bool allAvailable = true;
+        for (uint16 i = 0; i < partCount; ++i) {
+            m_partStatus[i] = (bitmap[i / 8] & (1 << (i % 8))) ? 1 : 0;
+            if (!m_partStatus[i])
+                allAvailable = false;
+        }
+
+        if (allAvailable)
+            m_completeSource = true;
+
+        // Update PartFile source part frequency
+        if (file) {
+            auto& freq = file->srcPartFrequency();
+            if (freq.size() == partCount) {
+                for (uint16 i = 0; i < partCount; ++i) {
+                    if (m_partStatus[i])
+                        freq[i]++;
                 }
             }
         }
+    }
 
-        if (!partsNeeded) {
-            setDownloadState(DownloadState::NoNeededParts);
-            swapToAnotherFile(
-                QStringLiteral("A4AF for NNP file. processFileStatus() TCP"),
-                true, false, false, nullptr, true, true);
-        } else if (file->isMD4HashsetNeeded()
-                   || (file->isAICHPartHashsetNeeded() && supportsFileIdentifiers()
-                       && reqFileAICHHash() != nullptr
-                       && *reqFileAICHHash() == file->fileIdentifier().getAICHHash())) {
-            // MFC: If we need hashsets, request them now
-            sendHashSetRequest();
-        } else {
-            sendStartupLoadReq();
+    if (!file)
+        return;
+
+    // MFC: Check if this source has any parts we still need
+    bool partsNeeded = m_completeSource;
+    if (!partsNeeded) {
+        for (uint16 i = 0; i < m_partCount; ++i) {
+            if (m_partStatus[i] && !file->isComplete(i)) {
+                partsNeeded = true;
+                break;
+            }
         }
+    }
+
+    if (!partsNeeded) {
+        setDownloadState(DownloadState::NoNeededParts);
+        swapToAnotherFile(
+            QStringLiteral("A4AF for NNP file. processFileStatus() TCP"),
+            true, false, false, nullptr, true, true);
+        return;
+    }
+
+    // Request hashset or upload slot — only when actively connecting via TCP
+    if (m_downloadState != DownloadState::Connected
+        && m_downloadState != DownloadState::Connecting)
+        return;
+
+    if (file->isMD4HashsetNeeded()
+        || (file->isAICHPartHashsetNeeded() && supportsFileIdentifiers()
+            && reqFileAICHHash() != nullptr
+            && *reqFileAICHHash() == file->fileIdentifier().getAICHHash())) {
+        sendHashSetRequest();
+    } else {
+        sendStartupLoadReq();
     }
 }
 
@@ -500,16 +511,21 @@ void UpDownClient::createBlockRequests(int blockCount)
     if (!m_reqFile || blockCount <= 0)
         return;
 
-    // Don't exceed 3 pending blocks total
-    auto currentPending = static_cast<int>(m_pendingBlocks.size());
-    int toRequest = std::min(blockCount, 3 - currentPending);
-    if (toRequest <= 0)
+    // Prevent uncontrolled growth (MFC: m_PendingBlocks_list > 2 * blockCount)
+    if (static_cast<int>(m_pendingBlocks.size()) > 2 * blockCount)
         return;
 
-    Requested_Block_Struct* blocks[3] = {};
-    int count = toRequest;
+    // Subtract unqueued (not-yet-sent) blocks from request count
+    for (const auto* pending : m_pendingBlocks)
+        blockCount -= static_cast<int>(pending->queued == 0);
 
-    if (m_reqFile->getNextRequestedBlock(this, blocks, count)) {
+    if (blockCount <= 0)
+        return;
+
+    std::vector<Requested_Block_Struct*> blocks(blockCount, nullptr);
+    int count = blockCount;
+
+    if (m_reqFile->getNextRequestedBlock(this, blocks.data(), count)) {
         for (int i = 0; i < count; ++i) {
             auto* pending = new Pending_Block_Struct;
             pending->block = blocks[i];
@@ -539,8 +555,18 @@ void UpDownClient::sendBlockRequests()
     // before the first block arrives (especially on slow connections)
     m_lastBlockReceived = static_cast<uint32>(getTickCount());
 
-    // Create new block requests if needed
-    createBlockRequests(3);
+    // Dynamic block count based on download speed (MFC SendBlockRequests logic).
+    // Fast sources pipeline more blocks to avoid round-trip stalls; slow sources
+    // request fewer to prevent timeout disconnects from fast uploaders.
+    int blockCount;
+    if (isEmuleClient() && compatibleClient() == 0 && downDatarate() < 9 * 1024)
+        blockCount = (downDatarate() < 4 * 1024) ? 1 : 2;
+    else if (downDatarate() > 75 * 1024)
+        blockCount = (downDatarate() > 150 * 1024) ? 9 : 6;
+    else
+        blockCount = 3;
+
+    createBlockRequests(blockCount);
 
     logDebug(QStringLiteral("sendBlockRequests: pendingBlocks=%1 from %2")
                  .arg(m_pendingBlocks.size()).arg(userName()));
@@ -1025,39 +1051,73 @@ void UpDownClient::udpReaskForDownload()
             return;
     }
 
-    m_reaskPending = true;
-    m_totalUDPPackets++;
+    // MFC DownloadClient.cpp:1347-1401
+    if (!hasLowID()) {
+        // High-ID: direct OP_REASKFILEPING to the source
+        // Don't use UDP to ask for sources (use TCP for that)
+        if (isSourceRequestAllowed())
+            return;
 
-    // Build OP_REASKFILEPING packet: file hash + part status
-    SafeMemFile data;
-    data.writeHash16(m_reqFile->fileHash());
+        if (swapToAnotherFile(QStringLiteral("A4AF check before OP_ReaskFilePing. udpReaskForDownload()"),
+                              true, false, false, nullptr, true, true))
+            return; // swapped → need TCP
 
-    // If source exchange v3+, include our part status for better source matching
-    if (m_sourceExchange1Ver >= 3 && m_reqFile->partCount() > 0) {
-        const uint16 parts = m_reqFile->partCount();
-        data.writeUInt16(parts);
+        m_reaskPending = true;
+        m_totalUDPPackets++;
 
-        const uint16 byteCount = (parts + 7) / 8;
-        std::vector<uint8> bitmap(byteCount, 0);
-        for (uint16 i = 0; i < parts; ++i) {
-            if (m_reqFile->isComplete(i))
-                bitmap[i / 8] |= (1 << (i % 8));
+        SafeMemFile data;
+        data.writeHash16(m_reqFile->fileHash());
+
+        // If source exchange v3+, include our part status
+        if (m_sourceExchange1Ver >= 3 && m_reqFile->partCount() > 0) {
+            const uint16 parts = m_reqFile->partCount();
+            data.writeUInt16(parts);
+            const uint16 byteCount = (parts + 7) / 8;
+            std::vector<uint8> bitmap(byteCount, 0);
+            for (uint16 i = 0; i < parts; ++i) {
+                if (m_reqFile->isComplete(i))
+                    bitmap[i / 8] |= (1 << (i % 8));
+            }
+            data.write(bitmap.data(), byteCount);
         }
-        data.write(bitmap.data(), byteCount);
-    }
+        if (m_extendedRequestsVer >= 2)
+            data.writeUInt16(static_cast<uint16>(m_reqFile->sourceCount()));
 
-    // Include complete source count if extended requests
-    if (m_extendedRequestsVer >= 2) {
-        data.writeUInt16(static_cast<uint16>(m_reqFile->sourceCount()));
-    }
+        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);
+        if (theApp.clientUDP) {
+            const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
+            theApp.clientUDP->sendPacket(std::move(packet), ntohl(m_connectIP), m_udpPort,
+                                         encrypt, m_userHash.data(), false, 0);
+        }
+    } else if (hasLowID() && m_buddyIP != 0 && m_buddyPort != 0 && hasValidBuddyID()) {
+        // Low-ID with buddy: send OP_REASKCALLBACKUDP to buddy for relay.
+        // MFC DownloadClient.cpp:1378-1401
+        m_reaskPending = true;
+        m_totalUDPPackets++;
 
-    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);
+        SafeMemFile data;
+        data.writeHash16(m_buddyID.data());             // buddy ID (16 bytes)
+        data.writeHash16(m_reqFile->fileHash());         // file hash (16 bytes)
 
-    // Send via client UDP socket
-    if (theApp.clientUDP) {
-        const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
-        theApp.clientUDP->sendPacket(std::move(packet), ntohl(m_connectIP), m_udpPort,
-                                     encrypt, m_userHash.data(), false, 0);
+        if (m_sourceExchange1Ver >= 3 && m_reqFile->partCount() > 0) {
+            const uint16 parts = m_reqFile->partCount();
+            data.writeUInt16(parts);
+            const uint16 byteCount = (parts + 7) / 8;
+            std::vector<uint8> bitmap(byteCount, 0);
+            for (uint16 i = 0; i < parts; ++i) {
+                if (m_reqFile->isComplete(i))
+                    bitmap[i / 8] |= (1 << (i % 8));
+            }
+            data.write(bitmap.data(), byteCount);
+        }
+        if (m_extendedRequestsVer >= 2)
+            data.writeUInt16(static_cast<uint16>(m_reqFile->sourceCount()));
+
+        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKCALLBACKUDP);
+        // MFC FIXME: We don't know which kad version the buddy has, so send unencrypted
+        if (theApp.clientUDP)
+            theApp.clientUDP->sendPacket(std::move(packet), m_buddyIP, m_buddyPort,
+                                          false, nullptr, true, 0);
     }
 }
 

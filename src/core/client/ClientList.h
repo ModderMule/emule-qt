@@ -88,6 +88,15 @@ public:
     /// Matches MFC CClientList::DoRequestFirewallCheckUDP (srchybrid/ClientList.cpp:767).
     bool doRequestFirewallCheckUDP(const kad::Contact& contact);
 
+    // -- Connecting client timeout (MFC CClientList::ProcessConnectingClientsList) --
+
+    /// Track a client that just started a connection attempt.
+    /// 45-second timeout ensures sources in WaitCallback/Connecting states
+    /// don't stay stuck forever. Matches MFC srchybrid/ClientList.cpp:865-901.
+    void addConnectingClient(UpDownClient* client);
+    void removeConnectingClient(const UpDownClient* client);
+    void processConnectingClients();
+
     // -- Banned clients -----------------------------------------------------
 
     /// Iterate over all known clients.
@@ -115,7 +124,13 @@ signals:
 private:
     void cleanUpBannedList();
 
+    struct ConnectingClient {
+        UpDownClient* client;
+        uint32 insertedTick;
+    };
+
     std::vector<UpDownClient*> m_clients;
+    std::vector<ConnectingClient> m_connectingClients;
     std::unordered_map<uint32, uint32> m_bannedList;  // IP -> ban tick
     uint32 m_lastBanCleanUp = 0;
     UpDownClient* m_buddy = nullptr;

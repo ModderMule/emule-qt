@@ -4,7 +4,6 @@
 
 #include "controls/ClientListModel.h"
 
-#include <QDateTime>
 #include <QIcon>
 #include <QPainter>
 #include <QPixmap>
@@ -37,20 +36,6 @@ QString formatSpeed(int64_t bytesPerSec)
     return QStringLiteral("%1 KiB/s").arg(static_cast<double>(bytesPerSec) / 1024.0, 0, 'f', 1);
 }
 
-/// Format wait time as duration.
-QString formatWaitTime(int64_t startTime)
-{
-    if (startTime <= 0)
-        return {};
-    const int64_t now = QDateTime::currentSecsSinceEpoch();
-    const int64_t secs = now - startTime;
-    if (secs < 60)
-        return QStringLiteral("%1s").arg(secs);
-    if (secs < 3600)
-        return QStringLiteral("%1m %2s").arg(secs / 60).arg(secs % 60);
-    return QStringLiteral("%1h %2m").arg(secs / 3600).arg((secs % 3600) / 60);
-}
-
 /// Format a duration in milliseconds as HH:MM:SS.
 QString formatDuration(int64_t ms)
 {
@@ -64,6 +49,12 @@ QString formatDuration(int64_t ms)
         .arg(h, 2, 10, QLatin1Char('0'))
         .arg(m, 2, 10, QLatin1Char('0'))
         .arg(s, 2, 10, QLatin1Char('0'));
+}
+
+/// Format wait time (elapsed ms from daemon) as HH:MM:SS.
+QString formatWaitTime(int64_t ms)
+{
+    return formatDuration(ms);
 }
 
 /// Priority display string matching MFC eMule (same as SharedFilesModel).

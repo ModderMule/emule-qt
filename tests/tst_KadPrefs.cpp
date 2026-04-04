@@ -152,17 +152,17 @@ void tst_KadPrefs::firewalled_recheckPreservesLastState()
     prefs.incFirewalled();
     QVERIFY(!prefs.firewalled()); // not firewalled
 
-    // Now setFirewalled() should snapshot current state (not firewalled) and reset counter
+    // setFirewalled() snapshots current state (not firewalled → false) and resets counter
     prefs.setFirewalled();
-    // After reset, counter is 0, recheckIP is still true → returns true (recheck mode)
-    QVERIFY(prefs.firewalled());
+    // During recheck, returns last saved state (was not firewalled → false)
+    QVERIFY(!prefs.firewalled());
 
     // Complete enough recheck IPs to exit recheck mode
     for (uint32 i = 0; i < KADEMLIAFIREWALLCHECKS; ++i)
         prefs.incRecheckIP();
 
-    // Now recheckIP() returns false → returns m_lastFirewallState (which was false)
-    QVERIFY(!prefs.firewalled());
+    // Done rechecking with 0 confirmations (counter < 2) → firewalled
+    QVERIFY(prefs.firewalled());
 }
 
 // ---------------------------------------------------------------------------

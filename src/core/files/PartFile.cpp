@@ -453,15 +453,68 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     if (senderPartCount == 0 && !sender->completeSource())
         return false;
 
-    // Build list of candidate parts (sender has it AND we need it)
+    const uint16 pc = partCount();
+    const uint64 fs = static_cast<uint64>(fileSize());
+    int blocksFound = 0;
+
+    // Helper: try to allocate blocks from a specific part
+    auto tryAllocateFromPart = [&](uint32 partNum) {
+        uint64 searchFrom = 0;
+        while (blocksFound < count) {
+            auto* reqBlock = new Requested_Block_Struct;
+            if (!getNextEmptyBlockInPart(partNum, reqBlock, searchFrom)) {
+                delete reqBlock;
+                break;
+            }
+            searchFrom = reqBlock->endOffset + 1;
+
+            if (!isAlreadyRequested(reqBlock->startOffset, reqBlock->endOffset)) {
+                newblocks[blocksFound] = reqBlock;
+                m_requestedBlocks.push_back(reqBlock);
+                ++blocksFound;
+                sender->setLastPartAsked(partNum);
+            } else {
+                delete reqBlock;
+            }
+        }
+    };
+
+    // ICS part continuation: if sender was already downloading a part, continue it first
+    // (MorphXT enkeyDEV ICS: keeps source on the same part to reduce switching overhead)
+    const uint16 lastPart = sender->lastPartAsked();
+    if (lastPart < pc && !isComplete(lastPart)) {
+        bool senderHasLast = sender->completeSource();
+        if (!senderHasLast && lastPart < partStatus.size())
+            senderHasLast = (partStatus[lastPart] != 0);
+        if (senderHasLast)
+            tryAllocateFromPart(lastPart);
+        if (blocksFound >= count) {
+            count = blocksFound;
+            return true;
+        }
+    }
+
+    // ICS source balancing: count how many other sources download each part
+    const auto dlParts = calcDownloadingParts(sender);
+
+    // Build list of candidate parts with MFC-style tiered ranking (lower rank = better)
     struct PartCandidate {
         uint32 part;
-        int score;
+        uint32 rank; // lower is better (MFC convention)
     };
     std::vector<PartCandidate> candidates;
 
-    const uint16 pc = partCount();
+    // Rarity bounds (MFC: veryRare, rare, almostRare thresholds)
+    const int srcCount = sourceCount();
+    const uint16 veryRareBound = static_cast<uint16>(std::max(srcCount / 10, 3));
+    const uint16 rareBound     = static_cast<uint16>(2 * veryRareBound);
+    const uint16 almostRareBound = static_cast<uint16>(4 * veryRareBound);
+
     for (uint32 p = 0; p < pc; ++p) {
+        // Skip the part we already tried above
+        if (p == lastPart && lastPart < pc)
+            continue;
+
         // Check if sender has this part
         bool senderHasPart = sender->completeSource();
         if (!senderHasPart && p < partStatus.size())
@@ -474,32 +527,13 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
         if (isComplete(p))
             continue;
 
-        // Score the part
-        int score = 0;
+        // --- Criterion 1: Frequency (rarity) ---
+        uint16 freq = 0;
+        if (p < m_srcPartFrequency.size())
+            freq = m_srcPartFrequency[p];
 
-        // Rarity bonus — continuous inverse-frequency score
-        if (p < m_srcPartFrequency.size()) {
-            uint16 freq = m_srcPartFrequency[p];
-            if (freq > 0)
-                score += std::max(1, 50 - static_cast<int>(freq) * 2);
-            else
-                score += 50; // freq=0 means unknown availability — treat as rare
-        }
-
-        // Completion bonus — prefer nearly-complete parts
-        const uint64 partStart = static_cast<uint64>(p) * PARTSIZE;
-        uint64 partEnd = partStart + PARTSIZE - 1;
-        const uint64 fs = static_cast<uint64>(fileSize());
-        if (partEnd >= fs)
-            partEnd = fs - 1;
-        const uint64 partSize = partEnd - partStart + 1;
-        const uint64 gapInPart = totalGapSizeInPart(p);
-        if (partSize > 0) {
-            const int completion = static_cast<int>((partSize - gapInPart) * 100 / partSize);
-            score += completion / 5;
-        }
-
-        // Preview priority — first and last parts for previewable media files
+        // --- Criterion 2: Preview priority ---
+        bool critPreview = false;
         if (thePrefs.previewPrio()
             && fs > 2 * PARTSIZE
             && (getED2KFileTypeID(fileName()) == ED2KFileType::Video
@@ -507,50 +541,110 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
             && (p == 0
                 || p == pc - 1
                 || (p == pc - 2 && fs - (static_cast<uint64>(pc - 1) * PARTSIZE) < PARTSIZE / 3)))
-            score += 30;
+            critPreview = true;
 
-        // Random tie-breaker (0-4) to avoid sequential ordering among equal-score parts
-        static thread_local std::mt19937 rng(std::random_device{}());
-        std::uniform_int_distribution<int> dist(0, 4);
-        score += dist(rng);
+        // --- Criterion 3 & 4: Completion with requested blocks counted as downloaded ---
+        const uint64 partStart = static_cast<uint64>(p) * PARTSIZE;
+        uint64 partEnd = partStart + PARTSIZE - 1;
+        if (partEnd >= fs)
+            partEnd = fs - 1;
+        const uint64 fullPartSize = partEnd - partStart + 1;
+        const uint64 gapInPart = totalGapSizeInPart(p);
+        uint64 effectiveDownloaded = fullPartSize - gapInPart;
+        bool critRequested = false;
 
-        candidates.push_back({p, score});
+        // Count requested blocks as already downloaded (MFC optimization)
+        for (const auto* reqBlock : m_requestedBlocks) {
+            if (reqBlock->startOffset > partEnd || reqBlock->endOffset < partStart)
+                continue;
+            const uint64 overlapStart = std::max(reqBlock->startOffset, partStart);
+            const uint64 overlapEnd   = std::min(reqBlock->endOffset, partEnd);
+            effectiveDownloaded += overlapEnd - overlapStart + 1;
+            critRequested = true;
+        }
+        // Normalize to PARTSIZE to avoid advantage for smaller last part (MFC convention)
+        if (effectiveDownloaded > PARTSIZE)
+            effectiveDownloaded = PARTSIZE;
+        const uint16 critCompletion = static_cast<uint16>(
+            std::min(effectiveDownloaded * 100 / std::max(fullPartSize, uint64(1)), uint64(100)));
+
+        // --- Criterion 5: Same chunk preference (handled by ICS continuation above) ---
+        const bool sameChunk = (p == sender->lastPartAsked());
+
+        // --- Criterion 6 & 7: Transferring clients and bandwidth scoring ---
+        uint16 transferringClientsScore = static_cast<uint16>(m_downloadingSources.size());
+        uint16 bandwidthScore = 2000;
+
+        if (transferringClientsScore > 1) {
+            uint32 totalRate = 1;
+            for (const auto* dlClient : m_downloadingSources) {
+                if (dlClient->isPartAvailable(p)) {
+                    --transferringClientsScore;
+                    totalRate += dlClient->downDatarate() + 500;
+                }
+            }
+            bandwidthScore = static_cast<uint16>(
+                std::min(static_cast<uint64>((PARTSIZE - effectiveDownloaded) / (totalRate * 5ULL)),
+                         uint64(2000)));
+        }
+
+        // --- Calculate rank using MFC's tiered formulas (lower = better) ---
+        uint32 rank;
+        if (freq <= veryRareBound) {
+            rank = 75u * freq
+                 + static_cast<uint16>(!critRequested)
+                 + (critRequested ? 3000u : 3001u)
+                 + (100u - critCompletion)
+                 + static_cast<uint16>(!sameChunk)
+                 + transferringClientsScore;
+        } else if (critPreview) {
+            rank = ((critRequested && !sameChunk) ? 20000u : 10000u)
+                 + (100u - critCompletion);
+        } else if (freq <= rareBound) {
+            rank = 25u * freq
+                 + (critRequested ? 10101u : 10102u)
+                 + (100u - critCompletion)
+                 + static_cast<uint16>(!sameChunk)
+                 + transferringClientsScore;
+        } else if (freq <= almostRareBound) {
+            static thread_local std::mt19937 rng(std::random_device{}());
+            std::uniform_int_distribution<uint16> dist(0, static_cast<uint16>(
+                3 * (almostRareBound - rareBound) / 2));
+            uint16 randomAdd = dist(rng);
+            rank = freq
+                 + (critRequested ? 20101u : (20201u + almostRareBound - rareBound))
+                 + ((effectiveDownloaded > 0) ? 0u : 500u)
+                 + 5u * (100u - critCompletion)
+                 + (sameChunk ? 0u : randomAdd)
+                 + bandwidthScore;
+        } else {
+            // Common chunk
+            rank = (critRequested ? 30000u : 30001u)
+                 + (100u - critCompletion)
+                 + static_cast<uint16>(!sameChunk)
+                 + bandwidthScore;
+        }
+
+        candidates.push_back({p, rank});
     }
 
-    if (candidates.empty())
+    if (candidates.empty() && blocksFound == 0)
         return false;
 
-    // Sort by score descending
+    // Sort by rank ascending (lower = better, MFC convention)
     std::ranges::sort(candidates, [](const PartCandidate& a, const PartCandidate& b) {
-        return a.score > b.score;
+        return a.rank < b.rank;
     });
-
-    int blocksFound = 0;
 
     for (const auto& cand : candidates) {
         if (blocksFound >= count)
             break;
-
-        // Try multiple blocks from the same part (MFC eMule queues up to 3)
-        uint64 searchFrom = 0;
-        while (blocksFound < count) {
-            auto* reqBlock = new Requested_Block_Struct;
-            if (!getNextEmptyBlockInPart(cand.part, reqBlock, searchFrom)) {
-                delete reqBlock;
-                break;
-            }
-            // Advance past this block for next iteration
-            searchFrom = reqBlock->endOffset + 1;
-
-            if (!isAlreadyRequested(reqBlock->startOffset, reqBlock->endOffset)) {
-                newblocks[blocksFound] = reqBlock;
-                m_requestedBlocks.push_back(reqBlock);
-                ++blocksFound;
-            } else {
-                delete reqBlock;
-            }
-        }
+        tryAllocateFromPart(cand.part);
     }
+
+    // Reset lastPartAsked if we couldn't find any blocks
+    if (blocksFound == 0)
+        sender->setLastPartAsked(UINT16_MAX);
 
     count = blocksFound;
     return blocksFound > 0;
@@ -616,6 +710,20 @@ void PartFile::removeAllRequestedBlocks()
     // Only clear the list — blocks are owned by the clients'
     // Pending_Block_Struct and freed by clearPendingBlockRequest.
     m_requestedBlocks.clear();
+}
+
+// MorphXT ICS: count how many downloading sources are working on each part
+std::vector<uint16> PartFile::calcDownloadingParts(const UpDownClient* exclude) const
+{
+    std::vector<uint16> counts(partCount(), 0);
+    for (const auto* client : m_downloadingSources) {
+        if (client == exclude)
+            continue;
+        const uint16 part = client->lastPartAsked();
+        if (part < partCount())
+            counts[part]++;
+    }
+    return counts;
 }
 
 // ===========================================================================
@@ -887,6 +995,12 @@ bool PartFile::createPartFile(const QString& tempDir)
     // Save initial .part.met
     savePartFile();
 
+    // MFC CreatePartFile: clear hashset flags for files that don't need them
+    if (fileIdentifier().getTheoreticalMD4PartHashCount() == 0)
+        m_md4HashsetNeeded = false;
+    if (fileIdentifier().getTheoreticalAICHPartHashCount() == 0)
+        m_aichPartHashsetNeeded = false;
+
     return true;
 }
 
@@ -1119,11 +1233,25 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
         return PartFileLoadResult::FailedNoAccess;
     }
 
+    // MFC safety: if .part file is shorter than expected, add gap for missing tail
+    {
+        const uint64 partFileLen = static_cast<uint64>(QFileInfo(partPath).size());
+        const uint64 fs = static_cast<uint64>(fileSize());
+        if (fs > 0 && partFileLen < fs) {
+            logWarning(QStringLiteral("PartFile::loadPartFile: .part file truncated (%1 < %2), adding gap for tail")
+                           .arg(partFileLen).arg(fs));
+            addGap(partFileLen, fs - 1);
+        }
+    }
+
     // Init part frequency array
     m_srcPartFrequency.resize(partCount(), 0);
 
     // Update completed infos
     updateCompletedInfos();
+
+    // MFC LoadPartFile: final hashset-needed check based on actual hash counts
+    m_md4HashsetNeeded = !fileIdentifier().hasExpectedMD4HashCount();
 
     // Set status
     if (m_paused)
@@ -1320,18 +1448,20 @@ bool PartFile::savePartFile()
         return false;
     }
 
-    // Atomic rename: temp → original
-    if (QFile::exists(m_fullName))
-        QFile::remove(m_fullName);
+    // Rotate: current → .bak, then rename temp → final
+    const QString bakPath = m_fullName + QStringLiteral(".bak");
+    QFile::remove(bakPath);
+    if (QFile::exists(m_fullName)) {
+        if (!QFile::rename(m_fullName, bakPath))
+            QFile::remove(m_fullName);
+    }
     if (!QFile::rename(tempPath, m_fullName)) {
         logError(QStringLiteral("PartFile::savePartFile: rename failed %1 → %2")
                      .arg(tempPath, m_fullName));
+        if (QFile::exists(bakPath))
+            QFile::rename(bakPath, m_fullName);
         return false;
     }
-
-    // Create .bak backup copy
-    const QString bakPath = m_fullName + QStringLiteral(".bak");
-    QFile::copy(m_fullName, bakPath);
 
     return true;
 }

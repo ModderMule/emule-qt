@@ -25,6 +25,8 @@
 #include "net/UDPSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
+#include "utils/OtherFunctions.h"
+#include "utils/SafeFile.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
@@ -220,6 +222,8 @@ void CoreSession::shutdownUploadPipeline()
     m_uploadDiskIO.reset();
     m_uploadThrottler.reset();
     m_sharedFileList.reset();
+    if (m_knownFileList)
+        m_knownFileList->save();
     m_knownFileList.reset();
 }
 
@@ -257,6 +261,8 @@ void CoreSession::onTimer()
             float upRate = theApp.uploadQueue
                 ? static_cast<float>(theApp.uploadQueue->datarate()) / 1024.0f : 0.0f;
             theApp.statistics->updateConnectionStats(upRate, downRate);
+            theApp.statistics->compUpDatarateOverhead();
+            theApp.statistics->compDownDatarateOverhead();
         }
         if (theApp.clientList)
             theApp.clientList->process();
@@ -693,6 +699,72 @@ void CoreSession::initKademlia()
         connect(m_clientUDP.get(), &ClientUDPSocket::reaskFilePingReceived,
                 theApp.uploadQueue, &UploadQueue::onReaskFilePing);
     }
+
+    // Wire download-side UDP reask response signals.
+    // MFC handles these in CClientUDPSocket::ProcessPacket (srchybrid/ClientUDPSocket.cpp:324-355).
+    // The Qt ClientUDPSocket emits signals but they were never connected.
+
+    // OP_REASKACK — remote source confirms our queue position via UDP.
+    connect(m_clientUDP.get(), &ClientUDPSocket::reaskAckReceived,
+        this, [](uint32 senderIP, uint16 senderPort, const uint8* data, uint32 size) {
+            if (!theApp.clientList)
+                return;
+            auto* sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+            if (!sender || !sender->reaskPending())
+                return;
+            SafeMemFile io(data, size);
+            // If UDPv4+, response contains part status first
+            if (sender->udpVer() > 3 && sender->reqFile())
+                sender->processFileStatus(true, io, sender->reqFile());
+            uint16 rank = io.readUInt16();
+            sender->setRemoteQueueFull(false);
+            sender->udpReaskACK(rank);
+            sender->incDownAskedCount();
+        });
+
+    // OP_FILENOTFOUND — remote source no longer has the file.
+    connect(m_clientUDP.get(), &ClientUDPSocket::fileNotFoundReceived,
+        this, [](uint32 senderIP, uint16 senderPort) {
+            if (!theApp.clientList)
+                return;
+            auto* sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+            if (sender && sender->reaskPending())
+                sender->udpReaskFNF(); // may delete sender
+        });
+
+    // OP_QUEUEFULL — remote source's upload queue is full.
+    connect(m_clientUDP.get(), &ClientUDPSocket::queueFullReceived,
+        this, [](uint32 senderIP, uint16 senderPort) {
+            if (!theApp.clientList)
+                return;
+            auto* sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+            if (sender && sender->reaskPending()) {
+                sender->setRemoteQueueFull(true);
+                sender->udpReaskACK(0);
+            }
+        });
+
+    // OP_REASKCALLBACKUDP — firewalled client asks us to relay reask to our buddy.
+    // MFC: srchybrid/ClientUDPSocket.cpp:201-224
+    connect(m_clientUDP.get(), &ClientUDPSocket::reaskCallbackReceived,
+        this, [](uint32 senderIP, uint16 senderPort, const uint8* data, uint32 size) {
+            if (!theApp.clientList)
+                return;
+            auto* buddy = theApp.clientList->getBuddy();
+            if (!buddy || !buddy->socket() || size < 17)
+                return;
+            // First 16 bytes = buddy ID that must match our buddy
+            if (!md4equ(data, buddy->buddyID()))
+                return;
+            // Patch bytes 10-15 with sender IP:port, then relay bytes 10+ as OP_REASKCALLBACKTCP
+            std::vector<uint8> buf(data, data + size);
+            pokeUInt32(buf.data() + 10, senderIP);
+            pokeUInt16(buf.data() + 14, senderPort);
+            uint32 relaySize = size - 10;
+            auto packet = std::make_unique<Packet>(OP_REASKCALLBACKTCP, relaySize, OP_EMULEPROT);
+            std::memcpy(packet->pBuffer, buf.data() + 10, relaySize);
+            buddy->sendPacket(std::move(packet));
+        });
 
     // 2. Create and start Kademlia (no internal socket binding).
     m_kademlia = std::make_unique<kad::Kademlia>();

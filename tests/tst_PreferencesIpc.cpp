@@ -1,21 +1,21 @@
 /// @file tst_PreferencesIpc.cpp
 /// @brief Integration test — SetPreferences / GetPreferences IPC round-trip.
 ///
-/// Connects to a running emulecored on localhost:4712 and verifies that
-/// bandwidth settings survive a Set → Get → YAML cycle with large values.
-///
-/// Requires: emulecored running locally (start it before running this test).
+/// Runs a minimal in-process IPC server (no emulecored required) that handles
+/// Handshake, GetPreferences, and SetPreferences using the real Preferences
+/// class backed by a temporary YAML file.
 
 #include "IpcConnection.h"
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "prefs/Preferences.h"
 
 #include <QCborMap>
-#include <QDir>
 #include <QElapsedTimer>
-#include <QFile>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <yaml-cpp/yaml.h>
@@ -26,14 +26,21 @@ class tst_PreferencesIpc : public QObject {
     Q_OBJECT
 
 private:
-    IpcConnection* m_conn = nullptr;    // owns the socket
+    // Client side
+    IpcConnection* m_conn = nullptr;
     int m_nextSeqId = 1;
+
+    // Server side
+    QTcpServer* m_server = nullptr;
+    IpcConnection* m_serverConn = nullptr;
+
+    // Temp YAML persistence
+    QTemporaryDir m_tmpDir;
     QString m_prefsPath;
 
     /// Send an IPC message and wait for the response (blocking).
     IpcMessage sendAndWait(IpcMessage msg, int timeoutMs = 5000)
     {
-        // Assign sequence ID
         QCborArray arr = msg.toArray();
         if (arr.size() >= 2)
             arr[1] = m_nextSeqId++;
@@ -41,7 +48,6 @@ private:
 
         const int expectedSeq = tagged.seqId();
 
-        // Collect responses via signal
         IpcMessage result;
         bool found = false;
         auto conn = connect(m_conn, &IpcConnection::messageReceived,
@@ -54,7 +60,6 @@ private:
 
         m_conn->sendMessage(tagged);
 
-        // Spin event loop until response arrives or timeout
         QElapsedTimer timer;
         timer.start();
         while (!found && timer.elapsed() < timeoutMs)
@@ -92,22 +97,83 @@ private:
         return 0;
     }
 
+    /// Handle a message received on the server side.
+    void handleServerMessage(const IpcMessage& msg)
+    {
+        switch (msg.type()) {
+        case IpcMsgType::Handshake: {
+            IpcMessage reply(IpcMsgType::HandshakeOk, msg.seqId());
+            reply.append(QString::fromLatin1(ProtocolVersion));
+            reply.append(QStringLiteral("Test IPC Server"));
+            m_serverConn->sendMessage(reply);
+            break;
+        }
+        case IpcMsgType::SetPreferences: {
+            for (int i = 0; i + 1 < msg.fieldCount(); i += 2) {
+                const QString key = msg.fieldString(i);
+                const auto val = static_cast<uint32_t>(msg.fieldInt(i + 1));
+
+                if (key == QStringLiteral("maxDownload"))
+                    eMule::thePrefs.setMaxDownload(val);
+                else if (key == QStringLiteral("maxGraphDownloadRate"))
+                    eMule::thePrefs.setMaxGraphDownloadRate(val);
+                else if (key == QStringLiteral("maxConnections"))
+                    eMule::thePrefs.setMaxConnections(static_cast<uint16_t>(val));
+            }
+            eMule::thePrefs.save();
+            m_serverConn->sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+            break;
+        }
+        case IpcMsgType::GetPreferences: {
+            QCborMap prefs;
+            prefs.insert(QStringLiteral("maxDownload"),
+                         static_cast<qint64>(eMule::thePrefs.maxDownload()));
+            prefs.insert(QStringLiteral("maxGraphDownloadRate"),
+                         static_cast<qint64>(eMule::thePrefs.maxGraphDownloadRate()));
+            prefs.insert(QStringLiteral("maxGraphUploadRate"),
+                         static_cast<qint64>(eMule::thePrefs.maxGraphUploadRate()));
+            prefs.insert(QStringLiteral("maxConnections"),
+                         static_cast<qint64>(eMule::thePrefs.maxConnections()));
+            m_serverConn->sendMessage(
+                IpcMessage::makeResult(msg.seqId(), true, QCborValue(prefs)));
+            break;
+        }
+        default:
+            m_serverConn->sendMessage(
+                IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Not implemented")));
+            break;
+        }
+    }
+
 private slots:
     void initTestCase()
     {
-        // Resolve preferences path
-        m_prefsPath = QDir::homePath() + QStringLiteral("/eMuleQt/Config/preferences.yml");
-        QVERIFY2(QFile::exists(m_prefsPath),
-                 qPrintable(QStringLiteral("preferences.yml not found at ") + m_prefsPath));
+        QVERIFY(m_tmpDir.isValid());
+        m_prefsPath = m_tmpDir.filePath(QStringLiteral("preferences.yml"));
+        eMule::thePrefs.load(m_prefsPath);
 
-        // Connect to daemon — IpcConnection takes ownership of the socket
-        auto* socket = new QTcpSocket;
-        socket->connectToHost(QStringLiteral("127.0.0.1"), 4712);
-        QVERIFY2(socket->waitForConnected(3000), "Cannot connect to daemon on localhost:4712");
+        // Start minimal IPC server on ephemeral port
+        m_server = new QTcpServer(this);
+        QVERIFY(m_server->listen(QHostAddress::LocalHost, 0));
+        const quint16 port = m_server->serverPort();
 
-        m_conn = new IpcConnection(socket, this);
+        // Accept incoming connection and set up server-side handler
+        connect(m_server, &QTcpServer::newConnection, this, [this] {
+            auto* socket = m_server->nextPendingConnection();
+            m_serverConn = new IpcConnection(socket, this);
+            connect(m_serverConn, &IpcConnection::messageReceived,
+                    this, &tst_PreferencesIpc::handleServerMessage);
+        });
 
-        // Handshake (localhost — no auth required by daemon for local connections)
+        // Connect client to server
+        auto* clientSocket = new QTcpSocket;
+        clientSocket->connectToHost(QHostAddress::LocalHost, port);
+        QVERIFY(clientSocket->waitForConnected(3000));
+        QVERIFY(m_server->waitForNewConnection(3000));
+
+        m_conn = new IpcConnection(clientSocket, this);
+
+        // Handshake
         IpcMessage handshake(IpcMsgType::Handshake);
         handshake.append(QString::fromLatin1(ProtocolVersion));
 
@@ -120,17 +186,19 @@ private slots:
     {
         delete m_conn;
         m_conn = nullptr;
+        delete m_serverConn;
+        m_serverConn = nullptr;
+        delete m_server;
+        m_server = nullptr;
     }
 
     // ----- Test cases --------------------------------------------------------
 
     void setAndGet_maxDownload()
     {
-        // Set maxDownload to a large value
         IpcMessage resp = setPreference(QStringLiteral("maxDownload"), 100000);
         QVERIFY2(resp.isValid(), "SetPreferences response not received");
 
-        // Read back via GetPreferences
         QCborMap prefs = getPreferences();
         QVERIFY(!prefs.isEmpty());
 
@@ -154,17 +222,12 @@ private slots:
 
     void setAndGet_yamlPersistence()
     {
-        // Set value via IPC
         setPreference(QStringLiteral("maxDownload"), 100000);
-
-        // Also set maxGraphDownloadRate (capacity must be >= limit)
         setPreference(QStringLiteral("maxGraphDownloadRate"), 125000);
 
-        // Give daemon a moment to flush YAML (save is synchronous in handler,
-        // but we need the write to hit disk)
+        // Give save a moment to flush to disk
         QTest::qWait(200);
 
-        // Verify on disk
         uint32_t diskMaxDown = readYamlValue(QStringLiteral("bandwidth"), QStringLiteral("maxDownload"));
         QCOMPARE(diskMaxDown, uint32_t(100000));
 

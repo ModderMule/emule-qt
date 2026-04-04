@@ -53,18 +53,42 @@ bool KnownFileList::init(const QString& configDir)
 void KnownFileList::save()
 {
     const QString knownPath = m_configDir + QStringLiteral("/known.met");
+    const QString tmpPath   = knownPath + QStringLiteral(".tmp");
+    const QString bakPath   = knownPath + QStringLiteral(".bak");
 
     try {
-        SafeFile file(knownPath, QIODevice::WriteOnly | QIODevice::Truncate);
+        // Clean up stale .tmp from a previous failed save
+        QFile::remove(tmpPath);
 
-        file.writeUInt8(MET_HEADER_I64TAGS);
-        file.writeUInt32(static_cast<uint32>(m_filesMap.size()));
+        // Write to temp file
+        {
+            SafeFile file(tmpPath, QIODevice::WriteOnly);
+            file.writeUInt8(MET_HEADER_I64TAGS);
+            file.writeUInt32(static_cast<uint32>(m_filesMap.size()));
+            for (const auto& [key, knownFile] : m_filesMap) {
+                knownFile->writeToFile(file);
+            }
+        } // file closed before rename
 
-        for (const auto& [key, knownFile] : m_filesMap) {
-            knownFile->writeToFile(file);
+        // Rotate: current → .bak (preserves old data as backup)
+        QFile::remove(bakPath);
+        if (QFile::exists(knownPath)) {
+            if (!QFile::rename(knownPath, bakPath)) {
+                logWarning(QStringLiteral("known.met: failed to create backup"));
+                QFile::remove(knownPath);
+            }
+        }
+
+        // Rename temp → final
+        if (!QFile::rename(tmpPath, knownPath)) {
+            logError(QStringLiteral("known.met: failed to rename tmp → known.met"));
+            if (QFile::exists(bakPath))
+                QFile::rename(bakPath, knownPath);
+            return;
         }
     } catch (const std::exception& e) {
         logError(QStringLiteral("Failed to save known.met: %1").arg(QString::fromUtf8(e.what())));
+        QFile::remove(tmpPath);
     }
 
     saveCancelledFiles();
@@ -238,7 +262,7 @@ bool KnownFileList::loadKnownFiles()
             if (!kf->loadFromFile(file)) {
                 logWarning(QStringLiteral("known.met: corrupt entry %1 of %2").arg(i).arg(count));
                 delete kf;
-                continue;
+                break; // file cursor is at unknown position, can't continue
             }
 
             MD4Key key(kf->fileHash());
@@ -258,13 +282,13 @@ bool KnownFileList::loadKnownFiles()
     } catch (const std::exception& e) {
         logError(QStringLiteral("known.met load error: %1").arg(QString::fromUtf8(e.what())));
 
-        // Try .bak fallback
+        // Try .bak fallback (once only — remove .bak to prevent infinite recursion)
         const QString bakPath = filePath + QStringLiteral(".bak");
         if (QFile::exists(bakPath)) {
             logInfo(QStringLiteral("Trying known.met.bak fallback..."));
             QFile::remove(filePath);
-            if (QFile::copy(bakPath, filePath))
-                return loadKnownFiles(); // retry with restored backup
+            if (QFile::rename(bakPath, filePath))
+                return loadKnownFiles();
         }
         return false;
     }
@@ -318,6 +342,8 @@ bool KnownFileList::loadCancelledFiles()
 void KnownFileList::saveCancelledFiles()
 {
     const QString filePath = m_configDir + QStringLiteral("/cancelled.met");
+    const QString tmpPath  = filePath + QStringLiteral(".tmp");
+    const QString bakPath  = filePath + QStringLiteral(".bak");
 
     // Generate seed on first save
     if (m_cancelledSeed == 0) {
@@ -326,18 +352,33 @@ void KnownFileList::saveCancelledFiles()
     }
 
     try {
-        SafeFile file(filePath, QIODevice::WriteOnly | QIODevice::Truncate);
+        QFile::remove(tmpPath);
 
-        file.writeUInt8(kCancelledMetHeader);
-        file.writeUInt8(kCancelledMetVersion);
-        file.writeUInt32(m_cancelledSeed);
-        file.writeUInt32(static_cast<uint32>(m_cancelledFiles.size()));
+        {
+            SafeFile file(tmpPath, QIODevice::WriteOnly);
+            file.writeUInt8(kCancelledMetHeader);
+            file.writeUInt8(kCancelledMetVersion);
+            file.writeUInt32(m_cancelledSeed);
+            file.writeUInt32(static_cast<uint32>(m_cancelledFiles.size()));
+            for (const auto& key : m_cancelledFiles) {
+                file.write(key.data.data(), 16);
+            }
+        }
 
-        for (const auto& key : m_cancelledFiles) {
-            file.write(key.data.data(), 16);
+        QFile::remove(bakPath);
+        if (QFile::exists(filePath)) {
+            if (!QFile::rename(filePath, bakPath))
+                QFile::remove(filePath);
+        }
+
+        if (!QFile::rename(tmpPath, filePath)) {
+            logError(QStringLiteral("cancelled.met: failed to rename tmp → cancelled.met"));
+            if (QFile::exists(bakPath))
+                QFile::rename(bakPath, filePath);
         }
     } catch (const std::exception& e) {
         logError(QStringLiteral("Failed to save cancelled.met: %1").arg(QString::fromUtf8(e.what())));
+        QFile::remove(tmpPath);
     }
 }
 

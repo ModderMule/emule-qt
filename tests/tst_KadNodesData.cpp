@@ -70,7 +70,7 @@ void tst_KadNodesData::cleanup()
 
 void tst_KadNodesData::loadNodesDat_fromProjectData()
 {
-    const QString srcPath = projectDataDir() + QStringLiteral("/config/nodes.dat");
+    const QString srcPath = projectDataDir() + QStringLiteral("/nodes.dat");
     QVERIFY2(QFile::exists(srcPath),
              qPrintable(QStringLiteral("Missing test fixture: %1").arg(srcPath)));
 
@@ -101,7 +101,7 @@ void tst_KadNodesData::loadNodesDat_fromProjectData()
 
 void tst_KadNodesData::nodesDat_contactsHaveValidProperties()
 {
-    const QString srcPath = projectDataDir() + QStringLiteral("/config/nodes.dat");
+    const QString srcPath = projectDataDir() + QStringLiteral("/nodes.dat");
     const QString dstPath = m_tmpDir->filePath(QStringLiteral("nodes.dat"));
     QVERIFY(QFile::copy(srcPath, dstPath));
 
@@ -143,7 +143,7 @@ void tst_KadNodesData::nodesDat_contactsHaveValidProperties()
 
 void tst_KadNodesData::nodesDat_bootstrapFileFormat()
 {
-    const QString srcPath = projectDataDir() + QStringLiteral("/config/nodes.dat");
+    const QString srcPath = projectDataDir() + QStringLiteral("/nodes.dat");
     QVERIFY(QFile::exists(srcPath));
 
     SafeFile sf;

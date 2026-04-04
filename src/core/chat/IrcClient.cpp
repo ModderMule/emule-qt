@@ -106,6 +106,7 @@ void IrcClient::sendRaw(const QString& line)
     data.append("\r\n");
 
     m_socket->write(data);
+    m_socket->flush();
     emit rawLineSent(line);
 }
 

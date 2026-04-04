@@ -70,7 +70,7 @@ bool ClientUDPSocket::rebind(uint16 port)
                      .arg(port).arg(m_socket.errorString()));
         return false;
     }
-    m_port = port;
+    m_port = m_socket.localPort();
     return true;
 }
 
@@ -84,6 +84,13 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, uint32 ip, uint
 {
     if (!packet)
         return false;
+
+    if (auto* stats = theApp.statistics) {
+        if (isKad)
+            stats->addUpDataOverheadKad(packet->size);
+        else
+            stats->addUpDataOverheadOther(packet->size);
+    }
 
     // Purge expired packets from queue
     purgeExpiredPackets();
@@ -248,12 +255,16 @@ void ClientUDPSocket::onReadyRead()
             processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderIP, senderPort);
         } else if (protoByte == OP_KADEMLIAHEADER) {
             // Uncompressed Kademlia packet — forward directly
+            if (auto* stats = theApp.statistics)
+                stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
             uint8 opcode = buf[1];
             emit kadPacketReceived(opcode, buf + 2,
                                    static_cast<uint32>(bufLen - 2), senderIP, senderPort,
                                    false, 0);
         } else if (protoByte == OP_KADEMLIAPACKEDPROT) {
             // Compressed Kademlia packet — decompress before forwarding
+            if (auto* stats = theApp.statistics)
+                stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
             uint8 opcode = buf[1];
             QByteArray decompressed = decompressKadPayload(buf + 2, static_cast<int>(bufLen - 2));
             if (!decompressed.isEmpty()) {
@@ -285,6 +296,8 @@ void ClientUDPSocket::onReadyRead()
                     processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2),
                                   opcode, senderIP, senderPort);
                 } else if (innerProto == OP_KADEMLIAHEADER) {
+                    if (auto* stats = theApp.statistics)
+                        stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
                     bool validKey = (dr.senderVerifyKey != 0) &&
                         (dr.senderVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIP));
                     emit kadPacketReceived(opcode, dr.data + 2,
@@ -292,6 +305,8 @@ void ClientUDPSocket::onReadyRead()
                                            senderIP, senderPort,
                                            validKey, dr.receiverVerifyKey);
                 } else if (innerProto == OP_KADEMLIAPACKEDPROT) {
+                    if (auto* stats = theApp.statistics)
+                        stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
                     bool validKey = (dr.senderVerifyKey != 0) &&
                         (dr.senderVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIP));
                     QByteArray decompressed = decompressKadPayload(dr.data + 2, dr.length - 2);

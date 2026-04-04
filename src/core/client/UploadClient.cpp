@@ -100,8 +100,12 @@ bool UpDownClient::processExtendedInfo(SafeMemFile& data, KnownFile* file)
     m_upPartCount = partCount;
     m_upPartStatus.resize(partCount);
 
-    if (partCount == 0)
+    if (partCount == 0) {
+        // MFC: still consume complete source count if present
+        if (m_extendedRequestsVer > 1 && (data.length() - data.position()) >= 2)
+            data.readUInt16();
         return true;
+    }
 
     // Read part availability bitmap
     const uint16 byteCount = (partCount + 7) / 8;
@@ -111,6 +115,10 @@ bool UpDownClient::processExtendedInfo(SafeMemFile& data, KnownFile* file)
     for (uint16 i = 0; i < partCount; ++i) {
         m_upPartStatus[i] = (bitmap[i / 8] & (1 << (i % 8))) ? 1 : 0;
     }
+
+    // MFC ProcessExtendedInfo: consume complete source count for ExtendedRequests v2+
+    if (m_extendedRequestsVer > 1 && (data.length() - data.position()) >= 2)
+        data.readUInt16();
 
     return true;
 }
@@ -421,6 +429,17 @@ uint32 UpDownClient::waitStartTime() const
     if (!m_credits)
         return 0;
     return m_credits->secureWaitStartTime(m_connectIP);
+}
+
+uint32 UpDownClient::getWaitTimeDelay() const
+{
+    if (!m_credits)
+        return 0;
+    uint32 wst = m_credits->secureWaitStartTime(m_connectIP);
+    if (wst == 0)
+        return 0;
+    uint32 curTick = static_cast<uint32>(getTickCount());
+    return (curTick >= wst) ? (curTick - wst) : 0;
 }
 
 void UpDownClient::setWaitStartTime()
@@ -776,6 +795,15 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
             // Unknown sub-response, can't continue (unknown length)
             return;
         }
+    }
+
+    // Initiate download if processFileStatus didn't already handle it.
+    // For single-part files, OP_SETREQFILEID is not sent so the response
+    // contains no OP_FILESTATUS — sendStartupLoadReq() is never reached.
+    // Matches the separate-packet OP_REQFILENAMEANSWER handler in onFileRequestReceived.
+    if (m_reqFile && (m_downloadState == DownloadState::Connected
+                      || m_downloadState == DownloadState::Connecting)) {
+        sendStartupLoadReq();
     }
 }
 

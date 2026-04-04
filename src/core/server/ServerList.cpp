@@ -76,10 +76,17 @@ bool ServerList::saveServerMet(const QString& filePath)
         return false;
     }
 
-    // Atomic rename: remove old, rename tmp → final
-    QFile::remove(filePath);
+    // Rotate: current → .bak, then rename tmp → final
+    const QString bakPath = filePath + QStringLiteral(".bak");
+    QFile::remove(bakPath);
+    if (QFile::exists(filePath)) {
+        if (!QFile::rename(filePath, bakPath))
+            QFile::remove(filePath);
+    }
     if (!QFile::rename(tmpPath, filePath)) {
         logError(QStringLiteral("Failed to rename %1 to %2").arg(tmpPath, filePath));
+        if (QFile::exists(bakPath))
+            QFile::rename(bakPath, filePath);
         return false;
     }
 

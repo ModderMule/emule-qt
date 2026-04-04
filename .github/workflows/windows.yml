@@ -16,7 +16,7 @@ jobs:
       # - name: Install Qt 6
       #   uses: jurplel/install-qt-action@v4
       #   with:
-      #     version: "6.8.3"
+      #     version: "6.10.3"
       #     arch: win64_msvc2022_64
       #     modules: qthttpserver qtwebsockets qtmultimedia
 
@@ -26,13 +26,13 @@ jobs:
           pip install aqtinstall
           $qtDir = "D:\Qt"
 
-          Write-Host "=== Available modules for 6.8.3 win64_msvc2022_64 ==="
-          aqt list-qt windows desktop --modules 6.8.3 win64_msvc2022_64
+          Write-Host "=== Available modules for 6.10.3 win64_msvc2022_64 ==="
+          aqt list-qt windows desktop --modules 6.10.3 win64_msvc2022_64
 
           Write-Host "=== Installing Qt base + modules ==="
-          aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qthttpserver qtwebsockets qtmultimedia -O $qtDir
+          aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -m qthttpserver qtwebsockets qtmultimedia -O $qtDir --base https://ftp.fau.de/qtproject/ --fallbackmirror https://download.qt.io/
 
-          $root = "$qtDir\6.8.3\msvc2022_64"
+          $root = "$qtDir\6.10.3\msvc2022_64"
           echo "QT_ROOT_DIR=$root" >> $env:GITHUB_ENV
           echo "CMAKE_PREFIX_PATH=$root" >> $env:GITHUB_ENV
           echo "$root\bin" >> $env:GITHUB_PATH
@@ -57,7 +57,7 @@ jobs:
       - name: Run tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ctest --test-dir build --build-config Release --output-on-failure
+        run: ctest --test-dir build --build-config Release --output-on-failure --parallel
 
       - name: Bundle
         run: scripts\bundle-win.bat build "$env:QT_ROOT_DIR"

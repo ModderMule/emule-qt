@@ -74,19 +74,40 @@ void FriendList::save(const QString& configDir) const
 {
     const QString filePath = QDir(configDir).filePath(
         QString::fromLatin1(kFriendsMetFilename));
-
-    SafeFile file;
-    if (!file.open(filePath, QIODevice::WriteOnly)) {
-        logError(QStringLiteral("FriendList: failed to open %1 for writing").arg(filePath));
-        return;
-    }
+    const QString tmpPath = filePath + QStringLiteral(".tmp");
+    const QString bakPath = filePath + QStringLiteral(".bak");
 
     try {
-        file.writeUInt8(MET_HEADER);
-        file.writeUInt32(static_cast<uint32>(m_friends.size()));
+        QFile::remove(tmpPath);
 
-        for (const auto& f : m_friends)
-            f->writeToFile(file);
+        {
+            SafeFile file;
+            if (!file.open(tmpPath, QIODevice::WriteOnly)) {
+                logError(QStringLiteral("FriendList: failed to open %1 for writing").arg(tmpPath));
+                return;
+            }
+
+            file.writeUInt8(MET_HEADER);
+            file.writeUInt32(static_cast<uint32>(m_friends.size()));
+
+            for (const auto& f : m_friends)
+                f->writeToFile(file);
+        } // file closed before rename
+
+        // Rotate: current → .bak
+        QFile::remove(bakPath);
+        if (QFile::exists(filePath)) {
+            if (!QFile::rename(filePath, bakPath))
+                QFile::remove(filePath);
+        }
+
+        // Rename temp → final
+        if (!QFile::rename(tmpPath, filePath)) {
+            logError(QStringLiteral("FriendList: failed to rename tmp → %1").arg(filePath));
+            if (QFile::exists(bakPath))
+                QFile::rename(bakPath, filePath);
+            return;
+        }
 
         logInfo(QStringLiteral("FriendList: saved %1 friends to %2")
                     .arg(m_friends.size())
@@ -95,6 +116,7 @@ void FriendList::save(const QString& configDir) const
     } catch (const FileException& ex) {
         logError(QStringLiteral("FriendList: error writing %1: %2")
                      .arg(filePath, QString::fromUtf8(ex.what())));
+        QFile::remove(tmpPath);
     }
 }
 

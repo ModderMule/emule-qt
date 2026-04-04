@@ -36,6 +36,7 @@
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "transfer/DownloadQueue.h"
+#include "stats/Statistics.h"
 #include "transfer/UploadQueue.h"
 #include "utils/TimeUtils.h"
 
@@ -1313,6 +1314,9 @@ bool UpDownClient::sendPacket(std::unique_ptr<Packet> packet, bool /*verifyConne
     if (!m_socket)
         return false;
 
+    if (auto* stats = theApp.statistics)
+        stats->addUpDataOverheadOther(packet->size);
+
     m_socket->sendPacket(std::move(packet));
     return true;
 }
@@ -1369,12 +1373,20 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         return true;
     }
 
-    // Direct TCP connection path for high-ID clients
+    // Derive connect IP from user ID for high-ID clients
     if (m_connectIP == 0 && !hasLowID()) {
         m_connectIP = ntohl(m_userIDHybrid);
     }
 
-    if (m_connectIP != 0) {
+    // MFC BaseClient.cpp:1379 — track connecting client for 45s timeout
+    if (theApp.clientList)
+        theApp.clientList->addConnectingClient(this);
+
+    // ---- Path 3: Normal outgoing TCP connection (high-ID clients) ----
+    // MFC BaseClient.cpp:1383-1396
+    if (!hasLowID() || m_kadState == KadState::QueuedFwCheck
+        || m_kadState == KadState::QueuedFwCheckUDP)
+    {
         // Transition Kad FW check states before connecting
         if (m_kadState == KadState::QueuedFwCheck)
             setKadState(KadState::ConnectingFwCheck);
@@ -1382,7 +1394,6 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
             setKadState(KadState::ConnectingFwCheckUDP);
 
         // Set download state so connectionEstablished() sends the file request.
-        // Matches MFC UpDownClient.cpp TryToConnect().
         if (m_reqFile && m_downloadState == DownloadState::None)
             setDownloadState(DownloadState::Connecting);
 
@@ -1392,11 +1403,45 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
                      .arg(m_connectIP, 8, 16, QLatin1Char('0'))
                      .arg(m_userIDHybrid, 8, 16, QLatin1Char('0')));
 
-        // Direct TCP connection
         m_connectingState = ConnectingState::DirectTCP;
         connect();
         return true;
     }
+
+    // ---- Path 4: Direct Callback via UDP (firewalled but UDP open) ----
+    // MFC BaseClient.cpp:1399-1413
+    if (supportsDirectUDPCallback() && thePrefs.udpPort() != 0 && m_connectIP != 0) {
+        m_connectingState = ConnectingState::DirectCallback;
+
+        // Build connect options byte: MFC GetMyConnectOptions(true, false)
+        // Bit 0: CryptLayer supported, Bit 1: CryptLayer requested,
+        // Bit 2: CryptLayer required, Bit 3: Direct UDP callback (disabled for outgoing)
+        const uint8 connectOpts =
+            (static_cast<uint8>(thePrefs.cryptLayerSupported()) << 0) |
+            (static_cast<uint8>(thePrefs.cryptLayerRequested()) << 1) |
+            (static_cast<uint8>(thePrefs.cryptLayerRequired()) << 2);
+
+        SafeMemFile data;
+        data.writeUInt16(thePrefs.port());              // our TCP port
+        data.writeHash16(thePrefs.userHash().data());  // our user hash
+        data.writeUInt8(connectOpts);          // connection/crypto options
+
+        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_DIRECTCALLBACKREQ);
+        if (theApp.clientUDP) {
+            theApp.clientUDP->sendPacket(std::move(packet), m_connectIP, m_kadPort,
+                                          shouldReceiveCryptUDPPackets(),
+                                          m_userHash.data(), false, 0);
+        }
+
+        logDebug(QStringLiteral("tryToConnect: DIRECT CALLBACK via UDP to %1:%2")
+                     .arg(QHostAddress(ntohl(m_connectIP)).toString()).arg(m_kadPort));
+        return true;
+    }
+
+    // ---- Paths 6 & 7: Server / Kad callback (firewalled, no direct UDP) ----
+    // MFC BaseClient.cpp:1417-1418: set WaitCallback before callback attempts
+    if (m_downloadState == DownloadState::Connecting)
+        setDownloadState(DownloadState::WaitCallback);
 
     // Low-ID client — need callback via server
     if (hasLowID() && theApp.serverConnect && theApp.serverConnect->isConnected()) {
@@ -1442,10 +1487,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
 
             auto packet = std::make_unique<Packet>(data, OP_KADEMLIAHEADER, KADEMLIA_CALLBACK_REQ);
             m_connectingState = ConnectingState::KadCallback;
-            // Send encrypted UDP to buddy using their Kad ID as the encryption key. We assume all Kad clients support encryption by now
+            // MFC FIXME: We don't know which kad version the buddy has, so we need to send unencrypted
             if (theApp.clientUDP)
                 theApp.clientUDP->sendPacket(std::move(packet), m_buddyIP,
-                                             m_buddyPort, true, m_buddyID.data(), true, 0);
+                                             m_buddyPort, false, nullptr, true, 0);
             setDownloadState(DownloadState::WaitCallbackKad);
             logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2")
                          .arg(QHostAddress(ntohl(m_buddyIP)).toString()).arg(m_buddyPort));
@@ -1637,6 +1682,9 @@ void UpDownClient::connectionEstablished()
                  .arg(m_socket ? m_socket->peerPort() : 0)
                  .arg(m_socket ? QStringLiteral("valid") : QStringLiteral("null")));
 
+    if (theApp.clientList)
+        theApp.clientList->removeConnectingClient(this);
+
     m_connectingState = ConnectingState::None;
 
     // Flush waiting packets
@@ -1714,6 +1762,9 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     Q_UNUSED(fromSocket);
 
     logDebug(QStringLiteral("Client disconnected: %1 reason: %2").arg(userName(), reason));
+
+    if (theApp.clientList)
+        theApp.clientList->removeConnectingClient(this);
 
     m_connectingState = ConnectingState::None;
 
@@ -3446,25 +3497,6 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
             logDebug(QStringLiteral("OP_FILESTATUS: partCount=%1 completeSource=%2 downloadState=%3 from %4")
                          .arg(m_partCount).arg(m_completeSource)
                          .arg(static_cast<int>(m_downloadState)).arg(userName()));
-
-            // MFC: after receiving file status, request an upload slot if we
-            // haven't already and don't need a hashset first.
-            if (m_downloadState == DownloadState::Connected
-                || m_downloadState == DownloadState::Connecting) {
-                const auto& ident = m_reqFile->fileIdentifier();
-                const bool hashsetNeeded =
-                    ident.getTheoreticalMD4PartHashCount() > 0
-                    && !ident.hasExpectedMD4HashCount();
-
-                if (!hashsetNeeded) {
-                    logDebug(QStringLiteral("OP_FILESTATUS: sending STARTUPLOADREQ → OnQueue"));
-                    sendStartupLoadReq();
-                    setDownloadState(DownloadState::OnQueue);
-                } else {
-                    logDebug(QStringLiteral("OP_FILESTATUS: hashset needed, requesting"));
-                    sendHashSetRequest();
-                }
-            }
         }
         break;
     }

@@ -477,6 +477,7 @@ public:
     void unBan();
     void ban(const QString& reason = {});
     [[nodiscard]] uint32 waitStartTime() const;
+    [[nodiscard]] uint32 getWaitTimeDelay() const;
     void setWaitStartTime();
     void clearWaitStartTime();
     [[nodiscard]] EMSocket* getFileUploadSocket() const;
@@ -507,6 +508,7 @@ public:
     [[nodiscard]] uint16 availablePartCount() const;
     [[nodiscard]] bool isPartAvailable(uint32 part) const;
     void setRemoteQueueRank(uint32 rank, bool updateDisplay = false);
+    [[nodiscard]] bool reaskPending() const { return m_reaskPending; }
     void udpReaskACK(uint16 newQR);
     void udpReaskFNF();
     void udpReaskForDownload();

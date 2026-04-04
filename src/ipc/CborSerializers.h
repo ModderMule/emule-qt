@@ -249,7 +249,7 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("transferredUp"),   static_cast<qint64>(c.transferredUp()));
     m.insert(QStringLiteral("sessionUp"),       static_cast<qint64>(c.sessionUp()));
     m.insert(QStringLiteral("askedCount"),      static_cast<qint64>(c.askedCount()));
-    m.insert(QStringLiteral("waitStartTime"),   static_cast<qint64>(c.waitStartTime()));
+    m.insert(QStringLiteral("waitStartTime"),   static_cast<qint64>(c.getWaitTimeDelay()));
     m.insert(QStringLiteral("isBanned"),        c.isBanned());
     // Download fields
     m.insert(QStringLiteral("transferredDown"), static_cast<qint64>(c.transferredDown()));

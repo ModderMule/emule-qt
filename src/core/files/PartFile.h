@@ -268,6 +268,7 @@ public:
     std::vector<uint16>& srcPartFrequency() { return m_srcPartFrequency; }
     [[nodiscard]] const std::list<Requested_Block_Struct*>& requestedBlockList() const { return m_requestedBlocks; }
     [[nodiscard]] const std::vector<uint16>& corruptedParts() const { return m_corruptedParts; }
+    [[nodiscard]] std::vector<uint16> calcDownloadingParts(const UpDownClient* exclude) const;
 
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
 

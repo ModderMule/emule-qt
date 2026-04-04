@@ -10,6 +10,9 @@
 
 find_package(Qt6 REQUIRED COMPONENTS Test)
 
+# All tests are independent executables — safe to run in parallel:
+#   ctest --parallel    (or set CTEST_PARALLEL_LEVEL env var)
+
 # ---------------------------------------------------------------------------
 # Shared test helpers (fixtures, mock factories, temp dir utilities)
 # ---------------------------------------------------------------------------
@@ -115,6 +118,7 @@ emule_add_test(tst_ListenSocket          FOLDER "Net")
 emule_add_test(tst_HttpClientReqSocket   FOLDER "Net")
 emule_add_test(tst_ClientUDPSocket       FOLDER "Net")
 emule_add_test(tst_TcpConnect            FOLDER "Net")
+set_tests_properties(tst_TcpConnect PROPERTIES TIMEOUT 60)
 
 # Module 29e: Firewall & UPnP
 emule_add_test(tst_UPnPManager   FOLDER "UPnP")
@@ -203,6 +207,9 @@ set_tests_properties(tst_MockPeerUpload PROPERTIES TIMEOUT 120)
 emule_add_test(tst_MockPeerDownload         FOLDER "Net")
 target_compile_definitions(tst_MockPeerDownload PRIVATE QTEST_FUNCTION_TIMEOUT=300000)
 set_tests_properties(tst_MockPeerDownload PROPERTIES TIMEOUT 300)
+emule_add_test(tst_CallbackAndQueueRank     FOLDER "Net")
+target_compile_definitions(tst_CallbackAndQueueRank PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
+set_tests_properties(tst_CallbackAndQueueRank PROPERTIES TIMEOUT 60)
 emule_add_test(tst_Scheduler                FOLDER "Transfer")
 emule_add_test(tst_ImportParts              FOLDER "Transfer")
 

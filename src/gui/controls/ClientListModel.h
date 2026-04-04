@@ -35,7 +35,7 @@ struct ClientRow {
     int64_t sessionUp = 0;
     int64_t sessionDown = 0;
     int64_t askedCount = 0;
-    int64_t waitStartTime = 0;
+    int64_t waitStartTime = 0;  // elapsed wait time in ms (computed daemon-side)
     int partCount = 0;
     int availPartCount = 0;
     int remoteQueueRank = 0;

@@ -297,30 +297,53 @@ bool ClientCreditsList::loadList(const QString& filePath)
 
 bool ClientCreditsList::saveList(const QString& filePath) const
 {
-    SafeFile file;
-    if (!file.open(filePath, QIODevice::WriteOnly | QIODevice::Truncate))
-        return false;
+    const QString tmpPath = filePath + QStringLiteral(".tmp");
+    const QString bakPath = filePath + QStringLiteral(".bak");
 
     try {
-        file.writeUInt8(CREDITFILE_VERSION);
+        QFile::remove(tmpPath);
 
-        // Count entries with actual transfer data
-        uint32 count = 0;
-        for (auto& [key, credit] : m_clients) {
-            if (credit->uploadedTotal() || credit->downloadedTotal())
-                ++count;
+        {
+            SafeFile file;
+            if (!file.open(tmpPath, QIODevice::WriteOnly))
+                return false;
+
+            file.writeUInt8(CREDITFILE_VERSION);
+
+            // Count entries with actual transfer data
+            uint32 count = 0;
+            for (auto& [key, credit] : m_clients) {
+                if (credit->uploadedTotal() || credit->downloadedTotal())
+                    ++count;
+            }
+
+            file.writeUInt32(count);
+
+            for (auto& [key, credit] : m_clients) {
+                if (credit->uploadedTotal() || credit->downloadedTotal())
+                    file.write(&credit->m_credits, sizeof(CreditStruct));
+            }
+        } // file closed before rename
+
+        // Rotate: current → .bak
+        QFile::remove(bakPath);
+        if (QFile::exists(filePath)) {
+            if (!QFile::rename(filePath, bakPath))
+                QFile::remove(filePath);
         }
 
-        file.writeUInt32(count);
-
-        for (auto& [key, credit] : m_clients) {
-            if (credit->uploadedTotal() || credit->downloadedTotal())
-                file.write(&credit->m_credits, sizeof(CreditStruct));
+        // Rename temp → final
+        if (!QFile::rename(tmpPath, filePath)) {
+            logError(QStringLiteral("clients.met: failed to rename tmp → clients.met"));
+            if (QFile::exists(bakPath))
+                QFile::rename(bakPath, filePath);
+            return false;
         }
 
         return true;
     } catch (const FileException& e) {
         logError(QStringLiteral("Error saving credit file: %1").arg(QLatin1StringView(e.what())));
+        QFile::remove(tmpPath);
         return false;
     }
 }
