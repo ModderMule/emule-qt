@@ -511,8 +511,8 @@ void UpDownClient::createBlockRequests(int blockCount)
     if (!m_reqFile || blockCount <= 0)
         return;
 
-    // Prevent uncontrolled growth (MFC: m_PendingBlocks_list > 2 * blockCount)
-    if (static_cast<int>(m_pendingBlocks.size()) > 2 * blockCount)
+    // eMule 2026 bandwidth: 3x headroom for deep pipelines on fast links. MFC default: 2 * blockCount
+    if (static_cast<int>(m_pendingBlocks.size()) > 3 * blockCount)
         return;
 
     // Subtract unqueued (not-yet-sent) blocks from request count
@@ -558,11 +558,21 @@ void UpDownClient::sendBlockRequests()
     // Dynamic block count based on download speed (MFC SendBlockRequests logic).
     // Fast sources pipeline more blocks to avoid round-trip stalls; slow sources
     // request fewer to prevent timeout disconnects from fast uploaders.
+    // eMule 2026 bandwidth: extended tiers for broadband (>1 MB/s). MFC max: 9 at >150 KB/s.
+    // Wire-compatible: each OP_REQUESTPARTS packet still carries exactly 3 blocks.
     int blockCount;
     if (isEmuleClient() && compatibleClient() == 0 && downDatarate() < 9 * 1024)
         blockCount = (downDatarate() < 4 * 1024) ? 1 : 2;
+    else if (downDatarate() > 10 * 1024 * 1024)
+        blockCount = 40;
+    else if (downDatarate() > 5 * 1024 * 1024)
+        blockCount = 25;
+    else if (downDatarate() > 1 * 1024 * 1024)
+        blockCount = 15;
+    else if (downDatarate() > 150 * 1024)
+        blockCount = 9;
     else if (downDatarate() > 75 * 1024)
-        blockCount = (downDatarate() > 150 * 1024) ? 9 : 6;
+        blockCount = 6;
     else
         blockCount = 3;
 

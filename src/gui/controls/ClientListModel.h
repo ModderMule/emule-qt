@@ -46,9 +46,11 @@ struct ClientRow {
     bool isBanned = false;
     bool hasCredit = false;
     bool isFriend = false;
+    int64_t upDatarate = 0;       // bytes/sec upload rate
     int64_t uploadStartDelay = 0;  // ms since upload started (0 = not uploading)
     int filePriority = -1;         // download priority of queued file (-1 = unknown)
     bool isAutoPriority = false;   // whether file priority is auto
+    int upPartCount = 0;           // parts client has (upload context, PARTSIZE chunks)
     uint8_t fileRating = 0;        // client's rating for file (0-5)
     bool isConnected = false;      // has active socket connection
 };

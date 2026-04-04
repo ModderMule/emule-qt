@@ -173,13 +173,26 @@ uint32 UploadBandwidthThrottler::getSlotLimit(uint32 currentUpSpeed) const
         ? m_uploadQueue->targetClientDataRate(true)
         : 3u * 1024u;
 
-    // if throttler doesn't require another slot, go with a slightly more restrictive method
-    if (currentUpSpeed > 49 * 1024) {
+    // eMule 2026 bandwidth: tiered upPerClient scaling for modern speeds. MFC default: single tier at >49 KB/s with /43 divisor.
+    if (currentUpSpeed > 500 * 1024) {
+        upPerClient += currentUpSpeed / 20;
+        if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
+            upPerClient = UPLOAD_CLIENT_MAXDATARATE;
+    } else if (currentUpSpeed > 200 * 1024) {
+        upPerClient += currentUpSpeed / 30;
+        if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
+            upPerClient = UPLOAD_CLIENT_MAXDATARATE;
+    } else if (currentUpSpeed > 49 * 1024) {
         upPerClient += currentUpSpeed / 43;
         if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
             upPerClient = UPLOAD_CLIENT_MAXDATARATE;
     }
 
+    // eMule 2026 bandwidth: higher slot floors for broadband. MFC default: max tier at >25 KB/s.
+    if (currentUpSpeed > 200 * 1024)
+        return std::max(currentUpSpeed / upPerClient, static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 5));
+    if (currentUpSpeed > 100 * 1024)
+        return std::max(currentUpSpeed / upPerClient, static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 4));
     if (currentUpSpeed > 25 * 1024)
         return std::max(currentUpSpeed / upPerClient, static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 3));
     if (currentUpSpeed > 16 * 1024)
@@ -191,8 +204,9 @@ uint32 UploadBandwidthThrottler::getSlotLimit(uint32 currentUpSpeed) const
 
 uint32 UploadBandwidthThrottler::calculateChangeDelta(uint32 numberOfConsecutiveChanges)
 {
-    static constexpr uint32 deltas[9] =
-        {50u, 50u, 128u, 256u, 512u, 512u + 256u, 1024u, 1024u + 256u, 1024u + 512u};
+    // eMule 2026 bandwidth: larger steps for faster convergence at high bandwidth. MFC default: 9 entries, max 1536.
+    static constexpr uint32 deltas[12] =
+        {50u, 50u, 128u, 256u, 512u, 768u, 1024u, 1280u, 1536u, 2048u, 3072u, 4096u};
     return deltas[std::min(numberOfConsecutiveChanges, static_cast<uint32>(std::size(deltas) - 1))];
 }
 
@@ -323,9 +337,17 @@ void UploadBandwidthThrottler::runInternal()
                 nSlotsBusyLevel = 125;
         }
 
+        // eMule 2026 bandwidth: larger fragments for modern speeds reduce per-loop overhead.
+        // MFC default: two tiers, threshold at 6 KB/s (minFrag 536 or 1300).
         uint32 minFragSize;
         uint32 doubleSendSize;
-        if (allowedDataRate < 6 * 1024) {
+        if (allowedDataRate > 1024 * 1024) {
+            minFragSize = 8000;
+            doubleSendSize = 16000;
+        } else if (allowedDataRate > 100 * 1024) {
+            minFragSize = 4000;
+            doubleSendSize = 8000;
+        } else if (allowedDataRate < 6 * 1024) {
             doubleSendSize = minFragSize = 536;
         } else {
             minFragSize = 1300;

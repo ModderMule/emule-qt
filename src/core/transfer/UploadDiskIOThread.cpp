@@ -6,8 +6,10 @@
 /// Creates standard and compressed (zlib) packets for sending file data.
 
 #include "transfer/UploadDiskIOThread.h"
+#include "app/AppContext.h"
 #include "files/PartFile.h"
 #include "net/Packet.h"
+#include "stats/Statistics.h"
 
 #include "utils/Log.h"
 
@@ -164,7 +166,8 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createStandardPackets(
     int readPos = 0;
 
     while (togo > 0) {
-        uint32 nPacketSize = (togo < 13000) ? togo : 10240u;
+        // eMule 2026 bandwidth: larger packets reduce framing overhead. MFC default: 10240, threshold 13000.
+        uint32 nPacketSize = (togo < 40000) ? togo : 32768u;
         togo -= nPacketSize;
 
         uint64 curEnd = endOffset - togo;
@@ -178,6 +181,8 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createStandardPackets(
             std::memcpy(&packet->pBuffer[16], &curStart, 8);
             std::memcpy(&packet->pBuffer[24], &curEnd, 8);
             std::memcpy(&packet->pBuffer[32], data.constData() + readPos, nPacketSize);
+            if (auto* stats = theApp.statistics)
+                stats->addUpDataOverheadFileRequest(32);
         } else {
             // Standard: OP_SENDINGPART with 24-byte header (16 hash + 4 start + 4 end)
             packet = std::make_shared<Packet>(OP_SENDINGPART, nPacketSize + 24, OP_EDONKEYPROT, isPartFile);
@@ -187,6 +192,8 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createStandardPackets(
             std::memcpy(&packet->pBuffer[16], &start32, 4);
             std::memcpy(&packet->pBuffer[20], &end32, 4);
             std::memcpy(&packet->pBuffer[24], data.constData() + readPos, nPacketSize);
+            if (auto* stats = theApp.statistics)
+                stats->addUpDataOverheadFileRequest(24);
         }
 
         packet->statsPayload = nPacketSize;
@@ -221,7 +228,8 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createPackedPackets(
     uint32 totalPayloadSize = 0;
 
     while (togo > 0) {
-        uint32 nPacketSize = (togo < 13000) ? togo : 10240u;
+        // eMule 2026 bandwidth: larger packets reduce framing overhead. MFC default: 10240, threshold 13000.
+        uint32 nPacketSize = (togo < 40000) ? togo : 32768u;
         togo -= nPacketSize;
 
         std::shared_ptr<Packet> packet;
@@ -243,6 +251,8 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createPackedPackets(
             std::memcpy(&packet->pBuffer[20], &compLen, 4);
             std::memcpy(&packet->pBuffer[24], compressed.data() + readPos, nPacketSize);
         }
+        if (auto* stats = theApp.statistics)
+            stats->addUpDataOverheadFileRequest(24);
 
         // Approximate payload size proportional to original
         uint32 payloadSize = togo > 0

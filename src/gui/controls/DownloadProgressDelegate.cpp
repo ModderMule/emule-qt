@@ -83,6 +83,13 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
         return;
     }
 
+    // Completed files: solid green bar matching MFC eMule (RGB 0,224,0)
+    if (!isSourceRow && percent >= 100.0) {
+        painter->fillRect(barRect, QColor(0, 224, 0));
+        painter->restore();
+        return;
+    }
+
     // Layer 1: Part map (full bar height)
     if (!partMap.isEmpty()) {
         const qsizetype partCount = partMap.size();

@@ -1667,7 +1667,8 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
             && theApp.downloadQueue->doKademliaFileRequest()
             && kad->getTotalFile() < KADEMLIATOTALFILE
             && curTick >= m_lastSearchTimeKad
-            && kad->isKadReady()
+            //&& kad->isKadReady()
+            && kad->isConnected()
             && kad::SearchManager::getTotalResponsesReceived() > 0
             && !m_stopped)
         {

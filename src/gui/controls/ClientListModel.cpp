@@ -277,12 +277,12 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         switch (column) {
         case 0: return c.userName;
         case 1: return c.fileName;
-        case 2: return formatSpeed(c.sessionUp > 0 ? c.sessionUp : 0);
+        case 2: return formatSpeed(c.upDatarate);
         case 3: return formatSize(c.transferredUp);
         case 4: return formatWaitTime(c.waitStartTime);
         case 5: return c.uploadStartDelay > 0 ? formatDuration(c.uploadStartDelay) : QString{};
         case 6: return c.uploadState;
-        case 7: return c.partCount > 0 ? QString::number(c.partCount) : QString{};
+        case 7: return c.upPartCount > 0 ? QString::number(c.upPartCount) : QString{};
         default: return {};
         }
 
@@ -341,12 +341,12 @@ QVariant ClientListModel::sortData(const ClientRow& c, int column) const
         switch (column) {
         case 0: return c.userName;
         case 1: return c.fileName;
-        case 2: return QVariant::fromValue(c.sessionUp);
+        case 2: return QVariant::fromValue(c.upDatarate);
         case 3: return QVariant::fromValue(c.transferredUp);
         case 4: return QVariant::fromValue(c.waitStartTime);
         case 5: return QVariant::fromValue(c.uploadStartDelay);
         case 6: return c.uploadState;
-        case 7: return c.partCount;
+        case 7: return c.upPartCount;
         default: return {};
         }
 

@@ -34,7 +34,7 @@ private slots:
     {
         Preferences prefs;
         QCOMPARE(prefs.maxConnections(), static_cast<uint16>(500));
-        QCOMPARE(prefs.maxHalfConnections(), static_cast<uint16>(9));
+        QCOMPARE(prefs.maxHalfConnections(), static_cast<uint16>(50)); // eMule 2026 bandwidth default
     }
 
     void defaults_bandwidth()
@@ -410,7 +410,7 @@ private slots:
     void defaults_connection()
     {
         Preferences prefs;
-        QCOMPARE(prefs.maxConsPerFive(), static_cast<uint16>(20));
+        QCOMPARE(prefs.maxConsPerFive(), static_cast<uint16>(40)); // eMule 2026 bandwidth default
     }
 
     void defaults_serverExtended()

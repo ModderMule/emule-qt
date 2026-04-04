@@ -248,6 +248,7 @@ namespace eMule::Ipc {
     // Upload fields
     m.insert(QStringLiteral("transferredUp"),   static_cast<qint64>(c.transferredUp()));
     m.insert(QStringLiteral("sessionUp"),       static_cast<qint64>(c.sessionUp()));
+    m.insert(QStringLiteral("upDatarate"),     static_cast<qint64>(c.upDatarate()));
     m.insert(QStringLiteral("askedCount"),      static_cast<qint64>(c.askedCount()));
     m.insert(QStringLiteral("waitStartTime"),   static_cast<qint64>(c.getWaitTimeDelay()));
     m.insert(QStringLiteral("isBanned"),        c.isBanned());
@@ -256,6 +257,7 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("sessionDown"),     static_cast<qint64>(c.sessionDown()));
     m.insert(QStringLiteral("datarate"),        static_cast<qint64>(c.downDatarate()));
     m.insert(QStringLiteral("partCount"),       c.partCount());
+    m.insert(QStringLiteral("upPartCount"),    static_cast<int>(c.upPartCount()));
     m.insert(QStringLiteral("fileName"),        c.clientFilename());
     m.insert(QStringLiteral("remoteQueueRank"), static_cast<qint64>(c.remoteQueueRank()));
     m.insert(QStringLiteral("availPartCount"),  c.availablePartCount());

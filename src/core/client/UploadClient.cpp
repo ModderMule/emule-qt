@@ -438,6 +438,9 @@ uint32 UpDownClient::getWaitTimeDelay() const
     uint32 wst = m_credits->secureWaitStartTime(m_connectIP);
     if (wst == 0)
         return 0;
+    // MFC: freeze waited time once upload starts (GetWaitTime = m_dwUploadTime - GetWaitStartTime)
+    if (m_uploadTime > 0 && m_uploadTime >= wst)
+        return m_uploadTime - wst;
     uint32 curTick = static_cast<uint32>(getTickCount());
     return (curTick >= wst) ? (curTick - wst) : 0;
 }

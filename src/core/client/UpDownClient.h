@@ -249,6 +249,9 @@ public:
     void setAskedCount(uint32 c) { m_askedCount = c; }
     void incAskedCount() { ++m_askedCount; }
 
+    [[nodiscard]] uint32 lastUpRequest() const { return m_lastUpRequest; }
+    void setLastUpRequest(uint32 t) { m_lastUpRequest = t; }
+
     [[nodiscard]] uint32 slotNumber() const { return m_slotNumber; }
     void setSlotNumber(uint32 s) { m_slotNumber = s; }
 

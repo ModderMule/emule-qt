@@ -20,6 +20,7 @@
 #include "net/EMSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
+#include "server/ServerConnect.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
@@ -181,7 +182,7 @@ UpDownClient* UploadQueue::findBestClientInQueue()
         UpDownClient* cur = *it;
 
         // Purge stale clients (not seen in MAX_PURGEQUEUETIME = 1 hour)
-        bool stale = (curTick >= cur->askedCount() + MAX_PURGEQUEUETIME);
+        bool stale = (curTick >= cur->lastUpRequest() + MAX_PURGEQUEUETIME);
         bool noFile = m_sharedFiles && !m_sharedFiles->getFileByID(cur->reqUpFileId());
 
         if (stale || noFile) {
@@ -276,7 +277,16 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
         maxSpeed = thePrefs.maxUpload();
     uint32 upPerClient = targetClientDataRate(false);
 
-    if (maxSpeed > 49) {
+    // eMule 2026 bandwidth: tiered upPerClient scaling matching getSlotLimit(). MFC default: single tier at >49 KB/s with /43 divisor.
+    if (maxSpeed > 500) {
+        upPerClient += m_datarate / 20;
+        if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
+            upPerClient = UPLOAD_CLIENT_MAXDATARATE;
+    } else if (maxSpeed > 200) {
+        upPerClient += m_datarate / 30;
+        if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
+            upPerClient = UPLOAD_CLIENT_MAXDATARATE;
+    } else if (maxSpeed > 49) {
         upPerClient += m_datarate / 43;
         if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
             upPerClient = UPLOAD_CLIENT_MAXDATARATE;
@@ -286,8 +296,15 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
         if (static_cast<uint32>(curUploadSlots) < m_datarate / upPerClient)
             return true;
     } else {
+        // eMule 2026 bandwidth: higher slot floors for broadband. MFC default: max tier at >25 KB/s.
         uint32 nMaxSlots;
-        if (maxSpeed > 25)
+        if (maxSpeed > 200)
+            nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
+                                 static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 5));
+        else if (maxSpeed > 100)
+            nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
+                                 static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 4));
+        else if (maxSpeed > 25)
             nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
                                  static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 3));
         else if (maxSpeed > 16)
@@ -365,7 +382,22 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
     if (!client)
         return false;
 
+    // Prevent Low ID callback abuse (MFC UploadQueue.cpp:525-546)
+    // Reject clients we can never reach when our queue is already long.
+    if (theApp.isConnected()
+        && theApp.isFirewalled()
+        && client->kadPort() == 0
+        && client->downloadState() == DownloadState::None
+        && !client->friendPtr()
+        && theApp.serverConnect
+        && !theApp.serverConnect->isLocalServer(client->serverIP(), client->serverPort())
+        && static_cast<int>(m_waitingList.size()) > 50)
+    {
+        return false;
+    }
+
     client->incAskedCount();
+    client->setLastUpRequest(static_cast<uint32>(getTickCount()));
 
     if (!ignoreTimeLimit)
         client->addRequestCount(client->reqUpFileId());
@@ -690,9 +722,8 @@ void UploadQueue::onReaskFilePing(uint32 senderIP, uint16 senderPort,
     }
 
     if (sender) {
-        sender->incAskedCount();
-
         // Re-add to queue (updates position, handles reconnect)
+        // Note: addClientToQueue() calls incAskedCount() + setLastUpRequest() internally
         addClientToQueue(sender);
 
         // Build reask ACK with part status + queue rank

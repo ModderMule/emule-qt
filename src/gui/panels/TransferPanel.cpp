@@ -66,10 +66,12 @@ ClientRow parseClient(const QCborMap& m)
     row.transferredUp   = m.value(QStringLiteral("transferredUp")).toInteger();
     row.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
     row.sessionUp       = m.value(QStringLiteral("sessionUp")).toInteger();
+    row.upDatarate      = m.value(QStringLiteral("upDatarate")).toInteger();
     row.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
     row.askedCount      = m.value(QStringLiteral("askedCount")).toInteger();
     row.waitStartTime   = m.value(QStringLiteral("waitStartTime")).toInteger();
     row.partCount       = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
+    row.upPartCount     = static_cast<int>(m.value(QStringLiteral("upPartCount")).toInteger());
     row.availPartCount  = static_cast<int>(m.value(QStringLiteral("availPartCount")).toInteger());
     row.remoteQueueRank = static_cast<int>(m.value(QStringLiteral("remoteQueueRank")).toInteger());
     row.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());

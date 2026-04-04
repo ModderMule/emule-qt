@@ -146,9 +146,6 @@ bool ClientReqSocket::packetReceived(Packet* packet)
                      .arg(peerAddress().toString()).arg(peerPort()));
     resetTimeOutTimer();
 
-    if (auto* stats = theApp.statistics)
-        stats->addDownDataOverheadFileRequest(packet->size);
-
     const auto* data = reinterpret_cast<const uint8*>(packet->pBuffer);
     uint32 size = packet->size;
     uint8 opcode = packet->opcode;
@@ -190,9 +187,12 @@ bool ClientReqSocket::packetReceived(Packet* packet)
 
 bool ClientReqSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 {
+    auto* stats = theApp.statistics;
+
     switch (opcode) {
     case OP_HELLO:
     case OP_HELLOANSWER:
+        if (stats) stats->addDownDataOverheadOther(size);
         emit helloReceived(packet, size, opcode);
         break;
 
@@ -203,21 +203,34 @@ bool ClientReqSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
     case OP_FILESTATUS:
     case OP_HASHSETREQUEST:
     case OP_HASHSETANSWER:
+        if (stats) stats->addDownDataOverheadFileRequest(size);
         emit fileRequestReceived(packet, size, opcode);
         break;
 
     case OP_STARTUPLOADREQ:
+        if (stats) stats->addDownDataOverheadFileRequest(size);
         emit uploadRequestReceived(packet, size);
         break;
 
+    // File data — only count the 24-byte header (16 hash + 4 start + 4 end)
+    case OP_SENDINGPART:
+        if (stats) stats->addDownDataOverheadFileRequest(24);
+        emit packetForClient(packet, size, opcode, OP_EDONKEYPROT);
+        break;
+
+    // File transfer control
     case OP_ACCEPTUPLOADREQ:
     case OP_CANCELTRANSFER:
     case OP_OUTOFPARTREQS:
     case OP_REQUESTPARTS:
-    case OP_SENDINGPART:
     case OP_QUEUERANK:
-    case OP_CHANGE_CLIENT_ID:
     case OP_CHANGE_SLOT:
+        if (stats) stats->addDownDataOverheadFileRequest(size);
+        emit packetForClient(packet, size, opcode, OP_EDONKEYPROT);
+        break;
+
+    // Other protocol control
+    case OP_CHANGE_CLIENT_ID:
     case OP_ASKSHAREDFILES:
     case OP_ASKSHAREDFILESANSWER:
     case OP_ASKSHAREDDIRS:
@@ -227,6 +240,7 @@ bool ClientReqSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
     case OP_ASKSHAREDDENIEDANS:
     case OP_MESSAGE:
     case OP_END_OF_DOWNLOAD:
+        if (stats) stats->addDownDataOverheadOther(size);
         emit packetForClient(packet, size, opcode, OP_EDONKEYPROT);
         break;
 
@@ -242,19 +256,49 @@ bool ClientReqSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
 
 bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 opcode)
 {
+    auto* stats = theApp.statistics;
+
     switch (opcode) {
-    case OP_EMULEINFO:
-    case OP_EMULEINFOANSWER:
+    // File data — header-only overhead
     case OP_COMPRESSEDPART:
+        if (stats) stats->addDownDataOverheadFileRequest(24);
+        emit extPacketReceived(packet, size, opcode);
+        break;
     case OP_COMPRESSEDPART_I64:
+        if (stats) stats->addDownDataOverheadFileRequest(28);
+        emit extPacketReceived(packet, size, opcode);
+        break;
     case OP_SENDINGPART_I64:
-    case OP_REQUESTPARTS_I64:
-    case OP_QUEUERANKING:
-    case OP_FILEDESC:
+        if (stats) stats->addDownDataOverheadFileRequest(32);
+        emit extPacketReceived(packet, size, opcode);
+        break;
+
+    // Source exchange
     case OP_REQUESTSOURCES:
     case OP_ANSWERSOURCES:
     case OP_REQUESTSOURCES2:
     case OP_ANSWERSOURCES2:
+        if (stats) stats->addDownDataOverheadSourceExchange(size);
+        emit extPacketReceived(packet, size, opcode);
+        break;
+
+    // File request control
+    case OP_REQUESTPARTS_I64:
+    case OP_QUEUERANKING:
+    case OP_FILEDESC:
+    case OP_AICHREQUEST:
+    case OP_AICHANSWER:
+    case OP_HASHSETREQUEST2:
+    case OP_HASHSETANSWER2:
+    case OP_MULTIPACKET_EXT2:
+    case OP_MULTIPACKETANSWER_EXT2:
+        if (stats) stats->addDownDataOverheadFileRequest(size);
+        emit extPacketReceived(packet, size, opcode);
+        break;
+
+    // Other protocol control
+    case OP_EMULEINFO:
+    case OP_EMULEINFOANSWER:
     case OP_PUBLICKEY:
     case OP_SIGNATURE:
     case OP_SECIDENTSTATE:
@@ -264,18 +308,13 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_PUBLICIP_ANSWER:
     case OP_CALLBACK:
     case OP_REASKCALLBACKTCP:
-    case OP_AICHREQUEST:
-    case OP_AICHANSWER:
     case OP_BUDDYPING:
     case OP_BUDDYPONG:
     case OP_CHATCAPTCHAREQ:
     case OP_CHATCAPTCHARES:
     case OP_FWCHECKUDPREQ:
     case OP_KAD_FWTCPCHECK_ACK:
-    case OP_MULTIPACKET_EXT2:
-    case OP_MULTIPACKETANSWER_EXT2:
-    case OP_HASHSETREQUEST2:
-    case OP_HASHSETANSWER2:
+        if (stats) stats->addDownDataOverheadOther(size);
         emit extPacketReceived(packet, size, opcode);
         break;
 

@@ -120,7 +120,8 @@ struct Preferences::Data {
     uint16 udpPort = 0;
     uint16 serverUDPPort = 65535; // 65535 = random, 0 = disabled
     uint16 maxConnections = 500;
-    uint16 maxHalfConnections = 9;
+    // eMule 2026 bandwidth: modern OS handles hundreds of half-open connections. MFC default: 9
+    uint16 maxHalfConnections = 50;
     QString bindAddress;
 
     // Bandwidth (KB/s)
@@ -191,7 +192,8 @@ struct Preferences::Data {
     bool rememberCancelledFiles = true;
 
     // Transfer
-    uint32 fileBufferSize = 4194304;    // 4 MB
+    // eMule 2026 bandwidth: larger buffer reduces disk flush frequency at high download speeds. MFC default: 4194304 (4 MB)
+    uint32 fileBufferSize = 16777216;   // 16 MB
     uint32 fileBufferTimeLimit = 60;    // seconds
 
     // Extended (PPgTweaks)
@@ -383,7 +385,8 @@ struct Preferences::Data {
     uint32 kadUDPKey = 0;  // 0 = generate random on first run
 
     // Connection
-    uint16 maxConsPerFive = 20;  // MAXCONPER5SEC — max connections per 5 seconds
+    // eMule 2026 bandwidth: faster source finding on modern networks. MFC default: 20
+    uint16 maxConsPerFive = 40;  // MAXCONPER5SEC — max connections per 5 seconds
     bool showOverhead = false;   // Show overhead bandwidth in status bar
 
     // Server management (extended)

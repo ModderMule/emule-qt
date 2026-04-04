@@ -108,7 +108,8 @@
 #define RSAKEYSIZE                  384         //384 bits
 #define MAX_SOURCES_FILE_SOFT       750
 #define MAX_SOURCES_FILE_UDP        50u
-#define SESSIONMAXTRANS             (PARTSIZE+20*1024)
+// eMule 2026 bandwidth: longer sessions avoid excessive rotation at high per-client rates. MFC default: (PARTSIZE+20*1024)
+#define SESSIONMAXTRANS             (PARTSIZE*4+20*1024)
 #define SESSIONMAXTIME              HR2MS(1)    //1 hour
 #define MAXFILECOMMENTLEN           128
 #define PARTSIZE                    UINT64_C(9728000)
@@ -119,9 +120,11 @@
 #define CONFIGFOLDER                "config/"
 #define MAXCONPER5SEC               20
 #define MAXCON5WIN9X                10
-#define UPLOAD_CLIENT_MAXDATARATE   (25*1024)
+// eMule 2026 bandwidth: higher per-client throughput, fewer slots needed. MFC default: (25*1024)
+#define UPLOAD_CLIENT_MAXDATARATE   (128*1024)
 #define MIN_UP_CLIENTS_ALLOWED      2
-#define MAX_UP_CLIENTS_ALLOWED      100
+// eMule 2026 bandwidth: higher ceiling for fast symmetric connections. MFC default: 100
+#define MAX_UP_CLIENTS_ALLOWED      150
 #define DOWNLOADTIMEOUT             SEC2MS(100)
 #define CONSERVTIMEOUT              SEC2MS(25)
 #define RARE_FILE                   50
