@@ -31,7 +31,7 @@ jobs:
           -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel 2
 
 #      - name: Run tests
 #        continue-on-error: true
