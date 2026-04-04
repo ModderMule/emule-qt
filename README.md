@@ -1,5 +1,7 @@
 # eMule Qt
 
+[![Windows CI](https://github.com/ModderMule/emule-qt/actions/workflows/windows.yml/badge.svg)](https://github.com/ModderMule/emule-qt/actions/workflows/windows.yml) [![macOS CI](https://github.com/ModderMule/emule-qt/actions/workflows/macos.yml/badge.svg)](https://github.com/ModderMule/emule-qt/actions/workflows/macos.yml) [![Linux CI](https://github.com/ModderMule/emule-qt/actions/workflows/linux.yml/badge.svg)](https://github.com/ModderMule/emule-qt/actions/workflows/linux.yml)
+
 **eMule Qt** is a free, open-source peer-to-peer file sharing client for the **ED2K** and **Kademlia** networks — rebuilt from the ground up with **Qt 6** and **modern C++23**.
 
 Cross-platform. Fully compatible with the existing eMule network.

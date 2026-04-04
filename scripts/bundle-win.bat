@@ -251,7 +251,7 @@ REM -- Copy OpenSSL DLLs if present -------------------------------------------
 REM Qt's network module needs OpenSSL at runtime.  windeployqt does not
 REM always copy them, so we look in the Qt bin directory and in the
 REM system-wide OpenSSL install.
-for %%D in ("%QT_DIR%\bin" "C:\Program Files\OpenSSL-Win64\bin" "C:\OpenSSL-Win64\bin") do (
+for %%D in ("%QT_DIR%\bin" "C:\Program Files\OpenSSL-Win64\bin" "C:\OpenSSL-Win64\bin" "%VCPKG_INSTALLATION_ROOT%\installed\x64-windows\bin") do (
     if exist "%%~D\libssl-3-x64.dll" (
         if not exist "%STAGE_DIR%\libssl-3-x64.dll" (
             echo   Copying OpenSSL DLLs from %%~D
@@ -313,7 +313,7 @@ set "VCPKG_BIN_SUFFIX=bin"
 if /i "%CONFIG%"=="Debug" set "VCPKG_BIN_SUFFIX=debug\bin"
 
 set "VCPKG_BIN="
-for %%P in ("%PROJECT_DIR%\src\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%" "%PROJECT_DIR%\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%" "%BUILD_DIR%\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%") do (
+for %%P in ("%PROJECT_DIR%\src\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%" "%PROJECT_DIR%\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%" "%BUILD_DIR%\vcpkg_installed\x64-windows\%VCPKG_BIN_SUFFIX%" "%VCPKG_INSTALLATION_ROOT%\installed\x64-windows\%VCPKG_BIN_SUFFIX%") do (
     if "!VCPKG_BIN!"=="" (
         if exist "%%~P" set "VCPKG_BIN=%%~P"
     )
@@ -336,7 +336,9 @@ if exist "%ZIP_PATH%" del "%ZIP_PATH%"
 
 echo(
 echo === Creating %ZIP_NAME% ===
-powershell -NoProfile -Command "Compress-Archive -Path '%STAGE_DIR%' -DestinationPath '%ZIP_PATH%' -Force"
+REM PowerShell Compress-Archive can produce zips that extractors flag as password-protected
+REM powershell -NoProfile -Command "Compress-Archive -Path '%STAGE_DIR%' -DestinationPath '%ZIP_PATH%' -Force"
+7z a -tzip -mx=7 "%ZIP_PATH%" "%STAGE_DIR%"
 
 if exist "%ZIP_PATH%" (
     echo(

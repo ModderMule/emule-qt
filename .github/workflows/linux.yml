@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install system dependencies
         run: |
@@ -63,10 +63,10 @@ jobs:
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Bundle
-        run: scripts/bundle-linux.sh build
+        run: scripts/bundle-linux.sh deploy-qt build
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: eMuleQt-v${{ env.APP_VERSION }}-linux-x86_64
           path: build/emuleqt-v*-linux-x86_64.tar.gz

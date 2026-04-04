@@ -89,7 +89,7 @@ LogWidget::LogWidget(QWidget* parent)
     setIpcTabVisible(thePrefs.enableIpcLog());
 
     // Initial info message
-    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.3 ready</font>"));
+    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.4 ready</font>"));
 
     // Install handler to capture core log output
     installMessageHandler();
@@ -231,7 +231,7 @@ void LogWidget::clearAll()
     m_logSeqIds.clear();
     m_verboseSeqIds.clear();
     m_kadSeqIds.clear();
-    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.3 ready</font>"));
+    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.4 ready</font>"));
 }
 
 QString LogWidget::logText() const { return m_logBrowser->toPlainText(); }

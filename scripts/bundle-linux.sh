@@ -245,6 +245,62 @@ LAUNCHER
     echo "  Qt deployment complete"
 fi
 
+# -- Bundle OpenSSL and zlib -------------------------------------------------
+
+# Ensure lib/ directory exists (created by deploy-qt, or create it now)
+mkdir -p "$STAGE_DIR/lib"
+
+echo ""
+echo "=== Bundling OpenSSL and zlib ==="
+
+# Use the staged binary if deploy-qt renamed it, otherwise the original
+PROBE_BIN="$STAGE_DIR/emulecored.bin"
+[ -f "$PROBE_BIN" ] || PROBE_BIN="$STAGE_DIR/emulecored"
+
+BUNDLED_SYSLIBS=0
+for libname in libssl.so.3 libcrypto.so.3 libz.so.1; do
+    # Skip if already bundled (e.g. by linuxdeploy)
+    if [ -f "$STAGE_DIR/lib/$libname" ]; then
+        echo "  $libname already bundled"
+        BUNDLED_SYSLIBS=$((BUNDLED_SYSLIBS + 1))
+        continue
+    fi
+
+    # Find the library path via ldd
+    libpath=$(ldd "$PROBE_BIN" 2>/dev/null | grep "$libname" | awk '{print $3}')
+
+    if [ -n "$libpath" ] && [ -f "$libpath" ]; then
+        cp "$libpath" "$STAGE_DIR/lib/$libname"
+        BUNDLED_SYSLIBS=$((BUNDLED_SYSLIBS + 1))
+        echo "  $libname <- $libpath"
+    else
+        echo "  Warning: $libname not found via ldd"
+    fi
+done
+
+echo "  $BUNDLED_SYSLIBS system libraries bundled"
+
+# If deploy-qt was not used, create launcher scripts for LD_LIBRARY_PATH
+if [ "$DEPLOY_QT" = false ] && [ ! -f "$STAGE_DIR/emuleqt.bin" ]; then
+    mv "$STAGE_DIR/emuleqt" "$STAGE_DIR/emuleqt.bin"
+    cat > "$STAGE_DIR/emuleqt" <<'LAUNCHER'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$SCRIPT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$SCRIPT_DIR/emuleqt.bin" "$@"
+LAUNCHER
+    chmod +x "$STAGE_DIR/emuleqt"
+
+    mv "$STAGE_DIR/emulecored" "$STAGE_DIR/emulecored.bin"
+    cat > "$STAGE_DIR/emulecored" <<'LAUNCHER'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$SCRIPT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$SCRIPT_DIR/emulecored.bin" "$@"
+LAUNCHER
+    chmod +x "$STAGE_DIR/emulecored"
+fi
+
 # -- Copy config data --------------------------------------------------------
 
 CONFIG_SRC="$REPO_ROOT/data/config"

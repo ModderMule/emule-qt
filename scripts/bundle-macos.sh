@@ -139,6 +139,58 @@ else
     echo "  Set QTDIR or install Qt to enable framework bundling."
 fi
 
+# -- Bundle OpenSSL dylib ----------------------------------------------------
+
+FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
+mkdir -p "$FRAMEWORKS_DIR"
+
+# Find the absolute OpenSSL path linked by the binaries
+OPENSSL_DYLIB=$(otool -L "$MACOS_DIR/emulecored" | grep -o '/.*libcrypto[^[:space:]]*' | head -1)
+
+if [ -n "$OPENSSL_DYLIB" ] && [ -f "$OPENSSL_DYLIB" ]; then
+    DYLIB_NAME=$(basename "$OPENSSL_DYLIB")
+    echo ""
+    echo "=== Bundling OpenSSL ==="
+    echo "  Source: $OPENSSL_DYLIB"
+
+    cp "$OPENSSL_DYLIB" "$FRAMEWORKS_DIR/$DYLIB_NAME"
+
+    # Rewrite load path in both binaries
+    for bin in "$MACOS_DIR/emuleqt" "$MACOS_DIR/emulecored"; do
+        install_name_tool -change "$OPENSSL_DYLIB" "@executable_path/../Frameworks/$DYLIB_NAME" "$bin"
+    done
+
+    # Fix the dylib's own install name
+    install_name_tool -id "@executable_path/../Frameworks/$DYLIB_NAME" "$FRAMEWORKS_DIR/$DYLIB_NAME"
+
+    # Ad-hoc re-sign (required on Apple Silicon)
+    codesign --force --sign - "$FRAMEWORKS_DIR/$DYLIB_NAME"
+    codesign --force --sign - "$MACOS_DIR/emuleqt"
+    codesign --force --sign - "$MACOS_DIR/emulecored"
+
+    echo "  Bundled and relinked $DYLIB_NAME"
+else
+    echo "Warning: OpenSSL dylib not found — skipping OpenSSL bundling."
+    echo "  The app will only work on machines with OpenSSL installed."
+fi
+
+# Bundle any other non-system absolute-path dylibs (e.g. zstd from Homebrew)
+for bin in "$MACOS_DIR/emuleqt" "$MACOS_DIR/emulecored"; do
+    # Find absolute paths that are NOT /usr/lib (system) or @rpath (already handled)
+    for dylib in $(otool -L "$bin" | grep -o '/opt/[^[:space:]]*\|/usr/local/[^[:space:]]*' | sort -u); do
+        DYLIB_NAME=$(basename "$dylib")
+        if [ -f "$dylib" ] && [ ! -f "$FRAMEWORKS_DIR/$DYLIB_NAME" ]; then
+            echo "  Bundling $DYLIB_NAME <- $dylib"
+            cp "$dylib" "$FRAMEWORKS_DIR/$DYLIB_NAME"
+            install_name_tool -id "@executable_path/../Frameworks/$DYLIB_NAME" "$FRAMEWORKS_DIR/$DYLIB_NAME"
+            codesign --force --sign - "$FRAMEWORKS_DIR/$DYLIB_NAME"
+        fi
+        # Rewrite the reference in the binary
+        install_name_tool -change "$dylib" "@executable_path/../Frameworks/$DYLIB_NAME" "$bin"
+    done
+    codesign --force --sign - "$bin"
+done
+
 # -- Verify ------------------------------------------------------------------
 
 echo ""
