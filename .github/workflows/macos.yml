@@ -5,6 +5,9 @@ on:
 #    tags: ['v*']
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: macos-latest
@@ -19,16 +22,25 @@ jobs:
           version: "6.10.3"
           arch: clang_64
           modules: qthttpserver qtwebsockets qtmultimedia
+          cache: true
 
-      - name: Install OpenSSL
-        run: brew install openssl@3
+      - name: Install build tools
+        run: brew install ninja openssl@3
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: macos
 
       - name: Configure
         run: >
-          cmake -S . -B build
+          cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
           -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DEMULE_BUILD_TESTS=OFF
 
       - name: Build
         run: cmake --build build --parallel 2
@@ -39,11 +51,16 @@ jobs:
 #          QT_QPA_PLATFORM: offscreen
 #        run: ctest --test-dir build --output-on-failure --parallel
 
+      - name: Get version
+        run: |
+          VERSION=$(grep -m1 '^ *VERSION [0-9]' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+
       - name: Bundle
         run: scripts/bundle-macos.sh build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eMuleQt-macOS
+          name: eMuleQt-v${{ env.APP_VERSION }}-macOS
           path: build/src/gui/emuleqt.app

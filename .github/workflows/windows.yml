@@ -5,6 +5,9 @@ on:
 #    tags: ['v*']
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: windows-latest
@@ -48,12 +51,24 @@ jobs:
       - name: Install dependencies (vcpkg)
         run: vcpkg install zlib openssl --triplet x64-windows
 
+      # let Ninja use the MSVC compiler
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: windows
+
       - name: Configure
         shell: pwsh
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
+            -DEMULE_BUILD_TESTS=OFF
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -64,11 +79,17 @@ jobs:
 #          QT_QPA_PLATFORM: offscreen
 #        run: ctest --test-dir build --build-config Release --output-on-failure --parallel
 
+      - name: Get version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path CMakeLists.txt -Pattern '^\s+VERSION\s+(\d+\.\d+\.\d+)').Matches[0].Groups[1].Value
+          echo "APP_VERSION=$v" >> $env:GITHUB_ENV
+
       - name: Bundle
         run: scripts\bundle-win.bat "$env:QT_ROOT_DIR" Release --no-build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eMuleQt-win64
+          name: eMuleQt-v${{ env.APP_VERSION }}-win64
           path: build/emuleqt-v*-win64.zip
