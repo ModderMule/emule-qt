@@ -2,6 +2,7 @@
 #include "panels/ServerPanel.h"
 
 #include "app/IpcClient.h"
+#include "core/app/AppConfig.h"
 #include "controls/LogWidget.h"
 #include "controls/ServerListModel.h"
 
@@ -266,8 +267,7 @@ void ServerPanel::onUpdateServerMetClicked()
     m_logWidget->appendServerInfo(tr("Downloading server.met from %1 ...").arg(urlStr));
 
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("eMule Qt/1.0"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, eMule::kUserAgent);
 
     auto* reply = m_netManager->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {

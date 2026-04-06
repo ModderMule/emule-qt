@@ -305,6 +305,14 @@ uint64 PartFile::totalGapSizeInPart(uint32 part) const
     return totalGapSizeInRange(partStart, partEnd);
 }
 
+uint64 PartFile::totalGapSize() const
+{
+    uint64 total = 0;
+    for (const auto& gap : m_gapList)
+        total += gap.end - gap.start + 1;
+    return total;
+}
+
 void PartFile::updateCompletedInfos()
 {
     const uint64 fs = static_cast<uint64>(fileSize());
@@ -457,6 +465,12 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     const uint64 fs = static_cast<uint64>(fileSize());
     int blocksFound = 0;
 
+    // Endgame: when very few blocks remain, allow multiple sources to
+    // request the same block simultaneously so they race to complete it.
+    // Duplicate completions are harmless — processBlockPacket discards
+    // data for already-filled ranges, and removeBlockFromList cleans up.
+    const bool endgame = (totalGapSize() <= ENDGAME_BLOCK_THRESHOLD * EMBLOCKSIZE);
+
     // Helper: try to allocate blocks from a specific part
     auto tryAllocateFromPart = [&](uint32 partNum) {
         uint64 searchFrom = 0;
@@ -468,7 +482,7 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
             }
             searchFrom = reqBlock->endOffset + 1;
 
-            if (!isAlreadyRequested(reqBlock->startOffset, reqBlock->endOffset)) {
+            if (endgame || !isAlreadyRequested(reqBlock->startOffset, reqBlock->endOffset)) {
                 newblocks[blocksFound] = reqBlock;
                 m_requestedBlocks.push_back(reqBlock);
                 ++blocksFound;

@@ -760,6 +760,153 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
 }
 
 // ===========================================================================
+// processMultiPacketLegacy — handle OP_MULTIPACKET / OP_MULTIPACKET_EXT
+//                            (upload side, deprecated opcodes)
+// MFC ListenSocket.cpp ProcessExtPacket OP_MULTIPACKET / OP_MULTIPACKET_EXT
+// ===========================================================================
+
+void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool hasFileSize)
+{
+    (void)checkHandshakeFinished();
+
+    if (size < 16)
+        return;
+
+    SafeMemFile dataIn(data, size);
+
+    // Legacy header: hash16 [+ filesize64 for OP_MULTIPACKET_EXT]
+    uint8 fileHash[16];
+    dataIn.readHash16(fileHash);
+
+    uint64 fileSize = 0;
+    if (hasFileSize)
+        fileSize = dataIn.readUInt64();
+
+    // Look up the file
+    KnownFile* reqFile = findUploadFile(fileHash);
+    if (!reqFile) {
+        sendFileNotFound(fileHash);
+        return;
+    }
+
+    if (hasFileSize && static_cast<uint64>(reqFile->fileSize()) != fileSize) {
+        sendFileNotFound(fileHash);
+        return;
+    }
+
+    if (reqFile->isLargeFile() && !supportsLargeFiles()) {
+        sendFileNotFound(fileHash);
+        return;
+    }
+
+    setWaitStartTime();
+
+    if (!md4equ(fileHash, m_reqUpFileId.data()))
+        setCommentDirty(true);
+
+    setUploadFileID(reqFile);
+
+    // Build response — legacy answer uses hash16 prefix
+    SafeMemFile dataOut;
+    dataOut.writeHash16(fileHash);
+    bool hasResponse = false;
+    bool answerFNF = false;
+
+    // Process sub-opcodes (same as EXT2)
+    bool stopParsing = false;
+    while ((dataIn.length() - dataIn.position()) > 0 && !answerFNF && !stopParsing) {
+        const uint8 subOpcode = dataIn.readUInt8();
+
+        switch (subOpcode) {
+        case OP_REQUESTFILENAME: {
+            if (m_extendedRequestsVer > 0 && (dataIn.length() - dataIn.position()) >= 2) {
+                if (!processExtendedInfo(dataIn, reqFile)) {
+                    sendFileNotFound(fileHash);
+                    answerFNF = true;
+                    break;
+                }
+            }
+            dataOut.writeUInt8(OP_REQFILENAMEANSWER);
+            dataOut.writeString(reqFile->fileName(), UTF8Mode::Raw);
+            hasResponse = true;
+            break;
+        }
+
+        case OP_SETREQFILEID:
+            dataOut.writeUInt8(OP_FILESTATUS);
+            if (reqFile->isPartFile()) {
+                static_cast<PartFile*>(reqFile)->writePartStatus(dataOut);
+            } else {
+                dataOut.writeUInt16(0); // complete file
+            }
+            hasResponse = true;
+            break;
+
+        default:
+            // Unknown sub-opcode with unknown length — stop parsing
+            logDebug(QStringLiteral("MultiPacketLegacy: unknown sub-opcode 0x%1")
+                         .arg(subOpcode, 2, 16, QLatin1Char('0')));
+            stopParsing = true;
+            break;
+        }
+    }
+
+    if (hasResponse && !answerFNF) {
+        auto packet = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_MULTIPACKETANSWER);
+        sendPacket(std::move(packet));
+        sendCommentInfo(reqFile);
+    }
+}
+
+// ===========================================================================
+// processMultiPacketAnswerLegacy — handle OP_MULTIPACKETANSWER (download side)
+// MFC DownloadClient.cpp ProcessMultiPacketAnswer for deprecated 0x93
+// ===========================================================================
+
+void UpDownClient::processMultiPacketAnswerLegacy(const uint8* data, uint32 size)
+{
+    (void)checkHandshakeFinished();
+
+    if (size < 16)
+        return;
+
+    SafeMemFile dataIn(data, size);
+
+    // Legacy header: hash16 only (no FileIdentifier)
+    uint8 fileHash[16];
+    dataIn.readHash16(fileHash);
+
+    // Find the file we requested
+    if (!m_reqFile || !md4equ(fileHash, m_reqFile->fileHash()))
+        return;
+
+    // Process sub-responses (same as EXT2 answer)
+    while ((dataIn.length() - dataIn.position()) > 0) {
+        const uint8 subOpcode = dataIn.readUInt8();
+
+        switch (subOpcode) {
+        case OP_REQFILENAMEANSWER:
+            processFileInfo(dataIn, m_reqFile);
+            break;
+
+        case OP_FILESTATUS:
+            processFileStatus(false, dataIn, m_reqFile);
+            break;
+
+        default:
+            // Unknown sub-response with unknown length — can't continue
+            return;
+        }
+    }
+
+    // Initiate download if processFileStatus didn't already handle it
+    if (m_reqFile && (m_downloadState == DownloadState::Connected
+                      || m_downloadState == DownloadState::Connecting)) {
+        sendStartupLoadReq();
+    }
+}
+
+// ===========================================================================
 // processMultiPacketAnswer — handle OP_MULTIPACKETANSWER_EXT2 (download side)
 // ===========================================================================
 

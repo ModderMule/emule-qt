@@ -6,6 +6,8 @@
 /// Non-static QObject-based class owned by the application. Uses QTimer for
 /// periodic processing instead of being called from an external timer.
 
+#include "kademlia/KadFastKad.h"
+#include "kademlia/KadSafeKad.h"
 #include "kademlia/KadTypes.h"
 #include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUInt128.h"
@@ -125,6 +127,8 @@ public:
     static RoutingZone* getInstanceRoutingZone() { return s_instance ? s_instance->m_routingZone : nullptr; }
     static KademliaUDPListener* getInstanceUDPListener() { return s_instance ? s_instance->m_udpListener : nullptr; }
     static Indexed* getInstanceIndexed() { return s_instance ? s_instance->m_indexed : nullptr; }
+    static SafeKad* getInstanceSafeKad() { return s_instance ? &s_instance->m_safeKad : nullptr; }
+    static FastKad* getInstanceFastKad() { return s_instance ? &s_instance->m_fastKad : nullptr; }
 
 signals:
     void started();
@@ -161,6 +165,9 @@ private:
     bool m_wasConnected = false;
     bool m_ownsPrefs = false;
     std::list<uint32> m_statsEstUsersProbes;
+
+    SafeKad m_safeKad;
+    FastKad m_fastKad;
 
     static Kademlia* s_instance;
     static eMule::IPFilter* s_ipFilter;

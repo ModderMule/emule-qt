@@ -99,7 +99,7 @@ void Kademlia::start(KadPrefs* prefs)
     m_nextSearchJumpStart = now;
     m_nextSelfLookup = now + MIN2S(3);
     m_nextFirewallCheck = now + HR2S(1);
-    m_nextFindBuddy = now + MIN2S(5);
+    m_nextFindBuddy = now + MIN2S(1);
     m_statusUpdate = now + SEC(60);
     m_bigTimer = now;  // MFC: m_tBigTimer = tNow (per-zone timers gate first fire)
     m_consolidate = now + MIN2S(45);
@@ -164,6 +164,9 @@ void Kademlia::stop()
         m_ownsPrefs = false;
     }
 
+    m_safeKad.shutdownCleanup();
+    m_fastKad.shutdownCleanup();
+
     UDPFirewallTester::reset();
 
     // Clear bootstrap list
@@ -208,11 +211,11 @@ void Kademlia::recheckFirewalled()
     UDPFirewallTester::reCheckFirewallUDP(false);
 
     const auto now = static_cast<time_t>(time(nullptr));
-    // Delay the next buddy search to at least 5 min so the firewall
+    // Delay the next buddy search to at least 1 min so the firewall
     // recheck has time to complete and we don't start a buddy search
     // based on stale firewalled status.
-    if (m_nextFindBuddy < now + MIN2S(5))
-        m_nextFindBuddy = now + MIN2S(5);
+    if (m_nextFindBuddy < now + MIN2S(1))
+        m_nextFindBuddy = now + MIN2S(1);
     m_nextFirewallCheck = now + HR2S(1);
 }
 

@@ -9,6 +9,7 @@
 #include "app/VersionChecker.h"
 #include "app/UiState.h"
 #include "controls/LogWidget.h"
+#include "controls/SpeedGraph.h"
 #include "dialogs/NetworkInfoDialog.h"
 #include "dialogs/ImportDownloadsDialog.h"
 #include "dialogs/FirstStartWizard.h"
@@ -231,7 +232,16 @@ void MainWindow::showOptionsDialog(int page)
     OptionsDialog dlg(m_ipc, m_statsPanel, this);
     if (page >= 0 && page < OptionsDialog::PageCount)
         dlg.selectPage(page);
+    const bool hadSpeedGraph = (m_speedGraph != nullptr);
+
     dlg.exec();
+
+    // Rebuild toolbar if speed graph visibility changed
+    if (thePrefs.showSpeedGraph() != hadSpeedGraph)
+        rebuildToolbar();
+    else if (m_speedGraph)
+        m_speedGraph->setTimeRangeMinutes(
+            static_cast<int>(thePrefs.speedGraphTimeRangeMin()));
 
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
 
@@ -324,6 +334,9 @@ void MainWindow::updateTransferRates(double upKBs, double downKBs,
         m_statusUpLabel->setText(QStringLiteral("Up: %1").arg(upKBs, 0, 'f', 1));
         m_statusDownLabel->setText(QStringLiteral("Down: %1").arg(downKBs, 0, 'f', 1));
     }
+
+    if (m_speedGraph)
+        m_speedGraph->appendSample(downKBs, upKBs);
 }
 
 void MainWindow::showNotification(const QString& title, const QString& message)
@@ -808,6 +821,20 @@ void MainWindow::rebuildToolbar()
     // Update Connect button state
     if (m_connectAction)
         updateConnectButton();
+
+    // Speed graph (right-aligned in toolbar)
+    if (thePrefs.showSpeedGraph()) {
+        auto* spacer = new QWidget;
+        spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        m_toolbar->addWidget(spacer);
+
+        m_speedGraph = new SpeedGraph(m_toolbar);
+        m_speedGraph->setTimeRangeMinutes(
+            static_cast<int>(thePrefs.speedGraphTimeRangeMin()));
+        m_toolbar->addWidget(m_speedGraph);
+    } else {
+        m_speedGraph = nullptr;
+    }
 }
 
 void MainWindow::loadToolbarSkin(const QString& path)

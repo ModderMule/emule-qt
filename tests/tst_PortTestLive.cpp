@@ -14,6 +14,7 @@
 
 #include "TestHelpers.h"
 
+#include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
@@ -161,8 +162,7 @@ tst_PortTestLive::PortTestResult tst_PortTestLive::runPortTest(bool obfuscation)
     QNetworkRequest req(url);
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                      QNetworkRequest::NoLessSafeRedirectPolicy);
-    req.setHeader(QNetworkRequest::UserAgentHeader,
-                  QStringLiteral("eMuleQt PortTest/1.0"));
+    req.setHeader(QNetworkRequest::UserAgentHeader, eMule::kUserAgent);
 
     QNetworkReply* reply = m_nam.get(req);
 

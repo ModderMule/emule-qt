@@ -86,7 +86,7 @@ private:
                                       const KadUDPKey& senderKey, bool validReceiverKey);
     void process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                       const KadUDPKey& senderKey, bool validReceiverKey);
-    void process_KADEMLIA2_HELLO_RES_ACK(const uint8* data, uint32 len, uint32 ip, bool validReceiverKey);
+    void process_KADEMLIA2_HELLO_RES_ACK(const uint8* data, uint32 len, uint32 ip, uint16 udpPort, bool validReceiverKey);
     void process_KADEMLIA2_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                 const KadUDPKey& senderKey);
     void process_KADEMLIA2_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,

@@ -98,6 +98,7 @@ public:
     // -- Stats ----------------------------------------------------------------
 
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
+    [[nodiscard]] bool hasActiveTransfers() const;
     [[nodiscard]] uint32 successfulDownloadCount() const { return m_successfulDownCount; }
     [[nodiscard]] uint32 failedDownloadCount() const { return m_failedDownCount; }
     [[nodiscard]] uint32 averageDownTime() const;

@@ -200,6 +200,9 @@ public:
     [[nodiscard]] bool verbose() const;
     void setVerbose(bool val);
 
+    [[nodiscard]] bool logPublicIP() const;
+    void setLogPublicIP(bool val);
+
     [[nodiscard]] bool kadVerboseLog() const;
     void setKadVerboseLog(bool val);
 
@@ -571,6 +574,12 @@ public:
     [[nodiscard]] QString ipFilterUpdateUrl() const;
     void setIpFilterUpdateUrl(const QString& val);
 
+    [[nodiscard]] bool useSafeKad() const;
+    void setUseSafeKad(bool val);
+
+    [[nodiscard]] bool useFastKad() const;
+    void setUseFastKad(bool val);
+
     [[nodiscard]] QString appToken() const;
     void setAppToken(const QString& val);
 
@@ -875,6 +884,12 @@ public:
 
     [[nodiscard]] bool showTransToolbar() const;
     void setShowTransToolbar(bool val);
+
+    [[nodiscard]] bool showSpeedGraph() const;
+    void setShowSpeedGraph(bool val);
+
+    [[nodiscard]] uint32 speedGraphTimeRangeMin() const;
+    void setSpeedGraphTimeRangeMin(uint32 val);
 
     [[nodiscard]] bool storeSearches() const;
     void setStoreSearches(bool val);

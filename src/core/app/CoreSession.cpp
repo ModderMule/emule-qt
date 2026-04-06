@@ -256,9 +256,9 @@ void CoreSession::onTimer()
         if (theApp.sharedFileList)
             theApp.sharedFileList->process();
         if (theApp.statistics) {
-            float downRate = theApp.downloadQueue
+            float downRate = (theApp.downloadQueue && theApp.downloadQueue->hasActiveTransfers())
                 ? static_cast<float>(theApp.downloadQueue->datarate()) / 1024.0f : 0.0f;
-            float upRate = theApp.uploadQueue
+            float upRate = (theApp.uploadQueue && theApp.uploadQueue->hasActiveUploads())
                 ? static_cast<float>(theApp.uploadQueue->datarate()) / 1024.0f : 0.0f;
             theApp.statistics->updateConnectionStats(upRate, downRate);
             theApp.statistics->compUpDatarateOverhead();

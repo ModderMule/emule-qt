@@ -1792,7 +1792,8 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
         m_downloadState == DownloadState::Connecting ||
         m_downloadState == DownloadState::WaitCallback ||
         m_downloadState == DownloadState::WaitCallbackKad ||
-        m_downloadState == DownloadState::ReqHashSet)
+        m_downloadState == DownloadState::ReqHashSet ||
+        m_downloadState == DownloadState::NoNeededParts)
     {
         // Add to dead source list
         if (theApp.clientList) {
@@ -3162,18 +3163,15 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         break;
 
     case OP_COMPRESSEDPART:
-        (void)checkHandshakeFinished();
-        processBlockPacket(data, size, true, false);
+        processBlockPacketWithValidation(data, size, true, false);
         break;
 
     case OP_COMPRESSEDPART_I64:
-        (void)checkHandshakeFinished();
-        processBlockPacket(data, size, true, true);
+        processBlockPacketWithValidation(data, size, true, true);
         break;
 
     case OP_SENDINGPART_I64:
-        (void)checkHandshakeFinished();
-        processBlockPacket(data, size, false, true);
+        processBlockPacketWithValidation(data, size, false, true);
         break;
 
     case OP_REQUESTPARTS_I64:
@@ -3278,8 +3276,20 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         processKadFwTcpCheckAck();
         break;
 
+    case OP_MULTIPACKET:
+        processMultiPacketLegacy(data, size, false);
+        break;
+
+    case OP_MULTIPACKET_EXT:
+        processMultiPacketLegacy(data, size, true);
+        break;
+
     case OP_MULTIPACKET_EXT2:
         processMultiPacketExt2(data, size);
+        break;
+
+    case OP_MULTIPACKETANSWER:
+        processMultiPacketAnswerLegacy(data, size);
         break;
 
     case OP_MULTIPACKETANSWER_EXT2:
@@ -3311,8 +3321,7 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
 
     switch (opcode) {
     case OP_SENDINGPART:
-        (void)checkHandshakeFinished();
-        processBlockPacket(data, size, false, false);
+        processBlockPacketWithValidation(data, size, false, false);
         break;
 
     case OP_ACCEPTUPLOADREQ:
@@ -3462,20 +3471,14 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
     case OP_REQFILENAMEANSWER: {
         // Answer to our file name request (download side)
         // Payload: [16-byte fileHash] [filename string...]
+        // MFC: only ProcessFileInfo here — sendStartupLoadReq is called from
+        // processFileStatus when OP_FILESTATUS arrives (avoids race where
+        // remote accepts before we know the part bitmap → NoNeededParts).
         SafeMemFile io(data, size);
         uint8 fileHash[16];
         io.readHash16(fileHash);
-        // Verify this is for the file we requested
-        if (m_reqFile && md4equ(fileHash, m_reqFile->fileHash())) {
+        if (m_reqFile && md4equ(fileHash, m_reqFile->fileHash()))
             processFileInfo(io, m_reqFile);
-
-            // MFC: REQFILENAMEANSWER triggers sendStartupLoadReq if not already queued
-            if (m_downloadState == DownloadState::Connected
-                || m_downloadState == DownloadState::Connecting) {
-                sendStartupLoadReq();
-                setDownloadState(DownloadState::OnQueue);
-            }
-        }
         break;
     }
 

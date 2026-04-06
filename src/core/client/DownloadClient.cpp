@@ -643,6 +643,34 @@ void UpDownClient::sendBlockRequests()
 }
 
 // ===========================================================================
+// processBlockPacketWithValidation — MFC ListenSocket.cpp OP_SENDINGPART wrapper
+// Validates file status before/after processing block data.
+// ===========================================================================
+
+void UpDownClient::processBlockPacketWithValidation(const uint8* data, uint32 size,
+                                                     bool packed, bool i64Offsets)
+{
+    (void)checkHandshakeFinished();
+    const PartFile* creqfile = m_reqFile;
+    if (creqfile && !creqfile->isStopped()
+        && (creqfile->status() == PartFileStatus::Ready
+            || creqfile->status() == PartFileStatus::Empty)) {
+        processBlockPacket(data, size, packed, i64Offsets);
+        // MFC: if file went to paused/error during processing, stop download
+        if (creqfile->isStopped()
+            || creqfile->status() == PartFileStatus::Paused
+            || creqfile->status() == PartFileStatus::Error) {
+            sendCancelTransfer();
+            setDownloadState(DownloadState::OnQueue);
+        }
+    } else {
+        sendCancelTransfer();
+        setDownloadState(creqfile == nullptr || creqfile->isStopped()
+                             ? DownloadState::None : DownloadState::OnQueue);
+    }
+}
+
+// ===========================================================================
 // processBlockPacket — MFC DownloadClient.cpp ProcessBlockPacket
 // ===========================================================================
 

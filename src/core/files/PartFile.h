@@ -161,6 +161,11 @@ public:
     [[nodiscard]] bool isAlreadyRequested(uint64 start, uint64 end) const;
     [[nodiscard]] uint64 totalGapSizeInRange(uint64 start, uint64 end) const;
     [[nodiscard]] uint64 totalGapSizeInPart(uint32 part) const;
+    [[nodiscard]] uint64 totalGapSize() const;
+
+    // Endgame: when remaining gaps fit in this many EMBLOCKSIZE blocks,
+    // allow multiple sources to request the same block simultaneously.
+    static constexpr int ENDGAME_BLOCK_THRESHOLD = 3;
     [[nodiscard]] EMFileSize completedSize() const { return m_completedSize; }
     [[nodiscard]] float percentCompleted() const { return m_percentCompleted; }
     [[nodiscard]] uint64 compressionGain() const { return m_compressionGain; }

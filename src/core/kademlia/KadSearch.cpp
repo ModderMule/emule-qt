@@ -283,6 +283,28 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
             break;
         }
     }
+    // SafeKad: validate responding contact and record response time
+    if (foundSender && pFromContact) {
+        // Record response time for FastKad adaptive timeout
+        auto sentIt = m_requestSentTimes.find(pFromContact->getClientID());
+        if (sentIt != m_requestSentTimes.end()) {
+            auto elapsed = std::chrono::steady_clock::now() - sentIt->second;
+            double ms = std::chrono::duration<double, std::milli>(elapsed).count();
+            if (auto* fk = Kademlia::getInstanceFastKad())
+                fk->addResponseTime(fromIP, ms);
+            m_requestSentTimes.erase(sentIt);
+        }
+        // Check if this node is bad (may have changed identity since we sent the request)
+        if (auto* sk = Kademlia::getInstanceSafeKad()) {
+            if (sk->isBadNode(fromIP, fromPort, pFromContact->getClientID(),
+                              pFromContact->getVersion(), true, false)) {
+                logKad(QStringLiteral("Kad search %1: SafeKad rejected response from %2:%3")
+                           .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort));
+                return;
+            }
+        }
+    }
+
     logKad(QStringLiteral("Kad search %1: response from %2:%3 — sender %4, +%5 contacts, best=%6 responded=%7 possible=%8")
                .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort)
                .arg(foundSender ? QStringLiteral("found") : QStringLiteral("NOT found"))
@@ -638,9 +660,19 @@ void Search::jumpStart()
         return;
     }
 
-    // If we had a response within the cooldown period, no need to jumpstart.
-    // MFC hardcodes SEC(3) in CSearch::JumpStart(), independent of SEARCH_JUMPSTART.
-    if ((now - m_lastResponse) < static_cast<time_t>(kSearchJumpstartCooldown))
+    // Adaptive cooldown: use FastKad estimate for find operations, fixed 3s for store.
+    time_t cooldown = kSearchJumpstartCooldown;
+    if (m_type != SearchType::StoreFile && m_type != SearchType::StoreKeyword
+        && m_type != SearchType::StoreNotes)
+    {
+        if (auto* fk = Kademlia::getInstanceFastKad()) {
+            double estMs = fk->getEstMaxResponseTimeMs();
+            time_t estSec = static_cast<time_t>(estMs / 1000.0) + 1;
+            if (estSec > 0 && estSec < 10)
+                cooldown = estSec;
+        }
+    }
+    if ((now - m_lastResponse) < cooldown)
         return;
 
     // If we ran out of contacts, stop search (MFC Search.cpp:268-270).
@@ -693,6 +725,7 @@ void Search::sendFindValue(Contact* contact, bool reAskMore)
     ++m_kadPacketSent;
     m_inUse[contact->getClientID()] = contact;
     contact->incUse();
+    m_requestSentTimes[contact->getClientID()] = std::chrono::steady_clock::now();
 
     if (m_lookupHistory)
         m_lookupHistory->contactAskedKad(contact);
@@ -739,6 +772,14 @@ void Search::prepareToStop()
 
     m_stopping = true;
     m_storePhaseStarted = time(nullptr);
+
+    // SafeKad: mark non-responding contacts as problematic
+    if (auto* sk = Kademlia::getInstanceSafeKad()) {
+        for (const auto& [dist, contact] : m_tried) {
+            if (m_responded.find(dist) == m_responded.end())
+                sk->trackProblematicNode(contact->getIPAddress(), contact->getUDPPort());
+        }
+    }
 
     // Adjust m_created so the search expires within ~15 seconds.
     // MFC: m_tCreated = time(NULL) - uBaseTime + SEC(15);

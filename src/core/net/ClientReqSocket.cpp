@@ -290,6 +290,9 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_AICHANSWER:
     case OP_HASHSETREQUEST2:
     case OP_HASHSETANSWER2:
+    case OP_MULTIPACKET:
+    case OP_MULTIPACKETANSWER:
+    case OP_MULTIPACKET_EXT:
     case OP_MULTIPACKET_EXT2:
     case OP_MULTIPACKETANSWER_EXT2:
         if (stats) stats->addDownDataOverheadFileRequest(size);

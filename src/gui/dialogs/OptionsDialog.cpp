@@ -166,6 +166,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_showCatTabInfosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoRemoveFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showTransToolbarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showSpeedGraphCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_speedGraphTimeSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_storeSearchesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_disableKnownClientListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_disableQueueListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -298,6 +300,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logUlDlEventsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logRawSocketPacketsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logWebServerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logPublicIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableIpcLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_startCoreWithConsoleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_closeUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -763,6 +766,18 @@ QWidget* OptionsDialog::createDisplayPage()
 
     m_showTransToolbarCheck = new QCheckBox(tr("Show additional toolbar on Transfers window"), page);
     layout->addWidget(m_showTransToolbarCheck);
+
+    m_showSpeedGraphCheck = new QCheckBox(tr("Show speed graph in toolbar"), page);
+    layout->addWidget(m_showSpeedGraphCheck);
+
+    auto* graphTimeRow = new QHBoxLayout;
+    graphTimeRow->addSpacing(20);
+    graphTimeRow->addWidget(new QLabel(tr("Speed graph time range (minutes):"), page));
+    m_speedGraphTimeSpin = new QSpinBox(page);
+    m_speedGraphTimeSpin->setRange(1, 60);
+    graphTimeRow->addWidget(m_speedGraphTimeSpin);
+    graphTimeRow->addStretch();
+    layout->addLayout(graphTimeRow);
 
     m_storeSearchesCheck = new QCheckBox(tr("Remember open searches between restarts"), page);
     layout->addWidget(m_storeSearchesCheck);
@@ -2688,6 +2703,9 @@ QWidget* OptionsDialog::createExtendedPage()
     m_logWebServerCheck = new QCheckBox(tr("Log web server requests"), verboseGroup);
     verboseLayout->addWidget(m_logWebServerCheck);
 
+    m_logPublicIPCheck = new QCheckBox(tr("Log public IP address on startup"), verboseGroup);
+    verboseLayout->addWidget(m_logPublicIPCheck);
+
     m_enableIpcLogCheck = new QCheckBox(tr("Enable IPC log tab"), verboseGroup);
     verboseLayout->addWidget(m_enableIpcLogCheck);
 
@@ -3306,6 +3324,8 @@ void OptionsDialog::loadSettings()
     m_showCatTabInfosCheck->setChecked(thePrefs.showCatTabInfos());
     m_autoRemoveFinishedCheck->setChecked(thePrefs.autoRemoveFinishedDownloads());
     m_showTransToolbarCheck->setChecked(thePrefs.showTransToolbar());
+    m_showSpeedGraphCheck->setChecked(thePrefs.showSpeedGraph());
+    m_speedGraphTimeSpin->setValue(static_cast<int>(thePrefs.speedGraphTimeRangeMin()));
     m_storeSearchesCheck->setChecked(thePrefs.storeSearches());
     m_disableKnownClientListCheck->setChecked(thePrefs.disableKnownClientList());
     m_disableQueueListCheck->setChecked(thePrefs.disableQueueList());
@@ -3477,6 +3497,8 @@ void OptionsDialog::saveSettings()
     thePrefs.setShowCatTabInfos(m_showCatTabInfosCheck->isChecked());
     thePrefs.setAutoRemoveFinishedDownloads(m_autoRemoveFinishedCheck->isChecked());
     thePrefs.setShowTransToolbar(m_showTransToolbarCheck->isChecked());
+    thePrefs.setShowSpeedGraph(m_showSpeedGraphCheck->isChecked());
+    thePrefs.setSpeedGraphTimeRangeMin(static_cast<uint32_t>(m_speedGraphTimeSpin->value()));
     thePrefs.setStoreSearches(m_storeSearchesCheck->isChecked());
     thePrefs.setDisableKnownClientList(m_disableKnownClientListCheck->isChecked());
     thePrefs.setDisableQueueList(m_disableQueueListCheck->isChecked());
@@ -3844,6 +3866,8 @@ void OptionsDialog::saveSettings()
         req.append(m_logRawSocketPacketsCheck->isChecked());
         req.append(QStringLiteral("logWebServer"));
         req.append(m_logWebServerCheck->isChecked());
+        req.append(QStringLiteral("logPublicIP"));
+        req.append(m_logPublicIPCheck->isChecked());
         req.append(QStringLiteral("enableIpcLog"));
         req.append(m_enableIpcLogCheck->isChecked());
         req.append(QStringLiteral("startCoreWithConsole"));
@@ -3927,6 +3951,10 @@ void OptionsDialog::saveSettings()
         req.append(m_autoRemoveFinishedCheck->isChecked());
         req.append(QStringLiteral("showTransToolbar"));
         req.append(m_showTransToolbarCheck->isChecked());
+        req.append(QStringLiteral("showSpeedGraph"));
+        req.append(m_showSpeedGraphCheck->isChecked());
+        req.append(QStringLiteral("speedGraphTimeRangeMin"));
+        req.append(static_cast<qint64>(m_speedGraphTimeSpin->value()));
         req.append(QStringLiteral("storeSearches"));
         req.append(m_storeSearchesCheck->isChecked());
         req.append(QStringLiteral("disableKnownClientList"));
@@ -4131,6 +4159,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setLogUlDlEvents(m_logUlDlEventsCheck->isChecked());
         thePrefs.setLogRawSocketPackets(m_logRawSocketPacketsCheck->isChecked());
         thePrefs.setLogWebServer(m_logWebServerCheck->isChecked());
+        thePrefs.setLogPublicIP(m_logPublicIPCheck->isChecked());
         // USS
         thePrefs.setDynUpEnabled(m_dynUpEnabledCheck->isChecked());
         thePrefs.setDynUpPingTolerance(m_dynUpPingToleranceSpin->value());
@@ -4417,6 +4446,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_logRawSocketPacketsCheck->setEnabled(verboseOn);
     m_logWebServerCheck->setChecked(prefs.value(QStringLiteral("logWebServer")).toBool());
     m_logWebServerCheck->setEnabled(verboseOn);
+    m_logPublicIPCheck->setChecked(prefs.value(QStringLiteral("logPublicIP")).toBool());
     m_enableIpcLogCheck->setChecked(prefs.value(QStringLiteral("enableIpcLog")).toBool());
     m_startCoreWithConsoleCheck->setChecked(prefs.value(QStringLiteral("startCoreWithConsole")).toBool());
     // USS

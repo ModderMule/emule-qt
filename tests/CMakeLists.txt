@@ -170,6 +170,7 @@ emule_add_test(tst_KadFirewallTester FOLDER "Kademlia")
 emule_add_test(tst_KadIndexed        FOLDER "Kademlia")
 emule_add_test(tst_KadUDPListener    FOLDER "Kademlia")
 emule_add_test(tst_Kademlia          FOLDER "Kademlia")
+emule_add_test(tst_SafeKadFastKad    FOLDER "Kademlia")
 
 # Module 29o: Preferences & configuration
 emule_add_test(tst_Preferences     FOLDER "Prefs")

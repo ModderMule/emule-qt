@@ -53,6 +53,7 @@ public:
     // Data rates
     void updateDatarates();
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
+    [[nodiscard]] bool hasActiveUploads() const { return !m_uploadingList.empty(); }
     [[nodiscard]] uint32 friendDatarate() const { return m_friendDatarate; }
     [[nodiscard]] uint32 targetClientDataRate(bool minRate) const;
 

@@ -3,6 +3,7 @@
 /// @brief HTTP-based version checker implementation.
 
 #include "app/VersionChecker.h"
+#include "core/app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
@@ -42,8 +43,7 @@ void VersionChecker::check(bool manual)
     }
 
     QNetworkRequest req(QUrl(QStringLiteral("https://emule-qt.org/pub/emuleqt-version.json")));
-    req.setHeader(QNetworkRequest::UserAgentHeader,
-                  QStringLiteral("eMuleQt/%1").arg(QApplication::applicationVersion()));
+    req.setHeader(QNetworkRequest::UserAgentHeader, eMule::kUserAgent);
     m_nam->get(req);
 }
 

@@ -458,8 +458,13 @@ void RoutingZone::onSmallTimer()
     // Leaf zone: check for expired contacts
     Contact* oldest = m_bin->getOldest();
     if (oldest) {
-        if (oldest->getType() == 4) {
-            // Expired contact — remove
+        // SafeKad: remove contacts whose IP is banned
+        bool banned = false;
+        if (auto* sk = Kademlia::getInstanceSafeKad())
+            banned = sk->isBanned(oldest->getIPAddress());
+
+        if (oldest->getType() == 4 || banned) {
+            // Expired or banned contact — remove
             if (!oldest->inUse()) {
                 m_bin->removeContact(oldest);
                 emit contactRemoved(oldest);

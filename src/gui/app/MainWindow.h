@@ -33,6 +33,7 @@ class MiniMuleWidget;
 
 class IpcClient;
 class IrcPanel;
+class SpeedGraph;
 class TrayMenuManager;
 class VersionChecker;
 class KadPanel;
@@ -216,6 +217,9 @@ private:
     // System tray icon for popup notifications
     QSystemTrayIcon* m_trayIcon = nullptr;
     QSoundEffect* m_notifySound = nullptr;
+
+    // Speed graph in toolbar
+    SpeedGraph* m_speedGraph = nullptr;
 
     // Cached status for world icon
     bool m_ed2kConnected = false;

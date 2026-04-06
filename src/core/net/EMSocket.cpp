@@ -374,6 +374,9 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
         // Schedule send on the socket's thread. Unlike MFC Winsock which is thread-safe,
         // Qt sockets require write() to be called from the thread that created the socket.
         // Using QTimer::singleShot(0) defers to the next event loop iteration on the correct thread.
+        // If multiple control packets are queued in the same event loop tick, the first
+        // timer callback drains all of them via send()'s while loop; subsequent callbacks
+        // find the queue empty and are harmless no-ops.
         QTimer::singleShot(0, this, [this] {
             if (thePrefs.logRawSocketPackets())
                 logDebug(QStringLiteral("EMSocket::sendPacket — QTimer fired, conState=%1 encReady=%2 peer=%3:%4")

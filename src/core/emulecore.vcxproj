@@ -201,6 +201,7 @@
     <ClCompile Include="chat\IrcClient.cpp" />
     <ClCompile Include="kademlia\KadContact.cpp" />
     <ClCompile Include="kademlia\KadEntry.cpp" />
+    <ClCompile Include="kademlia\KadFastKad.cpp" />
     <ClCompile Include="kademlia\KadFirewallTester.cpp" />
     <ClCompile Include="kademlia\KadIO.cpp" />
     <ClCompile Include="kademlia\KadIndexed.cpp" />
@@ -211,6 +212,7 @@
     <ClCompile Include="kademlia\KadPrefs.cpp" />
     <ClCompile Include="kademlia\KadRoutingBin.cpp" />
     <ClCompile Include="kademlia\KadRoutingZone.cpp" />
+    <ClCompile Include="kademlia\KadSafeKad.cpp" />
     <ClCompile Include="kademlia\KadSearch.cpp" />
     <ClCompile Include="kademlia\KadSearchManager.cpp" />
     <ClCompile Include="kademlia\KadUDPListener.cpp" />
@@ -315,6 +317,7 @@
     <ClInclude Include="kademlia\KadContact.h" />
     <ClInclude Include="kademlia\KadEntry.h" />
     <ClInclude Include="kademlia\KadError.h" />
+    <ClInclude Include="kademlia\KadFastKad.h" />
     <ClInclude Include="kademlia\KadFirewallTester.h" />
     <ClInclude Include="kademlia\KadIO.h" />
     <QtMoc Include="kademlia\KadIndexed.h" />
@@ -325,6 +328,7 @@
     <ClInclude Include="kademlia\KadPrefs.h" />
     <ClInclude Include="kademlia\KadRoutingBin.h" />
     <QtMoc Include="kademlia\KadRoutingZone.h" />
+    <ClInclude Include="kademlia\KadSafeKad.h" />
     <ClInclude Include="kademlia\KadSearch.h" />
     <ClInclude Include="kademlia\KadSearchDefs.h" />
     <ClInclude Include="kademlia\KadSearchManager.h" />

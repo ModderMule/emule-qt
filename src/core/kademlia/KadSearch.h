@@ -13,6 +13,7 @@
 #include <QByteArray>
 #include <QString>
 
+#include <chrono>
 #include <cstdint>
 #include <ctime>
 #include <map>
@@ -104,6 +105,7 @@ private:
     uint32 m_searchID = 0;
     bool m_stopping = false;
     time_t m_storePhaseStarted = 0;  // When prepareToStop() triggered storePacket()
+    std::map<UInt128, std::chrono::steady_clock::time_point> m_requestSentTimes;
 };
 
 } // namespace eMule::kad

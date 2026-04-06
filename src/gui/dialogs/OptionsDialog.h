@@ -148,6 +148,8 @@ private:
     QCheckBox* m_showCatTabInfosCheck = nullptr;
     QCheckBox* m_autoRemoveFinishedCheck = nullptr;
     QCheckBox* m_showTransToolbarCheck = nullptr;
+    QCheckBox* m_showSpeedGraphCheck = nullptr;
+    QSpinBox*  m_speedGraphTimeSpin = nullptr;
     QCheckBox* m_storeSearchesCheck = nullptr;
     QCheckBox* m_disableKnownClientListCheck = nullptr;
     QCheckBox* m_disableQueueListCheck = nullptr;
@@ -344,6 +346,7 @@ private:
     QCheckBox*    m_logUlDlEventsCheck = nullptr;
     QCheckBox*    m_logRawSocketPacketsCheck = nullptr;
     QCheckBox*    m_logWebServerCheck = nullptr;
+    QCheckBox*    m_logPublicIPCheck = nullptr;
     QCheckBox*    m_enableIpcLogCheck = nullptr;
     QCheckBox*    m_startCoreWithConsoleCheck = nullptr;
     QCheckBox*    m_closeUPnPCheck = nullptr;

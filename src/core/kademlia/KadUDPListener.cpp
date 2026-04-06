@@ -236,7 +236,7 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
         process_KADEMLIA2_HELLO_RES(payload, payloadLen, ip, udpPort, senderKey, validReceiverKey);
         break;
     case KADEMLIA2_HELLO_RES_ACK:
-        process_KADEMLIA2_HELLO_RES_ACK(payload, payloadLen, ip, validReceiverKey);
+        process_KADEMLIA2_HELLO_RES_ACK(payload, payloadLen, ip, udpPort, validReceiverKey);
         break;
     case KADEMLIA2_REQ:
         process_KADEMLIA2_REQ(payload, payloadLen, ip, udpPort, senderKey);
@@ -721,6 +721,10 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
             rz->verifyContact(contactID, ip);
     }
 
+    // SafeKad: track verified node identity
+    if (auto* sk = Kademlia::getInstanceSafeKad())
+        sk->trackNode(ip, udpPort, contactID, true);
+
     // Deliver node-ID result to any pending FetchNodeIDRequest for this IP.
     // The contact data starts with 16 bytes KadID + 2 bytes TCP port.
     // Matches MFC KademliaUDPListener.cpp:461-474.
@@ -759,13 +763,18 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
 }
 
 void KademliaUDPListener::process_KADEMLIA2_HELLO_RES_ACK(const uint8* data, uint32 len,
-                                                            uint32 ip, bool /*validReceiverKey*/)
+                                                            uint32 ip, uint16 udpPort,
+                                                            bool /*validReceiverKey*/)
 {
     if (len < 16)
         return;
 
     SafeMemFile io(data, len);
     UInt128 remoteID = io::readUInt128(io);
+
+    // SafeKad: track verified node identity
+    if (auto* sk = Kademlia::getInstanceSafeKad())
+        sk->trackNode(ip, udpPort, remoteID, true);
 
     // Verify the contact's IP in the routing table
     if (auto* rz = Kademlia::getInstanceRoutingZone())
@@ -860,6 +869,14 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
     SafeMemFile io(data, len);
     UInt128 target = io::readUInt128(io);
     uint8 numContacts = io.readUInt8();
+
+    // SafeKad: track the responding node if we can identify it in the routing table
+    if (auto* sk = Kademlia::getInstanceSafeKad()) {
+        if (auto* rz = Kademlia::getInstanceRoutingZone()) {
+            if (auto* sender = rz->getContact(ip, udpPort, false))
+                sk->trackNode(ip, udpPort, sender->getClientID(), true);
+        }
+    }
 
     // MFC: firewall check searches skip routing table add — those contacts
     // must remain un-contacted for the UDP firewall test to be valid.

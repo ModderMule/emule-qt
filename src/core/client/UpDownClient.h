@@ -502,6 +502,8 @@ public:
     virtual void sendBlockRequests();
     virtual void processBlockPacket(const uint8* data, uint32 size,
                                     bool packed, bool i64Offsets);
+    void processBlockPacketWithValidation(const uint8* data, uint32 size,
+                                          bool packed, bool i64Offsets);
     virtual void sendCancelTransfer();
     void startDownload();
     void sendHashSetRequest();
@@ -600,7 +602,9 @@ private:
     void processSetReqFileID(const uint8* data, uint32 size);
     void processRequestFileName(const uint8* data, uint32 size);
     void processMultiPacketExt2(const uint8* data, uint32 size);
+    void processMultiPacketLegacy(const uint8* data, uint32 size, bool hasFileSize);
     void processMultiPacketAnswer(const uint8* data, uint32 size);
+    void processMultiPacketAnswerLegacy(const uint8* data, uint32 size);
 
     // Helpers for upload-side file lookup
     KnownFile* findUploadFile(const uint8* fileHash) const;

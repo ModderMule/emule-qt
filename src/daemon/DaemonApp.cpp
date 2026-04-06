@@ -16,6 +16,9 @@
 #include "utils/Log.h"
 
 #include <QDateTime>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QUuid>
 
 #include <openssl/rand.h>
@@ -66,6 +69,24 @@ bool DaemonApp::start()
         thePrefs.save();
     }
     logInfo(QStringLiteral("IPC auth token: %1").arg(tokens.first()));
+
+    // Resolve and log public IP (non-blocking, opt-in)
+    if (thePrefs.logPublicIP()) {
+        auto* nam = new QNetworkAccessManager(this);
+        // curl -6 ifconfig.me <- for v6 detection later
+        QNetworkRequest req(QUrl(QStringLiteral("https://api.ipify.org")));
+        req.setTransferTimeout(5000);
+        auto* reply = nam->get(req);
+        connect(reply, &QNetworkReply::finished, this, [reply, nam]() {
+            if (reply->error() == QNetworkReply::NoError) {
+                const QString ip = QString::fromUtf8(reply->readAll()).trimmed();
+                if (!ip.isEmpty())
+                    logInfo(QStringLiteral("Public IP address: %1").arg(ip));
+            }
+            reply->deleteLater();
+            nam->deleteLater();
+        });
+    }
 
     // Start IPC server
     m_ipcServer = std::make_unique<IpcServer>(this);

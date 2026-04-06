@@ -102,12 +102,16 @@ bool KadPrefs::recheckIP() const
 void KadPrefs::setRecheckIP()
 {
     m_recheckIp = 0;
-    m_firewallCounter = 0;
+    setFirewalled(); // snapshots m_lastFirewallState and resets m_firewallCounter
 }
 
 void KadPrefs::incRecheckIP()
 {
     ++m_recheckIp;
+    // When FW check completes and confirms we're firewalled, trigger
+    // immediate buddy search instead of waiting for the timer.
+    if (!recheckIP() && firewalled())
+        setFindBuddy(true);
 }
 
 // ---------------------------------------------------------------------------

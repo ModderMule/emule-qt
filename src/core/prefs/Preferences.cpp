@@ -162,6 +162,7 @@ struct Preferences::Data {
     bool logToDisk = false;
     uint32 maxLogFileSize = 1048576; // 1 MB
     bool verbose = true;
+    bool logPublicIP = false;
     bool kadVerboseLog = true;
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
     int logLevel = 5;               // 0-5, higher = more verbose
@@ -330,6 +331,8 @@ struct Preferences::Data {
     // Security
     uint32 ipFilterLevel = 100;  // DFLT_FILTER_LEVEL — lower = more restrictive
     bool warnUntrustedFiles = true;
+    bool useSafeKad = true;
+    bool useFastKad = true;
     QString ipFilterUpdateUrl;
     QString appToken;
     QString bugReportApiKey;
@@ -454,6 +457,8 @@ struct Preferences::Data {
     bool showCatTabInfos = false;
     bool autoRemoveFinishedDownloads = false;
     bool showTransToolbar = true;
+    bool showSpeedGraph = true;
+    uint32 speedGraphTimeRangeMin = 15;
     bool storeSearches = true;
     bool disableKnownClientList = false;
     bool disableQueueList = false;
@@ -1083,6 +1088,18 @@ void Preferences::setVerbose(bool val)
 {
     QWriteLocker lock(&m_lock);
     m_data->verbose = val;
+}
+
+bool Preferences::logPublicIP() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->logPublicIP;
+}
+
+void Preferences::setLogPublicIP(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->logPublicIP = val;
 }
 
 bool Preferences::kadVerboseLog() const
@@ -1863,6 +1880,30 @@ void Preferences::setWarnUntrustedFiles(bool val)
 {
     QWriteLocker lock(&m_lock);
     m_data->warnUntrustedFiles = val;
+}
+
+bool Preferences::useSafeKad() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->useSafeKad;
+}
+
+void Preferences::setUseSafeKad(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->useSafeKad = val;
+}
+
+bool Preferences::useFastKad() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->useFastKad;
+}
+
+void Preferences::setUseFastKad(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->useFastKad = val;
 }
 
 QString Preferences::ipFilterUpdateUrl() const
@@ -3113,6 +3154,30 @@ void Preferences::setShowTransToolbar(bool val)
     m_data->showTransToolbar = val;
 }
 
+bool Preferences::showSpeedGraph() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->showSpeedGraph;
+}
+
+void Preferences::setShowSpeedGraph(bool val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->showSpeedGraph = val;
+}
+
+uint32 Preferences::speedGraphTimeRangeMin() const
+{
+    QReadLocker lock(&m_lock);
+    return m_data->speedGraphTimeRangeMin;
+}
+
+void Preferences::setSpeedGraphTimeRangeMin(uint32 val)
+{
+    QWriteLocker lock(&m_lock);
+    m_data->speedGraphTimeRangeMin = val;
+}
+
 bool Preferences::storeSearches() const
 {
     QReadLocker lock(&m_lock);
@@ -3577,6 +3642,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->useSecureIdent            = p.value(QStringLiteral("useSecureIdent")).toBool();
     m_data->enableSearchResultFilter  = p.value(QStringLiteral("enableSearchResultFilter")).toBool();
     m_data->warnUntrustedFiles        = p.value(QStringLiteral("warnUntrustedFiles")).toBool();
+    m_data->useSafeKad                = p.value(QStringLiteral("useSafeKad")).toBool();
+    m_data->useFastKad                = p.value(QStringLiteral("useFastKad")).toBool();
     m_data->ipFilterUpdateUrl         = p.value(QStringLiteral("ipFilterUpdateUrl")).toString();
     m_data->appToken                  = p.value(QStringLiteral("appToken")).toString();
 
@@ -3598,6 +3665,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->minFreeDiskSpace            = static_cast<uint64>(p.value(QStringLiteral("minFreeDiskSpace")).toInteger());
     m_data->logToDisk                   = p.value(QStringLiteral("logToDisk")).toBool();
     m_data->verbose                     = p.value(QStringLiteral("verbose")).toBool();
+    m_data->logPublicIP                 = p.value(QStringLiteral("logPublicIP")).toBool();
     m_data->closeUPnPOnExit             = p.value(QStringLiteral("closeUPnPOnExit")).toBool();
     m_data->skipWANIPSetup              = p.value(QStringLiteral("skipWANIPSetup")).toBool();
     m_data->skipWANPPPSetup             = p.value(QStringLiteral("skipWANPPPSetup")).toBool();
@@ -3981,6 +4049,7 @@ bool Preferences::load(const QString& filePath)
             m_data->logToDisk = l["logToDisk"].as<bool>(m_data->logToDisk);
             m_data->maxLogFileSize = l["maxLogFileSize"].as<uint32>(m_data->maxLogFileSize);
             m_data->verbose = l["verbose"].as<bool>(m_data->verbose);
+            m_data->logPublicIP = l["logPublicIP"].as<bool>(m_data->logPublicIP);
             m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
             m_data->logLevel = l["logLevel"].as<int>(m_data->logLevel);
@@ -4154,6 +4223,8 @@ bool Preferences::load(const QString& filePath)
             m_data->useSecureIdent = sec["useSecureIdent"].as<bool>(m_data->useSecureIdent);
             m_data->viewSharedFilesAccess = sec["viewSharedFilesAccess"].as<int>(m_data->viewSharedFilesAccess);
             m_data->warnUntrustedFiles = sec["warnUntrustedFiles"].as<bool>(m_data->warnUntrustedFiles);
+            m_data->useSafeKad = sec["useSafeKad"].as<bool>(m_data->useSafeKad);
+            m_data->useFastKad = sec["useFastKad"].as<bool>(m_data->useFastKad);
             if (sec["ipFilterUpdateUrl"])
                 m_data->ipFilterUpdateUrl = QString::fromStdString(sec["ipFilterUpdateUrl"].as<std::string>());
             if (sec["bugReportApiKey"])
@@ -4255,6 +4326,8 @@ bool Preferences::load(const QString& filePath)
             m_data->showCatTabInfos = d["showCatTabInfos"].as<bool>(m_data->showCatTabInfos);
             m_data->autoRemoveFinishedDownloads = d["autoRemoveFinishedDownloads"].as<bool>(m_data->autoRemoveFinishedDownloads);
             m_data->showTransToolbar = d["showTransToolbar"].as<bool>(m_data->showTransToolbar);
+            m_data->showSpeedGraph = d["showSpeedGraph"].as<bool>(m_data->showSpeedGraph);
+            m_data->speedGraphTimeRangeMin = d["speedGraphTimeRangeMin"].as<uint32_t>(m_data->speedGraphTimeRangeMin);
             m_data->storeSearches = d["storeSearches"].as<bool>(m_data->storeSearches);
             m_data->disableKnownClientList = d["disableKnownClientList"].as<bool>(m_data->disableKnownClientList);
             m_data->disableQueueList = d["disableQueueList"].as<bool>(m_data->disableQueueList);
@@ -4570,6 +4643,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "logToDisk" << YAML::Value << m_data->logToDisk;
     out << YAML::Key << "maxLogFileSize" << YAML::Value << m_data->maxLogFileSize;
     out << YAML::Key << "verbose" << YAML::Value << m_data->verbose;
+    out << YAML::Key << "logPublicIP" << YAML::Value << m_data->logPublicIP;
     out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
     out << YAML::Key << "logLevel" << YAML::Value << m_data->logLevel;
@@ -4743,6 +4817,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "useSecureIdent" << YAML::Value << m_data->useSecureIdent;
     out << YAML::Key << "viewSharedFilesAccess" << YAML::Value << m_data->viewSharedFilesAccess;
     out << YAML::Key << "warnUntrustedFiles" << YAML::Value << m_data->warnUntrustedFiles;
+    out << YAML::Key << "useSafeKad" << YAML::Value << m_data->useSafeKad;
+    out << YAML::Key << "useFastKad" << YAML::Value << m_data->useFastKad;
     if (!m_data->ipFilterUpdateUrl.isEmpty())
         out << YAML::Key << "ipFilterUpdateUrl" << YAML::Value << m_data->ipFilterUpdateUrl.toStdString();
     if (!m_data->bugReportApiKey.isEmpty())
@@ -4841,6 +4917,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "showCatTabInfos" << YAML::Value << m_data->showCatTabInfos;
     out << YAML::Key << "autoRemoveFinishedDownloads" << YAML::Value << m_data->autoRemoveFinishedDownloads;
     out << YAML::Key << "showTransToolbar" << YAML::Value << m_data->showTransToolbar;
+    out << YAML::Key << "showSpeedGraph" << YAML::Value << m_data->showSpeedGraph;
+    out << YAML::Key << "speedGraphTimeRangeMin" << YAML::Value << m_data->speedGraphTimeRangeMin;
     out << YAML::Key << "storeSearches" << YAML::Value << m_data->storeSearches;
     out << YAML::Key << "disableKnownClientList" << YAML::Value << m_data->disableKnownClientList;
     out << YAML::Key << "disableQueueList" << YAML::Value << m_data->disableQueueList;

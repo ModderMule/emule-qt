@@ -692,6 +692,15 @@ void DownloadQueue::setCatStatus(uint32 category, bool paused)
     }
 }
 
+bool DownloadQueue::hasActiveTransfers() const
+{
+    for (const auto* file : m_fileList) {
+        if (file->transferringSrcCount() > 0)
+            return true;
+    }
+    return false;
+}
+
 uint32 DownloadQueue::averageDownTime() const
 {
     return m_successfulDownCount > 0

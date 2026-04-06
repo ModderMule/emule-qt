@@ -287,8 +287,7 @@ void BugReportDialog::onSubmitClicked()
 
     QNetworkRequest req(QUrl(QStringLiteral("%1/wp-json/emqt/v1/report").arg(baseUrl)));
     req.setRawHeader("X-Api-Key", apiKey.toUtf8());
-    req.setHeader(QNetworkRequest::UserAgentHeader,
-                  QStringLiteral("eMuleQt/%1").arg(QApplication::applicationVersion()));
+    req.setHeader(QNetworkRequest::UserAgentHeader, eMule::kUserAgent);
 
     req.setTransferTimeout(30000); // 30 seconds
     QNetworkReply* reply = m_nam->post(req, multiPart);

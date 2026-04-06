@@ -1949,6 +1949,7 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("minFreeDiskSpace"), static_cast<qint64>(thePrefs.minFreeDiskSpace()));
     prefs.insert(QStringLiteral("logToDisk"), thePrefs.logToDisk());
     prefs.insert(QStringLiteral("verbose"), thePrefs.verbose());
+    prefs.insert(QStringLiteral("logPublicIP"), thePrefs.logPublicIP());
     prefs.insert(QStringLiteral("closeUPnPOnExit"), thePrefs.closeUPnPOnExit());
     prefs.insert(QStringLiteral("skipWANIPSetup"), thePrefs.skipWANIPSetup());
     prefs.insert(QStringLiteral("skipWANPPPSetup"), thePrefs.skipWANPPPSetup());
@@ -3279,6 +3280,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setLogToDisk(val.toBool());
     else if (key == QStringLiteral("verbose"))
         thePrefs.setVerbose(val.toBool());
+    else if (key == QStringLiteral("logPublicIP"))
+        thePrefs.setLogPublicIP(val.toBool());
     else if (key == QStringLiteral("closeUPnPOnExit"))
         thePrefs.setCloseUPnPOnExit(val.toBool());
     else if (key == QStringLiteral("skipWANIPSetup"))
@@ -3466,6 +3469,10 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setAutoRemoveFinishedDownloads(val.toBool());
     else if (key == QStringLiteral("showTransToolbar"))
         thePrefs.setShowTransToolbar(val.toBool());
+    else if (key == QStringLiteral("showSpeedGraph"))
+        thePrefs.setShowSpeedGraph(val.toBool());
+    else if (key == QStringLiteral("speedGraphTimeRangeMin"))
+        thePrefs.setSpeedGraphTimeRangeMin(static_cast<uint32_t>(val.toInteger()));
     else if (key == QStringLiteral("storeSearches"))
         thePrefs.setStoreSearches(val.toBool());
     else if (key == QStringLiteral("disableKnownClientList"))
