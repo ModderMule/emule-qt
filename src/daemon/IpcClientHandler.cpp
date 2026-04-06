@@ -2031,8 +2031,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         const QString key = msg.fieldString(i);
         const QCborValue val = msg.field(i + 1);
 
-        if (!applyPreferenceA(key, val))
-            applyPreferenceB(key, val);
+        if (!applyPreferenceA(key, val) && !applyPreferenceB(key, val))
+            applyPreferenceC(key, val);
     }
     // Detect whether shared directory settings changed before saving
     bool sharedDirsChanged = false;
@@ -3391,8 +3391,16 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
             dirs.append(item.toString());
         thePrefs.setSharedDirs(dirs);
     }
+
+    else
+        return false;
+    return true;
+}
+
+bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& val)
+{
     // Web Server
-    else if (key == QStringLiteral("webServerEnabled"))
+    if (key == QStringLiteral("webServerEnabled"))
         thePrefs.setWebServerEnabled(val.toBool());
     else if (key == QStringLiteral("webServerPort"))
         thePrefs.setWebServerPort(static_cast<uint16>(val.toInteger()));

@@ -121,6 +121,7 @@ private:
     // Preference application helpers (split to avoid MSVC C1061 nesting limit)
     bool applyPreferenceA(const QString& key, const QCborValue& val);
     bool applyPreferenceB(const QString& key, const QCborValue& val);
+    bool applyPreferenceC(const QString& key, const QCborValue& val);
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;
