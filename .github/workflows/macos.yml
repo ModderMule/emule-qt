@@ -63,4 +63,4 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: eMuleQt-v${{ env.APP_VERSION }}-macOS
-          path: build/emuleqt-v${{ env.APP_VERSION }}.dmg
+          path: build/eMuleQt-v${{ env.APP_VERSION }}-macOS.dmg

@@ -202,7 +202,7 @@ echo "Done. App bundle: $APP_BUNDLE"
 # -- Create DMG (optional, --dmg flag) -----------------------------------------
 
 if [ "$CREATE_DMG" = true ]; then
-    DMG_OUTPUT="$BUILD_DIR/emuleqt-v${VERSION}.dmg"
+    DMG_OUTPUT="$BUILD_DIR/eMuleQt-v${VERSION}-macOS.dmg"
     APP_NAME="$(basename "$APP_BUNDLE")"
 
     if command -v create-dmg &>/dev/null; then

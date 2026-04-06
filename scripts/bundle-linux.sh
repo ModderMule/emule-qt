@@ -13,7 +13,7 @@
 #   build-dir   Path to the CMake build directory (default: ./build)
 #
 # Output:
-#   emuleqt-vX.Y.Z-linux-x86_64.tar.gz containing:
+#   eMuleQt-vX.Y.Z-linux-x86_64.tar.gz containing:
 #     eMuleQt/
 #       emuleqt          GUI executable
 #       emulecored       daemon executable
@@ -343,7 +343,7 @@ fi
 
 # -- Create tarball ----------------------------------------------------------
 
-TAR_NAME="emuleqt-v${VERSION}-linux-x86_64.tar.gz"
+TAR_NAME="eMuleQt-v${VERSION}-linux-x86_64.tar.gz"
 TAR_PATH="$BUILD_DIR/$TAR_NAME"
 
 echo ""

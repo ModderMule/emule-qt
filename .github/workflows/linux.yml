@@ -69,4 +69,4 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: eMuleQt-v${{ env.APP_VERSION }}-linux-x86_64
-          path: build/emuleqt-v*-linux-x86_64.tar.gz
+          path: build/eMuleQt-v*-linux-x86_64.tar.gz

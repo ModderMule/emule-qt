@@ -92,4 +92,4 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: eMuleQt-v${{ env.APP_VERSION }}-win64
-          path: build/emuleqt-v*-win64.zip
+          path: build/eMuleQt-v*-win64.zip
