@@ -52,7 +52,7 @@ void tst_Friend::construct_default()
     QVERIFY(!f.hasUserhash());
     QVERIFY(!f.hasKadID());
     QVERIFY(f.name().isEmpty());
-    QCOMPARE(f.lastUsedIP(), 0u);
+    QVERIFY(f.lastUsedAddress().isNull());
     QCOMPARE(f.lastUsedPort(), static_cast<uint16>(0));
     QCOMPARE(f.lastSeen(), std::time_t(0));
     QCOMPARE(f.lastChatted(), std::time_t(0));
@@ -68,7 +68,7 @@ void tst_Friend::construct_withHash()
     QVERIFY(f.hasUserhash());
     QVERIFY(md4equ(f.userHash().data(), hash.data()));
     QCOMPARE(f.name(), QStringLiteral("Alice"));
-    QCOMPARE(f.lastUsedIP(), 0x7F000001u);
+    QCOMPARE(f.lastUsedAddress().toNetworkUint32(), 0x7F000001u);
     QCOMPARE(f.lastUsedPort(), static_cast<uint16>(4662));
     QCOMPARE(f.lastSeen(), std::time_t(1000));
     QCOMPARE(f.lastChatted(), std::time_t(500));
@@ -83,7 +83,7 @@ void tst_Friend::construct_withoutHash()
     // hasHash=false means hash should NOT be stored
     QVERIFY(!f.hasUserhash());
     QCOMPARE(f.name(), QStringLiteral("Bob"));
-    QCOMPARE(f.lastUsedIP(), 0x0A000001u);
+    QCOMPARE(f.lastUsedAddress().toNetworkUint32(), 0x0A000001u);
 }
 
 void tst_Friend::hasUserhash_emptyIsFalse()
@@ -161,9 +161,9 @@ void tst_Friend::nameAccessors()
 void tst_Friend::ipPortAccessors()
 {
     Friend f;
-    f.setLastUsedIP(0xC0A80001); // 192.168.0.1
+    f.setLastUsedAddress(Address::fromNetworkOrder(0xC0A80001)); // 192.168.0.1
     f.setLastUsedPort(4662);
-    QCOMPARE(f.lastUsedIP(), 0xC0A80001u);
+    QCOMPARE(f.lastUsedAddress().toNetworkUint32(), 0xC0A80001u);
     QCOMPARE(f.lastUsedPort(), static_cast<uint16>(4662));
 }
 
@@ -195,7 +195,7 @@ void tst_Friend::serialize_roundTrip()
 
     QVERIFY(loaded.hasUserhash());
     QVERIFY(md4equ(loaded.userHash().data(), hash.data()));
-    QCOMPARE(loaded.lastUsedIP(), 0x0A0B0C0Du);
+    QCOMPARE(loaded.lastUsedAddress().toNetworkUint32(), 0x0A0B0C0Du);
     QCOMPARE(loaded.lastUsedPort(), static_cast<uint16>(4662));
     QCOMPARE(loaded.lastSeen(), std::time_t(1700000000));
     QCOMPARE(loaded.lastChatted(), std::time_t(1700001000));
@@ -254,7 +254,7 @@ void tst_Friend::serialize_empty()
     QVERIFY(!loaded.hasUserhash());
     QVERIFY(!loaded.hasKadID());
     QVERIFY(loaded.name().isEmpty());
-    QCOMPARE(loaded.lastUsedIP(), 0u);
+    QVERIFY(loaded.lastUsedAddress().isNull());
 }
 
 QTEST_GUILESS_MAIN(tst_Friend)

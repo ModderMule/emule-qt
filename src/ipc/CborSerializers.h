@@ -125,7 +125,7 @@ namespace eMule::Ipc {
     return QCborMap{
         {QStringLiteral("name"),        s.name()},
         {QStringLiteral("address"),     s.address()},
-        {QStringLiteral("ip"),          static_cast<qint64>(s.ip())},
+        {QStringLiteral("ip"),          static_cast<qint64>(s.ipAddress().toNetworkUint32())},
         {QStringLiteral("port"),        s.port()},
         {QStringLiteral("description"), s.description()},
         {QStringLiteral("version"),     s.version()},
@@ -148,7 +148,7 @@ namespace eMule::Ipc {
     return QCborMap{
         {QStringLiteral("hash"),        f.hasUserhash() ? md4str(f.userHash().data()) : QString()},
         {QStringLiteral("name"),        f.name()},
-        {QStringLiteral("ip"),          static_cast<qint64>(f.lastUsedIP())},
+        {QStringLiteral("ip"),          static_cast<qint64>(f.lastUsedAddress().toNetworkUint32())},
         {QStringLiteral("port"),        f.lastUsedPort()},
         {QStringLiteral("lastSeen"),    static_cast<qint64>(f.lastSeen())},
         {QStringLiteral("lastChatted"), static_cast<qint64>(f.lastChatted())},
@@ -263,10 +263,10 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("availPartCount"),  c.availablePartCount());
     // Client software identification
     m.insert(QStringLiteral("softwareId"), static_cast<int>(c.clientSoft()));
-    m.insert(QStringLiteral("hasCredit"),  c.credits() ? (c.credits()->scoreRatio(c.connectIP()) > 1.0f) : false);
+    m.insert(QStringLiteral("hasCredit"),  c.credits() ? (c.credits()->scoreRatio(c.connectAddress().toNetworkUint32()) > 1.0f) : false);
     m.insert(QStringLiteral("isFriend"),   c.friendPtr() != nullptr);
     // Network address
-    m.insert(QStringLiteral("ip"),   static_cast<qint64>(c.connectIP()));
+    m.insert(QStringLiteral("ip"),   static_cast<qint64>(c.connectAddress().toNetworkUint32()));
     m.insert(QStringLiteral("port"), static_cast<qint64>(c.userPort()));
     // Upload timing and connection state
     m.insert(QStringLiteral("uploadStartDelay"), static_cast<qint64>(c.getUpStartTimeDelay()));
@@ -303,10 +303,10 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("hasLowID"), c.hasLowID());
 
     // Server info
-    m.insert(QStringLiteral("serverIP"),   static_cast<qint64>(c.serverIP()));
+    m.insert(QStringLiteral("serverIP"),   static_cast<qint64>(c.serverAddress().toNetworkUint32()));
     m.insert(QStringLiteral("serverPort"), static_cast<qint64>(c.serverPort()));
-    if (c.serverIP() != 0 && app.serverList) {
-        if (auto* srv = app.serverList->findByIPTcp(c.serverIP(), c.serverPort()))
+    if (!c.serverAddress().isNull() && app.serverList) {
+        if (auto* srv = app.serverList->findByIPTcp(c.serverAddress().toNetworkUint32(), c.serverPort()))
             m.insert(QStringLiteral("serverName"), srv->name());
     }
 
@@ -326,7 +326,7 @@ namespace eMule::Ipc {
 
     // Identification (credits)
     if (c.credits()) {
-        const auto identState = c.credits()->currentIdentState(c.connectIP());
+        const auto identState = c.credits()->currentIdentState(c.connectAddress().toNetworkUint32());
         QString identStr;
         switch (identState) {
         case IdentState::Identified:   identStr = QStringLiteral("Verified (secure)"); break;
@@ -340,7 +340,7 @@ namespace eMule::Ipc {
         // Credit totals
         m.insert(QStringLiteral("downloadedTotal"), static_cast<qint64>(c.credits()->downloadedTotal()));
         m.insert(QStringLiteral("uploadedTotal"),   static_cast<qint64>(c.credits()->uploadedTotal()));
-        m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.connectIP())));
+        m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.connectAddress().toNetworkUint32())));
     } else {
         m.insert(QStringLiteral("identification"), QStringLiteral("Not available"));
         m.insert(QStringLiteral("downloadedTotal"), 0);

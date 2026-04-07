@@ -75,7 +75,7 @@ private slots:
 void tst_Server::construct_ipPort()
 {
     Server srv(0x0100007F, 4661);  // 127.0.0.1 in network byte order
-    QCOMPARE(srv.ip(), uint32{0x0100007F});
+    QCOMPARE(srv.ipAddress().toNetworkUint32(), uint32{0x0100007F});
     QCOMPARE(srv.port(), uint16{4661});
     QCOMPARE(srv.name(), QString());
     QCOMPARE(srv.failedCount(), uint32{0});
@@ -99,7 +99,7 @@ void tst_Server::construct_fromStream()
     f.seek(0, 0);
     Server srv(f, true);
 
-    QCOMPARE(srv.ip(), uint32{0xC0A80164});
+    QCOMPARE(srv.ipAddress().toNetworkUint32(), uint32{0xC0A80164});
     QCOMPARE(srv.port(), uint16{4662});
     QCOMPARE(srv.name(), QStringLiteral("TestServer"));
     QCOMPARE(srv.users(), uint32{5000});
@@ -119,7 +119,7 @@ void tst_Server::construct_copy()
 
     Server copy(original);
 
-    QCOMPARE(copy.ip(), original.ip());
+    QCOMPARE(copy.ipAddress(), original.ipAddress());
     QCOMPARE(copy.port(), original.port());
     QCOMPARE(copy.name(), original.name());
     QCOMPARE(copy.description(), original.description());
@@ -186,7 +186,7 @@ void tst_Server::addTag_dynIP()
     Tag tag(ST_DYNIP, QStringLiteral("server.example.com"));
     srv.addTagFromFile(tag);
     QCOMPARE(srv.dynIP(), QStringLiteral("server.example.com"));
-    QCOMPARE(srv.ip(), uint32{0});  // IP reset when dynIP is set
+    QVERIFY(srv.ipAddress().isNull());  // IP reset when dynIP is set
 }
 
 void tst_Server::addTag_maxUsers()
@@ -371,7 +371,7 @@ void tst_Server::fullStreamRoundTrip()
 
     // Write as server.met format: ip, port, tagCount, tags
     SafeMemFile f;
-    f.writeUInt32(original.ip());
+    f.writeUInt32(original.ipAddress().toNetworkUint32());
     f.writeUInt16(original.port());
 
     SafeMemFile tagBuf;
@@ -386,7 +386,7 @@ void tst_Server::fullStreamRoundTrip()
     f.seek(0, 0);
     Server restored(f, true);
 
-    QCOMPARE(restored.ip(), original.ip());
+    QCOMPARE(restored.ipAddress(), original.ipAddress());
     QCOMPARE(restored.port(), original.port());
     QCOMPARE(restored.name(), original.name());
     QCOMPARE(restored.description(), original.description());
@@ -503,7 +503,7 @@ void tst_Server::udpKey_zeroKey()
 void tst_Server::edge_zeroIP()
 {
     Server srv(0, 4661);
-    QCOMPARE(srv.ip(), uint32{0});
+    QVERIFY(srv.ipAddress().isNull());
 }
 
 void tst_Server::edge_emptyDynIP()

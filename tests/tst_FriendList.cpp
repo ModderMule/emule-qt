@@ -235,7 +235,7 @@ void tst_FriendList::saveAndLoad_roundTrip()
         Friend* f1 = list.searchFriend(h1.data());
         QVERIFY(f1);
         QCOMPARE(f1->name(), QStringLiteral("Alice"));
-        QCOMPARE(f1->lastUsedIP(), 0x0A000001u);
+        QCOMPARE(f1->lastUsedAddress().toNetworkUint32(), 0x0A000001u);
         QCOMPARE(f1->lastUsedPort(), static_cast<uint16>(4662));
         QVERIFY(f1->hasKadID());
         auto kadId = makeHash(0xCC);

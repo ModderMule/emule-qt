@@ -36,7 +36,7 @@ void LookupHistory::contactReceived(Contact* received, Contact* from,
     auto entry = std::make_unique<HistoryEntry>();
     entry->contactID = received->getClientID();
     entry->distance = distance;
-    entry->ip = received->getIPAddress();
+    entry->ip = received->address().toUint32();
     entry->port = received->getUDPPort();
     entry->contactVersion = received->getVersion();
     entry->providedCloser = closer;

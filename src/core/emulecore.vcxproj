@@ -188,6 +188,7 @@
     <ClCompile Include="client\DownloadClient.cpp" />
     <ClCompile Include="transfer\DownloadQueue.cpp" />
     <ClCompile Include="protocol\ED2KLink.cpp" />
+    <ClCompile Include="net\Address.cpp" />
     <ClCompile Include="net\EMSocket.cpp" />
     <ClCompile Include="net\EncryptedDatagramSocket.cpp" />
     <ClCompile Include="net\EncryptedStreamSocket.cpp" />
@@ -354,6 +355,7 @@
     <QtMoc Include="files\PartFileWriteThread.h" />
     <ClInclude Include="utils\PathUtils.h" />
     <ClInclude Include="utils\PerfLog.h" />
+    <ClInclude Include="net\Address.h" />
     <ClInclude Include="net\Pinger.h" />
     <ClInclude Include="utils\PlatformUtils.h" />
     <ClInclude Include="prefs\Preferences.h" />

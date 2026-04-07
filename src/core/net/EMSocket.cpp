@@ -435,7 +435,10 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             || (m_sendBuffer != nullptr && m_currentPacketIsControl)
             || (sentBytes > 0 && sentBytes % minFragSize != 0)
             || (m_sendBuffer == nullptr && !m_controlQueue.empty())
-            || (m_sendBuffer != nullptr && !m_currentPacketIsControl && wasLongTimeSinceSend && !m_controlQueue.empty() && sentBytes < minFragSize)))
+            // Drain a partially-sent standard packet when control packets
+            // are waiting — otherwise control packets are blocked behind
+            // the send buffer until wasLongTimeSinceSend (>1s).
+            || (m_sendBuffer != nullptr && !m_currentPacketIsControl && !m_controlQueue.empty())))
     {
         // Get the next packet to send if needed
         if (m_sendBuffer == nullptr) {

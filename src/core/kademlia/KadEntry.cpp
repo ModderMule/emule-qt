@@ -25,7 +25,7 @@ Entry::Entry() = default;
 Entry* Entry::copy() const
 {
     auto* e = new Entry();
-    e->m_ip = m_ip;
+    e->m_address = m_address;
     e->m_tcpPort = m_tcpPort;
     e->m_udpPort = m_udpPort;
     e->m_keyID = m_keyID;
@@ -177,7 +177,7 @@ void Entry::writeTagListInc(FileDataIO& data, uint32 increaseTagNumber) const
 // KeyEntry — public
 // ---------------------------------------------------------------------------
 
-std::unordered_map<uint32, uint32> KeyEntry::s_globalPublishIPs;
+std::unordered_map<Address, uint32> KeyEntry::s_globalPublishIPs;
 
 KeyEntry::KeyEntry() = default;
 
@@ -194,7 +194,7 @@ KeyEntry::~KeyEntry()
 Entry* KeyEntry::copy() const
 {
     auto* e = new KeyEntry();
-    e->m_ip = m_ip;
+    e->m_address = m_address;
     e->m_tcpPort = m_tcpPort;
     e->m_udpPort = m_udpPort;
     e->m_keyID = m_keyID;
@@ -293,7 +293,7 @@ void KeyEntry::writePublishTrackingDataToFile(FileDataIO& data)
 
     data.writeUInt32(static_cast<uint32>(m_publishingIPs->size()));
     for (const auto& pip : *m_publishingIPs) {
-        data.writeUInt32(pip.ip);
+        data.writeUInt32(pip.ip.toUint32());
         data.writeUInt32(static_cast<uint32>(pip.lastPublish));
         // AICH hash index (v9+)
         data.writeUInt16(pip.aichHashIdx);
@@ -317,7 +317,7 @@ void KeyEntry::readPublishTrackingDataFromFile(FileDataIO& data, bool includesAI
 
     for (uint32 i = 0; i < count; ++i) {
         PublishingIP pip;
-        pip.ip = data.readUInt32();
+        pip.ip = Address::fromHostOrder(data.readUInt32());
         pip.lastPublish = static_cast<time_t>(data.readUInt32());
         if (includesAICH)
             pip.aichHashIdx = data.readUInt16();
@@ -478,7 +478,7 @@ void KeyEntry::recalculateTrustValue()
         m_trustValue = 0.0f;
 }
 
-void KeyEntry::adjustGlobalPublishTracking(uint32 ip, bool increase)
+void KeyEntry::adjustGlobalPublishTracking(const Address& ip, bool increase)
 {
     if (increase) {
         ++s_globalPublishIPs[ip];

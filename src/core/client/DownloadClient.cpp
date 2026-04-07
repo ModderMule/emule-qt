@@ -1124,10 +1124,10 @@ void UpDownClient::udpReaskForDownload()
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);
         if (theApp.clientUDP) {
             const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
-            theApp.clientUDP->sendPacket(std::move(packet), ntohl(m_connectIP), m_udpPort,
+            theApp.clientUDP->sendPacket(std::move(packet), m_connectAddress.toUint32(), m_udpPort,
                                          encrypt, m_userHash.data(), false, 0);
         }
-    } else if (hasLowID() && m_buddyIP != 0 && m_buddyPort != 0 && hasValidBuddyID()) {
+    } else if (hasLowID() && !m_buddyAddress.isNull() && m_buddyPort != 0 && hasValidBuddyID()) {
         // Low-ID with buddy: send OP_REASKCALLBACKUDP to buddy for relay.
         // MFC DownloadClient.cpp:1378-1401
         m_reaskPending = true;
@@ -1154,7 +1154,7 @@ void UpDownClient::udpReaskForDownload()
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKCALLBACKUDP);
         // MFC FIXME: We don't know which kad version the buddy has, so send unencrypted
         if (theApp.clientUDP)
-            theApp.clientUDP->sendPacket(std::move(packet), m_buddyIP, m_buddyPort,
+            theApp.clientUDP->sendPacket(std::move(packet), m_buddyAddress.toUint32(), m_buddyPort,
                                           false, nullptr, true, 0);
     }
 }
@@ -1637,7 +1637,7 @@ void UpDownClient::processAICHFileHash(SafeMemFile& data, PartFile* file)
             if (theApp.clientList) {
                 DeadSourceKey key;
                 key.hash = m_userHash;
-                key.serverIP = m_serverIP;
+                key.serverAddress = m_serverAddress;
                 key.userID = m_userIDHybrid;
                 key.port = m_userPort;
                 key.kadPort = m_kadPort;
@@ -1648,7 +1648,7 @@ void UpDownClient::processAICHFileHash(SafeMemFile& data, PartFile* file)
     }
 
     // Report hash to trust system for consensus building
-    recoveryHashSet.untrustedHashReceived(masterHash, m_connectIP);
+    recoveryHashSet.untrustedHashReceived(masterHash, m_connectAddress.toNetworkUint32());
 }
 
 // ===========================================================================

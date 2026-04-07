@@ -8,6 +8,7 @@
 
 #include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUInt128.h"
+#include "net/Address.h"
 #include "utils/Types.h"
 
 #include <cstdint>
@@ -40,9 +41,8 @@ public:
     void setClientID(const UInt128& clientId, const UInt128& localKadId); // different from userHash (UpDownClient)
 
     // -- Network -------------------------------------------------------------
-    [[nodiscard]] uint32   getIPAddress() const      { return m_ip; }
-    [[nodiscard]] uint32   getNetIP() const          { return m_netIp; }
-    void setIPAddress(uint32 ip);
+    [[nodiscard]] const Address& address() const     { return m_address; }
+    void setAddress(const Address& addr);
 
     [[nodiscard]] uint16   getTCPPort() const        { return m_tcpPort; }
     void setTCPPort(uint16 port)                     { m_tcpPort = port; }
@@ -104,8 +104,7 @@ private:
     time_t     m_expires     = 0;
     time_t     m_created     = 0;
     uint32     m_inUse       = 0;
-    uint32     m_ip          = 0;
-    uint32     m_netIp       = 0;
+    Address    m_address;
     uint16     m_tcpPort     = 0;
     uint16     m_udpPort     = 0;
     UInt128    m_clientHash;

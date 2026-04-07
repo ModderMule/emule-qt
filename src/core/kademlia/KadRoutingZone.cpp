@@ -12,6 +12,7 @@
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
 #include "ipfilter/IPFilter.h"
+#include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "utils/SafeFile.h"
 
@@ -116,9 +117,9 @@ bool RoutingZone::add(const UInt128& id, uint32 ip, uint16 udpPort, uint16 tcpPo
         return false;
 
     // Validate IP (allow LAN IPs when filterLANIPs is disabled)
-    if (!isGoodIP(htonl(ip), !thePrefs.filterLANIPs())) {
-        logKad(QStringLiteral("Kad: Rejected contact %1 — isGoodIP failed (filterLAN=%2)")
-                   .arg(QHostAddress(ip).toString()).arg(thePrefs.filterLANIPs()));
+    if (!Address::fromHostOrder(ip).isRoutable(!thePrefs.filterLANIPs())) {
+        logKad(QStringLiteral("Kad: Rejected contact %1 — isRoutable failed (filterLAN=%2)")
+                   .arg(Address::fromHostOrder(ip).toString()).arg(thePrefs.filterLANIPs()));
         return false;
     }
 
@@ -188,7 +189,7 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
         // Contact already exists — update if requested
         if (update) {
             // Check if IP/port changed
-            if (existing->getIPAddress() == contact->getIPAddress()
+            if (existing->address() == contact->address()
                 && existing->getUDPPort() == contact->getUDPPort()) {
                 // Same IP/port — just update version and key
                 if (contact->getVersion() >= existing->getVersion()) {
@@ -213,10 +214,10 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
                 bool keyAcceptable = (existingKeyVal == 0) || (existingKeyVal == newKeyVal);
                 if (!keyAcceptable) {
                     logKad(QStringLiteral("Kad: %1 tried to update contact %2 but failed to provide proper sender key (sent empty: %3) — denying")
-                               .arg(QHostAddress(contact->getIPAddress()).toString(),
-                                    QHostAddress(existing->getIPAddress()).toString(),
+                               .arg(contact->address().toString(),
+                                    existing->address().toString(),
                                     newKeyVal == 0 ? u"yes" : u"no"));
-                } else if (m_bin->changeContactIPAddress(existing, contact->getIPAddress())) {
+                } else if (m_bin->changeContactIPAddress(existing, contact->address().toUint32())) {
                     existing->setUDPPort(contact->getUDPPort());
                     existing->setTCPPort(contact->getTCPPort());
                     existing->setVersion(contact->getVersion());
@@ -461,7 +462,7 @@ void RoutingZone::onSmallTimer()
         // SafeKad: remove contacts whose IP is banned
         bool banned = false;
         if (auto* sk = Kademlia::getInstanceSafeKad())
-            banned = sk->isBanned(oldest->getIPAddress());
+            banned = sk->isBanned(oldest->address().toUint32());
 
         if (oldest->getType() == 4 || banned) {
             // Expired or banned contact — remove
@@ -478,7 +479,7 @@ void RoutingZone::onSmallTimer()
             if (auto* udpListener = Kademlia::getInstanceUDPListener()) {
                 const UInt128 contactID = oldest->getClientID();
                 udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                    oldest->getIPAddress(), oldest->getUDPPort(),
+                    oldest->address().toUint32(), oldest->getUDPPort(),
                     oldest->getVersion(), oldest->getUDPKey(),
                     &contactID, true);
             }
@@ -518,7 +519,7 @@ uint32 RoutingZone::estimateCount() const
 bool RoutingZone::verifyContact(const UInt128& id, uint32 ip)
 {
     Contact* contact = getContact(id);
-    if (contact && contact->getIPAddress() == ip) {
+    if (contact && contact->address().toUint32() == ip) {
         contact->setIpVerified(true);
         return true;
     }
@@ -617,7 +618,7 @@ void RoutingZone::readFile(const QString& specialNodesdat)
             }
 
             // Validate (allow LAN IPs when filterLANIPs is disabled)
-            if (!isGoodIP(htonl(ip), !thePrefs.filterLANIPs()))
+            if (!Address::fromHostOrder(ip).isRoutable(!thePrefs.filterLANIPs()))
                 continue;
             if (udpPort == 0)
                 continue;
@@ -695,7 +696,7 @@ void RoutingZone::writeFile()
                 // MFC uses WriteUInt128 → GetData() (raw host-order bytes).
                 sf.writeHash16(contact->getClientID().getData());
 
-                sf.writeUInt32(contact->getIPAddress());
+                sf.writeUInt32(contact->address().toUint32());
                 sf.writeUInt16(contact->getUDPPort());
                 sf.writeUInt16(contact->getTCPPort());
                 sf.writeUInt8(contact->getVersion());
@@ -862,7 +863,7 @@ void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
         uint16 tcpPort = sf.readUInt16();
         uint8 contactVersion = sf.readUInt8();
 
-        if (!isGoodIP(htonl(ip), !thePrefs.filterLANIPs()))
+        if (!Address::fromHostOrder(ip).isRoutable(!thePrefs.filterLANIPs()))
             continue;
         if (udpPort == 0)
             continue;

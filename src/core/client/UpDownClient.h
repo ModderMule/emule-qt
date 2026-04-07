@@ -12,6 +12,7 @@
 
 #include "client/ClientStateDefs.h"
 #include "client/ClientStructs.h"
+#include "net/Address.h"
 #include "utils/Types.h"
 
 #include <QCborArray>
@@ -86,11 +87,16 @@ public:
     [[nodiscard]] const QString& userName() const { return m_username; }
     void setUserName(const QString& name) { m_username = name; }
 
-    [[nodiscard]] uint32 userIP() const { return m_userIP; }
-    void setIP(uint32 ip) { m_userIP = ip; m_connectIP = ip; }
+    // Address-based accessors
+    [[nodiscard]] const Address& userAddress() const    { return m_userAddress; }
+    [[nodiscard]] const Address& connectAddress() const { return m_connectAddress; }
+    [[nodiscard]] const Address& serverAddress() const  { return m_serverAddress; }
+    [[nodiscard]] const Address& buddyAddress() const   { return m_buddyAddress; }
 
-    [[nodiscard]] uint32 connectIP() const { return m_connectIP; }
-    void setConnectIP(uint32 ip) { m_connectIP = ip; }
+    void setUserAddress(const Address& a)    { m_userAddress = a; m_connectAddress = a; }
+    void setConnectAddress(const Address& a) { m_connectAddress = a; }
+    void setServerAddress(const Address& a)  { m_serverAddress = a; }
+    void setBuddyAddress(const Address& a)   { m_buddyAddress = a; }
 
     [[nodiscard]] uint32 userIDHybrid() const { return m_userIDHybrid; }
     void setUserIDHybrid(uint32 id) { m_userIDHybrid = id; }
@@ -99,8 +105,6 @@ public:
     [[nodiscard]] uint16 userPort() const { return m_userPort; }
     void setUserPort(uint16 port) { m_userPort = port; }
 
-    [[nodiscard]] uint32 serverIP() const { return m_serverIP; }
-    void setServerIP(uint32 ip) { m_serverIP = ip; }
     [[nodiscard]] uint16 serverPort() const { return m_serverPort; }
     void setServerPort(uint16 port) { m_serverPort = port; }
 
@@ -109,8 +113,6 @@ public:
     [[nodiscard]] uint16 kadPort() const { return m_kadPort; }
     void setKadPort(uint16 port) { m_kadPort = port; }
 
-    [[nodiscard]] uint32 buddyIP() const { return m_buddyIP; }
-    void setBuddyIP(uint32 ip) { m_buddyIP = ip; }
     [[nodiscard]] uint16 buddyPort() const { return m_buddyPort; }
     void setBuddyPort(uint16 port) { m_buddyPort = port; }
 
@@ -637,14 +639,14 @@ private:
     std::array<uint8, 16> m_userHash{};
     QString m_username;
     uint32 m_userIDHybrid = 0;
-    uint32 m_connectIP = 0;
-    uint32 m_userIP = 0;
+    Address m_connectAddress;
+    Address m_userAddress;
     uint16 m_userPort = 0;
-    uint32 m_serverIP = 0;
+    Address m_serverAddress;
     uint16 m_serverPort = 0;
     uint16 m_udpPort = 0;
     uint16 m_kadPort = 0;
-    uint32 m_buddyIP = 0;
+    Address m_buddyAddress;
     uint16 m_buddyPort = 0;
     std::array<uint8, 16> m_buddyID{};
     bool m_buddyIDValid = false;
@@ -757,7 +759,7 @@ private:
     Friend* m_friend = nullptr;
 
     // -- Timestamps ---------------------------------------------------------
-    uint32 m_lastSignatureIP = 0;
+    Address m_lastSignatureAddress;
     uint32 m_lastSourceRequest = 0;
     uint32 m_lastSourceAnswer = 0;
     uint32 m_lastAskedForSources = 0;

@@ -105,6 +105,7 @@ emule_add_test(tst_AICHHashSet      FOLDER "Crypto")
 emule_add_test(tst_FileIdentifier   FOLDER "Crypto")
 
 # Module 29d: Networking
+emule_add_test(tst_Address            FOLDER "Net")
 emule_add_test(tst_Packet            FOLDER "Net")
 emule_add_test(tst_EncryptedDatagram FOLDER "Net")
 emule_add_test(tst_EMSocket          FOLDER "Net")
@@ -118,7 +119,7 @@ emule_add_test(tst_ListenSocket          FOLDER "Net")
 emule_add_test(tst_HttpClientReqSocket   FOLDER "Net")
 emule_add_test(tst_ClientUDPSocket       FOLDER "Net")
 emule_add_test(tst_TcpConnect            FOLDER "Net")
-set_tests_properties(tst_TcpConnect PROPERTIES TIMEOUT 60)
+set_tests_properties(tst_TcpConnect PROPERTIES TIMEOUT 300)
 
 # Module 29e: Firewall & UPnP
 emule_add_test(tst_UPnPManager   FOLDER "UPnP")

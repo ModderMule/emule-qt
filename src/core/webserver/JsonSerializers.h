@@ -78,7 +78,7 @@ namespace eMule {
     return QJsonObject{
         {QStringLiteral("name"),        s.name()},
         {QStringLiteral("address"),     s.address()},
-        {QStringLiteral("ip"),          static_cast<qint64>(s.ip())},
+        {QStringLiteral("ip"),          static_cast<qint64>(s.ipAddress().toNetworkUint32())},
         {QStringLiteral("port"),        s.port()},
         {QStringLiteral("description"), s.description()},
         {QStringLiteral("version"),     s.version()},
@@ -95,7 +95,7 @@ namespace eMule {
     return QJsonObject{
         {QStringLiteral("hash"),          f.hasUserhash() ? md4str(f.userHash().data()) : QString()},
         {QStringLiteral("name"),          f.name()},
-        {QStringLiteral("ip"),            static_cast<qint64>(f.lastUsedIP())},
+        {QStringLiteral("ip"),            static_cast<qint64>(f.lastUsedAddress().toNetworkUint32())},
         {QStringLiteral("port"),          f.lastUsedPort()},
         {QStringLiteral("lastSeen"),      static_cast<qint64>(f.lastSeen())},
         {QStringLiteral("hasFriendSlot"), f.friendSlot()},

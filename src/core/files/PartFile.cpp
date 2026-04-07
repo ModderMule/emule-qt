@@ -2212,7 +2212,7 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
             continue;
 
         // Skip invalid IPs
-        if (src->userIP() == 0)
+        if (src->userAddress().isNull())
             continue;
 
         // Skip the requesting client itself
@@ -2236,9 +2236,9 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
         }
 
         // Write per-source data
-        data.writeUInt32(src->userIP());      // userId (4 bytes)
-        data.writeUInt16(src->userPort());     // port (2 bytes)
-        data.writeUInt32(src->serverIP());     // serverIP (4 bytes)
+        data.writeUInt32(src->userAddress().toNetworkUint32());  // userId (4 bytes)
+        data.writeUInt16(src->userPort());                     // port (2 bytes)
+        data.writeUInt32(src->serverAddress().toNetworkUint32()); // serverIP (4 bytes)
         data.writeUInt16(src->serverPort());   // serverPort (2 bytes)
 
         if (usedVersion >= 2)

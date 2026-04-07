@@ -30,7 +30,7 @@ RoutingBin::RoutingBin() = default;
 RoutingBin::~RoutingBin()
 {
     for (auto* contact : m_entries) {
-        adjustGlobalTracking(contact->getIPAddress(), false);
+        adjustGlobalTracking(contact->address().toUint32(), false);
         if (!m_dontDeleteContacts)
             delete contact;
     }
@@ -44,22 +44,22 @@ RoutingBin::~RoutingBin()
 bool RoutingBin::addContact(Contact* contact)
 {
     Q_ASSERT(contact != nullptr);
-    const uint32 ip = contact->getIPAddress();
+    const uint32 ip = contact->address().toUint32();
     uint32 sameSubnets = 0;
 
     for (const auto* c : m_entries) {
         if (contact->getClientID() == c->getClientID())
             return false;
-        sameSubnets += static_cast<uint32>(((ip ^ c->getIPAddress()) & ~0xFFu) == 0);
+        sameSubnets += static_cast<uint32>(((ip ^ c->address().toUint32()) & ~0xFFu) == 0);
     }
 
     if (!checkGlobalIPLimits(ip, contact->getUDPPort(), true))
         return false;
 
     // No more than 2 IPs from the same /24 in one bin (unless LAN)
-    if (sameSubnets >= 2 && !isLanIP(contact->getNetIP())) {
+    if (sameSubnets >= 2 && !contact->address().isLan()) {
         logKad(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same subnet in RoutingBin")
-                   .arg(ipstr(contact->getNetIP()))
+                   .arg(contact->address().toString())
                    .arg(contact->getUDPPort()));
         return false;
     }
@@ -86,7 +86,7 @@ void RoutingBin::setAlive(Contact* contact)
 void RoutingBin::setTCPPort(uint32 ip, uint16 udpPort, uint16 tcpPort)
 {
     for (auto* contact : m_entries) {
-        if (ip == contact->getIPAddress() && udpPort == contact->getUDPPort()) {
+        if (ip == contact->address().toUint32() && udpPort == contact->getUDPPort()) {
             contact->setTCPPort(tcpPort);
             contact->updateType();
             pushToBottom(contact);
@@ -98,7 +98,7 @@ void RoutingBin::setTCPPort(uint32 ip, uint16 udpPort, uint16 tcpPort)
 void RoutingBin::removeContact(Contact* contact, bool noTrackingAdjust)
 {
     if (!noTrackingAdjust)
-        adjustGlobalTracking(contact->getIPAddress(), false);
+        adjustGlobalTracking(contact->address().toUint32(), false);
     m_entries.remove(contact);
 }
 
@@ -113,7 +113,7 @@ Contact* RoutingBin::getContact(const UInt128& id)
 Contact* RoutingBin::getContact(uint32 ip, uint16 port, bool tcpPort)
 {
     for (auto* contact : m_entries) {
-        if (ip == contact->getIPAddress()
+        if (ip == contact->address().toUint32()
             && ((!tcpPort && port == contact->getUDPPort())
                 || (tcpPort && port == contact->getTCPPort())
                 || port == 0))
@@ -207,44 +207,46 @@ void RoutingBin::getClosestTo(uint32 maxType, const UInt128& target, uint32 maxR
 
 bool RoutingBin::changeContactIPAddress(Contact* contact, uint32 newIP)
 {
-    if (contact->getIPAddress() == newIP)
+    if (contact->address().toUint32() == newIP)
         return true;
 
     Q_ASSERT(getContact(contact->getClientID()) == contact);
+
+    const auto newAddr = Address::fromHostOrder(newIP);
 
     // No more than 1 KadID per IP (global)
     auto itIP = s_globalContactIPs.find(newIP);
     uint32 sameIPCount = (itIP != s_globalContactIPs.end()) ? itIP->second : 0;
     if (sameIPCount >= kMaxContactsIP) {
         logKad(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same IP (global)")
-                   .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
+                   .arg(contact->address().toString(), newAddr.toString()));
         return false;
     }
 
-    if ((newIP ^ contact->getIPAddress()) & ~0xFFu) {
+    if ((newIP ^ contact->address().toUint32()) & ~0xFFu) {
         // Different subnet — check global subnet limit
         auto itSubnet = s_globalContactSubnets.find(newIP & ~0xFFu);
         uint32 sameSubnetGlobal = (itSubnet != s_globalContactSubnets.end()) ? itSubnet->second : 0;
-        if (sameSubnetGlobal >= kMaxContactsSubnet && !isLanIP(ntohl(newIP))) {
+        if (sameSubnetGlobal >= kMaxContactsSubnet && !newAddr.isLan()) {
             logKad(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same Subnet (global)")
-                       .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
+                       .arg(contact->address().toString(), newAddr.toString()));
             return false;
         }
 
         uint32 sameSubnet = 0;
         for (const auto* c : m_entries)
-            sameSubnet += static_cast<uint32>(((newIP ^ c->getIPAddress()) & ~0xFFu) == 0);
+            sameSubnet += static_cast<uint32>(((newIP ^ c->address().toUint32()) & ~0xFFu) == 0);
 
-        if (sameSubnet >= 2 && !isLanIP(ntohl(newIP))) {
+        if (sameSubnet >= 2 && !newAddr.isLan()) {
             logKad(QStringLiteral("Rejected kad contact ip change on update (old IP=%1, requested IP=%2) - too many contacts with the same Subnet (local)")
-                       .arg(ipstr(contact->getNetIP()), ipstr(htonl(newIP))));
+                       .arg(contact->address().toString(), newAddr.toString()));
             return false;
         }
     }
 
-    adjustGlobalTracking(contact->getIPAddress(), false);
-    contact->setIPAddress(newIP);
-    adjustGlobalTracking(contact->getIPAddress(), true);
+    adjustGlobalTracking(contact->address().toUint32(), false);
+    contact->setAddress(newAddr);
+    adjustGlobalTracking(contact->address().toUint32(), true);
     return true;
 }
 
@@ -263,22 +265,24 @@ void RoutingBin::setAllContactsVerified()
 
 bool RoutingBin::checkGlobalIPLimits(uint32 ip, uint16 port, bool log)
 {
+    const auto addr = Address::fromHostOrder(ip);
+
     auto itIP = s_globalContactIPs.find(ip);
     uint32 sameIPCount = (itIP != s_globalContactIPs.end()) ? itIP->second : 0;
     if (sameIPCount >= kMaxContactsIP) {
         if (log)
             logKad(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same IP (global)")
-                       .arg(ipstr(htonl(ip)))
+                       .arg(addr.toString())
                        .arg(port));
         return false;
     }
 
     auto itSubnet = s_globalContactSubnets.find(ip & ~0xFFu);
     uint32 sameSubnetCount = (itSubnet != s_globalContactSubnets.end()) ? itSubnet->second : 0;
-    if (sameSubnetCount >= kMaxContactsSubnet && !isLanIP(ntohl(ip))) {
+    if (sameSubnetCount >= kMaxContactsSubnet && !addr.isLan()) {
         if (log)
             logKad(QStringLiteral("Ignored kad contact (IP=%1:%2) - too many contacts with the same Subnet (global)")
-                       .arg(ipstr(htonl(ip)))
+                       .arg(addr.toString())
                        .arg(port));
         return false;
     }
@@ -288,7 +292,7 @@ bool RoutingBin::checkGlobalIPLimits(uint32 ip, uint16 port, bool log)
 bool RoutingBin::hasOnlyLANNodes() const
 {
     for (const auto* contact : m_entries)
-        if (!isLanIP(contact->getNetIP()))
+        if (!contact->address().isLan())
             return false;
     return true;
 }
@@ -305,6 +309,8 @@ void RoutingBin::resetGlobalTracking()
 
 void RoutingBin::adjustGlobalTracking(uint32 ip, bool increase)
 {
+    const auto addr = Address::fromHostOrder(ip);
+
     // -- IP tracking --
     auto itIP = s_globalContactIPs.find(ip);
     uint32 sameIPCount = (itIP != s_globalContactIPs.end()) ? itIP->second : 0;
@@ -313,13 +319,13 @@ void RoutingBin::adjustGlobalTracking(uint32 ip, bool increase)
         if (sameIPCount >= kMaxContactsIP) {
             Q_ASSERT(false);
             logKad(QStringLiteral("RoutingBin Global IP Tracking inconsistency on increase (%1)")
-                       .arg(ipstr(htonl(ip))));
+                       .arg(addr.toString()));
         }
         ++sameIPCount;
     } else if (sameIPCount == 0) {
         Q_ASSERT(false);
         logKad(QStringLiteral("RoutingBin Global IP Tracking inconsistency on decrease (%1)")
-                   .arg(ipstr(htonl(ip))));
+                   .arg(addr.toString()));
     } else {
         --sameIPCount;
     }
@@ -335,16 +341,16 @@ void RoutingBin::adjustGlobalTracking(uint32 ip, bool increase)
     uint32 sameSubnetCount = (itSubnet != s_globalContactSubnets.end()) ? itSubnet->second : 0;
 
     if (increase) {
-        if (sameSubnetCount >= kMaxContactsSubnet && !isLanIP(ntohl(ip))) {
+        if (sameSubnetCount >= kMaxContactsSubnet && !addr.isLan()) {
             Q_ASSERT(false);
             logKad(QStringLiteral("RoutingBin Global Subnet Tracking inconsistency on increase (%1)")
-                       .arg(ipstr(htonl(ip))));
+                       .arg(addr.toString()));
         }
         ++sameSubnetCount;
     } else if (sameSubnetCount == 0) {
         Q_ASSERT(false);
         logKad(QStringLiteral("RoutingBin Global IP Subnet inconsistency on decrease (%1)")
-                   .arg(ipstr(htonl(ip))));
+                   .arg(addr.toString()));
     } else {
         --sameSubnetCount;
     }

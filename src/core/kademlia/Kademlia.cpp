@@ -405,7 +405,7 @@ void Kademlia::process()
             Contact* bc = s_bootstrapList.front();
             s_bootstrapList.pop_front();
             if (m_udpListener) {
-                m_udpListener->bootstrap(bc->getIPAddress(), bc->getUDPPort(),
+                m_udpListener->bootstrap(bc->address().toUint32(), bc->getUDPPort(),
                                          bc->getVersion());
             }
             delete bc;

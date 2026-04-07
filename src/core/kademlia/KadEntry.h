@@ -9,6 +9,7 @@
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadTypes.h"
 #include "kademlia/KadUInt128.h"
+#include "net/Address.h"
 #include "utils/SafeFile.h"
 #include "utils/Types.h"
 
@@ -44,7 +45,7 @@ public:
     QString getCommonFileNameLowerCase() const;
     void setFileName(const QString& name);
 
-    uint32 m_ip = 0;
+    Address m_address;        // publisher's IP (host byte order convention)
     uint16 m_tcpPort = 0;
     uint16 m_udpPort = 0;
     UInt128 m_keyID;
@@ -88,11 +89,11 @@ public:
 private:
     bool searchTermsMatch(const SearchTerm& term) const;
     void recalculateTrustValue();
-    static void adjustGlobalPublishTracking(uint32 ip, bool increase);
+    static void adjustGlobalPublishTracking(const Address& ip, bool increase);
 
     struct PublishingIP {
         time_t lastPublish = 0;
-        uint32 ip = 0;
+        Address ip;
         uint16 aichHashIdx = 0;
     };
 
@@ -103,7 +104,7 @@ private:
     uint32 m_lastTrustValueCalc = 0;
     QString m_searchTermCache;
 
-    static std::unordered_map<uint32, uint32> s_globalPublishIPs;
+    static std::unordered_map<Address, uint32> s_globalPublishIPs;
 };
 
 } // namespace eMule::kad

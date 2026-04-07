@@ -291,7 +291,7 @@ void tst_ServerDownloadLive::searchForFile()
     connect(m_serverConnect, &ServerConnect::searchResultReceived,
             this, [&](const uint8* data, uint32 size, bool /*moreResults*/) {
                 const Server* srv = m_serverConnect->currentServer();
-                const uint32  srvIP   = srv ? srv->ip()   : 0;
+                const uint32  srvIP   = srv ? srv->ipAddress().toNetworkUint32() : 0;
                 const uint16  srvPort = srv ? srv->port() : 0;
                 searchList.processSearchAnswer(data, size, true, srvIP, srvPort);
                 resultReceived = true;

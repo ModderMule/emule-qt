@@ -6,6 +6,7 @@
 #include "kademlia/KadContact.h"
 #include "kademlia/KadUInt128.h"
 #include "kademlia/KadUDPKey.h"
+#include "net/Address.h"
 
 #include <QTest>
 
@@ -38,7 +39,7 @@ private slots:
 void tst_KadContact::construct_default()
 {
     Contact c;
-    QCOMPARE(c.getIPAddress(), uint32{0});
+    QVERIFY(c.address().isNull());
     QCOMPARE(c.getTCPPort(), uint16{0});
     QCOMPARE(c.getUDPPort(), uint16{0});
     QCOMPARE(c.getType(), uint8{3});
@@ -59,7 +60,7 @@ void tst_KadContact::construct_withId()
     Contact c(clientId, 0x0A000001, 4672, 4662, 8, KadUDPKey(0x1234, 0x0A000001), true, localId);
 
     QCOMPARE(c.getClientID(), clientId);
-    QCOMPARE(c.getIPAddress(), uint32{0x0A000001});
+    QCOMPARE(c.address().toUint32(), uint32{0x0A000001});
     QCOMPARE(c.getUDPPort(), uint16{4672});
     QCOMPARE(c.getTCPPort(), uint16{4662});
     QCOMPARE(c.getVersion(), uint8{8});
@@ -111,13 +112,13 @@ void tst_KadContact::setIPAddress_clearsVerified()
     Contact c(clientId, 0x0A000001, 4672, 4662, 8, KadUDPKey(), true, localId);
     QVERIFY(c.isIpVerified());
 
-    c.setIPAddress(0x0A000002);
+    c.setAddress(Address::fromHostOrder(0x0A000002));
     QVERIFY(!c.isIpVerified());
-    QCOMPARE(c.getIPAddress(), uint32{0x0A000002});
+    QCOMPARE(c.address().toUint32(), uint32{0x0A000002});
 
     // Setting same IP should NOT clear verified
     c.setIpVerified(true);
-    c.setIPAddress(0x0A000002);
+    c.setAddress(Address::fromHostOrder(0x0A000002));
     QVERIFY(c.isIpVerified()); // unchanged because same IP
 }
 
@@ -176,7 +177,7 @@ void tst_KadContact::copy_semantics()
     Contact copy(original);
     QCOMPARE(copy.getClientID(), original.getClientID());
     QCOMPARE(copy.getDistance(), original.getDistance());
-    QCOMPARE(copy.getIPAddress(), original.getIPAddress());
+    QCOMPARE(copy.address(), original.address());
     QCOMPARE(copy.getUDPPort(), original.getUDPPort());
     QCOMPARE(copy.getTCPPort(), original.getTCPPort());
     QCOMPARE(copy.getVersion(), original.getVersion());

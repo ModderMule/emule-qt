@@ -183,9 +183,9 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
         return false;
 
     // IPFilter check — reject filtered IPs
-    if (m_ipFilter && source->userIP() != 0) {
-        if (m_ipFilter->isFiltered(source->userIP())) {
-            logDebug(QStringLiteral("Source rejected by IPFilter: %1").arg(source->userIP()));
+    if (m_ipFilter && !source->userAddress().isNull()) {
+        if (m_ipFilter->isFiltered(source->userAddress().toNetworkUint32())) {
+            logDebug(QStringLiteral("Source rejected by IPFilter: %1").arg(ipstr(source->userAddress())));
             return false;
         }
     }
@@ -197,9 +197,9 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
         key.userID = source->userIDHybrid();
         key.port = source->userPort();
         key.kadPort = source->kadPort();
-        key.serverIP = source->serverIP();
+        key.serverAddress = source->serverAddress();
         if (m_clientList->globalDeadSourceList.isDeadSource(key)) {
-            logDebug(QStringLiteral("Source rejected — dead source: %1").arg(source->userIP()));
+            logDebug(QStringLiteral("Source rejected — dead source: %1").arg(ipstr(source->userAddress())));
             return false;
         }
     }
@@ -208,12 +208,12 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
     if (m_clientList) {
         UpDownClient* existing = nullptr;
         if (source->hasValidHash())
-            existing = m_clientList->findByUserHash(source->userHash(), source->userIP(), source->userPort());
-        if (!existing && source->userIP() != 0)
-            existing = m_clientList->findByIP(source->userIP(), source->userPort());
+            existing = m_clientList->findByUserHash(source->userHash(), source->userAddress().toNetworkUint32(), source->userPort());
+        if (!existing && !source->userAddress().isNull())
+            existing = m_clientList->findByIP(source->userAddress().toNetworkUint32(), source->userPort());
         if (existing && existing != source) {
             logDebug(QStringLiteral("Source rejected — duplicate in ClientList: IP=%1:%2")
-                         .arg(source->userIP()).arg(source->userPort()));
+                         .arg(ipstr(source->userAddress())).arg(source->userPort()));
             return false;
         }
     }
@@ -228,18 +228,18 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
         if (existing->hasValidHash() && source->hasValidHash()) {
             if (md4equ(existing->userHash(), source->userHash())) {
                 logDebug(QStringLiteral("Source rejected — duplicate hash in file source list: IP=%1:%2")
-                             .arg(source->userIP()).arg(source->userPort()));
+                             .arg(ipstr(source->userAddress())).arg(source->userPort()));
                 return false;
             }
         }
 
         // Compare by IP:port
-        if (existing->userIP() == source->userIP() &&
+        if (existing->userAddress() == source->userAddress() &&
             existing->userPort() == source->userPort() &&
-            existing->userIP() != 0)
+            !existing->userAddress().isNull())
         {
             logDebug(QStringLiteral("Source rejected — duplicate IP:port in file source list: %1:%2")
-                         .arg(source->userIP()).arg(source->userPort()));
+                         .arg(ipstr(source->userAddress())).arg(source->userPort()));
             return false;
         }
     }
@@ -324,7 +324,7 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
         client->setKadPort(udpPort);
         if (clientHash)
             client->setUserHash(clientHash);
-        client->setIP(htonl(ip));
+        client->setUserAddress(Address::fromHostOrder(ip));
         client->setConnectOptions(buddyCrypt, true, false);
         logDebug(QStringLiteral("Kad HighID source for %1: type=%2 IP=%3:%4 crypt=0x%5")
                      .arg(file->fileName()).arg(sourceType).arg(ip).arg(tcpPort)
@@ -345,7 +345,7 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
             logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 filtered").arg(buddyIP));
             return;
         }
-        if (m_clientList && m_clientList->isBannedClient(htonl(buddyIP))) {
+        if (m_clientList && m_clientList->isBannedClient(Address::fromHostOrder(buddyIP))) {
             logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 banned").arg(buddyIP));
             return;
         }
@@ -357,7 +357,7 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
             client->setUserHash(clientHash);
         if (buddyHash)
             client->setBuddyID(buddyHash);
-        client->setBuddyIP(htonl(buddyIP));
+        client->setBuddyAddress(Address::fromHostOrder(buddyIP));
         client->setBuddyPort(buddyPort);
         client->setConnectOptions(buddyCrypt, true, true);
         logDebug(QStringLiteral("Kad FW source for %1: type=%2 buddy=%3:%4")
@@ -380,7 +380,7 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
         auto* client = new UpDownClient(tcpPort, 1, 0, 0, file);
         client->setSourceFrom(SourceFrom::Kademlia);
         client->setKadPort(udpPort);
-        client->setConnectIP(htonl(ip));  // IP for UDP, not TCP (MFC:1596)
+        client->setConnectAddress(Address::fromHostOrder(ip));  // IP for UDP, not TCP (MFC:1596)
         if (clientHash)
             client->setUserHash(clientHash);
         client->setConnectOptions(buddyCrypt, true, false);
@@ -466,7 +466,7 @@ void DownloadQueue::addServerSourceResult(const uint8* data, uint32 size, bool o
     uint16 srvPort = 0;
     if (m_serverConnect) {
         if (auto* srv = m_serverConnect->currentServer()) {
-            srvIP = srv->ip();
+            srvIP = srv->ipAddress().toNetworkUint32();
             srvPort = srv->port();
         }
     }
@@ -723,12 +723,17 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     // doSwap() mutates srcList, so iterate a copy.
     auto sources = file->srcList();
     for (auto* client : sources) {
-        if (!client->swapToAnotherFile(
+        if (client->swapToAnotherFile(
                 QStringLiteral("download completed"),
                 /*ignoreNoNeeded=*/true,
                 /*ignoreSuspensions=*/true,
                 /*removeCompletely=*/true))
         {
+            // Swap succeeded — set state to None so PartFile::process()
+            // picks up this source and re-initiates the download via
+            // tryToConnect().  (MFC DoSwap: SetDownloadState(DS_NONE))
+            client->setDownloadState(DownloadState::None);
+        } else {
             // No other file available — just disconnect
             client->setDownloadState(DownloadState::None);
             client->setReqFile(nullptr);

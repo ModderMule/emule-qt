@@ -20,6 +20,7 @@
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "net/Address.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
 
@@ -186,7 +187,7 @@ void KademliaUDPListener::sendPublishSourcePacket(Contact* contact, const UInt12
 
     UInt128 pubClientID = contact->getClientID();
     sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
-               contact->getIPAddress(), contact->getUDPPort(),
+               contact->address().toUint32(), contact->getUDPPort(),
                contact->getUDPKey(), &pubClientID);
 }
 
@@ -592,7 +593,7 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpP
     packet.writeUInt16(static_cast<uint16>(contacts.size()));
     for (auto* contact : contacts) {
         io::writeUInt128(packet, contact->getClientID());
-        packet.writeUInt32(contact->getIPAddress());
+        packet.writeUInt32(contact->address().toUint32());
         packet.writeUInt16(contact->getUDPPort());
         packet.writeUInt16(contact->getTCPPort());
         packet.writeUInt8(contact->getVersion());
@@ -832,7 +833,7 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
         if (count >= kK * 2)
             break;
         io::writeUInt128(resPacket, contact->getClientID());
-        resPacket.writeUInt32(contact->getIPAddress());
+        resPacket.writeUInt32(contact->address().toUint32());
         resPacket.writeUInt16(contact->getUDPPort());
         resPacket.writeUInt16(contact->getTCPPort());
         resPacket.writeUInt8(contact->getVersion());
@@ -914,7 +915,7 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
             if (!UDPFirewallTester::needsMoreTestContacts())
                 break;
             UDPFirewallTester::addPossibleTestContact(
-                contact->getClientID(), contact->getIPAddress(),
+                contact->getClientID(), contact->address().toUint32(),
                 contact->getUDPPort(), contact->getTCPPort(),
                 target, contact->getVersion(),
                 contact->getUDPKey(), contact->isIpVerified(),
@@ -1030,7 +1031,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
                 auto* entry = new KeyEntry();
                 entry->m_keyID = keyID;
                 entry->m_sourceID = sourceID;
-                entry->m_ip = ip;
+                entry->m_address = Address::fromHostOrder(ip);
                 // Extract known tags to dedicated fields (MFC lines 1217-1249).
                 // Filename → m_fileNames (for search term matching),
                 // Filesize → m_size; remaining tags → m_tags.
@@ -1083,7 +1084,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
             auto* entry = new Entry();
             entry->m_keyID = keyID;
             entry->m_sourceID = sourceID;
-            entry->m_ip = ip;
+            entry->m_address = Address::fromHostOrder(ip);
             for (auto& tag : tags)
                 entry->addTag(std::move(tag));
             if (!indexed->addSources(keyID, sourceID, entry, load))
@@ -1158,7 +1159,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
             auto* entry = new Entry();
             entry->m_keyID = keyID;
             entry->m_sourceID = sourceID;
-            entry->m_ip = ip;
+            entry->m_address = Address::fromHostOrder(ip);
             for (auto& tag : tags)
                 entry->addTag(std::move(tag));
             if (!indexed->addNotes(keyID, sourceID, entry, load))
@@ -1215,7 +1216,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
     // Attempt TCP verification: connect to their TCP port to verify it's open.
     // This is best-effort — failure is silently ignored.
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-    client->setConnectIP(htonl(ip));  // Kad IPs are host BO; m_connectIP is network BO
+    client->setConnectAddress(Address::fromHostOrder(ip));
     client->setKadState(KadState::QueuedFwCheck);
     if (auto* rz = Kademlia::getInstanceRoutingZone())
         propagateLanCryptoInfo(client, rz->getContact(ip, udpPort, false));
@@ -1246,7 +1247,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
 
     // Attempt TCP verification: connect to their TCP port to verify it's open
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-    client->setConnectIP(htonl(ip));  // Kad IPs are host BO; m_connectIP is network BO
+    client->setConnectAddress(Address::fromHostOrder(ip));
     client->setKadState(KadState::QueuedFwCheck);
     client->setConnectOptions(options, true, true);
 

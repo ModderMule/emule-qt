@@ -304,7 +304,7 @@ void tst_KadRoutingBin::changeContactIPAddress()
 
     // Change to a new IP → should succeed
     QVERIFY(bin.changeContactIPAddress(c, 0x0B000101));
-    QCOMPARE(c->getIPAddress(), uint32{0x0B000101});
+    QCOMPARE(c->address().toUint32(), uint32{0x0B000101});
 }
 
 // ---------------------------------------------------------------------------

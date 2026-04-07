@@ -151,7 +151,7 @@ void ServerListModel::refreshFromServerList(const ServerList* serverList)
             row.lowIdUsers = srv->lowIDUsers();
             row.obfuscation = srv->supportsObfuscationTCP();
             row.files = srv->files();
-            row.numericIp = srv->ip();
+            row.numericIp = srv->ipAddress().toNetworkUint32();
             row.serverId = srv->serverId();
             row.serverPtr = srv.get();
             m_rows.push_back(std::move(row));

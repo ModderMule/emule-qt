@@ -6,6 +6,7 @@
 /// Manages upload slot allocation, waiting queue, data rate tracking,
 /// and coordination between clients, throttler, and disk IO thread.
 
+#include "net/Address.h"
 #include "utils/Types.h"
 
 #include <QList>
@@ -80,7 +81,7 @@ signals:
 
 public slots:
     /// Handle OP_REASKFILEPING from ClientUDPSocket.
-    void onReaskFilePing(uint32 senderIP, uint16 senderPort,
+    void onReaskFilePing(const Endpoint& sender,
                          const uint8* data, uint32 size);
 
 private slots:

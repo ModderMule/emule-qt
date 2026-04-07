@@ -86,7 +86,7 @@ void ServerConnect::tryAnotherConnectionRequest()
             bool alreadyConnecting = false;
             for (const auto& [ts, sock] : m_connectionAttempts) {
                 const Server* cs = sock ? sock->currentServer() : nullptr;
-                if (cs && cs->ip() == candidate->ip() && cs->port() == candidate->port()) {
+                if (cs && cs->ipAddress() == candidate->ipAddress() && cs->port() == candidate->port()) {
                     alreadyConnecting = true;
                     break;
                 }
@@ -222,7 +222,7 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
             [](uint32 clientIP, uint16 clientPort, const uint8* cryptData, uint32 cryptSize) {
                 if (!theApp.clientList)
                     return;
-                if (theApp.clientList->isBannedClient(clientIP))
+                if (theApp.clientList->isBannedClient(Address::fromNetworkOrder(clientIP)))
                     return;
 
                 auto* client = theApp.clientList->findByConnIP(clientIP, clientPort);
@@ -658,7 +658,7 @@ bool ServerConnect::isLocalServer(uint32 ip, uint16 port) const
 {
     if (!m_connected || !m_connectedSocket || !m_connectedSocket->currentServer())
         return false;
-    return m_connectedSocket->currentServer()->ip() == ip &&
+    return m_connectedSocket->currentServer()->ipAddress().toNetworkUint32() == ip &&
            m_connectedSocket->currentServer()->port() == port;
 }
 
@@ -666,7 +666,7 @@ bool ServerConnect::awaitingTestFromIP(uint32 ip) const
 {
     for (const auto& [timestamp, socket] : m_connectionAttempts) {
         if (socket && socket->currentServer() &&
-            socket->currentServer()->ip() == ip &&
+            socket->currentServer()->ipAddress().toNetworkUint32() == ip &&
             socket->connectionState() == ServerConnState::WaitForLogin) {
             return true;
         }

@@ -199,7 +199,7 @@ void CoreNotifierBridge::onServerStateChanged()
         info.insert(QStringLiteral("obfuscated"),
                     theApp.serverConnect->isConnectedObfuscated());
         if (const auto* srv = theApp.serverConnect->currentServer()) {
-            info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ip()));
+            info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ipAddress().toNetworkUint32()));
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());

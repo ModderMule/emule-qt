@@ -38,7 +38,7 @@ static DeadSourceKey makeLowIDKey(uint32 id, uint16 port, uint32 serverIP)
     DeadSourceKey k;
     k.userID = id;
     k.port = port;
-    k.serverIP = serverIP;
+    k.serverAddress = Address::fromNetworkOrder(serverIP);
     return k;
 }
 
@@ -110,7 +110,7 @@ void tst_DeadSourceList::highID_matching()
     DeadSourceKey lookup;
     lookup.userID = 0x01020304;
     lookup.port = 4662;
-    lookup.serverIP = 0xAAAAAAAA;  // different server
+    lookup.serverAddress = Address::fromNetworkOrder(0xAAAAAAAA);  // different server
     QVERIFY(list.isDeadSource(lookup));
 }
 

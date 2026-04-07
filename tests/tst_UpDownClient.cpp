@@ -4,6 +4,7 @@
 
 #include "TestHelpers.h"
 #include "client/UpDownClient.h"
+#include "net/Address.h"
 #include "client/ClientCredits.h"
 #include "files/KnownFile.h"
 #include "protocol/Tag.h"
@@ -144,10 +145,10 @@ void tst_UpDownClient::construct_default()
 {
     UpDownClient client;
     QCOMPARE(client.userIDHybrid(), 0u);
-    QCOMPARE(client.userIP(), 0u);
-    QCOMPARE(client.connectIP(), 0u);
+    QCOMPARE(client.userAddress().toNetworkUint32(), 0u);
+    QCOMPARE(client.connectAddress().toNetworkUint32(), 0u);
     QCOMPARE(client.userPort(), uint16{0});
-    QCOMPARE(client.serverIP(), 0u);
+    QCOMPARE(client.serverAddress().toNetworkUint32(), 0u);
     QCOMPARE(client.serverPort(), uint16{0});
     QCOMPARE(client.uploadState(), UploadState::None);
     QCOMPARE(client.downloadState(), DownloadState::None);
@@ -175,8 +176,8 @@ void tst_UpDownClient::construct_withSource_highID()
     // ed2kID=true + high ID → hybrid is ntohl(userId)
     QCOMPARE(client.userIDHybrid(), ntohl(userId));
     // connectIP set from ed2k high ID → the original userId value
-    QCOMPARE(client.connectIP(), userId);
-    QCOMPARE(client.serverIP(), 0x01020304u);
+    QCOMPARE(client.connectAddress().toNetworkUint32(), userId);
+    QCOMPARE(client.serverAddress().toNetworkUint32(), 0x01020304u);
     QCOMPARE(client.serverPort(), uint16{4661});
 }
 
@@ -190,7 +191,7 @@ void tst_UpDownClient::construct_withSource_lowID()
     // Low ID preserved as-is
     QCOMPARE(client.userIDHybrid(), lowId);
     // connectIP stays 0 for low ID
-    QCOMPARE(client.connectIP(), 0u);
+    QCOMPARE(client.connectAddress().toNetworkUint32(), 0u);
 }
 
 void tst_UpDownClient::setUserHash_valid()
@@ -225,9 +226,9 @@ void tst_UpDownClient::setUserName()
 void tst_UpDownClient::setIP_setsConnectIP()
 {
     UpDownClient client;
-    client.setIP(0xC0A80001);
-    QCOMPARE(client.userIP(), 0xC0A80001u);
-    QCOMPARE(client.connectIP(), 0xC0A80001u);
+    client.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    QCOMPARE(client.userAddress().toNetworkUint32(), 0xC0A80001u);
+    QCOMPARE(client.connectAddress().toNetworkUint32(), 0xC0A80001u);
 }
 
 void tst_UpDownClient::setBuddyID_valid()
@@ -348,8 +349,8 @@ void tst_UpDownClient::compare_highID_byIPPort()
     // No valid hashes, high IDs
     a.setUserIDHybrid(0x0A0B0C0D);
     b.setUserIDHybrid(0x0A0B0C0D);
-    a.setIP(0xC0A80001);
-    b.setIP(0xC0A80001);
+    a.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    b.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     a.setUserPort(4662);
     b.setUserPort(4662);
     // compare with ignoreUserHash to skip hash check
@@ -361,8 +362,8 @@ void tst_UpDownClient::compare_highID_byKadPort()
     UpDownClient a, b;
     a.setUserIDHybrid(0x0A0B0C0D);
     b.setUserIDHybrid(0x0A0B0C0D);
-    a.setIP(0xC0A80001);
-    b.setIP(0xC0A80001);
+    a.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    b.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     a.setKadPort(4672);
     b.setKadPort(4672);
     QVERIFY(a.compare(&b, true));
@@ -373,8 +374,8 @@ void tst_UpDownClient::compare_lowID_byServerIPPort()
     UpDownClient a, b;
     a.setUserIDHybrid(100);  // low ID
     b.setUserIDHybrid(100);
-    a.setServerIP(0x01020304);
-    b.setServerIP(0x01020304);
+    a.setServerAddress(Address::fromNetworkOrder(0x01020304));
+    b.setServerAddress(Address::fromNetworkOrder(0x01020304));
     a.setServerPort(4661);
     b.setServerPort(4661);
     QVERIFY(a.compare(&b, true));
@@ -385,8 +386,8 @@ void tst_UpDownClient::compare_lowID_byIPPort()
     UpDownClient a, b;
     a.setUserIDHybrid(100);  // low ID
     b.setUserIDHybrid(100);
-    a.setIP(0xC0A80001);
-    b.setIP(0xC0A80001);
+    a.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    b.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     a.setUserPort(4662);
     b.setUserPort(4662);
     QVERIFY(a.compare(&b, true));
@@ -397,8 +398,8 @@ void tst_UpDownClient::compare_noMatch()
     UpDownClient a, b;
     a.setUserIDHybrid(0x0A0B0C0D);
     b.setUserIDHybrid(0x0E0F1011);
-    a.setIP(0xC0A80001);
-    b.setIP(0xC0A80002);
+    a.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    b.setUserAddress(Address::fromNetworkOrder(0xC0A80002));
     a.setUserPort(4662);
     b.setUserPort(4663);
     QVERIFY(!a.compare(&b, true));
@@ -637,7 +638,7 @@ void tst_UpDownClient::processHello_basic()
     QCOMPARE(client.userIDHybrid(), 0x0A0B0C0Du);
     QCOMPARE(client.userPort(), uint16{4662});
     QCOMPARE(client.userName(), QStringLiteral("TestPeer"));
-    QCOMPARE(client.serverIP(), 0x01020304u);
+    QCOMPARE(client.serverAddress().toNetworkUint32(), 0x01020304u);
     QCOMPARE(client.serverPort(), uint16{4661});
 
     // eDonkey info packet flag should be set
@@ -783,7 +784,7 @@ void tst_UpDownClient::processHello_buddy()
     client.processHelloPacket(
         reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size()));
 
-    QCOMPARE(client.buddyIP(), 0xC0A80101u);
+    QCOMPARE(client.buddyAddress().toNetworkUint32(), 0xC0A80101u);
     QCOMPARE(client.buddyPort(), uint16{5555});
 }
 
@@ -1126,14 +1127,14 @@ void tst_UpDownClient::disconnected_preservesIdentity()
     uint8 hash[16];
     fillHash(hash, 0xAA);
     client.setUserHash(hash);
-    client.setIP(0xC0A80001);
+    client.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     client.setUserPort(4662);
 
     client.disconnected(QStringLiteral("test"));
 
     // Identity should be preserved
     QVERIFY(md4equ(client.userHash(), hash));
-    QCOMPARE(client.userIP(), 0xC0A80001u);
+    QCOMPARE(client.userAddress().toNetworkUint32(), 0xC0A80001u);
     QCOMPARE(client.userPort(), uint16{4662});
 }
 
@@ -1257,7 +1258,7 @@ void tst_UpDownClient::hasPassedSecureIdent_identified()
     credits.verified(0xC0A80001);
 
     client.setCredits(&credits);
-    client.setConnectIP(0xC0A80001);
+    client.setConnectAddress(Address::fromNetworkOrder(0xC0A80001));
 
     QVERIFY(client.hasPassedSecureIdent(false));
 

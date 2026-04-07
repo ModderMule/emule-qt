@@ -18,7 +18,7 @@ static std::atomic<uint32> s_nextServerId{1};
 
 Server::Server(uint32 ip, uint16 port)
     : m_serverId(s_nextServerId++)
-    , m_ip(ip)
+    , m_address(Address::fromNetworkOrder(ip))
     , m_port(port)
 {
 }
@@ -26,8 +26,8 @@ Server::Server(uint32 ip, uint16 port)
 Server::Server(FileDataIO& data, bool optUTF8)
     : m_serverId(s_nextServerId++)
 {
-    m_ip   = data.readUInt32();
-    m_port = data.readUInt16();
+    m_address = Address::fromNetworkOrder(data.readUInt32());
+    m_port    = data.readUInt16();
 
     const uint32 tagCount = data.readUInt32();
     for (uint32 i = 0; i < tagCount; ++i) {
@@ -38,7 +38,7 @@ Server::Server(FileDataIO& data, bool optUTF8)
 
 Server::Server(const Server& other)
     : m_serverId(other.m_serverId)
-    , m_ip(other.m_ip)
+    , m_address(other.m_address)
     , m_port(other.m_port)
     , m_dynIP(other.m_dynIP)
     , m_name(other.m_name)
@@ -78,7 +78,7 @@ Server::Server(const Server& other)
 
 QString Server::address() const
 {
-    return m_dynIP.isEmpty() ? ipstr(m_ip) : m_dynIP;
+    return m_dynIP.isEmpty() ? ipstr(m_address) : m_dynIP;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ void Server::addTagFromFile(const Tag& tag)
     case ST_DYNIP:
         if (tag.isStr() && !tag.strValue().isEmpty() && m_dynIP.isEmpty()) {
             m_dynIP = tag.strValue();
-            m_ip = 0;  // reset outdated IP when dynIP is set
+            m_address = Address();  // reset outdated IP when dynIP is set
         }
         break;
     case ST_PORT:

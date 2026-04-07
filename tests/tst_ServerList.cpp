@@ -186,7 +186,7 @@ void tst_ServerList::findByIPTcp_found()
 
     auto* found = list.findByIPTcp(0x08080404, 4662);
     QVERIFY(found != nullptr);
-    QCOMPARE(found->ip(), uint32{0x08080404});
+    QCOMPARE(found->ipAddress().toNetworkUint32(), uint32{0x08080404});
     QCOMPARE(found->port(), uint16{4662});
 }
 
@@ -339,7 +339,7 @@ void tst_ServerList::serverMet_saveLoad_roundTrip()
     QVERIFY(s2 != nullptr);
     QCOMPARE(s2->name(), QStringLiteral("Server2"));
     QCOMPARE(s2->dynIP(), QStringLiteral("dyn.example.com"));
-    QCOMPARE(s2->ip(), uint32{0});
+    QCOMPARE(s2->ipAddress().toNetworkUint32(), uint32{0});
     QCOMPARE(s2->users(), uint32{2000});
 }
 

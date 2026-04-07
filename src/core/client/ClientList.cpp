@@ -97,7 +97,7 @@ void ClientList::handleIncomingConnection(ClientReqSocket* socket)
 UpDownClient* ClientList::findByIP(uint32 ip) const
 {
     for (auto* c : m_clients) {
-        if (c->userIP() == ip)
+        if (c->userAddress().toNetworkUint32() == ip)
             return c;
     }
     return nullptr;
@@ -106,7 +106,7 @@ UpDownClient* ClientList::findByIP(uint32 ip) const
 UpDownClient* ClientList::findByIP(uint32 ip, uint16 port) const
 {
     for (auto* c : m_clients) {
-        if (c->userIP() == ip && c->userPort() == port)
+        if (c->userAddress().toNetworkUint32() == ip && c->userPort() == port)
             return c;
     }
     return nullptr;
@@ -115,7 +115,7 @@ UpDownClient* ClientList::findByIP(uint32 ip, uint16 port) const
 UpDownClient* ClientList::findByConnIP(uint32 ip, uint16 port) const
 {
     for (auto* c : m_clients) {
-        if (c->connectIP() == ip && c->userPort() == port)
+        if (c->connectAddress().toNetworkUint32() == ip && c->userPort() == port)
             return c;
     }
     return nullptr;
@@ -129,7 +129,7 @@ UpDownClient* ClientList::findByUserHash(const uint8* hash, uint32 ip, uint16 po
     for (auto* c : m_clients) {
         if (md4equ(c->userHash(), hash)) {
             if (ip != 0 && port != 0
-                && c->userIP() == ip && c->userPort() == port)
+                && c->userAddress().toNetworkUint32() == ip && c->userPort() == port)
             {
                 return c;  // exact match
             }
@@ -144,7 +144,7 @@ UpDownClient* ClientList::findByUserHash(const uint8* hash, uint32 ip, uint16 po
 UpDownClient* ClientList::findByIP_UDP(uint32 ip, uint16 udpPort) const
 {
     for (auto* c : m_clients) {
-        if (c->userIP() == ip && c->udpPort() == udpPort)
+        if (c->userAddress().toNetworkUint32() == ip && c->udpPort() == udpPort)
             return c;
     }
     return nullptr;
@@ -156,7 +156,7 @@ UpDownClient* ClientList::findByServerID(uint32 serverIP, uint32 ed2kUserID) con
     const uint32 hybridID = ntohl(ed2kUserID);
 
     for (auto* c : m_clients) {
-        if (c->serverIP() == serverIP && c->userIDHybrid() == hybridID)
+        if (c->serverAddress().toNetworkUint32() == serverIP && c->userIDHybrid() == hybridID)
             return c;
     }
     return nullptr;
@@ -174,7 +174,7 @@ UpDownClient* ClientList::findByUserID_KadPort(uint32 clientID, uint16 kadPort) 
 UpDownClient* ClientList::findByIP_KadPort(uint32 ip, uint16 kadPort) const
 {
     for (auto* c : m_clients) {
-        if (c->userIP() == ip && c->kadPort() == kadPort)
+        if (c->userAddress().toNetworkUint32() == ip && c->kadPort() == kadPort)
             return c;
     }
     return nullptr;
@@ -217,7 +217,7 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
 
     // Create a new client for the incoming buddy
     auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-    client->setConnectIP(htonl(ip));  // Kad IPs are host byte order; m_connectIP is network BO
+    client->setConnectAddress(Address::fromHostOrder(ip));
     client->setKadPort(udpPort);
     client->setUserHash(clientID);
     client->setKadState(KadState::IncomingBuddy);
@@ -241,7 +241,7 @@ void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     auto* client = findByConnIP(ip, tcpPort);
     if (!client) {
         client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-        client->setConnectIP(htonl(ip));  // Kad IPs are host byte order; m_connectIP is network BO
+        client->setConnectAddress(Address::fromHostOrder(ip));
         addClient(client);
     }
 
@@ -261,12 +261,12 @@ void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
 bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
 {
     // Skip if we already know this IP — the result would be biased
-    if (findByIP(contact.getNetIP()))
+    if (findByIP(contact.address().toNetworkUint32()))
         return false;
 
     // Create a temporary client for the TCP connection
     auto* client = new UpDownClient(contact.getTCPPort(), 0, 0, 0, nullptr);
-    client->setConnectIP(htonl(contact.getIPAddress()));  // Kad IPs are host BO; m_connectIP is network BO
+    client->setConnectAddress(contact.address());
     client->setKadVersion(contact.getVersion());
     client->setKadPort(contact.getUDPPort());
     client->setKadState(KadState::QueuedFwCheckUDP);
@@ -383,22 +383,24 @@ void ClientList::processConnectingClients()
 // Banned clients
 // ===========================================================================
 
-void ClientList::addBannedClient(uint32 ip)
+void ClientList::addBannedClient(const Address& addr)
 {
-    m_bannedList[ip] = static_cast<uint32>(getTickCount());
+    if (addr.isNull()) return;
+    m_bannedList[addr] = static_cast<uint32>(getTickCount());
 }
 
-bool ClientList::isBannedClient(uint32 ip) const
+bool ClientList::isBannedClient(const Address& addr) const
 {
-    auto it = m_bannedList.find(ip);
+    if (addr.isNull()) return false;
+    auto it = m_bannedList.find(addr);
     if (it == m_bannedList.end())
         return false;
     return (static_cast<uint32>(getTickCount()) < it->second + CLIENTBANTIME);
 }
 
-void ClientList::removeBannedClient(uint32 ip)
+void ClientList::removeBannedClient(const Address& addr)
 {
-    m_bannedList.erase(ip);
+    m_bannedList.erase(addr);
 }
 
 int ClientList::bannedCount() const

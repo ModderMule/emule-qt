@@ -16,6 +16,7 @@
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "net/ClientReqSocket.h"
+#include "net/Address.h"
 #include "net/ClientUDPSocket.h"
 #include "net/EMSocket.h"
 #include "net/ListenSocket.h"
@@ -369,10 +370,11 @@ void tst_CallbackAndQueueRank::initTestCase()
 
     // Wire the receiver's reaskAckReceived signal (same as CoreSession)
     connect(m_receiverUDP, &ClientUDPSocket::reaskAckReceived,
-        this, [](uint32 senderIP, uint16 senderPort, const uint8* data, uint32 size) {
+        this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
-            auto* sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+            auto* sender = theApp.clientList->findByIP_UDP(
+                senderEP.address().toUint32(), senderEP.port());
             if (!sender || !sender->reaskPending())
                 return;
             SafeMemFile io(data, size);
@@ -508,8 +510,8 @@ void tst_CallbackAndQueueRank::doUdpReaskTest(bool encrypted)
     // to be this remote source sending OP_REASKACK back to our receiver.
     auto* client = new UpDownClient();
     // IP matches what the UDP datagram source will be (127.0.0.1 host order)
-    client->setIP(0x7F000001);
-    client->setConnectIP(0x7F000001);
+    client->setUserAddress(Address::fromNetworkOrder(0x7F000001));
+    client->setConnectAddress(Address::fromNetworkOrder(0x7F000001));
     client->setUserIDHybrid(htonl(0x7F000001)); // high ID (> 16M)
     client->setUserPort(4662);
     client->setDownloadState(DownloadState::OnQueue);
@@ -705,7 +707,7 @@ void tst_CallbackAndQueueRank::directCallback_setsCorrectState()
 {
     auto* client = new UpDownClient();
     client->setUserIDHybrid(200);
-    client->setConnectIP(htonl(0x7F000001));
+    client->setConnectAddress(Address::fromNetworkOrder(htonl(0x7F000001)));
     client->setUserPort(4662);
     client->setKadPort(4672);
 
@@ -771,7 +773,7 @@ void tst_CallbackAndQueueRank::udpReaskViaCallback_sendsRealPacket()
     // --- Node 2: firewalled source with buddy ---
     auto* client = new UpDownClient();
     client->setUserIDHybrid(100);
-    client->setConnectIP(0);
+    client->setConnectAddress(Address());
     client->setUserPort(4662);
     client->setUDPPort(4672);
 
@@ -782,7 +784,7 @@ void tst_CallbackAndQueueRank::udpReaskViaCallback_sendsRealPacket()
     uint8 buddyId[16];
     std::memset(buddyId, 0x66, 16);
     client->setBuddyID(buddyId);
-    client->setBuddyIP(0x7F000001); // host byte order for 127.0.0.1
+    client->setBuddyAddress(Address::fromHostOrder(0x7F000001)); // host byte order for 127.0.0.1
     client->setBuddyPort(buddyPort);
 
     auto miBuf = buildMinimalMuleInfo();
@@ -862,7 +864,7 @@ void tst_CallbackAndQueueRank::swapToAnotherFile_swapsSourceAndTracksA4AF()
     // --- Source client assigned to fileA, with fileB as A4AF ---
     auto* client = new UpDownClient();
     client->setUserIDHybrid(htonl(0x7F000001));
-    client->setConnectIP(0x7F000001);
+    client->setConnectAddress(Address::fromNetworkOrder(0x7F000001));
     client->setUserPort(4662);
     client->setReqFile(fileA);
     fileA->addSource(client);

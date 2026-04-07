@@ -59,7 +59,7 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt)
     }
 
     // Direct connection via IP
-    uint32 ip = m_curServer->ip();
+    uint32 ip = m_curServer->ipAddress().toNetworkUint32();
     QHostAddress addr(ntohl(ip)); // Convert from network to host byte order
     uint16 port = m_curServer->port();
 
@@ -261,7 +261,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (m_curServer) {
             // Update server's reported IP if different
             if (serverIP != 0)
-                m_curServer->setIP(serverIP);
+                m_curServer->setIpAddress(Address::fromNetworkOrder(serverIP));
         }
 
         emit serverIdentReceived(serverHash, serverIP, serverPort, name, description);
@@ -471,7 +471,7 @@ void ServerSocket::onDnsLookupFinished()
         }
     }
 
-    m_curServer->setIP(ip);
+    m_curServer->setIpAddress(Address::fromNetworkOrder(ip));
     emit dynIPResolved(ip, m_curServer->dynIP());
 
     // Now connect

@@ -234,6 +234,18 @@ bool IPFilter::isFiltered(uint32 ip) const
     return isFiltered(ip, kDefaultFilterLevel);
 }
 
+bool IPFilter::isFiltered(const Address& addr, uint32 filterLevel) const
+{
+    if (!addr.isIPv4())
+        return false; // IPv6 filtering not yet implemented
+    return isFiltered(addr.toNetworkUint32(), filterLevel);
+}
+
+bool IPFilter::isFiltered(const Address& addr) const
+{
+    return isFiltered(addr, kDefaultFilterLevel);
+}
+
 bool IPFilter::isFiltered(uint32 ip, uint32 filterLevel) const
 {
     if (m_entries.empty() || ip == 0)

@@ -43,7 +43,7 @@ void tst_KadIndexed::addKeyword_basic()
     UInt128 keyID(uint32{100});
     UInt128 sourceID(uint32{200});
     auto* entry = new KeyEntry();
-    entry->m_ip = 0x0A000001;
+    entry->m_address = Address::fromHostOrder(0x0A000001);
     entry->setFileName(QStringLiteral("test.mp3"));
 
     uint8 load = 0;
@@ -64,7 +64,7 @@ void tst_KadIndexed::addKeyword_loadTracking()
     for (uint32 i = 0; i < 10; ++i) {
         UInt128 sourceID(i + 1);
         auto* entry = new KeyEntry();
-        entry->m_ip = 0x0A000001 + i;
+        entry->m_address = Address::fromHostOrder(0x0A000001 + i);
         entry->setFileName(QStringLiteral("file_%1.txt").arg(i));
         indexed.addKeyword(keyID, sourceID, entry, load);
     }
@@ -81,7 +81,7 @@ void tst_KadIndexed::addSources_basic()
     UInt128 keyID(uint32{300});
     UInt128 sourceID(uint32{400});
     auto* entry = new Entry();
-    entry->m_ip = 0x0A000001;
+    entry->m_address = Address::fromHostOrder(0x0A000001);
     entry->m_tcpPort = 4662;
     entry->m_udpPort = 4672;
 
@@ -98,7 +98,7 @@ void tst_KadIndexed::addNotes_basic()
     UInt128 keyID(uint32{500});
     UInt128 sourceID(uint32{600});
     auto* entry = new Entry();
-    entry->m_ip = 0x0A000001;
+    entry->m_address = Address::fromHostOrder(0x0A000001);
     entry->addTag(Tag(QByteArrayLiteral("comment"), QStringLiteral("Great file!")));
 
     uint8 load = 0;
@@ -140,14 +140,14 @@ void tst_KadIndexed::addKeyword_duplicateSource()
 
     // Add first entry
     auto* entry1 = new KeyEntry();
-    entry1->m_ip = 0x0A000001;
+    entry1->m_address = Address::fromHostOrder(0x0A000001);
     entry1->setFileName(QStringLiteral("original.txt"));
     indexed.addKeyword(keyID, sourceID, entry1, load);
     QCOMPARE(indexed.m_totalIndexKeyword, uint32{1});
 
     // Add second entry with same key+source — should merge, not add new
     auto* entry2 = new KeyEntry();
-    entry2->m_ip = 0x0A000002;
+    entry2->m_address = Address::fromHostOrder(0x0A000002);
     entry2->setFileName(QStringLiteral("updated.txt"));
     bool result = indexed.addKeyword(keyID, sourceID, entry2, load);
     QVERIFY(result);

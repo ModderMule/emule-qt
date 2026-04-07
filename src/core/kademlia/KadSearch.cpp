@@ -276,7 +276,7 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
     Contact* pFromContact = nullptr;
     for (auto it = m_tried.begin(); it != m_tried.end(); ++it) {
         Contact* c = it->second;
-        if (c->getIPAddress() == fromIP && c->getUDPPort() == fromPort) {
+        if (c->address().toUint32() == fromIP && c->getUDPPort() == fromPort) {
             uFromDistance = it->first;
             pFromContact = c;
             foundSender = true;
@@ -318,7 +318,7 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
             if (!UDPFirewallTester::needsMoreTestContacts())
                 break;
             UDPFirewallTester::addPossibleTestContact(
-                contact->getClientID(), contact->getIPAddress(),
+                contact->getClientID(), contact->address().toUint32(),
                 contact->getUDPPort(), contact->getTCPPort(),
                 m_target, contact->getVersion(),
                 contact->getUDPKey(), contact->isIpVerified(),
@@ -347,15 +347,15 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
         }
 
         // Reject duplicate IPs (MFC Search.cpp:403-407)
-        if (receivedIPs.count(contact->getIPAddress()) > 0) {
+        if (receivedIPs.count(contact->address().toUint32()) > 0) {
             delete contact;
             continue;
         }
-        receivedIPs[contact->getIPAddress()] = 1;
+        receivedIPs[contact->address().toUint32()] = 1;
 
         // Limit to 2 IPs per /24 subnet (MFC Search.cpp:412-423)
-        uint32 subnetIP = contact->getIPAddress() & ~0xFFu;
-        if (!isLanIP(contact->getNetIP())) {
+        uint32 subnetIP = contact->address().toUint32() & ~0xFFu;
+        if (!contact->address().isLan()) {
             auto sit = receivedSubnets.find(subnetIP);
             if (sit != receivedSubnets.end()) {
                 if (sit->second >= 2) {
@@ -432,7 +432,7 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
             if (dist == zero) {
                 m_nodeSpecialSearchRequester->kadSearchIPByNodeIDResult(
                     KadClientSearchResult::Succeeded,
-                    contact->getIPAddress(), contact->getTCPPort());
+                    contact->address().toUint32(), contact->getTCPPort());
                 m_nodeSpecialSearchRequester = nullptr;
                 prepareToStop();
                 break;
@@ -760,7 +760,7 @@ void Search::sendFindValue(Contact* contact, bool reAskMore)
         io::writeUInt128(packet, contact->getClientID());
         UInt128 reqClientID = contact->getClientID();
         udpListener->sendPacket(packet, KADEMLIA2_REQ,
-                                contact->getIPAddress(), contact->getUDPPort(),
+                                contact->address().toUint32(), contact->getUDPPort(),
                                 contact->getUDPKey(), &reqClientID);
     }
 }
@@ -777,7 +777,7 @@ void Search::prepareToStop()
     if (auto* sk = Kademlia::getInstanceSafeKad()) {
         for (const auto& [dist, contact] : m_tried) {
             if (m_responded.find(dist) == m_responded.end())
-                sk->trackProblematicNode(contact->getIPAddress(), contact->getUDPPort());
+                sk->trackProblematicNode(contact->address().toUint32(), contact->getUDPPort());
         }
     }
 
@@ -842,7 +842,7 @@ void Search::storePacket()
             continue;
 
         // Distance tolerance: skip contacts too far from target (MFC Search.cpp:479-482).
-        if (dist.get32BitChunk(0) > kSearchTolerance && !isLanIP(contact->getNetIP())) // or always bypass in LAN mode? && !(Kademlia::instance() && Kademlia::instance()->isRunningInLANMode())
+        if (dist.get32BitChunk(0) > kSearchTolerance && !contact->address().isLan()) // or always bypass in LAN mode? && !(Kademlia::instance() && Kademlia::instance()->isRunningInLANMode())
             continue;
 
         switch (m_type) {
@@ -850,7 +850,7 @@ void Search::storePacket()
             // Action phase: send KADEMLIA2_SEARCH_KEY_REQ to closest responded contacts
             logKad(QStringLiteral("Kad search %1: SEARCH_KEY_REQ #%2 → %3:%4 dist=%5")
                        .arg(m_searchID).arg(storeCount + 1)
-                       .arg(ipToString(contact->getIPAddress())).arg(contact->getUDPPort())
+                       .arg(contact->address().toString()).arg(contact->getUDPPort())
                        .arg(dist.toHexString()));
             SafeMemFile packet;
             io::writeUInt128(packet, m_target);
@@ -864,7 +864,7 @@ void Search::storePacket()
             {
                 UInt128 keyClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_SEARCH_KEY_REQ,
-                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &keyClientID);
             }
             ++storeCount;
@@ -885,7 +885,7 @@ void Search::storePacket()
             {
                 UInt128 clientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_SEARCH_SOURCE_REQ,
-                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &clientID);
             }
             ++storeCount;
@@ -904,7 +904,7 @@ void Search::storePacket()
             {
                 UInt128 noteClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_SEARCH_NOTES_REQ,
-                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &noteClientID);
             }
             ++storeCount;
@@ -947,7 +947,7 @@ void Search::storePacket()
 
                 UInt128 pubKeyClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_KEY_REQ,
-                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &pubKeyClientID);
             }
             ++storeCount;
@@ -1003,7 +1003,7 @@ void Search::storePacket()
                     tags.emplace_back(FT_SOURCETYPE,
                                       static_cast<uint32>(largeFile ? 5 : 3));
                     tags.emplace_back(FT_SERVERIP,
-                                      static_cast<uint32>(buddy->userIP()));
+                                      buddy->userAddress().toUint32());
                     tags.emplace_back(FT_SERVERPORT,
                                       static_cast<uint32>(buddy->userPort()));
                     // FT_BUDDYHASH: hex string of KadID XOR (MFC: md4str(uBuddyID))
@@ -1050,7 +1050,7 @@ void Search::storePacket()
             {
                 UInt128 pubSrcClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
-                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &pubSrcClientID);
             }
             ++storeCount;
@@ -1091,7 +1091,7 @@ void Search::storePacket()
             {
                 UInt128 pubNotesClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_NOTES_REQ,
-                                        contact->getIPAddress(), contact->getUDPPort(),
+                                        contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &pubNotesClientID);
             }
             ++storeCount;
@@ -1114,7 +1114,7 @@ void Search::storePacket()
             packet.writeUInt16(thePrefs.port());
 
             udpListener->sendPacket(packet, KADEMLIA_FINDBUDDY_REQ,
-                                    contact->getIPAddress(), contact->getUDPPort(),
+                                    contact->address().toUint32(), contact->getUDPPort(),
                                     contact->getUDPKey(), nullptr);
             ++storeCount;
             break;
@@ -1134,7 +1134,7 @@ void Search::storePacket()
             packet.writeUInt16(thePrefs.port());
 
             udpListener->sendPacket(packet, KADEMLIA_CALLBACK_REQ,
-                                    contact->getIPAddress(), contact->getUDPPort(),
+                                    contact->address().toUint32(), contact->getUDPPort(),
                                     contact->getUDPKey(), nullptr);
             ++storeCount;
             break;
@@ -1146,7 +1146,7 @@ void Search::storePacket()
             if (dist == zero && m_nodeSpecialSearchRequester) {
                 m_nodeSpecialSearchRequester->kadSearchIPByNodeIDResult(
                     KadClientSearchResult::Succeeded,
-                    contact->getIPAddress(), contact->getTCPPort());
+                    contact->address().toUint32(), contact->getTCPPort());
                 m_nodeSpecialSearchRequester = nullptr;
             }
             break;

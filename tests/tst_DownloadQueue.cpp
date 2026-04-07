@@ -6,6 +6,7 @@
 #include "files/PartFile.h"
 #include "transfer/DownloadQueue.h"
 #include "client/UpDownClient.h"
+#include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "utils/OtherFunctions.h"
 
@@ -273,7 +274,7 @@ void tst_DownloadQueue::checkAndAddSource_basic()
     dq.addDownload(pf);
 
     UpDownClient client;
-    client.setIP(0x01020304);
+    client.setUserAddress(Address::fromNetworkOrder(0x01020304));
     client.setUserPort(4662);
 
     bool added = dq.checkAndAddSource(pf, &client);

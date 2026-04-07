@@ -379,7 +379,7 @@ void ServerPanel::onServerDoubleClicked(const QModelIndex& index)
     if (!srv)
         return;
 
-    auto* mutableSrv = m_serverList->findByIPTcp(srv->ip(), srv->port());
+    auto* mutableSrv = m_serverList->findByIPTcp(srv->ipAddress().toNetworkUint32(), srv->port());
     if (mutableSrv)
         m_serverConnect->connectToServer(mutableSrv);
 }

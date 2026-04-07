@@ -65,7 +65,7 @@ bool URLClient::setUrl(const QString& url, uint32 fromIP)
 
     // If we have an IP from the caller, use it
     if (fromIP != 0)
-        setIP(fromIP);
+        setUserAddress(Address::fromNetworkOrder(fromIP));
 
     // Set port for connection
     setUserPort(m_urlPort);
@@ -108,7 +108,7 @@ bool URLClient::tryToConnect(bool ignoreMaxCon)
     setConnectingState(ConnectingState::DirectTCP);
 
     // If we have an IP already, create socket and connect directly
-    if (connectIP() != 0) {
+    if (!connectAddress().isNull()) {
         connectToHost();
         return true;
     }
@@ -124,13 +124,13 @@ bool URLClient::tryToConnect(bool ignoreMaxCon)
         // Use the first IPv4 address
         for (const auto& addr : info.addresses()) {
             if (addr.protocol() == QAbstractSocket::IPv4Protocol) {
-                setIP(htonl(addr.toIPv4Address()));
+                setUserAddress(Address::fromQHostAddress(addr));
                 connectToHost();
                 return;
             }
         }
         // Fallback to first address if no IPv4
-        setIP(htonl(info.addresses().first().toIPv4Address()));
+        setUserAddress(Address::fromQHostAddress(info.addresses().first()));
         connectToHost();
     });
 
@@ -382,8 +382,8 @@ void URLClient::connectToHost()
     reqSocket->initProxySupport(thePrefs.proxySettings());
 
     // Initiate TCP connection
-    const uint32 ip = connectIP();
-    const QHostAddress addr(ntohl(ip));
+    const auto connAddr = connectAddress();
+    const QHostAddress addr = connAddr.toQHostAddress();
     reqSocket->connectToHost(addr, m_urlPort);
     reqSocket->waitForOnConnect();
 

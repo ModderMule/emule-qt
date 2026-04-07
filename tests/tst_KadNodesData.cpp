@@ -118,7 +118,7 @@ void tst_KadNodesData::nodesDat_contactsHaveValidProperties()
         QVERIFY(c != nullptr);
 
         // Every contact must have a non-zero IP
-        QVERIFY2(c->getIPAddress() != 0,
+        QVERIFY2(!c->address().isNull(),
                  "Contact has zero IP address");
 
         // UDP port must be non-zero
@@ -225,7 +225,7 @@ void tst_KadNodesData::bootstrapDat_v3_contactsHaveValidProperties()
     for (const Contact* c : contacts) {
         QVERIFY(c != nullptr);
 
-        QVERIFY2(c->getIPAddress() != 0,
+        QVERIFY2(!c->address().isNull(),
                  "Bootstrap contact has zero IP address");
 
         QVERIFY2(c->getUDPPort() != 0,

@@ -112,7 +112,7 @@ void tst_ServerMetData::serverMet_serverProperties()
         QVERIFY(srv->port() > 0);
 
         // Either a numeric IP or a dynIP must be set
-        QVERIFY(srv->ip() != 0 || srv->hasDynIP());
+        QVERIFY(!srv->ipAddress().isNull() || srv->hasDynIP());
     }
 }
 

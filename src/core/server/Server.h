@@ -7,6 +7,7 @@
 /// the original Server.h with scoped enums, QString, and on-demand IP
 /// formatting via eMule::ipstr().
 
+#include "net/Address.h"
 #include "utils/SafeFile.h"
 #include "utils/Types.h"
 
@@ -71,8 +72,8 @@ public:
 
     // -- Network ----------------------------------------------------------
 
-    [[nodiscard]] uint32  ip() const        { return m_ip; }
-    void setIP(uint32 ip)                   { m_ip = ip; }
+    [[nodiscard]] const Address& ipAddress() const { return m_address; }
+    void setIpAddress(const Address& addr)  { m_address = addr; }
 
     [[nodiscard]] uint16  port() const      { return m_port; }
     void setPort(uint16 port)               { m_port = port; }
@@ -215,7 +216,7 @@ private:
     uint32  m_serverId = 0;
 
     // Network
-    uint32  m_ip = 0;
+    Address m_address;
     uint16  m_port = 0;
     QString m_dynIP;
 

@@ -53,7 +53,7 @@ bool ServerList::saveServerMet(const QString& filePath)
 
         for (const auto& srv : m_servers) {
             // Don't write potentially outdated IPs of dynIP servers
-            file.writeUInt32(srv->hasDynIP() ? 0 : srv->ip());
+            file.writeUInt32(srv->hasDynIP() ? 0 : srv->ipAddress().toNetworkUint32());
             file.writeUInt16(srv->port());
 
             // Write tag count placeholder, then tags, then fix count
@@ -271,7 +271,7 @@ int ServerList::addServersFromTextFile(const QString& filePath)
         QHostAddress addr(host);
         auto srv = std::make_unique<Server>(0, nPort);
         if (!addr.isNull()) {
-            srv->setIP(static_cast<uint32>(addr.toIPv4Address()));
+            srv->setIpAddress(Address::fromQHostAddress(addr));
         } else {
             srv->setDynIP(host);
         }
@@ -353,7 +353,7 @@ void ServerList::removeAllServers()
 Server* ServerList::findByIPTcp(uint32 ip, uint16 port) const
 {
     for (const auto& srv : m_servers) {
-        if (srv->ip() == ip && srv->port() == port)
+        if (srv->ipAddress().toNetworkUint32() == ip && srv->port() == port)
             return srv.get();
     }
     return nullptr;
@@ -362,7 +362,7 @@ Server* ServerList::findByIPTcp(uint32 ip, uint16 port) const
 Server* ServerList::findByIPUdp(uint32 ip, uint16 udpPort, bool obfuscationPorts) const
 {
     for (const auto& srv : m_servers) {
-        if (srv->ip() == ip
+        if (srv->ipAddress().toNetworkUint32() == ip
             && (udpPort == srv->port() + 4
                 || (obfuscationPorts
                     && (udpPort == srv->obfuscationPortUDP()
@@ -513,7 +513,7 @@ void ServerList::checkForExpiredUDPKeys(uint32 currentClientIP)
 
 bool ServerList::isGoodServerIP(const Server& server)
 {
-    return server.port() != 0 && (server.hasDynIP() || isGoodIP(server.ip()));
+    return server.port() != 0 && (server.hasDynIP() || server.ipAddress().isRoutable());
 }
 
 // ---------------------------------------------------------------------------
@@ -527,7 +527,7 @@ bool ServerList::isDuplicate(const Server& server) const
         return true;
 
     // For non-dynIP servers, also check by IP + port
-    if (!server.hasDynIP() && server.ip() != 0 && findByIPTcp(server.ip(), server.port()))
+    if (!server.hasDynIP() && !server.ipAddress().isNull() && findByIPTcp(server.ipAddress().toNetworkUint32(), server.port()))
         return true;
 
     return false;

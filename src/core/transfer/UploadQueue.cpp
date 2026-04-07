@@ -112,7 +112,7 @@ int UploadQueue::uploadQueueLength() const
 UpDownClient* UploadQueue::waitingClientByIP(uint32 ip) const
 {
     for (auto* client : m_waitingList) {
-        if (client->userIP() == ip)
+        if (client->userAddress().toNetworkUint32() == ip)
             return client;
     }
     return nullptr;
@@ -390,7 +390,7 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
         && client->downloadState() == DownloadState::None
         && !client->friendPtr()
         && theApp.serverConnect
-        && !theApp.serverConnect->isLocalServer(client->serverIP(), client->serverPort())
+        && !theApp.serverConnect->isLocalServer(client->serverAddress().toNetworkUint32(), client->serverPort())
         && static_cast<int>(m_waitingList.size()) > 50)
     {
         return false;
@@ -428,7 +428,7 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
                          .arg(client->userName()));
             return false;
         }
-        if (client->userIP() == cur->userIP())
+        if (client->userAddress() == cur->userAddress())
             ++sameIPCount;
     }
 
@@ -682,11 +682,14 @@ void UploadQueue::process()
 // Packet payload: <filehash 16>
 // ===========================================================================
 
-void UploadQueue::onReaskFilePing(uint32 senderIP, uint16 senderPort,
+void UploadQueue::onReaskFilePing(const Endpoint& senderEP,
                                    const uint8* data, uint32 size)
 {
     if (!data || size < 16)
         return;
+
+    uint32 senderIP = senderEP.address().toUint32();
+    uint16 senderPort = senderEP.port();
 
     // Look up the requesting client by IP + UDP port
     UpDownClient* sender = nullptr;

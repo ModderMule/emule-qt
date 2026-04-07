@@ -97,8 +97,7 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, uint32 ip, uint
 
     UDPPack pack;
     pack.packet = std::move(packet);
-    pack.ip = ip;
-    pack.port = port;
+    pack.destination = Endpoint::fromHostOrder(ip, port);
     pack.queueTime = static_cast<uint32>(m_elapsedTimer.elapsed());
     pack.encrypt = encrypt;
     pack.kad = isKad;
@@ -171,8 +170,7 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
         PreparedDatagram dg;
         dg.data = QByteArray(reinterpret_cast<const char*>(buf.data() + offset),
                              static_cast<qsizetype>(rawSize));
-        dg.ip = pack.ip;
-        dg.port = pack.port;
+        dg.destination = pack.destination;
 
         result.sentBytesControlPackets += rawSize;
         m_sendReadyQueue.push_back(std::move(dg));
@@ -199,10 +197,11 @@ void ClientUDPSocket::flushSendQueue()
     }
 
     for (auto& dg : toSend) {
-        qint64 sent = m_socket.writeDatagram(dg.data, QHostAddress(dg.ip), dg.port);
+        qint64 sent = m_socket.writeDatagram(
+            dg.data, dg.destination.address().toQHostAddress(), dg.destination.port());
         if (sent < 0) {
-            logWarning(QStringLiteral("UDP send failed to %1:%2 — %3")
-                .arg(QHostAddress(dg.ip).toString()).arg(dg.port).arg(m_socket.errorString()));
+            logWarning(QStringLiteral("UDP send failed to %1 — %2")
+                .arg(dg.destination.toString()).arg(m_socket.errorString()));
         }
     }
 }
@@ -223,8 +222,9 @@ void ClientUDPSocket::onReadyRead()
             continue;
 
         QHostAddress senderAddr = datagram.senderAddress();
-        uint32 senderIP = senderAddr.toIPv4Address();
+        uint32 senderIP = senderAddr.toIPv4Address(); // host byte order
         uint16 senderPort = static_cast<uint16>(datagram.senderPort());
+        const Endpoint senderEP = Endpoint::fromHostOrder(senderIP, senderPort);
 
         // IP filter and ban checks expect network byte order
         const uint32 senderIPnbo = htonl(senderIP);
@@ -236,7 +236,7 @@ void ClientUDPSocket::onReadyRead()
             }
         }
         if (auto* cl = theApp.clientList) {
-            if (cl->isBannedClient(senderIPnbo))
+            if (cl->isBannedClient(Address::fromHostOrder(senderIP)))
                 continue;
         }
 
@@ -259,7 +259,7 @@ void ClientUDPSocket::onReadyRead()
                 stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
             uint8 opcode = buf[1];
             emit kadPacketReceived(opcode, buf + 2,
-                                   static_cast<uint32>(bufLen - 2), senderIP, senderPort,
+                                   static_cast<uint32>(bufLen - 2), senderEP,
                                    false, 0);
         } else if (protoByte == OP_KADEMLIAPACKEDPROT) {
             // Compressed Kademlia packet — decompress before forwarding
@@ -271,7 +271,7 @@ void ClientUDPSocket::onReadyRead()
                 emit kadPacketReceived(opcode,
                                        reinterpret_cast<const uint8*>(decompressed.constData()),
                                        static_cast<uint32>(decompressed.size()),
-                                       senderIP, senderPort, false, 0);
+                                       senderEP, false, 0);
             }
         } else {
             // May be encrypted — use our userHash and kadID for decryption
@@ -302,7 +302,7 @@ void ClientUDPSocket::onReadyRead()
                         (dr.senderVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIP));
                     emit kadPacketReceived(opcode, dr.data + 2,
                                            static_cast<uint32>(dr.length - 2),
-                                           senderIP, senderPort,
+                                           senderEP,
                                            validKey, dr.receiverVerifyKey);
                 } else if (innerProto == OP_KADEMLIAPACKEDPROT) {
                     if (auto* stats = theApp.statistics)
@@ -314,7 +314,7 @@ void ClientUDPSocket::onReadyRead()
                         emit kadPacketReceived(opcode,
                                                reinterpret_cast<const uint8*>(decompressed.constData()),
                                                static_cast<uint32>(decompressed.size()),
-                                               senderIP, senderPort,
+                                               senderEP,
                                                validKey, dr.receiverVerifyKey);
                     }
                 }
@@ -333,41 +333,42 @@ bool ClientUDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadOther(size);
 
+    const Endpoint senderEP = Endpoint::fromHostOrder(senderIP, senderPort);
+
     switch (opcode) {
     case OP_REASKCALLBACKUDP:
-        emit reaskCallbackReceived(senderIP, senderPort, packet, size);
+        emit reaskCallbackReceived(senderEP, packet, size);
         break;
 
     case OP_REASKFILEPING:
-        emit reaskFilePingReceived(senderIP, senderPort, packet, size);
+        emit reaskFilePingReceived(senderEP, packet, size);
         break;
 
     case OP_REASKACK:
-        emit reaskAckReceived(senderIP, senderPort, packet, size);
+        emit reaskAckReceived(senderEP, packet, size);
         break;
 
     case OP_FILENOTFOUND:
-        emit fileNotFoundReceived(senderIP, senderPort);
+        emit fileNotFoundReceived(senderEP);
         break;
 
     case OP_QUEUEFULL:
-        emit queueFullReceived(senderIP, senderPort);
+        emit queueFullReceived(senderEP);
         break;
 
     case OP_DIRECTCALLBACKREQ:
-        emit directCallbackReceived(senderIP, senderPort, packet, size);
+        emit directCallbackReceived(senderEP, packet, size);
         break;
 
     case OP_PORTTEST:
         if (size == 1 && packet[0] == 0x12)
-            emit portTestReceived(senderIP, senderPort);
+            emit portTestReceived(senderEP);
         break;
 
     default:
-        logDebug(QStringLiteral("ClientUDPSocket: Unknown opcode 0x%1 from %2:%3")
+        logDebug(QStringLiteral("ClientUDPSocket: Unknown opcode 0x%1 from %2")
                      .arg(opcode, 2, 16, QLatin1Char('0'))
-                     .arg(ipstr(senderIP))
-                     .arg(senderPort));
+                     .arg(senderEP.toString()));
         break;
     }
 

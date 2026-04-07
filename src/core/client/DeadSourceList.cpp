@@ -16,7 +16,7 @@ bool operator==(const DeadSourceKey& a, const DeadSourceKey& b) noexcept
     if (a.userID != 0 && a.userID == b.userID) {
         bool portMatch = (a.port != 0 && a.port == b.port)
                       || (a.kadPort != 0 && a.kadPort == b.kadPort);
-        bool serverMatch = (a.serverIP == b.serverIP) || !isLowID(a.userID);
+        bool serverMatch = (a.serverAddress == b.serverAddress) || !isLowID(a.userID);
         if (portMatch && serverMatch)
             return true;
     }

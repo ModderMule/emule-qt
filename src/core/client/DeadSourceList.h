@@ -6,6 +6,7 @@
 /// Decoupled from CUpDownClient: takes explicit parameters (hash, IPs, ports)
 /// instead of a client reference.
 
+#include "net/Address.h"
 #include "utils/Types.h"
 #include "utils/OtherFunctions.h"
 
@@ -21,7 +22,7 @@ using SteadyTimePoint = std::chrono::steady_clock::time_point;
 /// Key identifying a dead source, replaces CDeadSource.
 struct DeadSourceKey {
     std::array<uint8, 16> hash{};  // user hash (for low-ID clients without server)
-    uint32 serverIP = 0;           // server IP (for low-ID identification)
+    Address serverAddress;         // server address (for low-ID identification)
     uint32 userID   = 0;           // user ID (high-ID = IP, low-ID = server-assigned)
     uint16 port     = 0;           // user TCP port
     uint16 kadPort  = 0;           // Kademlia UDP port
@@ -39,7 +40,7 @@ struct std::hash<eMule::DeadSourceKey> {
         std::size_t h = ds.userID;
         if (h != 0) {
             if (eMule::isLowID(static_cast<eMule::uint32>(h)))
-                h ^= ds.serverIP;
+                h ^= ds.serverAddress.hash();
             return h;
         }
         // Low-ID without server: hash from user hash

@@ -84,9 +84,9 @@ UpDownClient::UpDownClient(uint16 port, uint32 userId, uint32 serverIP,
 
     // For high-ID clients, set the connect IP
     if (!hasLowID())
-        m_connectIP = ed2kID ? userId : ntohl(userId);
+        m_connectAddress = Address::fromNetworkOrder(ed2kID ? userId : ntohl(userId));
 
-    m_serverIP = serverIP;
+    m_serverAddress = Address::fromNetworkOrder(serverIP);
     m_serverPort = serverPort;
 }
 
@@ -134,9 +134,10 @@ void UpDownClient::init()
     m_addNextConnect = false;
 
     // If socket existed we would get peer IP here, but Phase 1 has no socket
-    setIP(0);
+    m_userAddress = Address();
+    m_connectAddress = Address();
 
-    m_serverIP = 0;
+    m_serverAddress = Address();
     m_userIDHybrid = 0;
     m_userPort = 0;
     m_serverPort = 0;
@@ -167,7 +168,7 @@ void UpDownClient::init()
     m_infoPacketsReceived = InfoPacketState::None;
     m_supportSecIdent = 0;
 
-    m_lastSignatureIP = 0;
+    m_lastSignatureAddress = Address();
     m_lastSourceRequest = 0;
     m_lastSourceAnswer = 0;
     m_lastAskedForSources = 0;
@@ -185,7 +186,7 @@ void UpDownClient::init()
     m_kadVersion = 0;
     m_captchasSent = 0;
 
-    m_buddyIP = 0;
+    m_buddyAddress = Address();
     m_lastBuddyPingPongTime = static_cast<uint32>(getTickCount());
     setBuddyID(nullptr);
 
@@ -456,7 +457,7 @@ bool UpDownClient::compare(const UpDownClient* other, bool ignoreUserHash) const
 
     if (hasLowID()) {
         // Firewalled client: check IP + port matches
-        if (userIP() != 0 && userIP() == other->userIP()) {
+        if (!m_userAddress.isNull() && m_userAddress == other->m_userAddress) {
             if (userPort() != 0 && userPort() == other->userPort())
                 return true;
             if (kadPort() != 0 && kadPort() == other->kadPort())
@@ -464,7 +465,7 @@ bool UpDownClient::compare(const UpDownClient* other, bool ignoreUserHash) const
         }
         // Same low ID on same server
         if (userIDHybrid() != 0 && userIDHybrid() == other->userIDHybrid()
-            && serverIP() != 0 && serverIP() == other->serverIP()
+            && !m_serverAddress.isNull() && m_serverAddress == other->m_serverAddress
             && serverPort() != 0 && serverPort() == other->serverPort())
         {
             return true;
@@ -476,8 +477,8 @@ bool UpDownClient::compare(const UpDownClient* other, bool ignoreUserHash) const
     if ((userPort() != 0 && userPort() == other->userPort())
         || (kadPort() != 0 && kadPort() == other->kadPort()))
     {
-        if (userIP() != 0 && other->userIP() != 0) {
-            if (userIP() == other->userIP())
+        if (!m_userAddress.isNull() && !other->m_userAddress.isNull()) {
+            if (m_userAddress == other->m_userAddress)
                 return true;
         } else if (userIDHybrid() == other->userIDHybrid()) {
             return true;
@@ -696,11 +697,11 @@ QString UpDownClient::dbgGetFullClientSoftVer() const
 QString UpDownClient::dbgGetClientInfo(bool formatIP) const
 {
     if (hasLowID()) {
-        if (connectIP() != 0) {
+        if (!m_connectAddress.isNull()) {
             return QStringLiteral("%1@%2 (%3) '%4' (%5,%6/%7/%8)")
                 .arg(userIDHybrid())
-                .arg(ipstr(serverIP()))
-                .arg(ipstr(connectIP()))
+                .arg(ipstr(m_serverAddress))
+                .arg(ipstr(m_connectAddress))
                 .arg(userName())
                 .arg(dbgGetFullClientSoftVer())
                 .arg(dbgGetDownloadState())
@@ -709,7 +710,7 @@ QString UpDownClient::dbgGetClientInfo(bool formatIP) const
         }
         return QStringLiteral("%1@%2 '%3' (%4,%5/%6/%7)")
             .arg(userIDHybrid())
-            .arg(ipstr(serverIP()))
+            .arg(ipstr(m_serverAddress))
             .arg(userName())
             .arg(dbgGetFullClientSoftVer())
             .arg(dbgGetDownloadState())
@@ -719,7 +720,7 @@ QString UpDownClient::dbgGetClientInfo(bool formatIP) const
 
     Q_UNUSED(formatIP);
     return QStringLiteral("%1 '%2' (%3,%4/%5/%6)")
-        .arg(ipstr(connectIP()))
+        .arg(ipstr(m_connectAddress))
         .arg(userName())
         .arg(dbgGetFullClientSoftVer())
         .arg(dbgGetDownloadState())
@@ -843,7 +844,7 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 
         case CT_EMULE_BUDDYIP:
             if (tag.isInt())
-                m_buddyIP = tag.intValue();
+                m_buddyAddress = Address::fromNetworkOrder(tag.intValue());
             break;
 
         case CT_EMULE_MISCOPTIONS1:
@@ -906,7 +907,7 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     m_userPort = nUserPort;
 
     // Read server info
-    m_serverIP = data.readUInt32();
+    m_serverAddress = Address::fromNetworkOrder(data.readUInt32());
     m_serverPort = data.readUInt16();
 
     // Check for trailing client identification bytes
@@ -922,13 +923,13 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     if (m_socket) {
         const auto addr = m_socket->peerAddress();
         if (!addr.isNull())
-            setIP(htonl(addr.toIPv4Address()));
+            setUserAddress(Address::fromQHostAddress(addr));
     }
 
     // Add peer's server to our server list if not already known
-    if (theApp.serverList && m_serverIP != 0 && m_serverPort != 0) {
-        if (!theApp.serverList->findByIPTcp(m_serverIP, m_serverPort)) {
-            auto newServer = std::make_unique<Server>(m_serverIP, m_serverPort);
+    if (theApp.serverList && !m_serverAddress.isNull() && m_serverPort != 0) {
+        if (!theApp.serverList->findByIPTcp(m_serverAddress.toNetworkUint32(), m_serverPort)) {
+            auto newServer = std::make_unique<Server>(m_serverAddress.toNetworkUint32(), m_serverPort);
             theApp.serverList->addServer(std::move(newServer));
         }
     }
@@ -939,12 +940,12 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 
     // Friend linking
     if (theApp.friendList)
-        m_friend = theApp.friendList->searchFriend(m_userHash.data(), m_userIP, m_userPort);
+        m_friend = theApp.friendList->searchFriend(m_userHash.data(), m_userAddress.toNetworkUint32(), m_userPort);
 
-    // High-ID conversion: if not low-ID, convert userIDHybrid to match userIP
-    if (m_userIP != 0) {
-        if (!hasLowID() || m_userIDHybrid == 0 || m_userIDHybrid == m_userIP)
-            m_userIDHybrid = ntohl(m_userIP);
+    // High-ID conversion: if not low-ID, convert userIDHybrid to match userAddress
+    if (!m_userAddress.isNull()) {
+        if (!hasLowID() || m_userIDHybrid == 0 || m_userIDHybrid == m_userAddress.toNetworkUint32())
+            m_userIDHybrid = m_userAddress.toUint32();
     }
 
     // Set info packets received flag
@@ -1112,14 +1113,14 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     // CT_EMULE_BUDDYIP + CT_EMULE_BUDDYUDP — MFC: sent when firewalled with buddy
     if (sendBuddyTags) {
         auto* buddy = theApp.clientList->getBuddy();
-        Tag(CT_EMULE_BUDDYIP, buddy->connectIP()).writeTagToFile(data);
+        Tag(CT_EMULE_BUDDYIP, buddy->connectAddress().toNetworkUint32()).writeTagToFile(data);
         Tag(CT_EMULE_BUDDYUDP, static_cast<uint32>(buddy->udpPort())).writeTagToFile(data);
     }
 
     // Write server info
     if (theApp.serverConnect && theApp.serverConnect->isConnected()) {
         if (auto* srv = theApp.serverConnect->currentServer()) {
-            data.writeUInt32(srv->ip());
+            data.writeUInt32(srv->ipAddress().toNetworkUint32());
             data.writeUInt16(srv->port());
         } else {
             data.writeUInt32(0);
@@ -1349,6 +1350,18 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         return true;
     }
 
+    // Already connected — send file request directly for the new file.
+    // This must be checked BEFORE the reask throttle: after doSwap() sets
+    // state=None the source needs to re-request immediately, but the
+    // throttle would block it for 1 minute.
+    if (m_socket && m_socket->isConnected()) {
+        if (m_reqFile && m_downloadState == DownloadState::None) {
+            setDownloadState(DownloadState::Connected);
+            sendFileRequest();
+        }
+        return true;
+    }
+
     const uint32 curTick = static_cast<uint32>(getTickCount());
     if ((curTick - m_lastTriedToConnect) < MIN2MS(1)) {
         return false;
@@ -1356,8 +1369,8 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     m_lastTriedToConnect = curTick;
 
     // IP filter check
-    if (theApp.ipFilter && theApp.ipFilter->isFiltered(m_connectIP)) {
-        logDebug(QStringLiteral("tryToConnect: IP filtered: %1").arg(m_connectIP));
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(m_connectAddress.toNetworkUint32())) {
+        logDebug(QStringLiteral("tryToConnect: IP filtered: %1").arg(m_connectAddress.toNetworkUint32()));
         return false;
     }
 
@@ -1367,15 +1380,9 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         return false;
     }
 
-    if (m_socket && m_socket->isConnected()) {
-        logDebug(QStringLiteral("tryToConnect: already connected, calling connectionEstablished()"));
-        connectionEstablished();
-        return true;
-    }
-
     // Derive connect IP from user ID for high-ID clients
-    if (m_connectIP == 0 && !hasLowID()) {
-        m_connectIP = ntohl(m_userIDHybrid);
+    if (m_connectAddress.isNull() && !hasLowID()) {
+        m_connectAddress = Address::fromHostOrder(m_userIDHybrid);
     }
 
     // MFC BaseClient.cpp:1379 — track connecting client for 45s timeout
@@ -1397,10 +1404,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         if (m_reqFile && m_downloadState == DownloadState::None)
             setDownloadState(DownloadState::Connecting);
 
-        const QHostAddress dbgAddr(ntohl(m_connectIP));
+        const QHostAddress dbgAddr(m_connectAddress.toUint32());
         logDebug(QStringLiteral("tryToConnect: DIRECT TCP to %1:%2 (connectIP=0x%3, userIDHybrid=0x%4)")
                      .arg(dbgAddr.toString()).arg(m_userPort)
-                     .arg(m_connectIP, 8, 16, QLatin1Char('0'))
+                     .arg(m_connectAddress.toNetworkUint32(), 8, 16, QLatin1Char('0'))
                      .arg(m_userIDHybrid, 8, 16, QLatin1Char('0')));
 
         m_connectingState = ConnectingState::DirectTCP;
@@ -1410,7 +1417,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
 
     // ---- Path 4: Direct Callback via UDP (firewalled but UDP open) ----
     // MFC BaseClient.cpp:1399-1413
-    if (supportsDirectUDPCallback() && thePrefs.udpPort() != 0 && m_connectIP != 0) {
+    if (supportsDirectUDPCallback() && thePrefs.udpPort() != 0 && !m_connectAddress.isNull()) {
         m_connectingState = ConnectingState::DirectCallback;
 
         // Build connect options byte: MFC GetMyConnectOptions(true, false)
@@ -1428,13 +1435,13 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_DIRECTCALLBACKREQ);
         if (theApp.clientUDP) {
-            theApp.clientUDP->sendPacket(std::move(packet), m_connectIP, m_kadPort,
+            theApp.clientUDP->sendPacket(std::move(packet), m_connectAddress.toNetworkUint32(), m_kadPort,
                                           shouldReceiveCryptUDPPackets(),
                                           m_userHash.data(), false, 0);
         }
 
         logDebug(QStringLiteral("tryToConnect: DIRECT CALLBACK via UDP to %1:%2")
-                     .arg(QHostAddress(ntohl(m_connectIP)).toString()).arg(m_kadPort));
+                     .arg(m_connectAddress.toQHostAddress().toString()).arg(m_kadPort));
         return true;
     }
 
@@ -1446,7 +1453,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     // Low-ID client — need callback via server
     if (hasLowID() && theApp.serverConnect && theApp.serverConnect->isConnected()) {
         // Check if the source is on the same server we're connected to
-        if (theApp.serverConnect->isLocalServer(m_serverIP, m_serverPort)) {
+        if (theApp.serverConnect->isLocalServer(m_serverAddress.toNetworkUint32(), m_serverPort)) {
             // Send callback request via server
             SafeMemFile data;
             data.writeUInt32(m_userIDHybrid);
@@ -1462,22 +1469,22 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     // Matches MFC BaseClient.cpp:1435-1449.
     if (hasValidBuddyID() && kad::Kademlia::instance()
         && kad::Kademlia::instance()->isConnected()
-        && ((m_buddyIP != 0 && m_buddyPort != 0) || m_reqFile != nullptr))
+        && ((!m_buddyAddress.isNull() && m_buddyPort != 0) || m_reqFile != nullptr))
     {
         // Try to find buddy IP from Kad routing table if we don't have it
-        if (m_buddyIP == 0 || m_buddyPort == 0) {
+        if (m_buddyAddress.isNull() || m_buddyPort == 0) {
             kad::UInt128 buddyKadId(m_buddyID.data());
             if (auto* zone = kad::Kademlia::getInstanceRoutingZone()) {
                 if (auto* contact = zone->getContact(buddyKadId)) {
-                    m_buddyIP = contact->getIPAddress();
+                    m_buddyAddress = contact->address();
                     m_buddyPort = contact->getUDPPort();
                     logDebug(QStringLiteral("tryToConnect: found buddy IP from Kad routing table: %1:%2")
-                                 .arg(QHostAddress(ntohl(m_buddyIP)).toString()).arg(m_buddyPort));
+                                 .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort));
                 }
             }
         }
 
-        if (m_buddyIP != 0 && m_buddyPort != 0 && m_reqFile != nullptr) {
+        if (!m_buddyAddress.isNull() && m_buddyPort != 0 && m_reqFile != nullptr) {
             SafeMemFile data;
             kad::UInt128 buddyKadId(m_buddyID.data());
             kad::io::writeUInt128(data, buddyKadId);
@@ -1489,11 +1496,11 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
             m_connectingState = ConnectingState::KadCallback;
             // MFC FIXME: We don't know which kad version the buddy has, so we need to send unencrypted
             if (theApp.clientUDP)
-                theApp.clientUDP->sendPacket(std::move(packet), m_buddyIP,
+                theApp.clientUDP->sendPacket(std::move(packet), m_buddyAddress.toNetworkUint32(),
                                              m_buddyPort, false, nullptr, true, 0);
             setDownloadState(DownloadState::WaitCallbackKad);
             logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2")
-                         .arg(QHostAddress(ntohl(m_buddyIP)).toString()).arg(m_buddyPort));
+                         .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort));
             return true;
         }
         // Buddy IP not in routing table — fall back to FindSource search
@@ -1529,7 +1536,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     logDebug(QStringLiteral("tryToConnect: no viable connection path for %1 "
                             "(connectIP=0x%2 lowID=%3 buddyValid=%4)")
                  .arg(userName())
-                 .arg(m_connectIP, 8, 16, QLatin1Char('0'))
+                 .arg(m_connectAddress.toNetworkUint32(), 8, 16, QLatin1Char('0'))
                  .arg(hasLowID())
                  .arg(hasValidBuddyID()));
     return false;
@@ -1623,7 +1630,7 @@ void UpDownClient::connect()
     reqSocket->initProxySupport(thePrefs.proxySettings());
 
     // Initiate TCP connection
-    const QHostAddress addr(ntohl(m_connectIP));
+    const QHostAddress addr(m_connectAddress.toUint32());
     logDebug(QStringLiteral("connect: connectToHost(%1, %2) encrypted=%3 socketState=%4 fd=%5")
                  .arg(addr.toString()).arg(m_userPort)
                  .arg(encrypted)
@@ -1799,7 +1806,7 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
         if (theApp.clientList) {
             DeadSourceKey key;
             key.hash = m_userHash;
-            key.serverIP = m_serverIP;
+            key.serverAddress = m_serverAddress;
             key.userID = m_userIDHybrid;
             key.port = m_userPort;
             key.kadPort = m_kadPort;
@@ -1817,7 +1824,7 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
 
     // Update friend's last-seen info
     if (m_friend) {
-        m_friend->setLastUsedIP(m_connectIP);
+        m_friend->setLastUsedAddress(m_connectAddress);
         m_friend->setLastUsedPort(m_userPort);
         m_friend->setLastSeen(std::time(nullptr));
     }
@@ -1830,9 +1837,9 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // Handle Kad UDP firewall check cancellation/failure — MFC BaseClient.cpp:1109-1112
     if (m_kadState == KadState::QueuedFwCheckUDP
         || m_kadState == KadState::ConnectingFwCheckUDP) {
-        kad::UDPFirewallTester::setUDPFWCheckResult(false, true, ntohl(m_connectIP), 0);
+        kad::UDPFirewallTester::setUDPFWCheckResult(false, true, m_connectAddress.toUint32(), 0);
     } else if (m_kadState == KadState::FwCheckUDP) {
-        kad::UDPFirewallTester::setUDPFWCheckResult(false, false, ntohl(m_connectIP), 0);
+        kad::UDPFirewallTester::setUDPFWCheckResult(false, false, m_connectAddress.toUint32(), 0);
     }
     setKadState(KadState::None);
 
@@ -1898,7 +1905,7 @@ void UpDownClient::onInfoPacketsReceived()
 
 bool UpDownClient::isBanned() const
 {
-    if (theApp.clientList && theApp.clientList->isBannedClient(m_connectIP))
+    if (theApp.clientList && theApp.clientList->isBannedClient(m_connectAddress))
         return true;
     return m_uploadState == UploadState::Banned;
 }
@@ -1991,7 +1998,7 @@ void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const Q
     if (theApp.searchList) {
         theApp.searchList->processSearchAnswer(data, size,
                                                 m_unicodeSupport,
-                                                m_serverIP, m_serverPort);
+                                                m_serverAddress.toNetworkUint32(), m_serverPort);
     }
 
     // Build CBOR array of files and emit signal for the GUI
@@ -2235,7 +2242,7 @@ void UpDownClient::sendSignaturePacket()
             challengeIP = theApp.serverConnect->clientID();
             chaIPKind = kCryptCipLocalClient;
         } else {
-            challengeIP = userIP();
+            challengeIP = m_userAddress.toNetworkUint32();
             chaIPKind = kCryptCipRemoteClient;
         }
     }
@@ -2318,7 +2325,7 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
         return;
 
     // Prevent duplicate signatures from the same IP (MFC uses GetIP())
-    if (m_lastSignatureIP == userIP()) {
+    if (m_lastSignatureAddress == m_userAddress) {
         logDebug(QStringLiteral("processSignaturePacket: duplicate signature from %1").arg(userName()));
         return;
     }
@@ -2335,9 +2342,9 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
         return;
     }
 
-    m_lastSignatureIP = userIP();
+    m_lastSignatureAddress = m_userAddress;
 
-    bool verified = theApp.clientCredits->verifyIdent(m_credits, data + 1, data[0], userIP(), chaIPKind);
+    bool verified = theApp.clientCredits->verifyIdent(m_credits, data + 1, data[0], m_userAddress.toNetworkUint32(), chaIPKind);
     if (thePrefs.logSecureIdent())
         logDebug(QStringLiteral("processSignaturePacket: sigLen=%1 chaIPKind=%2 verified=%3 for %4")
                      .arg(data[0]).arg(chaIPKind).arg(verified).arg(userName()));
@@ -2362,7 +2369,7 @@ void UpDownClient::sendSecIdentStatePacket()
     uint8 state;
     if (m_credits->secIDKeyLen() == 0) {
         state = static_cast<uint8>(SecureIdentState::KeyAndSigNeeded);
-    } else if (m_lastSignatureIP != userIP()) {
+    } else if (m_lastSignatureAddress != m_userAddress) {
         state = static_cast<uint8>(SecureIdentState::SignatureNeeded);
     } else {
         // Already verified from this IP — MFC returns without sending.
@@ -2437,7 +2444,7 @@ bool UpDownClient::hasPassedSecureIdent(bool passIfUnavailable) const
         return passIfUnavailable;
     }
 
-    const IdentState state = m_credits->currentIdentState(m_connectIP);
+    const IdentState state = m_credits->currentIdentState(m_connectAddress.toNetworkUint32());
     if (state == IdentState::Identified)
         return true;
 
@@ -2816,7 +2823,7 @@ void UpDownClient::sendFirewallCheckUDPRequest()
                      .arg(static_cast<int>(m_downloadState))
                      .arg(static_cast<int>(m_chatState))
                      .arg(m_kadVersion).arg(kadPort()));
-        kad::UDPFirewallTester::setUDPFWCheckResult(false, true, ntohl(m_connectIP), 0);
+        kad::UDPFirewallTester::setUDPFWCheckResult(false, true, m_connectAddress.toUint32(), 0);
         setKadState(KadState::None);
         return;
     }
@@ -2830,8 +2837,8 @@ void UpDownClient::sendFirewallCheckUDPRequest()
 
     const uint16 internPort = kadPrefs->internKadPort();
     const uint16 externPort = kadPrefs->externalKadPort();
-    //const uint32 verifyKey = kad::KadPrefs::getUDPVerifyKey(m_connectIP); // NBO
-    const uint32 verifyKey = kad::KadPrefs::getUDPVerifyKey(ntohl(m_connectIP)); // HBO, m_connectIP is stored in NBO but getUDPVerifyKey() expects HBO
+    //const uint32 verifyKey = kad::KadPrefs::getUDPVerifyKey(m_connectAddress.toNetworkUint32()); // NBO
+    const uint32 verifyKey = kad::KadPrefs::getUDPVerifyKey(m_connectAddress.toUint32()); // HBO, m_connectAddress is stored in NBO but getUDPVerifyKey() expects HBO
 
     SafeMemFile data;
     data.writeUInt16(internPort);
@@ -2867,7 +2874,7 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
         || m_downloadState != DownloadState::None
         || m_chatState != ChatState::None
         || (kad::Kademlia::getInstanceRoutingZone()
-            && kad::Kademlia::getInstanceRoutingZone()->getContact(ntohl(m_connectIP), 0, false) != nullptr);
+            && kad::Kademlia::getInstanceRoutingZone()->getContact(m_connectAddress.toUint32(), 0, false) != nullptr);
 
     const uint16 remoteInternPort = data.readUInt16();
     const uint16 remoteExternPort = data.readUInt16();
@@ -2887,7 +2894,7 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
     SafeMemFile testPacket1;
     testPacket1.writeUInt8(static_cast<uint8>(errorAlreadyKnown ? 1 : 0));
     testPacket1.writeUInt16(remoteInternPort);
-    udpListener->sendPacket(testPacket1, KADEMLIA2_FIREWALLUDP, ntohl(m_connectIP),
+    udpListener->sendPacket(testPacket1, KADEMLIA2_FIREWALLUDP, m_connectAddress.toUint32(),
                             remoteInternPort,
                             kad::KadUDPKey(senderKey, thePrefs.publicIP()), nullptr);
 
@@ -2896,7 +2903,7 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
         SafeMemFile testPacket2;
         testPacket2.writeUInt8(static_cast<uint8>(errorAlreadyKnown ? 1 : 0));
         testPacket2.writeUInt16(remoteExternPort);
-        udpListener->sendPacket(testPacket2, KADEMLIA2_FIREWALLUDP, ntohl(m_connectIP),
+        udpListener->sendPacket(testPacket2, KADEMLIA2_FIREWALLUDP, m_connectAddress.toUint32(),
                                 remoteExternPort,
                                 kad::KadUDPKey(senderKey, thePrefs.publicIP()), nullptr);
     }

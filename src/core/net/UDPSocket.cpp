@@ -89,7 +89,7 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
         std::memcpy(buf.data() + offset + 2, packet->pBuffer, packet->size);
 
     uint16 port = specialPort ? specialPort : (server.port() + 4); // Default UDP port = TCP+4
-    uint32 ip = server.ip();
+    uint32 ip = server.ipAddress().toNetworkUint32();
 
     // Encrypt if server supports it.
     // encryptSendServer writes a crypto header at buf[0..overhead-1]
@@ -120,7 +120,7 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
 
         ServerUDPPacket pkt;
         pkt.data.assign(buf.begin() + offset, buf.begin() + offset + rawSize);
-        pkt.port = port;
+        pkt.destination = Endpoint(Address(), port); // IP resolved later via DNS
         req->pendingPackets.push_back(std::move(pkt));
 
         req->lookup = std::make_unique<QDnsLookup>(this);
@@ -162,8 +162,8 @@ SocketSentBytes UDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, uint32
         qint64 sent = m_socket.writeDatagram(
             reinterpret_cast<const char*>(pkt.data.data()),
             static_cast<qint64>(pkt.data.size()),
-            QHostAddress(ntohl(pkt.ip)),
-            pkt.port);
+            pkt.destination.address().toQHostAddress(),
+            pkt.destination.port());
 
         if (sent < 0) {
             m_wouldBlock = true;
@@ -245,25 +245,26 @@ bool UDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadServer(size);
 
+    const Endpoint senderEP = Endpoint::fromNetworkOrder(senderIP, senderPort);
+
     switch (opcode) {
     case OP_GLOBSEARCHRES:
-        logDebug(QStringLiteral("UDPSocket: received OP_GLOBSEARCHRES from %1:%2 size=%3")
-                     .arg(ipstr(senderIP))
-                     .arg(senderPort)
+        logDebug(QStringLiteral("UDPSocket: received OP_GLOBSEARCHRES from %1 size=%2")
+                     .arg(senderEP.toString())
                      .arg(size));
-        emit globalSearchResult(packet, size, senderIP, senderPort);
+        emit globalSearchResult(packet, size, senderEP);
         break;
 
     case OP_GLOBFOUNDSOURCES:
-        emit globalFoundSources(packet, size, senderIP, senderPort);
+        emit globalFoundSources(packet, size, senderEP);
         break;
 
     case OP_GLOBSERVSTATRES:
-        emit serverStatusResult(packet, size, senderIP, senderPort);
+        emit serverStatusResult(packet, size, senderEP);
         break;
 
     case OP_SERVER_DESC_RES:
-        emit serverDescResult(packet, size, senderIP, senderPort);
+        emit serverDescResult(packet, size, senderEP);
         break;
 
     default:
@@ -288,8 +289,7 @@ void UDPSocket::sendBuffer(uint32 ip, uint16 port, const uint8* data, uint32 siz
 
         ServerUDPPacket pkt;
         pkt.data.assign(data, data + size);
-        pkt.ip = ip;
-        pkt.port = port;
+        pkt.destination = Endpoint::fromNetworkOrder(ip, port);
         m_controlQueue.push_back(std::move(pkt));
     }
 
@@ -318,11 +318,13 @@ void UDPSocket::onDnsFinished()
             if (lookup->error() == QDnsLookup::NoError && !lookup->hostAddressRecords().isEmpty()) {
                 QHostAddress addr = lookup->hostAddressRecords().first().value();
                 uint32 ip = htonl(addr.toIPv4Address());
+                Address resolved = Address::fromNetworkOrder(ip);
 
                 // Send all pending packets
                 for (auto& pkt : (*it)->pendingPackets) {
-                    pkt.ip = ip;
-                    sendBuffer(ip, pkt.port, pkt.data.data(), static_cast<uint32>(pkt.data.size()));
+                    pkt.destination = Endpoint(resolved, pkt.destination.port());
+                    sendBuffer(ip, pkt.destination.port(),
+                               pkt.data.data(), static_cast<uint32>(pkt.data.size()));
                 }
             } else {
                 logWarning(QStringLiteral("UDPSocket: DNS lookup failed: %1")

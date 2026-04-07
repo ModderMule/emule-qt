@@ -7,6 +7,7 @@
 /// Phase 1 covers add/remove/find and banned IP tracking.
 
 #include "client/DeadSourceList.h"
+#include "net/Address.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -107,9 +108,10 @@ public:
     /// Matches MFC CClientList::Process() (srchybrid/ClientList.cpp).
     void process();
 
-    void addBannedClient(uint32 ip);
-    [[nodiscard]] bool isBannedClient(uint32 ip) const;
-    void removeBannedClient(uint32 ip);
+    void addBannedClient(const Address& addr);
+    [[nodiscard]] bool isBannedClient(const Address& addr) const;
+    void removeBannedClient(const Address& addr);
+
     [[nodiscard]] int bannedCount() const;
     void removeAllBannedClients();
 
@@ -131,7 +133,7 @@ private:
 
     std::vector<UpDownClient*> m_clients;
     std::vector<ConnectingClient> m_connectingClients;
-    std::unordered_map<uint32, uint32> m_bannedList;  // IP -> ban tick
+    std::unordered_map<Address, uint32> m_bannedList;  // Address -> ban tick
     uint32 m_lastBanCleanUp = 0;
     UpDownClient* m_buddy = nullptr;
     BuddyStatus m_buddyStatus = BuddyStatus::None;

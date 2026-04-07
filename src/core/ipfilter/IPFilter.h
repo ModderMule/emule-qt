@@ -7,6 +7,7 @@
 /// PeerGuardian2 binary), stores sorted ranges for O(log n) lookup,
 /// and merges overlapping/adjacent ranges.
 
+#include "net/Address.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -64,6 +65,12 @@ public:
 
     /// Convenience: check using default level (100).
     [[nodiscard]] bool isFiltered(uint32 ip) const;
+
+    /// Check if an Address is filtered at the given level. IPv6 addresses are not yet filtered.
+    [[nodiscard]] bool isFiltered(const Address& addr, uint32 filterLevel) const;
+
+    /// Convenience: check Address using default level (100).
+    [[nodiscard]] bool isFiltered(const Address& addr) const;
 
     // -- Modification ---------------------------------------------------------
 

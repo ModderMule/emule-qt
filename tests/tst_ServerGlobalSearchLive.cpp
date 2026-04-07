@@ -122,7 +122,7 @@ void tst_ServerGlobalSearchLive::globalSearchTwoServers()
 
     // Register IPs so spam tracking allows results through
     for (Server* srv : targets)
-        m_searchList->addSentUDPRequestIP(srv->ip());
+        m_searchList->addSentUDPRequestIP(srv->ipAddress().toNetworkUint32());
 
     // Build minimal OP_GLOBSEARCHREQ payload for keyword "eMulev0.50a"
     // Format: [type=0x01][len_lo][len_hi][keyword bytes...]

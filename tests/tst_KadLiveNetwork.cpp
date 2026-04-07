@@ -404,7 +404,7 @@ void tst_KadLiveNetwork::initTestCase()
     auto* udpListener = m_kad->getUDPListener();
     rateLimitedSend(contacts,
         [udpListener](const Contact* c) {
-            udpListener->bootstrap(c->getIPAddress(), c->getUDPPort());
+            udpListener->bootstrap(c->address().toUint32(), c->getUDPPort());
         });
 
     // Also try DNS bootstrap in case nodes.dat is too stale
@@ -431,7 +431,7 @@ void tst_KadLiveNetwork::initTestCase()
             [udpListener](const Contact* c) {
                 UInt128 contactID = c->getClientID();
                 udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                                           c->getIPAddress(), c->getUDPPort(),
+                                           c->address().toUint32(), c->getUDPPort(),
                                            c->getVersion(), c->getUDPKey(), &contactID, false);
             },
             [this, baseRecv] {
@@ -480,7 +480,7 @@ void tst_KadLiveNetwork::bootstrap_connectsToNetwork()
         [udpListener](const Contact* c) {
             UInt128 contactID = c->getClientID();
             udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                                       c->getIPAddress(), c->getUDPPort(),
+                                       c->address().toUint32(), c->getUDPPort(),
                                        c->getVersion(), c->getUDPKey(), &contactID, false);
         },
         [this, baseReceived] {
@@ -515,9 +515,9 @@ void tst_KadLiveNetwork::bootstrap_connectsToNetwork()
         const int baseRaw = m_rawDatagramsReceived.load(std::memory_order_relaxed);
         UInt128 pcID = pc->getClientID();
         probeListener->sendNullPacket(KADEMLIA2_PING,
-                                     pc->getIPAddress(), pc->getUDPPort(),
+                                     pc->address().toUint32(), pc->getUDPPort(),
                                      pc->getUDPKey(), &pcID);
-        qDebug() << "PING probe sent to" << QHostAddress(pc->getIPAddress()).toString()
+        qDebug() << "PING probe sent to" << pc->address().toString()
                  << ":" << pc->getUDPPort();
 
         const bool pingResponse = QTest::qWaitFor([this, baseRaw] {
@@ -539,7 +539,7 @@ void tst_KadLiveNetwork::bootstrap_connectsToNetwork()
             io::writeUInt128(probePacket, pc->getClientID());
             UInt128 pcID = pc->getClientID();
             probeListener->sendPacket(probePacket, KADEMLIA2_REQ,
-                                     pc->getIPAddress(), pc->getUDPPort(),
+                                     pc->address().toUint32(), pc->getUDPPort(),
                                      pc->getUDPKey(), &pcID);
             ++reqSent;
         }
@@ -954,7 +954,7 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
         [udpListener](const Contact* c) {
             UInt128 contactID = c->getClientID();
             udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                                       c->getIPAddress(), c->getUDPPort(),
+                                       c->address().toUint32(), c->getUDPPort(),
                                        c->getVersion(), c->getUDPKey(), &contactID, false);
         });
     qDebug() << "Sent HELLO_REQ to" << contacts.size() << "contacts for firewall check";
@@ -1152,7 +1152,7 @@ void tst_KadLiveNetwork::buddySearch_connectsWithBuddy()
             [udpListener](const Contact* c) {
                 UInt128 contactID = c->getClientID();
                 udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                                           c->getIPAddress(), c->getUDPPort(),
+                                           c->address().toUint32(), c->getUDPPort(),
                                            c->getVersion(), c->getUDPKey(), &contactID, false);
             },
             [this, baseRecv] {
@@ -1269,7 +1269,7 @@ void tst_KadLiveNetwork::pongEcho_returnsCorrectPort()
         if (!c->isIpVerified()) continue;
         SafeMemFile emptyPacket;
         udpListener->sendPacket(emptyPacket, KADEMLIA2_PING,
-                                c->getIPAddress(), c->getUDPPort(),
+                                c->address().toUint32(), c->getUDPPort(),
                                 c->getUDPKey(), nullptr);
         if (++pingsSent >= 5) break;
     }

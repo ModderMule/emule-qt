@@ -23,8 +23,7 @@ Contact::Contact(const UInt128& clientId, uint32 ip, uint16 udpPort, uint16 tcpP
                  const UInt128& localKadId)
     : m_clientId(clientId)
     , m_udpKey(udpKey)
-    , m_ip(ip)
-    , m_netIp(htonl(ip))
+    , m_address(Address::fromHostOrder(ip))
     , m_tcpPort(tcpPort)
     , m_udpPort(udpPort)
     , m_version(version)
@@ -41,8 +40,7 @@ Contact::Contact(const UInt128& clientId, uint32 ip, uint16 udpPort, uint16 tcpP
                  bool ipVerified)
     : m_clientId(clientId)
     , m_udpKey(udpKey)
-    , m_ip(ip)
-    , m_netIp(htonl(ip))
+    , m_address(Address::fromHostOrder(ip))
     , m_tcpPort(tcpPort)
     , m_udpPort(udpPort)
     , m_version(version)
@@ -77,12 +75,11 @@ void Contact::setClientID(const UInt128& clientId, const UInt128& localKadId)
     m_distance.xorWith(clientId);
 }
 
-void Contact::setIPAddress(uint32 ip)
+void Contact::setAddress(const Address& addr)
 {
-    if (m_ip != ip) {
+    if (m_address != addr) {
         setIpVerified(false);
-        m_ip = ip;
-        m_netIp = htonl(m_ip);
+        m_address = addr;
     }
 }
 
@@ -161,8 +158,7 @@ void Contact::copy(const Contact& from)
     m_expires            = from.m_expires;
     m_created            = from.m_created;
     m_inUse              = from.m_inUse;
-    m_ip                 = from.m_ip;
-    m_netIp              = from.m_netIp;
+    m_address            = from.m_address;
     m_tcpPort            = from.m_tcpPort;
     m_udpPort            = from.m_udpPort;
     m_clientHash         = from.m_clientHash;

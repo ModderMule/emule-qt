@@ -381,7 +381,7 @@ void tst_FileDownloadLive::initTestCase()
     auto* udpListener = m_kad->getUDPListener();
     rateLimitedSend(contacts,
         [udpListener](const Contact* c) {
-            udpListener->bootstrap(c->getIPAddress(), c->getUDPPort());
+            udpListener->bootstrap(c->address().toUint32(), c->getUDPPort());
         },
         [this] { return m_kadPacketsReceived.load(std::memory_order_relaxed) >= 10; });
 
@@ -397,7 +397,7 @@ void tst_FileDownloadLive::initTestCase()
             [udpListener](const Contact* c) {
                 UInt128 contactID = c->getClientID();
                 udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                                           c->getIPAddress(), c->getUDPPort(),
+                                           c->address().toUint32(), c->getUDPPort(),
                                            c->getVersion(), c->getUDPKey(), &contactID, false);
             },
             [this, baseRecv] {

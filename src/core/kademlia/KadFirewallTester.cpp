@@ -208,7 +208,7 @@ void UDPFirewallTester::queryNextClient()
         }
 
         // Skip if we already know this IP from the client list
-        if (routingZone && routingZone->getContact(testContact.getIPAddress(), 0, false)) {
+        if (routingZone && routingZone->getContact(testContact.address().toUint32(), 0, false)) {
             logKad(QStringLiteral("Kad: UDP FW skip contact — IP already known"));
             continue;
         }

@@ -33,7 +33,7 @@ private slots:
 void tst_KadEntry::construct_default()
 {
     Entry e;
-    QCOMPARE(e.m_ip, uint32{0});
+    QVERIFY(e.m_address.isNull());
     QCOMPARE(e.m_tcpPort, uint16{0});
     QCOMPARE(e.m_udpPort, uint16{0});
     QCOMPARE(e.m_size, uint64{0});
@@ -109,14 +109,14 @@ void tst_KadEntry::writeTagList_roundTrip()
 void tst_KadEntry::keyEntry_copy()
 {
     KeyEntry original;
-    original.m_ip = 0x0A000001;
+    original.m_address = Address::fromHostOrder(0x0A000001);
     original.m_size = 5000;
     original.setFileName(QStringLiteral("copied.txt"));
 
     Entry* copied = original.copy();
     QVERIFY(copied != nullptr);
     QVERIFY(copied->isKeyEntry());
-    QCOMPARE(copied->m_ip, uint32{0x0A000001});
+    QCOMPARE(copied->m_address.toUint32(), uint32{0x0A000001});
     QCOMPARE(copied->m_size, uint64{5000});
     QCOMPARE(copied->getCommonFileName(), QStringLiteral("copied.txt"));
 

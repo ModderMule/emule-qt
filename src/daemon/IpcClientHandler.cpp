@@ -634,7 +634,7 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
         info.insert(QStringLiteral("obfuscated"),
                     theApp.serverConnect->isConnectedObfuscated());
         if (const auto* srv = theApp.serverConnect->currentServer()) {
-            info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ip()));
+            info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ipAddress().toNetworkUint32()));
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
@@ -701,7 +701,7 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
         // Already connected to this exact server — no-op
         if (theApp.serverConnect->isConnected()) {
             const auto* cur = theApp.serverConnect->currentServer();
-            if (cur && cur->ip() == ip && cur->port() == port) {
+            if (cur && cur->ipAddress().toNetworkUint32() == ip && cur->port() == port) {
                 sendMessage(IpcMessage::makeResult(msg.seqId(), true));
                 return;
             }
@@ -810,7 +810,7 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
                                .arg(count));
                 for (size_t i = 0; i < count; ++i) {
                     Server* srv = theApp.serverList->serverAt(i);
-                    theApp.searchList->addSentUDPRequestIP(srv->ip());
+                    theApp.searchList->addSentUDPRequestIP(srv->ipAddress().toNetworkUint32());
                     auto pkt = std::make_unique<Packet>(OP_GLOBSEARCHREQ,
                                                         static_cast<uint32>(payload.size()));
                     pkt->prot = OP_EDONKEYPROT;
@@ -819,7 +819,7 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
                     const bool encrypted = srv->serverKeyUDP() != 0 && srv->supportsObfuscationUDP();
                     logDebug(QStringLiteral("  -> %1 (%2:%3) UDP:%4 encrypted=%5 keyUDP=0x%6")
                                    .arg(srv->name())
-                                   .arg(ipstr(srv->ip()))
+                                   .arg(ipstr(srv->ipAddress()))
                                    .arg(srv->port())
                                    .arg(udpPort)
                                    .arg(encrypted ? QStringLiteral("yes") : QStringLiteral("no"))
@@ -2099,7 +2099,7 @@ void IpcClientHandler::handleGetKadContacts(const IpcMessage& msg)
                 QCborMap m;
                 m.insert(QStringLiteral("clientId"), c->getClientID().toHexString());
                 m.insert(QStringLiteral("distance"), c->getDistance().toBinaryString());
-                m.insert(QStringLiteral("ip"), static_cast<qint64>(c->getIPAddress()));
+                m.insert(QStringLiteral("ip"), static_cast<qint64>(c->address().toUint32()));
                 m.insert(QStringLiteral("udpPort"), c->getUDPPort());
                 m.insert(QStringLiteral("tcpPort"), c->getTCPPort());
                 m.insert(QStringLiteral("version"), c->getVersion());

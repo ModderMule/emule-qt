@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "net/Address.h"
 #include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
 
@@ -139,7 +140,7 @@ void tst_ClientList::findByIP_single()
 {
     ClientList list;
     UpDownClient client;
-    client.setIP(0xC0A80001);
+    client.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     list.addClient(&client);
     QCOMPARE(list.findByIP(0xC0A80001u), &client);
 }
@@ -148,9 +149,9 @@ void tst_ClientList::findByIP_withPort()
 {
     ClientList list;
     UpDownClient a, b;
-    a.setIP(0xC0A80001);
+    a.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     a.setUserPort(4662);
-    b.setIP(0xC0A80001);
+    b.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     b.setUserPort(4663);
     list.addClient(&a);
     list.addClient(&b);
@@ -163,7 +164,7 @@ void tst_ClientList::findByConnIP()
 {
     ClientList list;
     UpDownClient client;
-    client.setConnectIP(0xC0A80002);
+    client.setConnectAddress(Address::fromNetworkOrder(0xC0A80002));
     client.setUserPort(4662);
     list.addClient(&client);
     QCOMPARE(list.findByConnIP(0xC0A80002u, 4662), &client);
@@ -176,10 +177,10 @@ void tst_ClientList::findByUserHash_exact()
     uint8 hash[16];
     fillHash(hash, 0xAA);
     a.setUserHash(hash);
-    a.setIP(0xC0A80001);
+    a.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     a.setUserPort(4662);
     b.setUserHash(hash);
-    b.setIP(0xC0A80002);
+    b.setUserAddress(Address::fromNetworkOrder(0xC0A80002));
     b.setUserPort(4663);
     list.addClient(&a);
     list.addClient(&b);
@@ -195,7 +196,7 @@ void tst_ClientList::findByUserHash_fallback()
     uint8 hash[16];
     fillHash(hash, 0xBB);
     a.setUserHash(hash);
-    a.setIP(0xC0A80001);
+    a.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     a.setUserPort(4662);
     list.addClient(&a);
 
@@ -207,7 +208,7 @@ void tst_ClientList::findByIP_UDP()
 {
     ClientList list;
     UpDownClient client;
-    client.setIP(0xC0A80001);
+    client.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     client.setUDPPort(4672);
     list.addClient(&client);
     QCOMPARE(list.findByIP_UDP(0xC0A80001u, 4672), &client);
@@ -219,7 +220,7 @@ void tst_ClientList::findByServerID()
     UpDownClient client;
     // Server ID search converts ED2K user ID to hybrid with ntohl
     const uint32 ed2kId = 0x0D0C0B0A;
-    client.setServerIP(0x01020304);
+    client.setServerAddress(Address::fromNetworkOrder(0x01020304));
     client.setUserIDHybrid(ntohl(ed2kId));
     list.addClient(&client);
     QCOMPARE(list.findByServerID(0x01020304u, ed2kId), &client);
@@ -239,7 +240,7 @@ void tst_ClientList::findByIP_KadPort()
 {
     ClientList list;
     UpDownClient client;
-    client.setIP(0xC0A80001);
+    client.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     client.setKadPort(4672);
     list.addClient(&client);
     QCOMPARE(list.findByIP_KadPort(0xC0A80001u, 4672), &client);
@@ -249,7 +250,7 @@ void tst_ClientList::findByIP_notFound()
 {
     ClientList list;
     UpDownClient client;
-    client.setIP(0xC0A80001);
+    client.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
     list.addClient(&client);
     QCOMPARE(list.findByIP(0xDEADBEEFu), nullptr);
 }
@@ -257,25 +258,25 @@ void tst_ClientList::findByIP_notFound()
 void tst_ClientList::addBannedClient()
 {
     ClientList list;
-    list.addBannedClient(0xC0A80001);
+    list.addBannedClient(Address::fromNetworkOrder(0xC0A80001));
     QCOMPARE(list.bannedCount(), 1);
 }
 
 void tst_ClientList::isBannedClient_true()
 {
     ClientList list;
-    list.addBannedClient(0xC0A80001);
-    QVERIFY(list.isBannedClient(0xC0A80001));
-    QVERIFY(!list.isBannedClient(0xC0A80002));
+    list.addBannedClient(Address::fromNetworkOrder(0xC0A80001));
+    QVERIFY(list.isBannedClient(Address::fromNetworkOrder(0xC0A80001)));
+    QVERIFY(!list.isBannedClient(Address::fromNetworkOrder(0xC0A80002)));
 }
 
 void tst_ClientList::removeBannedClient()
 {
     ClientList list;
-    list.addBannedClient(0xC0A80001);
-    QVERIFY(list.isBannedClient(0xC0A80001));
-    list.removeBannedClient(0xC0A80001);
-    QVERIFY(!list.isBannedClient(0xC0A80001));
+    list.addBannedClient(Address::fromNetworkOrder(0xC0A80001));
+    QVERIFY(list.isBannedClient(Address::fromNetworkOrder(0xC0A80001)));
+    list.removeBannedClient(Address::fromNetworkOrder(0xC0A80001));
+    QVERIFY(!list.isBannedClient(Address::fromNetworkOrder(0xC0A80001)));
     QCOMPARE(list.bannedCount(), 0);
 }
 
@@ -283,8 +284,8 @@ void tst_ClientList::bannedCount()
 {
     ClientList list;
     QCOMPARE(list.bannedCount(), 0);
-    list.addBannedClient(0xC0A80001);
-    list.addBannedClient(0xC0A80002);
+    list.addBannedClient(Address::fromNetworkOrder(0xC0A80001));
+    list.addBannedClient(Address::fromNetworkOrder(0xC0A80002));
     QCOMPARE(list.bannedCount(), 2);
     list.removeAllBannedClients();
     QCOMPARE(list.bannedCount(), 0);

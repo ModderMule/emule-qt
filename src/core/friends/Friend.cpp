@@ -19,7 +19,7 @@ Friend::Friend(const uint8* userHash, std::time_t lastSeen, uint32 lastUsedIP,
                uint16 lastUsedPort, std::time_t lastChatted,
                const QString& name, bool hasHash)
     : m_name(name)
-    , m_lastUsedIP(lastUsedIP)
+    , m_lastUsedAddress(Address::fromNetworkOrder(lastUsedIP))
     , m_lastUsedPort(lastUsedPort)
     , m_lastSeen(lastSeen)
     , m_lastChatted(lastChatted)
@@ -35,7 +35,7 @@ Friend::Friend(const uint8* userHash, std::time_t lastSeen, uint32 lastUsedIP,
 void Friend::loadFromFile(FileDataIO& file)
 {
     file.readHash16(m_userHash.data());
-    m_lastUsedIP = file.readUInt32();
+    m_lastUsedAddress = Address::fromNetworkOrder(file.readUInt32());
     m_lastUsedPort = file.readUInt16();
     m_lastSeen = static_cast<std::time_t>(file.readUInt32());
     m_lastChatted = static_cast<std::time_t>(file.readUInt32());
@@ -61,7 +61,7 @@ void Friend::loadFromFile(FileDataIO& file)
 void Friend::writeToFile(FileDataIO& file) const
 {
     file.writeHash16(m_userHash.data());
-    file.writeUInt32(m_lastUsedIP);
+    file.writeUInt32(m_lastUsedAddress.toNetworkUint32());
     file.writeUInt16(m_lastUsedPort);
     file.writeUInt32(static_cast<uint32>(m_lastSeen));
     file.writeUInt32(static_cast<uint32>(m_lastChatted));

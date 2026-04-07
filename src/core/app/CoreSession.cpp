@@ -20,6 +20,7 @@
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUDPListener.h"
+#include "net/Address.h"
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
 #include "net/UDPSocket.h"
@@ -296,13 +297,13 @@ void CoreSession::initUSS()
         std::vector<uint32> ips;
         if (theApp.serverList) {
             for (const auto& srv : theApp.serverList->servers()) {
-                if (srv->ip() != 0)
-                    ips.push_back(srv->ip());
+                if (!srv->ipAddress().isNull())
+                    ips.push_back(srv->ipAddress().toNetworkUint32());
             }
         }
         if (theApp.clientList) {
             theApp.clientList->forEachClient([&ips](UpDownClient* c) {
-                uint32 ip = c->connectIP();
+                uint32 ip = c->connectAddress().toNetworkUint32();
                 if (ip != 0)
                     ips.push_back(ip);
             });
@@ -431,14 +432,17 @@ void CoreSession::initServerConnect()
                     return;
                 auto* srv = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
                 theApp.searchList->processSearchAnswer(data, size, true,
-                    srv ? srv->ip() : 0, srv ? srv->port() : 0);
+                    srv ? srv->ipAddress().toNetworkUint32() : 0, srv ? srv->port() : 0);
             });
 
     // 7. Wire UDP global search results → SearchList
     connect(m_serverUDP.get(), &UDPSocket::globalSearchResult,
-            this, [](const uint8* data, uint32 size, uint32 ip, uint16 port) {
-                if (theApp.searchList)
+            this, [](const uint8* data, uint32 size, const Endpoint& server) {
+                if (theApp.searchList) {
+                    uint32 ip = server.address().toNetworkUint32();
+                    uint16 port = server.port();
                     theApp.searchList->processUDPSearchAnswer(data, size, true, ip, port);
+                }
             });
 }
 
@@ -706,9 +710,11 @@ void CoreSession::initKademlia()
 
     // OP_REASKACK — remote source confirms our queue position via UDP.
     connect(m_clientUDP.get(), &ClientUDPSocket::reaskAckReceived,
-        this, [](uint32 senderIP, uint16 senderPort, const uint8* data, uint32 size) {
+        this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
+            uint32 senderIP = senderEP.address().toUint32();
+            uint16 senderPort = senderEP.port();
             auto* sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
             if (!sender || !sender->reaskPending())
                 return;
@@ -724,20 +730,22 @@ void CoreSession::initKademlia()
 
     // OP_FILENOTFOUND — remote source no longer has the file.
     connect(m_clientUDP.get(), &ClientUDPSocket::fileNotFoundReceived,
-        this, [](uint32 senderIP, uint16 senderPort) {
+        this, [](const Endpoint& senderEP) {
             if (!theApp.clientList)
                 return;
-            auto* sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+            auto* sender = theApp.clientList->findByIP_UDP(
+                senderEP.address().toUint32(), senderEP.port());
             if (sender && sender->reaskPending())
                 sender->udpReaskFNF(); // may delete sender
         });
 
     // OP_QUEUEFULL — remote source's upload queue is full.
     connect(m_clientUDP.get(), &ClientUDPSocket::queueFullReceived,
-        this, [](uint32 senderIP, uint16 senderPort) {
+        this, [](const Endpoint& senderEP) {
             if (!theApp.clientList)
                 return;
-            auto* sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+            auto* sender = theApp.clientList->findByIP_UDP(
+                senderEP.address().toUint32(), senderEP.port());
             if (sender && sender->reaskPending()) {
                 sender->setRemoteQueueFull(true);
                 sender->udpReaskACK(0);
@@ -747,7 +755,7 @@ void CoreSession::initKademlia()
     // OP_REASKCALLBACKUDP — firewalled client asks us to relay reask to our buddy.
     // MFC: srchybrid/ClientUDPSocket.cpp:201-224
     connect(m_clientUDP.get(), &ClientUDPSocket::reaskCallbackReceived,
-        this, [](uint32 senderIP, uint16 senderPort, const uint8* data, uint32 size) {
+        this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
             auto* buddy = theApp.clientList->getBuddy();
@@ -758,8 +766,8 @@ void CoreSession::initKademlia()
                 return;
             // Patch bytes 10-15 with sender IP:port, then relay bytes 10+ as OP_REASKCALLBACKTCP
             std::vector<uint8> buf(data, data + size);
-            pokeUInt32(buf.data() + 10, senderIP);
-            pokeUInt16(buf.data() + 14, senderPort);
+            pokeUInt32(buf.data() + 10, senderEP.address().toUint32());
+            pokeUInt16(buf.data() + 14, senderEP.port());
             uint32 relaySize = size - 10;
             auto packet = std::make_unique<Packet>(OP_REASKCALLBACKTCP, relaySize, OP_EMULEPROT);
             std::memcpy(packet->pBuffer, buf.data() + 10, relaySize);
@@ -807,7 +815,7 @@ void CoreSession::initKademlia()
 
     // 5. Direct callback: remote firewalled client asks us to connect back via UDP.
     connect(m_clientUDP.get(), &ClientUDPSocket::directCallbackReceived,
-        this, [](uint32 senderIP, uint16 /*senderPort*/, const uint8* data, uint32 size) {
+        this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
             // Only accept if we're firewalled and Kad is running
@@ -824,13 +832,14 @@ void CoreSession::initKademlia()
             io.readHash16(userHash);
             uint8 connectOptions = io.readUInt8();
 
+            uint32 senderIP = senderEP.address().toNetworkUint32();
             auto* client = theApp.clientList->findByUserHash(userHash, senderIP, tcpPort);
             if (!client) {
                 client = new UpDownClient(tcpPort, 0, senderIP, 0, nullptr);
                 client->setUserHash(userHash);
                 theApp.clientList->addClient(client);
             } else {
-                client->setConnectIP(senderIP);
+                client->setConnectAddress(Address::fromNetworkOrder(senderIP));
                 client->setUserPort(tcpPort);
             }
             client->setConnectOptions(connectOptions, true, false);
@@ -839,7 +848,7 @@ void CoreSession::initKademlia()
 
     // 6. UDP port test → send reply on TCP port-test connection
     connect(m_clientUDP.get(), &ClientUDPSocket::portTestReceived,
-        this, [this](uint32, uint16) {
+        this, [this](const Endpoint&) {
             if (m_listenSocket)
                 m_listenSocket->sendPortTestReply('1', true);
         });
@@ -868,8 +877,10 @@ void CoreSession::wireKadListener()
     //    Reconstruct [opcode][payload] buffer for processPacket().
     connect(udp, &ClientUDPSocket::kadPacketReceived,
         listener, [listener](uint8 opcode, const uint8* data, uint32 size,
-                             uint32 senderIP, uint16 senderPort,
+                             const Endpoint& sender,
                              bool validReceiverKey, uint32 receiverVerifyKey) {
+            uint32 senderIP = sender.address().toUint32();
+            uint16 senderPort = sender.port();
             QByteArray buf(1 + static_cast<qsizetype>(size), Qt::Uninitialized);
             buf[0] = static_cast<char>(opcode);
             if (size > 0)

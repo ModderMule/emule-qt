@@ -5,6 +5,7 @@
 #include "transfer/UploadQueue.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "client/UpDownClient.h"
+#include "net/Address.h"
 #include "utils/Opcodes.h"
 
 #include <QSignalSpy>
@@ -54,7 +55,7 @@ void tst_UploadQueue::addClientToQueue_basic()
 
     UpDownClient client;
     // Set a unique IP so IP-limit doesn't trigger
-    client.setIP(0x0A000001);
+    client.setUserAddress(Address::fromNetworkOrder(0x0A000001));
 
     bool added = queue.addClientToQueue(&client);
     QVERIFY(added);
@@ -69,7 +70,7 @@ void tst_UploadQueue::addClientToQueue_duplicate()
     qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
 
     UpDownClient client;
-    client.setIP(0x0A000001);
+    client.setUserAddress(Address::fromNetworkOrder(0x0A000001));
 
     queue.addClientToQueue(&client);
     // Adding the same client again should return true (already in queue)
@@ -88,8 +89,8 @@ void tst_UploadQueue::addClientToQueue_ipLimit()
     // First, fill the minimum upload slots with different-IP clients
     // so that subsequent same-IP clients go to the waiting list
     UpDownClient filler1, filler2;
-    filler1.setIP(0x0B000001);
-    filler2.setIP(0x0B000002);
+    filler1.setUserAddress(Address::fromNetworkOrder(0x0B000001));
+    filler2.setUserAddress(Address::fromNetworkOrder(0x0B000002));
     uint8 fh1[16] = {0xF1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     uint8 fh2[16] = {0xF2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     filler1.setUserHash(fh1);
@@ -101,10 +102,10 @@ void tst_UploadQueue::addClientToQueue_ipLimit()
     // Create 4 clients with the same IP — they should go to the waiting list
     UpDownClient c1, c2, c3, c4;
     const uint32 sameIP = 0x0A000001;
-    c1.setIP(sameIP);
-    c2.setIP(sameIP);
-    c3.setIP(sameIP);
-    c4.setIP(sameIP);
+    c1.setUserAddress(Address::fromNetworkOrder(sameIP));
+    c2.setUserAddress(Address::fromNetworkOrder(sameIP));
+    c3.setUserAddress(Address::fromNetworkOrder(sameIP));
+    c4.setUserAddress(Address::fromNetworkOrder(sameIP));
 
     // Give each client a unique user hash so compare() doesn't trigger
     uint8 hash1[16] = {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
@@ -132,7 +133,7 @@ void tst_UploadQueue::removeFromWaitingQueue_basic()
     QSignalSpy removedSpy(&queue, &UploadQueue::clientRemovedFromQueue);
 
     UpDownClient client;
-    client.setIP(0x0A000001);
+    client.setUserAddress(Address::fromNetworkOrder(0x0A000001));
 
     queue.addClientToQueue(&client);
 
@@ -173,7 +174,7 @@ void tst_UploadQueue::waitingPosition_correct()
     qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
 
     UpDownClient client;
-    client.setIP(0x0A000001);
+    client.setUserAddress(Address::fromNetworkOrder(0x0A000001));
 
     // Not in queue — position should be 0
     QCOMPARE(queue.waitingPosition(&client), 0);
@@ -230,8 +231,8 @@ void tst_UploadQueue::waitingUserCount_correct()
     QCOMPARE(queue.waitingUserCount(), 0);
 
     UpDownClient c1, c2;
-    c1.setIP(0x0A000001);
-    c2.setIP(0x0A000002);
+    c1.setUserAddress(Address::fromNetworkOrder(0x0A000001));
+    c2.setUserAddress(Address::fromNetworkOrder(0x0A000002));
 
     uint8 hash1[16] = {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     uint8 hash2[16] = {2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
@@ -265,7 +266,7 @@ void tst_UploadQueue::forEachWaiting_iterates()
     qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
 
     UpDownClient c1;
-    c1.setIP(0x0A000001);
+    c1.setUserAddress(Address::fromNetworkOrder(0x0A000001));
     uint8 hash1[16] = {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     c1.setUserHash(hash1);
 

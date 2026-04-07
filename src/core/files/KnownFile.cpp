@@ -611,7 +611,7 @@ bool KnownFile::publishSrc()
             if (!buddy)
                 return false;
 
-            buddyIP = buddy->userIP();
+            buddyIP = buddy->userAddress().toNetworkUint32();
             // If buddy IP changed, reset publish time to force re-publish
             if (m_lastBuddyIP != 0 && m_lastBuddyIP != buddyIP)
                 setLastPublishTimeKadSrc(0, 0);
@@ -677,9 +677,9 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
         if (client->hasLowID())
             continue;
 
-        data.writeUInt32(client->userIP());
+        data.writeUInt32(client->userAddress().toNetworkUint32());
         data.writeUInt16(client->userPort());
-        data.writeUInt32(client->serverIP());
+        data.writeUInt32(client->serverAddress().toNetworkUint32());
         data.writeUInt16(client->serverPort());
 
         if (usedVersion >= 2)

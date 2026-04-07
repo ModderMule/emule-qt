@@ -7,6 +7,7 @@
 /// UDP communication with ED2K servers. Replaces the CUDPSocketWnd DNS
 /// helper window with QDnsLookup.
 
+#include "net/Address.h"
 #include "net/Packet.h"
 #include "net/ThrottledSocket.h"
 #include "utils/Types.h"
@@ -30,8 +31,7 @@ class Server;
 
 struct ServerUDPPacket {
     std::vector<uint8> data;
-    uint32 ip = 0;      ///< Destination IP (network byte order).
-    uint16 port = 0;    ///< Destination port (host byte order).
+    Endpoint destination;   ///< Destination address + port.
 };
 
 // ---------------------------------------------------------------------------
@@ -80,16 +80,16 @@ public:
 
 signals:
     /// Global search results received from server.
-    void globalSearchResult(const uint8* data, uint32 size, uint32 serverIP, uint16 serverPort);
+    void globalSearchResult(const uint8* data, uint32 size, const Endpoint& server);
 
     /// Global found sources received from server.
-    void globalFoundSources(const uint8* data, uint32 size, uint32 serverIP, uint16 serverPort);
+    void globalFoundSources(const uint8* data, uint32 size, const Endpoint& server);
 
     /// Server status response received.
-    void serverStatusResult(const uint8* data, uint32 size, uint32 serverIP, uint16 serverPort);
+    void serverStatusResult(const uint8* data, uint32 size, const Endpoint& server);
 
     /// Server description response received.
-    void serverDescResult(const uint8* data, uint32 size, uint32 serverIP, uint16 serverPort);
+    void serverDescResult(const uint8* data, uint32 size, const Endpoint& server);
 
 private slots:
     void onReadyRead();

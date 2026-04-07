@@ -46,7 +46,7 @@ uint32 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
 
     // Base score from wait time
     const uint32 curTick = static_cast<uint32>(getTickCount());
-    const uint32 waitTime = m_credits ? m_credits->secureWaitStartTime(m_connectIP) : 0;
+    const uint32 waitTime = m_credits ? m_credits->secureWaitStartTime(m_connectAddress.toNetworkUint32()) : 0;
     float score = (waitTime != 0) ? static_cast<float>(curTick - waitTime) : 0.0f;
 
     // Apply file priority and credit multiplier
@@ -78,7 +78,7 @@ float UpDownClient::getCombinedFilePrioAndCredit() const
     if (!m_credits)
         return prioNum;
 
-    return prioNum * m_credits->scoreRatio(m_connectIP);
+    return prioNum * m_credits->scoreRatio(m_connectAddress.toNetworkUint32());
 }
 
 // ===========================================================================
@@ -131,6 +131,9 @@ void UpDownClient::setUploadFileID(KnownFile* newReqFile)
 {
     if (m_uploadFile == newReqFile)
         return;
+
+    // Flush pending block requests from old file before switching
+    flushSendBlocks();
 
     // Remove from old file's uploading list
     if (m_uploadFile) {
@@ -291,12 +294,24 @@ void UpDownClient::flushSendBlocks()
 
 void UpDownClient::sendHashsetPacket(const uint8* data, uint32 size, bool fileIdentifiers)
 {
-    Q_UNUSED(fileIdentifiers);
-
     if (!m_socket || !data || size < 16)
         return;
 
-    const uint8* fileHash = data; // First 16 bytes = file hash
+    // OP_HASHSETREQUEST2 uses a FileIdentifier (descriptor + MD4 + optional
+    // size/AICH) whereas OP_HASHSETREQUEST is just a raw 16-byte MD4 hash.
+    uint8 fileHash[16]{};
+    uint8 requestedOptions = 0;
+    if (fileIdentifiers) {
+        SafeMemFile io(data, size);
+        FileIdentifierSA ident;
+        if (!ident.readIdentifier(io))
+            return;
+        md4cpy(fileHash, ident.getMD4Hash());
+        if (io.length() - io.position() >= 1)
+            requestedOptions = io.readUInt8();
+    } else {
+        md4cpy(fileHash, data);
+    }
 
     // Look up file in shared files by hash
     KnownFile* file = nullptr;
@@ -304,25 +319,37 @@ void UpDownClient::sendHashsetPacket(const uint8* data, uint32 size, bool fileId
         file = theApp.sharedFileList->getFileByID(fileHash);
 
     SafeMemFile response;
-    response.writeHash16(fileHash);
 
-    if (file) {
-        // Send actual hashset from the file
-        const uint16 hashCount = file->fileIdentifier().getAvailableMD4PartHashCount();
-        response.writeUInt16(hashCount);
-        for (uint16 i = 0; i < hashCount; ++i) {
-            const uint8* partHash = file->fileIdentifier().getMD4PartHash(i);
-            if (partHash)
-                response.writeHash16(partHash);
+    if (fileIdentifiers) {
+        // OP_HASHSETANSWER2: FileIdentifier + hashset blob via writeHashSetsToPacket
+        if (file) {
+            file->fileIdentifier().writeIdentifier(response);
+            const bool sendMD4  = (requestedOptions & 0x01) != 0;
+            const bool sendAICH = (requestedOptions & 0x02) != 0;
+            file->fileIdentifier().writeHashSetsToPacket(response, sendMD4, sendAICH);
+        } else {
+            // File not found — write a minimal identifier so the client can match it
+            response.writeHash16(fileHash);
         }
+        auto packet = std::make_unique<Packet>(response, OP_EMULEPROT, OP_HASHSETANSWER2);
+        sendPacket(std::move(packet));
     } else {
-        response.writeUInt16(0); // part count = 0 (file not found)
+        // OP_HASHSETANSWER: hash(16) + count(2) + N×hash(16)
+        response.writeHash16(fileHash);
+        if (file) {
+            const uint16 hashCount = file->fileIdentifier().getAvailableMD4PartHashCount();
+            response.writeUInt16(hashCount);
+            for (uint16 i = 0; i < hashCount; ++i) {
+                const uint8* partHash = file->fileIdentifier().getMD4PartHash(i);
+                if (partHash)
+                    response.writeHash16(partHash);
+            }
+        } else {
+            response.writeUInt16(0);
+        }
+        auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_HASHSETANSWER);
+        sendPacket(std::move(packet));
     }
-
-    const uint8 opcode = fileIdentifiers ? OP_HASHSETANSWER2 : OP_HASHSETANSWER;
-    const uint8 proto = fileIdentifiers ? OP_EMULEPROT : OP_EDONKEYPROT;
-    auto packet = std::make_unique<Packet>(response, proto, opcode);
-    sendPacket(std::move(packet));
 }
 
 // ===========================================================================
@@ -407,7 +434,7 @@ void UpDownClient::ban(const QString& reason)
         logDebug(QStringLiteral("Banning client: %1 reason: %2").arg(userName(), reason));
         setUploadState(UploadState::Banned);
         if (theApp.clientList)
-            theApp.clientList->addBannedClient(m_connectIP);
+            theApp.clientList->addBannedClient(m_connectAddress);
     }
 }
 
@@ -416,7 +443,7 @@ void UpDownClient::unBan()
     if (m_uploadState == UploadState::Banned) {
         setUploadState(UploadState::None);
         if (theApp.clientList)
-            theApp.clientList->removeBannedClient(m_connectIP);
+            theApp.clientList->removeBannedClient(m_connectAddress);
     }
 }
 
@@ -428,14 +455,14 @@ uint32 UpDownClient::waitStartTime() const
 {
     if (!m_credits)
         return 0;
-    return m_credits->secureWaitStartTime(m_connectIP);
+    return m_credits->secureWaitStartTime(m_connectAddress.toNetworkUint32());
 }
 
 uint32 UpDownClient::getWaitTimeDelay() const
 {
     if (!m_credits)
         return 0;
-    uint32 wst = m_credits->secureWaitStartTime(m_connectIP);
+    uint32 wst = m_credits->secureWaitStartTime(m_connectAddress.toNetworkUint32());
     if (wst == 0)
         return 0;
     // MFC: freeze waited time once upload starts (GetWaitTime = m_dwUploadTime - GetWaitStartTime)
@@ -448,7 +475,7 @@ uint32 UpDownClient::getWaitTimeDelay() const
 void UpDownClient::setWaitStartTime()
 {
     if (m_credits)
-        m_credits->setSecWaitStartTime(m_connectIP);
+        m_credits->setSecWaitStartTime(m_connectAddress.toNetworkUint32());
 }
 
 void UpDownClient::clearWaitStartTime()
@@ -690,7 +717,11 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
 
     // Look up the file
     KnownFile* reqFile = findUploadFile(fileIdent.getMD4Hash());
+    logDebug(QStringLiteral("processMultiPacketExt2: file=%1 found=%2")
+                 .arg(reqFile ? reqFile->fileName() : QStringLiteral("null"))
+                 .arg(reqFile != nullptr));
     if (!reqFile || !reqFile->fileIdentifier().compareRelaxed(fileIdent)) {
+        logDebug(QStringLiteral("processMultiPacketExt2: compareRelaxed failed or file not found"));
         sendFileNotFound(fileIdent.getMD4Hash());
         return;
     }
@@ -752,6 +783,8 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
         }
     }
 
+    logDebug(QStringLiteral("processMultiPacketExt2: hasResponse=%1 answerFNF=%2 for %3")
+                 .arg(hasResponse).arg(answerFNF).arg(reqFile->fileName()));
     if (hasResponse && !answerFNF) {
         auto packet = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_MULTIPACKETANSWER_EXT2);
         sendPacket(std::move(packet));
@@ -925,8 +958,13 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
         return;
 
     // Find the file we requested
-    if (!m_reqFile || !md4equ(fileIdent.getMD4Hash(), m_reqFile->fileHash()))
+    if (!m_reqFile || !md4equ(fileIdent.getMD4Hash(), m_reqFile->fileHash())) {
+        logDebug(QStringLiteral("processMultiPacketAnswer: hash mismatch or no reqFile (reqFile=%1)")
+                     .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
         return;
+    }
+    logDebug(QStringLiteral("processMultiPacketAnswer: matched file=%1 state=%2")
+                 .arg(m_reqFile->fileName()).arg(static_cast<int>(m_downloadState)));
 
     // Process sub-responses
     while ((dataIn.length() - dataIn.position()) > 0) {

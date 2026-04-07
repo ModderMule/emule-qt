@@ -179,7 +179,7 @@ Friend* FriendList::searchFriend(const uint8* userHash, uint32 ip,
                 return f.get();
         } else {
             // IP+port-based friend
-            if (f->lastUsedIP() == ip && ip != 0
+            if (f->lastUsedAddress().toNetworkUint32() == ip && ip != 0
                 && f->lastUsedPort() == port && port != 0)
             {
                 return f.get();

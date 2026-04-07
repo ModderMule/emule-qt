@@ -7,6 +7,7 @@
 /// UDP communication with other eMule/Kademlia clients. Uses
 /// EncryptedDatagramSocket for client encryption.
 
+#include "net/Address.h"
 #include "net/Packet.h"
 #include "net/ThrottledSocket.h"
 #include "utils/Types.h"
@@ -27,8 +28,7 @@ namespace eMule {
 
 struct UDPPack {
     std::unique_ptr<Packet> packet;
-    uint32 ip = 0;                          ///< Destination IP (host byte order).
-    uint16 port = 0;                        ///< Destination port.
+    Endpoint destination;                   ///< Destination address + port.
     uint32 queueTime = 0;                   ///< Tick count when queued.
     bool encrypt = false;                   ///< Use encryption.
     bool kad = false;                       ///< Kademlia packet.
@@ -81,40 +81,39 @@ public:
 
 signals:
     /// Reask callback received from firewalled client.
-    void reaskCallbackReceived(uint32 senderIP, uint16 senderPort,
+    void reaskCallbackReceived(const Endpoint& sender,
                                const uint8* data, uint32 size);
 
     /// File reask ping received from client.
-    void reaskFilePingReceived(uint32 senderIP, uint16 senderPort,
+    void reaskFilePingReceived(const Endpoint& sender,
                                const uint8* data, uint32 size);
 
     /// Reask acknowledged (queue rank response).
-    void reaskAckReceived(uint32 senderIP, uint16 senderPort,
+    void reaskAckReceived(const Endpoint& sender,
                           const uint8* data, uint32 size);
 
     /// File not found response.
-    void fileNotFoundReceived(uint32 senderIP, uint16 senderPort);
+    void fileNotFoundReceived(const Endpoint& sender);
 
     /// Queue full response.
-    void queueFullReceived(uint32 senderIP, uint16 senderPort);
+    void queueFullReceived(const Endpoint& sender);
 
     /// Direct callback request.
-    void directCallbackReceived(uint32 senderIP, uint16 senderPort,
+    void directCallbackReceived(const Endpoint& sender,
                                 const uint8* data, uint32 size);
 
     /// Port test packet received.
-    void portTestReceived(uint32 senderIP, uint16 senderPort);
+    void portTestReceived(const Endpoint& sender);
 
     /// Kademlia packet received — forward to Kademlia engine.
     /// @param opcode  Kad opcode (first byte after protocol).
     /// @param data    Payload after opcode.
     /// @param size    Size of payload.
-    /// @param senderIP   IP in host byte order.
-    /// @param senderPort Sender port.
+    /// @param sender  Sender address + port (IP in host byte order convention).
     /// @param validReceiverKey  True if the decrypted receiver key matched.
     /// @param receiverVerifyKey The receiver verify key from decryption (0 if plaintext).
     void kadPacketReceived(uint8 opcode, const uint8* data, uint32 size,
-                           uint32 senderIP, uint16 senderPort,
+                           const Endpoint& sender,
                            bool validReceiverKey, uint32 receiverVerifyKey);
 
 private slots:
@@ -131,8 +130,7 @@ private:
 
     struct PreparedDatagram {
         QByteArray data;
-        uint32 ip = 0;
-        uint16 port = 0;
+        Endpoint destination;
     };
 
     QUdpSocket m_socket;

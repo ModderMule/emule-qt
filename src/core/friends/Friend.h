@@ -7,6 +7,7 @@
 /// display name, timestamps, and friend slot flag. Serializable to the
 /// emfriends.met binary format via SafeFile + Tag.
 
+#include "net/Address.h"
 #include "utils/Types.h"
 
 #include <QString>
@@ -54,8 +55,8 @@ public:
     [[nodiscard]] QString name() const { return m_name; }
     void setName(const QString& name) { m_name = name; }
 
-    [[nodiscard]] uint32 lastUsedIP() const { return m_lastUsedIP; }
-    void setLastUsedIP(uint32 ip) { m_lastUsedIP = ip; }
+    [[nodiscard]] const Address& lastUsedAddress() const { return m_lastUsedAddress; }
+    void setLastUsedAddress(const Address& addr) { m_lastUsedAddress = addr; }
 
     [[nodiscard]] uint16 lastUsedPort() const { return m_lastUsedPort; }
     void setLastUsedPort(uint16 port) { m_lastUsedPort = port; }
@@ -73,7 +74,7 @@ private:
     std::array<uint8, 16> m_userHash{};
     std::array<uint8, 16> m_kadID{};
     QString m_name;
-    uint32 m_lastUsedIP = 0;
+    Address m_lastUsedAddress;
     uint16 m_lastUsedPort = 0;
     std::time_t m_lastSeen = 0;
     std::time_t m_lastChatted = 0;
