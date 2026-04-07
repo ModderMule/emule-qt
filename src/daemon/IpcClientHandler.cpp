@@ -2150,8 +2150,12 @@ void IpcClientHandler::handleGetKadStatus(const IpcMessage& msg)
         if (prefs) {
             status.insert(QStringLiteral("ip"),
                           static_cast<qint64>(prefs->ipAddress()));
+            // ID is the IP in eD2K byte order (first octet in LSB)
+            const uint32_t kadIp = prefs->ipAddress();
+            const uint32_t ed2kId = ((kadIp & 0xFF) << 24) | ((kadIp & 0xFF00) << 8)
+                                  | ((kadIp >> 8) & 0xFF00) | ((kadIp >> 24) & 0xFF);
             status.insert(QStringLiteral("id"),
-                          static_cast<qint64>(prefs->ipAddress()));
+                          static_cast<qint64>(ed2kId));
             status.insert(QStringLiteral("internPort"), prefs->internKadPort());
             status.insert(QStringLiteral("externPort"),
                           prefs->useExternKadPort()

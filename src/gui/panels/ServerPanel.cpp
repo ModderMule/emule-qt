@@ -832,12 +832,12 @@ QWidget* ServerPanel::createControlsPanel()
 
 void ServerPanel::refreshMyInfo()
 {
-    // Format network-byte-order IP to dotted string
+    // Format Kad-style IP (first octet in MSB, same as QHostAddress) to dotted string
     auto fmtIP = [](uint32_t ip) -> QString {
         return QHostAddress(static_cast<quint32>(ip)).toString();
     };
-    // Format host-byte-order IP (like Kad ipAddress) to dotted string
-    auto fmtIPHost = [](uint32_t ip) -> QString {
+    // Format eD2K-style IP (first octet in LSB) to dotted string — byte-swaps for QHostAddress
+    auto fmtIPSwap = [](uint32_t ip) -> QString {
         const quint32 net = ((ip & 0xFF) << 24) | ((ip & 0xFF00) << 8)
                           | ((ip >> 8) & 0xFF00) | ((ip >> 24) & 0xFF);
         return QHostAddress(net).toString();
@@ -863,7 +863,7 @@ void ServerPanel::refreshMyInfo()
         if (lowId && pubIP == 0)
             html += sp + tr("IP:Port:") + QStringLiteral("\t") + tr("Unknown") + QStringLiteral("<br>");
         else
-            html += sp + tr("IP:Port:") + QStringLiteral("\t") + QStringLiteral("%1:%2").arg(fmtIP(pubIP)).arg(thePrefs.port()) + QStringLiteral("<br>");
+            html += sp + tr("IP:Port:") + QStringLiteral("\t") + QStringLiteral("%1:%2").arg(fmtIPSwap(pubIP)).arg(thePrefs.port()) + QStringLiteral("<br>");
 
         // Client ID
         const uint32_t clientId = m_serverConnect ? m_serverConnect->clientID() : m_ed2kClientID;
@@ -941,10 +941,10 @@ void ServerPanel::refreshMyInfo()
                 html += sp + tr("UDP Status:") + QStringLiteral("\t")
                     + QStringLiteral("<font color='green'>") + udpText + QStringLiteral("</font><br>");
             }
-            // IP:Port (Kad IP is host-byte-order)
+            // IP:Port (Kad IP has first octet in MSB, same as QHostAddress)
             if (m_kadIP != 0) {
                 html += sp + tr("IP:Port:") + QStringLiteral("\t%1:%2<br>")
-                        .arg(fmtIPHost(m_kadIP)).arg(thePrefs.udpPort());
+                        .arg(fmtIP(m_kadIP)).arg(thePrefs.udpPort());
             }
             // ID (numeric)
             if (m_kadId != 0)
@@ -1345,7 +1345,10 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
         if (!dynIP.isEmpty()) {
             address = dynIP;
         } else if (ip != 0) {
-            address = QHostAddress(ip).toString();
+            // server.met stores IPs in eD2K byte order (first octet in LSB) — swap for QHostAddress
+            const quint32 swapped = ((ip & 0xFF) << 24) | ((ip & 0xFF00) << 8)
+                                  | ((ip >> 8) & 0xFF00) | ((ip >> 24) & 0xFF);
+            address = QHostAddress(swapped).toString();
         }
 
         if (address.isEmpty() || port == 0) {

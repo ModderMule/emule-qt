@@ -23,20 +23,19 @@ namespace eMule {
 
 namespace {
 
-/// Convert a network-byte-order uint32 IP to "x.x.x.y" string.
-QString ipFromUint32(qint64 ip)
+/// Convert a Kad-style IP (first octet in MSB, same as QHostAddress) to dotted string.
+QString ipFromKad(qint64 ip)
 {
     return QHostAddress(static_cast<quint32>(ip)).toString();
 }
 
-/// Convert a network-byte-order uint32 IP to "x.x.x.y" string with htonl.
-QString ipFromUint32Htonl(qint64 ip)
+/// Convert an eD2K-style IP (first octet in LSB) to dotted string — byte-swaps for QHostAddress.
+QString ipFromEd2k(qint64 ip)
 {
-    const auto native = static_cast<quint32>(ip);
-    // Kad stores IP in host byte order, needs htonl for display
-    const quint32 net = ((native & 0xFF) << 24) | ((native & 0xFF00) << 8)
-                      | ((native >> 8) & 0xFF00) | ((native >> 24) & 0xFF);
-    return QHostAddress(net).toString();
+    const auto val = static_cast<quint32>(ip);
+    const quint32 swapped = ((val & 0xFF) << 24) | ((val & 0xFF00) << 8)
+                          | ((val >> 8) & 0xFF00) | ((val >> 24) & 0xFF);
+    return QHostAddress(swapped).toString();
 }
 
 } // anonymous namespace
@@ -154,7 +153,7 @@ void NetworkInfoDialog::populateInfo(const QCborMap& info)
             html += QStringLiteral("<tr><td>IP:Port:</td><td>%1</td></tr>").arg(tr("Unknown"));
         else
             html += QStringLiteral("<tr><td>IP:Port:</td><td>%1:%2</td></tr>")
-                        .arg(ipFromUint32(publicIP)).arg(tcpPort);
+                        .arg(ipFromEd2k(publicIP)).arg(tcpPort);
 
         // Client ID
         const auto clientID = ed2k.value(QStringLiteral("clientID")).toInteger();
@@ -244,7 +243,7 @@ void NetworkInfoDialog::populateInfo(const QCborMap& info)
         const auto kadIP = kad.value(QStringLiteral("ip")).toInteger();
         const auto internPort = kad.value(QStringLiteral("internPort")).toInteger();
         html += QStringLiteral("<tr><td>IP:Port:</td><td>%1:%2</td></tr>")
-                    .arg(ipFromUint32Htonl(kadIP)).arg(internPort);
+                    .arg(ipFromKad(kadIP)).arg(internPort);
 
         // ID
         html += QStringLiteral("<tr><td>ID:</td><td>%1</td></tr>")
