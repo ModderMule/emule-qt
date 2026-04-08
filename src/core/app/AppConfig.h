@@ -13,7 +13,7 @@
 namespace eMule {
 
 /// Application version string — single source of truth for daemon, GUI, and web server.
-inline constexpr QLatin1StringView kAppVersion{"0.1.5"};
+inline constexpr QLatin1StringView kAppVersion{"0.1.6"};
 
 /// User-Agent header value for all outgoing HTTP requests.
 inline const QString kUserAgent = QStringLiteral("eMuleQt/") + kAppVersion;
