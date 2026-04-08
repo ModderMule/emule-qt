@@ -482,8 +482,12 @@ private:
 
         const uint8 options = dataIn.readUInt8(); // 0x01=MD4, 0x02=AICH
 
-        // Build response: options(1) + MD4 hashset data (matches writeHashSetsToPacket format)
+        // Build response: FileIdentifier + options + MD4 hashset data
+        // (matches real server: writeIdentifier + writeHashSetsToPacket)
         SafeMemFile dataOut;
+        dataOut.writeUInt8(0x03); // desc: hasMD4 + hasSize
+        dataOut.writeHash16(m_fileHash.data());
+        dataOut.writeUInt64(m_fileSize);
         uint8 respOptions = (options & 0x01) ? 0x01 : 0x00;
         dataOut.writeUInt8(respOptions);
 

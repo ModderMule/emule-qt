@@ -534,54 +534,16 @@ void tst_TcpConnect::download_askedForAnotherFile()
     // -- Process timer -------------------------------------------------------
     UpDownClient* dlClient = nullptr;  // set after client creation
     QTimer processTimer;
-    QObject::connect(&processTimer, &QTimer::timeout, this, [this, &dlClient] {
+    QObject::connect(&processTimer, &QTimer::timeout, this, [this] {
         m_downloadQueue->process();
         m_uploadQueue->process();
 
-        // Drain all sockets — file data + control packets
+        // Server-side drain: the UploadBandwidthThrottler thread is stopped,
+        // so we must manually push queued file+control data out.
         for (auto* serverClient : m_serverClients) {
             if (auto* sock = serverClient->socket()) {
                 sock->sendFileAndControlData(16 * 1024 * 1024, 0);
                 sock->flush();
-            }
-        }
-        if (dlClient) {
-            if (auto* sock = dlClient->socket()) {
-                auto sent = sock->sendControlData(64 * 1024, 0);
-                if (sent.sentBytesControlPackets > 0)
-                    qDebug() << "dlClient sendControlData sent" << sent.sentBytesControlPackets << "bytes";
-            }
-        }
-
-        // Two-pass poll: after ioctl-triggered readyRead handlers queue
-        // responses, drain and poll again in the same timer cycle.
-        for (int pass = 0; pass < 2; ++pass) {
-            if (dlClient) {
-                if (auto* sock = dlClient->socket()) {
-                    int avail = 0;
-                    auto fd = sock->socketDescriptor();
-                    if (fd != -1 && ::ioctl(static_cast<int>(fd), FIONREAD, &avail) == 0 && avail > 0)
-                        emit sock->readyRead();
-                }
-            }
-            for (auto* serverClient : m_serverClients) {
-                if (auto* sock = serverClient->socket()) {
-                    int avail = 0;
-                    auto fd = sock->socketDescriptor();
-                    if (fd != -1 && ::ioctl(static_cast<int>(fd), FIONREAD, &avail) == 0 && avail > 0)
-                        emit sock->readyRead();
-                }
-            }
-            // Drain responses queued during readyRead handlers
-            for (auto* serverClient : m_serverClients) {
-                if (auto* sock = serverClient->socket()) {
-                    sock->sendFileAndControlData(16 * 1024 * 1024, 0);
-                    sock->flush();
-                }
-            }
-            if (dlClient) {
-                if (auto* sock = dlClient->socket())
-                    sock->sendControlData(64 * 1024, 0);
             }
         }
     });
@@ -784,39 +746,6 @@ void tst_TcpConnect::download_completesLargeFileNoMultiPacket()
             if (auto* sock = serverClient->socket()) {
                 sock->sendFileAndControlData(16 * 1024 * 1024, 0);
                 sock->flush();
-            }
-        }
-        if (dlClient) {
-            if (auto* sock = dlClient->socket())
-                sock->sendControlData(64 * 1024, 0);
-        }
-
-        for (int pass = 0; pass < 2; ++pass) {
-            if (dlClient) {
-                if (auto* sock = dlClient->socket()) {
-                    int avail = 0;
-                    auto fd = sock->socketDescriptor();
-                    if (fd != -1 && ::ioctl(static_cast<int>(fd), FIONREAD, &avail) == 0 && avail > 0)
-                        emit sock->readyRead();
-                }
-            }
-            for (auto* serverClient : m_serverClients) {
-                if (auto* sock = serverClient->socket()) {
-                    int avail = 0;
-                    auto fd = sock->socketDescriptor();
-                    if (fd != -1 && ::ioctl(static_cast<int>(fd), FIONREAD, &avail) == 0 && avail > 0)
-                        emit sock->readyRead();
-                }
-            }
-            for (auto* serverClient : m_serverClients) {
-                if (auto* sock = serverClient->socket()) {
-                    sock->sendFileAndControlData(16 * 1024 * 1024, 0);
-                    sock->flush();
-                }
-            }
-            if (dlClient) {
-                if (auto* sock = dlClient->socket())
-                    sock->sendControlData(64 * 1024, 0);
             }
         }
     });
