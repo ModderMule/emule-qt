@@ -437,8 +437,17 @@ void UploadBandwidthThrottler::runInternal()
                         ? static_cast<uint32>(bytesToSpend - static_cast<int64>(spentBytes))
                         : 1u;
                     SocketSentBytes sent = socket->sendControlData(sendLimit, minFragSize);
-                    spentBytes += sent.sentBytesStandardPackets + sent.sentBytesControlPackets;
+                    uint32 totalSent = sent.sentBytesStandardPackets + sent.sentBytesControlPackets;
+                    spentBytes += totalSent;
                     spentOverhead += sent.sentBytesControlPackets;
+                    // Re-queue if the socket still has unsent control data
+                    // (e.g. kernel buffer was full from data packets).
+                    // Break so the throttler can drain data packets first,
+                    // then retry on the next loop iteration.
+                    if (!sent.success || totalSent == 0) {
+                        m_controlQueue.push_back(socket);
+                        break;
+                    }
                 }
             }
 

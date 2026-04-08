@@ -119,7 +119,7 @@ emule_add_test(tst_ListenSocket          FOLDER "Net")
 emule_add_test(tst_HttpClientReqSocket   FOLDER "Net")
 emule_add_test(tst_ClientUDPSocket       FOLDER "Net")
 emule_add_test(tst_TcpConnect            FOLDER "Net")
-set_tests_properties(tst_TcpConnect PROPERTIES TIMEOUT 300)
+set_tests_properties(tst_TcpConnect PROPERTIES TIMEOUT 30)
 
 # Module 29e: Firewall & UPnP
 emule_add_test(tst_UPnPManager   FOLDER "UPnP")

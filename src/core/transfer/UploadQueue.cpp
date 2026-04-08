@@ -63,6 +63,10 @@ void UploadQueue::setDiskIOThread(UploadDiskIOThread* diskIO)
 void UploadQueue::onBlockPacketsReady(UpDownClient* client,
                                        QList<std::shared_ptr<Packet>> packets)
 {
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("onBlockPacketsReady: client=%1 packets=%2")
+                     .arg(client ? client->userName() : QStringLiteral("null"))
+                     .arg(packets.size()));
     if (!client || !client->socket())
         return;
 

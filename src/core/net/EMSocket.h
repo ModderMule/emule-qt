@@ -98,6 +98,7 @@ public:
 
     void setDownloadLimit(uint32 limit);
     void disableDownloadLimit();
+    void clearDownloadLimit() { m_downloadLimitEnable = false; }
 
     // --- Queue inspection ---
 

@@ -140,6 +140,38 @@ void DownloadQueue::removeFile(PartFile* file)
 
 void DownloadQueue::deleteAll()
 {
+    // Control flow: Phase 1 detaches all sources (swap or disconnect).
+    // Phase 2 disconnects each PartFileNotifier to invalidate pending
+    // QueuedConnection events (onDownloadCompleted), then deletes.
+    // Without the disconnect, deferred onDownloadCompleted fires after
+    // the PartFile is freed → use-after-free in safeAddKFile.
+    //
+    // Phase 1: For each file, try to swap its sources to another pending
+    // file (A4AF).  Sources that can't swap are detached cleanly.
+    // This mirrors onDownloadCompleted's cleanup pattern.
+    for (auto* file : m_fileList) {
+        auto sources = file->srcList();  // copy — doSwap mutates srcList
+        for (auto* client : sources) {
+            if (client->swapToAnotherFile(
+                    QStringLiteral("file deleted"), true, true, true)) {
+                client->setDownloadState(DownloadState::None);
+            } else {
+                client->setDownloadState(DownloadState::None);
+                client->setReqFile(nullptr);
+                file->removeSource(client);
+            }
+            client->removeFileFromOtherLists(file);
+        }
+
+        for (auto* client : file->a4afSrcList())
+            client->removeFileFromOtherLists(file);
+        file->a4afSrcList().clear();
+    }
+
+    // Phase 2: Delete all PartFiles.  Each PartFile's destructor destroys
+    // its PartFileNotifier member, which causes Qt to purge any pending
+    // QMetaCallEvents (QueuedConnection) from that sender in the receiver's
+    // event queue.  This prevents stale onDownloadCompleted from firing.
     for (auto* file : m_fileList)
         delete file;
     m_fileList.clear();
@@ -719,10 +751,14 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     logInfo(QStringLiteral("Download completed: %1").arg(file->fileName()));
 
     // Phase 1: Active sources — try to swap each to another pending file.
+    // Send OP_CANCELTRANSFER first so the server stops uploading the
+    // completed file's data, freeing the TCP buffer for control packets.
     // swapToAnotherFile() requires m_reqFile != nullptr, so call before cleanup.
     // doSwap() mutates srcList, so iterate a copy.
     auto sources = file->srcList();
     for (auto* client : sources) {
+        client->sendCancelTransfer();
+
         if (client->swapToAnotherFile(
                 QStringLiteral("download completed"),
                 /*ignoreNoNeeded=*/true,

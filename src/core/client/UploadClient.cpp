@@ -21,7 +21,9 @@
 #include "transfer/UploadQueue.h"
 #include "utils/TimeUtils.h"
 
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/OtherFunctions.h"
 
 
 namespace eMule {
@@ -129,6 +131,11 @@ bool UpDownClient::processExtendedInfo(SafeMemFile& data, KnownFile* file)
 
 void UpDownClient::setUploadFileID(KnownFile* newReqFile)
 {
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("setUploadFileID: old=%1 new=%2 for %3")
+                     .arg(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null"))
+                     .arg(newReqFile ? newReqFile->fileName() : QStringLiteral("null"))
+                     .arg(userName()));
     if (m_uploadFile == newReqFile)
         return;
 
@@ -179,6 +186,11 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
     m_blockRequests.push_back(reqBlock);
 
     // Signal disk IO thread to start reading the block from disk
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("addReqBlock: start=%1 end=%2 uploadFile=%3 uploadQueue=%4")
+                     .arg(reqBlock->startOffset).arg(reqBlock->endOffset)
+                     .arg(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null"))
+                     .arg(theApp.uploadQueue != nullptr));
     if (theApp.uploadQueue && m_uploadFile) {
         if (auto* diskIO = theApp.uploadQueue->diskIOThread()) {
             BlockReadRequest readReq;
@@ -585,6 +597,12 @@ void UpDownClient::sendFileStatus(const uint8* fileHash, KnownFile* file)
 
 void UpDownClient::processRequestParts(const uint8* data, uint32 size, bool i64Offsets)
 {
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("processRequestParts: size=%1 i64=%2 uploadFile=%3 from %4")
+                     .arg(size).arg(i64Offsets)
+                     .arg(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null"))
+                     .arg(userName()));
+
     const uint32 expectedSize = i64Offsets ? 64u : 40u; // 16 + 3*(4 or 8) + 3*(4 or 8)
     if (size < expectedSize)
         return;
@@ -717,11 +735,7 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
 
     // Look up the file
     KnownFile* reqFile = findUploadFile(fileIdent.getMD4Hash());
-    logDebug(QStringLiteral("processMultiPacketExt2: file=%1 found=%2")
-                 .arg(reqFile ? reqFile->fileName() : QStringLiteral("null"))
-                 .arg(reqFile != nullptr));
     if (!reqFile || !reqFile->fileIdentifier().compareRelaxed(fileIdent)) {
-        logDebug(QStringLiteral("processMultiPacketExt2: compareRelaxed failed or file not found"));
         sendFileNotFound(fileIdent.getMD4Hash());
         return;
     }
@@ -737,6 +751,12 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
         setCommentDirty(true);
 
     setUploadFileID(reqFile);
+
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("processMultiPacketExt2: file=%1 hash=%2 from %3")
+                     .arg(reqFile->fileName())
+                     .arg(md4str(fileIdent.getMD4Hash()))
+                     .arg(userName()));
 
     // Build response
     SafeMemFile dataOut;
@@ -783,9 +803,10 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
         }
     }
 
-    logDebug(QStringLiteral("processMultiPacketExt2: hasResponse=%1 answerFNF=%2 for %3")
-                 .arg(hasResponse).arg(answerFNF).arg(reqFile->fileName()));
     if (hasResponse && !answerFNF) {
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("processMultiPacketExt2: sending OP_MULTIPACKETANSWER_EXT2 size=%1 for %2")
+                         .arg(dataOut.length()).arg(reqFile->fileName()));
         auto packet = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_MULTIPACKETANSWER_EXT2);
         sendPacket(std::move(packet));
         sendCommentInfo(reqFile);
@@ -959,12 +980,17 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
 
     // Find the file we requested
     if (!m_reqFile || !md4equ(fileIdent.getMD4Hash(), m_reqFile->fileHash())) {
-        logDebug(QStringLiteral("processMultiPacketAnswer: hash mismatch or no reqFile (reqFile=%1)")
-                     .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("processMultiPacketAnswer: hash mismatch or no reqFile, reqFile=%1")
+                         .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
         return;
     }
-    logDebug(QStringLiteral("processMultiPacketAnswer: matched file=%1 state=%2")
-                 .arg(m_reqFile->fileName()).arg(static_cast<int>(m_downloadState)));
+
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("processMultiPacketAnswer: file=%1 dlState=%2 from %3")
+                     .arg(m_reqFile->fileName())
+                     .arg(static_cast<int>(m_downloadState))
+                     .arg(userName()));
 
     // Process sub-responses
     while ((dataIn.length() - dataIn.position()) > 0) {

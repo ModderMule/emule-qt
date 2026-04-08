@@ -36,6 +36,7 @@
 #include <winsock2.h>
 #else
 #include <arpa/inet.h>
+#include <sys/ioctl.h>
 #endif
 
 using namespace eMule;
@@ -57,7 +58,9 @@ private slots:
     void secureIdent_completesHandshake();
     void download_completesFile();
     void download_askedForAnotherFile();
+    void download_completesLargeFileNoMultiPacket();
     void download_completesZipFile();
+    void download_deleteAllWhileActive();
     void cleanupTestCase();
 
 private:
@@ -127,7 +130,7 @@ void tst_TcpConnect::initTestCase()
     // 3. Set finite max upload so UploadQueue slot allocation works
     //    (with UNLIMITED speed and 0 data rate, forceNewClient() never
     //    grants a slot because m_datarate / upPerClient == 0)
-    thePrefs.setMaxUpload(100);
+    thePrefs.setMaxUpload(UNLIMITED);  // No upload speed limit for loopback tests
 
     // 4. Client credits — needed by sendHelloPacket()
     auto* creditsList = new ClientCreditsList();
@@ -161,6 +164,9 @@ void tst_TcpConnect::initTestCase()
     // 9. No IP filter
     theApp.ipFilter = nullptr;
 
+    // Disable verbose socket logging (enable for debugging multipacket flow)
+    // thePrefs.setLogRawSocketPackets(true);
+
     // 10. KnownFileList + SharedFileList
     m_knownFiles = new KnownFileList();
     m_sharedFiles = new SharedFileList(m_knownFiles, this);
@@ -177,10 +183,10 @@ void tst_TcpConnect::initTestCase()
     m_uploadQueue->setSharedFileList(m_sharedFiles);
     theApp.uploadQueue = m_uploadQueue;
 
-    // 13. DownloadQueue
+    // 13. DownloadQueue — don't set KnownFileList/SharedFileList to avoid
+    //     onDownloadCompleted calling safeAddKFile which takes ownership
+    //     of the PartFile and deletes the original shared KnownFile.
     m_downloadQueue = new DownloadQueue(this);
-    m_downloadQueue->setSharedFileList(m_sharedFiles);
-    m_downloadQueue->setKnownFileList(m_knownFiles);
     m_downloadQueue->setClientList(m_clientList);
     theApp.downloadQueue = m_downloadQueue;
 
@@ -339,8 +345,11 @@ void tst_TcpConnect::secureIdent_completesHandshake()
 {
     // -- Cleanup from earlier tests ------------------------------------------
     m_listenSocket->killAllSockets();
-    for (auto* c : m_serverClients)
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
         m_clientList->removeClient(c);
+    }
     qDeleteAll(m_serverClients);
     m_serverClients.clear();
 
@@ -377,8 +386,11 @@ void tst_TcpConnect::secureIdent_completesHandshake()
 
     // -- Cleanup -------------------------------------------------------------
     delete client;
-    for (auto* c : m_serverClients)
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
         m_clientList->removeClient(c);
+    }
     qDeleteAll(m_serverClients);
     m_serverClients.clear();
 }
@@ -395,35 +407,28 @@ void tst_TcpConnect::download_completesFile()
     // Kill orphaned server-side sockets from tests 1–3 so they don't time out
     // and cause cascading disconnects during this test.
     m_listenSocket->killAllSockets();
-    for (auto* c : m_serverClients)
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
         m_clientList->removeClient(c);
+    }
     qDeleteAll(m_serverClients);
     m_serverClients.clear();
 
-    // Stop the throttler thread.  The throttler calls sendFileAndControlData()
-    // from its own thread, which triggers QSocketNotifier cross-thread warnings
-    // and corrupts Qt socket state (QTcpSocket is not thread-safe).
-    // We manually drain server socket queues from the main thread instead.
     m_throttler->endThread();
 
     // -- Process timer -------------------------------------------------------
-    // Drives download/upload queues and manually sends queued data on server
-    // sockets from the main thread (replacing the stopped throttler thread).
-    // ListenSocket::process() is intentionally omitted to avoid timeout checks.
     QTimer processTimer;
     QObject::connect(&processTimer, &QTimer::timeout, this, [this] {
         m_downloadQueue->process();
         m_uploadQueue->process();
 
-        // Drain standard + control packet queues on server sockets from
-        // the main thread.  Without the throttler thread, standard (data)
-        // packets would otherwise sit in the queue forever.
         for (auto* serverClient : m_serverClients) {
             if (auto* sock = serverClient->socket())
-                sock->sendFileAndControlData(1024 * 1024, 0);
+                sock->sendFileAndControlData(4 * 1024 * 1024, 0);
         }
     });
-    processTimer.start(100);
+    processTimer.start(10);
 
     // -- Setup: create PartFile for download ----------------------------------
     const uint8* fileHash = m_sharedFile->fileHash();
@@ -452,8 +457,8 @@ void tst_TcpConnect::download_completesFile()
 
     QVERIFY(client->tryToConnect());
 
-    // -- Wait for download to complete (up to 30s for a 12 KB file) ----------
-    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpy.count() >= 1, 30000);
+    // -- Wait for download to complete ----------------------------------------
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpy.count() >= 1, 10000);
 
     // Verify move succeeded
     QVERIFY2(moveFinishedSpy.first().first().toBool(), "File move failed");
@@ -485,6 +490,12 @@ void tst_TcpConnect::download_completesFile()
     QVERIFY2(QFile::exists(originalPath), "Original readme.txt was removed!");
 
     processTimer.stop();
+
+    // Detach client from source list before deleting — the QueuedConnection
+    // for onDownloadCompleted hasn't fired yet (it fires during the next
+    // test's processEvents).  If the client is still in the srcList when
+    // onDownloadCompleted runs, it dereferences a deleted pointer.
+    partFile->removeSource(client);
     delete client;
 }
 
@@ -504,36 +515,77 @@ void tst_TcpConnect::download_askedForAnotherFile()
     QVERIFY2(m_sharedDmgFile != nullptr, "Shared DMG not set up from initTestCase");
 
     // -- Cleanup from earlier tests ------------------------------------------
-    m_listenSocket->killAllSockets();
-    for (auto* c : m_serverClients)
-        m_clientList->removeClient(c);
-    qDeleteAll(m_serverClients);
-    m_serverClients.clear();
-
-    // Process pending events (queued signals from prior test's downloads)
-    // before removing files, to avoid use-after-free from stale lambdas.
+    // Process events to flush queued onDownloadCompleted signals from test 6.
+    // Without this, a stale QueuedConnection fires during deleteAll and crashes.
     QCoreApplication::processEvents();
 
-    // Remove completed files from earlier tests so addDownload doesn't
-    // skip them as duplicates (isFileExisting check).
+    m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
+        m_clientList->removeClient(c);
+    }
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
     m_downloadQueue->deleteAll();
 
-    // Stop the throttler thread — sendFileAndControlData() from the throttler
-    // thread triggers cross-thread QSocketNotifier warnings.
     m_throttler->endThread();
 
     // -- Process timer -------------------------------------------------------
+    UpDownClient* dlClient = nullptr;  // set after client creation
     QTimer processTimer;
-    QObject::connect(&processTimer, &QTimer::timeout, this, [this] {
+    QObject::connect(&processTimer, &QTimer::timeout, this, [this, &dlClient] {
         m_downloadQueue->process();
         m_uploadQueue->process();
 
+        // Drain all sockets — file data + control packets
         for (auto* serverClient : m_serverClients) {
-            if (auto* sock = serverClient->socket())
-                sock->sendFileAndControlData(1024 * 1024, 0);
+            if (auto* sock = serverClient->socket()) {
+                sock->sendFileAndControlData(16 * 1024 * 1024, 0);
+                sock->flush();
+            }
+        }
+        if (dlClient) {
+            if (auto* sock = dlClient->socket()) {
+                auto sent = sock->sendControlData(64 * 1024, 0);
+                if (sent.sentBytesControlPackets > 0)
+                    qDebug() << "dlClient sendControlData sent" << sent.sentBytesControlPackets << "bytes";
+            }
+        }
+
+        // Two-pass poll: after ioctl-triggered readyRead handlers queue
+        // responses, drain and poll again in the same timer cycle.
+        for (int pass = 0; pass < 2; ++pass) {
+            if (dlClient) {
+                if (auto* sock = dlClient->socket()) {
+                    int avail = 0;
+                    auto fd = sock->socketDescriptor();
+                    if (fd != -1 && ::ioctl(static_cast<int>(fd), FIONREAD, &avail) == 0 && avail > 0)
+                        emit sock->readyRead();
+                }
+            }
+            for (auto* serverClient : m_serverClients) {
+                if (auto* sock = serverClient->socket()) {
+                    int avail = 0;
+                    auto fd = sock->socketDescriptor();
+                    if (fd != -1 && ::ioctl(static_cast<int>(fd), FIONREAD, &avail) == 0 && avail > 0)
+                        emit sock->readyRead();
+                }
+            }
+            // Drain responses queued during readyRead handlers
+            for (auto* serverClient : m_serverClients) {
+                if (auto* sock = serverClient->socket()) {
+                    sock->sendFileAndControlData(16 * 1024 * 1024, 0);
+                    sock->flush();
+                }
+            }
+            if (dlClient) {
+                if (auto* sock = dlClient->socket())
+                    sock->sendControlData(64 * 1024, 0);
+            }
         }
     });
-    processTimer.start(100);
+    processTimer.start(10);
 
     const QString tempDir = thePrefs.tempDirs().first();
 
@@ -573,6 +625,7 @@ void tst_TcpConnect::download_askedForAnotherFile()
     const uint16 port = m_listenSocket->connectedPort();
     auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
                                     partFileA, true, this);
+    dlClient = client;
     partFileA->addSource(client);
 
     // Register A4AF files on completion — connect BEFORE addDownload so our
@@ -605,14 +658,14 @@ void tst_TcpConnect::download_askedForAnotherFile()
     // PartFile::process() detects state=None and calls tryToConnect() which
     // sends the file request on the already-connected socket.
     // ========================================================================
-    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyA.count() >= 1, 30000);
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyA.count() >= 1, 10000);
     QVERIFY2(moveFinishedSpyA.first().first().toBool(), "File A move failed");
     QCOMPARE(partFileA->status(), PartFileStatus::Complete);
 
     // ========================================================================
     // File B (eMule0.50a.zip, ~2.9 MB) — auto-swapped from file A
     // ========================================================================
-    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyB.count() >= 1, 120000);
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyB.count() >= 1, 10000);
     QVERIFY2(moveFinishedSpyB.first().first().toBool(), "File B move failed");
     QCOMPARE(partFileB->status(), PartFileStatus::Complete);
 
@@ -649,19 +702,204 @@ void tst_TcpConnect::download_askedForAnotherFile()
         QCOMPARE(downloaded.readAll(), original.readAll());
     }
 
-    // -- Verify file C received the source via auto-swap from B ---------------
-    // The 20 MB multi-part download can't complete in a loopback test without
-    // the throttler, but we verify the A4AF swap chain reached file C.
-    // ToDo: complete file C download once loopback throttler support is added
-    QTRY_VERIFY_WITH_TIMEOUT(partFileC->sourceCount() >= 1, 5000);
-    QCOMPARE(client->reqFile(), partFileC);
+    // ========================================================================
+    // File C (eMuleQt-testfile-20MB.bin, ~20 MB) — auto-swapped from file B
+    // ========================================================================
+    QSignalSpy moveFinishedSpyC(partFileC->partNotifier(),
+                                &PartFileNotifier::fileMoveFinished);
+
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyC.count() >= 1, 25000);
+    QVERIFY2(moveFinishedSpyC.first().first().toBool(), "File C move failed");
+    QCOMPARE(partFileC->status(), PartFileStatus::Complete);
+
+    // -- Verify downloaded file C --------------------------------------------
+    const QString downloadedC = thePrefs.incomingDir() + QDir::separator()
+                                + QStringLiteral("eMuleQt-testfile-20MB.bin");
+    QVERIFY2(QFile::exists(downloadedC),
+             qPrintable(QStringLiteral("Downloaded 20MB file not found at %1").arg(downloadedC)));
+    QFileInfo fiC(downloadedC);
+    QCOMPARE(static_cast<uint64>(fiC.size()), sizeC);
+
+    {
+        QFile original(dataIncoming + QStringLiteral("/eMuleQt-testfile-20MB.bin"));
+        QVERIFY(original.open(QIODevice::ReadOnly));
+        QFile downloaded(downloadedC);
+        QVERIFY(downloaded.open(QIODevice::ReadOnly));
+        QCOMPARE(downloaded.readAll(), original.readAll());
+    }
 
     // -- Cleanup: delete downloaded copies -----------------------------------
     QVERIFY(QFile::remove(downloadedA));
     QVERIFY(QFile::remove(downloadedB));
+    QVERIFY(QFile::remove(downloadedC));
 
     processTimer.stop();
+
+    // Remove server clients from upload queue before deleting to avoid
+    // dangling pointers in m_uploadingList / m_waitingList.
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
+    }
+
+    // Remove client from source lists before deleting to avoid dangling
+    // pointers in the download queue's PartFile srcLists.
+    if (client->reqFile())
+        client->reqFile()->removeSource(client);
+    client->setReqFile(nullptr);
     delete client;
+}
+
+// ---------------------------------------------------------------------------
+// Test 7b: Download 20MB file directly (no A4AF) with multipacket disabled
+//          Diagnostic: isolates whether the file C bug is multipacket-specific
+// ---------------------------------------------------------------------------
+
+void tst_TcpConnect::download_completesLargeFileNoMultiPacket()
+{
+    QVERIFY2(m_sharedDmgFile != nullptr, "Shared 20MB file not set up from initTestCase");
+
+    // -- Cleanup from earlier tests ------------------------------------------
+    QCoreApplication::processEvents();
+    m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
+        m_clientList->removeClient(c);
+    }
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
+    m_downloadQueue->deleteAll();
+
+    m_throttler->endThread();
+
+    // -- Process timer (same pattern as test 7) --------------------------------
+    UpDownClient* dlClient = nullptr;
+    QTimer processTimer;
+    QObject::connect(&processTimer, &QTimer::timeout, this, [this, &dlClient] {
+        m_downloadQueue->process();
+        m_uploadQueue->process();
+
+        for (auto* serverClient : m_serverClients) {
+            if (auto* sock = serverClient->socket()) {
+                sock->sendFileAndControlData(16 * 1024 * 1024, 0);
+                sock->flush();
+            }
+        }
+        if (dlClient) {
+            if (auto* sock = dlClient->socket())
+                sock->sendControlData(64 * 1024, 0);
+        }
+
+        for (int pass = 0; pass < 2; ++pass) {
+            if (dlClient) {
+                if (auto* sock = dlClient->socket()) {
+                    int avail = 0;
+                    auto fd = sock->socketDescriptor();
+                    if (fd != -1 && ::ioctl(static_cast<int>(fd), FIONREAD, &avail) == 0 && avail > 0)
+                        emit sock->readyRead();
+                }
+            }
+            for (auto* serverClient : m_serverClients) {
+                if (auto* sock = serverClient->socket()) {
+                    int avail = 0;
+                    auto fd = sock->socketDescriptor();
+                    if (fd != -1 && ::ioctl(static_cast<int>(fd), FIONREAD, &avail) == 0 && avail > 0)
+                        emit sock->readyRead();
+                }
+            }
+            for (auto* serverClient : m_serverClients) {
+                if (auto* sock = serverClient->socket()) {
+                    sock->sendFileAndControlData(16 * 1024 * 1024, 0);
+                    sock->flush();
+                }
+            }
+            if (dlClient) {
+                if (auto* sock = dlClient->socket())
+                    sock->sendControlData(64 * 1024, 0);
+            }
+        }
+    });
+    processTimer.start(10);
+
+    // -- Setup: create PartFile for 20MB download ----------------------------
+    const uint8* fileHash = m_sharedDmgFile->fileHash();
+    const uint64 fileSize = static_cast<uint64>(m_sharedDmgFile->fileSize());
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("eMuleQt-testfile-20MB.bin"));
+    partFile->setFileSize(static_cast<EMFileSize>(fileSize));
+    partFile->setFileHash(fileHash);
+
+    const QString tempDir = thePrefs.tempDirs().first();
+    QVERIFY2(partFile->createPartFile(tempDir), "Failed to create .part for 20MB file");
+    partFile->setStatus(PartFileStatus::Ready);
+
+    m_downloadQueue->addDownload(partFile);
+
+    // -- Spies ---------------------------------------------------------------
+    QSignalSpy moveFinishedSpy(partFile->partNotifier(),
+                               &PartFileNotifier::fileMoveFinished);
+
+    // -- Create client with multipacket DISABLED -----------------------------
+    const uint32 loopbackNBO = htonl(0x7F000001);
+    const uint16 port = m_listenSocket->connectedPort();
+    auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
+                                    partFile, true, this);
+    dlClient = client;
+
+    // Disable multipacket so sendFileRequest uses individual packets
+    client->setTestDisableMultiPacket(true);
+
+    QVERIFY(client->tryToConnect());
+
+    // -- Wait for download to complete ----------------------------------------
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpy.count() >= 1, 25000);
+    QVERIFY2(moveFinishedSpy.first().first().toBool(), "File move failed");
+    QCOMPARE(partFile->status(), PartFileStatus::Complete);
+
+    // -- Verify downloaded file -----------------------------------------------
+    const QString downloadedPath = thePrefs.incomingDir() + QDir::separator()
+                                   + QStringLiteral("eMuleQt-testfile-20MB.bin");
+    QVERIFY2(QFile::exists(downloadedPath),
+             qPrintable(QStringLiteral("Downloaded 20MB file not found at %1").arg(downloadedPath)));
+
+    QFileInfo fi(downloadedPath);
+    QCOMPARE(static_cast<uint64>(fi.size()), fileSize);
+
+    // Byte-for-byte content comparison
+    const QString originalPath = projectDataDir()
+                                 + QStringLiteral("/incoming/eMuleQt-testfile-20MB.bin");
+    QFile original(originalPath);
+    QVERIFY(original.open(QIODevice::ReadOnly));
+    QFile downloaded(downloadedPath);
+    QVERIFY(downloaded.open(QIODevice::ReadOnly));
+    QCOMPARE(downloaded.readAll(), original.readAll());
+
+    // -- Cleanup --------------------------------------------------------------
+    downloaded.close();
+    original.close();
+    QVERIFY(QFile::remove(downloadedPath));
+
+    processTimer.stop();
+
+    // Full cleanup
+    m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
+        m_clientList->removeClient(c);
+    }
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
+
+    if (client->reqFile())
+        client->reqFile()->removeSource(client);
+    client->setReqFile(nullptr);
+    delete client;
+
+    QCoreApplication::processEvents();
+    m_downloadQueue->deleteAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -673,11 +911,18 @@ void tst_TcpConnect::download_completesZipFile()
     QVERIFY2(m_sharedZipFile != nullptr, "Shared KnownFile for zip not set up from initTestCase");
 
     // -- Cleanup from earlier tests ------------------------------------------
+    QCoreApplication::processEvents();
     m_listenSocket->killAllSockets();
-    for (auto* c : m_serverClients)
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
         m_clientList->removeClient(c);
+    }
     qDeleteAll(m_serverClients);
     m_serverClients.clear();
+    m_downloadQueue->deleteAll();
+
+    m_throttler->endThread();
 
     // -- Process timer -------------------------------------------------------
     QTimer processTimer;
@@ -687,12 +932,12 @@ void tst_TcpConnect::download_completesZipFile()
 
         for (auto* serverClient : m_serverClients) {
             if (auto* sock = serverClient->socket()) {
-                sock->sendFileAndControlData(1024 * 1024, 0);
+                sock->sendFileAndControlData(4 * 1024 * 1024, 0);
                 sock->flush();
             }
         }
     });
-    processTimer.start(100);
+    processTimer.start(10);
 
     // -- Setup: create PartFile for download ----------------------------------
     const uint8* fileHash = m_sharedZipFile->fileHash();
@@ -721,8 +966,8 @@ void tst_TcpConnect::download_completesZipFile()
 
     QVERIFY(client->tryToConnect());
 
-    // -- Wait for download to complete (up to 120s for a ~2.9 MB file) -------
-    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpy.count() >= 1, 120000);
+    // -- Wait for download to complete ----------------------------------------
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpy.count() >= 1, 10000);
 
     // Verify move succeeded
     QVERIFY2(moveFinishedSpy.first().first().toBool(), "File move failed");
@@ -758,6 +1003,103 @@ void tst_TcpConnect::download_completesZipFile()
 }
 
 // ---------------------------------------------------------------------------
+// Test 9: deleteAll while download is active — must not crash
+// ---------------------------------------------------------------------------
+
+void tst_TcpConnect::download_deleteAllWhileActive()
+{
+    QVERIFY2(m_sharedFile != nullptr, "Shared readme.txt not set up");
+    QVERIFY2(m_sharedZipFile != nullptr, "Shared zip not set up");
+
+    // -- Cleanup from earlier tests ------------------------------------------
+    QCoreApplication::processEvents();
+    m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
+        m_clientList->removeClient(c);
+    }
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
+    m_downloadQueue->deleteAll();
+
+    m_throttler->endThread();
+
+    // -- Process timer -------------------------------------------------------
+    QTimer processTimer;
+    QObject::connect(&processTimer, &QTimer::timeout, this, [this] {
+        m_downloadQueue->process();
+        m_uploadQueue->process();
+
+        for (auto* serverClient : m_serverClients) {
+            if (auto* sock = serverClient->socket()) {
+                sock->sendFileAndControlData(4 * 1024 * 1024, 0);
+                sock->flush();
+            }
+        }
+    });
+    processTimer.start(10);
+
+    const QString tempDir = thePrefs.tempDirs().first();
+
+    // -- Create two PartFiles ------------------------------------------------
+    auto* partFileA = new PartFile();
+    partFileA->setFileName(QStringLiteral("readme.txt"));
+    partFileA->setFileSize(static_cast<EMFileSize>(m_sharedFile->fileSize()));
+    partFileA->setFileHash(m_sharedFile->fileHash());
+    QVERIFY(partFileA->createPartFile(tempDir));
+    partFileA->setStatus(PartFileStatus::Ready);
+
+    auto* partFileB = new PartFile();
+    partFileB->setFileName(QStringLiteral("eMule0.50a.zip"));
+    partFileB->setFileSize(static_cast<EMFileSize>(m_sharedZipFile->fileSize()));
+    partFileB->setFileHash(m_sharedZipFile->fileHash());
+    QVERIFY(partFileB->createPartFile(tempDir));
+    partFileB->setStatus(PartFileStatus::Ready);
+
+    m_downloadQueue->addDownload(partFileA);
+    m_downloadQueue->addDownload(partFileB);
+
+    // -- Start downloading file A, register B as A4AF ------------------------
+    const uint32 loopbackNBO = htonl(0x7F000001);
+    const uint16 port = m_listenSocket->connectedPort();
+    auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
+                                    partFileA, true, this);
+    partFileA->addSource(client);
+    client->addRequestForAnotherFile(partFileB);
+
+    QVERIFY(client->tryToConnect());
+
+    // Wait for transfer to begin
+    QTRY_COMPARE_WITH_TIMEOUT(client->downloadState(), DownloadState::Downloading, 10000);
+
+    // -- deleteAll while active — must not crash ------------------------------
+    processTimer.stop();
+
+    // Kill server sockets first — they hold m_uploadFile pointers
+    m_listenSocket->killAllSockets();
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
+        m_clientList->removeClient(c);
+    }
+    qDeleteAll(m_serverClients);
+    m_serverClients.clear();
+
+    // deleteAll tries A4AF swap, then detaches cleanly
+    m_downloadQueue->deleteAll();
+
+    // Verify client's reqFile was cleaned up
+    QCOMPARE(client->reqFile(), nullptr);
+
+    // Delete client — must not crash
+    delete client;
+
+    // Process events to catch any deferred crashes
+    QCoreApplication::processEvents();
+}
+
+// ---------------------------------------------------------------------------
 // Teardown
 // ---------------------------------------------------------------------------
 
@@ -780,10 +1122,16 @@ void tst_TcpConnect::cleanupTestCase()
         m_listenSocket->stopListening();
 
     // Delete server-side clients created by the production handler
-    for (auto* c : m_serverClients)
+    for (auto* c : m_serverClients) {
+        m_uploadQueue->removeFromUploadQueue(c);
+        m_uploadQueue->removeFromWaitingQueue(c);
         m_clientList->removeClient(c);
+    }
     qDeleteAll(m_serverClients);
     m_serverClients.clear();
+
+    // Disable packet logging
+    thePrefs.setLogRawSocketPackets(false);
 
     // Reset globals
     theApp.downloadQueue = nullptr;

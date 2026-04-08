@@ -371,23 +371,10 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
         send(1024, 0, true);
         scheduleRetryIfNeeded();
     } else if (controlPacket) {
-        // Schedule send on the socket's thread. Unlike MFC Winsock which is thread-safe,
-        // Qt sockets require write() to be called from the thread that created the socket.
-        // Using QTimer::singleShot(0) defers to the next event loop iteration on the correct thread.
-        // If multiple control packets are queued in the same event loop tick, the first
-        // timer callback drains all of them via send()'s while loop; subsequent callbacks
-        // find the queue empty and are harmless no-ops.
+        // Schedule send on the socket's thread via QTimer.
         QTimer::singleShot(0, this, [this] {
-            if (thePrefs.logRawSocketPackets())
-                logDebug(QStringLiteral("EMSocket::sendPacket — QTimer fired, conState=%1 encReady=%2 peer=%3:%4")
-                             .arg(static_cast<int>(m_conState.load(std::memory_order_relaxed))).arg(isEncryptionLayerReady())
-                             .arg(peerAddress().toString()).arg(peerPort()));
             if (m_conState.load(std::memory_order_acquire) == EMSState::Connected) {
-                auto result = send(1024 * 64, 0, true);
-                if (thePrefs.logRawSocketPackets())
-                    logDebug(QStringLiteral("EMSocket::sendPacket — send() returned ctrl=%1 std=%2 success=%3")
-                                 .arg(result.sentBytesControlPackets).arg(result.sentBytesStandardPackets)
-                                 .arg(result.success));
+                send(1024 * 64, 0, true);
                 scheduleRetryIfNeeded();
             }
         });
@@ -483,16 +470,25 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             }
         }
 
+        // Must drain a standard send buffer blocking queued control packets?
+        const bool drainForControl = (onlyControlPackets && m_sendBuffer != nullptr
+                                      && !m_currentPacketIsControl && !m_controlQueue.empty());
+
         // Send as much as allowed
         while (m_sent < m_sendBufferLen
             && sentBytes < maxNumberOfBytesToSend
             && (!onlyControlPackets || m_currentPacketIsControl
+                || drainForControl
                 || (wasLongTimeSinceSend && sentBytes < minFragSize)
                 || sentBytes % minFragSize != 0)
             && ret.success)
         {
             uint32 toSend = m_sendBufferLen - m_sent;
             if (!onlyControlPackets || m_currentPacketIsControl) {
+                if (toSend > maxNumberOfBytesToSend - sentBytes)
+                    toSend = maxNumberOfBytesToSend - sentBytes;
+            } else if (drainForControl) {
+                // Drain the blocking standard packet so control packets can follow
                 if (toSend > maxNumberOfBytesToSend - sentBytes)
                     toSend = maxNumberOfBytesToSend - sentBytes;
             } else if (wasLongTimeSinceSend && minFragSize > sentBytes) {
@@ -545,8 +541,13 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
                 }
             }
 
-            m_cachedBytesToWrite.store(bytesToWrite(), std::memory_order_relaxed);
-            m_busy = (m_cachedBytesToWrite.load(std::memory_order_relaxed) >= kBusyThreshold);
+            // Only call Qt's bytesToWrite() from the owning thread — it's not
+            // thread-safe and accessing it from the throttler thread can corrupt
+            // Qt's internal socket state (breaking QSocketNotifier events).
+            if (QThread::currentThread() == thread()) {
+                m_cachedBytesToWrite.store(bytesToWrite(), std::memory_order_relaxed);
+                m_busy = (m_cachedBytesToWrite.load(std::memory_order_relaxed) >= kBusyThreshold);
+            }
             auto written = static_cast<uint32>(result);
 
             m_sent += written;

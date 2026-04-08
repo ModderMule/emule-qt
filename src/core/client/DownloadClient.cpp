@@ -116,7 +116,16 @@ void UpDownClient::sendFileRequest()
     logDebug(QStringLiteral("sendFileRequest: reqFile=%1")
                  .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
 
-    if (supportMultiPacket() || supportsFileIdentifiers()) {
+    const bool useMultiPacket = supportMultiPacket() || supportsFileIdentifiers();
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("sendFileRequest: %1 path for file=%2 multiPacket=%3 extMultiPacket=%4 fileIdent=%5")
+                     .arg(useMultiPacket ? QStringLiteral("multipacket") : QStringLiteral("individual"))
+                     .arg(m_reqFile->fileName())
+                     .arg(supportMultiPacket())
+                     .arg(supportExtMultiPacket())
+                     .arg(supportsFileIdentifiers()));
+
+    if (useMultiPacket) {
         // --- Multipacket path (MFC DownloadClient.cpp SendFileRequest) ---
         SafeMemFile data;
         uint8 opcode;
@@ -368,6 +377,11 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
 
 void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdentifiers)
 {
+    // Control flow for fileIdentifiers=true (OP_HASHSETANSWER2):
+    //   readIdentifier (skip header) → readHashSetsFromPacket → verify →
+    //   if state==ReqHashSet → sendStartupLoadReq (requests upload slot).
+    // The FileIdentifier header must be consumed first because the server's
+    // sendHashsetPacket writes: writeIdentifier + writeHashSetsToPacket.
     if (!data || size < 16 || !m_reqFile) {
         m_hashsetRequestingMD4 = false;
         m_hashsetRequestingAICH = false;
@@ -377,7 +391,17 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
     SafeMemFile file(data, size);
 
     if (fileIdentifiers) {
-        // New-style: read via FileIdentifier with MD4 + AICH hashsets
+        // New-style: OP_HASHSETANSWER2 format is FileIdentifier + hashset data.
+        // Skip the FileIdentifier header first — the hashset reader expects to
+        // start at the options byte, not at the identifier descriptor.
+        FileIdentifierSA headerIdent;
+        if (!headerIdent.readIdentifier(file)) {
+            logDebug(QStringLiteral("processHashSet: failed to read FileIdentifier header from %1").arg(userName()));
+            m_hashsetRequestingMD4 = false;
+            m_hashsetRequestingAICH = false;
+            return;
+        }
+
         auto& ident = m_reqFile->fileIdentifier();
         bool md4 = false;
         bool aich = false;
@@ -421,6 +445,11 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
 
         m_hashsetRequestingMD4 = false;
     }
+
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("processHashSet: state=%1 reqFile=%2")
+                     .arg(static_cast<int>(m_downloadState))
+                     .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
 
     // If hashset obtained, proceed with download — MFC: transition to
     // OnQueue before sending OP_STARTUPLOADREQ so that the subsequent
@@ -929,6 +958,14 @@ void UpDownClient::sendHashSetRequest()
     if (m_hashsetRequestingMD4 || m_hashsetRequestingAICH)
         return;
 
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("sendHashSetRequest: file=%1 md4needed=%2 aichNeeded=%3 state=%4 fileIdent=%5")
+                     .arg(m_reqFile->fileName())
+                     .arg(m_reqFile->isMD4HashsetNeeded())
+                     .arg(m_reqFile->isAICHPartHashsetNeeded())
+                     .arg(static_cast<int>(m_downloadState))
+                     .arg(supportsFileIdentifiers()));
+
     if (supportsFileIdentifiers()) {
         // MFC: v2 path — OP_HASHSETREQUEST2 with FileIdentifier + options byte
         SafeMemFile data;
@@ -1249,6 +1286,10 @@ bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
 
 bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString& reason)
 {
+    // Control flow: oldFile.removeSource → clearDownloadBlockRequests (returns
+    // old blocks to oldFile's gap list) → m_reqFile = swapTo → addSource.
+    // clearDownloadBlockRequests must run BEFORE m_reqFile changes so that
+    // removeBlockFromList operates on the correct file's gap list.
     if (!swapTo || !m_reqFile || swapTo == m_reqFile)
         return false;
 
@@ -1276,6 +1317,13 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
     // Remove old file from our other-requests/no-needed lists
     m_otherRequests.remove(swapTo);
     m_otherNoNeeded.remove(swapTo);
+
+    // Clear stale pending block requests BEFORE switching m_reqFile —
+    // the blocks reference the old file's offsets and removeBlockFromList
+    // must run against the old file's gap list, not the new one.
+    // Without this, sendBlockRequests finds all blocks already queued
+    // and never requests data for the new file.
+    clearDownloadBlockRequests();
 
     // Set the new request file
     m_reqFile = swapTo;

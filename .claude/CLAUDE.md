@@ -22,3 +22,4 @@
 - never disable UDP or TCP encryption as it is required by most peers to connect
 - start the GUI with  `--screenshot` cmd arg to take screenshots
 - local config for debugging is at `$HOME/eMuleQt/Config/preferences.yml`
+- use LLDB to fix crashes via stack trace: `lldb -o "settings set auto-confirm true" -o "process launch -- download_askedForAnotherFile download_completesLargeFileNoMultiPacket" -k "bt" -k "quit" -- ./tests/tst_TcpConnect 2>&1`

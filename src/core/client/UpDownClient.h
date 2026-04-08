@@ -167,10 +167,17 @@ public:
 
     [[nodiscard]] bool isEmuleClient() const { return m_emuleProtocol || hashType() == static_cast<int>(ClientSoftware::eMule); }
     [[nodiscard]] bool extProtocolAvailable() const { return m_emuleProtocol; }
-    [[nodiscard]] bool supportMultiPacket() const { return m_multiPacket; }
-    [[nodiscard]] bool supportExtMultiPacket() const { return m_extMultiPacket; }
+    [[nodiscard]] bool supportMultiPacket() const {
+        return m_multiPacket && !m_testDisableMultiPacket;
+    }
+    [[nodiscard]] bool supportExtMultiPacket() const {
+        return m_extMultiPacket && !m_testDisableMultiPacket;
+    }
     [[nodiscard]] bool supportsLargeFiles() const { return m_supportsLargeFiles; }
-    [[nodiscard]] bool supportsFileIdentifiers() const { return m_supportsFileIdent; }
+    [[nodiscard]] bool supportsFileIdentifiers() const {
+        return m_supportsFileIdent && !m_testDisableMultiPacket;
+    }
+    void setTestDisableMultiPacket(bool disable) { m_testDisableMultiPacket = disable; }
     [[nodiscard]] bool supportsUDP() const { return m_udpPort != 0 && m_udpVer != 0; }
     [[nodiscard]] bool supportsCryptLayer() const { return m_supportsCryptLayer; }
     [[nodiscard]] bool requestsCryptLayer() const { return m_requestsCryptLayer; }
@@ -747,6 +754,7 @@ private:
     bool m_directUDPCallback = false;
     bool m_supportsFileIdent = false;
     bool m_hashsetRequestingAICH = false;
+    bool m_testDisableMultiPacket = false;
 
     // -- Multi-bit fields (from MFC bitfields > 1 bit) ----------------------
     uint8 m_unaskQueueRankRecv = 0;    // was :2

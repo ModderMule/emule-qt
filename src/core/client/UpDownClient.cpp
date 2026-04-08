@@ -112,6 +112,16 @@ UpDownClient::~UpDownClient()
     // Clean up waiting packets
     m_waitingPackets.clear();
 
+    // Remove from download file source lists — try to swap the source to
+    // another pending file first so we don't lose it needlessly.
+    if (m_reqFile) {
+        if (!swapToAnotherFile(QStringLiteral("client destroyed"),
+                               true, true, true)) {
+            m_reqFile->removeSource(this);
+        }
+        m_reqFile = nullptr;
+    }
+
     // Remove from upload file
     if (m_uploadFile) {
         m_uploadFile->removeUploadingClient(this);
@@ -367,6 +377,11 @@ void UpDownClient::setUploadState(UploadState state)
 
 void UpDownClient::setDownloadState(DownloadState state)
 {
+    // Control flow when leaving Downloading: clear rate data, reset socket
+    // timeout, and clear the download rate limit via clearDownloadLimit()
+    // (not disableDownloadLimit which re-enters onReadyRead).  This lets
+    // the socket read the next file's control packets (multipacket answer,
+    // hashset response) without being throttled by a stale limit.
     if (state != m_downloadState) {
         // MFC: Increase socket timeout to 4x when entering Downloading state
         // to give the uploader time to start sending data blocks
@@ -380,14 +395,23 @@ void UpDownClient::setDownloadState(DownloadState state)
         else if (m_downloadState == DownloadState::Downloading && m_reqFile)
             m_reqFile->removeDownloadingSource(this);
 
-        // Clear rate data and reset socket timeout when leaving Downloading
+        // Clear rate data and reset socket timeout when leaving Downloading.
+        // Also disable download rate limiting so the socket can read control
+        // packets (e.g. multipacket answers) without being blocked by a stale
+        // download limit from the previous file's transfer.
         if (m_downloadState == DownloadState::Downloading) {
             m_downDatarate = 0;
             m_downDataRateMS = 0;
             m_sumForAvgDownDataRate = 0;
             m_averageDDR.clear();
-            if (m_socket)
+            if (m_socket) {
                 m_socket->setTimeOut(CONNECTION_TIMEOUT);
+                // Clear the download rate limit flag — use clearDownloadLimit()
+                // not disableDownloadLimit() to avoid re-entrant onReadyRead()
+                // during state transition.  The next readyRead will process
+                // pending data without limit.
+                m_socket->clearDownloadLimit();
+            }
         }
 
         m_downloadState = state;
@@ -1355,6 +1379,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     // state=None the source needs to re-request immediately, but the
     // throttle would block it for 1 minute.
     if (m_socket && m_socket->isConnected()) {
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("tryToConnect: already connected, reqFile=%1 dlState=%2")
+                         .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null"))
+                         .arg(static_cast<int>(m_downloadState)));
         if (m_reqFile && m_downloadState == DownloadState::None) {
             setDownloadState(DownloadState::Connected);
             sendFileRequest();
