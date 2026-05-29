@@ -24,7 +24,7 @@ namespace eMule {
 // ===========================================================================
 
 ClientList::ClientList(QObject* parent)
-    : QObject(parent)
+    : EntityList<UpDownClient>(parent)
     , m_lastBanCleanUp(static_cast<uint32>(getTickCount()))
 {
     globalDeadSourceList.init(true);
@@ -38,45 +38,31 @@ ClientList::~ClientList() = default;
 
 void ClientList::addClient(UpDownClient* client, bool skipDupTest)
 {
-    if (!client)
-        return;
-
-    if (!skipDupTest) {
-        // Check for duplicate pointer (matches MFC list.Find())
-        if (std::find(m_clients.begin(), m_clients.end(), client) != m_clients.end())
-            return;
-    }
-
-    m_clients.push_back(client);
-    emit clientAdded(client);
+    // EntityList::addEntity: null-check -> pointer dup-check -> append ->
+    // onEntityAdded() (emits clientAdded). Matches MFC list.Find() semantics.
+    addEntity(client, skipDupTest);
 }
 
 void ClientList::removeClient(UpDownClient* client, const QString& reason)
 {
     Q_UNUSED(reason);
-    if (!client)
-        return;
-
-    auto it = std::find(m_clients.begin(), m_clients.end(), client);
-    if (it != m_clients.end()) {
-        m_clients.erase(it);
-        emit clientRemoved(client);
-    }
+    // EntityList::removeEntity: find -> erase -> onEntityRemoved() (emits clientRemoved).
+    removeEntity(client);
 }
 
 bool ClientList::isValidClient(const UpDownClient* client) const
 {
-    return std::find(m_clients.begin(), m_clients.end(), client) != m_clients.end();
+    return contains(client);
 }
 
 int ClientList::clientCount() const
 {
-    return static_cast<int>(m_clients.size());
+    return count();
 }
 
 void ClientList::deleteAll()
 {
-    m_clients.clear();
+    m_items.clear();
 }
 
 // ===========================================================================
@@ -96,7 +82,7 @@ void ClientList::handleIncomingConnection(ClientReqSocket* socket)
 
 UpDownClient* ClientList::findByIP(uint32 ip) const
 {
-    for (auto* c : m_clients) {
+    for (auto* c : m_items) {
         if (c->userAddress().toNetworkUint32() == ip)
             return c;
     }
@@ -105,7 +91,7 @@ UpDownClient* ClientList::findByIP(uint32 ip) const
 
 UpDownClient* ClientList::findByIP(uint32 ip, uint16 port) const
 {
-    for (auto* c : m_clients) {
+    for (auto* c : m_items) {
         if (c->userAddress().toNetworkUint32() == ip && c->userPort() == port)
             return c;
     }
@@ -114,7 +100,7 @@ UpDownClient* ClientList::findByIP(uint32 ip, uint16 port) const
 
 UpDownClient* ClientList::findByConnIP(uint32 ip, uint16 port) const
 {
-    for (auto* c : m_clients) {
+    for (auto* c : m_items) {
         if (c->connectAddress().toNetworkUint32() == ip && c->userPort() == port)
             return c;
     }
@@ -126,7 +112,7 @@ UpDownClient* ClientList::findByUserHash(const uint8* hash, uint32 ip, uint16 po
     // Two-pass: prefer exact match (hash+IP+port), fallback to hash-only
     UpDownClient* hashOnlyMatch = nullptr;
 
-    for (auto* c : m_clients) {
+    for (auto* c : m_items) {
         if (md4equ(c->userHash(), hash)) {
             if (ip != 0 && port != 0
                 && c->userAddress().toNetworkUint32() == ip && c->userPort() == port)
@@ -143,7 +129,7 @@ UpDownClient* ClientList::findByUserHash(const uint8* hash, uint32 ip, uint16 po
 
 UpDownClient* ClientList::findByIP_UDP(uint32 ip, uint16 udpPort) const
 {
-    for (auto* c : m_clients) {
+    for (auto* c : m_items) {
         if (c->userAddress().toNetworkUint32() == ip && c->udpPort() == udpPort)
             return c;
     }
@@ -155,7 +141,7 @@ UpDownClient* ClientList::findByServerID(uint32 serverIP, uint32 ed2kUserID) con
     // Convert ED2K user ID to hybrid format (matches MFC ntohl conversion)
     const uint32 hybridID = ntohl(ed2kUserID);
 
-    for (auto* c : m_clients) {
+    for (auto* c : m_items) {
         if (c->serverAddress().toNetworkUint32() == serverIP && c->userIDHybrid() == hybridID)
             return c;
     }
@@ -164,7 +150,7 @@ UpDownClient* ClientList::findByServerID(uint32 serverIP, uint32 ed2kUserID) con
 
 UpDownClient* ClientList::findByUserID_KadPort(uint32 clientID, uint16 kadPort) const
 {
-    for (auto* c : m_clients) {
+    for (auto* c : m_items) {
         if (c->userIDHybrid() == clientID && c->kadPort() == kadPort)
             return c;
     }
@@ -173,7 +159,7 @@ UpDownClient* ClientList::findByUserID_KadPort(uint32 clientID, uint16 kadPort) 
 
 UpDownClient* ClientList::findByIP_KadPort(uint32 ip, uint16 kadPort) const
 {
-    for (auto* c : m_clients) {
+    for (auto* c : m_items) {
         if (c->userAddress().toNetworkUint32() == ip && c->kadPort() == kadPort)
             return c;
     }
@@ -297,7 +283,7 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
 
 void ClientList::forEachClient(const std::function<void(UpDownClient*)>& callback) const
 {
-    for (auto* client : m_clients)
+    for (auto* client : m_items)
         callback(client);
 }
 
@@ -311,7 +297,7 @@ void ClientList::process()
     processConnectingClients();
 
     // Remove clients that serve no purpose — matches MFC CClientList::Process()
-    for (auto it = m_clients.begin(); it != m_clients.end(); ) {
+    for (auto it = m_items.begin(); it != m_items.end(); ) {
         auto* client = *it;
 
         // Keep clients that are still useful
@@ -335,7 +321,7 @@ void ClientList::process()
             continue;
         }
 
-        it = m_clients.erase(it);
+        it = m_items.erase(it);
         emit clientRemoved(client);
         client->deleteLater();
     }

@@ -36,7 +36,7 @@ namespace eMule {
 // ===========================================================================
 
 DownloadQueue::DownloadQueue(QObject* parent)
-    : QObject(parent)
+    : EntityList<PartFile>(parent)
 {
 }
 
@@ -85,7 +85,7 @@ void DownloadQueue::init(const QStringList& tempDirs)
 
             if (result == PartFileLoadResult::LoadSuccess) {
                 connectPartFileSignals(partFile);
-                m_fileList.push_back(partFile);
+                m_items.push_back(partFile);
                 logInfo(QStringLiteral("Loaded part file: %1").arg(partFile->fileName()));
             } else {
                 logWarning(QStringLiteral("Failed to load part file: %1 (result=%2)")
@@ -108,7 +108,8 @@ void DownloadQueue::addDownload(PartFile* file, bool paused)
     if (!file)
         return;
 
-    // Check for duplicate
+    // Check for duplicate (hash-based) up front so we only do the call-specific
+    // pre-work for files we will actually add.
     if (isFileExisting(file->fileHash()))
         return;
 
@@ -116,26 +117,17 @@ void DownloadQueue::addDownload(PartFile* file, bool paused)
         file->pauseFile();
 
     connectPartFileSignals(file);
-    m_fileList.push_back(file);
-    sortByPriority();
 
-    logInfo(QStringLiteral("Download started: %1").arg(file->fileName()));
-    emit fileAdded(file);
+    // EntityList::addEntity appends + invokes onEntityAdded() (sort/log/emit).
+    // Dup already checked above, so skip the base pointer check.
+    addEntity(file, /*skipDupCheck=*/true);
 }
 
 void DownloadQueue::removeFile(PartFile* file)
 {
-    if (!file)
-        return;
-
-    auto it = std::ranges::find(m_fileList, file);
-    if (it != m_fileList.end()) {
-        if (file->status() != PartFileStatus::Complete)
-            ++m_failedDownCount;
-        m_fileList.erase(it);
-        sortByPriority();
-        emit fileRemoved(file);
-    }
+    // EntityList::removeEntity: find -> erase -> onEntityRemoved()
+    // (counter update + sort + emit).
+    removeEntity(file);
 }
 
 void DownloadQueue::deleteAll()
@@ -149,7 +141,7 @@ void DownloadQueue::deleteAll()
     // Phase 1: For each file, try to swap its sources to another pending
     // file (A4AF).  Sources that can't swap are detached cleanly.
     // This mirrors onDownloadCompleted's cleanup pattern.
-    for (auto* file : m_fileList) {
+    for (auto* file : m_items) {
         auto sources = file->srcList();  // copy — doSwap mutates srcList
         for (auto* client : sources) {
             if (client->swapToAnotherFile(
@@ -172,9 +164,9 @@ void DownloadQueue::deleteAll()
     // its PartFileNotifier member, which causes Qt to purge any pending
     // QMetaCallEvents (QueuedConnection) from that sender in the receiver's
     // event queue.  This prevents stale onDownloadCompleted from firing.
-    for (auto* file : m_fileList)
+    for (auto* file : m_items)
         delete file;
-    m_fileList.clear();
+    m_items.clear();
 }
 
 // ===========================================================================
@@ -186,7 +178,7 @@ PartFile* DownloadQueue::fileByID(const uint8* hash) const
     if (!hash)
         return nullptr;
 
-    for (auto* file : m_fileList) {
+    for (auto* file : m_items) {
         if (md4equ(file->fileHash(), hash))
             return file;
     }
@@ -195,9 +187,9 @@ PartFile* DownloadQueue::fileByID(const uint8* hash) const
 
 PartFile* DownloadQueue::fileByIndex(int index) const
 {
-    if (index < 0 || index >= static_cast<int>(m_fileList.size()))
+    if (index < 0 || index >= static_cast<int>(m_items.size()))
         return nullptr;
-    return m_fileList[static_cast<size_t>(index)];
+    return m_items[static_cast<size_t>(index)];
 }
 
 bool DownloadQueue::isFileExisting(const uint8* hash) const
@@ -295,7 +287,7 @@ void DownloadQueue::removeSource(UpDownClient* source)
     if (!source)
         return;
 
-    for (auto* file : m_fileList)
+    for (auto* file : m_items)
         file->removeSource(source);
 }
 
@@ -565,7 +557,7 @@ void DownloadQueue::startNextFile(int category)
 {
     PartFile* bestFile = nullptr;
 
-    for (auto* file : m_fileList) {
+    for (auto* file : m_items) {
         if (!file->isPaused() && !file->isStopped())
             continue;
 
@@ -584,7 +576,7 @@ void DownloadQueue::startNextFile(int category)
 
 void DownloadQueue::sortByPriority()
 {
-    std::ranges::sort(m_fileList, [](const PartFile* a, const PartFile* b) {
+    std::ranges::sort(m_items, [](const PartFile* a, const PartFile* b) {
         // rightFileHasHigherPrio(a, b) returns true when b has higher prio.
         // We want higher-prio files first, so swap the arguments.
         return PartFile::rightFileHasHigherPrio(b, a);
@@ -627,7 +619,7 @@ void DownloadQueue::process()
             downspeed = 200;
     }
 
-    for (auto* file : m_fileList) {
+    for (auto* file : m_items) {
         if (file->status() != PartFileStatus::Ready &&
             file->status() != PartFileStatus::Empty)
             continue;
@@ -646,7 +638,7 @@ void DownloadQueue::process()
     // UDP source request batching — send re-ask requests via UDP
     if (curTick >= m_lastUDPSourceRequestTime + FILEREASKTIME) {
         m_lastUDPSourceRequestTime = curTick;
-        for (auto* file : m_fileList) {
+        for (auto* file : m_items) {
             if (file->status() != PartFileStatus::Ready &&
                 file->status() != PartFileStatus::Empty)
                 continue;
@@ -664,7 +656,7 @@ void DownloadQueue::process()
     {
         m_lastServerSourceRequestTime = curTick;
         if (theApp.serverList) {
-            for (auto* file : m_fileList) {
+            for (auto* file : m_items) {
                 if (file->status() != PartFileStatus::Ready &&
                     file->status() != PartFileStatus::Empty)
                     continue;
@@ -712,9 +704,28 @@ void DownloadQueue::connectPartFileSignals(PartFile* file)
             Qt::QueuedConnection);
 }
 
+// EntityList hooks — invoked from addEntity()/removeEntity() after the list
+// mutation. They carry the queue-specific side-effects that used to live inline
+// in addDownload()/removeFile().
+
+void DownloadQueue::onEntityAdded(PartFile* file)
+{
+    sortByPriority();
+    logInfo(QStringLiteral("Download started: %1").arg(file->fileName()));
+    emit fileAdded(file);
+}
+
+void DownloadQueue::onEntityRemoved(PartFile* file)
+{
+    if (file->status() != PartFileStatus::Complete)
+        ++m_failedDownCount;
+    sortByPriority();
+    emit fileRemoved(file);
+}
+
 void DownloadQueue::setCatStatus(uint32 category, bool paused)
 {
-    for (auto* file : m_fileList) {
+    for (auto* file : m_items) {
         if (file->category() == category) {
             if (paused)
                 file->pauseFile();
@@ -726,7 +737,7 @@ void DownloadQueue::setCatStatus(uint32 category, bool paused)
 
 bool DownloadQueue::hasActiveTransfers() const
 {
-    for (const auto* file : m_fileList) {
+    for (const auto* file : m_items) {
         if (file->transferringSrcCount() > 0)
             return true;
     }

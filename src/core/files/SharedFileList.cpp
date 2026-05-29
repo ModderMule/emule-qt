@@ -96,7 +96,7 @@ void HashingThread::run()
 // ===========================================================================
 
 SharedFileList::SharedFileList(KnownFileList* knownFiles, QObject* parent)
-    : QObject(parent)
+    : EntityMap<MD4Key, KnownFile>(parent)
     , m_knownFiles(knownFiles)
 {
     m_hashingThread = new HashingThread(this);
@@ -113,7 +113,7 @@ SharedFileList::~SharedFileList()
         m_hashingThread->requestStop();
         m_hashingThread->wait();
     }
-    // Note: files in m_filesMap are owned by KnownFileList, not us
+    // Note: files in m_map are owned by KnownFileList, not us
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ void SharedFileList::reload()
     QMutexLocker locker(&m_mutex);
     ++m_generation;
     m_hashingThread->clearQueue();
-    m_filesMap.clear();
+    m_map.clear();
     m_waitingForHash.clear();
     m_hashingInProgress = false;
     findSharedFiles();
@@ -138,24 +138,47 @@ void SharedFileList::reload()
 
 bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
 {
-    if (!file)
-        return false;
+    // Stash the call-specific flag for onEntityAdded(); see header comment for
+    // why a plain member is safe here. EntityMap::addEntity takes the lock and
+    // runs keyFor -> isDuplicate -> insert -> onEntityAdded under it.
+    m_pendingOnlyAdd = onlyAdd;
+    return addEntity(file);
+}
 
-    QMutexLocker locker(&m_mutex);
+// ---------------------------------------------------------------------------
+// removeFile
+// ---------------------------------------------------------------------------
 
-    MD4Key key(file->fileHash());
+bool SharedFileList::removeFile(KnownFile* file)
+{
+    // EntityMap::removeEntity: erase by keyFor -> onEntityRemoved (under lock).
+    return removeEntity(file);
+}
 
-    // Check unshared list
+// ---------------------------------------------------------------------------
+// EntityMap hooks
+// ---------------------------------------------------------------------------
+
+MD4Key SharedFileList::keyFor(KnownFile* file) const
+{
+    return MD4Key(file->fileHash());
+}
+
+bool SharedFileList::isDuplicate(const MD4Key& key, KnownFile* file) const
+{
+    // Files explicitly unshared stay excluded.
     if (m_unsharedFiles.contains(key))
-        return false;
-
-    if (m_filesMap.contains(key)) {
+        return true;
+    if (m_map.contains(key)) {
         logDebug(QStringLiteral("Duplicate hash: \"%1\" has same MD4 as existing \"%2\" — skipped")
-                     .arg(file->fileName(), m_filesMap[key]->fileName()));
-        return false;
+                     .arg(file->fileName(), m_map.at(key)->fileName()));
+        return true;
     }
+    return false;
+}
 
-    m_filesMap[key] = file;
+void SharedFileList::onEntityAdded(KnownFile* file)
+{
     addKeywords(file);
 
     // Auto-detect .emulecollection files and attach parsed collection
@@ -167,36 +190,17 @@ bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
             file->setCollection(std::move(coll));
     }
 
-    if (!onlyAdd) {
+    if (!m_pendingOnlyAdd)
         file->setLastSeen(std::time(nullptr));
-    }
 
     emit fileAdded(file);
-    return true;
 }
 
-// ---------------------------------------------------------------------------
-// removeFile
-// ---------------------------------------------------------------------------
-
-bool SharedFileList::removeFile(KnownFile* file)
+void SharedFileList::onEntityRemoved(KnownFile* file)
 {
-    if (!file)
-        return false;
-
-    QMutexLocker locker(&m_mutex);
-
-    MD4Key key(file->fileHash());
-    auto it = m_filesMap.find(key);
-    if (it == m_filesMap.end())
-        return false;
-
     removeKeywords(file);
-    m_filesMap.erase(it);
-    m_unsharedFiles.insert(key);
-
+    m_unsharedFiles.insert(keyFor(file));
     emit fileRemoved(file);
-    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,9 +222,7 @@ void SharedFileList::process()
 
 KnownFile* SharedFileList::getFileByID(const uint8* hash) const
 {
-    QMutexLocker locker(&m_mutex);
-    auto it = m_filesMap.find(MD4Key(hash));
-    return (it != m_filesMap.end()) ? it->second : nullptr;
+    return findByKey(MD4Key(hash));
 }
 
 bool SharedFileList::isUnsharedFile(const uint8* hash) const
@@ -231,8 +233,7 @@ bool SharedFileList::isUnsharedFile(const uint8* hash) const
 
 int SharedFileList::getCount() const
 {
-    QMutexLocker locker(&m_mutex);
-    return static_cast<int>(m_filesMap.size());
+    return count();
 }
 
 uint64 SharedFileList::getDataSize(uint64& largestOut) const
@@ -240,7 +241,7 @@ uint64 SharedFileList::getDataSize(uint64& largestOut) const
     QMutexLocker locker(&m_mutex);
     uint64 total = 0;
     largestOut = 0;
-    for (const auto& [key, file] : m_filesMap) {
+    for (const auto& [key, file] : m_map) {
         auto sz = static_cast<uint64>(file->fileSize());
         total += sz;
         if (sz > largestOut)
@@ -291,7 +292,7 @@ void SharedFileList::sendListToServer()
     std::vector<KnownFile*> sortedFiles;
     {
         QMutexLocker locker(&m_mutex);
-        for (auto& [key, file] : m_filesMap) {
+        for (auto& [key, file] : m_map) {
             if (!file->publishedED2K())
                 sortedFiles.push_back(file);
         }
@@ -397,7 +398,7 @@ void SharedFileList::setServerConnect(ServerConnect* sc)
 void SharedFileList::clearED2KPublishFlags()
 {
     QMutexLocker locker(&m_mutex);
-    for (auto& [key, file] : m_filesMap)
+    for (auto& [key, file] : m_map)
         file->setPublishedED2K(false);
 }
 
@@ -415,7 +416,7 @@ void SharedFileList::publish()
     // --- Source publishing (round-robin by index) ---
     if (kad->getTotalStoreSrc() < KADEMLIATOTALSTORESRC) {
         QMutexLocker locker(&m_mutex);
-        const auto fileCount = static_cast<uint32>(m_filesMap.size());
+        const auto fileCount = static_cast<uint32>(m_map.size());
         if (fileCount > 0) {
             for (uint32 i = 0; i < fileCount; ++i) {
                 uint32 idx = (m_currFileSrc + i) % fileCount;
@@ -439,7 +440,7 @@ void SharedFileList::publish()
     // --- Notes publishing (round-robin by index) ---
     if (kad->getTotalStoreNotes() < KADEMLIATOTALSTORENOTES) {
         QMutexLocker locker(&m_mutex);
-        const auto fileCount = static_cast<uint32>(m_filesMap.size());
+        const auto fileCount = static_cast<uint32>(m_map.size());
         if (fileCount > 0) {
             for (uint32 i = 0; i < fileCount; ++i) {
                 uint32 idx = (m_currFileNotes + i) % fileCount;
@@ -491,7 +492,7 @@ void SharedFileList::publish()
                         // Skip part files and verify the file is still shared
                         if (file->isPartFile())
                             continue;
-                        if (!m_filesMap.contains(MD4Key(file->fileHash())))
+                        if (!m_map.contains(MD4Key(file->fileHash())))
                             continue;
 
                         kad::UInt128 fileID;
@@ -572,7 +573,7 @@ void SharedFileList::addFilesFromDirectory(const QString& dir, const QString& sh
                 existing->setFilePath(fi.absoluteFilePath());
                 if (!sharedDir.isEmpty())
                     existing->setSharedDirectory(sharedDir);
-                m_filesMap[MD4Key(existing->fileHash())] = existing;
+                m_map[MD4Key(existing->fileHash())] = existing;
                 emit fileAdded(existing);
                 continue;
             }
@@ -648,9 +649,7 @@ void SharedFileList::onHashingFailed(const QString& directory, const QString& fi
 
 void SharedFileList::forEachFile(const std::function<void(KnownFile*)>& callback) const
 {
-    QMutexLocker locker(&m_mutex);
-    for (auto& [key, file] : m_filesMap)
-        callback(file);
+    forEach(callback);
 }
 
 int SharedFileList::getHashingCount() const
@@ -668,9 +667,9 @@ int SharedFileList::getHashingCount() const
 
 KnownFile* SharedFileList::getFileByIndex(uint32 index) const
 {
-    if (index >= m_filesMap.size())
+    if (index >= m_map.size())
         return nullptr;
-    auto it = m_filesMap.begin();
+    auto it = m_map.begin();
     std::advance(it, index);
     return it->second;
 }

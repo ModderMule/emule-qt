@@ -300,6 +300,8 @@
     <ClInclude Include="utils\DebugUtils.h" />
     <QtMoc Include="transfer\DownloadQueue.h" />
     <ClInclude Include="protocol\ED2KLink.h" />
+    <ClInclude Include="utils\EntityList.h" />
+    <ClInclude Include="utils\EntityMap.h" />
     <QtMoc Include="net\EMSocket.h" />
     <ClInclude Include="net\EncryptedDatagramSocket.h" />
     <QtMoc Include="net\EncryptedStreamSocket.h" />

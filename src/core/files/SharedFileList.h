@@ -8,6 +8,7 @@
 
 #include "files/KnownFileList.h"
 #include "files/PublishKeywordList.h"
+#include "utils/EntityMap.h"
 
 #include <QMutex>
 #include <QObject>
@@ -75,7 +76,7 @@ struct UnknownFileEntry {
 // SharedFileList
 // ---------------------------------------------------------------------------
 
-class SharedFileList : public QObject {
+class SharedFileList : public EntityMap<MD4Key, KnownFile> {
     Q_OBJECT
 public:
     explicit SharedFileList(KnownFileList* knownFiles, QObject* parent = nullptr);
@@ -124,7 +125,19 @@ private:
 
     KnownFile* getFileByIndex(uint32 index) const;
 
-    std::unordered_map<MD4Key, KnownFile*> m_filesMap;
+    // EntityMap<MD4Key, KnownFile> hooks. Storage (m_map) + mutex (m_mutex) now
+    // live in the base; these carry the shared-file-specific add/remove logic.
+    [[nodiscard]] MD4Key keyFor(KnownFile* file) const override;
+    [[nodiscard]] bool isDuplicate(const MD4Key& key, KnownFile* file) const override;
+    void onEntityAdded(KnownFile* file) override;
+    void onEntityRemoved(KnownFile* file) override;
+
+    /// Set by safeAddKFile() immediately before addEntity(); read by
+    /// onEntityAdded(). Safe as a plain member because all adds run on the main
+    /// thread (hashing results arrive via queued connection); the base mutex
+    /// only guards concurrent forEach/lookups from publish/UDP paths.
+    bool m_pendingOnlyAdd = false;
+
     std::unordered_set<MD4Key> m_unsharedFiles;
     std::list<UnknownFileEntry> m_waitingForHash;
     PublishKeywordList m_keywords;

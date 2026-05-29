@@ -8,6 +8,7 @@
 
 #include "client/DeadSourceList.h"
 #include "net/Address.h"
+#include "utils/EntityList.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -31,7 +32,7 @@ enum class BuddyStatus : uint8_t {
     Connected    ///< Buddy is active
 };
 
-class ClientList : public QObject {
+class ClientList : public EntityList<UpDownClient> {
     Q_OBJECT
 
 public:
@@ -126,12 +127,15 @@ signals:
 private:
     void cleanUpBannedList();
 
+    // EntityList hooks — emit the list's signals on add/remove.
+    void onEntityAdded(UpDownClient* client) override { emit clientAdded(client); }
+    void onEntityRemoved(UpDownClient* client) override { emit clientRemoved(client); }
+
     struct ConnectingClient {
         UpDownClient* client;
         uint32 insertedTick;
     };
 
-    std::vector<UpDownClient*> m_clients;
     std::vector<ConnectingClient> m_connectingClients;
     std::unordered_map<Address, uint32> m_bannedList;  // Address -> ban tick
     uint32 m_lastBanCleanUp = 0;

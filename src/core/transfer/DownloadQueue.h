@@ -7,6 +7,7 @@
 /// add/remove, priority sorting, periodic processing, source management
 /// with IPFilter/dead-source/dedup checks, and server UDP source queries.
 
+#include "utils/EntityList.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -25,7 +26,7 @@ class ServerConnect;
 class SharedFileList;
 class UpDownClient;
 
-class DownloadQueue : public QObject {
+class DownloadQueue : public EntityList<PartFile> {
     Q_OBJECT
 
 public:
@@ -46,14 +47,14 @@ public:
                                   uint32 category = 0, bool paused = false);
     void removeFile(PartFile* file);
     void deleteAll();
-    [[nodiscard]] int fileCount() const { return static_cast<int>(m_fileList.size()); }
+    [[nodiscard]] int fileCount() const { return count(); }
 
     // -- Lookup ---------------------------------------------------------------
 
     [[nodiscard]] PartFile* fileByID(const uint8* hash) const;
     [[nodiscard]] PartFile* fileByIndex(int index) const;
     [[nodiscard]] bool isFileExisting(const uint8* hash) const;
-    [[nodiscard]] const std::vector<PartFile*>& files() const { return m_fileList; }
+    [[nodiscard]] const std::vector<PartFile*>& files() const { return items(); }
 
     // -- Source management (basic) --------------------------------------------
 
@@ -112,7 +113,10 @@ private:
     void onDownloadCompleted(PartFile* file);
     void connectPartFileSignals(PartFile* file);
 
-    std::vector<PartFile*> m_fileList;
+    // EntityList hooks — emit the queue's signals + run side-effects on add/remove.
+    void onEntityAdded(PartFile* file) override;
+    void onEntityRemoved(PartFile* file) override;
+
     SharedFileList* m_sharedFileList = nullptr;
     KnownFileList* m_knownFileList = nullptr;
     IPFilter* m_ipFilter = nullptr;
