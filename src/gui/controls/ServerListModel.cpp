@@ -24,18 +24,8 @@ QString priorityString(ServerPriority pref)
 } // anonymous namespace
 
 ServerListModel::ServerListModel(QObject* parent)
-    : QAbstractTableModel(parent)
+    : AbstractTableModel<ServerRow>(parent)
 {
-}
-
-int ServerListModel::rowCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : static_cast<int>(m_rows.size());
-}
-
-int ServerListModel::columnCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : ColCount;
 }
 
 QVariant ServerListModel::data(const QModelIndex& index, int role) const
@@ -128,12 +118,11 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
 
 void ServerListModel::refreshFromServerList(const ServerList* serverList)
 {
-    beginResetModel();
-    m_rows.clear();
+    std::vector<ServerRow> rows;
 
     if (serverList) {
         const auto& servers = serverList->servers();
-        m_rows.reserve(servers.size());
+        rows.reserve(servers.size());
 
         for (const auto& srv : servers) {
             ServerRow row;
@@ -154,18 +143,17 @@ void ServerListModel::refreshFromServerList(const ServerList* serverList)
             row.numericIp = srv->ipAddress().toNetworkUint32();
             row.serverId = srv->serverId();
             row.serverPtr = srv.get();
-            m_rows.push_back(std::move(row));
+            rows.push_back(std::move(row));
         }
     }
 
-    endResetModel();
+    setRows(std::move(rows));
 }
 
 void ServerListModel::refreshFromCborArray(const QCborArray& servers)
 {
-    beginResetModel();
-    m_rows.clear();
-    m_rows.reserve(static_cast<size_t>(servers.size()));
+    std::vector<ServerRow> rows;
+    rows.reserve(static_cast<size_t>(servers.size()));
 
     static constexpr std::pair<int, const char*> prefNames[] = {
         {0, "Normal"}, {1, "High"}, {2, "Low"},
@@ -197,10 +185,10 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         row.numericIp = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
         row.serverId  = static_cast<uint32_t>(m.value(QStringLiteral("serverId")).toInteger());
         row.serverPtr = nullptr; // no direct pointer in IPC mode
-        m_rows.push_back(std::move(row));
+        rows.push_back(std::move(row));
     }
 
-    endResetModel();
+    setRows(std::move(rows));
 
     // Force repaint of foreground color after model reset so the connected
     // server row reliably shows blue through the sort proxy model.
@@ -208,25 +196,10 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole});
 }
 
-void ServerListModel::clear()
-{
-    beginResetModel();
-    m_rows.clear();
-    endResetModel();
-}
-
 const Server* ServerListModel::serverAtRow(int row) const
 {
-    if (row < 0 || row >= static_cast<int>(m_rows.size()))
-        return nullptr;
-    return m_rows[static_cast<size_t>(row)].serverPtr;
-}
-
-const ServerRow* ServerListModel::rowAt(int row) const
-{
-    if (row < 0 || row >= static_cast<int>(m_rows.size()))
-        return nullptr;
-    return &m_rows[static_cast<size_t>(row)];
+    const ServerRow* r = rowAt(row);
+    return r ? r->serverPtr : nullptr;
 }
 
 void ServerListModel::setConnectedServer(uint32_t serverId)

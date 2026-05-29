@@ -3,9 +3,10 @@
 /// @file SearchResultsModel.h
 /// @brief Table model for search results in the Search window.
 
-#include <QAbstractTableModel>
 #include <QHash>
 #include <QString>
+
+#include "AbstractTableModel.h"
 
 #include <cstdint>
 #include <vector>
@@ -31,7 +32,7 @@ struct SearchResultRow {
 };
 
 /// Table model backing the search results tree view in the Search panel.
-class SearchResultsModel : public QAbstractTableModel {
+class SearchResultsModel : public AbstractTableModel<SearchResultRow> {
     Q_OBJECT
 
 public:
@@ -53,28 +54,23 @@ public:
 
     explicit SearchResultsModel(QObject* parent = nullptr);
 
-    [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
-    [[nodiscard]] int columnCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
 
     /// Replace all results with a new snapshot.
-    void setResults(std::vector<SearchResultRow> results);
-
-    /// Clear all results.
-    void clear();
+    void setResults(std::vector<SearchResultRow> results) { setRows(std::move(results)); }
 
     /// Remove a single row by source-model row index.
     void removeRow(int row);
 
-    [[nodiscard]] int resultCount() const { return static_cast<int>(m_results.size()); }
+    [[nodiscard]] int resultCount() const { return count(); }
 
     /// Get the file hash for a row index.
     [[nodiscard]] QString hashAt(int row) const;
 
     /// Get the full result row for a row index (nullptr if out of range).
-    [[nodiscard]] const SearchResultRow* resultAt(int row) const;
+    [[nodiscard]] const SearchResultRow* resultAt(int row) const { return rowAt(row); }
 
     /// Update the knownType for a specific row (triggers dataChanged).
     void setKnownType(int row, int knownType);
@@ -82,8 +78,8 @@ public:
     /// Batch-update knownType by hash. Map: hash → knownType.
     void updateKnownTypes(const QHash<QString, int>& typesByHash);
 
-private:
-    std::vector<SearchResultRow> m_results;
+protected:
+    [[nodiscard]] int columnCountValue() const override { return ColCount; }
 };
 
 } // namespace eMule

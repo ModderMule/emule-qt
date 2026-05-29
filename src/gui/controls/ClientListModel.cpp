@@ -195,20 +195,13 @@ QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend)
 } // anonymous namespace
 
 ClientListModel::ClientListModel(ClientListMode mode, QObject* parent)
-    : QAbstractTableModel(parent)
+    : AbstractTableModel<ClientRow>(parent)
     , m_mode(mode)
 {
 }
 
-int ClientListModel::rowCount(const QModelIndex& parent) const
+int ClientListModel::columnCountValue() const
 {
-    return parent.isValid() ? 0 : static_cast<int>(m_clients.size());
-}
-
-int ClientListModel::columnCount(const QModelIndex& parent) const
-{
-    if (parent.isValid())
-        return 0;
     switch (m_mode) {
     case ClientListMode::Uploading:    return UploadingColCount;
     case ClientListMode::Downloading:  return DownloadingColCount;
@@ -220,10 +213,10 @@ int ClientListModel::columnCount(const QModelIndex& parent) const
 
 QVariant ClientListModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || index.row() >= static_cast<int>(m_clients.size()))
+    if (!index.isValid() || index.row() >= static_cast<int>(m_rows.size()))
         return {};
 
-    const auto& c = m_clients[static_cast<size_t>(index.row())];
+    const auto& c = m_rows[static_cast<size_t>(index.row())];
 
     if (role == Qt::DisplayRole)
         return displayData(c, index.column());
@@ -242,27 +235,6 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
         return {};
     return headerLabel(section);
-}
-
-void ClientListModel::setClients(std::vector<ClientRow> clients)
-{
-    beginResetModel();
-    m_clients = std::move(clients);
-    endResetModel();
-}
-
-void ClientListModel::clear()
-{
-    beginResetModel();
-    m_clients.clear();
-    endResetModel();
-}
-
-const ClientRow* ClientListModel::clientAt(int row) const
-{
-    if (row < 0 || row >= static_cast<int>(m_clients.size()))
-        return nullptr;
-    return &m_clients[static_cast<size_t>(row)];
 }
 
 // ---------------------------------------------------------------------------

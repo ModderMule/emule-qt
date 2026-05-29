@@ -7,6 +7,7 @@
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadPrefs.h"
+#include "kademlia/KadResultPacketWriter.h"
 #include "kademlia/KadUDPListener.h"
 #include "utils/SafeFile.h"
 
@@ -32,35 +33,9 @@ Indexed::Indexed(QObject* parent)
 
 Indexed::~Indexed()
 {
-    // Clean up keywords
-    for (auto& [key, keyHash] : m_keywords) {
-        for (auto& [srcKey, source] : keyHash->mapSource) {
-            for (auto* entry : source->entryList)
-                delete entry;
-            delete source;
-        }
-        delete keyHash;
-    }
-
-    // Clean up sources
-    for (auto& [key, srcHash] : m_sources) {
-        for (auto* source : srcHash->sourceList) {
-            for (auto* entry : source->entryList)
-                delete entry;
-            delete source;
-        }
-        delete srcHash;
-    }
-
-    // Clean up notes
-    for (auto& [key, srcHash] : m_notes) {
-        for (auto* source : srcHash->sourceList) {
-            for (auto* entry : source->entryList)
-                delete entry;
-            delete source;
-        }
-        delete srcHash;
-    }
+    destroyIndex(m_keywords);
+    destroyIndex(m_sources);
+    destroyIndex(m_notes);
 
     // Clean up loads
     for (auto& [key, load] : m_loads)
@@ -130,124 +105,16 @@ bool Indexed::addSources(const UInt128& keyID, const UInt128& sourceID,
                           Entry* entry, uint8& outLoad)
 {
     QMutexLocker lock(&m_mutex);
-
-    if (!entry)
-        return false;
-
-    if (m_totalIndexSource >= KADEMLIAMAXENTRIES) {
-        outLoad = 100;
-        return false;
-    }
-
-    HashKeyOwn hashKey(keyID.getData());
-    SrcHash* srcHash = nullptr;
-    auto it = m_sources.find(hashKey);
-    if (it != m_sources.end()) {
-        srcHash = it->second;
-
-        // Check per-file source limit
-        uint32 totalSrc = 0;
-        for (auto* src : srcHash->sourceList)
-            totalSrc += static_cast<uint32>(src->entryList.size());
-        if (totalSrc >= KADEMLIAMAXSOURCEPERFILE) {
-            outLoad = 100;
-            return false;
-        }
-    } else {
-        srcHash = new SrcHash();
-        srcHash->keyID = keyID;
-        m_sources[hashKey] = srcHash;
-    }
-
-    // Find or create source
-    Source* source = nullptr;
-    for (auto* s : srcHash->sourceList) {
-        if (s->sourceID == sourceID) {
-            source = s;
-            break;
-        }
-    }
-    if (!source) {
-        source = new Source();
-        source->sourceID = sourceID;
-        srcHash->sourceList.push_back(source);
-    }
-
-    // Replace existing entries from same source
-    for (auto* e : source->entryList) {
-        delete e;
-        --m_totalIndexSource;
-    }
-    source->entryList.clear();
-
-    entry->m_lifetime = time(nullptr) + KADEMLIAREPUBLISHTIMES;
-    source->entryList.push_back(entry);
-    ++m_totalIndexSource;
-
-    outLoad = static_cast<uint8>(
-        (m_totalIndexSource * 100) / KADEMLIAMAXENTRIES);
-    return true;
+    return addSourceEntry(m_sources, m_totalIndexSource, KADEMLIAMAXSOURCEPERFILE,
+                          KADEMLIAREPUBLISHTIMES, keyID, sourceID, entry, outLoad);
 }
 
 bool Indexed::addNotes(const UInt128& keyID, const UInt128& sourceID,
                         Entry* entry, uint8& outLoad)
 {
     QMutexLocker lock(&m_mutex);
-
-    if (!entry)
-        return false;
-
-    if (m_totalIndexNotes >= KADEMLIAMAXENTRIES) {
-        outLoad = 100;
-        return false;
-    }
-
-    HashKeyOwn hashKey(keyID.getData());
-    SrcHash* srcHash = nullptr;
-    auto it = m_notes.find(hashKey);
-    if (it != m_notes.end()) {
-        srcHash = it->second;
-
-        uint32 totalNotes = 0;
-        for (auto* src : srcHash->sourceList)
-            totalNotes += static_cast<uint32>(src->entryList.size());
-        if (totalNotes >= KADEMLIAMAXNOTESPERFILE) {
-            outLoad = 100;
-            return false;
-        }
-    } else {
-        srcHash = new SrcHash();
-        srcHash->keyID = keyID;
-        m_notes[hashKey] = srcHash;
-    }
-
-    Source* source = nullptr;
-    for (auto* s : srcHash->sourceList) {
-        if (s->sourceID == sourceID) {
-            source = s;
-            break;
-        }
-    }
-    if (!source) {
-        source = new Source();
-        source->sourceID = sourceID;
-        srcHash->sourceList.push_back(source);
-    }
-
-    // Replace existing notes from same source
-    for (auto* e : source->entryList) {
-        delete e;
-        --m_totalIndexNotes;
-    }
-    source->entryList.clear();
-
-    entry->m_lifetime = time(nullptr) + KADEMLIAREPUBLISHTIMEN;
-    source->entryList.push_back(entry);
-    ++m_totalIndexNotes;
-
-    outLoad = static_cast<uint8>(
-        (m_totalIndexNotes * 100) / KADEMLIAMAXENTRIES);
-    return true;
+    return addSourceEntry(m_notes, m_totalIndexNotes, KADEMLIAMAXNOTESPERFILE,
+                          KADEMLIAREPUBLISHTIMEN, keyID, sourceID, entry, outLoad);
 }
 
 bool Indexed::addLoad(const UInt128& keyID, time_t loadTime)
@@ -291,21 +158,13 @@ void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* sea
 
     KeyHash* keyHash = it->second;
 
-    // Helper: write packet header (kadID + target + count placeholder)
-    auto writeHeader = [&](SafeMemFile& pkt) -> qint64 {
-        io::writeUInt128(pkt, Kademlia::getInstancePrefs()->kadId());
-        io::writeUInt128(pkt, keyID);
-        auto pos = pkt.position();
-        pkt.writeUInt16(0);
-        return pos;
-    };
-
-    auto packet = std::make_unique<SafeMemFile>();
-    auto countPos = writeHeader(*packet);
+    ResultPacketSender sender(Kademlia::getInstancePrefs()->kadId(), keyID,
+        [&](SafeMemFile& pkt) {
+            udpListener->sendPacket(pkt, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+        });
 
     constexpr int kMaxResults = 300;
     int count = -static_cast<int>(startPosition); // negative = skip entries for pagination
-    uint16 unsentCount = 0;
 
     // Two-pass loop: first send only trusted entries (trust >= 1.0), then untrusted.
     // This ensures the 300 result cap isn't filled with spam (MFC lines 634-676).
@@ -330,41 +189,17 @@ void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* sea
                 }
                 ++count;
 
-                // Write this result to a temp buffer to check size
                 SafeMemFile tmpBuf;
                 io::writeUInt128(tmpBuf, source->sourceID);
                 keyEntry->writeTagListWithPublishInfo(tmpBuf);
-
-                // Anti-fragmentation: if adding this result exceeds MTU, send current packet first
-                if (packet->length() + tmpBuf.length() > UDP_KAD_MAXFRAGMENT && unsentCount > 0) {
-                    auto endPos = packet->position();
-                    packet->seek(countPos, 0);
-                    packet->writeUInt16(unsentCount);
-                    packet->seek(endPos, 0);
-                    udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
-
-                    // Start new packet
-                    packet = std::make_unique<SafeMemFile>();
-                    countPos = writeHeader(*packet);
-                    unsentCount = 0;
-                }
-
-                const auto& buf = tmpBuf.buffer();
-                packet->write(buf.constData(), tmpBuf.length());
-                ++unsentCount;
+                sender.addResult(tmpBuf);
             }
         }
         if (!onlyTrusted)
             break;
     }
 
-    if (unsentCount > 0) {
-        auto endPos = packet->position();
-        packet->seek(countPos, 0);
-        packet->writeUInt16(unsentCount);
-        packet->seek(endPos, 0);
-        udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
-    }
+    sender.flush();
 }
 
 void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port,
@@ -384,19 +219,12 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
 
     SrcHash* srcHash = it->second;
 
-    auto writeHeader = [&](SafeMemFile& pkt) -> qint64 {
-        io::writeUInt128(pkt, Kademlia::getInstancePrefs()->kadId());
-        io::writeUInt128(pkt, keyID);
-        auto pos = pkt.position();
-        pkt.writeUInt16(0);
-        return pos;
-    };
-
-    auto packet = std::make_unique<SafeMemFile>();
-    auto countPos = writeHeader(*packet);
+    ResultPacketSender sender(Kademlia::getInstancePrefs()->kadId(), keyID,
+        [&](SafeMemFile& pkt) {
+            udpListener->sendPacket(pkt, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+        });
 
     int count = -static_cast<int>(startPosition);
-    uint16 unsentCount = 0;
     constexpr int kMaxResults = 300;
 
     for (auto* source : srcHash->sourceList) {
@@ -417,31 +245,10 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
         SafeMemFile tmpBuf;
         io::writeUInt128(tmpBuf, source->sourceID);
         entry->writeTagList(tmpBuf);
-
-        // Anti-fragmentation
-        if (packet->length() + tmpBuf.length() > UDP_KAD_MAXFRAGMENT && unsentCount > 0) {
-            auto endPos = packet->position();
-            packet->seek(countPos, 0);
-            packet->writeUInt16(unsentCount);
-            packet->seek(endPos, 0);
-            udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
-            packet = std::make_unique<SafeMemFile>();
-            countPos = writeHeader(*packet);
-            unsentCount = 0;
-        }
-
-        const auto& buf = tmpBuf.buffer();
-        packet->write(buf.constData(), tmpBuf.length());
-        ++unsentCount;
+        sender.addResult(tmpBuf);
     }
 
-    if (unsentCount > 0) {
-        auto endPos = packet->position();
-        packet->seek(countPos, 0);
-        packet->writeUInt16(unsentCount);
-        packet->seek(endPos, 0);
-        udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
-    }
+    sender.flush();
 }
 
 void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
@@ -460,18 +267,11 @@ void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
 
     SrcHash* srcHash = it->second;
 
-    auto writeHeader = [&](SafeMemFile& pkt) -> qint64 {
-        io::writeUInt128(pkt, Kademlia::getInstancePrefs()->kadId());
-        io::writeUInt128(pkt, keyID);
-        auto pos = pkt.position();
-        pkt.writeUInt16(0);
-        return pos;
-    };
+    ResultPacketSender sender(Kademlia::getInstancePrefs()->kadId(), keyID,
+        [&](SafeMemFile& pkt) {
+            udpListener->sendPacket(pkt, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
+        });
 
-    auto packet = std::make_unique<SafeMemFile>();
-    auto countPos = writeHeader(*packet);
-
-    uint16 unsentCount = 0;
     constexpr uint16 kMaxResults = 150;
     uint16 totalCount = 0;
 
@@ -488,33 +288,12 @@ void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
             SafeMemFile tmpBuf;
             io::writeUInt128(tmpBuf, source->sourceID);
             entry->writeTagList(tmpBuf);
-
-            // Anti-fragmentation
-            if (packet->length() + tmpBuf.length() > UDP_KAD_MAXFRAGMENT && unsentCount > 0) {
-                auto endPos = packet->position();
-                packet->seek(countPos, 0);
-                packet->writeUInt16(unsentCount);
-                packet->seek(endPos, 0);
-                udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
-                packet = std::make_unique<SafeMemFile>();
-                countPos = writeHeader(*packet);
-                unsentCount = 0;
-            }
-
-            const auto& buf = tmpBuf.buffer();
-            packet->write(buf.constData(), tmpBuf.length());
-            ++unsentCount;
+            sender.addResult(tmpBuf);
             ++totalCount;
         }
     }
 
-    if (unsentCount > 0) {
-        auto endPos = packet->position();
-        packet->seek(countPos, 0);
-        packet->writeUInt16(unsentCount);
-        packet->seek(endPos, 0);
-        udpListener->sendPacket(*packet, KADEMLIA2_SEARCH_RES, ip, port, senderKey, nullptr);
-    }
+    sender.flush();
 }
 
 bool Indexed::sendStoreRequest(const UInt128& keyID)
@@ -535,6 +314,68 @@ bool Indexed::sendStoreRequest(const UInt128& keyID)
 // ---------------------------------------------------------------------------
 // Private methods
 // ---------------------------------------------------------------------------
+
+bool Indexed::addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileMax,
+                             time_t lifetimeSecs, const UInt128& keyID,
+                             const UInt128& sourceID, Entry* entry, uint8& outLoad)
+{
+    // Non-locking: addSources/addNotes already hold m_mutex.
+    if (!entry)
+        return false;
+
+    if (counter >= KADEMLIAMAXENTRIES) {
+        outLoad = 100;
+        return false;
+    }
+
+    HashKeyOwn hashKey(keyID.getData());
+    SrcHash* srcHash = nullptr;
+    auto it = index.find(hashKey);
+    if (it != index.end()) {
+        srcHash = it->second;
+
+        // Check per-file limit
+        uint32 total = 0;
+        for (auto* src : srcHash->sourceList)
+            total += static_cast<uint32>(src->entryList.size());
+        if (total >= perFileMax) {
+            outLoad = 100;
+            return false;
+        }
+    } else {
+        srcHash = new SrcHash();
+        srcHash->keyID = keyID;
+        index[hashKey] = srcHash;
+    }
+
+    // Find or create source
+    Source* source = nullptr;
+    for (auto* s : srcHash->sourceList) {
+        if (s->sourceID == sourceID) {
+            source = s;
+            break;
+        }
+    }
+    if (!source) {
+        source = new Source();
+        source->sourceID = sourceID;
+        srcHash->sourceList.push_back(source);
+    }
+
+    // Replace existing entries from same source
+    for (auto* e : source->entryList) {
+        delete e;
+        --counter;
+    }
+    source->entryList.clear();
+
+    entry->m_lifetime = time(nullptr) + lifetimeSecs;
+    source->entryList.push_back(entry);
+    ++counter;
+
+    outLoad = static_cast<uint8>((counter * 100) / KADEMLIAMAXENTRIES);
+    return true;
+}
 
 void Indexed::readFile()
 {
@@ -687,92 +528,9 @@ void Indexed::clean()
         return;
     m_nextClean = now + kCleanInterval;
 
-    // Clean expired keyword entries
-    for (auto keyIt = m_keywords.begin(); keyIt != m_keywords.end(); ) {
-        KeyHash* keyHash = keyIt->second;
-        for (auto srcIt = keyHash->mapSource.begin(); srcIt != keyHash->mapSource.end(); ) {
-            Source* source = srcIt->second;
-            for (auto entIt = source->entryList.begin(); entIt != source->entryList.end(); ) {
-                if ((*entIt)->m_lifetime > 0 && (*entIt)->m_lifetime < now) {
-                    delete *entIt;
-                    entIt = source->entryList.erase(entIt);
-                    --m_totalIndexKeyword;
-                } else {
-                    ++entIt;
-                }
-            }
-            if (source->entryList.empty()) {
-                delete source;
-                srcIt = keyHash->mapSource.erase(srcIt);
-            } else {
-                ++srcIt;
-            }
-        }
-        if (keyHash->mapSource.empty()) {
-            delete keyHash;
-            keyIt = m_keywords.erase(keyIt);
-        } else {
-            ++keyIt;
-        }
-    }
-
-    // Clean expired source entries
-    for (auto hashIt = m_sources.begin(); hashIt != m_sources.end(); ) {
-        SrcHash* srcHash = hashIt->second;
-        for (auto srcIt = srcHash->sourceList.begin(); srcIt != srcHash->sourceList.end(); ) {
-            Source* source = *srcIt;
-            for (auto entIt = source->entryList.begin(); entIt != source->entryList.end(); ) {
-                if ((*entIt)->m_lifetime > 0 && (*entIt)->m_lifetime < now) {
-                    delete *entIt;
-                    entIt = source->entryList.erase(entIt);
-                    --m_totalIndexSource;
-                } else {
-                    ++entIt;
-                }
-            }
-            if (source->entryList.empty()) {
-                delete source;
-                srcIt = srcHash->sourceList.erase(srcIt);
-            } else {
-                ++srcIt;
-            }
-        }
-        if (srcHash->sourceList.empty()) {
-            delete srcHash;
-            hashIt = m_sources.erase(hashIt);
-        } else {
-            ++hashIt;
-        }
-    }
-
-    // Clean expired note entries (same pattern)
-    for (auto hashIt = m_notes.begin(); hashIt != m_notes.end(); ) {
-        SrcHash* srcHash = hashIt->second;
-        for (auto srcIt = srcHash->sourceList.begin(); srcIt != srcHash->sourceList.end(); ) {
-            Source* source = *srcIt;
-            for (auto entIt = source->entryList.begin(); entIt != source->entryList.end(); ) {
-                if ((*entIt)->m_lifetime > 0 && (*entIt)->m_lifetime < now) {
-                    delete *entIt;
-                    entIt = source->entryList.erase(entIt);
-                    --m_totalIndexNotes;
-                } else {
-                    ++entIt;
-                }
-            }
-            if (source->entryList.empty()) {
-                delete source;
-                srcIt = srcHash->sourceList.erase(srcIt);
-            } else {
-                ++srcIt;
-            }
-        }
-        if (srcHash->sourceList.empty()) {
-            delete srcHash;
-            hashIt = m_notes.erase(hashIt);
-        } else {
-            ++hashIt;
-        }
-    }
+    cleanIndex(m_keywords, now, m_totalIndexKeyword);
+    cleanIndex(m_sources, now, m_totalIndexSource);
+    cleanIndex(m_notes, now, m_totalIndexNotes);
 }
 
 } // namespace eMule::kad

@@ -61,6 +61,13 @@ private:
     void readFile();
     void clean();
 
+    // Shared body for addSources/addNotes (identical except for the index map,
+    // counter, per-file cap, and lifetime). Non-locking: the public wrappers
+    // hold m_mutex. addKeyword stays separate (merge semantics + map container).
+    bool addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileMax,
+                        time_t lifetimeSecs, const UInt128& keyID, const UInt128& sourceID,
+                        Entry* entry, uint8& outLoad);
+
     time_t m_nextClean = 0;
     KeyHashMap m_keywords;
     SrcHashMap m_sources;

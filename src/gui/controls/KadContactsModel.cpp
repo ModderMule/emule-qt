@@ -7,7 +7,7 @@
 namespace eMule {
 
 KadContactsModel::KadContactsModel(QObject* parent)
-    : QAbstractTableModel(parent)
+    : AbstractTableModel<KadContactRow>(parent)
 {
     // Pre-render the 5 contact type icons (colored circles)
     // Type 0: green (established, 2+ hours)
@@ -28,22 +28,12 @@ KadContactsModel::KadContactsModel(QObject* parent)
     Q_UNUSED(colors); // used in contactIcon
 }
 
-int KadContactsModel::rowCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : static_cast<int>(m_contacts.size());
-}
-
-int KadContactsModel::columnCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : ColCount;
-}
-
 QVariant KadContactsModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || index.row() >= static_cast<int>(m_contacts.size()))
+    if (!index.isValid() || index.row() >= static_cast<int>(m_rows.size()))
         return {};
 
-    const auto& c = m_contacts[static_cast<size_t>(index.row())];
+    const auto& c = m_rows[static_cast<size_t>(index.row())];
 
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
@@ -93,20 +83,6 @@ QVariant KadContactsModel::headerData(int section, Qt::Orientation orientation, 
     case ColDistance:  return tr("Distance");
     default:          return {};
     }
-}
-
-void KadContactsModel::setContacts(std::vector<KadContactRow> contacts)
-{
-    beginResetModel();
-    m_contacts = std::move(contacts);
-    endResetModel();
-}
-
-void KadContactsModel::clear()
-{
-    beginResetModel();
-    m_contacts.clear();
-    endResetModel();
 }
 
 QPixmap KadContactsModel::contactIcon(uint8_t type)

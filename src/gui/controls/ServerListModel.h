@@ -3,9 +3,10 @@
 /// @file ServerListModel.h
 /// @brief Table model for the ED2K server list in the Server tab.
 
-#include <QAbstractTableModel>
 #include <QCborArray>
 #include <QString>
+
+#include "AbstractTableModel.h"
 
 #include <cstdint>
 #include <vector>
@@ -43,7 +44,7 @@ struct ServerRow {
 };
 
 /// Table model backing the server list tree view.
-class ServerListModel : public QAbstractTableModel {
+class ServerListModel : public AbstractTableModel<ServerRow> {
     Q_OBJECT
 
 public:
@@ -65,8 +66,6 @@ public:
 
     explicit ServerListModel(QObject* parent = nullptr);
 
-    [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
-    [[nodiscard]] int columnCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
@@ -77,20 +76,16 @@ public:
     /// Rebuild model from CBOR array received via IPC.
     void refreshFromCborArray(const QCborArray& servers);
 
-    /// Clear all rows.
-    void clear();
-
     /// Get the server pointer for a given row index.
     [[nodiscard]] const Server* serverAtRow(int row) const;
-
-    /// Get the row data snapshot for a given row index (nullptr if out of range).
-    [[nodiscard]] const ServerRow* rowAt(int row) const;
 
     /// Set the currently connected server (0 to clear).
     void setConnectedServer(uint32_t serverId);
 
+protected:
+    [[nodiscard]] int columnCountValue() const override { return ColCount; }
+
 private:
-    std::vector<ServerRow> m_rows;
     uint32_t m_connectedServerId = 0;
 };
 

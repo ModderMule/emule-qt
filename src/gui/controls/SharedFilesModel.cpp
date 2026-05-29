@@ -88,26 +88,16 @@ int networkOrdinal(bool ed2k, bool kad)
 } // anonymous namespace
 
 SharedFilesModel::SharedFilesModel(QObject* parent)
-    : QAbstractTableModel(parent)
+    : AbstractTableModel<SharedFileRow>(parent)
 {
-}
-
-int SharedFilesModel::rowCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : static_cast<int>(m_files.size());
-}
-
-int SharedFilesModel::columnCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : ColCount;
 }
 
 QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || index.row() >= static_cast<int>(m_files.size()))
+    if (!index.isValid() || index.row() >= static_cast<int>(m_rows.size()))
         return {};
 
-    const auto& f = m_files[static_cast<size_t>(index.row())];
+    const auto& f = m_rows[static_cast<size_t>(index.row())];
 
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
@@ -205,37 +195,16 @@ QVariant SharedFilesModel::headerData(int section, Qt::Orientation orientation, 
     }
 }
 
-void SharedFilesModel::setFiles(std::vector<SharedFileRow> files)
-{
-    beginResetModel();
-    m_files = std::move(files);
-    endResetModel();
-}
-
-void SharedFilesModel::clear()
-{
-    beginResetModel();
-    m_files.clear();
-    endResetModel();
-}
-
 QString SharedFilesModel::hashAt(int row) const
 {
-    if (row >= 0 && row < static_cast<int>(m_files.size()))
-        return m_files[static_cast<size_t>(row)].hash;
+    if (const SharedFileRow* r = rowAt(row))
+        return r->hash;
     return {};
-}
-
-const SharedFileRow* SharedFilesModel::fileAt(int row) const
-{
-    if (row >= 0 && row < static_cast<int>(m_files.size()))
-        return &m_files[static_cast<size_t>(row)];
-    return nullptr;
 }
 
 bool SharedFilesModel::containsHash(const QString& hexHash) const
 {
-    return std::any_of(m_files.begin(), m_files.end(),
+    return std::any_of(m_rows.begin(), m_rows.end(),
         [&](const SharedFileRow& r) { return r.hash == hexHash; });
 }
 

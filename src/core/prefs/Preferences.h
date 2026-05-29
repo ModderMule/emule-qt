@@ -1003,6 +1003,12 @@ public:
 private:
     struct Data;
 
+    // Thread-safe accessors for trivial preference fields. Defined in the .cpp
+    // where Data is complete; all instantiations live in that single TU, so the
+    // Data layout stays fully encapsulated. Locking lives here in one place.
+    template<class T> [[nodiscard]] T get(T Data::*member) const;
+    template<class T> void           set(T Data::*member, const T& value);
+
     void validate();
     void resolveDefaultDirectories();
     void resolveDefaultVideoPlayer();

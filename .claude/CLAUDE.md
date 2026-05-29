@@ -5,6 +5,7 @@
 - write .md files into a subfolder ./docs/
 - never remove ToDo comments unless fully implemented
 - write private functions at the end of the file after public functions
+- use inheritance to avoid duplicate code. When adding similar features in a 2nd file, check if refactoring to a parent class makes sense
 - write modern `C++23` code according to latest standard
 - Use the latest Qt version 6 installed at `/Users/daniel/Qt`
 - use the app Log class instead of `qDebug`

@@ -500,6 +500,28 @@ struct Preferences::Data {
 };
 
 // ---------------------------------------------------------------------------
+// Trivial-field accessor helpers
+//
+// Every trivial getter/setter routes through these so the read/write locking
+// lives in exactly one place. T is deduced from the pointer-to-member, so the
+// field type never has to be repeated. Defined here (not in the header)
+// because Data is only complete in this translation unit and these are the
+// only instantiation sites.
+// ---------------------------------------------------------------------------
+
+template<class T> T Preferences::get(T Data::*member) const
+{
+    QReadLocker lock(&m_lock);
+    return (*m_data).*member;
+}
+
+template<class T> void Preferences::set(T Data::*member, const T& value)
+{
+    QWriteLocker lock(&m_lock);
+    (*m_data).*member = value;
+}
+
+// ---------------------------------------------------------------------------
 // Global instance
 // ---------------------------------------------------------------------------
 
@@ -530,1068 +552,396 @@ void Preferences::setDefaults()
 // Getters / setters — General
 // ---------------------------------------------------------------------------
 
-QString Preferences::nick() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->nick;
-}
+QString Preferences::nick() const { return get(&Data::nick); }
 
-void Preferences::setNick(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->nick = val;
-}
+void Preferences::setNick(const QString& val) { set(&Data::nick, val); }
 
-std::array<uint8, 16> Preferences::userHash() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->userHash;
-}
+std::array<uint8, 16> Preferences::userHash() const { return get(&Data::userHash); }
 
-void Preferences::setUserHash(const std::array<uint8, 16>& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->userHash = val;
-}
+void Preferences::setUserHash(const std::array<uint8, 16>& val) { set(&Data::userHash, val); }
 
-bool Preferences::autoConnect() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autoConnect;
-}
+bool Preferences::autoConnect() const { return get(&Data::autoConnect); }
 
-void Preferences::setAutoConnect(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autoConnect = val;
-}
+void Preferences::setAutoConnect(bool val) { set(&Data::autoConnect, val); }
 
-bool Preferences::reconnect() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->reconnect;
-}
+bool Preferences::reconnect() const { return get(&Data::reconnect); }
 
-void Preferences::setReconnect(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->reconnect = val;
-}
+void Preferences::setReconnect(bool val) { set(&Data::reconnect, val); }
 
-bool Preferences::filterLANIPs() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->filterLANIPs;
-}
+bool Preferences::filterLANIPs() const { return get(&Data::filterLANIPs); }
 
-void Preferences::setFilterLANIPs(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->filterLANIPs = val;
-}
+void Preferences::setFilterLANIPs(bool val) { set(&Data::filterLANIPs, val); }
 
-bool Preferences::skipFirewalledChecksInLanMode() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->skipFirewalledChecksInLanMode;
-}
+bool Preferences::skipFirewalledChecksInLanMode() const { return get(&Data::skipFirewalledChecksInLanMode); }
 
-void Preferences::setSkipFirewalledChecksInLanMode(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->skipFirewalledChecksInLanMode = val;
-}
+void Preferences::setSkipFirewalledChecksInLanMode(bool val) { set(&Data::skipFirewalledChecksInLanMode, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Server connection
 // ---------------------------------------------------------------------------
 
-bool Preferences::safeServerConnect() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->safeServerConnect;
-}
+bool Preferences::safeServerConnect() const { return get(&Data::safeServerConnect); }
 
-void Preferences::setSafeServerConnect(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->safeServerConnect = val;
-}
+void Preferences::setSafeServerConnect(bool val) { set(&Data::safeServerConnect, val); }
 
-bool Preferences::autoConnectStaticOnly() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autoConnectStaticOnly;
-}
+bool Preferences::autoConnectStaticOnly() const { return get(&Data::autoConnectStaticOnly); }
 
-void Preferences::setAutoConnectStaticOnly(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autoConnectStaticOnly = val;
-}
+void Preferences::setAutoConnectStaticOnly(bool val) { set(&Data::autoConnectStaticOnly, val); }
 
-bool Preferences::useServerPriorities() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useServerPriorities;
-}
+bool Preferences::useServerPriorities() const { return get(&Data::useServerPriorities); }
 
-void Preferences::setUseServerPriorities(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useServerPriorities = val;
-}
+void Preferences::setUseServerPriorities(bool val) { set(&Data::useServerPriorities, val); }
 
-bool Preferences::addServersFromServer() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->addServersFromServer;
-}
+bool Preferences::addServersFromServer() const { return get(&Data::addServersFromServer); }
 
-void Preferences::setAddServersFromServer(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->addServersFromServer = val;
-}
+void Preferences::setAddServersFromServer(bool val) { set(&Data::addServersFromServer, val); }
 
-uint32 Preferences::serverKeepAliveTimeout() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->serverKeepAliveTimeout;
-}
+uint32 Preferences::serverKeepAliveTimeout() const { return get(&Data::serverKeepAliveTimeout); }
 
-void Preferences::setServerKeepAliveTimeout(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->serverKeepAliveTimeout = val;
-}
+void Preferences::setServerKeepAliveTimeout(uint32 val) { set(&Data::serverKeepAliveTimeout, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Network
 // ---------------------------------------------------------------------------
 
-uint16 Preferences::port() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->port;
-}
+uint16 Preferences::port() const { return get(&Data::port); }
 
-void Preferences::setPort(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->port = val;
-}
+void Preferences::setPort(uint16 val) { set(&Data::port, val); }
 
-uint16 Preferences::udpPort() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->udpPort;
-}
+uint16 Preferences::udpPort() const { return get(&Data::udpPort); }
 
-void Preferences::setUdpPort(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->udpPort = val;
-}
+void Preferences::setUdpPort(uint16 val) { set(&Data::udpPort, val); }
 
-uint16 Preferences::serverUDPPort() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->serverUDPPort;
-}
+uint16 Preferences::serverUDPPort() const { return get(&Data::serverUDPPort); }
 
-void Preferences::setServerUDPPort(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->serverUDPPort = val;
-}
+void Preferences::setServerUDPPort(uint16 val) { set(&Data::serverUDPPort, val); }
 
-uint16 Preferences::maxConnections() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxConnections;
-}
+uint16 Preferences::maxConnections() const { return get(&Data::maxConnections); }
 
-void Preferences::setMaxConnections(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxConnections = val;
-}
+void Preferences::setMaxConnections(uint16 val) { set(&Data::maxConnections, val); }
 
-uint16 Preferences::maxHalfConnections() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxHalfConnections;
-}
+uint16 Preferences::maxHalfConnections() const { return get(&Data::maxHalfConnections); }
 
-void Preferences::setMaxHalfConnections(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxHalfConnections = val;
-}
+void Preferences::setMaxHalfConnections(uint16 val) { set(&Data::maxHalfConnections, val); }
 
-QString Preferences::bindAddress() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->bindAddress;
-}
+QString Preferences::bindAddress() const { return get(&Data::bindAddress); }
 
-void Preferences::setBindAddress(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->bindAddress = val;
-}
+void Preferences::setBindAddress(const QString& val) { set(&Data::bindAddress, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Bandwidth
 // ---------------------------------------------------------------------------
 
-uint32 Preferences::maxUpload() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxUpload;
-}
+uint32 Preferences::maxUpload() const { return get(&Data::maxUpload); }
 
-void Preferences::setMaxUpload(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxUpload = val;
-}
+void Preferences::setMaxUpload(uint32 val) { set(&Data::maxUpload, val); }
 
-uint32 Preferences::maxDownload() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxDownload;
-}
+uint32 Preferences::maxDownload() const { return get(&Data::maxDownload); }
 
-void Preferences::setMaxDownload(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxDownload = val;
-}
+void Preferences::setMaxDownload(uint32 val) { set(&Data::maxDownload, val); }
 
-uint32 Preferences::minUpload() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->minUpload;
-}
+uint32 Preferences::minUpload() const { return get(&Data::minUpload); }
 
-void Preferences::setMinUpload(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->minUpload = val;
-}
+void Preferences::setMinUpload(uint32 val) { set(&Data::minUpload, val); }
 
-uint32 Preferences::maxGraphUploadRate() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxGraphUploadRate;
-}
+uint32 Preferences::maxGraphUploadRate() const { return get(&Data::maxGraphUploadRate); }
 
-void Preferences::setMaxGraphUploadRate(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxGraphUploadRate = val;
-}
+void Preferences::setMaxGraphUploadRate(uint32 val) { set(&Data::maxGraphUploadRate, val); }
 
-uint32 Preferences::maxGraphDownloadRate() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxGraphDownloadRate;
-}
+uint32 Preferences::maxGraphDownloadRate() const { return get(&Data::maxGraphDownloadRate); }
 
-void Preferences::setMaxGraphDownloadRate(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxGraphDownloadRate = val;
-}
+void Preferences::setMaxGraphDownloadRate(uint32 val) { set(&Data::maxGraphDownloadRate, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Encryption
 // ---------------------------------------------------------------------------
 
-bool Preferences::cryptLayerSupported() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->cryptLayerSupported;
-}
+bool Preferences::cryptLayerSupported() const { return get(&Data::cryptLayerSupported); }
 
-void Preferences::setCryptLayerSupported(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->cryptLayerSupported = val;
-}
+void Preferences::setCryptLayerSupported(bool val) { set(&Data::cryptLayerSupported, val); }
 
-bool Preferences::cryptLayerRequested() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->cryptLayerRequested;
-}
+bool Preferences::cryptLayerRequested() const { return get(&Data::cryptLayerRequested); }
 
-void Preferences::setCryptLayerRequested(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->cryptLayerRequested = val;
-}
+void Preferences::setCryptLayerRequested(bool val) { set(&Data::cryptLayerRequested, val); }
 
-bool Preferences::cryptLayerRequired() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->cryptLayerRequired;
-}
+bool Preferences::cryptLayerRequired() const { return get(&Data::cryptLayerRequired); }
 
-void Preferences::setCryptLayerRequired(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->cryptLayerRequired = val;
-}
+void Preferences::setCryptLayerRequired(bool val) { set(&Data::cryptLayerRequired, val); }
 
-uint8 Preferences::cryptTCPPaddingLength() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->cryptTCPPaddingLength;
-}
+uint8 Preferences::cryptTCPPaddingLength() const { return get(&Data::cryptTCPPaddingLength); }
 
-void Preferences::setCryptTCPPaddingLength(uint8 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->cryptTCPPaddingLength = val;
-}
+void Preferences::setCryptTCPPaddingLength(uint8 val) { set(&Data::cryptTCPPaddingLength, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Proxy
 // ---------------------------------------------------------------------------
 
-int Preferences::proxyType() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->proxyType;
-}
+int Preferences::proxyType() const { return get(&Data::proxyType); }
 
-void Preferences::setProxyType(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->proxyType = val;
-}
+void Preferences::setProxyType(int val) { set(&Data::proxyType, val); }
 
-QString Preferences::proxyHost() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->proxyHost;
-}
+QString Preferences::proxyHost() const { return get(&Data::proxyHost); }
 
-void Preferences::setProxyHost(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->proxyHost = val;
-}
+void Preferences::setProxyHost(const QString& val) { set(&Data::proxyHost, val); }
 
-uint16 Preferences::proxyPort() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->proxyPort;
-}
+uint16 Preferences::proxyPort() const { return get(&Data::proxyPort); }
 
-void Preferences::setProxyPort(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->proxyPort = val;
-}
+void Preferences::setProxyPort(uint16 val) { set(&Data::proxyPort, val); }
 
-bool Preferences::proxyEnablePassword() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->proxyEnablePassword;
-}
+bool Preferences::proxyEnablePassword() const { return get(&Data::proxyEnablePassword); }
 
-void Preferences::setProxyEnablePassword(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->proxyEnablePassword = val;
-}
+void Preferences::setProxyEnablePassword(bool val) { set(&Data::proxyEnablePassword, val); }
 
-QString Preferences::proxyUser() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->proxyUser;
-}
+QString Preferences::proxyUser() const { return get(&Data::proxyUser); }
 
-void Preferences::setProxyUser(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->proxyUser = val;
-}
+void Preferences::setProxyUser(const QString& val) { set(&Data::proxyUser, val); }
 
-QString Preferences::proxyPassword() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->proxyPassword;
-}
+QString Preferences::proxyPassword() const { return get(&Data::proxyPassword); }
 
-void Preferences::setProxyPassword(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->proxyPassword = val;
-}
+void Preferences::setProxyPassword(const QString& val) { set(&Data::proxyPassword, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Directories
 // ---------------------------------------------------------------------------
 
-QString Preferences::incomingDir() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->incomingDir;
-}
+QString Preferences::incomingDir() const { return get(&Data::incomingDir); }
 
-void Preferences::setIncomingDir(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->incomingDir = val;
-}
+void Preferences::setIncomingDir(const QString& val) { set(&Data::incomingDir, val); }
 
-QStringList Preferences::tempDirs() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->tempDirs;
-}
+QStringList Preferences::tempDirs() const { return get(&Data::tempDirs); }
 
-void Preferences::setTempDirs(const QStringList& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->tempDirs = val;
-}
+void Preferences::setTempDirs(const QStringList& val) { set(&Data::tempDirs, val); }
 
-QString Preferences::configDir() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->configDir;
-}
+QString Preferences::configDir() const { return get(&Data::configDir); }
 
-void Preferences::setConfigDir(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->configDir = val;
-}
+void Preferences::setConfigDir(const QString& val) { set(&Data::configDir, val); }
 
-QString Preferences::fileCommentsFilePath() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->fileCommentsFilePath;
-}
+QString Preferences::fileCommentsFilePath() const { return get(&Data::fileCommentsFilePath); }
 
-void Preferences::setFileCommentsFilePath(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->fileCommentsFilePath = val;
-}
+void Preferences::setFileCommentsFilePath(const QString& val) { set(&Data::fileCommentsFilePath, val); }
 
-QStringList Preferences::sharedDirs() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->sharedDirs;
-}
+QStringList Preferences::sharedDirs() const { return get(&Data::sharedDirs); }
 
-void Preferences::setSharedDirs(const QStringList& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->sharedDirs = val;
-}
+void Preferences::setSharedDirs(const QStringList& val) { set(&Data::sharedDirs, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — UPnP
 // ---------------------------------------------------------------------------
 
-bool Preferences::enableUPnP() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->enableUPnP;
-}
+bool Preferences::enableUPnP() const { return get(&Data::enableUPnP); }
 
-void Preferences::setEnableUPnP(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->enableUPnP = val;
-}
+void Preferences::setEnableUPnP(bool val) { set(&Data::enableUPnP, val); }
 
-bool Preferences::skipWANIPSetup() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->skipWANIPSetup;
-}
+bool Preferences::skipWANIPSetup() const { return get(&Data::skipWANIPSetup); }
 
-void Preferences::setSkipWANIPSetup(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->skipWANIPSetup = val;
-}
+void Preferences::setSkipWANIPSetup(bool val) { set(&Data::skipWANIPSetup, val); }
 
-bool Preferences::skipWANPPPSetup() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->skipWANPPPSetup;
-}
+bool Preferences::skipWANPPPSetup() const { return get(&Data::skipWANPPPSetup); }
 
-void Preferences::setSkipWANPPPSetup(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->skipWANPPPSetup = val;
-}
+void Preferences::setSkipWANPPPSetup(bool val) { set(&Data::skipWANPPPSetup, val); }
 
-bool Preferences::closeUPnPOnExit() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->closeUPnPOnExit;
-}
+bool Preferences::closeUPnPOnExit() const { return get(&Data::closeUPnPOnExit); }
 
-void Preferences::setCloseUPnPOnExit(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->closeUPnPOnExit = val;
-}
+void Preferences::setCloseUPnPOnExit(bool val) { set(&Data::closeUPnPOnExit, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Logging
 // ---------------------------------------------------------------------------
 
-bool Preferences::logToDisk() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logToDisk;
-}
+bool Preferences::logToDisk() const { return get(&Data::logToDisk); }
 
-void Preferences::setLogToDisk(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logToDisk = val;
-}
+void Preferences::setLogToDisk(bool val) { set(&Data::logToDisk, val); }
 
-uint32 Preferences::maxLogFileSize() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxLogFileSize;
-}
+uint32 Preferences::maxLogFileSize() const { return get(&Data::maxLogFileSize); }
 
-void Preferences::setMaxLogFileSize(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxLogFileSize = val;
-}
+void Preferences::setMaxLogFileSize(uint32 val) { set(&Data::maxLogFileSize, val); }
 
-bool Preferences::verbose() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->verbose;
-}
+bool Preferences::verbose() const { return get(&Data::verbose); }
 
-void Preferences::setVerbose(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->verbose = val;
-}
+void Preferences::setVerbose(bool val) { set(&Data::verbose, val); }
 
-bool Preferences::logPublicIP() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logPublicIP;
-}
+bool Preferences::logPublicIP() const { return get(&Data::logPublicIP); }
 
-void Preferences::setLogPublicIP(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logPublicIP = val;
-}
+void Preferences::setLogPublicIP(bool val) { set(&Data::logPublicIP, val); }
 
-bool Preferences::kadVerboseLog() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->kadVerboseLog;
-}
+bool Preferences::kadVerboseLog() const { return get(&Data::kadVerboseLog); }
 
-void Preferences::setKadVerboseLog(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->kadVerboseLog = val;
-}
+void Preferences::setKadVerboseLog(bool val) { set(&Data::kadVerboseLog, val); }
 
-uint32 Preferences::maxLogLines() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxLogLines;
-}
+uint32 Preferences::maxLogLines() const { return get(&Data::maxLogLines); }
 
-void Preferences::setMaxLogLines(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxLogLines = val;
-}
+void Preferences::setMaxLogLines(uint32 val) { set(&Data::maxLogLines, val); }
 
-int Preferences::logLevel() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logLevel;
-}
+int Preferences::logLevel() const { return get(&Data::logLevel); }
 
-void Preferences::setLogLevel(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logLevel = val;
-}
+void Preferences::setLogLevel(int val) { set(&Data::logLevel, val); }
 
-bool Preferences::verboseLogToDisk() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->verboseLogToDisk;
-}
+bool Preferences::verboseLogToDisk() const { return get(&Data::verboseLogToDisk); }
 
-void Preferences::setVerboseLogToDisk(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->verboseLogToDisk = val;
-}
+void Preferences::setVerboseLogToDisk(bool val) { set(&Data::verboseLogToDisk, val); }
 
-bool Preferences::logSourceExchange() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logSourceExchange;
-}
+bool Preferences::logSourceExchange() const { return get(&Data::logSourceExchange); }
 
-void Preferences::setLogSourceExchange(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logSourceExchange = val;
-}
+void Preferences::setLogSourceExchange(bool val) { set(&Data::logSourceExchange, val); }
 
-bool Preferences::logBannedClients() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logBannedClients;
-}
+bool Preferences::logBannedClients() const { return get(&Data::logBannedClients); }
 
-void Preferences::setLogBannedClients(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logBannedClients = val;
-}
+void Preferences::setLogBannedClients(bool val) { set(&Data::logBannedClients, val); }
 
-bool Preferences::logRatingDescReceived() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logRatingDescReceived;
-}
+bool Preferences::logRatingDescReceived() const { return get(&Data::logRatingDescReceived); }
 
-void Preferences::setLogRatingDescReceived(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logRatingDescReceived = val;
-}
+void Preferences::setLogRatingDescReceived(bool val) { set(&Data::logRatingDescReceived, val); }
 
-bool Preferences::logSecureIdent() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logSecureIdent;
-}
+bool Preferences::logSecureIdent() const { return get(&Data::logSecureIdent); }
 
-void Preferences::setLogSecureIdent(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logSecureIdent = val;
-}
+void Preferences::setLogSecureIdent(bool val) { set(&Data::logSecureIdent, val); }
 
-bool Preferences::logFilteredIPs() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logFilteredIPs;
-}
+bool Preferences::logFilteredIPs() const { return get(&Data::logFilteredIPs); }
 
-void Preferences::setLogFilteredIPs(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logFilteredIPs = val;
-}
+void Preferences::setLogFilteredIPs(bool val) { set(&Data::logFilteredIPs, val); }
 
-bool Preferences::logFileSaving() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logFileSaving;
-}
+bool Preferences::logFileSaving() const { return get(&Data::logFileSaving); }
 
-void Preferences::setLogFileSaving(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logFileSaving = val;
-}
+void Preferences::setLogFileSaving(bool val) { set(&Data::logFileSaving, val); }
 
-bool Preferences::logA4AF() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logA4AF;
-}
+bool Preferences::logA4AF() const { return get(&Data::logA4AF); }
 
-void Preferences::setLogA4AF(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logA4AF = val;
-}
+void Preferences::setLogA4AF(bool val) { set(&Data::logA4AF, val); }
 
-bool Preferences::logUlDlEvents() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logUlDlEvents;
-}
+bool Preferences::logUlDlEvents() const { return get(&Data::logUlDlEvents); }
 
-void Preferences::setLogUlDlEvents(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logUlDlEvents = val;
-}
+void Preferences::setLogUlDlEvents(bool val) { set(&Data::logUlDlEvents, val); }
 
-bool Preferences::logRawSocketPackets() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logRawSocketPackets;
-}
+bool Preferences::logRawSocketPackets() const { return get(&Data::logRawSocketPackets); }
 
-void Preferences::setLogRawSocketPackets(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logRawSocketPackets = val;
-}
+void Preferences::setLogRawSocketPackets(bool val) { set(&Data::logRawSocketPackets, val); }
 
-bool Preferences::logWebServer() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logWebServer;
-}
+bool Preferences::logWebServer() const { return get(&Data::logWebServer); }
 
-void Preferences::setLogWebServer(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logWebServer = val;
-}
+void Preferences::setLogWebServer(bool val) { set(&Data::logWebServer, val); }
 
-bool Preferences::enableIpcLog() const { QReadLocker lock(&m_lock); return m_data->enableIpcLog; }
-void Preferences::setEnableIpcLog(bool val) { QWriteLocker lock(&m_lock); m_data->enableIpcLog = val; }
-bool Preferences::startCoreWithConsole() const { QReadLocker lock(&m_lock); return m_data->startCoreWithConsole; }
-void Preferences::setStartCoreWithConsole(bool val) { QWriteLocker lock(&m_lock); m_data->startCoreWithConsole = val; }
+bool Preferences::enableIpcLog() const { return get(&Data::enableIpcLog); }
+void Preferences::setEnableIpcLog(bool val) { set(&Data::enableIpcLog, val); }
+bool Preferences::startCoreWithConsole() const { return get(&Data::startCoreWithConsole); }
+void Preferences::setStartCoreWithConsole(bool val) { set(&Data::startCoreWithConsole, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Files
 // ---------------------------------------------------------------------------
 
-uint16 Preferences::maxSourcesPerFile() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxSourcesPerFile;
-}
+uint16 Preferences::maxSourcesPerFile() const { return get(&Data::maxSourcesPerFile); }
 
-void Preferences::setMaxSourcesPerFile(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxSourcesPerFile = val;
-}
+void Preferences::setMaxSourcesPerFile(uint16 val) { set(&Data::maxSourcesPerFile, val); }
 
-bool Preferences::useICH() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useICH;
-}
+bool Preferences::useICH() const { return get(&Data::useICH); }
 
-void Preferences::setUseICH(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useICH = val;
-}
+void Preferences::setUseICH(bool val) { set(&Data::useICH, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Transfer
 // ---------------------------------------------------------------------------
 
-uint32 Preferences::fileBufferSize() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->fileBufferSize;
-}
+uint32 Preferences::fileBufferSize() const { return get(&Data::fileBufferSize); }
 
-void Preferences::setFileBufferSize(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->fileBufferSize = val;
-}
+void Preferences::setFileBufferSize(uint32 val) { set(&Data::fileBufferSize, val); }
 
-uint32 Preferences::fileBufferTimeLimit() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->fileBufferTimeLimit;
-}
+uint32 Preferences::fileBufferTimeLimit() const { return get(&Data::fileBufferTimeLimit); }
 
-void Preferences::setFileBufferTimeLimit(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->fileBufferTimeLimit = val;
-}
+void Preferences::setFileBufferTimeLimit(uint32 val) { set(&Data::fileBufferTimeLimit, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Extended (PPgTweaks)
 // ---------------------------------------------------------------------------
 
-bool Preferences::useCreditSystem() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useCreditSystem;
-}
+bool Preferences::useCreditSystem() const { return get(&Data::useCreditSystem); }
 
-void Preferences::setUseCreditSystem(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useCreditSystem = val;
-}
+void Preferences::setUseCreditSystem(bool val) { set(&Data::useCreditSystem, val); }
 
-bool Preferences::a4afSaveCpu() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->a4afSaveCpu;
-}
+bool Preferences::a4afSaveCpu() const { return get(&Data::a4afSaveCpu); }
 
-void Preferences::setA4afSaveCpu(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->a4afSaveCpu = val;
-}
+void Preferences::setA4afSaveCpu(bool val) { set(&Data::a4afSaveCpu, val); }
 
-bool Preferences::autoArchivePreviewStart() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autoArchivePreviewStart;
-}
+bool Preferences::autoArchivePreviewStart() const { return get(&Data::autoArchivePreviewStart); }
 
-void Preferences::setAutoArchivePreviewStart(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autoArchivePreviewStart = val;
-}
+void Preferences::setAutoArchivePreviewStart(bool val) { set(&Data::autoArchivePreviewStart, val); }
 
-QString Preferences::ed2kHostname() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ed2kHostname;
-}
+QString Preferences::ed2kHostname() const { return get(&Data::ed2kHostname); }
 
-void Preferences::setEd2kHostname(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ed2kHostname = val;
-}
+void Preferences::setEd2kHostname(const QString& val) { set(&Data::ed2kHostname, val); }
 
-bool Preferences::showExtControls() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showExtControls;
-}
+bool Preferences::showExtControls() const { return get(&Data::showExtControls); }
 
-void Preferences::setShowExtControls(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showExtControls = val;
-}
+void Preferences::setShowExtControls(bool val) { set(&Data::showExtControls, val); }
 
-int Preferences::commitFiles() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->commitFiles;
-}
+int Preferences::commitFiles() const { return get(&Data::commitFiles); }
 
-void Preferences::setCommitFiles(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->commitFiles = val;
-}
+void Preferences::setCommitFiles(int val) { set(&Data::commitFiles, val); }
 
-int Preferences::extractMetaData() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->extractMetaData;
-}
+int Preferences::extractMetaData() const { return get(&Data::extractMetaData); }
 
-void Preferences::setExtractMetaData(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->extractMetaData = val;
-}
+void Preferences::setExtractMetaData(int val) { set(&Data::extractMetaData, val); }
 
-uint32 Preferences::queueSize() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->queueSize;
-}
+uint32 Preferences::queueSize() const { return get(&Data::queueSize); }
 
-void Preferences::setQueueSize(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->queueSize = val;
-}
+void Preferences::setQueueSize(uint32 val) { set(&Data::queueSize, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Upload SpeedSense (USS)
 // ---------------------------------------------------------------------------
 
-bool Preferences::dynUpEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->dynUpEnabled;
-}
+bool Preferences::dynUpEnabled() const { return get(&Data::dynUpEnabled); }
 
-void Preferences::setDynUpEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->dynUpEnabled = val;
-}
+void Preferences::setDynUpEnabled(bool val) { set(&Data::dynUpEnabled, val); }
 
-int Preferences::dynUpPingTolerance() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->dynUpPingTolerance;
-}
+int Preferences::dynUpPingTolerance() const { return get(&Data::dynUpPingTolerance); }
 
-void Preferences::setDynUpPingTolerance(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->dynUpPingTolerance = val;
-}
+void Preferences::setDynUpPingTolerance(int val) { set(&Data::dynUpPingTolerance, val); }
 
-int Preferences::dynUpPingToleranceMs() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->dynUpPingToleranceMs;
-}
+int Preferences::dynUpPingToleranceMs() const { return get(&Data::dynUpPingToleranceMs); }
 
-void Preferences::setDynUpPingToleranceMs(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->dynUpPingToleranceMs = val;
-}
+void Preferences::setDynUpPingToleranceMs(int val) { set(&Data::dynUpPingToleranceMs, val); }
 
-bool Preferences::dynUpUseMillisecondPingTolerance() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->dynUpUseMillisecondPingTolerance;
-}
+bool Preferences::dynUpUseMillisecondPingTolerance() const { return get(&Data::dynUpUseMillisecondPingTolerance); }
 
-void Preferences::setDynUpUseMillisecondPingTolerance(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->dynUpUseMillisecondPingTolerance = val;
-}
+void Preferences::setDynUpUseMillisecondPingTolerance(bool val) { set(&Data::dynUpUseMillisecondPingTolerance, val); }
 
-int Preferences::dynUpGoingUpDivider() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->dynUpGoingUpDivider;
-}
+int Preferences::dynUpGoingUpDivider() const { return get(&Data::dynUpGoingUpDivider); }
 
-void Preferences::setDynUpGoingUpDivider(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->dynUpGoingUpDivider = val;
-}
+void Preferences::setDynUpGoingUpDivider(int val) { set(&Data::dynUpGoingUpDivider, val); }
 
-int Preferences::dynUpGoingDownDivider() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->dynUpGoingDownDivider;
-}
+int Preferences::dynUpGoingDownDivider() const { return get(&Data::dynUpGoingDownDivider); }
 
-void Preferences::setDynUpGoingDownDivider(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->dynUpGoingDownDivider = val;
-}
+void Preferences::setDynUpGoingDownDivider(int val) { set(&Data::dynUpGoingDownDivider, val); }
 
-int Preferences::dynUpNumberOfPings() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->dynUpNumberOfPings;
-}
+int Preferences::dynUpNumberOfPings() const { return get(&Data::dynUpNumberOfPings); }
 
-void Preferences::setDynUpNumberOfPings(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->dynUpNumberOfPings = val;
-}
+void Preferences::setDynUpNumberOfPings(int val) { set(&Data::dynUpNumberOfPings, val); }
 
 #ifdef Q_OS_WIN
 
-bool Preferences::autotakeEd2kLinks() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autotakeEd2kLinks;
-}
+bool Preferences::autotakeEd2kLinks() const { return get(&Data::autotakeEd2kLinks); }
 
-void Preferences::setAutotakeEd2kLinks(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autotakeEd2kLinks = val;
-}
+void Preferences::setAutotakeEd2kLinks(bool val) { set(&Data::autotakeEd2kLinks, val); }
 
-bool Preferences::openPortsOnWinFirewall() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->openPortsOnWinFirewall;
-}
+bool Preferences::openPortsOnWinFirewall() const { return get(&Data::openPortsOnWinFirewall); }
 
-void Preferences::setOpenPortsOnWinFirewall(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->openPortsOnWinFirewall = val;
-}
+void Preferences::setOpenPortsOnWinFirewall(bool val) { set(&Data::openPortsOnWinFirewall, val); }
 
-bool Preferences::sparsePartFiles() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->sparsePartFiles;
-}
+bool Preferences::sparsePartFiles() const { return get(&Data::sparsePartFiles); }
 
-void Preferences::setSparsePartFiles(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->sparsePartFiles = val;
-}
+void Preferences::setSparsePartFiles(bool val) { set(&Data::sparsePartFiles, val); }
 
-bool Preferences::allocFullFile() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->allocFullFile;
-}
+bool Preferences::allocFullFile() const { return get(&Data::allocFullFile); }
 
-void Preferences::setAllocFullFile(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->allocFullFile = val;
-}
+void Preferences::setAllocFullFile(bool val) { set(&Data::allocFullFile, val); }
 
-bool Preferences::resolveShellLinks() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->resolveShellLinks;
-}
+bool Preferences::resolveShellLinks() const { return get(&Data::resolveShellLinks); }
 
-void Preferences::setResolveShellLinks(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->resolveShellLinks = val;
-}
+void Preferences::setResolveShellLinks(bool val) { set(&Data::resolveShellLinks, val); }
 
-int Preferences::multiUserSharing() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->multiUserSharing;
-}
+int Preferences::multiUserSharing() const { return get(&Data::multiUserSharing); }
 
-void Preferences::setMultiUserSharing(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->multiUserSharing = val;
-}
+void Preferences::setMultiUserSharing(int val) { set(&Data::multiUserSharing, val); }
 
 #endif // Q_OS_WIN
 
@@ -1599,175 +949,68 @@ void Preferences::setMultiUserSharing(int val)
 // Getters / setters — Statistics
 // ---------------------------------------------------------------------------
 
-float Preferences::connMaxDownRate() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->connMaxDownRate;
-}
+float Preferences::connMaxDownRate() const { return get(&Data::connMaxDownRate); }
 
-void Preferences::setConnMaxDownRate(float val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->connMaxDownRate = val;
-}
+void Preferences::setConnMaxDownRate(float val) { set(&Data::connMaxDownRate, val); }
 
-float Preferences::connAvgDownRate() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->connAvgDownRate;
-}
+float Preferences::connAvgDownRate() const { return get(&Data::connAvgDownRate); }
 
-void Preferences::setConnAvgDownRate(float val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->connAvgDownRate = val;
-}
+void Preferences::setConnAvgDownRate(float val) { set(&Data::connAvgDownRate, val); }
 
-float Preferences::connMaxAvgDownRate() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->connMaxAvgDownRate;
-}
+float Preferences::connMaxAvgDownRate() const { return get(&Data::connMaxAvgDownRate); }
 
-void Preferences::setConnMaxAvgDownRate(float val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->connMaxAvgDownRate = val;
-}
+void Preferences::setConnMaxAvgDownRate(float val) { set(&Data::connMaxAvgDownRate, val); }
 
-float Preferences::connAvgUpRate() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->connAvgUpRate;
-}
+float Preferences::connAvgUpRate() const { return get(&Data::connAvgUpRate); }
 
-void Preferences::setConnAvgUpRate(float val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->connAvgUpRate = val;
-}
+void Preferences::setConnAvgUpRate(float val) { set(&Data::connAvgUpRate, val); }
 
-float Preferences::connMaxAvgUpRate() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->connMaxAvgUpRate;
-}
+float Preferences::connMaxAvgUpRate() const { return get(&Data::connMaxAvgUpRate); }
 
-void Preferences::setConnMaxAvgUpRate(float val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->connMaxAvgUpRate = val;
-}
+void Preferences::setConnMaxAvgUpRate(float val) { set(&Data::connMaxAvgUpRate, val); }
 
-float Preferences::connMaxUpRate() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->connMaxUpRate;
-}
+float Preferences::connMaxUpRate() const { return get(&Data::connMaxUpRate); }
 
-void Preferences::setConnMaxUpRate(float val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->connMaxUpRate = val;
-}
+void Preferences::setConnMaxUpRate(float val) { set(&Data::connMaxUpRate, val); }
 
-uint32 Preferences::statsAverageMinutes() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->statsAverageMinutes;
-}
+uint32 Preferences::statsAverageMinutes() const { return get(&Data::statsAverageMinutes); }
 
-void Preferences::setStatsAverageMinutes(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->statsAverageMinutes = val;
-}
+void Preferences::setStatsAverageMinutes(uint32 val) { set(&Data::statsAverageMinutes, val); }
 
-uint32 Preferences::graphsUpdateSec() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->graphsUpdateSec;
-}
+uint32 Preferences::graphsUpdateSec() const { return get(&Data::graphsUpdateSec); }
 
-void Preferences::setGraphsUpdateSec(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->graphsUpdateSec = val;
-}
+void Preferences::setGraphsUpdateSec(uint32 val) { set(&Data::graphsUpdateSec, val); }
 
-uint32 Preferences::statsUpdateSec() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->statsUpdateSec;
-}
+uint32 Preferences::statsUpdateSec() const { return get(&Data::statsUpdateSec); }
 
-void Preferences::setStatsUpdateSec(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->statsUpdateSec = val;
-}
+void Preferences::setStatsUpdateSec(uint32 val) { set(&Data::statsUpdateSec, val); }
 
-bool Preferences::fillGraphs() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->fillGraphs;
-}
+bool Preferences::fillGraphs() const { return get(&Data::fillGraphs); }
 
-void Preferences::setFillGraphs(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->fillGraphs = val;
-}
+void Preferences::setFillGraphs(bool val) { set(&Data::fillGraphs, val); }
 
-uint32 Preferences::statsConnectionsMax() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->statsConnectionsMax;
-}
+uint32 Preferences::statsConnectionsMax() const { return get(&Data::statsConnectionsMax); }
 
-void Preferences::setStatsConnectionsMax(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->statsConnectionsMax = val;
-}
+void Preferences::setStatsConnectionsMax(uint32 val) { set(&Data::statsConnectionsMax, val); }
 
-uint32 Preferences::statsConnectionsRatio() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->statsConnectionsRatio;
-}
+uint32 Preferences::statsConnectionsRatio() const { return get(&Data::statsConnectionsRatio); }
 
-void Preferences::setStatsConnectionsRatio(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->statsConnectionsRatio = val;
-}
+void Preferences::setStatsConnectionsRatio(uint32 val) { set(&Data::statsConnectionsRatio, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Cumulative Statistics
 // ---------------------------------------------------------------------------
 
-// Macro to reduce boilerplate for trivial getter/setter pairs.
-#define PREF_GET_SET(Type, Name)                           \
-    Type Preferences::Name() const {                       \
-        QReadLocker lock(&m_lock);                         \
-        return m_data->Name;                               \
-    }                                                      \
-    void Preferences::set##Name(Type val) {                \
-        QWriteLocker lock(&m_lock);                        \
-        m_data->Name = val;                                \
-    }
+// Macro to reduce boilerplate for trivial getter/setter pairs. Routes through
+// the get()/set() templates so locking lives in exactly one place.
+#define PREF_GET_SET(Type, Name)                                     \
+    Type Preferences::Name() const { return get(&Data::Name); }      \
+    void Preferences::set##Name(Type val) { set<Type>(&Data::Name, val); }
 
 // Helper with capital first letter for setter name
-#define PREF_GS(Type, name, Name)                          \
-    Type Preferences::name() const {                       \
-        QReadLocker lock(&m_lock);                         \
-        return m_data->name;                               \
-    }                                                      \
-    void Preferences::set##Name(Type val) {                \
-        QWriteLocker lock(&m_lock);                        \
-        m_data->name = val;                                \
-    }
+#define PREF_GS(Type, name, Name)                                    \
+    Type Preferences::name() const { return get(&Data::name); }      \
+    void Preferences::set##Name(Type val) { set<Type>(&Data::name, val); }
 
 PREF_GS(uint64, cumTotalUploaded, CumTotalUploaded)
 PREF_GS(uint64, cumTotalDownloaded, CumTotalDownloaded)
@@ -1858,319 +1101,115 @@ PREF_GS(uint64, recMaxLargestFile, RecMaxLargestFile)
 // Getters / setters — Security
 // ---------------------------------------------------------------------------
 
-uint32 Preferences::ipFilterLevel() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ipFilterLevel;
-}
+uint32 Preferences::ipFilterLevel() const { return get(&Data::ipFilterLevel); }
 
-void Preferences::setIpFilterLevel(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ipFilterLevel = val;
-}
+void Preferences::setIpFilterLevel(uint32 val) { set(&Data::ipFilterLevel, val); }
 
-bool Preferences::warnUntrustedFiles() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->warnUntrustedFiles;
-}
+bool Preferences::warnUntrustedFiles() const { return get(&Data::warnUntrustedFiles); }
 
-void Preferences::setWarnUntrustedFiles(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->warnUntrustedFiles = val;
-}
+void Preferences::setWarnUntrustedFiles(bool val) { set(&Data::warnUntrustedFiles, val); }
 
-bool Preferences::useSafeKad() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useSafeKad;
-}
+bool Preferences::useSafeKad() const { return get(&Data::useSafeKad); }
 
-void Preferences::setUseSafeKad(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useSafeKad = val;
-}
+void Preferences::setUseSafeKad(bool val) { set(&Data::useSafeKad, val); }
 
-bool Preferences::useFastKad() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useFastKad;
-}
+bool Preferences::useFastKad() const { return get(&Data::useFastKad); }
 
-void Preferences::setUseFastKad(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useFastKad = val;
-}
+void Preferences::setUseFastKad(bool val) { set(&Data::useFastKad, val); }
 
-QString Preferences::ipFilterUpdateUrl() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ipFilterUpdateUrl;
-}
+QString Preferences::ipFilterUpdateUrl() const { return get(&Data::ipFilterUpdateUrl); }
 
-void Preferences::setIpFilterUpdateUrl(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ipFilterUpdateUrl = val;
-}
+void Preferences::setIpFilterUpdateUrl(const QString& val) { set(&Data::ipFilterUpdateUrl, val); }
 
-QString Preferences::appToken() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->appToken;
-}
+QString Preferences::appToken() const { return get(&Data::appToken); }
 
-void Preferences::setAppToken(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->appToken = val;
-}
+void Preferences::setAppToken(const QString& val) { set(&Data::appToken, val); }
 
-QString Preferences::bugReportApiKey() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->bugReportApiKey;
-}
+QString Preferences::bugReportApiKey() const { return get(&Data::bugReportApiKey); }
 
-QString Preferences::bugReportDomain() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->bugReportDomain;
-}
+QString Preferences::bugReportDomain() const { return get(&Data::bugReportDomain); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — IRC
 // ---------------------------------------------------------------------------
 
-QString Preferences::ircServer() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircServer;
-}
+QString Preferences::ircServer() const { return get(&Data::ircServer); }
 
-void Preferences::setIrcServer(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircServer = val;
-}
+void Preferences::setIrcServer(const QString& val) { set(&Data::ircServer, val); }
 
-QString Preferences::ircNick() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircNick;
-}
+QString Preferences::ircNick() const { return get(&Data::ircNick); }
 
-void Preferences::setIrcNick(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircNick = val;
-}
+void Preferences::setIrcNick(const QString& val) { set(&Data::ircNick, val); }
 
-bool Preferences::ircEnableUTF8() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircEnableUTF8;
-}
+bool Preferences::ircEnableUTF8() const { return get(&Data::ircEnableUTF8); }
 
-void Preferences::setIrcEnableUTF8(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircEnableUTF8 = val;
-}
+void Preferences::setIrcEnableUTF8(bool val) { set(&Data::ircEnableUTF8, val); }
 
-bool Preferences::ircUsePerform() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircUsePerform;
-}
+bool Preferences::ircUsePerform() const { return get(&Data::ircUsePerform); }
 
-void Preferences::setIrcUsePerform(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircUsePerform = val;
-}
+void Preferences::setIrcUsePerform(bool val) { set(&Data::ircUsePerform, val); }
 
-QString Preferences::ircPerformString() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircPerformString;
-}
+QString Preferences::ircPerformString() const { return get(&Data::ircPerformString); }
 
-void Preferences::setIrcPerformString(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircPerformString = val;
-}
+void Preferences::setIrcPerformString(const QString& val) { set(&Data::ircPerformString, val); }
 
-bool Preferences::ircConnectHelpChannel() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircConnectHelpChannel;
-}
+bool Preferences::ircConnectHelpChannel() const { return get(&Data::ircConnectHelpChannel); }
 
-void Preferences::setIrcConnectHelpChannel(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircConnectHelpChannel = val;
-}
+void Preferences::setIrcConnectHelpChannel(bool val) { set(&Data::ircConnectHelpChannel, val); }
 
-bool Preferences::ircLoadChannelList() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircLoadChannelList;
-}
+bool Preferences::ircLoadChannelList() const { return get(&Data::ircLoadChannelList); }
 
-void Preferences::setIrcLoadChannelList(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircLoadChannelList = val;
-}
+void Preferences::setIrcLoadChannelList(bool val) { set(&Data::ircLoadChannelList, val); }
 
-bool Preferences::ircAddTimestamp() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircAddTimestamp;
-}
+bool Preferences::ircAddTimestamp() const { return get(&Data::ircAddTimestamp); }
 
-void Preferences::setIrcAddTimestamp(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircAddTimestamp = val;
-}
+void Preferences::setIrcAddTimestamp(bool val) { set(&Data::ircAddTimestamp, val); }
 
-bool Preferences::ircIgnoreMiscInfoMessages() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircIgnoreMiscInfoMessages;
-}
+bool Preferences::ircIgnoreMiscInfoMessages() const { return get(&Data::ircIgnoreMiscInfoMessages); }
 
-void Preferences::setIrcIgnoreMiscInfoMessages(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircIgnoreMiscInfoMessages = val;
-}
+void Preferences::setIrcIgnoreMiscInfoMessages(bool val) { set(&Data::ircIgnoreMiscInfoMessages, val); }
 
-bool Preferences::ircIgnoreJoinMessages() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircIgnoreJoinMessages;
-}
+bool Preferences::ircIgnoreJoinMessages() const { return get(&Data::ircIgnoreJoinMessages); }
 
-void Preferences::setIrcIgnoreJoinMessages(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircIgnoreJoinMessages = val;
-}
+void Preferences::setIrcIgnoreJoinMessages(bool val) { set(&Data::ircIgnoreJoinMessages, val); }
 
-bool Preferences::ircIgnorePartMessages() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircIgnorePartMessages;
-}
+bool Preferences::ircIgnorePartMessages() const { return get(&Data::ircIgnorePartMessages); }
 
-void Preferences::setIrcIgnorePartMessages(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircIgnorePartMessages = val;
-}
+void Preferences::setIrcIgnorePartMessages(bool val) { set(&Data::ircIgnorePartMessages, val); }
 
-bool Preferences::ircIgnoreQuitMessages() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircIgnoreQuitMessages;
-}
+bool Preferences::ircIgnoreQuitMessages() const { return get(&Data::ircIgnoreQuitMessages); }
 
-void Preferences::setIrcIgnoreQuitMessages(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircIgnoreQuitMessages = val;
-}
+void Preferences::setIrcIgnoreQuitMessages(bool val) { set(&Data::ircIgnoreQuitMessages, val); }
 
-bool Preferences::ircUseChannelFilter() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircUseChannelFilter;
-}
+bool Preferences::ircUseChannelFilter() const { return get(&Data::ircUseChannelFilter); }
 
-void Preferences::setIrcUseChannelFilter(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircUseChannelFilter = val;
-}
+void Preferences::setIrcUseChannelFilter(bool val) { set(&Data::ircUseChannelFilter, val); }
 
-QString Preferences::ircChannelFilter() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ircChannelFilter;
-}
+QString Preferences::ircChannelFilter() const { return get(&Data::ircChannelFilter); }
 
-void Preferences::setIrcChannelFilter(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ircChannelFilter = val;
-}
+void Preferences::setIrcChannelFilter(const QString& val) { set(&Data::ircChannelFilter, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — IPC Daemon
 // ---------------------------------------------------------------------------
 
-bool Preferences::ipcEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ipcEnabled;
-}
+bool Preferences::ipcEnabled() const { return get(&Data::ipcEnabled); }
 
-void Preferences::setIpcEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ipcEnabled = val;
-}
+void Preferences::setIpcEnabled(bool val) { set(&Data::ipcEnabled, val); }
 
-uint16 Preferences::ipcPort() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ipcPort;
-}
+uint16 Preferences::ipcPort() const { return get(&Data::ipcPort); }
 
-void Preferences::setIpcPort(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ipcPort = val;
-}
+void Preferences::setIpcPort(uint16 val) { set(&Data::ipcPort, val); }
 
-QString Preferences::ipcListenAddress() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ipcListenAddress;
-}
+QString Preferences::ipcListenAddress() const { return get(&Data::ipcListenAddress); }
 
-void Preferences::setIpcListenAddress(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ipcListenAddress = val;
-}
+void Preferences::setIpcListenAddress(const QString& val) { set(&Data::ipcListenAddress, val); }
 
-QString Preferences::ipcDaemonPath() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ipcDaemonPath;
-}
+QString Preferences::ipcDaemonPath() const { return get(&Data::ipcDaemonPath); }
 
-void Preferences::setIpcDaemonPath(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ipcDaemonPath = val;
-}
+void Preferences::setIpcDaemonPath(const QString& val) { set(&Data::ipcDaemonPath, val); }
 
-int Preferences::ipcRemotePollingMs() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ipcRemotePollingMs;
-}
+int Preferences::ipcRemotePollingMs() const { return get(&Data::ipcRemotePollingMs); }
 
 void Preferences::setIpcRemotePollingMs(int val)
 {
@@ -2178,839 +1217,323 @@ void Preferences::setIpcRemotePollingMs(int val)
     m_data->ipcRemotePollingMs = std::clamp(val, 200, 10000);
 }
 
-QStringList Preferences::ipcTokens() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->ipcTokens;
-}
+QStringList Preferences::ipcTokens() const { return get(&Data::ipcTokens); }
 
-void Preferences::setIpcTokens(const QStringList& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->ipcTokens = val;
-}
+void Preferences::setIpcTokens(const QStringList& val) { set(&Data::ipcTokens, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Web Server
 // ---------------------------------------------------------------------------
 
-bool Preferences::webServerEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerEnabled;
-}
+bool Preferences::webServerEnabled() const { return get(&Data::webServerEnabled); }
 
-void Preferences::setWebServerEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerEnabled = val;
-}
+void Preferences::setWebServerEnabled(bool val) { set(&Data::webServerEnabled, val); }
 
-uint16 Preferences::webServerPort() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerPort;
-}
+uint16 Preferences::webServerPort() const { return get(&Data::webServerPort); }
 
-void Preferences::setWebServerPort(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerPort = val;
-}
+void Preferences::setWebServerPort(uint16 val) { set(&Data::webServerPort, val); }
 
-QString Preferences::webServerApiKey() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerApiKey;
-}
+QString Preferences::webServerApiKey() const { return get(&Data::webServerApiKey); }
 
-void Preferences::setWebServerApiKey(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerApiKey = val;
-}
+void Preferences::setWebServerApiKey(const QString& val) { set(&Data::webServerApiKey, val); }
 
-QString Preferences::webServerListenAddress() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerListenAddress;
-}
+QString Preferences::webServerListenAddress() const { return get(&Data::webServerListenAddress); }
 
-void Preferences::setWebServerListenAddress(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerListenAddress = val;
-}
+void Preferences::setWebServerListenAddress(const QString& val) { set(&Data::webServerListenAddress, val); }
 
-bool Preferences::webServerRestApiEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerRestApiEnabled;
-}
+bool Preferences::webServerRestApiEnabled() const { return get(&Data::webServerRestApiEnabled); }
 
-void Preferences::setWebServerRestApiEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerRestApiEnabled = val;
-}
+void Preferences::setWebServerRestApiEnabled(bool val) { set(&Data::webServerRestApiEnabled, val); }
 
-bool Preferences::webServerGzipEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerGzipEnabled;
-}
+bool Preferences::webServerGzipEnabled() const { return get(&Data::webServerGzipEnabled); }
 
-void Preferences::setWebServerGzipEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerGzipEnabled = val;
-}
+void Preferences::setWebServerGzipEnabled(bool val) { set(&Data::webServerGzipEnabled, val); }
 
-bool Preferences::webServerUPnP() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerUPnP;
-}
+bool Preferences::webServerUPnP() const { return get(&Data::webServerUPnP); }
 
-void Preferences::setWebServerUPnP(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerUPnP = val;
-}
+void Preferences::setWebServerUPnP(bool val) { set(&Data::webServerUPnP, val); }
 
-QString Preferences::webServerTemplatePath() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerTemplatePath;
-}
+QString Preferences::webServerTemplatePath() const { return get(&Data::webServerTemplatePath); }
 
-void Preferences::setWebServerTemplatePath(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerTemplatePath = val;
-}
+void Preferences::setWebServerTemplatePath(const QString& val) { set(&Data::webServerTemplatePath, val); }
 
-int Preferences::webServerSessionTimeout() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerSessionTimeout;
-}
+int Preferences::webServerSessionTimeout() const { return get(&Data::webServerSessionTimeout); }
 
-void Preferences::setWebServerSessionTimeout(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerSessionTimeout = val;
-}
+void Preferences::setWebServerSessionTimeout(int val) { set(&Data::webServerSessionTimeout, val); }
 
-bool Preferences::webServerHttpsEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerHttpsEnabled;
-}
+bool Preferences::webServerHttpsEnabled() const { return get(&Data::webServerHttpsEnabled); }
 
-void Preferences::setWebServerHttpsEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerHttpsEnabled = val;
-}
+void Preferences::setWebServerHttpsEnabled(bool val) { set(&Data::webServerHttpsEnabled, val); }
 
-QString Preferences::webServerCertPath() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerCertPath;
-}
+QString Preferences::webServerCertPath() const { return get(&Data::webServerCertPath); }
 
-void Preferences::setWebServerCertPath(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerCertPath = val;
-}
+void Preferences::setWebServerCertPath(const QString& val) { set(&Data::webServerCertPath, val); }
 
-QString Preferences::webServerKeyPath() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerKeyPath;
-}
+QString Preferences::webServerKeyPath() const { return get(&Data::webServerKeyPath); }
 
-void Preferences::setWebServerKeyPath(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerKeyPath = val;
-}
+void Preferences::setWebServerKeyPath(const QString& val) { set(&Data::webServerKeyPath, val); }
 
-QString Preferences::webServerAdminPassword() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerAdminPassword;
-}
+QString Preferences::webServerAdminPassword() const { return get(&Data::webServerAdminPassword); }
 
-void Preferences::setWebServerAdminPassword(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerAdminPassword = val;
-}
+void Preferences::setWebServerAdminPassword(const QString& val) { set(&Data::webServerAdminPassword, val); }
 
-bool Preferences::webServerAdminAllowHiLevFunc() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerAdminAllowHiLevFunc;
-}
+bool Preferences::webServerAdminAllowHiLevFunc() const { return get(&Data::webServerAdminAllowHiLevFunc); }
 
-void Preferences::setWebServerAdminAllowHiLevFunc(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerAdminAllowHiLevFunc = val;
-}
+void Preferences::setWebServerAdminAllowHiLevFunc(bool val) { set(&Data::webServerAdminAllowHiLevFunc, val); }
 
-bool Preferences::webServerGuestEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerGuestEnabled;
-}
+bool Preferences::webServerGuestEnabled() const { return get(&Data::webServerGuestEnabled); }
 
-void Preferences::setWebServerGuestEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerGuestEnabled = val;
-}
+void Preferences::setWebServerGuestEnabled(bool val) { set(&Data::webServerGuestEnabled, val); }
 
-QString Preferences::webServerGuestPassword() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->webServerGuestPassword;
-}
+QString Preferences::webServerGuestPassword() const { return get(&Data::webServerGuestPassword); }
 
-void Preferences::setWebServerGuestPassword(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->webServerGuestPassword = val;
-}
+void Preferences::setWebServerGuestPassword(const QString& val) { set(&Data::webServerGuestPassword, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Scheduler
 // ---------------------------------------------------------------------------
 
-bool Preferences::schedulerEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->schedulerEnabled;
-}
+bool Preferences::schedulerEnabled() const { return get(&Data::schedulerEnabled); }
 
-void Preferences::setSchedulerEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->schedulerEnabled = val;
-}
+void Preferences::setSchedulerEnabled(bool val) { set(&Data::schedulerEnabled, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Kademlia
 // ---------------------------------------------------------------------------
 
-bool Preferences::kadEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->kadEnabled;
-}
+bool Preferences::kadEnabled() const { return get(&Data::kadEnabled); }
 
-void Preferences::setKadEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->kadEnabled = val;
-}
+void Preferences::setKadEnabled(bool val) { set(&Data::kadEnabled, val); }
 
-uint32 Preferences::kadUDPKey() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->kadUDPKey;
-}
+uint32 Preferences::kadUDPKey() const { return get(&Data::kadUDPKey); }
 
-void Preferences::setKadUDPKey(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->kadUDPKey = val;
-}
+void Preferences::setKadUDPKey(uint32 val) { set(&Data::kadUDPKey, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Connection
 // ---------------------------------------------------------------------------
 
-uint16 Preferences::maxConsPerFive() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->maxConsPerFive;
-}
+uint16 Preferences::maxConsPerFive() const { return get(&Data::maxConsPerFive); }
 
-void Preferences::setMaxConsPerFive(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->maxConsPerFive = val;
-}
+void Preferences::setMaxConsPerFive(uint16 val) { set(&Data::maxConsPerFive, val); }
 
-bool Preferences::showOverhead() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showOverhead;
-}
+bool Preferences::showOverhead() const { return get(&Data::showOverhead); }
 
-void Preferences::setShowOverhead(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showOverhead = val;
-}
+void Preferences::setShowOverhead(bool val) { set(&Data::showOverhead, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Server management (extended)
 // ---------------------------------------------------------------------------
 
-bool Preferences::addServersFromClients() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->addServersFromClients;
-}
+bool Preferences::addServersFromClients() const { return get(&Data::addServersFromClients); }
 
-void Preferences::setAddServersFromClients(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->addServersFromClients = val;
-}
+void Preferences::setAddServersFromClients(bool val) { set(&Data::addServersFromClients, val); }
 
-bool Preferences::filterServerByIP() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->filterServerByIP;
-}
+bool Preferences::filterServerByIP() const { return get(&Data::filterServerByIP); }
 
-void Preferences::setFilterServerByIP(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->filterServerByIP = val;
-}
+void Preferences::setFilterServerByIP(bool val) { set(&Data::filterServerByIP, val); }
 
-uint32 Preferences::deadServerRetries() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->deadServerRetries;
-}
+uint32 Preferences::deadServerRetries() const { return get(&Data::deadServerRetries); }
 
-void Preferences::setDeadServerRetries(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->deadServerRetries = val;
-}
+void Preferences::setDeadServerRetries(uint32 val) { set(&Data::deadServerRetries, val); }
 
-bool Preferences::autoUpdateServerList() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autoUpdateServerList;
-}
+bool Preferences::autoUpdateServerList() const { return get(&Data::autoUpdateServerList); }
 
-void Preferences::setAutoUpdateServerList(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autoUpdateServerList = val;
-}
+void Preferences::setAutoUpdateServerList(bool val) { set(&Data::autoUpdateServerList, val); }
 
-QString Preferences::serverListURL() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->serverListURL;
-}
+QString Preferences::serverListURL() const { return get(&Data::serverListURL); }
 
-void Preferences::setServerListURL(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->serverListURL = val;
-}
+void Preferences::setServerListURL(const QString& val) { set(&Data::serverListURL, val); }
 
-bool Preferences::smartLowIdCheck() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->smartLowIdCheck;
-}
+bool Preferences::smartLowIdCheck() const { return get(&Data::smartLowIdCheck); }
 
-void Preferences::setSmartLowIdCheck(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->smartLowIdCheck = val;
-}
+void Preferences::setSmartLowIdCheck(bool val) { set(&Data::smartLowIdCheck, val); }
 
-bool Preferences::manualServerHighPriority() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->manualServerHighPriority;
-}
+bool Preferences::manualServerHighPriority() const { return get(&Data::manualServerHighPriority); }
 
-void Preferences::setManualServerHighPriority(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->manualServerHighPriority = val;
-}
+void Preferences::setManualServerHighPriority(bool val) { set(&Data::manualServerHighPriority, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Network modes
 // ---------------------------------------------------------------------------
 
-bool Preferences::networkED2K() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->networkED2K;
-}
+bool Preferences::networkED2K() const { return get(&Data::networkED2K); }
 
-void Preferences::setNetworkED2K(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->networkED2K = val;
-}
+void Preferences::setNetworkED2K(bool val) { set(&Data::networkED2K, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Chat / Messages
 // ---------------------------------------------------------------------------
 
-bool Preferences::msgOnlyFriends() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->msgOnlyFriends;
-}
+bool Preferences::msgOnlyFriends() const { return get(&Data::msgOnlyFriends); }
 
-void Preferences::setMsgOnlyFriends(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->msgOnlyFriends = val;
-}
+void Preferences::setMsgOnlyFriends(bool val) { set(&Data::msgOnlyFriends, val); }
 
-bool Preferences::msgSecure() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->msgSecure;
-}
+bool Preferences::msgSecure() const { return get(&Data::msgSecure); }
 
-void Preferences::setMsgSecure(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->msgSecure = val;
-}
+void Preferences::setMsgSecure(bool val) { set(&Data::msgSecure, val); }
 
-bool Preferences::useChatCaptchas() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useChatCaptchas;
-}
+bool Preferences::useChatCaptchas() const { return get(&Data::useChatCaptchas); }
 
-void Preferences::setUseChatCaptchas(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useChatCaptchas = val;
-}
+void Preferences::setUseChatCaptchas(bool val) { set(&Data::useChatCaptchas, val); }
 
-bool Preferences::enableSpamFilter() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->enableSpamFilter;
-}
+bool Preferences::enableSpamFilter() const { return get(&Data::enableSpamFilter); }
 
-void Preferences::setEnableSpamFilter(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->enableSpamFilter = val;
-}
+void Preferences::setEnableSpamFilter(bool val) { set(&Data::enableSpamFilter, val); }
 
-QString Preferences::messageFilter() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->messageFilter;
-}
+QString Preferences::messageFilter() const { return get(&Data::messageFilter); }
 
-void Preferences::setMessageFilter(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->messageFilter = val;
-}
+void Preferences::setMessageFilter(const QString& val) { set(&Data::messageFilter, val); }
 
-QString Preferences::commentFilter() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->commentFilter;
-}
+QString Preferences::commentFilter() const { return get(&Data::commentFilter); }
 
-void Preferences::setCommentFilter(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->commentFilter = val;
-}
+void Preferences::setCommentFilter(const QString& val) { set(&Data::commentFilter, val); }
 
-bool Preferences::showSmileys() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showSmileys;
-}
+bool Preferences::showSmileys() const { return get(&Data::showSmileys); }
 
-void Preferences::setShowSmileys(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showSmileys = val;
-}
+void Preferences::setShowSmileys(bool val) { set(&Data::showSmileys, val); }
 
-bool Preferences::indicateRatings() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->indicateRatings;
-}
+bool Preferences::indicateRatings() const { return get(&Data::indicateRatings); }
 
-void Preferences::setIndicateRatings(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->indicateRatings = val;
-}
+void Preferences::setIndicateRatings(bool val) { set(&Data::indicateRatings, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Security (extended)
 // ---------------------------------------------------------------------------
 
-bool Preferences::useSecureIdent() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useSecureIdent;
-}
+bool Preferences::useSecureIdent() const { return get(&Data::useSecureIdent); }
 
-void Preferences::setUseSecureIdent(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useSecureIdent = val;
-}
+void Preferences::setUseSecureIdent(bool val) { set(&Data::useSecureIdent, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Shared file visibility
 // ---------------------------------------------------------------------------
 
-int Preferences::viewSharedFilesAccess() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->viewSharedFilesAccess;
-}
+int Preferences::viewSharedFilesAccess() const { return get(&Data::viewSharedFilesAccess); }
 
-void Preferences::setViewSharedFilesAccess(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->viewSharedFilesAccess = val;
-}
+void Preferences::setViewSharedFilesAccess(int val) { set(&Data::viewSharedFilesAccess, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Download behavior
 // ---------------------------------------------------------------------------
 
-bool Preferences::autoDownloadPriority() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autoDownloadPriority;
-}
+bool Preferences::autoDownloadPriority() const { return get(&Data::autoDownloadPriority); }
 
-void Preferences::setAutoDownloadPriority(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autoDownloadPriority = val;
-}
+void Preferences::setAutoDownloadPriority(bool val) { set(&Data::autoDownloadPriority, val); }
 
-bool Preferences::addNewFilesPaused() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->addNewFilesPaused;
-}
+bool Preferences::addNewFilesPaused() const { return get(&Data::addNewFilesPaused); }
 
-void Preferences::setAddNewFilesPaused(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->addNewFilesPaused = val;
-}
+void Preferences::setAddNewFilesPaused(bool val) { set(&Data::addNewFilesPaused, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Files (extended)
 // ---------------------------------------------------------------------------
 
-bool Preferences::autoSharedFilesPriority() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autoSharedFilesPriority;
-}
+bool Preferences::autoSharedFilesPriority() const { return get(&Data::autoSharedFilesPriority); }
 
-void Preferences::setAutoSharedFilesPriority(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autoSharedFilesPriority = val;
-}
+void Preferences::setAutoSharedFilesPriority(bool val) { set(&Data::autoSharedFilesPriority, val); }
 
-bool Preferences::transferFullChunks() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->transferFullChunks;
-}
+bool Preferences::transferFullChunks() const { return get(&Data::transferFullChunks); }
 
-void Preferences::setTransferFullChunks(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->transferFullChunks = val;
-}
+void Preferences::setTransferFullChunks(bool val) { set(&Data::transferFullChunks, val); }
 
-bool Preferences::previewPrio() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->previewPrio;
-}
+bool Preferences::previewPrio() const { return get(&Data::previewPrio); }
 
-void Preferences::setPreviewPrio(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->previewPrio = val;
-}
+void Preferences::setPreviewPrio(bool val) { set(&Data::previewPrio, val); }
 
-bool Preferences::startNextPausedFile() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->startNextPausedFile;
-}
+bool Preferences::startNextPausedFile() const { return get(&Data::startNextPausedFile); }
 
-void Preferences::setStartNextPausedFile(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->startNextPausedFile = val;
-}
+void Preferences::setStartNextPausedFile(bool val) { set(&Data::startNextPausedFile, val); }
 
-bool Preferences::startNextPausedFileSameCat() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->startNextPausedFileSameCat;
-}
+bool Preferences::startNextPausedFileSameCat() const { return get(&Data::startNextPausedFileSameCat); }
 
-void Preferences::setStartNextPausedFileSameCat(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->startNextPausedFileSameCat = val;
-}
+void Preferences::setStartNextPausedFileSameCat(bool val) { set(&Data::startNextPausedFileSameCat, val); }
 
-bool Preferences::startNextPausedFileOnlySameCat() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->startNextPausedFileOnlySameCat;
-}
+bool Preferences::startNextPausedFileOnlySameCat() const { return get(&Data::startNextPausedFileOnlySameCat); }
 
-void Preferences::setStartNextPausedFileOnlySameCat(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->startNextPausedFileOnlySameCat = val;
-}
+void Preferences::setStartNextPausedFileOnlySameCat(bool val) { set(&Data::startNextPausedFileOnlySameCat, val); }
 
-bool Preferences::rememberDownloadedFiles() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->rememberDownloadedFiles;
-}
+bool Preferences::rememberDownloadedFiles() const { return get(&Data::rememberDownloadedFiles); }
 
-void Preferences::setRememberDownloadedFiles(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->rememberDownloadedFiles = val;
-}
+void Preferences::setRememberDownloadedFiles(bool val) { set(&Data::rememberDownloadedFiles, val); }
 
-bool Preferences::rememberCancelledFiles() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->rememberCancelledFiles;
-}
+bool Preferences::rememberCancelledFiles() const { return get(&Data::rememberCancelledFiles); }
 
-void Preferences::setRememberCancelledFiles(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->rememberCancelledFiles = val;
-}
+void Preferences::setRememberCancelledFiles(bool val) { set(&Data::rememberCancelledFiles, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Disk space
 // ---------------------------------------------------------------------------
 
-bool Preferences::checkDiskspace() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->checkDiskspace;
-}
+bool Preferences::checkDiskspace() const { return get(&Data::checkDiskspace); }
 
-void Preferences::setCheckDiskspace(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->checkDiskspace = val;
-}
+void Preferences::setCheckDiskspace(bool val) { set(&Data::checkDiskspace, val); }
 
-uint64 Preferences::minFreeDiskSpace() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->minFreeDiskSpace;
-}
+uint64 Preferences::minFreeDiskSpace() const { return get(&Data::minFreeDiskSpace); }
 
-void Preferences::setMinFreeDiskSpace(uint64 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->minFreeDiskSpace = val;
-}
+void Preferences::setMinFreeDiskSpace(uint64 val) { set(&Data::minFreeDiskSpace, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Search
 // ---------------------------------------------------------------------------
 
-bool Preferences::enableSearchResultFilter() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->enableSearchResultFilter;
-}
+bool Preferences::enableSearchResultFilter() const { return get(&Data::enableSearchResultFilter); }
 
-void Preferences::setEnableSearchResultFilter(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->enableSearchResultFilter = val;
-}
+void Preferences::setEnableSearchResultFilter(bool val) { set(&Data::enableSearchResultFilter, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Network detection
 // ---------------------------------------------------------------------------
 
-uint32 Preferences::publicIP() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->publicIP;
-}
+uint32 Preferences::publicIP() const { return get(&Data::publicIP); }
 
-void Preferences::setPublicIP(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->publicIP = val;
-}
+void Preferences::setPublicIP(uint32 val) { set(&Data::publicIP, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — GUI (General page)
 // ---------------------------------------------------------------------------
 
-bool Preferences::promptOnExit() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->promptOnExit;
-}
+bool Preferences::promptOnExit() const { return get(&Data::promptOnExit); }
 
-void Preferences::setPromptOnExit(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->promptOnExit = val;
-}
+void Preferences::setPromptOnExit(bool val) { set(&Data::promptOnExit, val); }
 
-bool Preferences::startMinimized() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->startMinimized;
-}
+bool Preferences::startMinimized() const { return get(&Data::startMinimized); }
 
-void Preferences::setStartMinimized(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->startMinimized = val;
-}
+void Preferences::setStartMinimized(bool val) { set(&Data::startMinimized, val); }
 
-bool Preferences::showSplashScreen() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showSplashScreen;
-}
+bool Preferences::showSplashScreen() const { return get(&Data::showSplashScreen); }
 
-void Preferences::setShowSplashScreen(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showSplashScreen = val;
-}
+void Preferences::setShowSplashScreen(bool val) { set(&Data::showSplashScreen, val); }
 
-QString Preferences::language() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->language;
-}
+QString Preferences::language() const { return get(&Data::language); }
 
-void Preferences::setLanguage(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->language = val;
-}
+void Preferences::setLanguage(const QString& val) { set(&Data::language, val); }
 
-bool Preferences::enableOnlineSignature() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->enableOnlineSignature;
-}
+bool Preferences::enableOnlineSignature() const { return get(&Data::enableOnlineSignature); }
 
-void Preferences::setEnableOnlineSignature(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->enableOnlineSignature = val;
-}
+void Preferences::setEnableOnlineSignature(bool val) { set(&Data::enableOnlineSignature, val); }
 
-bool Preferences::enableMiniMule() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->enableMiniMule;
-}
+bool Preferences::enableMiniMule() const { return get(&Data::enableMiniMule); }
 
-void Preferences::setEnableMiniMule(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->enableMiniMule = val;
-}
+void Preferences::setEnableMiniMule(bool val) { set(&Data::enableMiniMule, val); }
 
-bool Preferences::preventStandby() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->preventStandby;
-}
+bool Preferences::preventStandby() const { return get(&Data::preventStandby); }
 
-void Preferences::setPreventStandby(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->preventStandby = val;
-}
+void Preferences::setPreventStandby(bool val) { set(&Data::preventStandby, val); }
 
-bool Preferences::startWithOS() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->startWithOS;
-}
+bool Preferences::startWithOS() const { return get(&Data::startWithOS); }
 
-void Preferences::setStartWithOS(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->startWithOS = val;
-}
+void Preferences::setStartWithOS(bool val) { set(&Data::startWithOS, val); }
 
-uint32 Preferences::startVersion() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->startVersion;
-}
+uint32 Preferences::startVersion() const { return get(&Data::startVersion); }
 
-void Preferences::setStartVersion(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->startVersion = val;
-}
+void Preferences::setStartVersion(uint32 val) { set(&Data::startVersion, val); }
 
-bool Preferences::versionCheckEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->versionCheckEnabled;
-}
+bool Preferences::versionCheckEnabled() const { return get(&Data::versionCheckEnabled); }
 
-void Preferences::setVersionCheckEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->versionCheckEnabled = val;
-}
+void Preferences::setVersionCheckEnabled(bool val) { set(&Data::versionCheckEnabled, val); }
 
-int Preferences::versionCheckDays() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->versionCheckDays;
-}
+int Preferences::versionCheckDays() const { return get(&Data::versionCheckDays); }
 
 void Preferences::setVersionCheckDays(int val)
 {
@@ -3018,537 +1541,193 @@ void Preferences::setVersionCheckDays(int val)
     m_data->versionCheckDays = std::clamp(val, 1, 14);
 }
 
-int64_t Preferences::lastVersionCheck() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->lastVersionCheck;
-}
+int64_t Preferences::lastVersionCheck() const { return get(&Data::lastVersionCheck); }
 
-void Preferences::setLastVersionCheck(int64_t val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->lastVersionCheck = val;
-}
+void Preferences::setLastVersionCheck(int64_t val) { set(&Data::lastVersionCheck, val); }
 
-bool Preferences::bringToFrontOnLinkClick() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->bringToFrontOnLinkClick;
-}
+bool Preferences::bringToFrontOnLinkClick() const { return get(&Data::bringToFrontOnLinkClick); }
 
-void Preferences::setBringToFrontOnLinkClick(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->bringToFrontOnLinkClick = val;
-}
+void Preferences::setBringToFrontOnLinkClick(bool val) { set(&Data::bringToFrontOnLinkClick, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — GUI (Display page)
 // ---------------------------------------------------------------------------
 
-int Preferences::depth3D() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->depth3D;
-}
+int Preferences::depth3D() const { return get(&Data::depth3D); }
 
-void Preferences::setDepth3D(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->depth3D = val;
-}
+void Preferences::setDepth3D(int val) { set(&Data::depth3D, val); }
 
-int Preferences::tooltipDelay() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->tooltipDelay;
-}
+int Preferences::tooltipDelay() const { return get(&Data::tooltipDelay); }
 
-void Preferences::setTooltipDelay(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->tooltipDelay = val;
-}
+void Preferences::setTooltipDelay(int val) { set(&Data::tooltipDelay, val); }
 
-bool Preferences::minimizeToTray() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->minimizeToTray;
-}
+bool Preferences::minimizeToTray() const { return get(&Data::minimizeToTray); }
 
-void Preferences::setMinimizeToTray(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->minimizeToTray = val;
-}
+void Preferences::setMinimizeToTray(bool val) { set(&Data::minimizeToTray, val); }
 
-bool Preferences::transferDoubleClick() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->transferDoubleClick;
-}
+bool Preferences::transferDoubleClick() const { return get(&Data::transferDoubleClick); }
 
-void Preferences::setTransferDoubleClick(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->transferDoubleClick = val;
-}
+void Preferences::setTransferDoubleClick(bool val) { set(&Data::transferDoubleClick, val); }
 
-bool Preferences::showDwlPercentage() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showDwlPercentage;
-}
+bool Preferences::showDwlPercentage() const { return get(&Data::showDwlPercentage); }
 
-void Preferences::setShowDwlPercentage(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showDwlPercentage = val;
-}
+void Preferences::setShowDwlPercentage(bool val) { set(&Data::showDwlPercentage, val); }
 
-bool Preferences::showRatesInTitle() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showRatesInTitle;
-}
+bool Preferences::showRatesInTitle() const { return get(&Data::showRatesInTitle); }
 
-void Preferences::setShowRatesInTitle(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showRatesInTitle = val;
-}
+void Preferences::setShowRatesInTitle(bool val) { set(&Data::showRatesInTitle, val); }
 
-bool Preferences::showCatTabInfos() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showCatTabInfos;
-}
+bool Preferences::showCatTabInfos() const { return get(&Data::showCatTabInfos); }
 
-void Preferences::setShowCatTabInfos(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showCatTabInfos = val;
-}
+void Preferences::setShowCatTabInfos(bool val) { set(&Data::showCatTabInfos, val); }
 
-bool Preferences::autoRemoveFinishedDownloads() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autoRemoveFinishedDownloads;
-}
+bool Preferences::autoRemoveFinishedDownloads() const { return get(&Data::autoRemoveFinishedDownloads); }
 
-void Preferences::setAutoRemoveFinishedDownloads(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autoRemoveFinishedDownloads = val;
-}
+void Preferences::setAutoRemoveFinishedDownloads(bool val) { set(&Data::autoRemoveFinishedDownloads, val); }
 
-bool Preferences::showTransToolbar() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showTransToolbar;
-}
+bool Preferences::showTransToolbar() const { return get(&Data::showTransToolbar); }
 
-void Preferences::setShowTransToolbar(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showTransToolbar = val;
-}
+void Preferences::setShowTransToolbar(bool val) { set(&Data::showTransToolbar, val); }
 
-bool Preferences::showSpeedGraph() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->showSpeedGraph;
-}
+bool Preferences::showSpeedGraph() const { return get(&Data::showSpeedGraph); }
 
-void Preferences::setShowSpeedGraph(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->showSpeedGraph = val;
-}
+void Preferences::setShowSpeedGraph(bool val) { set(&Data::showSpeedGraph, val); }
 
-uint32 Preferences::speedGraphTimeRangeMin() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->speedGraphTimeRangeMin;
-}
+uint32 Preferences::speedGraphTimeRangeMin() const { return get(&Data::speedGraphTimeRangeMin); }
 
-void Preferences::setSpeedGraphTimeRangeMin(uint32 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->speedGraphTimeRangeMin = val;
-}
+void Preferences::setSpeedGraphTimeRangeMin(uint32 val) { set(&Data::speedGraphTimeRangeMin, val); }
 
-bool Preferences::storeSearches() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->storeSearches;
-}
+bool Preferences::storeSearches() const { return get(&Data::storeSearches); }
 
-void Preferences::setStoreSearches(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->storeSearches = val;
-}
+void Preferences::setStoreSearches(bool val) { set(&Data::storeSearches, val); }
 
-bool Preferences::disableKnownClientList() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->disableKnownClientList;
-}
+bool Preferences::disableKnownClientList() const { return get(&Data::disableKnownClientList); }
 
-void Preferences::setDisableKnownClientList(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->disableKnownClientList = val;
-}
+void Preferences::setDisableKnownClientList(bool val) { set(&Data::disableKnownClientList, val); }
 
-bool Preferences::disableQueueList() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->disableQueueList;
-}
+bool Preferences::disableQueueList() const { return get(&Data::disableQueueList); }
 
-void Preferences::setDisableQueueList(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->disableQueueList = val;
-}
+void Preferences::setDisableQueueList(bool val) { set(&Data::disableQueueList, val); }
 
-bool Preferences::useAutoCompletion() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useAutoCompletion;
-}
+bool Preferences::useAutoCompletion() const { return get(&Data::useAutoCompletion); }
 
-void Preferences::setUseAutoCompletion(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useAutoCompletion = val;
-}
+void Preferences::setUseAutoCompletion(bool val) { set(&Data::useAutoCompletion, val); }
 
-bool Preferences::useOriginalIcons() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useOriginalIcons;
-}
+bool Preferences::useOriginalIcons() const { return get(&Data::useOriginalIcons); }
 
-void Preferences::setUseOriginalIcons(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useOriginalIcons = val;
-}
+void Preferences::setUseOriginalIcons(bool val) { set(&Data::useOriginalIcons, val); }
 
-QString Preferences::logFont() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->logFont;
-}
+QString Preferences::logFont() const { return get(&Data::logFont); }
 
-void Preferences::setLogFont(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->logFont = val;
-}
+void Preferences::setLogFont(const QString& val) { set(&Data::logFont, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — GUI (Files page)
 // ---------------------------------------------------------------------------
 
-bool Preferences::watchClipboard4ED2KLinks() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->watchClipboard4ED2KLinks;
-}
+bool Preferences::watchClipboard4ED2KLinks() const { return get(&Data::watchClipboard4ED2KLinks); }
 
-void Preferences::setWatchClipboard4ED2KLinks(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->watchClipboard4ED2KLinks = val;
-}
+void Preferences::setWatchClipboard4ED2KLinks(bool val) { set(&Data::watchClipboard4ED2KLinks, val); }
 
-bool Preferences::useAdvancedCalcRemainingTime() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->useAdvancedCalcRemainingTime;
-}
+bool Preferences::useAdvancedCalcRemainingTime() const { return get(&Data::useAdvancedCalcRemainingTime); }
 
-void Preferences::setUseAdvancedCalcRemainingTime(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->useAdvancedCalcRemainingTime = val;
-}
+void Preferences::setUseAdvancedCalcRemainingTime(bool val) { set(&Data::useAdvancedCalcRemainingTime, val); }
 
-QString Preferences::videoPlayerCommand() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->videoPlayerCommand;
-}
+QString Preferences::videoPlayerCommand() const { return get(&Data::videoPlayerCommand); }
 
-void Preferences::setVideoPlayerCommand(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->videoPlayerCommand = val;
-}
+void Preferences::setVideoPlayerCommand(const QString& val) { set(&Data::videoPlayerCommand, val); }
 
-QString Preferences::videoPlayerArgs() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->videoPlayerArgs;
-}
+QString Preferences::videoPlayerArgs() const { return get(&Data::videoPlayerArgs); }
 
-void Preferences::setVideoPlayerArgs(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->videoPlayerArgs = val;
-}
+void Preferences::setVideoPlayerArgs(const QString& val) { set(&Data::videoPlayerArgs, val); }
 
-bool Preferences::createBackupToPreview() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->createBackupToPreview;
-}
+bool Preferences::createBackupToPreview() const { return get(&Data::createBackupToPreview); }
 
-void Preferences::setCreateBackupToPreview(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->createBackupToPreview = val;
-}
+void Preferences::setCreateBackupToPreview(bool val) { set(&Data::createBackupToPreview, val); }
 
-bool Preferences::autoCleanupFilenames() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->autoCleanupFilenames;
-}
+bool Preferences::autoCleanupFilenames() const { return get(&Data::autoCleanupFilenames); }
 
-void Preferences::setAutoCleanupFilenames(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->autoCleanupFilenames = val;
-}
+void Preferences::setAutoCleanupFilenames(bool val) { set(&Data::autoCleanupFilenames, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Notifications (GUI-side)
 // ---------------------------------------------------------------------------
 
-int Preferences::notifySoundType() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifySoundType;
-}
+int Preferences::notifySoundType() const { return get(&Data::notifySoundType); }
 
-void Preferences::setNotifySoundType(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifySoundType = val;
-}
+void Preferences::setNotifySoundType(int val) { set(&Data::notifySoundType, val); }
 
-QString Preferences::notifySoundFile() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifySoundFile;
-}
+QString Preferences::notifySoundFile() const { return get(&Data::notifySoundFile); }
 
-void Preferences::setNotifySoundFile(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifySoundFile = val;
-}
+void Preferences::setNotifySoundFile(const QString& val) { set(&Data::notifySoundFile, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Notifications (daemon-side)
 // ---------------------------------------------------------------------------
 
-bool Preferences::notifyOnLog() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyOnLog;
-}
+bool Preferences::notifyOnLog() const { return get(&Data::notifyOnLog); }
 
-void Preferences::setNotifyOnLog(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyOnLog = val;
-}
+void Preferences::setNotifyOnLog(bool val) { set(&Data::notifyOnLog, val); }
 
-bool Preferences::notifyOnChat() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyOnChat;
-}
+bool Preferences::notifyOnChat() const { return get(&Data::notifyOnChat); }
 
-void Preferences::setNotifyOnChat(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyOnChat = val;
-}
+void Preferences::setNotifyOnChat(bool val) { set(&Data::notifyOnChat, val); }
 
-bool Preferences::notifyOnChatMsg() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyOnChatMsg;
-}
+bool Preferences::notifyOnChatMsg() const { return get(&Data::notifyOnChatMsg); }
 
-void Preferences::setNotifyOnChatMsg(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyOnChatMsg = val;
-}
+void Preferences::setNotifyOnChatMsg(bool val) { set(&Data::notifyOnChatMsg, val); }
 
-bool Preferences::notifyOnDownloadAdded() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyOnDownloadAdded;
-}
+bool Preferences::notifyOnDownloadAdded() const { return get(&Data::notifyOnDownloadAdded); }
 
-void Preferences::setNotifyOnDownloadAdded(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyOnDownloadAdded = val;
-}
+void Preferences::setNotifyOnDownloadAdded(bool val) { set(&Data::notifyOnDownloadAdded, val); }
 
-bool Preferences::notifyOnDownloadFinished() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyOnDownloadFinished;
-}
+bool Preferences::notifyOnDownloadFinished() const { return get(&Data::notifyOnDownloadFinished); }
 
-void Preferences::setNotifyOnDownloadFinished(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyOnDownloadFinished = val;
-}
+void Preferences::setNotifyOnDownloadFinished(bool val) { set(&Data::notifyOnDownloadFinished, val); }
 
-bool Preferences::notifyOnNewVersion() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyOnNewVersion;
-}
+bool Preferences::notifyOnNewVersion() const { return get(&Data::notifyOnNewVersion); }
 
-void Preferences::setNotifyOnNewVersion(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyOnNewVersion = val;
-}
+void Preferences::setNotifyOnNewVersion(bool val) { set(&Data::notifyOnNewVersion, val); }
 
-bool Preferences::notifyOnUrgent() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyOnUrgent;
-}
+bool Preferences::notifyOnUrgent() const { return get(&Data::notifyOnUrgent); }
 
-void Preferences::setNotifyOnUrgent(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyOnUrgent = val;
-}
+void Preferences::setNotifyOnUrgent(bool val) { set(&Data::notifyOnUrgent, val); }
 
-bool Preferences::notifyEmailEnabled() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailEnabled;
-}
+bool Preferences::notifyEmailEnabled() const { return get(&Data::notifyEmailEnabled); }
 
-void Preferences::setNotifyEmailEnabled(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailEnabled = val;
-}
+void Preferences::setNotifyEmailEnabled(bool val) { set(&Data::notifyEmailEnabled, val); }
 
-QString Preferences::notifyEmailSmtpServer() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailSmtpServer;
-}
+QString Preferences::notifyEmailSmtpServer() const { return get(&Data::notifyEmailSmtpServer); }
 
-void Preferences::setNotifyEmailSmtpServer(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailSmtpServer = val;
-}
+void Preferences::setNotifyEmailSmtpServer(const QString& val) { set(&Data::notifyEmailSmtpServer, val); }
 
-uint16 Preferences::notifyEmailSmtpPort() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailSmtpPort;
-}
+uint16 Preferences::notifyEmailSmtpPort() const { return get(&Data::notifyEmailSmtpPort); }
 
-void Preferences::setNotifyEmailSmtpPort(uint16 val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailSmtpPort = val;
-}
+void Preferences::setNotifyEmailSmtpPort(uint16 val) { set(&Data::notifyEmailSmtpPort, val); }
 
-int Preferences::notifyEmailSmtpAuth() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailSmtpAuth;
-}
+int Preferences::notifyEmailSmtpAuth() const { return get(&Data::notifyEmailSmtpAuth); }
 
-void Preferences::setNotifyEmailSmtpAuth(int val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailSmtpAuth = val;
-}
+void Preferences::setNotifyEmailSmtpAuth(int val) { set(&Data::notifyEmailSmtpAuth, val); }
 
-bool Preferences::notifyEmailSmtpTls() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailSmtpTls;
-}
+bool Preferences::notifyEmailSmtpTls() const { return get(&Data::notifyEmailSmtpTls); }
 
-void Preferences::setNotifyEmailSmtpTls(bool val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailSmtpTls = val;
-}
+void Preferences::setNotifyEmailSmtpTls(bool val) { set(&Data::notifyEmailSmtpTls, val); }
 
-QString Preferences::notifyEmailSmtpUser() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailSmtpUser;
-}
+QString Preferences::notifyEmailSmtpUser() const { return get(&Data::notifyEmailSmtpUser); }
 
-void Preferences::setNotifyEmailSmtpUser(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailSmtpUser = val;
-}
+void Preferences::setNotifyEmailSmtpUser(const QString& val) { set(&Data::notifyEmailSmtpUser, val); }
 
-QString Preferences::notifyEmailSmtpPassword() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailSmtpPassword;
-}
+QString Preferences::notifyEmailSmtpPassword() const { return get(&Data::notifyEmailSmtpPassword); }
 
-void Preferences::setNotifyEmailSmtpPassword(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailSmtpPassword = val;
-}
+void Preferences::setNotifyEmailSmtpPassword(const QString& val) { set(&Data::notifyEmailSmtpPassword, val); }
 
-QString Preferences::notifyEmailRecipient() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailRecipient;
-}
+QString Preferences::notifyEmailRecipient() const { return get(&Data::notifyEmailRecipient); }
 
-void Preferences::setNotifyEmailRecipient(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailRecipient = val;
-}
+void Preferences::setNotifyEmailRecipient(const QString& val) { set(&Data::notifyEmailRecipient, val); }
 
-QString Preferences::notifyEmailSender() const
-{
-    QReadLocker lock(&m_lock);
-    return m_data->notifyEmailSender;
-}
+QString Preferences::notifyEmailSender() const { return get(&Data::notifyEmailSender); }
 
-void Preferences::setNotifyEmailSender(const QString& val)
-{
-    QWriteLocker lock(&m_lock);
-    m_data->notifyEmailSender = val;
-}
+void Preferences::setNotifyEmailSender(const QString& val) { set(&Data::notifyEmailSender, val); }
 
 // ---------------------------------------------------------------------------
 // IPC sync

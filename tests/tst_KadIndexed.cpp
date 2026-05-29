@@ -5,9 +5,15 @@
 
 #include "kademlia/KadEntry.h"
 #include "kademlia/KadIndexed.h"
+#include "kademlia/KadResultPacketWriter.h"
+#include "kademlia/KadTypes.h"
 #include "kademlia/KadUInt128.h"
+#include "utils/MapKey.h"
+#include "utils/SafeFile.h"
 
 #include <QTest>
+
+#include <ctime>
 
 using namespace eMule;
 using namespace eMule::kad;
@@ -24,6 +30,13 @@ private slots:
     void getFileKeyCount();
     void addKeyword_duplicateSource();
     void sendStoreRequest_check();
+
+    // Refactor coverage: extracted KadResultPacketWriter.h helpers.
+    void resultPacketSender_header();
+    void resultPacketSender_fragments();
+    void cleanIndex_srcHash();
+    void cleanIndex_keyHash();
+    void addSources_replacesDuplicate();
 };
 
 void tst_KadIndexed::construct_empty()
@@ -168,6 +181,152 @@ void tst_KadIndexed::sendStoreRequest_check()
     // After adding a load entry with current time, store should be blocked
     indexed.addLoad(keyID, time(nullptr));
     QVERIFY(!indexed.sendStoreRequest(keyID));
+}
+
+void tst_KadIndexed::resultPacketSender_header()
+{
+    UInt128 kadId(uint32{0xAABBCCDD});
+    UInt128 keyID(uint32{0x11223344});
+
+    QList<QByteArray> sent;
+    ResultPacketSender sender(kadId, keyID,
+        [&](SafeMemFile& pkt) { sent.append(pkt.buffer()); });
+
+    SafeMemFile body;
+    body.writeUInt32(0xDEADBEEF); // 4-byte payload
+    sender.addResult(body);
+    sender.flush();
+
+    QCOMPARE(sent.size(), 1);
+    // header = kadId(16) + keyID(16) + count(2), then 4-byte body
+    QCOMPARE(static_cast<int>(sent.first().size()), 16 + 16 + 2 + 4);
+
+    SafeMemFile reader(sent.first());
+    reader.seek(32, 0); // skip kadId + keyID to the count field
+    QCOMPARE(reader.readUInt16(), uint16{1});
+}
+
+void tst_KadIndexed::resultPacketSender_fragments()
+{
+    UInt128 kadId(uint32{1});
+    UInt128 keyID(uint32{2});
+
+    QList<QByteArray> sent;
+    ResultPacketSender sender(kadId, keyID,
+        [&](SafeMemFile& pkt) { sent.append(pkt.buffer()); });
+
+    // 500-byte bodies force multiple packets below UDP_KAD_MAXFRAGMENT (1420).
+    constexpr int kResults = 10;
+    const QByteArray payload(500, 'x');
+    for (int i = 0; i < kResults; ++i) {
+        SafeMemFile body;
+        body.write(payload.constData(), payload.size());
+        sender.addResult(body);
+    }
+    sender.flush();
+
+    QVERIFY(sent.size() >= 2); // fragmented across packets
+
+    int totalCount = 0;
+    for (const QByteArray& pkt : sent) {
+        SafeMemFile reader(pkt);
+        reader.seek(32, 0);
+        totalCount += reader.readUInt16();
+    }
+    QCOMPARE(totalCount, kResults); // every result accounted for exactly once
+}
+
+void tst_KadIndexed::cleanIndex_srcHash()
+{
+    SrcHashMap map;
+    UInt128 keyID(uint32{42});
+    HashKeyOwn key(keyID.getData());
+
+    auto* srcHash = new SrcHash();
+    srcHash->keyID = keyID;
+
+    // Expired source: lifetime > 0 and < now -> pruned.
+    auto* expiredSrc = new Source();
+    expiredSrc->sourceID = UInt128(uint32{1});
+    auto* expiredEntry = new Entry();
+    expiredEntry->m_lifetime = 1;
+    expiredSrc->entryList.push_back(expiredEntry);
+    srcHash->sourceList.push_back(expiredSrc);
+
+    // Live source: future lifetime -> kept.
+    auto* liveSrc = new Source();
+    liveSrc->sourceID = UInt128(uint32{2});
+    auto* liveEntry = new Entry();
+    liveEntry->m_lifetime = time(nullptr) + 100000;
+    liveSrc->entryList.push_back(liveEntry);
+    srcHash->sourceList.push_back(liveSrc);
+
+    map[key] = srcHash;
+
+    uint32 counter = 2;
+    cleanIndex(map, time(nullptr), counter);
+
+    QCOMPARE(counter, uint32{1});                                  // one entry removed
+    QCOMPARE(static_cast<int>(map.size()), 1);                     // hash kept (live source)
+    QCOMPARE(static_cast<int>(map[key]->sourceList.size()), 1);    // only live source left
+
+    destroyIndex(map);
+}
+
+void tst_KadIndexed::cleanIndex_keyHash()
+{
+    KeyHashMap map;
+    UInt128 keyID(uint32{7});
+    HashKeyOwn key(keyID.getData());
+
+    auto* keyHash = new KeyHash();
+    keyHash->keyID = keyID;
+
+    UInt128 srcA(uint32{1});
+    auto* expiredSrc = new Source();
+    expiredSrc->sourceID = srcA;
+    auto* expiredEntry = new KeyEntry();
+    expiredEntry->m_lifetime = 1;
+    expiredSrc->entryList.push_back(expiredEntry);
+    keyHash->mapSource[HashKeyOwn(srcA.getData())] = expiredSrc;
+
+    UInt128 srcB(uint32{2});
+    auto* liveSrc = new Source();
+    liveSrc->sourceID = srcB;
+    auto* liveEntry = new KeyEntry();
+    liveEntry->m_lifetime = time(nullptr) + 100000;
+    liveSrc->entryList.push_back(liveEntry);
+    keyHash->mapSource[HashKeyOwn(srcB.getData())] = liveSrc;
+
+    map[key] = keyHash;
+
+    uint32 counter = 2;
+    cleanIndex(map, time(nullptr), counter); // exercises the map/->second overload
+
+    QCOMPARE(counter, uint32{1});
+    QCOMPARE(static_cast<int>(map.size()), 1);
+    QCOMPARE(static_cast<int>(map[key]->mapSource.size()), 1);
+
+    destroyIndex(map);
+}
+
+void tst_KadIndexed::addSources_replacesDuplicate()
+{
+    Indexed indexed;
+    UInt128 keyID(uint32{300});
+    UInt128 sourceID(uint32{400});
+    uint8 load = 0;
+
+    auto* e1 = new Entry();
+    e1->m_size = 111;
+    QVERIFY(indexed.addSources(keyID, sourceID, e1, load));
+    QCOMPARE(indexed.m_totalIndexSource, uint32{1});
+
+    // Same key + source: addSourceEntry replaces (deletes e1), does not accumulate.
+    auto* e2 = new Entry();
+    e2->m_size = 222;
+    QVERIFY(indexed.addSources(keyID, sourceID, e2, load));
+    QCOMPARE(indexed.m_totalIndexSource, uint32{1});
 }
 
 QTEST_GUILESS_MAIN(tst_KadIndexed)

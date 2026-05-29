@@ -6,8 +6,9 @@
 /// A single model class serves all 4 tabs (Uploading, Downloading, On Queue,
 /// Known Clients) by switching the column set based on the mode.
 
-#include <QAbstractTableModel>
 #include <QString>
+
+#include "AbstractTableModel.h"
 
 #include <cstdint>
 #include <vector>
@@ -56,27 +57,25 @@ struct ClientRow {
 };
 
 /// Table model backing the client list tree views in the Transfer panel.
-class ClientListModel : public QAbstractTableModel {
+class ClientListModel : public AbstractTableModel<ClientRow> {
     Q_OBJECT
 
 public:
     explicit ClientListModel(ClientListMode mode, QObject* parent = nullptr);
 
-    [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
-    [[nodiscard]] int columnCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
 
     /// Replace all clients with a new snapshot.
-    void setClients(std::vector<ClientRow> clients);
+    void setClients(std::vector<ClientRow> clients) { setRows(std::move(clients)); }
 
-    /// Clear all clients.
-    void clear();
-
-    [[nodiscard]] int clientCount() const { return static_cast<int>(m_clients.size()); }
+    [[nodiscard]] int clientCount() const { return count(); }
     [[nodiscard]] ClientListMode mode() const { return m_mode; }
-    [[nodiscard]] const ClientRow* clientAt(int row) const;
+    [[nodiscard]] const ClientRow* clientAt(int row) const { return rowAt(row); }
+
+protected:
+    [[nodiscard]] int columnCountValue() const override;
 
 private:
     [[nodiscard]] QVariant displayData(const ClientRow& c, int column) const;
@@ -84,7 +83,6 @@ private:
     [[nodiscard]] QVariant headerLabel(int column) const;
 
     ClientListMode m_mode;
-    std::vector<ClientRow> m_clients;
 };
 
 } // namespace eMule

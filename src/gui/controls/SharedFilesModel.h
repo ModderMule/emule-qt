@@ -3,9 +3,10 @@
 /// @file SharedFilesModel.h
 /// @brief Table model for the Shared Files list.
 
-#include <QAbstractTableModel>
 #include <QSortFilterProxyModel>
 #include <QString>
+
+#include "AbstractTableModel.h"
 
 #include <cstdint>
 #include <vector>
@@ -46,7 +47,7 @@ struct SharedFileRow {
 };
 
 /// Table model backing the shared files tree view.
-class SharedFilesModel : public QAbstractTableModel {
+class SharedFilesModel : public AbstractTableModel<SharedFileRow> {
     Q_OBJECT
 
 public:
@@ -69,31 +70,26 @@ public:
 
     explicit SharedFilesModel(QObject* parent = nullptr);
 
-    [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
-    [[nodiscard]] int columnCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
 
     /// Replace all files with a new snapshot.
-    void setFiles(std::vector<SharedFileRow> files);
+    void setFiles(std::vector<SharedFileRow> files) { setRows(std::move(files)); }
 
-    /// Clear all files.
-    void clear();
-
-    [[nodiscard]] int fileCount() const { return static_cast<int>(m_files.size()); }
+    [[nodiscard]] int fileCount() const { return count(); }
 
     /// Get the file hash for a row index.
     [[nodiscard]] QString hashAt(int row) const;
 
     /// Get the full row for a row index (nullptr if out of range).
-    [[nodiscard]] const SharedFileRow* fileAt(int row) const;
+    [[nodiscard]] const SharedFileRow* fileAt(int row) const { return rowAt(row); }
 
     /// Check if a file with the given hex hash is in the shared files list.
     [[nodiscard]] bool containsHash(const QString& hexHash) const;
 
-private:
-    std::vector<SharedFileRow> m_files;
+protected:
+    [[nodiscard]] int columnCountValue() const override { return ColCount; }
 };
 
 // ---------------------------------------------------------------------------

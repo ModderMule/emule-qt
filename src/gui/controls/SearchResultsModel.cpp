@@ -97,26 +97,16 @@ QIcon fileTypeIcon(const QString& type)
 } // anonymous namespace
 
 SearchResultsModel::SearchResultsModel(QObject* parent)
-    : QAbstractTableModel(parent)
+    : AbstractTableModel<SearchResultRow>(parent)
 {
-}
-
-int SearchResultsModel::rowCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : static_cast<int>(m_results.size());
-}
-
-int SearchResultsModel::columnCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : ColCount;
 }
 
 QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || index.row() >= static_cast<int>(m_results.size()))
+    if (!index.isValid() || index.row() >= static_cast<int>(m_rows.size()))
         return {};
 
-    const auto& r = m_results[static_cast<size_t>(index.row())];
+    const auto& r = m_rows[static_cast<size_t>(index.row())];
 
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
@@ -198,39 +188,18 @@ QVariant SearchResultsModel::headerData(int section, Qt::Orientation orientation
     }
 }
 
-void SearchResultsModel::setResults(std::vector<SearchResultRow> results)
-{
-    beginResetModel();
-    m_results = std::move(results);
-    endResetModel();
-}
-
-void SearchResultsModel::clear()
-{
-    beginResetModel();
-    m_results.clear();
-    endResetModel();
-}
-
 QString SearchResultsModel::hashAt(int row) const
 {
-    if (row >= 0 && row < static_cast<int>(m_results.size()))
-        return m_results[static_cast<size_t>(row)].hash;
+    if (const SearchResultRow* r = rowAt(row))
+        return r->hash;
     return {};
-}
-
-const SearchResultRow* SearchResultsModel::resultAt(int row) const
-{
-    if (row >= 0 && row < static_cast<int>(m_results.size()))
-        return &m_results[static_cast<size_t>(row)];
-    return nullptr;
 }
 
 void SearchResultsModel::setKnownType(int row, int knownType)
 {
-    if (row < 0 || row >= static_cast<int>(m_results.size()))
+    if (row < 0 || row >= static_cast<int>(m_rows.size()))
         return;
-    auto& r = m_results[static_cast<size_t>(row)];
+    auto& r = m_rows[static_cast<size_t>(row)];
     if (r.knownType == knownType)
         return;
     r.knownType = knownType;
@@ -239,10 +208,10 @@ void SearchResultsModel::setKnownType(int row, int knownType)
 
 void SearchResultsModel::updateKnownTypes(const QHash<QString, int>& typesByHash)
 {
-    for (int i = 0; i < static_cast<int>(m_results.size()); ++i) {
-        auto it = typesByHash.find(m_results[static_cast<size_t>(i)].hash);
-        if (it != typesByHash.end() && m_results[static_cast<size_t>(i)].knownType != it.value()) {
-            m_results[static_cast<size_t>(i)].knownType = it.value();
+    for (int i = 0; i < static_cast<int>(m_rows.size()); ++i) {
+        auto it = typesByHash.find(m_rows[static_cast<size_t>(i)].hash);
+        if (it != typesByHash.end() && m_rows[static_cast<size_t>(i)].knownType != it.value()) {
+            m_rows[static_cast<size_t>(i)].knownType = it.value();
             emit dataChanged(index(i, 0), index(i, ColCount - 1));
         }
     }
@@ -250,10 +219,10 @@ void SearchResultsModel::updateKnownTypes(const QHash<QString, int>& typesByHash
 
 void SearchResultsModel::removeRow(int row)
 {
-    if (row < 0 || row >= static_cast<int>(m_results.size()))
+    if (row < 0 || row >= static_cast<int>(m_rows.size()))
         return;
     beginRemoveRows({}, row, row);
-    m_results.erase(m_results.begin() + row);
+    m_rows.erase(m_rows.begin() + row);
     endRemoveRows();
 }
 

@@ -327,6 +327,7 @@
     <ClInclude Include="kademlia\KadMiscUtils.h" />
     <ClInclude Include="kademlia\KadPacketTracking.h" />
     <ClInclude Include="kademlia\KadPrefs.h" />
+    <ClInclude Include="kademlia\KadResultPacketWriter.h" />
     <ClInclude Include="kademlia\KadRoutingBin.h" />
     <QtMoc Include="kademlia\KadRoutingZone.h" />
     <ClInclude Include="kademlia\KadSafeKad.h" />
