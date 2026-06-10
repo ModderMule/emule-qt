@@ -110,8 +110,8 @@ public:
         const uint8* clientHash, uint16 udpPort)>;
     /// Callback type for Kad notes results.
     using KadNotesResultCallback = std::function<void(uint32 searchID,
-        const uint8* fileHash, const QString& name, uint8 rating,
-        const QString& comment)>;
+        const uint8* fileHash, const uint8* publisherId, const QString& name,
+        uint8 rating, const QString& comment)>;
 
     static void setKadKeywordResultCallback(KadKeywordResultCallback cb) { s_keywordResultCb = std::move(cb); }
     static void setKadSourceResultCallback(KadSourceResultCallback cb) { s_sourceResultCb = std::move(cb); }

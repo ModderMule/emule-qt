@@ -253,30 +253,35 @@ QWidget* FileDetailDialog::createFileNamesTab(const QCborMap& d)
     auto* page = new QWidget;
     auto* layout = new QVBoxLayout(page);
 
-    auto* tree = new QTreeWidget;
-    tree->setHeaderLabels({tr("File Name"), tr("Sources")});
-    tree->setRootIsDecorated(false);
-    tree->setAlternatingRowColors(true);
-    tree->setSortingEnabled(true);
-    tree->header()->setStretchLastSection(false);
-    tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    tree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_fileNamesTree = new QTreeWidget;
+    m_fileNamesTree->setHeaderLabels({tr("File Name"), tr("Sources")});
+    m_fileNamesTree->setRootIsDecorated(false);
+    m_fileNamesTree->setAlternatingRowColors(true);
+    m_fileNamesTree->setSortingEnabled(true);
+    m_fileNamesTree->header()->setStretchLastSection(false);
+    m_fileNamesTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_fileNamesTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 
-    const QCborArray names = d.value(QLatin1StringView("sourceNames")).toArray();
-    for (const auto& entry : names) {
-        const QCborMap m = entry.toMap();
-        auto* item = new QTreeWidgetItem(tree);
-        item->setText(0, m.value(QLatin1StringView("name")).toString());
-        const int count = static_cast<int>(m.value(QLatin1StringView("count")).toInteger());
-        item->setData(1, Qt::DisplayRole, count);
-    }
-    tree->sortByColumn(1, Qt::DescendingOrder);
+    m_fileNamesEmptyLabel = new QLabel(
+        tr("No alternative file names reported by sources. "
+           "Use “Search Kad” to look them up."));
+    m_fileNamesEmptyLabel->setWordWrap(true);
+    layout->addWidget(m_fileNamesEmptyLabel);
+    layout->addWidget(m_fileNamesTree);
 
-    if (names.isEmpty()) {
-        layout->addWidget(new QLabel(tr("No alternative file names reported by sources.")));
-    }
+    populateFileNames(d);
 
-    layout->addWidget(tree);
+    // "Search Kad" button — same Kad notes lookup as the Comments tab (a notes
+    // search is the only Kad lookup that returns filenames for a file hash).
+    const QString fileHash = d.value(QLatin1StringView("hash")).toString();
+    const QString fileName = str(d, QLatin1StringView("fileName"));
+    auto* searchKadBtn = new QPushButton(tr("Search Kad"));
+    searchKadBtn->setIcon(QIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
+    connect(searchKadBtn, &QPushButton::clicked, this, [this, fileHash, fileName]() {
+        emit searchKadNotes(fileHash, fileName);
+    });
+    layout->addWidget(searchKadBtn);
+
     return page;
 }
 
@@ -287,19 +292,68 @@ QWidget* FileDetailDialog::createCommentsTab(const QCborMap& d)
     auto* page = new QWidget;
     auto* layout = new QVBoxLayout(page);
 
-    auto* tree = new QTreeWidget;
-    tree->setHeaderLabels({tr("User Name"), tr("Rating"), tr("Comment")});
-    tree->setRootIsDecorated(false);
-    tree->setAlternatingRowColors(true);
-    tree->setSortingEnabled(true);
-    tree->header()->setStretchLastSection(true);
-    tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    tree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_commentsTree = new QTreeWidget;
+    m_commentsTree->setHeaderLabels({tr("User Name"), tr("Rating"), tr("Comment")});
+    m_commentsTree->setRootIsDecorated(false);
+    m_commentsTree->setAlternatingRowColors(true);
+    m_commentsTree->setSortingEnabled(true);
+    m_commentsTree->header()->setStretchLastSection(true);
+    m_commentsTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_commentsTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 
+    m_commentsEmptyLabel =
+        new QLabel(tr("No comments or ratings available for this file."));
+    m_commentsEmptyLabel->setWordWrap(true);
+    layout->addWidget(m_commentsEmptyLabel);
+    layout->addWidget(m_commentsTree);
+
+    populateComments(d);
+
+    // "Search Kad" button — triggers a Kad notes lookup for this file
+    const QString fileHash = d.value(QLatin1StringView("hash")).toString();
+    const QString fileName = str(d, QLatin1StringView("fileName"));
+    auto* searchKadBtn = new QPushButton(tr("Search Kad"));
+    searchKadBtn->setIcon(QIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
+    connect(searchKadBtn, &QPushButton::clicked, this, [this, fileHash, fileName]() {
+        emit searchKadNotes(fileHash, fileName);
+    });
+    layout->addWidget(searchKadBtn);
+
+    return page;
+}
+
+// ── Dynamic-tab population / refresh ───────────────────────────────────
+
+void FileDetailDialog::populateFileNames(const QCborMap& d)
+{
+    if (!m_fileNamesTree)
+        return;
+
+    m_fileNamesTree->clear();
+    const QCborArray names = d.value(QLatin1StringView("sourceNames")).toArray();
+    for (const auto& entry : names) {
+        const QCborMap m = entry.toMap();
+        auto* item = new QTreeWidgetItem(m_fileNamesTree);
+        item->setText(0, m.value(QLatin1StringView("name")).toString());
+        const int count = static_cast<int>(m.value(QLatin1StringView("count")).toInteger());
+        item->setData(1, Qt::DisplayRole, count);
+    }
+    m_fileNamesTree->sortByColumn(1, Qt::DescendingOrder);
+
+    if (m_fileNamesEmptyLabel)
+        m_fileNamesEmptyLabel->setVisible(names.isEmpty());
+}
+
+void FileDetailDialog::populateComments(const QCborMap& d)
+{
+    if (!m_commentsTree)
+        return;
+
+    m_commentsTree->clear();
     const QCborArray commentArr = d.value(QLatin1StringView("comments")).toArray();
     for (const auto& entry : commentArr) {
         const QCborMap m = entry.toMap();
-        auto* item = new QTreeWidgetItem(tree);
+        auto* item = new QTreeWidgetItem(m_commentsTree);
         item->setText(0, m.value(QLatin1StringView("userName")).toString());
         const int rating = static_cast<int>(m.value(QLatin1StringView("rating")).toInteger());
         item->setText(1, ratingStars(rating));
@@ -307,22 +361,14 @@ QWidget* FileDetailDialog::createCommentsTab(const QCborMap& d)
         item->setText(2, m.value(QLatin1StringView("comment")).toString());
     }
 
-    if (commentArr.isEmpty()) {
-        layout->addWidget(new QLabel(tr("No comments or ratings available for this file.")));
-    }
+    if (m_commentsEmptyLabel)
+        m_commentsEmptyLabel->setVisible(commentArr.isEmpty());
+}
 
-    layout->addWidget(tree);
-
-    // "Search Kad" button — triggers a Kad notes lookup for this file
-    const QString fileHash = d.value(QLatin1StringView("hash")).toString();
-    auto* searchKadBtn = new QPushButton(tr("Search Kad"));
-    searchKadBtn->setIcon(QIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
-    connect(searchKadBtn, &QPushButton::clicked, this, [this, fileHash]() {
-        emit searchKadNotes(fileHash);
-    });
-    layout->addWidget(searchKadBtn);
-
-    return page;
+void FileDetailDialog::applyDetails(const QCborMap& details)
+{
+    populateFileNames(details);
+    populateComments(details);
 }
 
 // ── Media Info tab ─────────────────────────────────────────────────────

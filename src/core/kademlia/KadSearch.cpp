@@ -631,12 +631,15 @@ void Search::processResultNotes(const UInt128& answer, TagList& info)
         }
     }
 
-    // Report via callback
+    // Report via callback. For a notes search the search target IS the file hash;
+    // `answer` is the note publisher's source ID (used downstream to dedup results).
     const auto& cb = Kademlia::kadNotesResultCallback();
     if (cb) {
         uint8 fileHash[16];
-        answer.toByteArray(fileHash);
-        cb(m_searchID, fileHash, fileName, rating, comment);
+        m_target.toByteArray(fileHash);
+        uint8 publisherId[16];
+        answer.toByteArray(publisherId);
+        cb(m_searchID, fileHash, publisherId, fileName, rating, comment);
     }
 
     logKad(QStringLiteral("Kad search %1: got notes result %2, rating=%3")

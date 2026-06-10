@@ -8,8 +8,10 @@
 #include <QDialog>
 
 class QCheckBox;
+class QLabel;
 class QTabWidget;
 class QTextEdit;
+class QTreeWidget;
 
 namespace eMule {
 
@@ -34,7 +36,12 @@ public:
                               QWidget* parent = nullptr);
 
 signals:
-    void searchKadNotes(const QString& fileHash);
+    void searchKadNotes(const QString& fileHash, const QString& fileName);
+
+public slots:
+    /// Re-populate the dynamic tabs (File Names + Comments) from a fresh details
+    /// map. Called by the owning panel after a Kad search returns new results.
+    void applyDetails(const QCborMap& details);
 
 private:
     QWidget* createGeneralTab(const QCborMap& details);
@@ -47,7 +54,17 @@ private:
 
     void updateEd2kLinkDisplay();
 
+    // Fill the dynamic tabs from a details map (used at build time and on refresh).
+    void populateFileNames(const QCborMap& details);
+    void populateComments(const QCborMap& details);
+
     QTabWidget* m_tabs = nullptr;
+
+    // Dynamic-tab widgets, repopulated by applyDetails().
+    QTreeWidget* m_fileNamesTree       = nullptr;
+    QLabel*      m_fileNamesEmptyLabel  = nullptr;
+    QTreeWidget* m_commentsTree        = nullptr;
+    QLabel*      m_commentsEmptyLabel   = nullptr;
 
     // ED2K Link tab state
     QTextEdit* m_linkEdit       = nullptr;

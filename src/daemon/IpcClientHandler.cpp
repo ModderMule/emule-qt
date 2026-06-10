@@ -651,6 +651,7 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
 void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
 {
     const QString hash = msg.fieldString(0);
+    const QString fileName = msg.fieldString(1); // optional; shown in the Kad search list
     if (hash.size() != 32) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
@@ -671,7 +672,7 @@ void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
     kad::UInt128 target;
     target.setValueBE(reinterpret_cast<const uint8*>(hashBytes.constData()));
 
-    const bool ok = kad::SearchManager::prepareLookup(kad::SearchType::Notes, true, target) != nullptr;
+    const bool ok = kad::SearchManager::prepareLookup(kad::SearchType::Notes, true, target, fileName) != nullptr;
     sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
 }
 
@@ -2864,6 +2865,28 @@ void IpcClientHandler::handleSetDownloadCategory(const IpcMessage& msg)
 // handleGetDownloadDetails — return extended download info
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/// Merge a file's cached Kad notes-search results (filenames + comments) into the
+/// File Names (name→count) and Comments aggregates shared by the detail handlers.
+/// The "count" for a name is the number of distinct note publishers reporting it.
+void mergeKadNotes(const KnownFile& file,
+                   std::unordered_map<QString, int>& nameCounts,
+                   QCborArray& comments)
+{
+    for (const auto& [publisherId, info] : file.kadNotes()) {
+        if (!info.fileName.isEmpty())
+            nameCounts[info.fileName]++;
+        if (!info.comment.isEmpty() || info.rating > 0)
+            comments.append(QCborMap{
+                {QLatin1StringView("userName"), QStringLiteral("Kad")},
+                {QLatin1StringView("rating"), info.rating},
+                {QLatin1StringView("comment"), info.comment}});
+    }
+}
+
+} // namespace
+
 void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
 {
     const QString hash = msg.fieldString(0);
@@ -2897,20 +2920,14 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
         details.insert(QLatin1StringView("aichHash"),
             pf->aichRecoveryHashSet().getMasterHash().getString());
 
-    // Source names: collect unique filenames with count
-    QCborArray sourceNames;
+    // Source names: unique filenames with count, from live sources...
     std::unordered_map<QString, int> nameMap;
     for (const auto* client : pf->srcList()) {
         if (!client->clientFilename().isEmpty())
             nameMap[client->clientFilename()]++;
     }
-    for (const auto& [name, count] : nameMap)
-        sourceNames.append(QCborMap{
-            {QLatin1StringView("name"), name},
-            {QLatin1StringView("count"), count}});
-    details.insert(QLatin1StringView("sourceNames"), sourceNames);
 
-    // Comments: from sources + kad notes
+    // Comments: from live sources...
     QCborArray comments;
     for (const auto* client : pf->srcList()) {
         if (!client->fileComment().isEmpty() || client->fileRating() > 0)
@@ -2919,6 +2936,16 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
                 {QLatin1StringView("rating"), client->fileRating()},
                 {QLatin1StringView("comment"), client->fileComment()}});
     }
+
+    // ...augmented with cached Kad notes (filenames + comments by file hash).
+    mergeKadNotes(*pf, nameMap, comments);
+
+    QCborArray sourceNames;
+    for (const auto& [name, count] : nameMap)
+        sourceNames.append(QCborMap{
+            {QLatin1StringView("name"), name},
+            {QLatin1StringView("count"), count}});
+    details.insert(QLatin1StringView("sourceNames"), sourceNames);
     details.insert(QLatin1StringView("comments"), comments);
 
     // ED2K links (pre-generated variants)
@@ -3094,9 +3121,19 @@ void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
     }
     details.insert(QLatin1StringView("tags"), tagArr);
 
-    // Comments and sourceNames (empty for shared KnownFiles — dialog expects these fields)
-    details.insert(QLatin1StringView("comments"), QCborArray());
-    details.insert(QLatin1StringView("sourceNames"), QCborArray());
+    // Completed/shared files have no live download sources, so File Names and
+    // Comments come entirely from cached Kad notes-search results (if any).
+    std::unordered_map<QString, int> nameMap;
+    QCborArray comments;
+    mergeKadNotes(*kf, nameMap, comments);
+
+    QCborArray sourceNames;
+    for (const auto& [name, count] : nameMap)
+        sourceNames.append(QCborMap{
+            {QLatin1StringView("name"), name},
+            {QLatin1StringView("count"), count}});
+    details.insert(QLatin1StringView("sourceNames"), sourceNames);
+    details.insert(QLatin1StringView("comments"), comments);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
 }

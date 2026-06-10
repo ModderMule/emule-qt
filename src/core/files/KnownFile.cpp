@@ -26,6 +26,9 @@
 #include <QFile>
 #include <QFileInfo>
 
+#include <algorithm>
+#include <vector>
+
 
 namespace eMule {
 
@@ -230,6 +233,12 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
                 fileIdentifier().loadAICHHashsetFromFile(hashsetFile, false);
             }
             break;
+        case FT_KADNOTECACHE:
+            // Consume here (don't fall through to addTagUnique) so it isn't both
+            // deserialized and re-written from the extra-tags list.
+            if (tag.isBlob())
+                deserializeKadNotes(tag.blobValue());
+            break;
         default:
             addTagUnique(std::move(tag));
             break;
@@ -288,6 +297,10 @@ bool KnownFile::writeToFile(FileDataIO& file) const
     bool writeAICHHashset = fileIdentifier().hasAICHHash()
                             && fileIdentifier().hasExpectedAICHHashCount();
     if (writeAICHHashset)
+        ++tagCount;
+
+    // Cached Kad notes (filenames/comments) — eMuleQt private tag
+    if (!m_kadNotes.empty())
         ++tagCount;
 
     // Extra tags
@@ -372,11 +385,110 @@ bool KnownFile::writeToFile(FileDataIO& file) const
             .writeNewEd2kTag(file);
     }
 
+    // Cached Kad notes (filenames/comments) — eMuleQt private blob tag
+    if (!m_kadNotes.empty())
+        Tag(FT_KADNOTECACHE, serializeKadNotes()).writeNewEd2kTag(file);
+
     // Extra tags
     for (const auto& tag : tags())
         tag.writeNewEd2kTag(file, UTF8Mode::OptBOM);
 
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Kad notes cache (filenames + comments discovered via a Kad notes search)
+// ---------------------------------------------------------------------------
+
+void KnownFile::addKadNote(const QByteArray& publisherId, const QString& fileName,
+                           const QString& comment, uint8 rating, time_t now)
+{
+    // Need a stable 16-byte publisher key for dedup and a filename to be useful.
+    if (publisherId.size() != 16 || fileName.isEmpty())
+        return;
+
+    // Insert-or-update keyed by publisher → re-running the search for the same
+    // publisher refreshes its entry rather than adding a duplicate.
+    KadNoteInfo& info = m_kadNotes[publisherId];
+    info.fileName = fileName;
+    info.comment  = comment;
+    info.rating   = rating;
+    info.lastSeen = now;
+
+    pruneKadNotes();
+}
+
+QByteArray KnownFile::serializeKadNotes() const
+{
+    SafeMemFile mem;
+    mem.writeUInt32(static_cast<uint32>(m_kadNotes.size()));
+    for (const auto& [publisherId, info] : m_kadNotes) {
+        mem.writeHash16(reinterpret_cast<const uint8*>(publisherId.constData()));
+        mem.writeString(info.fileName, UTF8Mode::Raw);
+        mem.writeString(info.comment, UTF8Mode::Raw);
+        mem.writeUInt8(info.rating);
+        mem.writeUInt32(static_cast<uint32>(info.lastSeen));
+    }
+    return mem.buffer();
+}
+
+void KnownFile::deserializeKadNotes(const QByteArray& blob)
+{
+    if (blob.isEmpty())
+        return;
+
+    try {
+        SafeMemFile mem(reinterpret_cast<const uint8*>(blob.constData()), blob.size());
+        const uint32 count = mem.readUInt32();
+        for (uint32 i = 0; i < count && mem.position() < mem.length(); ++i) {
+            uint8 publisherId[16];
+            mem.readHash16(publisherId);
+            KadNoteInfo info;
+            info.fileName = mem.readString(true);
+            info.comment  = mem.readString(true);
+            info.rating   = mem.readUInt8();
+            info.lastSeen = static_cast<time_t>(mem.readUInt32());
+            m_kadNotes[QByteArray(reinterpret_cast<const char*>(publisherId), 16)] =
+                std::move(info);
+        }
+    } catch (const FileException&) {
+        // Truncated/corrupt cache — keep whatever parsed cleanly.
+    }
+
+    pruneKadNotes();
+}
+
+void KnownFile::pruneKadNotes()
+{
+    const time_t now = time(nullptr);
+
+    // 1. Drop entries older than the configured expiry.
+    const int expiryDays = thePrefs.kadFileNameExpiryDays();
+    if (expiryDays > 0) {
+        const time_t cutoff = now - static_cast<time_t>(expiryDays) * 86400;
+        for (auto it = m_kadNotes.begin(); it != m_kadNotes.end();) {
+            if (it->second.lastSeen < cutoff)
+                it = m_kadNotes.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    // 2. Cap to the newest-by-lastSeen entries.
+    const int maxCount = thePrefs.kadFileNameMaxCount();
+    if (maxCount > 0 && static_cast<int>(m_kadNotes.size()) > maxCount) {
+        std::vector<std::map<QByteArray, KadNoteInfo>::iterator> its;
+        its.reserve(m_kadNotes.size());
+        for (auto it = m_kadNotes.begin(); it != m_kadNotes.end(); ++it)
+            its.push_back(it);
+        std::sort(its.begin(), its.end(),
+                  [](const auto& a, const auto& b) {
+                      return a->second.lastSeen < b->second.lastSeen;
+                  });
+        const int toRemove = static_cast<int>(m_kadNotes.size()) - maxCount;
+        for (int i = 0; i < toRemove; ++i)
+            m_kadNotes.erase(its[i]);
+    }
 }
 
 // ---------------------------------------------------------------------------

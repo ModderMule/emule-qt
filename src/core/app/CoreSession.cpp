@@ -800,6 +800,17 @@ void CoreSession::initKademlia()
                     sourceType, buddyHash, clientHash, udpPort);
         });
 
+    // Wire Kad notes result callback → DownloadQueue. A notes search is the only
+    // Kad lookup that returns filenames (and comments/ratings) for a given file
+    // hash, so this populates the File Names + Comments tabs of the detail dialog.
+    kad::Kademlia::setKadNotesResultCallback(
+        [](uint32 /*searchID*/, const uint8* fileHash, const uint8* publisherId,
+           const QString& name, uint8 rating, const QString& comment) {
+            if (theApp.downloadQueue)
+                theApp.downloadQueue->addKadNoteResult(
+                    fileHash, publisherId, name, rating, comment);
+        });
+
     // Re-wire UDP↔listener bridges each time Kad starts (including restarts).
     connect(m_kademlia.get(), &kad::Kademlia::started,
             this, &CoreSession::wireKadListener);

@@ -17,6 +17,10 @@
 - make the GUI look as close to the original MFC GUI as possible by comparing with sreenshots at `docs/eMuleScreensGUI`
 
 
+## eMule protocol
+- when assigning new Opcodes, check `/Users/daniel/Documents/Coding/CPP/eMulev0.50a.-MorphXTv12.7/srchybrid/opcodes.h` for unused opcodes under the same prefix `OP_/ST_/FT_/...`
+
+
 ## Testing
 - open ports: TCP `5662`, UDP `5672`
 - kill `emulecored` after testing

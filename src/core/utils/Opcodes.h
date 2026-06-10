@@ -420,6 +420,10 @@
 #define FT_ATTRANSFERREDHI          0x54
 #define FT_MAXSOURCES               0x55
 
+// eMuleQt
+// collision-free for known.met / .part.met under the FT_ prefix.
+#define FT_KADNOTECACHE             0x90  // cached Kad notes-search results (filenames + comments, keyed by publisher)
+
 // Media tags
 #define FT_MEDIA_ARTIST             0xD0
 #define TAG_MEDIA_ARTIST            "\xD0"

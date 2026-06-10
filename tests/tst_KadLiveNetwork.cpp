@@ -855,7 +855,8 @@ void tst_KadLiveNetwork::notesSearch_findsPublishedComment()
 
     Kademlia::setKadNotesResultCallback(
         [&noteResults](uint32 /*searchID*/, const uint8* /*fileHash*/,
-                       const QString& name, uint8 rating, const QString& comment) {
+                       const uint8* /*publisherId*/, const QString& name,
+                       uint8 rating, const QString& comment) {
             noteResults.push_back({name, rating, comment});
         });
 

@@ -49,6 +49,7 @@
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QPointer>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QTimer>
@@ -1368,12 +1369,30 @@ void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int ta
         const QCborMap details = resp.field(1).toMap();
         auto* dlg = new FileDetailDialog(details,
                                           static_cast<FileDetailDialog::Tab>(tab), this);
-        connect(dlg, &FileDetailDialog::searchKadNotes, this, [this](const QString& fileHash) {
-            if (m_ipc && m_ipc->isConnected()) {
-                IpcMessage kadMsg(IpcMsgType::SearchKadNotes);
-                kadMsg.append(fileHash);
-                m_ipc->sendRequest(std::move(kadMsg), [](const IpcMessage&) {});
-            }
+        QPointer<FileDetailDialog> dlgPtr(dlg);
+        connect(dlg, &FileDetailDialog::searchKadNotes, this,
+                [this, dlgPtr](const QString& fileHash, const QString& fileName) {
+            if (!m_ipc || !m_ipc->isConnected())
+                return;
+            IpcMessage kadMsg(IpcMsgType::SearchKadNotes);
+            kadMsg.append(fileHash);
+            kadMsg.append(fileName);
+            m_ipc->sendRequest(std::move(kadMsg), [](const IpcMessage&) {});
+
+            // Kad notes arrive asynchronously over UDP; re-fetch details a couple
+            // of times so the open dialog picks up the new File Names / Comments.
+            auto refresh = [this, dlgPtr, fileHash]() {
+                if (!dlgPtr || !m_ipc || !m_ipc->isConnected())
+                    return;
+                IpcMessage req(IpcMsgType::GetSharedFileDetails);
+                req.append(fileHash);
+                m_ipc->sendRequest(std::move(req), [dlgPtr](const IpcMessage& r) {
+                    if (dlgPtr && r.fieldBool(0))
+                        dlgPtr->applyDetails(r.field(1).toMap());
+                });
+            };
+            QTimer::singleShot(8000, this, refresh);
+            QTimer::singleShot(20000, this, refresh);
         });
         dlg->show();
     });

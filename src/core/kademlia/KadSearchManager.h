@@ -25,7 +25,7 @@ public:
     static void stopSearch(uint32 searchID, bool delayDelete);
     static void stopAllSearches();
 
-    static Search* prepareLookup(SearchType type, bool start, const UInt128& id);
+    static Search* prepareLookup(SearchType type, bool start, const UInt128& id, const QString& guiName = QString());
     static Search* prepareFindKeywords(const QString& keyword,
                                        uint32 searchTermsSize,
                                        const uint8* searchTermsData);

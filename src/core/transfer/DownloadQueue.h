@@ -70,6 +70,12 @@ public:
                             uint8 sourceType, const uint8* buddyHash,
                             const uint8* clientHash, uint16 udpPort);
 
+    /// Store a Kad "notes" search result (filename + rating + comment) on the
+    /// matching file — an in-progress download or an already-completed known file.
+    /// Dedups by the note publisher's source ID and persists the result.
+    void addKadNoteResult(const uint8* fileHash, const uint8* publisherId,
+                          const QString& name, uint8 rating, const QString& comment);
+
     /// Process OP_FOUNDSOURCES / OP_FOUNDSOURCES_OBFU from the connected server.
     void addServerSourceResult(const uint8* data, uint32 size, bool obfuscated);
 

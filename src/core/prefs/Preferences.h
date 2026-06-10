@@ -716,6 +716,13 @@ public:
     [[nodiscard]] uint32 kadUDPKey() const;
     void setKadUDPKey(uint32 val);
 
+    // Cached Kad notes-search filenames/comments on the File Details page (core-only).
+    [[nodiscard]] int kadFileNameExpiryDays() const;
+    void setKadFileNameExpiryDays(int val);
+
+    [[nodiscard]] int kadFileNameMaxCount() const;
+    void setKadFileNameMaxCount(int val);
+
     // -- Connection -----------------------------------------------------------
 
     [[nodiscard]] uint16 maxConsPerFive() const;

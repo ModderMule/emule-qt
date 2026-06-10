@@ -1175,6 +1175,11 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                     }
                 }
                 break;
+            case FT_KADNOTECACHE:
+                // Consume here so it isn't re-added to the extra-tags list.
+                if (tag.isBlob())
+                    deserializeKadNotes(tag.blobValue());
+                break;
             default: {
                 // Handle gap tags — either by numeric nameId (new format)
                 // or by string name starting with FT_GAPSTART/FT_GAPEND byte
@@ -1410,6 +1415,12 @@ bool PartFile::savePartFile()
             SafeMemFile aichFile;
             fileIdentifier().writeAICHHashsetToFile(aichFile);
             Tag(FT_AICHHASHSET, aichFile.buffer()).writeNewEd2kTag(file);
+            tagCount++;
+        }
+
+        // Cached Kad notes (filenames/comments) — eMuleQt private blob tag
+        if (!kadNotes().empty()) {
+            Tag(FT_KADNOTECACHE, serializeKadNotes()).writeNewEd2kTag(file);
             tagCount++;
         }
 

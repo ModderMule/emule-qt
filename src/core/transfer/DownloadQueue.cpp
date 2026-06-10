@@ -27,6 +27,8 @@
 #include <QDir>
 #include <QDirIterator>
 
+#include <ctime>
+
 
 
 namespace eMule {
@@ -417,6 +419,35 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
     default:
         logDebug(QStringLiteral("addKadSourceResult: unknown source type %1").arg(sourceType));
         return;
+    }
+}
+
+// ===========================================================================
+// addKadNoteResult
+// ===========================================================================
+
+void DownloadQueue::addKadNoteResult(const uint8* fileHash, const uint8* publisherId,
+                                     const QString& name, uint8 rating,
+                                     const QString& comment)
+{
+    if (!fileHash || !publisherId || name.isEmpty())
+        return;
+
+    const QByteArray pub(reinterpret_cast<const char*>(publisherId), 16);
+    const time_t now = time(nullptr);
+
+    // A notes result may target an in-progress download or an already-completed file.
+    if (PartFile* pf = fileByID(fileHash)) {
+        pf->addKadNote(pub, name, comment, rating, now);
+        pf->savePartFile();  // cheap single-file write; survives restart/completion
+        return;
+    }
+
+    if (m_knownFileList) {
+        if (KnownFile* kf = m_knownFileList->findKnownFileByID(fileHash)) {
+            kf->addKadNote(pub, name, comment, rating, now);
+            m_knownFileList->save();  // persist into known.met
+        }
     }
 }
 

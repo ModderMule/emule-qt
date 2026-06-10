@@ -12,10 +12,12 @@
 #include "files/StatisticFile.h"
 #include "utils/Opcodes.h"
 
+#include <QByteArray>
 #include <QObject>
 
 #include <ctime>
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -120,6 +122,20 @@ public:
 
     [[nodiscard]] uint32 lastBuddyIP() const { return m_lastBuddyIP; }
 
+    // Cached results of a Kad "notes" search (the only Kad lookup that returns a
+    // filename for a given file hash). Keyed by the note publisher's source ID so
+    // re-running the search never double-counts the same publisher. Persisted in the
+    // .met record, pruned by the kadFileName{ExpiryDays,MaxCount} prefs.
+    struct KadNoteInfo {
+        QString fileName;
+        QString comment;
+        uint8   rating = 0;
+        time_t  lastSeen = 0;
+    };
+    void addKadNote(const QByteArray& publisherId, const QString& fileName,
+                    const QString& comment, uint8 rating, time_t now);
+    [[nodiscard]] const std::map<QByteArray, KadNoteInfo>& kadNotes() const { return m_kadNotes; }
+
     // AICH
     [[nodiscard]] bool isAICHRecoverHashSetAvailable() const { return m_aichRecoverHashSetAvailable; }
     void setAICHRecoverHashSetAvailable(bool val) { m_aichRecoverHashSetAvailable = val; }
@@ -186,12 +202,20 @@ protected:
     bool loadTagsFromFile(FileDataIO& file);
     bool loadDateFromFile(FileDataIO& file);
 
+    // Kad notes cache (re)serialization — shared by KnownFile (known.met) and
+    // PartFile (.part.met) so both record formats use one implementation.
+    [[nodiscard]] QByteArray serializeKadNotes() const;
+    void deserializeKadNotes(const QByteArray& blob);
+
 private:
+    void pruneKadNotes();  // drop expired entries, then cap to the newest N
+
     FileNotifier m_notifier;
     std::unique_ptr<Collection> m_collection;
     std::vector<UpDownClient*> m_uploadingClients;
     std::vector<uint16> m_availPartFrequency;
     std::vector<QString> m_kadKeywords;
+    std::map<QByteArray, KadNoteInfo> m_kadNotes;
 
     time_t m_utcLastModified = static_cast<time_t>(-1);
     time_t m_timeLastSeen = 0;

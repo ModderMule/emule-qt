@@ -57,7 +57,7 @@ void SearchManager::stopAllSearches()
     notifySearchesChanged();
 }
 
-Search* SearchManager::prepareLookup(SearchType type, bool start, const UInt128& id)
+Search* SearchManager::prepareLookup(SearchType type, bool start, const UInt128& id, const QString& guiName)
 {
     // Check if already searching for this target
     if (alreadySearchingFor(id))
@@ -66,6 +66,9 @@ Search* SearchManager::prepareLookup(SearchType type, bool start, const UInt128&
     auto* search = new Search();
     search->setTargetID(id);
     search->setSearchType(type);
+    // Set the display name before starting so the first GUI push carries it.
+    if (!guiName.isEmpty())
+        search->setGUIName(guiName);
 
     if (start) {
         if (!startSearch(search)) {

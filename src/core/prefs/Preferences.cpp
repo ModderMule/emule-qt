@@ -386,6 +386,9 @@ struct Preferences::Data {
     // Kademlia
     bool kadEnabled = true;
     uint32 kadUDPKey = 0;  // 0 = generate random on first run
+    // Cached Kad notes-search results (filenames/comments) shown on the File Details page.
+    int kadFileNameExpiryDays = 30;   // drop cached entries older than this
+    int kadFileNameMaxCount = 100;    // keep at most this many newest entries per file
 
     // Connection
     // eMule 2026 bandwidth: faster source finding on modern networks. MFC default: 20
@@ -1308,6 +1311,14 @@ void Preferences::setKadEnabled(bool val) { set(&Data::kadEnabled, val); }
 uint32 Preferences::kadUDPKey() const { return get(&Data::kadUDPKey); }
 
 void Preferences::setKadUDPKey(uint32 val) { set(&Data::kadUDPKey, val); }
+
+int Preferences::kadFileNameExpiryDays() const { return get(&Data::kadFileNameExpiryDays); }
+
+void Preferences::setKadFileNameExpiryDays(int val) { set(&Data::kadFileNameExpiryDays, val); }
+
+int Preferences::kadFileNameMaxCount() const { return get(&Data::kadFileNameMaxCount); }
+
+void Preferences::setKadFileNameMaxCount(int val) { set(&Data::kadFileNameMaxCount, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Connection
@@ -2487,6 +2498,8 @@ bool Preferences::load(const QString& filePath)
         if (auto k = root["kademlia"]) {
             m_data->kadEnabled = k["enabled"].as<bool>(m_data->kadEnabled);
             m_data->kadUDPKey = k["udpKey"].as<uint32>(m_data->kadUDPKey);
+            m_data->kadFileNameExpiryDays = k["fileNameExpiryDays"].as<int>(m_data->kadFileNameExpiryDays);
+            m_data->kadFileNameMaxCount = k["fileNameMaxCount"].as<int>(m_data->kadFileNameMaxCount);
         }
 
         // Scheduler
@@ -3078,6 +3091,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "kademlia" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->kadEnabled;
     out << YAML::Key << "udpKey" << YAML::Value << m_data->kadUDPKey;
+    out << YAML::Key << "fileNameExpiryDays" << YAML::Value << m_data->kadFileNameExpiryDays;
+    out << YAML::Key << "fileNameMaxCount" << YAML::Value << m_data->kadFileNameMaxCount;
     out << YAML::EndMap;
 
     // Scheduler
