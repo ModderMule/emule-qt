@@ -933,9 +933,10 @@ void tst_MockPeerDownload::downloadFlow_partFileReachesCompletion()
     // 4. Wait for all gaps filled (download complete, hashes verified)
     QTRY_VERIFY_WITH_TIMEOUT(m_partFile->gapList().empty(), 120000);
 
-    // 5. Wait for completion status
+    // 5. Wait for Complete status (not just Completing). Completing means the
+    //    async FileMoveThread is still mid-rename; only Complete guarantees the
+    //    file has been moved to incoming/ (see PartFile::performFileMove lambda).
     QTRY_VERIFY_WITH_TIMEOUT(
-        m_partFile->status() == PartFileStatus::Completing ||
         m_partFile->status() == PartFileStatus::Complete, 30000);
 
     // 6. Verify completed size
@@ -952,20 +953,15 @@ void tst_MockPeerDownload::downloadFlow_partFileReachesCompletion()
     QByteArray expectedBytes = original.read(65536);
     original.close();
 
-    // Look for the completed file in incoming dir first, then temp dir
-    QString completedPath;
+    // After Complete status the file is guaranteed to be in incoming/ — assert it
+    // directly rather than falling back to a temp .part (whose first 64KB would
+    // also match the original and silently mask a failed move).
     QDir incomingDir(m_tmpDir->filePath(QStringLiteral("incoming")));
     QStringList incomingFiles = incomingDir.entryList(
         {QStringLiteral("*.bin")}, QDir::Files);
-    if (!incomingFiles.isEmpty()) {
-        completedPath = incomingDir.filePath(incomingFiles.first());
-    } else {
-        // Still in temp dir as .part (file move may be async)
-        QDir tempDir(m_tmpDir->filePath(QStringLiteral("temp")));
-        QStringList partFiles = tempDir.entryList({QStringLiteral("*.part")}, QDir::Files);
-        QVERIFY2(!partFiles.isEmpty(), "No completed file found in incoming or temp dir");
-        completedPath = tempDir.filePath(partFiles.first());
-    }
+    QVERIFY2(!incomingFiles.isEmpty(),
+             "Completed file not found in incoming dir after Complete status");
+    const QString completedPath = incomingDir.filePath(incomingFiles.first());
 
     QFile completedFile(completedPath);
     QVERIFY(completedFile.open(QIODevice::ReadOnly));
