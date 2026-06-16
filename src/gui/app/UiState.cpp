@@ -4,6 +4,8 @@
 
 #include "app/UiState.h"
 
+#include <QAbstractItemView>
+#include <QItemSelectionModel>
 #include <QSaveFile>
 
 #include <yaml-cpp/yaml.h>
@@ -331,6 +333,32 @@ void UiState::bindHeaderView(QHeaderView* header, const QString& key)
     QObject::connect(header, &QHeaderView::sectionResized, header, capture);
     QObject::connect(header, &QHeaderView::sectionMoved,   header, capture);
     QObject::connect(header, &QHeaderView::sortIndicatorChanged, header, capture);
+
+    // A header view's parent is its owning item view; guard its selection so a
+    // model reset can't leave a stale index for a deferred header repaint to crash on.
+    if (auto* view = qobject_cast<QAbstractItemView*>(header->parentWidget()))
+        guardSelectionOnReset(view);
+}
+
+void UiState::guardSelectionOnReset(QAbstractItemView* view)
+{
+    if (!view)
+        return;
+    auto* model = view->model();
+    if (!model)
+        return;
+
+    // Clear selection the moment a (source) reset begins, before the proxy's
+    // persistent-index mapping is torn down — prevents a deferred header paint
+    // from dereferencing a stale index in QSortFilterProxyModel::parent().
+    // Resolve selectionModel() lazily (a later setModel() swaps it); bind the
+    // connection lifetime to the view.
+    QObject::connect(model, &QAbstractItemModel::modelAboutToBeReset, view, [view] {
+        if (auto* sel = view->selectionModel()) {
+            sel->clearCurrentIndex();   // currentIndex also holds a persistent index
+            sel->clearSelection();
+        }
+    });
 }
 
 } // namespace eMule

@@ -683,6 +683,11 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
         return;
     }
 
+    if (!thePrefs.networkED2K()) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false));
+        return;
+    }
+
     // If IP and port fields are provided, connect to a specific server
     if (msg.fieldCount() >= 2) {
         const auto ip = static_cast<uint32>(msg.fieldInt(0));
@@ -715,11 +720,7 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
         return;
     }
 
-    // No fields — connect to any server (only if eD2K network enabled)
-    if (!thePrefs.networkED2K()) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 403, QStringLiteral("eD2K network disabled")));
-        return;
-    }
+    // No fields — connect to any server
     theApp.serverConnect->connectToAnyServer();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }

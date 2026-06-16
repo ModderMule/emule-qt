@@ -807,6 +807,9 @@ void SearchPanel::switchToTab(int index)
     auto& tab = m_tabs[static_cast<size_t>(index)];
     m_resultView->setModel(tab.proxy);
     m_resultView->header()->restoreState(hdrState);
+    // bindHeaderView ran in the ctor while the view had no model, so guard the
+    // selection here now that this tab's proxy is attached (re-show is idempotent).
+    theUiState.guardSelectionOnReset(m_resultView);
     connect(m_resultView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &SearchPanel::updateDownloadButton);
     updateDownloadButton();

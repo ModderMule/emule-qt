@@ -42,7 +42,14 @@ public:
     void bindStatsTree(QTreeWidget* tree);
 
     /// Restore a header view's column widths/sort order, connect it to auto-update.
+    /// Also installs a selection guard on the owning view (see guardSelectionOnReset).
     void bindHeaderView(QHeaderView* header, const QString& key);
+
+    /// Clear a view's selection/current index the moment its model begins a reset,
+    /// before the (proxy) persistent-index mapping is torn down. Prevents a deferred
+    /// QHeaderView::paintEvent from dereferencing a stale index in
+    /// QSortFilterProxyModel::parent(). Safe to call repeatedly on the same view.
+    void guardSelectionOnReset(QAbstractItemView* view);
 
     /// Restore the main window size. Call in the constructor before show().
     void bindMainWindow(QMainWindow* window);
