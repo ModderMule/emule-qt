@@ -28,6 +28,17 @@ private slots:
     void keyEntry_copy();
     void keyEntry_mergeIPs();
     void keyEntry_trustValue();
+
+    // Publisher trust / name-spam defences — MFC Entry.cpp
+    void init();
+    void cleanup();
+    void trust_singlePublisherIsTrusted();
+    void trust_sameSubnetSharesPoints();
+    void trust_spammerDilutesItself();
+    void trust_publisherCapEvictsOldest();
+    void addTag_filtersResultOnlyTags();
+    void aich_refcountsAndKeepsIndicesStable();
+    void merge_fastRefreshDoesNotBumpPopularity();
 };
 
 void tst_KadEntry::construct_default()
@@ -144,6 +155,188 @@ void tst_KadEntry::keyEntry_trustValue()
     // Without any publishers, trust should be 0
     float trust = entry.getTrustValue();
     QCOMPARE(trust, 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Publisher trust and name-spam defences
+//
+// A keyword entry's trust value decides whether this node serves it before or
+// after untrusted results. Publishers earn points per /24 block, but the points
+// for a block are shared across every entry that block published — so one honest
+// publisher scores the full 10 while a spammer flooding many entries from one
+// network dilutes its own contribution below the 1.0 "trusted" threshold.
+//
+// Until this was wired up, no publisher IP was ever recorded: the tracking list
+// was permanently null, every entry scored 0, and the trusted-first serve
+// degenerated into one unranked pass.
+// ---------------------------------------------------------------------------
+
+namespace {
+/// Publish `entry` as if it arrived from `ip`. A first publish passes nullptr;
+/// a replacement passes the entry it supersedes, as Indexed::addKeyword does.
+void publishFrom(KeyEntry& entry, uint32 ip, KeyEntry* replaces = nullptr)
+{
+    entry.m_address = Address::fromHostOrder(ip);
+    entry.mergeIPsAndFilenames(replaces);
+}
+} // namespace
+
+void tst_KadEntry::init()
+{
+    // s_globalPublishIPs is static and shared, so each test starts clean.
+    KeyEntry::resetGlobalTrackingMap();
+}
+
+void tst_KadEntry::cleanup()
+{
+    KeyEntry::resetGlobalTrackingMap();
+}
+
+void tst_KadEntry::trust_singlePublisherIsTrusted()
+{
+    KeyEntry entry;
+    entry.setFileName(QStringLiteral("ubuntu.iso"));
+    publishFrom(entry, 0x0A000001);
+
+    // One publisher, sole occupant of its /24 → the full per-subnet allocation.
+    // Callers treat >= 1.0 as trusted, so this must not be the old 0.0.
+    QCOMPARE(entry.getTrustValue(), 10.0f);
+}
+
+void tst_KadEntry::trust_sameSubnetSharesPoints()
+{
+    // Two publishers in ONE /24 split that block's allocation between them...
+    KeyEntry sameSubnet;
+    sameSubnet.setFileName(QStringLiteral("a.iso"));
+    publishFrom(sameSubnet, 0x0A000001);
+    {
+        KeyEntry second;
+        second.setFileName(QStringLiteral("a.iso"));
+        publishFrom(second, 0x0A000002, &sameSubnet);
+        const float sameSubnetTrust = second.getTrustValue();
+
+        // ...whereas two publishers in DIFFERENT /24s each bring a full share.
+        KeyEntry crossSubnet;
+        crossSubnet.setFileName(QStringLiteral("b.iso"));
+        publishFrom(crossSubnet, 0x0A000001);
+        KeyEntry third;
+        third.setFileName(QStringLiteral("b.iso"));
+        publishFrom(third, 0x0B000001, &crossSubnet);
+
+        // This is the whole point of masking to /24: without it, an attacker
+        // holding one /24 would look like 256 independent endorsements.
+        QVERIFY(third.getTrustValue() > sameSubnetTrust);
+    }
+}
+
+void tst_KadEntry::trust_spammerDilutesItself()
+{
+    // One host publishing many different entries: its per-entry contribution
+    // falls as 10/N, so at scale each entry drops below the trusted threshold.
+    std::vector<std::unique_ptr<KeyEntry>> spam;
+    for (int i = 0; i < 50; ++i) {
+        auto e = std::make_unique<KeyEntry>();
+        e->setFileName(QStringLiteral("spam_%1.iso").arg(i));
+        publishFrom(*e, 0x0A000001);
+        spam.push_back(std::move(e));
+    }
+    QVERIFY(spam.front()->getTrustValue() < 1.0f);
+
+    // An honest publisher from an uncontended block is unaffected.
+    KeyEntry honest;
+    honest.setFileName(QStringLiteral("honest.iso"));
+    publishFrom(honest, 0x0C000001);
+    QVERIFY(honest.getTrustValue() >= 1.0f);
+}
+
+void tst_KadEntry::trust_publisherCapEvictsOldest()
+{
+    // The list is capped at 100 so calculation and storage stay bounded. The
+    // oldest publisher is dropped and its global tracking count released —
+    // failing to release would permanently inflate that subnet's divisor and
+    // silently drive every entry it ever touched towards untrusted.
+    std::unique_ptr<KeyEntry> current = std::make_unique<KeyEntry>();
+    current->setFileName(QStringLiteral("popular.iso"));
+    publishFrom(*current, 0x0A000001);
+
+    for (uint32 i = 1; i < 105; ++i) {
+        auto next = std::make_unique<KeyEntry>();
+        next->setFileName(QStringLiteral("popular.iso"));
+        // Each publisher gets its own /24 so nothing collapses by subnet.
+        publishFrom(*next, 0x0A000001 + (i << 8), current.get());
+        current = std::move(next);
+    }
+
+    // Capped, not unbounded: 100 publishers each contributing a full share.
+    QCOMPARE(current->getTrustValue(), 100 * 10.0f);
+}
+
+void tst_KadEntry::addTag_filtersResultOnlyTags()
+{
+    // TAG_PUBLISHINFO and TAG_KADAICHHASHRESULT are generated by *us* when
+    // answering a search. Accepting them from a publisher would let it forge its
+    // own trust and publisher counts, which we would then re-serve alongside the
+    // genuine ones.
+    Entry e;
+    e.addTag(Tag(QByteArrayLiteral(TAG_PUBLISHINFO), uint32{0xFFFFFFFF}));
+    e.addTag(Tag(QByteArrayLiteral(TAG_KADAICHHASHRESULT), QByteArrayLiteral("forged")));
+    QCOMPARE(e.getTagCount(), uint32{0});
+
+    // An ordinary tag still goes through.
+    e.addTag(Tag(uint8{FT_MEDIA_ARTIST}, QStringLiteral("someone")));
+    QCOMPARE(e.getTagCount(), uint32{1});
+}
+
+void tst_KadEntry::aich_refcountsAndKeepsIndicesStable()
+{
+    KeyEntry e;
+    const QByteArray hashA(20, '\xAA');
+    const QByteArray hashB(20, '\xBB');
+
+    const uint16 idxA = e.addRemoveAICHHash(hashA, true);
+    const uint16 idxB = e.addRemoveAICHHash(hashB, true);
+    QVERIFY(idxA != idxB);
+    QCOMPARE(e.aichHashCount(), uint16{2});
+
+    // Re-adding an existing hash returns the same index rather than growing.
+    QCOMPARE(e.addRemoveAICHHash(hashA, true), idxA);
+    QCOMPARE(e.aichHashCount(), uint16{2});
+
+    // Removal only decrements popularity — the slot survives, so indices held
+    // by publisher records stay valid.
+    QCOMPARE(e.addRemoveAICHHash(hashA, false), idxA);
+    QCOMPARE(e.aichHashCount(), uint16{2});
+    QCOMPARE(e.addRemoveAICHHash(hashB, false), idxB);
+    QCOMPARE(e.aichHashCount(), uint16{2});
+
+    // Removing an unknown hash reports the sentinel instead of inventing a slot.
+    QCOMPARE(e.addRemoveAICHHash(QByteArray(20, '\xCC'), false), KeyEntry::kNoAICHHash);
+}
+
+void tst_KadEntry::merge_fastRefreshDoesNotBumpPopularity()
+{
+    // getCommonFileName() returns the most popular name, and that is what we
+    // serve to searchers. A publisher republishing in a tight loop must not be
+    // able to promote its own filename by refreshing repeatedly.
+    KeyEntry first;
+    first.setFileName(QStringLiteral("real-name.iso"));
+    publishFrom(first, 0x0A000001);
+
+    KeyEntry refreshed;
+    refreshed.setFileName(QStringLiteral("real-name.iso"));
+    publishFrom(refreshed, 0x0A000001, &first);
+
+    // Same publisher, immediately: recorded as a refresh, so no extra publisher
+    // and no popularity bump.
+    QCOMPARE(refreshed.getCommonFileName(), QStringLiteral("real-name.iso"));
+    QCOMPARE(refreshed.getTrustValue(), 10.0f);
+
+    // A *different* publisher naming the same file is a genuine endorsement and
+    // does raise that name's popularity above a competing one.
+    KeyEntry other;
+    other.setFileName(QStringLiteral("real-name.iso"));
+    publishFrom(other, 0x0B000001, &refreshed);
+    QCOMPARE(other.getCommonFileName(), QStringLiteral("real-name.iso"));
 }
 
 QTEST_GUILESS_MAIN(tst_KadEntry)

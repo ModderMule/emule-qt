@@ -140,7 +140,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     }
 
     case OP_IDCHANGE: {
-        // Format: uint32 clientID [, uint32 tcpFlags]
+        // MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:275-350.
+        // Layout: uint32 clientID, uint32 tcpFlags, uint32 auxPort,
+        //         uint32 serverReportedIP, uint32 obfuscationTCPPort
         if (size < 4)
             return false;
 
@@ -148,6 +150,19 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         uint32 tcpFlags = 0;
         if (size >= 8)
             tcpFlags = peekUInt32(packet + 4);
+
+        // The extended answer tells us the IP the server sees us on, which is the
+        // only public-IP source available when it hands us a LowID.
+        uint32 serverReportedIP = 0;
+        uint32 obfuscationTCPPort = 0;
+        if (size >= 20) {
+            serverReportedIP = peekUInt32(packet + 12);
+            // MFC asserts on this and zeroes it — a LowID here is nonsense, since
+            // the whole point of the field is to report a routable address.
+            if (isLowID(serverReportedIP))
+                serverReportedIP = 0;
+            obfuscationTCPPort = peekUInt32(packet + 16);
+        }
 
         if (clientID == 0) {
             // Server is full
@@ -158,10 +173,12 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         // Apply server TCP flags to our server copy
         if (m_curServer) {
             m_curServer->setTCPFlags(tcpFlags);
+            if (obfuscationTCPPort != 0)
+                m_curServer->setObfuscationPortTCP(static_cast<uint16>(obfuscationTCPPort));
         }
 
         setConnectionState(ServerConnState::Connected);
-        emit loginReceived(clientID, tcpFlags);
+        emit loginReceived(clientID, tcpFlags, serverReportedIP);
 
         logInfo(QStringLiteral("New client ID is %1").arg(clientID));
         if (isLowID(clientID))
@@ -193,7 +210,19 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     }
 
     case OP_SERVERSTATUS: {
-        // Format: uint32 users, uint32 files [, optional extended data]
+        // Format: uint32 users, uint32 files
+        //
+        // This is ALL that is defined for the TCP status packet — see original
+        // eMule ServerSocket.cpp `case OP_SERVERSTATUS`, which reads exactly 8
+        // bytes and treats anything beyond as unknown trailing data.
+        //
+        // Do NOT parse maxUsers/udpFlags/serverKeyUDP/obfuscation ports here.
+        // Those fields belong to the *UDP* OP_GLOBSERVSTATRES packet (0x97) and
+        // have a different layout (it carries a leading 4-byte challenge).
+        // Reading them out of a TCP packet yields garbage — in particular a
+        // bogus serverKeyUDP would make us obfuscate UDP with a key the server
+        // cannot derive, silently breaking global search against that server.
+        // See ServerList::processStatusResponse() for the real parser.
         if (size < 8)
             return false;
 
@@ -203,28 +232,11 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (m_curServer) {
             m_curServer->setUsers(users);
             m_curServer->setFiles(files);
+        }
 
-            // Parse optional extended status
-            if (size >= 12)
-                m_curServer->setMaxUsers(peekUInt32(packet + 8));
-            if (size >= 16)
-                m_curServer->setSoftFiles(peekUInt32(packet + 12));
-            if (size >= 20)
-                m_curServer->setHardFiles(peekUInt32(packet + 16));
-            if (size >= 24) {
-                uint32 udpFlags = peekUInt32(packet + 20);
-                m_curServer->setUDPFlags(udpFlags);
-            }
-            if (size >= 28)
-                m_curServer->setLowIDUsers(peekUInt32(packet + 24));
-            if (size >= 30)
-                m_curServer->setObfuscationPortTCP(peekUInt16(packet + 28));
-            if (size >= 32)
-                m_curServer->setObfuscationPortUDP(peekUInt16(packet + 30));
-            if (size >= 36) {
-                m_curServer->setServerKeyUDP(peekUInt32(packet + 32));
-                m_curServer->setServerKeyUDPIP(thePrefs.publicIP());
-            }
+        if (size > 8) {
+            logDebug(QStringLiteral("ServerSocket: OP_SERVERSTATUS has %1 trailing bytes (ignored)")
+                         .arg(size - 8));
         }
 
         emit serverStatusReceived(users, files);

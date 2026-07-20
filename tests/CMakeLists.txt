@@ -166,6 +166,7 @@ emule_add_test(tst_KadEntry          FOLDER "Kademlia")
 emule_add_test(tst_KadLookupHistory  FOLDER "Kademlia")
 emule_add_test(tst_KadPacketTracking FOLDER "Kademlia")
 emule_add_test(tst_KadSearch         FOLDER "Kademlia")
+emule_add_test(tst_KadSearchExpr     FOLDER "Kademlia")
 emule_add_test(tst_KadSearchManager  FOLDER "Kademlia")
 emule_add_test(tst_KadFirewallTester FOLDER "Kademlia")
 emule_add_test(tst_KadIndexed        FOLDER "Kademlia")
@@ -186,6 +187,7 @@ emule_add_test(tst_FrameGrabThread FOLDER "Media")
 
 # Module 11: PartFile & Download Integration
 emule_add_test(tst_PartFile          FOLDER "Files")
+emule_add_test(tst_SourceExchange    FOLDER "Files")
 emule_add_test(tst_DownloadQueue     FOLDER "Transfer")
 
 # Module 11 Phase 3: Complete File Management

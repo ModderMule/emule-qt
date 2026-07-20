@@ -102,6 +102,10 @@ inline void md4cpy(void* dst, const void* src) noexcept
 /// Check if an IP (in network byte order) is a valid public IP.
 [[nodiscard]] bool isGoodIP(uint32 nIP, bool forceCheck = false);
 
+/// Check if an IP/port pair is usable as a contact address.
+/// MFC OtherFunctions.cpp IsGoodIPPort(). Takes the same byte order as isGoodIP().
+[[nodiscard]] bool isGoodIPPort(uint32 nIP, uint16 nPort);
+
 /// Check if an IP is a LAN/private IP.
 [[nodiscard]] bool isLanIP(uint32 nIP);
 

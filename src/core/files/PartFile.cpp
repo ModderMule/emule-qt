@@ -7,6 +7,7 @@
 
 #include "files/PartFile.h"
 #include "app/AppContext.h"
+#include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHHashSet.h"
 #include "crypto/AICHHashTree.h"
@@ -2193,13 +2194,24 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
     if (m_srcList.empty() || !forClient)
         return nullptr;
 
-    // Negotiate version down to our max supported
-    const uint8 usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
+    // Only answer in SX2 when the peer actually asked for it; otherwise fall back to
+    // the SX1 version it announced at handshake. SX1 carries no version byte and uses
+    // its own opcode, so the two formats must not be mixed.
+    uint8 usedVersion;
+    bool isSX2;
+    if (forClient->supportsSourceExchange2() && version > 0) {
+        usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
+        isSX2 = true;
+    } else {
+        usedVersion = forClient->sourceExchange1Ver();
+        isSX2 = false;
+    }
 
     SafeMemFile data;
 
-    // SX2 header: version byte
-    data.writeUInt8(usedVersion);
+    // SX2 header: version byte. SX1 has none.
+    if (isSX2)
+        data.writeUInt8(usedVersion);
 
     // File hash (16 bytes)
     data.writeHash16(fileHash());
@@ -2246,8 +2258,11 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
                 continue;
         }
 
-        // Write per-source data
-        data.writeUInt32(src->userAddress().toNetworkUint32());  // userId (4 bytes)
+        // Write per-source data.
+        // v3+ sends IDs in hybrid (host order) format so that high-ID clients
+        // with an address ending in .0 aren't falsely read back as low-ID.
+        data.writeUInt32(usedVersion >= 3 ? src->userIDHybrid()
+                                          : src->userAddress().toNetworkUint32()); // userId (4 bytes)
         data.writeUInt16(src->userPort());                     // port (2 bytes)
         data.writeUInt32(src->serverAddress().toNetworkUint32()); // serverIP (4 bytes)
         data.writeUInt16(src->serverPort());   // serverPort (2 bytes)
@@ -2256,7 +2271,10 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
             data.writeHash16(src->userHash()); // userHash (16 bytes)
 
         if (usedVersion >= 4) {
-            // Crypt options byte
+            // Crypt options byte.
+            // Bit 3 (direct UDP callback) is deliberately never set: the SX record
+            // carries no Kad UDP port, so the receiver can't act on it and forces
+            // it off anyway (setConnectOptions(..., callback=false)).
             uint8 cryptOpts = 0;
             if (src->supportsCryptLayer())
                 cryptOpts |= 0x01;
@@ -2264,8 +2282,6 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
                 cryptOpts |= 0x02;
             if (src->requiresCryptLayer())
                 cryptOpts |= 0x04;
-            if (src->supportsDirectUDPCallback())
-                cryptOpts |= 0x08;
             data.writeUInt8(cryptOpts);
         }
 
@@ -2281,7 +2297,8 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
     data.writeUInt16(count);
     data.seek(static_cast<int>(endPos), SEEK_SET);
 
-    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_ANSWERSOURCES2);
+    auto packet = std::make_unique<Packet>(
+        data, OP_EMULEPROT, isSX2 ? OP_ANSWERSOURCES2 : OP_ANSWERSOURCES);
     if (packet->size > 354)
         packet->packPacket();
 
@@ -2292,14 +2309,67 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
 // addClientSources — process SX2 source answer for this PartFile
 // ===========================================================================
 
-void PartFile::addClientSources(SafeMemFile& data, uint8 version, const UpDownClient* sender)
+void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool isSX2,
+                                const UpDownClient* sender)
 {
     Q_UNUSED(sender);
 
-    if (version == 0 || version > SOURCEEXCHANGE2_VERSION)
+    if (isStopped())
         return;
 
     const uint16 srcCount = data.readUInt16();
+    const qint64 dataSize = data.length() - data.position();
+
+    // Byte size of one source record for a given SX version.
+    const auto recordSize = [](uint8 v) -> qint64 {
+        qint64 n = 4 + 2 + 4 + 2;    // userId, port, serverIP, serverPort
+        if (v >= 2) n += 16;         // userHash
+        if (v >= 4) n += 1;          // cryptOptions
+        return n;
+    };
+
+    // The version actually used to lay out the records, which is not necessarily the
+    // one the peer announced.
+    uint8 version;
+
+    if (!isSX2) {
+        // SX1 has no version byte, so infer the layout from the record size and only
+        // then check the peer announced at least that much. Trusting the announced
+        // version instead would mis-slice the records and yield garbage user hashes.
+        if (srcCount != 0 && dataSize == srcCount * recordSize(1))
+            version = 1;
+        else if (srcCount != 0 && dataSize == srcCount * recordSize(2))
+            version = (clientSXVersion == 2) ? 2 : 3;
+        else if (srcCount != 0 && dataSize == srcCount * recordSize(4))
+            version = 4;
+        else {
+            logWarning(QStringLiteral("Ignoring invalid SX packet (v%1, count=%2, size=%3) for %4")
+                           .arg(clientSXVersion).arg(srcCount).arg(dataSize).arg(fileName()));
+            return;
+        }
+
+        if (clientSXVersion < version) {
+            logWarning(QStringLiteral("Ignoring SX packet claiming v%1 but shaped as v%2 for %3")
+                           .arg(clientSXVersion).arg(version).arg(fileName()));
+            return;
+        }
+    } else {
+        // SX2 states its version, so a mismatch can't be a misunderstanding — drop it.
+        if (clientSXVersion == 0 || clientSXVersion > SOURCEEXCHANGE2_VERSION) {
+            logWarning(QStringLiteral("Ignoring SX2 packet with unknown version v%1 for %2")
+                           .arg(clientSXVersion).arg(fileName()));
+            return;
+        }
+        version = clientSXVersion;
+
+        if (dataSize != srcCount * recordSize(version)) {
+            logWarning(QStringLiteral("Ignoring corrupt SX2 packet (v%1, count=%2, size=%3, "
+                                      "expected %4) for %5")
+                           .arg(version).arg(srcCount).arg(dataSize)
+                           .arg(srcCount * recordSize(version)).arg(fileName()));
+            return;
+        }
+    }
 
     for (uint16 i = 0; i < srcCount; ++i) {
         uint32 userId = data.readUInt32();
@@ -2315,17 +2385,38 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 version, const UpDownCl
         if (version >= 4)
             cryptFlags = data.readUInt8();
 
-        // v1/v2: IDs were in network byte order for high-ID detection
-        if (version < 3)
-            userId = ntohl(userId);
+        // v3+ clients send IDs in hybrid (host order) format so high-ID clients
+        // with an address ending in .0 aren't falsely switched to a low-ID.
+        // Validation needs the ED2K (network order) representation; the raw
+        // userId is handed to UpDownClient along with the ed2kID flag below,
+        // which does its own conversion — so don't mutate userId here.
+        const uint32 userIdEd2k = (version < 3) ? userId : htonl(userId);
 
-        // Validate IP (for high-ID clients, userId == IP)
-        if (!isLowID(userId) && !isGoodIP(userId))
+        // The hybrid form is what identifies a low ID; for v<3 the id arrives in
+        // ED2K order and only high IDs get converted.
+        const uint32 userIdHybrid = (version < 3)
+            ? (isLowID(userId) ? userId : htonl(userId))
+            : userId;
+
+        // If we're firewalled too, neither side can accept the other's connection,
+        // so a low-ID source is dead weight.
+        if (isLowID(userIdHybrid) && theApp.isFirewalled())
             continue;
 
-        // IPFilter check
-        if (!isLowID(userId) && theApp.ipFilter && theApp.ipFilter->isFiltered(userId))
-            continue;
+        if (!isLowID(userIdEd2k)) {
+            // Validate IP (for high-ID clients, userId == IP)
+            if (!isGoodIP(userIdEd2k))
+                continue;
+
+            // IPFilter check
+            if (theApp.ipFilter && theApp.ipFilter->isFiltered(userIdEd2k))
+                continue;
+
+            // Don't re-admit a peer we've already banned via another path.
+            if (theApp.clientList &&
+                theApp.clientList->isBannedClient(Address::fromNetworkOrder(userIdEd2k)))
+                continue;
+        }
 
         // Max sources check
         if (sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))

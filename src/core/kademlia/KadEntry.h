@@ -34,6 +34,11 @@ public:
     virtual Entry* copy() const;
     virtual bool isKeyEntry() const { return false; }
 
+    /// Canonical lookup key for @p tag: its name, or its single-byte numeric ID
+    /// rendered as a one-byte name. Kad tags arrive in either shape depending on
+    /// whether they came from io::readKadTag or were built with a nameId.
+    [[nodiscard]] static QByteArray tagLookupKey(const Tag& tag);
+
     uint64 getIntTagValue(const QByteArray& tagName, bool includeVirtual = true) const;
     bool getIntTagValue(const QByteArray& tagName, uint64& outValue, bool includeVirtual = true) const;
     QString getStrTagValue(const QByteArray& tagName) const;
@@ -84,17 +89,31 @@ public:
     void dirtyDeletePublishData();
     void writeTagListWithPublishInfo(FileDataIO& data);
 
+    /// Reference-count an AICH hash reported by a publisher.
+    /// Returns the hash's stable index. Removal only decrements the popularity
+    /// count — the slot itself is never erased, so indices stay valid.
+    /// MFC Entry.cpp:715-737.
+    uint16 addRemoveAICHHash(const QByteArray& hash, bool add);
+    [[nodiscard]] uint16 aichHashCount() const
+    {
+        return static_cast<uint16>(m_aichHashes.size());
+    }
+
     static void resetGlobalTrackingMap();
+
+    /// Sentinel for "this publisher reported no AICH hash".
+    static constexpr uint16 kNoAICHHash = 0xFFFF;
 
 private:
     bool searchTermsMatch(const SearchTerm& term) const;
     void recalculateTrustValue();
+    /// @param ip publisher address; the tracking map is keyed by its /24 block.
     static void adjustGlobalPublishTracking(const Address& ip, bool increase);
 
     struct PublishingIP {
         time_t lastPublish = 0;
         Address ip;
-        uint16 aichHashIdx = 0;
+        uint16 aichHashIdx = kNoAICHHash;
     };
 
     float m_trustValue = 0.0f;
@@ -104,7 +123,10 @@ private:
     uint32 m_lastTrustValueCalc = 0;
     QString m_searchTermCache;
 
-    static std::unordered_map<Address, uint32> s_globalPublishIPs;
+    /// Publish counts per /24 block (key = host-order IP masked with ~0xFF).
+    /// Keying on the exact IP — as this previously did — would give anyone with
+    /// a /24 a full 256 independent trust budgets. MFC Entry.cpp:327.
+    static std::unordered_map<uint32, uint32> s_globalPublishIPs;
 };
 
 } // namespace eMule::kad

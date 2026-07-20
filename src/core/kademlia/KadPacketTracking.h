@@ -34,13 +34,17 @@ struct TrackedChallenge {
 };
 
 struct TrackedPacketsIn {
+    /// Per-opcode token bucket. Tokens are denominated in **milliseconds** of
+    /// allowance, matching MFC PacketTracking.cpp: a budget of N packets/minute
+    /// costs MIN2MS(1)/N per packet, the bucket refills at real time and caps at
+    /// MIN2MS(1). Going negative means over budget.
     struct TrackedRequest {
-        uint32 latest = 0;
-        int tokens = 0;
+        uint64 latest = 0;
+        int64 tokens = 0;
         uint8 opcode = 0;
         bool dbgLogged = false;
     };
-    uint32 lastExpire = 0;
+    uint64 lastExpire = 0;
     uint32 ip = 0;
     std::vector<TrackedRequest> trackedRequests;
 };
@@ -57,6 +61,12 @@ public:
 protected:
     void addTrackedOutPacket(uint32 ip, uint8 opcode);
     bool isOnOutTrackList(uint32 ip, uint8 opcode, bool dontRemove = false);
+    /// Incoming request flood protection.
+    /// @return 0 = allowed, 1 = flood (drop), 2 = massive flood (drop, ban, and
+    ///         the caller should expire the contact from the routing zone).
+    ///         Matches MFC PacketTracking.cpp:99-208 — note this is the
+    ///         *opposite* polarity to the pre-rewrite port code, which returned
+    ///         1 for "allowed".
     int inTrackListIsAllowedPacket(uint32 ip, uint8 opcode, bool validReceiverKey);
     void inTrackListCleanup();
     void addLegacyChallenge(const UInt128& contactID, const UInt128& challengeID,
@@ -64,14 +74,15 @@ protected:
     bool isLegacyChallenge(const UInt128& challengeID, uint32 ip, uint8 opcode,
                            UInt128& outContactID);
     bool hasActiveLegacyChallenge(uint32 ip) const;
+    /// True for request opcodes whose response handler gates on isOnOutTrackList().
+    static bool isTrackedOutListRequestPacket(uint8 opcode);
 
 private:
-    static bool isTrackedOutListRequestPacket(uint8 opcode);
 
     std::list<TrackedPacket> m_trackedRequests;
     std::list<TrackedChallenge> m_challengeRequests;
     std::unordered_map<uint32, TrackedPacketsIn*> m_trackPacketsIn;
-    uint32 m_lastTrackInCleanup = 0;
+    uint64 m_lastTrackInCleanup = 0; // getTickCount() ms, matches TrackedRequest
 };
 
 } // namespace eMule::kad

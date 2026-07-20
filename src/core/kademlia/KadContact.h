@@ -19,7 +19,7 @@ namespace eMule::kad {
 /// A Kademlia DHT contact (peer node).
 class Contact {
 public:
-    ~Contact() = default;
+    ~Contact();
     Contact();
 
     /// Construct with a known local Kad ID (distance = localKadId XOR clientId).
@@ -58,8 +58,13 @@ public:
 
     // -- Reference counting --------------------------------------------------
     [[nodiscard]] bool     inUse() const             { return m_inUse > 0; }
+    [[nodiscard]] uint32   useCount() const          { return m_inUse; }
     void incUse()                                    { ++m_inUse; }
     void decUse();
+
+    /// Number of Contact objects currently alive. Used by tests to assert that
+    /// searches free every contact they were handed (see KadSearch's m_deleteList).
+    [[nodiscard]] static uint64 liveInstanceCount();
 
     // -- Version / timing ----------------------------------------------------
     [[nodiscard]] uint8    getVersion() const        { return m_version; }

@@ -23,6 +23,12 @@ QByteArray getKeywordBytes(const QString& keyword);
 /// Split a string into words using Kad keyword delimiter characters.
 void getWords(const QString& str, std::vector<QString>& outWords);
 
+/// The keyword a Kad search for @p expression will be indexed under: the first
+/// word of the lowercased expression. Empty when the expression yields no usable
+/// word. Callers building the search-terms blob must use the same keyword the
+/// search target was hashed from, so both go through this.
+[[nodiscard]] QString kadSearchKeyword(const QString& expression);
+
 /// Lowercase a tag string using Unicode standard case mapping.
 QString kadTagStrToLower(const QString& str);
 

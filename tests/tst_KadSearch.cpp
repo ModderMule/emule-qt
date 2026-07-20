@@ -3,11 +3,16 @@
 
 #include "TestHelpers.h"
 
+#include "kademlia/KadContact.h"
+#include "kademlia/KadDefines.h"
 #include "kademlia/KadLookupHistory.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadSearchManager.h"
+#include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUInt128.h"
+#include "protocol/Tag.h"
+#include "utils/Opcodes.h"
 
 #include <QTest>
 
@@ -25,6 +30,15 @@ private slots:
     void getTypeName_allTypes();
     void updateNodeLoad_accumulates();
     void stopping_flag();
+
+    // Contact ownership (audit item #2)
+    void processResponse_freesAllResultContacts();
+    void processResponse_freesRejectedDuplicates();
+
+    // Source publishing (audit item #4)
+    void sourceTags_publishBuddyUdpPort();
+    void sourceTags_notFirewalledHasNoBuddyTags();
+    void sourceTags_firewalledWithoutBuddyCannotPublish();
 
 private:
     void cleanupSearchManager();
@@ -132,6 +146,172 @@ void tst_KadSearch::stopping_flag()
     uint32 searchID = search->getSearchID();
     SearchManager::stopSearch(searchID, false);
     // After stopSearch, the search is deleted — we just verify no crash
+}
+
+// ---------------------------------------------------------------------------
+// Contact ownership (audit item #2)
+//
+// Contacts handed to a search by the UDP listener are raw pointers the search
+// takes ownership of. They used to be leaked: m_deleteList existed but nothing
+// ever populated it, so every response leaked one Contact per result.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+uint32 testIP(uint32 seed)
+{
+    // Distinct /24s so the anti-spam subnet limit doesn't reject them.
+    return (77u << 24) | ((seed & 0xFF) << 16) | (1u << 8) | 1u;
+}
+
+ContactArray makeResults(const UInt128& target, uint32 count, bool sameIP = false)
+{
+    ContactArray results;
+    for (uint32 i = 1; i <= count; ++i) {
+        results.push_back(new Contact(UInt128(i * 1013u), testIP(sameIP ? 1 : i),
+                                      static_cast<uint16>(4672 + i),
+                                      static_cast<uint16>(4662 + i),
+                                      target, KADEMLIA_VERSION, KadUDPKey(), false));
+    }
+    return results;
+}
+
+} // namespace
+
+void tst_KadSearch::processResponse_freesAllResultContacts()
+{
+    const uint64 baseline = Contact::liveInstanceCount();
+
+    UInt128 target(uint32{9001});
+    auto* search = SearchManager::prepareLookup(SearchType::Node, false, target);
+    QVERIFY(search != nullptr);
+    QVERIFY(SearchManager::startSearch(search));
+    const uint32 searchID = search->getSearchID();
+
+    ContactArray results = makeResults(target, 3);
+    QCOMPARE(Contact::liveInstanceCount(), baseline + 3);
+
+    SearchManager::processResponse(target, testIP(200), 4672, results);
+
+    // The search owns them now and must have recorded all three for deletion.
+    QCOMPARE(search->deleteListSize(), std::size_t{3});
+    QCOMPARE(Contact::liveInstanceCount(), baseline + 3);
+
+    SearchManager::stopSearch(searchID, false);
+
+    // Destroying the search must free every contact it was handed.
+    QCOMPARE(Contact::liveInstanceCount(), baseline);
+}
+
+void tst_KadSearch::processResponse_freesRejectedDuplicates()
+{
+    // Contacts rejected by the dedup / anti-spam filters are no longer deleted
+    // inline — m_deleteList owns them all. Deleting inline *and* recording them
+    // would be a double free; not recording them at all was the original leak.
+    const uint64 baseline = Contact::liveInstanceCount();
+
+    UInt128 target(uint32{9002});
+    auto* search = SearchManager::prepareLookup(SearchType::Node, false, target);
+    QVERIFY(search != nullptr);
+    QVERIFY(SearchManager::startSearch(search));
+    const uint32 searchID = search->getSearchID();
+
+    // All three share one IP, so two get rejected as duplicates.
+    ContactArray results = makeResults(target, 3, /*sameIP*/ true);
+    QCOMPARE(Contact::liveInstanceCount(), baseline + 3);
+
+    SearchManager::processResponse(target, testIP(200), 4672, results);
+    QCOMPARE(search->deleteListSize(), std::size_t{3});
+
+    SearchManager::stopSearch(searchID, false);
+    QCOMPARE(Contact::liveInstanceCount(), baseline);
+}
+
+// ---------------------------------------------------------------------------
+// Source publish tags (audit item #4)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const Tag* findTag(const std::vector<Tag>& tags, uint8 nameId)
+{
+    for (const auto& t : tags)
+        if (t.nameId() == nameId)
+            return &t;
+    return nullptr;
+}
+
+} // namespace
+
+void tst_KadSearch::sourceTags_publishBuddyUdpPort()
+{
+    // Regression: FT_SERVERPORT carried the buddy's ED2K *TCP* port. The Kad
+    // buddy-callback packet is UDP, so downloaders sent it to a port nothing was
+    // listening on and every callback to a firewalled source failed.
+    Search::SourcePublishParams p;
+    p.firewalled   = true;
+    p.hasBuddy     = true;
+    p.buddyIP      = testIP(5);
+    p.buddyUDPPort = 5555;   // deliberately different from any TCP port
+    p.tcpPort      = 4662;
+    p.largeFile    = false;
+
+    bool canPublish = false;
+    const auto tags = Search::buildSourcePublishTags(p, canPublish);
+    QVERIFY(canPublish);
+
+    const Tag* serverPort = findTag(tags, FT_SERVERPORT);
+    QVERIFY(serverPort != nullptr);
+    QCOMPARE(static_cast<uint16>(serverPort->intValue()), uint16{5555});
+
+    const Tag* serverIP = findTag(tags, FT_SERVERIP);
+    QVERIFY(serverIP != nullptr);
+    QCOMPARE(serverIP->intValue(), p.buddyIP);
+
+    // Source type 3 = firewalled with buddy, file <= 4GB.
+    const Tag* sourceType = findTag(tags, FT_SOURCETYPE);
+    QVERIFY(sourceType != nullptr);
+    QCOMPARE(sourceType->intValue(), uint32{3});
+
+    // Our own TCP port still travels as FT_SOURCEPORT and must not be confused
+    // with the buddy's port.
+    const Tag* sourcePort = findTag(tags, FT_SOURCEPORT);
+    QVERIFY(sourcePort != nullptr);
+    QCOMPARE(static_cast<uint16>(sourcePort->intValue()), uint16{4662});
+}
+
+void tst_KadSearch::sourceTags_notFirewalledHasNoBuddyTags()
+{
+    Search::SourcePublishParams p;
+    p.firewalled = false;
+    p.tcpPort    = 4662;
+    p.largeFile  = true;
+
+    bool canPublish = false;
+    const auto tags = Search::buildSourcePublishTags(p, canPublish);
+    QVERIFY(canPublish);
+
+    QVERIFY(findTag(tags, FT_SERVERIP) == nullptr);
+    QVERIFY(findTag(tags, FT_SERVERPORT) == nullptr);
+
+    // Source type 4 = reachable directly, file > 4GB.
+    const Tag* sourceType = findTag(tags, FT_SOURCETYPE);
+    QVERIFY(sourceType != nullptr);
+    QCOMPARE(sourceType->intValue(), uint32{4});
+}
+
+void tst_KadSearch::sourceTags_firewalledWithoutBuddyCannotPublish()
+{
+    // Publishing a source nobody can reach is worse than publishing none.
+    Search::SourcePublishParams p;
+    p.firewalled        = true;
+    p.directUDPCallback = false;
+    p.hasBuddy          = false;
+
+    bool canPublish = true;
+    const auto tags = Search::buildSourcePublishTags(p, canPublish);
+    QVERIFY(!canPublish);
+    QVERIFY(tags.empty());
 }
 
 QTEST_GUILESS_MAIN(tst_KadSearch)

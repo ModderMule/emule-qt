@@ -187,7 +187,9 @@ void CoreNotifierBridge::onServerStateChanged()
 {
     IpcMessage msg(IpcMsgType::PushServerState, 0);
     QCborMap info;
-    bool connected = theApp.isConnected();
+    // ED2K-only: drives the GUI's eD2K indicator and the "connection lost"
+    // notification/email below — theApp.isConnected() is true for Kad too.
+    bool connected = theApp.serverConnect && theApp.serverConnect->isConnected();
     info.insert(QStringLiteral("connected"),  connected);
     info.insert(QStringLiteral("connecting"),
                 theApp.serverConnect && theApp.serverConnect->isConnecting());
@@ -195,7 +197,7 @@ void CoreNotifierBridge::onServerStateChanged()
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
     if (connected && theApp.serverConnect) {
         info.insert(QStringLiteral("publicIP"),
-                    static_cast<qint64>(thePrefs.publicIP()));
+                    static_cast<qint64>(theApp.publicIP()));
         info.insert(QStringLiteral("obfuscated"),
                     theApp.serverConnect->isConnectedObfuscated());
         if (const auto* srv = theApp.serverConnect->currentServer()) {

@@ -829,4 +829,125 @@ ParseResult parseSearchExpression(const QString& input, bool keepQuotedStrings)
     return parser.parse(input, keepQuotedStrings);
 }
 
+namespace {
+
+[[nodiscard]] bool isOperatorAttr(const SearchAttr& a)
+{
+    return a.m_str == QByteArray(kSearchOpTokenAnd)
+        || a.m_str == QByteArray(kSearchOpTokenOr)
+        || a.m_str == QByteArray(kSearchOpTokenNot);
+}
+
+/// Append @p attr to @p expr, AND-combining it with whatever is already there.
+/// The expression is in prefix notation, so the operator goes at the front —
+/// mirrors MFC's AddAndAttr (SearchResultsWnd.cpp:1150-1162).
+void addAndAttr(SearchExpr& expr, const SearchAttr& attr)
+{
+    SearchExpr combined;
+    if (!expr.m_expr.empty())
+        combined.add(SearchOperator::And);
+    combined.add(attr);
+    combined.add(expr);
+    expr = std::move(combined);
+}
+
+} // anonymous namespace
+
+QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& kadKeyword)
+{
+    const bool forKad = !kadKeyword.isEmpty();
+
+    // Quoted strings are kept for Kad: they are matched against the result name
+    // by the receiving node and by our own result filter.
+    ParseResult parsed = parseSearchExpression(params.expression, forKad);
+    if (!parsed.success())
+        return {};
+
+    SearchExpr expr;
+
+    if (forKad) {
+        // Classify the parsed expression the way MFC's ParsedSearchExpression
+        // does (SearchResultsWnd.cpp:825-870).
+        int opCount = 0;
+        int opAnd = 0;
+        int nonDefaultTags = 0;
+        for (const auto& a : parsed.expr.m_expr) {
+            if (isOperatorAttr(a)) {
+                ++opCount;
+                if (a.m_str == QByteArray(kSearchOpTokenAnd))
+                    ++opAnd;
+            } else if (a.m_tag != FT_FILENAME) {
+                ++nonDefaultTags;
+            }
+        }
+
+        const QByteArray keywordUtf8 = kadKeyword.toUtf8();
+        if (opAnd > 0 && opAnd == opCount && nonDefaultTags == 0) {
+            // Pure AND-chain of filename terms: collapse into one space-joined
+            // string term, minus the keyword the target hash already covers.
+            // The receiver re-tokenizes it and requires every word to match.
+            QByteArray joined;
+            for (const auto& a : parsed.expr.m_expr) {
+                if (isOperatorAttr(a))
+                    continue;
+                if (a.m_str.toLower() == keywordUtf8.toLower())
+                    continue;
+                if (!joined.isEmpty())
+                    joined += ' ';
+                joined += a.m_str;
+            }
+            if (!joined.isEmpty())
+                expr.add(SearchAttr(joined));
+        } else if (parsed.expr.m_expr.size() == 1
+                   && parsed.expr.m_expr[0].m_tag == FT_FILENAME
+                   && parsed.expr.m_expr[0].m_str.toLower() == keywordUtf8.toLower()) {
+            // Expression is just the keyword — nothing left to send.
+        } else {
+            expr.add(parsed.expr);
+        }
+    } else {
+        expr.add(parsed.expr);
+    }
+
+    // Filters, AND-chained on top. Order matches MFC GetSearchPacket:1030-1065.
+    SearchExpr filters;
+    if (!params.extension.isEmpty())
+        addAndAttr(filters, SearchAttr(FT_FILEFORMAT, params.extension.toUtf8()));
+    if (params.availability > 0)
+        addAndAttr(filters, SearchAttr(FT_SOURCES, ED2K_SEARCH_OP_GREATER_EQUAL, params.availability));
+    if (params.maxSize > 0)
+        addAndAttr(filters, SearchAttr(FT_FILESIZE, ED2K_SEARCH_OP_LESS_EQUAL, params.maxSize));
+    if (params.minSize > 0)
+        addAndAttr(filters, SearchAttr(FT_FILESIZE, ED2K_SEARCH_OP_GREATER_EQUAL, params.minSize));
+    if (!params.fileType.isEmpty())
+        addAndAttr(filters, SearchAttr(FT_FILETYPE, params.fileType.toUtf8()));
+    if (params.completeSources > 0)
+        addAndAttr(filters, SearchAttr(FT_COMPLETE_SOURCES, ED2K_SEARCH_OP_GREATER_EQUAL, params.completeSources));
+    if (params.minBitrate > 0)
+        addAndAttr(filters, SearchAttr(FT_MEDIA_BITRATE, ED2K_SEARCH_OP_GREATER_EQUAL, params.minBitrate));
+    if (params.minLength > 0)
+        addAndAttr(filters, SearchAttr(FT_MEDIA_LENGTH, ED2K_SEARCH_OP_GREATER_EQUAL, params.minLength));
+    if (!params.codec.isEmpty())
+        addAndAttr(filters, SearchAttr(FT_MEDIA_CODEC, params.codec.toUtf8()));
+    if (!params.title.isEmpty())
+        addAndAttr(filters, SearchAttr(FT_MEDIA_TITLE, params.title.toUtf8()));
+    if (!params.album.isEmpty())
+        addAndAttr(filters, SearchAttr(FT_MEDIA_ALBUM, params.album.toUtf8()));
+    if (!params.artist.isEmpty())
+        addAndAttr(filters, SearchAttr(FT_MEDIA_ARTIST, params.artist.toUtf8()));
+
+    if (!filters.m_expr.empty()) {
+        SearchExpr combined;
+        if (!expr.m_expr.empty())
+            combined.add(SearchOperator::And);
+        combined.add(expr);
+        combined.add(filters);
+        expr = std::move(combined);
+    }
+
+    if (expr.m_expr.empty())
+        return {};
+    return expr.toBytes();
+}
+
 } // namespace eMule

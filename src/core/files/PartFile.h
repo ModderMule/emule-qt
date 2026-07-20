@@ -258,7 +258,11 @@ public:
 
     std::unique_ptr<Packet> createSrcInfoPacket(const UpDownClient* forClient,
                                                  uint8 version, uint16 options) const override;
-    void addClientSources(SafeMemFile& data, uint8 version, const UpDownClient* sender);
+    /// Parse an incoming source answer. `isSX2` selects the wire dialect: SX1 has no
+    /// version byte and its real version is inferred from the record size, whereas SX2
+    /// states its version up front and must match it exactly.
+    void addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool isSX2,
+                          const UpDownClient* sender);
 
     // -- Category -------------------------------------------------------------
 

@@ -3,9 +3,12 @@
 /// @brief 128-bit unsigned integer implementation.
 
 #include "kademlia/KadUInt128.h"
+#include "kademlia/KadLog.h"
 #include "utils/OtherFunctions.h"
 
 #include <QUuid>
+
+#include <openssl/rand.h>
 
 
 namespace eMule::kad {
@@ -77,6 +80,22 @@ UInt128& UInt128::setValueBE(const uint8* valueBE) noexcept
 
 UInt128& UInt128::setValueRandom()
 {
+    // This generates our KadID and every search target, so it must not be
+    // predictable. The previous std::mt19937 was seeded from a single 32-bit
+    // random_device value, capping the reachable state space at 2^32 no matter
+    // how large mt19937's internal state is — an attacker able to guess the seed
+    // could predict our node ID and search targets. MFC uses CryptoPP's
+    // AutoSeededRandomPool (UInt128.cpp:103-110); OpenSSL is already a hard
+    // dependency here, so use its CSPRNG.
+    uint8 randomBytes[16];
+    if (RAND_bytes(randomBytes, sizeof(randomBytes)) == 1) {
+        setValueBE(randomBytes);
+        return *this;
+    }
+
+    // RAND_bytes only fails if the CSPRNG could not be seeded at all. Fall back
+    // rather than returning a predictable zero, and make the degradation visible.
+    logKad(QStringLiteral("Kad: RAND_bytes failed — falling back to a non-crypto RNG for a 128-bit value"));
     auto& rng = randomEngine();
     std::uniform_int_distribution<uint32> dist;
     m_data[0] = dist(rng);

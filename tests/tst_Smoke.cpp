@@ -1,6 +1,7 @@
 #include <QTest>
 
 #include "TestHelpers.h"
+#include "app/AppConfig.h"
 #include "utils/Types.h"
 
 /// @brief Smoke test — verifies the build system, Qt Test framework,
@@ -26,9 +27,22 @@ private slots:
 
     void testConfigHeader()
     {
-        // Verify config.h was generated and EMULE_VERSION is defined
+        // Verify config.h was generated and EMULE_VERSION is defined.
+        // Assert self-consistency rather than a pinned literal, so a version
+        // bump in CMakeLists.txt does not require editing this test.
         QVERIFY(EMULE_VERSION_MAJOR >= 0);
-        QCOMPARE(QString::fromLatin1(EMULE_VERSION_STRING), QStringLiteral("0.1.6"));
+        QCOMPARE(QString::fromLatin1(EMULE_VERSION_STRING),
+                 QStringLiteral("%1.%2.%3").arg(EMULE_VERSION_MAJOR)
+                                           .arg(EMULE_VERSION_MINOR)
+                                           .arg(EMULE_VERSION_PATCH));
+    }
+
+    void testAppVersionMatchesConfig()
+    {
+        // kAppVersion (AppConfig.h) must track the generated config.h version —
+        // it feeds the GUI title, daemon banner, web server, and User-Agent.
+        QCOMPARE(QString(eMule::kAppVersion), QString::fromLatin1(EMULE_VERSION_STRING));
+        QVERIFY(eMule::kUserAgent.startsWith(QStringLiteral("eMuleQt/")));
     }
 
     void testTempDir()

@@ -5,9 +5,19 @@
 #include "kademlia/KadContact.h"
 #include "utils/Opcodes.h"
 
+#include <atomic>
+
 
 
 namespace eMule::kad {
+
+namespace {
+// Live-object counter. Contacts are raw-owned by RoutingBin and by Search's
+// m_deleteList, so tests use this to prove a search frees everything it was
+// handed. Atomic because it is cheap and keeps the counter honest if Kad UDP
+// handling is ever moved off the core event-loop thread.
+std::atomic<uint64> s_liveContacts{0};
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Constructors
@@ -15,7 +25,13 @@ namespace eMule::kad {
 
 Contact::Contact()
 {
+    s_liveContacts.fetch_add(1, std::memory_order_relaxed);
     initContact();
+}
+
+Contact::~Contact()
+{
+    s_liveContacts.fetch_sub(1, std::memory_order_relaxed);
 }
 
 Contact::Contact(const UInt128& clientId, uint32 ip, uint16 udpPort, uint16 tcpPort,
@@ -30,6 +46,7 @@ Contact::Contact(const UInt128& clientId, uint32 ip, uint16 udpPort, uint16 tcpP
     , m_type(3)
     , m_ipVerified(ipVerified)
 {
+    s_liveContacts.fetch_add(1, std::memory_order_relaxed);
     m_distance.setValue(localKadId);
     m_distance.xorWith(clientId);
     initContact();
@@ -47,6 +64,7 @@ Contact::Contact(const UInt128& clientId, uint32 ip, uint16 udpPort, uint16 tcpP
     , m_type(3)
     , m_ipVerified(ipVerified)
 {
+    s_liveContacts.fetch_add(1, std::memory_order_relaxed);
     m_distance.setValue(target);
     m_distance.xorWith(clientId);
     initContact();
@@ -54,6 +72,7 @@ Contact::Contact(const UInt128& clientId, uint32 ip, uint16 udpPort, uint16 tcpP
 
 Contact::Contact(const Contact& other)
 {
+    s_liveContacts.fetch_add(1, std::memory_order_relaxed);
     copy(other);
 }
 
@@ -67,6 +86,11 @@ Contact& Contact::operator=(const Contact& other)
 // ---------------------------------------------------------------------------
 // Public methods
 // ---------------------------------------------------------------------------
+
+uint64 Contact::liveInstanceCount()
+{
+    return s_liveContacts.load(std::memory_order_relaxed);
+}
 
 void Contact::setClientID(const UInt128& clientId, const UInt128& localKadId)
 {

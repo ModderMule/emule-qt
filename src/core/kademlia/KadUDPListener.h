@@ -66,6 +66,12 @@ public:
     /// Total number of HELLO_RES packets received since startup (monotonically increasing).
     [[nodiscard]] uint32_t totalHellosReceived() const { return m_hellosReceived.load(std::memory_order_relaxed); }
 
+    /// Decode a serialized search expression tree (the payload produced by
+    /// SearchExpr::toBytes). Public because Search rebuilds its own expression
+    /// from the blob it sent, to re-verify incoming results — MFC does the same
+    /// (Search.cpp:1171-1175).
+    [[nodiscard]] static std::unique_ptr<SearchTerm> createSearchExpressionTree(SafeMemFile& io, int level);
+
 signals:
     void packetToSend(QByteArray data, uint32 destIP, uint16 destPort,
                       KadUDPKey targetKey, UInt128 cryptTargetID);
@@ -77,7 +83,6 @@ private:
                               bool update, bool fromHelloReq, bool* outRequestsACK,
                               UInt128* outContactID);
     void sendLegacyChallenge(uint32 ip, uint16 udpPort, const UInt128& contactID);
-    static std::unique_ptr<SearchTerm> createSearchExpressionTree(SafeMemFile& io, int level);
 
     void process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpPort, const KadUDPKey& senderKey);
     void process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,

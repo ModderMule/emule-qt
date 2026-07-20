@@ -25,6 +25,8 @@ private slots:
     void connectionStateSignal();
     void processServerMessage();
     void processIdChange();
+    void processIdChangeExtended();
+    void processIdChangeExtendedRejectsLowIDReport();
     void processServerStatus();
     void processReject();
 };
@@ -150,8 +152,98 @@ void tst_ServerSocket::processIdChange()
     QTRY_COMPARE_WITH_TIMEOUT(loginSpy.count(), 1, 3000);
     QCOMPARE(loginSpy.first().at(0).toUInt(), clientID);
     QCOMPARE(loginSpy.first().at(1).toUInt(), tcpFlags);
+    // Short form carries no server-reported IP; the field must stay 0 rather
+    // than picking up whatever follows the packet in the buffer.
+    QCOMPARE(loginSpy.first().at(2).toUInt(), uint32{0});
 
     QCOMPARE(clientSocket.connectionState(), ServerConnState::Connected);
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+// ---------------------------------------------------------------------------
+// Test: extended OP_IDCHANGE (>= 20 bytes)
+//
+// MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:341. The extended form
+// is the only way to learn our public IP on a LowID connection, and the only
+// source of the server's obfuscated TCP port. eMuleQt parsed neither, so
+// supportsObfuscationTCP() was permanently false and a LowID login left us with
+// no public IP at all.
+// Layout: clientID(4) tcpFlags(4) auxPort(4) serverReportedIP(4) obfTCPPort(4)
+// ---------------------------------------------------------------------------
+
+void tst_ServerSocket::processIdChangeExtended()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy loginSpy(&clientSocket, &ServerSocket::loginReceived);
+    QVERIFY(loginSpy.isValid());
+
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    char payload[20];
+    uint32 clientID = 0x00000042;          // LowID — the case the IP field exists for
+    uint32 tcpFlags = SRVCAP_ZLIB;
+    uint32 auxPort  = 4661;
+    uint32 reportedIP = 0x0100007F;        // 127.0.0.1 in ED2K order, a HighID value
+    uint32 obfPort  = 4663;
+    std::memcpy(payload, &clientID, 4);
+    std::memcpy(payload + 4, &tcpFlags, 4);
+    std::memcpy(payload + 8, &auxPort, 4);
+    std::memcpy(payload + 12, &reportedIP, 4);
+    std::memcpy(payload + 16, &obfPort, 4);
+
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_IDCHANGE, payload, 20);
+
+    QTRY_COMPARE_WITH_TIMEOUT(loginSpy.count(), 1, 3000);
+    QCOMPARE(loginSpy.first().at(0).toUInt(), clientID);
+    QCOMPARE(loginSpy.first().at(2).toUInt(), reportedIP);
+
+    // Field 16 must reach the Server, or supportsObfuscationTCP() stays false.
+    QVERIFY(clientSocket.currentServer() != nullptr);
+    QCOMPARE(clientSocket.currentServer()->obfuscationPortTCP(), uint16{4663});
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+void tst_ServerSocket::processIdChangeExtendedRejectsLowIDReport()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy loginSpy(&clientSocket, &ServerSocket::loginReceived);
+
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    char payload[20] = {};
+    uint32 clientID = 0x00000042;
+    uint32 reportedIP = 0x00000063;  // a LowID here is nonsense — MFC asserts and zeroes it
+    std::memcpy(payload, &clientID, 4);
+    std::memcpy(payload + 12, &reportedIP, 4);
+
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_IDCHANGE, payload, 20);
+
+    QTRY_COMPARE_WITH_TIMEOUT(loginSpy.count(), 1, 3000);
+    // Dropped, not forwarded: the field is supposed to report a routable address,
+    // and a LowID would be stored as our public IP and stamped onto UDP keys.
+    QCOMPARE(loginSpy.first().at(2).toUInt(), uint32{0});
 
     serverSide->close();
     clientSocket.close();

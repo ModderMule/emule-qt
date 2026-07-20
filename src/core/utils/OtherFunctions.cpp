@@ -163,12 +163,19 @@ bool isGoodIP(uint32 nIP, bool forceCheck)
     if (isLanIP(nIP) && !forceCheck)
         return false;
 
-    // 0.x.x.x is invalid
+    // 0.x.x.x is invalid, and so is anything from 224.0.0.0 up (multicast +
+    // reserved + broadcast). MFC OtherFunctions.cpp:2060 rejects both; without
+    // the 224+ check a peer can hand us multicast addresses as Kad contacts.
     const auto a = static_cast<uint8>(nIP);
-    if (a == 0)
+    if (nIP == 0 || a == 0 || a >= 224)
         return false;
 
     return true;
+}
+
+bool isGoodIPPort(uint32 nIP, uint16 nPort)
+{
+    return isGoodIP(nIP) && nPort != 0;
 }
 
 bool isLanIP(uint32 nIP)

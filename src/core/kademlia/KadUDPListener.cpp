@@ -20,6 +20,7 @@
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "ipfilter/IPFilter.h"
 #include "net/Address.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
@@ -62,9 +63,9 @@ void KademliaUDPListener::bootstrap(const QString& host, uint16 udpPort)
 void KademliaUDPListener::bootstrap(uint32 ip, uint16 udpPort, uint8 kadVersion,
                                      const UInt128* cryptTargetID)
 {
+    // sendPacket() tracks BOOTSTRAP_REQ for us — see isTrackedOutListRequestPacket().
     sendNullPacket(KADEMLIA2_BOOTSTRAP_REQ, ip, udpPort, KadUDPKey(0),
                    (kadVersion >= KADEMLIA_VERSION6_49aBETA) ? cryptTargetID : nullptr);
-    addTrackedOutPacket(ip, KADEMLIA2_BOOTSTRAP_REQ);
 }
 
 void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
@@ -170,8 +171,10 @@ void KademliaUDPListener::sendMyDetails(uint8 opcode, uint32 ip, uint16 udpPort,
                    .arg(ipToString(ip)).arg(udpPort));
     }
 
+    // sendPacket() tracks HELLO_REQ / HELLO_RES for us — see
+    // isTrackedOutListRequestPacket(). Tracking again here would double-insert
+    // and keep the out-track entry alive past its single intended consumption.
     sendPacket(packet, opcode, ip, udpPort, targetKey, cryptTargetID);
-    addTrackedOutPacket(ip, opcode);
 }
 
 void KademliaUDPListener::sendPublishSourcePacket(Contact* contact, const UInt128& targetID,
@@ -210,6 +213,13 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     if (len < 1)
         return;
 
+    // We do not accept unencrypted incoming packets from port 53 (DNS), to avoid
+    // attacks based on DNS protocol confusion. MFC KademliaUDPListener.cpp:223-226.
+    // The routing table already refuses port-53 contacts (RoutingZone::add); this
+    // is the packet-acceptance half of the same mitigation.
+    if (udpPort == 53 && senderKey.isEmpty())
+        return;
+
     // Update connection state on every incoming packet (MFC KademliaUDPListener.cpp:229-231)
     auto* prefs = Kademlia::getInstancePrefs();
     if (prefs)
@@ -222,6 +232,24 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
 
     // logKad(QStringLiteral("Kad: processPacket opcode=0x%1 from %2:%3 len=%4")
     //            .arg(opcode, 2, 16, QLatin1Char('0')).arg(ipToString(ip)).arg(udpPort).arg(len));
+
+    // General incoming-request flood protection. MFC KademliaUDPListener.cpp:236-250.
+    switch (inTrackListIsAllowedPacket(ip, opcode, validReceiverKey)) {
+    case 2:
+        // Massive flood — the limiter has already banned the IP. Also drop the
+        // contact from the routing zone so we stop treating it as a peer; its
+        // packets die at the socket while the ban lasts, so it would otherwise
+        // linger as a dead entry.
+        if (auto* rz = Kademlia::getInstanceRoutingZone()) {
+            if (auto* contact = rz->getContact(ip, udpPort, false))
+                contact->expire();
+        }
+        return;
+    case 1:
+        return;
+    default:
+        break;
+    }
 
     switch (opcode) {
     case KADEMLIA2_BOOTSTRAP_REQ:
@@ -327,10 +355,14 @@ void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint8 opcode
     if (len > 0)
         fullPacket.append(reinterpret_cast<const char*>(data), static_cast<qsizetype>(len));
 
-    // Track outgoing request packets whose response handlers check isOnOutTrackList().
-    // bootstrap(), sendMyDetails(), and firewalledCheck() already track their own opcodes;
-    // these two are sent from Search::sendFindValue() / process_KADEMLIA2_PING.
-    if (opcode == KADEMLIA2_REQ || opcode == KADEMLIA2_PING)
+    // Track every outgoing request whose response handler gates on
+    // isOnOutTrackList(). MFC does this from its SendPacket overloads
+    // (KademliaUDPListener.cpp:1884,1900,1913) rather than per call site, so no
+    // request can be forgotten. Previously only REQ and PING were tracked, which
+    // meant a PUBLISH_RES out-track guard would have rejected every legitimate
+    // publish response. firewalledCheck() still tracks its own opcode — it folds
+    // FIREWALLED and FIREWALLED2 onto one key.
+    if (isTrackedOutListRequestPacket(opcode))
         addTrackedOutPacket(destIP, opcode);
 
     sendPacket(reinterpret_cast<const uint8*>(fullPacket.constData()),
@@ -481,14 +513,81 @@ bool KademliaUDPListener::addContact_KADEMLIA2(const uint8* data, uint32 len, ui
 
 void KademliaUDPListener::sendLegacyChallenge(uint32 ip, uint16 udpPort, const UInt128& contactID)
 {
+    // Verify that a pre-0.49a contact is real and not sent from a spoofed IP.
+    // Those versions support no direct validation, so we send a KADEMLIA2_REQ
+    // for a random target — the challenge. Only the true holder of that IP can
+    // receive our packet and answer it, so any KADEMLIA2_RES that comes back
+    // matching the challenge proves the address.
+    // MFC KademliaUDPListener.cpp:2122-2155.
+    if (hasActiveLegacyChallenge(ip))
+        return; // never more than one challenge in flight per IP
+
     UInt128 challenge;
     challenge.setValueRandom();
-    addLegacyChallenge(contactID, challenge, ip, KADEMLIA2_HELLO_RES);
+    if (challenge == 0u)
+        challenge = UInt128(uint32{1}); // a zero challenge is the PING wildcard
 
     SafeMemFile packet;
+    packet.writeUInt8(KADEMLIA_FIND_VALUE);
+    // The target we want is our challenge...
     io::writeUInt128(packet, challenge);
-    sendPacket(packet, KADEMLIA2_PING, ip, udpPort, KadUDPKey(0), nullptr);
+    // ...and the contact's ID lets the far end sanity-check the request.
+    io::writeUInt128(packet, contactID);
+
+    // The versions we send this to support neither encryption nor obfuscation.
+    sendPacket(packet, KADEMLIA2_REQ, ip, udpPort, KadUDPKey(0), nullptr);
+    addLegacyChallenge(contactID, challenge, ip, KADEMLIA2_REQ);
 }
+
+namespace {
+
+/// Should we accept a publish request for @p keyID from @p ip?
+///
+/// Two guards, applied identically by all three PUBLISH_*_REQ handlers in MFC
+/// (KademliaUDPListener.cpp:1183-1196, :1282-1293, :1513-1526):
+///
+///  1. Refuse while we are UDP-firewalled. We would happily index the entry but
+///     could not be reached to serve it, so the publisher gets a false report of
+///     having placed its data somewhere reachable.
+///  2. Refuse keys that are not close to our own KadID. Publishes are supposed
+///     to land on the nodes nearest the key; without this anyone can dump an
+///     arbitrary index onto us regardless of where it belongs. LAN peers are
+///     exempt so a local test network still works.
+bool shouldAcceptPublish(const UInt128& keyID, uint32 ip)
+{
+    if (UDPFirewallTester::isFirewalledUDP(true))
+        return false;
+
+    auto* prefs = Kademlia::getInstancePrefs();
+    if (!prefs)
+        return false;
+
+    UInt128 distance(prefs->kadId());
+    distance.xorWith(keyID);
+    return distance.get32BitChunk(0) <= kSearchTolerance
+           || Address::fromHostOrder(ip).isLan();
+}
+
+/// Read a `<u16 namelen> <name…>` tag name and build a Tag around @p value.
+///
+/// A single-byte name is a numeric tag ID and must be normalized to Tag's
+/// nameId, exactly as io::readKadTag does when parsing stored entries. Keeping
+/// it as a raw byte-array name instead made every meta/numeric search term
+/// compare against a name no entry ever carries, so no filter could ever match.
+template <typename ValueT>
+Tag makeTermTag(SafeMemFile& io, const ValueT& value)
+{
+    const uint16 nameLen = io.readUInt16();
+    QByteArray name(nameLen, Qt::Uninitialized);
+    if (nameLen > 0)
+        io.read(name.data(), nameLen);
+
+    if (nameLen == 1)
+        return Tag(static_cast<uint8>(name[0]), value);
+    return Tag(std::move(name), value);
+}
+
+} // namespace
 
 std::unique_ptr<SearchTerm> KademliaUDPListener::createSearchExpressionTree(SafeMemFile& io, int level)
 {
@@ -523,19 +622,18 @@ std::unique_ptr<SearchTerm> KademliaUDPListener::createSearchExpressionTree(Safe
     }
     case 0x01: { // String
         term->type = SearchTerm::Type::String;
-        QString str = io::readStringUTF8(io);
-        if (!str.isEmpty())
-            term->strings.push_back(str.toLower());
+        QString str = kadTagStrToLower(io::readStringUTF8(io));
+        // Pre-tokenize: a string term carries several words ("aaa bbb ccc") and
+        // is matched as "aaa AND bbb AND ccc". Storing it unsplit meant a
+        // multi-word term could never match. MFC KademliaUDPListener.cpp:977-978.
+        getWords(str, term->strings);
         break;
     }
     case 0x02: { // MetaTag (string)
         term->type = SearchTerm::Type::MetaTag;
-        QString val = io::readStringUTF8(io);
-        uint16 nameLen = io.readUInt16();
-        QByteArray name(nameLen, Qt::Uninitialized);
-        if (nameLen > 0)
-            io.read(name.data(), nameLen);
-        term->tag = Tag(std::move(name), val);
+        // Lower case — the search code compares against lowercased entry data.
+        QString val = kadTagStrToLower(io::readStringUTF8(io));
+        term->tag = makeTermTag(io, val);
         break;
     }
     case 0x03:   // Numeric Relation 32-bit
@@ -543,11 +641,7 @@ std::unique_ptr<SearchTerm> KademliaUDPListener::createSearchExpressionTree(Safe
         // MFC: value + mmop byte + tag name
         uint64 val = (op == 0x03) ? io.readUInt32() : io.readUInt64();
         uint8 mmop = io.readUInt8();
-        uint16 nameLen = io.readUInt16();
-        QByteArray name(nameLen, Qt::Uninitialized);
-        if (nameLen > 0)
-            io.read(name.data(), nameLen);
-        term->tag = Tag(std::move(name), val);
+        term->tag = makeTermTag(io, val);
         // mmop: 0=Equal, 1=Greater, 2=Less, 3=GreaterEqual, 4=LessEqual, 5=NotEqual
         switch (mmop) {
         case 0x00: term->type = SearchTerm::Type::OpEqual; break;
@@ -627,8 +721,17 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uin
     uint16 numContacts = io.readUInt16();
     // Add bootstrapper itself to routing zone
     if (auto* rz = Kademlia::getInstanceRoutingZone()) {
+        // If we know no contacts at all we are cold-starting, and getClosestTo()
+        // hands out only IP-verified contacts — so without this we could never
+        // issue the first lookup. Assume the bootstrap answer is genuine just
+        // this once. MFC KademliaUDPListener.cpp:542-546: "the attack vectors to
+        // exploit this are very small with no major effects, so that's a good
+        // trade-off".
+        const bool assumeVerified = rz->getNumContacts() == 0;
+
         rz->addOrUpdateContact(bootstrapID, ip, udpPort, bootstrapTCP,
-                               bootstrapVersion, senderKey, validReceiverKey);
+                               bootstrapVersion, senderKey,
+                               validReceiverKey || assumeVerified);
 
         // Add all received contacts to routing zone
         for (uint16 i = 0; i < numContacts && io.position() < io.length(); ++i) {
@@ -639,7 +742,7 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uin
             uint8 contactVersion = io.readUInt8();
 
             rz->add(contactID, contactIP, contactUDP, contactTCP,
-                    contactVersion, KadUDPKey(0), false,
+                    contactVersion, KadUDPKey(0), assumeVerified,
                     true /*update*/, false /*fromHello*/, false /*fromNodesDat*/);
         }
     }
@@ -660,27 +763,46 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
 {
     uint8 version = 0;
     bool ipVerified = validReceiverKey;
-    bool requestsACK = false;
     UInt128 contactID;
 
-    if (!addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
-                              ipVerified, true, true, &requestsACK, &contactID))
-        return;
+    const bool addedOrUpdated =
+        addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
+                             ipVerified, true, true, nullptr, &contactID);
 
     if (ipVerified) {
         if (auto* rz = Kademlia::getInstanceRoutingZone())
             rz->verifyContact(contactID, ip);
     }
 
-    // Send hello response
+    // Answer, and — if this contact entered our routing table without already
+    // having proved its IP — ask it for an ACK so we complete a three-way
+    // handshake and learn it is not spoofing the source address.
+    // MFC KademliaUDPListener.cpp:573.
+    //
+    // This is the side that *requests* the ACK. The port previously hardcoded
+    // false here and instead sent a HELLO_RES_ACK from this handler carrying the
+    // remote's ID, which is the wrong side of the exchange and the wrong payload,
+    // so the handshake never functioned in either direction.
     sendMyDetails(KADEMLIA2_HELLO_RES, ip, udpPort, version,
-                  senderKey, &contactID, false);
+                  senderKey, &contactID, addedOrUpdated && !validReceiverKey);
 
-    if (requestsACK && version >= KADEMLIA_VERSION8_49b) {
-        SafeMemFile ackPacket;
-        io::writeUInt128(ackPacket, contactID);
-        ackPacket.writeUInt8(0); // tag count = 0 (MFC expects ≥17 bytes)
-        sendPacket(ackPacket, KADEMLIA2_HELLO_RES_ACK, ip, udpPort, senderKey, &contactID);
+    if (!addedOrUpdated)
+        return;
+
+    // Peers too old for HELLO_RES_ACK still need verifying. The three version
+    // bands below are disjoint and together cover everything we accept.
+    if (!validReceiverKey && !hasActiveLegacyChallenge(ip)) {
+        if (version == KADEMLIA_VERSION7_49a) {
+            // v7 has sender/receiver keys but no HELLO_RES_ACK — a PING whose
+            // PONG we can match proves the IP. A zero challenge is the wildcard
+            // isLegacyChallenge() accepts for PING. MFC :578-581.
+            addLegacyChallenge(contactID, UInt128(), ip, KADEMLIA2_PING);
+            sendNullPacket(KADEMLIA2_PING, ip, udpPort, senderKey, nullptr);
+        } else if (version < KADEMLIA_VERSION7_49a) {
+            // Pre-v7 supports neither, so fall back to the KADEMLIA2_REQ
+            // challenge. MFC :593-596.
+            sendLegacyChallenge(ip, udpPort, contactID);
+        }
     }
 
     // Check if firewalled — ask this node to report our external IP
@@ -709,10 +831,36 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
 
     uint8 version = 0;
     bool ipVerified = validReceiverKey;
+    bool sendACK = false;
     UInt128 contactID;
 
-    if (!addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
-                              ipVerified, true, false, nullptr, &contactID))
+    const bool addedOrUpdated =
+        addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
+                             ipVerified, true, false, &sendACK, &contactID);
+
+    if (sendACK) {
+        // The remote asked us to prove we are not a spoofed contact. Reply with
+        // *our own* KadID — MFC KademliaUDPListener.cpp:645-659.
+        if (senderKey.isEmpty()) {
+            // Without a sender key our reply could not be validated anyway;
+            // most likely a bug in the remote client.
+            logKad(QStringLiteral("Kad: HELLO_RES from %1 demands an ACK but sent no sender key")
+                       .arg(ipToString(ip)));
+        } else {
+            auto* prefs = Kademlia::getInstancePrefs();
+            SafeMemFile ackPacket;
+            io::writeUInt128(ackPacket, prefs ? prefs->kadId() : UInt128());
+            ackPacket.writeUInt8(0); // no tags at this time
+            sendPacket(ackPacket, KADEMLIA2_HELLO_RES_ACK, ip, udpPort, senderKey, nullptr);
+        }
+    } else if (addedOrUpdated && !validReceiverKey && version < KADEMLIA_VERSION7_49a) {
+        // Even though this is an answer to our own request, it can still be
+        // spoofed by anyone who can guess we would send a HELLO_REQ, and these
+        // versions support no keys. MFC :661-667.
+        sendLegacyChallenge(ip, udpPort, contactID);
+    }
+
+    if (!addedOrUpdated)
         return;
 
     // If the contact's IP was verified (valid receiver key proves the remote
@@ -765,10 +913,27 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
 
 void KademliaUDPListener::process_KADEMLIA2_HELLO_RES_ACK(const uint8* data, uint32 len,
                                                             uint32 ip, uint16 udpPort,
-                                                            bool /*validReceiverKey*/)
+                                                            bool validReceiverKey)
 {
-    if (len < 16)
+    // This packet completes the three-way handshake and is the sole basis for
+    // marking the contact IP-verified, so all three of MFC's guards apply
+    // (KademliaUDPListener.cpp:604-620). Without them any unsolicited datagram
+    // could promote an arbitrary KadID to verified, which is precisely what the
+    // ACK exists to prevent.
+    if (len < 17) // 16 (KadID) + 1 (tag count)
         return;
+
+    if (!isOnOutTrackList(ip, KADEMLIA2_HELLO_RES)) {
+        logKad(QStringLiteral("Kad: unrequested HELLO_RES_ACK from %1 — dropped")
+                   .arg(ipToString(ip)));
+        return;
+    }
+
+    if (!validReceiverKey) {
+        logKad(QStringLiteral("Kad: HELLO_RES_ACK from %1 has an invalid receiver key — dropped")
+                   .arg(ipToString(ip)));
+        return;
+    }
 
     SafeMemFile io(data, len);
     UInt128 remoteID = io::readUInt128(io);
@@ -871,6 +1036,39 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
     UInt128 target = io::readUInt128(io);
     uint8 numContacts = io.readUInt8();
 
+    // Is this the answer to one of our legacy (pre-0.49a) challenges? Those peers
+    // support no direct verification, so we sent a KADEMLIA2_REQ with a random
+    // target and treat any answer as proof the IP is not spoofed.
+    // MFC KademliaUDPListener.cpp:759-767.
+    UInt128 challengeContactID;
+    if (isLegacyChallenge(target, ip, KADEMLIA2_REQ, challengeContactID)) {
+        if (auto* rz = Kademlia::getInstanceRoutingZone()) {
+            if (!rz->verifyContact(challengeContactID, ip)) {
+                logKad(QStringLiteral("Kad: KADEMLIA2_RES: no valid sender in routing table for legacy challenge (%1)")
+                           .arg(ipToString(ip)));
+            }
+        }
+        return; // we do not care about the rest of its content
+    }
+
+    // Exact size — 16 (target) + 1 (count) + 25 per contact. MFC :770.
+    // A short read used to silently yield a truncated contact list instead of
+    // rejecting a malformed packet.
+    if (len != 17u + 25u * numContacts) {
+        logKad(QStringLiteral("Kad: KADEMLIA2_RES from %1 has wrong size %2 for %3 contacts — dropped")
+                   .arg(ipToString(ip)).arg(len).arg(numContacts));
+        return;
+    }
+
+    // Refuse answers for a search that already expired, or that carry more
+    // contacts than we asked for. MFC :778-786. Returns 0 for an unknown target,
+    // which is exactly the expired-search case.
+    if (numContacts > SearchManager::getExpectedResponseContactCount(target)) {
+        logKad(QStringLiteral("Kad: KADEMLIA2_RES from %1 — search expired or over-answered (%2 contacts) — dropped")
+                   .arg(ipToString(ip)).arg(numContacts));
+        return;
+    }
+
     // SafeKad: track the responding node if we can identify it in the routing table
     if (auto* sk = Kademlia::getInstanceSafeKad()) {
         if (auto* rz = Kademlia::getInstanceRoutingZone()) {
@@ -882,6 +1080,9 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
     // MFC: firewall check searches skip routing table add — those contacts
     // must remain un-contacted for the UDP firewall test to be valid.
     const bool isFWCheckSearch = SearchManager::isFWCheckUDPSearch(target);
+    auto* rz = Kademlia::getInstanceRoutingZone();
+    auto* ipFilter = Kademlia::getIPFilter();
+    uint32 ignoredCount = 0;
 
     ContactArray results;
     // Each contact entry: 16 (KadID) + 4 (IP) + 2 (UDP) + 2 (TCP) + 1 (ver) = 25 bytes
@@ -892,18 +1093,54 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
         uint16 contactTCP = io.readUInt16();
         uint8 contactVersion = io.readUInt8();
 
-        auto* contact = new Contact(contactID, contactIP, contactUDP, contactTCP,
-                                     target, contactVersion, KadUDPKey(0), false);
+        // Vet every contact before it can reach a live search. Previously only
+        // the routing-table insert was filtered and its verdict was discarded, so
+        // a hostile responder could seed m_possible with bogon, ipfiltered,
+        // port-53 or Kad1 addresses that the search would then go and query.
+        // MFC :793-806.
+        if (contactVersion < KADEMLIA_VERSION2_47a) // Kad1 is no longer accepted
+            continue;
+        const uint32 hostIP = htonl(contactIP);
+        if (!isGoodIPPort(hostIP, contactUDP)) {
+            ++ignoredCount;
+            continue;
+        }
+        if (ipFilter && ipFilter->isFiltered(hostIP, thePrefs.ipFilterLevel())) {
+            ++ignoredCount;
+            continue;
+        }
+        if (contactUDP == 53 && contactVersion <= KADEMLIA_VERSION5_48a) {
+            ++ignoredCount; // no DNS port without encryption
+            continue;
+        }
 
         // Add to routing table — matches MFC Process_KADEMLIA2_RES behavior.
         // Skip for firewall check searches (MFC: contacts must stay un-contacted).
-        if (!isFWCheckSearch) {
-            if (auto* rz = Kademlia::getInstanceRoutingZone())
-                rz->addOrUpdateContact(contactID, contactIP, contactUDP, contactTCP,
-                                       contactVersion, KadUDPKey(0), false);
+        // Note update/fromHello are false here: a routing answer must not be able
+        // to mutate existing entries or claim a completed HELLO handshake.
+        bool wasAdded = false;
+        if (!isFWCheckSearch && rz) {
+            wasAdded = rz->addOrUpdateContact(contactID, contactIP, contactUDP, contactTCP,
+                                              contactVersion, KadUDPKey(0), false,
+                                              /*update=*/false, /*fromHello=*/false);
         }
 
-        results.push_back(contact);
+        auto* contact = new Contact(contactID, contactIP, contactUDP, contactTCP,
+                                     target, contactVersion, KadUDPKey(0), false);
+
+        // If the contact made it into the routing table it is trustworthy enough;
+        // otherwise it still has to pass the duplicate/hijack and IP-limit checks.
+        if (wasAdded || !rz || rz->isAcceptableContact(contact)) {
+            results.push_back(contact);
+        } else {
+            ++ignoredCount;
+            delete contact;
+        }
+    }
+
+    if (ignoredCount > 0) {
+        logKad(QStringLiteral("Kad: ignored %1 bad contacts in routing answer from %2")
+                   .arg(ignoredCount).arg(ipToString(ip)));
     }
 
     // If this is a firewall check search, feed contacts to the UDP firewall tester
@@ -1017,6 +1254,10 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
 
     SafeMemFile io(data, len);
     UInt128 keyID = io::readUInt128(io);
+
+    if (!shouldAcceptPublish(keyID, ip))
+        return;
+
     uint16 count = io.readUInt16();
 
     auto* indexed = Kademlia::getInstanceIndexed();
@@ -1043,6 +1284,25 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
                         if (entry->m_size == 0)
                             entry->m_size = tag.isInt() ? tag.intValue()
                                           : tag.isInt64(false) ? tag.int64Value() : 0;
+                    } else if (Entry::tagLookupKey(tag) == QByteArrayLiteral(TAG_KADAICHHASHPUB)) {
+                        // The AICH hash is aggregated across publishers rather
+                        // than stored as a plain tag — mergeIPsAndFilenames()
+                        // reference-counts it and we re-serve the popular one as
+                        // TAG_KADAICHHASHRESULT. MFC KademliaUDPListener.cpp:1227-1240.
+                        // AICH hashes are SHA-1 digests (20 bytes).
+                        constexpr qsizetype kAICHHashSize = 20;
+                        const QByteArray hash = tag.isBlob() ? tag.blobValue() : QByteArray();
+                        if (hash.size() == kAICHHashSize) {
+                            if (entry->aichHashCount() == 0)
+                                entry->addRemoveAICHHash(hash, true);
+                            else
+                                logKad(QStringLiteral("Kad: multiple TAG_KADAICHHASHPUB tags for one file from %1")
+                                           .arg(ipToString(ip)));
+                        } else {
+                            logKad(QStringLiteral("Kad: bad TAG_KADAICHHASHPUB from %1")
+                                       .arg(ipToString(ip)));
+                        }
+                        // consumed, never stored in the tag list
                     } else {
                         entry->addTag(std::move(tag));
                     }
@@ -1077,6 +1337,10 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
     uint8 load = 0;
     try {
         UInt128 keyID = io::readUInt128(io);
+
+        if (!shouldAcceptPublish(keyID, ip))
+            return;
+
         UInt128 sourceID = io::readUInt128(io);
         TagList tags = io::readKadTagList(io);
 
@@ -1085,10 +1349,83 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
             entry->m_keyID = keyID;
             entry->m_sourceID = sourceID;
             entry->m_address = Address::fromHostOrder(ip);
-            for (auto& tag : tags)
-                entry->addTag(std::move(tag));
-            if (!indexed->addSources(keyID, sourceID, entry, load))
+            entry->m_udpPort = udpPort;
+            entry->m_lifetime = time(nullptr) + KADEMLIAREPUBLISHTIMES;
+
+            // Interpret the publisher's tags rather than storing them verbatim.
+            // MFC KademliaUDPListener.cpp:1300-1380.
+            bool addUDPPortTag = true;
+            for (auto& tag : tags) {
+                switch (tag.nameId()) {
+                case FT_SOURCETYPE:
+                    if (!entry->m_source) {
+                        // A source result is useless without an address, and the
+                        // publisher never sends its own — so we synthesise it
+                        // from the address the packet actually came from. This
+                        // also means a spoofed TAG_SOURCEIP cannot be stored.
+                        entry->addTag(Tag(FT_SOURCEIP, entry->m_address.toUint32()));
+                        entry->addTag(std::move(tag));
+                        entry->m_source = true;
+                    }
+                    break;
+                case FT_SOURCEPORT:
+                    if (entry->m_tcpPort == 0) {
+                        entry->m_tcpPort = static_cast<uint16>(tag.intValue());
+                        entry->addTag(std::move(tag));
+                    }
+                    break;
+                case FT_SOURCEUPORT:
+                    if (addUDPPortTag && tag.isInt() && tag.intValue() != 0) {
+                        entry->m_udpPort = static_cast<uint16>(tag.intValue());
+                        entry->addTag(std::move(tag));
+                        addUDPPortTag = false;
+                    }
+                    break;
+                case FT_SERVERIP: {
+                    // Drop lowID sources whose buddy is unreachable: a filtered
+                    // or banned buddy IP makes the whole source unusable, and
+                    // MFC clears m_bSource so the entry is discarded and no
+                    // PUBLISH_RES is sent at all. MFC :1344-1369.
+                    if (!tag.isInt())
+                        break;
+                    const uint32 buddyIP = tag.intValue();
+                    const char* reason = nullptr;
+                    auto* ipFilter = Kademlia::getIPFilter();
+                    if (ipFilter && ipFilter->isFiltered(buddyIP, thePrefs.ipFilterLevel()))
+                        reason = "IP-filtered";
+                    else if (theApp.clientList
+                             && theApp.clientList->isBannedClient(Address::fromNetworkOrder(buddyIP)))
+                        reason = "banned";
+
+                    if (reason == nullptr) {
+                        entry->addTag(std::move(tag));
+                    } else {
+                        entry->m_source = false;
+                        logKad(QStringLiteral("Kad: publish from source %1 with %2 buddy IP — rejected")
+                                   .arg(ipToString(ip), QLatin1StringView(reason)));
+                    }
+                    break;
+                }
+                default:
+                    entry->addTag(std::move(tag));
+                    break;
+                }
+            }
+
+            // If the publisher omitted its UDP port, fall back to the observed
+            // one so the stored source still carries a usable port. MFC :1379.
+            if (addUDPPortTag)
+                entry->addTag(Tag(FT_SOURCEUPORT, static_cast<uint32>(entry->m_udpPort)));
+
+            // Only a genuine source (TAG_SOURCETYPE seen, buddy not rejected)
+            // gets indexed, and only a successful index earns a response.
+            bool stored = false;
+            if (entry->m_source)
+                stored = indexed->addSources(keyID, sourceID, entry, load);
+            if (!stored) {
                 delete entry;
+                return;
+            }
         }
 
         // Send publish response with load
@@ -1106,6 +1443,18 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_RES(const uint8* data, uint3
                                                          uint32 ip, uint16 udpPort,
                                                          const KadUDPKey& senderKey)
 {
+    // Only accept a publish response from a node we actually published to.
+    // MFC KademliaUDPListener.cpp:1431-1437. This is only correct because
+    // sendPacket() now registers all three PUBLISH_*_REQ opcodes on the
+    // out-track list — previously nothing tracked them.
+    if (!isOnOutTrackList(ip, KADEMLIA2_PUBLISH_KEY_REQ)
+        && !isOnOutTrackList(ip, KADEMLIA2_PUBLISH_SOURCE_REQ)
+        && !isOnOutTrackList(ip, KADEMLIA2_PUBLISH_NOTES_REQ)) {
+        logKad(QStringLiteral("Kad: unrequested PUBLISH_RES from %1 — dropped")
+                   .arg(ipToString(ip)));
+        return;
+    }
+
     if (len < 17)
         return;
 
@@ -1152,6 +1501,10 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
     uint8 load = 0;
     try {
         UInt128 keyID = io::readUInt128(io);
+
+        if (!shouldAcceptPublish(keyID, ip))
+            return;
+
         UInt128 sourceID = io::readUInt128(io);
         TagList tags = io::readKadTagList(io);
 
@@ -1472,6 +1825,20 @@ void KademliaUDPListener::process_KADEMLIA2_PONG(const uint8* data, uint32 len,
     if (len < 2)
         return;
 
+    // Is this the answer to a v7 verification PING? Those are registered with a
+    // zero challenge, which isLegacyChallenge() treats as a wildcard for PING.
+    // Unlike the KADEMLIA2_RES case we fall through afterwards — the port echo
+    // below is still useful. MFC KademliaUDPListener.cpp:1824-1834.
+    UInt128 challengeContactID;
+    if (isLegacyChallenge(UInt128(), ip, KADEMLIA2_PING, challengeContactID)) {
+        if (auto* rz = Kademlia::getInstanceRoutingZone()) {
+            if (!rz->verifyContact(challengeContactID, ip)) {
+                logKad(QStringLiteral("Kad: PONG: no valid sender in routing table for legacy challenge (%1)")
+                           .arg(ipToString(ip)));
+            }
+        }
+    }
+
     SafeMemFile io(data, len);
     uint16 externalPort = io.readUInt16();
 
@@ -1490,9 +1857,31 @@ void KademliaUDPListener::process_KADEMLIA2_FIREWALLUDP(const uint8* data, uint3
     uint8 errorCode = io.readUInt8();
     uint16 incomingPort = io.readUInt16();
 
-    logKad(QStringLiteral("Kad: FIREWALLUDP from %1 — errorCode=%2, incomingPort=%3")
-               .arg(ip).arg(errorCode).arg(incomingPort));
-    UDPFirewallTester::setUDPFWCheckResult(errorCode == 0, false, ip, incomingPort);
+    // The reported port decides our firewall verdict and which Kad port we then
+    // advertise, so it cannot be taken on trust: accept it only if it is one of
+    // the two ports we actually listen on. MFC KademliaUDPListener.cpp:1856-1866.
+    //
+    // Note both rejection paths report the test as *cancelled*, not failed — a
+    // result we cannot interpret must not count towards the firewalled tally.
+    // Previously a non-zero errorCode was reported as a counted firewalled
+    // verdict, which MFC explicitly avoids ("ignoring result").
+    auto* prefs = Kademlia::getInstancePrefs();
+    const uint16 externPort = prefs ? prefs->externalKadPort() : uint16{0};
+    const uint16 internPort = prefs ? prefs->internKadPort() : uint16{0};
+
+    if (incomingPort == 0 || (incomingPort != externPort && incomingPort != internPort)) {
+        logKad(QStringLiteral("Kad: FIREWALLUDP from %1 on unexpected incoming port %2 — ignoring result")
+                   .arg(ipToString(ip)).arg(incomingPort));
+        UDPFirewallTester::setUDPFWCheckResult(false, /*testCancelled=*/true, ip, 0);
+    } else if (errorCode == 0) {
+        logKad(QStringLiteral("Kad: FIREWALLUDP from %1 — incoming port %2")
+                   .arg(ipToString(ip)).arg(incomingPort));
+        UDPFirewallTester::setUDPFWCheckResult(true, false, ip, incomingPort);
+    } else {
+        logKad(QStringLiteral("Kad: FIREWALLUDP from %1 — remote error code %2 — ignoring result")
+                   .arg(ipToString(ip)).arg(errorCode));
+        UDPFirewallTester::setUDPFWCheckResult(false, /*testCancelled=*/true, ip, 0);
+    }
 }
 
 } // namespace eMule::kad

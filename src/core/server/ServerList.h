@@ -89,6 +89,17 @@ public:
     void resetSearchServerPos() { m_searchServerPos = 0; }
     void resetStatServerPos()   { m_statServerPos = 0; }
 
+    // -- UDP server status (OP_GLOBSERVSTATREQ / OP_GLOBSERVSTATRES) -------
+
+    /// Send an OP_GLOBSERVSTATREQ ping to the next due server in the list.
+    /// Rate-limited by the caller; each server is re-pinged at most every
+    /// UDPSERVSTATREASKTIME. Port of CServerList::ServerStats().
+    void serverStats();
+
+    /// Parse an OP_GLOBSERVSTATRES (0x97) reply and update the matching server.
+    /// Port of the OP_GLOBSERVSTATRES case in CUDPSocket::ProcessPacket.
+    void processStatusResponse(const uint8* data, uint32 size, const Endpoint& from);
+
     // -- Aggregate stats --------------------------------------------------
 
     [[nodiscard]] ServerListStats stats() const;
@@ -108,6 +119,7 @@ public:
 signals:
     void serverAdded(Server* server);
     void serverAboutToBeRemoved(const Server* server);
+    void serverUpdated(Server* server);
     void listReloaded();
     void listSaved();
 

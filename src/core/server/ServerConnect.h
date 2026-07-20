@@ -196,7 +196,13 @@ private:
     void initLocalIP();
 
     // -- Smart LowID ----------------------------------------------------------
-    void onLoginReceived(ServerSocket* socket, uint32 clientID);
+    void onLoginReceived(ServerSocket* socket, uint32 clientID, uint32 serverReportedIP);
+
+    /// Shared teardown for both disconnect paths — the explicit disconnect() and
+    /// the socket-initiated ServerConnState::Disconnected case. Clears the client
+    /// ID and our public IP, since both were the departing server's claim.
+    /// MFC: CServerConnect::Disconnect() — sockets.cpp:506.
+    void clearServerIdentity();
 
     // -- Login packet construction -------------------------------------------
     void sendLoginPacket(ServerSocket* socket);

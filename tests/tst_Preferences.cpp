@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 
+#include "app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "net/EMSocket.h"
 #include "net/EncryptedStreamSocket.h"
@@ -65,6 +66,36 @@ private slots:
         Preferences prefs;
         QCOMPARE(prefs.enableUPnP(), true);
         QCOMPARE(prefs.closeUPnPOnExit(), true);
+    }
+
+    // -- Config directory override (--config) ---------------------------------
+
+    // --config must redirect every configDir() consumer (server.met, nodes.dat,
+    // known.met, ...), not just the preferences.yml lookup in main(). Crucially
+    // it must NOT be persisted, or a sandboxed test run would rewrite the user's
+    // real preferences.yml to point at the sandbox.
+    void configDir_honoursAppConfigOverride()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        const auto realDir = QStringLiteral("/tmp/emuleqt-real-config");
+        const auto sandbox = tmp.filePath(QStringLiteral("sandbox"));
+
+        Preferences p;
+        p.load(file);
+        p.setConfigDir(realDir);
+        QCOMPARE(p.configDir(), realDir);
+
+        AppConfig::setConfigDirOverride(sandbox);
+        QCOMPARE(p.configDir(), sandbox);   // every consumer now redirected
+
+        p.save();
+        AppConfig::setConfigDirOverride(QString());  // process-global static
+
+        // The saved file must still name the user's real directory.
+        Preferences p2;
+        p2.load(file);
+        QCOMPARE(p2.configDir(), realDir);
     }
 
     // -- Load / Save ----------------------------------------------------------
@@ -461,11 +492,8 @@ private slots:
         QCOMPARE(prefs.enableSearchResultFilter(), true);
     }
 
-    void defaults_publicIP()
-    {
-        Preferences prefs;
-        QCOMPARE(prefs.publicIP(), 0u);
-    }
+    // publicIP is no longer a preference — it moved to AppContext as session
+    // state that must be re-derived each run. Covered by tst_AppContext.
 
     // -- New core settings round-trip -----------------------------------------
 
@@ -492,7 +520,6 @@ private slots:
             p1.setCheckDiskspace(false);
             p1.setMinFreeDiskSpace(104857600); // 100 MB
             p1.setEnableSearchResultFilter(false);
-            p1.setPublicIP(0xC0A80101); // 192.168.1.1
 
             QVERIFY(p1.saveTo(file));
         }
@@ -514,7 +541,6 @@ private slots:
         QCOMPARE(p2.checkDiskspace(), false);
         QCOMPARE(p2.minFreeDiskSpace(), uint64{104857600});
         QCOMPARE(p2.enableSearchResultFilter(), false);
-        QCOMPARE(p2.publicIP(), uint32{0xC0A80101});
     }
 
     // -- Validation for new settings ------------------------------------------

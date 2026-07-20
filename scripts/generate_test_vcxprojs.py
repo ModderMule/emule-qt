@@ -52,7 +52,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </PropertyGroup>
       <Import Project="$(VCTargetsPath)\\Microsoft.Cpp.Default.props" />
       <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-        <PlatformToolset>v143</PlatformToolset>
+        <PlatformToolset>v145</PlatformToolset>
         <OutputDirectory>release\\</OutputDirectory>
         <ATLMinimizesCRunTimeLibraryUsage>false</ATLMinimizesCRunTimeLibraryUsage>
         <CharacterSet>NotSet</CharacterSet>
@@ -61,7 +61,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
         <PrimaryOutput>{name}</PrimaryOutput>
       </PropertyGroup>
       <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-        <PlatformToolset>v143</PlatformToolset>
+        <PlatformToolset>v145</PlatformToolset>
         <OutputDirectory>debug\\</OutputDirectory>
         <ATLMinimizesCRunTimeLibraryUsage>false</ATLMinimizesCRunTimeLibraryUsage>
         <CharacterSet>NotSet</CharacterSet>
@@ -258,7 +258,7 @@ def discover_tests() -> list[str]:
 
 def generate_vcxproj(name: str) -> str:
     guid = make_guid(name)
-    return VCXPROJ_TEMPLATE.format(name=name, guid=guid)
+    return VCXPROJ_TEMPLATE.format(name=name, guid=guid).rstrip("\r\n")
 
 
 def generate_sln(test_names: list[str]) -> str:

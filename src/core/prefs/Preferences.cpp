@@ -432,9 +432,6 @@ struct Preferences::Data {
     // Search
     bool enableSearchResultFilter = true;  // Filter search result spam
 
-    // Network detection
-    uint32 publicIP = 0;  // Our detected public IP (set by server/peers)
-
     // GUI (General page)
     bool promptOnExit = true;
     bool startMinimized = false;
@@ -715,7 +712,16 @@ QStringList Preferences::tempDirs() const { return get(&Data::tempDirs); }
 
 void Preferences::setTempDirs(const QStringList& val) { set(&Data::tempDirs, val); }
 
-QString Preferences::configDir() const { return get(&Data::configDir); }
+QString Preferences::configDir() const
+{
+    // A --config override must redirect every consumer (server.met, nodes.dat,
+    // known.met, ...), not just the preferences.yml lookup in main(). Read the
+    // override here rather than writing it into m_data->configDir, so
+    // saveImpl() keeps persisting the user's real path and a --config run
+    // cannot leak its sandbox path into their preferences.yml.
+    const QString overrideDir = AppConfig::configDirOverride();
+    return overrideDir.isEmpty() ? get(&Data::configDir) : overrideDir;
+}
 
 void Preferences::setConfigDir(const QString& val) { set(&Data::configDir, val); }
 
@@ -1496,10 +1502,6 @@ void Preferences::setEnableSearchResultFilter(bool val) { set(&Data::enableSearc
 // Getters / setters — Network detection
 // ---------------------------------------------------------------------------
 
-uint32 Preferences::publicIP() const { return get(&Data::publicIP); }
-
-void Preferences::setPublicIP(uint32 val) { set(&Data::publicIP, val); }
-
 // ---------------------------------------------------------------------------
 // Getters / setters — GUI (General page)
 // ---------------------------------------------------------------------------
@@ -2170,7 +2172,9 @@ bool Preferences::load(const QString& filePath)
             m_data->maxConsPerFive = static_cast<uint16>(n["maxConsPerFive"].as<int>(m_data->maxConsPerFive));
             m_data->showOverhead = n["showOverhead"].as<bool>(m_data->showOverhead);
             m_data->networkED2K = n["networkED2K"].as<bool>(m_data->networkED2K);
-            m_data->publicIP = n["publicIP"].as<uint32>(m_data->publicIP);
+            // "publicIP" is deliberately not read: it now lives on AppContext as
+            // session state. A value left over from an older preferences.yml is
+            // ignored rather than resurrecting keys bound to a stale address.
         }
 
         // Bandwidth
@@ -2770,7 +2774,6 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxConsPerFive" << YAML::Value << static_cast<int>(m_data->maxConsPerFive);
     out << YAML::Key << "showOverhead" << YAML::Value << m_data->showOverhead;
     out << YAML::Key << "networkED2K" << YAML::Value << m_data->networkED2K;
-    out << YAML::Key << "publicIP" << YAML::Value << m_data->publicIP;
     out << YAML::EndMap;
 
     // Bandwidth

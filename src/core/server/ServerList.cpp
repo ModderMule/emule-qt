@@ -3,13 +3,20 @@
 /// @brief ED2K server collection implementation — port of CServerList from MFC.
 
 #include "ServerList.h"
+#include "ServerConnect.h"
+#include "app/AppContext.h"
+#include "prefs/Preferences.h"
+#include "net/Packet.h"
 #include "protocol/ED2KLink.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
+#include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 
+#include <QDateTime>
 #include <QFile>
 #include <QHostAddress>
+#include <QRandomGenerator>
 #include <QTextStream>
 
 
@@ -493,18 +500,225 @@ void ServerList::sortByPreference()
 }
 
 // ---------------------------------------------------------------------------
+// UDP server status — OP_GLOBSERVSTATREQ / OP_GLOBSERVSTATRES
+// ---------------------------------------------------------------------------
+
+void ServerList::serverStats()
+{
+    if (m_servers.empty() || !theApp.serverConnect)
+        return;
+
+    // MFC: CServerList::ServerStats() gates on theApp.IsConnected() — "ED2K
+    // connected OR Kad connected". Its comment notes stats should keep running
+    // in Kad-only mode so the two networks refresh each other. sendUDPPacket()
+    // applies the same predicate, so there is nothing to pre-check here beyond
+    // having a socket to send on.
+    if (!theApp.isConnected())
+        return;
+
+    const auto now = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
+
+    // Find the next server that is actually due for a ping. Walk at most one
+    // full lap so an all-recently-pinged list terminates.
+    Server* target = nextStatServer();
+    if (target == nullptr)
+        return;
+    const Server* const first = target;
+    while (target->lastPingedTime() > 0
+           && now < target->lastPingedTime() + UDPSERVSTATREASKTIME) {
+        target = nextStatServer();
+        if (target == first)
+            return;  // every server pinged recently
+    }
+
+    if (target->failedCount() >= MAX_SERVERFAILCOUNT)
+        return;
+
+    target->setRealLastPingedTime(now);
+
+    // Plain (non-obfuscated) status request. The challenge convention
+    // 0x55AA<random16> matches original eMule — some servers key extended
+    // reply formats off the 0x55AA marker, so keep it exactly.
+    // NOTE: original eMule first attempts an *obfuscated* ping to port+12 and
+    // only falls back to this on no reply. Not implemented yet — see
+    // Server::cryptPingReplyPending(), which stays false for now.
+    auto packet = std::make_unique<Packet>(OP_GLOBSERVSTATREQ, 4);
+    packet->prot = OP_EDONKEYPROT;
+
+    const uint32 challenge = 0x55AA0000u | (QRandomGenerator::global()->generate() & 0xFFFFu);
+    pokeUInt32(packet->pBuffer, challenge);
+
+    target->setChallenge(challenge);
+    target->setLastPinged(static_cast<uint32>(QDateTime::currentMSecsSinceEpoch()));
+    // Spread re-asks out by up to an hour so the whole list does not come due
+    // at once (matches eMule's `tNow - (rand() % HR2S(1))`).
+    target->setLastPingedTime(
+        now - static_cast<uint32>(QRandomGenerator::global()->bounded(HR2S(1))));
+    target->incFailedCount();
+
+    logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATREQ -> %1 (%2:%3) challenge=0x%4")
+                 .arg(target->name())
+                 .arg(ipstr(target->ipAddress()))
+                 .arg(target->port())
+                 .arg(challenge, 8, 16, QLatin1Char('0')));
+
+    theApp.serverConnect->sendUDPPacket(std::move(packet), *target,
+                                        static_cast<uint16>(target->port() + 4));
+}
+
+void ServerList::processStatusResponse(const uint8* data, uint32 size, const Endpoint& from)
+{
+    // Layout (original eMule CUDPSocket::ProcessPacket, OP_GLOBSERVSTATRES):
+    //   +0  uint32 challenge
+    //   +4  uint32 users
+    //   +8  uint32 files
+    //  +12  uint32 maxUsers        (size >= 16)
+    //  +16  uint32 softFiles       (size >= 24)
+    //  +20  uint32 hardFiles       (size >= 24)
+    //  +24  uint32 udpFlags        (size >= 28)
+    //  +28  uint32 lowIDUsers      (size >= 32)
+    //  +32  uint16 udpObfuscationPort  (size >= 40)
+    //  +34  uint16 tcpObfuscationPort  (size >= 40)
+    //  +36  uint32 serverUDPKey        (size >= 40)
+    // Anything past 40 bytes is a vendor extension and is ignored (ed2kNET
+    // appends a tagged X25519 public key here) — tolerate, do not reject.
+    if (data == nullptr || size < 12)
+        return;
+
+    // The reply arrives on the server's UDP port (tcpPort + 4) or its
+    // obfuscation port; findByIPUdp handles both.
+    Server* server = findByIPUdp(from.address().toNetworkUint32(), from.port(), true);
+    if (server == nullptr) {
+        logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from unknown server %1:%2")
+                     .arg(ipstr(from.address()))
+                     .arg(from.port()));
+        return;
+    }
+
+    const uint32 challenge = peekUInt32(data);
+    if (challenge != server->challenge()) {
+        logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES challenge mismatch from %1 "
+                                "(got 0x%2, expected 0x%3)")
+                     .arg(server->name())
+                     .arg(challenge, 8, 16, QLatin1Char('0'))
+                     .arg(server->challenge(), 8, 16, QLatin1Char('0')));
+        return;
+    }
+
+    server->setChallenge(0);
+    server->setCryptPingReplyPending(false);
+    server->resetFailedCount();
+
+    const auto nowMs = static_cast<uint32>(QDateTime::currentMSecsSinceEpoch());
+    server->setPing(nowMs - server->lastPinged());
+
+    server->setUsers(peekUInt32(data + 4));
+    server->setFiles(peekUInt32(data + 8));
+
+    if (size >= 16)
+        server->setMaxUsers(peekUInt32(data + 12));
+    if (size >= 24) {
+        server->setSoftFiles(peekUInt32(data + 16));
+        server->setHardFiles(peekUInt32(data + 20));
+    }
+
+    uint32 udpFlags = 0;
+    if (size >= 28) {
+        udpFlags = peekUInt32(data + 24);
+        server->setUDPFlags(udpFlags);
+    }
+    if (size >= 32)
+        server->setLowIDUsers(peekUInt32(data + 28));
+
+    uint16 udpObfPort = 0;
+    uint16 tcpObfPort = 0;
+    if (size >= 40) {
+        udpObfPort = peekUInt16(data + 32);
+        tcpObfPort = peekUInt16(data + 34);
+        // setServerKeyUDP() stamps our current public IP itself, as MFC does.
+        server->setServerKeyUDP(peekUInt32(data + 36));
+
+        if (size > 40) {
+            logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 has %2 extra bytes "
+                                    "(vendor extension, ignored)")
+                         .arg(server->name())
+                         .arg(size - 40));
+        }
+    }
+
+    // Apply default obfuscation ports when a short packet carried no port data
+    // but the flags claim obfuscation support.
+    if (tcpObfPort == 0 && (udpFlags & SrvUdpFlag::TcpObfuscation) != 0)
+        tcpObfPort = server->port();
+    if (udpObfPort == 0 && (udpFlags & SrvUdpFlag::UdpObfuscation) != 0)
+        udpObfPort = static_cast<uint16>(server->port() + 12);
+
+    server->setObfuscationPortTCP(tcpObfPort);
+    server->setObfuscationPortUDP(udpObfPort);
+
+    logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — users=%2 files=%3 "
+                            "ping=%4ms udpFlags=0x%5 udpKey=0x%6")
+                 .arg(server->name())
+                 .arg(server->users())
+                 .arg(server->files())
+                 .arg(server->ping())
+                 .arg(udpFlags, 8, 16, QLatin1Char('0'))
+                 .arg(server->serverKeyUDPRaw(), 8, 16, QLatin1Char('0')));
+
+    emit serverUpdated(server);
+}
+
+// ---------------------------------------------------------------------------
 // Crypto key management
 // ---------------------------------------------------------------------------
 
 void ServerList::checkForExpiredUDPKeys(uint32 currentClientIP)
 {
+    // MFC: CServerList::CheckForExpiredUDPKeys() — ServerList.cpp:1086.
+    // Our public IP changed, so every UDP key issued for the old one is now
+    // dead. Clearing lastPingedTime re-queues those servers for a stat ping,
+    // which is how a fresh key is obtained.
+    const auto now = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
+
+    uint32 keysTotal = 0;
+    uint32 keysExpired = 0;
+    uint32 pingsDelayed = 0;
+
     for (const auto& srv : m_servers) {
-        if (srv->supportsObfuscationUDP()) {
-            if (srv->serverKeyUDP() != 0 && srv->serverKeyUDPIP() != currentClientIP) {
-                srv->setLastPingedTime(0);
-            }
+        if (!srv->supportsObfuscationUDP())
+            continue;
+
+        // Deliberately the raw key: serverKeyUDP() already hides anything
+        // issued for a different IP, which is exactly what we are hunting for.
+        if (srv->serverKeyUDPRaw() == 0)
+            continue;
+
+        ++keysTotal;
+
+        if (srv->serverKeyUDPIP() == currentClientIP)
+            continue;  // still valid
+
+        ++keysExpired;
+
+        // Don't let an IP change fire the whole list at once — a server pinged
+        // within the last UDPSERVSTATMINREASKTIME is backdated so it comes due
+        // exactly when that minimum elapses, rather than immediately.
+        const uint32 sinceLastPing = now - srv->realLastPingedTime();
+        if (sinceLastPing < UDPSERVSTATMINREASKTIME) {
+            ++pingsDelayed;
+            srv->setLastPingedTime((now - static_cast<uint32>(UDPSERVSTATREASKTIME))
+                                   + (UDPSERVSTATMINREASKTIME - sinceLastPing));
+        } else {
+            srv->setLastPingedTime(0);  // due now
         }
     }
+
+    logDebug(QStringLiteral("ServerList: public IP changed — %1 UDP keys total, %2 expired, "
+                            "%3 immediate pings forced, %4 delayed")
+                 .arg(keysTotal)
+                 .arg(keysExpired)
+                 .arg(keysExpired - pingsDelayed)
+                 .arg(pingsDelayed));
 }
 
 // ---------------------------------------------------------------------------

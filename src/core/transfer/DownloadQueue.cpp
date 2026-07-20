@@ -203,10 +203,63 @@ bool DownloadQueue::isFileExisting(const uint8* hash) const
 // Source management
 // ===========================================================================
 
+namespace {
+
+/// True when the candidate source describes this very client. Sources arrive from
+/// three directions (source exchange, Kad, and server answers) and every one of them
+/// can hand us back our own address, so this is checked for all of them.
+///
+/// Note the two ID representations in play: the server comparisons work on the ED2K
+/// (network-order) id because that is what the server assigned us, while Kad reports
+/// its address in hybrid (host) order. Mixing them silently never matches.
+///
+/// The companion "drop low-ID sources while firewalled" rule from the original's
+/// CanAddSource deliberately lives in PartFile::addClientSources instead: the
+/// original applies it only to source-exchange and search results, never to Kad
+/// answers, which carry buddy details this check knows nothing about.
+bool isSelf(uint32 hybridID, uint16 port,
+            const Address& serverAddr, uint16 serverPort)
+{
+    const uint32 ed2kID = isLowID(hybridID) ? hybridID : htonl(hybridID);
+
+    if (theApp.serverConnect && theApp.serverConnect->isConnected()) {
+        if (theApp.serverConnect->isLowID()) {
+            // Under a LowID our "address" is only meaningful together with the server
+            // that issued it.
+            const Server* srv = theApp.serverConnect->currentServer();
+            if (theApp.serverConnect->clientID() == ed2kID && srv &&
+                srv->ipAddress() == serverAddr && srv->port() == serverPort)
+                return true;
+            if (theApp.serverConnect->localIP() == ed2kID)
+                return true;
+        } else if (theApp.serverConnect->clientID() == ed2kID &&
+                   thePrefs.port() == port) {
+            return true;
+        }
+    }
+
+    auto* kadInst = kad::Kademlia::instance();
+    if (kadInst && kadInst->isConnected() && !kadInst->isFirewalled() &&
+        kadInst->getIPAddress() == hybridID && thePrefs.port() == port)
+        return true;
+
+    return false;
+}
+
+} // namespace
+
 bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
 {
     if (!file || !source)
         return false;
+
+    // Never add ourselves as a source for our own download.
+    if (isSelf(source->userIDHybrid(), source->userPort(),
+               source->serverAddress(), source->serverPort())) {
+        logDebug(QStringLiteral("Source rejected — that is us: %1:%2")
+                     .arg(ipstr(source->userAddress())).arg(source->userPort()));
+        return false;
+    }
 
     // IPFilter check — reject filtered IPs
     if (m_ipFilter && !source->userAddress().isNull()) {

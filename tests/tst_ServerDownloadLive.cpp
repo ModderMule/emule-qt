@@ -199,9 +199,12 @@ void tst_ServerDownloadLive::initTestCase()
     cfg.userNick = QStringLiteral("eMuleQt-TestClient");
     cfg.listenPort = m_listenSocket->connectedPort();
     // CT_EMULE_VERSION: (compatClient << 24) | (major << 17) | (minor << 10) | (update << 7)
-    // Report as official eMule 0.50a (SO_EMULE=4) to pass server version checks.
-    constexpr uint32 SO_EMULE = 4;
-    cfg.emuleVersionTag = (SO_EMULE << 24) | (0u << 17) | (50u << 10) | (0u << 7);
+    // Must mirror CoreSession::start() exactly, so this test exercises the version we
+    // really ship. compatClient stays 0 (standard eMule) — matching srchybrid, which
+    // also omits the byte for server login (srchybrid/ServerConnect.cpp:199).
+    cfg.emuleVersionTag = (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17)
+                        | (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10)
+                        | (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);
     cfg.connectionTimeout = 30000;
 
     auto userHash = thePrefs.userHash();

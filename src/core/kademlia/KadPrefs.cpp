@@ -80,6 +80,8 @@ uint32 KadPrefs::ipAddress() const
 void KadPrefs::setIPAddress(uint32 ip)
 {
     // Two-step verification: IP must match twice before being set
+    const uint32 previous = m_ip;
+
     if (ip == 0 || m_ipLast == 0) {
         m_ipLast = ip;
     }
@@ -88,6 +90,13 @@ void KadPrefs::setIPAddress(uint32 ip)
     } else {
         m_ipLast = ip;
     }
+
+    // Kad outranks the ED2K-derived address in AppContext::publicIP(), so a new
+    // value here changes our effective public IP and invalidates every server
+    // UDP key — and nothing calls AppContext::setPublicIP() to notice. Fired only
+    // once the two-step check above has actually committed a new address.
+    if (m_ip != previous && m_ip != 0)
+        theApp.onEffectivePublicIPChanged(m_ip);
 }
 
 // ---------------------------------------------------------------------------
@@ -454,10 +463,21 @@ void KadPrefs::readFile()
     in >> ip >> reserved;
 
     // MFC uses ReadUInt128 → GetDataPtr() (raw host-order bytes).
+    // Note this zeroes m_clientId before reading, discarding the random ID the
+    // constructor generated — so *every* path out of here must leave a valid ID
+    // behind, or we would run with KadID 0 and be trivially locatable.
     m_clientId = UInt128();
     if (in.readRawData(reinterpret_cast<char*>(m_clientId.getDataPtr()), 16) != 16) {
-        logKad(QStringLiteral("Failed to read KadID from: %1").arg(m_filename));
+        logKad(QStringLiteral("Failed to read KadID from: %1 — generating a new one").arg(m_filename));
+        m_clientId.setValueRandom();
         return;
+    }
+
+    // Get rid of invalid Kad IDs which older versions may have stored, and of a
+    // corrupted (all-zero) file. MFC Prefs.cpp:108-110.
+    if (m_clientId == 0u) {
+        logKad(QStringLiteral("Kad: stored KadID was all-zero — generating a new one"));
+        m_clientId.setValueRandom();
     }
 
     uint8 tagCount = 0;

@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstring>
+#include <set>
 
 using namespace eMule;
 using namespace eMule::kad;
@@ -25,6 +26,7 @@ private slots:
     void construct_copy();
 
     void setValue_random();
+    void setValue_randomIsDistinctAndFullWidth();
     void setValue_GUID();
 
     void toHexString();
@@ -123,6 +125,42 @@ void tst_KadUInt128::setValue_random()
     v.setValueRandom();
     // Extremely unlikely to be zero
     QVERIFY(v != uint32{0});
+}
+
+void tst_KadUInt128::setValue_randomIsDistinctAndFullWidth()
+{
+    // This generates our KadID and every search target, so a weak generator
+    // makes both predictable. The old implementation drew from an mt19937 seeded
+    // with a single 32-bit value; it now uses OpenSSL's CSPRNG.
+    //
+    // We cannot test unpredictability directly, but we can catch the failure
+    // modes that would matter: repeated values, and entropy confined to part of
+    // the 128-bit space (e.g. only the low word actually varying).
+    constexpr int kSamples = 64;
+    std::set<QString> seen;
+    uint32 orBits[4] = {0, 0, 0, 0};
+    uint32 andBits[4] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+
+    for (int i = 0; i < kSamples; ++i) {
+        UInt128 v;
+        v.setValueRandom();
+        seen.insert(v.toHexString());
+        for (int chunk = 0; chunk < 4; ++chunk) {
+            const uint32 c = v.get32BitChunk(chunk);
+            orBits[chunk] |= c;
+            andBits[chunk] &= c;
+        }
+    }
+
+    // No repeats across 64 draws.
+    QCOMPARE(static_cast<int>(seen.size()), kSamples);
+
+    // Every 32-bit chunk must show both set and clear bits — a chunk that is
+    // constant across 64 samples means that part of the ID is not random.
+    for (int chunk = 0; chunk < 4; ++chunk) {
+        QVERIFY2(orBits[chunk] != 0, "a 32-bit chunk was always zero");
+        QVERIFY2(andBits[chunk] != 0xFFFFFFFFu, "a 32-bit chunk was always all-ones");
+    }
 }
 
 void tst_KadUInt128::setValue_GUID()

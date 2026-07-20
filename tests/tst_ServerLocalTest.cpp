@@ -1,9 +1,12 @@
 /// @file tst_ServerLocalTest.cpp
-/// @brief Local server integration test — starts a local eNode server,
-///        connects with obfuscation AND plain TCP in two rounds, plus a
-///        third UDP global search round while disconnected. Publishes
-///        shared files, searches by keyword, and verifies results contain
-///        our file hashes.
+/// @brief Local server integration test — starts a local eNode server and
+///        exercises it over four rounds: obfuscated TCP (5565), plain TCP
+///        (5555), UDP global search while disconnected (5559), and plain TCP
+///        against the obfuscated port (5565). Publishes shared files, searches
+///        by keyword, and verifies the results carry our hashes and sizes.
+///
+/// Each round asserts HighID, so a firewall probe that fails — or silently
+/// falls back to plaintext — is caught rather than logged and ignored.
 ///
 /// Deterministic: we control the server and the data.
 /// Requires SERVER_TEST_CMD set in .env (QSKIP if not available).
@@ -82,13 +85,20 @@ private slots:
     void searchUdpGlobal();
     void stopServerUdpSearch();
 
+    // Round 4: Plain TCP against the *obfuscated* port
+    void startServerPlainOnObfuscatedPort();
+    void publishFilesPlainOnObfuscatedPort();
+    void searchPlainOnObfuscatedPort_data();
+    void searchPlainOnObfuscatedPort();
+    void stopServerPlainOnObfuscatedPort();
+
     void cleanupTestCase();
 
 private:
     // Helper methods
     void startServer();
     void stopServer();
-    void connectToLocalServer(bool noCrypt);
+    void connectToLocalServer(bool noCrypt, quint16 overridePort = 0);
     void disconnectFromServer();
     void publishFiles();
     void searchForKeyword();
@@ -118,10 +128,13 @@ private:
     // UDP socket for Round 3
     UDPSocket* m_udpSocket = nullptr;
 
-    // Shared file hashes (MD4, 16 bytes each)
+    // Shared file hashes (MD4, 16 bytes each) and their sizes
     QByteArray m_readmeHash;
     QByteArray m_zipHash;
     QByteArray m_testfileHash;
+    uint64 m_readmeSize = 0;
+    uint64 m_zipSize = 0;
+    uint64 m_testfileSize = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -139,25 +152,37 @@ void tst_ServerLocalTest::startServer()
     m_serverProcess->start(m_enodeExecutable, m_enodeArgs);
     QVERIFY2(m_serverProcess->waitForStarted(5000), "Failed to start eNode server process");
 
-    // Poll TCP connect to 127.0.0.1:5555 every 500ms (up to 10s) for readiness
+    // Wait for the LAST listener the server binds, not the first: 5555 comes up
+    // before the obfuscated 5565, and round 1 connects to 5565. Polling only 5555
+    // can therefore connect before 5565 exists.
+    // The budget is 30s because dynIp resolution can stall the server's startup by
+    // ~12s before it binds anything.
+    const QList<quint16> readyPorts = {5555, 5565};
     bool serverReady = false;
-    for (int attempt = 0; attempt < 20; ++attempt) {
+    for (int attempt = 0; attempt < 60 && !serverReady; ++attempt) {
         if (m_serverProcess->state() == QProcess::NotRunning) {
             qWarning() << "eNode process exited prematurely, exit code:"
                        << m_serverProcess->exitCode();
             break;
         }
-        QTcpSocket probe;
-        probe.connectToHost(QStringLiteral("127.0.0.1"), 5555);
-        if (probe.waitForConnected(500)) {
+        bool allUp = true;
+        for (quint16 port : readyPorts) {
+            QTcpSocket probe;
+            probe.connectToHost(QStringLiteral("127.0.0.1"), port);
+            if (!probe.waitForConnected(250)) {
+                allUp = false;
+                break;
+            }
             probe.disconnectFromHost();
+        }
+        if (allUp) {
             serverReady = true;
             break;
         }
         QTest::qWait(500);
     }
-    QVERIFY2(serverReady, "eNode server did not become ready within 10s");
-    qDebug() << "eNode server is ready on 127.0.0.1:5555";
+    QVERIFY2(serverReady, "eNode server did not become ready within 30s (ports 5555 and 5565)");
+    qDebug() << "eNode server is ready on 127.0.0.1 ports 5555 and 5565";
 }
 
 // ---------------------------------------------------------------------------
@@ -180,11 +205,14 @@ void tst_ServerLocalTest::stopServer()
 // Helper: Connect to local server
 // ---------------------------------------------------------------------------
 
-void tst_ServerLocalTest::connectToLocalServer(bool noCrypt)
+void tst_ServerLocalTest::connectToLocalServer(bool noCrypt, quint16 overridePort)
 {
-    // Recreate local server object
+    // Recreate local server object. overridePort lets a round target a specific
+    // TCP port as the *plain* port — used by round 4 to speak plaintext to the
+    // obfuscated listener.
+    const quint16 tcpPort = overridePort != 0 ? overridePort : 5555;
     delete m_localServer;
-    m_localServer = new Server(htonl(0x7F000001), 5555);
+    m_localServer = new Server(htonl(0x7F000001), tcpPort);
     m_localServer->setName(QStringLiteral("(TESTING!!!) eNode"));
     m_localServer->setObfuscationPortTCP(5565);
     m_localServer->setObfuscationPortUDP(5569);
@@ -203,8 +231,11 @@ void tst_ServerLocalTest::connectToLocalServer(bool noCrypt)
     cfg.serverKeepAliveTimeout = 0;
     cfg.userNick = QStringLiteral("eMuleQt-LocalTest");
     cfg.listenPort = m_listenSocket->connectedPort();
-    constexpr uint32 SO_EMULE = 4;
-    cfg.emuleVersionTag = (SO_EMULE << 24) | (0u << 17) | (50u << 10) | (0u << 7);
+    // Must mirror CoreSession::start() exactly, so this test exercises the version we
+    // really ship. compatClient stays 0 (standard eMule).
+    cfg.emuleVersionTag = (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17)
+                        | (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10)
+                        | (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);
     cfg.connectionTimeout = 30000;
 
     if (noCrypt) {
@@ -216,6 +247,14 @@ void tst_ServerLocalTest::connectToLocalServer(bool noCrypt)
         cfg.cryptLayerPreferred = true;
         cfg.cryptLayerRequired = true;
     }
+
+    // cfg above only governs our OUTBOUND connection to the server. The server
+    // probes back to our listen port to decide HighID vs LowID, and that inbound
+    // socket takes its config from thePrefs (ListenSocket.cpp). Requiring
+    // obfuscation there too means the server's probe must succeed *encrypted* —
+    // which is what makes the HighID assertion below a real test of the server's
+    // obfuscated handshake rather than of its plaintext fallback.
+    thePrefs.setCryptLayerRequired(!noCrypt);
 
     auto userHash = thePrefs.userHash();
     std::copy(userHash.begin(), userHash.end(), cfg.userHash.begin());
@@ -250,6 +289,17 @@ void tst_ServerLocalTest::connectToLocalServer(bool noCrypt)
 
     // Allow login response / server status to settle
     QTest::qWait(1000);
+
+    // We are reachable on cfg.listenPort, so a correct server hands out a HighID.
+    // In the obfuscated round our listener rejects plaintext (see above), so a
+    // LowID here means the server's *encrypted* probe-back failed and it silently
+    // fell back to an unencrypted one — the failure mode of a wrong RC4 key
+    // derivation in the server's client-side handshake.
+    QVERIFY2(!m_serverConnect->isLowID(),
+             qPrintable(QStringLiteral("Got LowID (clientID=0x%1) but we are reachable on port %2 — "
+                                       "the server's firewall probe failed")
+                            .arg(m_serverConnect->clientID(), 0, 16)
+                            .arg(cfg.listenPort)));
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +343,7 @@ void tst_ServerLocalTest::searchForKeyword()
 
     QFETCH(QString, keyword);
     QFETCH(QByteArray, expectedHash);
+    QFETCH(uint64, expectedSize);
 
     const uint32 searchID = m_searchList->newSearch({}, SearchParams{});
 
@@ -332,16 +383,30 @@ void tst_ServerLocalTest::searchForKeyword()
                             .arg(keyword)));
 
     bool found = false;
+    uint64 reportedSize = 0;
     m_searchList->forEachResult(searchID, [&](const SearchFile* file) {
-        if (memcmp(file->fileHash(), expectedHash.constData(), 16) == 0)
+        if (memcmp(file->fileHash(), expectedHash.constData(), 16) == 0) {
             found = true;
+            reportedSize = static_cast<uint64>(file->fileSize());
+        }
     });
 
     QVERIFY2(found,
              qPrintable(QStringLiteral("Expected hash %1 not found in search results for \"%2\"")
                             .arg(QString::fromLatin1(expectedHash.toHex()), keyword)));
 
+    // The server must round-trip the size we published. A zero (or truncated) size
+    // means it dropped the FT_FILESIZE tag — which happens when a narrowed integer
+    // tag is not decoded. Such a file is still searchable but returns no sources,
+    // so nothing else in this test would notice.
+    QVERIFY2(reportedSize == expectedSize,
+             qPrintable(QStringLiteral("Size mismatch for \"%1\": server reported %2, published %3")
+                            .arg(keyword)
+                            .arg(reportedSize)
+                            .arg(expectedSize)));
+
     qDebug() << "PASS: Found expected hash" << expectedHash.toHex()
+             << "size" << reportedSize
              << "in results for" << keyword;
 
     disconnect(conn);
@@ -361,13 +426,26 @@ void tst_ServerLocalTest::checkServerLog()
         return;
     }
 
+    // The server logs most failures at WARN, not ERROR — matching only ERROR/PANIC
+    // made this check unable to fail. Parse failures and dropped offers are exactly
+    // what we want this test to catch, so match those too.
+    static const QStringList badMarkers = {
+        QStringLiteral("ERROR"),
+        QStringLiteral("PANIC"),
+        QStringLiteral("FATAL"),
+        QStringLiteral("WARN"),
+    };
+
     QStringList errorLines;
     int lineNumber = 0;
     while (!logFile.atEnd()) {
         ++lineNumber;
         const QString line = QString::fromUtf8(logFile.readLine());
-        if (line.contains(QStringLiteral("ERROR")) || line.contains(QStringLiteral("PANIC"))) {
-            errorLines.append(QStringLiteral("Line %1: %2").arg(lineNumber).arg(line.trimmed()));
+        for (const auto& marker : badMarkers) {
+            if (line.contains(marker)) {
+                errorLines.append(QStringLiteral("Line %1: %2").arg(lineNumber).arg(line.trimmed()));
+                break;
+            }
         }
     }
 
@@ -391,10 +469,15 @@ void tst_ServerLocalTest::addSearchData()
 {
     QTest::addColumn<QString>("keyword");
     QTest::addColumn<QByteArray>("expectedHash");
+    QTest::addColumn<uint64>("expectedSize");
 
-    QTest::newRow("readme")              << QStringLiteral("readme")              << m_readmeHash;
-    QTest::newRow("eMule")               << QStringLiteral("eMule")               << m_zipHash;
-    QTest::newRow("testfile")            << QStringLiteral("testfile")            << m_testfileHash;
+    // readme.txt is under 64 KiB, so eMule sends its FT_FILESIZE as TAGTYPE_UINT16
+    // rather than TAGTYPE_UINT32. A server that only accepts the 32-bit form indexes
+    // it with size 0 — it still turns up in searches, so only the size assertion in
+    // searchForKeyword() catches it.
+    QTest::newRow("readme")              << QStringLiteral("readme")              << m_readmeHash   << m_readmeSize;
+    QTest::newRow("eMule")               << QStringLiteral("eMule")               << m_zipHash      << m_zipSize;
+    QTest::newRow("testfile")            << QStringLiteral("testfile")            << m_testfileHash << m_testfileSize;
 }
 
 // ---------------------------------------------------------------------------
@@ -457,6 +540,14 @@ void tst_ServerLocalTest::initTestCase()
     theApp.listenSocket = m_listenSocket;
     thePrefs.setPort(m_listenSocket->connectedPort());
 
+    // Without this, inbound connections are accepted at the socket layer but no
+    // UpDownClient is ever created, so OP_HELLO is never answered. The server's
+    // firewall probe then times out and we are handed a LowID — which would make
+    // the HighID assertion in connectToLocalServer() fail for a reason that has
+    // nothing to do with the server. CoreSession::start() does the same wiring.
+    connect(m_listenSocket, &ListenSocket::newClientConnection,
+            m_clientList, &ClientList::handleIncomingConnection);
+
     m_throttler = new UploadBandwidthThrottler(this);
     m_throttler->start();
     theApp.uploadBandwidthThrottler = m_throttler;
@@ -477,12 +568,14 @@ void tst_ServerLocalTest::initTestCase()
              "Failed to create KnownFile from readme.txt");
     QVERIFY(m_sharedFiles->safeAddKFile(sharedReadme));
     m_readmeHash = QByteArray(reinterpret_cast<const char*>(sharedReadme->fileHash()), 16);
+    m_readmeSize = sharedReadme->fileSize();
 
     auto* sharedZip = new KnownFile();
     QVERIFY2(sharedZip->createFromFile(dataIncoming, QStringLiteral("eMule0.50a.zip")),
              "Failed to create KnownFile from eMule0.50a.zip");
     QVERIFY(m_sharedFiles->safeAddKFile(sharedZip));
     m_zipHash = QByteArray(reinterpret_cast<const char*>(sharedZip->fileHash()), 16);
+    m_zipSize = sharedZip->fileSize();
 
     auto* sharedTestfile = new KnownFile();
     QVERIFY2(sharedTestfile->createFromFile(dataIncoming,
@@ -490,6 +583,7 @@ void tst_ServerLocalTest::initTestCase()
              "Failed to create KnownFile from eMuleQt-testfile-20MB.bin");
     QVERIFY(m_sharedFiles->safeAddKFile(sharedTestfile));
     m_testfileHash = QByteArray(reinterpret_cast<const char*>(sharedTestfile->fileHash()), 16);
+    m_testfileSize = sharedTestfile->fileSize();
 
     qDebug() << "Shared files:" << m_sharedFiles->getCount();
     qDebug() << "readme.txt hash:" << m_readmeHash.toHex();
@@ -543,8 +637,10 @@ void tst_ServerLocalTest::searchObfuscated()
 
 void tst_ServerLocalTest::stopServerObfuscated()
 {
-    checkServerLog();
+    // Disconnect first so the log check also covers the disconnect path.
     disconnectFromServer();
+    QTest::qWait(500);
+    checkServerLog();
     stopServer();
 }
 
@@ -575,8 +671,10 @@ void tst_ServerLocalTest::searchPlain()
 
 void tst_ServerLocalTest::stopServerPlain()
 {
-    checkServerLog();
+    // Disconnect first so the log check also covers the disconnect path.
     disconnectFromServer();
+    QTest::qWait(500);
+    checkServerLog();
     stopServer();
 }
 
@@ -588,6 +686,7 @@ void tst_ServerLocalTest::searchForKeywordUDP()
 {
     QFETCH(QString, keyword);
     QFETCH(QByteArray, expectedHash);
+    QFETCH(uint64, expectedSize);
 
     const uint32 searchID = m_searchList->newSearch({}, SearchParams{});
 
@@ -626,16 +725,26 @@ void tst_ServerLocalTest::searchForKeywordUDP()
                             .arg(keyword)));
 
     bool found = false;
+    uint64 reportedSize = 0;
     m_searchList->forEachResult(searchID, [&](const SearchFile* file) {
-        if (memcmp(file->fileHash(), expectedHash.constData(), 16) == 0)
+        if (memcmp(file->fileHash(), expectedHash.constData(), 16) == 0) {
             found = true;
+            reportedSize = static_cast<uint64>(file->fileSize());
+        }
     });
 
     QVERIFY2(found,
              qPrintable(QStringLiteral("Expected hash %1 not found in UDP results for \"%2\"")
                             .arg(QString::fromLatin1(expectedHash.toHex()), keyword)));
 
+    QVERIFY2(reportedSize == expectedSize,
+             qPrintable(QStringLiteral("Size mismatch for \"%1\" over UDP: server reported %2, published %3")
+                            .arg(keyword)
+                            .arg(reportedSize)
+                            .arg(expectedSize)));
+
     qDebug() << "PASS: Found expected hash" << expectedHash.toHex()
+             << "size" << reportedSize
              << "in UDP results for" << keyword;
 }
 
@@ -665,10 +774,13 @@ void tst_ServerLocalTest::startServerUdpSearch()
     m_udpSocket = new UDPSocket(this);
     QVERIFY2(m_udpSocket->create(), "Failed to create UDPSocket");
 
-    // Wire UDP global search results → SearchList (lambda bridges the optUTF8 param)
+    // Wire UDP global search results → SearchList. The signal carries an Endpoint;
+    // unpack it the same way CoreSession::start() does.
     connect(m_udpSocket, &UDPSocket::globalSearchResult,
-            this, [this](const uint8* data, uint32 size, uint32 srvIP, uint16 srvPort) {
-                m_searchList->processUDPSearchAnswer(data, size, true, srvIP, srvPort);
+            this, [this](const uint8* data, uint32 size, const Endpoint& server) {
+                m_searchList->processUDPSearchAnswer(data, size, true,
+                                                     server.address().toNetworkUint32(),
+                                                     server.port());
             });
 
     qDebug() << "UDP search round: disconnected from TCP, UDPSocket created";
@@ -691,6 +803,52 @@ void tst_ServerLocalTest::stopServerUdpSearch()
     delete m_udpSocket;
     m_udpSocket = nullptr;
 
+    stopServer();
+}
+
+// ---------------------------------------------------------------------------
+// Round 4: Plain TCP against the *obfuscated* port (5565)
+//
+// A client that does not speak obfuscation may still connect to the obfuscated
+// port, and the server must serve it normally. The server used to feed the very
+// first bytes into its DH negotiation without looking at the protocol byte: a
+// plaintext OP_LOGINREQUEST is longer than the 97 bytes negotiate() requires, so
+// it "succeeded", derived RC4 keys from login payload bytes, wrote 96 bytes of
+// garbage back and parked the session in CS_NEGOTIATING until the 3600s
+// disconnect timeout. Nothing was logged.
+//
+// The original inspects the protocol byte first, which is what makes this round
+// pass (eNode/ed2k/packet.js:105-129).
+// ---------------------------------------------------------------------------
+
+void tst_ServerLocalTest::startServerPlainOnObfuscatedPort()
+{
+    startServer();
+    // noCrypt=true forces plaintext; overridePort aims it at the obfuscated
+    // listener rather than 5555.
+    connectToLocalServer(/*noCrypt=*/true, /*overridePort=*/5565);
+}
+
+void tst_ServerLocalTest::publishFilesPlainOnObfuscatedPort()
+{
+    publishFiles();
+}
+
+void tst_ServerLocalTest::searchPlainOnObfuscatedPort_data()
+{
+    addSearchData();
+}
+
+void tst_ServerLocalTest::searchPlainOnObfuscatedPort()
+{
+    searchForKeyword();
+}
+
+void tst_ServerLocalTest::stopServerPlainOnObfuscatedPort()
+{
+    disconnectFromServer();
+    QTest::qWait(500);
+    checkServerLog();
     stopServer();
 }
 

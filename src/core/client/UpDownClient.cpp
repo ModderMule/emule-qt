@@ -1166,7 +1166,10 @@ void UpDownClient::sendMuleInfoPacket(bool answer)
         return;
 
     SafeMemFile data;
-    data.writeUInt8((SEND_EMULE_VERSION_MJR << 4) | (SEND_EMULE_VERSION_MIN / 10)); // eMule version byte
+    // eMule version byte: BCD of the minor version (0.50a sends 0x50, 0.70b sends 0x70).
+    // MFC builds it by formatting the minor as decimal and re-reading it as hex
+    // (Emule.cpp:1277). The major is always 0 and is not part of the encoding.
+    data.writeUInt8(((SEND_EMULE_VERSION_MIN / 10) << 4) | (SEND_EMULE_VERSION_MIN % 10));
     data.writeUInt8(EMULE_PROTOCOL); // protocol version
 
     constexpr uint32 tagCount = 7;
@@ -2095,8 +2098,21 @@ void UpDownClient::processPublicIPAnswer(const uint8* data, uint32 size)
     SafeMemFile file(data, size);
     const uint32 ip = file.readUInt32();
 
-    thePrefs.setPublicIP(ip);
+    // MFC: CUpDownClient::ProcessPublicIPAnswer() — BaseClient.cpp:3896. All three
+    // guards matter: a peer is the least trustworthy public-IP source we have, and
+    // this value feeds server UDP-key stamping, Kad key derivation and
+    // EncryptedDatagramSocket. Without them any peer could dictate our public IP.
+    if (!m_needOurPublicIP)
+        return;  // unsolicited — we never asked this client
+
     m_needOurPublicIP = false;
+
+    // theApp.publicIP() consults Kad first and the ED2K value second, so this one
+    // check is what makes a peer answer the last resort of the three sources.
+    if (theApp.publicIP() != 0 || isLowID(ip))
+        return;
+
+    theApp.setPublicIP(ip);  // expiry of stale server UDP keys happens in there
 }
 
 // ===========================================================================
@@ -2924,7 +2940,7 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
     testPacket1.writeUInt16(remoteInternPort);
     udpListener->sendPacket(testPacket1, KADEMLIA2_FIREWALLUDP, m_connectAddress.toUint32(),
                             remoteInternPort,
-                            kad::KadUDPKey(senderKey, thePrefs.publicIP()), nullptr);
+                            kad::KadUDPKey(senderKey, theApp.publicIP()), nullptr);
 
     // If external port differs, test that too (PAT router scenario)
     if (remoteExternPort != 0 && remoteExternPort != remoteInternPort) {
@@ -2933,7 +2949,7 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
         testPacket2.writeUInt16(remoteExternPort);
         udpListener->sendPacket(testPacket2, KADEMLIA2_FIREWALLUDP, m_connectAddress.toUint32(),
                                 remoteExternPort,
-                                kad::KadUDPKey(senderKey, thePrefs.publicIP()), nullptr);
+                                kad::KadUDPKey(senderKey, theApp.publicIP()), nullptr);
     }
 
     logDebug(QStringLiteral("Answered UDP firewall check request from %1").arg(dbgGetClientInfo()));
@@ -3481,8 +3497,14 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
             sendFileRequest();
         }
 
-        // MFC sends OP_EMULEINFO after receiving HELLO_ANSWER (BaseClient.cpp:691).
-        if (isMule)
+        // OP_EMULEINFO is the pre-0.42 capability exchange. Clients that sent an
+        // extended (mule) hello already gave us everything via CT_EMULE_MISCOPTIONS1/2
+        // and CT_EMULE_VERSION, and sending it to them is actively harmful: their
+        // ProcessMuleInfoPacket overwrites the 0x99 "version came from hello" marker
+        // with our legacy version byte, which anti-leech modules (eMuleAI Shield
+        // PR_FAKEMULEVERSION) read as a forged eMule version and ban us for.
+        // MFC: ListenSocket only sends it when !bIsMuleHello; eMule 0.50a never sends it.
+        if (!isMule)
             sendMuleInfoPacket(false);
         onInfoPacketsReceived();
     }
@@ -3730,7 +3752,7 @@ void UpDownClient::processAnswerSources(const uint8* data, uint32 size)
     m_lastSourceAnswer = static_cast<uint32>(getTickCount());
     file->setLastAnsweredTime();
 
-    file->addClientSources(io, m_sourceExchange1Ver, this);
+    file->addClientSources(io, m_sourceExchange1Ver, /*isSX2*/ false, this);
 }
 
 // ===========================================================================
@@ -3806,7 +3828,7 @@ void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
     m_lastSourceAnswer = static_cast<uint32>(getTickCount());
     file->setLastAnsweredTime();
 
-    file->addClientSources(io, version, this);
+    file->addClientSources(io, version, /*isSX2*/ true, this);
 }
 
 // ===========================================================================
@@ -3840,7 +3862,7 @@ void UpDownClient::processAskSharedFiles()
     SafeMemFile response;
     response.writeUInt32(static_cast<uint32>(files.size()));
 
-    const uint32 clientID = thePrefs.publicIP();
+    const uint32 clientID = theApp.publicIP();
     const uint16 clientPort = thePrefs.port();
 
     for (KnownFile* file : files) {
@@ -3937,7 +3959,7 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
     response.writeString(reqDir, UTF8Mode::Raw);
     response.writeUInt32(static_cast<uint32>(matchedFiles.size()));
 
-    const uint32 clientID = thePrefs.publicIP();
+    const uint32 clientID = theApp.publicIP();
     const uint16 clientPort = thePrefs.port();
 
     for (KnownFile* file : matchedFiles) {

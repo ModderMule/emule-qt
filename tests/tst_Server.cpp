@@ -2,6 +2,8 @@
 /// @brief Tests for server/Server — construction, tag round-trips, capability flags.
 
 #include "TestHelpers.h"
+#include "app/AppContext.h"
+#include "prefs/Preferences.h"
 #include "server/Server.h"
 #include "protocol/Tag.h"
 #include "utils/SafeFile.h"
@@ -260,8 +262,15 @@ void tst_Server::addTag_udpKey()
     Server srv(0, 4661);
     srv.addTagFromFile(Tag(ST_UDPKEY, uint32{0xDEADBEEF}));
     srv.addTagFromFile(Tag(ST_UDPKEYIP, uint32{0xC0A80001}));
-    QCOMPARE(srv.serverKeyUDP(), uint32{0xDEADBEEF});
+    QCOMPARE(srv.serverKeyUDPRaw(), uint32{0xDEADBEEF});
     QCOMPARE(srv.serverKeyUDPIP(), uint32{0xC0A80001});
+
+    // This is exactly the server.met-restore case the IP gate exists for: the
+    // key belongs to 192.168.0.1, but this process has no public IP, so it must
+    // not be used to obfuscate. Otherwise the ping goes encrypted to port+14
+    // with a key the server dropped long ago, and no reply ever arrives.
+    QCOMPARE(theApp.publicIP(), uint32{0});
+    QCOMPARE(srv.serverKeyUDP(), uint32{0});
 }
 
 void tst_Server::addTag_obfuscationPorts()

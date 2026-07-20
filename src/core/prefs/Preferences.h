@@ -817,10 +817,11 @@ public:
     [[nodiscard]] bool enableSearchResultFilter() const;
     void setEnableSearchResultFilter(bool val);
 
-    // -- Network detection ----------------------------------------------------
-
-    [[nodiscard]] uint32 publicIP() const;
-    void setPublicIP(uint32 val);
+    // Our public IP lives on AppContext (theApp.publicIP()), not here: it is
+    // session state that must be re-derived each run, and it has a Kad source
+    // that Preferences cannot reach. Persisting it made hasValidUDPKey() match
+    // server UDP keys issued for an IP we no longer hold. MFC keeps it on
+    // CemuleApp for the same reason.
 
     // -- GUI (General page) ---------------------------------------------------
 

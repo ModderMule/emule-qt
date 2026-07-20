@@ -182,13 +182,20 @@ public:
     [[nodiscard]] bool supportsCryptLayer() const { return m_supportsCryptLayer; }
     [[nodiscard]] bool requestsCryptLayer() const { return m_requestsCryptLayer; }
     [[nodiscard]] bool requiresCryptLayer() const { return m_requiresCryptLayer; }
-    [[nodiscard]] bool supportsDirectUDPCallback() const { return m_directUDPCallback; }
+    /// A direct UDP callback needs a reachable Kad endpoint and a hash to address it
+    /// with; without both the callback goes nowhere and we'd just stall on it.
+    [[nodiscard]] bool supportsDirectUDPCallback() const
+    {
+        return m_directUDPCallback && hasValidHash() && m_kadPort != 0;
+    }
     [[nodiscard]] bool unicodeSupport() const { return m_unicodeSupport; }
 
     [[nodiscard]] uint8 dataCompVer() const { return m_dataCompVer; }
     [[nodiscard]] uint8 udpVer() const { return m_udpVer; }
     [[nodiscard]] uint8 sourceExchange1Ver() const { return m_sourceExchange1Ver; }
+    void setSourceExchange1Ver(uint8 v) { m_sourceExchange1Ver = v; }
     [[nodiscard]] bool supportsSourceExchange2() const { return m_supportsSourceEx2; }
+    void setSupportsSourceExchange2(bool s) { m_supportsSourceEx2 = s; }
     [[nodiscard]] uint8 extendedRequestsVer() const { return m_extendedRequestsVer; }
     [[nodiscard]] uint8 acceptCommentVer() const { return m_acceptCommentVer; }
     [[nodiscard]] uint8 compatibleClient() const { return m_compatibleClient; }
@@ -271,6 +278,11 @@ public:
 
     [[nodiscard]] uint16 upPartCount() const { return m_upPartCount; }
     [[nodiscard]] const std::vector<uint8>& upPartStatus() const { return m_upPartStatus; }
+    void setUpPartStatus(const std::vector<uint8>& status)
+    {
+        m_upPartStatus = status;
+        m_upPartCount = static_cast<uint16>(status.size());
+    }
     [[nodiscard]] uint16 upCompleteSourcesCount() const { return m_upCompleteSourcesCount; }
     void setUpCompleteSourcesCount(uint16 c) { m_upCompleteSourcesCount = c; }
 

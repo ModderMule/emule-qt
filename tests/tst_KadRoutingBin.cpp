@@ -43,6 +43,7 @@ private slots:
     void getOldest();
     void setAlive_movesToBottom();
     void getClosestTo_ordering();
+    void getClosestTo_excludesUnverified();
     void getEntries();
     void getRandomContact();
     void globalIPLimits();
@@ -214,6 +215,34 @@ void tst_KadRoutingBin::getClosestTo_ordering()
     QCOMPARE(it->second, c2); // distance 0
     ++it;
     QCOMPARE(it->second, c3); // distance 1
+}
+
+void tst_KadRoutingBin::getClosestTo_excludesUnverified()
+{
+    // getClosestTo() feeds both our own searches and the KADEMLIA2_RES answers
+    // we serve to remote peers, so an unverified contact must never appear —
+    // otherwise this node propagates spoofable addresses into the network.
+    RoutingBin bin;
+    auto* verified = makeContact(2, 0x0A010101);
+    auto* unverified = makeContact(3, 0x0A020101);
+    verified->setIpVerified(true);
+    unverified->setIpVerified(false);
+    bin.addContact(verified);
+    bin.addContact(unverified);
+
+    UInt128 target(uint32{2});
+    ContactMap result;
+    bin.getClosestTo(3, target, 10, result);
+
+    QCOMPARE(static_cast<uint32>(result.size()), uint32{1});
+    QCOMPARE(result.begin()->second, verified);
+
+    // Once verified it becomes eligible — proving the exclusion is the flag and
+    // not something else about the contact.
+    unverified->setIpVerified(true);
+    ContactMap after;
+    bin.getClosestTo(3, target, 10, after);
+    QCOMPARE(static_cast<uint32>(after.size()), uint32{2});
 }
 
 // ---------------------------------------------------------------------------

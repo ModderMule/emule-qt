@@ -2,6 +2,7 @@
 /// @brief Tests for server/ServerConnect — connection state machine, retry, timeout.
 
 #include "TestHelpers.h"
+#include "app/AppContext.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
@@ -96,6 +97,11 @@ class tst_ServerConnect : public QObject {
     Q_OBJECT
 
 private slots:
+    /// A HighID login now writes theApp.publicIP() as a side effect, and theApp
+    /// is process-global — several cases here log in with 0x12345678. Clear it
+    /// after every case so none of them can leak an IP into the next.
+    void cleanup() { theApp.setPublicIP(0); }
+
     // Construction & configuration
     void constructionDefaults();
     void setConfig_updatesMaxSimCons();
@@ -116,6 +122,11 @@ private slots:
     // Disconnect
     void disconnect_whileConnected();
     void disconnect_whileNotConnected_returnsFalse();
+
+    // Public IP derived from the login answer
+    void setClientID_highIDBecomesPublicIP();
+    void setClientID_lowIDDoesNot();
+    void disconnect_clearsPublicIP();
 
     // StopConnectionTry
     void stopConnectionTry_clearsConnecting();
@@ -355,6 +366,73 @@ void tst_ServerConnect::disconnect_whileConnected()
     QVERIFY(result);
     QVERIFY(!conn.isConnected());
     QVERIFY(!disconnSpy.isEmpty());
+
+    serverSide->close();
+}
+
+// ---------------------------------------------------------------------------
+// Tests: public IP derived from the login answer
+//
+// MFC: CServerConnect::SetClientID() — sockets.cpp:562, and Disconnect() —
+// sockets.cpp:506. A HighID *is* our public IP; eMuleQt never recorded it, which
+// is why server UDP obfuscation could not engage: Server::setServerKeyUDP()
+// stamps keys with theApp.publicIP(), and a key stamped for 0 never matches.
+// ---------------------------------------------------------------------------
+
+void tst_ServerConnect::setClientID_highIDBecomesPublicIP()
+{
+    ServerList list;
+    ServerConnect conn(list);
+
+    QCOMPARE(theApp.publicIP(), uint32{0});
+    conn.setClientID(0x12345678);  // HighID
+
+    QCOMPARE(theApp.publicIP(), uint32{0x12345678});
+    QCOMPARE(conn.clientID(), uint32{0x12345678});
+    QVERIFY(!conn.isLowID());
+}
+
+void tst_ServerConnect::setClientID_lowIDDoesNot()
+{
+    ServerList list;
+    ServerConnect conn(list);
+
+    // A LowID is a server-local handle, not an address — storing it would stamp
+    // UDP keys with a value no server could ever confirm.
+    conn.setClientID(0x00000042);
+
+    QCOMPARE(theApp.publicIP(), uint32{0});
+    QVERIFY(conn.isLowID());
+}
+
+void tst_ServerConnect::disconnect_clearsPublicIP()
+{
+    QTcpServer tcpServer;
+    QVERIFY(tcpServer.listen(QHostAddress::LocalHost, 0));
+
+    Server srv = makeLoopbackServer(tcpServer.serverPort());
+
+    ServerList list;
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+
+    conn.connectToServer(&srv, false, true);
+
+    QVERIFY(tcpServer.waitForNewConnection(5000));
+    auto* serverSide = tcpServer.nextPendingConnection();
+    QVERIFY(serverSide);
+
+    QTest::qWait(200);
+    writeIdChange(serverSide, 0x12345678);
+    QTRY_VERIFY_WITH_TIMEOUT(conn.isConnected(), 5000);
+    QCOMPARE(theApp.publicIP(), uint32{0x12345678});  // login recorded it
+
+    QVERIFY(conn.disconnect());
+
+    // The IP was this server's claim about us; with it gone we may not keep
+    // asserting it. Safe to clear because Kad still backs publicIP() when up.
+    QCOMPARE(theApp.publicIP(), uint32{0});
+    QCOMPARE(conn.clientID(), uint32{0});
 
     serverSide->close();
 }

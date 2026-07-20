@@ -97,10 +97,13 @@ void tst_ServerGlobalSearchLive::initTestCase()
     // 5. SearchList
     m_searchList = new SearchList();
 
-    // Wire UDP global search results → SearchList
+    // Wire UDP global search results → SearchList. The signal carries an Endpoint;
+    // unpack it the same way CoreSession::start() does.
     connect(m_udpSocket, &UDPSocket::globalSearchResult,
-            this, [this](const uint8* data, uint32 size, uint32 serverIP, uint16 serverPort) {
-                m_searchList->processUDPSearchAnswer(data, size, true, serverIP, serverPort);
+            this, [this](const uint8* data, uint32 size, const Endpoint& server) {
+                m_searchList->processUDPSearchAnswer(data, size, true,
+                                                     server.address().toNetworkUint32(),
+                                                     server.port());
             });
 }
 

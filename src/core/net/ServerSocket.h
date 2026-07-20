@@ -83,7 +83,10 @@ signals:
     /// Server assigned us an ID (login successful).
     /// @param clientID  Our assigned client ID (high or low).
     /// @param tcpFlags  Server capability flags.
-    void loginReceived(uint32 clientID, uint32 tcpFlags);
+    /// @param serverReportedIP The IP the server sees us on, from the extended
+    ///        OP_IDCHANGE answer; 0 when absent or when the server reported a
+    ///        LowID there. Our only public-IP source on a LowID connection.
+    void loginReceived(uint32 clientID, uint32 tcpFlags, uint32 serverReportedIP);
 
     /// Search results received from server.
     /// @param data    Raw result data.

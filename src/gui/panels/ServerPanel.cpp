@@ -3,6 +3,7 @@
 
 #include "app/IpcClient.h"
 #include "core/app/AppConfig.h"
+#include "core/app/AppContext.h"
 #include "controls/LogWidget.h"
 #include "controls/ServerListModel.h"
 
@@ -858,7 +859,7 @@ void ServerPanel::refreshMyInfo()
         html += sp + tr("Status:") + QStringLiteral(" <font color='green'>") + tr("Connected") + QStringLiteral("</font><br>");
 
         // IP:Port (public IP from server, or Unknown if low ID and no public IP)
-        const uint32_t pubIP = m_serverConnect ? thePrefs.publicIP() : m_ed2kPublicIP;
+        const uint32_t pubIP = m_serverConnect ? theApp.publicIP() : m_ed2kPublicIP;
         const bool lowId = m_serverConnect ? m_serverConnect->isLowID() : m_ed2kFirewalled;
         if (lowId && pubIP == 0)
             html += sp + tr("IP:Port:") + QStringLiteral("\t") + tr("Unknown") + QStringLiteral("<br>");

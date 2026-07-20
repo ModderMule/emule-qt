@@ -54,11 +54,42 @@ struct AppContext {
     /// Returns our server-assigned client ID (0 if not connected).
     [[nodiscard]] uint32 getID() const;
 
-    /// Returns true when connected to an ED2K server.
+    /// Returns true when connected to any network — an ED2K server *or* Kad.
+    /// Mirrors MFC CemuleApp::IsConnected() (emule.cpp:1122).
+    /// Callers that specifically mean "connected to an ED2K server" (GUI status
+    /// indicators, the Connect button, connection-lost notifications) must use
+    /// serverConnect->isConnected() directly instead.
     [[nodiscard]] bool isConnected() const;
 
     /// Returns true when we are firewalled on all connected networks (ed2k + Kad).
     [[nodiscard]] bool isFirewalled() const;
+
+    /// Our public IP in ED2K byte order (first octet in the LSB), 0 if unknown.
+    ///
+    /// Priority is Kad -> ED2K server -> peer. Kad's IP wins whenever it has one
+    /// because KadPrefs::setIPAddress() only commits a value confirmed by two
+    /// independent nodes, whereas a server's claim is a single unverified
+    /// assertion. Pass @p ignoreKadIP to read only the ED2K-derived value —
+    /// callers that must agree with what a *specific* server sees need that.
+    ///
+    /// MFC: CemuleApp::GetPublicIP() — Emule.cpp:1542. Note the priority there is
+    /// the other way round: the stored ED2K value wins and Kad is only a fallback.
+    [[nodiscard]] uint32 publicIP(bool ignoreKadIP = false) const;
+
+    /// Records an ED2K-derived public IP (HighID, server-reported IP, or a peer's
+    /// OP_PUBLICIP answer). Pass 0 to clear it on server disconnect.
+    /// MFC: CemuleApp::SetPublicIP() — Emule.cpp:1548.
+    void setPublicIP(uint32 ip);
+
+    /// Re-checks server UDP keys after something *other* than setPublicIP()
+    /// changed our effective public IP — in practice, Kad learning a new one.
+    /// MFC has no equivalent because Kad never outranks the stored value there.
+    void onEffectivePublicIPChanged(uint32 newIP);
+
+private:
+    /// ED2K-derived public IP only; publicIP() layers the Kad source on top.
+    /// Deliberately not persisted — it is session state, as in MFC.
+    uint32 m_publicIP = 0;
 };
 
 extern AppContext theApp;

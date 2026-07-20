@@ -187,7 +187,14 @@ void RoutingBin::getClosestTo(uint32 maxType, const UInt128& target, uint32 maxR
         return;
 
     for (auto* contact : m_entries) {
-        if (contact->getType() <= maxType) {
+        // Only hand out contacts whose IP we have actually verified. This list
+        // feeds both our own searches and the KADEMLIA2_RES answers we serve to
+        // remote peers, so without the gate we propagate spoofable contacts into
+        // the network — something official eMule never does (MFC RoutingBin.cpp
+        // GetClosestTo). Bootstrap still works because RoutingZone::readFile
+        // bulk-verifies a nodes.dat that declared no verified contacts, and
+        // process_KADEMLIA2_BOOTSTRAP_RES assumes verified when the table is empty.
+        if (contact->getType() <= maxType && contact->isIpVerified()) {
             UInt128 targetDistance(contact->getClientID());
             targetDistance.xorWith(target);
             result[targetDistance] = contact;

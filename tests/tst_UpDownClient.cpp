@@ -3,6 +3,7 @@
 ///        hello handshake, mule info exchange, connection, upload, download.
 
 #include "TestHelpers.h"
+#include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "net/Address.h"
 #include "client/ClientCredits.h"
@@ -56,6 +57,7 @@ private slots:
     void initVersion_aMule();
     void initVersion_hybrid();
     void initVersion_unknown();
+    void sendVersion_matchesCommunityHybrid();
     void clearHelloProperties();
     void setConnectOptions_decodesBits();
     void sessionUp_resetCycle();
@@ -99,7 +101,8 @@ private slots:
     void processEmuleQueueRank_setsRank();
     void processEdonkeyQueueRank_setsRank();
     void checkFailedFileIdReqs_bansAfterMax();
-    void publicIPRequestResponse_roundtrip();
+    void publicIPAnswer_unsolicitedIsIgnored();
+    void publicIPAnswer_shortPacketIsIgnored();
 
     // Phase 3 tests — secure identity
     void secIdentState_sendAndProcess();
@@ -481,12 +484,24 @@ void tst_UpDownClient::clearHelloProperties()
 void tst_UpDownClient::setConnectOptions_decodesBits()
 {
     UpDownClient client;
+    // A direct UDP callback is only actually possible with a Kad endpoint and a
+    // hash to address it by, so give the client both before asserting on it.
+    uint8 hash[16];
+    std::memset(hash, 0xAB, sizeof(hash));
+    client.setUserHash(hash);
+    client.setKadPort(4672);
+
     // options=0x0F, encryption=true, callback=true
     client.setConnectOptions(0x0F, true, true);
     QVERIFY(client.supportsCryptLayer());
     QVERIFY(client.requestsCryptLayer());
     QVERIFY(client.requiresCryptLayer());
     QVERIFY(client.supportsDirectUDPCallback());
+
+    // Losing the Kad port alone is enough to make the callback impossible.
+    client.setKadPort(0);
+    QVERIFY(!client.supportsDirectUDPCallback());
+    client.setKadPort(4672);
 
     // encryption=false should block crypto bits
     client.setConnectOptions(0x0F, false, true);
@@ -615,6 +630,57 @@ static QByteArray buildMuleInfoPacket(uint8 emuleVer, uint8 protVer,
 // Phase 2 tests — processHelloPacket
 // ---------------------------------------------------------------------------
 
+/// Verifies the eMule version we advertise to peers in CT_EMULE_VERSION, by
+/// packing it exactly as sendHelloTypePacket() does and decoding it back
+/// through the peer-side parser. Prints the resulting human-readable string.
+///
+/// Reference: srchybrid/version.h (eMule Community v0.70b) — VERSION_MJR 0,
+/// VERSION_MIN 70, VERSION_UPDATE 1. Our SEND_EMULE_VERSION_* must match so
+/// peers see us as a current client, not an unknown build.
+void tst_UpDownClient::sendVersion_matchesCommunityHybrid()
+{
+    // Constants must track srchybrid/version.h
+    QCOMPARE(SEND_EMULE_VERSION_MJR, 0);
+    QCOMPARE(SEND_EMULE_VERSION_MIN, 70);
+    QCOMPARE(SEND_EMULE_VERSION_UPD, 1);   // 0='a', 1='b'
+    QCOMPARE(EDONKEYVERSION, 0x3C);
+
+    // Same packing as UpDownClient::sendHelloTypePacket()
+    const uint32 emuleVer =
+        (static_cast<uint32>(0) << 24) |                        // compatClient = standard eMule
+        (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17) |
+        (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10) |
+        (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);
+
+    // Feed it back through the peer-side hello parser
+    uint8 hash[16];
+    fillHash(hash, 0x5A);
+
+    std::vector<Tag> tags;
+    tags.emplace_back(CT_NAME, QStringLiteral("eMuleQt"));
+    tags.emplace_back(CT_VERSION, static_cast<uint32>(EDONKEYVERSION));
+    tags.emplace_back(CT_EMULE_VERSION, emuleVer);
+    tags.emplace_back(CT_MOD_VERSION, QStringLiteral("eMule Qt " EMULE_VERSION_STRING));
+
+    const auto buf = buildHelloPacket(hash, 0x0A0B0C0D, 4662, tags);
+
+    UpDownClient client;
+    QVERIFY(client.processHelloPacket(
+        reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size())));
+
+    // NOTE: processHelloPacket() already ran initClientSoftwareVersion(); calling it
+    // again would re-decode the decimal m_clientVersion as a raw bitfield (see the
+    // comment in UpDownClient::processMuleInfoPacket) and yield "eMule v0.68d".
+
+    qInfo("We advertise ourselves as: %s (CT_EMULE_VERSION=0x%08X, CT_VERSION=%d)",
+          qPrintable(client.dbgGetFullClientSoftVer()), emuleVer, EDONKEYVERSION);
+
+    QCOMPARE(client.clientSoft(), ClientSoftware::eMule);
+    QCOMPARE(client.clientSoftwareStr(), QStringLiteral("eMule v0.70b"));
+    QCOMPARE(client.dbgGetFullClientSoftVer(),
+             QStringLiteral("eMule v0.70b [eMule Qt " EMULE_VERSION_STRING "]"));
+}
+
 void tst_UpDownClient::processHello_basic()
 {
     uint8 hash[16];
@@ -740,8 +806,13 @@ void tst_UpDownClient::processHello_miscOptions2()
     QVERIFY(client.supportsCryptLayer());
     QVERIFY(client.requestsCryptLayer());
     QVERIFY(client.requiresCryptLayer());
-    QVERIFY(client.supportsDirectUDPCallback());
     QVERIFY(client.supportsFileIdentifiers());
+
+    // The hello announces the capability, but acting on it also needs a Kad port,
+    // which this handshake never supplied.
+    QVERIFY(!client.supportsDirectUDPCallback());
+    client.setKadPort(4672);
+    QVERIFY(client.supportsDirectUDPCallback());
 }
 
 void tst_UpDownClient::processHello_udpPorts()
@@ -1202,22 +1273,44 @@ void tst_UpDownClient::checkFailedFileIdReqs_bansAfterMax()
     QCOMPARE(client.uploadState(), UploadState::Banned);
 }
 
-void tst_UpDownClient::publicIPRequestResponse_roundtrip()
+// MFC: CUpDownClient::ProcessPublicIPAnswer() — BaseClient.cpp:3896. A peer is
+// the least trustworthy public-IP source we have, and the value feeds server
+// UDP-key stamping, Kad key derivation and EncryptedDatagramSocket — so an
+// unrequested answer must be dropped outright. eMuleQt applied no guard at all,
+// letting any peer we happened to talk to dictate our public IP.
+//
+// Only the reject path is reachable from a unit test: the accept path needs
+// m_needOurPublicIP, which is private and only set by sendPublicIPRequest() on a
+// live connected socket. The reject path is the security-relevant half.
+void tst_UpDownClient::publicIPAnswer_unsolicitedIsIgnored()
 {
+    theApp.setPublicIP(0);
+
     UpDownClient client;
 
-    // Process a public IP answer
     SafeMemFile data;
     data.writeUInt32(0xC0A80164); // 192.168.1.100
     const auto& buf = data.buffer();
 
+    // We never sent an OP_PUBLICIP_REQ to this client, so it has no business
+    // telling us our address.
     client.processPublicIPAnswer(
         reinterpret_cast<const uint8*>(buf.constData()),
         static_cast<uint32>(buf.size()));
 
-    // The needOurPublicIP flag should be cleared (was set by sendPublicIPRequest)
-    // Since we didn't call sendPublicIPRequest, just verify no crash
-    QVERIFY(true);
+    QCOMPARE(theApp.publicIP(), uint32{0});
+}
+
+void tst_UpDownClient::publicIPAnswer_shortPacketIsIgnored()
+{
+    theApp.setPublicIP(0);
+
+    UpDownClient client;
+
+    const uint8 truncated[2] = {0xFF, 0xFF};
+    client.processPublicIPAnswer(truncated, sizeof(truncated));
+
+    QCOMPARE(theApp.publicIP(), uint32{0});
 }
 
 // ---------------------------------------------------------------------------

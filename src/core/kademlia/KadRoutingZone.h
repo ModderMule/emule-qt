@@ -65,7 +65,11 @@ public:
     void getNumContacts(uint32& inOutContacts, uint32& inOutFilteredContacts,
                         uint8 minVersion) const;
 
-    [[nodiscard]] static bool isAcceptableContact(const Contact* contact);
+    /// Vet a contact received in a KADEMLIA2_RES routing answer.
+    /// Similar to the checks add() applies, except duplicates are allowed.
+    /// Non-static: it consults the routing table for KadID hijack attempts.
+    /// MFC RoutingZone.cpp:928-948.
+    [[nodiscard]] bool isAcceptableContact(const Contact* contact) const;
 
     // -- Bulk operations ------------------------------------------------------
 
@@ -79,8 +83,14 @@ public:
     void getBootstrapContacts(ContactArray& result, uint32 maxRequired) const;
 
     /// Convenience method: create a Contact from params and add/update it.
+    /// @param update    allow an existing entry with this KadID to be modified.
+    /// @param fromHello stamp the contact as having completed a HELLO handshake.
+    /// Both default to true for the HELLO paths; the KADEMLIA2_RES routing-answer
+    /// path must pass false for both (MFC RoutingZone.cpp:816), otherwise a
+    /// search response can rewrite routing entries and forge handshake state.
     bool addOrUpdateContact(const UInt128& id, uint32 ip, uint16 udpPort, uint16 tcpPort,
-                            uint8 version, const KadUDPKey& udpKey, bool ipVerified);
+                            uint8 version, const KadUDPKey& udpKey, bool ipVerified,
+                            bool update = true, bool fromHello = true);
 
     // -- Maintenance ----------------------------------------------------------
 
@@ -96,6 +106,18 @@ public:
     void setNextSmallTimer(time_t t) { m_nextSmallTimer = t; }
 
     [[nodiscard]] uint32 estimateCount() const;
+
+    /// Build the keyspace target this zone's refresh lookup should probe:
+    /// (zoneIndex << (128 - level)) padded with random low bits, XORed with the
+    /// local KadID.  Exposed separately from randomLookup() so it can be tested
+    /// without a live SearchManager.
+    [[nodiscard]] UInt128 randomLookupTarget() const;
+
+    /// The pure computation behind randomLookupTarget(), independent of any
+    /// zone instance so the prefix math can be checked at arbitrary levels.
+    [[nodiscard]] static UInt128 makeRandomLookupTarget(const UInt128& zoneIndex,
+                                                        uint32 level,
+                                                        const UInt128& localKadId);
 
     bool verifyContact(const UInt128& id, uint32 ip);
     [[nodiscard]] bool hasOnlyLANNodes() const;

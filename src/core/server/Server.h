@@ -166,8 +166,21 @@ public:
     [[nodiscard]] uint16 obfuscationPortUDP() const     { return m_obfuscationPortUDP; }
     void setObfuscationPortUDP(uint16 p)                { m_obfuscationPortUDP = p; }
 
-    [[nodiscard]] uint32 serverKeyUDP() const           { return m_serverKeyUDP; }
-    void setServerKeyUDP(uint32 key)                    { m_serverKeyUDP = key; }
+    /// UDP obfuscation key, but only while our public IP still matches the one
+    /// the key was issued for — the key is bound to that IP, so a server will
+    /// silently drop packets obfuscated with a stale one. Returns 0 otherwise
+    /// so callers fall back to plaintext on the standard UDP port.
+    /// MFC: CServer::GetServerKeyUDP() — Server.cpp:322.
+    [[nodiscard]] uint32 serverKeyUDP() const;
+
+    /// The stored key regardless of IP validity — for persistence and expiry
+    /// checks only, never for deciding whether to obfuscate.
+    /// MFC: GetServerKeyUDP(bForce = true).
+    [[nodiscard]] uint32 serverKeyUDPRaw() const        { return m_serverKeyUDP; }
+
+    /// Stamps the key with our current public IP, as MFC does.
+    /// MFC: CServer::SetServerKeyUDP() — Server.cpp:329.
+    void setServerKeyUDP(uint32 key);
 
     [[nodiscard]] uint32 serverKeyUDPIP() const         { return m_serverKeyUDPIP; }
     void setServerKeyUDPIP(uint32 ip)                   { m_serverKeyUDPIP = ip; }
@@ -199,8 +212,15 @@ public:
     [[nodiscard]] bool supportsGetSourcesObfuscation() const { return (m_tcpFlags & SrvTcpFlag::TcpObfuscation) != 0; }
     [[nodiscard]] bool supportsObfuscationTCP() const   { return m_obfuscationPortTCP != 0 && (supportsObfuscationUDP() || supportsGetSourcesObfuscation()); }
 
-    /// Check if we hold a valid UDP key for the given client IP.
-    [[nodiscard]] bool hasValidUDPKey(uint32 clientIP) const { return m_serverKeyUDP != 0 && m_serverKeyUDPIP == clientIP; }
+    /// Check if we hold a valid UDP key for the given client IP. The stored IP
+    /// must itself be known: a key stamped before we learned our public IP
+    /// (m_serverKeyUDPIP == 0) is not usable, and must not be treated as valid
+    /// just because clientIP happens to be 0 too.
+    /// MFC: the condition inside CServer::GetServerKeyUDP() — Server.cpp:323.
+    [[nodiscard]] bool hasValidUDPKey(uint32 clientIP) const
+    {
+        return m_serverKeyUDP != 0 && m_serverKeyUDPIP != 0 && m_serverKeyUDPIP == clientIP;
+    }
 
     // -- Serialization ----------------------------------------------------
 

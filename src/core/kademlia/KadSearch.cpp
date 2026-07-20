@@ -4,6 +4,7 @@
 
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadClientSearcher.h"
+#include "kademlia/KadEntry.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
@@ -54,13 +55,17 @@ Search::~Search()
         m_nodeSpecialSearchRequester = nullptr;
     }
 
-    // Clean up contacts in use
-    for (auto& [id, contact] : m_inUse) {
+    // Release the routing-zone contacts we pinned; the zone owns them.
+    // MFC Search.cpp:149-150.
+    for (auto& [dist, contact] : m_inUse) {
         if (contact)
             contact->decUse();
     }
-    for (auto* contact : m_deleteList)
-        delete contact;
+    // Free the contacts the UDP listener allocated for us. MFC Search.cpp:153-155.
+    for (auto* contact : m_deleteList) {
+        if (contact && !contact->inUse())
+            delete contact;
+    }
 }
 
 void Search::setSearchType(SearchType type)
@@ -172,6 +177,47 @@ void Search::preparePacketForTags(SafeMemFile& packet, KnownFile* file, uint8 ta
     }
 }
 
+std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bool& outCanPublish)
+{
+    // Mirrors MFC Search.cpp StorePacket() STOREFILE case (:640-690).
+    std::vector<Tag> tags;
+    outCanPublish = true;
+
+    auto addCommonPortAndSize = [&] {
+        tags.emplace_back(FT_SOURCEPORT, static_cast<uint32>(p.tcpPort));
+        if (!p.useExternKadPort)
+            tags.emplace_back(FT_SOURCEUPORT, static_cast<uint32>(p.internKadPort));
+        if (p.hasFileSize)
+            tags.emplace_back(FT_FILESIZE, p.fileSize);
+    };
+
+    if (p.firewalled && p.directUDPCallback) {
+        // Source type 6: firewalled but reachable by direct UDP callback.
+        tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(6));
+        addCommonPortAndSize();
+    } else if (p.firewalled && p.hasBuddy) {
+        // Source type 3 (firewalled <=4GB) or 5 (firewalled >4GB): the buddy
+        // relays the callback for us.
+        tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(p.largeFile ? 5 : 3));
+        tags.emplace_back(FT_SERVERIP, p.buddyIP);
+        tags.emplace_back(FT_SERVERPORT, static_cast<uint32>(p.buddyUDPPort));
+        tags.emplace_back(FT_BUDDYHASH, p.buddyHash.toHexString());
+        addCommonPortAndSize();
+    } else if (p.firewalled) {
+        // Firewalled with neither a direct callback nor a buddy — a published
+        // source nobody can reach is worse than none.
+        outCanPublish = false;
+        return tags;
+    } else {
+        // Not firewalled: source type 1 (normal) or 4 (>4GB).
+        tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(p.largeFile ? 4 : 1));
+        addCommonPortAndSize();
+    }
+
+    tags.emplace_back(FT_ENCRYPTION, static_cast<uint32>(p.cryptOptions));
+    return tags;
+}
+
 void Search::updateNodeLoad(uint8 load)
 {
     m_totalLoad += load;
@@ -209,8 +255,13 @@ void Search::go(uint32 maxToSend)
                    .arg(m_searchID).arg(rtContacts));
         UInt128 distance(RoutingZone::localKadId());
         distance.xorWith(m_target);
-        if (auto* rz = Kademlia::getInstanceRoutingZone())
-            rz->getClosestTo(3, m_target, distance, 50, m_possible, true, false);
+        if (auto* rz = Kademlia::getInstanceRoutingZone()) {
+            // setInUse=true (MFC Go(), Search.cpp:172): without pinning, the
+            // routing zone can free a contact that is still sitting untried in
+            // m_possible, leaving us with a dangling pointer.
+            rz->getClosestTo(3, m_target, distance, 50, m_possible, true, true);
+            pinFetchedContacts(m_possible);
+        }
         // Remove contacts already in m_tried to avoid resending
         for (auto it = m_possible.begin(); it != m_possible.end(); ) {
             if (m_tried.count(it->first) > 0)
@@ -253,14 +304,38 @@ void Search::go(uint32 maxToSend)
 
 void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray& results)
 {
+    // Take ownership of every contact the UDP listener allocated for us, before
+    // any early return can drop them. They are freed in the destructor.
+    // MFC Search.cpp:322-323.
+    m_deleteList.insert(m_deleteList.end(), results.begin(), results.end());
+
     m_lastResponse = time(nullptr);
+
+    // Find the responding contact in m_tried. MFC resolves the sender *before*
+    // the size check (Search.cpp:326-341) because the check needs its identity.
+    // m_tried contains all contacted nodes; m_responded tracks who replied.
+    UInt128 uFromDistance;
+    Contact* pFromContact = nullptr;
+    for (auto it = m_tried.begin(); it != m_tried.end(); ++it) {
+        Contact* c = it->second;
+        if (c->address().toUint32() == fromIP && c->getUDPPort() == fromPort) {
+            uFromDistance = it->first;
+            pFromContact = c;
+            break;
+        }
+    }
 
     // Validate response size (MFC Search.cpp:341-344).
     // Reject nodes sending more contacts than requested (protocol violation / malicious).
     {
         uint8 expected = getRequestContactCount();
+        // The raised KADEMLIA_FIND_VALUE_MORE budget applies only to the one
+        // contact we actually asked for more nodes — MFC compares pointer
+        // identity. Testing merely that *a* more-nodes request is outstanding
+        // let any other peer over-answer at the same time.
         if (results.size() > expected
             && !(m_requestedMoreNodesContact != nullptr
+                 && m_requestedMoreNodesContact == pFromContact
                  && results.size() <= KADEMLIA_FIND_VALUE_MORE)) {
             logKad(QStringLiteral("Kad search %1: node %2:%3 sent %4 contacts (expected <= %5), ignoring")
                        .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort)
@@ -269,22 +344,8 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
         }
     }
 
-    // Find the responding contact in m_tried and record in m_responded.
-    // MFC keeps responders in m_tried; m_responded tracks who replied (keyed by distance).
-    bool foundSender = false;
-    UInt128 uFromDistance;
-    Contact* pFromContact = nullptr;
-    for (auto it = m_tried.begin(); it != m_tried.end(); ++it) {
-        Contact* c = it->second;
-        if (c->address().toUint32() == fromIP && c->getUDPPort() == fromPort) {
-            uFromDistance = it->first;
-            pFromContact = c;
-            foundSender = true;
-            break;
-        }
-    }
     // SafeKad: validate responding contact and record response time
-    if (foundSender && pFromContact) {
+    if (pFromContact) {
         // Record response time for FastKad adaptive timeout
         auto sentIt = m_requestSentTimes.find(pFromContact->getClientID());
         if (sentIt != m_requestSentTimes.end()) {
@@ -307,7 +368,7 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
 
     logKad(QStringLiteral("Kad search %1: response from %2:%3 — sender %4, +%5 contacts, best=%6 responded=%7 possible=%8")
                .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort)
-               .arg(foundSender ? QStringLiteral("found") : QStringLiteral("NOT found"))
+               .arg(pFromContact ? QStringLiteral("found") : QStringLiteral("NOT found"))
                .arg(results.size()).arg(m_best.size()).arg(m_responded.size()).arg(m_possible.size()));
 
     // NodeFwCheckUDP: feed response contacts to the UDP firewall tester
@@ -327,6 +388,16 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
         UDPFirewallTester::queryNextClient();
     }
 
+    // Everything below ingests the sender's contact list into this search, so it
+    // runs only for a sender we actually queried. MFC wraps the whole block in
+    // `if (pFromContact != NULL)` (Search.cpp:375). Without this an unsolicited
+    // response — needing only to slip past the out-track list — could seed
+    // m_possible with contacts the search would then go and query.
+    if (pFromContact == nullptr) {
+        ++m_totalRequestAnswers;
+        return;
+    }
+
     // Anti-spam: reject duplicate IPs and limit to 2 per /24 subnet (MFC Search.cpp:379-423).
     std::map<uint32, uint32> receivedIPs;
     std::map<uint32, uint32> receivedSubnets;
@@ -340,17 +411,14 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
         // m_tried contains ALL contacted nodes (responded or not), so checking
         // m_tried + m_possible covers everything. m_best entries are always also
         // in m_tried, so no separate m_best check needed.
+        // Rejected contacts are NOT deleted here — m_deleteList owns them all.
         UInt128 dist = contact->getDistance();
-        if (m_tried.count(dist) > 0 || m_possible.count(dist) > 0) {
-            delete contact;
+        if (m_tried.count(dist) > 0 || m_possible.count(dist) > 0)
             continue;
-        }
 
         // Reject duplicate IPs (MFC Search.cpp:403-407)
-        if (receivedIPs.count(contact->address().toUint32()) > 0) {
-            delete contact;
+        if (receivedIPs.count(contact->address().toUint32()) > 0)
             continue;
-        }
         receivedIPs[contact->address().toUint32()] = 1;
 
         // Limit to 2 IPs per /24 subnet (MFC Search.cpp:412-423)
@@ -358,17 +426,15 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
         if (!contact->address().isLan()) {
             auto sit = receivedSubnets.find(subnetIP);
             if (sit != receivedSubnets.end()) {
-                if (sit->second >= 2) {
-                    delete contact;
+                if (sit->second >= 2)
                     continue;
-                }
                 ++sit->second;
             } else {
                 receivedSubnets[subnetIP] = 1;
             }
         }
 
-        if (foundSender && dist < uFromDistance)
+        if (dist < uFromDistance)
             providedCloserContacts = true;
 
         // Add to possible contacts
@@ -384,8 +450,7 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
     }
 
     // Record response in m_responded (keyed by distance, matching MFC m_mapResponded).
-    if (foundSender)
-        m_responded[uFromDistance] = providedCloserContacts;
+    m_responded[uFromDistance] = providedCloserContacts;
 
     ++m_totalRequestAnswers;
 
@@ -547,28 +612,31 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
 
 void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort)
 {
-    ++m_answers;
-    logKad(QStringLiteral("Kad: keyword result #%1 from %2:%3, %4 tags")
-               .arg(m_answers).arg(fromIP).arg(fromPort).arg(info.size()));
-
     // Extract file metadata from tags
     QString fileName;
     uint64 fileSize = 0;
     QString fileType;
     uint32 sources = 0;
     uint32 completeSources = 0;
+    bool hasFileName = false;
+    bool hasFileSize = false;
 
     for (const auto& tag : info) {
         switch (tag.nameId()) {
         case FT_FILENAME:
-            if (tag.isStr())
+            if (tag.isStr()) {
                 fileName = tag.strValue();
+                hasFileName = true;
+            }
             break;
         case FT_FILESIZE:
-            if (tag.isInt())
+            if (tag.isInt()) {
                 fileSize = tag.intValue();
-            else if (tag.isInt64(false))
+                hasFileSize = true;
+            } else if (tag.isInt64(false)) {
                 fileSize = tag.int64Value();
+                hasFileSize = true;
+            }
             break;
         case FT_FILESIZE_HI:
             if (tag.isInt())
@@ -590,6 +658,64 @@ void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 f
             break;
         }
     }
+
+    // Filter the result against what we actually asked for. Remote nodes are
+    // supposed to do this, but nothing forces them to — a sloppy or hostile node
+    // can return anything indexed under the keyword hash.
+    // MFC Search.cpp:1151-1176.
+
+    // 1. Without a name or size there is nothing usable here.
+    if (!hasFileName || !hasFileSize || fileName.isEmpty()) {
+        logKad(QStringLiteral("Kad search %1: dropping keyword result from %2:%3 — missing name or size")
+                   .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort));
+        return;
+    }
+
+    // 2. Every word we searched for must appear in the returned name.
+    if (!m_words.empty()) {
+        std::vector<QString> nameWords;
+        getWords(fileName, nameWords);
+        for (const auto& want : m_words) {
+            bool found = false;
+            for (const auto& have : nameWords) {
+                if (have.compare(want, Qt::CaseInsensitive) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                logKad(QStringLiteral("Kad search %1: dropping \"%2\" from %3:%4 — missing keyword \"%5\"")
+                           .arg(m_searchID).arg(fileName).arg(ipToString(fromIP)).arg(fromPort).arg(want));
+                return;
+            }
+        }
+    }
+
+    // 3. Re-verify the full boolean expression we published in the request.
+    //    Built lazily from the same blob we sent (MFC Search.cpp:1171-1175).
+    if (!m_searchTerm && !m_searchTermsData.isEmpty()) {
+        SafeMemFile termFile(reinterpret_cast<const uint8*>(m_searchTermsData.constData()),
+                             static_cast<uint32>(m_searchTermsData.size()));
+        m_searchTerm = KademliaUDPListener::createSearchExpressionTree(termFile, 0);
+    }
+    if (m_searchTerm) {
+        // Reuse the same matcher the serving side uses, so what we accept and
+        // what we serve can't drift apart.
+        KeyEntry candidate;
+        candidate.setFileName(fileName);
+        candidate.m_size = fileSize;
+        for (const auto& tag : info)
+            candidate.addTag(tag);
+        if (!candidate.startSearchTermsMatch(*m_searchTerm)) {
+            logKad(QStringLiteral("Kad search %1: dropping \"%2\" from %3:%4 — fails search expression")
+                       .arg(m_searchID).arg(fileName).arg(ipToString(fromIP)).arg(fromPort));
+            return;
+        }
+    }
+
+    ++m_answers;
+    logKad(QStringLiteral("Kad: keyword result #%1 from %2:%3, %4 tags")
+               .arg(m_answers).arg(fromIP).arg(fromPort).arg(info.size()));
 
     // Report via callback to SearchList
     const auto& cb = Kademlia::kadKeywordResultCallback();
@@ -716,6 +842,22 @@ void Search::jumpStart()
     go(kJumpstartMaxSend);
 }
 
+void Search::pinFetchedContacts(const ContactMap& fetched)
+{
+    // getClosestTo(setInUse=true) already called incUse() on every entry it
+    // returned. Record them so the destructor can release exactly one reference
+    // each (MFC Go(), Search.cpp:178-183). go() may re-seed m_possible from the
+    // routing table more than once, so a contact can come back already pinned —
+    // drop the surplus reference rather than leaking it.
+    for (const auto& [dist, contact] : fetched) {
+        if (!contact)
+            continue;
+        auto [it, inserted] = m_inUse.try_emplace(dist, contact);
+        if (!inserted)
+            contact->decUse();
+    }
+}
+
 void Search::sendFindValue(Contact* contact, bool reAskMore)
 {
     if (!contact || m_stopping)
@@ -725,9 +867,11 @@ void Search::sendFindValue(Contact* contact, bool reAskMore)
     if (!udpListener)
         return;
 
+    // No incUse() here: pinning happens once, where contacts enter the search
+    // (pinFetchedContacts). Doing it per send double-counted the reAskMore
+    // re-send against the single decUse() in the destructor, pinning the
+    // contact forever.
     ++m_kadPacketSent;
-    m_inUse[contact->getClientID()] = contact;
-    contact->incUse();
     m_requestSentTimes[contact->getClientID()] = std::chrono::steady_clock::now();
 
     if (m_lookupHistory)
@@ -967,83 +1111,53 @@ void Search::storePacket()
             // Build source tags matching MFC StorePacket format
             // Source types: 1=HighID, 3=FW+buddy(<=4GB), 4=HighID(>4GB),
             //               5=FW+buddy(>4GB), 6=FW+directUDP
-            std::vector<Tag> tags;
-
             uint8 targetHash[16];
             m_target.toByteArray(targetHash);
             auto* pubFile = theApp.sharedFileList
                 ? theApp.sharedFileList->getFileByID(targetHash) : nullptr;
-            bool largeFile = pubFile && pubFile->isLargeFile();
+
+            SourcePublishParams sp;
+            sp.largeFile        = pubFile && pubFile->isLargeFile();
+            sp.hasFileSize      = pubFile != nullptr;
+            sp.fileSize         = pubFile ? static_cast<uint64>(pubFile->fileSize()) : 0;
+            sp.tcpPort          = thePrefs.port();
+            sp.internKadPort    = prefs ? prefs->internKadPort() : 0;
+            sp.useExternKadPort = !prefs || prefs->useExternKadPort();
 
             auto* kadInst = Kademlia::instance();
-            if (kadInst && kadInst->isFirewalled()) {
-                // Check for direct UDP callback (source type 6)
-                bool directCallback = kadInst->isRunning()
+            sp.firewalled = kadInst && kadInst->isFirewalled();
+            if (sp.firewalled) {
+                sp.directUDPCallback = kadInst->isRunning()
                     && !UDPFirewallTester::isFirewalledUDP(true)
                     && UDPFirewallTester::isVerified();
-
-                if (directCallback) {
-                    // Source type 6: firewalled but direct UDP callback possible
-                    tags.emplace_back(FT_SOURCETYPE,
-                                      static_cast<uint32>(6));
-                    tags.emplace_back(FT_SOURCEPORT,
-                                      static_cast<uint32>(thePrefs.port()));
-                    if (prefs && !prefs->useExternKadPort())
-                        tags.emplace_back(FT_SOURCEUPORT,
-                                          static_cast<uint32>(prefs->internKadPort()));
-                    if (pubFile)
-                        tags.emplace_back(FT_FILESIZE,
-                                          static_cast<uint64>(pubFile->fileSize()));
-                } else {
+                if (!sp.directUDPCallback) {
                     auto* clientList = Kademlia::getClientList();
-                    auto* buddy = clientList ? clientList->getBuddy() : nullptr;
-                    if (!buddy) {
-                        // Firewalled, no direct callback, no buddy — can't publish
-                        prepareToStop();
-                        break;
+                    if (auto* buddy = clientList ? clientList->getBuddy() : nullptr) {
+                        sp.hasBuddy = true;
+                        sp.buddyIP = buddy->userAddress().toUint32();
+                        // MFC Search.cpp:668 publishes the buddy's *UDP* port —
+                        // the Kad buddy-callback packet is sent there, not to the
+                        // ED2K TCP port.
+                        sp.buddyUDPPort = buddy->udpPort();
+                        // FT_BUDDYHASH: KadID XOR all-ones (MFC: md4str(uBuddyID))
+                        sp.buddyHash = UInt128(true);
+                        sp.buddyHash.xorWith(prefs ? prefs->kadId() : RoutingZone::localKadId());
                     }
-                    // Source type 3 (firewalled <=4GB) or 5 (firewalled >4GB)
-                    tags.emplace_back(FT_SOURCETYPE,
-                                      static_cast<uint32>(largeFile ? 5 : 3));
-                    tags.emplace_back(FT_SERVERIP,
-                                      buddy->userAddress().toUint32());
-                    tags.emplace_back(FT_SERVERPORT,
-                                      static_cast<uint32>(buddy->userPort()));
-                    // FT_BUDDYHASH: hex string of KadID XOR (MFC: md4str(uBuddyID))
-                    UInt128 buddyID(true);
-                    buddyID.xorWith(prefs ? prefs->kadId() : RoutingZone::localKadId());
-                    tags.emplace_back(FT_BUDDYHASH,
-                                      buddyID.toHexString());
-                    tags.emplace_back(FT_SOURCEPORT,
-                                      static_cast<uint32>(thePrefs.port()));
-                    if (prefs && !prefs->useExternKadPort())
-                        tags.emplace_back(FT_SOURCEUPORT,
-                                          static_cast<uint32>(prefs->internKadPort()));
-                    if (pubFile)
-                        tags.emplace_back(FT_FILESIZE,
-                                          static_cast<uint64>(pubFile->fileSize()));
                 }
-            } else {
-                // Not firewalled: source type 1 (normal) or 4 (>4GB)
-                tags.emplace_back(FT_SOURCETYPE,
-                                  static_cast<uint32>(largeFile ? 4 : 1));
-                tags.emplace_back(FT_SOURCEPORT,
-                                  static_cast<uint32>(thePrefs.port()));
-                if (prefs && !prefs->useExternKadPort())
-                    tags.emplace_back(FT_SOURCEUPORT,
-                                      static_cast<uint32>(prefs->internKadPort()));
-                if (pubFile)
-                    tags.emplace_back(FT_FILESIZE,
-                                      static_cast<uint64>(pubFile->fileSize()));
             }
 
             // FT_ENCRYPTION: connect options (MFC: CKadTagUInt8)
-            uint8 byCrypt = 0;
-            if (thePrefs.cryptLayerSupported())  byCrypt |= 0x01;
-            if (thePrefs.cryptLayerRequested())  byCrypt |= 0x02;
-            if (thePrefs.cryptLayerRequired())   byCrypt |= 0x04;
-            tags.emplace_back(FT_ENCRYPTION,
-                              static_cast<uint32>(byCrypt));
+            if (thePrefs.cryptLayerSupported())  sp.cryptOptions |= 0x01;
+            if (thePrefs.cryptLayerRequested())  sp.cryptOptions |= 0x02;
+            if (thePrefs.cryptLayerRequired())   sp.cryptOptions |= 0x04;
+
+            bool canPublish = false;
+            std::vector<Tag> tags = buildSourcePublishTags(sp, canPublish);
+            if (!canPublish) {
+                // Firewalled, no direct callback, no buddy — nothing to publish
+                prepareToStop();
+                break;
+            }
 
             io::writeKadTagList(packet, tags);
             logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ pktLen=%1 tags=%2 srcType=%3")

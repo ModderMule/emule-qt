@@ -25,6 +25,8 @@ private slots:
     void initTestCase();
 
     void construction_generatesRandomKadId();
+    void readFile_regeneratesZeroKadId();
+    void readFile_regeneratesOnTruncatedFile();
     void construction_clientHashFromUserHash();
     void persistRoundTrip();
     void setIPAddress_twoStepVerification();
@@ -266,6 +268,67 @@ void tst_KadPrefs::statsFirewalledRatio_noData()
 
     QCOMPARE(prefs.statsGetFirewalledRatio(true), 0.0f);
     QCOMPARE(prefs.statsGetFirewalledRatio(false), 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// KadID sanitization on load
+//
+// readFile() zeroes m_clientId before reading into it, discarding the random ID
+// the constructor generated. Every path out of it must therefore leave a valid
+// ID behind — running with KadID 0 would put us at a fixed, predictable point in
+// the keyspace where anyone could target us.
+// ---------------------------------------------------------------------------
+
+namespace {
+/// Write a preferencesKad.dat whose KadID field is all zeroes.
+/// Layout: uint32 IP | uint16 reserved | 16-byte KadID | uint8 tagCount.
+void writeZeroKadIdFile(const QString& configDir)
+{
+    QFile f(configDir + QStringLiteral("/preferencesKad.dat"));
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    QDataStream out(&f);
+    out.setByteOrder(QDataStream::LittleEndian);
+    out << uint32{0x0A000101} << uint16{0};
+    const QByteArray zeroId(16, '\0');
+    out.writeRawData(zeroId.constData(), 16);
+    out << uint8{0};
+}
+} // namespace
+
+void tst_KadPrefs::readFile_regeneratesZeroKadId()
+{
+    TempDir tmp;
+    writeZeroKadIdFile(tmp.path());
+
+    KadPrefs p(tmp.path());
+    // Proves the file was actually parsed — otherwise the assertion below would
+    // pass vacuously on the constructor's own random ID.
+    QCOMPARE(p.ipAddress(), uint32{0x0A000101});
+    QVERIFY2(p.kadId() != uint32{0},
+             "an all-zero stored KadID must be replaced, not adopted");
+}
+
+void tst_KadPrefs::readFile_regeneratesOnTruncatedFile()
+{
+    // A file long enough to pass the size check but truncated mid-KadID takes
+    // the short-read branch, which returns *after* m_clientId was already
+    // zeroed — a second route to the same bad state.
+    TempDir tmp;
+    {
+        QFile f(tmp.path() + QStringLiteral("/preferencesKad.dat"));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QDataStream out(&f);
+        out.setByteOrder(QDataStream::LittleEndian);
+        out << uint32{0x0A000101} << uint16{0};
+        const QByteArray partial(10, '\x42'); // 10 of the 16 KadID bytes
+        out.writeRawData(partial.constData(), partial.size());
+        const QByteArray pad(7, '\0');        // pad past the 23-byte size gate
+        out.writeRawData(pad.constData(), pad.size());
+    }
+
+    KadPrefs p(tmp.path());
+    QVERIFY2(p.kadId() != uint32{0},
+             "a truncated KadID read must regenerate, not leave the ID zero");
 }
 
 QTEST_MAIN(tst_KadPrefs)

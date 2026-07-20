@@ -68,6 +68,11 @@ void AppConfig::setConfigDirOverride(const QString& path)
     s_configDirOverride = path;
 }
 
+QString AppConfig::configDirOverride()
+{
+    return s_configDirOverride;
+}
+
 // ---------------------------------------------------------------------------
 // configDir
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadLog.h"
+#include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearchManager.h"
@@ -18,6 +19,11 @@ namespace eMule::kad {
 // Must match in both setUDPFWCheckResult() and getUDPCheckClientsNeeded().
 // Note: KADEMLIAFIREWALLCHECKS (4) is the TCP constant — do NOT use it here.
 static constexpr uint8 kUDPFWCheckClientsNeeded = 2;
+
+// MFC UDPFirewallTester.cpp:63 — MIN2MS(6). A check that produces no result for
+// this long reports *firewalled*; reporting "open" on timeout would advertise a
+// port nobody can reach.
+static constexpr uint32 kUDPFWCheckTimeoutSecs = 6 * 60;
 
 // ---------------------------------------------------------------------------
 // Static data
@@ -43,79 +49,160 @@ bool UDPFirewallTester::isFirewalledUDP(bool lastStateIfTesting)
 {
     if (Kademlia::shouldSkipFirewallChecks())
         return false;
-    if (lastStateIfTesting && isFWCheckUDPRunning())
-        return s_firewalledLastStateUDP;
-    return s_firewalledUDP;
+
+    const bool checkingFW = isFWCheckUDPRunning();
+    if (s_timedOut) {
+        // A check that never produced results means firewalled, not open.
+        // MFC UDPFirewallTester.cpp:56-58.
+        if (checkingFW)
+            return true;
+    } else if (checkingFW) {
+        // Don't let a timeout firewall us if we already passed a test before.
+        auto* kadInst = Kademlia::instance();
+        if (!s_firewalledUDP && kadInst && kadInst->isFirewalled() && s_testStart != 0
+            && !s_isFWVerifiedUDP
+            && static_cast<uint32>(time(nullptr)) >= s_testStart + kUDPFWCheckTimeoutSecs)
+        {
+            logKad(QStringLiteral("Kad: UDP FW check timed out after %1 min — reporting firewalled")
+                       .arg(kUDPFWCheckTimeoutSecs / 60));
+            s_timedOut = true;
+            return true;
+        }
+    }
+
+    return (lastStateIfTesting && checkingFW) ? s_firewalledLastStateUDP : s_firewalledUDP;
 }
 
 void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
-                                             uint32 /*fromIP*/, uint16 /*incomingPort*/)
+                                             uint32 fromIP, uint16 incomingPort)
 {
-    if (testCancelled) {
-        if (s_fwChecksRunning > 0)
-            --s_fwChecksRunning;
-        logKad(QStringLiteral("Kad: UDP FW check cancelled — running=%1, finished=%2")
-                   .arg(s_fwChecksRunning).arg(s_fwChecksFinished));
-        queryNextClient();
+    auto* prefs = Kademlia::getInstancePrefs();
+    const uint32 now = static_cast<uint32>(time(nullptr));
+
+    // Only accept results from a client we actually asked. Without this any peer
+    // can inject a verdict. MFC UDPFirewallTester.cpp:84-116.
+    bool requested = false;
+    for (auto& used : s_usedTestClients) {
+        if (used.contact.address().toUint32() != fromIP)
+            continue;
+
+        // Late second answer after an already-open verdict: a proper forwarded
+        // internal port is more reliable than a NAT-assigned external one, so
+        // prefer it. MFC :90-101.
+        if (!isFWCheckUDPRunning() && !s_firewalledUDP && s_isFWVerifiedUDP
+            && now < s_lastSucceededTime + 10
+            && prefs && incomingPort == prefs->internKadPort() && prefs->useExternKadPort())
+        {
+            prefs->setUseExternKadPort(false);
+            logKad(QStringLiteral("Kad: Corrected UDP FW result — using open internal port %1")
+                       .arg(incomingPort));
+            return;
+        }
+        if (used.answered) {
+            // Each test produces two answer packets; count the client once.
+            return;
+        }
+        used.answered = true;
+        requested = true;
+        break;
+    }
+
+    if (!requested) {
+        logKad(QStringLiteral("Kad: Ignoring unrequested UDP FW check result from %1")
+                   .arg(ipToString(fromIP)));
         return;
     }
 
-    ++s_fwChecksFinished;
-    logKad(QStringLiteral("Kad: UDP FW check result — succeeded=%1, finished=%2/%3")
-               .arg(QLatin1StringView(succeeded ? "yes" : "no"))
-               .arg(s_fwChecksFinished)
-               .arg(kUDPFWCheckClientsNeeded));
+    if (!isFWCheckUDPRunning())
+        return; // already decided
 
-    if (succeeded) {
-        s_firewalledUDP = false;
-        s_isFWVerifiedUDP = true;
-        s_lastSucceededTime = static_cast<uint32>(time(nullptr));
-        logKad(QStringLiteral("Kad: UDP FW check succeeded — not firewalled"));
-    }
+    // Always release the slot, whatever the outcome — not doing this on failure
+    // deadlocked the tester at running=1/finished=1 and the second test never ran.
+    if (s_fwChecksRunning > 0)
+        --s_fwChecksRunning;
 
-    // Check if all tests are finished
-    if (s_fwChecksFinished >= kUDPFWCheckClientsNeeded) {
-        if (!s_isFWVerifiedUDP)
+    if (!testCancelled) {
+        ++s_fwChecksFinished;
+
+        if (succeeded) {
+            // One positive result is enough.
+            s_testStart = 0;
+            s_firewalledUDP = false;
+            s_isFWVerifiedUDP = true;
+            s_timedOut = false;
+            s_fwChecksFinished = kUDPFWCheckClientsNeeded; // no further tests
+            s_fwChecksRunning = 0;                          // cancel the others
+            s_possibleTestClients.clear();                  // keep used clients
+            s_lastSucceededTime = now;
+            s_firewalledLastStateUDP = s_firewalledUDP;
+            SearchManager::cancelNodeFWCheckUDPSearch();
+
+            // Learn which of our ports is actually reachable from outside.
+            if (prefs) {
+                if (incomingPort == prefs->internKadPort()) {
+                    prefs->setUseExternKadPort(false);
+                    logKad(QStringLiteral("Kad: UDP FW check succeeded — open, using intern port %1")
+                               .arg(incomingPort));
+                } else if (incomingPort != 0 && incomingPort == prefs->externalKadPort()) {
+                    prefs->setUseExternKadPort(true);
+                    logKad(QStringLiteral("Kad: UDP FW check succeeded — open, using extern port %1")
+                               .arg(incomingPort));
+                } else {
+                    logKad(QStringLiteral("Kad: UDP FW check succeeded — not firewalled"));
+                }
+            }
+            return;
+        }
+
+        if (s_fwChecksFinished >= kUDPFWCheckClientsNeeded) {
+            s_testStart = 0;
             s_firewalledUDP = true;
-        s_fwChecksRunning = 0;
-        s_firewalledLastStateUDP = s_firewalledUDP;
-        logKad(QStringLiteral("Kad: UDP FW check complete — firewalled: %1")
-                   .arg(QLatin1StringView(s_firewalledUDP ? "yes" : "no")));
+            s_isFWVerifiedUDP = true;
+            s_timedOut = false;
+            s_firewalledLastStateUDP = s_firewalledUDP;
+            s_possibleTestClients.clear();
+            SearchManager::cancelNodeFWCheckUDPSearch();
+            logKad(QStringLiteral("Kad: UDP FW check complete — firewalled"));
+            return;
+        }
+        logKad(QStringLiteral("Kad: UDP FW check from %1 — firewalled, continue testing (%2/%3)")
+                   .arg(ipToString(fromIP)).arg(s_fwChecksFinished).arg(kUDPFWCheckClientsNeeded));
+    } else {
+        logKad(QStringLiteral("Kad: UDP FW check from %1 cancelled").arg(ipToString(fromIP)));
     }
+
+    queryNextClient();
 }
 
 void UDPFirewallTester::reCheckFirewallUDP(bool setUnverified)
 {
     logKad(QStringLiteral("Kad: UDP FW recheck requested (setUnverified=%1)")
                .arg(QLatin1StringView(setUnverified ? "yes" : "no")));
-    if (setUnverified)
-        s_isFWVerifiedUDP = false;
     s_fwChecksRunning = 0;
     s_fwChecksFinished = 0;
+    s_lastSucceededTime = 0;
+    s_testStart = static_cast<uint32>(time(nullptr));
+    s_timedOut = false;
+    s_firewalledLastStateUDP = s_firewalledUDP;
+    s_isFWVerifiedUDP = s_isFWVerifiedUDP && !setUnverified;
     s_possibleTestClients.clear();
     s_usedTestClients.clear();
-    s_nodeSearchStarted = false;
-    s_timedOut = false;
+
+    SearchManager::findNodeFWCheckUDP();
+    s_nodeSearchStarted = true;
+
+    // Re-learn the external Kad port alongside the firewall state.
+    if (auto* prefs = Kademlia::getInstancePrefs())
+        (void)prefs->findExternKadPort(true);
 }
 
 bool UDPFirewallTester::isFWCheckUDPRunning()
 {
-    if (s_fwChecksRunning > 0 || s_nodeSearchStarted) {
-        // Timeout after 45s — matches MFC UDPFirewallTester.cpp
-        if (s_testStart != 0
-            && static_cast<uint32>(time(nullptr)) - s_testStart > 45)
-        {
-            s_timedOut = true;
-            s_fwChecksRunning = 0;
-            s_fwChecksFinished = 0;
-            s_nodeSearchStarted = false;
-            s_possibleTestClients.clear();
-            logKad(QStringLiteral("Kad: UDP FW check timed out"));
-            return false;
-        }
-        return true;
-    }
-    return false;
+    // MFC UDPFirewallTester.cpp:193-196. Deliberately not gated on
+    // s_fwChecksRunning: the check is "running" from the moment it starts until
+    // enough clients have reported, including while we are between clients.
+    return s_fwChecksFinished < kUDPFWCheckClientsNeeded
+           && !Kademlia::shouldSkipFirewallChecks();
 }
 
 bool UDPFirewallTester::isVerified()
@@ -171,12 +258,39 @@ void UDPFirewallTester::reset()
 
 void UDPFirewallTester::connected()
 {
-    if (!s_nodeSearchStarted && getUDPCheckClientsNeeded()) {
+    // MFC :183-190 gates on IsFWCheckUDPRunning(), not GetUDPCheckClientsNeeded().
+    if (!s_nodeSearchStarted && isFWCheckUDPRunning()) {
         s_nodeSearchStarted = true;
         s_testStart = static_cast<uint32>(time(nullptr));
+        s_timedOut = false;
         logKad(QStringLiteral("Kad: UDP FW tester connected — starting node search for test clients"));
         SearchManager::findNodeFWCheckUDP();
     }
+}
+
+void UDPFirewallTester::debugSetTestStart(uint32 startTime)
+{
+    s_testStart = startTime;
+}
+
+void UDPFirewallTester::debugAddUsedTestClient(uint32 ip, uint16 udpPort)
+{
+    UsedClient used;
+    used.contact = Contact(UInt128(uint32{0}), ip, udpPort, 0, UInt128(uint32{0}),
+                           KADEMLIA_VERSION, KadUDPKey(), false);
+    used.answered = false;
+    s_usedTestClients.push_back(std::move(used));
+    ++s_fwChecksRunning;
+}
+
+uint8 UDPFirewallTester::debugChecksFinished()
+{
+    return s_fwChecksFinished;
+}
+
+uint8 UDPFirewallTester::debugChecksRunning()
+{
+    return s_fwChecksRunning;
 }
 
 void UDPFirewallTester::queryNextClient()

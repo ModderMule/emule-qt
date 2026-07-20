@@ -7,13 +7,16 @@
 /// first-run seeding of bundled data files (nodes.dat, webserver assets,
 /// eMule.tmpl, etc.).
 
+#include "utils/Types.h"   // pulls in generated config.h (EMULE_VERSION_STRING)
+
 #include <QString>
 #include <QLatin1StringView>
 
 namespace eMule {
 
 /// Application version string — single source of truth for daemon, GUI, and web server.
-inline constexpr QLatin1StringView kAppVersion{"0.1.6"};
+/// Derived from the CMake PROJECT_VERSION via config.h so it cannot drift.
+inline constexpr QLatin1StringView kAppVersion{EMULE_VERSION_STRING};
 
 /// User-Agent header value for all outgoing HTTP requests.
 inline const QString kUserAgent = QStringLiteral("eMuleQt/") + kAppVersion;
@@ -32,6 +35,11 @@ public:
 
     /// Override the config directory. Must be called before configDir().
     static void setConfigDirOverride(const QString& path);
+
+    /// The active override, or an empty string when none is set.
+    /// Preferences::configDir() consults this so a --config run redirects
+    /// every consumer, not just the preferences.yml lookup in main().
+    [[nodiscard]] static QString configDirOverride();
 
 #ifdef Q_OS_WIN
     /// Returns the cached multiUserSharing value (0=per-user, 1=all-users,

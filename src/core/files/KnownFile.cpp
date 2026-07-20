@@ -759,37 +759,80 @@ bool KnownFile::publishNotes()
 }
 
 std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
-    const UpDownClient* /*forClient*/, uint8 version, uint16 /*options*/) const
+    const UpDownClient* forClient, uint8 version, uint16 /*options*/) const
 {
-    if (m_uploadingClients.empty())
+    if (!forClient || m_uploadingClients.empty())
         return nullptr;
 
-    // Negotiate version down to our max supported
-    const uint8 usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
+    // The requester must either report no chunk status at all, or one sized for this
+    // file. Anything else means the needed-parts comparison below would read two
+    // differently-shaped bitmaps against each other.
+    const auto& clientParts = forClient->upPartStatus();
+    if (!(forClient->upPartCount() == 0 && clientParts.empty()) &&
+        !(forClient->upPartCount() == partCount() && !clientParts.empty()))
+    {
+        logDebug(QStringLiteral("createSrcInfoPacket: requester part count %1 does not "
+                                "match file part count %2 for %3")
+                     .arg(forClient->upPartCount()).arg(partCount()).arg(fileName()));
+        return nullptr;
+    }
+
+    // Only answer in SX2 when the peer actually asked for it; otherwise fall back to
+    // the SX1 version it announced at handshake. SX1 carries no version byte and uses
+    // its own opcode, so the two formats must not be mixed.
+    uint8 usedVersion;
+    bool isSX2;
+    if (forClient->supportsSourceExchange2() && version > 0) {
+        usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
+        isSX2 = true;
+    } else {
+        usedVersion = forClient->sourceExchange1Ver();
+        isSX2 = false;
+    }
 
     SafeMemFile data;
 
-    // SX2 header: version byte
-    data.writeUInt8(usedVersion);
+    // SX2 header: version byte. SX1 has none.
+    if (isSX2)
+        data.writeUInt8(usedVersion);
 
     // File hash (16 bytes)
     data.writeHash16(fileHash());
 
+    // Placeholder for source count — seeked back to once the real count is known.
+    // The count must match the number of records actually written, or receivers
+    // fail their `count * entrySize == dataSize` check and drop the whole packet.
+    const auto countPos = data.position();
+    data.writeUInt16(0);
+
     // Limit number of sources based on protocol version
     const uint16 maxSources = (usedVersion >= 4) ? 500 : 50;
-    const auto srcCount = static_cast<uint16>(
-        std::min(static_cast<size_t>(maxSources), m_uploadingClients.size()));
+    uint16 count = 0;
 
-    data.writeUInt16(srcCount);
+    for (const auto* client : m_uploadingClients) {
+        if (count >= maxSources)
+            break;
 
-    for (uint16 i = 0; i < srcCount; ++i) {
-        const auto* client = m_uploadingClients[i];
-
-        // Skip low-ID clients
-        if (client->hasLowID())
+        // Skip low-ID clients, the requester itself, and anyone not actually in a
+        // position to serve the file. A client that is merely connecting or banned
+        // is not a source worth handing out.
+        if (client->hasLowID() || client == forClient)
+            continue;
+        if (client->uploadState() != UploadState::Uploading &&
+            client->uploadState() != UploadState::OnUploadQueue)
             continue;
 
-        data.writeUInt32(client->userAddress().toNetworkUint32());
+        // URL sources can't be described by an ed2k source record.
+        if (!client->isEd2kClient())
+            continue;
+
+        if (!sourceHasNeededPart(client, clientParts))
+            continue;
+
+        // v3+ sends IDs in hybrid (host order) format so that high-ID clients
+        // with an address ending in .0 aren't falsely read back as low-ID.
+        data.writeUInt32(usedVersion >= 3 ? client->userIDHybrid()
+                                          : client->userAddress().toNetworkUint32());
         data.writeUInt16(client->userPort());
         data.writeUInt32(client->serverAddress().toNetworkUint32());
         data.writeUInt16(client->serverPort());
@@ -798,6 +841,9 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
             data.writeHash16(client->userHash());
 
         if (usedVersion >= 4) {
+            // Bit 3 (direct UDP callback) is deliberately never set: the SX record
+            // carries no Kad UDP port, so the receiver can't act on it and forces
+            // it off anyway (setConnectOptions(..., callback=false)).
             uint8 cryptOpts = 0;
             if (client->supportsCryptLayer())
                 cryptOpts |= 0x01;
@@ -805,13 +851,23 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
                 cryptOpts |= 0x02;
             if (client->requiresCryptLayer())
                 cryptOpts |= 0x04;
-            if (client->supportsDirectUDPCallback())
-                cryptOpts |= 0x08;
             data.writeUInt8(cryptOpts);
         }
+
+        ++count;
     }
 
-    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_ANSWERSOURCES2);
+    if (count == 0)
+        return nullptr;
+
+    // Seek back and write actual count
+    const auto endPos = data.position();
+    data.seek(static_cast<int>(countPos), SEEK_SET);
+    data.writeUInt16(count);
+    data.seek(static_cast<int>(endPos), SEEK_SET);
+
+    auto packet = std::make_unique<Packet>(
+        data, OP_EMULEPROT, isSX2 ? OP_ANSWERSOURCES2 : OP_ANSWERSOURCES);
     if (packet->size > 354)
         packet->packPacket();
 
@@ -1049,6 +1105,38 @@ void KnownFile::updatePartsInfo()
     }
 
     emit m_notifier.fileUpdated();
+}
+
+// ---------------------------------------------------------------------------
+// sourceHasNeededPart — private
+// ---------------------------------------------------------------------------
+
+bool KnownFile::sourceHasNeededPart(const UpDownClient* src,
+                                    const std::vector<uint8>& requesterParts) const
+{
+    const auto& srcParts = src->upPartStatus();
+
+    // A client that doesn't report chunk status tells us nothing either way, so send
+    // it and let the requester find out — same as the original.
+    if (srcParts.empty())
+        return true;
+
+    if (requesterParts.empty()) {
+        // The requester didn't report chunk status, so we can't diff against it.
+        // Settle for any source holding at least one complete part.
+        return std::any_of(srcParts.begin(), srcParts.end(),
+                           [](uint8 have) { return have != 0; });
+    }
+
+    // Mismatched bitmaps can't be compared meaningfully; treat as not needed.
+    if (srcParts.size() != requesterParts.size())
+        return false;
+
+    for (size_t i = 0; i < srcParts.size(); ++i) {
+        if (srcParts[i] != 0 && requesterParts[i] == 0)
+            return true;
+    }
+    return false;
 }
 
 } // namespace eMule

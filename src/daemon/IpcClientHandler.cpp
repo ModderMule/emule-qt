@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QHostInfo>
 
+#include "app/AppContext.h"
 #include "app/CoreSession.h"
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
@@ -33,6 +34,7 @@
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIndexed.h"
+#include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "net/ListenSocket.h"
 #include "prefs/Preferences.h"
@@ -604,7 +606,10 @@ void IpcClientHandler::handleAddServer(const IpcMessage& msg)
 void IpcClientHandler::handleGetConnection(const IpcMessage& msg)
 {
     QCborMap info;
-    info.insert(QStringLiteral("connected"),  theApp.isConnected());
+    // ED2K-only: the GUI maps this onto its eD2K status indicator and the
+    // Connect/Disconnect button — theApp.isConnected() is true for Kad too.
+    info.insert(QStringLiteral("connected"),
+                theApp.serverConnect && theApp.serverConnect->isConnected());
     info.insert(QStringLiteral("connecting"),
                 theApp.serverConnect && theApp.serverConnect->isConnecting());
     info.insert(QStringLiteral("firewalled"), theApp.isFirewalled());
@@ -622,7 +627,8 @@ void IpcClientHandler::handleGetConnection(const IpcMessage& msg)
 void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
 {
     QCborMap info;
-    bool connected = theApp.isConnected();
+    // ED2K-only — see handleGetConnection().
+    bool connected = theApp.serverConnect && theApp.serverConnect->isConnected();
     info.insert(QStringLiteral("connected"),  connected);
     info.insert(QStringLiteral("connecting"),
                 theApp.serverConnect && theApp.serverConnect->isConnecting());
@@ -630,7 +636,7 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
     if (connected && theApp.serverConnect) {
         info.insert(QStringLiteral("publicIP"),
-                    static_cast<qint64>(thePrefs.publicIP()));
+                    static_cast<qint64>(theApp.publicIP()));
         info.insert(QStringLiteral("obfuscated"),
                     theApp.serverConnect->isConnectedObfuscated());
         if (const auto* srv = theApp.serverConnect->currentServer()) {
@@ -774,9 +780,20 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
     uint32 searchID = 0;
 
     if (params.type == SearchType::Kademlia) {
+        // Build the AND/OR/NOT expression tree + filters that travel with the
+        // KADEMLIA2_SEARCH_KEY_REQ. Without it a multi-word search degenerates
+        // to a bare single-keyword query and remote nodes return everything
+        // indexed under the first keyword.
+        const QString kadKeyword = kad::kadSearchKeyword(params.expression);
+        const QByteArray searchTerms = buildSearchTermsPayload(params, kadKeyword);
+
         // Create Kad search first to get its auto-assigned ID
         auto* kadSearch = kad::SearchManager::prepareFindKeywords(
-            params.expression, 0, nullptr);
+            params.expression,
+            static_cast<uint32>(searchTerms.size()),
+            searchTerms.isEmpty()
+                ? nullptr
+                : reinterpret_cast<const uint8*>(searchTerms.constData()));
         if (kadSearch) {
             searchID = kadSearch->getSearchID();
             theApp.searchList->newSearch(params.fileType, params, searchID);
@@ -2293,7 +2310,8 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
 
     // -- eD2K section ---------------------------------------------------------
     QCborMap ed2k;
-    const bool ed2kConnected = theApp.isConnected();
+    // ED2K-only: this feeds the "ed2k" section, reported separately from "kad" below.
+    const bool ed2kConnected = theApp.serverConnect && theApp.serverConnect->isConnected();
     const bool ed2kConnecting = theApp.serverConnect && theApp.serverConnect->isConnecting();
     const bool ed2kFirewalled = theApp.isFirewalled();
     ed2k.insert(QStringLiteral("connected"), ed2kConnected);
@@ -2305,7 +2323,7 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
                      static_cast<qint64>(theApp.serverConnect->clientID()));
         ed2k.insert(QStringLiteral("lowID"), theApp.serverConnect->isLowID());
         ed2k.insert(QStringLiteral("publicIP"),
-                     static_cast<qint64>(thePrefs.publicIP()));
+                     static_cast<qint64>(theApp.publicIP()));
 
         // Total users/files across all servers
         if (theApp.serverList) {

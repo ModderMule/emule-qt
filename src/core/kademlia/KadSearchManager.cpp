@@ -87,12 +87,14 @@ Search* SearchManager::prepareFindKeywords(const QString& keyword,
     // Split keywords first, then hash only the first word (MFC behavior).
     // The Kad DHT indexes keywords individually, so the target for "test file"
     // is MD4("test"), not MD4("test file").
-    UInt128 target;
     QString lowerKeyword = kadTagStrToLower(keyword);
     std::vector<QString> words;
     getWords(lowerKeyword, words);
     if (words.empty())
         return nullptr;
+    // Same keyword selection the search-terms blob is built against —
+    // see kadSearchKeyword().
+    UInt128 target;
     getKeywordHash(words.front(), target);
 
     // Check for duplicate
@@ -137,8 +139,11 @@ bool SearchManager::startSearch(Search* search)
 
     if (auto* rz = Kademlia::getInstanceRoutingZone()) {
         ContactMap contacts;
+        // setInUse=true (MFC Go(), Search.cpp:172): pin these so the routing
+        // zone cannot free them while they sit untried in m_possible.
         rz->getClosestTo(maxType, search->getTarget(),
-                         distance, 50, contacts, true, false);
+                         distance, 50, contacts, true, true);
+        search->pinFetchedContacts(contacts);
         for (auto& [dist, contact] : contacts)
             search->m_possible[dist] = contact;
     }

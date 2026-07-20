@@ -325,7 +325,7 @@ void tst_CallbackAndQueueRank::initTestCase()
     // publicIP must match localhost so UDP encryption key derivation works.
     // Sender encrypts with MD5(targetHash + publicIP + ...), receiver decrypts
     // with MD5(userHash + senderIP + ...).  Both must be 127.0.0.1 (host order).
-    thePrefs.setPublicIP(0x7F000001);
+    theApp.setPublicIP(0x7F000001);
 
     const QString incomingDir = m_tmpDir->filePath(QStringLiteral("incoming"));
     const QString tempDir = m_tmpDir->filePath(QStringLiteral("temp"));
@@ -745,6 +745,9 @@ void tst_CallbackAndQueueRank::directCallback_setsCorrectState()
     client->processHelloPacket(reinterpret_cast<const uint8*>(buf.constData()),
                                static_cast<uint32>(buf.size()));
 
+    // A direct UDP callback is delivered to the peer's Kad endpoint, so the client
+    // needs one before it can be considered reachable that way.
+    client->setKadPort(4672);
     QVERIFY(client->supportsDirectUDPCallback());
     QVERIFY(client->hasLowID());
 

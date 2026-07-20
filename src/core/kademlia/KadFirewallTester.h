@@ -33,6 +33,19 @@ public:
     static void connected();
     static void queryNextClient();
 
+    /// Test seam: backdate the check's start time so the 6-minute timeout can be
+    /// exercised without waiting for it.
+    static void debugSetTestStart(uint32 startTime);
+
+    /// Test seam: register a client as "asked" without going through the TCP
+    /// request in queryNextClient(), so result validation can be exercised.
+    static void debugAddUsedTestClient(uint32 ip, uint16 udpPort);
+
+    /// Test seam: how many firewall checks have reported so far.
+    [[nodiscard]] static uint8 debugChecksFinished();
+    /// Test seam: how many firewall checks are still awaiting a result.
+    [[nodiscard]] static uint8 debugChecksRunning();
+
 private:
     static bool getUDPCheckClientsNeeded();
 

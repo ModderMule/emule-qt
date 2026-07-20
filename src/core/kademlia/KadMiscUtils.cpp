@@ -40,6 +40,13 @@ QByteArray getKeywordBytes(const QString& keyword)
     return keyword.toUtf8();
 }
 
+QString kadSearchKeyword(const QString& expression)
+{
+    std::vector<QString> words;
+    getWords(kadTagStrToLower(expression), words);
+    return words.empty() ? QString() : words.front();
+}
+
 void getWords(const QString& str, std::vector<QString>& outWords)
 {
     // Split on any of the invalid keyword characters

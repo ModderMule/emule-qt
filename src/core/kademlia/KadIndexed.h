@@ -61,11 +61,30 @@ private:
     void readFile();
     void clean();
 
+    // How sources and notes differ. Everything else about inserting them is
+    // identical, so the shared body below takes this instead of being forked.
+    // MFC Indexed.cpp AddSources/AddNotes.
+    struct SourcePolicy {
+        // Is `stored` the same publisher as `incoming`? Sources match on
+        // IP + (TCP or UDP) port, notes on IP *or* sourceID. Deduping on
+        // sourceID alone — which is attacker-chosen — lets one host fill every
+        // slot for a file just by rotating it.
+        bool (*isSamePublisher)(const Entry& stored, const Entry& incoming);
+        // Is `entry` well-formed enough to store? Sources need a full address
+        // and an unexpired lifetime; notes only need an IP and some tags.
+        bool (*isPublishable)(const Entry& entry);
+    };
+
+    static const SourcePolicy kSourcePolicy;
+    static const SourcePolicy kNotePolicy;
+
     // Shared body for addSources/addNotes (identical except for the index map,
-    // counter, per-file cap, and lifetime). Non-locking: the public wrappers
-    // hold m_mutex. addKeyword stays separate (merge semantics + map container).
+    // counter, per-file cap, lifetime, and the policy above). Non-locking: the
+    // public wrappers hold m_mutex. addKeyword stays separate (merge semantics +
+    // map container).
     bool addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileMax,
-                        time_t lifetimeSecs, const UInt128& keyID, const UInt128& sourceID,
+                        time_t lifetimeSecs, const SourcePolicy& policy,
+                        const UInt128& keyID, const UInt128& sourceID,
                         Entry* entry, uint8& outLoad);
 
     time_t m_nextClean = 0;

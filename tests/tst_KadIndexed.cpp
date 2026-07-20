@@ -18,6 +18,33 @@
 using namespace eMule;
 using namespace eMule::kad;
 
+namespace {
+/// A source entry as a real PUBLISH_SOURCE_REQ would produce it: routable
+/// address, both ports, and at least one tag. Anything less is rejected as
+/// malformed, so tests that want a source stored must supply all of it.
+Entry* makeSourceEntry(uint32 ip, uint16 tcpPort = 4662, uint16 udpPort = 4672)
+{
+    auto* e = new Entry();
+    e->m_address = Address::fromHostOrder(ip);
+    e->m_tcpPort = tcpPort;
+    e->m_udpPort = udpPort;
+    e->addTag(Tag(uint8{FT_SOURCETYPE}, uint32{1}));
+    return e;
+}
+
+/// A keyword entry as a real PUBLISH_KEY_REQ would produce it. A name and a
+/// non-zero size are both mandatory — an entry missing either is unservable and
+/// is rejected on ingest.
+KeyEntry* makeKeyEntry(uint32 ip, const QString& name, uint64 size = 1024)
+{
+    auto* e = new KeyEntry();
+    e->m_address = Address::fromHostOrder(ip);
+    e->setFileName(name);
+    e->m_size = size;
+    return e;
+}
+} // namespace
+
 class tst_KadIndexed : public QObject {
     Q_OBJECT
 
@@ -37,6 +64,13 @@ private slots:
     void cleanIndex_srcHash();
     void cleanIndex_keyHash();
     void addSources_replacesDuplicate();
+
+    // Per-IP flood limits — MFC Indexed.cpp AddSources/AddNotes
+    void addSources_rotatingSourceIdOccupiesOneSlot();
+    void addSources_distinctHostsGetDistinctSlots();
+    void addSources_rejectsIncompleteEntries();
+    void addNotes_dedupePerIpOrSourceId();
+    void addNotes_acceptEntryWithoutPorts();
 };
 
 void tst_KadIndexed::construct_empty()
@@ -55,9 +89,7 @@ void tst_KadIndexed::addKeyword_basic()
 
     UInt128 keyID(uint32{100});
     UInt128 sourceID(uint32{200});
-    auto* entry = new KeyEntry();
-    entry->m_address = Address::fromHostOrder(0x0A000001);
-    entry->setFileName(QStringLiteral("test.mp3"));
+    auto* entry = makeKeyEntry(0x0A000001, QStringLiteral("test.mp3"));
 
     uint8 load = 0;
     bool result = indexed.addKeyword(keyID, sourceID, entry, load);
@@ -76,9 +108,7 @@ void tst_KadIndexed::addKeyword_loadTracking()
     // Add several keyword entries under different source IDs
     for (uint32 i = 0; i < 10; ++i) {
         UInt128 sourceID(i + 1);
-        auto* entry = new KeyEntry();
-        entry->m_address = Address::fromHostOrder(0x0A000001 + i);
-        entry->setFileName(QStringLiteral("file_%1.txt").arg(i));
+        auto* entry = makeKeyEntry(0x0A000001 + i, QStringLiteral("file_%1.txt").arg(i));
         indexed.addKeyword(keyID, sourceID, entry, load);
     }
 
@@ -97,6 +127,9 @@ void tst_KadIndexed::addSources_basic()
     entry->m_address = Address::fromHostOrder(0x0A000001);
     entry->m_tcpPort = 4662;
     entry->m_udpPort = 4672;
+    // A source publish always carries at least TAG_SOURCETYPE; entries with no
+    // tags at all are rejected as malformed.
+    entry->addTag(Tag(uint8{FT_SOURCETYPE}, uint32{1}));
 
     uint8 load = 0;
     bool result = indexed.addSources(keyID, sourceID, entry, load);
@@ -130,14 +163,12 @@ void tst_KadIndexed::getFileKeyCount()
     // Add entries with different key IDs
     UInt128 keyID1(uint32{1});
     UInt128 sourceID1(uint32{10});
-    auto* entry1 = new KeyEntry();
-    entry1->setFileName(QStringLiteral("a.txt"));
+    auto* entry1 = makeKeyEntry(0x0A000001, QStringLiteral("a.txt"));
     indexed.addKeyword(keyID1, sourceID1, entry1, load);
 
     UInt128 keyID2(uint32{2});
     UInt128 sourceID2(uint32{20});
-    auto* entry2 = new KeyEntry();
-    entry2->setFileName(QStringLiteral("b.txt"));
+    auto* entry2 = makeKeyEntry(0x0A000002, QStringLiteral("b.txt"));
     indexed.addKeyword(keyID2, sourceID2, entry2, load);
 
     QCOMPARE(indexed.getFileKeyCount(), uint32{2});
@@ -152,21 +183,22 @@ void tst_KadIndexed::addKeyword_duplicateSource()
     uint8 load = 0;
 
     // Add first entry
-    auto* entry1 = new KeyEntry();
-    entry1->m_address = Address::fromHostOrder(0x0A000001);
-    entry1->setFileName(QStringLiteral("original.txt"));
+    auto* entry1 = makeKeyEntry(0x0A000001, QStringLiteral("original.txt"));
     indexed.addKeyword(keyID, sourceID, entry1, load);
     QCOMPARE(indexed.m_totalIndexKeyword, uint32{1});
 
-    // Add second entry with same key+source — should merge, not add new
-    auto* entry2 = new KeyEntry();
-    entry2->m_address = Address::fromHostOrder(0x0A000002);
-    entry2->setFileName(QStringLiteral("updated.txt"));
+    // Same key+source and same size — merges rather than adding a second entry.
+    // The merge runs new-absorbs-old: entry2 becomes the stored entry and entry1
+    // is destroyed, so the index owns entry2 and the caller must NOT delete it.
+    // (It used to be the other way round, which leaked one KeyEntry per refresh.)
+    auto* entry2 = makeKeyEntry(0x0A000002, QStringLiteral("updated.txt"));
     bool result = indexed.addKeyword(keyID, sourceID, entry2, load);
     QVERIFY(result);
-    // Total should remain 1 since it merged
     QCOMPARE(indexed.m_totalIndexKeyword, uint32{1});
-    delete entry2; // not owned by indexed since it was merged
+
+    // Both publishers are now tracked against the surviving entry, and two
+    // distinct /24 blocks means it scores as trusted.
+    QVERIFY(entry2->getTrustValue() >= 1.0f);
 }
 
 void tst_KadIndexed::sendStoreRequest_check()
@@ -317,16 +349,139 @@ void tst_KadIndexed::addSources_replacesDuplicate()
     UInt128 sourceID(uint32{400});
     uint8 load = 0;
 
-    auto* e1 = new Entry();
+    // Sources are deduped by IP + port, not by sourceID, so both publishes must
+    // describe the same host to collapse onto one slot.
+    auto* e1 = makeSourceEntry(0x0A000001, 4662, 4672);
     e1->m_size = 111;
     QVERIFY(indexed.addSources(keyID, sourceID, e1, load));
     QCOMPARE(indexed.m_totalIndexSource, uint32{1});
 
-    // Same key + source: addSourceEntry replaces (deletes e1), does not accumulate.
-    auto* e2 = new Entry();
+    // Same publisher: addSourceEntry replaces (deletes e1), does not accumulate.
+    auto* e2 = makeSourceEntry(0x0A000001, 4662, 4672);
     e2->m_size = 222;
     QVERIFY(indexed.addSources(keyID, sourceID, e2, load));
     QCOMPARE(indexed.m_totalIndexSource, uint32{1});
+}
+
+// ---------------------------------------------------------------------------
+// Per-IP source/note flood limits
+//
+// The index used to dedupe on sourceID alone. sourceID is the publisher's ED2K
+// user hash — fully attacker-chosen — so one host could claim every slot for a
+// file simply by varying it. MFC keys sources on IP + port and notes on IP or
+// sourceID, which collapses all of one host's publishes onto a single slot.
+// ---------------------------------------------------------------------------
+
+void tst_KadIndexed::addSources_rotatingSourceIdOccupiesOneSlot()
+{
+    Indexed indexed;
+    UInt128 keyID(uint32{700});
+    uint8 load = 0;
+
+    // Same host, 50 different sourceIDs — the core item-F attack.
+    for (uint32 i = 0; i < 50; ++i) {
+        auto* e = makeSourceEntry(0x0A000001);
+        QVERIFY(indexed.addSources(keyID, UInt128(i), e, load));
+    }
+
+    QCOMPARE(indexed.m_totalIndexSource, uint32{1});
+}
+
+void tst_KadIndexed::addSources_distinctHostsGetDistinctSlots()
+{
+    Indexed indexed;
+    UInt128 keyID(uint32{701});
+    uint8 load = 0;
+
+    // Genuinely different hosts must still each get a slot, otherwise the
+    // dedupe would have broken normal operation rather than just the abuse.
+    for (uint32 i = 0; i < 5; ++i) {
+        auto* e = makeSourceEntry(0x0A000001 + i);
+        QVERIFY(indexed.addSources(keyID, UInt128(i), e, load));
+    }
+
+    QCOMPARE(indexed.m_totalIndexSource, uint32{5});
+}
+
+void tst_KadIndexed::addSources_rejectsIncompleteEntries()
+{
+    Indexed indexed;
+    UInt128 keyID(uint32{702});
+    UInt128 sourceID(uint32{1});
+    uint8 load = 0;
+
+    // No address.
+    auto* noIP = makeSourceEntry(0x0A000001);
+    noIP->m_address = Address();
+    QVERIFY(!indexed.addSources(keyID, sourceID, noIP, load));
+    delete noIP;
+
+    // No TCP port — unusable as a download source.
+    auto* noTCP = makeSourceEntry(0x0A000001, 0, 4672);
+    QVERIFY(!indexed.addSources(keyID, sourceID, noTCP, load));
+    delete noTCP;
+
+    // No UDP port.
+    auto* noUDP = makeSourceEntry(0x0A000001, 4662, 0);
+    QVERIFY(!indexed.addSources(keyID, sourceID, noUDP, load));
+    delete noUDP;
+
+    // No tags at all.
+    auto* noTags = new Entry();
+    noTags->m_address = Address::fromHostOrder(0x0A000001);
+    noTags->m_tcpPort = 4662;
+    noTags->m_udpPort = 4672;
+    QVERIFY(!indexed.addSources(keyID, sourceID, noTags, load));
+    delete noTags;
+
+    QCOMPARE(indexed.m_totalIndexSource, uint32{0});
+}
+
+void tst_KadIndexed::addNotes_dedupePerIpOrSourceId()
+{
+    Indexed indexed;
+    UInt128 keyID(uint32{703});
+    uint8 load = 0;
+
+    // m_sourceID must be set exactly as process_KADEMLIA2_PUBLISH_NOTES_REQ
+    // does — the note dedupe reads it off the entry, so leaving it at its
+    // default would make every note look like the same publisher.
+    auto makeNote = [](uint32 ip, uint32 sourceID) {
+        auto* e = new Entry();
+        e->m_address = Address::fromHostOrder(ip);
+        e->m_sourceID = UInt128(sourceID);
+        e->addTag(Tag(QByteArrayLiteral("comment"), QStringLiteral("spam")));
+        return e;
+    };
+
+    // One IP, many sourceIDs — collapses to a single note.
+    for (uint32 i = 0; i < 20; ++i)
+        QVERIFY(indexed.addNotes(keyID, UInt128(i), makeNote(0x0A000001, i), load));
+    QCOMPARE(indexed.m_totalIndexNotes, uint32{1});
+
+    // A different IP with an unseen sourceID earns its own slot.
+    QVERIFY(indexed.addNotes(keyID, UInt128(uint32{999}), makeNote(0x0A000002, 999), load));
+    QCOMPARE(indexed.m_totalIndexNotes, uint32{2});
+
+    // ...but the same sourceID from yet another IP collapses onto an existing
+    // slot, since notes match on IP *or* sourceID.
+    QVERIFY(indexed.addNotes(keyID, UInt128(uint32{999}), makeNote(0x0A000003, 999), load));
+    QCOMPARE(indexed.m_totalIndexNotes, uint32{2});
+}
+
+void tst_KadIndexed::addNotes_acceptEntryWithoutPorts()
+{
+    // Notes carry no ports and no lifetime requirement — the stricter source
+    // gate must not leak across to them.
+    Indexed indexed;
+    uint8 load = 0;
+
+    auto* note = new Entry();
+    note->m_address = Address::fromHostOrder(0x0A000001);
+    note->addTag(Tag(QByteArrayLiteral("comment"), QStringLiteral("nice")));
+
+    QVERIFY(indexed.addNotes(UInt128(uint32{704}), UInt128(uint32{1}), note, load));
+    QCOMPARE(indexed.m_totalIndexNotes, uint32{1});
 }
 
 QTEST_GUILESS_MAIN(tst_KadIndexed)

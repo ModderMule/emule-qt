@@ -210,6 +210,13 @@ protected:
 private:
     void pruneKadNotes();  // drop expired entries, then cap to the newest N
 
+    /// True when `src` holds at least one chunk the requester still wants, so it is
+    /// worth exchanging. `requesterParts` is the requester's upload part status; an
+    /// empty one means it doesn't report chunk status, in which case any source with
+    /// at least one complete part qualifies.
+    [[nodiscard]] bool sourceHasNeededPart(const UpDownClient* src,
+                                           const std::vector<uint8>& requesterParts) const;
+
     FileNotifier m_notifier;
     std::unique_ptr<Collection> m_collection;
     std::vector<UpDownClient*> m_uploadingClients;

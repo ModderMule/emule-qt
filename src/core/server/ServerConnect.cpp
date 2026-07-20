@@ -205,8 +205,8 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
             &ServerConnect::serverMessageReceived);
 
     connect(socket, &ServerSocket::loginReceived, this,
-            [this, socket](uint32 clientID, uint32 /*tcpFlags*/) {
-                onLoginReceived(socket, clientID);
+            [this, socket](uint32 clientID, uint32 /*tcpFlags*/, uint32 serverReportedIP) {
+                onLoginReceived(socket, clientID, serverReportedIP);
             });
 
     connect(socket, &ServerSocket::foundSourcesReceived, this,
@@ -456,6 +456,7 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     case ServerConnState::Disconnected:
         m_connected = false;
+        clearServerIdentity();
         if (m_connectedSocket) {
             m_connectedSocket = nullptr;
         }
@@ -528,7 +529,10 @@ bool ServerConnect::sendPacket(std::unique_ptr<Packet> packet, ServerSocket* to)
 bool ServerConnect::sendUDPPacket(std::unique_ptr<Packet> packet, const Server& host,
                                   uint16 specialPort)
 {
-    if (m_connected && m_udpSocket)
+    // MFC: CServerConnect::SendUDPPacket — ServerConnect.cpp:270 gates on
+    // theApp.IsConnected() (ED2K *or* Kad), not on our own ED2K connection.
+    // Server stat pings and global UDP search keep working in Kad-only mode.
+    if (theApp.isConnected() && m_udpSocket)
         m_udpSocket->sendPacket(std::move(packet), host, specialPort);
     return true;
 }
@@ -541,6 +545,7 @@ bool ServerConnect::disconnect()
 {
     if (m_connected && m_connectedSocket) {
         m_connected = false;
+        clearServerIdentity();
 
         destroySocket(m_connectedSocket);
         m_connectedSocket = nullptr;
@@ -643,6 +648,12 @@ bool ServerConnect::isLowID() const
 void ServerConnect::setClientID(uint32 newid)
 {
     m_clientID = newid;
+
+    // MFC: CServerConnect::SetClientID() — sockets.cpp:562. A HighID *is* our
+    // public IP: the server only issues one after routing a callback to it.
+    if (!eMule::isLowID(newid))
+        theApp.setPublicIP(newid);
+
     emit clientIDChanged(newid);
     emit stateChanged();
 }
@@ -802,9 +813,15 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
 // Smart LowID check — onLoginReceived
 // ---------------------------------------------------------------------------
 
-void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID)
+void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint32 serverReportedIP)
 {
     setClientID(clientID);
+
+    // MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:419, and note the
+    // ordering: setClientID() above already covered the HighID case, so this only
+    // has to handle the LowID one, where the server's view is all we have.
+    if (eMule::isLowID(clientID) && serverReportedIP != 0)
+        theApp.setPublicIP(serverReportedIP);
 
     if (!m_config.smartLowIdCheck)
         return;
@@ -835,6 +852,16 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID)
             tryAnotherConnectionRequest();
         }
     }
+}
+
+void ServerConnect::clearServerIdentity()
+{
+    // MFC: CServerConnect::Disconnect() — sockets.cpp:506. Both the client ID and
+    // the public IP were this server's claim about us; with it gone they are no
+    // longer ours to assert. Kad still backs theApp.publicIP() if it is running,
+    // which is what makes clearing safe here.
+    setClientID(0);
+    theApp.setPublicIP(0);
 }
 
 } // namespace eMule

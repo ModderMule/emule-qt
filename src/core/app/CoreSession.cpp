@@ -274,6 +274,15 @@ void CoreSession::onTimer()
         if (theApp.scheduler && thePrefs.schedulerEnabled())
             theApp.scheduler->check();
 
+        // Server stat ping — one server per UDPSERVERSTATTIME (5s); each server
+        // is re-asked at most every UDPSERVSTATREASKTIME (4.5h). This is what
+        // populates serverKeyUDP / obfuscation ports for non-connected servers.
+        if (theApp.serverList && theApp.serverConnect
+            && theApp.serverConnect->isUDPSocketAvailable()
+            && m_tickCounter % (UDPSERVERSTATTIME / 100) == 0) {
+            theApp.serverList->serverStats();
+        }
+
         // UPnP refresh every ~30s (300 ticks)
         if (m_upnpManager && m_tickCounter % 300 == 0)
             m_upnpManager->checkAndRefresh();
@@ -443,6 +452,15 @@ void CoreSession::initServerConnect()
                     uint16 port = server.port();
                     theApp.searchList->processUDPSearchAnswer(data, size, true, ip, port);
                 }
+            });
+
+    // 8. Wire UDP server status replies → ServerList
+    // Carries the server's UDP obfuscation key and ports, which we need before
+    // global UDP search can be obfuscated against that server.
+    connect(m_serverUDP.get(), &UDPSocket::serverStatusResult,
+            this, [](const uint8* data, uint32 size, const Endpoint& server) {
+                if (theApp.serverList)
+                    theApp.serverList->processStatusResponse(data, size, server);
             });
 }
 

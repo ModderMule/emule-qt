@@ -19,6 +19,7 @@
 /// This matches the original eMule grammar where OR binds tighter than AND.
 
 #include "search/SearchExpr.h"
+#include "search/SearchParams.h"
 
 #include <QStringList>
 
@@ -53,5 +54,28 @@ struct ParseResult {
 /// @return ParseResult with the expression and any errors.
 [[nodiscard]] ParseResult parseSearchExpression(const QString& input,
                                                  bool keepQuotedStrings = false);
+
+// ---------------------------------------------------------------------------
+// buildSearchTermsPayload — full search payload (expression + filters)
+// ---------------------------------------------------------------------------
+
+/// Build the binary search-terms payload for @p params: the parsed boolean
+/// expression AND-combined with every active filter (type, size, availability,
+/// extension, complete sources, media tags).
+///
+/// This is the port of MFC `GetSearchPacket` (srchybrid/SearchResultsWnd.cpp:965),
+/// which official eMule uses for both the ED2K server search packet and the Kad
+/// KADEMLIA2_SEARCH_KEY_REQ search-terms blob — the wire format is the same.
+///
+/// @param kadKeyword When non-empty, the search is a Kad search indexed under
+///        this keyword. The keyword is then dropped from the filename terms
+///        (the target hash already encodes it) and, when the expression is a
+///        plain AND-chain of filename terms, the remaining terms are collapsed
+///        into a single space-joined string term — matching official's layout,
+///        which the receiving node re-tokenizes and ANDs.
+/// @return Encoded payload, empty if the expression fails to parse or there is
+///         nothing left to send.
+[[nodiscard]] QByteArray buildSearchTermsPayload(const SearchParams& params,
+                                                  const QString& kadKeyword = QString());
 
 } // namespace eMule

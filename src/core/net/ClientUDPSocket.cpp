@@ -154,7 +154,7 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
 
         // Encrypt if requested.
         if (pack.encrypt) {
-            uint32 publicIP = thePrefs.publicIP();
+            uint32 publicIP = theApp.publicIP();
             uint32 cryptOverhead = static_cast<uint32>(
                 EncryptedDatagramSocket::encryptOverheadSize(pack.kad));
             uint32 encryptedLen = EncryptedDatagramSocket::encryptSendClient(

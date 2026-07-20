@@ -9,6 +9,7 @@
 #include "kademlia/KadLog.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingBin.h"
+#include "app/AppContext.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
 #include "ipfilter/IPFilter.h"
@@ -186,49 +187,64 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
     Contact* existing = m_bin->getContact(contact->getClientID());
 
     if (existing) {
-        // Contact already exists — update if requested
+        // Contact already exists — update if requested.
+        // Structure mirrors MFC RoutingZone.cpp:497-560.
         if (update) {
-            // Check if IP/port changed
-            if (existing->address() == contact->address()
-                && existing->getUDPPort() == contact->getUDPPort()) {
-                // Same IP/port — just update version and key
-                if (contact->getVersion() >= existing->getVersion()) {
-                    existing->setVersion(contact->getVersion());
-                    existing->setUDPKey(contact->getUDPKey());
-                }
-                if (contact->getReceivedHelloPacket())
-                    existing->setReceivedHelloPacket();
-                if (contact->isIpVerified() && !existing->isIpVerified()) {
-                    existing->setIpVerified(true);
-                    ipVerified = true;
-                }
-                m_bin->setAlive(existing);
-                emit contactUpdated(existing);
-            } else {
-                // IP or port changed — verify UDP key before accepting
-                // If existing contact has a verified key, the new contact must provide a matching key
-                // This prevents hijacking of verified routing table entries (matches original eMule behavior)
-                uint32 publicIP = thePrefs.publicIP();
-                uint32 existingKeyVal = existing->getUDPKey().getKeyValue(publicIP);
-                uint32 newKeyVal = contact->getUDPKey().getKeyValue(publicIP);
-                bool keyAcceptable = (existingKeyVal == 0) || (existingKeyVal == newKeyVal);
-                if (!keyAcceptable) {
-                    logKad(QStringLiteral("Kad: %1 tried to update contact %2 but failed to provide proper sender key (sent empty: %3) — denying")
-                               .arg(contact->address().toString(),
-                                    existing->address().toString(),
-                                    newKeyVal == 0 ? u"yes" : u"no"));
-                } else if (m_bin->changeContactIPAddress(existing, contact->address().toUint32())) {
-                    existing->setUDPPort(contact->getUDPPort());
-                    existing->setTCPPort(contact->getTCPPort());
-                    existing->setVersion(contact->getVersion());
-                    existing->setUDPKey(contact->getUDPKey());
-                    if (contact->getReceivedHelloPacket())
-                        existing->setReceivedHelloPacket();
-                    existing->setIpVerified(contact->isIpVerified());
-                    ipVerified = contact->isIpVerified();
+            const uint32 publicIP = theApp.publicIP();
+            const uint32 existingKeyVal = existing->getUDPKey().getKeyValue(publicIP);
+            const uint32 newKeyVal = contact->getUDPKey().getKeyValue(publicIP);
+
+            if (existingKeyVal != 0 && existingKeyVal != newKeyVal) {
+                // If the stored contact carries a UDP sender key (true for all
+                // >= 0.49a clients, unless our own IP changed recently) then any
+                // packet wanting to update it must present the same key. This
+                // gates *every* update, not just ones that move the IP — a
+                // same-address update can still rewrite version and key, which
+                // is enough to hijack the entry.
+                logKad(QStringLiteral("Kad: %1 tried to update contact %2 but failed to provide proper sender key (sent empty: %3) — denying")
+                           .arg(contact->address().toString(),
+                                existing->address().toString(),
+                                newKeyVal == 0 ? u"yes" : u"no"));
+            } else if (existing->getVersion() >= KADEMLIA_VERSION1_46c
+                       && existing->getVersion() < KADEMLIA_VERSION6_49aBETA
+                       && existing->getReceivedHelloPacket()) {
+                // Legacy Kad2 contacts (pre-0.49a) have no key to authenticate
+                // with, so once we have heard a HELLO from one it may only
+                // refresh its liveness timer — never change its values.
+                // Otherwise an attacker could rewrite it at will.
+                if (existing->address() == contact->address()
+                    && existing->getTCPPort() == contact->getTCPPort()
+                    && existing->getUDPPort() == contact->getUDPPort()
+                    && existing->getVersion() == contact->getVersion()) {
+                    ipVerified = existing->isIpVerified();
                     m_bin->setAlive(existing);
                     emit contactUpdated(existing);
+                } else {
+                    logKad(QStringLiteral("Kad: rejected value update for legacy kad2 contact (%1 -> %2, %3 -> %4)")
+                               .arg(existing->address().toString(),
+                                    contact->address().toString())
+                               .arg(existing->getVersion()).arg(contact->getVersion()));
                 }
+            } else if (m_bin->changeContactIPAddress(existing, contact->address().toUint32())
+                       && contact->getVersion() >= existing->getVersion()) {
+                // Everything else (Kad2 >= 0.49a with the key checked or unset,
+                // and first-HELLO updates) may do a full update. The version
+                // guard stops an older response from downgrading a newer entry.
+                existing->setUDPPort(contact->getUDPPort());
+                existing->setTCPPort(contact->getTCPPort());
+                existing->setVersion(contact->getVersion());
+                existing->setUDPKey(contact->getUDPKey());
+                // Only ever *set* the verified flag. Clearing it is the job of
+                // changeContactIPAddress() on a genuine IP change; doing it here
+                // would let any KADEMLIA2_RES — which always supplies
+                // ipVerified=false — strip an existing contact's verification.
+                if (!existing->isIpVerified())
+                    existing->setIpVerified(contact->isIpVerified());
+                ipVerified = existing->isIpVerified();
+                if (contact->getReceivedHelloPacket())
+                    existing->setReceivedHelloPacket();
+                m_bin->setAlive(existing);
+                emit contactUpdated(existing);
             }
         }
         return false; // Contact was not newly added (caller should delete)
@@ -266,10 +282,11 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
 
 bool RoutingZone::addOrUpdateContact(const UInt128& id, uint32 ip, uint16 udpPort,
                                      uint16 tcpPort, uint8 version,
-                                     const KadUDPKey& udpKey, bool ipVerified)
+                                     const KadUDPKey& udpKey, bool ipVerified,
+                                     bool update, bool fromHello)
 {
     return add(id, ip, udpPort, tcpPort, version, udpKey, ipVerified,
-               true /*update*/, true /*fromHello*/, false /*fromNodesDat*/);
+               update, fromHello, false /*fromNodesDat*/);
 }
 
 // ---------------------------------------------------------------------------
@@ -330,12 +347,33 @@ void RoutingZone::getNumContacts(uint32& inOutContacts, uint32& inOutFilteredCon
     }
 }
 
-bool RoutingZone::isAcceptableContact(const Contact* contact)
+bool RoutingZone::isAcceptableContact(const Contact* contact) const
 {
-    // Accept if type <= 3 and version >= KADEMLIA_VERSION2_47a
-    return contact != nullptr
-           && contact->getType() <= 3
-           && contact->getVersion() >= KADEMLIA_VERSION2_47a;
+    // MFC RoutingZone.cpp:928-948. Used to vet contacts arriving in a
+    // KADEMLIA2_RES routing answer before they are handed to a live search.
+    if (contact == nullptr)
+        return false;
+
+    // No Kad1 contacts.
+    if (contact->getVersion() < KADEMLIA_VERSION2_47a)
+        return false;
+
+    if (const Contact* duplicate = getContact(contact->getClientID())) {
+        // We already know this KadID. If the known contact proved its IP and the
+        // new one claims a different address, this is a hijack attempt — someone
+        // trying to displace a verified node in other peers' searches. Note only
+        // IP and *UDP* port identify a contact here; the TCP port may legitimately
+        // differ. Otherwise a duplicate is simply a node we already have, which
+        // is fine.
+        return !duplicate->isIpVerified()
+               || (duplicate->address() == contact->address()
+                   && duplicate->getUDPPort() == contact->getUDPPort());
+    }
+
+    // Unknown contact — it must not blow the global per-IP / per-/24 budget,
+    // otherwise a single host could saturate our searches with sibyls.
+    return RoutingBin::checkGlobalIPLimits(contact->address().toUint32(),
+                                           contact->getUDPPort(), false);
 }
 
 // ---------------------------------------------------------------------------
@@ -516,6 +554,29 @@ uint32 RoutingZone::estimateCount() const
     return estimate;
 }
 
+UInt128 RoutingZone::makeRandomLookupTarget(const UInt128& zoneIndex, uint32 level,
+                                            const UInt128& localKadId)
+{
+    // MFC RoutingZone.cpp:857-865.  zoneIndex accumulates the zone's path in its
+    // LOW bits (see genSubZone), so it has to be shifted up before the padding
+    // constructor can keep it as the leading prefix.  shiftLeft(>127) yields 0,
+    // which is exactly what the root zone (level 0) needs.
+    UInt128 prefix(zoneIndex);
+    prefix.shiftLeft(128 - level);
+    // Keep the top `level` bits, randomise the rest.
+    UInt128 target(prefix, level);
+    // The prefix lives in distance space; XOR with our own ID to turn it into an
+    // actual keyspace target.  Without this every zone refresh probes the same
+    // wrong region and distant buckets never get maintained.
+    target.xorWith(localKadId);
+    return target;
+}
+
+UInt128 RoutingZone::randomLookupTarget() const
+{
+    return makeRandomLookupTarget(m_zoneIndex, m_level, s_localKadId);
+}
+
 bool RoutingZone::verifyContact(const UInt128& id, uint32 ip)
 {
     Contact* contact = getContact(id);
@@ -572,11 +633,16 @@ void RoutingZone::readFile(const QString& specialNodesdat)
                     numContacts = sf.readUInt32();
             }
         } else if (numContacts == kNodesFileVersionTag) {
-            // v2 format (written by this Qt port)
+            // Backwards compatibility: earlier builds of this port wrote the
+            // header without the leading zero sentinel ([2][count] instead of
+            // [0][2][count]).  Keep reading it so an existing install doesn't
+            // lose its routing table.  The only file this can misparse is a
+            // genuine legacy v0 nodes.dat holding exactly 2 contacts, a format
+            // that predates 0.48a.
             version = 2;
             numContacts = sf.readUInt32();
         } else if (numContacts == kNodesFileVersion3Tag) {
-            // v3 format (written by this Qt port)
+            // Same, for the port's v3 header (legacy v0 with exactly 3 contacts).
             version = 3;
             numContacts = sf.readUInt32();
         }
@@ -588,6 +654,12 @@ void RoutingZone::readFile(const QString& specialNodesdat)
                    .arg(numContacts));
             numContacts = 5000;
         }
+
+        // Tracks whether the *file* declared any verified contact. Deliberately
+        // set from the byte as read, before the add attempt, matching MFC
+        // RoutingZone.cpp:224-232 — a file whose verified contacts all get
+        // ipfiltered should still suppress the fallback.
+        bool haveVerifiedContacts = false;
 
         for (uint32 i = 0; i < numContacts; ++i) {
             // Read KadID (16 bytes)
@@ -615,6 +687,8 @@ void RoutingZone::readFile(const QString& specialNodesdat)
             if (version >= 2) {
                 udpKey = KadUDPKey(sf);
                 ipVerified = sf.readUInt8() != 0;
+                if (ipVerified)
+                    haveVerifiedContacts = true;
             }
 
             // Validate (allow LAN IPs when filterLANIPs is disabled)
@@ -658,6 +732,18 @@ void RoutingZone::readFile(const QString& specialNodesdat)
             logKad(QStringLiteral("Kad: Loaded nodes.dat — %1 contacts (filterLANIPs=%2)")
                        .arg(loaded).arg(thePrefs.filterLANIPs()));
 
+        // getClosestTo() only returns IP-verified contacts, but a nodes.dat
+        // written by an older client (or any pre-v2 file) carries no verified
+        // flags at all — leaving every contact unusable and Kad unable to
+        // bootstrap. Trust them once, for this session, as MFC does
+        // (RoutingZone.cpp:252-255). The exposure is small: these are contacts
+        // we chose to persist, and they lose the flag again on any IP change.
+        if (!haveVerifiedContacts) {
+            logKad(QStringLiteral("Kad: no verified contacts in nodes.dat — might be an old file version; "
+                                  "setting all contacts verified for this session to speed up bootstrapping"));
+            setAllContactsVerified();
+        }
+
     } catch (const FileException& e) {
         logKad(QStringLiteral("Failed to read Kad nodes file: %1").arg(QLatin1StringView(e.what())));
     }
@@ -688,7 +774,11 @@ void RoutingZone::writeFile()
             if (!sf.open(tmpPath, QIODevice::WriteOnly))
                 return;
 
-            // Write v2 header
+            // Write v2 header in the official eMule layout: [0][2][count].
+            // The leading zero is a sentinel that stops pre-0.48a clients from
+            // reading the file (they would take the first uint32 as a contact
+            // count).  MFC RoutingZone.cpp:363-367.
+            sf.writeUInt32(0);
             sf.writeUInt32(kNodesFileVersionTag);
             sf.writeUInt32(static_cast<uint32>(contacts.size()));
 
@@ -816,13 +906,7 @@ RoutingBin* RoutingZone::randomBin() const
 
 void RoutingZone::randomLookup()
 {
-    // Generate random ID within this zone's range
-    UInt128 randomTarget;
-    randomTarget.setValueRandom();
-    // Keep bits [0..level) matching m_zoneIndex
-    for (uint32 i = 0; i < m_level; ++i)
-        randomTarget.setBitNumber(i, m_zoneIndex.getBitNumber(i));
-    SearchManager::findNode(randomTarget, false);
+    SearchManager::findNode(randomLookupTarget(), false);
 }
 
 void RoutingZone::setAllContactsVerified()

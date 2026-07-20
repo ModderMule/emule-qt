@@ -3,6 +3,7 @@
 /// @brief ED2K server data entity implementation — port of CServer from MFC.
 
 #include "Server.h"
+#include "app/AppContext.h"
 #include "protocol/Tag.h"
 
 #include "utils/Log.h"
@@ -91,6 +92,29 @@ void Server::setLastDescPingedCount(bool reset)
         m_lastDescPingedCount = 0;
     else
         ++m_lastDescPingedCount;
+}
+
+// ---------------------------------------------------------------------------
+// UDP obfuscation key — bound to the public IP it was issued for
+// ---------------------------------------------------------------------------
+
+uint32 Server::serverKeyUDP() const
+{
+    // MFC: CServer::GetServerKeyUDP() — Server.cpp:322. Every send/receive site
+    // in srchybrid/UDPSocket.cpp calls the non-forced form, so a key restored
+    // from server.met after our IP changed is never used to obfuscate. Without
+    // this the packet goes out encrypted to port+14 with a key the server has
+    // long since dropped, and no reply ever comes back.
+    return hasValidUDPKey(theApp.publicIP()) ? m_serverKeyUDP : 0;
+}
+
+void Server::setServerKeyUDP(uint32 key)
+{
+    // MFC: CServer::SetServerKeyUDP() — Server.cpp:329. The stamp and the key
+    // must be set together; splitting them is how a key ends up attributed to
+    // the wrong IP.
+    m_serverKeyUDP = key;
+    m_serverKeyUDPIP = theApp.publicIP();
 }
 
 // ---------------------------------------------------------------------------
