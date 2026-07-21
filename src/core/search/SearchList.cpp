@@ -5,6 +5,7 @@
 #include "search/SearchList.h"
 #include "protocol/Tag.h"
 #include "utils/SafeFile.h"
+#include "utils/Log.h"
 
 #include <QRegularExpression>
 
@@ -122,7 +123,8 @@ void SearchList::removeResult(SearchFile* file)
 void SearchList::addKadKeywordResult(uint32 searchID, const uint8* fileHash,
                                       const QString& name, uint64 size,
                                       const QString& type, uint32 sources,
-                                      uint32 completeSources)
+                                      uint32 completeSources,
+                                      const std::vector<Tag>& metaTags)
 {
     auto* entry = findEntry(searchID);
     if (!entry) {
@@ -146,6 +148,11 @@ void SearchList::addKadKeywordResult(uint32 searchID, const uint8* fileHash,
     file->addSources(sources);
     file->addCompleteSources(completeSources);
     file->setSearchID(searchID);
+    // Attach the imported Kad media/format metadata so the result carries the
+    // same bitrate/length/codec/artist/album tags as an ED2K hit — the IPC
+    // serializer already reads these from the file's tag list.
+    for (const auto& tag : metaTags)
+        file->addTagUnique(tag);
 
     addToList(file, false, 0);
     emit tabHeaderUpdated(searchID);
@@ -168,10 +175,16 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
         addToList(file, false, 0);
     }
 
-    // Check for trailing "more results" flag
+    // Check for trailing "more results" flag. When set, the server capped the
+    // result set — surface it to the user so they can narrow the query (#19). MFC
+    // routes the same flag to the search window (ServerSocket.cpp:360-363).
     bool moreResults = false;
     if (data.position() < data.length()) {
         moreResults = data.readUInt8() != 0;
+    }
+    if (moreResults) {
+        logInfo(QStringLiteral("Server returned only part of the matches — more results "
+                               "are available; narrow your search to see them."));
     }
 
     emit tabHeaderUpdated(m_currentSearchID);

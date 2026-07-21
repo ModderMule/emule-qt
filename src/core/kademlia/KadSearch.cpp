@@ -371,21 +371,15 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
                .arg(pFromContact ? QStringLiteral("found") : QStringLiteral("NOT found"))
                .arg(results.size()).arg(m_best.size()).arg(m_responded.size()).arg(m_possible.size()));
 
-    // NodeFwCheckUDP: feed response contacts to the UDP firewall tester
-    // before the dedup loop which may delete some contacts.
-    // Matches MFC Search.cpp ProcessResponse() NODEFWCHECKUDP case.
+    // Firewall-check responses are handed to the UDP firewall tester by the
+    // listener (process_KADEMLIA2_RES). The search itself must NOT query these
+    // contacts — contacting them opens the NAT mapping and invalidates the
+    // firewall verdict ("this will of course cripple the search but that's not
+    // the point"). Count the answer and stop here. The contacts are already
+    // owned by m_deleteList above, so returning frees them. MFC Search.cpp:346-373.
     if (m_type == SearchType::NodeFwCheckUDP) {
-        for (auto* contact : results) {
-            if (!UDPFirewallTester::needsMoreTestContacts())
-                break;
-            UDPFirewallTester::addPossibleTestContact(
-                contact->getClientID(), contact->address().toUint32(),
-                contact->getUDPPort(), contact->getTCPPort(),
-                m_target, contact->getVersion(),
-                contact->getUDPKey(), contact->isIpVerified(),
-                contact->connectOptions(), contact->clientHash());
-        }
-        UDPFirewallTester::queryNextClient();
+        ++m_answers;
+        return;
     }
 
     // Everything below ingests the sender's contact list into this search, so it
@@ -453,6 +447,14 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
     m_responded[uFromDistance] = providedCloserContacts;
 
     ++m_totalRequestAnswers;
+
+    // Count each answering node for complete-node and special searches so the
+    // early-finish gate (SearchManager) can fire once enough have replied. It was
+    // never incremented, so a bootstrap NODECOMPLETE always burned the full 45 s
+    // node lifetime before setPublish(true) instead of finishing ~10 s after 10
+    // answers. MFC Search.cpp:460.
+    if (m_type == SearchType::NodeComplete || m_type == SearchType::NodeSpecial)
+        ++m_answers;
 
     // Auto-query closer contacts using persistent m_best (MFC Search.cpp:429-452).
     // m_best tracks the top ALPHA_QUERY closest contacts discovered so far.
@@ -713,16 +715,58 @@ void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 f
         }
     }
 
+    // Availability is nonsense above this bound — treat as unknown. MFC Search.cpp:1108.
+    if (sources > 65500)
+        sources = 0;
+
+    // Resolve the responder's protocol version to gate version-specific tags.
+    uint8 senderVersion = 0;
+    for (const auto& [dist, c] : m_tried) {
+        if (c && c->address().toUint32() == fromIP && c->getUDPPort() == fromPort) {
+            senderVersion = c->getVersion();
+            break;
+        }
+    }
+
+    // Import media/format metadata (and version-gated publish-info / AICH-result)
+    // so the result carries bitrate/length/codec/artist/album like an ED2K hit.
+    // MFC Search.cpp:1091-1147,1184-1194 (with the version gates at :1110,1127).
+    TagList metaTags;
+    for (const auto& tag : info) {
+        switch (tag.nameId()) {
+        case FT_MEDIA_ARTIST:
+        case FT_MEDIA_ALBUM:
+        case FT_MEDIA_TITLE:
+        case FT_MEDIA_LENGTH:
+        case FT_MEDIA_BITRATE:
+        case FT_MEDIA_CODEC:
+            metaTags.push_back(tag);
+            continue;
+        default:
+            break;
+        }
+        const QByteArray key = Entry::tagLookupKey(tag);
+        if (key == QByteArrayLiteral(TAG_FILEFORMAT)) {
+            metaTags.push_back(tag);
+        } else if (key == QByteArrayLiteral(TAG_PUBLISHINFO)) {
+            if (senderVersion >= KADEMLIA_VERSION6_49aBETA)   // MFC Search.cpp:1110-1111
+                metaTags.push_back(tag);
+        } else if (key == QByteArrayLiteral(TAG_KADAICHHASHRESULT)) {
+            if (senderVersion >= KADEMLIA_VERSION9_50a)        // MFC Search.cpp:1127-1128
+                metaTags.push_back(tag);
+        }
+    }
+
     ++m_answers;
-    logKad(QStringLiteral("Kad: keyword result #%1 from %2:%3, %4 tags")
-               .arg(m_answers).arg(fromIP).arg(fromPort).arg(info.size()));
+    logKad(QStringLiteral("Kad: keyword result #%1 from %2:%3, %4 tags (%5 meta)")
+               .arg(m_answers).arg(fromIP).arg(fromPort).arg(info.size()).arg(metaTags.size()));
 
     // Report via callback to SearchList
     const auto& cb = Kademlia::kadKeywordResultCallback();
     if (cb) {
         uint8 fileHash[16];
         answer.toByteArray(fileHash);
-        cb(m_searchID, fileHash, fileName, fileSize, fileType, sources, completeSources);
+        cb(m_searchID, fileHash, fileName, fileSize, fileType, sources, completeSources, metaTags);
     }
 
     if (m_lookupHistory)
@@ -738,6 +782,10 @@ void Search::processResultNotes(const UInt128& answer, TagList& info)
     uint8 rating = 0;
     QString comment;
 
+    // Comments are published under TAG_DESCRIPTION (0x0B), which arrives as a
+    // one-byte tag name — NOT FT_FILECOMMENT (0xF6). Reading FT_FILECOMMENT meant
+    // received comments were silently dropped. MFC Search.cpp:980.
+    constexpr uint8 kTagDescription = 0x0B; // TAG_DESCRIPTION
     for (const auto& tag : info) {
         switch (tag.nameId()) {
         case FT_FILENAME:
@@ -745,16 +793,41 @@ void Search::processResultNotes(const UInt128& answer, TagList& info)
                 fileName = tag.strValue();
             break;
         case FT_FILERATING:
+            // Read the rating raw. The old `& 0xFF) >> 1` halved it while the
+            // publish side sent it unshifted, so a rating of 1–5 was received as
+            // 0–2. MFC applies no shift on either side (Search.cpp:781,1005).
             if (tag.isInt())
-                rating = static_cast<uint8>((tag.intValue() & 0xFF) >> 1);
+                rating = static_cast<uint8>(tag.intValue() & 0xFF);
             break;
-        case FT_FILECOMMENT:
-            if (tag.isStr())
+        case kTagDescription:
+            if (tag.isStr()) {
                 comment = tag.strValue();
+                // Cap runaway comments. MFC Search.cpp:999-1003.
+                if (comment.size() > MAXFILECOMMENTLEN)
+                    comment.truncate(MAXFILECOMMENTLEN);
+            }
             break;
         default:
             break;
         }
+    }
+
+    // Drop the whole result if the filename or comment matches the abuse filter
+    // ('|'-separated, already lower-case). MFC Search.cpp:981-994.
+    const QString filter = thePrefs.commentFilter();
+    if (!filter.isEmpty()) {
+        const auto matches = [&](const QString& text) {
+            if (text.isEmpty())
+                return false;
+            const QString lower = text.toLower();
+            const auto tokens = filter.split(QLatin1Char('|'), Qt::SkipEmptyParts);
+            for (const QString& tok : tokens)
+                if (lower.contains(tok.toLower()))
+                    return true;
+            return false;
+        };
+        if (matches(fileName) || matches(comment))
+            return;
     }
 
     // Report via callback. For a notes search the search target IS the file hash;
@@ -840,6 +913,15 @@ void Search::jumpStart()
 
     // Send a single packet to unstick a stalled search (MFC sends 1 per jumpstart).
     go(kJumpstartMaxSend);
+
+    // Stream a single action/publish packet to the next-closest responded contact
+    // this cycle, so keyword/source/notes results and store packets flow during
+    // the search instead of bursting at stop (MFC JumpStart→StorePacket, one
+    // contact per ~3 s stall cycle). Any not streamed by convergence are flushed
+    // in prepareToStop(). No-op for pure node searches. go() may have called
+    // prepareToStop() → storePacket(true) already; m_storeSent then makes this a
+    // no-op.
+    storePacket(false);
 }
 
 void Search::pinFetchedContacts(const ContactMap& fetched)
@@ -936,67 +1018,58 @@ void Search::prepareToStop()
     if (m_lookupHistory)
         m_lookupHistory->setSearchStopped();
 
-    // Action phase: search types send their search requests to closest
-    // responded contacts; store types send publish packets; FindBuddy/
-    // FindSource/NodeSpecial send their respective packets.
+    // Action phase: flush any action/publish packets not already streamed during
+    // the search to every remaining responded contact. Streaming (storePacket
+    // with flushRemaining=false, from jumpStart) sends these incrementally as
+    // nodes respond; this guarantees completeness at stop. Non-action node
+    // searches send nothing (their switch cases are no-ops).
+    storePacket(true);
+}
+
+uint32 Search::storeLimit() const
+{
     switch (m_type) {
-    case SearchType::File:
-    case SearchType::Keyword:
-    case SearchType::Notes:
-    case SearchType::StoreFile:
-    case SearchType::StoreKeyword:
-    case SearchType::StoreNotes:
-    case SearchType::FindBuddy:
-    case SearchType::FindSource:
-    case SearchType::NodeSpecial:
-        storePacket();
-        break;
-    default:
-        break;
+    case SearchType::FindBuddy:  return kSearchFindBuddyTotal;
+    case SearchType::FindSource: return kSearchFindSourceTotal;
+    default:                     return kSearchStoreKeywordTotal;
     }
 }
 
-void Search::storePacket()
+void Search::storePacket(bool flushRemaining)
 {
     auto* udpListener = Kademlia::getInstanceUDPListener();
     if (!udpListener)
         return;
 
-    // Send store packets to the closest contacts that responded
-    if (m_responded.empty()) {
-        logKad(QStringLiteral("Kad search %1: store phase — no responded contacts")
-                   .arg(m_searchID));
+    if (m_responded.empty())
         return;
-    }
 
-    // Determine the per-type contact limit
-    uint32 maxStore = kSearchStoreKeywordTotal;
-    switch (m_type) {
-    case SearchType::FindBuddy:  maxStore = kSearchFindBuddyTotal; break;
-    case SearchType::FindSource: maxStore = kSearchFindSourceTotal; break;
-    default: break;
-    }
+    const uint32 maxStore = storeLimit();
 
-    // Send to the closest responded contacts from m_tried (MFC iterates m_mapPossible
-    // for responded entries; we iterate m_tried which is sorted by distance).
-    uint32 storeCount = 0;
+    // Walk the responded contacts closest-first (m_tried is distance-sorted).
+    // m_storeSent dedups across cycles so streaming (one per jump-start) and the
+    // stop-time flush never send to the same contact twice. MFC's JumpStart drives
+    // this one contact at a time via StorePacket (Search.cpp:311-313).
     for (auto& [dist, contact] : m_tried) {
-        if (!contact || storeCount >= maxStore)
+        if (m_storeSent.size() >= maxStore)
             break;
-
-        // Only store to contacts that responded
-        if (m_responded.count(dist) == 0)
+        if (!contact)
             continue;
+        if (m_storeSent.count(dist) > 0)
+            continue;                       // already served this contact
+        if (m_responded.count(dist) == 0)
+            continue;                       // only store to nodes that answered
 
         // Distance tolerance: skip contacts too far from target (MFC Search.cpp:479-482).
-        if (dist.get32BitChunk(0) > kSearchTolerance && !contact->address().isLan()) // or always bypass in LAN mode? && !(Kademlia::instance() && Kademlia::instance()->isRunningInLANMode())
+        if (dist.get32BitChunk(0) > kSearchTolerance && !contact->address().isLan())
             continue;
 
+        bool sent = false;
         switch (m_type) {
         case SearchType::Keyword: {
             // Action phase: send KADEMLIA2_SEARCH_KEY_REQ to closest responded contacts
-            logKad(QStringLiteral("Kad search %1: SEARCH_KEY_REQ #%2 → %3:%4 dist=%5")
-                       .arg(m_searchID).arg(storeCount + 1)
+            logKad(QStringLiteral("Kad search %1: SEARCH_KEY_REQ → %2:%3 dist=%4")
+                       .arg(m_searchID)
                        .arg(contact->address().toString()).arg(contact->getUDPPort())
                        .arg(dist.toHexString()));
             SafeMemFile packet;
@@ -1014,7 +1087,7 @@ void Search::storePacket()
                                         contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &keyClientID);
             }
-            ++storeCount;
+            sent = true;
             break;
         }
         case SearchType::File: {
@@ -1035,7 +1108,7 @@ void Search::storePacket()
                                         contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &clientID);
             }
-            ++storeCount;
+            sent = true;
             break;
         }
         case SearchType::Notes: {
@@ -1054,7 +1127,7 @@ void Search::storePacket()
                                         contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &noteClientID);
             }
-            ++storeCount;
+            sent = true;
             break;
         }
         case SearchType::StoreKeyword: {
@@ -1097,7 +1170,7 @@ void Search::storePacket()
                                         contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &pubKeyClientID);
             }
-            ++storeCount;
+            sent = true;
             break;
         }
         case SearchType::StoreFile: {
@@ -1170,7 +1243,7 @@ void Search::storePacket()
                                         contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &pubSrcClientID);
             }
-            ++storeCount;
+            sent = true;
             break;
         }
         case SearchType::StoreNotes: {
@@ -1211,7 +1284,7 @@ void Search::storePacket()
                                         contact->address().toUint32(), contact->getUDPPort(),
                                         contact->getUDPKey(), &pubNotesClientID);
             }
-            ++storeCount;
+            sent = true;
             break;
         }
         case SearchType::FindBuddy: {
@@ -1233,7 +1306,7 @@ void Search::storePacket()
             udpListener->sendPacket(packet, KADEMLIA_FINDBUDDY_REQ,
                                     contact->address().toUint32(), contact->getUDPPort(),
                                     contact->getUDPKey(), nullptr);
-            ++storeCount;
+            sent = true;
             break;
         }
         case SearchType::FindSource: {
@@ -1253,7 +1326,7 @@ void Search::storePacket()
             udpListener->sendPacket(packet, KADEMLIA_CALLBACK_REQ,
                                     contact->address().toUint32(), contact->getUDPPort(),
                                     contact->getUDPKey(), nullptr);
-            ++storeCount;
+            sent = true;
             break;
         }
         case SearchType::NodeSpecial: {
@@ -1265,16 +1338,20 @@ void Search::storePacket()
                     KadClientSearchResult::Succeeded,
                     contact->address().toUint32(), contact->getTCPPort());
                 m_nodeSpecialSearchRequester = nullptr;
+                sent = true;
             }
             break;
         }
         default:
             break;
         }
-    }
 
-    logKad(QStringLiteral("Kad search %1: store phase — sent to %2 contacts")
-               .arg(m_searchID).arg(storeCount));
+        if (sent) {
+            m_storeSent[dist] = true;
+            if (!flushRemaining)
+                return;   // stream exactly one action packet per jump-start cycle
+        }
+    }
 }
 
 uint8 Search::getRequestContactCount() const

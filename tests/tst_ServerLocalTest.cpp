@@ -92,6 +92,11 @@ private slots:
     void searchPlainOnObfuscatedPort();
     void stopServerPlainOnObfuscatedPort();
 
+    // Round 5: obfuscated stat crypt-ping (port+12) round-trip
+    void startServerCryptPing();
+    void cryptPingRoundTrip();
+    void stopServerCryptPing();
+
     void cleanupTestCase();
 
 private:
@@ -849,6 +854,102 @@ void tst_ServerLocalTest::stopServerPlainOnObfuscatedPort()
     disconnectFromServer();
     QTest::qWait(500);
     checkServerLog();
+    stopServer();
+}
+
+// ---------------------------------------------------------------------------
+// Round 5: obfuscated stat crypt-ping (port+12) round-trip
+//
+// serverStats() probes port+12 with a raw challenge; eNode encrypts its
+// OP_GLOBSERVSTATRES with that challenge as the RC4 base key (server→client
+// magic 0xA5). This exercises the fix: decryptReceivedServer must key on 0xA5,
+// not 0x6B, or the reply is dropped and the crypt-ping never completes. eNode-go
+// answers the crypt-ping on its obfuscated UDP listener at tcp+12 (5567).
+// ---------------------------------------------------------------------------
+
+void tst_ServerLocalTest::startServerCryptPing()
+{
+    startServer();
+    // Obfuscated HighID connect so theApp.publicIP() is set — the crypt-ping
+    // branch of serverStats() requires it. Staying connected keeps
+    // theApp.isConnected() true so serverStats() runs.
+    connectToLocalServer(/*noCrypt=*/false);
+    QVERIFY2(theApp.publicIP() != 0,
+             "obfuscated HighID connect should have set our public IP");
+}
+
+void tst_ServerLocalTest::cryptPingRoundTrip()
+{
+    QVERIFY2(m_serverConnect->isConnected(), "Not connected — connect step failed");
+
+    // serverStats() reaches the ServerConnect through theApp; the other rounds use
+    // m_serverConnect directly and never registered it. Wire it (and theApp.isConnected()
+    // now sees our live ED2K connection). Restored in stopServerCryptPing.
+    theApp.serverConnect = m_serverConnect;
+
+    // A UDPSocket wired into ServerConnect so serverStats() actually transmits the
+    // crypt-ping, and whose stat replies feed ServerList::processStatusResponse.
+    m_udpSocket = new UDPSocket(this);
+    QVERIFY2(m_udpSocket->create(), "Failed to create UDPSocket");
+    m_serverConnect->setUDPSocket(m_udpSocket);
+    connect(m_udpSocket, &UDPSocket::serverStatusResult,
+            this, [this](const uint8* data, uint32 size, const Endpoint& from) {
+                m_serverList->processStatusResponse(data, size, from);
+            });
+
+    // The eNode server as the sole ServerList entry, so serverStats() pings it.
+    // The crypt-ping always targets port+12 regardless of the obf-port flag.
+    m_serverList->removeAllServers();
+    auto srv = std::make_unique<Server>(htonl(0x7F000001), 5555);
+    srv->setName(QStringLiteral("(TESTING!!!) eNode"));
+    // Mark it dynIP so addServer() accepts the loopback address (127.0.0.1 is not
+    // "routable", which the plain-IP path rejects). The numeric IP is still set, so
+    // the send goes direct with no DNS.
+    srv->setDynIP(QStringLiteral("127.0.0.1"));
+    srv->setUDPFlags(SrvUdpFlag::NewTags | SrvUdpFlag::Unicode | SrvUdpFlag::UdpObfuscation);
+    Server* entry = m_serverList->addServer(std::move(srv));
+    QVERIFY(entry != nullptr);
+
+    thePrefs.setCryptLayerSupported(true);
+
+    // Fire the obfuscated crypt-ping to port+12 (5567).
+    m_serverList->serverStats();
+    QVERIFY2(entry->cryptPingReplyPending(),
+             "serverStats() should have armed the obfuscated crypt-ping");
+    QVERIFY(entry->challenge() != 0);
+    qDebug() << "Sent obfuscated crypt-ping to 127.0.0.1:5567, challenge=0x"
+             << Qt::hex << entry->challenge();
+
+    // eNode answers on port+12, encrypted with the challenge as base key; our
+    // onReadyRead decrypts it (0xA5) and processStatusResponse clears the pending
+    // state and stores eNode's UDP key. Before the fix this reply is undecryptable.
+    const bool got = QTest::qWaitFor([entry] {
+        return !entry->cryptPingReplyPending() && entry->serverKeyUDPRaw() != 0;
+    }, 10'000);
+
+    QVERIFY2(got, qPrintable(QStringLiteral(
+        "crypt-ping reply not decrypted (pending=%1, udpKey=0x%2) — the server→client "
+        "obfuscation decrypt failed; check the 0xA5 magic in decryptReceivedServer")
+        .arg(entry->cryptPingReplyPending())
+        .arg(entry->serverKeyUDPRaw(), 0, 16)));
+
+    // eNode-go hands back its configured udp.serverKey (0x12345678) at offset +36.
+    QCOMPARE(entry->serverKeyUDPRaw(), 0x12345678u);
+    qDebug() << "PASS: crypt-ping round-trip — users" << entry->users()
+             << "files" << entry->files()
+             << "udpKey=0x" << Qt::hex << entry->serverKeyUDPRaw();
+}
+
+void tst_ServerLocalTest::stopServerCryptPing()
+{
+    disconnectFromServer();
+    QTest::qWait(500);
+    checkServerLog();
+
+    m_serverConnect->setUDPSocket(nullptr);
+    theApp.serverConnect = nullptr;
+    delete m_udpSocket;
+    m_udpSocket = nullptr;
     stopServer();
 }
 

@@ -43,8 +43,9 @@ struct WebServerConfig {
     uint16 port = 4711;
     QString listenAddress;
     QString apiKey;
-    bool enabled = false;
-    bool restApiEnabled = false;
+    bool enabled = false;         ///< Run the HTTP server at all (also serves the GUI preview stream).
+    bool webUiEnabled = false;    ///< Serve the template web UI (/, login, static assets). Independent of restApiEnabled.
+    bool restApiEnabled = false;  ///< Serve the JSON REST API (/api/v1/*). Independent of webUiEnabled.
     bool gzipEnabled = true;
     QString templatePath;
     int sessionTimeout = 5;

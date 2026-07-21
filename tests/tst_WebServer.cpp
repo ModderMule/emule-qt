@@ -75,6 +75,10 @@ private slots:
     // Error tests
     void invalidEndpoint();
 
+    // Web UI / REST API independence
+    void restApiWithoutWebUi();
+    void webUiWithoutRestApi();
+
 private:
     // Helper: send HTTP request and block until response
     struct Response {
@@ -89,6 +93,14 @@ private:
                          bool includeAuth = true);
 
     QString baseUrl() const;
+
+    // Blocking GET against an arbitrary port; returns the HTTP status code.
+    // Used by the independence tests, which spin up their own servers.
+    int rawGetStatus(uint16 port, const QString& path, bool withKey);
+
+    // Start a throwaway WebServer with the given UI/REST flags on a random port,
+    // wired to the shared fixture dependencies. Caller owns and must stop it.
+    std::unique_ptr<WebServer> startServer(bool webUiEnabled, bool restApiEnabled);
 
     std::unique_ptr<WebServer>     m_webServer;
     std::unique_ptr<Statistics>    m_stats;
@@ -420,6 +432,84 @@ void tst_WebServer::invalidEndpoint()
                             QStringLiteral("/api/v1/nonexistent"));
     // QHttpServer returns 404 for unregistered routes
     QCOMPARE(resp.statusCode, 404);
+}
+
+// ---------------------------------------------------------------------------
+// Web UI / REST API independence
+// ---------------------------------------------------------------------------
+
+int tst_WebServer::rawGetStatus(uint16 port, const QString& path, bool withKey)
+{
+    QNetworkRequest req(QUrl(QStringLiteral("http://127.0.0.1:%1%2").arg(port).arg(path)));
+    if (withKey)
+        req.setRawHeader(QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8());
+
+    QNetworkReply* reply = m_nam.get(req);
+    if (!reply->isFinished()) {
+        QEventLoop loop;
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+    const int code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    reply->deleteLater();
+    return code;
+}
+
+std::unique_ptr<WebServer> tst_WebServer::startServer(bool webUiEnabled, bool restApiEnabled)
+{
+    auto server = std::make_unique<WebServer>();
+    server->setStatistics(m_stats.get());
+    server->setFriendList(m_friendList.get());
+    server->setServerList(m_serverList.get());
+    server->setServerConnect(m_serverConnect.get());
+    server->setDownloadQueue(m_downloadQueue.get());
+    server->setUploadQueue(m_uploadQueue.get());
+    server->setSharedFileList(m_sharedFiles.get());
+    server->setSearchList(m_searchList.get());
+    server->setPreferences(m_preferences.get());
+
+    WebServerConfig config;
+    config.enabled = true;
+    config.webUiEnabled = webUiEnabled;
+    config.restApiEnabled = restApiEnabled;
+    config.port = 0;
+    config.apiKey = m_apiKey;
+    config.templatePath = QString();  // no template file — page render is not under test here
+
+    server->start(config);
+    return server;
+}
+
+// REST enabled, web UI disabled: /api/v1/* is served, the UI 404s.
+void tst_WebServer::restApiWithoutWebUi()
+{
+    auto server = startServer(/*webUiEnabled*/ false, /*restApiEnabled*/ true);
+    QVERIFY(server->isRunning());
+    const uint16 port = server->port();
+    QVERIFY(port > 0);
+
+    QCOMPARE(rawGetStatus(port, QStringLiteral("/api/v1/stats"), /*withKey*/ true), 200);
+    QCOMPARE(rawGetStatus(port, QStringLiteral("/api/v1/stats"), /*withKey*/ false), 401);
+    QCOMPARE(rawGetStatus(port, QStringLiteral("/"), /*withKey*/ false), 404);
+
+    server->stop();
+}
+
+// Web UI enabled, REST disabled: the UI root is served, /api/v1/* 404s.
+void tst_WebServer::webUiWithoutRestApi()
+{
+    auto server = startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ false);
+    QVERIFY(server->isRunning());
+    const uint16 port = server->port();
+    QVERIFY(port > 0);
+
+    // The UI root is registered (renders the login page even without a template).
+    QVERIFY(rawGetStatus(port, QStringLiteral("/"), /*withKey*/ false) != 404);
+    // REST is not registered — even with a valid key it 404s.
+    QCOMPARE(rawGetStatus(port, QStringLiteral("/api/v1/stats"), /*withKey*/ true), 404);
+
+    server->stop();
 }
 
 // ---------------------------------------------------------------------------

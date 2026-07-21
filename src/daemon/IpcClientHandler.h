@@ -59,6 +59,7 @@ private:
     void handleSetServerPriority(const Ipc::IpcMessage& msg);
     void handleSetServerStatic(const Ipc::IpcMessage& msg);
     void handleAddServer(const Ipc::IpcMessage& msg);
+    void handleSetServerOrder(const Ipc::IpcMessage& msg);
     void handleGetConnection(const Ipc::IpcMessage& msg);
     void handleConnectToServer(const Ipc::IpcMessage& msg);
     void handleDisconnectFromServer(const Ipc::IpcMessage& msg);

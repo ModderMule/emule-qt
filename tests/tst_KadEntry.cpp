@@ -5,8 +5,10 @@
 
 #include "kademlia/KadEntry.h"
 #include "kademlia/KadIO.h"
+#include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadUInt128.h"
 #include "protocol/Tag.h"
+#include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
 #include <QTest>
@@ -39,6 +41,7 @@ private slots:
     void addTag_filtersResultOnlyTags();
     void aich_refcountsAndKeepsIndicesStable();
     void merge_fastRefreshDoesNotBumpPopularity();
+    void metaTag_matchesOnEqualityNotSubstring();
 };
 
 void tst_KadEntry::construct_default()
@@ -337,6 +340,25 @@ void tst_KadEntry::merge_fastRefreshDoesNotBumpPopularity()
     other.setFileName(QStringLiteral("real-name.iso"));
     publishFrom(other, 0x0B000001, &refreshed);
     QCOMPARE(other.getCommonFileName(), QStringLiteral("real-name.iso"));
+}
+
+void tst_KadEntry::metaTag_matchesOnEqualityNotSubstring()
+{
+    // A string metatag must match on full-string case-insensitive equality, not
+    // substring — the old `contains` served "foobar" for a search of "foo".
+    KeyEntry e;
+    e.setFileName(QStringLiteral("song.mp3"));
+    e.addTag(Tag(static_cast<uint8>(FT_MEDIA_ARTIST), QStringLiteral("foobar")));
+
+    SearchTerm exact;
+    exact.type = SearchTerm::Type::MetaTag;
+    exact.tag = Tag(static_cast<uint8>(FT_MEDIA_ARTIST), QStringLiteral("FOOBAR")); // case-insensitive
+    QVERIFY(e.startSearchTermsMatch(exact));
+
+    SearchTerm substr;
+    substr.type = SearchTerm::Type::MetaTag;
+    substr.tag = Tag(static_cast<uint8>(FT_MEDIA_ARTIST), QStringLiteral("foo"));
+    QVERIFY(!e.startSearchTermsMatch(substr));
 }
 
 QTEST_GUILESS_MAIN(tst_KadEntry)

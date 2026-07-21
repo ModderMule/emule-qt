@@ -21,6 +21,9 @@
 #include <QDir>
 #include <QFile>
 
+#include <algorithm>
+#include <cmath>
+
 
 namespace eMule::kad {
 
@@ -435,42 +438,55 @@ void RoutingZone::consolidate()
     if (isLeaf())
         return;
 
-    // If both children are leaves, check if we should merge
-    if (m_subZones[0]->isLeaf() && m_subZones[1]->isLeaf()) {
-        uint32 total = m_subZones[0]->m_bin->getSize() + m_subZones[1]->m_bin->getSize();
-        if (total < kK / 2) {
-            // Merge: create new bin, move all contacts
-            auto* newBin = new RoutingBin();
-            newBin->m_dontDeleteContacts = true;
-
-            ContactArray entries;
-            m_subZones[0]->m_bin->getEntries(entries);
-            m_subZones[0]->m_bin->m_dontDeleteContacts = true;
-
-            ContactArray entries1;
-            m_subZones[1]->m_bin->getEntries(entries1);
-            m_subZones[1]->m_bin->m_dontDeleteContacts = true;
-
-            delete m_subZones[0];
-            delete m_subZones[1];
-            m_subZones[0] = nullptr;
-            m_subZones[1] = nullptr;
-
-            newBin->m_dontDeleteContacts = false;
-            m_bin = newBin;
-
-            for (auto* c : entries)
-                m_bin->addContact(c);
-            for (auto* c : entries1)
-                m_bin->addContact(c);
-
-            // Re-register as leaf zone (matches MFC Consolidate → StartTimer)
-            if (auto* kad = Kademlia::instance())
-                kad->addEvent(this);
-        }
-    } else {
+    // Recurse into any non-leaf child FIRST, so a merge that collapses a child to
+    // a leaf can cascade up and be merged at this level in the same pass. The old
+    // code recursed only when *neither* child could merge, so a parent merge newly
+    // exposed by merging the children was missed until the next 45-min cycle.
+    // MFC RoutingZone.cpp:697-699.
+    if (!m_subZones[0]->isLeaf())
         m_subZones[0]->consolidate();
+    if (!m_subZones[1]->isLeaf())
         m_subZones[1]->consolidate();
+
+    // Re-test this level once the children are (now possibly) leaves. MFC :701.
+    if (m_subZones[0]->isLeaf() && m_subZones[1]->isLeaf()
+        && (m_subZones[0]->m_bin->getSize() + m_subZones[1]->m_bin->getSize()) < kK / 2)
+    {
+        auto* newBin = new RoutingBin();
+        newBin->m_dontDeleteContacts = true;
+
+        ContactArray entries;
+        m_subZones[0]->m_bin->getEntries(entries);
+        m_subZones[0]->m_bin->m_dontDeleteContacts = true;
+
+        ContactArray entries1;
+        m_subZones[1]->m_bin->getEntries(entries1);
+        m_subZones[1]->m_bin->m_dontDeleteContacts = true;
+
+        delete m_subZones[0];
+        delete m_subZones[1];
+        m_subZones[0] = nullptr;
+        m_subZones[1] = nullptr;
+
+        newBin->m_dontDeleteContacts = false;
+        m_bin = newBin;
+
+        // Delete any contact that fails re-insertion (subnet/IP limits), matching
+        // split(); the old code discarded the bool return, leaking the contact and
+        // undercounting the global-IP tracker. MFC RoutingZone.cpp:719-724.
+        for (auto* c : entries)
+            if (!m_bin->addContact(c))
+                delete c;
+        for (auto* c : entries1)
+            if (!m_bin->addContact(c))
+                delete c;
+
+        // Re-register as a leaf zone AND reset its big timer (MFC Consolidate →
+        // StartTimer, RoutingZone.cpp:726,741-746); the old code left m_nextBigTimer
+        // at its stale pre-split value.
+        m_nextBigTimer = time(nullptr) + SEC(10);
+        if (auto* kad = Kademlia::instance())
+            kad->addEvent(this);
     }
 }
 
@@ -494,64 +510,106 @@ void RoutingZone::onSmallTimer()
     if (!isLeaf())
         return;
 
-    // Leaf zone: check for expired contacts
-    Contact* oldest = m_bin->getOldest();
-    if (oldest) {
-        // SafeKad: remove contacts whose IP is banned
-        bool banned = false;
-        if (auto* sk = Kademlia::getInstanceSafeKad())
-            banned = sk->isBanned(oldest->address().toUint32());
+    const time_t now = time(nullptr);
+    auto* sk = Kademlia::getInstanceSafeKad();
 
-        if (oldest->getType() == 4 || banned) {
-            // Expired or banned contact — remove
-            if (!oldest->inUse()) {
-                m_bin->removeContact(oldest);
-                emit contactRemoved(oldest);
-                delete oldest;
+    // Pass 1: iterate ALL entries. Remove every due type-4 contact — but only once
+    // its ~2-min CheckingType revival grace (m_expires) has elapsed, giving it time
+    // to answer a HELLO_RES — and stamp any zero-expire contact so it becomes
+    // eligible next tick. The old code inspected only the single oldest contact and
+    // deleted type-4 with no grace. MFC RoutingZone.cpp:808-821. (The SafeKad ban is
+    // a port-only extension, folded into the same removal path with no grace.)
+    ContactArray entries;
+    m_bin->getEntries(entries);
+    for (auto* c : entries) {
+        const bool banned = sk && sk->isBanned(c->address().toUint32());
+        if (banned) {
+            if (!c->inUse()) {
+                m_bin->removeContact(c);
+                emit contactRemoved(c);
+                delete c;
             }
-        } else if (oldest->getExpireTime() <= time(nullptr)) {
-            // Contact needs a type check — send HELLO to verify alive.
-            // Pass the contact's KadID to enable NodeID-based encryption.
-            oldest->checkingType();
-            m_bin->pushToBottom(oldest);
-            if (auto* udpListener = Kademlia::getInstanceUDPListener()) {
-                const UInt128 contactID = oldest->getClientID();
-                udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                    oldest->address().toUint32(), oldest->getUDPPort(),
-                    oldest->getVersion(), oldest->getUDPKey(),
-                    &contactID, true);
+            continue;
+        }
+        if (c->getType() == 4 && c->getExpireTime() > 0 && c->getExpireTime() <= now) {
+            if (!c->inUse()) {
+                m_bin->removeContact(c);
+                emit contactRemoved(c);
+                delete c;
+            }
+            continue;
+        }
+        if (c->getExpireTime() == 0)
+            c->setExpireTime(now);
+    }
+
+    // Pass 2: HELLO the oldest contact to re-check its type — but first rotate a
+    // not-yet-due (or type-4) front contact to the bottom, so a long-expiry contact
+    // stops blocking liveness checks of the ones behind it. MFC :822-827.
+    Contact* oldest = m_bin->getOldest();
+    if (!oldest)
+        return;
+    if (oldest->getExpireTime() >= now || oldest->getType() == 4) {
+        m_bin->pushToBottom(oldest);
+        return;
+    }
+
+    oldest->checkingType();
+    m_bin->pushToBottom(oldest);
+    auto* udpListener = Kademlia::getInstanceUDPListener();
+    if (!udpListener)
+        return;
+
+    // Never request an ACK from a routine liveness HELLO. For v2-v5 (which support
+    // no keys) send an EMPTY key and NULL id — the old code sent a stored key + id +
+    // requestAck=true to *every* version, which is undecryptable/nonconforming to
+    // 0.47a-0.48a peers. MFC :829-853.
+    if (oldest->getVersion() >= KADEMLIA_VERSION6_49aBETA) {
+        const UInt128 contactID = oldest->getClientID();
+        udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
+            oldest->address().toUint32(), oldest->getUDPPort(),
+            oldest->getVersion(), oldest->getUDPKey(), &contactID, false);
+        if (oldest->getVersion() >= KADEMLIA_VERSION8_49b) {
+            // We won't get a counted HELLO_REQ back from a node we pinged, so record
+            // the firewalled-stats sample here instead. MFC :836-846.
+            if (auto* prefs = Kademlia::getInstancePrefs()) {
+                prefs->statsIncUDPFirewalledNodes(false);
+                prefs->statsIncTCPFirewalledNodes(false);
             }
         }
+    } else if (oldest->getVersion() >= KADEMLIA_VERSION2_47a) {
+        udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
+            oldest->address().toUint32(), oldest->getUDPPort(),
+            oldest->getVersion(), KadUDPKey(), nullptr, false);
     }
 }
 
 uint32 RoutingZone::estimateCount() const
 {
+    // Non-leaf zones contribute nothing; the caller takes the MAX over leaves. The
+    // old code recursively SUMMED per-leaf whole-network extrapolations, wildly
+    // inflating the displayed count. MFC RoutingZone.cpp:761-796, caller :247-249.
     if (!isLeaf())
-        return m_subZones[0]->estimateCount() + m_subZones[1]->estimateCount();
-
-    // For zones close to us (level < KBASE), use simple formula
-    if (m_level < kKBase) {
-        return static_cast<uint32>(kK) * (1u << m_level);
-    }
-
-    // For deeper zones, compute from contact density
-    uint32 contactCount = m_bin->getSize();
-    if (contactCount == 0)
         return 0;
+    if (m_level < kKBase)
+        return static_cast<uint32>((1u << m_level) * kK);
 
-    // Estimate: contactCount * 2^level, adjusted for firewalled node ratio
-    uint32 estimate = contactCount * (1u << m_level);
-    if (UDPFirewallTester::isFirewalledUDP(true)) {
-        // We're behind a firewall — we only see non-firewalled peers.
-        // Inflate estimate by the ratio of firewalled nodes.
-        if (auto* prefs = Kademlia::getInstancePrefs()) {
-            float fwRatio = prefs->statsGetFirewalledRatio(true);
-            if (fwRatio > 0.0f && fwRatio < 1.0f)
-                estimate = static_cast<uint32>(static_cast<float>(estimate) / (1.0f - fwRatio));
-        }
-    }
-    return estimate;
+    // Density model: how full is the subtree three levels up?
+    const RoutingZone* cur = this;
+    for (int up = 0; up < 3 && cur; ++up)
+        cur = cur->m_superZone;
+    if (!cur)
+        return 0;
+    const float fModify = static_cast<float>(cur->getNumContacts()) / (kK * 2.0f);
+
+    float fwModify = 1.20f;
+    if (auto* prefs = Kademlia::getInstancePrefs())
+        fwModify = prefs->statsFirewalledModifyTotal();
+
+    // 2^(level-2) * K * density * firewall-inflation (ldexp avoids the 32-bit
+    // overflow a shift would hit for deep zones).
+    return static_cast<uint32>(std::ldexp(static_cast<double>(kK) * fModify * fwModify,
+                                          static_cast<int>(m_level) - 2));
 }
 
 UInt128 RoutingZone::makeRandomLookupTarget(const UInt128& zoneIndex, uint32 level,
@@ -754,6 +812,12 @@ void RoutingZone::writeFile()
     if (s_nodesFilename.isEmpty())
         return;
 
+    // Don't persist the routing table while a bootstrap probe run is unfinished —
+    // it isn't populated yet, so we'd overwrite the shipped/previous nodes.dat
+    // with a near-empty one. MFC RoutingZone.cpp:344-348.
+    if (!Kademlia::s_bootstrapList.empty())
+        return;
+
     ContactArray contacts;
     getBootstrapContacts(contacts, kMaxBootstrapContacts);
 
@@ -921,14 +985,12 @@ void RoutingZone::setAllContactsVerified()
 
 void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
 {
-    // Bootstrap nodes.dat files (v3 edition 1) contain 500-1000+ contacts in v1
-    // format (25 bytes each). In the original eMule these are not added to the
-    // routing table but kept in a bootstrap list for initial Kad connection.
-    // We add them directly to the routing table. A dedicated bootstrap list
-    // would add complexity without meaningful benefit — bootstrap contacts are
-    // created with ipVerified=false and get naturally verified/promoted through
-    // the normal HELLO handshake flow (type 3 → type 2 on HELLO_RES).
-
+    // Bootstrap-edition nodes.dat files (v3 edition 1) ship 500-1000+ contacts in
+    // v1 format (25 bytes each). Rather than injecting them straight into the
+    // routing table, keep the 50 closest to our own ID in a separate bootstrap
+    // list and probe them one at a time via BOOTSTRAP_REQ — the way official
+    // eMule does (RoutingZone.cpp:266-340). This avoids hammering the shipped
+    // bootstrap nodes and only promotes contacts that actually answer.
     uint32 numContacts = sf.readUInt32();
     if (numContacts == 0)
         return;
@@ -937,6 +999,8 @@ void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
     if (static_cast<uint64>(numContacts) * 25 > remaining)
         return;
 
+    ContactArray candidates;
+    candidates.reserve(numContacts);
     for (uint32 i = 0; i < numContacts; ++i) {
         uint8 idBytes[16];
         sf.readHash16(idBytes);
@@ -964,16 +1028,25 @@ void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
         if (id == s_localKadId)
             continue;
 
-        auto* contact = new Contact(id, ip, udpPort, tcpPort, contactVersion,
-                                    KadUDPKey(), false, s_localKadId);
+        candidates.push_back(new Contact(id, ip, udpPort, tcpPort, contactVersion,
+                                         KadUDPKey(), false, s_localKadId));
+    }
 
-        bool verifiedOut = false;
-        if (!add(contact, false, verifiedOut)) {
-            delete contact;
+    // Keep only the closest 50 to our own ID; probe those. MFC RoutingZone.cpp:305-340.
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Contact* a, const Contact* b) { return a->getDistance() < b->getDistance(); });
+    constexpr size_t kMaxBootstrap = 50;
+    size_t kept = 0;
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        if (i < kMaxBootstrap) {
+            Kademlia::s_bootstrapList.push_back(candidates[i]);
+            ++kept;
         } else {
-            emit contactAdded(contact);
+            delete candidates[i];
         }
     }
+    logKad(QStringLiteral("Kad: queued %1 bootstrap contacts (of %2) for probing")
+               .arg(kept).arg(numContacts));
 }
 
 } // namespace eMule::kad

@@ -42,7 +42,12 @@ constexpr int kCryptHeaderKad = kCryptHeaderSize + 4 + 4; // + receiverKey + sen
 constexpr uint8 kMagicValueUDP = 91;
 constexpr uint32 kMagicValueUDPSyncClient = 0x395F2EC1u;
 constexpr uint32 kMagicValueUDPSyncServer = 0x13EF24D5u;
+// Server-UDP obfuscation keys the RC4 hash on a direction-specific magic byte:
+// 0x6B for the client→server direction, 0xA5 for server→client. Original eMule:
+// MAGICVALUE_UDP_CLIENTSERVER / MAGICVALUE_UDP_SERVERCLIENT
+// (srchybrid/EncryptedDatagramSocket.cpp:143-144).
 constexpr uint8 kMagicValueUDPClientServer = 0x6B;
+constexpr uint8 kMagicValueUDPServerClient = 0xA5;
 
 /// Check if a byte matches a known protocol header (not encrypted).
 bool isProtocolHeader(uint8 byte)
@@ -290,9 +295,12 @@ DecryptResult EncryptedDatagramSocket::decryptReceivedServer(
     uint16 randomKeyPart;
     std::memcpy(&randomKeyPart, &buf[1], 2);
 
+    // This is a server→client packet, so the key uses the SERVER-CLIENT magic
+    // (0xA5). MFC: CEncryptedDatagramSocket::DecryptReceivedServer —
+    // srchybrid/EncryptedDatagramSocket.cpp:393.
     uint8 keyData[7];
     pokeUInt32(keyData, baseKey);
-    keyData[4] = kMagicValueUDPClientServer;
+    keyData[4] = kMagicValueUDPServerClient;
     pokeUInt16(&keyData[5], randomKeyPart);
     MD5Hasher md5(keyData, sizeof keyData);
 

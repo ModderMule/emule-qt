@@ -90,6 +90,17 @@ bool Entry::getIntTagValue(const QByteArray& tagName, uint64& outValue, bool inc
     return false;
 }
 
+bool Entry::getFloatTagValue(const QByteArray& tagName, float& outValue) const
+{
+    for (const auto& tag : m_tags) {
+        if (tagNameMatches(tag, tagName) && tag.isFloat()) {
+            outValue = tag.floatValue();
+            return true;
+        }
+    }
+    return false;
+}
+
 QString Entry::getStrTagValue(const QByteArray& tagName) const
 {
     if (tagName == kTagFilename)
@@ -567,7 +578,10 @@ bool KeyEntry::searchTermsMatch(const SearchTerm& term) const
                 return false;
             return name.mid(dot + 1).compare(term.tag.strValue(), Qt::CaseInsensitive) == 0;
         }
-        return getStrTagValue(key).contains(term.tag.strValue(), Qt::CaseInsensitive);
+        // Other string metatags match on full-string case-insensitive equality
+        // (MFC EqualKadTagStr, DataIO.cpp:518), not substring — `contains` served
+        // false positives (e.g. artist "foo" matching "foobar").
+        return getStrTagValue(key).compare(term.tag.strValue(), Qt::CaseInsensitive) == 0;
     }
 
     case SearchTerm::Type::OpGreaterEqual:
@@ -576,6 +590,24 @@ bool KeyEntry::searchTermsMatch(const SearchTerm& term) const
     case SearchTerm::Type::OpLess:
     case SearchTerm::Type::OpEqual:
     case SearchTerm::Type::OpNotEqual: {
+        // A float search tag compares against a stored float tag; MFC has a
+        // dedicated float branch (Entry.cpp:296-319). Integer tags take the
+        // path below. Forcing a float through the integer path gave wrong results.
+        if (term.tag.isFloat()) {
+            float entryVal = 0.0f;
+            if (!getFloatTagValue(tagLookupKey(term.tag), entryVal))
+                return false;
+            const float searchVal = term.tag.floatValue();
+            switch (term.type) {
+            case SearchTerm::Type::OpGreaterEqual: return entryVal >= searchVal;
+            case SearchTerm::Type::OpLessEqual:    return entryVal <= searchVal;
+            case SearchTerm::Type::OpGreater:      return entryVal > searchVal;
+            case SearchTerm::Type::OpLess:         return entryVal < searchVal;
+            case SearchTerm::Type::OpEqual:        return entryVal == searchVal;
+            case SearchTerm::Type::OpNotEqual:     return entryVal != searchVal;
+            default: return false;
+            }
+        }
         uint64 entryVal = 0;
         if (!getIntTagValue(tagLookupKey(term.tag), entryVal, true))
             return false;

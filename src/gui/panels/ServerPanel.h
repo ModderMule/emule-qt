@@ -66,6 +66,10 @@ private:
     QWidget* createControlsPanel();
     void refreshMyInfo();
     void requestServerList();
+
+    /// Apply the manual-order display mode (#24): when useUserSortedServerList is
+    /// enabled, show servers in the daemon's list order with column sorting off.
+    void applyServerSortMode();
     [[nodiscard]] QString saveSelection() const;
     void restoreSelection(const QString& key);
 

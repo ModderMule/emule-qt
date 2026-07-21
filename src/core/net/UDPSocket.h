@@ -68,12 +68,24 @@ public:
     /// Create and bind the UDP socket.
     bool create();
 
+    /// The OS-assigned local UDP port (0 if unbound).
+    [[nodiscard]] quint16 localPort() const { return m_socket.localPort(); }
+
     /// Send a packet to a server. Takes ownership of packet.
     /// @param packet     Packet to send.
     /// @param server     Target server (for IP, port, encryption keys).
     /// @param specialPort Override port (0 = use server's UDP port).
     void sendPacket(std::unique_ptr<Packet> packet, const Server& server,
                     uint16 specialPort = 0);
+
+    /// Send raw, pre-built bytes to a server unencrypted (used for the obfuscated
+    /// server-stat crypt-ping, whose challenge is sent in the clear).
+    /// @param server      Target server (for IP / dynIP resolution).
+    /// @param specialPort Destination port (0 = server's UDP port = TCP+4).
+    /// @param data        Raw bytes to send.
+    /// @param size        Byte count.
+    void sendRawPacket(const Server& server, uint16 specialPort,
+                       const uint8* data, uint32 size);
 
     /// ThrottledControlSocket: send queued control data up to bandwidth limit.
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;

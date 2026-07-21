@@ -162,6 +162,10 @@
 #define OP_MLDONKEYPROT             0x00
 #define MET_HEADER                  0x0E
 #define MET_HEADER_I64TAGS          0x0F
+// server.met version byte written by stock eMule (CServerList::SaveServermet).
+// The loader accepts 0xE0 and MET_HEADER (0x0E); 0x0F is a known2.met header and
+// makes a server.met eMule rejects as "bad version".
+#define MET_HEADER_SERVERMET        0xE0
 
 #define UNLIMITED                   UINT32_MAX
 

@@ -60,6 +60,10 @@ public:
 private:
     void readFile();
     void clean();
+    // Non-locking core of clean(): caller must already hold m_mutex. Called from
+    // the serve paths (which hold the lock) as well as clean() itself. Splitting
+    // it out avoids re-locking the non-recursive m_mutex → deadlock.
+    void cleanLocked();
 
     // How sources and notes differ. Everything else about inserting them is
     // identical, so the shared body below takes this instead of being forked.

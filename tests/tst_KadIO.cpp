@@ -23,6 +23,8 @@ private slots:
     void readWriteKadTag_uint32();
     void readWriteKadTag_uint8_autosize();
     void readWriteKadTag_float();
+    void readKadTag_unknownTypeThrows();
+    void readWriteKadTag_bsobRoundTrip();
     void readWriteKadTagList_roundTrip();
     void readWriteBsob_roundTrip();
 };
@@ -101,17 +103,55 @@ void tst_KadIO::readWriteKadTag_uint8_autosize()
 
 void tst_KadIO::readWriteKadTag_float()
 {
-    // Write a float tag manually (via the uint32-reinterpret path)
-    float val = 3.14f;
-    uint32 intVal = 0;
-    std::memcpy(&intVal, &val, sizeof(float));
-    Tag original(QByteArrayLiteral("trust"), intVal);
+    // A FLOAT32 tag must round-trip as a real float, not be reinterpreted as the
+    // integer holding its IEEE-754 bits (which the old reader did, so a rating of
+    // 3.0 came back as 1077936128).
+    Tag original(QByteArrayLiteral("trust"), 3.5f);
 
     SafeMemFile file;
     io::writeKadTag(file, original);
 
-    // Verify the data was written
-    QVERIFY(file.length() > 0);
+    file.seek(0, SEEK_SET);
+    Tag read = io::readKadTag(file);
+
+    QVERIFY(read.isFloat());
+    QVERIFY(!read.isInt());
+    QCOMPARE(read.floatValue(), 3.5f);
+}
+
+void tst_KadIO::readKadTag_unknownTypeThrows()
+{
+    // An unsupported tag type must throw FileException (which the packet handlers
+    // catch and drop), NOT log-and-return a dummy value that leaves the value
+    // bytes unread and desyncs the rest of the stream.
+    SafeMemFile file;
+    file.writeUInt8(0x99);         // bogus tag type
+    file.writeUInt16(1);           // 1-byte name
+    file.writeUInt8(0x01);
+    file.seek(0, SEEK_SET);
+
+    QVERIFY_EXCEPTION_THROWN(io::readKadTag(file), FileException);
+}
+
+void tst_KadIO::readWriteKadTag_bsobRoundTrip()
+{
+    // A BSOB tag must survive a write→read cycle as BSOB and must NOT be re-emitted
+    // as an (illegal-in-Kad) BLOB. The old code collapsed BSOB onto TAGTYPE_BLOB.
+    const QByteArray payload = QByteArrayLiteral("\x0A\x0B\x0C\x0D");
+    Tag original = Tag::makeBsob(QByteArrayLiteral("aich"), payload);
+
+    SafeMemFile file;
+    io::writeKadTag(file, original);
+
+    // The wire type byte must be BSOB (0x0A), never BLOB (0x07).
+    file.seek(0, SEEK_SET);
+    QCOMPARE(file.readUInt8(), static_cast<uint8>(TAGTYPE_BSOB));
+
+    file.seek(0, SEEK_SET);
+    Tag read = io::readKadTag(file);
+    QVERIFY(read.isBsob());
+    QVERIFY(!read.isBlob());
+    QCOMPARE(read.blobValue(), payload);
 }
 
 void tst_KadIO::readWriteKadTagList_roundTrip()

@@ -113,6 +113,7 @@ struct Preferences::Data {
     bool autoConnectStaticOnly = false; // Only connect to static servers
     bool useServerPriorities = true;    // Sort servers by priority before connecting
     bool addServersFromServer = true;   // Request server list from connected server
+    bool useUserSortedServerList = false; // Honor the user's manual server order at auto-connect
     uint32 serverKeepAliveTimeout = 0;  // Keep-alive interval (ms), 0 = disabled
 
     // Network
@@ -595,6 +596,10 @@ void Preferences::setUseServerPriorities(bool val) { set(&Data::useServerPriorit
 bool Preferences::addServersFromServer() const { return get(&Data::addServersFromServer); }
 
 void Preferences::setAddServersFromServer(bool val) { set(&Data::addServersFromServer, val); }
+
+bool Preferences::useUserSortedServerList() const { return get(&Data::useUserSortedServerList); }
+
+void Preferences::setUseUserSortedServerList(bool val) { set(&Data::useUserSortedServerList, val); }
 
 uint32 Preferences::serverKeepAliveTimeout() const { return get(&Data::serverKeepAliveTimeout); }
 
@@ -1772,6 +1777,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->autoConnectStaticOnly   = p.value(QStringLiteral("autoConnectStaticOnly")).toBool();
     m_data->useServerPriorities     = p.value(QStringLiteral("useServerPriorities")).toBool();
     m_data->addServersFromServer    = p.value(QStringLiteral("addServersFromServer")).toBool();
+    m_data->useUserSortedServerList = p.value(QStringLiteral("useUserSortedServerList")).toBool();
     m_data->addServersFromClients   = p.value(QStringLiteral("addServersFromClients")).toBool();
     m_data->deadServerRetries       = static_cast<uint32>(p.value(QStringLiteral("deadServerRetries")).toInteger());
     m_data->autoUpdateServerList    = p.value(QStringLiteral("autoUpdateServerList")).toBool();
@@ -2150,6 +2156,7 @@ bool Preferences::load(const QString& filePath)
             m_data->autoConnectStaticOnly = s["autoConnectStaticOnly"].as<bool>(m_data->autoConnectStaticOnly);
             m_data->useServerPriorities = s["useServerPriorities"].as<bool>(m_data->useServerPriorities);
             m_data->addServersFromServer = s["addServersFromServer"].as<bool>(m_data->addServersFromServer);
+            m_data->useUserSortedServerList = s["useUserSortedServerList"].as<bool>(m_data->useUserSortedServerList);
             m_data->serverKeepAliveTimeout = s["serverKeepAliveTimeout"].as<uint32>(m_data->serverKeepAliveTimeout);
             m_data->addServersFromClients = s["addServersFromClients"].as<bool>(m_data->addServersFromClients);
             m_data->filterServerByIP = s["filterServerByIP"].as<bool>(m_data->filterServerByIP);
@@ -2752,6 +2759,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "autoConnectStaticOnly" << YAML::Value << m_data->autoConnectStaticOnly;
     out << YAML::Key << "useServerPriorities" << YAML::Value << m_data->useServerPriorities;
     out << YAML::Key << "addServersFromServer" << YAML::Value << m_data->addServersFromServer;
+    out << YAML::Key << "useUserSortedServerList" << YAML::Value << m_data->useUserSortedServerList;
     out << YAML::Key << "serverKeepAliveTimeout" << YAML::Value << m_data->serverKeepAliveTimeout;
     out << YAML::Key << "addServersFromClients" << YAML::Value << m_data->addServersFromClients;
     out << YAML::Key << "filterServerByIP" << YAML::Value << m_data->filterServerByIP;

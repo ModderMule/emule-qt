@@ -23,6 +23,8 @@
 #include <memory>
 #include <vector>
 
+class tst_DownloadQueue;  // fwd-decl for the white-box unit-test friend below
+
 namespace eMule {
 
 class ServerList;
@@ -87,6 +89,10 @@ struct ServerConnectConfig {
 class ServerConnect : public QObject {
     Q_OBJECT
 
+    // White-box access for the DownloadQueue unit test — it flips the connected
+    // flag to exercise the global-UDP-source rotation without a live handshake.
+    friend class ::tst_DownloadQueue;
+
 public:
     explicit ServerConnect(ServerList& serverList, QObject* parent = nullptr);
     ~ServerConnect() override;
@@ -127,6 +133,10 @@ public:
     /// Send a UDP packet to a server.
     bool sendUDPPacket(std::unique_ptr<Packet> packet, const Server& host,
                        uint16 specialPort = 0);
+
+    /// Send raw, pre-built UDP bytes to a server unencrypted (obfuscated crypt-ping).
+    bool sendRawUDPPacket(const Server& host, uint16 specialPort,
+                          const uint8* data, uint32 size);
 
     // -- State queries --------------------------------------------------------
 
@@ -196,7 +206,18 @@ private:
     void initLocalIP();
 
     // -- Smart LowID ----------------------------------------------------------
-    void onLoginReceived(ServerSocket* socket, uint32 clientID, uint32 serverReportedIP);
+    void onLoginReceived(ServerSocket* socket, uint32 clientID, uint32 tcpFlags,
+                         uint32 serverReportedIP);
+
+    // -- Learned-metadata handlers (#14–#18) ----------------------------------
+    /// Resolve the persistent ServerList entry backing this socket's connected
+    /// server (the socket itself only mutates a throwaway copy).
+    Server* resolveListEntry(ServerSocket* socket);
+    void applyServerFlags(ServerSocket* socket, uint32 tcpFlags);
+    void onServerIdent(ServerSocket* socket, const uint8* serverHash,
+                       const QString& name, const QString& description);
+    void onServerStatus(ServerSocket* socket, uint32 users, uint32 files);
+    void onServerMessage(ServerSocket* socket, const QString& message);
 
     /// Shared teardown for both disconnect paths — the explicit disconnect() and
     /// the socket-initiated ServerConnState::Disconnected case. Clears the client

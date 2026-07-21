@@ -109,11 +109,19 @@ inline Source* derefSource(Source* s) { return s; }
 inline auto& innerContainer(KeyHash* h) { return h->mapSource; }   // unordered_map
 inline auto& innerContainer(SrcHash* h) { return h->sourceList; }  // list
 
+/// No-op survivor hook (the default): keyword cleaning passes a real one to
+/// prune each surviving entry's publisher-tracking list.
+struct NoSurvivorHook {
+    void operator()(Entry*) const {}
+};
+
 /// Prune entries whose lifetime has expired, erasing emptied sources and key
 /// nodes; decrement `counter` per removed entry. Works for KeyHashMap (keywords)
-/// and SrcHashMap (sources/notes). Caller holds the lock.
-template<class HashMap>
-void cleanIndex(HashMap& index, time_t now, uint32& counter)
+/// and SrcHashMap (sources/notes). `onSurvivor` is invoked on each entry that is
+/// kept (used to call KeyEntry::cleanUpTrackedPublishers on keywords). Caller
+/// holds the lock.
+template<class HashMap, class OnSurvivor = NoSurvivorHook>
+void cleanIndex(HashMap& index, time_t now, uint32& counter, OnSurvivor onSurvivor = {})
 {
     for (auto hashIt = index.begin(); hashIt != index.end(); ) {
         auto* hash = hashIt->second;
@@ -126,6 +134,7 @@ void cleanIndex(HashMap& index, time_t now, uint32& counter)
                     entIt = source->entryList.erase(entIt);
                     --counter;
                 } else {
+                    onSurvivor(*entIt);
                     ++entIt;
                 }
             }

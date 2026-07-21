@@ -64,6 +64,7 @@ CoreSession::~CoreSession()
     shutdownScheduler();
     shutdownUPnP();
     shutdownKademlia();
+    shutdownClientUDP();
     shutdownServerConnect();
     shutdownDownloadQueue();
     shutdownClientInfra();
@@ -83,6 +84,7 @@ void CoreSession::start()
     initClientInfra();
     initDownloadQueue();
     initSearch();
+    initClientUDP();
     initServerConnect();
     initKademlia();
     initUPnP();
@@ -256,6 +258,11 @@ void CoreSession::onTimer()
             theApp.knownFileList->process();
         if (theApp.sharedFileList)
             theApp.sharedFileList->process();
+        if (theApp.serverList) {
+            const QString serverMetPath = QDir(thePrefs.configDir()).filePath(
+                QStringLiteral("server.met"));
+            theApp.serverList->process(serverMetPath);  // auto-save every 17 min (#28)
+        }
         if (theApp.statistics) {
             float downRate = (theApp.downloadQueue && theApp.downloadQueue->hasActiveTransfers())
                 ? static_cast<float>(theApp.downloadQueue->datarate()) / 1024.0f : 0.0f;
@@ -449,7 +456,11 @@ void CoreSession::initServerConnect()
             this, [](const uint8* data, uint32 size, const Endpoint& server) {
                 if (theApp.searchList) {
                     uint32 ip = server.address().toNetworkUint32();
-                    uint16 port = server.port();
+                    // The answer arrives from the server's UDP port (TCP+4); the
+                    // SearchFile must record the real TCP port so it keys against
+                    // the server-list entry. MFC: CUDPSocket::ProcessPacket() —
+                    // UDPSocket.cpp:237 (passes nUDPPort - 4).
+                    uint16 port = static_cast<uint16>(server.port() - 4);
                     theApp.searchList->processUDPSearchAnswer(data, size, true, ip, port);
                 }
             });
@@ -462,6 +473,31 @@ void CoreSession::initServerConnect()
                 if (theApp.serverList)
                     theApp.serverList->processStatusResponse(data, size, server);
             });
+
+    // 8b. Wire UDP global-source replies (OP_GLOBFOUNDSOURCES) → DownloadQueue.
+    // Sources are attributed to the answering server (the `from` endpoint), not
+    // the currently-connected one, since any queried server may reply.
+    connect(m_serverUDP.get(), &UDPSocket::globalFoundSources,
+            this, [](const uint8* data, uint32 size, const Endpoint& from) {
+                if (theApp.downloadQueue)
+                    theApp.downloadQueue->addUDPGlobalSources(data, size, from);
+            });
+
+    // 8c. Wire UDP server-description replies (OP_SERVER_DESC_RES) → ServerList,
+    // refreshing name/description/version learned over UDP.
+    connect(m_serverUDP.get(), &UDPSocket::serverDescResult,
+            this, [](const uint8* data, uint32 size, const Endpoint& from) {
+                if (theApp.serverList)
+                    theApp.serverList->processDescResponse(data, size, from);
+            });
+
+    // 9. Auto-connect to a server at startup, if enabled.
+    // MFC: CemuleDlg::StartConnection() — emuleDlg.cpp:1978, reached from
+    // DoAutoConnect() (EmuleDlg.cpp:742). autoConnect gates *connecting*;
+    // networkED2K keeps the default Kad-only profile Kad-only. The Kad arm has
+    // the mirror of this in initKademlia().
+    if (thePrefs.networkED2K() && thePrefs.autoConnect())
+        m_serverConnect->connectToAnyServer();
 }
 
 // ---------------------------------------------------------------------------
@@ -696,19 +732,23 @@ void CoreSession::shutdownDownloadQueue()
 }
 
 // ---------------------------------------------------------------------------
-// initKademlia — create and start Kademlia if enabled
+// initClientUDP — create the shared client UDP socket and wire its non-Kad
+// handlers. Always created (peer reasks, firewalled callbacks and the port
+// test all need it), independent of the Kad/autoConnect gate.
+// MFC: clientudp is created in the app ctor (Emule.cpp:610) and Create()d at
+// boot regardless of autoconnect (EmuleDlg.cpp:725).
 // ---------------------------------------------------------------------------
 
-void CoreSession::initKademlia()
+void CoreSession::initClientUDP()
 {
-    if (!thePrefs.kadEnabled() || !thePrefs.autoConnect() || m_kademlia)
+    if (m_clientUDP)
         return;
 
-    // 1. Create and bind the shared UDP socket (client + Kad traffic).
+    // Create and bind the shared UDP socket (client + Kad traffic).
     m_clientUDP = std::make_unique<ClientUDPSocket>();
     const uint16 udpPort = static_cast<uint16>(thePrefs.udpPort());
     if (!m_clientUDP->rebind(udpPort)) {
-        logError(QStringLiteral("Failed to bind client UDP socket on port %1 — Kademlia disabled")
+        logError(QStringLiteral("Failed to bind client UDP socket on port %1")
                      .arg(udpPort));
         m_clientUDP.reset();
         return;
@@ -792,57 +832,9 @@ void CoreSession::initKademlia()
             buddy->sendPacket(std::move(packet));
         });
 
-    // 2. Create and start Kademlia (no internal socket binding).
-    m_kademlia = std::make_unique<kad::Kademlia>();
-    kad::Kademlia::setClientList(theApp.clientList);
-
-    // Wire Kad keyword result callback → SearchList
-    kad::Kademlia::setKadKeywordResultCallback(
-        [](uint32 searchID, const uint8* fileHash, const QString& name,
-           uint64 size, const QString& type, uint32 sources, uint32 completeSources) {
-            if (theApp.searchList)
-                theApp.searchList->addKadKeywordResult(searchID, fileHash, name, size,
-                                                       type, sources, completeSources);
-        });
-
-    // Wire Kad source result callback → DownloadQueue
-    kad::Kademlia::setKadSourceResultCallback(
-        [](uint32 searchID, const uint8* fileHash, uint32 ip, uint16 tcpPort,
-           uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
-           uint8 sourceType, const uint8* buddyHash, const uint8* clientHash,
-           uint16 udpPort) {
-            if (theApp.downloadQueue)
-                theApp.downloadQueue->addKadSourceResult(
-                    searchID, fileHash, ip, tcpPort,
-                    buddyIP, buddyPort, buddyCrypt,
-                    sourceType, buddyHash, clientHash, udpPort);
-        });
-
-    // Wire Kad notes result callback → DownloadQueue. A notes search is the only
-    // Kad lookup that returns filenames (and comments/ratings) for a given file
-    // hash, so this populates the File Names + Comments tabs of the detail dialog.
-    kad::Kademlia::setKadNotesResultCallback(
-        [](uint32 /*searchID*/, const uint8* fileHash, const uint8* publisherId,
-           const QString& name, uint8 rating, const QString& comment) {
-            if (theApp.downloadQueue)
-                theApp.downloadQueue->addKadNoteResult(
-                    fileHash, publisherId, name, rating, comment);
-        });
-
-    // Re-wire UDP↔listener bridges each time Kad starts (including restarts).
-    connect(m_kademlia.get(), &kad::Kademlia::started,
-            this, &CoreSession::wireKadListener);
-
-    m_kademlia->start();
-
-    if (!m_kademlia->isRunning()) {
-        m_kademlia.reset();
-        theApp.clientUDP = nullptr;
-        m_clientUDP.reset();
-        return;
-    }
-
-    // 5. Direct callback: remote firewalled client asks us to connect back via UDP.
+    // Direct callback: remote firewalled client asks us to connect back via UDP.
+    // Self-guards on Kad running + firewalled, so it is safe to wire even when
+    // Kad has not been started yet.
     connect(m_clientUDP.get(), &ClientUDPSocket::directCallbackReceived,
         this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
@@ -875,14 +867,94 @@ void CoreSession::initKademlia()
             client->tryToConnect();
         });
 
-    // 6. UDP port test → send reply on TCP port-test connection
+    // UDP port test → send reply on TCP port-test connection.
     connect(m_clientUDP.get(), &ClientUDPSocket::portTestReceived,
         this, [this](const Endpoint&) {
             if (m_listenSocket)
                 m_listenSocket->sendPortTestReply('1', true);
         });
+}
 
-    logInfo(QStringLiteral("Kademlia started."));
+// ---------------------------------------------------------------------------
+// shutdownClientUDP — release the shared client UDP socket. Called after
+// shutdownKademlia() so Kad has already stopped using the socket.
+// ---------------------------------------------------------------------------
+
+void CoreSession::shutdownClientUDP()
+{
+    if (theApp.clientUDP == m_clientUDP.get())
+        theApp.clientUDP = nullptr;
+    m_clientUDP.reset();
+}
+
+// ---------------------------------------------------------------------------
+// initKademlia — create Kademlia when Kad is enabled, and start it when
+// autoConnect is on. Construction is independent of autoConnect so that
+// Kademlia::instance() is addressable for a manual connect (GUI/IPC), matching
+// MFC's always-addressable static CKademlia. The shared UDP socket is created
+// separately in initClientUDP().
+// ---------------------------------------------------------------------------
+
+void CoreSession::initKademlia()
+{
+    if (!thePrefs.kadEnabled() || m_kademlia)
+        return;
+
+    // 1. Create Kademlia (no internal socket binding; uses m_clientUDP).
+    m_kademlia = std::make_unique<kad::Kademlia>();
+    kad::Kademlia::setClientList(theApp.clientList);
+
+    // Wire Kad keyword result callback → SearchList
+    kad::Kademlia::setKadKeywordResultCallback(
+        [](uint32 searchID, const uint8* fileHash, const QString& name,
+           uint64 size, const QString& type, uint32 sources, uint32 completeSources,
+           const kad::TagList& metaTags) {
+            if (theApp.searchList)
+                theApp.searchList->addKadKeywordResult(searchID, fileHash, name, size,
+                                                       type, sources, completeSources, metaTags);
+        });
+
+    // Wire Kad source result callback → DownloadQueue
+    kad::Kademlia::setKadSourceResultCallback(
+        [](uint32 searchID, const uint8* fileHash, uint32 ip, uint16 tcpPort,
+           uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
+           uint8 sourceType, const uint8* buddyHash, const uint8* clientHash,
+           uint16 udpPort) {
+            if (theApp.downloadQueue)
+                theApp.downloadQueue->addKadSourceResult(
+                    searchID, fileHash, ip, tcpPort,
+                    buddyIP, buddyPort, buddyCrypt,
+                    sourceType, buddyHash, clientHash, udpPort);
+        });
+
+    // Wire Kad notes result callback → DownloadQueue. A notes search is the only
+    // Kad lookup that returns filenames (and comments/ratings) for a given file
+    // hash, so this populates the File Names + Comments tabs of the detail dialog.
+    kad::Kademlia::setKadNotesResultCallback(
+        [](uint32 /*searchID*/, const uint8* fileHash, const uint8* publisherId,
+           const QString& name, uint8 rating, const QString& comment) {
+            if (theApp.downloadQueue)
+                theApp.downloadQueue->addKadNoteResult(
+                    fileHash, publisherId, name, rating, comment);
+        });
+
+    // Re-wire UDP↔listener bridges each time Kad starts (including restarts).
+    connect(m_kademlia.get(), &kad::Kademlia::started,
+            this, &CoreSession::wireKadListener);
+
+    // Start now only if auto-connect is enabled. Otherwise the object stays
+    // constructed and addressable via Kademlia::instance(), so a manual connect
+    // from the GUI/IPC (BootstrapKad) can start it later. MFC gates Start() the
+    // same way (StartConnection, emuleDlg.cpp:1983) while CKademlia stays an
+    // always-addressable static. A failed start is left constructed too, so a
+    // retry does not hit a null instance.
+    if (thePrefs.autoConnect()) {
+        m_kademlia->start();
+        if (m_kademlia->isRunning())
+            logInfo(QStringLiteral("Kademlia started."));
+        else
+            logWarning(QStringLiteral("Kademlia failed to start."));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -968,10 +1040,7 @@ void CoreSession::shutdownKademlia()
     if (m_kademlia)
         m_kademlia->stop();
     m_kademlia.reset();
-
-    if (theApp.clientUDP == m_clientUDP.get())
-        theApp.clientUDP = nullptr;
-    m_clientUDP.reset();
+    // The shared client UDP socket is released separately in shutdownClientUDP().
 }
 
 // ---------------------------------------------------------------------------

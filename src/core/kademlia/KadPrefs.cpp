@@ -116,11 +116,11 @@ void KadPrefs::setRecheckIP()
 
 void KadPrefs::incRecheckIP()
 {
+    // MFC just increments the counter (Prefs.cpp:290-293). The port previously
+    // also called setFindBuddy(true) here on a firewalled result, firing a buddy
+    // search immediately on a possibly-false firewalled status; buddy acquisition
+    // now goes through the normal timer instead.
     ++m_recheckIp;
-    // When FW check completes and confirms we're firewalled, trigger
-    // immediate buddy search instead of waiting for the timer.
-    if (!recheckIP() && firewalled())
-        setFindBuddy(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +311,9 @@ bool KadPrefs::findExternKadPort(bool reset)
         m_externPortIPs.clear();
         m_externPorts.clear();
     }
+    // No point discovering an external port in LAN mode. MFC Prefs.cpp:455.
+    if (Kademlia::instance() && Kademlia::instance()->isRunningInLANMode())
+        return false;
     return m_externPortIPs.size() < kExternalPortAskIPs;
 }
 
@@ -374,12 +377,32 @@ void KadPrefs::statsIncTCPFirewalledNodes(bool fw)
 
 float KadPrefs::statsGetFirewalledRatio(bool udp) const
 {
+    // Requires a minimum sample of open nodes (>10), otherwise the ratio is just
+    // noise. The old code returned a ratio from any non-zero total. MFC Prefs.cpp:466-478.
     uint32 open = udp ? m_statsUDPOpenNodes : m_statsTCPOpenNodes;
     uint32 fw = udp ? m_statsUDPFirewalledNodes : m_statsTCPFirewalledNodes;
-    uint32 total = open + fw;
-    if (total > 0)
-        return static_cast<float>(fw) / static_cast<float>(total);
+    if (fw > 0 && open > 10)
+        return static_cast<float>(fw) / static_cast<float>(fw + open);
     return 0.0f;
+}
+
+float KadPrefs::statsFirewalledModifyTotal()
+{
+    // Blends the old fixed 20% firewalled assumption with the measured firewalled
+    // ratio, weighted by how many v8+ contacts we have. Shared by both user-count
+    // estimators. MFC RoutingZone.cpp:778-793 / Kademlia.cpp:589-608.
+    constexpr float kOld = 1.20f;
+    float neu;
+    if (UDPFirewallTester::isFirewalledUDP(true))
+        neu = 1.40f;                                 // firewalled: assume 40% firewalled v8+
+    else if (statsGetFirewalledRatio(true) > 0.0f)
+        neu = 1.0f + statsGetFirewalledRatio(true);
+    else
+        neu = 0.0f;
+    const float newRatio = statsGetKadV8Ratio();
+    if (newRatio > 0.0f && neu > 0.0f)
+        return (newRatio * neu) + ((1.0f - newRatio) * kOld);
+    return kOld;
 }
 
 float KadPrefs::statsGetKadV8Ratio()

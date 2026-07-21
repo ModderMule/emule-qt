@@ -193,15 +193,21 @@ void DaemonApp::startWebServer()
         return text;
     });
 
+    // The web UI and the REST API are two independent surfaces — either can be
+    // enabled without the other. The HTTP server always runs (config.enabled)
+    // because the GUI's preview stream needs it even when both surfaces are off.
     WebServerConfig config;
-    config.enabled = true;
-    config.port    = thePrefs.webServerPort();
+    config.enabled        = true;
+    config.port           = thePrefs.webServerPort();
+    config.webUiEnabled   = thePrefs.webServerEnabled();
+    config.restApiEnabled = thePrefs.webServerRestApiEnabled();
 
-    if (thePrefs.webServerEnabled()) {
-        // Full web interface — use configured listen address
+    if (config.webUiEnabled || config.restApiEnabled) {
+        // Either surface needs the shared server + auth settings. The REST API
+        // authenticates with apiKey; the web UI uses session login. Populate all
+        // of it so REST works even with the UI off, and vice versa.
         config.listenAddress       = thePrefs.webServerListenAddress();
         config.apiKey              = thePrefs.webServerApiKey();
-        config.restApiEnabled      = thePrefs.webServerRestApiEnabled();
         config.gzipEnabled         = thePrefs.webServerGzipEnabled();
         config.templatePath        = thePrefs.webServerTemplatePath();
         config.sessionTimeout      = thePrefs.webServerSessionTimeout();
@@ -213,10 +219,10 @@ void DaemonApp::startWebServer()
         config.guestEnabled        = thePrefs.webServerGuestEnabled();
         config.guestPasswordHash   = thePrefs.webServerGuestPassword();
     } else {
-        // Preview-only mode — localhost only, no REST API or web UI
-        config.listenAddress  = QStringLiteral("127.0.0.1");
-        config.restApiEnabled = false;
-        config.guestEnabled   = false;
+        // Preview-only — the server runs solely for the GUI's preview stream, so
+        // keep it on localhost and expose neither surface.
+        config.listenAddress = QStringLiteral("127.0.0.1");
+        config.guestEnabled  = false;
     }
 
     m_webServer->start(config);

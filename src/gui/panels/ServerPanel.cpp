@@ -498,6 +498,66 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     m_serverMenu->addSeparator();
 
+    // -- Move Up / Move Down (manual server order, #24) -----------------------
+    // Only offered when the user opted into a manual order; each move swaps the
+    // selected server with its neighbour in the daemon's list order and pushes the
+    // new full order to the daemon (SetServerOrder), which persists it.
+    if (thePrefs.useUserSortedServerList()) {
+        auto moveServer = [this](uint32_t ip, uint16_t port, bool up) {
+            std::vector<std::pair<uint32_t, uint16_t>> order;
+            order.reserve(static_cast<size_t>(m_serverListModel->rowCount()));
+            int sel = -1;
+            for (int i = 0; i < m_serverListModel->rowCount(); ++i) {
+                const ServerRow* r = m_serverListModel->rowAt(i);
+                if (!r)
+                    continue;
+                if (r->numericIp == ip && r->port == port)
+                    sel = static_cast<int>(order.size());
+                order.emplace_back(r->numericIp, r->port);
+            }
+            if (sel < 0)
+                return;
+            const int other = up ? sel - 1 : sel + 1;
+            if (other < 0 || other >= static_cast<int>(order.size()))
+                return;
+            std::swap(order[static_cast<size_t>(sel)], order[static_cast<size_t>(other)]);
+
+            if (m_ipc && m_ipc->isConnected()) {
+                QCborArray arr;
+                for (const auto& [oip, oport] : order) {
+                    QCborArray pair;
+                    pair.append(static_cast<qint64>(oip));
+                    pair.append(static_cast<qint64>(oport));
+                    arr.append(pair);
+                }
+                Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerOrder);
+                req.append(arr);
+                m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
+                    requestServerList();
+                });
+            } else if (m_serverList) {
+                m_serverList->applyUserOrder({order.begin(), order.end()});
+                onServerListChanged();
+            }
+        };
+
+        auto* moveUpAction = m_serverMenu->addAction(tr("Move Up"));
+        moveUpAction->setIcon(style()->standardIcon(QStyle::SP_ArrowUp));
+        moveUpAction->setEnabled(hasSelection);
+        auto* moveDownAction = m_serverMenu->addAction(tr("Move Down"));
+        moveDownAction->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+        moveDownAction->setEnabled(hasSelection);
+        if (hasSelection) {
+            const uint32_t ip = row->numericIp;
+            const uint16_t port = row->port;
+            connect(moveUpAction, &QAction::triggered, this,
+                    [moveServer, ip, port]() { moveServer(ip, port, true); });
+            connect(moveDownAction, &QAction::triggered, this,
+                    [moveServer, ip, port]() { moveServer(ip, port, false); });
+        }
+        m_serverMenu->addSeparator();
+    }
+
     // -- Add To Static List ---------------------------------------------------
     auto* addStaticAction = m_serverMenu->addAction(tr("Add To Static List"));
     addStaticAction->setIcon(ico("ListAdd.ico", QStyle::SP_FileDialogNewFolder));
@@ -724,6 +784,7 @@ QWidget* ServerPanel::createServerListPanel()
             this, &ServerPanel::onServerDoubleClicked);
     connect(m_serverListView, &QTreeView::customContextMenuRequested,
             this, &ServerPanel::onServerContextMenu);
+    applyServerSortMode();   // #24: initial manual-order display mode
 
     layout->addWidget(m_serverListView);
 
@@ -995,6 +1056,7 @@ void ServerPanel::requestServerList()
         m_serverListModel->refreshFromCborArray(servers);
         m_serversLabel->setText(
             tr("\u25B8 Servers (%1)").arg(m_serverListModel->rowCount()));
+        applyServerSortMode();   // #24: honor manual-order display mode
         restoreSelection(key);
         m_serverListView->verticalScrollBar()->setValue(srvScroll);
     });
@@ -1003,6 +1065,21 @@ void ServerPanel::requestServerList()
 // ---------------------------------------------------------------------------
 // Selection save/restore — keyed by IP:port column value
 // ---------------------------------------------------------------------------
+
+void ServerPanel::applyServerSortMode()
+{
+    auto* proxy = qobject_cast<QSortFilterProxyModel*>(m_serverListView->model());
+    if (!proxy)
+        return;
+    if (thePrefs.useUserSortedServerList()) {
+        // Manual order: display the daemon's list order directly (no column sort),
+        // so Move Up/Down is visible and meaningful (#24).
+        m_serverListView->setSortingEnabled(false);
+        proxy->sort(-1);
+    } else {
+        m_serverListView->setSortingEnabled(true);
+    }
+}
 
 QString ServerPanel::saveSelection() const
 {

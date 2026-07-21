@@ -95,10 +95,13 @@ public:
     static eMule::ClientList* getClientList() { return s_clientList; }
 
     /// Callback type for Kad keyword search results.
-    /// Parameters: searchID, fileHash (16 bytes), name, size, type, tagList
+    /// Parameters: searchID, fileHash (16 bytes), name, size, type, sources,
+    ///   completeSources, and the imported media/format metadata tags
+    ///   (FT_MEDIA_*, TAG_FILEFORMAT, …) attached to the result.
     using KadKeywordResultCallback = std::function<void(uint32 searchID,
         const uint8* fileHash, const QString& name, uint64 size,
-        const QString& type, uint32 sources, uint32 completeSources)>;
+        const QString& type, uint32 sources, uint32 completeSources,
+        const TagList& metaTags)>;
     /// Callback type for Kad source results (file sources found via DHT).
     /// Parameters: searchID, fileHash (16 bytes), sourceIP, sourcePort,
     ///   buddyIP, buddyPort, cryptOptions, sourceType (1/3/4/5/6),

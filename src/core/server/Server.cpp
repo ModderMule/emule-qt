@@ -151,12 +151,12 @@ void Server::addTagFromFile(const Tag& tag)
         }
         break;
     case ST_PORT:
-        // Port override from tags — silently accept
-        if (tag.isInt())
-            m_port = static_cast<uint16>(tag.intValue());
-        break;
     case ST_IP:
-        // IP tag — silently accept (read from struct, tag ignored)
+        // IP and port are authoritative from the ServerMet_Struct header (read in
+        // the Server(FileDataIO&) ctor before this tag loop). An ST_PORT/ST_IP tag
+        // is discarded so a crafted server.met from an untrusted list cannot
+        // redirect us to an attacker-chosen address. MFC: CServer::AddTagFromFile()
+        // — Server.cpp:203-206.
         break;
     case ST_MAXUSERS:
         if (tag.isInt())

@@ -23,8 +23,11 @@ namespace eMule::kad {
 
 FastKad::FastKad() noexcept
 {
-    // Seed with a single 1-second default entry at IP 0 (placeholder)
-    addResponseTime(0, kDefaultResponseMs);
+    // No placeholder seed: an empty pool already reports the 1000 ms default via
+    // m_estMaxResponseTimeMs (header init), and recalculateResponseTime() only runs after a
+    // real sample. Seeding an IP-0 entry here would either be swallowed when prefs aren't
+    // loaded yet (isDisabled() true) or, when inserted, bias the mean toward 1000 ms and
+    // never get evicted (5-min protect window + capacity 100).
 }
 
 FastKad::~FastKad() noexcept
@@ -51,19 +54,30 @@ void FastKad::addResponseTime(uint32 ip, double responseTimeMs) noexcept
         if (m_responseTimes.size() >= kMaxResponseTimes) {
             std::chrono::steady_clock::duration oldestAge{};
             auto itOldest = m_responseTimes.end();
+            // Global-oldest fallback: the single oldest entry regardless of the protect
+            // window, so a full pool of all-young entries (>100 distinct peers in 5 min)
+            // still admits new samples instead of freezing the estimator.
+            std::chrono::steady_clock::duration globalOldestAge{};
+            auto itGlobalOldest = m_responseTimes.end();
 
             for (auto jt = m_responseTimes.begin(); jt != m_responseTimes.end(); ++jt) {
                 auto age = now - jt->second->lastReferenced;
+                if (itGlobalOldest == m_responseTimes.end() || age > globalOldestAge) {
+                    globalOldestAge = age;
+                    itGlobalOldest = jt;
+                }
                 if (age >= oldestAge && age > kProtectAge) {
                     oldestAge = age;
                     itOldest = jt;
                 }
             }
+            if (itOldest == m_responseTimes.end())
+                itOldest = itGlobalOldest; // all young — evict the globally oldest
             if (itOldest != m_responseTimes.end()) {
                 delete itOldest->second;
                 m_responseTimes.erase(itOldest);
             } else {
-                return; // All entries are young — can't evict
+                return; // pool empty (unreachable at capacity) — nothing to evict
             }
         }
         entry = new ResponseTimeEntry;
@@ -90,7 +104,7 @@ void FastKad::shutdownCleanup() noexcept
     m_responseTimes.clear();
     m_mean = 0.0;
     m_variance = 0.0;
-    m_estMaxResponseTimeMs = 0.0;
+    m_estMaxResponseTimeMs = kDefaultResponseMs; // restore the safe default, not 0 ms
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +134,11 @@ void FastKad::recalculateResponseTime() noexcept
             varianceSum += diff * diff;
         }
     }
-    varianceSum += missingCount * kDefaultResponseMs; // MFC matches this padding
+    // Each missing slot is assumed to sit at kDefaultResponseMs, so it contributes its
+    // *squared* deviation from the mean — a variance sum accumulates squared deviations
+    // (~10^6 scale), not the linear ~1000/sample the original (mis)ported padding added.
+    const double missingDiff = kDefaultResponseMs - m_mean;
+    varianceSum += missingCount * missingDiff * missingDiff;
     m_variance = varianceSum / (total - 1.0);
 
     // Estimate max expected response time with ~95% confidence + 100ms margin

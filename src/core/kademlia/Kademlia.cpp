@@ -20,6 +20,9 @@
 
 #include <QDir>
 
+#include <algorithm>
+#include <vector>
+
 
 namespace eMule::kad {
 
@@ -42,6 +45,13 @@ Kademlia::KadNotesResultCallback Kademlia::s_notesResultCb;
 Kademlia::Kademlia(QObject* parent)
     : QObject(parent)
 {
+    // Set the singleton at construction, not in start(), so Kademlia::instance()
+    // is addressable for a manual connect (GUI/IPC) even before Kad is started —
+    // matching MFC's always-addressable static CKademlia. The destructor clears
+    // it. All external instance() callers already guard on isRunning()/
+    // isConnected() (or null-check sub-objects), so a constructed-but-not-running
+    // instance is safe; it is the same state left behind by stop().
+    s_instance = this;
 }
 
 Kademlia::~Kademlia()
@@ -84,8 +94,8 @@ void Kademlia::start(KadPrefs* prefs)
     // Create indexed storage
     m_indexed = new Indexed(this);
 
-    // Set instance before creating zones so they can register via Kademlia::instance()
-    s_instance = this;
+    // s_instance is set in the constructor, so the zones created below can
+    // already register via Kademlia::instance().
 
     // Create routing zone — use config directory for nodes.dat persistence
     const QString cfgDir = thePrefs.configDir();
@@ -99,7 +109,7 @@ void Kademlia::start(KadPrefs* prefs)
     m_nextSearchJumpStart = now;
     m_nextSelfLookup = now + MIN2S(3);
     m_nextFirewallCheck = now + HR2S(1);
-    m_nextFindBuddy = now + MIN2S(1);
+    m_nextFindBuddy = now + MIN2S(5);   // MFC Kademlia.cpp:125
     m_statusUpdate = now + SEC(60);
     m_bigTimer = now;  // MFC: m_tBigTimer = tNow (per-zone timers gate first fire)
     m_consolidate = now + MIN2S(45);
@@ -113,7 +123,11 @@ void Kademlia::start(KadPrefs* prefs)
     m_processTimer->start();
 
     m_running = true;
-    m_bootstrapping = true;
+    // We are actively bootstrapping only if readFile queued shipped bootstrap
+    // contacts to probe (fresh install). A normal saved nodes.dat populates the
+    // routing table directly and connects via the HELLO flow, so bootstrapping
+    // stays false and step 1 never logs a spurious "bootstrap failed".
+    m_bootstrapping = !s_bootstrapList.empty();
     UDPFirewallTester::reset();
 
     emit started();
@@ -211,11 +225,11 @@ void Kademlia::recheckFirewalled()
     UDPFirewallTester::reCheckFirewallUDP(false);
 
     const auto now = static_cast<time_t>(time(nullptr));
-    // Delay the next buddy search to at least 1 min so the firewall
-    // recheck has time to complete and we don't start a buddy search
-    // based on stale firewalled status.
-    if (m_nextFindBuddy < now + MIN2S(1))
-        m_nextFindBuddy = now + MIN2S(1);
+    // Delay the next buddy search to at least 5 min so the firewall recheck has
+    // time to complete and we don't start a buddy search based on stale
+    // firewalled status. MFC Kademlia.cpp:422-423.
+    if (m_nextFindBuddy < now + MIN2S(5))
+        m_nextFindBuddy = now + MIN2S(5);
     m_nextFirewallCheck = now + HR2S(1);
 }
 
@@ -270,12 +284,24 @@ uint32 Kademlia::getIPAddress() const
 
 void Kademlia::bootstrap(uint32 ip, uint16 port)
 {
+    // Skip if already connected, and rate-limit to one manual bootstrap per 10 s
+    // so repeated GUI/DNS triggers can't hammer a node. MFC Kademlia.cpp:393-407.
+    const time_t now = time(nullptr);
+    if (isConnected() || now < m_bootstrap + SEC(10))
+        return;
+    m_bootstrap = now;
+    m_bootstrapping = true;
     if (m_udpListener)
         m_udpListener->bootstrap(ip, port);
 }
 
 void Kademlia::bootstrap(const QString& host, uint16 port)
 {
+    const time_t now = time(nullptr);
+    if (isConnected() || now < m_bootstrap + SEC(10))
+        return;
+    m_bootstrap = now;
+    m_bootstrapping = true;
     if (m_udpListener)
         m_udpListener->bootstrap(host, port);
 }
@@ -301,12 +327,20 @@ void Kademlia::removeEvent(RoutingZone* zone)
 
 void Kademlia::storeClosestDistance(const UInt128& distance)
 {
-    if (distance != UInt128(uint32{0})) {
-        m_statsEstUsersProbes.push_front(distance.get32BitChunk(0));
-        // Keep at most 100 probes
-        while (m_statsEstUsersProbes.size() > 100)
-            m_statsEstUsersProbes.pop_back();
+    // Store a per-probe user-count *estimate*, not the raw distance: an evenly
+    // distributed keyspace means the closest node's distance implies how full the
+    // space is (users ≈ (2^32 / distance) / 2). Dedup and cap at 100. The old code
+    // stored the raw distance chunk, which calculateKadUsersNew can't average into
+    // a count. MFC StatsAddClosestDistance, Kademlia.cpp:533-542.
+    const uint32 chunk = distance.get32BitChunk(0);
+    if (chunk > 0) {
+        const uint32 estimate = (0xFFFFFFFFu / chunk) / 2;
+        if (std::find(m_statsEstUsersProbes.begin(), m_statsEstUsersProbes.end(), estimate)
+            == m_statsEstUsersProbes.end())
+            m_statsEstUsersProbes.push_front(estimate);
     }
+    while (m_statsEstUsersProbes.size() > 100)
+        m_statsEstUsersProbes.pop_back();
 }
 
 bool Kademlia::isRunningInLANMode() const
@@ -399,19 +433,29 @@ void Kademlia::process()
 
     time_t now = time(nullptr);
 
-    // 1. Bootstrap if needed
-    if (m_bootstrapping && now >= m_bootstrap) {
+    // 1. Bootstrap — while not yet connected, probe the shipped bootstrap list one
+    //    contact at a time: one per 15 s, or every 2 s while the routing table is
+    //    still empty. Log a failure once the list is exhausted without connecting.
+    //    The port previously paced this at one per second and stopped silently.
+    //    MFC Kademlia.cpp:287-301.
+    if (!isConnected()
+        && (now >= m_bootstrap + SEC(15)
+            || ((m_routingZone ? m_routingZone->getNumContacts() : 0) == 0
+                && now >= m_bootstrap + SEC(2))))
+    {
         if (!s_bootstrapList.empty()) {
             Contact* bc = s_bootstrapList.front();
             s_bootstrapList.pop_front();
+            m_bootstrap = now;
+            m_bootstrapping = true;
             if (m_udpListener) {
                 m_udpListener->bootstrap(bc->address().toUint32(), bc->getUDPPort(),
                                          bc->getVersion());
             }
             delete bc;
-            m_bootstrap = now + SEC(1);
-        } else if (m_routingZone && m_routingZone->getNumContacts() > 0) {
+        } else if (m_bootstrapping) {
             m_bootstrapping = false;
+            logKad(QStringLiteral("Kad: bootstrap failed — no more bootstrap contacts to try"));
         }
     }
 
@@ -421,7 +465,19 @@ void Kademlia::process()
         SearchManager::updateStats();
 
         if (m_prefs && m_routingZone) {
-            uint32 users = m_routingZone->estimateCount();
+            // Take the MAX estimate over all leaf zones (estimateCount() returns 0
+            // for non-leaf zones now). In LAN mode use the real contact count, since
+            // the density estimator is meant for large networks. Calling it on the
+            // root — as before — returned 0 once the tree had split. MFC Kademlia.cpp:243-250.
+            const bool lan = isRunningInLANMode();
+            uint32 users = 0;
+            for (auto* zone : m_zoneEvents) {
+                const uint32 t = lan ? zone->getNumContacts() : zone->estimateCount();
+                if (t > users)
+                    users = t;
+            }
+            if (m_zoneEvents.empty())
+                users = lan ? m_routingZone->getNumContacts() : m_routingZone->estimateCount();
             m_prefs->setKademliaUsers(users);
             if (m_indexed)
                 m_prefs->setKademliaFiles(m_indexed->getFileKeyCount());
@@ -464,8 +520,11 @@ void Kademlia::process()
         && isFirewalled() && UDPFirewallTester::isFirewalledUDP(true))
     {
         if (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::None
-            && m_prefs->findBuddy())
+            && m_prefs->findBuddy() && !thePrefs.cryptLayerRequired())
         {
+            // Buddy callbacks don't support obfuscation, so a buddy search is
+            // futile when RequireCrypt is on. Evaluated after findBuddy() so the
+            // one-shot flag is still consumed each cycle. MFC ClientList.cpp:599.
             // Target = ~kadID (bitwise NOT).  MFC: CUInt128(true).Xor(GetKadID())
             UInt128 target(UInt128(true));
             target.xorWith(m_prefs->kadId());
@@ -507,11 +566,24 @@ void Kademlia::process()
         }
     }
 
-    // 8. External port lookup
-    if (now >= m_externPortLookup && m_prefs) {
-        if (m_prefs->findExternKadPort(false)) {
-            m_externPortLookup = now + HR2S(1);
+    // 8. External-Kad-port discovery — while the UDP firewall check is running and
+    //    we don't yet know our external Kad port, PING a random v6+ contact every
+    //    15 s. Its PONG reports the port we appear to send from, which NATed users
+    //    need to learn (else wrong firewall status + wrong published port). The
+    //    port previously only polled the getter and rescheduled +1h, sending no
+    //    ping. MFC Kademlia.cpp:231-241.
+    if (now >= m_externPortLookup && m_prefs
+        && UDPFirewallTester::isFWCheckUDPRunning()
+        && m_prefs->findExternKadPort(false))
+    {
+        if (m_routingZone && m_udpListener) {
+            if (auto* c = m_routingZone->getRandomContact(3, KADEMLIA_VERSION6_49aBETA)) {
+                UInt128 targetID = c->getClientID();
+                m_udpListener->sendNullPacket(KADEMLIA2_PING, c->address().toUint32(),
+                                              c->getUDPPort(), c->getUDPKey(), &targetID);
+            }
         }
+        m_externPortLookup = now + SEC(15);
     }
 
     // 9. Connection state — detect not-connected → connected transition.
@@ -535,13 +607,44 @@ void Kademlia::process()
             emit connected();
         }
     }
+
+    // 10. Expire timed-out findNodeIDByIP requests so their Timeout callback
+    //     actually fires. Only one comparison in the common (empty) case, so no
+    //     dedicated timer is needed. MFC Kademlia.cpp:303-304.
+    if (m_udpListener)
+        m_udpListener->expireClientSearch();
 }
 
 uint32 Kademlia::calculateKadUsersNew() const
 {
-    if (!m_routingZone)
+    // Median-of-probes user count: average the closest-node estimates gathered
+    // from lookups, trimming the top and bottom 1/6 to shed spikes, then apply the
+    // firewalled inflation. Needs ≥10 samples. The port previously just aliased
+    // estimateCount() here, dropping this algorithm entirely. MFC Kademlia.cpp:544-613.
+    if (m_statsEstUsersProbes.size() < 10)
         return 0;
-    return m_routingZone->estimateCount();
+
+    std::vector<uint32> sorted(m_statsEstUsersProbes.begin(), m_statsEstUsersProbes.end());
+    std::sort(sorted.begin(), sorted.end());
+
+    const size_t cut = sorted.size() / 6;
+    if (sorted.size() <= 2 * cut)
+        return 0;
+    uint64 sum = 0;
+    size_t count = 0;
+    for (size_t i = cut; i + cut < sorted.size(); ++i) {
+        sum += sorted[i];
+        ++count;
+    }
+    if (count == 0)
+        return 0;
+    const uint64 median = sum / count;
+
+    float fwModify = 1.20f;
+    if (m_prefs)
+        fwModify = m_prefs->statsFirewalledModifyTotal();
+
+    return static_cast<uint32>(static_cast<double>(median) * fwModify);
 }
 
 } // namespace eMule::kad

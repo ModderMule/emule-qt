@@ -81,6 +81,13 @@ Tag::Tag(QByteArray name, const QString& value)
 {
 }
 
+Tag::Tag(QByteArray name, float value)
+    : m_value(value)
+    , m_name(std::move(name))
+    , m_type(TAGTYPE_FLOAT32)
+{
+}
+
 Tag::Tag(QByteArray name, QByteArray blobData)
     : m_value(std::move(blobData))
     , m_name(std::move(name))
@@ -95,6 +102,25 @@ Tag::Tag(QByteArray name, const uint8* hash16)
     HashArray h{};
     std::memcpy(h.data(), hash16, 16);
     m_value = h;
+}
+
+// ---------------------------------------------------------------------------
+// BSOB factories — reuse the blob constructors, then override the wire type so
+// isBsob() distinguishes them and writeKadTag re-emits BSOB (0x0A), not BLOB.
+// ---------------------------------------------------------------------------
+
+Tag Tag::makeBsob(uint8 nameId, QByteArray data)
+{
+    Tag t(nameId, std::move(data));
+    t.m_type = TAGTYPE_BSOB;
+    return t;
+}
+
+Tag Tag::makeBsob(QByteArray name, QByteArray data)
+{
+    Tag t(std::move(name), std::move(data));
+    t.m_type = TAGTYPE_BSOB;
+    return t;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +230,7 @@ bool Tag::isInt64(bool orInt32) const
 bool Tag::isFloat() const { return m_type == TAGTYPE_FLOAT32; }
 bool Tag::isHash() const { return m_type == TAGTYPE_HASH; }
 bool Tag::isBlob() const { return m_type == TAGTYPE_BLOB; }
+bool Tag::isBsob() const { return m_type == TAGTYPE_BSOB; }
 
 // ---------------------------------------------------------------------------
 // Value access

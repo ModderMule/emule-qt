@@ -124,6 +124,13 @@ private:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode,
                        uint32 senderIP, uint16 senderPort);
 
+    /// Receive-side dispatch stub for the reserved UDP protocol headers
+    /// OP_UDPRESERVEDPROT1 (0xA3) / OP_UDPRESERVEDPROT2 (0xB2). No payload semantics
+    /// defined yet — logs the packet and accounts its overhead instead of dropping
+    /// it silently. @param protByte the reserved header byte that was received.
+    bool processReservedProtPacket(uint8 protByte, const uint8* packet, uint32 size,
+                                   uint8 opcode, uint32 senderIP, uint16 senderPort);
+
     QByteArray decompressKadPayload(const uint8* data, int len);
 
     void purgeExpiredPackets();

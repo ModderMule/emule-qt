@@ -49,9 +49,15 @@ void SafeKad::trackNode(uint32 ip, uint16 port, const UInt128& id, bool verified
     auto it = m_trackedNodes.find({ip, port});
 
     if (it == m_trackedNodes.end()) {
-        cleanup();
-        if (m_trackedNodes.size() >= kMaxTrackedNodes)
-            return;
+        // Only clean when the map is actually full (S4): cleanup() has an early break, but
+        // calling it on every insert still resets m_lastCleanup and defeats the 10-min
+        // throttle in isBadNode(). isBadNode(), the frequently-hit gatekeeper, drives the
+        // periodic expiry; here we just need to make room when at capacity.
+        if (m_trackedNodes.size() >= kMaxTrackedNodes) {
+            cleanup();
+            if (m_trackedNodes.size() >= kMaxTrackedNodes)
+                return;
+        }
 
         tracked = new (std::nothrow) Tracked;
         if (!tracked)
@@ -67,10 +73,18 @@ void SafeKad::trackNode(uint32 ip, uint16 port, const UInt128& id, bool verified
     m_trackedAge.erase(*tracked);
 
     if (id != tracked->lastID && !(tracked->idVerified && !verified)) {
+        // The ban requires `verified` by design: banning on an *unverified* ID-flip would let
+        // an attacker forge a victim's source IP to get that victim banned (a spoofing DoS).
+        // Unverified flips are therefore recorded but never banned — the onePerIP rule and
+        // limited trust for unverified contacts contain them without the spoofing risk.
         if (now - tracked->lastIDChange < kMinIDChangeInterval && verified) {
-            banIP(ip);
+            // Fully remove the tracked record *before* the reentrant banIP() -> cleanup(),
+            // which walks these same maps — otherwise cleanup() could delete/free the record
+            // we still hold (it is already erased from m_trackedAge just above). Ordering
+            // this way makes the safety explicit instead of accidental.
             m_trackedNodes.erase(tracked->node);
             delete tracked;
+            banIP(ip);
             return;
         }
         tracked->lastID = id;
@@ -100,9 +114,12 @@ void SafeKad::trackProblematicNode(uint32 ip, uint16 port) noexcept
     auto it = m_problematicNodes.find({ip, port});
 
     if (it == m_problematicNodes.end()) {
-        cleanup();
-        if (m_problematicNodes.size() >= kMaxProblematicNodes)
-            return;
+        // Clean only when full (S4) — see trackNode(); avoids per-packet cleanup.
+        if (m_problematicNodes.size() >= kMaxProblematicNodes) {
+            cleanup();
+            if (m_problematicNodes.size() >= kMaxProblematicNodes)
+                return;
+        }
 
         prob = new (std::nothrow) Problematic;
         if (!prob)
@@ -129,13 +146,25 @@ void SafeKad::banIP(uint32 ip) noexcept
         return;
 
     const time_t now = time(nullptr);
-    cleanup();
 
     Banned* banned;
     auto it = m_bannedIPs.find(ip);
     if (it == m_bannedIPs.end()) {
-        if (m_bannedIPs.size() >= kMaxBannedIPs)
-            return;
+        if (m_bannedIPs.size() >= kMaxBannedIPs) {
+            cleanup(); // free expired bans first (S4: only clean when full)
+            if (m_bannedIPs.size() >= kMaxBannedIPs && !m_bannedAge.empty()) {
+                // Still full: evict the oldest ban so a ban never silently fails (S3).
+                // Otherwise, when the table is at cap, an ID-flipper's IP is not actually
+                // banned while trackNode() still un-tracks it — so it is re-admitted fresh
+                // on its next packet. A ban must always take effect (LRU on ban records).
+                Banned* oldest = m_bannedAge.begin()->second;
+                m_bannedIPs.erase(oldest->ip);
+                m_bannedAge.erase(m_bannedAge.begin());
+                delete oldest;
+            }
+            if (m_bannedIPs.size() >= kMaxBannedIPs)
+                return; // no room could be made (inconsistent state) — give up
+        }
         banned = new (std::nothrow) Banned;
         if (!banned)
             return;
@@ -193,9 +222,11 @@ bool SafeKad::isBadNode(uint32 ip, uint16 port, const UInt128& id,
         }
     } else {
         if (onePerIP) {
-            // Check if any node at this IP (any port) is already tracked
+            // Check if any node at this IP (any port) is already tracked. upper_bound on the
+            // max port (not lower_bound) so the half-open range [lo, hi) *includes* a node at
+            // exactly port 65535 — otherwise a node squatting on :65535 defeats the check.
             auto lo = m_trackedNodes.lower_bound({ip, 0});
-            auto hi = m_trackedNodes.lower_bound({ip, 0xFFFF});
+            auto hi = m_trackedNodes.upper_bound({ip, 0xFFFF});
             if (lo != hi)
                 return true;
         }

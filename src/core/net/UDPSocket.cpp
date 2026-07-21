@@ -13,6 +13,7 @@
 #include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/SafeFile.h"
 
 
 #include <QHostAddress>
@@ -91,12 +92,16 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
     uint16 port = specialPort ? specialPort : (server.port() + 4); // Default UDP port = TCP+4
     uint32 ip = server.ipAddress().toNetworkUint32();
 
-    // Encrypt if server supports it.
+    // Encrypt if the crypt layer is enabled and the server supports it. MFC gates
+    // this on IsCryptLayerEnabled() too (UDPSocket.cpp:750) — without it we would
+    // obfuscate outbound server UDP even with the crypt layer switched off.
     // encryptSendServer writes a crypto header at buf[0..overhead-1]
     // and expects the plaintext payload at buf[overhead..overhead+len-1].
     // We placed the plaintext at buf.data()+offset, so pass
     // buf.data()+offset-overhead so the header goes into the reserved area.
-    if (server.serverKeyUDP() != 0 && server.supportsObfuscationUDP()) {
+    const bool encrypt = thePrefs.cryptLayerSupported()
+        && server.serverKeyUDP() != 0 && server.supportsObfuscationUDP();
+    if (encrypt) {
         uint32 cryptOverhead = static_cast<uint32>(
             EncryptedDatagramSocket::encryptOverheadSize(false));
         uint32 encryptedLen = EncryptedDatagramSocket::encryptSendServer(
@@ -133,16 +138,63 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
         return;
     }
 
-    const bool encrypted = server.serverKeyUDP() != 0 && server.supportsObfuscationUDP();
     logDebug(QStringLiteral("UDPSocket::sendPacket opcode=0x%1 payload=%2 bytes -> %3:%4 encrypted=%5")
                  .arg(packet->opcode, 2, 16, QLatin1Char('0'))
                  .arg(packet->size)
                  .arg(ipstr(ip))
                  .arg(port)
-                 .arg(encrypted ? QStringLiteral("yes") : QStringLiteral("no")));
+                 .arg(encrypt ? QStringLiteral("yes") : QStringLiteral("no")));
 
     // Send directly
     sendBuffer(ip, port, buf.data() + offset, rawSize);
+}
+
+// ---------------------------------------------------------------------------
+// Send raw (unencrypted, pre-built) bytes to a server
+// ---------------------------------------------------------------------------
+
+void UDPSocket::sendRawPacket(const Server& server, uint16 specialPort,
+                              const uint8* data, uint32 size)
+{
+    // The obfuscated server-stat handshake (ServerList::serverStats) sends its
+    // challenge as raw bytes in the clear — the server encrypts the *reply* with
+    // that challenge. MFC does the same: CUDPSocket::SendPacket() does not encrypt
+    // raw packets (UDPSocket.cpp:762-766).
+    if (!data || size == 0)
+        return;
+
+    if (auto* stats = theApp.statistics)
+        stats->addUpDataOverheadServer(size);
+
+    cleanupStaleDNSRequests();
+
+    uint16 port = specialPort ? specialPort : static_cast<uint16>(server.port() + 4);
+    uint32 ip = server.ipAddress().toNetworkUint32();
+
+    if (server.hasDynIP() && ip == 0) {
+        auto req = std::make_unique<ServerDNSRequest>();
+        req->createdTime = static_cast<uint32>(m_elapsedTimer.elapsed());
+        req->serverPort = port;
+
+        ServerUDPPacket pkt;
+        pkt.data.assign(data, data + size);
+        pkt.destination = Endpoint(Address(), port); // IP resolved later via DNS
+        req->pendingPackets.push_back(std::move(pkt));
+
+        req->lookup = std::make_unique<QDnsLookup>(this);
+        req->lookup->setType(QDnsLookup::A);
+        req->lookup->setName(server.dynIP());
+        QObject::connect(req->lookup.get(), &QDnsLookup::finished, this, &UDPSocket::onDnsFinished);
+        req->lookup->lookup();
+
+        m_dnsRequests.push_back(std::move(req));
+        return;
+    }
+
+    logDebug(QStringLiteral("UDPSocket::sendRawPacket %1 bytes -> %2:%3 (raw)")
+                 .arg(size).arg(ipstr(ip)).arg(port));
+
+    sendBuffer(ip, port, data, size);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +218,11 @@ SocketSentBytes UDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, uint32
             pkt.destination.port());
 
         if (sent < 0) {
+            // #32: MFC increments a server's failed-count on WSAECONNRESET (an ICMP
+            // port-unreachable from an earlier send). Not portable here — this is an
+            // *unconnected* QUdpSocket, so ICMP errors are neither delivered
+            // synchronously nor attributable to a prior destination. Dead servers are
+            // still reaped via the TCP-connect path (#27) and stat-ping failedCount.
             m_wouldBlock = true;
             break;
         }
@@ -204,33 +261,44 @@ void UDPSocket::onReadyRead()
         auto* buf = reinterpret_cast<uint8*>(data.data());
         qsizetype bufLen = data.size();
 
-        // Look up the server to get its UDP key for decryption
-        uint32 serverKeyUDP = 0;
-        if (auto* sl = theApp.serverList) {
-            if (auto* srv = sl->findByIPUdp(senderIP, senderPort)) {
-                serverKeyUDP = srv->serverKeyUDP();
-            }
-        }
+        // Resolve the answering server so we can pick the right decryption key.
+        // An obfuscated crypt-ping *reply* is encrypted with the challenge we sent
+        // (ServerList::serverStats, port+12); an ordinary obfuscated reply uses the
+        // server's stored UDP key. Only attempt decryption when the crypt layer is
+        // enabled and one of those keys applies, and only accept the result if it
+        // decodes to a real ED2K packet — otherwise drop, never re-parse ciphertext
+        // as plaintext. MFC: CUDPSocket::OnReceive() — UDPSocket.cpp:159-181.
+        Server* srv = theApp.serverList ? theApp.serverList->findByIPUdp(senderIP, senderPort)
+                                        : nullptr;
+        const bool cryptPending = srv && srv->cryptPingReplyPending() && srv->challenge() != 0;
+        const bool tryDecrypt = srv && thePrefs.cryptLayerSupported()
+            && ((srv->serverKeyUDP() != 0 && srv->supportsObfuscationUDP()) || cryptPending);
+        const uint32 dwKey = cryptPending ? srv->challenge()
+                                          : (srv ? srv->serverKeyUDP() : 0);
 
         uint8 protoByte = buf[0];
 
         if (protoByte == OP_EDONKEYPROT) {
             // Unencrypted ED2K packet
-            uint8 opcode = buf[1];
-            processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderIP, senderPort);
-        } else {
-            // May be encrypted — try decryption with server key
-            DecryptResult dr = EncryptedDatagramSocket::decryptReceivedServer(buf, static_cast<int>(bufLen), serverKeyUDP);
-            if (dr.length > 1 && dr.data != nullptr) {
-                uint8 opcode = dr.data[1];
-                processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2), opcode, senderIP, senderPort);
+            processPacket(buf + 2, static_cast<uint32>(bufLen - 2), buf[1], senderIP, senderPort);
+        } else if (tryDecrypt) {
+            DecryptResult dr = EncryptedDatagramSocket::decryptReceivedServer(
+                buf, static_cast<int>(bufLen), dwKey);
+            // decryptReceivedServer passes the buffer through unchanged on failure,
+            // so success is signalled by the decrypted first byte being OP_EDONKEYPROT.
+            if (dr.data != nullptr && dr.length >= 2 && dr.data[0] == OP_EDONKEYPROT) {
+                processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2), dr.data[1],
+                              senderIP, senderPort);
             } else {
-                // Try as plain ED2K even if first byte is unusual
-                if (bufLen >= 2) {
-                    uint8 opcode = buf[1];
-                    processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderIP, senderPort);
-                }
+                logDebug(QStringLiteral("UDPSocket: dropped undecryptable server datagram from %1:%2")
+                             .arg(ipstr(senderIP)).arg(senderPort));
             }
+        } else {
+            // Unknown protocol byte and no server key applies — drop it (MFC does
+            // not fall back to parsing it as plaintext).
+            logDebug(QStringLiteral("UDPSocket: dropped non-ed2k datagram (proto=0x%1) from %2:%3")
+                         .arg(protoByte, 2, 16, QLatin1Char('0'))
+                         .arg(ipstr(senderIP)).arg(senderPort));
         }
     }
 }
@@ -247,35 +315,62 @@ bool UDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
 
     const Endpoint senderEP = Endpoint::fromNetworkOrder(senderIP, senderPort);
 
-    switch (opcode) {
-    case OP_GLOBSEARCHRES:
-        logDebug(QStringLiteral("UDPSocket: received OP_GLOBSEARCHRES from %1 size=%2")
-                     .arg(senderEP.toString())
-                     .arg(size));
-        emit globalSearchResult(packet, size, senderEP);
-        break;
-
-    case OP_GLOBFOUNDSOURCES:
-        emit globalFoundSources(packet, size, senderEP);
-        break;
-
-    case OP_GLOBSERVSTATRES:
-        emit serverStatusResult(packet, size, senderEP);
-        break;
-
-    case OP_SERVER_DESC_RES:
-        emit serverDescResult(packet, size, senderEP);
-        break;
-
-    default:
-        logDebug(QStringLiteral("UDPSocket: Unknown server opcode 0x%1 from %2:%3")
-                     .arg(opcode, 2, 16, QLatin1Char('0'))
-                     .arg(ipstr(senderIP))
-                     .arg(senderPort));
-        break;
+    // A server that answers ANY UDP opcode is alive — clear its failure count so
+    // one that only ever replies to searches/sources is never reaped as dead. MFC
+    // resets this at the top of ProcessPacket for every opcode (UDPSocket.cpp:216).
+    if (auto* sl = theApp.serverList) {
+        if (auto* srv = sl->findByIPUdp(senderIP, senderPort, true))
+            srv->resetFailedCount();
     }
 
-    return true;
+    // The result/desc handlers below are invoked synchronously (direct signal
+    // connections) and parse untrusted server payloads via SafeMemFile, which
+    // throws FileException on any over-read. Without this boundary a truncated
+    // packet would unwind out of the Qt slot and kill the daemon. MFC guards the
+    // whole dispatch the same way — CUDPSocket::ProcessPacket() (UDPSocket.cpp:216)
+    // — swallowing the error (returns true) for the two multi-result opcodes.
+    try {
+        switch (opcode) {
+        case OP_GLOBSEARCHRES:
+            logDebug(QStringLiteral("UDPSocket: received OP_GLOBSEARCHRES from %1 size=%2")
+                         .arg(senderEP.toString())
+                         .arg(size));
+            emit globalSearchResult(packet, size, senderEP);
+            break;
+
+        case OP_GLOBFOUNDSOURCES:
+            emit globalFoundSources(packet, size, senderEP);
+            break;
+
+        case OP_GLOBSERVSTATRES:
+            emit serverStatusResult(packet, size, senderEP);
+            break;
+
+        case OP_SERVER_DESC_RES:
+            emit serverDescResult(packet, size, senderEP);
+            break;
+
+        default:
+            logDebug(QStringLiteral("UDPSocket: Unknown server opcode 0x%1 from %2:%3")
+                         .arg(opcode, 2, 16, QLatin1Char('0'))
+                         .arg(ipstr(senderIP))
+                         .arg(senderPort));
+            break;
+        }
+        return true;
+    } catch (const FileException& ex) {
+        logWarning(QStringLiteral("UDPSocket: bad server packet opcode=0x%1 from %2: %3")
+                       .arg(opcode, 2, 16, QLatin1Char('0'))
+                       .arg(senderEP.toString())
+                       .arg(QLatin1StringView(ex.what())));
+        // Swallow for the multi-result opcodes exactly as MFC does.
+        return (opcode == OP_GLOBSEARCHRES || opcode == OP_GLOBFOUNDSOURCES);
+    } catch (...) {
+        logWarning(QStringLiteral("UDPSocket: unknown exception processing opcode 0x%1 from %2")
+                       .arg(opcode, 2, 16, QLatin1Char('0'))
+                       .arg(senderEP.toString()));
+        return false;
+    }
 }
 
 // ---------------------------------------------------------------------------

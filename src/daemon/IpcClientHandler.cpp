@@ -160,6 +160,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetServerPriority:    handleSetServerPriority(msg); break;
     case IpcMsgType::SetServerStatic:      handleSetServerStatic(msg); break;
     case IpcMsgType::AddServer:            handleAddServer(msg); break;
+    case IpcMsgType::SetServerOrder:       handleSetServerOrder(msg); break;
     case IpcMsgType::GetConnection:        handleGetConnection(msg); break;
     case IpcMsgType::ConnectToServer:      handleConnectToServer(msg); break;
     case IpcMsgType::DisconnectFromServer: handleDisconnectFromServer(msg); break;
@@ -601,6 +602,30 @@ void IpcClientHandler::handleAddServer(const IpcMessage& msg)
         }
         sendMessage(IpcMessage::makeResult(msg.seqId(), false));
     }
+}
+
+void IpcClientHandler::handleSetServerOrder(const IpcMessage& msg)
+{
+    if (!theApp.serverList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ServerList unavailable")));
+        return;
+    }
+    // Payload field 0: a CBOR array of [ip:int64, port:int64] pairs in the desired
+    // display order (#24). Reorder the list and persist it immediately.
+    const QCborArray entries = msg.fieldArray(0);
+    std::vector<std::pair<uint32, uint16>> order;
+    order.reserve(static_cast<size_t>(entries.size()));
+    for (const QCborValue& e : entries) {
+        const QCborArray pair = e.toArray();
+        if (pair.size() < 2)
+            continue;
+        order.emplace_back(static_cast<uint32>(pair.at(0).toInteger()),
+                           static_cast<uint16>(pair.at(1).toInteger()));
+    }
+    theApp.serverList->applyUserOrder(order);
+    theApp.serverList->saveServerMet(
+        QDir(thePrefs.configDir()).filePath(QStringLiteral("server.met")));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
 void IpcClientHandler::handleGetConnection(const IpcMessage& msg)
@@ -1886,6 +1911,7 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("autoConnectStaticOnly"), thePrefs.autoConnectStaticOnly());
     prefs.insert(QStringLiteral("useServerPriorities"), thePrefs.useServerPriorities());
     prefs.insert(QStringLiteral("addServersFromServer"), thePrefs.addServersFromServer());
+    prefs.insert(QStringLiteral("useUserSortedServerList"), thePrefs.useUserSortedServerList());
     prefs.insert(QStringLiteral("addServersFromClients"), thePrefs.addServersFromClients());
     prefs.insert(QStringLiteral("deadServerRetries"), static_cast<qint64>(thePrefs.deadServerRetries()));
     prefs.insert(QStringLiteral("autoUpdateServerList"), thePrefs.autoUpdateServerList());
@@ -3216,6 +3242,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUseServerPriorities(val.toBool());
     else if (key == QStringLiteral("addServersFromServer"))
         thePrefs.setAddServersFromServer(val.toBool());
+    else if (key == QStringLiteral("useUserSortedServerList"))
+        thePrefs.setUseUserSortedServerList(val.toBool());
     else if (key == QStringLiteral("addServersFromClients"))
         thePrefs.setAddServersFromClients(val.toBool());
     else if (key == QStringLiteral("deadServerRetries"))

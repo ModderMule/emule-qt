@@ -84,6 +84,9 @@ public:
     [[nodiscard]] bool addServersFromServer() const;
     void setAddServersFromServer(bool val);
 
+    [[nodiscard]] bool useUserSortedServerList() const;
+    void setUseUserSortedServerList(bool val);
+
     [[nodiscard]] uint32 serverKeepAliveTimeout() const;
     void setServerKeepAliveTimeout(uint32 val);
 

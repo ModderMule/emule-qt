@@ -67,6 +67,8 @@ private:
     void shutdownClientInfra();
     void initDownloadQueue();
     void shutdownDownloadQueue();
+    void initClientUDP();
+    void shutdownClientUDP();
     void initKademlia();
     void wireKadListener();
     void shutdownKademlia();

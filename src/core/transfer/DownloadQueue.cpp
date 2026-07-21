@@ -21,8 +21,12 @@
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
+#include "stats/Statistics.h"
 #include "utils/Log.h"
+#include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
+
+#include <algorithm>
 
 #include <QDir>
 #include <QDirIterator>
@@ -557,19 +561,16 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
 
 void DownloadQueue::addServerSourceResult(const uint8* data, uint32 size, bool obfuscated)
 {
-    // Packet format: fileHash[16] + sourceCount[1] + per-source data
+    // TCP packet format: fileHash[16] + sourceCount[1] + per-source data.
     if (!data || size < 17)
         return;
 
-    // Extract file hash (first 16 bytes)
     PartFile* file = fileByID(data);
     if (!file)
         return;
 
-    const uint8 sourceCount = data[16];
-    uint32 offset = 17;
-
-    // Get server IP/port for low-ID source construction
+    // Sources from the connected server carry no server address of their own;
+    // low-ID ones are reached via that server, so stamp its IP/port.
     uint32 srvIP = 0;
     uint16 srvPort = 0;
     if (m_serverConnect) {
@@ -579,10 +580,58 @@ void DownloadQueue::addServerSourceResult(const uint8* data, uint32 size, bool o
         }
     }
 
-    for (uint8 i = 0; i < sourceCount; ++i) {
-        // Each source: userId[4] + port[2] = 6 bytes minimum
-        if (offset + 6 > size)
+    parseServerSourceBlock(file, data, size, /*offset=*/16, obfuscated, srvIP, srvPort);
+}
+
+void DownloadQueue::addUDPGlobalSources(const uint8* data, uint32 size, const Endpoint& from)
+{
+    // MFC: CUDPSocket::ProcessPacket() OP_GLOBFOUNDSOURCES — UDPSocket.cpp:268.
+    // One datagram may pack several files' source blocks, each
+    // [fileHash16][count][ source(6)... ], separated by the 2-byte marker
+    // OP_EDONKEYPROT, OP_GLOBFOUNDSOURCES. UDP sources are never obfuscated.
+    if (!data || size < 17)
+        return;
+
+    // Attribute the sources to the server that actually answered. Fall back to
+    // the sender's TCP port (UDP - 4) if it is not (yet) in our list.
+    uint32 srvIP = from.address().toNetworkUint32();
+    uint16 srvPort = (from.port() >= 4) ? static_cast<uint16>(from.port() - 4) : from.port();
+    if (theApp.serverList) {
+        if (auto* srv = theApp.serverList->findByIPUdp(srvIP, from.port(), true)) {
+            srvIP = srv->ipAddress().toNetworkUint32();
+            srvPort = srv->port();
+        }
+    }
+
+    uint32 offset = 0;
+    while (offset + 17 <= size) {
+        PartFile* file = fileByID(data + offset);  // null → sources skipped, offset still advances
+        offset += 16;
+        offset = parseServerSourceBlock(file, data, size, offset, /*obfuscated=*/false, srvIP, srvPort);
+
+        // Continue only across the OP_EDONKEYPROT, OP_GLOBFOUNDSOURCES separator.
+        if (offset + 2 > size)
             break;
+        if (data[offset] != OP_EDONKEYPROT || data[offset + 1] != OP_GLOBFOUNDSOURCES)
+            break;
+        offset += 2;
+    }
+}
+
+uint32 DownloadQueue::parseServerSourceBlock(PartFile* file, const uint8* data, uint32 size,
+                                             uint32 offset, bool obfuscated,
+                                             uint32 srvIP, uint16 srvPort)
+{
+    if (offset >= size)
+        return size;
+
+    const uint8 sourceCount = data[offset];
+    ++offset;
+
+    for (uint8 i = 0; i < sourceCount; ++i) {
+        // Each source: userId[4] + port[2] = 6 bytes minimum.
+        if (offset + 6 > size)
+            return size;  // truncated — no further block is parseable
 
         uint32 userId = 0;
         uint16 port = 0;
@@ -596,41 +645,72 @@ void DownloadQueue::addServerSourceResult(const uint8* data, uint32 size, bool o
 
         if (obfuscated) {
             if (offset + 1 > size)
-                break;
+                return size;
             cryptFlags = data[offset];
             offset += 1;
 
             if ((cryptFlags & 0x80) != 0) {
                 if (offset + 16 > size)
-                    break;
+                    return size;
                 std::memcpy(userHash.data(), data + offset, 16);
                 offset += 16;
                 hasHash = true;
             }
         }
 
-        // Validate source
-        if (!isLowID(userId) && !isGoodIP(userId))
-            continue;
-
-        if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
-            break;
-
-        auto* client = new UpDownClient(port, userId, srvIP, srvPort, file, true);
-        client->setSourceFrom(SourceFrom::Server);
-
-        if (obfuscated)
-            client->setConnectOptions(cryptFlags, true, false);
-
-        if (hasHash)
-            client->setUserHash(userHash.data());
-
-        if (checkAndAddSource(file, client)) {
-            client->tryToConnect();
-        } else {
-            delete client;
-        }
+        // file == null means the block is for a file we don't have — the offset
+        // still advances (skipping the sources) so the next block is found.
+        if (file)
+            addServerSourceClient(file, userId, port, obfuscated, cryptFlags,
+                                  userHash.data(), hasHash, srvIP, srvPort);
     }
+
+    return offset;
+}
+
+void DownloadQueue::addServerSourceClient(PartFile* file, uint32 userId, uint16 port,
+                                          bool obfuscated, uint8 cryptFlags,
+                                          const uint8* userHash, bool hasHash,
+                                          uint32 srvIP, uint16 srvPort)
+{
+    // Validate source. Mirror CPartFile::AddSources / CanAddSource
+    // (MFC PartFile.cpp:2478-2503). Server sources are built without a
+    // userAddress, so checkAndAddSource's ipfilter is skipped and it has no
+    // ban check — do both here, plus the firewalled-LowID drop (kept out of
+    // checkAndAddSource because Kad buddy sources use clientID=1 as a LowID
+    // marker). userId is ED2K/network order, and a low ID stays low in either
+    // byte order, so the raw value tests correctly.
+
+    // Two firewalled clients can never connect, so a low-ID source is dead weight.
+    if (isLowID(userId) && theApp.isFirewalled())
+        return;
+
+    if (!isLowID(userId)) {
+        if (!isGoodIP(userId))
+            return;
+        if (m_ipFilter && m_ipFilter->isFiltered(userId))
+            return;
+        if (m_clientList &&
+            m_clientList->isBannedClient(Address::fromNetworkOrder(userId)))
+            return;
+    }
+
+    if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+        return;
+
+    auto* client = new UpDownClient(port, userId, srvIP, srvPort, file, true);
+    client->setSourceFrom(SourceFrom::Server);
+
+    if (obfuscated)
+        client->setConnectOptions(cryptFlags, true, false);
+
+    if (hasHash)
+        client->setUserHash(userHash);
+
+    if (checkAndAddSource(file, client))
+        client->tryToConnect();
+    else
+        delete client;
 }
 
 // ===========================================================================
@@ -734,44 +814,241 @@ void DownloadQueue::process()
         }
     }
 
-    // Server-based source queries via UDP
-    if (m_serverConnect && m_serverConnect->isConnected() &&
-        curTick >= m_lastServerSourceRequestTime + UDPSERVERREASKTIME)
+    // Server-based source queries via UDP — port of the SendNextUDPPacket
+    // trigger in CDownloadQueue::Process(). m_lastUdpSearchTime is stamped only
+    // by stopUDPRequests(), so once a pass starts this fires every tick until the
+    // whole server list has been walked once, then idles for UDPSERVERREASKTIME.
+    if (m_serverConnect && m_serverConnect->isConnected() && theApp.serverList &&
+        (m_lastUdpSearchTime == 0 || curTick >= m_lastUdpSearchTime + UDPSERVERREASKTIME))
     {
-        m_lastServerSourceRequestTime = curTick;
-        if (theApp.serverList) {
-            for (auto* file : m_items) {
-                if (file->status() != PartFileStatus::Ready &&
-                    file->status() != PartFileStatus::Empty)
-                    continue;
-                if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
-                    continue;
+        sendNextUDPPacket();
+    }
+}
 
-                // Send OP_GLOBGETSOURCES2 to a few servers for each file needing sources
-                const uint8* hash = file->fileHash();
-                const uint64 fsize = file->fileSize();
-                // Build packet: 16 bytes hash + 4 bytes size (or 8 for large files)
-                bool largeFile = (fsize > UINT32_MAX);
-                uint32 pktSize = largeFile ? 24u : 20u;
-                auto pkt = std::make_unique<Packet>(
-                    largeFile ? OP_GLOBGETSOURCES2 : OP_GLOBGETSOURCES,
-                    pktSize, OP_EDONKEYPROT);
-                md4cpy(pkt->pBuffer, hash);
-                if (largeFile) {
-                    std::memcpy(pkt->pBuffer + 16, &fsize, 8);
-                } else {
-                    uint32 fsize32 = static_cast<uint32>(fsize);
-                    std::memcpy(pkt->pBuffer + 16, &fsize32, 4);
+// ===========================================================================
+// Global UDP source acquisition — port of CDownloadQueue::SendNextUDPPacket()
+// ===========================================================================
+
+namespace {
+constexpr uint32 kMaxRequestsPerServer        = 35;   // MAX_REQUESTS_PER_SERVER
+constexpr uint32 kMaxUdpPacketData            = 510;  // MAX_UDP_PACKET_DATA
+constexpr uint32 kBytesPerFileG1              = 16;   // BYTES_PER_FILE_G1
+constexpr uint32 kBytesPerFileG2              = 20;   // BYTES_PER_FILE_G2
+constexpr uint32 kAdditionalBytesPerLargeFile = 8;    // ADDITIONAL_BYTES_PER_LARGEFILE
+} // namespace
+
+// Walk the server list ONCE per pass, batching several files' hashes into one
+// OP_GLOBGETSOURCES(2) datagram per server. Sends at most one datagram per call;
+// called every tick from process() until the whole list has been covered, then
+// stopUDPRequests() stamps m_lastUdpSearchTime and the pass idles. Non-wrapping
+// getSuccServer() is what makes a pass terminate (unlike the old nextStatServer()).
+bool DownloadQueue::sendNextUDPPacket()
+{
+    // Sources returned by global getsources carry no user hash, so they are
+    // unusable when the crypt layer is required — don't bother asking (MFC).
+    if (m_items.empty() || !m_serverConnect || !m_serverConnect->isConnected()
+        || thePrefs.cryptLayerRequired())
+        return false;
+
+    ServerList* sl = theApp.serverList;
+    if (!sl)
+        return false;
+
+    // The connected server is already queried over TCP — skip it over UDP.
+    Server* connected = m_serverConnect->currentServer();
+    if (connected)
+        connected = sl->findByAddress(connected->address(), connected->port());
+
+    // True while `s` is still a live entry (a server may be reaped between ticks).
+    auto stillListed = [&](const Server* s) -> bool {
+        if (!s)
+            return false;
+        for (const auto& up : sl->servers())
+            if (up.get() == s)
+                return true;
+        return false;
+    };
+
+    // Advance to the next queryable server, skipping the connected + dead ones;
+    // returns false (and ends the pass) once getSuccServer() runs off the tail.
+    auto nextServer = [&]() -> bool {
+        m_requestsSentToServer = 0;
+        do {
+            m_curUdpServer = sl->getSuccServer(m_curUdpServer);
+            if (!m_curUdpServer) {
+                stopUDPRequests();
+                return false;
+            }
+        } while (m_curUdpServer == connected
+                 || m_curUdpServer->failedCount() >= thePrefs.deadServerRetries());
+        return true;
+    };
+
+    // The next download after the m_lastUdpFile cursor (or the head when the
+    // cursor is null / no longer present). Sets outTail when the cursor was the
+    // last item, signalling "this server's files are exhausted, switch server".
+    auto stepFile = [&](bool& outTail) -> PartFile* {
+        outTail = false;
+        if (m_items.empty())
+            return nullptr;
+        if (m_lastUdpFile == nullptr)
+            return m_items.front();
+        auto it = std::find(m_items.begin(), m_items.end(), m_lastUdpFile);
+        if (it == m_items.end())
+            return m_items.front();
+        if (++it == m_items.end()) {
+            outTail = true;
+            return nullptr;
+        }
+        return *it;
+    };
+
+    if (m_curUdpServer && !stillListed(m_curUdpServer))
+        m_curUdpServer = nullptr;
+    if (!m_curUdpServer && !nextServer())
+        return false;
+
+    bool ext2 = (m_curUdpServer->udpFlags() & SrvUdpFlag::ExtGetSources2) != 0;
+    bool serverLarge = m_curUdpServer->supportsLargeFilesUDP();
+
+    bool sent = false;
+    SafeMemFile data;
+    uint32 nFiles = 0;
+    uint32 nLarge = 0;
+
+    while (!isMaxFilesPerUDPServerPacketReached(nFiles, nLarge) && !sent) {
+        PartFile* nextfile = nullptr;
+        while (!sent &&
+               !(nextfile && (nextfile->status() == PartFileStatus::Ready ||
+                              nextfile->status() == PartFileStatus::Empty)))
+        {
+            bool tail = false;
+            PartFile* cand = stepFile(tail);
+            if (tail) {
+                // Finished this server's files — flush any pending batch to it,
+                // then move on to the next server (from its head).
+                if (data.length() > 0) {
+                    // Packet(SafeMemFile&) consumes the buffer via takeBuffer(),
+                    // leaving `data` empty; on success `sent` is set and we break
+                    // out below, so `data` is never written again this call.
+                    if (sendGlobGetSourcesUDPPacket(data, ext2, nFiles, nLarge))
+                        sent = true;
+                    nFiles = 0;
+                    nLarge = 0;
                 }
-                // Send to a server from the list
-                Server* srv = theApp.serverList->nextStatServer();
-                if (srv) {
-                    m_serverConnect->sendUDPPacket(
-                        std::move(pkt), *srv, static_cast<uint16>(srv->port() + 4));
+                if (!nextServer())
+                    return false;
+                ++m_searchedServers;
+                if (sent) {
+                    m_lastUdpFile = nullptr;
+                    break;
                 }
+                ext2 = (m_curUdpServer->udpFlags() & SrvUdpFlag::ExtGetSources2) != 0;
+                serverLarge = m_curUdpServer->supportsLargeFilesUDP();
+                nextfile = m_items.empty() ? nullptr : m_items.front();
+            } else {
+                nextfile = cand;
+            }
+            m_lastUdpFile = nextfile;
+        }
+
+        if (!sent && nextfile) {
+            const uint64 fsize = nextfile->fileSize();
+            const bool isLarge = fsize > UINT32_MAX;
+            // Port of CPartFile::GetMaxSourcePerFileUDP() (max-sources tracked
+            // globally via the pref in this port).
+            const uint32 udpCap = std::min<uint32>(
+                (static_cast<uint32>(thePrefs.maxSourcesPerFile()) * 3) / 4,
+                MAX_SOURCES_FILE_UDP);
+            if (static_cast<uint32>(nextfile->sourceCount()) < udpCap
+                && (serverLarge || !isLarge))
+            {
+                data.writeHash16(nextfile->fileHash());
+                // GETSOURCES2 carries the size; GETSOURCES1 is hash-only. The
+                // format is chosen by SERVER capability, never by file size.
+                if (ext2) {
+                    if (isLarge) {
+                        ++nLarge;
+                        data.writeUInt32(0);
+                        data.writeUInt64(fsize);
+                    } else {
+                        data.writeUInt32(static_cast<uint32>(fsize));
+                    }
+                }
+                ++nFiles;
             }
         }
     }
+
+    if (!sent && data.length() > 0)
+        sendGlobGetSourcesUDPPacket(data, ext2, nFiles, nLarge);
+
+    // Max 35 requests to one server per pass; when the queue is longer, rotate
+    // the tail window to the head so the next server gets fresh files, then
+    // advance the server (port of the MAX_REQUESTS_PER_SERVER block).
+    if (m_requestsSentToServer >= kMaxRequestsPerServer) {
+        if (m_items.size() > kMaxRequestsPerServer)
+            std::rotate(m_items.begin(),
+                        m_items.end() - kMaxRequestsPerServer, m_items.end());
+        if (!nextServer())
+            return false;
+        ++m_searchedServers;
+        m_lastUdpFile = nullptr;
+    }
+
+    return true;
+}
+
+bool DownloadQueue::isMaxFilesPerUDPServerPacketReached(uint32 nFiles,
+                                                        uint32 nIncludedLargeFiles) const
+{
+    if (m_curUdpServer && (m_curUdpServer->udpFlags() & SrvUdpFlag::ExtGetSources)) {
+        const uint32 bytesPerFile =
+            (m_curUdpServer->udpFlags() & SrvUdpFlag::ExtGetSources2) ? kBytesPerFileG2
+                                                                      : kBytesPerFileG1;
+        const uint32 usedBytes =
+            nFiles * bytesPerFile + nIncludedLargeFiles * kAdditionalBytesPerLargeFile;
+        return (m_requestsSentToServer >= kMaxRequestsPerServer)
+            || (usedBytes >= kMaxUdpPacketData);
+    }
+    // Old servers without extended getsources take one hash per packet.
+    return nFiles != 0;
+}
+
+bool DownloadQueue::sendGlobGetSourcesUDPPacket(SafeMemFile& data, bool ext2Packet,
+                                                uint32 nFiles, uint32 nIncludedLargeFiles)
+{
+    if (!m_curUdpServer || !m_serverConnect)
+        return false;
+
+    auto pkt = std::make_unique<Packet>(
+        data, OP_EDONKEYPROT, ext2Packet ? OP_GLOBGETSOURCES2 : OP_GLOBGETSOURCES);
+    const uint32 pktSize = pkt->size;
+
+    if (theApp.statistics)
+        theApp.statistics->addUpDataOverheadServer(pktSize);
+
+    logDebug(QStringLiteral("DownloadQueue: sending %1 to server %2:%3 (%4 files, %5 large)")
+                 .arg(ext2Packet ? QStringLiteral("OP_GlobGetSources2")
+                                 : QStringLiteral("OP_GlobGetSources"))
+                 .arg(m_curUdpServer->address())
+                 .arg(m_curUdpServer->port())
+                 .arg(nFiles)
+                 .arg(nIncludedLargeFiles));
+
+    m_serverConnect->sendUDPPacket(std::move(pkt), *m_curUdpServer,
+                                   static_cast<uint16>(m_curUdpServer->port() + 4));
+    m_requestsSentToServer += nFiles;
+    return true;
+}
+
+void DownloadQueue::stopUDPRequests()
+{
+    m_curUdpServer = nullptr;
+    m_lastUdpFile = nullptr;
+    m_searchedServers = 0;
+    m_requestsSentToServer = 0;
+    m_lastUdpSearchTime = static_cast<uint32>(getTickCount());
 }
 
 // ===========================================================================
@@ -801,6 +1078,11 @@ void DownloadQueue::onEntityAdded(PartFile* file)
 
 void DownloadQueue::onEntityRemoved(PartFile* file)
 {
+    // Keep the global-UDP-source file cursor from dangling on the freed file.
+    // (getSuccServer() already tolerates a removed server cursor.)
+    if (file == m_lastUdpFile)
+        m_lastUdpFile = nullptr;
+
     if (file->status() != PartFileStatus::Complete)
         ++m_failedDownCount;
     sortByPriority();

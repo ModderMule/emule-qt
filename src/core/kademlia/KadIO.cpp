@@ -137,12 +137,12 @@ Tag readKadTag(FileDataIO& f, bool optACP)
         return Tag(std::move(name), val);
     }
     case TAGTYPE_FLOAT32: {
+        // Read into a real float tag. The prior code reinterpreted the IEEE-754
+        // bits as a uint32, so a rating of 3.0 became 1077936128 and was
+        // re-serialized as an int (MFC reads a proper CKadTagFloat, DataIO.cpp:199).
         float val = readFloat(f);
-        // Store as uint32 via reinterpret (same as MFC)
-        uint32 intVal = 0;
-        std::memcpy(&intVal, &val, sizeof(float));
-        if (hasNumericId) return Tag(numericId, intVal);
-        return Tag(std::move(name), intVal);
+        if (hasNumericId) return Tag(numericId, val);
+        return Tag(std::move(name), val);
     }
     case TAGTYPE_HASH: {
         uint8 hash[16];
@@ -152,30 +152,19 @@ Tag readKadTag(FileDataIO& f, bool optACP)
     }
     case TAGTYPE_BSOB: {
         QByteArray bsob = readBsob(f);
-        if (hasNumericId) return Tag(numericId, std::move(bsob));
-        return Tag(std::move(name), std::move(bsob));
+        if (hasNumericId) return Tag::makeBsob(numericId, std::move(bsob));
+        return Tag::makeBsob(std::move(name), std::move(bsob));
     }
-    case TAGTYPE_BLOB: {
-        uint32 blobLen = f.readUInt32();
-        QByteArray blob(static_cast<qsizetype>(blobLen), Qt::Uninitialized);
-        if (blobLen > 0)
-            f.read(blob.data(), blobLen);
-        if (hasNumericId) return Tag(numericId, std::move(blob));
-        return Tag(std::move(name), std::move(blob));
-    }
+    // No TAGTYPE_BLOB case: Kad has no BLOB type (0x07). STR1–STR22 compact
+    // strings are an ED2K-only encoding and never appear on the Kad wire. Both
+    // fall through to the unsupported-type throw, matching official
+    // DataIO.cpp:219-220 (throw CNotSupportedException) which drops the packet.
     default:
-        // Handle STR1–STR22 compact string types
-        if (type >= TAGTYPE_STR1 && type <= TAGTYPE_STR22) {
-            uint32 strLen = type - TAGTYPE_STR1 + 1;
-            QByteArray raw(static_cast<qsizetype>(strLen), Qt::Uninitialized);
-            f.read(raw.data(), strLen);
-            QString val = QString::fromUtf8(raw);
-            if (hasNumericId) return Tag(numericId, val);
-            return Tag(std::move(name), val);
-        }
-        logKad(QStringLiteral("Kad: Unknown tag type 0x%1").arg(type, 2, 16, QChar(u'0')));
-        if (hasNumericId) return Tag(numericId, uint32{0});
-        return Tag(std::move(name), uint32{0});
+        // Must be FileException so the per-handler catch(const FileException&)
+        // sites drop the packet; any other exception type escapes them and
+        // terminates the daemon via the (uncaught) Qt slot dispatch.
+        logKad(QStringLiteral("Kad: unsupported tag type 0x%1").arg(type, 2, 16, QChar(u'0')));
+        throw FileException("Kad: unsupported tag type");
     }
 }
 
@@ -241,15 +230,9 @@ void writeKadTag(FileDataIO& f, const Tag& tag)
         if (!tagName.isEmpty())
             f.write(tagName.constData(), tagName.size());
         f.write(tag.hashValue(), 16);
-    } else if (tag.isBlob()) {
-        f.writeUInt8(TAGTYPE_BLOB);
-        f.writeUInt16(static_cast<uint16>(tagName.size()));
-        if (!tagName.isEmpty())
-            f.write(tagName.constData(), tagName.size());
-        const QByteArray& blob = tag.blobValue();
-        f.writeUInt32(static_cast<uint32>(blob.size()));
-        if (!blob.isEmpty())
-            f.write(blob.constData(), blob.size());
+    } else if (tag.isBsob()) {
+        // Kad has no BLOB type — binary payloads go on the wire as BSOB.
+        writeKadTagBsob(f, tagName, tag.blobValue());
     } else {
         // Fallback: write as uint32 0
         f.writeUInt8(TAGTYPE_UINT32);

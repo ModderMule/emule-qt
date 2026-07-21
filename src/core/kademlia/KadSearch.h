@@ -107,13 +107,20 @@ private:
     void pinFetchedContacts(const ContactMap& fetched);
     void sendFindValue(Contact* contact, bool reAskMore = false);
     void prepareToStop();
-    void storePacket();
+    // Send action/publish packets to responded contacts. flushRemaining=false
+    // streams one packet per jump-start cycle (results flow during the search);
+    // flushRemaining=true sends to every remaining responded contact (called at
+    // stop). m_storeSent dedups so nothing is sent twice. MFC streams via
+    // JumpStart→StorePacket (Search.cpp:311-313) instead of bursting at the end.
+    void storePacket(bool flushRemaining);
+    [[nodiscard]] uint32 storeLimit() const;
     [[nodiscard]] uint8 getRequestContactCount() const;
     [[nodiscard]] uint32 getLifetime() const;
 
     WordList m_words;
     UIntList m_fileIDs;
     std::map<UInt128, bool> m_responded;  // distance → provided closer contacts (MFC m_mapResponded)
+    std::map<UInt128, bool> m_storeSent;  // distance → already sent an action packet (streaming dedup)
     ContactMap m_possible;  // untried candidates, sorted by distance
     ContactMap m_tried;     // ALL contacted nodes (responded + not), sorted by distance
     ContactMap m_best;      // top ALPHA_QUERY closest contacts for auto-query (MFC m_mapBest)

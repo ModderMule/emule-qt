@@ -119,6 +119,9 @@ public:
     void statsIncTCPFirewalledNodes(bool firewalled);
     [[nodiscard]] float statsGetFirewalledRatio(bool udp) const;
     [[nodiscard]] float statsGetKadV8Ratio();
+    /// Combined firewalled-count inflation factor shared by both user-count
+    /// estimators (EstimateCount / CalculateKadUsersNew). Always in (1.0, 1.9].
+    [[nodiscard]] float statsFirewalledModifyTotal();
 
     // -- UDP verify key -------------------------------------------------------
 

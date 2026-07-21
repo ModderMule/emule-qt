@@ -16,18 +16,27 @@
 #include <deque>
 #include <vector>
 
+class tst_DownloadQueue;  // fwd-decl for the white-box unit-test friend below
+
 namespace eMule {
 
 class ClientList;
+class Endpoint;
 class IPFilter;
 class KnownFileList;
 class PartFile;
+class SafeMemFile;
+class Server;
 class ServerConnect;
 class SharedFileList;
 class UpDownClient;
 
 class DownloadQueue : public EntityList<PartFile> {
     Q_OBJECT
+
+    // White-box access for the unit test (drives the private global-UDP-source
+    // rotation state machine deterministically).
+    friend class ::tst_DownloadQueue;
 
 public:
     explicit DownloadQueue(QObject* parent = nullptr);
@@ -79,6 +88,12 @@ public:
     /// Process OP_FOUNDSOURCES / OP_FOUNDSOURCES_OBFU from the connected server.
     void addServerSourceResult(const uint8* data, uint32 size, bool obfuscated);
 
+    /// Process an OP_GLOBFOUNDSOURCES (0x9B) UDP reply, which may pack several
+    /// files' source blocks in one datagram. Sources are attributed to the
+    /// answering server (`from`). Port of the OP_GLOBFOUNDSOURCES case in
+    /// CUDPSocket::ProcessPacket.
+    void addUDPGlobalSources(const uint8* data, uint32 size, const Endpoint& from);
+
     // -- Queue operations -----------------------------------------------------
 
     void startNextFile(int category = -1);
@@ -119,6 +134,31 @@ private:
     void onDownloadCompleted(PartFile* file);
     void connectPartFileSignals(PartFile* file);
 
+    // Shared server-source parsing (TCP OP_FOUNDSOURCES and UDP OP_GLOBFOUNDSOURCES).
+    // parseServerSourceBlock reads one [count][source...] block starting at `offset`
+    // (the count byte) and returns the offset past it; addServerSourceClient runs the
+    // per-source validation and construction.
+    uint32 parseServerSourceBlock(PartFile* file, const uint8* data, uint32 size,
+                                  uint32 offset, bool obfuscated,
+                                  uint32 srvIP, uint16 srvPort);
+    void addServerSourceClient(PartFile* file, uint32 userId, uint16 port,
+                               bool obfuscated, uint8 cryptFlags,
+                               const uint8* userHash, bool hasHash,
+                               uint32 srvIP, uint16 srvPort);
+
+    // Global UDP source acquisition — port of CDownloadQueue::SendNextUDPPacket &
+    // friends. Walks the server list ONCE per pass (non-wrapping getSuccServer),
+    // batching several files' hashes into one OP_GLOBGETSOURCES(2) datagram per
+    // server, skipping the connected server + dead servers, then idles until the
+    // next UDPSERVERREASKTIME. Driven from process(); state carried in the
+    // m_curUdpServer / m_lastUdpFile cursors below.
+    bool sendNextUDPPacket();
+    bool sendGlobGetSourcesUDPPacket(SafeMemFile& data, bool ext2Packet,
+                                     uint32 nFiles, uint32 nIncludedLargeFiles);
+    [[nodiscard]] bool isMaxFilesPerUDPServerPacketReached(uint32 nFiles,
+                                                           uint32 nIncludedLargeFiles) const;
+    void stopUDPRequests();
+
     // EntityList hooks — emit the queue's signals + run side-effects on add/remove.
     void onEntityAdded(PartFile* file) override;
     void onEntityRemoved(PartFile* file) override;
@@ -135,8 +175,14 @@ private:
     std::deque<TransferredData> m_averageDRList;  // 10-second averaging window
     uint32 m_udCounter = 0;
     uint32 m_lastUDPSourceRequestTime = 0;
-    uint32 m_lastServerSourceRequestTime = 0;
     uint32 m_lastKademliaFileRequest = 0;
+
+    // Global-UDP-source rotation cursors (port of CDownloadQueue members).
+    Server*   m_curUdpServer = nullptr;       // cur_udpserver — current pass cursor (non-owning)
+    PartFile* m_lastUdpFile = nullptr;        // m_lastfile — file cursor within the current server
+    uint32    m_lastUdpSearchTime = 0;        // m_lastudpsearchtime — 0 ⇒ start a new pass now
+    uint32    m_searchedServers = 0;          // m_iSearchedServers — servers covered this pass
+    uint32    m_requestsSentToServer = 0;     // m_cRequestsSentToServer — per-server batch counter
 };
 
 } // namespace eMule

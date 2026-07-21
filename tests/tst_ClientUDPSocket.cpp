@@ -2,8 +2,10 @@
 /// @brief Tests for ClientUDPSocket — client-to-client UDP.
 
 #include "TestHelpers.h"
+#include "app/AppContext.h"
 #include "net/ClientUDPSocket.h"
 #include "net/Packet.h"
+#include "stats/Statistics.h"
 #include "utils/ByteOrder.h"
 #include "utils/Opcodes.h"
 
@@ -25,6 +27,8 @@ private slots:
     void sendControlDataEmptyQueue();
     void sendPacketQueues();
     void signalConnections();
+    void receivesReservedProt_dispatchesInsteadOfDropping_data();
+    void receivesReservedProt_dispatchesInsteadOfDropping();
 };
 
 // ---------------------------------------------------------------------------
@@ -107,6 +111,59 @@ void tst_ClientUDPSocket::signalConnections()
     QVERIFY(reaskSpy.isValid());
     QVERIFY(kadSpy.isValid());
     QVERIFY(portTestSpy.isValid());
+}
+
+// ---------------------------------------------------------------------------
+// Test: a datagram with a reserved protocol header (OP_UDPRESERVEDPROT1 0xA3 /
+// OP_UDPRESERVEDPROT2 0xB2) is dispatched to the reserved-prot stub rather than
+// being silently dropped.
+//
+// Both bytes are obfuscation-transparent (isProtocolHeader), so they arrive in
+// the clear and used to fall through every case in onReadyRead() with no log and
+// no stat. The stub accounts the payload via Statistics::addDownDataOverheadOther,
+// which the old drop path never touched — so the overhead-packet counter is a
+// clean discriminator that the new dispatch branch ran.
+// ---------------------------------------------------------------------------
+
+void tst_ClientUDPSocket::receivesReservedProt_dispatchesInsteadOfDropping_data()
+{
+    QTest::addColumn<int>("protoByte");
+    QTest::newRow("prot1 (0xA3)") << static_cast<int>(OP_UDPRESERVEDPROT1);
+    QTest::newRow("prot2 (0xB2)") << static_cast<int>(OP_UDPRESERVEDPROT2);
+}
+
+void tst_ClientUDPSocket::receivesReservedProt_dispatchesInsteadOfDropping()
+{
+    QFETCH(int, protoByte);
+
+    Statistics stats;
+    theApp.statistics = &stats;
+
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+    const uint16 port = sock.connectedPort();
+    QVERIFY(port != 0);
+
+    QUdpSocket sender;
+    QVERIFY(sender.bind(QHostAddress::LocalHost, 0));
+
+    // [proto][opcode=0x99][6 payload bytes] → the stub sees size = len - 2 = 6.
+    QByteArray dgram;
+    dgram.append(static_cast<char>(protoByte));
+    dgram.append(static_cast<char>(0x99));
+    dgram.append("payld!", 6);
+    const uint64 expectedSize = 6;
+
+    QCOMPARE(stats.downDataOverheadOtherPackets(), static_cast<uint64>(0));
+    QCOMPARE(sender.writeDatagram(dgram, QHostAddress::LocalHost, port),
+             static_cast<qint64>(dgram.size()));
+
+    // Drive the receive; the stub increments the overhead counters (drop would not).
+    QTRY_COMPARE(stats.downDataOverheadOtherPackets(), static_cast<uint64>(1));
+    const uint64 gotBytes = stats.downDataOverheadOther();
+
+    theApp.statistics = nullptr; // detach before the object leaves scope
+    QCOMPARE(gotBytes, expectedSize);
 }
 
 QTEST_MAIN(tst_ClientUDPSocket)

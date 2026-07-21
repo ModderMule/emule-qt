@@ -199,6 +199,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_safeServerConnectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoConnectStaticOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useServerPrioritiesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_useUserSortedServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_deadServerRetriesSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_autoUpdateServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_smartLowIdCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1173,6 +1174,11 @@ QWidget* OptionsDialog::createServerPage()
     // "Use priority system"
     m_useServerPrioritiesCheck = new QCheckBox(tr("Use priority system"), miscGroup);
     miscLayout->addWidget(m_useServerPrioritiesCheck);
+
+    // "Use the manual (user-sorted) server order" — enables Move Up/Down in the
+    // server list and tries servers in that order at auto-connect (#24).
+    m_useUserSortedServerListCheck = new QCheckBox(tr("Use the manual server order (drag/Move Up-Down)"), miscGroup);
+    miscLayout->addWidget(m_useUserSortedServerListCheck);
 
     // "Set manually added servers to high priority"
     m_manualHighPrioCheck = new QCheckBox(tr("Set manually added servers to high priority"), miscGroup);
@@ -2384,39 +2390,24 @@ QWidget* OptionsDialog::createWebInterfacePage()
     layout->addStretch();
 
     // --- Enable/disable logic ---
-    auto updateWebEnabled = [this] {
-        bool on = m_webEnabledCheck->isChecked();
-        m_webRestApiCheck->setEnabled(on);
-        m_webGzipCheck->setEnabled(on);
-        m_webUPnPCheck->setEnabled(on);
-        m_webPortSpin->setEnabled(on);
-        m_webTemplateEdit->setEnabled(on);
-        m_webTemplateBrowseBtn->setEnabled(on);
-        m_webTemplateReloadBtn->setEnabled(on);
-        m_webSessionTimeoutSpin->setEnabled(on);
-        m_webHttpsCheck->setEnabled(on);
-        m_webCreateCertBtn->setEnabled(on && m_webHttpsCheck->isChecked());
-        m_webCertEdit->setEnabled(on && m_webHttpsCheck->isChecked());
-        m_webCertBrowseBtn->setEnabled(on && m_webHttpsCheck->isChecked());
-        m_webKeyEdit->setEnabled(on && m_webHttpsCheck->isChecked());
-        m_webKeyBrowseBtn->setEnabled(on && m_webHttpsCheck->isChecked());
-        m_webApiKeyEdit->setEnabled(on);
-        m_webAdminPasswordEdit->setEnabled(on);
-        m_webAdminHiLevCheck->setEnabled(on);
-        m_webGuestEnabledCheck->setEnabled(on);
-        m_webGuestPasswordEdit->setEnabled(on && m_webGuestEnabledCheck->isChecked());
-    };
-
-    connect(m_webEnabledCheck, &QCheckBox::toggled, this, [updateWebEnabled, this] {
-        updateWebEnabled();
+    // The web server (UI) and the REST API are independent checkboxes — neither
+    // greys the other. updateWebEnabledStates() only greys sub-controls that have
+    // no effect for the current selection. Anything that changes which controls
+    // are relevant (either top-level checkbox, HTTPS, guest) re-runs it.
+    connect(m_webEnabledCheck, &QCheckBox::toggled, this, [this] {
+        updateWebEnabledStates();
         markDirty();
     });
-    connect(m_webHttpsCheck, &QCheckBox::toggled, this, [updateWebEnabled, this] {
-        updateWebEnabled();
+    connect(m_webRestApiCheck, &QCheckBox::toggled, this, [this] {
+        updateWebEnabledStates();
         markDirty();
     });
-    connect(m_webGuestEnabledCheck, &QCheckBox::toggled, this, [updateWebEnabled, this] {
-        updateWebEnabled();
+    connect(m_webHttpsCheck, &QCheckBox::toggled, this, [this] {
+        updateWebEnabledStates();
+        markDirty();
+    });
+    connect(m_webGuestEnabledCheck, &QCheckBox::toggled, this, [this] {
+        updateWebEnabledStates();
         markDirty();
     });
 
@@ -2476,8 +2467,9 @@ QWidget* OptionsDialog::createWebInterfacePage()
         }
     });
 
-    // Mark dirty for all editable controls
-    for (auto* cb : {m_webRestApiCheck, m_webGzipCheck, m_webUPnPCheck, m_webAdminHiLevCheck})
+    // Mark dirty for all editable controls. m_webEnabledCheck and
+    // m_webRestApiCheck are wired above (they also refresh enable states).
+    for (auto* cb : {m_webGzipCheck, m_webUPnPCheck, m_webAdminHiLevCheck})
         connect(cb, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     for (auto* le : {m_webTemplateEdit, m_webCertEdit, m_webKeyEdit, m_webApiKeyEdit,
                      m_webAdminPasswordEdit, m_webGuestPasswordEdit})
@@ -2486,7 +2478,7 @@ QWidget* OptionsDialog::createWebInterfacePage()
         connect(sb, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
 
     // Initial state
-    updateWebEnabled();
+    updateWebEnabledStates();
 
     return page;
 }
@@ -3504,6 +3496,9 @@ void OptionsDialog::saveSettings()
     thePrefs.setDisableQueueList(m_disableQueueListCheck->isChecked());
     thePrefs.setUseAutoCompletion(m_useAutoCompletionCheck->isChecked());
     thePrefs.setUseOriginalIcons(m_useOriginalIconsCheck->isChecked());
+    // Keep the GUI's copy of this view-flag current so the server panel's manual-order
+    // display mode and Move Up/Down menu reflect the change immediately (#24).
+    thePrefs.setUseUserSortedServerList(m_useUserSortedServerListCheck->isChecked());
     thePrefs.setEnableIpcLog(m_enableIpcLogCheck->isChecked());
     thePrefs.setStartCoreWithConsole(m_startCoreWithConsoleCheck->isChecked());
     if (m_useOriginalIconsCheck->isChecked() != m_initialUseOriginalIcons) {
@@ -3614,6 +3609,8 @@ void OptionsDialog::saveSettings()
         req.append(m_useServerPrioritiesCheck->isChecked());
         req.append(QStringLiteral("addServersFromServer"));
         req.append(m_addServersFromServerCheck->isChecked());
+        req.append(QStringLiteral("useUserSortedServerList"));
+        req.append(m_useUserSortedServerListCheck->isChecked());
         req.append(QStringLiteral("addServersFromClients"));
         req.append(m_addServersFromClientsCheck->isChecked());
         req.append(QStringLiteral("deadServerRetries"));
@@ -4047,6 +4044,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setAutoConnectStaticOnly(m_autoConnectStaticOnlyCheck->isChecked());
         thePrefs.setUseServerPriorities(m_useServerPrioritiesCheck->isChecked());
         thePrefs.setAddServersFromServer(m_addServersFromServerCheck->isChecked());
+        thePrefs.setUseUserSortedServerList(m_useUserSortedServerListCheck->isChecked());
         thePrefs.setAddServersFromClients(m_addServersFromClientsCheck->isChecked());
         thePrefs.setDeadServerRetries(static_cast<uint32>(m_deadServerRetriesSpin->value()));
         thePrefs.setAutoUpdateServerList(m_autoUpdateServerListCheck->isChecked());
@@ -4246,6 +4244,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_autoConnectStaticOnlyCheck->setChecked(prefs.value(QStringLiteral("autoConnectStaticOnly")).toBool());
     m_useServerPrioritiesCheck->setChecked(prefs.value(QStringLiteral("useServerPriorities")).toBool());
     m_addServersFromServerCheck->setChecked(prefs.value(QStringLiteral("addServersFromServer")).toBool());
+    m_useUserSortedServerListCheck->setChecked(prefs.value(QStringLiteral("useUserSortedServerList")).toBool());
     m_addServersFromClientsCheck->setChecked(prefs.value(QStringLiteral("addServersFromClients")).toBool());
     m_deadServerRetriesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("deadServerRetries")).toInteger(1)));
     m_autoUpdateServerListCheck->setChecked(prefs.value(QStringLiteral("autoUpdateServerList")).toBool());
@@ -4361,29 +4360,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_webApiKeyEdit->setText(prefs.value(QStringLiteral("webServerApiKey")).toString());
     m_webAdminHiLevCheck->setChecked(prefs.value(QStringLiteral("webServerAdminAllowHiLevFunc")).toBool());
     m_webGuestEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerGuestEnabled")).toBool());
-    {
-        bool webOn = m_webEnabledCheck->isChecked();
-        m_webRestApiCheck->setEnabled(webOn);
-        m_webGzipCheck->setEnabled(webOn);
-        m_webUPnPCheck->setEnabled(webOn);
-        m_webPortSpin->setEnabled(webOn);
-        m_webTemplateEdit->setEnabled(webOn);
-        m_webTemplateBrowseBtn->setEnabled(webOn);
-        m_webTemplateReloadBtn->setEnabled(webOn);
-        m_webSessionTimeoutSpin->setEnabled(webOn);
-        m_webHttpsCheck->setEnabled(webOn);
-        bool httpsOn = webOn && m_webHttpsCheck->isChecked();
-        m_webCreateCertBtn->setEnabled(httpsOn);
-        m_webCertEdit->setEnabled(httpsOn);
-        m_webCertBrowseBtn->setEnabled(httpsOn);
-        m_webKeyEdit->setEnabled(httpsOn);
-        m_webKeyBrowseBtn->setEnabled(httpsOn);
-        m_webApiKeyEdit->setEnabled(webOn);
-        m_webAdminPasswordEdit->setEnabled(webOn);
-        m_webAdminHiLevCheck->setEnabled(webOn);
-        m_webGuestEnabledCheck->setEnabled(webOn);
-        m_webGuestPasswordEdit->setEnabled(webOn && m_webGuestEnabledCheck->isChecked());
-    }
+    updateWebEnabledStates();
 
     // Statistics page
     m_statsGraphUpdateSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("graphsUpdateSec")).toInteger(3)));
@@ -4512,6 +4489,7 @@ void OptionsDialog::fillDaemonSettingsFromPrefs()
     p.insert(QStringLiteral("autoConnectStaticOnly"), thePrefs.autoConnectStaticOnly());
     p.insert(QStringLiteral("useServerPriorities"), thePrefs.useServerPriorities());
     p.insert(QStringLiteral("addServersFromServer"), thePrefs.addServersFromServer());
+    p.insert(QStringLiteral("useUserSortedServerList"), thePrefs.useUserSortedServerList());
     p.insert(QStringLiteral("addServersFromClients"), thePrefs.addServersFromClients());
     p.insert(QStringLiteral("deadServerRetries"), static_cast<qint64>(thePrefs.deadServerRetries()));
     p.insert(QStringLiteral("autoUpdateServerList"), thePrefs.autoUpdateServerList());
@@ -4570,6 +4548,44 @@ QIcon OptionsDialog::makePadlockIcon()
 
     p.end();
     return QIcon(pix);
+}
+
+// ---------------------------------------------------------------------------
+// updateWebEnabledStates — grey Web Interface sub-controls that have no effect
+// for the current selection. The two top-level checkboxes (web UI + REST API)
+// are independent and always enabled; neither disables the other.
+// ---------------------------------------------------------------------------
+
+void OptionsDialog::updateWebEnabledStates()
+{
+    const bool webOn  = m_webEnabledCheck->isChecked();    // template web UI
+    const bool restOn = m_webRestApiCheck->isChecked();    // JSON REST API
+    const bool anyOn  = webOn || restOn;
+
+    // Shared server-level controls — relevant whenever either surface is served.
+    m_webPortSpin->setEnabled(anyOn);
+    m_webGzipCheck->setEnabled(anyOn);
+    m_webUPnPCheck->setEnabled(anyOn);
+    m_webHttpsCheck->setEnabled(anyOn);
+    const bool httpsOn = anyOn && m_webHttpsCheck->isChecked();
+    m_webCreateCertBtn->setEnabled(httpsOn);
+    m_webCertEdit->setEnabled(httpsOn);
+    m_webCertBrowseBtn->setEnabled(httpsOn);
+    m_webKeyEdit->setEnabled(httpsOn);
+    m_webKeyBrowseBtn->setEnabled(httpsOn);
+
+    // REST-only: the API key authenticates /api/v1/* (X-Api-Key).
+    m_webApiKeyEdit->setEnabled(restOn);
+
+    // Web-UI-only: template, session login and admin/guest accounts.
+    m_webTemplateEdit->setEnabled(webOn);
+    m_webTemplateBrowseBtn->setEnabled(webOn);
+    m_webTemplateReloadBtn->setEnabled(webOn);
+    m_webSessionTimeoutSpin->setEnabled(webOn);
+    m_webAdminPasswordEdit->setEnabled(webOn);
+    m_webAdminHiLevCheck->setEnabled(webOn);
+    m_webGuestEnabledCheck->setEnabled(webOn);
+    m_webGuestPasswordEdit->setEnabled(webOn && m_webGuestEnabledCheck->isChecked());
 }
 
 } // namespace eMule

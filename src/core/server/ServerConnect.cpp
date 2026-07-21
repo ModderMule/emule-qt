@@ -14,6 +14,7 @@
 #include "net/Packet.h"
 #include "protocol/Tag.h"
 #include "transfer/DownloadQueue.h"
+#include "upnp/UPnPManager.h"
 #include "utils/Log.h"
 
 #include <QHostAddress>
@@ -153,6 +154,12 @@ void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
     }
 
     m_serverList.setServerPosition(startAt);
+    // #24: the persistent m_servers order already reflects the user's manual
+    // arrangement (applied via the SetServerOrder IPC → ServerList::applyUserOrder
+    // when useUserSortedServerList is enabled in the GUI). sortByPreference() below
+    // is a *stable* sort, so that arrangement is preserved within each priority
+    // tier — the daemon/GUI-split equivalent of MFC's "GetUserSortedServers() then
+    // Sort()". No separate re-fetch step is needed here.
     if (m_config.useServerPriorities && prioSort)
         m_serverList.sortByPreference();
 
@@ -201,18 +208,52 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                 onConnectionFailed(socket, reason);
             });
 
+    // Parse server messages for [emDynIP], "server version X.Y" and ERROR/WARNING
+    // before display (#17), then re-emit the surviving text for the GUI.
     connect(socket, &ServerSocket::serverMessage, this,
-            &ServerConnect::serverMessageReceived);
+            [this, socket](const QString& msg) { onServerMessage(socket, msg); });
 
     connect(socket, &ServerSocket::loginReceived, this,
-            [this, socket](uint32 clientID, uint32 /*tcpFlags*/, uint32 serverReportedIP) {
-                onLoginReceived(socket, clientID, serverReportedIP);
+            [this, socket](uint32 clientID, uint32 tcpFlags, uint32 serverReportedIP) {
+                onLoginReceived(socket, clientID, tcpFlags, serverReportedIP);
             });
 
     connect(socket, &ServerSocket::foundSourcesReceived, this,
             [](const uint8* data, uint32 size, bool obfuscated) {
                 if (theApp.downloadQueue)
                     theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
+            });
+
+    // Servers a connected server advertises (OP_SERVERLIST). Gated on the pref,
+    // matching MFC (CServerSocket::ProcessPacket, GetAddServersFromServer()).
+    connect(socket, &ServerSocket::serverListReceived, this,
+            [](const uint8* data, uint32 size) {
+                if (theApp.serverList && thePrefs.addServersFromServer())
+                    theApp.serverList->addServersFromPacket(data, size);
+            });
+
+    // Learned server metadata (name/description/version — #15, user/file counts —
+    // #16) reaches only the socket's throwaway copy; wire it to the persistent list
+    // entry. MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:390-397,463-470.
+    connect(socket, &ServerSocket::serverIdentReceived, this,
+            [this, socket](const uint8* serverHash, uint32 /*ip*/, uint16 /*port*/,
+                           const QString& name, const QString& description) {
+                onServerIdent(socket, serverHash, name, description);
+            });
+
+    connect(socket, &ServerSocket::serverStatusReceived, this,
+            [this, socket](uint32 users, uint32 files) {
+                onServerStatus(socket, users, files);
+            });
+
+    // A dynIP server that resolves leaves stale duplicate entries sharing its
+    // address; collapse them (#18). MFC: CServerList::RemoveDuplicatesByAddress().
+    connect(socket, &ServerSocket::dynIPResolved, this,
+            [this, socket](uint32 /*ip*/, const QString& /*hostname*/) {
+                if (!theApp.serverList)
+                    return;
+                if (Server* entry = resolveListEntry(socket))
+                    theApp.serverList->removeDuplicatesByAddress(entry);
             });
 
     connect(socket, &ServerSocket::searchResultReceived,
@@ -236,8 +277,14 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                     uint8 byCryptOptions = cryptData[0];
                     const uint8* userHash = cryptData + 1;
                     if (client->hasValidHash()) {
-                        if (md4equ(client->userHash(), userHash))
+                        if (md4equ(client->userHash(), userHash)) {
                             client->setConnectOptions(byCryptOptions, true, false);
+                        } else {
+                            // Userhash mismatch — the real hash is unknown, so drop
+                            // all crypt-layer flags defensively (options=0, no
+                            // encryption). MFC: CServerSocket — ServerSocket.cpp:553-556.
+                            client->setConnectOptions(0, false, false);
+                        }
                     } else {
                         client->setUserHash(userHash);
                         client->setConnectOptions(byCryptOptions, true, false);
@@ -537,6 +584,15 @@ bool ServerConnect::sendUDPPacket(std::unique_ptr<Packet> packet, const Server& 
     return true;
 }
 
+bool ServerConnect::sendRawUDPPacket(const Server& host, uint16 specialPort,
+                                     const uint8* data, uint32 size)
+{
+    // Same connectivity gate as sendUDPPacket (ED2K or Kad).
+    if (theApp.isConnected() && m_udpSocket)
+        m_udpSocket->sendRawPacket(host, specialPort, data, size);
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Disconnect
 // ---------------------------------------------------------------------------
@@ -577,7 +633,18 @@ void ServerConnect::onRetryTimer()
 
 void ServerConnect::checkForTimeout()
 {
+    // #22: proactively top up connection-attempt slots while auto-connecting, so a
+    // slot freed without a failure/timeout event is refilled promptly. MFC calls
+    // this ~every second from CUploadQueue::Process — UploadQueue.cpp:921.
+    if (m_connecting && !m_singleConnecting)
+        tryAnotherConnectionRequest();
+
+    // #20: behind a proxy the connect handshake is slower — extend the per-attempt
+    // timeout to CONNECTION_TIMEOUT. MFC: CServerConnect::ConnectToServer() —
+    // ServerConnect.cpp:406-409.
     uint32 timeout = m_config.connectionTimeout;
+    if (thePrefs.proxySettings().useProxy)
+        timeout = std::max<uint32>(timeout, CONNECTION_TIMEOUT);
 
     const qint64 curTick = m_elapsedTimer.elapsed();
 
@@ -726,6 +793,11 @@ void ServerConnect::destroySocket(ServerSocket* socket)
 
 void ServerConnect::initLocalIP()
 {
+    // #25: MFC derives the local IP from getaddrinfo(gethostname()) (the OS "primary"
+    // address). The port keeps the Qt approach below (first non-loopback IPv4) on
+    // purpose: it is non-blocking and idiomatic, and getaddrinfo(gethostname()) often
+    // returns loopback/.local on macOS. On multi-homed hosts the two can pick
+    // different addresses — an accepted, low-impact divergence.
     m_localIP = 0;
 
     // Use bind address if configured
@@ -813,45 +885,46 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
 // Smart LowID check — onLoginReceived
 // ---------------------------------------------------------------------------
 
-void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint32 serverReportedIP)
+void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint32 tcpFlags,
+                                    uint32 serverReportedIP)
 {
-    setClientID(clientID);
+    // #14: the socket applied the server's capability flags only to its throwaway
+    // copy; push them (including the obfuscation bit the IDCHANGE handler OR-ed in
+    // for an obfuscated connection) to the persistent list entry.
+    applyServerFlags(socket, tcpFlags);
 
-    // MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:419, and note the
-    // ordering: setClientID() above already covered the HighID case, so this only
-    // has to handle the LowID one, where the server's view is all we have.
+    // Smart-LowID retry (#21): if a server hands us a LowID but we already saw a
+    // HighID from another server this run, disconnect and try the next one — up to
+    // twice, re-mapping our UPnP ports once on the first retry. A LowID that triggers
+    // a retry must NOT be committed as our client ID (a later server may give HighID).
+    // MFC: CServerSocket::ProcessPacket() OP_IDCHANGE — ServerSocket.cpp:326-350.
+    if (m_config.smartLowIdCheck) {
+        if (!eMule::isLowID(clientID)) {
+            m_smartIdState = 1;                       // saw a HighID this run
+        } else if (m_smartIdState > 0) {
+            const bool firstRetry = (m_smartIdState == 1);
+            ++m_smartIdState;
+            m_smartIdState = (m_smartIdState > 2) ? 0 : m_smartIdState;  // 1→2 retry, 2→0 retry+reset
+            if (firstRetry && theApp.upnpManager)
+                theApp.upnpManager->checkAndRefresh();  // one-shot UPnP re-map
+            if (!m_singleConnecting) {
+                logInfo(QStringLiteral("Smart LowID: got LowID from server, trying another"));
+                destroySocket(socket);
+                if (socket == m_connectedSocket) {
+                    m_connectedSocket = nullptr;
+                    m_connected = false;
+                }
+                m_connecting = true;
+                tryAnotherConnectionRequest();
+                return;                                // do NOT commit this LowID
+            }
+        }
+    }
+
+    // Commit the assigned ID (HighID, a LowID we are keeping, or a manual connect).
+    setClientID(clientID);
     if (eMule::isLowID(clientID) && serverReportedIP != 0)
         theApp.setPublicIP(serverReportedIP);
-
-    if (!m_config.smartLowIdCheck)
-        return;
-
-    if (!eMule::isLowID(clientID)) {
-        // Got a HighID — record that we've seen one
-        m_smartIdState = 1;
-        return;
-    }
-
-    // Got a LowID
-    if (m_smartIdState > 0) {
-        // We previously got a HighID but now LowID — try another server
-        if (m_smartIdState >= 2) {
-            m_smartIdState = 0; // give up after 2 retries
-            return;
-        }
-        ++m_smartIdState;
-        if (!m_singleConnecting) {
-            logInfo(QStringLiteral("Smart LowID: got LowID from server, trying another"));
-            // Disconnect and try the next server
-            destroySocket(socket);
-            if (socket == m_connectedSocket) {
-                m_connectedSocket = nullptr;
-                m_connected = false;
-            }
-            m_connecting = true;
-            tryAnotherConnectionRequest();
-        }
-    }
 }
 
 void ServerConnect::clearServerIdentity()
@@ -862,6 +935,136 @@ void ServerConnect::clearServerIdentity()
     // which is what makes clearing safe here.
     setClientID(0);
     theApp.setPublicIP(0);
+}
+
+// ---------------------------------------------------------------------------
+// Learned-metadata handlers (#14–#18) — push socket-copy state to the real entry
+// ---------------------------------------------------------------------------
+
+Server* ServerConnect::resolveListEntry(ServerSocket* socket)
+{
+    if (!socket || !theApp.serverList)
+        return nullptr;
+    Server* connected = socket->currentServer();   // the socket's throwaway copy
+    if (!connected)
+        return nullptr;
+    // Prefer an exact IP+TCP-port match; fall back to the address string (which
+    // handles a dynIP server whose numeric IP may have changed). MFC uses
+    // GetServerByAddress() (a DN+port lookup) for the same purpose.
+    Server* entry = theApp.serverList->findByIPTcp(
+        connected->ipAddress().toNetworkUint32(), connected->port());
+    if (!entry)
+        entry = theApp.serverList->findByAddress(connected->address(), connected->port());
+    return entry;
+}
+
+void ServerConnect::applyServerFlags(ServerSocket* socket, uint32 tcpFlags)
+{
+    Server* entry = resolveListEntry(socket);
+    if (!entry)
+        return;
+    entry->setTCPFlags(tcpFlags);
+    // On an obfuscated connection reset the tried-crypt marker and default the TCP
+    // obfuscation port to the server's own port when unset. MFC: ServerSocket.cpp:296-301.
+    if ((tcpFlags & SrvTcpFlag::TcpObfuscation) != 0) {
+        entry->setTriedCrypt(false);
+        if (entry->obfuscationPortTCP() == 0)
+            entry->setObfuscationPortTCP(entry->port());
+    }
+    theApp.serverList->notifyServerUpdated(entry);
+}
+
+void ServerConnect::onServerIdent(ServerSocket* socket, const uint8* serverHash,
+                                  const QString& name, const QString& description)
+{
+    Server* entry = resolveListEntry(socket);
+    if (!entry)
+        return;
+    if (!name.isEmpty())
+        entry->setName(name);
+    entry->setDescription(description);
+    // A hash of "****" (0x2A2A2A2A) marks an eFarm server. MFC: ServerSocket.cpp:463-470.
+    if (serverHash != nullptr
+        && serverHash[0] == 0x2A && serverHash[1] == 0x2A
+        && serverHash[2] == 0x2A && serverHash[3] == 0x2A
+        && !entry->version().startsWith(QLatin1String("eFarm"))) {
+        entry->setVersion(QStringLiteral("eFarm ") + entry->version());
+    }
+    theApp.serverList->notifyServerUpdated(entry);
+}
+
+void ServerConnect::onServerStatus(ServerSocket* socket, uint32 users, uint32 files)
+{
+    Server* entry = resolveListEntry(socket);
+    if (!entry)
+        return;
+    entry->setUsers(users);
+    entry->setFiles(files);
+    theApp.serverList->notifyServerUpdated(entry);
+}
+
+void ServerConnect::onServerMessage(ServerSocket* socket, const QString& message)
+{
+    // 16.40+ servers batch several lines into one OP_SERVERMESSAGE separated by
+    // CRLF. Parse each for control markers before display. MFC: CServerSocket::
+    // ProcessPacket() OP_SERVERMESSAGE — ServerSocket.cpp:176-231.
+    const QStringList lines = message.split(QLatin1String("\r\n"), Qt::SkipEmptyParts);
+    const QStringList& iter = lines.isEmpty() ? QStringList{message} : lines;
+
+    QStringList display;
+    for (const QString& line : iter) {
+        // "[emDynIP: host]" — refresh the server's dynamic DN and collapse any
+        // duplicate entries that now share it. Only accept a real DN, not an IP.
+        const qsizetype dynStart = line.indexOf(QLatin1String("[emDynIP:"));
+        if (dynStart >= 0) {
+            const qsizetype dynEnd = line.indexOf(QLatin1Char(']'), dynStart);
+            if (dynEnd > dynStart) {
+                QString dn = line.mid(dynStart + 9, dynEnd - (dynStart + 9)).trimmed();
+                const qsizetype colon = dn.indexOf(QLatin1Char(':'));
+                if (colon >= 0)
+                    dn = dn.left(colon);
+                if (!dn.isEmpty() && QHostAddress(dn).isNull()) {
+                    if (Server* entry = resolveListEntry(socket)) {
+                        if (entry->dynIP() != dn) {
+                            entry->setDynIP(dn);
+                            theApp.serverList->removeDuplicatesByAddress(entry);
+                            theApp.serverList->notifyServerUpdated(entry);
+                        }
+                    }
+                }
+            }
+            continue;   // control marker — do not echo
+        }
+
+        // "server version X.Y" — record the version, and still show the line.
+        const qsizetype verIdx = line.indexOf(QLatin1String("server version"), 0, Qt::CaseInsensitive);
+        if (verIdx >= 0) {
+            const QString ver = line.mid(verIdx + 14).trimmed();
+            if (!ver.isEmpty()) {
+                if (Server* entry = resolveListEntry(socket)) {
+                    entry->setVersion(ver);
+                    theApp.serverList->notifyServerUpdated(entry);
+                }
+            }
+            display << line;
+            continue;
+        }
+
+        // ERROR / WARNING — route to the proper log level and suppress the echo.
+        if (line.startsWith(QLatin1String("ERROR"), Qt::CaseInsensitive)) {
+            logError(QStringLiteral("Server message: %1").arg(line));
+            continue;
+        }
+        if (line.startsWith(QLatin1String("WARNING"), Qt::CaseInsensitive)) {
+            logWarning(QStringLiteral("Server message: %1").arg(line));
+            continue;
+        }
+
+        display << line;
+    }
+
+    if (!display.isEmpty())
+        emit serverMessageReceived(display.join(QLatin1String("\r\n")));
 }
 
 } // namespace eMule

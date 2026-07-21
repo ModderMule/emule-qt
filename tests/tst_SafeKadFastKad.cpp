@@ -41,6 +41,8 @@ private slots:
     void isBadNode_unverifiedIdChange_rejected();
     void trackProblematicNode_basic();
     void isProblematic_bannedFallthrough();
+    void onePerIP_port65535();
+    void banIP_evictsWhenFull();
     void shutdownCleanup_clearsAll();
     void safeKad_disabled_prefReturnsEarly();
 
@@ -48,6 +50,8 @@ private slots:
     void initialEstimate_isDefault();
     void addResponseTime_lowersEstimate();
     void addResponseTime_highRaisesEstimate();
+    void variancePadding_notCollapsed();
+    void churn_keepsUpdating();
     void capacityLimit_evictsOldest();
     void fastKad_shutdownCleanup_resetsState();
     void fastKad_disabled_prefReturnsEarly();
@@ -168,6 +172,44 @@ void tst_SafeKadFastKad::isProblematic_bannedFallthrough()
 }
 
 // ---------------------------------------------------------------------------
+// SafeKad — onePerIP boundary (S2): a node squatting on port 65535 must still
+// be caught by the one-node-per-IP scan.
+// ---------------------------------------------------------------------------
+
+void tst_SafeKadFastKad::onePerIP_port65535()
+{
+    SafeKad sk;
+    UInt128 id1 = makeID(6553);
+    UInt128 id2 = makeID(6554);
+
+    // Track a node on the maximum port
+    sk.trackNode(0x0A00000D, 65535, id1, true);
+
+    // A second node from the same IP on a different port must be rejected under onePerIP —
+    // the tracked :65535 entry has to fall inside the scan range (upper_bound, not lower).
+    QVERIFY(sk.isBadNode(0x0A00000D, 1234, id2, KADEMLIA_VERSION8_49b, true, true));
+}
+
+// ---------------------------------------------------------------------------
+// SafeKad — a ban must take effect even when the ban table is full (S3).
+// ---------------------------------------------------------------------------
+
+void tst_SafeKadFastKad::banIP_evictsWhenFull()
+{
+    SafeKad sk;
+
+    // Fill the ban table to capacity (kMaxBannedIPs == 1000).
+    for (uint32 i = 0; i < 1000; ++i)
+        sk.banIP(0x0B000000 + i);
+
+    // Banning one more IP must still succeed (evict the oldest ban to make room),
+    // otherwise an ID-flipper whose IP can't be banned is simply re-admitted.
+    const uint32 newIP = 0x0C123456;
+    sk.banIP(newIP);
+    QVERIFY(sk.isBanned(newIP));
+}
+
+// ---------------------------------------------------------------------------
 // SafeKad — cleanup
 // ---------------------------------------------------------------------------
 
@@ -219,10 +261,9 @@ void tst_SafeKadFastKad::initialEstimate_isDefault()
 {
     FastKad fk;
 
-    // Seeded with one 1000ms default entry → estimate should be around 1000ms
+    // Empty pool (no ctor placeholder) reports the 1000ms member-init default
     double est = fk.getEstMaxResponseTimeMs();
-    QVERIFY2(est > 500.0 && est <= 3000.0,
-             qPrintable(QStringLiteral("Initial estimate %1 ms out of expected range").arg(est)));
+    QCOMPARE(est, 1000.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +303,52 @@ void tst_SafeKadFastKad::addResponseTime_highRaisesEstimate()
 }
 
 // ---------------------------------------------------------------------------
+// FastKad — variance padding is dimensionally correct (F2). With a half-full
+// pool of fast samples, the missing slots (assumed slow @1000ms) must inflate
+// the variance so the estimate reflects real uncertainty. The old linear
+// padding (missingCount * 1000) collapsed this: 50@100ms yielded ~1290ms;
+// the correct squared padding yields ~1554ms.
+// ---------------------------------------------------------------------------
+
+void tst_SafeKadFastKad::variancePadding_notCollapsed()
+{
+    FastKad fk;
+
+    // 50 fast samples (100ms) → 50 real, 50 "missing" slots padded at 1000ms.
+    for (uint32 i = 1; i <= 50; ++i)
+        fk.addResponseTime(i, 100.0);
+
+    double est = fk.getEstMaxResponseTimeMs();
+    // Correct padding puts this well above the old ~1290ms; assert the fix's regime.
+    QVERIFY2(est > 1400.0 && est <= 3000.0,
+             qPrintable(QStringLiteral("Estimate %1 ms should be > 1400 with correct variance padding").arg(est)));
+}
+
+// ---------------------------------------------------------------------------
+// FastKad — the estimator keeps updating under heavy churn (F4). If the pool
+// is full and every entry is younger than the 5-min protect window, the old
+// code dropped new samples (estimator froze). The global-oldest fallback must
+// keep admitting them.
+// ---------------------------------------------------------------------------
+
+void tst_SafeKadFastKad::churn_keepsUpdating()
+{
+    FastKad fk;
+
+    // Fill the 100-slot pool with slow responses, then churn in 100 fresh fast ones.
+    // All entries are young (added rapidly), so only the global-oldest fallback lets the
+    // fast samples in — otherwise the pool stays all-slow and the estimate never drops.
+    for (uint32 i = 1; i <= 100; ++i)
+        fk.addResponseTime(i, 1000.0);
+    for (uint32 i = 101; i <= 200; ++i)
+        fk.addResponseTime(i, 50.0);
+
+    double est = fk.getEstMaxResponseTimeMs();
+    QVERIFY2(est < 500.0,
+             qPrintable(QStringLiteral("Estimate %1 ms should drop below 500 once fast samples are admitted").arg(est)));
+}
+
+// ---------------------------------------------------------------------------
 // FastKad — capacity
 // ---------------------------------------------------------------------------
 
@@ -289,7 +376,9 @@ void tst_SafeKadFastKad::fastKad_shutdownCleanup_resetsState()
         fk.addResponseTime(i, 200.0);
 
     fk.shutdownCleanup();
-    QCOMPARE(fk.getEstMaxResponseTimeMs(), 0.0);
+    // Restores the safe 1000ms default (not 0ms, which would collapse the timeout window
+    // if FastKad is re-enabled in-process).
+    QCOMPARE(fk.getEstMaxResponseTimeMs(), 1000.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -301,8 +390,8 @@ void tst_SafeKadFastKad::fastKad_disabled_prefReturnsEarly()
     thePrefs.setUseFastKad(false);
 
     FastKad fk;
-    // Constructor calls addResponseTime(0, 1000) which is a no-op when disabled
-    // So estimate stays at default member init value
+    // No ctor seed; the estimate stays at the 1000ms member-init default and
+    // addResponseTime() is a no-op while disabled.
     double initial = fk.getEstMaxResponseTimeMs();
 
     // Additional calls should also be no-ops

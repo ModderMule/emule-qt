@@ -95,10 +95,13 @@ public:
     // --- Kad result processing ---
 
     /// Add a Kademlia keyword search result. Builds a SearchFile internally.
+    /// metaTags carries the imported media/format metadata (FT_MEDIA_*,
+    /// TAG_FILEFORMAT, …) so the result shows bitrate/length/codec like an ED2K hit.
     void addKadKeywordResult(uint32 searchID, const uint8* fileHash,
                              const QString& name, uint64 size,
                              const QString& type, uint32 sources,
-                             uint32 completeSources);
+                             uint32 completeSources,
+                             const std::vector<Tag>& metaTags = {});
 
     // --- Queries ---
 

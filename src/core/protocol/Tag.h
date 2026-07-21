@@ -32,8 +32,15 @@ public:
     Tag(QByteArray name, uint32 value);
     Tag(QByteArray name, uint64 value);
     Tag(QByteArray name, const QString& value);
+    Tag(QByteArray name, float value);
     Tag(QByteArray name, QByteArray blobData);
     Tag(QByteArray name, const uint8* hash16);
+
+    // BSOB (Kad binary small object) — a distinct wire type from BLOB. Kad has
+    // no BLOB type, so BSOB must never be collapsed onto TAGTYPE_BLOB or it
+    // would be re-serialized as an (illegal) BLOB that official peers reject.
+    static Tag makeBsob(uint8 nameId, QByteArray data);
+    static Tag makeBsob(QByteArray name, QByteArray data);
 
     // Deserialization constructor (reads from stream)
     Tag(FileDataIO& data, bool optUTF8);
@@ -57,6 +64,7 @@ public:
     [[nodiscard]] bool isFloat() const;
     [[nodiscard]] bool isHash() const;
     [[nodiscard]] bool isBlob() const;
+    [[nodiscard]] bool isBsob() const;
 
     // Value access
     [[nodiscard]] uint32 intValue() const;

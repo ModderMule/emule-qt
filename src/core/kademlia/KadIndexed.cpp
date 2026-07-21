@@ -50,8 +50,10 @@ bool Indexed::addKeyword(const UInt128& keyID, const UInt128& sourceID,
     if (!entry)
         return false;
 
-    // Check global limits
-    if (m_totalIndexKeyword >= KADEMLIAMAXINDEX) {
+    // Global index ceiling. MFC caps the keyword index at KADEMLIAMAXENTRIES
+    // (60000), not KADEMLIAMAXINDEX (50000, which is the *per-keyword* cap
+    // below). Indexed.cpp:371.
+    if (m_totalIndexKeyword > KADEMLIAMAXENTRIES) {
         outLoad = 100;
         return false;
     }
@@ -72,10 +74,17 @@ bool Indexed::addKeyword(const UInt128& keyID, const UInt128& sourceID,
     if (it != m_keywords.end()) {
         keyHash = it->second;
 
-        // Back-pressure before the index saturates: once we are near the cap,
-        // stop accepting refreshes for keywords we already hold, so a hot
-        // keyword cannot crowd out everything else. MFC Indexed.cpp:407.
-        if (m_totalIndexKeyword > KADEMLIAMAXINDEX - 5000) {
+        // Per-keyword caps are keyed off *this keyword's* source count, not the
+        // global counter — otherwise one hot keyword could evict the whole index
+        // and its load %/back-pressure would be diluted across every other key.
+        const size_t perKeyCount = keyHash->mapSource.size();
+        // Hard per-keyword cap. MFC Indexed.cpp:393-398.
+        if (perKeyCount > KADEMLIAMAXINDEX) {
+            outLoad = 100;
+            return false;
+        }
+        // Back-pressure before this keyword saturates. MFC Indexed.cpp:402.
+        if (perKeyCount > KADEMLIAMAXINDEX - 5000) {
             outLoad = 100;
             return false;
         }
@@ -114,8 +123,11 @@ bool Indexed::addKeyword(const UInt128& keyID, const UInt128& sourceID,
         delete oldEntry;
 
         source->entryList.push_back(entry);
+        // Publishers throttle republishing of *this specific keyword* off this
+        // number, so it must be the per-keyword load, not the global index load.
+        // MFC Indexed.cpp:431,440.
         outLoad = static_cast<uint8>(
-            (m_totalIndexKeyword * 100) / KADEMLIAMAXINDEX);
+            (keyHash->mapSource.size() * 100) / KADEMLIAMAXINDEX);
         return true;
     }
 
@@ -130,7 +142,7 @@ bool Indexed::addKeyword(const UInt128& keyID, const UInt128& sourceID,
     ++m_totalIndexKeyword;
 
     outLoad = static_cast<uint8>(
-        (m_totalIndexKeyword * 100) / KADEMLIAMAXINDEX);
+        (keyHash->mapSource.size() * 100) / KADEMLIAMAXINDEX);
     return true;
 }
 
@@ -261,6 +273,12 @@ void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* sea
     }
 
     sender.flush();
+
+    // Expire stale index state opportunistically after a serve, as MFC does at
+    // the end of SendValidKeywordResult (Indexed.cpp:690). Rate-limited inside;
+    // runs under the lock we already hold (cleanLocked, not clean, to avoid
+    // re-locking the non-recursive m_mutex).
+    cleanLocked();
 }
 
 void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port,
@@ -310,6 +328,9 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
     }
 
     sender.flush();
+
+    // MFC runs Clean() at the end of SendValidSourceResult too (Indexed.cpp:766).
+    cleanLocked();
 }
 
 void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
@@ -611,15 +632,27 @@ void Indexed::readFile()
 void Indexed::clean()
 {
     QMutexLocker lock(&m_mutex);
+    cleanLocked();
+}
 
+void Indexed::cleanLocked()
+{
     time_t now = time(nullptr);
     if (now < m_nextClean)
         return;
     m_nextClean = now + kCleanInterval;
 
-    cleanIndex(m_keywords, now, m_totalIndexKeyword);
+    // Keywords: also prune each surviving entry's stale publisher IPs so the /24
+    // trust map shrinks without waiting for the whole entry to expire.
+    // MFC Indexed.cpp:303.
+    cleanIndex(m_keywords, now, m_totalIndexKeyword, [](Entry* e) {
+        if (e->isKeyEntry())
+            static_cast<KeyEntry*>(e)->cleanUpTrackedPublishers();
+    });
     cleanIndex(m_sources, now, m_totalIndexSource);
-    cleanIndex(m_notes, now, m_totalIndexNotes);
+    // Notes are deliberately not expired at runtime: MFC's SendValidNoteResult
+    // omits Clean(), and its Clean() only walks keywords + sources
+    // (Indexed.cpp:690,766). They are bounded by the per-file cap instead.
 }
 
 } // namespace eMule::kad

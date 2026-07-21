@@ -6,10 +6,16 @@
 #include "prefs/Preferences.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
+#include "server/ServerConnect.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
+#include "ipfilter/IPFilter.h"
+#include "protocol/Tag.h"
 #include "utils/SafeFile.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 
+#include <QDateTime>
 #include <QSignalSpy>
 #include <QTest>
 #include <QFile>
@@ -68,6 +74,19 @@ private slots:
     void statusResponse_challengeMismatchIgnored();
     void statusResponse_unknownSenderIgnored();
     void statusResponse_defaultObfuscationPorts();
+
+    // OP_SERVERLIST parsing
+    void serverListPacket_addsServers();
+    void serverListPacket_rejectsTruncated();
+
+    // OP_SERVER_DESC_RES parsing
+    void descResponse_taggedRefresh();
+    void descResponse_wrongChallengeIgnored();
+    void descResponse_oldFormat();
+
+    // server.met write header
+    void serverMet_writeHeaderIsE0();
+
     void findByAddress_found();
     void findByAddress_notFound();
     void findByAddress_dynIP();
@@ -116,6 +135,21 @@ private slots:
 
     // Index adjustment after removal
     void removal_doesNotCorruptRoundRobin();
+
+    // Divergence-audit follow-ups (#11, #13, #18, #24, #29, #30, #33, #34)
+    void addServer_ipFilterRejects();                  // #11
+    void addTagFromFile_stPortDoesNotOverridePort();   // #13
+    void removeDuplicatesByAddress_collapses();        // #18
+    void applyUserOrder_reordersList();                // #24
+    void isGoodServerIP_honorsFilterLANIPs();          // #29
+    void addDuplicate_resetsFailedCount();             // #30
+    void moveServerDown_toBottom();                    // #33
+    void getSuccServer_nonWrapping();                  // #34
+    void getServerByIP_ipOnly();                       // #34
+
+    // Obfuscated stat crypt-ping (port+12) — serverStats() two-branch state machine
+    void serverStats_sendsObfuscatedCryptPingFirst();
+    void serverStats_fallsBackToPlaintextWhenPending();
 };
 
 // ---------------------------------------------------------------------------
@@ -1030,6 +1064,470 @@ void tst_ServerList::statusResponse_defaultObfuscationPorts()
 
     QCOMPARE(s->obfuscationPortTCP(), quint16{4661});
     QCOMPARE(s->obfuscationPortUDP(), quint16{4673});
+}
+
+// ---------------------------------------------------------------------------
+// OP_SERVERLIST (0x32) parsing — ServerList::addServersFromPacket
+// ---------------------------------------------------------------------------
+
+// Build an OP_SERVERLIST body: uint8 count, then count * (ip[4] network order, port[2]).
+static QByteArray makeServerListBody(const std::vector<std::pair<uint32, uint16>>& entries,
+                                     int overrideCount = -1)
+{
+    QByteArray b;
+    b.append(static_cast<char>(overrideCount >= 0 ? overrideCount
+                                                   : static_cast<int>(entries.size())));
+    for (const auto& [ipNet, port] : entries) {
+        char tmp[6];
+        pokeUInt32(tmp, ipNet);
+        pokeUInt16(tmp + 4, port);
+        b.append(tmp, 6);
+    }
+    return b;
+}
+
+void tst_ServerList::serverListPacket_addsServers()
+{
+    ServerList list;
+    QCOMPARE(list.serverCount(), size_t{0});
+
+    const uint32 ip1 = Address::fromString(QStringLiteral("81.82.83.84")).toNetworkUint32();
+    const uint32 ip2 = Address::fromString(QStringLiteral("91.92.93.94")).toNetworkUint32();
+
+    const QByteArray body = makeServerListBody({{ip1, 4661}, {ip2, 5000}});
+    list.addServersFromPacket(reinterpret_cast<const uint8*>(body.constData()),
+                              static_cast<uint32>(body.size()));
+
+    QCOMPARE(list.serverCount(), size_t{2});
+    QVERIFY(list.findByIPTcp(ip1, 4661) != nullptr);
+    QVERIFY(list.findByIPTcp(ip2, 5000) != nullptr);
+}
+
+void tst_ServerList::serverListPacket_rejectsTruncated()
+{
+    ServerList list;
+
+    // Header claims 3 servers, but only one entry is present (13 bytes; a valid
+    // 3-server packet needs 1 + 3*6 = 19). The bounds check must reject it whole.
+    const uint32 ip1 = Address::fromString(QStringLiteral("81.82.83.84")).toNetworkUint32();
+    const QByteArray body = makeServerListBody({{ip1, 4661}}, /*overrideCount*/ 3);
+    QCOMPARE(body.size(), qsizetype{7});
+
+    list.addServersFromPacket(reinterpret_cast<const uint8*>(body.constData()),
+                              static_cast<uint32>(body.size()));
+
+    QCOMPARE(list.serverCount(), size_t{0});
+}
+
+// ---------------------------------------------------------------------------
+// OP_SERVER_DESC_RES (0xA3) parsing — ServerList::processDescResponse
+// ---------------------------------------------------------------------------
+
+// Build a new-format (tagged) desc-res body: uint32 challenge, uint32 tagCount, tags.
+static QByteArray makeTaggedDescBody(uint32 challenge, const QString& name,
+                                     const QString& desc, const QString& version)
+{
+    SafeMemFile f;
+    f.writeUInt32(challenge);
+    f.writeUInt32(3);
+    Tag(ST_SERVERNAME, name).writeNewEd2kTag(f, UTF8Mode::OptBOM);
+    Tag(ST_DESCRIPTION, desc).writeNewEd2kTag(f, UTF8Mode::OptBOM);
+    Tag(ST_VERSION, version).writeNewEd2kTag(f, UTF8Mode::OptBOM);
+    return f.buffer();
+}
+
+void tst_ServerList::descResponse_taggedRefresh()
+{
+    ServerList list;
+    auto srv = makeServer(0x08080808, 4661, QStringLiteral("Old Name"));
+    srv->setDescription(QStringLiteral("Old Desc"));
+    Server* s = list.addServer(std::move(srv));
+    QVERIFY(s != nullptr);
+
+    // Low 16 bits must equal INV_SERV_DESC_LEN so the new format is recognized.
+    const uint32 challenge = (0x1234u << 16) | INV_SERV_DESC_LEN;
+    s->setDescReqChallenge(challenge);
+
+    const QByteArray body = makeTaggedDescBody(challenge, QStringLiteral("New Name"),
+                                               QStringLiteral("New Desc"),
+                                               QStringLiteral("17.15"));
+    list.processDescResponse(reinterpret_cast<const uint8*>(body.constData()),
+                             static_cast<uint32>(body.size()),
+                             udpSenderFor(0x08080808, 4661));
+
+    // A refresh must OVERWRITE the previously-set name/description (unlike load,
+    // which keeps existing values) and clear the outstanding challenge.
+    QCOMPARE(s->name(), QStringLiteral("New Name"));
+    QCOMPARE(s->description(), QStringLiteral("New Desc"));
+    QCOMPARE(s->version(), QStringLiteral("17.15"));
+    QCOMPARE(s->descReqChallenge(), 0u);
+}
+
+void tst_ServerList::descResponse_wrongChallengeIgnored()
+{
+    ServerList list;
+    auto srv = makeServer(0x08080808, 4661, QStringLiteral("Keep Name"));
+    Server* s = list.addServer(std::move(srv));
+
+    const uint32 expected = (0x1234u << 16) | INV_SERV_DESC_LEN;
+    s->setDescReqChallenge(expected);
+
+    // Same format marker, different challenge — an unsolicited reply we ignore.
+    const uint32 wrong = (0x9999u << 16) | INV_SERV_DESC_LEN;
+    const QByteArray body = makeTaggedDescBody(wrong, QStringLiteral("Evil Name"),
+                                               QStringLiteral("Evil Desc"),
+                                               QStringLiteral("0.1"));
+    list.processDescResponse(reinterpret_cast<const uint8*>(body.constData()),
+                             static_cast<uint32>(body.size()),
+                             udpSenderFor(0x08080808, 4661));
+
+    QCOMPARE(s->name(), QStringLiteral("Keep Name"));  // unchanged
+    QCOMPARE(s->descReqChallenge(), expected);         // not cleared
+}
+
+void tst_ServerList::descResponse_oldFormat()
+{
+    ServerList list;
+    auto srv = makeServer(0x08080808, 4661, QStringLiteral("Old Name"));
+    Server* s = list.addServer(std::move(srv));
+
+    // Legacy format: two length-prefixed strings, no challenge. The first two
+    // bytes are the name length (11), which is not INV_SERV_DESC_LEN.
+    SafeMemFile f;
+    f.writeString(QStringLiteral("Legacy Name"), UTF8Mode::None);
+    f.writeString(QStringLiteral("Legacy Desc"), UTF8Mode::None);
+    const QByteArray body = f.buffer();
+
+    list.processDescResponse(reinterpret_cast<const uint8*>(body.constData()),
+                             static_cast<uint32>(body.size()),
+                             udpSenderFor(0x08080808, 4661));
+
+    QCOMPARE(s->name(), QStringLiteral("Legacy Name"));
+    QCOMPARE(s->description(), QStringLiteral("Legacy Desc"));
+}
+
+// ---------------------------------------------------------------------------
+// server.met write header (#6) — must be 0xE0 for stock-eMule interop
+// ---------------------------------------------------------------------------
+
+void tst_ServerList::serverMet_writeHeaderIsE0()
+{
+    TempDir tmp;
+    const QString metPath = tmp.filePath(QStringLiteral("server.met"));
+
+    ServerList list;
+    list.addServer(makeServer(0x08080808, 4661, QStringLiteral("S1")));
+    QVERIFY(list.saveServerMet(metPath));
+
+    QFile f(metPath);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QByteArray head = f.read(1);
+    QCOMPARE(head.size(), qsizetype{1});
+    QCOMPARE(static_cast<uint8>(head[0]), uint8{0xE0});
+}
+
+// ---------------------------------------------------------------------------
+// Divergence-audit follow-ups
+// ---------------------------------------------------------------------------
+
+// #11 — a blocklisted server IP must be rejected by addServer when
+// filterServerByIP is enabled (previously the IP filter was never consulted).
+void tst_ServerList::addServer_ipFilterRejects()
+{
+    const uint32 ipNet = Address::fromString(QStringLiteral("5.6.7.8")).toNetworkUint32();
+    const uint32 ipHost = ntohl(ipNet);
+
+    IPFilter filter;
+    filter.addIPRange(ipHost, ipHost, 0 /*most restrictive level*/, "audit test block");
+
+    IPFilter* savedFilter = theApp.ipFilter;
+    const bool savedPref = thePrefs.filterServerByIP();
+    theApp.ipFilter = &filter;
+    thePrefs.setFilterServerByIP(true);
+
+    {
+        ServerList list;
+        auto* blocked = list.addServer(makeServer(ipNet, 4661));
+        QVERIFY(blocked == nullptr);
+        QCOMPARE(list.serverCount(), size_t{0});
+
+        // A different, unfiltered IP still adds fine.
+        const uint32 okNet = Address::fromString(QStringLiteral("9.9.9.9")).toNetworkUint32();
+        QVERIFY(list.addServer(makeServer(okNet, 4661)) != nullptr);
+    }
+
+    theApp.ipFilter = savedFilter;
+    thePrefs.setFilterServerByIP(savedPref);
+}
+
+// #13 — an ST_PORT tag in a server.met entry must NOT override the authoritative
+// port from the entry header (defends against a crafted list redirecting the port).
+void tst_ServerList::addTagFromFile_stPortDoesNotOverridePort()
+{
+    const uint16 headerPort = 4661;
+    const uint16 bogusTagPort = 6667;
+
+    SafeMemFile f;
+    f.writeUInt32(Address::fromString(QStringLiteral("8.8.8.8")).toNetworkUint32());
+    f.writeUInt16(headerPort);
+    f.writeUInt32(1);  // one tag
+    Tag(ST_PORT, static_cast<uint32>(bogusTagPort)).writeNewEd2kTag(f, UTF8Mode::None);
+
+    const QByteArray body = f.buffer();
+    SafeMemFile rf(body);
+    Server s(rf, true);
+
+    QCOMPARE(s.port(), headerPort);        // header wins
+    QVERIFY(s.port() != bogusTagPort);     // tag ignored
+}
+
+// #18 — after a dynIP server resolves, duplicate entries sharing its address+port
+// are collapsed, keeping the excepted one.
+void tst_ServerList::removeDuplicatesByAddress_collapses()
+{
+    ServerList list;
+    // Three dynIP entries with the same address/port, plus one unrelated server.
+    auto* keep = list.addServer(makeDynServer(QStringLiteral("dyn.example.com"), 4661, QStringLiteral("Keep")));
+    // isDuplicate blocks identical adds, so build the duplicates via distinct names
+    // by adding directly (dedup is by address+port, so these would be rejected) —
+    // instead insert unique-port dyn entries then rename to force the address clash.
+    QVERIFY(keep != nullptr);
+
+    // Add a distinct dynIP server that we will alias to the same address to simulate
+    // duplicates arriving from different sources.
+    auto extra = makeDynServer(QStringLiteral("other.example.com"), 4661, QStringLiteral("Dup"));
+    Server* dup = list.addServer(std::move(extra));
+    QVERIFY(dup != nullptr);
+    dup->setDynIP(QStringLiteral("dyn.example.com"));   // now shares keep's address+port
+
+    const uint32 unrelatedNet = Address::fromString(QStringLiteral("9.9.9.9")).toNetworkUint32();
+    QVERIFY(list.addServer(makeServer(unrelatedNet, 4661, QStringLiteral("Other"))) != nullptr);
+
+    QCOMPARE(list.serverCount(), size_t{3});
+    list.removeDuplicatesByAddress(keep);
+
+    QCOMPARE(list.serverCount(), size_t{2});             // the dup is gone
+    QVERIFY(list.findByAddress(QStringLiteral("dyn.example.com"), 4661) == keep);
+    QVERIFY(list.findByIPTcp(unrelatedNet, 4661) != nullptr);
+}
+
+// #24 — applyUserOrder reorders m_servers to a supplied ip:port sequence, with any
+// unlisted server appended stably, and round-trips through server.met.
+void tst_ServerList::applyUserOrder_reordersList()
+{
+    const uint32 a = Address::fromString(QStringLiteral("1.1.1.1")).toNetworkUint32();
+    const uint32 b = Address::fromString(QStringLiteral("2.2.2.2")).toNetworkUint32();
+    const uint32 c = Address::fromString(QStringLiteral("3.3.3.3")).toNetworkUint32();
+
+    ServerList list;
+    list.addServer(makeServer(a, 4661, QStringLiteral("A")));
+    list.addServer(makeServer(b, 4661, QStringLiteral("B")));
+    list.addServer(makeServer(c, 4661, QStringLiteral("C")));
+
+    // Ask for C, A first; B is unlisted and must end up last.
+    list.applyUserOrder({{c, 4661}, {a, 4661}});
+
+    QCOMPARE(list.serverCount(), size_t{3});
+    QCOMPARE(list.serverAt(0)->name(), QStringLiteral("C"));
+    QCOMPARE(list.serverAt(1)->name(), QStringLiteral("A"));
+    QCOMPARE(list.serverAt(2)->name(), QStringLiteral("B"));
+
+    // Order persists through a save/reload (saveServerMet writes m_servers in order).
+    TempDir tmp;
+    const QString metPath = tmp.filePath(QStringLiteral("server.met"));
+    QVERIFY(list.saveServerMet(metPath));
+
+    ServerList reloaded;
+    QVERIFY(reloaded.addServerMetToList(metPath, /*merge*/false));
+    QCOMPARE(reloaded.serverAt(0)->name(), QStringLiteral("C"));
+    QCOMPARE(reloaded.serverAt(1)->name(), QStringLiteral("A"));
+    QCOMPARE(reloaded.serverAt(2)->name(), QStringLiteral("B"));
+}
+
+// #29 — isGoodServerIP (via addServer) accepts a private/LAN IP only when the
+// filterLANIPs pref is off.
+void tst_ServerList::isGoodServerIP_honorsFilterLANIPs()
+{
+    const uint32 lanNet = Address::fromString(QStringLiteral("192.168.1.50")).toNetworkUint32();
+    const bool savedPref = thePrefs.filterLANIPs();
+
+    thePrefs.setFilterLANIPs(true);
+    {
+        ServerList list;
+        QVERIFY(list.addServer(makeServer(lanNet, 4661)) == nullptr);  // rejected
+    }
+
+    thePrefs.setFilterLANIPs(false);
+    {
+        ServerList list;
+        QVERIFY(list.addServer(makeServer(lanNet, 4661)) != nullptr);  // accepted
+    }
+
+    thePrefs.setFilterLANIPs(savedPref);
+}
+
+// #30 — re-announcing a duplicate server revives it by resetting its failed count.
+void tst_ServerList::addDuplicate_resetsFailedCount()
+{
+    ServerList list;
+    Server* s = list.addServer(makeServer(0x08080808, 4661));
+    QVERIFY(s != nullptr);
+    s->incFailedCount();
+    s->incFailedCount();
+    QCOMPARE(s->failedCount(), uint32{2});
+
+    // A duplicate add is rejected (returns nullptr) but must reset the live entry.
+    QVERIFY(list.addServer(makeServer(0x08080808, 4661)) == nullptr);
+    QCOMPARE(list.serverCount(), size_t{1});
+    QCOMPARE(s->failedCount(), uint32{0});
+}
+
+// #33 — moveServerDown relocates a server to the bottom of the list.
+void tst_ServerList::moveServerDown_toBottom()
+{
+    const uint32 a = Address::fromString(QStringLiteral("1.1.1.1")).toNetworkUint32();
+    const uint32 b = Address::fromString(QStringLiteral("2.2.2.2")).toNetworkUint32();
+    const uint32 c = Address::fromString(QStringLiteral("3.3.3.3")).toNetworkUint32();
+
+    ServerList list;
+    Server* sa = list.addServer(makeServer(a, 4661, QStringLiteral("A")));
+    list.addServer(makeServer(b, 4661, QStringLiteral("B")));
+    list.addServer(makeServer(c, 4661, QStringLiteral("C")));
+
+    list.moveServerDown(sa);
+    QCOMPARE(list.serverAt(0)->name(), QStringLiteral("B"));
+    QCOMPARE(list.serverAt(1)->name(), QStringLiteral("C"));
+    QCOMPARE(list.serverAt(2)->name(), QStringLiteral("A"));
+
+    // Moving the already-last server is a no-op.
+    list.moveServerDown(sa);
+    QCOMPARE(list.serverAt(2)->name(), QStringLiteral("A"));
+}
+
+// #34 — getSuccServer does NOT wrap (returns nullptr past the tail); getServerByIP
+// matches on IP regardless of port.
+void tst_ServerList::getSuccServer_nonWrapping()
+{
+    const uint32 a = Address::fromString(QStringLiteral("1.1.1.1")).toNetworkUint32();
+    const uint32 b = Address::fromString(QStringLiteral("2.2.2.2")).toNetworkUint32();
+
+    ServerList list;
+    Server* sa = list.addServer(makeServer(a, 4661, QStringLiteral("A")));
+    Server* sb = list.addServer(makeServer(b, 4661, QStringLiteral("B")));
+
+    QCOMPARE(list.getSuccServer(nullptr), sa);   // null → first
+    QCOMPARE(list.getSuccServer(sa), sb);        // A → B
+    QVERIFY(list.getSuccServer(sb) == nullptr);  // past the tail → nullptr (no wrap)
+}
+
+void tst_ServerList::getServerByIP_ipOnly()
+{
+    const uint32 a = Address::fromString(QStringLiteral("1.1.1.1")).toNetworkUint32();
+
+    ServerList list;
+    Server* sa = list.addServer(makeServer(a, 4661, QStringLiteral("A")));
+
+    QCOMPARE(list.getServerByIP(a), sa);
+    QVERIFY(list.getServerByIP(Address::fromString(QStringLiteral("2.2.2.2")).toNetworkUint32())
+            == nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Obfuscated stat crypt-ping — serverStats() two-branch state machine
+//
+// serverStats() probes a server on port+12 with a raw random challenge sent in
+// the clear (the server encrypts its reply with that challenge as the RC4 base
+// key). Only if that goes unanswered does it fall back, 20s later, to a plaintext
+// OP_GLOBSERVSTATREQ on port+4. MFC: CServerList::ServerStats() — ServerList.cpp:273-316.
+// ---------------------------------------------------------------------------
+
+namespace {
+/// Brings theApp to a "connected" state so serverStats() runs its full body:
+/// installs a ServerConnect (whose send calls no-op without a UDP socket) and a
+/// running Kad instance made connected via setLastContact(), and sets publicIP +
+/// the crypt-layer pref. All globals are restored on scope exit. Satisfies
+/// theApp.isConnected() through the Kad arm the same way
+/// tst_Kademlia::appContextIsConnected_satisfiedByKadAlone does.
+class CryptPingFixture {
+public:
+    CryptPingFixture(ServerList& list, uint32 publicIP, bool cryptEnabled)
+        : m_savedSC(theApp.serverConnect)
+        , m_savedSL(theApp.serverList)
+        , m_savedIP(theApp.publicIP(true))
+        , m_savedCrypt(thePrefs.cryptLayerSupported())
+        , m_sc(list)
+    {
+        theApp.serverList = &list;
+        theApp.serverConnect = &m_sc;
+        theApp.setPublicIP(publicIP);
+        thePrefs.setCryptLayerSupported(cryptEnabled);
+        m_kad.start();
+        m_kad.getPrefs()->setLastContact();   // Kad "connected" → theApp.isConnected()
+    }
+    ~CryptPingFixture()
+    {
+        m_kad.stop();                          // deletes Kad components, stops searches
+        thePrefs.setCryptLayerSupported(m_savedCrypt);
+        theApp.setPublicIP(m_savedIP);
+        theApp.serverConnect = m_savedSC;
+        theApp.serverList = m_savedSL;
+    }
+    CryptPingFixture(const CryptPingFixture&) = delete;
+    CryptPingFixture& operator=(const CryptPingFixture&) = delete;
+private:
+    ServerConnect* m_savedSC;
+    ServerList*    m_savedSL;
+    uint32         m_savedIP;
+    bool           m_savedCrypt;
+    ServerConnect  m_sc;
+    kad::Kademlia  m_kad;
+};
+} // namespace
+
+void tst_ServerList::serverStats_sendsObfuscatedCryptPingFirst()
+{
+    ServerList list;
+    CryptPingFixture fx(list, /*publicIP*/ 0x04030201u, /*crypt*/ true);
+    QVERIFY(theApp.isConnected());
+
+    auto* srv = list.addServer(makeServer(0x08080808, 5555, QStringLiteral("cryptsrv")));
+    QVERIFY(srv != nullptr);
+    QVERIFY(!srv->cryptPingReplyPending());
+    QCOMPARE(srv->challenge(), 0u);
+
+    const auto before = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
+    list.serverStats();
+
+    // Obfuscated branch taken: pending is armed with a non-zero challenge, and the
+    // server is backdated to come due again in ~20s so the plaintext fallback fires.
+    QVERIFY(srv->cryptPingReplyPending());
+    QVERIFY(srv->challenge() != 0);
+    const uint32 dueAt = srv->lastPingedTime() + static_cast<uint32>(UDPSERVSTATREASKTIME);
+    QVERIFY(dueAt >= before + 19 && dueAt <= before + 22);
+    // The free obfuscated probe must NOT bump the failure counter.
+    QCOMPARE(srv->failedCount(), 0u);
+}
+
+void tst_ServerList::serverStats_fallsBackToPlaintextWhenPending()
+{
+    ServerList list;
+    CryptPingFixture fx(list, /*publicIP*/ 0x04030201u, /*crypt*/ true);
+    QVERIFY(theApp.isConnected());
+
+    auto* srv = list.addServer(makeServer(0x08080808, 5555, QStringLiteral("cryptsrv")));
+    QVERIFY(srv != nullptr);
+    // Simulate an obfuscated probe that was already sent and never answered: pending
+    // is still set and the server is due now.
+    srv->setCryptPingReplyPending(true);
+    srv->setLastPingedTime(0);
+
+    list.serverStats();
+
+    // Plaintext fallback: pending cleared, the 0x55AA<rand16> challenge convention,
+    // and the failure counter bumped (a real, countable stat request).
+    QVERIFY(!srv->cryptPingReplyPending());
+    QCOMPARE(srv->challenge() & 0xFFFF0000u, 0x55AA0000u);
+    QCOMPARE(srv->failedCount(), 1u);
 }
 
 QTEST_MAIN(tst_ServerList)

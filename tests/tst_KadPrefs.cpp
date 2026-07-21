@@ -38,6 +38,7 @@ private slots:
     void getUDPVerifyKey_nonZero();
     void getUDPVerifyKey_deterministic();
     void statsFirewalledRatio_withSamples();
+    void statsFirewalledRatio_belowMinSample();
     void statsFirewalledRatio_noData();
 };
 
@@ -252,13 +253,28 @@ void tst_KadPrefs::statsFirewalledRatio_withSamples()
     TempDir tmp;
     KadPrefs prefs(tmp.path());
 
-    prefs.statsIncUDPFirewalledNodes(true);
-    prefs.statsIncUDPFirewalledNodes(true);
-    prefs.statsIncUDPFirewalledNodes(false);
+    // The ratio needs a minimum sample of open nodes (>10) before it is trusted.
+    for (int i = 0; i < 3; ++i)
+        prefs.statsIncUDPFirewalledNodes(true);   // firewalled
+    for (int i = 0; i < 12; ++i)
+        prefs.statsIncUDPFirewalledNodes(false);  // open
 
-    // 2 firewalled out of 3 total
+    // 3 firewalled out of 15 total.
     float ratio = prefs.statsGetFirewalledRatio(true);
-    QVERIFY(qFuzzyCompare(ratio, 2.0f / 3.0f));
+    QVERIFY(qFuzzyCompare(ratio, 3.0f / 15.0f));
+}
+
+void tst_KadPrefs::statsFirewalledRatio_belowMinSample()
+{
+    // Fewer than 11 open nodes: the ratio is just noise and must read 0.
+    TempDir tmp;
+    KadPrefs prefs(tmp.path());
+
+    prefs.statsIncUDPFirewalledNodes(true);
+    prefs.statsIncUDPFirewalledNodes(true);
+    prefs.statsIncUDPFirewalledNodes(false); // only 1 open node
+
+    QCOMPARE(prefs.statsGetFirewalledRatio(true), 0.0f);
 }
 
 void tst_KadPrefs::statsFirewalledRatio_noData()

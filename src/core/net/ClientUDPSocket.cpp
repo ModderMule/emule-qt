@@ -273,6 +273,13 @@ void ClientUDPSocket::onReadyRead()
                                        static_cast<uint32>(decompressed.size()),
                                        senderEP, false, 0);
             }
+        } else if (protoByte == OP_UDPRESERVEDPROT1 || protoByte == OP_UDPRESERVEDPROT2) {
+            // Reserved UDP protocol headers (0xA3 / 0xB2). Obfuscation-transparent
+            // (see isProtocolHeader in EncryptedDatagramSocket.cpp), so they always
+            // arrive in the clear. No payload semantics are defined yet — dispatch to
+            // a named stub instead of dropping them silently.
+            processReservedProtPacket(protoByte, buf + 2, static_cast<uint32>(bufLen - 2),
+                                      buf[1], senderIP, senderPort);
         } else {
             // May be encrypted — use our userHash and kadID for decryption
             auto userHash = thePrefs.userHash();
@@ -417,6 +424,26 @@ QByteArray ClientUDPSocket::decompressKadPayload(const uint8* data, int len)
     } while (result == Z_BUF_ERROR && outSize < kMaxDecompressed);
 
     return {};
+}
+
+// ---------------------------------------------------------------------------
+// Reserved UDP protocols (0xA3 / 0xB2) — receive-side dispatch stub
+// ---------------------------------------------------------------------------
+
+bool ClientUDPSocket::processReservedProtPacket(uint8 protByte, const uint8* /*packet*/, uint32 size,
+                                                uint8 opcode, uint32 senderIP, uint16 senderPort)
+{
+    if (auto* stats = theApp.statistics)
+        stats->addDownDataOverheadOther(size);
+
+    const Endpoint senderEP = Endpoint::fromHostOrder(senderIP, senderPort);
+    logDebug(QStringLiteral("ClientUDPSocket: reserved UDP prot (0x%1) opcode 0x%2 size %3 "
+                            "from %4 — no channel handler registered")
+                 .arg(protByte, 2, 16, QLatin1Char('0'))
+                 .arg(opcode, 2, 16, QLatin1Char('0'))
+                 .arg(size)
+                 .arg(senderEP.toString()));
+    return true;
 }
 
 } // namespace eMule

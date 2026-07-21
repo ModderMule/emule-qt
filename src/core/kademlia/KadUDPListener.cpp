@@ -729,9 +729,15 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uin
         // trade-off".
         const bool assumeVerified = rz->getNumContacts() == 0;
 
-        rz->addOrUpdateContact(bootstrapID, ip, udpPort, bootstrapTCP,
-                               bootstrapVersion, senderKey,
-                               validReceiverKey || assumeVerified);
+        // While still probing the shipped bootstrap list, don't fold each
+        // bootstrap responder into the routing table — just harvest the contacts
+        // it returns. Once the list is exhausted (normal operation) it is added.
+        // MFC KademliaUDPListener.cpp:547.
+        if (Kademlia::s_bootstrapList.empty()) {
+            rz->addOrUpdateContact(bootstrapID, ip, udpPort, bootstrapTCP,
+                                   bootstrapVersion, senderKey,
+                                   validReceiverKey || assumeVerified);
+        }
 
         // Add all received contacts to routing zone
         for (uint16 i = 0; i < numContacts && io.position() < io.length(); ++i) {
@@ -802,6 +808,14 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
             // Pre-v7 supports neither, so fall back to the KADEMLIA2_REQ
             // challenge. MFC :593-596.
             sendLegacyChallenge(ip, udpPort, contactID);
+        } else if (version > KADEMLIA_VERSION5_48a) {
+            // v8+ verify via HELLO_RES_ACK, not a challenge — so piggyback
+            // external-port discovery on this exchange instead. Mutually
+            // exclusive with the challenge branches above. MFC :590-591.
+            if (auto* prefs = Kademlia::getInstancePrefs()) {
+                if (prefs->findExternKadPort(false))
+                    sendNullPacket(KADEMLIA2_PING, ip, udpPort, senderKey, nullptr);
+            }
         }
     }
 
@@ -858,6 +872,13 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
         // spoofed by anyone who can guess we would send a HELLO_REQ, and these
         // versions support no keys. MFC :661-667.
         sendLegacyChallenge(ip, udpPort, contactID);
+    }
+
+    // Piggyback external-port discovery onto the HELLO exchange with v6+ peers.
+    // MFC KademliaUDPListener.cpp:671-672.
+    if (auto* prefs = Kademlia::getInstancePrefs()) {
+        if (version > KADEMLIA_VERSION5_48a && prefs->findExternKadPort(false))
+            sendNullPacket(KADEMLIA2_PING, ip, udpPort, senderKey, nullptr);
     }
 
     if (!addedOrUpdated)
@@ -1291,7 +1312,9 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
                         // TAG_KADAICHHASHRESULT. MFC KademliaUDPListener.cpp:1227-1240.
                         // AICH hashes are SHA-1 digests (20 bytes).
                         constexpr qsizetype kAICHHashSize = 20;
-                        const QByteArray hash = tag.isBlob() ? tag.blobValue() : QByteArray();
+                        // AICH is published as a BSOB (Kad has no BLOB); accept
+                        // either in case a peer mislabels the payload.
+                        const QByteArray hash = (tag.isBsob() || tag.isBlob()) ? tag.blobValue() : QByteArray();
                         if (hash.size() == kAICHHashSize) {
                             if (entry->aichHashCount() == 0)
                                 entry->addRemoveAICHHash(hash, true);
@@ -1842,9 +1865,16 @@ void KademliaUDPListener::process_KADEMLIA2_PONG(const uint8* data, uint32 len,
     SafeMemFile io(data, len);
     uint16 externalPort = io.readUInt16();
 
-    // Feed external port to preferences for consensus
-    if (auto* prefs = Kademlia::getInstancePrefs())
-        prefs->setExternKadPort(externalPort, ip);
+    // Only feed the reported external port into the consensus while we are still
+    // trying to discover it, and once recorded, resume the UDP firewall check
+    // (which was waiting on the port). MFC KademliaUDPListener.cpp:1833-1841.
+    if (auto* prefs = Kademlia::getInstancePrefs()) {
+        if (prefs->findExternKadPort(false)) {
+            prefs->setExternKadPort(externalPort, ip);
+            if (UDPFirewallTester::isFWCheckUDPRunning())
+                UDPFirewallTester::queryNextClient();
+        }
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA2_FIREWALLUDP(const uint8* data, uint32 len,

@@ -58,6 +58,11 @@ public:
     /// Takes ownership of the server.
     Server* addServer(std::unique_ptr<Server> server);
 
+    /// Parse an OP_SERVERLIST (0x32) payload — uint8 count, [ip4 port2]*count —
+    /// and add each as a Low-priority server (dedup/IP-validity via addServer).
+    /// Port of the OP_SERVERLIST case in CServerSocket::ProcessPacket.
+    void addServersFromPacket(const uint8* data, uint32 size);
+
     /// Remove a server by pointer. Returns true if removed.
     bool removeServer(const Server* server);
 
@@ -67,11 +72,38 @@ public:
     /// Remove servers with failedCount >= maxRetries. Returns count removed.
     int removeDeadServers(uint32 maxRetries);
 
+    /// Remove every other entry sharing `except`'s address string and port —
+    /// used after a dynIP server resolves so stale duplicates don't accumulate.
+    /// Port of CServerList::RemoveDuplicatesByAddress().
+    void removeDuplicatesByAddress(const Server* except);
+
+    /// Emit serverUpdated(server) so views refresh after an in-place mutation.
+    void notifyServerUpdated(Server* server) { emit serverUpdated(server); }
+
     // -- Lookups ----------------------------------------------------------
 
     [[nodiscard]] Server* findByIPTcp(uint32 ip, uint16 port) const;
     [[nodiscard]] Server* findByIPUdp(uint32 ip, uint16 udpPort, bool obfuscationPorts = true) const;
     [[nodiscard]] Server* findByAddress(const QString& address, uint16 port) const;
+
+    /// IP-only lookup (ignores port). Port of CServerList::GetServerByIP().
+    [[nodiscard]] Server* getServerByIP(uint32 ip) const;
+
+    /// The server after `last` in list order, or nullptr past the tail (or when
+    /// `last` is no longer present). Unlike nextStatServer() this does NOT wrap, so
+    /// a rotation over it terminates after one pass. Port of GetSuccServer().
+    /// Passing nullptr returns the first server.
+    [[nodiscard]] Server* getSuccServer(const Server* last) const;
+
+    /// Move a server to the bottom of the list (used by the GUI multi-connect flow
+    /// to deprioritize full servers). Port of CServerList::MoveServerDown().
+    void moveServerDown(const Server* server);
+
+    /// Reorder the list to the GUI-supplied (ip, port) sequence; any server not in
+    /// `order` keeps its relative position appended at the tail. This is the
+    /// daemon-side of the user-sorted-server-list feature (#24) — persisted via
+    /// saveServerMet, which writes m_servers in order.
+    void applyUserOrder(const std::vector<std::pair<uint32, uint16>>& order);
 
     // -- Iteration --------------------------------------------------------
 
@@ -96,9 +128,19 @@ public:
     /// UDPSERVSTATREASKTIME. Port of CServerList::ServerStats().
     void serverStats();
 
+    /// Periodic tick: persist server.met to `metPath` at most every 17 minutes so
+    /// list state (users/files/ping/failedCount/UDP keys) survives a kill/crash,
+    /// not just a clean shutdown. Port of CServerList::Process() — ServerList.cpp:849.
+    void process(const QString& metPath);
+
     /// Parse an OP_GLOBSERVSTATRES (0x97) reply and update the matching server.
     /// Port of the OP_GLOBSERVSTATRES case in CUDPSocket::ProcessPacket.
     void processStatusResponse(const uint8* data, uint32 size, const Endpoint& from);
+
+    /// Parse an OP_SERVER_DESC_RES (0xA3) reply and refresh the matching server's
+    /// name/description/version/dynIP. Port of the OP_SERVER_DESC_RES case in
+    /// CUDPSocket::ProcessPacket.
+    void processDescResponse(const uint8* data, uint32 size, const Endpoint& from);
 
     // -- Aggregate stats --------------------------------------------------
 
@@ -128,6 +170,7 @@ private:
     size_t m_serverPos = 0;
     size_t m_searchServerPos = 0;
     size_t m_statServerPos = 0;
+    uint32 m_lastServerMetSave = 0;   ///< epoch-secs of last periodic save (#28)
 
     [[nodiscard]] bool isDuplicate(const Server& server) const;
     void adjustPositionsAfterRemoval(size_t removedIndex);

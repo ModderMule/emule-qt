@@ -10,6 +10,7 @@
 
 #include "kademlia/KadRoutingZone.h"
 #include "utils/Log.h"
+#include "kademlia/Kademlia.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadRoutingBin.h"
@@ -41,6 +42,8 @@ private slots:
     void bootstrapDat_v3_fileFormat();
 
 private:
+    static void clearBootstrapList();
+
     TempDir* m_tmpDir = nullptr;
 };
 
@@ -54,14 +57,25 @@ void tst_KadNodesData::initTestCase()
 void tst_KadNodesData::init()
 {
     RoutingBin::resetGlobalTracking();
+    clearBootstrapList();
     m_tmpDir = new TempDir();
 }
 
 void tst_KadNodesData::cleanup()
 {
     RoutingBin::resetGlobalTracking();
+    clearBootstrapList();
     delete m_tmpDir;
     m_tmpDir = nullptr;
+}
+
+void tst_KadNodesData::clearBootstrapList()
+{
+    // The bootstrap probe list is a Kademlia static that accumulates across
+    // RoutingZone loads, so drain it between tests.
+    for (auto* c : Kademlia::s_bootstrapList)
+        delete c;
+    Kademlia::s_bootstrapList.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -194,13 +208,16 @@ void tst_KadNodesData::loadBootstrapDat_v3_fromProjectData()
 
     RoutingZone zone(localId, dstPath);
 
-    const uint32 numContacts = zone.getNumContacts();
-    logDebug(QStringLiteral("Loaded %1 Kad contacts from nodes-bootstrap.dat (v3)")
-                 .arg(numContacts));
+    // A v3 bootstrap file is no longer injected straight into the routing table;
+    // its contacts are queued in the separate probe list (closest 50) and probed
+    // one at a time via BOOTSTRAP_REQ. MFC RoutingZone.cpp:266-340.
+    QCOMPARE(zone.getNumContacts(), uint32{0});
 
-    QVERIFY2(numContacts > 0,
-             qPrintable(QStringLiteral("Expected contacts from v3 bootstrap, got %1")
-                            .arg(numContacts)));
+    const size_t queued = Kademlia::s_bootstrapList.size();
+    logDebug(QStringLiteral("Queued %1 bootstrap contacts from nodes-bootstrap.dat (v3)")
+                 .arg(queued));
+    QVERIFY2(queued > 0, "Expected bootstrap contacts queued for probing");
+    QVERIFY2(queued <= 50, "Bootstrap probe list must be capped at 50");
 }
 
 // ---------------------------------------------------------------------------
@@ -217,8 +234,8 @@ void tst_KadNodesData::bootstrapDat_v3_contactsHaveValidProperties()
     localId.setValueRandom();
     RoutingZone zone(localId, dstPath);
 
-    ContactArray contacts;
-    zone.getAllEntries(contacts);
+    // Contacts are queued in the bootstrap probe list, not the routing table.
+    const ContactList& contacts = Kademlia::s_bootstrapList;
 
     QVERIFY(!contacts.empty());
 

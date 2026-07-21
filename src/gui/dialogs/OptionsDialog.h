@@ -96,6 +96,11 @@ private:
     QWidget* createExtendedPage();
     QWidget* createPlaceholderPage(const QString& title);
 
+    /// Enable/disable the Web Interface controls from the two independent
+    /// checkboxes (web UI + REST API). Neither checkbox greys the other; this
+    /// only greys sub-controls that have no effect for the current selection.
+    void updateWebEnabledStates();
+
     void loadSettings();
     void saveSettings();
     void fillDaemonSettings(const QCborMap& prefs);
@@ -201,6 +206,7 @@ private:
     QCheckBox* m_safeServerConnectCheck = nullptr;
     QCheckBox* m_autoConnectStaticOnlyCheck = nullptr;
     QCheckBox* m_useServerPrioritiesCheck = nullptr;
+    QCheckBox* m_useUserSortedServerListCheck = nullptr;
     QCheckBox* m_manualHighPrioCheck = nullptr;
 
     // Directories page controls

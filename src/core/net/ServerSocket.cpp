@@ -104,9 +104,12 @@ bool ServerSocket::packetReceived(Packet* packet)
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadServer(packet->size);
 
-    // Decompress zlib-packed server packets (PR_ZLIB / OP_PACKEDPROT)
+    // Decompress zlib-packed server packets (PR_ZLIB / OP_PACKEDPROT).
+    // MFC: CServerSocket::ProcessPacket() calls UnPackPacket(250000) — the server
+    // cap is 250 KB, not the 50 KB Packet default, so large OP_SEARCHRESULT /
+    // OP_FOUNDSOURCES / OP_SERVERLIST sets inflate instead of hitting Z_BUF_ERROR.
     if (packet->prot == OP_PACKEDPROT) {
-        if (!packet->unPackPacket()) {
+        if (!packet->unPackPacket(250000)) {
             logWarning(QStringLiteral("ServerSocket: Failed to decompress packed packet (opcode 0x%1)")
                            .arg(packet->opcode, 2, 16, QLatin1Char('0')));
             return false;
@@ -141,8 +144,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
     case OP_IDCHANGE: {
         // MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:275-350.
-        // Layout: uint32 clientID, uint32 tcpFlags, uint32 auxPort,
-        //         uint32 serverReportedIP, uint32 obfuscationTCPPort
+        // Layout: uint32 clientID, [uint32 tcpFlags], [uint32 auxPort],
+        //         [uint32 serverReportedIP]. There is NO obfuscation-TCP-port
+        //         field here — the reference derives that from the flags.
         if (size < 4)
             return false;
 
@@ -152,16 +156,15 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             tcpFlags = peekUInt32(packet + 4);
 
         // The extended answer tells us the IP the server sees us on, which is the
-        // only public-IP source available when it hands us a LowID.
+        // only public-IP source available when it hands us a LowID. MFC reads it
+        // at offset 12 once size >= 16 (ServerSocket.cpp:306-315).
         uint32 serverReportedIP = 0;
-        uint32 obfuscationTCPPort = 0;
-        if (size >= 20) {
+        if (size >= 16) {
             serverReportedIP = peekUInt32(packet + 12);
             // MFC asserts on this and zeroes it — a LowID here is nonsense, since
             // the whole point of the field is to report a routable address.
             if (isLowID(serverReportedIP))
                 serverReportedIP = 0;
-            obfuscationTCPPort = peekUInt32(packet + 16);
         }
 
         if (clientID == 0) {
@@ -170,12 +173,16 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             return false;
         }
 
-        // Apply server TCP flags to our server copy
-        if (m_curServer) {
+        // If the live connection is obfuscated the server won't have advertised
+        // that in the flags — OR it in so the persistent entry records it. MFC:
+        // CServerSocket::ProcessPacket() — ServerSocket.cpp:296.
+        if (isServerCryptEnabledConnection())
+            tcpFlags |= SrvTcpFlag::TcpObfuscation;
+
+        // Apply server TCP flags to our server copy; #14 also wires them through to
+        // the persistent list entry via the loginReceived consumer.
+        if (m_curServer)
             m_curServer->setTCPFlags(tcpFlags);
-            if (obfuscationTCPPort != 0)
-                m_curServer->setObfuscationPortTCP(static_cast<uint16>(obfuscationTCPPort));
-        }
 
         setConnectionState(ServerConnState::Connected);
         emit loginReceived(clientID, tcpFlags, serverReportedIP);
@@ -191,10 +198,10 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (size < 4)
             return false;
 
-        // The original checks the last 16 bytes for "more results" flag
-        // For now, forward the entire blob and let the search engine parse
-        bool moreAvailable = false;
-        emit searchResultReceived(packet, size, moreAvailable);
+        // The "more results available" flag is a trailing byte the search parser
+        // reads authoritatively (SearchList::processSearchAnswer), which also
+        // surfaces it to the user (#19). The socket-level flag here is unused.
+        emit searchResultReceived(packet, size, /*moreResultsAvailable=*/false);
         break;
     }
 

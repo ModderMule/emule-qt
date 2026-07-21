@@ -72,6 +72,7 @@ public:
 
     [[nodiscard]] time_t   getCreatedTime() const    { return m_created; }
     [[nodiscard]] time_t   getExpireTime() const     { return m_expires; }
+    void                   setExpireTime(time_t t)   { m_expires = t; }
     [[nodiscard]] time_t   getLastTypeSet() const    { return m_lastTypeSet; }
     [[nodiscard]] time_t   getLastSeen() const;
 

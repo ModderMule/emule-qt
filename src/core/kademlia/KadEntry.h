@@ -41,6 +41,7 @@ public:
 
     uint64 getIntTagValue(const QByteArray& tagName, bool includeVirtual = true) const;
     bool getIntTagValue(const QByteArray& tagName, uint64& outValue, bool includeVirtual = true) const;
+    bool getFloatTagValue(const QByteArray& tagName, float& outValue) const;
     QString getStrTagValue(const QByteArray& tagName) const;
     void addTag(Tag tag);
     uint32 getTagCount() const;

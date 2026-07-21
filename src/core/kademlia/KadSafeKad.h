@@ -22,6 +22,14 @@ public:
     void trackProblematicNode(uint32 ip, uint16 port) noexcept;
     void banIP(uint32 ip) noexcept;
 
+    // NOTE: the three predicates below are intentionally NOT pure — the mutation *is* the
+    // mechanism, not a side effect to be removed:
+    //   - isBadNode() tracks the queried node (via trackNode); that insert is exactly what
+    //     enforces the one-node-per-IP rule on subsequent calls.
+    //   - isBanned()/isProblematic() lazily expire a stale record and refresh lastReferenced
+    //     so a repeatedly-seen entry ages out on last-seen, not first-seen.
+    // They keep [[nodiscard]] because callers must act on the verdict; the state change is
+    // documented here so the mutation is not surprising.
     [[nodiscard]] bool isBadNode(uint32 ip, uint16 port, const UInt128& id,
                                   uint8 kadVersion, bool verified = false,
                                   bool onePerIP = true) noexcept;

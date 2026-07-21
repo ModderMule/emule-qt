@@ -23,6 +23,7 @@ class tst_Kademlia : public QObject {
 private slots:
     void cleanup();
     void construct_notRunning();
+    void instanceAvailableBeforeStart();
     void startStop_lifecycle();
     void isConnected_requiresContact();
     void appContextIsConnected_satisfiedByKadAlone();
@@ -55,6 +56,22 @@ void tst_Kademlia::construct_notRunning()
     QVERIFY(kad.getRoutingZone() == nullptr);
     QVERIFY(kad.getUDPListener() == nullptr);
     QVERIFY(kad.getIndexed() == nullptr);
+}
+
+// s_instance is set in the constructor (not in start()), so a manual connect
+// from the GUI/IPC can reach Kademlia::instance() before Kad has been started —
+// this is what stops the daemon returning 503 "Kademlia unavailable" when
+// autoConnect is off. The constructed-but-not-running state must look exactly
+// like the stopped state that every instance() caller already tolerates.
+void tst_Kademlia::instanceAvailableBeforeStart()
+{
+    Kademlia kad;
+    QCOMPARE(Kademlia::instance(), &kad);  // addressable without start()
+    QVERIFY(!kad.isRunning());
+    QVERIFY(!kad.isConnected());
+    QVERIFY(kad.getPrefs() == nullptr);       // sub-objects still null, as when stopped
+    QVERIFY(kad.getRoutingZone() == nullptr);
+    QVERIFY(kad.getUDPListener() == nullptr);
 }
 
 void tst_Kademlia::startStop_lifecycle()

@@ -273,47 +273,52 @@ void WebServer::setPreferences(Preferences* prefs)    { m_preferences = prefs; }
 
 void WebServer::registerRoutes()
 {
-    // OPTIONS catch-all for CORS preflight
+    // OPTIONS catch-all for CORS preflight — always registered.
     m_server->route(QStringLiteral("/<arg>"), QHttpServerRequest::Method::Options,
         [](const QUrl&) {
             return QHttpServerResponse(QHttpServerResponse::StatusCode::NoContent);
         });
 
-    // --- Template web interface routes ---
+    // --- Template web interface routes (only if the web UI is enabled) ---
+    // Independent of the REST API: the UI is fully server-rendered and does not
+    // call /api/v1/*. Gated so "web server disabled" actually serves no UI.
+    if (m_config.webUiEnabled) {
+        // Login form submission (POST /)
+        m_server->route(QStringLiteral("/"), QHttpServerRequest::Method::Post,
+            [this](const QHttpServerRequest& req) {
+                return handleLogin(req);
+            });
 
-    // Login form submission (POST /)
-    m_server->route(QStringLiteral("/"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& req) {
-            return handleLogin(req);
-        });
+        // Main page dispatch (GET /)
+        m_server->route(QStringLiteral("/"), QHttpServerRequest::Method::Get,
+            [this](const QHttpServerRequest& req) {
+                return handlePage(req);
+            });
 
-    // Main page dispatch (GET /)
-    m_server->route(QStringLiteral("/"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            return handlePage(req);
-        });
+        // Favicon
+        m_server->route(QStringLiteral("/favicon.ico"), QHttpServerRequest::Method::Get,
+            [this]() {
+                return handleStaticFile(QStringLiteral("favicon.ico"));
+            });
 
-    // Favicon
-    m_server->route(QStringLiteral("/favicon.ico"), QHttpServerRequest::Method::Get,
-        [this]() {
-            return handleStaticFile(QStringLiteral("favicon.ico"));
-        });
-
-    // Static files (images, CSS)
-    m_server->route(QStringLiteral("/<arg>"), QHttpServerRequest::Method::Get,
-        [this](const QString& file, const QHttpServerRequest& /*req*/) {
-            if (file.startsWith(QStringLiteral("api/")))
+        // Static files (images, CSS)
+        m_server->route(QStringLiteral("/<arg>"), QHttpServerRequest::Method::Get,
+            [this](const QString& file, const QHttpServerRequest& /*req*/) {
+                if (file.startsWith(QStringLiteral("api/")))
+                    return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
+                // Only serve known static file extensions
+                if (file.endsWith(QStringLiteral(".gif")) || file.endsWith(QStringLiteral(".jpg")) ||
+                    file.endsWith(QStringLiteral(".png")) || file.endsWith(QStringLiteral(".ico")) ||
+                    file.endsWith(QStringLiteral(".css")) || file.endsWith(QStringLiteral(".js"))) {
+                    return handleStaticFile(file);
+                }
                 return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
-            // Only serve known static file extensions
-            if (file.endsWith(QStringLiteral(".gif")) || file.endsWith(QStringLiteral(".jpg")) ||
-                file.endsWith(QStringLiteral(".png")) || file.endsWith(QStringLiteral(".ico")) ||
-                file.endsWith(QStringLiteral(".css")) || file.endsWith(QStringLiteral(".js"))) {
-                return handleStaticFile(file);
-            }
-            return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
-        });
+            });
+    }
 
     // --- Preview streaming (always available, uses stream token auth) ---
+    // Neither web UI nor REST API — the GUI's preview feature relies on it, so it
+    // is served regardless of either flag.
     m_server->route(QStringLiteral("/api/v1/downloads/<arg>/preview"), QHttpServerRequest::Method::Get,
         [this](const QString& hash, const QHttpServerRequest& req) {
             return handlePreviewStream(hash, req);

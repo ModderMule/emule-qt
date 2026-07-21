@@ -284,9 +284,12 @@ void tst_Server::addTag_obfuscationPorts()
 
 void tst_Server::addTag_port()
 {
+    // #13: an ST_PORT tag must NOT override the authoritative port from the entry
+    // header — a crafted server.met could otherwise redirect the client to an
+    // attacker-chosen TCP port. The tag is discarded.
     Server srv(0, 4661);
     srv.addTagFromFile(Tag(ST_PORT, uint32{4777}));
-    QCOMPARE(srv.port(), uint16{4777});
+    QCOMPARE(srv.port(), uint16{4661});
 }
 
 // ---------------------------------------------------------------------------

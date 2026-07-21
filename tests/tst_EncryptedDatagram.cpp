@@ -3,9 +3,11 @@
 
 #include "TestHelpers.h"
 #include "net/EncryptedDatagramSocket.h"
+#include "crypto/MD5Hash.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 
+#include <QByteArray>
 #include <QTest>
 
 #include <array>
@@ -21,7 +23,7 @@ private slots:
     void clientED2K_encryptDecryptRoundtrip();
     void clientKadNodeID_encryptDecryptRoundtrip();
     void clientKadRecvKey_encryptDecryptRoundtrip();
-    void serverEncryptDecryptRoundtrip();
+    void serverDecrypt_recoversServerEncodedReply();
     void overheadSize_ed2k();
     void overheadSize_kad();
     void nonEncryptedPassthrough_protocolMarker();
@@ -142,29 +144,65 @@ void tst_EncryptedDatagram::clientKadRecvKey_encryptDecryptRoundtrip()
 }
 
 // ---------------------------------------------------------------------------
-// Server encrypt → decrypt roundtrip
+// Server → client decrypt recovers a reply encoded the way a real server does
+//
+// decryptReceivedServer must key the RC4 on the SERVER-CLIENT magic (0xA5), not
+// the CLIENT-SERVER magic (0x6B) that encryptSendServer uses. The old symmetric
+// test (encryptSendServer → decryptReceivedServer, both 0x6B) could not catch a
+// direction-magic error because it agreed with itself. This test is deliberately
+// ASYMMETRIC: it encodes the frame independently, exactly as a real server /
+// eNode-go (ed2k/udpcrypt.go Encrypt) does, then asserts our decrypt recovers it.
 // ---------------------------------------------------------------------------
 
-void tst_EncryptedDatagram::serverEncryptDecryptRoundtrip()
+namespace {
+/// Encode a server→client obfuscated UDP frame: RC4 keyed on
+/// MD5(baseKey ‖ 0xA5 ‖ randomKeyPart), no keystream drop, carrying
+/// SYNC_SERVER + zero padding + payload. Mirrors srchybrid
+/// EncryptedDatagramSocket.cpp (server side) and eNode-go udpcrypt.go Encrypt.
+QByteArray buildObfuscatedServerReply(const uint8* payload, uint32 payloadLen, uint32 baseKey)
 {
-    uint32 baseKey = 0xCAFEBABE;
+    constexpr uint8  kMagicServerClient = 0xA5;
+    constexpr uint32 kSyncServer        = 0x13EF24D5u;
+    const uint16 randomKeyPart = getRandomUInt16();
 
-    const char* payload = "ServerPkt";
-    const uint32 payloadLen = 9;
+    uint8 keyData[7];
+    pokeUInt32(keyData, baseKey);
+    keyData[4] = kMagicServerClient;
+    pokeUInt16(&keyData[5], randomKeyPart);
+    MD5Hasher md5(keyData, sizeof keyData);
+    RC4Key key = rc4CreateKey({md5.getRawHash(), 16}, /*skipDiscard=*/true);
 
-    uint32 overhead = static_cast<uint32>(EncryptedDatagramSocket::encryptOverheadSize(false));
-    std::vector<uint8> buf(payloadLen + overhead + 16, 0);
-    std::memcpy(buf.data() + overhead, payload, payloadLen);
+    // [marker != OP_EDONKEYPROT][randomKeyPart:2][ RC4( sync:4 | padLen:1=0 | payload:N ) ]
+    QByteArray frame;
+    frame.resize(static_cast<int>(3 + 4 + 1 + payloadLen));
+    auto* buf = reinterpret_cast<uint8*>(frame.data());
+    buf[0] = 0x01;
+    pokeUInt16(&buf[1], randomKeyPart);
+    pokeUInt32(&buf[3], kSyncServer);
+    buf[7] = 0;
+    std::memcpy(&buf[8], payload, payloadLen);
+    rc4Crypt(&buf[3], 4 + 1 + payloadLen, key);   // encrypt from the sync marker onward
+    return frame;
+}
+} // namespace
 
-    uint32 encryptedLen = EncryptedDatagramSocket::encryptSendServer(
-        buf.data(), payloadLen, baseKey);
+void tst_EncryptedDatagram::serverDecrypt_recoversServerEncodedReply()
+{
+    const uint32 baseKey = 0x12345678;   // e.g. eNode-go's fixed udp.serverKey
+    const char* payload = "ServerReply!";
+    const uint32 payloadLen = 12;
 
-    QVERIFY(encryptedLen > payloadLen);
+    QByteArray frame = buildObfuscatedServerReply(
+        reinterpret_cast<const uint8*>(payload), payloadLen, baseKey);
 
+    auto* buf = reinterpret_cast<uint8*>(frame.data());
     DecryptResult result = EncryptedDatagramSocket::decryptReceivedServer(
-        buf.data(), static_cast<int>(encryptedLen), baseKey);
+        buf, static_cast<int>(frame.size()), baseKey);
 
+    // With the 0x6B bug the sync check fails and the frame passes through
+    // undecrypted (length == frame.size(), data still points at the marker).
     QCOMPARE(result.length, static_cast<int>(payloadLen));
+    QVERIFY(result.data != nullptr);
     QVERIFY(std::memcmp(result.data, payload, payloadLen) == 0);
 }
 
