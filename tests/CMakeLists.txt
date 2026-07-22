@@ -278,6 +278,10 @@ if(EMULE_LIVE_TESTS)
     target_compile_definitions(tst_ServerGlobalSearchLive PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
     set_tests_properties(tst_ServerGlobalSearchLive PROPERTIES LABELS "live" TIMEOUT 120)
 
+    emule_add_test(tst_ServerConnectLive FOLDER "LiveNetwork")
+    target_compile_definitions(tst_ServerConnectLive PRIVATE QTEST_FUNCTION_TIMEOUT=240000)
+    set_tests_properties(tst_ServerConnectLive PROPERTIES LABELS "live" TIMEOUT 320)
+
     emule_add_test(tst_ServerLocalTest FOLDER "LiveNetwork")
     target_compile_definitions(tst_ServerLocalTest PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
     set_tests_properties(tst_ServerLocalTest PROPERTIES LABELS "live" TIMEOUT 120)

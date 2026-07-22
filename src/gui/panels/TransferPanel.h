@@ -77,9 +77,17 @@ private:
     void sendDownloadActionBatch(const QStringList& hashes, int action);
     void sendStopDownload(const QString& hash);
     void sendStopDownloadBatch(const QStringList& hashes);
+    /// Open a completed download, transparently handling a remote core.
+    /// Local core → daemon opens the file locally. Remote core → fetch over
+    /// HTTP via the web server (media in the configured player, otherwise the
+    /// system default handler / browser).
+    void openDownload(const QString& hash);
     void sendOpenFile(const QString& hash);
     void sendOpenFolder(const QString& hash);
     void sendPreview(const QString& hash);
+    /// Build the web-server HTTP streaming URL for a download (preview / remote open).
+    /// Empty if the web server / stream token is unavailable.
+    [[nodiscard]] QString streamUrl(const QString& hash) const;
     void sendSetCategory(const QString& hash, int category);
     void sendSetCategoryBatch(const QStringList& hashes, int category);
     void sendSetPriority(const QString& hash, int priority, bool isAuto);

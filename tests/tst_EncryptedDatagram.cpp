@@ -24,6 +24,7 @@ private slots:
     void clientKadNodeID_encryptDecryptRoundtrip();
     void clientKadRecvKey_encryptDecryptRoundtrip();
     void serverDecrypt_recoversServerEncodedReply();
+    void serverDecrypt_recoversReplyWithPadding();
     void overheadSize_ed2k();
     void overheadSize_kad();
     void nonEncryptedPassthrough_protocolMarker();
@@ -159,7 +160,8 @@ namespace {
 /// MD5(baseKey ‖ 0xA5 ‖ randomKeyPart), no keystream drop, carrying
 /// SYNC_SERVER + zero padding + payload. Mirrors srchybrid
 /// EncryptedDatagramSocket.cpp (server side) and eNode-go udpcrypt.go Encrypt.
-QByteArray buildObfuscatedServerReply(const uint8* payload, uint32 payloadLen, uint32 baseKey)
+QByteArray buildObfuscatedServerReply(const uint8* payload, uint32 payloadLen,
+                                      uint32 baseKey, uint8 padLen = 0)
 {
     constexpr uint8  kMagicServerClient = 0xA5;
     constexpr uint32 kSyncServer        = 0x13EF24D5u;
@@ -172,16 +174,18 @@ QByteArray buildObfuscatedServerReply(const uint8* payload, uint32 payloadLen, u
     MD5Hasher md5(keyData, sizeof keyData);
     RC4Key key = rc4CreateKey({md5.getRawHash(), 16}, /*skipDiscard=*/true);
 
-    // [marker != OP_EDONKEYPROT][randomKeyPart:2][ RC4( sync:4 | padLen:1=0 | payload:N ) ]
+    // [marker != OP_EDONKEYPROT][randomKeyPart:2][ RC4( sync:4 | padLen:1 | padding:padLen | payload:N ) ]
     QByteArray frame;
-    frame.resize(static_cast<int>(3 + 4 + 1 + payloadLen));
+    frame.resize(static_cast<int>(3 + 4 + 1 + padLen + payloadLen));
     auto* buf = reinterpret_cast<uint8*>(frame.data());
     buf[0] = 0x01;
     pokeUInt16(&buf[1], randomKeyPart);
     pokeUInt32(&buf[3], kSyncServer);
-    buf[7] = 0;
-    std::memcpy(&buf[8], payload, payloadLen);
-    rc4Crypt(&buf[3], 4 + 1 + payloadLen, key);   // encrypt from the sync marker onward
+    buf[7] = padLen;
+    for (uint8 i = 0; i < padLen; ++i)
+        buf[8 + i] = static_cast<uint8>(0xAA + i); // arbitrary padding bytes
+    std::memcpy(&buf[8 + padLen], payload, payloadLen);
+    rc4Crypt(&buf[3], 4 + 1 + padLen + payloadLen, key); // encrypt from the sync marker onward
     return frame;
 }
 } // namespace
@@ -204,6 +208,31 @@ void tst_EncryptedDatagram::serverDecrypt_recoversServerEncodedReply()
     QCOMPARE(result.length, static_cast<int>(payloadLen));
     QVERIFY(result.data != nullptr);
     QVERIFY(std::memcmp(result.data, payload, payloadLen) == 0);
+}
+
+// Regression: a server reply carrying non-zero padding must decrypt without
+// crashing. decryptReceivedServer skips padding by advancing the RC4 keystream
+// with a null buffer (rc4Crypt(nullptr, padLen, key)); before the fix that
+// dereferenced a null pointer and SIGSEGV'd in rc4Crypt. Real servers routinely
+// send padding, so the zero-padding test above never exercised this path.
+void tst_EncryptedDatagram::serverDecrypt_recoversReplyWithPadding()
+{
+    const uint32 baseKey = 0x12345678;
+    const char* payload = "ServerReply!";
+    const uint32 payloadLen = 12;
+
+    for (uint8 padLen : {uint8(1), uint8(7), uint8(15)}) {
+        QByteArray frame = buildObfuscatedServerReply(
+            reinterpret_cast<const uint8*>(payload), payloadLen, baseKey, padLen);
+
+        auto* buf = reinterpret_cast<uint8*>(frame.data());
+        DecryptResult result = EncryptedDatagramSocket::decryptReceivedServer(
+            buf, static_cast<int>(frame.size()), baseKey);
+
+        QCOMPARE(result.length, static_cast<int>(payloadLen));
+        QVERIFY(result.data != nullptr);
+        QVERIFY(std::memcmp(result.data, payload, payloadLen) == 0);
+    }
 }
 
 // ---------------------------------------------------------------------------

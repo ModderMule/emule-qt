@@ -17,6 +17,7 @@
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/OtherFunctions.h"
 #include "protocol/ED2KLink.h"
 
 #include <QApplication>
@@ -25,6 +26,7 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QCursor>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFont>
@@ -47,6 +49,7 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QTreeView>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -390,10 +393,13 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // -- 4. Open File / Preview / Details / Comments (single-item only) --
     {
         auto* act = m_downloadMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this, [this, singleHash]() {
-            sendOpenFile(singleHash);
+            openDownload(singleHash);
         });
-        const bool isComplete = singleSel && dl && (dl->status == QStringLiteral("complete"));
+        const bool isComplete = singleSel && dl && dl->isComplete();
         act->setEnabled(isComplete);
+        // Completed download: Open File becomes the default action (rendered bold).
+        if (isComplete)
+            m_downloadMenu->setDefaultAction(act);
     }
     {
         auto* act = m_downloadMenu->addAction(ico("Preview.ico"), tr("Preview"), this, [this, singleHash]() {
@@ -652,6 +658,13 @@ QWidget* TransferPanel::createDownloadsSection()
         if (hash.isEmpty())
             return;
 
+        // Completed download: default action is Open File — no expansion, since
+        // sources are no longer allocated to it.
+        if (const auto* dl = m_downloadModel->downloadAt(srcIdx.row()); dl && dl->isComplete()) {
+            openDownload(hash);
+            return;
+        }
+
         if (m_downloadView->isExpanded(proxyIdx)) {
             m_downloadView->collapse(proxyIdx);
             m_expandedDownloads.remove(hash);
@@ -848,7 +861,7 @@ QToolBar* TransferPanel::createActionToolbar()
     auto* actOpenFile = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/FileOpen.ico")), tr("Open File"));
     connect(actOpenFile, &QAction::triggered, this, [this]() {
-        sendOpenFile(saveDownloadSelection());
+        openDownload(saveDownloadSelection());
     });
     m_selectionActions.append(actOpenFile);
 
@@ -1030,6 +1043,15 @@ void TransferPanel::requestDownloads()
         updateCategoryTabs();
         updateActionStates();
         updateClearCompletedState();
+
+        // Completed downloads no longer have sources — stop tracking/fetching them.
+        for (auto it = m_expandedDownloads.begin(); it != m_expandedDownloads.end();) {
+            const auto* dl = m_downloadModel->findByHash(*it);
+            if (dl && dl->isComplete())
+                it = m_expandedDownloads.erase(it);
+            else
+                ++it;
+        }
 
         // Refresh sources for expanded downloads
         for (const QString& expHash : m_expandedDownloads)
@@ -1343,21 +1365,63 @@ void TransferPanel::sendOpenFolder(const QString& hash)
 
 void TransferPanel::sendPreview(const QString& hash)
 {
-    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
-        return;
-
-    if (m_streamToken.isEmpty()) {
+    const QString url = streamUrl(hash);
+    if (url.isEmpty()) {
         logWarning(tr("Preview not available — web server is not running or stream token not received."));
         return;
     }
+    launchPreview(url);
+}
 
-    // Construct the streaming URL via the daemon's web server
+QString TransferPanel::streamUrl(const QString& hash) const
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty() || m_streamToken.isEmpty())
+        return {};
+
+    // Streaming URL via the daemon's web server (backs preview and remote open).
     const QString host = m_ipc->daemonHost();
     const uint16_t wsPort = thePrefs.webServerPort();
-    const QString url = QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
-                            .arg(host).arg(wsPort).arg(hash, m_streamToken);
+    return QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
+        .arg(host).arg(wsPort).arg(hash, m_streamToken);
+}
 
-    launchPreview(url);
+void TransferPanel::openDownload(const QString& hash)
+{
+    if (hash.isEmpty())
+        return;
+
+    // Local core: the daemon opens the file on its own host, which is the same
+    // machine as the GUI — nothing needs to travel over the network.
+    if (m_ipc && m_ipc->isLocalConnection()) {
+        sendOpenFile(hash);
+        return;
+    }
+
+    // Remote core: the completed file lives on the daemon host, so open it over
+    // HTTP through the web server (same channel Preview uses).
+    const QString url = streamUrl(hash);
+    if (url.isEmpty()) {
+        logWarning(tr("Open File not available — web server is not running or stream token not received."));
+        return;
+    }
+
+    // Resolve the file name to decide media vs. non-media handling.
+    QString fileName;
+    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+        if (m_downloadModel->hashAt(i) == hash) {
+            if (const auto* dl = m_downloadModel->downloadAt(i))
+                fileName = dl->fileName;
+            break;
+        }
+    }
+
+    // Media files stream into the configured player; everything else is handed
+    // to the system default handler (browser download / associated app).
+    const ED2KFileType ft = getED2KFileTypeID(fileName);
+    if (ft == ED2KFileType::Video || ft == ED2KFileType::Audio)
+        launchPreview(url);
+    else
+        QDesktopServices::openUrl(QUrl(url));
 }
 
 void TransferPanel::sendSetCategory(const QString& hash, int category)

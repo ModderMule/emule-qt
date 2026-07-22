@@ -272,7 +272,10 @@ void rc4Crypt(const uint8* input, uint8* output, uint32 len, RC4Key& key)
         key.x = static_cast<uint8>(key.x + 1);
         key.y = static_cast<uint8>(key.y + key.state[key.x]);
         std::swap(key.state[key.x], key.state[key.y]);
-        output[i] = input[i] ^ key.state[static_cast<uint8>(key.state[key.x] + key.state[key.y])];
+        // A null buffer advances the keystream only (used to skip padding
+        // bytes without touching memory) — matches MFC RC4Crypt's NULL check.
+        if (input != nullptr)
+            output[i] = input[i] ^ key.state[static_cast<uint8>(key.state[key.x] + key.state[key.y])];
     }
 }
 

@@ -61,6 +61,10 @@ struct DownloadRow {
     bool isPreviewPossible = false;
 
     std::vector<SourceRow> sources;  // child rows (populated when expanded)
+
+    /// A completed download (green 100% bar). Completed files have no live
+    /// sources, so they are never expandable in the tree.
+    [[nodiscard]] bool isComplete() const { return status == QLatin1String("complete"); }
 };
 
 /// Tree model backing the downloads view in the Transfer panel.

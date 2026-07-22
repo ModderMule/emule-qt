@@ -159,8 +159,13 @@ int DownloadListModel::rowCount(const QModelIndex& parent) const
     // Only top-level rows (downloads) can have children
     if (parent.internalId() == 0) {
         const int row = parent.row();
-        if (row >= 0 && row < static_cast<int>(m_downloads.size()))
-            return static_cast<int>(m_downloads[static_cast<size_t>(row)].sources.size());
+        if (row >= 0 && row < static_cast<int>(m_downloads.size())) {
+            const auto& dl = m_downloads[static_cast<size_t>(row)];
+            // Completed downloads have no live sources — not expandable
+            if (dl.isComplete())
+                return 0;
+            return static_cast<int>(dl.sources.size());
+        }
     }
 
     return 0;
@@ -181,6 +186,9 @@ bool DownloadListModel::hasChildren(const QModelIndex& parent) const
         const int row = parent.row();
         if (row >= 0 && row < static_cast<int>(m_downloads.size())) {
             const auto& dl = m_downloads[static_cast<size_t>(row)];
+            // Completed downloads have no live sources — never expandable
+            if (dl.isComplete())
+                return false;
             return !dl.sources.empty() || dl.sourceCount > 0;
         }
     }
@@ -404,7 +412,19 @@ void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
         existingHashes.insert(existing.hash);
         if (auto it = incomingByHash.constFind(existing.hash); it != incomingByHash.cend()) {
             auto& fresh = incoming[it.value()];
-            fresh.sources = std::move(existing.sources); // preserve child rows
+            if (fresh.isComplete()) {
+                // Download just completed (or is complete): drop its source children
+                // so the view collapses cleanly and the expand arrow disappears.
+                if (!existing.sources.empty()) {
+                    beginRemoveRows(index(static_cast<int>(i), 0), 0,
+                                    static_cast<int>(existing.sources.size()) - 1);
+                    existing.sources.clear();
+                    endRemoveRows();
+                }
+                // fresh.sources is already empty from the daemon snapshot
+            } else {
+                fresh.sources = std::move(existing.sources); // preserve child rows
+            }
             existing = std::move(fresh);
         }
     }
@@ -434,6 +454,12 @@ void DownloadListModel::setSources(const QString& hash, std::vector<SourceRow> i
             continue;
 
         auto& dl = m_downloads[static_cast<size_t>(i)];
+
+        // Completed downloads have no live sources and report 0 child rows;
+        // never insert children under them (would desync the view's row count).
+        if (dl.isComplete())
+            return;
+
         const QModelIndex parentIdx = index(i, 0);
 
         // Incremental update keyed by userHash — preserves selection & scroll.

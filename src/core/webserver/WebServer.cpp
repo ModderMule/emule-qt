@@ -603,13 +603,22 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
         return jsonError(404, QStringLiteral("Download not found"));
     }
 
-    // fullName() returns the .part.met metadata path — strip .met to get the data file
-    QString path = file->fullName();
-    if (path.endsWith(QStringLiteral(".met")))
-        path.chop(4);
+    // Determine the data file path. For in-progress downloads, fullName() is the
+    // .part.met metadata path — strip .met to get the .part data file. Completed
+    // downloads have been moved to the incoming dir; fullName() still points at the
+    // now-deleted .part, so use the final path recorded in filePath() instead. This
+    // lets the endpoint back both live preview and completed-file open (remote core).
+    QString path;
+    if (file->status() == PartFileStatus::Complete && !file->filePath().isEmpty()) {
+        path = file->filePath();
+    } else {
+        path = file->fullName();
+        if (path.endsWith(QStringLiteral(".met")))
+            path.chop(4);
+    }
     if (path.isEmpty() || !QFileInfo::exists(path)) {
-        logWarning(QStringLiteral("Preview: 404 — part file not available: %1").arg(path));
-        return jsonError(404, QStringLiteral("Part file not available"));
+        logWarning(QStringLiteral("Preview: 404 — file not available: %1").arg(path));
+        return jsonError(404, QStringLiteral("File not available"));
     }
 
     QFile partFile(path);
