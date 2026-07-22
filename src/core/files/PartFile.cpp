@@ -1665,21 +1665,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
 
         const bool obfu = theApp.serverConnect->currentServer()
                           && theApp.serverConnect->currentServer()->supportsGetSourcesObfuscation();
-        const uint64 fsize = static_cast<uint64>(fileSize());
-        const bool largeFile = (fsize > UINT32_MAX);
-        const uint32 pktSize = largeFile ? 24u : 20u;
-
-        auto pkt = std::make_unique<Packet>(
-            obfu ? OP_GETSOURCES_OBFU : OP_GETSOURCES,
-            pktSize, OP_EDONKEYPROT);
-        md4cpy(pkt->pBuffer, fileHash());
-        if (largeFile) {
-            std::memcpy(pkt->pBuffer + 16, &fsize, 8);
-        } else {
-            uint32 fsize32 = static_cast<uint32>(fsize);
-            std::memcpy(pkt->pBuffer + 16, &fsize32, 4);
-        }
-        theApp.serverConnect->sendPacket(std::move(pkt));
+        theApp.serverConnect->sendPacket(createServerSourceRequestPacket(obfu));
     }
 
     // -- Kad source search (MFC PartFile.cpp:2363-2380) --
@@ -2182,6 +2168,35 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
     savePartFile();
     logInfo(QStringLiteral("PartFile AICH recovery: recovered %1 of %2 bytes from part %3 of '%4'")
                 .arg(recovered).arg(partLen).arg(partNumber).arg(fileName()));
+}
+
+// ===========================================================================
+// createServerSourceRequestPacket — OP_GETSOURCES(_OBFU) to the connected server
+// ===========================================================================
+
+std::unique_ptr<Packet> PartFile::createServerSourceRequestPacket(bool obfuscated) const
+{
+    // Large-file size encoding (MFC DownloadQueue.cpp:1354-1357): a zero uint32
+    // marks that a uint64 size follows. Sending the bare uint64 (no marker) makes a
+    // standard server read the low 32 bits as the whole size, so the (hash,size)
+    // lookup misses and no sources come back.
+    const uint64 fsize     = static_cast<uint64>(fileSize());
+    const bool   largeFile = (fsize > UINT32_MAX);
+    const uint32 pktSize   = largeFile ? 28u : 20u;
+
+    auto pkt = std::make_unique<Packet>(
+        obfuscated ? OP_GETSOURCES_OBFU : OP_GETSOURCES,
+        pktSize, OP_EDONKEYPROT);
+    md4cpy(pkt->pBuffer, fileHash());
+    if (largeFile) {
+        const uint32 zero = 0;
+        std::memcpy(pkt->pBuffer + 16, &zero, 4);
+        std::memcpy(pkt->pBuffer + 20, &fsize, 8);
+    } else {
+        const uint32 fsize32 = static_cast<uint32>(fsize);
+        std::memcpy(pkt->pBuffer + 16, &fsize32, 4);
+    }
+    return pkt;
 }
 
 // ===========================================================================

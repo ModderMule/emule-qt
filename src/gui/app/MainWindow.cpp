@@ -212,6 +212,10 @@ void MainWindow::onConnectToggle()
         if (thePrefs.networkED2K()) {
             Ipc::IpcMessage reqEd2k(Ipc::IpcMsgType::ConnectToServer);
             m_ipc->sendRequest(std::move(reqEd2k));
+        } else if (m_serverPanel) {
+            // Otherwise the toolbar Connect silently skips servers — tell the user why.
+            m_serverPanel->logWidget()->appendServerInfo(
+                tr("eD2K network is disabled — enable it in Options → Connection to connect to servers."));
         }
         if (thePrefs.kadEnabled()) {
             Ipc::IpcMessage reqKad(Ipc::IpcMsgType::BootstrapKad);

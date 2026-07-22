@@ -6,6 +6,7 @@
 #include "protocol/Tag.h"
 #include "utils/SafeFile.h"
 #include "utils/Log.h"
+#include "utils/OtherFunctions.h"
 
 #include <QRegularExpression>
 
@@ -187,6 +188,9 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
                                "are available; narrow your search to see them."));
     }
 
+    logServerVerbose(QStringLiteral("TCP search answer from %1:%2 — parsed %3 result(s), moreResults=%4")
+                         .arg(ipstr(serverIP)).arg(serverPort).arg(resultCount).arg(moreResults));
+
     emit tabHeaderUpdated(m_currentSearchID);
     return moreResults;
 }
@@ -200,10 +204,14 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
                                         uint32 serverIP, uint16 serverPort)
 {
     // Validate server was in our request list
-    if (m_curED2KSentRequestsIPs.find(serverIP) == m_curED2KSentRequestsIPs.end())
+    if (m_curED2KSentRequestsIPs.find(serverIP) == m_curED2KSentRequestsIPs.end()) {
+        logServerVerbose(QStringLiteral("UDP search answer from %1:%2 DROPPED — sender not in our sent-request set")
+                             .arg(ipstr(serverIP)).arg(serverPort));
         return;
+    }
 
     SafeMemFile data(packet, size);
+    uint32 parsedResults = 0;
 
     // A single UDP datagram can contain multiple concatenated search results,
     // each separated by an OP_EDONKEYPROT + OP_GLOBSEARCHRES header.
@@ -214,6 +222,7 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
 
         auto& record = m_udpServerRecords[serverIP];
         record.totalResults++;
+        ++parsedResults;
 
         addToList(file, false, serverIP);
 
@@ -232,6 +241,9 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
             }
         }
     } while (data.position() < data.length());
+
+    logServerVerbose(QStringLiteral("UDP search answer from %1:%2 — parsed %3 result(s)")
+                         .arg(ipstr(serverIP)).arg(serverPort).arg(parsedResults));
 
     emit tabHeaderUpdated(m_currentSearchID);
 }

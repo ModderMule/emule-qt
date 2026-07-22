@@ -292,6 +292,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logLevelSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_verboseLogToDiskCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logSourceExchangeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_serverVerboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logBannedClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logRatingDescCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -2666,6 +2667,12 @@ QWidget* OptionsDialog::createExtendedPage()
         tr("Log client source exchange and server source queries/answers"), verboseGroup);
     verboseLayout->addWidget(m_logSourceExchangeCheck);
 
+    // Independent of the "Enabled" master above: routes to the Verbose tab via a
+    // dedicated log category, so it can diagnose a connect without the full firehose.
+    m_serverVerboseCheck = new QCheckBox(
+        tr("Log server connection && search details (TCP/UDP handshake)"), verboseGroup);
+    verboseLayout->addWidget(m_serverVerboseCheck);
+
     m_logBannedClientsCheck = new QCheckBox(tr("Log banned clients"), verboseGroup);
     verboseLayout->addWidget(m_logBannedClientsCheck);
 
@@ -3845,6 +3852,8 @@ void OptionsDialog::saveSettings()
         req.append(m_verboseLogToDiskCheck->isChecked());
         req.append(QStringLiteral("logSourceExchange"));
         req.append(m_logSourceExchangeCheck->isChecked());
+        req.append(QStringLiteral("serverVerboseLog"));
+        req.append(m_serverVerboseCheck->isChecked());
         req.append(QStringLiteral("logBannedClients"));
         req.append(m_logBannedClientsCheck->isChecked());
         req.append(QStringLiteral("logRatingDescReceived"));
@@ -4148,6 +4157,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setLogLevel(m_logLevelSpin->value());
         thePrefs.setVerboseLogToDisk(m_verboseLogToDiskCheck->isChecked());
         thePrefs.setLogSourceExchange(m_logSourceExchangeCheck->isChecked());
+        thePrefs.setServerVerboseLog(m_serverVerboseCheck->isChecked());
         thePrefs.setLogBannedClients(m_logBannedClientsCheck->isChecked());
         thePrefs.setLogRatingDescReceived(m_logRatingDescCheck->isChecked());
         thePrefs.setLogSecureIdent(m_logSecureIdentCheck->isChecked());
@@ -4405,6 +4415,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_verboseLogToDiskCheck->setEnabled(verboseOn);
     m_logSourceExchangeCheck->setChecked(prefs.value(QStringLiteral("logSourceExchange")).toBool());
     m_logSourceExchangeCheck->setEnabled(verboseOn);
+    // Independent channel — stays enabled regardless of the verbose master toggle.
+    m_serverVerboseCheck->setChecked(prefs.value(QStringLiteral("serverVerboseLog")).toBool());
     m_logBannedClientsCheck->setChecked(prefs.value(QStringLiteral("logBannedClients")).toBool(true));
     m_logBannedClientsCheck->setEnabled(verboseOn);
     m_logRatingDescCheck->setChecked(prefs.value(QStringLiteral("logRatingDescReceived")).toBool(true));

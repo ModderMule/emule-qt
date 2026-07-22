@@ -166,6 +166,7 @@ struct Preferences::Data {
     bool verbose = true;
     bool logPublicIP = false;
     bool kadVerboseLog = true;
+    bool serverVerboseLog = false;  // Gated server TCP/UDP/search handshake logging
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
     int logLevel = 5;               // 0-5, higher = more verbose
     bool verboseLogToDisk = false;
@@ -786,6 +787,10 @@ void Preferences::setLogPublicIP(bool val) { set(&Data::logPublicIP, val); }
 bool Preferences::kadVerboseLog() const { return get(&Data::kadVerboseLog); }
 
 void Preferences::setKadVerboseLog(bool val) { set(&Data::kadVerboseLog, val); }
+
+bool Preferences::serverVerboseLog() const { return get(&Data::serverVerboseLog); }
+
+void Preferences::setServerVerboseLog(bool val) { set(&Data::serverVerboseLog, val); }
 
 uint32 Preferences::maxLogLines() const { return get(&Data::maxLogLines); }
 
@@ -1870,6 +1875,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logToDisk                   = p.value(QStringLiteral("logToDisk")).toBool();
     m_data->verbose                     = p.value(QStringLiteral("verbose")).toBool();
     m_data->logPublicIP                 = p.value(QStringLiteral("logPublicIP")).toBool();
+    m_data->serverVerboseLog            = p.value(QStringLiteral("serverVerboseLog")).toBool();
     m_data->closeUPnPOnExit             = p.value(QStringLiteral("closeUPnPOnExit")).toBool();
     m_data->skipWANIPSetup              = p.value(QStringLiteral("skipWANIPSetup")).toBool();
     m_data->skipWANPPPSetup             = p.value(QStringLiteral("skipWANPPPSetup")).toBool();
@@ -2259,6 +2265,7 @@ bool Preferences::load(const QString& filePath)
             m_data->verbose = l["verbose"].as<bool>(m_data->verbose);
             m_data->logPublicIP = l["logPublicIP"].as<bool>(m_data->logPublicIP);
             m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
+            m_data->serverVerboseLog = l["serverVerboseLog"].as<bool>(m_data->serverVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
             m_data->logLevel = l["logLevel"].as<int>(m_data->logLevel);
             m_data->verboseLogToDisk = l["verboseLogToDisk"].as<bool>(m_data->verboseLogToDisk);
@@ -2856,6 +2863,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "verbose" << YAML::Value << m_data->verbose;
     out << YAML::Key << "logPublicIP" << YAML::Value << m_data->logPublicIP;
     out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
+    out << YAML::Key << "serverVerboseLog" << YAML::Value << m_data->serverVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
     out << YAML::Key << "logLevel" << YAML::Value << m_data->logLevel;
     out << YAML::Key << "verboseLogToDisk" << YAML::Value << m_data->verboseLogToDisk;

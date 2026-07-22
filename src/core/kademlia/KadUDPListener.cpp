@@ -96,6 +96,13 @@ void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
 
     // Track so we accept the KADEMLIA_FIREWALLED_RES reply from this IP
     addTrackedOutPacket(ip, KADEMLIA_FIREWALLED_REQ);
+
+    // Also let EncryptedStreamSocket accept this node's unencrypted firewall-check callback
+    // under require-encryption (and only count its ACK). `ip` is host order; store network
+    // order. MFC: CClientList::AddKadFirewallRequest from FirewalledCheck
+    // (srchybrid/kademlia/net/KademliaUDPListener.cpp:181).
+    if (theApp.clientList)
+        theApp.clientList->addKadFirewallRequest(htonl(ip));
 }
 
 // ---------------------------------------------------------------------------

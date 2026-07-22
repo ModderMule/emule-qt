@@ -715,6 +715,11 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
     }
 
     if (!thePrefs.networkED2K()) {
+        // Silent no-op here is a common "server connect does nothing" footgun — the
+        // eD2K network is simply switched off. Surface it (logWarning is always shown,
+        // routing to the Verbose tab) so the user sees why nothing happens.
+        logWarning(QStringLiteral("Server connect requested, but the eD2K network is disabled "
+                                  "(Options → Connection → \"eD2K network\"). Ignoring."));
         sendMessage(IpcMessage::makeResult(msg.seqId(), false));
         return;
     }
@@ -837,9 +842,17 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
                                                     static_cast<uint32>(payload.size()));
                 pkt->prot = OP_EDONKEYPROT;
                 std::memcpy(pkt->pBuffer, payload.constData(), static_cast<size_t>(payload.size()));
+                const Server* cur = theApp.serverConnect->currentServer();
+                logServerVerbose(QStringLiteral(">>> TCP server search: expr=\"%1\" -> %2 (%3 byte payload)")
+                                     .arg(params.expression)
+                                     .arg(cur ? cur->name() : QStringLiteral("connected server"))
+                                     .arg(payload.size()));
                 theApp.serverConnect->sendPacket(std::move(pkt));
                 started = true;
             }
+        } else {
+            logServerVerbose(QStringLiteral("TCP server search skipped for \"%1\" — not connected to a server")
+                                 .arg(params.expression));
         }
     }
 
@@ -849,23 +862,25 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
             const QByteArray payload = parsed.expr.toBytes();
             if (!payload.isEmpty()) {
                 const size_t count = theApp.serverList->serverCount();
-                logDebug(QStringLiteral("UDP Global Search: expr=\"%1\", querying %2 servers")
+                logServerVerbose(QStringLiteral("UDP Global Search: expr=\"%1\", querying %2 servers")
                                .arg(params.expression)
                                .arg(count));
                 for (size_t i = 0; i < count; ++i) {
                     Server* srv = theApp.serverList->serverAt(i);
+                    // Opcode is selected from the server's UDP flags (REQ/REQ2/REQ3).
+                    // The keyword expression carries no 64-bit size tag → is64=false.
+                    auto pkt = buildGlobalSearchPacket(*srv, payload, /*is64BitSearch*/ false);
+                    if (!pkt)
+                        continue;   // 64-bit search vs a server without large-file support
                     theApp.searchList->addSentUDPRequestIP(srv->ipAddress().toNetworkUint32());
-                    auto pkt = std::make_unique<Packet>(OP_GLOBSEARCHREQ,
-                                                        static_cast<uint32>(payload.size()));
-                    pkt->prot = OP_EDONKEYPROT;
-                    std::memcpy(pkt->pBuffer, payload.constData(), static_cast<size_t>(payload.size()));
                     const auto udpPort = static_cast<uint16>(srv->port() + 4);
                     const bool encrypted = srv->serverKeyUDP() != 0 && srv->supportsObfuscationUDP();
-                    logDebug(QStringLiteral("  -> %1 (%2:%3) UDP:%4 encrypted=%5 keyUDP=0x%6")
+                    logServerVerbose(QStringLiteral("  -> %1 (%2:%3) UDP:%4 opcode=0x%5 encrypted=%6 keyUDP=0x%7")
                                    .arg(srv->name())
                                    .arg(ipstr(srv->ipAddress()))
                                    .arg(srv->port())
                                    .arg(udpPort)
+                                   .arg(pkt->opcode, 2, 16, QLatin1Char('0'))
                                    .arg(encrypted ? QStringLiteral("yes") : QStringLiteral("no"))
                                    .arg(srv->serverKeyUDP(), 8, 16, QLatin1Char('0')));
                     theApp.serverConnect->sendUDPPacket(std::move(pkt), *srv, udpPort);
@@ -1994,6 +2009,7 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("minFreeDiskSpace"), static_cast<qint64>(thePrefs.minFreeDiskSpace()));
     prefs.insert(QStringLiteral("logToDisk"), thePrefs.logToDisk());
     prefs.insert(QStringLiteral("verbose"), thePrefs.verbose());
+    prefs.insert(QStringLiteral("serverVerboseLog"), thePrefs.serverVerboseLog());
     prefs.insert(QStringLiteral("logPublicIP"), thePrefs.logPublicIP());
     prefs.insert(QStringLiteral("closeUPnPOnExit"), thePrefs.closeUPnPOnExit());
     prefs.insert(QStringLiteral("skipWANIPSetup"), thePrefs.skipWANIPSetup());
@@ -3366,8 +3382,14 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setMinFreeDiskSpace(static_cast<uint64>(val.toInteger()));
     else if (key == QStringLiteral("logToDisk"))
         thePrefs.setLogToDisk(val.toBool());
-    else if (key == QStringLiteral("verbose"))
+    else if (key == QStringLiteral("verbose")) {
         thePrefs.setVerbose(val.toBool());
+        DaemonApp::applyLogFilterRules();
+    }
+    else if (key == QStringLiteral("serverVerboseLog")) {
+        thePrefs.setServerVerboseLog(val.toBool());
+        DaemonApp::applyLogFilterRules();
+    }
     else if (key == QStringLiteral("logPublicIP"))
         thePrefs.setLogPublicIP(val.toBool());
     else if (key == QStringLiteral("closeUPnPOnExit"))

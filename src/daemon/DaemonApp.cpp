@@ -16,9 +16,11 @@
 #include "utils/Log.h"
 
 #include <QDateTime>
+#include <QLoggingCategory>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QStringList>
 #include <QUuid>
 
 #include <openssl/rand.h>
@@ -312,6 +314,28 @@ void DaemonApp::logMessageHandler(QtMsgType type, const QMessageLogContext& cont
     push.append(msg);
     push.append(ts);
     s_instance->m_ipcServer->broadcast(push);
+}
+
+void DaemonApp::applyLogFilterRules()
+{
+    // Refresh the emit-site gate for the dedicated server-verbose channel.
+    setServerVerboseLogging(thePrefs.serverVerboseLog());
+
+    // Compose category filter rules. Rules are evaluated top-to-bottom, so the
+    // per-subsystem overrides below win over the "all off" baseline. Enabling a
+    // subsystem's *.debug just lets its qCDebug lines reach the handler; the
+    // actual show/hide is still gated by the pref (verbose) or the emit-site
+    // bool (kad / server-verbose), so this never leaks one channel into another.
+    QStringList rules;
+    rules << QStringLiteral("emule.*.debug=false");
+    if (thePrefs.verbose())
+        rules << QStringLiteral("emule.*.debug=true");
+    if (thePrefs.kadVerboseLog())
+        rules << QStringLiteral("emule.kad.debug=true");
+    if (thePrefs.serverVerboseLog())
+        rules << QStringLiteral("emule.serverv.debug=true");
+
+    QLoggingCategory::setFilterRules(rules.join(QLatin1Char('\n')));
 }
 
 } // namespace eMule

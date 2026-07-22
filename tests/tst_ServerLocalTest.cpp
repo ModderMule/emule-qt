@@ -17,6 +17,7 @@
 #include "app/AppContext.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
@@ -24,6 +25,7 @@
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 #include "net/ServerSocket.h"
+#include "net/Address.h"
 #include "net/UDPSocket.h"
 #include "prefs/Preferences.h"
 #include "search/SearchFile.h"
@@ -54,6 +56,29 @@
 
 using namespace eMule;
 using namespace eMule::testing;
+
+// ---------------------------------------------------------------------------
+// Fixture data seeded by the eNode server from debug_fixtures.yaml.
+// These are NOT published by us — the server injects them at startup.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Files (hash + size + which peers offer them).
+const QByteArray kDebianHash = QByteArray::fromHex("fedcba9876543210fedcba9876543210");
+const QByteArray kBunnyHash  = QByteArray::fromHex("00112233445566778899aabbccddeeff");
+const QByteArray kSintelHash = QByteArray::fromHex("22223333444455556666777788889999");
+
+constexpr uint64 kDebianSize = 4700000000ULL;   // >4 GiB — exercises 64-bit size + large-file GETSOURCES
+constexpr uint64 kBunnySize  = 355856889ULL;
+constexpr uint64 kSintelSize = 1129240576ULL;
+
+// Peers. Debian is offered by all three (→ 3 sources); Sintel only by peer 2.
+constexpr auto kPeer1IPv4  = "203.0.113.7";     // HighID, offers Debian + bunny
+constexpr auto kPeer2IPv4  = "198.51.100.42";   // HighID (crypt), offers Debian + Sintel
+constexpr uint32 kPeer3LowID = 123456;          // LowID, offers Debian
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Test class
@@ -97,6 +122,14 @@ private slots:
     void cryptPingRoundTrip();
     void stopServerCryptPing();
 
+    // Round 6: server-seeded fixtures — search results + sources (TCP & UDP)
+    void startServerFixtures();
+    void searchFixtures_data();
+    void searchFixtures();
+    void requestFixtureSourcesTcp();
+    void requestFixtureSourcesUdp();
+    void stopServerFixtures();
+
     void cleanupTestCase();
 
 private:
@@ -110,6 +143,11 @@ private:
     void searchForKeywordUDP();
     void checkServerLog();
     void addSearchData();
+    void addFixtureSearchData();
+
+    /// Create a PartFile download (findable by fileByID) for a fixture file so the
+    /// server's OP_FOUNDSOURCES / OP_GLOBFOUNDSOURCES reply attaches its sources to it.
+    PartFile* addFixtureDownload(const QByteArray& hash, uint64 size, const QString& name);
 
     // eNode server process
     QProcess* m_serverProcess = nullptr;
@@ -349,6 +387,7 @@ void tst_ServerLocalTest::searchForKeyword()
     QFETCH(QString, keyword);
     QFETCH(QByteArray, expectedHash);
     QFETCH(uint64, expectedSize);
+    QFETCH(QString, expectedName);
 
     const uint32 searchID = m_searchList->newSearch({}, SearchParams{});
 
@@ -389,10 +428,12 @@ void tst_ServerLocalTest::searchForKeyword()
 
     bool found = false;
     uint64 reportedSize = 0;
+    QString reportedName;
     m_searchList->forEachResult(searchID, [&](const SearchFile* file) {
         if (memcmp(file->fileHash(), expectedHash.constData(), 16) == 0) {
             found = true;
             reportedSize = static_cast<uint64>(file->fileSize());
+            reportedName = file->fileName();
         }
     });
 
@@ -410,8 +451,15 @@ void tst_ServerLocalTest::searchForKeyword()
                             .arg(reportedSize)
                             .arg(expectedSize)));
 
+    // The filename round-trips through the FT_FILENAME string tag — a mangled name
+    // means the string tag was decoded with the wrong length/encoding.
+    QVERIFY2(reportedName == expectedName,
+             qPrintable(QStringLiteral("Name mismatch for \"%1\": server reported \"%2\", expected \"%3\"")
+                            .arg(keyword, reportedName, expectedName)));
+
     qDebug() << "PASS: Found expected hash" << expectedHash.toHex()
              << "size" << reportedSize
+             << "name" << reportedName
              << "in results for" << keyword;
 
     disconnect(conn);
@@ -475,14 +523,37 @@ void tst_ServerLocalTest::addSearchData()
     QTest::addColumn<QString>("keyword");
     QTest::addColumn<QByteArray>("expectedHash");
     QTest::addColumn<uint64>("expectedSize");
+    QTest::addColumn<QString>("expectedName");
 
     // readme.txt is under 64 KiB, so eMule sends its FT_FILESIZE as TAGTYPE_UINT16
     // rather than TAGTYPE_UINT32. A server that only accepts the 32-bit form indexes
     // it with size 0 — it still turns up in searches, so only the size assertion in
     // searchForKeyword() catches it.
-    QTest::newRow("readme")              << QStringLiteral("readme")              << m_readmeHash   << m_readmeSize;
-    QTest::newRow("eMule")               << QStringLiteral("eMule")               << m_zipHash      << m_zipSize;
-    QTest::newRow("testfile")            << QStringLiteral("testfile")            << m_testfileHash << m_testfileSize;
+    QTest::newRow("readme")   << QStringLiteral("readme")   << m_readmeHash   << m_readmeSize   << QStringLiteral("readme.txt");
+    QTest::newRow("eMule")    << QStringLiteral("eMule")    << m_zipHash      << m_zipSize      << QStringLiteral("eMule0.50a.zip");
+    QTest::newRow("testfile") << QStringLiteral("testfile") << m_testfileHash << m_testfileSize << QStringLiteral("eMuleQt-testfile-20MB.bin");
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Add fixture search data rows (server-seeded from debug_fixtures.yaml)
+// ---------------------------------------------------------------------------
+
+void tst_ServerLocalTest::addFixtureSearchData()
+{
+    QTest::addColumn<QString>("keyword");
+    QTest::addColumn<QByteArray>("expectedHash");
+    QTest::addColumn<uint64>("expectedSize");
+    QTest::addColumn<QString>("expectedName");
+
+    // These files are injected by the server itself from debug_fixtures.yaml — we do
+    // not publish them. The Debian file is >4 GiB, so its size assertion exercises the
+    // FT_FILESIZE + FT_FILESIZE_HI 64-bit combine path.
+    QTest::newRow("Debian") << QStringLiteral("Debian") << kDebianHash << kDebianSize
+                            << QStringLiteral("Debian-13-amd64-netinst.iso");
+    QTest::newRow("bunny")  << QStringLiteral("bunny")  << kBunnyHash  << kBunnySize
+                            << QStringLiteral("big buck bunny 1080p.mkv");
+    QTest::newRow("Sintel") << QStringLiteral("Sintel") << kSintelHash << kSintelSize
+                            << QStringLiteral("Sintel.2010.1080p.mkv");
 }
 
 // ---------------------------------------------------------------------------
@@ -933,8 +1004,10 @@ void tst_ServerLocalTest::cryptPingRoundTrip()
         .arg(entry->cryptPingReplyPending())
         .arg(entry->serverKeyUDPRaw(), 0, 16)));
 
-    // eNode-go hands back its configured udp.serverKey (0x12345678) at offset +36.
-    QCOMPARE(entry->serverKeyUDPRaw(), 0x12345678u);
+    // eNode-go advertises a per-IP-derived UDP key (deriveUDPKey), not the raw configured
+    // serverKey — the client treats it as opaque (stores and echoes it). The round-trip
+    // success is that a non-zero key was learned, already ensured by the qWaitFor above.
+    QVERIFY2(entry->serverKeyUDPRaw() != 0, "crypt-ping should have learned a non-zero server UDP key");
     qDebug() << "PASS: crypt-ping round-trip — users" << entry->users()
              << "files" << entry->files()
              << "udpKey=0x" << Qt::hex << entry->serverKeyUDPRaw();
@@ -951,6 +1024,166 @@ void tst_ServerLocalTest::stopServerCryptPing()
     delete m_udpSocket;
     m_udpSocket = nullptr;
     stopServer();
+}
+
+// ---------------------------------------------------------------------------
+// Round 6: server-seeded fixtures — search results + sources (TCP & UDP)
+//
+// enode.local.yaml enables debug.seedFixtures, so the server injects the peers
+// and files from debug_fixtures.yaml at startup (via the same Connect/AddFile
+// path a real login takes). Those files become OP_SEARCHRESULT hits and the
+// peers become the sources the server returns for a hash (OP_FOUNDSOURCES over
+// TCP, OP_GLOBFOUNDSOURCES over UDP). This round asserts we receive and parse
+// both. We publish nothing ourselves — the server has only the fixtures.
+// ---------------------------------------------------------------------------
+
+void tst_ServerLocalTest::startServerFixtures()
+{
+    startServer();
+    connectToLocalServer(/*noCrypt=*/false);   // obfuscated HighID
+
+    // isFirewalled() reaches ServerConnect through theApp; wire it so it returns
+    // false (we hold a HighID). Without this the LowID fixture source is dropped as
+    // unreachable and the Debian source count would be 2, not 3. A real client always
+    // has theApp.serverConnect set. Restored in stopServerFixtures().
+    theApp.serverConnect = m_serverConnect;
+}
+
+void tst_ServerLocalTest::searchFixtures_data()
+{
+    addFixtureSearchData();
+}
+
+void tst_ServerLocalTest::searchFixtures()
+{
+    searchForKeyword();
+}
+
+void tst_ServerLocalTest::requestFixtureSourcesTcp()
+{
+    QVERIFY2(m_serverConnect->isConnected(), "Not connected — connect step failed");
+
+    // Debian is offered by all three fixture peers (2 HighID + 1 LowID).
+    PartFile* pf = addFixtureDownload(kDebianHash, kDebianSize,
+                                      QStringLiteral("Debian-13-amd64-netinst.iso"));
+    QVERIFY2(pf != nullptr, "Failed to create Debian PartFile download");
+
+    // Real client path: OP_GETSOURCES with the >4 GiB large-file size encoding. The
+    // server's OP_FOUNDSOURCES reply flows ServerSocket::foundSourcesReceived ->
+    // DownloadQueue::addServerSourceResult -> this PartFile's srcList.
+    m_serverConnect->sendPacket(pf->createServerSourceRequestPacket(/*obfuscated=*/false));
+    qDebug() << "Sent OP_GETSOURCES for Debian (size" << kDebianSize << ")";
+
+    const bool got = QTest::qWaitFor([pf] { return pf->sourceCount() > 0; }, 15'000);
+    qDebug() << "TCP sources for Debian:" << pf->sourceCount();
+    QVERIFY2(got, "No TCP sources returned for the Debian fixture hash — a large-file "
+                  "OP_GETSOURCES that omits the uint32(0) marker misses the (hash,size) lookup");
+
+    QVERIFY2(pf->sourceCount() == 3,
+             qPrintable(QStringLiteral("Expected 3 Debian sources, got %1").arg(pf->sourceCount())));
+
+    // Verify the specific fixture peers were parsed: two HighID IPs + one LowID.
+    const uint32 ip1 = Address::fromString(QString::fromLatin1(kPeer1IPv4)).toNetworkUint32();
+    const uint32 ip2 = Address::fromString(QString::fromLatin1(kPeer2IPv4)).toNetworkUint32();
+    bool foundIp1 = false, foundIp2 = false, foundLowID = false;
+    for (const UpDownClient* src : pf->srcList()) {
+        if (src->hasLowID()) {
+            if (src->userIDHybrid() == kPeer3LowID)
+                foundLowID = true;
+        } else {
+            const uint32 srcIP = src->connectAddress().toNetworkUint32();
+            if (srcIP == ip1) foundIp1 = true;
+            if (srcIP == ip2) foundIp2 = true;
+        }
+    }
+    QVERIFY2(foundIp1, "HighID peer 203.0.113.7 missing from parsed Debian sources");
+    QVERIFY2(foundIp2, "HighID peer 198.51.100.42 missing from parsed Debian sources");
+    QVERIFY2(foundLowID, "LowID peer (id=123456) missing from parsed Debian sources");
+
+    qDebug() << "PASS: parsed 3 Debian sources (203.0.113.7, 198.51.100.42, LowID 123456)";
+}
+
+void tst_ServerLocalTest::requestFixtureSourcesUdp()
+{
+    // Sintel is offered by exactly one peer (198.51.100.42) and was NOT requested over
+    // TCP, so a source appearing here is provably parsed from the UDP reply rather than
+    // a leftover from the TCP round.
+    PartFile* pf = addFixtureDownload(kSintelHash, kSintelSize,
+                                      QStringLiteral("Sintel.2010.1080p.mkv"));
+    QVERIFY2(pf != nullptr, "Failed to create Sintel PartFile download");
+
+    // UDP source socket, wired the way CoreSession does: OP_GLOBFOUNDSOURCES ->
+    // DownloadQueue::addUDPGlobalSources.
+    m_udpSocket = new UDPSocket(this);
+    QVERIFY2(m_udpSocket->create(), "Failed to create UDPSocket");
+    connect(m_udpSocket, &UDPSocket::globalFoundSources,
+            this, [this](const uint8* data, uint32 size, const Endpoint& from) {
+                m_downloadQueue->addUDPGlobalSources(data, size, from);
+            });
+
+    // OP_GLOBGETSOURCES (0x9A): payload is just the file hash — eNode answers by hash
+    // (GetSourcesByHash), no size needed. Send unencrypted to a plain server object on
+    // eNode's UDP port (TCP + 4 = 5559), mirroring the UDP search round.
+    Server udpDest(htonl(0x7F000001), 5555);
+    auto packet = std::make_unique<Packet>(OP_GLOBGETSOURCES, 16);
+    packet->prot = OP_EDONKEYPROT;
+    std::memcpy(packet->pBuffer, kSintelHash.constData(), 16);
+    m_udpSocket->sendPacket(std::move(packet), udpDest, 5559);
+    qDebug() << "Sent OP_GLOBGETSOURCES for Sintel";
+
+    const bool got = QTest::qWaitFor([pf] { return pf->sourceCount() > 0; }, 15'000);
+    qDebug() << "UDP sources for Sintel:" << pf->sourceCount();
+    QVERIFY2(got, "No UDP sources returned for the Sintel fixture hash");
+
+    QVERIFY2(pf->sourceCount() == 1,
+             qPrintable(QStringLiteral("Expected 1 Sintel source, got %1").arg(pf->sourceCount())));
+
+    const uint32 ip2 = Address::fromString(QString::fromLatin1(kPeer2IPv4)).toNetworkUint32();
+    const UpDownClient* src = pf->srcList().front();
+    QVERIFY2(!src->hasLowID() && src->connectAddress().toNetworkUint32() == ip2,
+             "Sintel UDP source is not the expected peer 198.51.100.42");
+
+    qDebug() << "PASS: parsed 1 Sintel source (198.51.100.42) over UDP";
+}
+
+void tst_ServerLocalTest::stopServerFixtures()
+{
+    disconnectFromServer();
+    QTest::qWait(500);
+    checkServerLog();
+
+    // Drop the fixture downloads now, while the temp dir still exists — otherwise the
+    // PartFiles are freed during global teardown after ~TempDir and their .part.met
+    // save fails with noisy (harmless) errors.
+    m_downloadQueue->deleteAll();
+
+    theApp.serverConnect = nullptr;
+    delete m_udpSocket;
+    m_udpSocket = nullptr;
+    stopServer();
+}
+
+// ---------------------------------------------------------------------------
+// Helper: create a PartFile download for a fixture file
+// ---------------------------------------------------------------------------
+
+PartFile* tst_ServerLocalTest::addFixtureDownload(const QByteArray& hash, uint64 size,
+                                                  const QString& name)
+{
+    auto* pf = new PartFile();
+    pf->setFileName(name, true);
+    pf->setFileSize(size);
+    pf->setFileHash(reinterpret_cast<const uint8*>(hash.constData()));
+
+    const QString tempDir = thePrefs.tempDirs().isEmpty()
+                                ? m_tmpDir->filePath(QStringLiteral("temp"))
+                                : thePrefs.tempDirs().constFirst();
+    if (!pf->createPartFile(tempDir)) {
+        delete pf;
+        return nullptr;
+    }
+    m_downloadQueue->addDownload(pf);
+    return pf;
 }
 
 // ---------------------------------------------------------------------------

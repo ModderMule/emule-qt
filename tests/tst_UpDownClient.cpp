@@ -7,7 +7,11 @@
 #include "client/UpDownClient.h"
 #include "net/Address.h"
 #include "client/ClientCredits.h"
+#include "client/ClientList.h"
 #include "files/KnownFile.h"
+#include "kademlia/KadPrefs.h"
+#include "kademlia/Kademlia.h"
+#include "net/ClientReqSocket.h"
 #include "protocol/Tag.h"
 #include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
@@ -15,7 +19,10 @@
 #include "utils/SafeFile.h"
 
 #include <QSignalSpy>
+#include <QTcpServer>
+#include <QTemporaryDir>
 #include <QTest>
+#include <QtEndian>
 
 #include <cstdint>
 #include <cstring>
@@ -128,6 +135,9 @@ private slots:
     // Phase 3 tests — source swapping
     void swapToAnotherFile_noFiles_returnsFalse();
     void dontSwapTo_preventsSwap();
+
+    // Phase 3 tests — Kad firewall-check ACK guard
+    void processKadFwTcpCheckAck_countsOnlyRequestedPeer();
 };
 
 // ---------------------------------------------------------------------------
@@ -1583,6 +1593,74 @@ void tst_UpDownClient::dontSwapTo_preventsSwap()
     // A different file should not be suspended
     auto* otherFile = reinterpret_cast<PartFile*>(std::uintptr_t{0x2000});
     QVERIFY(!client.isSwapSuspended(otherFile));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 tests — Kad firewall-check ACK guard
+// ---------------------------------------------------------------------------
+
+// The Kad-firewall-check ACK guard (UpDownClient::processKadFwTcpCheckAck) must
+// count an OP_KAD_FWTCPCHECK_ACK toward clearing our firewalled state only when
+// the ACK's socket peer is an IP we asked to firewall-check us — otherwise a
+// spoofed ACK could falsely flip us to "not firewalled" (MFC ListenSocket.cpp:1676).
+// A real loopback socket supplies a non-null, non-palindromic peer IP (127.0.0.1 =
+// 0x7F000001 host / 0x0100007F network) so the network-order match is genuinely
+// exercised — a dropped htonl/toNetworkUint32 on either side would break it.
+//
+// Observed via KadPrefs::firewalled(): it returns false once the firewall counter
+// reaches 2, so the counter is pre-seeded to 1 and each ACK's effect (or lack of
+// it) is read off the boolean. The reject case runs first (leaves the counter at
+// 1), so the accept case still sees 1 and flips firewalled() — one fixture, both
+// branches.
+void tst_UpDownClient::processKadFwTcpCheckAck_countsOnlyRequestedPeer()
+{
+    // Kad prefs the guard will mutate, owned by this test (stop() won't free it).
+    QTemporaryDir cfgDir;
+    QVERIFY(cfgDir.isValid());
+    kad::KadPrefs prefs(cfgDir.path());
+    kad::Kademlia kad;
+    kad.start(&prefs);
+    QCOMPARE(kad::Kademlia::getInstancePrefs(), &prefs);
+
+    // clientList the guard queries.
+    ClientList clientList;
+    theApp.clientList = &clientList;
+
+    // Real connected socket → peerAddress() == 127.0.0.1.
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    auto* sock = new ClientReqSocket();
+    sock->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(sock->waitForConnected(5000));
+
+    UpDownClient client;
+    client.setSocket(sock);
+
+    const uint32 peerHost = sock->peerAddress().toIPv4Address();
+    QCOMPARE(peerHost, 0x7F000001u);            // IPv4 loopback, host order
+
+    // Pre-seed the counter to 1 so a single incFirewalled() becomes observable.
+    prefs.incFirewalled();
+    QVERIFY(prefs.firewalled());                // true at counter 1
+
+    // (1) Unrequested ACK: peer not in the FW-check list → guard rejects → no-op.
+    client.processKadFwTcpCheckAck();
+    QVERIFY2(prefs.firewalled(),
+             "spoofed OP_KAD_FWTCPCHECK_ACK must not clear firewalled state");
+
+    // (2) Requested ACK: register the peer exactly as KadUDPListener::firewalledCheck
+    //     does (host-order IP → network order), then the same ACK counts.
+    clientList.addKadFirewallRequest(qToBigEndian(peerHost));
+    client.processKadFwTcpCheckAck();
+    QVERIFY2(!prefs.firewalled(),
+             "legitimate OP_KAD_FWTCPCHECK_ACK must increment the firewalled counter");
+
+    // Teardown — the socket is not owned by the client.
+    client.setSocket(nullptr);
+    sock->deleteLater();
+    QCoreApplication::processEvents();
+    theApp.clientList = nullptr;
+    kad.stop();
 }
 
 QTEST_MAIN(tst_UpDownClient)

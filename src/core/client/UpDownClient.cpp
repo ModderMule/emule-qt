@@ -2961,6 +2961,21 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
 
 void UpDownClient::processKadFwTcpCheckAck()
 {
+    // Only count the ACK from an IP we actually asked to firewall-check us — otherwise a
+    // spoofed ACK could falsely clear our firewalled state. The firewall-check connection
+    // carries no HELLO, so userAddress() may still be unset; use the socket peer IP, which
+    // is MFC's client->GetIP(). MFC: CListenSocket OP_KAD_FWTCPCHECK_ACK ->
+    // IsKadFirewallCheckIP (srchybrid/ListenSocket.cpp:1676).
+    uint32 peerIpNet = 0;
+    if (m_socket) {
+        const auto addr = m_socket->peerAddress();
+        if (!addr.isNull())
+            peerIpNet = Address::fromQHostAddress(addr).toNetworkUint32();
+    }
+    if (theApp.clientList && !theApp.clientList->isKadFirewallCheckIP(peerIpNet)) {
+        logWarning(QStringLiteral("Unrequested OP_KAD_FWTCPCHECK_ACK from %1").arg(dbgGetClientInfo()));
+        return;
+    }
     if (auto* prefs = kad::Kademlia::getInstancePrefs())
         prefs->incFirewalled();
 }

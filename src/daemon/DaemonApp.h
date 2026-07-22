@@ -64,6 +64,14 @@ public:
     /// daemon restarts and reset its log checkpoints accordingly.
     [[nodiscard]] static QString sessionToken();
 
+    /// (Re)compose the Qt logging filter rules from the current logging prefs
+    /// (verbose / kadVerboseLog / serverVerboseLog) and apply them. Each debug
+    /// subsystem is enabled independently so a single toggle can surface its
+    /// channel without turning on the global verbose firehose. Also refreshes
+    /// the per-subsystem emit-site gates (setServerVerboseLogging). Safe to call
+    /// at startup and whenever a logging pref changes at runtime.
+    static void applyLogFilterRules();
+
 
     /// Maximum number of log entries to buffer (per daemon instance).
     static constexpr int MaxLogBuffer = 500;

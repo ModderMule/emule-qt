@@ -18,6 +18,27 @@
 
 namespace eMule {
 
+namespace {
+
+/// Human-readable name for a ServerConnState, for server-verbose logging.
+const char* serverConnStateName(ServerConnState s)
+{
+    switch (s) {
+    case ServerConnState::NotConnected: return "NotConnected";
+    case ServerConnState::Connecting:   return "Connecting";
+    case ServerConnState::WaitForLogin: return "WaitForLogin";
+    case ServerConnState::Connected:    return "Connected";
+    case ServerConnState::ServerDead:   return "ServerDead";
+    case ServerConnState::FatalError:   return "FatalError";
+    case ServerConnState::Disconnected: return "Disconnected";
+    case ServerConnState::ServerFull:   return "ServerFull";
+    case ServerConnState::Error:        return "Error";
+    }
+    return "?";
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Construction / destruction
 // ---------------------------------------------------------------------------
@@ -52,6 +73,8 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt)
 
     // If server has a dynamic IP, resolve it first
     if (m_curServer->hasDynIP()) {
+        logServerVerbose(QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
+                             .arg(m_curServer->dynIP()).arg(m_curServer->name()));
         m_dnsLookup = std::make_unique<QDnsLookup>(QDnsLookup::A, m_curServer->dynIP(), this);
         connect(m_dnsLookup.get(), &QDnsLookup::finished, this, &ServerSocket::onDnsLookupFinished);
         m_dnsLookup->lookup();
@@ -210,6 +233,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         // The "more results available" flag is a trailing byte the search parser
         // reads authoritatively (SearchList::processSearchAnswer), which also
         // surfaces it to the user (#19). The socket-level flag here is unused.
+        logServerVerbose(QStringLiteral("<<< OP_SEARCHRESULT received (%1 bytes) from %2")
+                             .arg(size).arg(m_curServer ? m_curServer->name() : QStringLiteral("?")));
         emit searchResultReceived(packet, size, /*moreResultsAvailable=*/false);
         break;
     }
@@ -221,6 +246,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             return false;
 
         bool obfuscated = (opcode == OP_FOUNDSOURCES_OBFU);
+        logServerVerbose(QStringLiteral("<<< OP_FOUNDSOURCES%1 received (%2 bytes)")
+                             .arg(obfuscated ? QStringLiteral("_OBFU") : QString()).arg(size));
         emit foundSourcesReceived(packet, size, obfuscated);
         break;
     }
@@ -250,8 +277,10 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             m_curServer->setFiles(files);
         }
 
+        logServerVerbose(QStringLiteral("<<< OP_SERVERSTATUS: users=%1 files=%2").arg(users).arg(files));
+
         if (size > 8) {
-            logDebug(QStringLiteral("ServerSocket: OP_SERVERSTATUS has %1 trailing bytes (ignored)")
+            logServerVerbose(QStringLiteral("ServerSocket: OP_SERVERSTATUS has %1 trailing bytes (ignored)")
                          .arg(size - 8));
         }
 
@@ -292,6 +321,10 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                 m_curServer->setIpAddress(Address::fromNetworkOrder(serverIP));
         }
 
+        logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: name='%1' (%2:%3) tags=%4")
+                             .arg(name)
+                             .arg(Address::fromNetworkOrder(serverIP).toString()).arg(serverPort)
+                             .arg(tagCount));
         emit serverIdentReceived(serverHash, serverIP, serverPort, name, description);
         break;
     }
@@ -301,6 +334,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (size < 1)
             return false;
 
+        logServerVerbose(QStringLiteral("<<< OP_SERVERLIST received (%1 bytes, %2 entries advertised)")
+                             .arg(size).arg(static_cast<uint>(packet[0])));
         emit serverListReceived(packet, size);
         break;
     }
@@ -312,6 +347,10 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
         uint32 clientIP = peekUInt32(packet);
         uint16 clientPort = peekUInt16(packet + 4);
+
+        logServerVerbose(QStringLiteral("<<< OP_CALLBACKREQUESTED from %1:%2 (%3 crypt bytes)")
+                             .arg(Address::fromNetworkOrder(clientIP).toString()).arg(clientPort)
+                             .arg(size > 6 ? size - 6 : 0));
 
         if (auto* filter = theApp.ipFilter) {
             if (filter->isFiltered(clientIP, thePrefs.ipFilterLevel())) {
@@ -342,7 +381,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         break;
 
     default:
-        logDebug(QStringLiteral("ServerSocket: Unknown opcode 0x%1, size %2")
+        logServerVerbose(QStringLiteral("ServerSocket: Unknown opcode 0x%1, size %2")
                      .arg(opcode, 2, 16, QLatin1Char('0'))
                      .arg(size));
         break;
@@ -359,6 +398,11 @@ void ServerSocket::setConnectionState(ServerConnState newState)
 {
     if (m_connectionState == newState)
         return;
+
+    logServerVerbose(QStringLiteral("[%1] socket state: %2 -> %3")
+                         .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
+                         .arg(QLatin1String(serverConnStateName(m_connectionState)))
+                         .arg(QLatin1String(serverConnStateName(newState))));
 
     m_connectionState = newState;
     emit connectionStateChanged(newState);
@@ -406,6 +450,7 @@ void ServerSocket::onSocketConnected()
     if (isServerCryptEnabledConnection()) {
         // Defer WaitForLogin until DH handshake completes —
         // onEncryptionHandshakeComplete() will trigger it.
+        logServerVerbose(QStringLiteral("TCP connected — waiting for obfuscation (DH) handshake before login"));
         m_pendingLogin = true;
     } else {
         setConnectionState(ServerConnState::WaitForLogin);
@@ -415,6 +460,7 @@ void ServerSocket::onSocketConnected()
 void ServerSocket::onEncryptionHandshakeComplete()
 {
     if (m_pendingLogin) {
+        logServerVerbose(QStringLiteral("Obfuscation handshake complete — proceeding to login"));
         m_pendingLogin = false;
         setConnectionState(ServerConnState::WaitForLogin);
     }

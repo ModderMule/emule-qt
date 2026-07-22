@@ -14,6 +14,7 @@
 #include "net/Packet.h"
 #include "net/UDPSocket.h"
 #include "prefs/Preferences.h"
+#include "search/SearchExprParser.h"
 #include "search/SearchList.h"
 #include "search/SearchParams.h"
 #include "server/Server.h"
@@ -127,28 +128,25 @@ void tst_ServerGlobalSearchLive::globalSearchTwoServers()
     for (Server* srv : targets)
         m_searchList->addSentUDPRequestIP(srv->ipAddress().toNetworkUint32());
 
-    // Build minimal OP_GLOBSEARCHREQ payload for keyword "eMulev0.50a"
-    // Format: [type=0x01][len_lo][len_hi][keyword bytes...]
-    static constexpr char kKeyword[] = "eMulev0.50a";
-    static constexpr uint32 kKeyLen  = sizeof(kKeyword) - 1; // 11
-    const uint32 payloadSize = 1 + 2 + kKeyLen;
+    // Build the search-terms payload once for keyword "eMulev0.50a", then let
+    // buildGlobalSearchPacket pick the per-server opcode (REQ/REQ2/REQ3) from each
+    // server's UDP flags — the same path production uses. Servers with no learned
+    // UDP flags fall back to the legacy OP_GLOBSEARCHREQ.
+    const QByteArray payload =
+        parseSearchExpression(QStringLiteral("eMulev0.50a")).expr.toBytes();
+    QVERIFY2(!payload.isEmpty(), "Failed to build search-terms payload");
 
     for (Server* srv : targets) {
-        auto packet = std::make_unique<Packet>(OP_GLOBSEARCHREQ, payloadSize);
-        packet->prot = OP_EDONKEYPROT;
+        auto packet = buildGlobalSearchPacket(*srv, payload, /*is64BitSearch*/ false);
+        if (!packet)
+            continue;   // 64-bit search vs a server without large-file support
 
-        uint8* p = reinterpret_cast<uint8*>(packet->pBuffer);
-        *p++ = 0x01;                           // type = filename keyword
-        *p++ = static_cast<uint8>(kKeyLen);    // length lo
-        *p++ = 0x00;                           // length hi
-        std::memcpy(p, kKeyword, kKeyLen);
-
-        // OP_GLOBSEARCHREQ goes to server UDP port (= TCP port + 4 by ED2K spec)
-        // Pass as specialPort; UDPSocket uses it when non-zero.
+        // Server UDP port = TCP port + 4 (ED2K spec); UDPSocket switches to the
+        // obfuscation port automatically when it obfuscates.
         const uint16 udpPort = static_cast<uint16>(srv->port() + 4);
 
-        qDebug() << "Sending OP_GLOBSEARCHREQ to"
-                 << srv->name() << srv->address() << "udp:" << udpPort;
+        qDebug() << "Sending global search opcode" << Qt::hex << packet->opcode
+                 << Qt::dec << "to" << srv->name() << srv->address() << "udp:" << udpPort;
 
         m_udpSocket->sendPacket(std::move(packet), *srv, udpPort);
     }

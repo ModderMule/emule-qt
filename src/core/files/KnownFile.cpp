@@ -941,8 +941,14 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
 
     // Compute final file hash
     if (parts == 1) {
-        // Single-part: file hash = part hash
+        // Single-part file: the whole-file hash IS the single part hash, and eMule
+        // stores no part hashset in that case. An empty hashset is what satisfies
+        // HasExpectedMD4HashCount() here (getTheoreticalMD4PartHashCount() == 0 for
+        // a file smaller than PARTSIZE). Keeping the 1-entry hashset would write
+        // parts=1 to known.met, which fails to reload (calculateMD4HashByHashSet
+        // rejects size <= 1) — the "known.met: corrupt entry" on startup.
         setFileHash(md4HashSet[0].data());
+        md4HashSet.clear();
     } else {
         // Multi-part: compute MD4 of all part hashes
         fileIdentifier().calculateMD4HashByHashSet(false);

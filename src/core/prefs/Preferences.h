@@ -214,6 +214,9 @@ public:
     [[nodiscard]] bool kadVerboseLog() const;
     void setKadVerboseLog(bool val);
 
+    [[nodiscard]] bool serverVerboseLog() const;
+    void setServerVerboseLog(bool val);
+
     [[nodiscard]] uint32 maxLogLines() const;
     void setMaxLogLines(uint32 val);
 

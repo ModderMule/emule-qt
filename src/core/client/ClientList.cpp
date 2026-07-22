@@ -277,6 +277,29 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
     return true;
 }
 
+void ClientList::addKadFirewallRequest(uint32 ipNet)
+{
+    const uint32 now = static_cast<uint32>(getTickCount());
+    m_kadFirewallRequests.push_front({ipNet, now});
+    // Drop entries older than the 180 s window (oldest live at the back).
+    while (!m_kadFirewallRequests.empty()
+           && now >= m_kadFirewallRequests.back().second + SEC2MS(180))
+        m_kadFirewallRequests.pop_back();
+}
+
+bool ClientList::isKadFirewallCheckIP(uint32 ipNet) const
+{
+    const uint32 now = static_cast<uint32>(getTickCount());
+    // Newest first: once we reach an expired entry, all older ones are expired too.
+    for (const auto& [ip, inserted] : m_kadFirewallRequests) {
+        if (now >= inserted + SEC2MS(180))
+            break;
+        if (ip == ipNet)
+            return true;
+    }
+    return false;
+}
+
 // ===========================================================================
 // Iteration
 // ===========================================================================

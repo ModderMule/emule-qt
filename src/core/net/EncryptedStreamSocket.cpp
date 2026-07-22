@@ -20,6 +20,7 @@
 
 #include "net/EncryptedStreamSocket.h"
 #include "app/AppContext.h"
+#include "client/ClientList.h"
 #include "server/ServerConnect.h"
 #include "crypto/MD5Hash.h"
 #include "prefs/Preferences.h"
@@ -224,15 +225,15 @@ int EncryptedStreamSocket::processReceivedData(void* buf, int len)
             // the (hidden) strict option rejects even those. Mirrors
             // srchybrid/EncryptedStreamSocket.cpp:270-295.
             const uint32 peerIpNet = htonl(peerAddress().toIPv4Address());
-            const bool awaitingTest = theApp.serverConnect
-                                      && theApp.serverConnect->awaitingTestFromIP(peerIpNet);
-            // TODO: also permit Kad firewall-check IPs (MFC IsKadFirewallCheckIP) once that tracking exists.
+            const bool awaitingTest =
+                (theApp.serverConnect && theApp.serverConnect->awaitingTestFromIP(peerIpNet))
+                || (theApp.clientList && theApp.clientList->isKadFirewallCheckIP(peerIpNet));
             if (m_config.cryptLayerRequiredStrict || !awaitingTest) {
                 onError(kErrEncryptionNotAllowed);
                 return 0;
             }
-            logInfo(QStringLiteral("EncryptedStreamSocket: Permitting unencrypted server-test callback "
-                                   "from %1 despite require-encryption").arg(dbgGetIPString()));
+            logInfo(QStringLiteral("EncryptedStreamSocket: Permitting unencrypted server-test/Kad-firewall "
+                                   "callback from %1 despite require-encryption").arg(dbgGetIPString()));
         }
         break;
     }

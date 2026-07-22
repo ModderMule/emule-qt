@@ -107,4 +107,23 @@ void logError(const QString& msg);
 /// Log a debug message (only in debug/verbose mode).
 void logDebug(const QString& msg);
 
+// ---------------------------------------------------------------------------
+// Gated server-verbose logging (server TCP/UDP/search handshake detail)
+// ---------------------------------------------------------------------------
+//
+// Mirrors the Kad logging helper (KadLog): a single toggle gates a dedicated
+// logging category (lcEmuleServerVerbose → "emule.serverv") that the GUI routes
+// to the Verbose tab. Kept independent of the global `verbose` pref so it can be
+// switched on to diagnose a connect without enabling the full debug firehose.
+
+/// Log a server TCP/UDP/search verbose line via qCDebug(lcEmuleServerVerbose)
+/// when server-verbose logging is enabled.
+void logServerVerbose(const QString& msg);
+
+/// Enable/disable server-verbose logging (the emit-site gate).
+void setServerVerboseLogging(bool enabled);
+
+/// Check whether server-verbose logging is enabled.
+[[nodiscard]] bool isServerVerboseLoggingEnabled();
+
 } // namespace eMule

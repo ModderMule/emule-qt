@@ -14,8 +14,10 @@
 #include <QObject>
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace eMule::kad { class Contact; }
@@ -90,6 +92,15 @@ public:
     /// Matches MFC CClientList::DoRequestFirewallCheckUDP (srchybrid/ClientList.cpp:767).
     bool doRequestFirewallCheckUDP(const kad::Contact& contact);
 
+    /// Record an IP we asked to firewall-check us, so EncryptedStreamSocket accepts its
+    /// unencrypted callback under require-encryption (and so a firewall-check ACK is only
+    /// counted from a requested IP). `ipNet` is network order; entries expire after 180 s.
+    /// Matches MFC CClientList::AddKadFirewallRequest (srchybrid/ClientList.cpp:844).
+    void addKadFirewallRequest(uint32 ipNet);
+    /// True if `ipNet` (network order) is a still-live Kad firewall-check request.
+    /// Matches MFC CClientList::IsKadFirewallCheckIP (srchybrid/ClientList.cpp:852).
+    [[nodiscard]] bool isKadFirewallCheckIP(uint32 ipNet) const;
+
     // -- Connecting client timeout (MFC CClientList::ProcessConnectingClientsList) --
 
     /// Track a client that just started a connection attempt.
@@ -139,6 +150,9 @@ private:
     std::vector<ConnectingClient> m_connectingClients;
     std::unordered_map<Address, uint32> m_bannedList;  // Address -> ban tick
     uint32 m_lastBanCleanUp = 0;
+    // Kad firewall-check requests (MFC listFirewallCheckRequests): newest at front,
+    // (ipNet, insertedSec). Purged in addKadFirewallRequest; the query never removes.
+    mutable std::deque<std::pair<uint32, uint32>> m_kadFirewallRequests;
     UpDownClient* m_buddy = nullptr;
     BuddyStatus m_buddyStatus = BuddyStatus::None;
 };

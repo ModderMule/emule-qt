@@ -343,6 +343,7 @@ private:
     QCheckBox*    m_verboseCheck = nullptr;
     QCheckBox*    m_verboseLogToDiskCheck = nullptr;
     QCheckBox*    m_logSourceExchangeCheck = nullptr;
+    QCheckBox*    m_serverVerboseCheck = nullptr;
     QCheckBox*    m_logBannedClientsCheck = nullptr;
     QCheckBox*    m_logRatingDescCheck = nullptr;
     QCheckBox*    m_logSecureIdentCheck = nullptr;

@@ -258,6 +258,13 @@ public:
 
     std::unique_ptr<Packet> createSrcInfoPacket(const UpDownClient* forClient,
                                                  uint8 version, uint16 options) const override;
+
+    /// Build the OP_GETSOURCES(_OBFU) packet asking the connected server for this
+    /// file's sources. For a large file (>4 GiB) the size is sent as a zero uint32
+    /// marker followed by a uint64, matching the ed2k protocol (and eNode's parser);
+    /// otherwise a plain uint32. Extracted from process() so it can be unit-tested.
+    [[nodiscard]] std::unique_ptr<Packet> createServerSourceRequestPacket(bool obfuscated) const;
+
     /// Parse an incoming source answer. `isSX2` selects the wire dialect: SX1 has no
     /// version byte and its real version is inferred from the record size, whereas SX2
     /// states its version up front and must match it exactly.

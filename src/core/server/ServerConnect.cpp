@@ -114,10 +114,21 @@ void ServerConnect::tryAnotherConnectionRequest()
             }
         } else {
             // Only auto-connect to static servers if configured
-            if (!m_config.autoConnectStaticOnly || next->isStaticMember())
+            if (!m_config.autoConnectStaticOnly || next->isStaticMember()) {
+                logServerVerbose(QStringLiteral("tryAnotherConnectionRequest: next candidate %1 (%2:%3) obfuscated=%4 (slot %5/%6)")
+                                     .arg(next->name()).arg(next->address()).arg(next->port())
+                                     .arg(m_tryObfuscated)
+                                     .arg(m_connectionAttempts.size() + 1).arg(m_maxSimCons));
                 connectToServer(next, true, !m_tryObfuscated);
+            } else {
+                logServerVerbose(QStringLiteral("tryAnotherConnectionRequest: skipping non-static %1 (static-only auto-connect)")
+                                     .arg(next->name()));
+            }
         }
     }
+    // NB: the "connection slots full" path is intentionally not logged — it is
+    // polled ~once/second from checkForTimeout() while a connect is in flight and
+    // would flood the verbose log with identical lines.
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +138,8 @@ void ServerConnect::tryAnotherConnectionRequest()
 void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
                                        bool isAuto, bool noCrypt)
 {
+    logServerVerbose(QStringLiteral("connectToAnyServer: %1 servers in list, startAt=%2 prioSort=%3 isAuto=%4 noCrypt=%5")
+                         .arg(m_serverList.serverCount()).arg(startAt).arg(prioSort).arg(isAuto).arg(noCrypt));
     stopConnectionTry();
     disconnect();
     m_connecting = true;
@@ -294,6 +307,10 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                 client->tryToConnect();
             });
 
+    logServerVerbose(QStringLiteral("connectToServer: %1 (%2:%3) multiconnect=%4 noCrypt=%5 openSockets=%6")
+                         .arg(server->name()).arg(server->address()).arg(server->port())
+                         .arg(multiconnect).arg(noCrypt).arg(m_openSockets.size()));
+
     socket->initProxySupport(thePrefs.proxySettings());
     socket->connectTo(*server, noCrypt);
 
@@ -307,6 +324,10 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
 
 void ServerConnect::stopConnectionTry()
 {
+    if (!m_connectionAttempts.empty() || !m_openSockets.empty())
+        logServerVerbose(QStringLiteral("stopConnectionTry: %1 pending attempt(s), %2 open socket(s)")
+                             .arg(m_connectionAttempts.size()).arg(m_openSockets.size()));
+
     m_connectionAttempts.clear();
     m_connecting = false;
     m_singleConnecting = false;
@@ -619,6 +640,8 @@ bool ServerConnect::disconnect()
 
 void ServerConnect::onRetryTimer()
 {
+    logServerVerbose(QStringLiteral("Retry timer fired — re-attempting auto-connect from position %1")
+                         .arg(m_startAutoConnectPos));
     stopConnectionTry();
     if (isConnected())
         return;
@@ -698,7 +721,8 @@ void ServerConnect::keepConnectionAlive()
         auto packet = std::make_unique<Packet>(files);
         packet->opcode = OP_OFFERFILES;
 
-        logDebug(QStringLiteral("Refreshing server connection (keep-alive)"));
+        logServerVerbose(QStringLiteral("Refreshing server connection (keep-alive, idle %1 ms)")
+                             .arg(elapsed - lastTx));
         m_connectedSocket->sendPacket(std::move(packet));
     }
 }
@@ -765,6 +789,10 @@ void ServerConnect::destroySocket(ServerSocket* socket)
 {
     if (!socket)
         return;
+
+    if (const Server* cs = socket->currentServer())
+        logServerVerbose(QStringLiteral("destroySocket: %1 (%2:%3)")
+                             .arg(cs->name()).arg(cs->address()).arg(cs->port()));
 
     // Remove from open sockets list
     auto it = std::find(m_openSockets.begin(), m_openSockets.end(), socket);
@@ -872,7 +900,9 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     auto packet = std::make_unique<Packet>(data);
     packet->opcode = OP_LOGINREQUEST;
 
-    logDebug(QStringLiteral(">>> Sending OP_LoginRequest"));
+    logServerVerbose(QStringLiteral(">>> Sending OP_LoginRequest (clientID=%1 port=%2 nick=%3 caps=0x%4)")
+                         .arg(m_clientID).arg(m_config.listenPort).arg(m_config.userNick)
+                         .arg(srvCaps, 0, 16));
     // forceImmediateSend=true: write the login to the socket NOW rather than
     // deferring via QTimer::singleShot(0).  After a DH handshake the login
     // must reach the server in the same event-loop iteration, otherwise
@@ -888,6 +918,13 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
 void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint32 tcpFlags,
                                     uint32 serverReportedIP)
 {
+    logServerVerbose(QStringLiteral("onLoginReceived: clientID=%1 (%2) tcpFlags=0x%3 serverReportedIP=%4 smartIdState=%5")
+                         .arg(clientID)
+                         .arg(eMule::isLowID(clientID) ? QStringLiteral("LowID") : QStringLiteral("HighID"))
+                         .arg(tcpFlags, 0, 16)
+                         .arg(Address::fromNetworkOrder(serverReportedIP).toString())
+                         .arg(m_smartIdState));
+
     // #14: the socket applied the server's capability flags only to its throwaway
     // copy; push them (including the obfuscation bit the IDCHANGE handler OR-ed in
     // for an obfuscated connection) to the persistent list entry. srchybrid also

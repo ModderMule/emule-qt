@@ -159,6 +159,17 @@ bool FileIdentifier::loadMD4HashsetFromFile(FileDataIO& file, bool verifyExistin
     if (!verifyExistingHash)
         md4cpy(m_md4Hash.data(), checkId.data());
 
+    // A single-part file carries no meaningful part hashset — the whole-file hash
+    // already equals that lone part hash. Older known.met files (written before the
+    // single-part hashset was cleared on hashing) store a redundant 1-entry hashset;
+    // discard it rather than failing the whole entry in calculateMD4HashByHashSet,
+    // which rejects size <= 1. verifyExistingHash never reaches here with size 1
+    // (parts != getTheoreticalMD4PartHashCount(), which is 0 or >= 2, never 1).
+    if (m_md4HashSet.size() == 1) {
+        deleteMD4Hashset();
+        return true;
+    }
+
     return m_md4HashSet.empty() || calculateMD4HashByHashSet(true, true);
 }
 

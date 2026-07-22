@@ -7,9 +7,17 @@
 
 #include "search/SearchExprParser.h"
 #include "protocol/ED2KLink.h"
+#include "protocol/Tag.h"
+#include "net/Packet.h"
+#include "server/Server.h"
+#include "utils/Opcodes.h"
+#include "utils/SafeFile.h"
 
 #include <QByteArray>
 #include <QString>
+
+#include <cstring>
+#include <memory>
 
 
 namespace eMule {
@@ -948,6 +956,54 @@ QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& ka
     if (expr.m_expr.empty())
         return {};
     return expr.toBytes();
+}
+
+// ---------------------------------------------------------------------------
+// buildGlobalSearchPacket
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<Packet> buildGlobalSearchPacket(const Server& server,
+                                                const QByteArray& searchTerms,
+                                                bool is64BitSearch)
+{
+    const bool extGetFiles = (server.udpFlags() & SrvUdpFlag::ExtGetFiles) != 0;
+    const bool largeFiles  = server.supportsLargeFilesUDP();
+
+    // OP_GLOBSEARCHREQ3: server supports large files AND extended get-files. Prepend a
+    // CT_SERVER_UDPSEARCH_FLAGS tag advertising our new-tags/large-files capability,
+    // then the search tree. MFC: CSearchResultsWnd::OnTimer (SearchResultsWnd.cpp:273).
+    if (largeFiles && extGetFiles) {
+        SafeMemFile data;
+        data.writeUInt32(1);   // tag count
+        Tag(static_cast<uint8>(CT_SERVER_UDPSEARCH_FLAGS),
+            static_cast<uint32>(SRVCAP_UDP_NEWTAGS_LARGEFILES)).writeNewEd2kTag(data);
+        const QByteArray prefix = data.buffer();
+
+        auto packet = std::make_unique<Packet>(
+            OP_GLOBSEARCHREQ3,
+            static_cast<uint32>(prefix.size() + searchTerms.size()));
+        packet->prot = OP_EDONKEYPROT;
+        std::memcpy(packet->pBuffer, prefix.constData(),
+                    static_cast<size_t>(prefix.size()));
+        std::memcpy(packet->pBuffer + prefix.size(), searchTerms.constData(),
+                    static_cast<size_t>(searchTerms.size()));
+        return packet;
+    }
+
+    // A 64-bit (>4 GiB) search needs large-file UDP support; skip the server
+    // otherwise — the reference's `!m_b64BitSearchPacket || SupportsLargeFilesUDP()`
+    // guard (SearchResultsWnd.cpp:284/294).
+    if (is64BitSearch && !largeFiles)
+        return nullptr;
+
+    // OP_GLOBSEARCHREQ2 for extended-get-files servers, else the legacy opcode.
+    const uint8 opcode = extGetFiles ? OP_GLOBSEARCHREQ2 : OP_GLOBSEARCHREQ;
+    auto packet = std::make_unique<Packet>(
+        opcode, static_cast<uint32>(searchTerms.size()));
+    packet->prot = OP_EDONKEYPROT;
+    std::memcpy(packet->pBuffer, searchTerms.constData(),
+                static_cast<size_t>(searchTerms.size()));
+    return packet;
 }
 
 } // namespace eMule

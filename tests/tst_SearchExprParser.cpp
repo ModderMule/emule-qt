@@ -7,6 +7,9 @@
 #include "TestHelpers.h"
 #include "search/SearchExprParser.h"
 #include "search/SearchExpr.h"
+#include "net/Packet.h"
+#include "server/Server.h"
+#include "utils/Opcodes.h"
 
 #include <QTest>
 
@@ -98,6 +101,12 @@ private slots:
     void error_missing_size_operator();
     void error_invalid_type_value();
     void error_missing_string_value();
+
+    // --- Global-search packet opcode selection (buildGlobalSearchPacket) ---
+    void globalSearch_legacyReq_whenNoFlags();
+    void globalSearch_req2_whenExtGetFiles();
+    void globalSearch_req3_whenExtGetFilesAndLargeFiles();
+    void globalSearch_skip_when64BitAndNoLargeFiles();
 };
 
 // Helper to check the i-th element of the expression
@@ -689,6 +698,66 @@ void tst_SearchExprParser::error_missing_string_value()
 {
     auto r = parseSearchExpression(QStringLiteral("@ext="));
     QVERIFY(!r.success());
+}
+
+// ---------------------------------------------------------------------------
+// buildGlobalSearchPacket — opcode selection from server UDP flags
+// (port of MFC CSearchResultsWnd::OnTimer, SearchResultsWnd.cpp:267-303)
+// ---------------------------------------------------------------------------
+
+void tst_SearchExprParser::globalSearch_legacyReq_whenNoFlags()
+{
+    const QByteArray terms = parseSearchExpression(QStringLiteral("eMule")).expr.toBytes();
+    QVERIFY(!terms.isEmpty());
+
+    Server srv(0x01020304, 4661);   // no UDP flags learned yet
+    auto pkt = buildGlobalSearchPacket(srv, terms, /*is64BitSearch*/ false);
+    QVERIFY(pkt != nullptr);
+    QCOMPARE(pkt->opcode, static_cast<uint8>(OP_GLOBSEARCHREQ));
+    QCOMPARE(pkt->prot, static_cast<uint8>(OP_EDONKEYPROT));
+    // Legacy body is exactly the search tree.
+    QCOMPARE(pkt->size, static_cast<uint32>(terms.size()));
+}
+
+void tst_SearchExprParser::globalSearch_req2_whenExtGetFiles()
+{
+    const QByteArray terms = parseSearchExpression(QStringLiteral("eMule")).expr.toBytes();
+    Server srv(0x01020304, 4661);
+    srv.setUDPFlags(SrvUdpFlag::ExtGetFiles);
+    auto pkt = buildGlobalSearchPacket(srv, terms, /*is64BitSearch*/ false);
+    QVERIFY(pkt != nullptr);
+    QCOMPARE(pkt->opcode, static_cast<uint8>(OP_GLOBSEARCHREQ2));
+    QCOMPARE(pkt->size, static_cast<uint32>(terms.size()));
+}
+
+void tst_SearchExprParser::globalSearch_req3_whenExtGetFilesAndLargeFiles()
+{
+    const QByteArray terms = parseSearchExpression(QStringLiteral("eMule")).expr.toBytes();
+    Server srv(0x01020304, 4661);
+    srv.setUDPFlags(SrvUdpFlag::ExtGetFiles | SrvUdpFlag::LargeFiles);
+    auto pkt = buildGlobalSearchPacket(srv, terms, /*is64BitSearch*/ false);
+    QVERIFY(pkt != nullptr);
+    QCOMPARE(pkt->opcode, static_cast<uint8>(OP_GLOBSEARCHREQ3));
+    // REQ3 prepends <uint32 tagCount=1> + a CT_SERVER_UDPSEARCH_FLAGS new-ed2k tag,
+    // so the body is strictly larger than the bare search tree, and the first 4
+    // bytes are the tag count (1).
+    QVERIFY(pkt->size > static_cast<uint32>(terms.size()));
+    const auto* body = reinterpret_cast<const uint8*>(pkt->pBuffer);
+    const uint32 tagCount = static_cast<uint32>(body[0])
+                          | (static_cast<uint32>(body[1]) << 8)
+                          | (static_cast<uint32>(body[2]) << 16)
+                          | (static_cast<uint32>(body[3]) << 24);
+    QCOMPARE(tagCount, 1u);
+}
+
+void tst_SearchExprParser::globalSearch_skip_when64BitAndNoLargeFiles()
+{
+    const QByteArray terms = parseSearchExpression(QStringLiteral("eMule")).expr.toBytes();
+    Server srv(0x01020304, 4661);
+    srv.setUDPFlags(SrvUdpFlag::ExtGetFiles);   // ext-get-files but NOT large files
+    // A 64-bit search on a server without large-file support must be skipped.
+    auto pkt = buildGlobalSearchPacket(srv, terms, /*is64BitSearch*/ true);
+    QVERIFY(pkt == nullptr);
 }
 
 QTEST_MAIN(tst_SearchExprParser)

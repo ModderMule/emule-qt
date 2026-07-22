@@ -164,4 +164,26 @@ void logDebug(const QString& msg)
     qCDebug(lcEmuleGeneral).noquote() << msg;
 }
 
+// ---------------------------------------------------------------------------
+// Gated server-verbose logging
+// ---------------------------------------------------------------------------
+
+static bool s_serverVerboseEnabled = false;
+
+void logServerVerbose(const QString& msg)
+{
+    if (s_serverVerboseEnabled)
+        qCDebug(lcEmuleServerVerbose).noquote() << msg;
+}
+
+void setServerVerboseLogging(bool enabled)
+{
+    s_serverVerboseEnabled = enabled;
+}
+
+bool isServerVerboseLoggingEnabled()
+{
+    return s_serverVerboseEnabled;
+}
+
 } // namespace eMule

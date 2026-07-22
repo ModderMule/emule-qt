@@ -23,7 +23,12 @@
 
 #include <QStringList>
 
+#include <memory>
+
 namespace eMule {
+
+class Packet;
+class Server;
 
 // ---------------------------------------------------------------------------
 // ParseResult — output from the search expression parser
@@ -77,5 +82,28 @@ struct ParseResult {
 ///         nothing left to send.
 [[nodiscard]] QByteArray buildSearchTermsPayload(const SearchParams& params,
                                                   const QString& kadKeyword = QString());
+
+// ---------------------------------------------------------------------------
+// buildGlobalSearchPacket — server-UDP global-search packet with opcode selection
+// ---------------------------------------------------------------------------
+
+/// Build the server-UDP global-search packet for @p server, selecting the opcode
+/// from the server's UDP flags — port of MFC CSearchResultsWnd::OnTimer
+/// (srchybrid/SearchResultsWnd.cpp:267-303):
+///   - large-files + ext-get-files → OP_GLOBSEARCHREQ3 (prepends a
+///     CT_SERVER_UDPSEARCH_FLAGS = SRVCAP_UDP_NEWTAGS_LARGEFILES tag)
+///   - ext-get-files                → OP_GLOBSEARCHREQ2
+///   - otherwise                    → legacy OP_GLOBSEARCHREQ
+///
+/// @param searchTerms The encoded search tree (e.g. from SearchExpr::toBytes()).
+/// @param is64BitSearch True when the search carries a >4 GiB size condition; such
+///        a request is skipped (returns nullptr) for servers without large-file
+///        UDP support, matching the reference's b64BitSearchPacket guard.
+/// @return The packet (prot = OP_EDONKEYPROT), or nullptr if the server must be
+///         skipped. Obfuscation/obf-port are applied later by UDPSocket::sendPacket
+///         when the server has a UDP key and advertises UDP obfuscation.
+[[nodiscard]] std::unique_ptr<Packet> buildGlobalSearchPacket(const Server& server,
+                                                              const QByteArray& searchTerms,
+                                                              bool is64BitSearch);
 
 } // namespace eMule

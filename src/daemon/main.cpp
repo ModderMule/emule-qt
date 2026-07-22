@@ -86,10 +86,10 @@ int main(int argc, char* argv[])
     // Seed bundled config data (webserver assets, template, nodes.dat)
     eMule::AppConfig::seedBundledData(configDir);
 
-    // Enable debug-level output for all emule.* categories so logDebug()
-    // messages reach the message handler and are forwarded to the GUI.
-    if (eMule::thePrefs.verbose())
-        QLoggingCategory::setFilterRules(QStringLiteral("emule.*.debug=true"));
+    // Enable debug-level output per logging pref (verbose / kadVerboseLog /
+    // serverVerboseLog) so the corresponding logDebug()/logKad()/logServerVerbose()
+    // lines reach the message handler and are forwarded to the GUI.
+    eMule::DaemonApp::applyLogFilterRules();
 
     eMule::logInfo(QStringLiteral("eMule Core Daemon starting..."));
 

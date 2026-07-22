@@ -60,6 +60,7 @@
 #include "net/Packet.h"
 #include "net/UDPSocket.h"
 #include "prefs/Preferences.h"
+#include "search/SearchExprParser.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
 #include "search/SearchParams.h"
@@ -67,6 +68,7 @@
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "transfer/UploadBandwidthThrottler.h"
+#include "utils/Log.h"
 #include "utils/Opcodes.h"
 
 #include <QDir>
@@ -229,6 +231,16 @@ void tst_ServerConnectLive::initTestCase()
                                                      server.port());
             });
 
+    // Wire UDP server-status replies (OP_GLOBSERVSTATRES) → ServerList so the
+    // obfuscated crypt-ping in serverStats() actually stores each server's UDP
+    // key + flags. Mirrors CoreSession.cpp:474 — without it the obf REQ3 path
+    // below never sees a key (the reply is received but dropped on the floor).
+    connect(m_udpSocket, &UDPSocket::serverStatusResult,
+            this, [](const uint8* data, uint32 size, const Endpoint& server) {
+                if (theApp.serverList)
+                    theApp.serverList->processStatusResponse(data, size, server);
+            });
+
     // 13. ServerConnect — production-representative config (mirrors CoreSession).
     m_serverConnect = new ServerConnect(*m_serverList, this);
 
@@ -385,49 +397,104 @@ void tst_ServerConnectLive::udpGlobalSearch()
 
     const QString keyword =
         qEnvironmentVariable("EMULE_SEARCH_KEYWORD", QStringLiteral("eMule"));
-    const QByteArray kw = keyword.toUtf8();
-    QVERIFY2(kw.size() > 0 && kw.size() <= 0xFFFF, "Invalid search keyword");
+
+    // Build the search-terms payload (search tree) once. buildGlobalSearchPacket then
+    // picks the per-server opcode (REQ/REQ2/REQ3) from the server's UDP flags — the
+    // exact production path (IpcClientHandler / MFC CSearchResultsWnd).
+    const QByteArray payload = parseSearchExpression(keyword).expr.toBytes();
+    QVERIFY2(!payload.isEmpty(), "Failed to build search-terms payload for keyword");
 
     const uint32 searchID = m_searchList->newSearch({}, SearchParams{});
 
-    // Targets: the connected (known-alive) server plus the first couple of
-    // servers, deduped by IP — maximizes the odds of a UDP answer.
-    QList<Server*> targets;
-    QSet<uint32> seen;
-    auto addTarget = [&](Server* srv) {
-        if (!srv) return;
-        const uint32 ip = srv->ipAddress().toNetworkUint32();
-        if (ip == 0 || seen.contains(ip)) return;
-        seen.insert(ip);
-        targets.append(srv);
-    };
-    addTarget(m_serverConnect->currentServer());
-    for (size_t i = 0; i < std::min<size_t>(2, m_serverList->serverCount()); ++i)
-        addTarget(m_serverList->serverAt(i));
+    if (m_portsOpen) {
+        // ---- Obfuscated OP_GLOBSEARCHREQ3 path. Requires a public IP, which the
+        //      HighID connect from test 1 provided. "Require the real handshake":
+        //      drive serverStats() until a server completes the OP_GLOBSERVSTATREQ/RES
+        //      crypt-ping and hands us a UDP key, then send an *obfuscated* REQ3. ----
+        QVERIFY2(theApp.publicIP() != 0,
+                 "HighID connect yielded no public IP — cannot obtain a server UDP key");
 
-    // Register IPs so SearchList's UDP spam guard lets the answers through.
-    for (Server* srv : targets)
-        m_searchList->addSentUDPRequestIP(srv->ipAddress().toNetworkUint32());
+        // serverStats()/sendUDPPacket gate on theApp.isConnected(); wire the global
+        // ServerConnect here (deliberately NOT in initTestCase — the awaitingTestFromIP
+        // guard must stay inert during test 1's obfuscated connect).
+        theApp.serverConnect = m_serverConnect;
+        thePrefs.setCryptLayerSupported(true);
+        setServerVerboseLogging(true);   // surface the crypt-ping / serverStats detail
 
-    // OP_GLOBSEARCHREQ payload: [type=0x01][len_lo][len_hi][keyword bytes...]
-    const auto keyLen = static_cast<uint16>(kw.size());
-    const uint32 payloadSize = 1u + 2u + keyLen;
+        // Poll serverStats() (pings the next due server per call) until a server has
+        // answered the obfuscated crypt-ping with a UDP key AND advertises the full
+        // REQ3 capability set (obfuscation + ext-get-files + large files).
+        Server* obfServer = nullptr;
+        QElapsedTimer keyTimer;
+        keyTimer.start();
+        while (keyTimer.elapsed() < 60'000 && obfServer == nullptr) {
+            m_serverList->serverStats();
+            QTest::qWait(500);
+            for (size_t i = 0; i < m_serverList->serverCount(); ++i) {
+                Server* srv = m_serverList->serverAt(i);
+                if (srv->serverKeyUDP() != 0 && srv->supportsObfuscationUDP()
+                    && (srv->udpFlags() & SrvUdpFlag::ExtGetFiles)
+                    && srv->supportsLargeFilesUDP()) {
+                    obfServer = srv;
+                    break;
+                }
+            }
+        }
 
-    for (Server* srv : targets) {
-        auto packet = std::make_unique<Packet>(OP_GLOBSEARCHREQ, payloadSize);
-        packet->prot = OP_EDONKEYPROT;
+        QVERIFY2(obfServer != nullptr,
+                 "No REQ3-capable server completed the obfuscated crypt-ping "
+                 "(OP_GLOBSERVSTATREQ/RES) within 60s — cannot exercise the obf REQ3 path");
 
-        uint8* p = reinterpret_cast<uint8*>(packet->pBuffer);
-        *p++ = 0x01;                                        // type = filename keyword
-        *p++ = static_cast<uint8>(keyLen & 0xFF);           // length lo
-        *p++ = static_cast<uint8>((keyLen >> 8) & 0xFF);    // length hi
-        std::memcpy(p, kw.constData(), keyLen);
+        qDebug() << "Obf-capable server with UDP key:" << obfServer->name()
+                 << obfServer->address()
+                 << "keyUDP:" << Qt::hex << obfServer->serverKeyUDP()
+                 << Qt::dec << "udpFlags:" << obfServer->udpFlags();
 
-        // ED2K server UDP port = TCP port + 4.
-        const uint16 udpPort = static_cast<uint16>(srv->port() + 4);
-        qDebug() << "Sending OP_GLOBSEARCHREQ \"" << keyword << "\" to"
-                 << srv->name() << srv->address() << "udp:" << udpPort;
-        m_udpSocket->sendPacket(std::move(packet), *srv, udpPort);
+        // Build via the shared helper and assert REQ3 + that the obfuscation gate in
+        // UDPSocket::sendPacket will fire deterministically (crypt on + key + obf flag).
+        auto pkt = buildGlobalSearchPacket(*obfServer, payload, /*is64BitSearch*/ false);
+        QVERIFY2(pkt != nullptr, "buildGlobalSearchPacket returned null for obf server");
+        QCOMPARE(pkt->opcode, static_cast<uint8>(OP_GLOBSEARCHREQ3));
+        QVERIFY2(thePrefs.cryptLayerSupported()
+                     && obfServer->serverKeyUDP() != 0
+                     && obfServer->supportsObfuscationUDP(),
+                 "Obfuscation preconditions not met — the send would go out in the clear");
+
+        m_searchList->addSentUDPRequestIP(obfServer->ipAddress().toNetworkUint32());
+        const uint16 udpPort = static_cast<uint16>(obfServer->port() + 4);
+        qDebug() << "Sending OBFUSCATED OP_GLOBSEARCHREQ3 \"" << keyword << "\" to"
+                 << obfServer->name() << "keyUDP:" << Qt::hex << obfServer->serverKeyUDP();
+        m_serverConnect->sendUDPPacket(std::move(pkt), *obfServer, udpPort);
+    } else {
+        // ---- Firewalled path: no public IP → no server UDP key → send in the clear.
+        //      Still exercises the per-server opcode selection through the helper.
+        //      Targets: connected server + first couple, deduped by IP. ----
+        QList<Server*> targets;
+        QSet<uint32> seen;
+        auto addTarget = [&](Server* srv) {
+            if (!srv) return;
+            const uint32 ip = srv->ipAddress().toNetworkUint32();
+            if (ip == 0 || seen.contains(ip)) return;
+            seen.insert(ip);
+            targets.append(srv);
+        };
+        addTarget(m_serverConnect->currentServer());
+        for (size_t i = 0; i < std::min<size_t>(2, m_serverList->serverCount()); ++i)
+            addTarget(m_serverList->serverAt(i));
+
+        for (Server* srv : targets)
+            m_searchList->addSentUDPRequestIP(srv->ipAddress().toNetworkUint32());
+
+        for (Server* srv : targets) {
+            auto pkt = buildGlobalSearchPacket(*srv, payload, /*is64BitSearch*/ false);
+            if (!pkt)
+                continue;
+            const uint16 udpPort = static_cast<uint16>(srv->port() + 4);
+            qDebug() << "Sending global search opcode" << Qt::hex << pkt->opcode << Qt::dec
+                     << "\"" << keyword << "\" to" << srv->name() << srv->address()
+                     << "udp:" << udpPort;
+            m_udpSocket->sendPacket(std::move(pkt), *srv, udpPort);
+        }
     }
 
     const bool gotResults = QTest::qWaitFor([this, searchID] {
@@ -472,6 +539,9 @@ void tst_ServerConnectLive::cleanupTestCase()
     delete m_searchList;
     m_searchList = nullptr;
 
+    // udpGlobalSearch() wires theApp.serverConnect for the obf key-fetch path; drop
+    // the borrowed pointer before m_serverConnect (a child of this) is destroyed.
+    theApp.serverConnect = nullptr;
     theApp.serverList = nullptr;
     theApp.sharedFileList = nullptr;
     theApp.knownFileList = nullptr;
