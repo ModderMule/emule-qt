@@ -1377,7 +1377,15 @@ uint32 Search::getLifetime() const
 {
     switch (m_type) {
     case SearchType::Node:           return kSearchNodeLifetime;
-    case SearchType::NodeComplete:   return kSearchNodeCompLifetime;
+    // NodeComplete's base/stop lifetime is the full node lifetime (45s), NOT the
+    // 10s kSearchNodeCompLifetime — that shorter value is only the "publish after
+    // >=10 answers" fast-path threshold used in SearchManager::jumpStart(). MFC
+    // PrepareToStop() uses SEARCHNODE_LIFETIME for all node types incl. NODECOMPLETE
+    // (Search.cpp:214-218). Returning 10 here made prepareToStop() future-date
+    // m_created (now-10+15 = now+5), so SearchManager's `now >= m_created+45`
+    // deletion (which calls setPublish(true)) could not fire for ~50s when the
+    // self-lookup got fewer than 10 answers — stalling all Kad publishing.
+    case SearchType::NodeComplete:   return kSearchNodeLifetime;
     case SearchType::File:           return kSearchFileLifetime;
     case SearchType::Keyword:        return kSearchKeywordLifetime;
     case SearchType::Notes:          return kSearchNotesLifetime;

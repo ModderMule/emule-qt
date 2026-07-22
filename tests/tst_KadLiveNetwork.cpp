@@ -97,6 +97,12 @@ private:
                          std::function<void(const Contact*)> sendFn,
                          std::function<bool()> earlyStopCondition = nullptr);
 
+    /// Refresh the routing table with a round of HELLO exchanges so a subsequent
+    /// search has plenty of verified, UDP-keyed contacts to route through. Earlier
+    /// tests may let verifications expire or consume contacts. Returns the number
+    /// of IP-verified contacts afterwards.
+    int warmRoutingTable(int maxContacts = 30, int minReplies = 10);
+
     static constexpr int kSendRate = 10;              ///< Max packets per second
 
     TempDir* m_tmpDir = nullptr;
@@ -704,23 +710,67 @@ void tst_KadLiveNetwork::publishKeywords_completesWithLoad()
         m_sharedFiles->addKeywords(file);
     });
 
-    // Publish keywords one by one
-    int keywordsPublished = 0;
-    while (true) {
-        // Access keyword list directly — addKeywords populated it
-        auto* search = SearchManager::prepareLookup(SearchType::StoreKeyword, false,
-                                                     UInt128(uint32{0}));
-        if (!search)
-            break;
-
-        // We need to supply a proper target; use SharedFileList::publish() pattern.
-        // Instead, break and use the high-level publish() call.
-        delete search;
-        break;
+    // Keyword publishing via SharedFileList::publish() is gated by
+    // Kademlia::getPublish() (SharedFileList.cpp:413, matching MFC
+    // SharedFileList.cpp:1247). That flag only flips true once a NodeComplete
+    // self-lookup expires in SearchManager::jumpStart() (KadSearchManager.cpp:398-414,
+    // = MFC SearchManager.cpp:311-315). The natural self-lookup is scheduled at
+    // Kad start + 3 min (Kademlia.cpp:110), later than this whole suite runs — so
+    // trigger it now and wait for the real gate, exercising the true publish path.
+    auto* prefs = Kademlia::getInstancePrefs();
+    QVERIFY(prefs);
+    if (!m_kad->getPublish()) {
+        // Clear the field and re-verify contacts first: a lingering search for our
+        // own kadID would make prepareLookup() below return null (duplicate target),
+        // and a churned table stops the NodeComplete lookup from converging — either
+        // way the real gate never opens and we'd always fall back. stopAllSearches()
+        // + warmRoutingTable() give the self-lookup the clean, warm start it needs.
+        SearchManager::stopAllSearches();
+        const int verifiedContacts = warmRoutingTable();
+        qDebug() << "Keyword publish: getPublish() is false — triggering self-lookup"
+                 << "(kadId" << prefs->kadId().toHexString()
+                 << ", verified contacts" << verifiedContacts << ")";
+        // A NodeComplete self-lookup is what SearchManager::findNode(id, true) starts
+        // internally; that method is private (Kademlia-only friend), so drive the same
+        // path through the public prepareLookup().
+        auto* selfLookup =
+            SearchManager::prepareLookup(SearchType::NodeComplete, true, prefs->kadId());
+        qDebug() << "Keyword publish: self-lookup search created:" << (selfLookup != nullptr);
+        // NodeComplete sets publish at +45s unconditionally, or +10s once it has
+        // >= 10 answers (KadSearchManager.cpp:405-407). Poll up to 50s, logging the
+        // self-lookup's presence/answers so a stubborn fallback is diagnosable.
+        bool published = false;
+        for (int waited = 0; waited < 50'000 && !published; waited += 5'000) {
+            published = QTest::qWaitFor([this] {
+                return m_kad->getPublish();
+            }, 5'000);
+            bool ncPresent = false;
+            uint32 ncAnswers = 0;
+            for (const auto& [t, s] : SearchManager::getSearches()) {
+                if (s->getSearchType() == SearchType::NodeComplete) {
+                    ncPresent = true;
+                    ncAnswers = s->getAnswers();
+                }
+            }
+            qDebug() << "  self-lookup wait: getPublish" << m_kad->getPublish()
+                     << "NodeComplete present" << ncPresent << "answers" << ncAnswers
+                     << "activeSearches" << SearchManager::getSearches().size();
+        }
+        if (!published) {
+            qWarning() << "Keyword publish: self-lookup did not enable getPublish() "
+                          "within 50s — forcing setPublish(true) to still exercise "
+                          "the keyword publish pipeline";
+            prefs->setPublish(true);   // fallback so the test still runs
+        }
     }
+    QVERIFY2(m_kad->getPublish(),
+             "getPublish() still false after self-lookup trigger + forced fallback");
+    qDebug() << "Keyword publish: getPublish() enabled; totalStoreKey ="
+             << m_kad->getTotalStoreKey();
 
     // Use the high-level publish() which handles keyword splitting and round-robin.
     // Call it repeatedly to cycle through all keywords.
+    int keywordsPublished = 0;
     constexpr int kMaxKeywordRounds = 20;
     for (int round = 0; round < kMaxKeywordRounds; ++round) {
         m_sharedFiles->publish();
@@ -738,6 +788,9 @@ void tst_KadLiveNetwork::publishKeywords_completesWithLoad()
                 }
             }
         }
+        qDebug() << "  Keyword publish round" << round
+                 << "— started so far:" << keywordsPublished
+                 << "totalStoreKey:" << m_kad->getTotalStoreKey();
         if (keywordsPublished >= 3)
             break;  // enough keywords started
     }
@@ -1087,6 +1140,17 @@ void tst_KadLiveNetwork::keywordSearch_findsResults()
             m_searchResults.push_back({name, size, sources, completeSources});
         });
 
+    // Give the keyword search a clean, warm start. Earlier tests (source/keyword
+    // publishing, notes) leave long-lived StoreKeyword/self-lookup searches active
+    // — each 140s — plus a churned routing table with stale, unverified contacts.
+    // That starves the keyword node-lookup so it can't converge to responding
+    // nodes within the 20s budget. Clear the field, then re-verify contacts so the
+    // lookup routes through fresh, UDP-keyed peers (the same conditions under which
+    // it succeeds in isolation and in the live GUI).
+    SearchManager::stopAllSearches();
+    const int verifiedContacts = warmRoutingTable();
+    qDebug() << "Keyword search bootstrap — verified contacts:" << verifiedContacts;
+
     // Search for "emule" — a common keyword on the live eMule network that
     // is virtually guaranteed to have indexed entries on nodes near the hash.
     auto* search = SearchManager::prepareFindKeywords(
@@ -1097,10 +1161,30 @@ void tst_KadLiveNetwork::keywordSearch_findsResults()
 
     qDebug() << "Started Kad keyword search" << searchID << "for 'emule'";
 
-    // Wait up to 20s for at least 1 result (3 min total budget).
-    const bool gotResults = QTest::qWaitFor([this] {
-        return m_searchResults.size() >= 1;
-    }, 20'000);
+    // Wait up to 20s for at least 1 result. "emule" is one of the most common
+    // keywords on the live Kad network, so on a healthy connection a result
+    // should arrive well within 20s; if it doesn't, the connection is broken or
+    // there is a real bug — which this test deliberately surfaces (budget kept at
+    // 20s). Poll in ticks and log progress so a miss is self-explaining: no
+    // routing contacts / no packets moving → broken connection; packets flowing
+    // but answers == 0 → search or response-handling bug; answers climbing but
+    // results == 0 → result filtering/decode bug.
+    bool gotResults = false;
+    constexpr int kBudgetMs = 20'000;
+    constexpr int kTickMs = 4'000;
+    for (int waited = 0; waited < kBudgetMs; waited += kTickMs) {
+        gotResults = QTest::qWaitFor([this] {
+            return m_searchResults.size() >= 1;
+        }, kTickMs);
+        qDebug() << "  keyword search: results" << m_searchResults.size()
+                 << "answers" << search->getAnswers()
+                 << "active" << SearchManager::isSearching(searchID)
+                 << "routingContacts" << m_kad->getRoutingZone()->getNumContacts()
+                 << "pktSent" << m_kadPacketsSent.load()
+                 << "pktRecv" << m_kadPacketsReceived.load();
+        if (gotResults)
+            break;
+    }
 
     const auto resultCount = m_searchResults.size();
     qDebug() << "Keyword search returned" << resultCount << "results";
@@ -1144,37 +1228,8 @@ void tst_KadLiveNetwork::buddySearch_connectsWithBuddy()
     // FindBuddy search has plenty of verified contacts to work with.
     // Earlier tests may have let verifications expire or consumed contacts.
     {
-        ContactArray contacts;
-        m_kad->getRoutingZone()->getAllEntries(contacts);
-        if (contacts.size() > 30)
-            contacts.resize(30);
-        auto* udpListener = m_kad->getUDPListener();
-        const int baseRecv = m_kadPacketsReceived.load(std::memory_order_relaxed);
-        rateLimitedSend(contacts,
-            [udpListener](const Contact* c) {
-                UInt128 contactID = c->getClientID();
-                udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
-                                           c->address().toUint32(), c->getUDPPort(),
-                                           c->getVersion(), c->getUDPKey(), &contactID, false);
-            },
-            [this, baseRecv] {
-                return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 10;
-            });
-
-        // Wait for HELLO_RES to arrive and verify contacts
-        (void)QTest::qWaitFor([this, baseRecv] {
-            return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= 10;
-        }, 5'000);
-
-        ContactArray verified;
-        m_kad->getRoutingZone()->getAllEntries(verified);
-        int verifiedCount = 0;
-        for (const auto* c : verified) {
-            if (c->isIpVerified())
-                ++verifiedCount;
-        }
-        qDebug() << "Buddy search bootstrap — total contacts:" << verified.size()
-                 << "verified:" << verifiedCount;
+        const int verifiedCount = warmRoutingTable();
+        qDebug() << "Buddy search bootstrap — verified contacts:" << verifiedCount;
     }
 
     // Try up to 3 separate FindBuddy searches.  Each search finds a willing
@@ -1311,6 +1366,41 @@ void tst_KadLiveNetwork::rateLimitedSend(const ContactArray& contacts,
         sendFn(c);
         ++sent;
     }
+}
+
+int tst_KadLiveNetwork::warmRoutingTable(int maxContacts, int minReplies)
+{
+    ContactArray contacts;
+    m_kad->getRoutingZone()->getAllEntries(contacts);
+    if (static_cast<int>(contacts.size()) > maxContacts)
+        contacts.resize(static_cast<size_t>(maxContacts));
+
+    auto* udpListener = m_kad->getUDPListener();
+    const int baseRecv = m_kadPacketsReceived.load(std::memory_order_relaxed);
+    rateLimitedSend(contacts,
+        [udpListener](const Contact* c) {
+            UInt128 contactID = c->getClientID();
+            udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
+                                       c->address().toUint32(), c->getUDPPort(),
+                                       c->getVersion(), c->getUDPKey(), &contactID, false);
+        },
+        [this, baseRecv, minReplies] {
+            return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= minReplies;
+        });
+
+    // Wait for HELLO_RES to arrive and verify contacts.
+    (void)QTest::qWaitFor([this, baseRecv, minReplies] {
+        return m_kadPacketsReceived.load(std::memory_order_relaxed) - baseRecv >= minReplies;
+    }, 5'000);
+
+    ContactArray verified;
+    m_kad->getRoutingZone()->getAllEntries(verified);
+    int verifiedCount = 0;
+    for (const auto* c : verified) {
+        if (c->isIpVerified())
+            ++verifiedCount;
+    }
+    return verifiedCount;
 }
 
 // ---------------------------------------------------------------------------

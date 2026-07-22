@@ -63,7 +63,10 @@ LogWidget::LogWidget(QWidget* parent)
     m_verboseBrowser = new QTextBrowser;
     m_verboseBrowser->setReadOnly(true);
     m_verboseBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
-    m_tabBar->addTab(tr("Verbose"));
+    if (thePrefs.useOriginalIcons())
+        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Log.ico")), tr("Verbose"));
+    else
+        m_tabBar->addTab(tr("Verbose"));
     m_stack->addWidget(m_verboseBrowser);
 
     // Kad tab
@@ -89,7 +92,7 @@ LogWidget::LogWidget(QWidget* parent)
     setIpcTabVisible(thePrefs.enableIpcLog());
 
     // Initial info message
-    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.6 ready</font>"));
+    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.2.0 ready</font>"));
 
     // Install handler to capture core log output
     installMessageHandler();
@@ -231,7 +234,7 @@ void LogWidget::clearAll()
     m_logSeqIds.clear();
     m_verboseSeqIds.clear();
     m_kadSeqIds.clear();
-    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.1.6 ready</font>"));
+    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.2.0 ready</font>"));
 }
 
 QString LogWidget::logText() const { return m_logBrowser->toPlainText(); }

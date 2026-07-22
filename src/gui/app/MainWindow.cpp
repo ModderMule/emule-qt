@@ -208,16 +208,25 @@ void MainWindow::onConnectToggle()
             m_ipc->sendRequest(std::move(req));
         }
     } else {
-        // Connect based on enabled networks
-        if (thePrefs.networkED2K()) {
+        // The toolbar Connect brings up the networks the user has enabled (its
+        // "auto" set). If both are disabled there is nothing to connect — surface
+        // a popup instead of a silent no-op. (Explicit per-server connects go
+        // through other paths and are not gated by these prefs.)
+        const bool ed2kEnabled = thePrefs.networkED2K();
+        const bool kadEnabled  = thePrefs.kadEnabled();
+
+        if (!ed2kEnabled && !kadEnabled) {
+            QMessageBox::warning(this, tr("Cannot Connect"),
+                tr("Both the eD2K and Kad networks are disabled.\n\n"
+                   "Enable at least one under Options → Connection to connect."));
+            return;
+        }
+
+        if (ed2kEnabled) {
             Ipc::IpcMessage reqEd2k(Ipc::IpcMsgType::ConnectToServer);
             m_ipc->sendRequest(std::move(reqEd2k));
-        } else if (m_serverPanel) {
-            // Otherwise the toolbar Connect silently skips servers — tell the user why.
-            m_serverPanel->logWidget()->appendServerInfo(
-                tr("eD2K network is disabled — enable it in Options → Connection to connect to servers."));
         }
-        if (thePrefs.kadEnabled()) {
+        if (kadEnabled) {
             Ipc::IpcMessage reqKad(Ipc::IpcMsgType::BootstrapKad);
             m_ipc->sendRequest(std::move(reqKad));
         }

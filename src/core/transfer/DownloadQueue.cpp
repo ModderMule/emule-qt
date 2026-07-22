@@ -166,12 +166,21 @@ void DownloadQueue::deleteAll()
         file->a4afSrcList().clear();
     }
 
-    // Phase 2: Delete all PartFiles.  Each PartFile's destructor destroys
-    // its PartFileNotifier member, which causes Qt to purge any pending
-    // QMetaCallEvents (QueuedConnection) from that sender in the receiver's
-    // event queue.  This prevents stale onDownloadCompleted from firing.
-    for (auto* file : m_items)
+    // Phase 2: Delete the PartFiles we still own.  A *completed* download was
+    // handed to KnownFileList (onDownloadCompleted → safeAddKFile); it now owns
+    // that object — persisting it in known.met and deleting it on teardown.
+    // Freeing it here would leave a dangling pointer in KnownFileList::m_filesMap,
+    // crashing the shutdown save (KnownFile::writeToFile) and double-freeing it in
+    // KnownFileList::clear().  Mirrors MFC, where a completed CPartFile is owned by
+    // theApp.knownfiles, not the queue (KnownFileList.cpp SafeAddKFile asserts
+    // !downloadqueue->IsPartFile()).  Each remaining PartFile's destructor destroys
+    // its FileNotifier, which purges any pending QueuedConnection
+    // onDownloadCompleted events from firing after the file is freed.
+    for (auto* file : m_items) {
+        if (m_knownFileList && m_knownFileList->isFilePtrInList(file))
+            continue; // owned by KnownFileList now — it saves and deletes it
         delete file;
+    }
     m_items.clear();
 }
 

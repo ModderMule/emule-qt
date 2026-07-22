@@ -4,6 +4,7 @@
 
 #include "TestHelpers.h"
 #include "app/AppContext.h"
+#include "files/KnownFileList.h"
 #include "files/PartFile.h"
 #include "transfer/DownloadQueue.h"
 #include "client/UpDownClient.h"
@@ -72,6 +73,7 @@ private slots:
     void addDownload_basic();
     void addDownload_paused();
     void removeFile_basic();
+    void deleteAll_keepsCompletedFileOwnedByKnownList();
     void fileByID_found();
     void fileByID_notFound();
     void isFileExisting_basic();
@@ -230,6 +232,50 @@ void tst_DownloadQueue::removeFile_basic()
     QCOMPARE(spy.count(), 1);
 
     delete pf;
+}
+
+// Regression: on shutdown the download queue is torn down (~DownloadQueue →
+// deleteAll) *before* KnownFileList::save(). A completed download is handed to
+// KnownFileList (onDownloadCompleted → safeAddKFile), which owns it from then on.
+// If deleteAll freed that PartFile, KnownFileList would keep a dangling pointer
+// and the shutdown save would dereference it — the production SIGSEGV in
+// KnownFile::writeToFile (KnownFile.cpp:393, "for (auto& tag : tags())"), plus a
+// double-free in KnownFileList::clear(). deleteAll must leave any file owned by
+// KnownFileList alive.
+void tst_DownloadQueue::deleteAll_keepsCompletedFileOwnedByKnownList()
+{
+    KnownFileList kfl;
+    const QString knownDir = m_tempDir.path() + QStringLiteral("/known_owner");
+    QDir().mkpath(knownDir);
+    kfl.init(knownDir);
+
+    DownloadQueue dq;
+    dq.setKnownFileList(&kfl);
+
+    uint8 hash[16] = {0xC0, 0xFF, 0xEE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("completed.bin"));
+    pf->setStatus(PartFileStatus::Complete);
+
+    // Completion registers the file in BOTH the queue (kept for UI display) and
+    // the known-file list (its new owner).
+    dq.addDownload(pf);
+    QVERIFY(kfl.safeAddKFile(pf));
+    QCOMPARE(kfl.count(), size_t(1));
+    QVERIFY(kfl.isFilePtrInList(pf));
+
+    // Shutdown teardown order: queue first...
+    dq.deleteAll();
+
+    // ...then the known-file save. Before the fix, deleteAll had freed pf and this
+    // save dereferenced a dangling pointer (SIGSEGV in KnownFile::writeToFile).
+    QVERIFY(kfl.isFilePtrInList(pf));
+    QCOMPARE(kfl.count(), size_t(1));
+    kfl.save();
+    QCOMPARE(pf->fileName(), QStringLiteral("completed.bin")); // pf still alive
+
+    // KnownFileList owns pf now and frees it exactly once (no double-free).
+    kfl.clear();
+    QCOMPARE(kfl.count(), size_t(0));
 }
 
 void tst_DownloadQueue::fileByID_found()

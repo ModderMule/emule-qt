@@ -900,7 +900,11 @@ void CoreSession::shutdownClientUDP()
 
 void CoreSession::initKademlia()
 {
-    if (!thePrefs.kadEnabled() || m_kademlia)
+    // Construct Kademlia regardless of the kadEnabled pref, so a manual connect
+    // (GUI/IPC BootstrapKad) can start it later even when Kad is not auto-enabled.
+    // The pref gates *auto*-connect only (see the auto-start check below), matching
+    // MFC's always-addressable static CKademlia. Construction binds no socket.
+    if (m_kademlia)
         return;
 
     // 1. Create Kademlia (no internal socket binding; uses m_clientUDP).
@@ -945,13 +949,13 @@ void CoreSession::initKademlia()
     connect(m_kademlia.get(), &kad::Kademlia::started,
             this, &CoreSession::wireKadListener);
 
-    // Start now only if auto-connect is enabled. Otherwise the object stays
-    // constructed and addressable via Kademlia::instance(), so a manual connect
-    // from the GUI/IPC (BootstrapKad) can start it later. MFC gates Start() the
-    // same way (StartConnection, emuleDlg.cpp:1983) while CKademlia stays an
-    // always-addressable static. A failed start is left constructed too, so a
-    // retry does not hit a null instance.
-    if (thePrefs.autoConnect()) {
+    // Start now only when Kad is enabled AND auto-connect is on. Otherwise the
+    // object stays constructed and addressable via Kademlia::instance(), so a
+    // manual connect from the GUI/IPC (BootstrapKad) can start it later. MFC gates
+    // Start() the same way (StartConnection, emuleDlg.cpp:1983) while CKademlia
+    // stays an always-addressable static. A failed start is left constructed too,
+    // so a retry does not hit a null instance.
+    if (thePrefs.kadEnabled() && thePrefs.autoConnect()) {
         m_kademlia->start();
         if (m_kademlia->isRunning())
             logInfo(QStringLiteral("Kademlia started."));

@@ -54,12 +54,11 @@
 #include "utils/Log.h"
 
 #include <QCoreApplication>
-#include <QDesktopServices>
 #include <QFileInfo>
 #include <QHostAddress>
+#include <QProcess>
 #include <QSet>
 #include <QStorageInfo>
-#include <QUrl>
 
 
 namespace eMule {
@@ -67,6 +66,23 @@ namespace eMule {
 using namespace Ipc;
 
 namespace {
+
+/// Open a filesystem path with the OS default handler. This runs from the
+/// headless daemon (a QCoreApplication), where QDesktopServices::openUrl has no
+/// QPA platform backend and silently fails — so invoke the platform opener
+/// directly (matches the QProcess::startDetached pattern used elsewhere).
+bool openPathWithDefaultApp(const QString& path)
+{
+#if defined(Q_OS_MACOS)
+    return QProcess::startDetached(QStringLiteral("open"), {path});
+#elif defined(Q_OS_WIN)
+    return QProcess::startDetached(QStringLiteral("cmd"),
+                                   {QStringLiteral("/c"), QStringLiteral("start"),
+                                    QString(), QDir::toNativeSeparators(path)});
+#else
+    return QProcess::startDetached(QStringLiteral("xdg-open"), {path});
+#endif
+}
 
 /// Determine the KnownType for a search result by checking live subsystems.
 /// Priority matches MFC eMule: downloading > shared > downloaded > cancelled.
@@ -364,6 +380,14 @@ void IpcClientHandler::handleCancelDownload(const IpcMessage& msg)
         theApp.knownFileList->addCancelledFileID(pf->fileHash());
     pf->stopFile(true);
     theApp.downloadQueue->removeFile(pf);
+    // A *completed* download was handed to KnownFileList/SharedFileList, which
+    // then hold non-owning references to it. Cancelling removes the file entirely,
+    // so unlink it from both before freeing — otherwise the freed pointer would
+    // dangle in their maps and crash the next known.met save (KnownFile::writeToFile).
+    if (theApp.knownFileList)
+        theApp.knownFileList->remove(pf);
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->removeFile(pf);
     delete pf;
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
@@ -714,15 +738,10 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
         return;
     }
 
-    if (!thePrefs.networkED2K()) {
-        // Silent no-op here is a common "server connect does nothing" footgun — the
-        // eD2K network is simply switched off. Surface it (logWarning is always shown,
-        // routing to the Verbose tab) so the user sees why nothing happens.
-        logWarning(QStringLiteral("Server connect requested, but the eD2K network is disabled "
-                                  "(Options → Connection → \"eD2K network\"). Ignoring."));
-        sendMessage(IpcMessage::makeResult(msg.seqId(), false));
-        return;
-    }
+    // A ConnectToServer request is an explicit user action (toolbar Connect, or
+    // double-click / "connect" on a specific server), so it proceeds regardless of
+    // the "eD2K network" pref. That pref gates *auto*-connect at startup only
+    // (CoreSession::start: networkED2K() && autoConnect()), not manual connects.
 
     // If IP and port fields are provided, connect to a specific server
     if (msg.fieldCount() >= 2) {
@@ -2721,7 +2740,11 @@ void IpcClientHandler::handleOpenDownloadFile(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("File not found on disk")));
         return;
     }
-    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    if (!openPathWithDefaultApp(path)) {
+        logWarning(QStringLiteral("Failed to open file with default app: %1").arg(path));
+        sendMessage(IpcMessage::makeError(msg.seqId(), 500, QStringLiteral("Failed to launch default application")));
+        return;
+    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -2753,7 +2776,11 @@ void IpcClientHandler::handleOpenDownloadFolder(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Folder not found")));
         return;
     }
-    QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+    if (!openPathWithDefaultApp(folder)) {
+        logWarning(QStringLiteral("Failed to open folder with default app: %1").arg(folder));
+        sendMessage(IpcMessage::makeError(msg.seqId(), 500, QStringLiteral("Failed to launch file manager")));
+        return;
+    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 

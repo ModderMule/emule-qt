@@ -207,8 +207,16 @@ void ServerListModel::setConnectedServer(uint32_t serverId)
     if (m_connectedServerId == serverId)
         return;
     m_connectedServerId = serverId;
+    // Connected state only changes the row's foreground color, not the row
+    // order/count — so emit dataChanged(ForegroundRole), NOT layoutChanged().
+    // A bare layoutChanged() (without a preceding layoutAboutToBeChanged())
+    // violates the model contract: QSortFilterProxyModel tears down and
+    // rebuilds its source mappings, leaving the view's selectionModel holding
+    // a dangling proxy currentIndex. The next requestServerList() ->
+    // saveSelection() then dereferences it via QModelIndex::data() and crashes
+    // inside QSortFilterProxyModel::data(). Mirror refreshFromCborArray().
     if (!m_rows.empty())
-        emit layoutChanged();
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole});
 }
 
 } // namespace eMule
