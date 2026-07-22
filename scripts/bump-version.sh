@@ -40,3 +40,4 @@ sed -i '' "s/\"version-string\": \"${OLD}\"/\"version-string\": \"${NEW}\"/" \
     "$ROOT/src/vcpkg.json"
 
 echo "Done. Verify with: grep -r '${NEW}' CMakeLists.txt src/ tests/"
+echo "Next: run scripts/publish-release.sh to commit, tag (v${NEW}) and push the release."
