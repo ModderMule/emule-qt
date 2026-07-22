@@ -331,9 +331,15 @@ private slots:
         auto cfg = prefs.obfuscationConfig();
         QCOMPARE(cfg.cryptLayerEnabled, true);
         QCOMPARE(cfg.cryptLayerRequired, true);
-        QCOMPARE(cfg.cryptLayerRequiredStrict, true);
+        // Strict is an independent hidden option (MFC CryptLayerRequiredStrict), default false —
+        // requiring encryption alone must NOT imply strict (that would reject server test callbacks).
+        QCOMPARE(cfg.cryptLayerRequiredStrict, false);
         QCOMPARE(cfg.userHash, hash);
         QCOMPARE(cfg.cryptTCPPaddingLength, static_cast<uint8>(200));
+
+        // Strict propagates only when explicitly set.
+        prefs.setCryptLayerRequiredStrict(true);
+        QCOMPARE(prefs.obfuscationConfig().cryptLayerRequiredStrict, true);
     }
 
     void factory_proxySettings()

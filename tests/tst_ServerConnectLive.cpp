@@ -21,9 +21,10 @@
 ///   - Both set → bind the TCP listener to EMULE_TCP_PORT (we declare ourselves
 ///     reachable) → expect a HighID from the server.
 ///   - Unset    → bind a random port (firewalled) → expect a LowID.
-/// HighID is a TCP-callback decision, so only the TCP listen port gates it;
-/// UDPSocket::create() binds a random UDP port, so EMULE_UDP_PORT is part of the
-/// pair for parity with the other live tests and is informational here.
+/// HighID is a TCP-callback decision, so only the TCP listen port gates it. When
+/// EMULE_UDP_PORT is set, the server UDP socket is bound to it (via serverUDPPort()),
+/// so global-search replies traverse the router forward and can actually arrive;
+/// unset → a random UDP port (firewalled), replies dropped.
 ///
 /// Optional env knobs:
 ///   - EMULE_SEARCH_KEYWORD      overrides the global-search keyword ("eMule").
@@ -135,6 +136,12 @@ void tst_ServerConnectLive::initTestCase()
     thePrefs.load(m_tmpDir->filePath(QStringLiteral("prefs.yaml")));
     thePrefs.setConfigDir(m_tmpDir->path());
 
+    // Diagnostic: EMULE_LOG_RAW=1 dumps the raw (encrypted) TCP handshake/login
+    // bytes and decrypted receive bytes, for wire-level inspection of the
+    // obfuscated server-login handshake.
+    if (qEnvironmentVariableIntValue("EMULE_LOG_RAW") == 1)
+        thePrefs.setLogRawSocketPackets(true);
+
     // 2. Port configuration — EMULE_TCP_PORT / EMULE_UDP_PORT select specific
     //    forwarded ports. When both are set we bind the TCP listener to the
     //    forwarded port so the server's callback reaches us → HighID. When
@@ -163,6 +170,12 @@ void tst_ServerConnectLive::initTestCase()
              qPrintable(QStringLiteral("Failed to start TCP listener on port %1").arg(tcpBindPort)));
     theApp.listenSocket = m_listenSocket;
     thePrefs.setPort(m_listenSocket->connectedPort());
+
+    // Adopt inbound callback sockets into UpDownClients so the server's HighID-callback OP_HELLO
+    // gets an OP_HELLOANSWER — mirrors production CoreSession wiring (CoreSession.cpp:643-644).
+    // Without this the callback socket is orphaned → no answer → LowID even with the port open.
+    connect(m_listenSocket, &ListenSocket::newClientConnection,
+            m_clientList, &ClientList::handleIncomingConnection);
 
     // 7. Upload throttler — flushes control packets from the queue.
     m_throttler = new UploadBandwidthThrottler(this);
@@ -196,9 +209,16 @@ void tst_ServerConnectLive::initTestCase()
              << "TCP:" << m_listenSocket->connectedPort();
 
     // 11. UDPSocket — for the global search (also handed to ServerConnect).
+    //     Bind the server UDP socket to the forwarded port when open, so global-search
+    //     replies traverse the router forward instead of landing on an unforwarded random
+    //     port; 65535 = random (firewalled case). create() now honors serverUDPPort()
+    //     (MFC CUDPSocket::Create), so setting the pref is all that's needed.
+    thePrefs.setServerUDPPort(m_portsOpen ? static_cast<uint16>(envUdpPort) : uint16{65535});
     m_udpSocket = new UDPSocket(this);
     QVERIFY2(m_udpSocket->create(), "Failed to create UDP socket");
     thePrefs.setUdpPort(m_udpSocket->localPort());
+    qDebug() << "Server UDP socket bound on port" << m_udpSocket->localPort()
+             << (m_portsOpen ? "(forwarded — replies can arrive)" : "(random — firewalled)");
 
     // 12. SearchList — wired to receive UDP global-search results.
     m_searchList = new SearchList();

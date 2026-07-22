@@ -138,6 +138,11 @@ public:
     [[nodiscard]] bool cryptLayerRequired() const;
     void setCryptLayerRequired(bool val);
 
+    // Hidden option (MFC CryptLayerRequiredStrict, .ini-only, default false): when set, even
+    // unencrypted server LowID/firewall-test callbacks are rejected while require-encryption is on.
+    [[nodiscard]] bool cryptLayerRequiredStrict() const;
+    void setCryptLayerRequiredStrict(bool val);
+
     [[nodiscard]] uint8 cryptTCPPaddingLength() const;
     void setCryptTCPPaddingLength(uint8 val);
 

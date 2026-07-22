@@ -63,6 +63,14 @@ void ClientReqSocket::disconnect(const QString& reason)
         theApp.listenSocket->removeSocket(this);
 
     m_deleteThis = true;
+    // Push any bytes still sitting in Qt's write buffer to the OS before we tear
+    // the socket down. close()/deleteLater() would otherwise discard a just-queued
+    // packet — this is what made the UDP port test falsely report "closed": the
+    // OP_PORTTEST confirmation reply (queued right before disconnect) was dropped,
+    // so the port-test server never received it. flush() hands the pending bytes
+    // to the kernel, which still delivers them across the graceful close. Mirrors
+    // eMule draining the send side before disconnecting (CEMSocket::Safe_Delete).
+    flush();
     close();
     deleteLater();
 }

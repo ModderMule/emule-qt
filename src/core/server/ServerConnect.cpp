@@ -890,38 +890,52 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
 {
     // #14: the socket applied the server's capability flags only to its throwaway
     // copy; push them (including the obfuscation bit the IDCHANGE handler OR-ed in
-    // for an obfuscated connection) to the persistent list entry.
+    // for an obfuscated connection) to the persistent list entry. srchybrid also
+    // applies the TCP flags before the smart-ID check (ServerSocket.cpp:301).
     applyServerFlags(socket, tcpFlags);
 
-    // Smart-LowID retry (#21): if a server hands us a LowID but we already saw a
-    // HighID from another server this run, disconnect and try the next one — up to
-    // twice, re-mapping our UPnP ports once on the first retry. A LowID that triggers
-    // a retry must NOT be committed as our client ID (a later server may give HighID).
-    // MFC: CServerSocket::ProcessPacket() OP_IDCHANGE — ServerSocket.cpp:326-350.
+    // Smart-LowID retry — faithful port of srchybrid CServerSocket::ProcessPacket
+    // OP_IDCHANGE (ServerSocket.cpp:326-350). The retry is *armed* only after we
+    // have seen a HighID this session (m_smartIdState set to 1); a consistently
+    // firewalled client (state stays 0) therefore accepts its first LowID instead
+    // of bouncing forever. Once armed, at most two consecutive LowIDs bounce
+    // (state 1→2→0, one UPnP re-map on the first) before a LowID is accepted.
+    //
+    // This runs BEFORE the socket promotes to Connected (the OP_IDCHANGE handler
+    // calls us ahead of setConnectionState), so a bounce never flaps the app to
+    // "connected" and never clears the connect flags. The manual/auto distinction
+    // uses the *immutable* per-socket flag — not the mutable m_singleConnecting,
+    // which the old post-promotion ordering had already cleared — so a manual
+    // single-server connect is honoured and never wanders to another server.
     if (m_config.smartLowIdCheck) {
         if (!eMule::isLowID(clientID)) {
-            m_smartIdState = 1;                       // saw a HighID this run
+            m_smartIdState = 1;                       // armed: saw a HighID this run
         } else if (m_smartIdState > 0) {
             const bool firstRetry = (m_smartIdState == 1);
             ++m_smartIdState;
-            m_smartIdState = (m_smartIdState > 2) ? 0 : m_smartIdState;  // 1→2 retry, 2→0 retry+reset
+            m_smartIdState = (m_smartIdState > 2) ? 0 : m_smartIdState;  // 1→2, 2→0
             if (firstRetry && theApp.upnpManager)
                 theApp.upnpManager->checkAndRefresh();  // one-shot UPnP re-map
-            if (!m_singleConnecting) {
+            if (!socket->isManualSingleConnect()) {
                 logInfo(QStringLiteral("Smart LowID: got LowID from server, trying another"));
+                // Suppress promotion (srchybrid's `break`), then reap this socket
+                // and advance to the next server. srchybrid relies on parallel
+                // sockets / timeouts to progress; under safeServerConnect we only
+                // have one socket at a time, so we drive the next attempt here.
+                socket->requestLowIDBounce();
                 destroySocket(socket);
-                if (socket == m_connectedSocket) {
-                    m_connectedSocket = nullptr;
-                    m_connected = false;
-                }
                 m_connecting = true;
                 tryAnotherConnectionRequest();
                 return;                                // do NOT commit this LowID
             }
+            // Manual single connect: accept the LowID (fall through).
         }
+        // state == 0 (never armed): accept the first LowID (firewalled client).
     }
 
-    // Commit the assigned ID (HighID, a LowID we are keeping, or a manual connect).
+    // Commit the assigned ID (HighID, an accepted LowID, or a manual connect). This
+    // runs just before the socket promotes to Connected, matching srchybrid's order
+    // (m_clientid set, then SetConnectionState(CS_CONNECTED), then SetClientID).
     setClientID(clientID);
     if (eMule::isLowID(clientID) && serverReportedIP != 0)
         theApp.setPublicIP(serverReportedIP);

@@ -19,6 +19,8 @@
 ///   Keys derived from DH shared secret S: SendKey=MD5(<S 96><34>), RecvKey=MD5(<S 96><203>)
 
 #include "net/EncryptedStreamSocket.h"
+#include "app/AppContext.h"
+#include "server/ServerConnect.h"
 #include "crypto/MD5Hash.h"
 #include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
@@ -217,11 +219,20 @@ int EncryptedStreamSocket::processReceivedData(void* buf, int len)
         m_streamCryptState = StreamCryptState::None;
 
         if (m_config.cryptLayerRequired) {
-            if (m_config.cryptLayerRequiredStrict) {
+            // Even with "require obfuscation" on, MFC still accepts unencrypted connections that are
+            // server LowID/firewall-test callbacks — otherwise the option always yields LowID. Only
+            // the (hidden) strict option rejects even those. Mirrors
+            // srchybrid/EncryptedStreamSocket.cpp:270-295.
+            const uint32 peerIpNet = htonl(peerAddress().toIPv4Address());
+            const bool awaitingTest = theApp.serverConnect
+                                      && theApp.serverConnect->awaitingTestFromIP(peerIpNet);
+            // TODO: also permit Kad firewall-check IPs (MFC IsKadFirewallCheckIP) once that tracking exists.
+            if (m_config.cryptLayerRequiredStrict || !awaitingTest) {
                 onError(kErrEncryptionNotAllowed);
                 return 0;
             }
-            // Allow unencrypted for firewall checks (simplified — full check needs server connect info)
+            logInfo(QStringLiteral("EncryptedStreamSocket: Permitting unencrypted server-test callback "
+                                   "from %1 despite require-encryption").arg(dbgGetIPString()));
         }
         break;
     }
@@ -442,7 +453,14 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
                 fileResponse.writeUInt32(kMagicValueSync);
                 const uint8 selectedMethod = static_cast<uint8>(EncryptionMethod::Obfuscation);
                 fileResponse.writeUInt8(selectedMethod);
-                uint8 padding = static_cast<uint8>(getRandomUInt16() % (m_config.cryptTCPPaddingLength + 1));
+                // Server LowID/firewall tests use a smaller max padding (16); regular clients use the
+                // configured length. Mirrors srchybrid/EncryptedStreamSocket.cpp:525-529.
+                const uint32 peerIpNet = htonl(peerAddress().toIPv4Address());
+                const uint8 paddingBase = (theApp.serverConnect
+                                           && theApp.serverConnect->awaitingTestFromIP(peerIpNet))
+                                              ? uint8{16}
+                                              : static_cast<uint8>(m_config.cryptTCPPaddingLength + 1);
+                uint8 padding = static_cast<uint8>(getRandomUInt16() % paddingBase);
                 fileResponse.writeUInt8(padding);
                 for (int i = padding; --i >= 0;)
                     fileResponse.writeUInt8(static_cast<uint8>(getRandomUInt16() & 0xFF));

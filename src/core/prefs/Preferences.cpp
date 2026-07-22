@@ -136,6 +136,7 @@ struct Preferences::Data {
     bool cryptLayerSupported = true;
     bool cryptLayerRequested = true;
     bool cryptLayerRequired = false;
+    bool cryptLayerRequiredStrict = false;  // MFC hidden .ini option; ignores even server test callbacks
     uint8 cryptTCPPaddingLength = 128;
 
     // Proxy
@@ -672,6 +673,10 @@ void Preferences::setCryptLayerRequested(bool val) { set(&Data::cryptLayerReques
 bool Preferences::cryptLayerRequired() const { return get(&Data::cryptLayerRequired); }
 
 void Preferences::setCryptLayerRequired(bool val) { set(&Data::cryptLayerRequired, val); }
+
+bool Preferences::cryptLayerRequiredStrict() const { return get(&Data::cryptLayerRequiredStrict); }
+
+void Preferences::setCryptLayerRequiredStrict(bool val) { set(&Data::cryptLayerRequiredStrict, val); }
 
 uint8 Preferences::cryptTCPPaddingLength() const { return get(&Data::cryptTCPPaddingLength); }
 
@@ -1837,6 +1842,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->cryptLayerSupported       = p.value(QStringLiteral("cryptLayerSupported")).toBool();
     m_data->cryptLayerRequested       = p.value(QStringLiteral("cryptLayerRequested")).toBool();
     m_data->cryptLayerRequired        = p.value(QStringLiteral("cryptLayerRequired")).toBool();
+    m_data->cryptLayerRequiredStrict  = p.value(QStringLiteral("cryptLayerRequiredStrict")).toBool();
     m_data->useSecureIdent            = p.value(QStringLiteral("useSecureIdent")).toBool();
     m_data->enableSearchResultFilter  = p.value(QStringLiteral("enableSearchResultFilter")).toBool();
     m_data->warnUntrustedFiles        = p.value(QStringLiteral("warnUntrustedFiles")).toBool();
@@ -2205,6 +2211,7 @@ bool Preferences::load(const QString& filePath)
             m_data->cryptLayerSupported = e["cryptLayerSupported"].as<bool>(m_data->cryptLayerSupported);
             m_data->cryptLayerRequested = e["cryptLayerRequested"].as<bool>(m_data->cryptLayerRequested);
             m_data->cryptLayerRequired = e["cryptLayerRequired"].as<bool>(m_data->cryptLayerRequired);
+            m_data->cryptLayerRequiredStrict = e["cryptLayerRequiredStrict"].as<bool>(m_data->cryptLayerRequiredStrict);
             m_data->cryptTCPPaddingLength = static_cast<uint8>(e["cryptTCPPaddingLength"].as<int>(m_data->cryptTCPPaddingLength));
         }
 
@@ -2651,7 +2658,7 @@ ObfuscationConfig Preferences::obfuscationConfig() const
     ObfuscationConfig cfg;
     cfg.cryptLayerEnabled = m_data->cryptLayerSupported;
     cfg.cryptLayerRequired = m_data->cryptLayerRequired;
-    cfg.cryptLayerRequiredStrict = m_data->cryptLayerRequired;
+    cfg.cryptLayerRequiredStrict = m_data->cryptLayerRequiredStrict;
     cfg.userHash = m_data->userHash;
     cfg.cryptTCPPaddingLength = m_data->cryptTCPPaddingLength;
     return cfg;
@@ -2805,6 +2812,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "cryptLayerSupported" << YAML::Value << m_data->cryptLayerSupported;
     out << YAML::Key << "cryptLayerRequested" << YAML::Value << m_data->cryptLayerRequested;
     out << YAML::Key << "cryptLayerRequired" << YAML::Value << m_data->cryptLayerRequired;
+    out << YAML::Key << "cryptLayerRequiredStrict" << YAML::Value << m_data->cryptLayerRequiredStrict;
     out << YAML::Key << "cryptTCPPaddingLength" << YAML::Value << static_cast<int>(m_data->cryptTCPPaddingLength);
     out << YAML::EndMap;
 

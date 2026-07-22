@@ -435,11 +435,14 @@ void CoreSession::initServerConnect()
     if (theApp.downloadQueue)
         theApp.downloadQueue->setServerConnect(theApp.serverConnect);
 
-    // 5. Create and bind server UDP socket
-    m_serverUDP = std::make_unique<UDPSocket>(this);
-    if (!m_serverUDP->create())
-        logWarning(QStringLiteral("Failed to bind server UDP socket"));
-    m_serverConnect->setUDPSocket(m_serverUDP.get());
+    // 5. Create and bind server UDP socket — skip when serverUDPPort==0 (disabled).
+    //    Matches MFC CServerConnect (srchybrid/ServerConnect.cpp:466).
+    if (thePrefs.serverUDPPort() != 0) {
+        m_serverUDP = std::make_unique<UDPSocket>(this);
+        if (!m_serverUDP->create())
+            logWarning(QStringLiteral("Failed to bind server UDP socket"));
+        m_serverConnect->setUDPSocket(m_serverUDP.get());
+    }
 
     // 6. Wire TCP search results → SearchList
     connect(m_serverConnect.get(), &ServerConnect::searchResultReceived,

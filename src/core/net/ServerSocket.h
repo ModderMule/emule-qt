@@ -66,6 +66,13 @@ public:
     /// Whether this is a manually-initiated single-server connection.
     [[nodiscard]] bool isManualSingleConnect() const { return m_manualSingleConnect; }
 
+    /// Smart-LowID bounce flag. During loginReceived handling ServerConnect calls
+    /// requestLowIDBounce() to abandon a LowID and try another server; the
+    /// OP_IDCHANGE handler then skips promotion to Connected, mirroring the
+    /// reference's `break` (srchybrid CServerSocket::ProcessPacket:336-337).
+    [[nodiscard]] bool lowIDBounced() const { return m_lowIDBounced; }
+    void requestLowIDBounce() { m_lowIDBounced = true; }
+
     /// Get a copy of the connected server's data (may be null if not connected).
     [[nodiscard]] Server* currentServer() const { return m_curServer.get(); }
 
@@ -148,6 +155,7 @@ private:
     bool m_isDeleting = false;
     bool m_noCrypt = false;
     bool m_pendingLogin = false;
+    bool m_lowIDBounced = false;
 
     QElapsedTimer m_elapsedTimer;
 };

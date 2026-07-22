@@ -52,8 +52,18 @@ UDPSocket::~UDPSocket()
 
 bool UDPSocket::create()
 {
-    if (!m_socket.bind(QHostAddress::AnyIPv4, 0)) {
-        logError(QStringLiteral("UDPSocket: Failed to bind: %1").arg(m_socket.errorString()));
+    // Bind the server UDP socket to the configured server UDP port, matching MFC
+    // CUDPSocket::Create() (srchybrid/UDPSocket.cpp:130): 0 = server UDP disabled,
+    // 65535 (_UI16_MAX) = OS-assigned random port (backward compat), else bind the
+    // configured port. Binding the configured port lets global-search replies land
+    // on a forwardable port instead of a random one the router won't forward.
+    const uint16 serverUDPPort = thePrefs.serverUDPPort();
+    if (serverUDPPort == 0)
+        return false;
+    const uint16 bindPort = (serverUDPPort == 65535) ? uint16{0} : serverUDPPort;
+    if (!m_socket.bind(QHostAddress::AnyIPv4, bindPort)) {
+        logError(QStringLiteral("UDPSocket: Failed to bind server UDP port %1: %2")
+                     .arg(bindPort).arg(m_socket.errorString()));
         return false;
     }
     return true;

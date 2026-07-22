@@ -184,12 +184,21 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (m_curServer)
             m_curServer->setTCPFlags(tcpFlags);
 
-        setConnectionState(ServerConnState::Connected);
-        emit loginReceived(clientID, tcpFlags, serverReportedIP);
-
         logInfo(QStringLiteral("New client ID is %1").arg(clientID));
         if (isLowID(clientID))
             logWarning(QStringLiteral("You have a Low ID. Please check your port forwarding and firewall settings."));
+
+        // The smart-LowID decision is made by ServerConnect BEFORE we promote the
+        // connection, faithfully matching srchybrid CServerSocket::ProcessPacket
+        // (decide, then SetConnectionState(CS_CONNECTED) — ServerSocket.cpp:326-348).
+        // On a bounce ServerConnect calls requestLowIDBounce() and we skip promotion
+        // entirely, mirroring the reference's `break`.
+        m_lowIDBounced = false;
+        emit loginReceived(clientID, tcpFlags, serverReportedIP);
+        if (m_lowIDBounced)
+            return true;  // abandoned this LowID; ServerConnect is trying another server
+
+        setConnectionState(ServerConnState::Connected);
         break;
     }
 
