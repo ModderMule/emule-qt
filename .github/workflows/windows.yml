@@ -1,9 +1,13 @@
 name: Windows CI
 
+# Tag pushes are handled by release.yml, which calls this workflow -- do not add a
+# push/tags trigger here or a tag would build twice.
 on:
-#  push:
-#    tags: ['v*']
+  workflow_call:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -49,6 +53,7 @@ jobs:
           }
 
       - name: Install dependencies (vcpkg)
+        shell: pwsh
         run: vcpkg install zlib openssl --triplet x64-windows
 
       # let Ninja use the MSVC compiler
@@ -71,6 +76,7 @@ jobs:
             -DEMULE_BUILD_TESTS=OFF
 
       - name: Build
+        shell: pwsh
         run: cmake --build build --config Release --parallel
 
 #      - name: Run tests
@@ -86,10 +92,14 @@ jobs:
           echo "APP_VERSION=$v" >> $env:GITHUB_ENV
 
       - name: Bundle
+        shell: pwsh
         run: scripts\bundle-win.bat "$env:QT_ROOT_DIR" Release --no-build
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: eMuleQt-v${{ env.APP_VERSION }}-win64
           path: build/eMuleQt-v*-win64.zip
+          # Default is 'warn', which would leave the job green with no artifact
+          # if the bundle script produced nothing.
+          if-no-files-found: error

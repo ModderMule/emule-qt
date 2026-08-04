@@ -4,6 +4,7 @@
 
 #include "net/UDPSocket.h"
 #include "net/EncryptedDatagramSocket.h"
+#include "net/HostResolver.h"
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
 #include "prefs/Preferences.h"
@@ -26,7 +27,6 @@ namespace eMule {
 // ---------------------------------------------------------------------------
 
 static constexpr int kMaxUDPPacketSize = 5000;
-static constexpr uint32 kDNSRequestTimeoutMs = 120'000; // 2 minutes
 
 // ---------------------------------------------------------------------------
 // Construction / destruction
@@ -35,7 +35,6 @@ static constexpr uint32 kDNSRequestTimeoutMs = 120'000; // 2 minutes
 UDPSocket::UDPSocket(QObject* parent)
     : QObject(parent)
 {
-    m_elapsedTimer.start();
     QObject::connect(&m_socket, &QUdpSocket::readyRead, this, &UDPSocket::onReadyRead);
 }
 
@@ -61,7 +60,11 @@ bool UDPSocket::create()
     if (serverUDPPort == 0)
         return false;
     const uint16 bindPort = (serverUDPPort == 65535) ? uint16{0} : serverUDPPort;
-    if (!m_socket.bind(QHostAddress::AnyIPv4, bindPort)) {
+    // Dual-stack bind. IPv4 senders (incl. v4-mapped ::ffff: over an AF_INET6 socket)
+    // still resolve via toIPv4Address() below, so the server UDP path is unchanged for
+    // the realistic case: IPv4 transport to a dual-stack server, with IPv6 sources
+    // carried inside the payload. Dialing a v6-only server over UDP is a later step.
+    if (!m_socket.bind(QHostAddress::Any, bindPort)) {
         logError(QStringLiteral("UDPSocket: Failed to bind server UDP port %1: %2")
                      .arg(bindPort).arg(m_socket.errorString()));
         return false;
@@ -83,7 +86,6 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
         stats->addUpDataOverheadServer(packet->size);
 
 
-    cleanupStaleDNSRequests();
 
     // Build raw UDP packet: 2-byte header (prot + opcode) + payload
     uint32 rawSize = 2 + packet->size;
@@ -100,7 +102,6 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
         std::memcpy(buf.data() + offset + 2, packet->pBuffer, packet->size);
 
     uint16 port = specialPort ? specialPort : (server.port() + 4); // Default UDP port = TCP+4
-    uint32 ip = server.ipAddress().toNetworkUint32();
 
     // Encrypt if the crypt layer is enabled and the server supports it. MFC gates
     // this on IsCryptLayerEnabled() too (UDPSocket.cpp:750) — without it we would
@@ -127,36 +128,21 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
     }
 
     // Check if server needs DNS resolution
-    if (server.hasDynIP() && ip == 0) {
-        // Queue for DNS resolution
-        auto req = std::make_unique<ServerDNSRequest>();
-        req->createdTime = static_cast<uint32>(m_elapsedTimer.elapsed());
-        req->serverPort = port;
-
-        ServerUDPPacket pkt;
-        pkt.data.assign(buf.begin() + offset, buf.begin() + offset + rawSize);
-        pkt.destination = Endpoint(Address(), port); // IP resolved later via DNS
-        req->pendingPackets.push_back(std::move(pkt));
-
-        req->lookup = std::make_unique<QDnsLookup>(this);
-        req->lookup->setType(QDnsLookup::A);
-        req->lookup->setName(server.dynIP());
-        QObject::connect(req->lookup.get(), &QDnsLookup::finished, this, &UDPSocket::onDnsFinished);
-        req->lookup->lookup();
-
-        m_dnsRequests.push_back(std::move(req));
+    if (server.hasDynIP() && server.ipAddress().isNull()) {
+        queueDNSRequest(server, port, buf.data() + offset, rawSize);
         return;
     }
 
-    logServerVerbose(QStringLiteral(">>> UDPSocket::sendPacket opcode=0x%1 payload=%2 bytes -> %3:%4 encrypted=%5")
+    const Endpoint dest(server.ipAddress(), port);
+
+    logServerVerbose(QStringLiteral(">>> UDPSocket::sendPacket opcode=0x%1 payload=%2 bytes -> %3 encrypted=%4")
                  .arg(packet->opcode, 2, 16, QLatin1Char('0'))
                  .arg(packet->size)
-                 .arg(ipstr(ip))
-                 .arg(port)
+                 .arg(dest.toString())
                  .arg(encrypt ? QStringLiteral("yes") : QStringLiteral("no")));
 
     // Send directly
-    sendBuffer(ip, port, buf.data() + offset, rawSize);
+    sendBuffer(dest, buf.data() + offset, rawSize);
 }
 
 // ---------------------------------------------------------------------------
@@ -176,35 +162,20 @@ void UDPSocket::sendRawPacket(const Server& server, uint16 specialPort,
     if (auto* stats = theApp.statistics)
         stats->addUpDataOverheadServer(size);
 
-    cleanupStaleDNSRequests();
 
     uint16 port = specialPort ? specialPort : static_cast<uint16>(server.port() + 4);
-    uint32 ip = server.ipAddress().toNetworkUint32();
 
-    if (server.hasDynIP() && ip == 0) {
-        auto req = std::make_unique<ServerDNSRequest>();
-        req->createdTime = static_cast<uint32>(m_elapsedTimer.elapsed());
-        req->serverPort = port;
-
-        ServerUDPPacket pkt;
-        pkt.data.assign(data, data + size);
-        pkt.destination = Endpoint(Address(), port); // IP resolved later via DNS
-        req->pendingPackets.push_back(std::move(pkt));
-
-        req->lookup = std::make_unique<QDnsLookup>(this);
-        req->lookup->setType(QDnsLookup::A);
-        req->lookup->setName(server.dynIP());
-        QObject::connect(req->lookup.get(), &QDnsLookup::finished, this, &UDPSocket::onDnsFinished);
-        req->lookup->lookup();
-
-        m_dnsRequests.push_back(std::move(req));
+    if (server.hasDynIP() && server.ipAddress().isNull()) {
+        queueDNSRequest(server, port, data, size);
         return;
     }
 
-    logServerVerbose(QStringLiteral(">>> UDPSocket::sendRawPacket %1 bytes -> %2:%3 (raw)")
-                 .arg(size).arg(ipstr(ip)).arg(port));
+    const Endpoint dest(server.ipAddress(), port);
 
-    sendBuffer(ip, port, data, size);
+    logServerVerbose(QStringLiteral(">>> UDPSocket::sendRawPacket %1 bytes -> %2 (raw)")
+                 .arg(size).arg(dest.toString()));
+
+    sendBuffer(dest, data, size);
 }
 
 // ---------------------------------------------------------------------------
@@ -259,12 +230,13 @@ void UDPSocket::onReadyRead()
         if (data.size() < 2)
             continue;
 
-        QHostAddress senderAddr = datagram.senderAddress();
-        uint32 senderIP = htonl(senderAddr.toIPv4Address());
-        uint16 senderPort = static_cast<uint16>(datagram.senderPort());
+        // Endpoint-typed so an IPv6 server's reply is attributed to the right entry
+        // instead of collapsing to 0 and matching a null-address server.
+        const Endpoint sender(Address::fromQHostAddress(datagram.senderAddress()),
+                              static_cast<uint16>(datagram.senderPort()));
 
         if (auto* filter = theApp.ipFilter) {
-            if (filter->isFiltered(senderIP, thePrefs.ipFilterLevel()))
+            if (filter->isFiltered(sender.address(), thePrefs.ipFilterLevel()))
                 continue;
         }
 
@@ -278,8 +250,9 @@ void UDPSocket::onReadyRead()
         // enabled and one of those keys applies, and only accept the result if it
         // decodes to a real ED2K packet — otherwise drop, never re-parse ciphertext
         // as plaintext. MFC: CUDPSocket::OnReceive() — UDPSocket.cpp:159-181.
-        Server* srv = theApp.serverList ? theApp.serverList->findByIPUdp(senderIP, senderPort)
-                                        : nullptr;
+        Server* srv = theApp.serverList
+                          ? theApp.serverList->findByIPUdp(sender.address(), sender.port())
+                          : nullptr;
         const bool cryptPending = srv && srv->cryptPingReplyPending() && srv->challenge() != 0;
         const bool tryDecrypt = srv && thePrefs.cryptLayerSupported()
             && ((srv->serverKeyUDP() != 0 && srv->supportsObfuscationUDP()) || cryptPending);
@@ -290,7 +263,7 @@ void UDPSocket::onReadyRead()
 
         if (protoByte == OP_EDONKEYPROT) {
             // Unencrypted ED2K packet
-            processPacket(buf + 2, static_cast<uint32>(bufLen - 2), buf[1], senderIP, senderPort);
+            processPacket(buf + 2, static_cast<uint32>(bufLen - 2), buf[1], sender);
         } else if (tryDecrypt) {
             DecryptResult dr = EncryptedDatagramSocket::decryptReceivedServer(
                 buf, static_cast<int>(bufLen), dwKey);
@@ -298,17 +271,17 @@ void UDPSocket::onReadyRead()
             // so success is signalled by the decrypted first byte being OP_EDONKEYPROT.
             if (dr.data != nullptr && dr.length >= 2 && dr.data[0] == OP_EDONKEYPROT) {
                 processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2), dr.data[1],
-                              senderIP, senderPort);
+                              sender);
             } else {
-                logServerVerbose(QStringLiteral("UDPSocket: dropped undecryptable server datagram from %1:%2")
-                             .arg(ipstr(senderIP)).arg(senderPort));
+                logServerVerbose(QStringLiteral("UDPSocket: dropped undecryptable server datagram from %1")
+                             .arg(sender.toString()));
             }
         } else {
             // Unknown protocol byte and no server key applies — drop it (MFC does
             // not fall back to parsing it as plaintext).
-            logServerVerbose(QStringLiteral("UDPSocket: dropped non-ed2k datagram (proto=0x%1) from %2:%3")
+            logServerVerbose(QStringLiteral("UDPSocket: dropped non-ed2k datagram (proto=0x%1) from %2")
                          .arg(protoByte, 2, 16, QLatin1Char('0'))
-                         .arg(ipstr(senderIP)).arg(senderPort));
+                         .arg(sender.toString()));
         }
     }
 }
@@ -318,18 +291,16 @@ void UDPSocket::onReadyRead()
 // ---------------------------------------------------------------------------
 
 bool UDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
-                              uint32 senderIP, uint16 senderPort)
+                              const Endpoint& senderEP)
 {
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadServer(size);
-
-    const Endpoint senderEP = Endpoint::fromNetworkOrder(senderIP, senderPort);
 
     // A server that answers ANY UDP opcode is alive — clear its failure count so
     // one that only ever replies to searches/sources is never reaped as dead. MFC
     // resets this at the top of ProcessPacket for every opcode (UDPSocket.cpp:216).
     if (auto* sl = theApp.serverList) {
-        if (auto* srv = sl->findByIPUdp(senderIP, senderPort, true))
+        if (auto* srv = sl->findByIPUdp(senderEP.address(), senderEP.port(), true))
             srv->resetFailedCount();
     }
 
@@ -367,10 +338,9 @@ bool UDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
             break;
 
         default:
-            logServerVerbose(QStringLiteral("UDPSocket: Unknown server opcode 0x%1 from %2:%3")
+            logServerVerbose(QStringLiteral("UDPSocket: Unknown server opcode 0x%1 from %2")
                          .arg(opcode, 2, 16, QLatin1Char('0'))
-                         .arg(ipstr(senderIP))
-                         .arg(senderPort));
+                         .arg(senderEP.toString()));
             break;
         }
         return true;
@@ -393,14 +363,14 @@ bool UDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-void UDPSocket::sendBuffer(uint32 ip, uint16 port, const uint8* data, uint32 size)
+void UDPSocket::sendBuffer(const Endpoint& dest, const uint8* data, uint32 size)
 {
     {
         std::lock_guard lock(m_sendLock);
 
         ServerUDPPacket pkt;
         pkt.data.assign(data, data + size);
-        pkt.destination = Endpoint::fromNetworkOrder(ip, port);
+        pkt.destination = dest;
         m_controlQueue.push_back(std::move(pkt));
     }
 
@@ -408,44 +378,30 @@ void UDPSocket::sendBuffer(uint32 ip, uint16 port, const uint8* data, uint32 siz
         throttler->queueForSendingControlPacket(this);
 }
 
-void UDPSocket::cleanupStaleDNSRequests()
+void UDPSocket::queueDNSRequest(const Server& server, uint16 port,
+                                const uint8* data, uint32 size)
 {
-    uint32 now = static_cast<uint32>(m_elapsedTimer.elapsed());
+    if (!m_hostResolver)
+        m_hostResolver = new HostResolver(this);
 
-    std::erase_if(m_dnsRequests, [now](const std::unique_ptr<ServerDNSRequest>& req) {
-        return (now - req->createdTime) > kDNSRequestTimeoutMs;
-    });
-}
+    // One query returns A and AAAA together; the preference only orders them. IPv4 leads
+    // by default because a server reached over IPv6 without a routable IPv4 hands out a
+    // LowID unconditionally — but an AAAA-only server hostname now works.
+    const auto pref = thePrefs.serverPreferIPv6() ? HostResolver::Preference::PreferIPv6
+                                                  : HostResolver::Preference::PreferIPv4;
+    const QString host = server.dynIP();
+    std::vector<uint8> payload(data, data + size);
 
-void UDPSocket::onDnsFinished()
-{
-    auto* lookup = qobject_cast<QDnsLookup*>(QObject::sender());
-    if (!lookup)
-        return;
-
-    // Find the matching request
-    for (auto it = m_dnsRequests.begin(); it != m_dnsRequests.end(); ++it) {
-        if ((*it)->lookup.get() == lookup) {
-            if (lookup->error() == QDnsLookup::NoError && !lookup->hostAddressRecords().isEmpty()) {
-                QHostAddress addr = lookup->hostAddressRecords().first().value();
-                uint32 ip = htonl(addr.toIPv4Address());
-                Address resolved = Address::fromNetworkOrder(ip);
-
-                // Send all pending packets
-                for (auto& pkt : (*it)->pendingPackets) {
-                    pkt.destination = Endpoint(resolved, pkt.destination.port());
-                    sendBuffer(ip, pkt.destination.port(),
-                               pkt.data.data(), static_cast<uint32>(pkt.data.size()));
-                }
-            } else {
-                logWarning(QStringLiteral("UDPSocket: DNS lookup failed: %1")
-                               .arg(lookup->errorString()));
+    m_hostResolver->resolve(host, pref, this,
+        [this, host, port, payload = std::move(payload)](const HostResolver::Result& result) {
+            if (!result.ok()) {
+                logWarning(QStringLiteral("UDPSocket: DNS lookup failed for %1: %2")
+                               .arg(host, result.errorString));
+                return;
             }
-
-            m_dnsRequests.erase(it);
-            break;
-        }
-    }
+            sendBuffer(Endpoint(result.first(), port),
+                       payload.data(), static_cast<uint32>(payload.size()));
+        });
 }
 
 } // namespace eMule

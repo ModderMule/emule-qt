@@ -21,12 +21,12 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "ipfilter/IPFilter.h"
+#include "net/HostResolver.h"
 #include "net/Address.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
 
 
-#include <QHostInfo>
 
 
 namespace eMule::kad {
@@ -48,16 +48,21 @@ KademliaUDPListener::~KademliaUDPListener() = default;
 
 void KademliaUDPListener::bootstrap(const QString& host, uint16 udpPort)
 {
-    // Resolve hostname and bootstrap
-    QHostInfo::lookupHost(host, this, [this, udpPort](const QHostInfo& info) {
-        if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-            logKad(QStringLiteral("Kad: Failed to resolve bootstrap host: %1")
-                       .arg(info.errorString()));
-            return;
-        }
-        uint32 ip = info.addresses().first().toIPv4Address();
-        bootstrap(ip, udpPort);
-    });
+    // Kad contacts are keyed by a 32-bit IPv4, so ask for A records only. Taking the
+    // first address of either family (as this used to) turned an AAAA-first answer into
+    // toIPv4Address() == 0 and bootstrapped against 0.0.0.0 without a word.
+    if (!m_hostResolver)
+        m_hostResolver = new HostResolver(this);
+
+    m_hostResolver->resolve(host, HostResolver::Preference::IPv4Only, this,
+        [this, host, udpPort](const HostResolver::Result& result) {
+            if (!result.ok()) {
+                logKad(QStringLiteral("Kad: Failed to resolve bootstrap host %1: %2")
+                           .arg(host, result.errorString));
+                return;
+            }
+            bootstrap(result.first().toUint32(), udpPort);
+        });
 }
 
 void KademliaUDPListener::bootstrap(uint32 ip, uint16 udpPort, uint8 kadVersion,
@@ -1107,10 +1112,26 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
 
     // MFC: firewall check searches skip routing table add — those contacts
     // must remain un-contacted for the UDP firewall test to be valid.
-    const bool isFWCheckSearch = SearchManager::isFWCheckUDPSearch(target);
+    // MFC :789 only treats the search as such while a check is actually running;
+    // once it finished the answer is processed as an ordinary routing answer.
+    const bool isFWCheckSearch = UDPFirewallTester::isFWCheckUDPRunning()
+                                 && SearchManager::isFWCheckUDPSearch(target);
+
+    // MFC :806 deliberately cripples a FW check search: the contacts go to the
+    // tester only — never into the routing zone, and never back to the search
+    // manager, which would UDP-ask them and destroy the "not contacted yet"
+    // property the whole test rests on.
+    // On a LAN-only network that leaves the tester with nothing: the routing
+    // table holds a handful of nodes and every answer repeats the same ones, so
+    // a crippled search never reaches an un-asked peer. There — and only there —
+    // we keep delivering the answer to the search manager as well.
+    const bool lanMode = Kademlia::instance() != nullptr
+                         && Kademlia::instance()->isRunningInLANMode();
+
     auto* rz = Kademlia::getInstanceRoutingZone();
     auto* ipFilter = Kademlia::getIPFilter();
     uint32 ignoredCount = 0;
+    uint32 fwFedCount = 0;
 
     ContactArray results;
     // Each contact entry: 16 (KadID) + 4 (IP) + 2 (UDP) + 2 (TCP) + 1 (ver) = 25 bytes
@@ -1139,6 +1160,19 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
         }
         if (contactUDP == 53 && contactVersion <= KADEMLIA_VERSION5_48a) {
             ++ignoredCount; // no DNS port without encryption
+            continue;
+        }
+
+        // Outside LAN mode a FW check contact stops here: straight to the tester,
+        // no routing-zone entry, no Contact object, nothing for the search manager
+        // to query. MFC :806.
+        if (isFWCheckSearch && !lanMode) {
+            if (UDPFirewallTester::needsMoreTestContacts()) {
+                UDPFirewallTester::addPossibleTestContact(contactID, contactIP, contactUDP,
+                                                          contactTCP, target, contactVersion,
+                                                          KadUDPKey(0), false);
+                ++fwFedCount;
+            }
             continue;
         }
 
@@ -1171,11 +1205,9 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
                    .arg(ignoredCount).arg(ipToString(ip)));
     }
 
-    // If this is a firewall check search, feed contacts to the UDP firewall tester
+    // In LAN mode the FW check contacts were kept, so feed them to the tester here
     // (skip entirely when the tester already has enough candidates).
-    if (isFWCheckSearch && UDPFirewallTester::needsMoreTestContacts()) {
-        logKad(QStringLiteral("Kad: FW check search response — feeding %1 contacts to UDP FW tester")
-                   .arg(results.size()));
+    if (isFWCheckSearch && lanMode) {
         for (const auto* contact : results) {
             if (!UDPFirewallTester::needsMoreTestContacts())
                 break;
@@ -1185,10 +1217,18 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
                 target, contact->getVersion(),
                 contact->getUDPKey(), contact->isIpVerified(),
                 contact->connectOptions(), contact->clientHash());
+            ++fwFedCount;
         }
-        UDPFirewallTester::queryNextClient();
+    }
+    if (isFWCheckSearch) {
+        logKad(QStringLiteral("Kad: FW check search response — feeding %1 contacts to UDP FW tester")
+                   .arg(fwFedCount));
+        if (fwFedCount > 0)
+            UDPFirewallTester::queryNextClient();
     }
 
+    // MFC :838 calls ProcessResponse unconditionally. Outside LAN mode `results`
+    // is empty for a FW check search — that crippled search is exactly the point.
     SearchManager::processResponse(target, ip, udpPort, results);
 }
 

@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "net/Address.h"
+#include "utils/OtherFunctions.h"   // the uint32 isGoodIP the Address form delegates to
 
 #include <QTest>
 
@@ -79,6 +80,7 @@ private slots:
     void isPublicIP_ipv6_multicast();
     void isPublicIP_ipv6_srv6();
     void isPublicIP_ipv6_global_ok();
+    void labNetworkMode_widensIPv6Only();
 
     // IPv4 ↔ IPv6 mapped conversion
     void toIPv6Mapped_basic();
@@ -88,6 +90,11 @@ private slots:
     void toIPv4_alreadyV4();
     void conversion_roundTrip();
 
+    // Address-typed isGoodIP / isGoodIPPort
+    void isGoodIP_ipv4_matchesUint32Form();
+    void isGoodIP_ipv6();
+    void isGoodIP_nullAndPort();
+
     // Endpoint construction
     void endpoint_default_isNull();
     void endpoint_fromHostOrder();
@@ -96,6 +103,16 @@ private slots:
     void endpoint_toString_ipv6();
     void endpoint_comparison();
     void endpoint_hash();
+    void endpoint_fromString_roundTrips();
+    void endpoint_fromString_rejectsHostname();
+
+    // Textual host:port parsing
+    void parseHostPort_ipv4();
+    void parseHostPort_hostname();
+    void parseHostPort_ipv6Bracketed();
+    void parseHostPort_ipv6Bare();
+    void parseHostPort_rejects();
+    void formatHostPort_bracketsOnlyIPv6();
 
     // ipstr overloads
     void ipstr_address();
@@ -465,6 +482,122 @@ void tst_Address::endpoint_hash()
     QCOMPARE(s.size(), std::size_t(2));
 }
 
+void tst_Address::endpoint_fromString_roundTrips()
+{
+    for (const char* literal : {"1.2.3.4", "2001:db8::1", "::1"}) {
+        const Endpoint original(Address::fromString(QLatin1StringView(literal)), 4662);
+        const auto parsed = Endpoint::fromString(original.toString());
+        QVERIFY(parsed.has_value());
+        QCOMPARE(*parsed, original);
+    }
+
+    // A default port fills in when the text carries none.
+    const auto noPort = Endpoint::fromString(QStringLiteral("[2001:db8::1]"), 4662);
+    QVERIFY(noPort.has_value());
+    QCOMPARE(noPort->port(), uint16{4662});
+    QVERIFY(noPort->address().isIPv6());
+}
+
+void tst_Address::endpoint_fromString_rejectsHostname()
+{
+    // Endpoint holds an address, so a DNS name is not convertible — use parseHostPort.
+    QVERIFY(!Endpoint::fromString(QStringLiteral("example.com:4662")).has_value());
+    QVERIFY(!Endpoint::fromString(QStringLiteral("1.2.3.4:0")).has_value());
+    QVERIFY(!Endpoint::fromString(QStringLiteral("1.2.3.4")).has_value());   // no port, no default
+}
+
+// ===========================================================================
+// parseHostPort / formatHostPort
+// ===========================================================================
+
+void tst_Address::parseHostPort_ipv4()
+{
+    auto hp = parseHostPort(QStringLiteral("1.2.3.4:4662"));
+    QVERIFY(hp.has_value());
+    QCOMPARE(hp->host, QStringLiteral("1.2.3.4"));
+    QCOMPARE(hp->port, uint16{4662});
+    QVERIFY(hp->hostIsLiteral);
+
+    hp = parseHostPort(QStringLiteral("1.2.3.4"), 4661);
+    QVERIFY(hp.has_value());
+    QCOMPARE(hp->port, uint16{4661});
+    QVERIFY(hp->hostIsLiteral);
+}
+
+void tst_Address::parseHostPort_hostname()
+{
+    const auto hp = parseHostPort(QStringLiteral("  server.example.com:5662  "));
+    QVERIFY(hp.has_value());
+    QCOMPARE(hp->host, QStringLiteral("server.example.com"));
+    QCOMPARE(hp->port, uint16{5662});
+    QVERIFY(!hp->hostIsLiteral);
+}
+
+void tst_Address::parseHostPort_ipv6Bracketed()
+{
+    auto hp = parseHostPort(QStringLiteral("[2001:db8::1]:4662"));
+    QVERIFY(hp.has_value());
+    QCOMPARE(hp->host, QStringLiteral("2001:db8::1"));   // brackets stripped
+    QCOMPARE(hp->port, uint16{4662});
+    QVERIFY(hp->hostIsLiteral);
+
+    hp = parseHostPort(QStringLiteral("[::1]"), 4662);
+    QVERIFY(hp.has_value());
+    QCOMPARE(hp->host, QStringLiteral("::1"));
+    QCOMPARE(hp->port, uint16{4662});
+}
+
+void tst_Address::parseHostPort_ipv6Bare()
+{
+    // A bare literal is accepted with the default port. It is NOT split at the last
+    // colon: "2001:db8::1:4662" is itself a valid address, so guessing would corrupt it.
+    auto hp = parseHostPort(QStringLiteral("2001:db8::1"), 4662);
+    QVERIFY(hp.has_value());
+    QCOMPARE(hp->host, QStringLiteral("2001:db8::1"));
+    QCOMPARE(hp->port, uint16{4662});
+
+    hp = parseHostPort(QStringLiteral("2001:db8::1:4662"), 4662);
+    QVERIFY(hp.has_value());
+    QCOMPARE(hp->host, QStringLiteral("2001:db8::1:4662"));   // the whole token
+    QCOMPARE(hp->port, uint16{4662});                          // from the default
+}
+
+void tst_Address::parseHostPort_rejects()
+{
+    QVERIFY(!parseHostPort(QString()).has_value());
+    QVERIFY(!parseHostPort(QStringLiteral("   ")).has_value());
+    QVERIFY(!parseHostPort(QStringLiteral("[2001:db8::1")).has_value());      // unclosed
+    QVERIFY(!parseHostPort(QStringLiteral("::1]:4662")).has_value());         // stray ]
+    QVERIFY(!parseHostPort(QStringLiteral("[example.com]:80")).has_value());  // not a literal
+    QVERIFY(!parseHostPort(QStringLiteral("[2001:db8::1]:0")).has_value());   // port 0
+    QVERIFY(!parseHostPort(QStringLiteral("[2001:db8::1]:99999")).has_value());
+    QVERIFY(!parseHostPort(QStringLiteral("[2001:db8::1]x4662")).has_value());
+    QVERIFY(!parseHostPort(QStringLiteral("host:abc")).has_value());          // non-numeric
+    QVERIFY(!parseHostPort(QStringLiteral("host:")).has_value());
+    QVERIFY(!parseHostPort(QStringLiteral(":4662")).has_value());             // no host
+    QVERIFY(!parseHostPort(QStringLiteral("not:an:address")).has_value());    // multi-colon, not v6
+    QVERIFY(!parseHostPort(QStringLiteral("host.example.com")).has_value());  // no port, no default
+}
+
+void tst_Address::formatHostPort_bracketsOnlyIPv6()
+{
+    QCOMPARE(formatHostPort(QStringLiteral("1.2.3.4"), 4662), QStringLiteral("1.2.3.4:4662"));
+    QCOMPARE(formatHostPort(QStringLiteral("host.example.com"), 4662),
+             QStringLiteral("host.example.com:4662"));
+    QCOMPARE(formatHostPort(QStringLiteral("2001:db8::1"), 4662),
+             QStringLiteral("[2001:db8::1]:4662"));
+
+    // Round-trips through parseHostPort for every family.
+    for (const char* host : {"1.2.3.4", "host.example.com", "2001:db8::1"}) {
+        const QString hostStr = QString::fromLatin1(host);
+        const QString text = formatHostPort(hostStr, 4662);
+        const auto hp = parseHostPort(text);
+        QVERIFY(hp.has_value());
+        QCOMPARE(hp->host, hostStr);
+        QCOMPARE(hp->port, uint16{4662});
+    }
+}
+
 // ===========================================================================
 // ipstr overloads
 // ===========================================================================
@@ -550,6 +683,47 @@ void tst_Address::isPublicIP_ipv6_global_ok()
     QVERIFY(Address::fromString(QStringLiteral("2607:f8b0:4004::1")).isPublicIP());
 }
 
+void tst_Address::labNetworkMode_widensIPv6Only()
+{
+    const auto doc = Address::fromString(QStringLiteral("2001:db8::1"));
+    const auto loopback = Address::fromString(QStringLiteral("::1"));
+    const auto linkLocal = Address::fromString(QStringLiteral("fe80::1"));
+    const auto ula = Address::fromString(QStringLiteral("fd00::1"));
+    const auto multicast = Address::fromString(QStringLiteral("ff02::1"));
+    const auto unspecified = Address::fromString(QStringLiteral("::"));
+
+    // Production default: all of these are refused.
+    QVERIFY(!Address::labNetworkMode());
+    QVERIFY(!doc.isPublicIP());
+    QVERIFY(!loopback.isPublicIP());
+    QVERIFY(!linkLocal.isPublicIP());
+    QVERIFY(!ula.isPublicIP());
+
+    {
+        // Lab mode is what filterLANIPs=false turns on: an interop rig runs on the
+        // documentation prefix and a single-host rig runs on ::1, so both must pass.
+        const ScopedLabNetworkMode lab(true);
+        QVERIFY(doc.isPublicIP());
+        QVERIFY(loopback.isPublicIP());
+        QVERIFY(linkLocal.isPublicIP());
+        QVERIFY(ula.isPublicIP());
+
+        // Never a peer address under any configuration.
+        QVERIFY(!multicast.isPublicIP());
+        QVERIFY(!unspecified.isPublicIP());
+
+        // IPv4 acceptance is deliberately untouched — it is relaxed for LAN through
+        // isGoodIP(forceCheck)/isRoutable(allowLan) instead, and widening it here would
+        // silently change which IPv4 sources we accept.
+        QVERIFY(!Address::fromString(QStringLiteral("192.168.1.1")).isPublicIP());
+        QVERIFY(!Address::fromString(QStringLiteral("127.0.0.1")).isPublicIP());
+    }
+
+    // The guard restores the previous value, so no state leaks into the next test.
+    QVERIFY(!Address::labNetworkMode());
+    QVERIFY(!doc.isPublicIP());
+}
+
 // ===========================================================================
 // IPv4 ↔ IPv6 mapped conversion
 // ===========================================================================
@@ -598,6 +772,77 @@ void tst_Address::conversion_roundTrip()
     auto mapped = orig.toIPv6Mapped();
     auto back = mapped.toIPv4();
     QCOMPARE(back, orig);
+}
+
+// ---------------------------------------------------------------------------
+// isGoodIP / isGoodIPPort — Address-typed forms
+// ---------------------------------------------------------------------------
+
+// The IPv4 branch must delegate to the classic uint32 rule, NOT to isPublicIP(), which
+// is materially stricter (it also rejects CGNAT, TEST-NETs and 6to4 relay anycast).
+// Swapping the two would silently change which IPv4 sources we accept.
+void tst_Address::isGoodIP_ipv4_matchesUint32Form()
+{
+    for (const char* ip : {"8.8.8.8", "10.0.0.1", "192.168.1.1", "127.0.0.1",
+                           "0.1.2.3", "224.0.0.1", "255.255.255.255",
+                           "100.64.0.1", "203.0.113.5", "192.88.99.1"}) {
+        const Address a = Address::fromString(QString::fromLatin1(ip));
+        QVERIFY2(!a.isNull(), ip);
+        QCOMPARE(isGoodIP(a), isGoodIP(a.toNetworkUint32()));
+        QCOMPARE(isGoodIP(a, true), isGoodIP(a.toNetworkUint32(), true));
+    }
+
+    // CGNAT is accepted here but rejected by isPublicIP() — the exact divergence that
+    // makes delegation, rather than substitution, the correct choice.
+    const Address cgnat = Address::fromString(QStringLiteral("100.64.0.1"));
+    QVERIFY(isGoodIP(cgnat));
+    QVERIFY(!cgnat.isPublicIP());
+}
+
+void tst_Address::isGoodIP_ipv6()
+{
+    const auto good = [](const char* s) {
+        return isGoodIP(Address::fromString(QString::fromLatin1(s)));
+    };
+    const auto forced = [](const char* s) {
+        return isGoodIP(Address::fromString(QString::fromLatin1(s)), true);
+    };
+
+    QVERIFY(good("2606:4700::1"));      // global unicast
+    QVERIFY(!good("::1"));              // loopback
+    QVERIFY(!good("fe80::1"));          // link-local
+    QVERIFY(!good("fd00::1"));          // unique local
+    QVERIFY(!good("2001:db8::1"));      // documentation
+    QVERIFY(!good("2002::1"));          // 6to4
+    QVERIFY(!good("ff02::1"));          // multicast
+    QVERIFY(!good("::"));               // unspecified
+
+    // forceCheck mirrors the IPv4 rule: it skips only the LAN test. Multicast and the
+    // unspecified address stay rejected, exactly as 224+/0.x.x.x do on the v4 side.
+    QVERIFY(forced("::1"));
+    QVERIFY(forced("fe80::1"));
+    QVERIFY(forced("fd00::1"));
+    QVERIFY(!forced("ff02::1"));
+    QVERIFY(!forced("::"));
+
+    // The IPv6-only source marker: 0xFFFFFFFF fails as an IPv4 address, which is what
+    // used to discard such sources, but a real IPv6 alongside it is perfectly good.
+    QVERIFY(!isGoodIP(0xFFFFFFFFu));
+    QVERIFY(good("2606:4700::abcd"));
+}
+
+void tst_Address::isGoodIP_nullAndPort()
+{
+    QVERIFY(!isGoodIP(Address{}));
+    QVERIFY(!isGoodIP(Address{}, true));
+
+    const Address v4 = Address::fromString(QStringLiteral("8.8.8.8"));
+    const Address v6 = Address::fromString(QStringLiteral("2606:4700::1"));
+    QVERIFY(isGoodIPPort(v4, 4662));
+    QVERIFY(isGoodIPPort(v6, 4662));
+    QVERIFY(!isGoodIPPort(v4, 0));
+    QVERIFY(!isGoodIPPort(v6, 0));
+    QVERIFY(!isGoodIPPort(Address{}, 4662));
 }
 
 #include "tst_Address.moc"

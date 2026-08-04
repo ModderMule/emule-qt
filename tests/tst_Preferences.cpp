@@ -36,6 +36,9 @@ private slots:
         Preferences prefs;
         QCOMPARE(prefs.maxConnections(), static_cast<uint16>(500));
         QCOMPARE(prefs.maxHalfConnections(), static_cast<uint16>(50)); // eMule 2026 bandwidth default
+        // Default ON: IPv6 peers are a small population and would otherwise be outbid
+        // on upload score by the IPv4 majority indefinitely.
+        QCOMPARE(prefs.separateIPv6Queue(), true);
     }
 
     void defaults_bandwidth()
@@ -131,6 +134,7 @@ private slots:
             p1.setProxyPassword(QStringLiteral("pass1"));
             p1.setEnableUPnP(false);
             p1.setCloseUPnPOnExit(false);
+            p1.setSeparateIPv6Queue(false);   // non-default, so a lost key would show
             p1.setLogToDisk(true);
             p1.setMaxLogFileSize(2048);
             p1.setVerbose(true);
@@ -168,6 +172,7 @@ private slots:
         QCOMPARE(p2.proxyPassword(), QStringLiteral("pass1"));
         QCOMPARE(p2.enableUPnP(), false);
         QCOMPARE(p2.closeUPnPOnExit(), false);
+        QCOMPARE(p2.separateIPv6Queue(), false);
         QCOMPARE(p2.logToDisk(), true);
         QCOMPARE(p2.maxLogFileSize(), 2048u);
         QCOMPARE(p2.verbose(), true);

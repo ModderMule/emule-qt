@@ -1,9 +1,12 @@
 /// @file tst_ServerLocalTest.cpp
 /// @brief Local server integration test — starts a local eNode server and
-///        exercises it over four rounds: obfuscated TCP (5565), plain TCP
-///        (5555), UDP global search while disconnected (5559), and plain TCP
-///        against the obfuscated port (5565). Publishes shared files, searches
-///        by keyword, and verifies the results carry our hashes and sizes.
+///        exercises it over eight rounds: obfuscated TCP (5565), plain TCP
+///        (5555), UDP global search while disconnected (5559), plain TCP
+///        against the obfuscated port (5565), the obfuscated stat crypt-ping
+///        (5567), server-seeded fixture searches and sources, IPv6 over ::1,
+///        and the two version surfaces a client can display. Publishes shared
+///        files, searches by keyword, and verifies the results carry our
+///        hashes and sizes.
 ///
 /// Each round asserts HighID, so a firewall probe that fails — or silently
 /// falls back to plaintext — is caught rather than logged and ignored.
@@ -37,11 +40,13 @@
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Opcodes.h"
+#include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 
 #include <QDir>
 #include <QFile>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTcpSocket>
 #include <QTest>
@@ -130,6 +135,20 @@ private slots:
     void requestFixtureSourcesUdp();
     void stopServerFixtures();
 
+    // Round 7: IPv6 — connect over ::1 (S1/S2) and confirm the fixture source path
+    // still works over an IPv6-transport session. QSKIPs when the eNode under test is
+    // not reachable over IPv6 (ipv6.enabled off), so it is safe in any environment.
+    void startServerIPv6();
+    void requestFixtureSourcesIPv6();
+    void stopServerIPv6();
+
+    // Round 8: the two version surfaces a client can display
+    void startServerVersions();
+    void versionFromLogin();
+    void versionFromDescExchange();
+    void versionLegacyDescPreservesVersion();
+    void stopServerVersions();
+
     void cleanupTestCase();
 
 private:
@@ -137,6 +156,10 @@ private:
     void startServer();
     void stopServer();
     void connectToLocalServer(bool noCrypt, quint16 overridePort = 0);
+    /// Connect to the local eNode over IPv6 loopback (::1). Returns false (does NOT
+    /// assert) when the connection can't be established, so Round 7 can QSKIP on a
+    /// server without ipv6.enabled.
+    bool connectToLocalServerIPv6();
     void disconnectFromServer();
     void publishFiles();
     void searchForKeyword();
@@ -167,9 +190,22 @@ private:
     DownloadQueue* m_downloadQueue = nullptr;
     SearchList* m_searchList = nullptr;
     Server* m_localServer = nullptr;
+    bool m_ipv6RoundActive = false;   // true only once the IPv6 (::1) connect succeeded
+
+    // Round 8: the ServerList entry the version parsers write onto, and the string
+    // the TCP login surface produced (compared against the UDP one later).
+    Server* m_versionEntry = nullptr;
+    QString m_tcpVersion;
 
     // UDP socket for Round 3
     UDPSocket* m_udpSocket = nullptr;
+
+    // What the last OP_GLOBSERVSTATRES carried on the wire, captured in the
+    // serverStatusResult lambda *before* ServerList consumes it: the payload size and
+    // the raw 4 bytes at +40. Rounds 5 and 8 assert on these to pin the reflection on
+    // the obfuscated and the plain channel respectively.
+    uint32 m_lastStatSize = 0;
+    uint32 m_lastStatObservedRaw = 0;
 
     // Shared file hashes (MD4, 16 bytes each) and their sizes
     QByteArray m_readmeHash;
@@ -965,6 +1001,8 @@ void tst_ServerLocalTest::cryptPingRoundTrip()
     m_serverConnect->setUDPSocket(m_udpSocket);
     connect(m_udpSocket, &UDPSocket::serverStatusResult,
             this, [this](const uint8* data, uint32 size, const Endpoint& from) {
+                m_lastStatSize = size;
+                m_lastStatObservedRaw = size >= 44 ? peekUInt32(data + 40) : 0;
                 m_serverList->processStatusResponse(data, size, from);
             });
 
@@ -1011,6 +1049,23 @@ void tst_ServerLocalTest::cryptPingRoundTrip()
     qDebug() << "PASS: crypt-ping round-trip — users" << entry->users()
              << "files" << entry->files()
              << "udpKey=0x" << Qt::hex << entry->serverKeyUDPRaw();
+
+    // The trailing observed-IPv4 reflection at +40. eNode-go appends it on the
+    // obfuscated channel (Lugdunum sends it on this channel only), which takes the
+    // payload to exactly 44 bytes — the size ServerList uses to tell the reflection
+    // apart from a vendor tag block. Assert the wire shape, not just its effect: on a
+    // loopback rig the value can never be adopted, so an assertion on publicIP() alone
+    // would stay green if the server stopped sending the field altogether.
+    QCOMPARE(m_lastStatSize, 44u);
+    const Address observed = Address::fromNetworkOrder(m_lastStatObservedRaw);
+    QCOMPARE(observed.toString(), QStringLiteral("127.0.0.1"));
+    qDebug() << "PASS: obfuscated reply carried the observed-IP reflection at +40 ="
+             << observed.toString();
+
+    // ...and the validation ladder threw it away, because 127.0.0.1 is not publicly
+    // routable. A rig whose reflection is a real routable address is what exercises
+    // adoption; the vote/threshold logic itself is covered by tst_ServerList.
+    QCOMPARE(theApp.serverCorroboratedIP(), 0u);
 }
 
 void tst_ServerLocalTest::stopServerCryptPing()
@@ -1160,6 +1215,380 @@ void tst_ServerLocalTest::stopServerFixtures()
     theApp.serverConnect = nullptr;
     delete m_udpSocket;
     m_udpSocket = nullptr;
+    stopServer();
+}
+
+// ---------------------------------------------------------------------------
+// Round 7: IPv6 — connect over ::1 (S1/S2) and confirm the fixture source path
+//
+// This exercises the dual-stack client against the same local eNode over IPv6
+// transport: the login carries CT_MOD_IP_V6 + SRVCAP_IPV6 (S1), the session is
+// sentinel-safe, and a v6-aware eNode may return an inline 0xFFFFFFFF IPv6 source
+// (S3a). It QSKIPs cleanly when the server is not reachable over IPv6, so it is
+// safe on any eNode build; run it against an ipv6.enabled eNode-go with IPv6
+// fixture peers in debug_fixtures.yaml to validate S1/S2/S3a end to end.
+// ---------------------------------------------------------------------------
+
+bool tst_ServerLocalTest::connectToLocalServerIPv6()
+{
+    delete m_localServer;
+    m_localServer = new Server(uint32{0}, 5555);
+    m_localServer->setIpAddress(Address::fromString(QStringLiteral("::1")));
+    m_localServer->setName(QStringLiteral("(TESTING!!!) eNode v6"));
+
+    ServerConnectConfig cfg;
+    cfg.safeServerConnect = true;
+    cfg.autoConnectStaticOnly = false;
+    cfg.useServerPriorities = false;
+    cfg.reconnectOnDisconnect = false;
+    cfg.addServersFromServer = false;
+    cfg.serverKeepAliveTimeout = 0;
+    cfg.userNick = QStringLiteral("eMuleQt-LocalTest-v6");
+    cfg.listenPort = m_listenSocket->connectedPort();
+    cfg.emuleVersionTag = (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17)
+                        | (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10)
+                        | (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);
+    cfg.connectionTimeout = 15000;
+    // Plain login over loopback keeps this round independent of the obfuscation path.
+    cfg.cryptLayerEnabled = false;
+    cfg.cryptLayerPreferred = false;
+    cfg.cryptLayerRequired = false;
+    thePrefs.setCryptLayerRequired(false);
+
+    auto userHash = thePrefs.userHash();
+    std::copy(userHash.begin(), userHash.end(), cfg.userHash.begin());
+    m_serverConnect->setConfig(cfg);
+
+    m_serverConnect->connectToServer(m_localServer, false, /*noCrypt=*/true);
+    return QTest::qWaitFor([this] { return m_serverConnect->isConnected(); }, 15'000);
+}
+
+void tst_ServerLocalTest::startServerIPv6()
+{
+    startServer();
+    if (!connectToLocalServerIPv6()) {
+        stopServer();
+        QSKIP("eNode not reachable over IPv6 (::1) — ipv6.enabled likely off; skipping IPv6 round");
+    }
+    m_ipv6RoundActive = true;
+    theApp.serverConnect = m_serverConnect;
+
+    const Server* srv = m_serverConnect->currentServer();
+    qDebug() << "IPv6 round connected. clientID=0x" << Qt::hex << m_serverConnect->clientID()
+             << "supportsIPv6=" << (srv && srv->supportsIPv6());
+}
+
+void tst_ServerLocalTest::requestFixtureSourcesIPv6()
+{
+    if (!m_ipv6RoundActive)
+        QSKIP("IPv6 round not active");
+
+    QVERIFY2(m_serverConnect->isConnected(), "IPv6 round: not connected");
+
+    // Because we advertised v6 capability at login, a v6-aware eNode may return an IPv6
+    // source via the 0xFFFFFFFF sentinel inside the classic OP_FOUNDSOURCES (S3a). We
+    // assert the sources parse (no desync) and log any IPv6 source that arrives.
+    PartFile* pf = addFixtureDownload(kDebianHash, kDebianSize,
+                                      QStringLiteral("Debian-13-amd64-netinst.iso"));
+    QVERIFY2(pf != nullptr, "Failed to create Debian PartFile download");
+
+    m_serverConnect->sendPacket(pf->createServerSourceRequestPacket(/*obfuscated=*/false));
+    const bool got = QTest::qWaitFor([pf] { return pf->sourceCount() > 0; }, 15'000);
+    QVERIFY2(got, "No sources returned for the Debian fixture over IPv6 transport");
+
+    int ipv6Sources = 0;
+    for (const UpDownClient* src : pf->srcList())
+        if (src->openIPv6())
+            ++ipv6Sources;
+    qDebug() << "IPv6 round: parsed" << pf->sourceCount() << "sources," << ipv6Sources << "over IPv6";
+}
+
+void tst_ServerLocalTest::stopServerIPv6()
+{
+    if (!m_ipv6RoundActive)
+        return;
+
+    disconnectFromServer();
+    QTest::qWait(500);
+    checkServerLog();
+    m_downloadQueue->deleteAll();
+    theApp.serverConnect = nullptr;
+    m_ipv6RoundActive = false;
+    stopServer();
+}
+
+// ---------------------------------------------------------------------------
+// Round 8: the two version surfaces a client can display
+//
+// eNode-go publishes its version in two deliberately *different* forms, and which
+// one a user sees is a client-side decision no test in the server's own Docker rig
+// can reach (eNode-go docs/interop-docker-tests.md §3):
+//
+//   TCP OP_SERVERMESSAGE at login   "server version v0.1.0 (eNode-go)"
+//   UDP OP_SERVER_DESC_RES (0xa3)   ST_VERSION = "17.14 (eNode-go v0.1.0)"
+//
+// So a connected user sees the first and someone merely holding us in a server list
+// sees the second — and writes that into their own server.met and re-shares it. This
+// round pins both, and the leading "v" that keeps the first one intact: srchybrid runs
+// _stscanf("%u.%u") over the text after "server version" and, when that *succeeds*,
+// reformats the whole value to a bare "%u.%02u" (srchybrid/ServerSocket.cpp:176-183),
+// discarding the name. The "17.14 …" form on that transport would therefore display as
+// a plain "17.14". We store the line verbatim, so that guard is about what an MFC peer
+// would make of the same string, not about our own parser.
+//
+// Assertions are derivation-based, not literal: both strings are built from
+// ed2k.ENodeVersionStr, so the same vX.Y.Z must appear in both — which survives an
+// eNode-go release bump but still fails if either surface stops being derived from it.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The "vX.Y.Z" that both surfaces carry — eNode-go's ed2k.ENodeVersionStr.
+QRegularExpression enodeVersionRe()
+{
+    return QRegularExpression(QStringLiteral(R"(v\d+\.\d+\.\d+)"));
+}
+
+/// What srchybrid's _stscanf("%u.%u") accepts. A version matching this is truncated
+/// to "%u.%02u" by a real MFC client, name and all.
+QRegularExpression mfcTruncatableRe()
+{
+    return QRegularExpression(QStringLiteral(R"(^\s*\d+\.\d+)"));
+}
+
+} // namespace
+
+void tst_ServerLocalTest::startServerVersions()
+{
+    startServer();
+
+    // Both version parsers write onto the *ServerList* entry, not onto the throwaway
+    // Server the socket holds: ServerConnect::onServerMessage goes through
+    // resolveListEntry() and ServerList::processDescResponse through findByIPUdp().
+    // The other rounds never add the eNode to the list, so the version they parse is
+    // written nowhere. Register it before connecting, so the login line has a home.
+    m_serverList->removeAllServers();
+    auto srv = std::make_unique<Server>(htonl(0x7F000001), 5555);
+    srv->setName(QStringLiteral("(TESTING!!!) eNode"));
+    // Loopback is not "routable", which addServer() rejects on the plain-IP path; a
+    // dynIP entry is accepted. The numeric IP stays set, so sends go direct with no DNS.
+    srv->setDynIP(QStringLiteral("127.0.0.1"));
+    // Deliberately no SrvUdpFlag::UdpObfuscation — belt and braces with
+    // cryptLayerSupported(false) above, so UDPSocket::sendPacket cannot decide to
+    // encrypt and redirect to the obfuscated port.
+    srv->setUDPFlags(SrvUdpFlag::NewTags | SrvUdpFlag::Unicode);
+    m_versionEntry = m_serverList->addServer(std::move(srv));
+    QVERIFY2(m_versionEntry != nullptr, "Failed to add the eNode to the ServerList");
+
+    // Plain TCP on 5555 — the transport the login-message surface lives on.
+    connectToLocalServer(/*noCrypt=*/true);
+
+    // Only now, once the login (and the server's obfuscated probe back to our listener)
+    // is done: force ServerList::serverStats() down its *plain* branch, so both the stat
+    // ping and the OP_SERVER_DESC_REQ it triggers go unencrypted to 5559. Round 5 already
+    // covers the obfuscated crypt-ping at tcp+12. Setting this before the connect would
+    // also make our listener reject the server's encrypted probe. Restored in
+    // stopServerVersions().
+    thePrefs.setCryptLayerSupported(false);
+
+    // serverStats() and processStatusResponse() both reach the connection through
+    // theApp. Restored in stopServerVersions().
+    theApp.serverConnect = m_serverConnect;
+}
+
+void tst_ServerLocalTest::versionFromLogin()
+{
+    QVERIFY2(m_serverConnect->isConnected(), "Not connected — connect step failed");
+    QVERIFY(m_versionEntry != nullptr);
+
+    const bool got = QTest::qWaitFor([this] {
+        return !m_versionEntry->version().isEmpty();
+    }, 10'000);
+    QVERIFY2(got, "No version recorded from the login: the server sent no "
+                  "\"server version …\" line in its OP_SERVERMESSAGE, or "
+                  "ServerConnect::onServerMessage failed to match it");
+
+    m_tcpVersion = m_versionEntry->version();
+    qDebug() << "TCP login surface: version =" << m_tcpVersion;
+
+    QVERIFY2(m_tcpVersion.contains(QStringLiteral("eNode"), Qt::CaseInsensitive),
+             qPrintable(QStringLiteral("Login version \"%1\" does not name the server — "
+                                       "the whole point of the string form is that the part "
+                                       "eserver discards says who we are")
+                            .arg(m_tcpVersion)));
+
+    // The guard. Asserted separately from any equality so it still fires if the
+    // expected string is ever updated to match a changed server.
+    QVERIFY2(!mfcTruncatableRe().match(m_tcpVersion).hasMatch(),
+             qPrintable(QStringLiteral("Login version \"%1\" parses as two dotted integers, so "
+                                       "srchybrid's _stscanf(\"%%u.%%u\") succeeds and reformats "
+                                       "the whole value to a bare \"%%u.%%02u\" "
+                                       "(srchybrid/ServerSocket.cpp:176-183) — a real client would "
+                                       "display only the numbers and drop the server name. A "
+                                       "leading \"v\" is what makes that scanf fail")
+                            .arg(m_tcpVersion)));
+
+    QVERIFY2(enodeVersionRe().match(m_tcpVersion).hasMatch(),
+             qPrintable(QStringLiteral("Login version \"%1\" carries no vX.Y.Z — it is no longer "
+                                       "derived from ed2k.ENodeVersionStr")
+                            .arg(m_tcpVersion)));
+
+    // OP_SERVERIDENT (0x41) carries no version tag by design, and the only thing that
+    // rewrites the version afterwards is the eFarm path in onServerIdent, which fires on
+    // a "****" server hash. This pins that the ident left the login string alone.
+    QVERIFY2(!m_tcpVersion.startsWith(QLatin1String("eFarm")),
+             "OP_SERVERIDENT was misread as an eFarm server and rewrote the version");
+}
+
+void tst_ServerLocalTest::versionFromDescExchange()
+{
+    QVERIFY2(m_serverConnect->isConnected(), "Not connected — connect step failed");
+    QVERIFY2(!m_tcpVersion.isEmpty(), "Login surface never produced a version");
+
+    // UDP socket wired exactly as CoreSession::start() does: stat replies drive
+    // ServerList::processStatusResponse, description replies processDescResponse.
+    m_udpSocket = new UDPSocket(this);
+    QVERIFY2(m_udpSocket->create(), "Failed to create UDPSocket");
+    m_serverConnect->setUDPSocket(m_udpSocket);
+    connect(m_udpSocket, &UDPSocket::serverStatusResult,
+            this, [this](const uint8* data, uint32 size, const Endpoint& from) {
+                m_lastStatSize = size;
+                m_lastStatObservedRaw = size >= 44 ? peekUInt32(data + 40) : 0;
+                m_serverList->processStatusResponse(data, size, from);
+            });
+    connect(m_udpSocket, &UDPSocket::serverDescResult,
+            this, [this](const uint8* data, uint32 size, const Endpoint& from) {
+                m_serverList->processDescResponse(data, size, from);
+            });
+
+    // Round 5 left these set from the obfuscated reply; clear them so the plain-channel
+    // assertion below cannot pass on a stale capture.
+    m_lastStatSize = 0;
+    m_lastStatObservedRaw = 0;
+
+    // The real client path, not a hand-built probe: serverStats() sends the plain
+    // OP_GLOBSERVSTATREQ, and processStatusResponse answers it by issuing the
+    // OP_SERVER_DESC_REQ whose challenge carries INV_SERV_DESC_LEN in its low 16 bits.
+    // So this also covers that automatic follow-up.
+    m_serverList->serverStats();
+    QVERIFY2(!m_versionEntry->cryptPingReplyPending(),
+             "serverStats() took the obfuscated crypt-ping branch — this round needs the "
+             "plain one (cryptLayerSupported should be off)");
+
+    const bool got = QTest::qWaitFor([this] {
+        return m_versionEntry->version() != m_tcpVersion;
+    }, 15'000);
+
+    const QString udpVersion = m_versionEntry->version();
+    qDebug() << "UDP OP_SERVER_DESC_RES surface: version =" << udpVersion
+             << "name =" << m_versionEntry->name()
+             << "desc =" << m_versionEntry->description();
+
+    QVERIFY2(got, qPrintable(QStringLiteral(
+        "The 0xa3 description reply never updated the version (still \"%1\", "
+        "descReqChallenge=0x%2) — either no reply arrived on 5559, or its ST_VERSION tag "
+        "was dropped")
+        .arg(udpVersion)
+        .arg(m_versionEntry->descReqChallenge(), 0, 16)));
+
+    // The observed-IPv4 reflection again, this time over the *plain* channel on 5559.
+    // eNode-go deliberately sends the extended form here too, where Lugdunum answers a
+    // plain 0x96 with the short 32-byte form — so this is the leg that only the eNode
+    // target covers. Round 5 pins the obfuscated one.
+    QCOMPARE(m_lastStatSize, 44u);
+    const Address observed = Address::fromNetworkOrder(m_lastStatObservedRaw);
+    QCOMPARE(observed.toString(), QStringLiteral("127.0.0.1"));
+    QCOMPARE(theApp.serverCorroboratedIP(), 0u);
+    qDebug() << "PASS: plain reply carried the observed-IP reflection at +40 ="
+             << observed.toString();
+
+    // Cleared only on a reply that echoed our exact challenge; a mismatched one is
+    // dropped silently and would otherwise look identical to a lost datagram.
+    QVERIFY2(m_versionEntry->descReqChallenge() == 0,
+             "The description reply did not echo our challenge");
+
+    // The tag block parsed as a whole, so an empty/missing version below would be a real
+    // miss rather than an unread packet.
+    QCOMPARE(m_versionEntry->name(), QStringLiteral("(TESTING!!!) eNode"));
+    QVERIFY2(!m_versionEntry->description().isEmpty(),
+             "ST_DESCRIPTION missing from the 0xa3 tag block");
+
+    // "17.x" is a protocol-compatibility claim, not eNode's own version: eserver only
+    // admits a peer to its `working` set when this parses as >= 17.7.
+    QVERIFY2(udpVersion.startsWith(QStringLiteral("17.")),
+             qPrintable(QStringLiteral("ST_VERSION \"%1\" no longer leads with the Lugdunum "
+                                       "compatibility version — eserver's version gate needs "
+                                       ">= 17.7 to flag us `working`")
+                            .arg(udpVersion)));
+    QVERIFY2(udpVersion.contains(QStringLiteral("eNode"), Qt::CaseInsensitive),
+             qPrintable(QStringLiteral("ST_VERSION \"%1\" does not name the server")
+                            .arg(udpVersion)));
+
+    // The cross-surface invariant: both strings are built from ed2k.ENodeVersionStr, so
+    // the same vX.Y.Z has to appear in both. Release-proof, unlike a literal.
+    const QString tcpTail = enodeVersionRe().match(m_tcpVersion).captured();
+    const QString udpTail = enodeVersionRe().match(udpVersion).captured();
+    QVERIFY2(!udpTail.isEmpty(),
+             qPrintable(QStringLiteral("ST_VERSION \"%1\" carries no vX.Y.Z")
+                            .arg(udpVersion)));
+    QVERIFY2(tcpTail == udpTail,
+             qPrintable(QStringLiteral("The two surfaces report different eNode versions: login "
+                                       "\"%1\" (%2) vs 0xa3 \"%3\" (%4) — one of them is no longer "
+                                       "derived from ed2k.ENodeVersionStr")
+                            .arg(m_tcpVersion, tcpTail, udpVersion, udpTail)));
+
+    // They are *meant* to disagree. Harmonising them onto the "17.14 …" form would make a
+    // real MFC client display a bare "17.14" on the login surface (see the guard above).
+    QVERIFY2(udpVersion != m_tcpVersion,
+             qPrintable(QStringLiteral("Both surfaces now report \"%1\" — the login line and the "
+                                       "0xa3 tag are deliberately different forms")
+                            .arg(udpVersion)));
+
+    qDebug() << "PASS: login surface" << m_tcpVersion << "/ 0xa3 surface" << udpVersion
+             << "— both carry" << udpTail;
+}
+
+void tst_ServerLocalTest::versionLegacyDescPreservesVersion()
+{
+    QVERIFY(m_udpSocket != nullptr);
+    const QString udpVersion = m_versionEntry->version();
+    QVERIFY2(udpVersion.startsWith(QStringLiteral("17.")),
+             "Previous step did not leave the 0xa3 version in place");
+
+    // Clear the name so the reply is provably observed rather than assumed.
+    m_versionEntry->setName(QString());
+
+    // A payload-less OP_SERVER_DESC_REQ (just "e3 a2"). Under 6 bytes the server answers
+    // in the legacy <name><desc> form: no tag block, so no version at all. That reply
+    // must not blank the version we already hold.
+    auto packet = std::make_unique<Packet>(OP_SERVER_DESC_REQ, 0u);
+    packet->prot = OP_EDONKEYPROT;
+    m_udpSocket->sendPacket(std::move(packet), *m_versionEntry, 5559);
+    qDebug() << "Sent legacy (payload-less) OP_SERVER_DESC_REQ";
+
+    const bool got = QTest::qWaitFor([this] {
+        return !m_versionEntry->name().isEmpty();
+    }, 10'000);
+    QVERIFY2(got, "No legacy OP_SERVER_DESC_RES came back for the payload-less request");
+
+    QCOMPARE(m_versionEntry->name(), QStringLiteral("(TESTING!!!) eNode"));
+    QCOMPARE(m_versionEntry->version(), udpVersion);
+
+    qDebug() << "PASS: legacy 0xa3 refreshed name/desc and left the version at" << udpVersion;
+}
+
+void tst_ServerLocalTest::stopServerVersions()
+{
+    disconnectFromServer();
+    QTest::qWait(500);
+    checkServerLog();
+
+    m_serverConnect->setUDPSocket(nullptr);
+    theApp.serverConnect = nullptr;
+    thePrefs.setCryptLayerSupported(true);   // back to the default this round turned off
+    delete m_udpSocket;
+    m_udpSocket = nullptr;
+    m_versionEntry = nullptr;
     stopServer();
 }
 

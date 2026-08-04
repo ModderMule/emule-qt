@@ -72,8 +72,9 @@ void getWords(const QString& str, std::vector<QString>& outWords)
             // Lowercase for dedup and Kad keyword matching
             QString lower = word.toLower();
 
-            // Filter: minimum 3 UTF-8 bytes (matching MFC KadGetKeywordBytes check)
-            if (lower.toUtf8().size() >= 3) {
+            // Filter: minimum keyword length in UTF-8 bytes
+            // (matching MFC KadGetKeywordBytes check)
+            if (lower.toUtf8().size() >= kMinKadKeywordBytes) {
                 // Dedup: skip if already present (case-insensitive)
                 bool duplicate = false;
                 for (const auto& existing : outWords) {
@@ -90,11 +91,12 @@ void getWords(const QString& str, std::vector<QString>& outWords)
         start = end;
     }
 
-    // Remove trailing file extension: if last word is <= 3 chars (3 UTF-8 bytes)
-    // and there are multiple words, it's likely a file extension — remove it
+    // Remove trailing file extension: if the last word is exactly the minimum
+    // keyword length and there are multiple words, it's likely a file
+    // extension — remove it
     if (outWords.size() > 1) {
         const auto& last = outWords.back();
-        if (last.toUtf8().size() <= 3)
+        if (last.toUtf8().size() <= kMinKadKeywordBytes)
             outWords.pop_back();
     }
 }

@@ -4,6 +4,7 @@
 
 #include "controls/SharedFilesModel.h"
 
+#include "utils/OtherFunctions.h"
 
 namespace eMule {
 
@@ -205,7 +206,14 @@ QString SharedFilesModel::hashAt(int row) const
 bool SharedFilesModel::containsHash(const QString& hexHash) const
 {
     return std::any_of(m_rows.begin(), m_rows.end(),
-        [&](const SharedFileRow& r) { return r.hash == hexHash; });
+        [&](const SharedFileRow& r) { return sameHash(r.hash, hexHash); });
+}
+
+const SharedFileRow* SharedFilesModel::findByHash(const QString& hexHash) const
+{
+    const auto it = std::find_if(m_rows.begin(), m_rows.end(),
+        [&](const SharedFileRow& r) { return sameHash(r.hash, hexHash); });
+    return it != m_rows.end() ? &*it : nullptr;
 }
 
 // ---------------------------------------------------------------------------

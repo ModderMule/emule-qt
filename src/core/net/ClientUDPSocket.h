@@ -76,6 +76,12 @@ public:
                     bool encrypt, const uint8* targetHash, bool isKad,
                     uint32 receiverVerifyKey);
 
+    /// Endpoint overload — the only form that can target an IPv6 peer. The uint32
+    /// overload above delegates here after wrapping (ip, port) as an IPv4 Endpoint.
+    bool sendPacket(std::unique_ptr<Packet> packet, const Endpoint& dest,
+                    bool encrypt, const uint8* targetHash, bool isKad,
+                    uint32 receiverVerifyKey);
+
     /// ThrottledControlSocket: send queued data up to bandwidth limit.
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
 
@@ -110,11 +116,13 @@ signals:
     /// @param data    Payload after opcode.
     /// @param size    Size of payload.
     /// @param sender  Sender address + port (IP in host byte order convention).
-    /// @param validReceiverKey  True if the decrypted receiver key matched.
-    /// @param receiverVerifyKey The receiver verify key from decryption (0 if plaintext).
+    /// @param validReceiverKey  True if the receiver key the peer echoed back matches
+    ///                          the one we minted for its IP — i.e. its IP is proven.
+    /// @param senderVerifyKey   The peer's own verify key for us (0 if plaintext). We
+    ///                          store it and echo it back on our next packet to them.
     void kadPacketReceived(uint8 opcode, const uint8* data, uint32 size,
                            const Endpoint& sender,
-                           bool validReceiverKey, uint32 receiverVerifyKey);
+                           bool validReceiverKey, uint32 senderVerifyKey);
 
 private slots:
     void onReadyRead();
@@ -122,7 +130,7 @@ private slots:
 
 private:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode,
-                       uint32 senderIP, uint16 senderPort);
+                       const Endpoint& sender);
 
     /// Receive-side dispatch stub for the reserved UDP protocol headers
     /// OP_UDPRESERVEDPROT1 (0xA3) / OP_UDPRESERVEDPROT2 (0xB2). No payload semantics

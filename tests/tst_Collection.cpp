@@ -6,7 +6,10 @@
 #include "TestHelpers.h"
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
+#include "files/KnownFile.h"
+#include "files/PublishKeywordList.h"
 #include "files/ShareableFile.h"
+#include "kademlia/KadMiscUtils.h"
 #include "utils/OtherFunctions.h"
 
 #include <QCborArray>
@@ -14,7 +17,9 @@
 #include <QCryptographicHash>
 #include <QTest>
 
+#include <algorithm>
 #include <cstring>
+#include <memory>
 
 using namespace eMule;
 using namespace eMule::testing;
@@ -47,6 +52,7 @@ private slots:
     void writeAndRead_textRoundTrip();
     void copyFrom_deepCopy();
     void authorKeyHelpers();
+    void authorKeyIsPublishedAsKadKeyword();
     void ipcSerialization_matchesHandlerFormat();
 };
 
@@ -217,6 +223,52 @@ void tst_Collection::authorKeyHelpers()
     // authorKeyHashString = MD5 of the key bytes, uppercase hex
     // MD5("\xDE\xAD\xBE\xEF") = 2F249230A8E7C2BF6005CCD2679259EC
     QCOMPARE(coll.authorKeyHashString(), QStringLiteral("2F249230A8E7C2BF6005CCD2679259EC"));
+}
+
+// ---------------------------------------------------------------------------
+// authorKeyIsPublishedAsKadKeyword
+//
+// "Search Author's Collections" is an ordinary Kad keyword search on the author's
+// public key, so a shared collection must be indexed under that key. Guards both
+// halves of that chain: KnownFile rebuilding its keyword list when the collection is
+// attached, and PublishKeywordList publishing the list rather than re-tokenizing the
+// file name. Mirrors srchybrid/SharedFileList.cpp:703-721.
+// ---------------------------------------------------------------------------
+
+void tst_Collection::authorKeyIsPublishedAsKadKeyword()
+{
+    KnownFile kf;
+    uint8 hash[16];
+    std::memset(hash, 0xC0, 16);
+    kf.setFileHash(hash);
+    kf.setFileName(QStringLiteral("mixtape.emulecollection"), true);
+
+    // Without a collection the keywords come from the file name alone.
+    QVERIFY(!kf.kadKeywords().empty());
+    const QString keyHex = QStringLiteral("deadbeef");
+    QVERIFY(!std::ranges::contains(kf.kadKeywords(), keyHex));
+
+    auto coll = std::make_unique<Collection>();
+    coll->m_name = QStringLiteral("Mixtape");
+    coll->m_authorKey = QByteArray("\xDE\xAD\xBE\xEF", 4);
+    kf.setCollection(std::move(coll));
+
+    // setCollection re-runs setFileName, which prepends the author key.
+    QVERIFY(std::ranges::contains(kf.kadKeywords(), keyHex));
+
+    // And the publisher must use that list, not the file name.
+    PublishKeywordList keywords;
+    keywords.addKeywords(&kf);
+    keywords.resetNextKeyword();
+
+    bool published = false;
+    while (const PublishKeyword* kw = keywords.getNextKeyword()) {
+        if (kad::kadTagStrToLower(kw->keyword()) == keyHex) {
+            published = true;
+            break;
+        }
+    }
+    QVERIFY2(published, "author key was not queued for Kad publishing");
 }
 
 // ---------------------------------------------------------------------------

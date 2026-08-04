@@ -29,6 +29,7 @@ private slots:
     void processIdChangeExtendedRejectsLowIDReport();
     void processServerStatus();
     void processReject();
+    void connectTo_literalInDynIPSkipsDns();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -315,6 +316,33 @@ void tst_ServerSocket::processReject()
 
     serverSide->close();
     clientSocket.close();
+}
+
+// ---------------------------------------------------------------------------
+// Test: a literal parked in the dynIP slot must not be resolved
+// ---------------------------------------------------------------------------
+
+void tst_ServerSocket::connectTo_literalInDynIPSkipsDns()
+{
+    // A legacy staticservers.dat line or an [emDynIP:] echo can leave a numeric address
+    // in dynIP. Resolving it — QDnsLookup(A, "127.0.0.1") — NXDOMAINs and the server is
+    // marked dead, so connectTo() must recognise the literal and dial it directly.
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket sock;
+    Server srv(uint32{0}, server.serverPort());
+    srv.setDynIP(QStringLiteral("127.0.0.1"));
+
+    sock.connectTo(srv);
+
+    QVERIFY(server.waitForNewConnection(5000));
+    QVERIFY(sock.connectionState() != ServerConnState::ServerDead);
+    QVERIFY(sock.currentServer() != nullptr);
+    QCOMPARE(sock.currentServer()->ipAddress(),
+             Address::fromString(QStringLiteral("127.0.0.1")));
+
+    sock.close();
 }
 
 QTEST_MAIN(tst_ServerSocket)

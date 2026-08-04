@@ -4,6 +4,7 @@
 
 #include "dialogs/CollectionCreateDialog.h"
 #include "app/IpcClient.h"
+#include "controls/AbstractListView.h"
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
@@ -81,13 +82,15 @@ void CollectionCreateDialog::setupUi()
     m_sharedLabel = new QLabel(tr("Shared (0)"));
     leftLayout->addWidget(m_sharedLabel);
 
-    m_sharedTree = new QTreeWidget;
+    auto* sharedTree = new ListTreeWidget;
+    m_sharedTree = sharedTree;
     m_sharedTree->setHeaderLabels({tr("File Name")});
     m_sharedTree->setRootIsDecorated(false);
     m_sharedTree->setAlternatingRowColors(true);
     m_sharedTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_sharedTree->setSortingEnabled(true);
     m_sharedTree->header()->setStretchLastSection(true);
+    sharedTree->bindColumns(QStringLiteral("collectionCreateShared"), {280});
     leftLayout->addWidget(m_sharedTree, 1);
     paneLayout->addLayout(leftLayout, 1);
 
@@ -115,13 +118,15 @@ void CollectionCreateDialog::setupUi()
     m_collectionLabel = new QLabel(tr("Collection List (0)"));
     rightLayout->addWidget(m_collectionLabel);
 
-    m_collectionTree = new QTreeWidget;
+    auto* collectionTree = new ListTreeWidget;
+    m_collectionTree = collectionTree;
     m_collectionTree->setHeaderLabels({tr("File Name")});
     m_collectionTree->setRootIsDecorated(false);
     m_collectionTree->setAlternatingRowColors(true);
     m_collectionTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_collectionTree->setSortingEnabled(true);
     m_collectionTree->header()->setStretchLastSection(true);
+    collectionTree->bindColumns(QStringLiteral("collectionCreateFiles"), {280});
     rightLayout->addWidget(m_collectionTree, 1);
     paneLayout->addLayout(rightLayout, 1);
 

@@ -102,6 +102,11 @@ private:
     std::vector<UpDownClient*> m_uploadingList;
     mutable QMutex m_mutex;
 
+    /// Family of the most recently promoted client, driving the alternating slot
+    /// assignment when thePrefs.separateIPv6Queue() is on. Only consulted when clients
+    /// of both families are waiting.
+    bool m_lastSlotWasIPv6 = false;
+
     // Data rate tracking
     std::deque<uint64> m_averageDRList;       // bandwidth samples
     std::deque<uint64> m_averageFriendDRList;  // friend bandwidth

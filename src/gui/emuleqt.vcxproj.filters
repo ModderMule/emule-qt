@@ -76,6 +76,9 @@
     <ClCompile Include="app\IpcClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\IpcFeedback.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="panels\IrcPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -187,6 +190,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="app\AutoStart.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="controls\AbstractListView.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\IpcFeedback.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="dialogs\ClientDetailDialog.h">

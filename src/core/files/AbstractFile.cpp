@@ -4,6 +4,7 @@
 
 #include "files/AbstractFile.h"
 #include "prefs/Preferences.h"
+#include "protocol/ED2KLink.h"
 
 #include <QObject>
 #include <QSettings>
@@ -125,45 +126,36 @@ bool AbstractFile::hasNullHash() const
 
 QString AbstractFile::getED2kLink(bool hashset, bool html, bool hostname) const
 {
-    QString link;
-    if (html)
-        link = QStringLiteral("<a href=\"");
+    // The link grammar lives in ED2KFileLink::toLink() — including where the '/'
+    // terminator goes and how an IPv6 hint is kept out of the legacy `sources,` block.
+    ED2KFileLink link;
+    link.name = m_fileName;
+    link.size = static_cast<uint64>(m_fileSize);
+    md4cpy(link.hash.data(), fileHash());
 
-    link += QStringLiteral("ed2k://|file|%1|%2|%3|")
-        .arg(urlEncode(stripInvalidFilenameChars(m_fileName)))
-        .arg(static_cast<uint64>(m_fileSize))
-        .arg(encodeBase16({fileHash(), 16}));
-
-    if (hashset
+    const bool emitPartHashes = hashset
         && m_fileIdentifier.getAvailableMD4PartHashCount() > 0
-        && m_fileIdentifier.hasExpectedMD4HashCount())
-    {
-        link += QStringLiteral("p=");
+        && m_fileIdentifier.hasExpectedMD4HashCount();
+    if (emitPartHashes) {
         for (uint16 j = 0; j < m_fileIdentifier.getAvailableMD4PartHashCount(); ++j) {
-            if (j > 0)
-                link += QChar(u':');
-            link += encodeBase16({m_fileIdentifier.getMD4PartHash(j), 16});
+            std::array<uint8, 16> partHash{};
+            md4cpy(partHash.data(), m_fileIdentifier.getMD4PartHash(j));
+            link.partHashes.push_back(partHash);
         }
-        link += QChar(u'|');
     }
 
-    if (m_fileIdentifier.hasAICHHash())
-        link += QStringLiteral("h=%1|").arg(m_fileIdentifier.getAICHHash().getString());
-
-    if (hostname) {
-        const auto& hn = thePrefs.ed2kHostname();
-        if (hn.contains(u'.'))
-            link += QStringLiteral("|sources,%1:%2|/").arg(hn).arg(thePrefs.port());
-        else
-            link += QChar(u'/');
-    } else {
-        link += QChar(u'/');
+    if (m_fileIdentifier.hasAICHHash()) {
+        link.aichHash = m_fileIdentifier.getAICHHash();
+        link.hasValidAICHHash = true;
     }
 
-    if (html)
-        link += QStringLiteral("\">%1</a>").arg(stripInvalidFilenameChars(m_fileName));
+    if (hostname)
+        link.hostnameSources = ownLinkSourceHints();
 
-    return link;
+    return link.toLink({.partHashes = emitPartHashes,
+                        .aichHash   = true,
+                        .sources    = hostname && !link.hostnameSources.empty(),
+                        .html       = html});
 }
 
 // ---------------------------------------------------------------------------

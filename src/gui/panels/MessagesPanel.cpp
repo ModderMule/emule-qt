@@ -31,6 +31,8 @@
 #include <QVBoxLayout>
 #include <QWidgetAction>
 
+#include "net/Address.h"
+
 namespace eMule {
 
 using namespace Ipc;
@@ -482,29 +484,20 @@ void MessagesPanel::showAddFriendDialog()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
+    // Send the literal address and let the daemon parse it. That keeps IPv6 intact (which
+    // has no uint32 form) and avoids the byte-order trap: the numeric field is eD2K network
+    // order, whereas QHostAddress::toIPv4Address() returns host order.
+    const Address addr = Address::fromString(dlg.ipAddress());
+
     IpcMessage msg(IpcMsgType::AddFriend);
     msg.append(dlg.friendHash());
     msg.append(dlg.friendName());
-    msg.append(static_cast<qint64>(0)); // IP will be resolved from string
+    msg.append(static_cast<qint64>(addr.toNetworkUint32()));
     msg.append(static_cast<qint64>(dlg.port()));
-
-    // Convert IP string to uint32 for IPC
-    QHostAddress addr(dlg.ipAddress());
-    if (!addr.isNull()) {
-        // Rebuild with numeric IP
-        IpcMessage msg2(IpcMsgType::AddFriend);
-        msg2.append(dlg.friendHash());
-        msg2.append(dlg.friendName());
-        msg2.append(static_cast<qint64>(addr.toIPv4Address()));
-        msg2.append(static_cast<qint64>(dlg.port()));
-        m_ipc->sendRequest(std::move(msg2), [this](const IpcMessage&) {
-            requestFriendList();
-        });
-    } else {
-        m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-            requestFriendList();
-        });
-    }
+    msg.append(addr.toString());
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+        requestFriendList();
+    });
 }
 
 void MessagesPanel::showFindDialog()

@@ -228,6 +228,13 @@ void DaemonApp::startWebServer()
     }
 
     m_webServer->start(config);
+
+    // The web port only needs forwarding while the server is actually up, and
+    // only when the user asked for it. This is what finally gives the
+    // webServerUPnP preference an effect — the old UPnPManager exposed
+    // enableWebServerPort() but nothing ever called it.
+    if (m_coreSession)
+        m_coreSession->updatePortMappings();
 }
 
 void DaemonApp::stopWebServer()
@@ -236,6 +243,8 @@ void DaemonApp::stopWebServer()
         m_webServer->stop();
         m_webServer.reset();
     }
+    if (m_coreSession)
+        m_coreSession->updatePortMappings();
 }
 
 void DaemonApp::restartWebServer()

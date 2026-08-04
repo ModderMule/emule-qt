@@ -7,6 +7,11 @@
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
+#include <QPointer>
+
+#include <memory>
+#include <utility>
+
 
 namespace eMule {
 
@@ -45,6 +50,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::GetSharedFiles:       return QStringLiteral("GetSharedFiles");
     case T::SetSharedFilePriority: return QStringLiteral("SetSharedFilePriority");
     case T::ReloadSharedFiles:    return QStringLiteral("ReloadSharedFiles");
+    case T::GetEd2kLink:          return QStringLiteral("GetEd2kLink");
     case T::GetFriends:           return QStringLiteral("GetFriends");
     case T::AddFriend:            return QStringLiteral("AddFriend");
     case T::RemoveFriend:         return QStringLiteral("RemoveFriend");
@@ -102,6 +108,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushChatMessage:      return QStringLiteral("PushChatMessage");
     case T::PushFriendListChanged: return QStringLiteral("PushFriendListChanged");
     case T::PushClientSharedFiles: return QStringLiteral("PushClientSharedFiles");
+    case T::PushPortMapStatus: return QStringLiteral("PushPortMapStatus");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }
@@ -278,6 +285,34 @@ int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
             /*outgoing=*/true);
 
     return seqId;
+}
+
+void IpcClient::sendBatchRequest(const QStringList& hashes,
+                                 const std::function<IpcMessage(const QString&)>& build,
+                                 QObject* context, std::function<void()> onAllDone)
+{
+    if (hashes.isEmpty() || !build || !isConnected())
+        return;
+
+    auto pending = std::make_shared<qsizetype>(hashes.size());
+    auto done = std::make_shared<std::function<void()>>(std::move(onAllDone));
+    const QPointer<QObject> guard(context);
+
+    auto settle = [pending, done, guard]() {
+        if (--(*pending) == 0 && guard && *done)
+            (*done)();
+    };
+
+    for (const QString& hash : hashes) {
+        if (hash.isEmpty()) {
+            settle();
+            continue;
+        }
+        // A request that never got queued must still settle, or a disconnect in the middle
+        // of a batch would leave the completion — and with it the list refresh — hanging.
+        if (sendRequest(build(hash), [settle](const IpcMessage&) { settle(); }) < 0)
+            settle();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -475,6 +510,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushChatMessage:        emit chatMessageReceived(msg); break;
     case IpcMsgType::PushFriendListChanged:  emit friendListChanged(msg); break;
     case IpcMsgType::PushClientSharedFiles:  emit clientSharedFilesReceived(msg); break;
+    case IpcMsgType::PushPortMapStatus:      emit portMapStatusChanged(msg); break;
     default: break;
     }
 }

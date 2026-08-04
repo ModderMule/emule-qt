@@ -66,6 +66,13 @@ inline void md4cpy(void* dst, const void* src) noexcept
 /// Parse a hex string into a 16-byte hash. Returns false on invalid input.
 [[nodiscard]] bool strmd4(const QString& str, uint8* hash);
 
+/// Compare two hex hash strings. md4str() emits uppercase, but hex built by hand
+/// elsewhere is often lowercase, so hash equality must ignore case.
+[[nodiscard]] inline bool sameHash(const QString& a, const QString& b) noexcept
+{
+    return a.compare(b, Qt::CaseInsensitive) == 0;
+}
+
 // ---------------------------------------------------------------------------
 // Base16 / Base32 encoding
 // ---------------------------------------------------------------------------

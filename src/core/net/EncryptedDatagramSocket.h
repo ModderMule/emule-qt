@@ -7,6 +7,7 @@
 /// Key material is passed as parameters instead of reading from global thePrefs/theApp.
 
 #include "utils/Types.h"
+#include "net/Address.h"
 
 #include <cstdint>
 
@@ -32,13 +33,14 @@ public:
     /// Decrypt a received client UDP packet.
     /// @param buf          Raw received buffer (modified in-place).
     /// @param len          Buffer length.
-    /// @param ip           Sender's IP address (network byte order).
+    /// @param senderIP     Sender's IP address (IPv4 or IPv6). The ED2K key mixes in
+    ///                     the 4-byte IPv4 (23-byte key) or the 16-byte IPv6 (35-byte key).
     /// @param userHash     Our user hash (16 bytes), or nullptr if unavailable.
     /// @param kadID        Our Kad node ID (16 bytes), or nullptr if Kad unavailable.
     /// @param kadRecvKey   Our Kad UDP verify key for the sender, or 0 if unavailable.
     /// @return             DecryptResult with pointer to decrypted data and verify keys.
     [[nodiscard]] static DecryptResult decryptReceivedClient(
-        uint8* buf, int len, uint32 ip,
+        uint8* buf, int len, const Address& senderIP,
         const uint8* userHash, const uint8* kadID, uint32 kadRecvKey);
 
     /// Encrypt a client UDP packet for sending.
@@ -48,13 +50,14 @@ public:
     /// @param isKad                True for Kad packets.
     /// @param receiverVerifyKey    Kad receiver verify key (0 if not Kad or unknown).
     /// @param senderVerifyKey      Kad sender verify key (0 if not Kad or unknown).
-    /// @param publicIP             Our public IP (network byte order), needed for ED2K packets.
+    /// @param publicIP             Our public IP (IPv4 or IPv6), needed for ED2K packets.
+    ///                             Must match the family of the datagram's destination.
     /// @return                     Total buffer length including encryption overhead.
     static uint32 encryptSendClient(
         uint8* buf, uint32 len,
         const uint8* clientHashOrKadID, bool isKad,
         uint32 receiverVerifyKey, uint32 senderVerifyKey,
-        uint32 publicIP);
+        const Address& publicIP);
 
     /// Decrypt a received server UDP packet.
     [[nodiscard]] static DecryptResult decryptReceivedServer(

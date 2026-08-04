@@ -83,7 +83,15 @@ public:
     // -- Lookups ----------------------------------------------------------
 
     [[nodiscard]] Server* findByIPTcp(uint32 ip, uint16 port) const;
+    /// Same lookup for an address of either family. findByIPTcp() delegates here;
+    /// an IPv6 server can only be found this way (its uint32 form is 0).
+    [[nodiscard]] Server* findByIPTcp(const Address& addr, uint16 port) const;
     [[nodiscard]] Server* findByIPUdp(uint32 ip, uint16 udpPort, bool obfuscationPorts = true) const;
+    /// Same lookup for an address of either family. findByIPUdp(uint32) delegates here;
+    /// prefer this form when the caller has an Endpoint, or an IPv6 server's reply
+    /// would be attributed to whichever entry happens to have a null address.
+    [[nodiscard]] Server* findByIPUdp(const Address& addr, uint16 udpPort,
+                                      bool obfuscationPorts = true) const;
     [[nodiscard]] Server* findByAddress(const QString& address, uint16 port) const;
 
     /// IP-only lookup (ignores port). Port of CServerList::GetServerByIP().
@@ -103,7 +111,7 @@ public:
     /// `order` keeps its relative position appended at the tail. This is the
     /// daemon-side of the user-sorted-server-list feature (#24) — persisted via
     /// saveServerMet, which writes m_servers in order.
-    void applyUserOrder(const std::vector<std::pair<uint32, uint16>>& order);
+    void applyUserOrder(const std::vector<std::pair<Address, uint16>>& order);
 
     // -- Iteration --------------------------------------------------------
 
@@ -174,6 +182,11 @@ private:
 
     [[nodiscard]] bool isDuplicate(const Server& server) const;
     void adjustPositionsAfterRemoval(size_t removedIndex);
+
+    /// Validate the IPv4 a server reflected back at us in the trailing field of a
+    /// challenge-matched OP_GLOBSERVSTATRES and, if it survives, cast one vote for it.
+    /// @p raw is the wire value (ed2k ID convention, first octet in the LSB).
+    static void noteObservedIPv4(const Server& server, const Endpoint& from, uint32 raw);
 };
 
 } // namespace eMule

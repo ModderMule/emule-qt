@@ -1,0 +1,216 @@
+name: Release
+
+# Fires when scripts/publish-release.sh pushes a vX.Y.Z tag. Builds all three
+# platforms by calling the per-OS workflows as reusable workflows, then publishes
+# a GitHub Release with their archives attached -- the page that the update
+# manifest's "releaseNotes" URL points at (see scripts/publish-release.sh).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# Floor for the whole run; the release job raises itself to contents: write.
+# A called workflow can only downgrade what the calling job hands it.
+permissions:
+  contents: read
+
+concurrency:
+  # Serialise re-runs of the same tag, but never cancel: a v0.2.1 push does not
+  # supersede an in-flight v0.2.0, and cancelling mid-publish strands a release
+  # with only some of its assets.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Cheap gate: ~10s, so a mismatch never burns three ~30min builds that would
+  # produce artifacts named differently from the tag.
+  guard:
+    name: Verify tag matches CMakeLists.txt
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout (CMakeLists.txt only)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          sparse-checkout: CMakeLists.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Compare tag with project version
+        id: check
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::Release must run from a tag (ref_type=${GITHUB_REF_TYPE}, ref_name=${GITHUB_REF_NAME})"
+            exit 1
+          fi
+
+          # Same grep the build workflows and the bundle scripts use, so there is
+          # no second parser to drift.
+          version="$(grep -m1 '^ *VERSION [0-9]' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+          if [ -z "${version}" ]; then
+            echo "::error file=CMakeLists.txt::Could not parse VERSION from CMakeLists.txt"
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error file=CMakeLists.txt::Tag ${GITHUB_REF_NAME} does not match project version ${version} (expected tag v${version}). Fix CMakeLists.txt or re-tag."
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "OK: tag ${GITHUB_REF_NAME} matches project version ${version}"
+
+  linux:
+    name: Linux
+    needs: guard
+    permissions:
+      contents: read
+    uses: ./.github/workflows/linux.yml
+
+  macos:
+    name: macOS
+    needs: guard
+    permissions:
+      contents: read
+    uses: ./.github/workflows/macos.yml
+
+  windows:
+    name: Windows
+    needs: guard
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows.yml
+
+  release:
+    name: Publish GitHub Release
+    needs: [guard, linux, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      # Only job that can write. The Releases API lives under `contents`.
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.guard.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0    # full history, for the previous-tag compare link
+
+      # The called workflows ran inside THIS run, so their artifacts need no
+      # run-id and no token to fetch.
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: eMuleQt-v*
+          merge-multiple: true    # load-bearing: flattens all three into dist/
+
+      - name: Verify assets and generate SHA256SUMS.txt
+        working-directory: dist
+        run: |
+          set -euo pipefail
+
+          assets=(
+            "eMuleQt-v${VERSION}-linux-x86_64.tar.gz"
+            "eMuleQt-v${VERSION}-macOS.dmg"
+            "eMuleQt-v${VERSION}-win64.zip"
+          )
+
+          missing=0
+          for f in "${assets[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Expected release asset missing: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "--- contents of dist/ ---"
+            ls -la
+            exit 1
+          fi
+
+          sha256sum "${assets[@]}" | tee SHA256SUMS.txt
+
+      - name: Build release notes
+        run: |
+          set -euo pipefail
+
+          prev="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$prev" ]; then
+            compare="https://github.com/${GITHUB_REPOSITORY}/compare/${prev}...${TAG}"
+          else
+            compare="https://github.com/${GITHUB_REPOSITORY}/commits/${TAG}"
+          fi
+
+          {
+            echo "## eMuleQt ${TAG}"
+            echo
+            echo "| Platform | Download |"
+            echo "| --- | --- |"
+            echo "| Linux x86_64 | \`eMuleQt-v${VERSION}-linux-x86_64.tar.gz\` |"
+            echo "| macOS (Apple silicon) | \`eMuleQt-v${VERSION}-macOS.dmg\` |"
+            echo "| Windows x64 | \`eMuleQt-v${VERSION}-win64.zip\` |"
+            echo
+            echo "**Full changelog:** ${compare}"
+            echo
+            echo "<details><summary>SHA-256 checksums</summary>"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+            echo
+            echo "</details>"
+          } > release-notes.md
+
+          cat release-notes.md
+
+      # Upserts, so re-running the workflow for an existing tag just replaces the
+      # assets. Auth is the per-run GITHUB_TOKEN scoped by this job's
+      # `permissions: contents: write` -- not tied to any personal account.
+      - name: Create or update the GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.TAG }}
+          name: eMuleQt ${{ env.TAG }}
+          body_path: release-notes.md
+          generate_release_notes: true    # appended below body_path
+          files: dist/*
+          fail_on_unmatched_files: true
+          make_latest: true
+          token: ${{ github.token }}
+
+      # Equivalent gh CLI implementation -- kept for later, deliberately not used
+      # (this project does not use the gh CLI).
+      # - name: Create or update the GitHub Release (gh)
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
+      #   run: |
+      #     set -euo pipefail
+      #     if gh release view "${TAG}" >/dev/null 2>&1; then
+      #       gh release upload "${TAG}" dist/* --clobber
+      #     else
+      #       gh release create "${TAG}" dist/* \
+      #         --title "eMuleQt ${TAG}" \
+      #         --notes-file release-notes.md \
+      #         --generate-notes \
+      #         --verify-tag
+      #     fi
+      #     gh release view "${TAG}" --json url,assets \
+      #       --jq '.url, (.assets[] | "  \(.name)  \(.size) bytes")'
+
+      - name: Summary
+        run: |
+          {
+            echo "### Released ${TAG}"
+            echo
+            echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

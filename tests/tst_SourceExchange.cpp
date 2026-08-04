@@ -15,6 +15,8 @@
 #include "files/PartFile.h"
 #include "net/Address.h"
 #include "net/Packet.h"
+#include "prefs/Preferences.h"
+#include "protocol/Tag.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
@@ -194,6 +196,22 @@ private slots:
     void knownFile_skipsRequesterAndIneligibleClients();
     void directUdpCallback_requiresKadPortAndValidHash();
     void parse_dropsLowIdSourcesWhenFirewalled();
+
+    // Extended Source Exchange (ExtSX) — IPv6 tag-block records
+    void extSX_answerIsVersion1TagBlock();
+    void extSX_roundTrip_recoversIPv6Source();
+    void extSX_skipsUnknownTagsWithoutDesync();
+    void extSX_keepsLowIdSourceWithIPv6ButClassicDropsIt();
+    void extSX_sourceCapIs500NotV1Default();
+    void extSX_lowIdUsesHybridIdNotAddress();
+    void extSX_ipv6OnlySourceSurvivesRoundTrip();
+    void extSX_userHashAndCryptTagsOnlyForTolerantPeer();
+    void extSX_userHashAndCryptTagsRoundTrip();
+
+    // Public-IPv6 confidence gate — peer corroboration + server override
+    void peerCorroboration_adoptsOnlyAfterThresholdDistinctPeers();
+    void reflectedIPv6NotHeldLocally_isRejected();
+    void publicIPv6_tierPrecedenceAndAdvertiseGate();
 
 private:
     std::vector<UpDownClient*> m_clients;
@@ -653,6 +671,466 @@ void tst_SourceExchange::parse_dropsLowIdSourcesWhenFirewalled()
 
     theApp.downloadQueue = nullptr;
     queue.deleteAll();
+}
+
+// ---------------------------------------------------------------------------
+// Extended Source Exchange (ExtSX) — IPv6 tag-block records
+// ---------------------------------------------------------------------------
+
+void tst_SourceExchange::extSX_answerIsVersion1TagBlock()
+{
+    // An ExtSX-capable requester gets version byte 1 and, per source, a variable tag
+    // block (tagCount + tags) in place of the fixed serverIP/serverPort fields.
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+
+    auto* src = track(makeHighIdClient(QStringLiteral("10.20.30.40"), 4662));
+    src->setUserIPv6(Address::fromString(QStringLiteral("2606:4700::1")));
+    src->setOpenIPv6(true);
+
+    auto file = makeFile({ src });
+    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    QVERIFY(packet != nullptr);
+
+    QCOMPARE(packet->opcode, uint8(OP_ANSWERSOURCES2));
+    QCOMPARE(uint8(packet->pBuffer[0]), uint8(SOURCEEXCHANGEEXT_VERSION));   // version 1
+    QCOMPARE(readU16(packet->pBuffer, kHeaderSize), uint16(1));              // one source
+
+    // Record: ID(4, network order at v1) + port(2) + tagCount(1).
+    QCOMPARE(readU32(packet->pBuffer, kHeaderSize + 2),
+             Address::fromString(QStringLiteral("10.20.30.40")).toNetworkUint32());
+    QCOMPARE(readU16(packet->pBuffer, kHeaderSize + 2 + 4), uint16(4662));
+    const uint8 tagCount = uint8(packet->pBuffer[kHeaderSize + 2 + 4 + 2]);
+    QCOMPARE(tagCount, uint8(3));   // CT_EMULE_SERVERIP, CT_EMULE_SERVERTCP, CT_MOD_IP_V6
+}
+
+void tst_SourceExchange::extSX_userHashAndCryptTagsOnlyForTolerantPeer()
+{
+    // The user hash and crypt options are only safe to add for a peer that advertised
+    // MODMISC_EXTXS_SKIPTAGS. The compatibility target's reader records any unrecognised
+    // tag in an error string and then returns out of the entire source-exchange parse, so
+    // sending these unconditionally would cost it every source in the packet.
+    auto* src = track(makeHighIdClient(QStringLiteral("10.20.30.40"), 4662));
+    uint8 srcHash[16];
+    std::memset(srcHash, 0x5A, sizeof(srcHash));
+    src->setUserHash(srcHash);
+    src->setConnectOptions(0x01, true, false);   // supports crypt layer
+
+    const auto tagCountFor = [&](bool tolerant) {
+        auto* peer = track(makeRequester());
+        peer->setSupportsExtendedXS(true);
+        peer->setSupportsExtSXSkipTags(tolerant);
+
+        auto file = makeFile({ src });
+        auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+        Q_ASSERT(packet != nullptr);
+        return uint8(packet->pBuffer[kHeaderSize + 2 + 4 + 2]);
+    };
+
+    // Legacy peer: exactly the three tags it got before this feature existed.
+    QCOMPARE(tagCountFor(false), uint8(2));   // CT_EMULE_SERVERIP + CT_EMULE_SERVERTCP
+    // Tolerant peer: plus CT_EMULE_USERHASH and CT_EMULE_CONOPTS.
+    QCOMPARE(tagCountFor(true), uint8(4));
+}
+
+void tst_SourceExchange::extSX_userHashAndCryptTagsRoundTrip()
+{
+    // A source learned over ExtSX used to arrive with no user hash (breaking credits,
+    // secure identification and obfuscated-UDP keying) and unknown crypt capability,
+    // because both lived in the classic record's version-gated tail that ExtSX omits.
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+    peer->setSupportsExtSXSkipTags(true);
+
+    auto* src = track(makeHighIdClient(QStringLiteral("60.70.80.90"), 4662));
+    uint8 srcHash[16];
+    std::memset(srcHash, 0x77, sizeof(srcHash));
+    src->setUserHash(srcHash);
+    src->setConnectOptions(0x03, true, false);   // supports + requests crypt
+
+    auto file = makeFile({ src });
+    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    QVERIFY(packet != nullptr);
+
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x55, sizeof(hash));
+    pf->setFileHash(hash);
+    queue.addDownload(pf);
+
+    SafeMemFile io(reinterpret_cast<const uint8*>(packet->pBuffer + kHeaderSize),
+                   packet->size - kHeaderSize);
+    pf->addClientSources(io, SOURCEEXCHANGEEXT_VERSION, /*isSX2*/ true, peer);
+
+    QCOMPARE(pf->sourceCount(), 1);
+    auto* learned = pf->srcList().front();
+    QVERIFY(learned->hasValidHash());
+    QCOMPARE(std::memcmp(learned->userHash(), srcHash, 16), 0);
+    QVERIFY(learned->supportsCryptLayer());
+    QVERIFY(learned->requestsCryptLayer());
+
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+void tst_SourceExchange::extSX_roundTrip_recoversIPv6Source()
+{
+    // Build an ExtSX answer with one v6-open source and one plain v4 source, then parse
+    // it straight back: both must survive and the v6 source keeps its exact address.
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+
+    // Public IPv4s: a dual-stack HighID source has a routable IPv4 (a LAN address would be
+    // dropped by the parser's isGoodIP check, exactly as the reference does).
+    auto* v6src = track(makeHighIdClient(QStringLiteral("60.70.80.90"), 4662));
+    v6src->setUserIPv6(Address::fromString(QStringLiteral("2606:4700::1")));
+    v6src->setOpenIPv6(true);
+    auto* v4src = track(makeHighIdClient(QStringLiteral("61.71.81.91"), 4663));
+
+    auto file = makeFile({ v6src, v4src });
+    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    QVERIFY(packet != nullptr);
+
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x44, sizeof(hash));
+    pf->setFileHash(hash);
+    queue.addDownload(pf);
+
+    // addClientSources reads from the count onwards (after the version byte + file hash).
+    SafeMemFile io(reinterpret_cast<const uint8*>(packet->pBuffer + kHeaderSize),
+                   packet->size - kHeaderSize);
+    pf->addClientSources(io, SOURCEEXCHANGEEXT_VERSION, /*isSX2*/ true, peer);
+
+    QCOMPARE(pf->sourceCount(), 2);
+    int v6count = 0;
+    for (auto* s : pf->srcList()) {
+        if (s->openIPv6()) {
+            ++v6count;
+            QCOMPARE(s->userIPv6().toString(), QStringLiteral("2606:4700::1"));
+        }
+    }
+    QCOMPARE(v6count, 1);
+
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+void tst_SourceExchange::extSX_skipsUnknownTagsWithoutDesync()
+{
+    // The self-describing tag block is desync-proof: an unknown tag in the middle of a
+    // record must be skipped by type, leaving the following record perfectly aligned.
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x55, sizeof(hash));
+    pf->setFileHash(hash);
+    queue.addDownload(pf);
+
+    const Address v6a = Address::fromString(QStringLiteral("2606:4700::2"));
+    const Address v6b = Address::fromString(QStringLiteral("2606:4700::3"));
+
+    SafeMemFile w;
+    w.writeUInt16(2);   // two sources
+
+    // Record 1: an UNKNOWN tag between real tags. A reader that mis-sizes it desyncs.
+    w.writeUInt32(Address::fromString(QStringLiteral("50.60.70.80")).toNetworkUint32());
+    w.writeUInt16(4662);
+    {
+        std::vector<Tag> tags;
+        tags.emplace_back(uint8(0x77), uint32(0xDEADBEEF));   // unknown numeric tag
+        tags.emplace_back(CT_MOD_IP_V6, v6a.ipv6Bytes().data());
+        w.writeUInt8(static_cast<uint8>(tags.size()));
+        for (const auto& t : tags)
+            t.writeNewEd2kTag(w);
+    }
+
+    // Record 2: reachable only if record 1 was consumed to the exact byte.
+    w.writeUInt32(Address::fromString(QStringLiteral("51.61.71.81")).toNetworkUint32());
+    w.writeUInt16(4663);
+    {
+        std::vector<Tag> tags;
+        tags.emplace_back(CT_MOD_IP_V6, v6b.ipv6Bytes().data());
+        w.writeUInt8(static_cast<uint8>(tags.size()));
+        for (const auto& t : tags)
+            t.writeNewEd2kTag(w);
+    }
+
+    const QByteArray body = w.buffer();
+    SafeMemFile io(reinterpret_cast<const uint8*>(body.constData()), body.size());
+    pf->addClientSources(io, SOURCEEXCHANGEEXT_VERSION, /*isSX2*/ true, peer);
+
+    QCOMPARE(pf->sourceCount(), 2);
+    QStringList v6s;
+    for (auto* s : pf->srcList())
+        v6s << s->userIPv6().toString();
+    v6s.sort();
+    QCOMPARE(v6s, (QStringList{ QStringLiteral("2606:4700::2"), QStringLiteral("2606:4700::3") }));
+
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+void tst_SourceExchange::extSX_keepsLowIdSourceWithIPv6ButClassicDropsIt()
+{
+    // A LowID source that has a reachable public IPv6 is dead weight to a classic peer
+    // (dropped) but useful to an ExtSX peer, which reaches it directly over IPv6 (kept).
+    auto* lowV6 = track(makeLowIdClient(0x00000123));
+    lowV6->setUserIPv6(Address::fromString(QStringLiteral("2606:4700::9")));
+    lowV6->setOpenIPv6(true);
+
+    auto file = makeFile({ lowV6 });
+
+    // Classic SX2 peer: the LowID source is dropped, so there is nothing to send.
+    auto* classic = track(makeRequester());   // supportsExtendedXS() == false
+    QVERIFY(file->createSrcInfoPacket(classic, 4, 0) == nullptr);
+
+    // ExtSX peer: the source is kept and carried as a v6 tag block.
+    auto* ext = track(makeRequester());
+    ext->setSupportsExtendedXS(true);
+    auto packet = file->createSrcInfoPacket(ext, SOURCEEXCHANGEEXT_VERSION, 0);
+    QVERIFY(packet != nullptr);
+    QCOMPARE(readU16(packet->pBuffer, kHeaderSize), uint16(1));
+}
+
+// ExtSX pins the version byte to 1, and the source cap used to key off that version
+// alone — so our best-equipped peers silently got the 50-source branch instead of 500,
+// ten times fewer sources than the same peer would receive over plain SX2 v4.
+void tst_SourceExchange::extSX_sourceCapIs500NotV1Default()
+{
+    constexpr int kSources = 120;   // comfortably over the old 50 cap, well under 500
+
+    std::vector<UpDownClient*> srcs;
+    srcs.reserve(kSources);
+    for (int i = 0; i < kSources; ++i) {
+        // Spread over 60.x.y.z so every address is public and distinct.
+        srcs.push_back(track(makeHighIdClient(
+            QStringLiteral("60.%1.%2.90").arg(i / 250).arg(i % 250 + 1),
+            static_cast<uint16>(4662 + i))));
+    }
+    auto file = makeFile(srcs);
+
+    // Anything past the old cap exceeds 354 bytes and is therefore zlib-packed, so the
+    // count has to be read after unpacking.
+    const auto declaredCount = [](std::unique_ptr<Packet> p) {
+        if (p->prot == OP_PACKEDPROT)
+            [&] { QVERIFY(p->unPackPacket()); }();
+        return readU16(p->pBuffer, kHeaderSize);
+    };
+
+    auto* ext = track(makeRequester());
+    ext->setSupportsExtendedXS(true);
+    auto extPacket = file->createSrcInfoPacket(ext, SOURCEEXCHANGEEXT_VERSION, 0);
+    QVERIFY(extPacket != nullptr);
+    QCOMPARE(declaredCount(std::move(extPacket)), uint16(kSources));
+
+    // Plain SX2 v4 already had the 500 cap; the two must now agree.
+    auto* classic = track(makeRequester());
+    auto v4Packet = file->createSrcInfoPacket(classic, 4, 0);
+    QVERIFY(v4Packet != nullptr);
+    QCOMPARE(declaredCount(std::move(v4Packet)), uint16(kSources));
+
+    // A v1 peer that is NOT ExtSX still gets the old 50 cap — that branch is untouched.
+    auto* v1 = track(makeRequester());
+    auto v1Packet = file->createSrcInfoPacket(v1, 1, 0);
+    QVERIFY(v1Packet != nullptr);
+    QCOMPARE(declaredCount(std::move(v1Packet)), uint16(50));
+}
+
+// On the ExtSX path the ID field is htonl(userIDHybrid), matching the reference
+// (eMuleAI PartFile.cpp:5093-5095), NOT the source's address. For a HighID IPv4 source
+// the two are identical; they diverge for a LowID source, where the address would be
+// read back as a bogus HighID.
+void tst_SourceExchange::extSX_lowIdUsesHybridIdNotAddress()
+{
+    constexpr uint32 kLowId = 0x00000123;
+    auto* lowV6 = track(makeLowIdClient(kLowId));
+    lowV6->setUserIPv6(Address::fromString(QStringLiteral("2606:4700::9")));
+    lowV6->setOpenIPv6(true);
+
+    auto file = makeFile({ lowV6 });
+    auto* ext = track(makeRequester());
+    ext->setSupportsExtendedXS(true);
+
+    auto packet = file->createSrcInfoPacket(ext, SOURCEEXCHANGEEXT_VERSION, 0);
+    QVERIFY(packet != nullptr);
+
+    const uint32 wireId = readU32(packet->pBuffer, kHeaderSize + 2);
+    QCOMPARE(wireId, htonl(kLowId));
+    // Not the 5.6.7.8 address makeLowIdClient assigns — that is the old, wrong value.
+    QVERIFY(wireId != Address::fromString(QStringLiteral("5.6.7.8")).toNetworkUint32());
+}
+
+// A source reachable only over IPv6 must survive the whole round trip. It used to be
+// discarded on parse: the unusable IPv4 field failed isGoodIP and the record was
+// dropped before the already-parsed CT_MOD_IP_V6 could be used.
+void tst_SourceExchange::extSX_ipv6OnlySourceSurvivesRoundTrip()
+{
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+
+    // No usable IPv4: the reference marks an IPv6-only peer with the HighID sentinel
+    // 0xFFFFFFFF, which reads back as the broadcast address.
+    auto* v6only = track(makeHighIdClient(QStringLiteral("70.80.90.100"), 4662));
+    v6only->setUserIDHybrid(0xFFFFFFFFu);
+    v6only->setUserIPv6(Address::fromString(QStringLiteral("2606:4700::abcd")));
+    v6only->setOpenIPv6(true);
+
+    auto file = makeFile({ v6only });
+    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    QVERIFY(packet != nullptr);
+    QCOMPARE(readU32(packet->pBuffer, kHeaderSize + 2), htonl(0xFFFFFFFFu));
+
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x55, sizeof(hash));
+    pf->setFileHash(hash);
+    queue.addDownload(pf);
+
+    SafeMemFile io(reinterpret_cast<const uint8*>(packet->pBuffer + kHeaderSize),
+                   packet->size - kHeaderSize);
+    pf->addClientSources(io, SOURCEEXCHANGEEXT_VERSION, /*isSX2*/ true, peer);
+
+    QCOMPARE(pf->sourceCount(), 1);
+    auto* parsed = pf->srcList().front();
+    QVERIFY(parsed->openIPv6());
+    QCOMPARE(parsed->userIPv6().toString(), QStringLiteral("2606:4700::abcd"));
+    // Constructed as a LowID client so we never dial 255.255.255.255.
+    QVERIFY(parsed->hasLowID());
+
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+// ---------------------------------------------------------------------------
+// Public-IPv6 confidence gate — peer corroboration + server override
+// ---------------------------------------------------------------------------
+
+void tst_SourceExchange::peerCorroboration_adoptsOnlyAfterThresholdDistinctPeers()
+{
+    thePrefs.setIpv6PublicPeerConfirmThreshold(3);
+    thePrefs.setIpv6PublicPeerConfirmWindowSecs(300);
+    theApp.clearPublicIPv6Observed();
+
+    const Address cand     = Address::fromString(QStringLiteral("2606:4700::abcd"));
+    const Address observed = Address::fromString(QStringLiteral("2606:4700::1234"));
+
+    // Every reflected address must be one we actually hold, so the test injects the
+    // interface set that LocalIPv6::updatePublicIPv6() supplies in production.
+    theApp.setLocalIPv6Addresses({cand, observed});
+
+    theApp.recordPeerObservedIPv6(cand, QByteArrayLiteral("[2001:db8::1]"));
+    theApp.recordPeerObservedIPv6(cand, QByteArrayLiteral("[2001:db8::2]"));
+    QVERIFY(theApp.peerCorroboratedIPv6().isNull());          // 2 < 3
+
+    // A repeat from an existing peer is not a new confirmation.
+    theApp.recordPeerObservedIPv6(cand, QByteArrayLiteral("[2001:db8::1]"));
+    QVERIFY(theApp.peerCorroboratedIPv6().isNull());          // still 2 distinct
+
+    // A non-public claim is ignored entirely (does not count toward the threshold).
+    theApp.recordPeerObservedIPv6(Address::fromString(QStringLiteral("fe80::1")),
+                                  QByteArrayLiteral("[2001:db8::9]"));
+    QVERIFY(theApp.peerCorroboratedIPv6().isNull());
+
+    theApp.recordPeerObservedIPv6(cand, QByteArrayLiteral("[2001:db8::3]"));
+    QCOMPARE(theApp.peerCorroboratedIPv6().toString(), cand.toString());   // 3 distinct → adopted
+
+    // A server-observed egress address always outranks peer corroboration.
+    theApp.setPublicIPv6Observed(observed);
+    QCOMPARE(theApp.publicIPv6().toString(), observed.toString());
+
+    // With no server observation, the peer-corroborated value is used again.
+    theApp.clearPublicIPv6Observed();
+    QCOMPARE(theApp.publicIPv6().toString(), cand.toString());
+}
+
+void tst_SourceExchange::reflectedIPv6NotHeldLocally_isRejected()
+{
+    thePrefs.setIpv6PublicPeerConfirmThreshold(3);
+    thePrefs.setIpv6PublicPeerConfirmWindowSecs(300);
+    thePrefs.setPublicIPv6Override(QString());
+    theApp.clearPublicIPv6Observed();
+
+    const Address held    = Address::fromString(QStringLiteral("2606:4700::beef"));
+    const Address foreign = Address::fromString(QStringLiteral("2606:4700::dead"));
+    theApp.setLocalIPv6Addresses({held});
+    theApp.setPublicIPv6Local(held);
+
+    // Peer corroboration cannot make us claim an address this host does not hold, no
+    // matter how many distinct peers assert it — otherwise three forged hellos would
+    // be enough to kill our inbound IPv6.
+    for (int i = 0; i < 6; ++i) {
+        theApp.recordPeerObservedIPv6(
+            foreign, QStringLiteral("[2001:db8::%1]").arg(i).toUtf8());
+    }
+    QVERIFY(theApp.peerCorroboratedIPv6().isNull());
+    QCOMPARE(theApp.publicIPv6().toString(), held.toString());
+
+    // Nor can a server: a reflected egress we do not hold is refused, and the address
+    // we already chose survives.
+    theApp.setPublicIPv6Observed(foreign, QStringLiteral("server.example"));
+    QCOMPARE(theApp.publicIPv6().toString(), held.toString());
+
+    // The same server naming an address we do hold is accepted and outranks tier 4.
+    theApp.setLocalIPv6Addresses({held, foreign});
+    theApp.setPublicIPv6Observed(foreign, QStringLiteral("server.example"));
+    QCOMPARE(theApp.publicIPv6().toString(), foreign.toString());
+
+    // Losing the address locally drops the reflection again (prefix renumber).
+    theApp.setLocalIPv6Addresses({held});
+    QCOMPARE(theApp.publicIPv6().toString(), held.toString());
+}
+
+void tst_SourceExchange::publicIPv6_tierPrecedenceAndAdvertiseGate()
+{
+    thePrefs.setIpv6PublicPeerConfirmThreshold(1);
+    thePrefs.setIpv6PublicPeerConfirmWindowSecs(300);
+    theApp.clearPublicIPv6Observed();
+
+    const Address local    = Address::fromString(QStringLiteral("2606:4700::100"));
+    const Address pinned   = Address::fromString(QStringLiteral("2606:4700::200"));
+    const Address peerSeen = Address::fromString(QStringLiteral("2606:4700::300"));
+    const Address observed = Address::fromString(QStringLiteral("2606:4700::400"));
+    theApp.setLocalIPv6Addresses({local, pinned, peerSeen, observed});
+
+    theApp.setPublicIPv6Override(Address{});
+    theApp.setPublicIPv6Local(local);
+    QCOMPARE(theApp.publicIPv6().toString(), local.toString());
+
+    // Peer corroboration beats the plain interface pick...
+    theApp.recordPeerObservedIPv6(peerSeen, QByteArrayLiteral("[2001:db8::1]"));
+    QCOMPARE(theApp.publicIPv6().toString(), peerSeen.toString());
+
+    // ...the operator's pin beats peers...
+    theApp.setPublicIPv6Override(pinned);
+    QCOMPARE(theApp.publicIPv6().toString(), pinned.toString());
+
+    // ...and what the server actually saw beats everything.
+    theApp.setPublicIPv6Observed(observed, QStringLiteral("server.example"));
+    QCOMPARE(theApp.publicIPv6().toString(), observed.toString());
+
+    // The advertise gate is confidence AND a non-failing probe verdict.
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED);        // probed, not reachable
+    QVERIFY(theApp.publicIPv6ProbedUnreachable());
+    QVERIFY(theApp.hasConfidentPublicIPv6());                        // still know the address
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());                    // but must not publish it
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED | IPV6ST_REACHABLE);
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+
+    theApp.clearPublicIPv6Observed();
+    theApp.setPublicIPv6Override(Address{});
+    theApp.setLocalIPv6Addresses({});
 }
 
 QTEST_MAIN(tst_SourceExchange)

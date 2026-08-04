@@ -21,6 +21,7 @@ class tst_EncryptedDatagram : public QObject {
 
 private slots:
     void clientED2K_encryptDecryptRoundtrip();
+    void clientED2K_IPv6_encryptDecryptRoundtrip();
     void clientKadNodeID_encryptDecryptRoundtrip();
     void clientKadRecvKey_encryptDecryptRoundtrip();
     void serverDecrypt_recoversServerEncodedReply();
@@ -58,17 +59,62 @@ void tst_EncryptedDatagram::clientED2K_encryptDecryptRoundtrip()
     uint32 encryptedLen = EncryptedDatagramSocket::encryptSendClient(
         buf.data(), payloadLen,
         userHash.data(), false,
-        0, 0, publicIP);
+        0, 0, Address::fromHostOrder(publicIP));
 
     QVERIFY(encryptedLen > payloadLen);
     QCOMPARE(encryptedLen, payloadLen + overhead);
 
     // Decrypt
     DecryptResult result = EncryptedDatagramSocket::decryptReceivedClient(
-        buf.data(), static_cast<int>(encryptedLen), publicIP,
+        buf.data(), static_cast<int>(encryptedLen), Address::fromHostOrder(publicIP),
         userHash.data(), nullptr, 0);
 
     QVERIFY(result.length == static_cast<int>(payloadLen));
+    QVERIFY(std::memcmp(result.data, payload, payloadLen) == 0);
+}
+
+// ---------------------------------------------------------------------------
+// Client ED2K IPv6 encrypt → decrypt roundtrip (35-byte key path)
+//
+// The IPv6 ED2K obfuscation key is MD5(<UserHash 16><IPv6 16><Magic 1><RandomKey 2>)
+// = 35 bytes (vs 23 for IPv4). This verifies the v6 key path round-trips, and — since
+// the IPv4 test above is untouched — that adding it did not disturb the v4 key.
+// ---------------------------------------------------------------------------
+
+void tst_EncryptedDatagram::clientED2K_IPv6_encryptDecryptRoundtrip()
+{
+    std::array<uint8, 16> userHash{};
+    for (std::size_t i = 0; i < 16; ++i)
+        userHash[i] = static_cast<uint8>(i + 1);
+
+    // A genuine global-unicast IPv6 (2001:db8::1234:5678), 16 raw network-order bytes.
+    std::array<uint8, 16> v6bytes{
+        0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78};
+    const Address publicIPv6 = Address::fromIPv6Bytes(v6bytes.data());
+    QVERIFY(publicIPv6.isIPv6());
+
+    const char* payload = "Hello eMule IPv6!";
+    const uint32 payloadLen = 17;
+
+    uint32 overhead = static_cast<uint32>(EncryptedDatagramSocket::encryptOverheadSize(false));
+    std::vector<uint8> buf(payloadLen + overhead + 16, 0);
+    std::memcpy(buf.data() + overhead, payload, payloadLen);
+
+    uint32 encryptedLen = EncryptedDatagramSocket::encryptSendClient(
+        buf.data(), payloadLen,
+        userHash.data(), false,
+        0, 0, publicIPv6);
+
+    QVERIFY(encryptedLen > payloadLen);
+    QCOMPARE(encryptedLen, payloadLen + overhead);
+
+    // Decrypt with the SAME IPv6 — the receiver's view of the sender's address.
+    DecryptResult result = EncryptedDatagramSocket::decryptReceivedClient(
+        buf.data(), static_cast<int>(encryptedLen), publicIPv6,
+        userHash.data(), nullptr, 0);
+
+    QCOMPARE(result.length, static_cast<int>(payloadLen));
     QVERIFY(std::memcmp(result.data, payload, payloadLen) == 0);
 }
 
@@ -95,13 +141,13 @@ void tst_EncryptedDatagram::clientKadNodeID_encryptDecryptRoundtrip()
     uint32 encryptedLen = EncryptedDatagramSocket::encryptSendClient(
         buf.data(), payloadLen,
         kadID.data(), true,
-        recvKey, sendKey, 0);
+        recvKey, sendKey, Address{});
 
     QVERIFY(encryptedLen > payloadLen);
 
     // Decrypt
     DecryptResult result = EncryptedDatagramSocket::decryptReceivedClient(
-        buf.data(), static_cast<int>(encryptedLen), 0,
+        buf.data(), static_cast<int>(encryptedLen), Address{},
         nullptr, kadID.data(), 0);
 
     QCOMPARE(result.length, static_cast<int>(payloadLen));
@@ -131,13 +177,13 @@ void tst_EncryptedDatagram::clientKadRecvKey_encryptDecryptRoundtrip()
     uint32 encryptedLen = EncryptedDatagramSocket::encryptSendClient(
         buf.data(), payloadLen,
         nullptr, true,
-        kadRecvKeyVal, sendVerify, 0);
+        kadRecvKeyVal, sendVerify, Address{});
 
     QVERIFY(encryptedLen > payloadLen);
 
     // Decrypt — provide the kadRecvKey
     DecryptResult result = EncryptedDatagramSocket::decryptReceivedClient(
-        buf.data(), static_cast<int>(encryptedLen), 0,
+        buf.data(), static_cast<int>(encryptedLen), Address{},
         nullptr, nullptr, kadRecvKeyVal);
 
     QCOMPARE(result.length, static_cast<int>(payloadLen));
@@ -265,7 +311,7 @@ void tst_EncryptedDatagram::nonEncryptedPassthrough_protocolMarker()
     buf[2] = 0x02;
 
     DecryptResult result = EncryptedDatagramSocket::decryptReceivedClient(
-        buf.data(), 20, 0x01020304,
+        buf.data(), 20, Address::fromHostOrder(0x01020304),
         userHash.data(), nullptr, 0);
 
     // Should pass through unchanged

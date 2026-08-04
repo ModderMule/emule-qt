@@ -157,6 +157,8 @@ void StatisticsPanel::setupUi()
     auto* treeLayout = new QVBoxLayout(treeContainer);
     treeLayout->setContentsMargins(2, 2, 2, 2);
 
+    // Not a ListTreeWidget: single column with a hidden header, so there is no
+    // column layout to persist. Its expansion state is kept by bindStatsTree().
     m_tree = new QTreeWidget(treeContainer);
     m_tree->setHeaderHidden(true);
     m_tree->setColumnCount(1);

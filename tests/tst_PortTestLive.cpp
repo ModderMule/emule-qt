@@ -46,14 +46,16 @@ public:
         bool udpOk = false;
         QString html;           ///< Raw HTML/JSON for diagnostics on failure.
         QString ip;             ///< Public IP reported by the test service.
+        bool serverIpv6 = true; ///< Whether the test server can originate IPv6 at all.
+        int  family = 0;        ///< Family the service actually observed (4 or 6).
     };
 
 private:
     /// Fetch the port test page and parse results (legacy emule-project.net).
     PortTestResult runPortTest(bool obfuscation);
 
-    /// Port test via emule-qt.org REST API (JSON response).
-    PortTestResult runPortTestQt();
+    /// Port test via emule-qt.org REST API (JSON response) over @p family (4 or 6).
+    PortTestResult runPortTestQt(int family);
 
     bool m_portsOpen = false;
     bool m_emuleQtTest = false;
@@ -68,6 +70,7 @@ private slots:
     void testPortsNoObfuscation();
     void testPortsWithObfuscation();
     void testPortsQt();
+    void testPortsQtIPv6();
     void cleanupTestCase();
 };
 
@@ -229,20 +232,20 @@ tst_PortTestLive::PortTestResult tst_PortTestLive::runPortTest(bool obfuscation)
 // emule-qt.org REST API port test
 // ---------------------------------------------------------------------------
 
-tst_PortTestLive::PortTestResult tst_PortTestLive::runPortTestQt()
+tst_PortTestLive::PortTestResult tst_PortTestLive::runPortTestQt(int family)
 {
-    // Use curl -4 to force IPv4 — QNetworkAccessManager has no IPv4-only mode,
-    // and dual-stack hosts may prefer IPv6 which the port test server can't probe.
+    // The service tests the address it observes, so the family must be pinned on our side.
+    // curl -4/-6 does that; QNetworkAccessManager has no family selector at all.
     const QString url = QStringLiteral(
         "https://emule-qt.org/wp-json/emqt/v1/porttest?tcpport=%1&udpport=%2")
         .arg(m_listenSocket->connectedPort())
         .arg(m_clientUDP->connectedPort());
 
-    qDebug() << "Fetching emule-qt.org port test:" << url;
+    qDebug() << "Fetching emule-qt.org port test over IPv" << family << ":" << url;
 
     QProcess curl;
     curl.start(QStringLiteral("curl"), {
-        QStringLiteral("-4"),
+        family == 6 ? QStringLiteral("-6") : QStringLiteral("-4"),
         QStringLiteral("-s"),
         QStringLiteral("-L"),
         QStringLiteral("--max-time"), QStringLiteral("30"),
@@ -287,10 +290,14 @@ tst_PortTestLive::PortTestResult tst_PortTestLive::runPortTestQt()
     result.tcpOk = tcp[QStringLiteral("open")].toBool();
     result.udpOk = udp[QStringLiteral("open")].toBool();
     result.ip = data[QStringLiteral("ip")].toString();
+    result.family = data[QStringLiteral("observedFamily")].toInt();
+    // Absent on an older server; assume capable so only an explicit false suppresses assertions.
+    result.serverIpv6 = data[QStringLiteral("serverIpv6")].toBool(true);
 
     qDebug() << "emule-qt.org port test result: TCP" << (result.tcpOk ? "OPEN" : "CLOSED")
              << "UDP" << (result.udpOk ? "OPEN" : "CLOSED")
-             << "IP:" << result.ip;
+             << "IP:" << result.ip << "family:" << result.family
+             << "server has IPv6:" << result.serverIpv6;
 
     return result;
 }
@@ -347,7 +354,7 @@ void tst_PortTestLive::testPortsQt()
     if (!m_emuleQtTest)
         QSKIP("EMULE_PORTTEST_QT not set — skipping emule-qt.org port test");
 
-    auto result = runPortTestQt();
+    auto result = runPortTestQt(4);
 
     if (m_portsOpen) {
         QVERIFY2(result.tcpOk,
@@ -363,6 +370,41 @@ void tst_PortTestLive::testPortsQt()
         QVERIFY2(!result.udpOk,
                  qPrintable(QStringLiteral("UDP port %1 expected closed (emule-qt.org)\n%2")
                      .arg(m_clientUDP->connectedPort()).arg(result.html)));
+    }
+}
+
+/// The IPv6 half of the same service. Kept as its own slot because the two families succeed and
+/// fail independently: an IPv4 verdict on a CGNAT or shared-egress line is structurally always
+/// "closed" and says nothing about IPv6, which is often the only family that can be forwarded.
+void tst_PortTestLive::testPortsQtIPv6()
+{
+    if (!m_emuleQtTest)
+        QSKIP("EMULE_PORTTEST_QT not set — skipping emule-qt.org port test");
+
+    auto result = runPortTestQt(6);
+
+    // Skip rather than fail on the two conditions that make the answer meaningless. Reporting
+    // "your port is closed" when either side simply had no IPv6 path is the exact failure mode
+    // this endpoint exists to avoid, so the test must not commit it either.
+    if (result.ip.isEmpty() || result.family != 6)
+        QSKIP("no IPv6 connectivity from this host — nothing to verify");
+    if (!result.serverIpv6)
+        QSKIP("the port test server has no IPv6 route — its verdict would be meaningless");
+
+    if (m_portsOpen) {
+        QVERIFY2(result.tcpOk,
+                 qPrintable(QStringLiteral("TCP port %1 should be open over IPv6 at %2\n%3")
+                     .arg(m_listenSocket->connectedPort()).arg(result.ip, result.html)));
+        QVERIFY2(result.udpOk,
+                 qPrintable(QStringLiteral("UDP port %1 should be open over IPv6 at %2\n%3")
+                     .arg(m_clientUDP->connectedPort()).arg(result.ip, result.html)));
+    } else {
+        QVERIFY2(!result.tcpOk,
+                 qPrintable(QStringLiteral("TCP port %1 expected closed over IPv6 at %2\n%3")
+                     .arg(m_listenSocket->connectedPort()).arg(result.ip, result.html)));
+        QVERIFY2(!result.udpOk,
+                 qPrintable(QStringLiteral("UDP port %1 expected closed over IPv6 at %2\n%3")
+                     .arg(m_clientUDP->connectedPort()).arg(result.ip, result.html)));
     }
 }
 

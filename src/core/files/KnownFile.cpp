@@ -777,14 +777,43 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
         return nullptr;
     }
 
+    // Upload side: candidates are clients we are serving, judged on their upload part
+    // status. A client merely connecting or banned is not a source worth handing out,
+    // and a URL source can't be described by an ed2k source record at all.
+    return buildSrcInfoPacket(
+        forClient, version, m_uploadingClients,
+        [this, &clientParts](const UpDownClient* client) {
+            if (client->uploadState() != UploadState::Uploading &&
+                client->uploadState() != UploadState::OnUploadQueue)
+                return false;
+            if (!client->isEd2kClient())
+                return false;
+            return sourceHasNeededPart(client, clientParts);
+        });
+}
+
+std::unique_ptr<Packet> KnownFile::buildSrcInfoPacket(
+    const UpDownClient* forClient, uint8 version,
+    const std::vector<UpDownClient*>& candidates,
+    const std::function<bool(const UpDownClient*)>& eligible) const
+{
     // Only answer in SX2 when the peer actually asked for it; otherwise fall back to
     // the SX1 version it announced at handshake. SX1 carries no version byte and uses
     // its own opcode, so the two formats must not be mixed.
     uint8 usedVersion;
     bool isSX2;
+    bool extSX = false;
     if (forClient->supportsSourceExchange2() && version > 0) {
-        usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
         isSX2 = true;
+        if (forClient->supportsExtendedXS()) {
+            // Extended SX: the version byte stays at 1 and each per-source record is a
+            // self-describing tag block (no fixed serverIP/port, no userHash/crypt tail),
+            // which lets a source carry its public IPv6.
+            usedVersion = SOURCEEXCHANGEEXT_VERSION;
+            extSX = true;
+        } else {
+            usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
+        }
     } else {
         usedVersion = forClient->sourceExchange1Ver();
         isSX2 = false;
@@ -805,53 +834,68 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
     const auto countPos = data.position();
     data.writeUInt16(0);
 
-    // Limit number of sources based on protocol version
-    const uint16 maxSources = (usedVersion >= 4) ? 500 : 50;
+    // ExtSX pins usedVersion to 1, so keying the cap on the version alone would quietly
+    // give our best-equipped peers the 50-source branch instead of 500.
+    const uint16 maxSources = (extSX || usedVersion >= 4) ? 500 : 50;
     uint16 count = 0;
 
-    for (const auto* client : m_uploadingClients) {
+    for (const auto* client : candidates) {
         if (count >= maxSources)
             break;
 
-        // Skip low-ID clients, the requester itself, and anyone not actually in a
-        // position to serve the file. A client that is merely connecting or banned
-        // is not a source worth handing out.
-        if (client->hasLowID() || client == forClient)
-            continue;
-        if (client->uploadState() != UploadState::Uploading &&
-            client->uploadState() != UploadState::OnUploadQueue)
+        // Skip low-ID clients and the requester itself. Exception: on the ExtSX path a
+        // LowID client that has a reachable public IPv6 is kept — the receiver reaches
+        // it directly over IPv6 (carried in the tag block below).
+        if ((client->hasLowID() && !(extSX && client->openIPv6())) || client == forClient)
             continue;
 
-        // URL sources can't be described by an ed2k source record.
-        if (!client->isEd2kClient())
+        // An address-less client can't be described — except on the ExtSX path, where
+        // the tag block carries an IPv6 that stands on its own.
+        if (client->userAddress().isNull() && !(extSX && client->openIPv6()))
             continue;
 
-        if (!sourceHasNeededPart(client, clientParts))
+        if (!eligible(client))
             continue;
 
-        // v3+ sends IDs in hybrid (host order) format so that high-ID clients
-        // with an address ending in .0 aren't falsely read back as low-ID.
-        data.writeUInt32(usedVersion >= 3 ? client->userIDHybrid()
-                                          : client->userAddress().toNetworkUint32());
+        // v3+ sends IDs in hybrid (host order) format so that high-ID clients with an
+        // address ending in .0 aren't falsely read back as low-ID.
+        //
+        // ExtSX runs at version 1 but still uses htonl(hybrid) rather than the address,
+        // matching the reference: for a LowID or IPv6-only source the two disagree, and
+        // the reference's reader normalizes the hybrid form back out.
+        uint32 wireId;
+        if (usedVersion >= 3)
+            wireId = client->userIDHybrid();
+        else if (extSX)
+            wireId = htonl(client->userIDHybrid());
+        else
+            wireId = client->userAddress().toNetworkUint32();
+
+        data.writeUInt32(wireId);
         data.writeUInt16(client->userPort());
-        data.writeUInt32(client->serverAddress().toNetworkUint32());
-        data.writeUInt16(client->serverPort());
 
-        if (usedVersion >= 2)
-            data.writeHash16(client->userHash());
+        if (extSX) {
+            writeExtendedSourceExchangeData(data, client, forClient->supportsExtSXSkipTags());
+        } else {
+            data.writeUInt32(client->serverAddress().toNetworkUint32());
+            data.writeUInt16(client->serverPort());
 
-        if (usedVersion >= 4) {
-            // Bit 3 (direct UDP callback) is deliberately never set: the SX record
-            // carries no Kad UDP port, so the receiver can't act on it and forces
-            // it off anyway (setConnectOptions(..., callback=false)).
-            uint8 cryptOpts = 0;
-            if (client->supportsCryptLayer())
-                cryptOpts |= 0x01;
-            if (client->requestsCryptLayer())
-                cryptOpts |= 0x02;
-            if (client->requiresCryptLayer())
-                cryptOpts |= 0x04;
-            data.writeUInt8(cryptOpts);
+            if (usedVersion >= 2)
+                data.writeHash16(client->userHash());
+
+            if (usedVersion >= 4) {
+                // Bit 3 (direct UDP callback) is deliberately never set: the SX record
+                // carries no Kad UDP port, so the receiver can't act on it and forces
+                // it off anyway (setConnectOptions(..., callback=false)).
+                uint8 cryptOpts = 0;
+                if (client->supportsCryptLayer())
+                    cryptOpts |= 0x01;
+                if (client->requestsCryptLayer())
+                    cryptOpts |= 0x02;
+                if (client->requiresCryptLayer())
+                    cryptOpts |= 0x04;
+                data.writeUInt8(cryptOpts);
+            }
         }
 
         ++count;
@@ -872,6 +916,55 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
         packet->packPacket();
 
     return packet;
+}
+
+void KnownFile::writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownClient* src,
+                                                bool peerSkipsUnknownTags) const
+{
+    // Assemble the per-source tag list, then write count + tags. This block is a strict
+    // superset of the classic serverIP/serverPort record: the server info rides as tags,
+    // and a reachable public IPv6 is added as CT_MOD_IP_V6. Tags are written in the
+    // optimized ed2k form; a reader skips any tag it does not recognise by type, so the
+    // format stays forward-compatible.
+    std::vector<Tag> tags;
+    const uint32 serverIp = src->serverAddress().toNetworkUint32();
+    if (serverIp != 0) {
+        tags.emplace_back(CT_EMULE_SERVERIP, serverIp);
+        tags.emplace_back(CT_EMULE_SERVERTCP, static_cast<uint32>(src->serverPort()));
+    }
+    if (src->openIPv6() && src->userIPv6().isPublicIP())
+        tags.emplace_back(CT_MOD_IP_V6, src->userIPv6().ipv6Bytes().data());
+
+    // The user hash and crypt options lived in the classic record's version-gated tail
+    // (>= 2 and >= 4). ExtSX pins the version at 1, so a source learned this way arrives
+    // with no hash — breaking credits, secure identification and obfuscated-UDP keying to
+    // it — and with unknown crypt capability. Carry both as tags instead.
+    //
+    // Strictly gated on the requester advertising MODMISC_EXTXS_SKIPTAGS. The tag format
+    // says a reader must skip what it does not recognise, but the compatibility target's
+    // reader records every unknown tag in an error string and then returns out of the whole
+    // source-exchange parse, so one of these tags in the first record would cost it every
+    // source in the packet. Peers without the bit keep getting the exact bytes they get today.
+    if (peerSkipsUnknownTags) {
+        if (src->hasValidHash())
+            tags.emplace_back(CT_EMULE_USERHASH, src->userHash());
+
+        // Same bit layout as the classic v4 tail; bit 3 (direct UDP callback) is deliberately
+        // never set, since the record carries no Kad UDP port for the receiver to act on.
+        uint8 cryptOpts = 0;
+        if (src->supportsCryptLayer())
+            cryptOpts |= 0x01;
+        if (src->requestsCryptLayer())
+            cryptOpts |= 0x02;
+        if (src->requiresCryptLayer())
+            cryptOpts |= 0x04;
+        if (cryptOpts != 0)
+            tags.emplace_back(CT_EMULE_CONOPTS, static_cast<uint32>(cryptOpts));
+    }
+
+    data.writeUInt8(static_cast<uint8>(tags.size()));
+    for (const auto& tag : tags)
+        tag.writeNewEd2kTag(data);
 }
 
 // ---------------------------------------------------------------------------

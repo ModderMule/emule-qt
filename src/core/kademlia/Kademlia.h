@@ -36,6 +36,15 @@ class KadPrefs;
 class KademliaUDPListener;
 class RoutingZone;
 
+/// Outcome of a firewall re-check request, so callers can tell the user why
+/// nothing happened instead of silently doing nothing.
+enum class RecheckFirewallResult {
+    Started,        ///< A new firewall check was started.
+    NotRunning,     ///< Kad is not running.
+    LanMode,        ///< Running in LAN mode — firewall checks are disabled.
+    AlreadyRunning, ///< A NodeFwCheckUDP lookup is still in flight.
+};
+
 /// Main Kademlia DHT engine.
 class Kademlia : public QObject {
     Q_OBJECT
@@ -61,7 +70,10 @@ public:
     /// True when Kad is connected AND has received enough responses for searches to be useful.
     [[nodiscard]] bool isKadReady() const;
     [[nodiscard]] bool isFirewalled() const;
-    void recheckFirewalled();
+    /// Starts a firewall re-check. At most one NodeFwCheckUDP lookup may run at
+    /// a time; a request made while one is in flight is rejected rather than
+    /// stacking another lookup.
+    [[nodiscard]] RecheckFirewallResult recheckFirewalled();
 
     [[nodiscard]] uint32 getKademliaUsers(bool newMethod = false) const;
     [[nodiscard]] uint32 getKademliaFiles() const;
@@ -110,7 +122,8 @@ public:
         const uint8* fileHash, uint32 ip, uint16 tcpPort,
         uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
         uint8 sourceType, const uint8* buddyHash,
-        const uint8* clientHash, uint16 udpPort)>;
+        const uint8* clientHash, uint16 udpPort,
+        const uint8* sourceIPv6, const uint8* buddyIPv6)>;  // 16 bytes each, or nullptr
     /// Callback type for Kad notes results.
     using KadNotesResultCallback = std::function<void(uint32 searchID,
         const uint8* fileHash, const uint8* publisherId, const QString& name,

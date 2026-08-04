@@ -3,8 +3,14 @@
 /// @brief TCP server accepting incoming peer connections — replaces MFC CListenSocket.
 
 #include "net/ListenSocket.h"
+#include "app/AppContext.h"
+#include "client/ClientList.h"
+#include "client/UpDownClient.h"
+#include "ipfilter/IPFilter.h"
+#include "net/Address.h"
 #include "net/ClientReqSocket.h"
 #include "prefs/Preferences.h"
+#include "stats/Statistics.h"
 #include "utils/Log.h"
 
 #include <QHostAddress>
@@ -33,7 +39,7 @@ ListenSocket::~ListenSocket()
 
 bool ListenSocket::startListening(uint16 port)
 {
-    if (!listen(QHostAddress::AnyIPv4, port)) {
+    if (!listen(QHostAddress::Any, port)) {   // dual-stack (AF_INET6, IPV6_V6ONLY=0): accept v4 + v6
         logError(QStringLiteral("ListenSocket: Failed to listen on port %1: %2")
                      .arg(port).arg(errorString()));
         return false;
@@ -75,8 +81,47 @@ void ListenSocket::incomingConnection(qintptr socketDescriptor)
         return;
     }
 
+    // Wrap the descriptor first so the peer can be read through the Qt socket, then apply
+    // the same two rejections MFC does (srchybrid/ListenSocket.cpp:2152-2167 for the plain
+    // Accept path, :2038-2051 for the WSAAccept condition callback).  Rejecting here — before
+    // addSocket() — is what makes safeDelete() safe: it does not call removeSocket(), so a
+    // socket that has already entered m_socketList must never be torn down this way.
     auto* reqSocket = new ClientReqSocket(nullptr, this);
     reqSocket->setSocketDescriptor(socketDescriptor);
+
+    const Address peer = Address::fromQHostAddress(reqSocket->peerAddress());
+
+    // Address-typed, so both families are checked against their own range table.  A v4
+    // peer arriving on the dual-stack listener as ::ffff:a.b.c.d is normalised back to
+    // Family::IPv4 by Address::fromQHostAddress, so it is matched against the v4 table
+    // and not, wrongly, against the v6 one.
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(peer, thePrefs.ipFilterLevel())) {
+        if (thePrefs.logFilteredIPs()) {
+            logWarning(QStringLiteral("Rejecting connection attempt (IP=%1) - IP filter (%2)")
+                           .arg(ipstr(peer), theApp.ipFilter->lastHitDescription()));
+        }
+        if (theApp.statistics)
+            theApp.statistics->addFilteredClient();
+        reqSocket->safeDelete();
+        return;
+    }
+
+    if (theApp.clientList && theApp.clientList->isBannedClient(peer)) {
+        // MFC increments no counter on this branch — only the filter branch feeds
+        // theStats.filteredclients.  Keep that split so the statistic keeps its meaning.
+        if (thePrefs.logBannedClients()) {
+            // MFC logs the offending client's info via FindClientByIP (IP only, no port).
+            // findByAddress() would need the port too, so use the IPv4 lookup and simply
+            // omit the name for a v6 peer.
+            const UpDownClient* banned =
+                peer.isIPv4() ? theApp.clientList->findByIP(peer.toNetworkUint32()) : nullptr;
+            logWarning(QStringLiteral("Rejecting connection attempt of banned client %1 %2")
+                           .arg(ipstr(peer), banned ? banned->userName() : QString()));
+        }
+        reqSocket->safeDelete();
+        return;
+    }
+
     reqSocket->setObfuscationConfig(thePrefs.obfuscationConfig());
 
     addSocket(reqSocket);

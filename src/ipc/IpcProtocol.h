@@ -38,27 +38,36 @@ enum class IpcMsgType : int {
     GetDownloadClients   = 121,  ///< [] — source clients we are downloading from
     GetKnownClients      = 122,  ///< [] — all known clients
     GetServers           = 130,
-    RemoveServer         = 131,  ///< [ip: int64, port: int64]
+    // Server-keyed requests carry `addr` — the literal address — in addition to the
+    // legacy numeric `ip`, which is 0 for an IPv6 server. The daemon prefers `addr`
+    // when present and falls back to `ip`, so an older GUI still works.
+    RemoveServer         = 131,  ///< [ip: int64, port: int64, addr: string]
     RemoveAllServers     = 132,  ///< []
-    SetServerPriority    = 133,  ///< [ip: int64, port: int64, priority: int]
-    SetServerStatic      = 134,  ///< [ip: int64, port: int64, isStatic: bool]
+    SetServerPriority    = 133,  ///< [ip: int64, port: int64, priority: int, addr: string]
+    SetServerStatic      = 134,  ///< [ip: int64, port: int64, isStatic: bool, addr: string]
     AddServer            = 135,  ///< [address: string, port: int64, name: string]
-    SetServerOrder       = 136,  ///< [CborArray of [ip:int64, port:int64]] — user-sorted order (#24)
+    SetServerOrder       = 136,  ///< [CborArray of [ip:int64, port:int64, addr:string]] (#24)
     GetConnection        = 140,
-    ConnectToServer      = 141,
+    ConnectToServer      = 141,  ///< [] or [ip: int64, port: int64, addr: string]
     DisconnectFromServer = 142,
     StartSearch          = 150,  ///< [expression, fileType, method, minSize, maxSize, avail, ext, completeSrc]
     GetSearchResults     = 151,  ///< [searchID]
     StopSearch           = 152,  ///< [searchID: int]
     RemoveSearch         = 153,  ///< [searchID: int]
     ClearAllSearches     = 154,  ///< []
-    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64]
+    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string] — link wins if set
     GetKnownTypes        = 156,  ///< [hashes: QCborArray of strings] → [types: QCborArray of ints]
     GetSharedFiles       = 160,
     SetSharedFilePriority = 161, ///< [hash: string, priority: int, isAuto: bool]
     ReloadSharedFiles    = 162, ///< [] — rescan shared directories from disk
+    GetEd2kLink          = 163, ///< [hashes: QCborArray of strings, hashset: bool,
+                                ///<  sourceHint: bool, html: bool]
+                                ///<   → [ok: bool, [links: QCborArray of strings,
+                                ///<                 sourceHintAvailable: bool]]
+                                ///<   links[i] pairs with hashes[i]; a hash that no longer
+                                ///<   resolves yields an empty string, never an error.
     GetFriends           = 170,
-    AddFriend            = 171,  ///< [hash, name, ip, port]
+    AddFriend            = 171,  ///< [hash, name, ip, port, addr: string] — addr wins if set
     RemoveFriend         = 172,  ///< [hash]
     SendChatMessage      = 173,  ///< [hash: string, message: string]
     SetFriendSlot        = 174,  ///< [hash: string, enabled: bool]
@@ -103,7 +112,7 @@ enum class IpcMsgType : int {
 
     GetCollectionInfo       = 256, ///< [hash: string] → collection metadata for shared file
     SaveCollection          = 257, ///< [name, fileHashes[], textFormat, sign] → create & share
-    SearchAuthorCollections = 258, ///< [fileHash: string] → initiate Kad author search
+    // 258 was SearchAuthorCollections; the GUI now drives that search through StartSearch.
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -128,6 +137,7 @@ enum class IpcMsgType : int {
     PushChatMessage       = 500,  ///< [senderHash, senderName, message]
     PushFriendListChanged = 510,  ///< [] — friend list changed
     PushClientSharedFiles = 520,  ///< [clientHash, CborArray of files] — response to browse
+    PushPortMapStatus     = 530,  ///< [{status, statusText, method, methodText, externalAddress}]
 };
 
 // ---------------------------------------------------------------------------
@@ -139,6 +149,12 @@ inline constexpr int FrameHeaderSize = 4;
 
 /// Maximum allowed payload size (16 MiB).
 inline constexpr uint32_t MaxPayloadSize = 16 * 1024 * 1024;
+
+/// Maximum number of hashes one GetEd2kLink request may carry. A hashset link for a
+/// multi-GB file runs past 10 KB, and an oversized frame does not merely fail — it drops
+/// the IPC connection (IpcConnection::onReadyRead) — so both ends clamp instead of
+/// trusting how much the user selected.
+inline constexpr int MaxEd2kLinkBatch = 1000;
 
 /// Default IPC TCP port.
 inline constexpr uint16_t DefaultIpcPort = 4712;

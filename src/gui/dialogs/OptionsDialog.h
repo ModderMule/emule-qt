@@ -68,6 +68,11 @@ public:
         PageCount
     };
 
+protected:
+    /// Capture the active sidebar page on every close path (OK, Cancel, Esc,
+    /// window close) so the next open restores it.
+    void done(int result) override;
+
 private slots:
     void onPageChanged(int row);
     void onOk();
@@ -111,6 +116,14 @@ private:
     void populateScheduleDetails(int index);
     void applyScheduleDetails();
     void showScheduleActionsMenu(const QPoint& pos);
+
+    /// Open the web port test for the ports currently entered in the Connection page.
+    /// Asks the daemon for its public addresses first, so both address families get a verdict.
+    void openPortTest();
+
+    /// Launch the port test page. Empty @p ipv4 / @p ipv6 hints are omitted from the URL.
+    void openPortTestUrl(int tcpPort, int udpPort, const QString& ipv4, const QString& ipv6);
+
     static QIcon makePadlockIcon();
 
     IpcClient* m_ipc = nullptr;
@@ -177,7 +190,11 @@ private:
     QSpinBox*  m_tcpPortSpin = nullptr;
     QSpinBox*  m_udpPortSpin = nullptr;
     QCheckBox* m_udpDisableCheck = nullptr;
+    /// Bitmask for the portMapProtocols pref: 1 = PCP, 2 = NAT-PMP, 4 = UPnP.
+    [[nodiscard]] quint32 portMapProtocolMask() const;
+
     QCheckBox* m_upnpCheck = nullptr;
+    QLabel*    m_portMapStatusLabel = nullptr;
     QSpinBox*  m_maxSourcesSpin = nullptr;
     QSpinBox*  m_maxConnectionsSpin = nullptr;
     QCheckBox* m_autoConnectCheck = nullptr;
@@ -185,6 +202,7 @@ private:
     QCheckBox* m_overheadCheck = nullptr;
     QCheckBox* m_kadEnabledCheck = nullptr;
     QCheckBox* m_ed2kEnabledCheck = nullptr;
+    QCheckBox* m_separateIPv6QueueCheck = nullptr;
 
     // Proxy page controls
     QCheckBox*  m_proxyEnableCheck = nullptr;
@@ -338,6 +356,7 @@ private:
     QCheckBox*    m_disableArchPreviewCheck = nullptr;
     QCheckBox*    m_showExtControlsCheck = nullptr;
     QLineEdit*    m_ed2kHostnameEdit = nullptr;
+    QCheckBox*    m_ed2kLinkAdvertiseIPv6Check = nullptr;
     QCheckBox*    m_checkDiskspaceCheck = nullptr;
     QCheckBox*    m_logToDiskCheck = nullptr;
     QCheckBox*    m_verboseCheck = nullptr;
@@ -357,8 +376,11 @@ private:
     QCheckBox*    m_enableIpcLogCheck = nullptr;
     QCheckBox*    m_startCoreWithConsoleCheck = nullptr;
     QCheckBox*    m_closeUPnPCheck = nullptr;
-    QCheckBox*    m_skipWANIPCheck = nullptr;
-    QCheckBox*    m_skipWANPPPCheck = nullptr;
+    QCheckBox*    m_portMapPcpCheck = nullptr;
+    QCheckBox*    m_portMapNatPmpCheck = nullptr;
+    QCheckBox*    m_portMapUPnPCheck = nullptr;
+    QCheckBox*    m_portMapIPv6Check = nullptr;
+    QSpinBox*     m_portMapLeaseSpin = nullptr;
     QButtonGroup* m_commitFilesGroup = nullptr;
     QButtonGroup* m_extractMetaDataGroup = nullptr;
     QSlider*      m_fileBufferSlider = nullptr;

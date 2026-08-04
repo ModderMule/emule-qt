@@ -8,6 +8,7 @@
 /// is ported, it connects to these signals.
 
 #include "net/EMSocket.h"
+#include "net/Address.h"
 
 #include <QDnsLookup>
 
@@ -121,11 +122,16 @@ signals:
     void callbackRequested(uint32 clientIP, uint16 clientPort,
                            const uint8* cryptOptions, uint32 cryptSize);
 
+    /// IPv6 LowID callback (OP_CALLBACKREQUESTED_IPV6): the requester's public IPv6
+    /// endpoint. We connect back to it over IPv6 (no crypt trailer in this variant).
+    void callbackRequestedIPv6(const eMule::Endpoint& requester);
+
     /// Server sent reject.
     void rejectReceived();
 
-    /// DNS resolution completed for a dynamic-IP server.
-    void dynIPResolved(uint32 ip, const QString& hostname);
+    /// DNS resolution completed for a dynamic-IP server. Address-typed: an AAAA-only
+    /// hostname resolves to an IPv6, which a uint32 cannot carry.
+    void dynIPResolved(const eMule::Address& addr, const QString& hostname);
 
     /// Connection failed or broken.
     void connectionFailed(eMule::ServerConnState reason);
@@ -145,6 +151,10 @@ private:
     void onSocketError(QAbstractSocket::SocketError error);
     void onDnsLookupFinished();
 
+    /// Start (or restart) the dynIP lookup with the given record type. Replaces any
+    /// in-flight lookup safely, so it can be called from the finished handler.
+    void startDnsLookup(QDnsLookup::Type type);
+
     // --- State ---
     std::unique_ptr<Server> m_curServer;
     std::unique_ptr<QDnsLookup> m_dnsLookup;
@@ -156,6 +166,7 @@ private:
     bool m_noCrypt = false;
     bool m_pendingLogin = false;
     bool m_lowIDBounced = false;
+    bool m_dnsTriedFallback = false;   // the other-family retry has been used
 
     QElapsedTimer m_elapsedTimer;
 };

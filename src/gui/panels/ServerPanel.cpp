@@ -4,11 +4,13 @@
 #include "app/IpcClient.h"
 #include "core/app/AppConfig.h"
 #include "core/app/AppContext.h"
+#include "controls/AbstractListView.h"
 #include "controls/LogWidget.h"
 #include "controls/ServerListModel.h"
 
 #include "app/UiState.h"
 #include "IpcMessage.h"
+#include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
@@ -36,9 +38,6 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QMenu>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QUrl>
 #include <QSortFilterProxyModel>
 #include <QPushButton>
@@ -222,21 +221,12 @@ void ServerPanel::onAddServerClicked()
     if (!m_serverList)
         return;
 
-    // Resolve hostname to IP if needed
-    QHostAddress addr(ip);
-    if (addr.isNull()) {
-        const QHostInfo info = QHostInfo::fromName(ip);
-        for (const auto& a : info.addresses()) {
-            if (a.protocol() == QAbstractSocket::IPv4Protocol) {
-                addr = a;
-                break;
-            }
-        }
-        if (addr.isNull())
-            return;
-    }
-
-    auto server = std::make_unique<Server>(addr.toIPv4Address(), port);
+    // Classify without resolving: a hostname is stored as a dynIP and re-resolved on
+    // every connect (A then AAAA), so an AAAA-only host works and nothing blocks the
+    // GUI thread. Accepts an IPv6 literal, bracketed or bare.
+    auto server = Server::fromAddressString(ip, port);
+    if (!server)
+        return;
     if (!name.isEmpty())
         server->setName(name);
     if (thePrefs.manualServerHighPriority())
@@ -261,38 +251,36 @@ void ServerPanel::onUpdateServerMetClicked()
         return;
     }
 
-    if (!m_netManager)
-        m_netManager = new QNetworkAccessManager(this);
-
     m_updateBtn->setEnabled(false);
     m_logWidget->appendServerInfo(tr("Downloading server.met from %1 ...").arg(urlStr));
 
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, eMule::kUserAgent);
+    // Several server.met mirrors serve the file gzipped; a plain one passes through.
+    eMule::HttpFileDownload::Options opts;
+    opts.preferredNames = {QStringLiteral("server.met")};
 
-    auto* reply = m_netManager->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        reply->deleteLater();
-        m_updateBtn->setEnabled(true);
+    eMule::HttpFileDownload::get(this, url, opts,
+        [this](bool ok, const QByteArray& data, const QString& entryName,
+               const QString& error) {
+            m_updateBtn->setEnabled(true);
 
-        if (reply->error() != QNetworkReply::NoError) {
+            if (!ok) {
+                m_logWidget->appendServerInfo(
+                    tr("Failed to download server.met: %1").arg(error));
+                return;
+            }
+            if (data.isEmpty()) {
+                m_logWidget->appendServerInfo(tr("Downloaded empty server.met file."));
+                return;
+            }
+
             m_logWidget->appendServerInfo(
-                tr("Failed to download server.met: %1").arg(reply->errorString()));
-            return;
-        }
+                entryName.isEmpty()
+                    ? tr("Downloaded server.met (%1 bytes). Parsing...").arg(data.size())
+                    : tr("Downloaded server.met, unpacked \"%1\" (%2 bytes). Parsing...")
+                          .arg(entryName).arg(data.size()));
 
-        const QByteArray data = reply->readAll();
-        if (data.isEmpty()) {
-            m_logWidget->appendServerInfo(tr("Downloaded empty server.met file."));
-            return;
-        }
-
-        m_logWidget->appendServerInfo(
-            tr("Downloaded server.met (%1 bytes). Parsing...")
-                .arg(data.size()));
-
-        parseAndAddServersFromMet(data);
-    });
+            parseAndAddServersFromMet(data);
+        });
 }
 
 void ServerPanel::onRefreshTimer()
@@ -361,12 +349,14 @@ void ServerPanel::onServerDoubleClicked(const QModelIndex& index)
     // IPC mode: send ConnectToServer with IP and port
     if (m_ipc && m_ipc->isConnected()) {
         const auto* row = m_serverListModel->rowAt(srcIndex.row());
-        if (!row || row->numericIp == 0)
+        // numericIp is 0 for an IPv6 server, so identity rests on addr.
+        if (!row || (row->numericIp == 0 && row->addr.isEmpty()))
             return;
 
         Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
         req.append(static_cast<qint64>(row->numericIp));
         req.append(static_cast<qint64>(row->port));
+        req.append(row->addr);
         m_ipc->sendRequest(std::move(req));
         m_connectBtn->setText(tr("Cancel"));
         return;
@@ -380,7 +370,7 @@ void ServerPanel::onServerDoubleClicked(const QModelIndex& index)
     if (!srv)
         return;
 
-    auto* mutableSrv = m_serverList->findByIPTcp(srv->ipAddress().toNetworkUint32(), srv->port());
+    auto* mutableSrv = m_serverList->findByIPTcp(srv->ipAddress(), srv->port());
     if (mutableSrv)
         m_serverConnect->connectToServer(mutableSrv);
 }
@@ -421,16 +411,18 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     connectAction->setEnabled(hasSelection);
     if (hasSelection) {
         const uint32_t ip = row->numericIp;
+        const QString addr = row->addr;
         const uint16_t port = row->port;
-        connect(connectAction, &QAction::triggered, this, [this, ip, port]() {
+        connect(connectAction, &QAction::triggered, this, [this, ip, addr, port]() {
             if (m_ipc && m_ipc->isConnected()) {
                 Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
                 req.append(static_cast<qint64>(ip));
                 req.append(static_cast<qint64>(port));
+                req.append(addr);
                 m_ipc->sendRequest(std::move(req));
                 m_connectBtn->setText(tr("Cancel"));
             } else if (m_serverConnect && m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(ip, port);
+                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
                 if (srv)
                     m_serverConnect->connectToServer(srv);
             }
@@ -465,19 +457,21 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
             prioNormal->setChecked(true);
 
         const uint32_t ip = row->numericIp;
+        const QString addr = row->addr;
         const uint16_t port = row->port;
 
-        auto setPriority = [this, ip, port](ServerPriority prio) {
+        auto setPriority = [this, ip, addr, port](ServerPriority prio) {
             if (m_ipc && m_ipc->isConnected()) {
                 Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerPriority);
                 req.append(static_cast<qint64>(ip));
                 req.append(static_cast<qint64>(port));
                 req.append(static_cast<qint64>(prio));
+                req.append(addr);
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
             } else if (m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(ip, port);
+                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
                 if (srv) {
                     srv->setPreference(prio);
                     onServerListChanged();
@@ -503,17 +497,22 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     // selected server with its neighbour in the daemon's list order and pushes the
     // new full order to the daemon (SetServerOrder), which persists it.
     if (thePrefs.useUserSortedServerList()) {
-        auto moveServer = [this](uint32_t ip, uint16_t port, bool up) {
-            std::vector<std::pair<uint32_t, uint16_t>> order;
+        // Entries carry both the numeric IP and the literal address; the latter is what
+        // identifies an IPv6 server, whose numeric form is always 0.
+        struct OrderEntry { uint32_t ip; QString addr; uint16_t port; };
+        auto moveServer = [this](const QString& selAddr, uint32_t ip, uint16_t port, bool up) {
+            std::vector<OrderEntry> order;
             order.reserve(static_cast<size_t>(m_serverListModel->rowCount()));
             int sel = -1;
             for (int i = 0; i < m_serverListModel->rowCount(); ++i) {
                 const ServerRow* r = m_serverListModel->rowAt(i);
                 if (!r)
                     continue;
-                if (r->numericIp == ip && r->port == port)
+                const bool isSel = selAddr.isEmpty() ? (r->numericIp == ip && r->port == port)
+                                                     : (r->addr == selAddr && r->port == port);
+                if (isSel)
                     sel = static_cast<int>(order.size());
-                order.emplace_back(r->numericIp, r->port);
+                order.push_back({r->numericIp, r->addr, r->port});
             }
             if (sel < 0)
                 return;
@@ -524,10 +523,11 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
             if (m_ipc && m_ipc->isConnected()) {
                 QCborArray arr;
-                for (const auto& [oip, oport] : order) {
+                for (const auto& e : order) {
                     QCborArray pair;
-                    pair.append(static_cast<qint64>(oip));
-                    pair.append(static_cast<qint64>(oport));
+                    pair.append(static_cast<qint64>(e.ip));
+                    pair.append(static_cast<qint64>(e.port));
+                    pair.append(e.addr);
                     arr.append(pair);
                 }
                 Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerOrder);
@@ -536,7 +536,11 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                     requestServerList();
                 });
             } else if (m_serverList) {
-                m_serverList->applyUserOrder({order.begin(), order.end()});
+                std::vector<std::pair<Address, uint16_t>> coreOrder;
+                coreOrder.reserve(order.size());
+                for (const auto& e : order)
+                    coreOrder.emplace_back(Address::fromString(e.addr), e.port);
+                m_serverList->applyUserOrder(coreOrder);
                 onServerListChanged();
             }
         };
@@ -549,11 +553,12 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
         moveDownAction->setEnabled(hasSelection);
         if (hasSelection) {
             const uint32_t ip = row->numericIp;
+            const QString addr = row->addr;
             const uint16_t port = row->port;
             connect(moveUpAction, &QAction::triggered, this,
-                    [moveServer, ip, port]() { moveServer(ip, port, true); });
+                    [moveServer, addr, ip, port]() { moveServer(addr, ip, port, true); });
             connect(moveDownAction, &QAction::triggered, this,
-                    [moveServer, ip, port]() { moveServer(ip, port, false); });
+                    [moveServer, addr, ip, port]() { moveServer(addr, ip, port, false); });
         }
         m_serverMenu->addSeparator();
     }
@@ -564,18 +569,20 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     addStaticAction->setEnabled(hasSelection && !row->isStatic);
     if (hasSelection) {
         const uint32_t ip = row->numericIp;
+        const QString addr = row->addr;
         const uint16_t port = row->port;
-        connect(addStaticAction, &QAction::triggered, this, [this, ip, port]() {
+        connect(addStaticAction, &QAction::triggered, this, [this, ip, addr, port]() {
             if (m_ipc && m_ipc->isConnected()) {
                 Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerStatic);
                 req.append(static_cast<qint64>(ip));
                 req.append(static_cast<qint64>(port));
                 req.append(true);
+                req.append(addr);
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
             } else if (m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(ip, port);
+                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
                 if (srv) {
                     srv->setStaticMember(true);
                     onServerListChanged();
@@ -590,18 +597,20 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     removeStaticAction->setEnabled(hasSelection && row->isStatic);
     if (hasSelection) {
         const uint32_t ip = row->numericIp;
+        const QString addr = row->addr;
         const uint16_t port = row->port;
-        connect(removeStaticAction, &QAction::triggered, this, [this, ip, port]() {
+        connect(removeStaticAction, &QAction::triggered, this, [this, ip, addr, port]() {
             if (m_ipc && m_ipc->isConnected()) {
                 Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerStatic);
                 req.append(static_cast<qint64>(ip));
                 req.append(static_cast<qint64>(port));
                 req.append(false);
+                req.append(addr);
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
             } else if (m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(ip, port);
+                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
                 if (srv) {
                     srv->setStaticMember(false);
                     onServerListChanged();
@@ -617,7 +626,10 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     copyLinkAction->setIcon(ico("eD2kLink.ico", QStyle::SP_FileIcon));
     copyLinkAction->setEnabled(hasSelection);
     if (hasSelection) {
-        const QString address = row->ip.section(QLatin1Char(':'), 0, 0);
+        // row->ip is Server::address() — a bare literal or hostname, never "ip:port".
+        // The old section(':',0,0) was a no-op for IPv4 and truncated an IPv6 to "2001";
+        // ED2KServerLink::toLink() adds the brackets an IPv6 literal needs.
+        const QString address = row->ip;
         const uint16_t port = row->port;
         connect(copyLinkAction, &QAction::triggered, this, [address, port]() {
             ED2KServerLink link{address, port};
@@ -640,8 +652,9 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
             if (!parsed)
                 continue;
             if (auto* srvLink = std::get_if<ED2KServerLink>(&*parsed)) {
-                const QHostAddress addr(srvLink->address);
-                if (addr.isNull() || srvLink->port == 0)
+                // Accept literals of either family and hostnames alike: the old
+                // QHostAddress::isNull() gate rejected every hostname server link.
+                if (srvLink->port == 0)
                     continue;
                 if (m_ipc && m_ipc->isConnected()) {
                     Ipc::IpcMessage req(Ipc::IpcMsgType::AddServer);
@@ -652,8 +665,8 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                         requestServerList();
                     });
                 } else if (m_serverList) {
-                    auto server = std::make_unique<Server>(addr.toIPv4Address(), srvLink->port);
-                    m_serverList->addServer(std::move(server));
+                    if (auto server = Server::fromAddressString(srvLink->address, srvLink->port))
+                        m_serverList->addServer(std::move(server));
                 }
             }
         }
@@ -665,17 +678,19 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     removeAction->setEnabled(hasSelection);
     if (hasSelection) {
         const uint32_t ip = row->numericIp;
+        const QString addr = row->addr;
         const uint16_t port = row->port;
-        connect(removeAction, &QAction::triggered, this, [this, ip, port]() {
+        connect(removeAction, &QAction::triggered, this, [this, ip, addr, port]() {
             if (m_ipc && m_ipc->isConnected()) {
                 Ipc::IpcMessage req(Ipc::IpcMsgType::RemoveServer);
                 req.append(static_cast<qint64>(ip));
                 req.append(static_cast<qint64>(port));
+                req.append(addr);
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
             } else if (m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(ip, port);
+                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
                 if (srv)
                     m_serverList->removeServer(srv);
             }
@@ -762,7 +777,8 @@ QWidget* ServerPanel::createServerListPanel()
     auto* serverProxy = new QSortFilterProxyModel(this);
     serverProxy->setSourceModel(m_serverListModel);
     serverProxy->setSortRole(Qt::UserRole);
-    m_serverListView = new QTreeView;
+    auto* serverView = new ListTreeView;
+    m_serverListView = serverView;
     m_serverListView->setModel(serverProxy);
     m_serverListView->setRootIsDecorated(false);
     m_serverListView->setAlternatingRowColors(true);
@@ -774,10 +790,10 @@ QWidget* ServerPanel::createServerListPanel()
     auto* header = m_serverListView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(80);
-    header->resizeSection(ServerListModel::ColName, 140);
-    header->resizeSection(ServerListModel::ColIP, 140);
-    header->resizeSection(ServerListModel::ColDescription, 160);
-    theUiState.bindHeaderView(header, QStringLiteral("serverList"));
+    // Name, IP, Description, Ping, Users, Max Users, Preference, Failed,
+    // Static, Soft/Files, LowID, Obfuscation.
+    serverView->bindColumns(QStringLiteral("serverList"),
+        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80});
 
     m_serverListView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_serverListView, &QTreeView::doubleClicked,
@@ -1266,6 +1282,7 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
     // Server tag IDs
     constexpr uint8_t kStServerName   = 0x01;
     constexpr uint8_t kStDynIP        = 0x85;
+    constexpr uint8_t kStIPv6         = 0x99;   // local extension, see ST_IPV6 in Opcodes.h
 
     QDataStream stream(data);
     stream.setByteOrder(QDataStream::LittleEndian);
@@ -1307,6 +1324,7 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
 
         QString serverName;
         QString dynIP;
+        Address ipv6;   // from the local ST_IPV6 tag; the header ip is 0 for those
 
         for (uint32_t t = 0; t < tagCount && stream.status() == QDataStream::Ok; ++t) {
             uint8_t rawType = 0;
@@ -1378,9 +1396,16 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
                 stream.skipRawData(4); // uint16 count + data? Actually variable — skip count
                 // BoolArray is rarely used in server.met, skip gracefully
                 break;
-            case kTagTypeHash:
-                stream.skipRawData(16);
+            case kTagTypeHash: {
+                std::array<uint8_t, 16> raw{};
+                if (stream.readRawData(reinterpret_cast<char*>(raw.data()), 16) != 16) {
+                    m_logWidget->appendServerInfo(tr("Corrupt server.met: truncated hash tag"));
+                    return;
+                }
+                if (nameId == kStIPv6 && ipv6.isNull())
+                    ipv6 = Address::fromIPv6Bytes(raw.data());
                 break;
+            }
             case kTagTypeBlob: {
                 uint32_t blobLen = 0;
                 stream >> blobLen;
@@ -1422,6 +1447,9 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
         QString address;
         if (!dynIP.isEmpty()) {
             address = dynIP;
+        } else if (!ipv6.isNull()) {
+            // IPv6 server: the 4-byte header field was 0 and the address came in the tag.
+            address = ipv6.toString();
         } else if (ip != 0) {
             // server.met stores IPs in eD2K byte order (first octet in LSB) — swap for QHostAddress
             const quint32 swapped = ((ip & 0xFF) << 24) | ((ip & 0xFF00) << 8)
@@ -1446,12 +1474,13 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
             m_ipc->sendRequest(std::move(req));
             ++addedCount;
         } else if (m_serverList) {
-            QHostAddress hostAddr(address);
-            auto server = std::make_unique<Server>(
-                hostAddr.isNull() ? 0u : static_cast<uint32_t>(hostAddr.toIPv4Address()),
-                port);
-            if (hostAddr.isNull())
-                server->setDynIP(address);
+            // fromAddressString classifies literal vs hostname and gets the byte order
+            // right — the old call passed a host-order uint32 to a network-order ctor.
+            auto server = Server::fromAddressString(address, port);
+            if (!server) {
+                ++skippedCount;
+                continue;
+            }
             server->setName(serverName);
             if (m_serverList->addServer(std::move(server)))
                 ++addedCount;

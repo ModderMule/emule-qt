@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{7C4E9F1A-2B3D-4E5F-A6B7-C8D9E0F1A2B3}</ProjectGuid>
+    <ProjectGuid>{5D43DD0E-88FF-57DF-8CDD-3103760593E6}</ProjectGuid>
     <RootNamespace>tst_ServerConnectLive</RootNamespace>
     <Keyword>QtVS_v304</Keyword>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>

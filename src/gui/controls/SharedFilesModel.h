@@ -88,6 +88,10 @@ public:
     /// Check if a file with the given hex hash is in the shared files list.
     [[nodiscard]] bool containsHash(const QString& hexHash) const;
 
+    /// Row for @p hexHash, or nullptr. Lets callers hold a hash instead of a row pointer —
+    /// setFiles() replaces the whole vector, so any kept pointer dangles after a refresh.
+    [[nodiscard]] const SharedFileRow* findByHash(const QString& hexHash) const;
+
 protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
 };

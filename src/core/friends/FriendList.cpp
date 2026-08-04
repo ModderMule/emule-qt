@@ -128,17 +128,30 @@ Friend* FriendList::addFriend(const uint8* userHash, uint32 lastUsedIP,
                               uint16 lastUsedPort, const QString& name,
                               bool hasHash)
 {
-    // Require either a valid hash or a valid IP+port
-    if (!hasHash && (lastUsedIP == 0 || lastUsedPort == 0))
+    return addFriend(userHash, Address::fromNetworkOrder(lastUsedIP), lastUsedPort,
+                     name, hasHash);
+}
+
+Friend* FriendList::addFriend(const uint8* userHash, const Address& lastUsedAddress,
+                              uint16 lastUsedPort, const QString& name,
+                              bool hasHash)
+{
+    // Require either a valid hash or a valid address+port. An IPv6 peer has no IPv4 form,
+    // so this must test the address itself, not its uint32 projection.
+    const bool haveAddress = lastUsedAddress.isIPv6()
+                             || (lastUsedAddress.isIPv4() && lastUsedAddress.toNetworkUint32() != 0);
+    if (!hasHash && (!haveAddress || lastUsedPort == 0))
         return nullptr;
 
-    // Duplicate check
-    if (searchFriend(hasHash ? userHash : nullptr, lastUsedIP, lastUsedPort))
+    // Duplicate check. searchFriend() matches on the IPv4 form, which is 0 for an IPv6
+    // address — such a friend is deduplicated by hash alone.
+    if (searchFriend(hasHash ? userHash : nullptr, lastUsedAddress.toNetworkUint32(), lastUsedPort))
         return nullptr;
 
     auto f = std::make_unique<Friend>(
-        userHash, std::time(nullptr), lastUsedIP, lastUsedPort,
+        userHash, std::time(nullptr), lastUsedAddress.toNetworkUint32(), lastUsedPort,
         0, name, hasHash);
+    f->setLastUsedAddress(lastUsedAddress);
 
     Friend* ptr = f.get();
     m_friends.push_back(std::move(f));

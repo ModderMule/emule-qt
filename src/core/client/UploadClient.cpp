@@ -413,35 +413,71 @@ void UpDownClient::sendCommentInfo(const KnownFile* file)
 // addRequestCount — MFC UploadClient.cpp:370-395
 // ===========================================================================
 
+// A request is only "bad" when the client asks for the same file again sooner than
+// MIN_REQUESTTIME — re-asking on a sane interval is normal and *heals* the counter.
+// Counting every request instead (as this did) banned well-behaved clients after four
+// legitimate asks, and never updating lastAsked left the interval test unusable.
 void UpDownClient::addRequestCount(const uint8* fileID)
 {
     if (!fileID)
         return;
 
+    const auto now = static_cast<uint32>(getTickCount());
+
     for (auto* req : m_requestedFiles) {
         if (md4equ(req->fileID.data(), fileID)) {
-            req->badRequests++;
-            if (req->badRequests > BADCLIENTBAN) {
-                ban(QStringLiteral("Too many file requests"));
+            if (now < req->lastAsked + MIN_REQUESTTIME && !friendSlot()) {
+                // A client we are downloading from is exempt: its re-asks are part of a
+                // legitimate exchange, so the counter only rises for pure leeching.
+                if (m_downloadState != DownloadState::Downloading) {
+                    ++req->badRequests;
+                    if (req->badRequests == BADCLIENTBAN)
+                        registerBadRequest(QStringLiteral("Too many file requests"));
+                }
+            } else if (req->badRequests > 0) {
+                --req->badRequests;
             }
+            req->lastAsked = now;
             return;
         }
     }
 
-    // New file request
+    // New file request — starts clean; the first ask can never be "too soon".
     auto* newReq = new Requested_File_Struct;
     md4cpy(newReq->fileID.data(), fileID);
-    newReq->lastAsked = static_cast<uint32>(getTickCount());
-    newReq->badRequests = 1;
+    newReq->lastAsked = now;
+    newReq->badRequests = 0;
     m_requestedFiles.push_back(newReq);
 }
 
 // ===========================================================================
-// ban / unBan
+// ban / unBan / registerBadRequest
 // ===========================================================================
+
+// Two-strikes, scoped to the peer's ADDRESS rather than to this object (MFC
+// BaseClient.cpp:2547-2550, DownloadClient.cpp:2004-2007). The first offence only
+// records a strike; the second bans and resets the counter so the ban expiring is a
+// clean slate. Because the counter lives in ClientList's tracked map it outlives this
+// UpDownClient — an abuser cannot clear its record by reconnecting.
+void UpDownClient::registerBadRequest(const QString& reason)
+{
+    if (!theApp.clientList)
+        return;
+
+    if (theApp.clientList->badRequests(this) < 2)
+        theApp.clientList->trackBadRequest(this, 1);
+
+    if (theApp.clientList->badRequests(this) == 2) {
+        theApp.clientList->trackBadRequest(this, -2);
+        ban(reason);
+    }
+}
 
 void UpDownClient::ban(const QString& reason)
 {
+    if (theApp.clientList)
+        theApp.clientList->addTrackClient(this);
+
     if (m_uploadState != UploadState::Banned) {
         logDebug(QStringLiteral("Banning client: %1 reason: %2").arg(userName(), reason));
         setUploadState(UploadState::Banned);
@@ -452,6 +488,9 @@ void UpDownClient::ban(const QString& reason)
 
 void UpDownClient::unBan()
 {
+    if (theApp.clientList)
+        theApp.clientList->addTrackClient(this);
+
     if (m_uploadState == UploadState::Banned) {
         setUploadState(UploadState::None);
         if (theApp.clientList)
@@ -720,6 +759,7 @@ void UpDownClient::processRequestFileName(const uint8* data, uint32 size)
 void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
 {
     (void)checkHandshakeFinished();
+    maybeBootstrapKadFromPeer();   // MFC ListenSocket.cpp:865-866
 
     if (size < 1)
         return;
@@ -822,6 +862,7 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
 void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool hasFileSize)
 {
     (void)checkHandshakeFinished();
+    maybeBootstrapKadFromPeer();   // MFC ListenSocket.cpp:865-866
 
     if (size < 16)
         return;
@@ -920,6 +961,7 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
 void UpDownClient::processMultiPacketAnswerLegacy(const uint8* data, uint32 size)
 {
     (void)checkHandshakeFinished();
+    maybeBootstrapKadFromPeer();   // MFC ListenSocket.cpp:1056-1057
 
     if (size < 16)
         return;
@@ -967,6 +1009,7 @@ void UpDownClient::processMultiPacketAnswerLegacy(const uint8* data, uint32 size
 void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
 {
     (void)checkHandshakeFinished();
+    maybeBootstrapKadFromPeer();   // MFC ListenSocket.cpp:1056-1057
 
     if (size < 1)
         return;

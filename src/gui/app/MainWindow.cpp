@@ -26,10 +26,9 @@
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
-#include "protocol/ED2KLink.h"
+#include "utils/Ed2kLinkImporter.h"
+#include "utils/StatusBarNotifier.h"
 
-#include "controls/DownloadListModel.h"
-#include "controls/SharedFilesModel.h"
 #include "dialogs/PasteLinksDialog.h"
 #include "dialogs/ToolbarCustomizeDialog.h"
 
@@ -50,6 +49,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QFile>
+#include <QPointer>
 #include <QSoundEffect>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -61,30 +61,6 @@
 
 namespace eMule {
 
-namespace {
-
-/// Convert a raw 16-byte MD4 hash to a lowercase hex string.
-QString hashToHex(const std::array<uint8_t, 16>& hash)
-{
-    QString hex;
-    hex.reserve(32);
-    for (uint8_t b : hash)
-        hex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
-    return hex;
-}
-
-/// Check if a file hash is already known (downloading or shared).
-bool isFileKnown(const QString& hashHex, const TransferPanel* tp, const SharedFilesPanel* sfp)
-{
-    if (tp && tp->downloadModel() && tp->downloadModel()->containsHash(hashHex))
-        return true;
-    if (sfp && sfp->sharedFilesModel() && sfp->sharedFilesModel()->containsHash(hashHex))
-        return true;
-    return false;
-}
-
-} // anonymous namespace
-
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
@@ -93,6 +69,21 @@ MainWindow::MainWindow(QWidget* parent)
     setupPages();
     rebuildToolbar();
     setupStatusBar();
+
+    // Anywhere in the GUI can now put a line in the status bar without knowing about
+    // MainWindow — the Qt stand-in for MFC's LOG_STATUSBAR (srchybrid/EmuleDlg.cpp:897).
+    StatusBarNotifier::setSink([self = QPointer<MainWindow>(this)](const QString& text, int ms) {
+        if (!self)
+            return;
+        if (ms > 0) {
+            self->statusBar()->showMessage(text, ms);
+        } else {
+            // A transient message paints over the permanent label, so drop it first —
+            // otherwise this line would stay hidden for the rest of that timeout.
+            self->statusBar()->clearMessage();
+            self->setStatusMessage(text);
+        }
+    });
 
     switchToTab(TabKad);
 
@@ -166,7 +157,10 @@ MainWindow::MainWindow(QWidget* parent)
     });
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow()
+{
+    StatusBarNotifier::setSink({});   // nothing left to post to
+}
 
 void MainWindow::switchToTab(Tab tab)
 {
@@ -332,6 +326,12 @@ void MainWindow::setNetworkStats(quint32 users, quint32 files)
         .arg(QLocale().toString(files)));
 }
 
+void MainWindow::setStatusMessage(const QString& text)
+{
+    if (m_statusMsg)
+        m_statusMsg->setText(text);
+}
+
 void MainWindow::updateTransferRates(double upKBs, double downKBs,
                                      double upOH, double downOH)
 {
@@ -393,6 +393,10 @@ void MainWindow::closeEvent(QCloseEvent* event)
         }
     }
     theUiState.captureMainWindow(this);
+    // Flush here as well as after exec() returns: anything that ends the process
+    // another way (crash, kill, logout) would otherwise lose the whole session's
+    // layout — column widths above all.
+    theUiState.save();
     QMainWindow::closeEvent(event);
     // Explicit quit — on macOS the QSystemTrayIcon keeps the event loop alive
     // even after the last window is closed, preventing aboutToQuit from firing.
@@ -426,6 +430,11 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 
 void MainWindow::onClipboardChanged()
 {
+    // MFC guards SearchClipboard() with the same preference (srchybrid/UploadQueue.cpp:925).
+    // Read it here rather than gating the connect() so Options changes take effect at once.
+    if (!thePrefs.watchClipboard4ED2KLinks())
+        return;
+
     const QString text = QApplication::clipboard()->text().trimmed();
     if (text.isEmpty() || text == m_lastClipboardContents)
         return;
@@ -435,55 +444,19 @@ void MainWindow::onClipboardChanged()
     if (!text.contains(QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive))
         return;
 
-    if (!m_ipc || !m_ipc->isConnected())
-        return;
-
-    // Build preview of file links for the prompt, skipping already-known files
-    const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-    QStringList fileNames;
-    for (const QString& line : lines) {
-        auto parsed = parseED2KLink(line.trimmed());
-        if (!parsed)
-            continue;
-        if (auto* fileLink = std::get_if<ED2KFileLink>(&*parsed)) {
-            if (isFileKnown(hashToHex(fileLink->hash), m_transferPanel, m_sharedFilesPanel))
-                continue;
-            fileNames << fileLink->name;
-        }
-    }
-    if (fileNames.isEmpty())
-        return;
-
-    const QString preview = fileNames.join(QLatin1Char('\n'));
-    const auto result = QMessageBox::question(
-        this, tr("eD2K Link"),
-        tr("Do you want to download the following file(s)?\n\n%1").arg(preview),
-        QMessageBox::Yes | QMessageBox::No);
-
-    if (result != QMessageBox::Yes)
-        return;
-
-    // Download each file link via IPC
-    for (const QString& line : lines) {
-        auto parsed = parseED2KLink(line.trimmed());
-        if (!parsed)
-            continue;
-        auto* fileLink = std::get_if<ED2KFileLink>(&*parsed);
-        if (!fileLink)
-            continue;
-
-        QString hashHex;
-        for (uint8 b : fileLink->hash)
-            hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
-
-        Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
-        msg.append(hashHex);
-        msg.append(fileLink->name);
-        msg.append(static_cast<qint64>(fileLink->size));
-        m_ipc->sendRequest(std::move(msg));
-    }
-
-    switchToTab(TabTransfers);
+    // Automatic: files we already have — including ones only the daemon knows about, such as
+    // completed-but-unshared and cancelled downloads — are skipped without a prompt. Copying
+    // the link of a file we already hold must never offer to download it.
+    Ed2kLinkImporter::importLinks(
+        text, m_ipc, this,
+        Ed2kLinkImporter::Source::Automatic,
+        Ed2kLinkImporter::Prompt::Ask,
+        [this](const Ed2kLinkImporter::Result& result) {
+            // Skips report themselves — the importer logs them and posts to the status bar,
+            // the same way for every import source.
+            if (result.added > 0)
+                switchToTab(TabTransfers);
+        });
 }
 
 // ---------------------------------------------------------------------------
@@ -595,10 +568,7 @@ void MainWindow::onIPFilter()
 
 void MainWindow::onPasteLinks()
 {
-    PasteLinksDialog dlg(m_ipc,
-                         m_transferPanel ? m_transferPanel->downloadModel() : nullptr,
-                         m_sharedFilesPanel ? m_sharedFilesPanel->sharedFilesModel() : nullptr,
-                         this);
+    PasteLinksDialog dlg(m_ipc, this);
     dlg.exec();
 }
 
@@ -1197,6 +1167,14 @@ void MainWindow::setupPages()
     // Tab 4: Shared Files
     m_sharedFilesPanel = new SharedFilesPanel(this);
     m_pages->addWidget(m_sharedFilesPanel);
+
+    // Wire "Search Author's Collections…" from SharedFilesPanel → SearchPanel
+    connect(m_sharedFilesPanel, &SharedFilesPanel::searchRequested,
+            this, [this](const QString& expression, const QString& fileType,
+                         int method, const QString& title) {
+        m_searchPanel->startSearchFromExternal(expression, fileType, method, title);
+        switchToTab(TabSearch);
+    });
 
     // Tab 5: Messages
     m_messagesPanel = new MessagesPanel(this);

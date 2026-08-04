@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 
+#include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadSearchManager.h"
@@ -24,6 +25,18 @@ private slots:
     void stopSearch_removesFromMap();
     void alreadySearchingFor_duplicate();
     void prepareFindKeywords_splits();
+    void selectKeyword_picksFirstFreeWord();
+    void selectKeyword_allActive();
+    void selectKeyword_tooShort();
+    void prepareFindKeywords_fallbackTarget();
+    void findNodeFWCheckUDP_onlyOneSearch();
+    void cancelNodeFWCheckUDPSearch_removesAll();
+
+private:
+    /// Start a keyword search for @p expression, asserting it starts.
+    static void startKeywordSearch(const QString& expression);
+    /// Number of NodeFwCheckUDP searches currently registered.
+    static int countFWCheckSearches();
 };
 
 void tst_KadSearchManager::cleanup()
@@ -99,6 +112,105 @@ void tst_KadSearchManager::prepareFindKeywords_splits()
     // The target should be the MD4 hash of "hello world" (lowercased keyword)
     QVERIFY(search->getTarget() != UInt128());
     delete search;
+}
+
+void tst_KadSearchManager::selectKeyword_picksFirstFreeWord()
+{
+    startKeywordSearch(QStringLiteral("ubuntu desktop"));
+
+    // "ubuntu" is taken, so the next long-enough word becomes the target
+    const auto sel = SearchManager::selectKeyword(QStringLiteral("ubuntu server"));
+    QCOMPARE(sel.status, KeywordStatus::Ok);
+    QCOMPARE(sel.keyword, QStringLiteral("server"));
+    QCOMPARE(sel.primaryKeyword, QStringLiteral("ubuntu"));
+    QVERIFY(sel.isFallback);
+}
+
+void tst_KadSearchManager::selectKeyword_allActive()
+{
+    startKeywordSearch(QStringLiteral("ubuntu desktop"));
+    startKeywordSearch(QStringLiteral("server release"));
+
+    const auto sel = SearchManager::selectKeyword(QStringLiteral("ubuntu server"));
+    QCOMPARE(sel.status, KeywordStatus::AllActive);
+    QCOMPARE(sel.primaryKeyword, QStringLiteral("ubuntu"));
+    QVERIFY(sel.keyword.isEmpty());
+}
+
+void tst_KadSearchManager::selectKeyword_tooShort()
+{
+    const auto sel = SearchManager::selectKeyword(QStringLiteral("ab cd"));
+    QCOMPARE(sel.status, KeywordStatus::TooShort);
+    QVERIFY(sel.keyword.isEmpty());
+    QVERIFY(sel.primaryKeyword.isEmpty());
+}
+
+void tst_KadSearchManager::prepareFindKeywords_fallbackTarget()
+{
+    startKeywordSearch(QStringLiteral("ubuntu desktop"));
+
+    // Without a keyword hint prepareFindKeywords selects one itself
+    auto* search = SearchManager::prepareFindKeywords(
+        QStringLiteral("ubuntu server"), 0, nullptr);
+    QVERIFY(search != nullptr);
+
+    UInt128 expected;
+    getKeywordHash(QStringLiteral("server"), expected);
+    QCOMPARE(search->getTarget(), expected);
+    QVERIFY(SearchManager::startSearch(search));
+}
+
+void tst_KadSearchManager::findNodeFWCheckUDP_onlyOneSearch()
+{
+    // The FW-check target is random, so alreadySearchingFor() cannot dedupe it;
+    // repeated calls (the "Recheck Firewall" button) must not stack up lookups.
+    QVERIFY(!SearchManager::isNodeFWCheckUDPSearchActive());
+
+    for (int i = 0; i < 3; ++i)
+        QVERIFY(SearchManager::findNodeFWCheckUDP());
+
+    QCOMPARE(countFWCheckSearches(), 1);
+    QVERIFY(SearchManager::isNodeFWCheckUDPSearchActive());
+}
+
+void tst_KadSearchManager::cancelNodeFWCheckUDPSearch_removesAll()
+{
+    // Plant two FW-check searches directly, bypassing the cancel-first in
+    // findNodeFWCheckUDP(), plus an unrelated search that must survive.
+    UInt128 fwTarget1(uint32{600});
+    UInt128 fwTarget2(uint32{601});
+    UInt128 nodeTarget(uint32{602});
+    QVERIFY(SearchManager::prepareLookup(SearchType::NodeFwCheckUDP, true, fwTarget1));
+    QVERIFY(SearchManager::prepareLookup(SearchType::NodeFwCheckUDP, true, fwTarget2));
+    QVERIFY(SearchManager::prepareLookup(SearchType::Node, true, nodeTarget));
+    QCOMPARE(countFWCheckSearches(), 2);
+
+    SearchManager::cancelNodeFWCheckUDPSearch();
+
+    QCOMPARE(countFWCheckSearches(), 0);
+    QVERIFY(!SearchManager::isNodeFWCheckUDPSearchActive());
+    QVERIFY(SearchManager::alreadySearchingFor(nodeTarget));
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+void tst_KadSearchManager::startKeywordSearch(const QString& expression)
+{
+    auto* search = SearchManager::prepareFindKeywords(expression, 0, nullptr);
+    QVERIFY(search != nullptr);
+    QVERIFY(SearchManager::startSearch(search));
+}
+
+int tst_KadSearchManager::countFWCheckSearches()
+{
+    int count = 0;
+    for (const auto& [target, search] : SearchManager::getSearches()) {
+        if (search->getSearchType() == SearchType::NodeFwCheckUDP)
+            ++count;
+    }
+    return count;
 }
 
 QTEST_GUILESS_MAIN(tst_KadSearchManager)

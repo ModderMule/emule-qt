@@ -149,9 +149,16 @@ void tst_TcpConnect::initTestCase()
     QObject::connect(m_listenSocket, &ListenSocket::newClientConnection,
                      m_clientList, &ClientList::handleIncomingConnection);
 
-    // Track server-side clients created by the production handler
+    // Track server-side clients created by the production handler.
     QObject::connect(m_clientList, &ClientList::clientAdded,
                      this, [this](UpDownClient* c) { m_serverClients.append(c); });
+    // ...and stop tracking any the core retires itself. An accepted client is not
+    // necessarily ours to delete: once its OP_HELLO identifies it as a peer we already
+    // know, ClientList::attachToAlreadyKnown() hands the socket to that known client and
+    // the throwaway is de-listed and deleteLater()'d. Without this, qDeleteAll() below
+    // would double-delete it.
+    QObject::connect(m_clientList, &ClientList::clientRemoved,
+                     this, [this](UpDownClient* c) { m_serverClients.removeAll(c); });
 
     // 7. UploadBandwidthThrottler — flushes control packets like OP_HELLO
     m_throttler = new UploadBandwidthThrottler(this);

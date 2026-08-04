@@ -72,7 +72,7 @@ bool isProtocolHeader(uint8 byte)
 // ---------------------------------------------------------------------------
 
 DecryptResult EncryptedDatagramSocket::decryptReceivedClient(
-    uint8* buf, int len, uint32 ip,
+    uint8* buf, int len, const Address& senderIP,
     const uint8* userHash, const uint8* kadID, uint32 kadRecvKey)
 {
     DecryptResult result;
@@ -124,12 +124,25 @@ DecryptResult EncryptedDatagramSocket::decryptReceivedClient(
         case 1: // ED2K packet
             isKad = false;
             if (userHash != nullptr) {
-                uint8 keyData[23];
-                md4cpy(keyData, userHash);
-                pokeUInt32(&keyData[16], ip);
-                keyData[20] = kMagicValueUDP;
-                pokeUInt16(&keyData[21], randomKeyPart);
-                md5.calculate(keyData, sizeof keyData);
+                if (senderIP.isIPv6()) {
+                    // IPv6: MD5(<UserHash 16><IPv6 16><Magic 1><RandomKey 2>) = 35 bytes
+                    uint8 keyData[35];
+                    md4cpy(keyData, userHash);
+                    std::memcpy(&keyData[16], senderIP.ipv6Bytes().data(), 16);
+                    keyData[32] = kMagicValueUDP;
+                    pokeUInt16(&keyData[33], randomKeyPart);
+                    md5.calculate(keyData, sizeof keyData);
+                } else {
+                    // IPv4: MD5(<UserHash 16><IP 4><Magic 1><RandomKey 2>) = 23 bytes.
+                    // toUint32() reproduces the exact host-order value the old uint32 path
+                    // passed (from QHostAddress::toIPv4Address()), so IPv4 keys are unchanged.
+                    uint8 keyData[23];
+                    md4cpy(keyData, userHash);
+                    pokeUInt32(&keyData[16], senderIP.toUint32());
+                    keyData[20] = kMagicValueUDP;
+                    pokeUInt16(&keyData[21], randomKeyPart);
+                    md5.calculate(keyData, sizeof keyData);
+                }
             }
             break;
 
@@ -202,7 +215,7 @@ uint32 EncryptedDatagramSocket::encryptSendClient(
     uint8* buf, uint32 len,
     const uint8* clientHashOrKadID, bool isKad,
     uint32 receiverVerifyKey, uint32 senderVerifyKey,
-    uint32 publicIP)
+    const Address& publicIP)
 {
     uint8 kadRecKeyUsed = 0; // NodeID marker
     const uint16 randomKeyPart = getRandomUInt16();
@@ -223,10 +236,20 @@ uint32 EncryptedDatagramSocket::encryptSendClient(
         } else {
             return len; // cannot encrypt
         }
+    } else if (publicIP.isIPv6()) {
+        // IPv6: MD5(<UserHash 16><IPv6 16><Magic 1><RandomKey 2>) = 35 bytes
+        uint8 keyData[35];
+        md4cpy(keyData, clientHashOrKadID);
+        std::memcpy(&keyData[16], publicIP.ipv6Bytes().data(), 16);
+        keyData[32] = kMagicValueUDP;
+        pokeUInt16(&keyData[33], randomKeyPart);
+        md5.calculate(keyData, sizeof keyData);
     } else {
+        // IPv4: 23-byte key. toUint32() reproduces the exact host-order value the old
+        // uint32 publicIP path passed, so IPv4 obfuscation is byte-for-byte unchanged.
         uint8 keyData[23];
         md4cpy(keyData, clientHashOrKadID);
-        pokeUInt32(&keyData[16], publicIP);
+        pokeUInt32(&keyData[16], publicIP.toUint32());
         keyData[20] = kMagicValueUDP;
         pokeUInt16(&keyData[21], randomKeyPart);
         md5.calculate(keyData, sizeof keyData);

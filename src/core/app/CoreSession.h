@@ -13,6 +13,7 @@
 #include <QTimer>
 
 #include <memory>
+#include <vector>
 
 namespace eMule {
 
@@ -33,7 +34,8 @@ class SharedFileList;
 class Scheduler;
 class Statistics;
 class UDPSocket;
-class UPnPManager;
+class PortMapper;
+struct PortMapRequest;
 class UploadBandwidthThrottler;
 class UploadDiskIOThread;
 class UploadQueue;
@@ -52,6 +54,11 @@ public:
 
     [[nodiscard]] kad::Kademlia* kademlia() const { return m_kademlia.get(); }
     [[nodiscard]] CollectionKeys* collectionKeys() const { return m_collectionKeys.get(); }
+
+    /// Re-declare the desired port mappings. Call after anything that changes
+    /// which ports need forwarding — notably the web server starting or
+    /// stopping, which is what finally gives the webServerUPnP pref an effect.
+    void updatePortMappings();
 
 private slots:
     void onTimer();
@@ -83,9 +90,18 @@ private:
     void shutdownSearch();
     void initServerConnect();
     void shutdownServerConnect();
+    /// Select our public IPv6 and emit the privacy-address advisory. The advisory is
+    /// emitted here and nowhere else, which is what makes it once-per-run — the later
+    /// refresh in ServerConnect::initLocalIP() runs on every reconnect and stays silent.
+    void initLocalIPv6();
     void autoUpdateServerList();
-    void initUPnP();
-    void shutdownUPnP();
+    void initPortMapper();
+    void shutdownPortMapper();
+    /// Collect the mappings that should currently exist. Reads the ports the
+    /// sockets are actually bound to, not the preference values — with a random
+    /// or zero configured port those differ, and mapping the pref would forward
+    /// a port nothing is listening on.
+    [[nodiscard]] std::vector<PortMapRequest> buildPortMapRequests() const;
     void stopWorkerThreads();
 
     // Owned components
@@ -109,7 +125,7 @@ private:
     std::unique_ptr<LastCommonRouteFinder> m_lastCommonRouteFinder;
     std::unique_ptr<Scheduler> m_scheduler;
     std::unique_ptr<Statistics> m_statistics;
-    std::unique_ptr<UPnPManager> m_upnpManager;
+    std::unique_ptr<PortMapper> m_portMapper;
     std::unique_ptr<CollectionKeys> m_collectionKeys;
 };
 

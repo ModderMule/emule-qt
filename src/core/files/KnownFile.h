@@ -28,6 +28,7 @@ class Collection;
 class FileDataIO;
 class Packet;
 class UpDownClient;
+class SafeMemFile;
 
 // ---------------------------------------------------------------------------
 // FileNotifier — lightweight QObject signal emitter owned by KnownFile.
@@ -201,6 +202,27 @@ public:
 protected:
     bool loadTagsFromFile(FileDataIO& file);
     bool loadDateFromFile(FileDataIO& file);
+
+    // Extended Source Exchange: write one source's variable tag block (tagCount + tags),
+    // replacing the fixed serverIP/serverPort record so a source can carry its public IPv6.
+    // Shared by KnownFile::createSrcInfoPacket and PartFile::createSrcInfoPacket.
+    // @p peerSkipsUnknownTags is the *requester's* MODMISC_EXTXS_SKIPTAGS bit — only then may
+    // the user-hash and crypt-options tags be added; see the comment at the emission site.
+    void writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownClient* src,
+                                         bool peerSkipsUnknownTags) const;
+
+    /// The whole source-exchange packet format in one place: version/ExtSX selection,
+    /// header, source cap, the ID field, and either the tag block or the legacy
+    /// serverIP/userHash/crypt tail. Both createSrcInfoPacket overrides funnel through
+    /// here so the two sides cannot drift — they differ only in which clients they
+    /// offer (@p candidates) and how they judge one usable (@p eligible), since the
+    /// upload side reads upPartStatus() and the download side partStatus().
+    /// @param eligible  Called per candidate before the low-ID/self filters below;
+    ///                  return false to skip it. Returns nullptr if nothing qualifies.
+    [[nodiscard]] std::unique_ptr<Packet> buildSrcInfoPacket(
+        const UpDownClient* forClient, uint8 version,
+        const std::vector<UpDownClient*>& candidates,
+        const std::function<bool(const UpDownClient*)>& eligible) const;
 
     // Kad notes cache (re)serialization — shared by KnownFile (known.met) and
     // PartFile (.part.met) so both record formats use one implementation.

@@ -9,12 +9,13 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "prefs/Preferences.h"
+#include "net/LocalIPv6.h"
 #include "net/ServerSocket.h"
 #include "net/UDPSocket.h"
 #include "net/Packet.h"
 #include "protocol/Tag.h"
 #include "transfer/DownloadQueue.h"
-#include "upnp/UPnPManager.h"
+#include "portmap/PortMapper.h"
 #include "utils/Log.h"
 
 #include <QHostAddress>
@@ -262,7 +263,7 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     // A dynIP server that resolves leaves stale duplicate entries sharing its
     // address; collapse them (#18). MFC: CServerList::RemoveDuplicatesByAddress().
     connect(socket, &ServerSocket::dynIPResolved, this,
-            [this, socket](uint32 /*ip*/, const QString& /*hostname*/) {
+            [this, socket](const Address& /*addr*/, const QString& /*hostname*/) {
                 if (!theApp.serverList)
                     return;
                 if (Server* entry = resolveListEntry(socket))
@@ -304,6 +305,26 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                     }
                 }
 
+                client->tryToConnect();
+            });
+
+    // IPv6 LowID callback (S4): the server relays the requester's public IPv6 endpoint;
+    // we connect back over IPv6 exactly as the classic 0x35 handler does over IPv4.
+    connect(socket, &ServerSocket::callbackRequestedIPv6, this,
+            [](const Endpoint& requester) {
+                if (!theApp.clientList)
+                    return;
+                const Address& addr = requester.address();
+                if (theApp.clientList->isBannedClient(addr))
+                    return;
+
+                // clientID=1 = LowID marker (no IPv4). setUserAddress points both
+                // userAddress and connectAddress at the IPv6 so tryToConnect dials v6.
+                auto* client = new UpDownClient(requester.port(), 1, 0, 0, nullptr);
+                client->setUserAddress(addr);
+                client->setUserIPv6(addr);
+                client->setOpenIPv6(true);
+                theApp.clientList->addClient(client);
                 client->tryToConnect();
             });
 
@@ -828,7 +849,18 @@ void ServerConnect::initLocalIP()
     // different addresses — an accepted, low-impact divergence.
     m_localIP = 0;
 
-    // Use bind address if configured
+    // IPv6 public address refresh (independent of the IPv4 selection below). Unlike
+    // IPv4-behind-NAT, a local global-unicast IPv6 is generally reachable directly, so
+    // we use one as our public IPv6. Selection prefers a stable address over an RFC 4941
+    // temporary one and honours the publicIPv6Override pref — see net/LocalIPv6.h.
+    // Running it here (per connect) picks up a prefix renumber without a restart; it is
+    // silent unless the selected address actually changed. The startup advisory is
+    // emitted once from CoreSession::initLocalIPv6().
+    updatePublicIPv6(scanLocalIPv6());
+
+    // Use bind address if configured. Deliberately IPv4-only: an IPv6 literal here is
+    // skipped so the fallback below still supplies the ED2K IPv4 identity that the
+    // LowID checks depend on. Pin a public IPv6 with publicIPv6Override instead.
     if (!m_config.bindAddress.isEmpty()) {
         QHostAddress bindAddr(m_config.bindAddress);
         if (!bindAddr.isNull() && bindAddr.protocol() == QAbstractSocket::IPv4Protocol) {
@@ -864,8 +896,19 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     // Listening port
     data.writeUInt16(m_config.listenPort);
 
-    // Tag count = 4
-    data.writeUInt32(4);
+    // IPv6: advertise our public IPv6 to the server so it can publish us as a v6 source
+    // and mark this session sentinel-safe. This is safe against legacy servers (they skip
+    // the unknown login tag) AND is only sent alongside the inline-sentinel parser
+    // (DownloadQueue::parseServerSourceBlock), per the S1/S3a coordination rule.
+    // Same advertise gate as the hello and the Kad source publish. Within a session the
+    // probe verdict always arrives after login, so this never blocks the first attempt;
+    // clearPublicIPv6Observed() zeroes the status on disconnect, so a fresh login re-sends
+    // the tag and the server can probe us again.
+    const Address publicIPv6 = theApp.publicIPv6();
+    const bool sendIPv6Tag = theApp.shouldAdvertisePublicIPv6();
+
+    // Tag count — base 4, plus the CT_MOD_IP_V6 tag when we have a public IPv6.
+    data.writeUInt32(sendIPv6Tag ? 5 : 4);
 
     // Tag: CT_NAME — user nick
     // Use old-format tags (writeTagToFile) in the login packet. The server hasn't
@@ -890,12 +933,21 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
 
     uint32 srvCaps = SRVCAP_NEWTAGS | SRVCAP_LARGEFILES | SRVCAP_UNICODE | cryptFlags;
     srvCaps |= SRVCAP_ZLIB;
+    if (sendIPv6Tag)
+        srvCaps |= SRVCAP_IPV6;   // "I speak the IPv6 server extension"
     Tag tagFlags(static_cast<uint8>(CT_SERVER_FLAGS), srvCaps);
     tagFlags.writeTagToFile(data);
 
     // Tag: CT_EMULE_VERSION
     Tag tagEmuleVer(static_cast<uint8>(CT_EMULE_VERSION), m_config.emuleVersionTag);
     tagEmuleVer.writeTagToFile(data);
+
+    // Tag: CT_MOD_IP_V6 — our public IPv6 as a 16-byte hash tag (old format: the server
+    // hasn't parsed SRVCAP_NEWTAGS yet). Only present when sendIPv6Tag (tag count is 5).
+    if (sendIPv6Tag) {
+        Tag tagIPv6(static_cast<uint8>(CT_MOD_IP_V6), publicIPv6.ipv6Bytes().data());
+        tagIPv6.writeTagToFile(data);
+    }
 
     auto packet = std::make_unique<Packet>(data);
     packet->opcode = OP_LOGINREQUEST;
@@ -951,8 +1003,8 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
             const bool firstRetry = (m_smartIdState == 1);
             ++m_smartIdState;
             m_smartIdState = (m_smartIdState > 2) ? 0 : m_smartIdState;  // 1→2, 2→0
-            if (firstRetry && theApp.upnpManager)
-                theApp.upnpManager->checkAndRefresh();  // one-shot UPnP re-map
+            if (firstRetry && theApp.portMapper)
+                theApp.portMapper->reprobe();   // one-shot re-map, as MFC does
             if (!socket->isManualSingleConnect()) {
                 logInfo(QStringLiteral("Smart LowID: got LowID from server, trying another"));
                 // Suppress promotion (srchybrid's `break`), then reap this socket
@@ -986,6 +1038,9 @@ void ServerConnect::clearServerIdentity()
     // which is what makes clearing safe here.
     setClientID(0);
     theApp.setPublicIP(0);
+    // The server-observed IPv6 (and its reachability verdict) were this server's
+    // observation of us; drop them too so a stale value can't outlive the session.
+    theApp.clearPublicIPv6Observed();
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,8 +1057,9 @@ Server* ServerConnect::resolveListEntry(ServerSocket* socket)
     // Prefer an exact IP+TCP-port match; fall back to the address string (which
     // handles a dynIP server whose numeric IP may have changed). MFC uses
     // GetServerByAddress() (a DN+port lookup) for the same purpose.
-    Server* entry = theApp.serverList->findByIPTcp(
-        connected->ipAddress().toNetworkUint32(), connected->port());
+    // Address-typed: the uint32 form is 0 for an IPv6 server, which would alias it to
+    // whichever entry has a null address instead of finding the right one.
+    Server* entry = theApp.serverList->findByIPTcp(connected->ipAddress(), connected->port());
     if (!entry)
         entry = theApp.serverList->findByAddress(connected->address(), connected->port());
     return entry;
@@ -1070,11 +1126,14 @@ void ServerConnect::onServerMessage(ServerSocket* socket, const QString& message
         if (dynStart >= 0) {
             const qsizetype dynEnd = line.indexOf(QLatin1Char(']'), dynStart);
             if (dynEnd > dynStart) {
-                QString dn = line.mid(dynStart + 9, dynEnd - (dynStart + 9)).trimmed();
-                const qsizetype colon = dn.indexOf(QLatin1Char(':'));
-                if (colon >= 0)
-                    dn = dn.left(colon);
-                if (!dn.isEmpty() && QHostAddress(dn).isNull()) {
+                const QString dynField = line.mid(dynStart + 9, dynEnd - (dynStart + 9)).trimmed();
+                // parseHostPort strips an optional ":port" without truncating an IPv6
+                // literal at its first colon (which used to leave e.g. "2001", a string
+                // QHostAddress rejects — so it was stored as if it were a hostname).
+                QString dn = dynField;
+                if (const auto hp = parseHostPort(dynField); hp)
+                    dn = hp->host;
+                if (!dn.isEmpty() && Address::fromString(dn).isNull()) {
                     if (Server* entry = resolveListEntry(socket)) {
                         if (entry->dynIP() != dn) {
                             entry->setDynIP(dn);

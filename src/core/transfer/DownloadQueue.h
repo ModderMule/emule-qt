@@ -7,6 +7,8 @@
 /// add/remove, priority sorting, periodic processing, source management
 /// with IPFilter/dead-source/dedup checks, and server UDP source queries.
 
+#include "client/ClientStateDefs.h"
+#include "net/Address.h"
 #include "utils/EntityList.h"
 #include "utils/Types.h"
 
@@ -14,6 +16,7 @@
 #include <QStringList>
 
 #include <deque>
+#include <memory>
 #include <vector>
 
 class tst_DownloadQueue;  // fwd-decl for the white-box unit-test friend below
@@ -21,7 +24,7 @@ class tst_DownloadQueue;  // fwd-decl for the white-box unit-test friend below
 namespace eMule {
 
 class ClientList;
-class Endpoint;
+class HostResolver;
 class IPFilter;
 class KnownFileList;
 class PartFile;
@@ -30,6 +33,7 @@ class Server;
 class ServerConnect;
 class SharedFileList;
 class UpDownClient;
+struct ED2KLinkSource;
 
 class DownloadQueue : public EntityList<PartFile> {
     Q_OBJECT
@@ -70,6 +74,17 @@ public:
     bool checkAndAddSource(PartFile* file, UpDownClient* source);
     void removeSource(UpDownClient* source);
 
+    /// Seed @p file with the source hints carried by an eD2K link.
+    ///
+    /// IP literals are added immediately; hostnames are resolved asynchronously (A and
+    /// AAAA) and the file is re-looked-up by hash when the answer arrives, so a
+    /// meanwhile-removed download is handled safely. Link text is untrusted, so the
+    /// number of DNS lookups one link may trigger is capped (kMaxLinkDnsSources).
+    void addLinkSources(PartFile* file, const std::vector<ED2KLinkSource>& sources);
+
+    /// Upper bound on hostname lookups triggered by a single link.
+    static constexpr int kMaxLinkDnsSources = 4;
+
     /// Add a Kad-discovered file source. Finds the matching PartFile by hash
     /// and stores the source info for later connection.
     /// sourceType: 1/4=non-firewalled, 3/5=firewalled+buddy, 6=direct UDP callback.
@@ -77,7 +92,9 @@ public:
                             uint32 ip, uint16 tcpPort,
                             uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
                             uint8 sourceType, const uint8* buddyHash,
-                            const uint8* clientHash, uint16 udpPort);
+                            const uint8* clientHash, uint16 udpPort,
+                            const uint8* sourceIPv6 = nullptr,
+                            const uint8* buddyIPv6 = nullptr);
 
     /// Store a Kad "notes" search result (filename + rating + comment) on the
     /// matching file — an in-progress download or an already-completed known file.
@@ -145,6 +162,27 @@ private:
                                bool obfuscated, uint8 cryptFlags,
                                const uint8* userHash, bool hasHash,
                                uint32 srvIP, uint16 srvPort);
+    // S3a inline-sentinel counterpart: build a source from an inline IPv6 (16 bytes).
+    void addServerSourceClientIPv6(PartFile* file, const uint8* ipv6, uint16 port,
+                                   bool obfuscated, uint8 cryptFlags,
+                                   const uint8* userHash, bool hasHash);
+
+    // Shared source construction for the server and link paths. Vetting stays with the
+    // callers, since each ingress trusts its input differently.
+    // @param ed2kUserId  ED2K user ID: network-order IPv4 for a HighID, the raw low
+    //                    value for a LowID, or 1 (the LowID marker) when there is no
+    //                    usable IPv4 at all.
+    // @param v6          IPv6 user address, or null. When @p ed2kUserId is the marker,
+    //                    userAddress/connectAddress point at it so the peer is dialed
+    //                    over IPv6 directly.
+    UpDownClient* makeSourceClient(PartFile* file, uint32 ed2kUserId, const Address& v6,
+                                   uint16 port, SourceFrom from,
+                                   uint32 srvIP = 0, uint16 srvPort = 0);
+
+    // One vetted peer source from a link (either or both families).
+    void addLinkPeerSource(PartFile* file, const Address& v4, const Address& v6, uint16 port);
+    // One HTTP source from an `s=<url>` link parameter.
+    void addLinkUrlSource(PartFile* file, const ED2KLinkSource& source);
 
     // Global UDP source acquisition — port of CDownloadQueue::SendNextUDPPacket &
     // friends. Walks the server list ONCE per pass (non-wrapping getSuccServer),
@@ -163,6 +201,7 @@ private:
     void onEntityAdded(PartFile* file) override;
     void onEntityRemoved(PartFile* file) override;
 
+    HostResolver* m_hostResolver = nullptr;   // created on first hostname source
     SharedFileList* m_sharedFileList = nullptr;
     KnownFileList* m_knownFileList = nullptr;
     IPFilter* m_ipFilter = nullptr;

@@ -2,6 +2,7 @@
 #include "panels/KadPanel.h"
 
 #include "app/IpcClient.h"
+#include "controls/AbstractListView.h"
 #include "controls/ContactsGraph.h"
 #include "controls/KadContactHistogram.h"
 #include "controls/KadContactsModel.h"
@@ -9,9 +10,11 @@
 #include "controls/KadSearchesModel.h"
 
 #include "app/UiState.h"
+#include "utils/IpcFeedback.h"
 
 #include "IpcMessage.h"
 
+#include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
 
 
@@ -27,9 +30,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
+#include <QPointer>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScrollBar>
@@ -180,43 +181,44 @@ void KadPanel::onBootstrapClicked()
         m_bootstrapBtn->setEnabled(false);
         m_bootstrapBtn->setText(tr("Downloading..."));
 
-        auto* nam = new QNetworkAccessManager(this);
-        auto* reply = nam->get(QNetworkRequest(QUrl(url)));
-        connect(reply, &QNetworkReply::finished, this, [this, reply, nam]() {
-            reply->deleteLater();
-            nam->deleteLater();
-            m_bootstrapBtn->setEnabled(true);
-            m_bootstrapBtn->setText(tr("Bootstrap"));
+        // nodes.dat mirrors are commonly gzipped; unwrapping is transparent for a plain one.
+        eMule::HttpFileDownload::Options opts;
+        opts.preferredNames = {QStringLiteral("nodes.dat")};
 
-            if (reply->error() != QNetworkReply::NoError) {
-                QMessageBox::warning(this, tr("Kademlia"),
-                    tr("Failed to download nodes.dat: %1").arg(reply->errorString()));
-                return;
-            }
+        eMule::HttpFileDownload::get(this, QUrl(url), opts,
+            [this](bool ok, const QByteArray& data, const QString& entryName,
+                   const QString& error) {
+                Q_UNUSED(entryName);
+                m_bootstrapBtn->setEnabled(true);
+                m_bootstrapBtn->setText(tr("Bootstrap"));
 
-            const QByteArray data = reply->readAll();
-            if (data.isEmpty()) {
-                QMessageBox::warning(this, tr("Kademlia"),
-                    tr("Downloaded nodes.dat is empty."));
-                return;
-            }
+                if (!ok) {
+                    QMessageBox::warning(this, tr("Kademlia"),
+                        tr("Failed to download nodes.dat: %1").arg(error));
+                    return;
+                }
+                if (data.isEmpty()) {
+                    QMessageBox::warning(this, tr("Kademlia"),
+                        tr("Downloaded nodes.dat is empty."));
+                    return;
+                }
 
-            const QString path = QDir(thePrefs.configDir()).filePath(QStringLiteral("nodes.dat"));
-            QFile f(path);
-            if (!f.open(QIODevice::WriteOnly)) {
-                QMessageBox::warning(this, tr("Kademlia"),
-                    tr("Failed to save nodes.dat: %1").arg(f.errorString()));
-                return;
-            }
-            f.write(data);
-            f.close();
+                const QString path = QDir(thePrefs.configDir()).filePath(QStringLiteral("nodes.dat"));
+                QFile f(path);
+                if (!f.open(QIODevice::WriteOnly)) {
+                    QMessageBox::warning(this, tr("Kademlia"),
+                        tr("Failed to save nodes.dat: %1").arg(f.errorString()));
+                    return;
+                }
+                f.write(data);
+                f.close();
 
-            // Bootstrap from the downloaded nodes.dat file
-            IpcMessage msg(IpcMsgType::BootstrapKad);
-            msg.append(QString());   // empty IP = bootstrap from nodes.dat file
-            msg.append(qint64(0));  // port 0
-            m_ipc->sendRequest(std::move(msg));
-        });
+                // Bootstrap from the downloaded nodes.dat file
+                IpcMessage msg(IpcMsgType::BootstrapKad);
+                msg.append(QString());   // empty IP = bootstrap from nodes.dat file
+                msg.append(qint64(0));  // port 0
+                m_ipc->sendRequest(std::move(msg));
+            });
     }
 }
 
@@ -270,7 +272,11 @@ void KadPanel::onRecheckFirewall()
         return;
 
     IpcMessage msg(IpcMsgType::RecheckFirewall);
-    m_ipc->sendRequest(std::move(msg));
+    QPointer<KadPanel> self(this);
+    m_ipc->sendRequest(std::move(msg), [self](const IpcMessage& resp) {
+        if (self)
+            IpcFeedback::checkOrWarn(resp, self, tr("Kademlia"));
+    });
 }
 
 void KadPanel::onSearchSelectionChanged()
@@ -353,7 +359,8 @@ QWidget* KadPanel::createContactsPanel()
     auto* proxyModel = new QSortFilterProxyModel(this);
     proxyModel->setSourceModel(m_contactsModel);
     proxyModel->setSortRole(Qt::UserRole);
-    m_contactsView = new QTreeView;
+    auto* contactsView = new ListTreeView;
+    m_contactsView = contactsView;
     m_contactsView->setModel(proxyModel);
     m_contactsView->setRootIsDecorated(false);
     m_contactsView->setAlternatingRowColors(true);
@@ -366,8 +373,8 @@ QWidget* KadPanel::createContactsPanel()
     auto* header = m_contactsView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(200);
-    header->resizeSection(KadContactsModel::ColStatus, 70);
-    theUiState.bindHeaderView(header, QStringLiteral("kadContacts"));
+    // Status, Client ID, Distance.
+    contactsView->bindColumns(QStringLiteral("kadContacts"), {70, 200, 200});
 
     // Compact monospace font for hex/binary display
     QFont monoFont(QStringLiteral("Courier New"), 9);
@@ -496,7 +503,8 @@ QWidget* KadPanel::createSearchesPanel()
     auto* searchProxy = new QSortFilterProxyModel(this);
     searchProxy->setSourceModel(m_searchesModel);
     searchProxy->setSortRole(Qt::UserRole);
-    m_searchesView = new QTreeView;
+    auto* searchesView = new ListTreeView;
+    m_searchesView = searchesView;
     m_searchesView->setModel(searchProxy);
     m_searchesView->setRootIsDecorated(false);
     m_searchesView->setAlternatingRowColors(true);
@@ -507,7 +515,9 @@ QWidget* KadPanel::createSearchesPanel()
 
     auto* header = m_searchesView->header();
     header->setStretchLastSection(true);
-    theUiState.bindHeaderView(header, QStringLiteral("kadSearches"));
+    // Number, Key, Type, Name, Status, Load, Packets Sent, Responses.
+    searchesView->bindColumns(QStringLiteral("kadSearches"),
+        {60, 170, 100, 240, 100, 60, 90, 90});
 
     layout->addWidget(m_searchesView);
 

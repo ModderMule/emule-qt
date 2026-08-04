@@ -22,6 +22,15 @@ private slots:
     void construct_ipPort();
     void construct_fromStream();
     void construct_copy();
+    void construct_fromAddress();
+    void fromAddressString_classifies();
+    void addressWithPort_bracketsIPv6();
+
+    // IPv6 persistence (local server.met extension)
+    void addTag_ipv6();
+    void addTag_ipv6_dynIPWins();
+    void writeTags_ipv6RoundTrip();
+    void writeTags_noIPv6TagForIPv4();
 
     // Tag deserialization
     void addTag_serverName();
@@ -189,6 +198,116 @@ void tst_Server::addTag_dynIP()
     srv.addTagFromFile(tag);
     QCOMPARE(srv.dynIP(), QStringLiteral("server.example.com"));
     QVERIFY(srv.ipAddress().isNull());  // IP reset when dynIP is set
+}
+
+void tst_Server::construct_fromAddress()
+{
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8::1"));
+    Server srv(v6, 4661);
+    QCOMPARE(srv.ipAddress(), v6);
+    QVERIFY(srv.ipAddress().isIPv6());
+    QCOMPARE(srv.port(), uint16{4661});
+    QVERIFY(!srv.hasDynIP());
+    QCOMPARE(srv.address(), QStringLiteral("2001:db8::1"));   // unbracketed: dedup key
+}
+
+void tst_Server::fromAddressString_classifies()
+{
+    // IPv4 literal
+    auto v4 = Server::fromAddressString(QStringLiteral("8.8.8.8"), 4661);
+    QVERIFY(v4 != nullptr);
+    QVERIFY(v4->ipAddress().isIPv4());
+    QVERIFY(!v4->hasDynIP());     // a literal must not become a dynIP: no DNS at connect
+
+    // IPv6 literal, bare and bracketed
+    for (const char* text : {"2001:db8::1", "[2001:db8::1]"}) {
+        auto v6 = Server::fromAddressString(QString::fromLatin1(text), 4661);
+        QVERIFY(v6 != nullptr);
+        QVERIFY(v6->ipAddress().isIPv6());
+        QVERIFY(!v6->hasDynIP());
+        QCOMPARE(v6->address(), QStringLiteral("2001:db8::1"));
+    }
+
+    // Hostname
+    auto dyn = Server::fromAddressString(QStringLiteral("srv.example.com"), 4661);
+    QVERIFY(dyn != nullptr);
+    QVERIFY(dyn->ipAddress().isNull());
+    QCOMPARE(dyn->dynIP(), QStringLiteral("srv.example.com"));
+
+    // Empty
+    QVERIFY(Server::fromAddressString(QString(), 4661) == nullptr);
+    QVERIFY(Server::fromAddressString(QStringLiteral("   "), 4661) == nullptr);
+}
+
+void tst_Server::addressWithPort_bracketsIPv6()
+{
+    QCOMPARE(Server(Address::fromString(QStringLiteral("2001:db8::1")), 4661).addressWithPort(),
+             QStringLiteral("[2001:db8::1]:4661"));
+    QCOMPARE(Server(Address::fromString(QStringLiteral("8.8.8.8")), 4661).addressWithPort(),
+             QStringLiteral("8.8.8.8:4661"));
+
+    Server dyn(uint32{0}, 4661);
+    dyn.setDynIP(QStringLiteral("srv.example.com"));
+    QCOMPARE(dyn.addressWithPort(), QStringLiteral("srv.example.com:4661"));
+}
+
+void tst_Server::addTag_ipv6()
+{
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8::1"));
+    Server srv(uint32{0}, 4661);   // header IP is 0 for an IPv6 server
+    srv.addTagFromFile(Tag(ST_IPV6, v6.ipv6Bytes().data()));
+    QCOMPARE(srv.ipAddress(), v6);
+
+    // A second tag must not overwrite the first.
+    const Address other = Address::fromString(QStringLiteral("2001:db8::2"));
+    srv.addTagFromFile(Tag(ST_IPV6, other.ipv6Bytes().data()));
+    QCOMPARE(srv.ipAddress(), v6);
+}
+
+void tst_Server::addTag_ipv6_dynIPWins()
+{
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8::1"));
+    Server srv(uint32{0}, 4661);
+    srv.addTagFromFile(Tag(ST_DYNIP, QStringLiteral("srv.example.com")));
+    srv.addTagFromFile(Tag(ST_IPV6, v6.ipv6Bytes().data()));
+    QCOMPARE(srv.dynIP(), QStringLiteral("srv.example.com"));
+    QVERIFY(srv.ipAddress().isNull());   // dynIP is resolved at connect time
+}
+
+void tst_Server::writeTags_ipv6RoundTrip()
+{
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8::1"));
+    Server original(v6, 4661);
+    original.setName(QStringLiteral("v6 server"));
+
+    SafeMemFile f;
+    const uint32 tagCount = original.writeTags(f);
+
+    f.seek(0, 0);
+    Server restored(uint32{0}, 4661);   // as loaded from server.met: header IP 0
+    for (uint32 i = 0; i < tagCount; ++i) {
+        Tag tag(f, true);
+        restored.addTagFromFile(tag);
+    }
+
+    QCOMPARE(restored.ipAddress(), v6);
+    QCOMPARE(restored.name(), original.name());
+    QVERIFY(!restored.hasDynIP());
+}
+
+void tst_Server::writeTags_noIPv6TagForIPv4()
+{
+    Server v4(0x01020304, 4661);
+    v4.setName(QStringLiteral("v4 server"));
+
+    SafeMemFile f;
+    const uint32 tagCount = v4.writeTags(f);
+
+    f.seek(0, 0);
+    for (uint32 i = 0; i < tagCount; ++i) {
+        Tag tag(f, true);
+        QVERIFY(tag.nameId() != ST_IPV6);
+    }
 }
 
 void tst_Server::addTag_maxUsers()

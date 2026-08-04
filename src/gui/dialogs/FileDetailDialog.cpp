@@ -4,7 +4,10 @@
 
 #include "FileDetailDialog.h"
 #include "ArchivePreviewPanel.h"
+#include "app/IpcClient.h"
+#include "controls/AbstractListView.h"
 #include "prefs/Preferences.h"
+#include "utils/IpcFeedback.h"
 
 #include <QCborArray>
 #include <QCheckBox>
@@ -18,9 +21,11 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLocale>
+#include <QPointer>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QTextEdit>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -253,14 +258,16 @@ QWidget* FileDetailDialog::createFileNamesTab(const QCborMap& d)
     auto* page = new QWidget;
     auto* layout = new QVBoxLayout(page);
 
-    m_fileNamesTree = new QTreeWidget;
+    auto* fileNamesTree = new ListTreeWidget;
+    m_fileNamesTree = fileNamesTree;
     m_fileNamesTree->setHeaderLabels({tr("File Name"), tr("Sources")});
     m_fileNamesTree->setRootIsDecorated(false);
     m_fileNamesTree->setAlternatingRowColors(true);
     m_fileNamesTree->setSortingEnabled(true);
-    m_fileNamesTree->header()->setStretchLastSection(false);
-    m_fileNamesTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_fileNamesTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    // Interactive, not Stretch/ResizeToContents: Qt-owned widths can't be
+    // resized by the user, so there would be nothing to remember.
+    m_fileNamesTree->header()->setStretchLastSection(true);
+    fileNamesTree->bindColumns(QStringLiteral("fileDetailNames"), {380, 80});
 
     m_fileNamesEmptyLabel = new QLabel(
         tr("No alternative file names reported by sources. "
@@ -292,14 +299,14 @@ QWidget* FileDetailDialog::createCommentsTab(const QCborMap& d)
     auto* page = new QWidget;
     auto* layout = new QVBoxLayout(page);
 
-    m_commentsTree = new QTreeWidget;
+    auto* commentsTree = new ListTreeWidget;
+    m_commentsTree = commentsTree;
     m_commentsTree->setHeaderLabels({tr("User Name"), tr("Rating"), tr("Comment")});
     m_commentsTree->setRootIsDecorated(false);
     m_commentsTree->setAlternatingRowColors(true);
     m_commentsTree->setSortingEnabled(true);
     m_commentsTree->header()->setStretchLastSection(true);
-    m_commentsTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    m_commentsTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    commentsTree->bindColumns(QStringLiteral("fileDetailComments"), {160, 80, 320});
 
     m_commentsEmptyLabel =
         new QLabel(tr("No comments or ratings available for this file."));
@@ -435,15 +442,14 @@ QWidget* FileDetailDialog::createMetadataTab(const QCborMap& d)
         return page;
     }
 
-    auto* tree = new QTreeWidget;
+    auto* tree = new ListTreeWidget;
     tree->setHeaderLabels({tr("Tag Name"), tr("Type"), tr("Value")});
     tree->setRootIsDecorated(false);
     tree->setAlternatingRowColors(true);
     tree->setSortingEnabled(true);
     tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     tree->header()->setStretchLastSection(true);
-    tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    tree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    tree->bindColumns(QStringLiteral("fileDetailTags"), {200, 100, 260});
 
     for (const auto& entry : tagArr) {
         const QCborMap t = entry.toMap();
@@ -486,11 +492,8 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
     auto* page = new QWidget;
     auto* layout = new QVBoxLayout(page);
 
-    // Store link variants
-    m_ed2kLink         = str(d, QLatin1StringView("ed2kLink"));
-    m_ed2kLinkHashset  = str(d, QLatin1StringView("ed2kLinkHashset"));
-    m_ed2kLinkHTML     = str(d, QLatin1StringView("ed2kLinkHTML"));
-    m_ed2kLinkHostname = str(d, QLatin1StringView("ed2kLinkHostname"));
+    m_ed2kLink = str(d, QLatin1StringView("ed2kLink"));
+    m_fileHash = str(d, QLatin1StringView("hash"));
 
     // Link display
     m_linkEdit = new QTextEdit;
@@ -505,6 +508,7 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
 
     m_chkHashset = new QCheckBox(tr("Include Hashset"));
     m_chkHostname = new QCheckBox(tr("Include Hostname"));
+    m_chkHostname->setToolTip(tr("Add your hostname or public IPv6 as a source"));
     m_chkHtml = new QCheckBox(tr("HTML Format"));
 
     groupLayout->addWidget(m_chkHashset);
@@ -517,6 +521,11 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
     connect(m_chkHashset,  &QCheckBox::checkStateChanged, this, updateLink);
     connect(m_chkHostname, &QCheckBox::checkStateChanged, this, updateLink);
     connect(m_chkHtml,     &QCheckBox::checkStateChanged, this, updateLink);
+
+    // Ask for the link once the owning panel has wired requestEd2kLink() up (it connects
+    // immediately after construction, so a zero-timer lands after that but before any
+    // user interaction). This also settles the Hostname checkbox's enabled state.
+    QTimer::singleShot(0, this, [this] { updateEd2kLinkDisplay(); });
 
     // Copy button
     auto* btnLayout = new QHBoxLayout;
@@ -547,28 +556,117 @@ QWidget* FileDetailDialog::createArchivePreviewTab(const QCborMap& d)
 
 void FileDetailDialog::updateEd2kLinkDisplay()
 {
-    const bool hashset  = m_chkHashset->isChecked();
-    const bool hostname = m_chkHostname->isChecked();
-    const bool html     = m_chkHtml->isChecked();
+    // Ask the daemon for this exact flag combination. Picking between pre-generated
+    // variants used to drop the hostname whenever the hashset box was ticked, and the
+    // GUI cannot build the link itself: only the core knows what may be advertised.
+    if (!m_fileHash.isEmpty()) {
+        emit requestEd2kLink(m_fileHash, m_chkHashset->isChecked(),
+                             m_chkHostname->isChecked(), m_chkHtml->isChecked());
+        return;
+    }
 
-    // Pick the appropriate pre-generated link.
-    // The variants are independent flags; we combine by choosing the most
-    // specific match. Since the daemon generates 4 fixed variants, we
-    // prioritize: hashset > hostname > html > plain.
-    QString link;
-    if (hashset)
-        link = m_ed2kLinkHashset;
-    else if (hostname)
-        link = m_ed2kLinkHostname;
-    else if (html)
-        link = m_ed2kLinkHTML;
+    // No hash in the details map (older core): fall back to the plain variant.
+    if (m_chkHtml->isChecked())
+        m_linkEdit->setHtml(m_ed2kLink);
     else
-        link = m_ed2kLink;
+        m_linkEdit->setPlainText(m_ed2kLink);
+}
 
-    if (html)
+void FileDetailDialog::applyEd2kLink(const QString& link, bool sourceHintAvailable)
+{
+    if (m_chkHtml->isChecked())
         m_linkEdit->setHtml(link);
     else
         m_linkEdit->setPlainText(link);
+
+    m_chkHostname->setEnabled(sourceHintAvailable);
+    if (!sourceHintAvailable && m_chkHostname->isChecked())
+        m_chkHostname->setChecked(false);   // re-triggers the request
+}
+
+// ── shared GetEd2kLink wiring ──────────────────────────────────────────
+
+void connectEd2kLinkRequests(FileDetailDialog* dialog, IpcClient* ipc)
+{
+    if (!dialog || !ipc)
+        return;
+
+    // One counter per dialog: a reply that was overtaken by a later request must not
+    // overwrite the newer link text.
+    auto generation = std::make_shared<int>(0);
+    QPointer<FileDetailDialog> dlgPtr(dialog);
+
+    QObject::connect(dialog, &FileDetailDialog::requestEd2kLink, dialog,
+        [ipc, generation, dlgPtr](const QString& hash, bool hashset,
+                                  bool sourceHint, bool html) {
+            if (!ipc->isConnected())
+                return;
+            const int myGeneration = ++(*generation);
+
+            Ipc::IpcMessage req(Ipc::IpcMsgType::GetEd2kLink);
+            req.append(QCborArray{hash});   // the request is batched; this dialog wants one
+            req.append(hashset);
+            req.append(sourceHint);
+            req.append(html);
+            ipc->sendRequest(std::move(req),
+                [generation, myGeneration, dlgPtr](const Ipc::IpcMessage& resp) {
+                    if (!dlgPtr || myGeneration != *generation)
+                        return;
+                    if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+                        return;
+                    const QCborArray result = resp.fieldArray(1);
+                    // Empty means the daemon no longer knows the hash — leave whatever
+                    // text the dialog already shows rather than blanking it.
+                    const QString link = result.at(0).toArray().at(0).toString();
+                    if (!link.isEmpty())
+                        dlgPtr->applyEd2kLink(link, result.at(1).toBool());
+                });
+        });
+}
+
+// ── shared SearchKadNotes wiring ───────────────────────────────────────
+
+void connectKadNotesSearch(FileDetailDialog* dialog, IpcClient* ipc,
+                           Ipc::IpcMsgType detailsRequest)
+{
+    if (!dialog || !ipc)
+        return;
+
+    QPointer<FileDetailDialog> dlgPtr(dialog);
+
+    QObject::connect(dialog, &FileDetailDialog::searchKadNotes, dialog,
+        [ipc, dlgPtr, detailsRequest](const QString& fileHash, const QString& fileName) {
+            if (!ipc->isConnected())
+                return;
+
+            Ipc::IpcMessage kadMsg(Ipc::IpcMsgType::SearchKadNotes);
+            kadMsg.append(fileHash);
+            kadMsg.append(fileName);
+            ipc->sendRequest(std::move(kadMsg),
+                [ipc, dlgPtr, detailsRequest, fileHash](const Ipc::IpcMessage& resp) {
+                    if (!dlgPtr)
+                        return;
+                    // Kad down, or a notes lookup for this file is already running.
+                    if (!IpcFeedback::checkOrWarn(resp, dlgPtr,
+                                                  FileDetailDialog::tr("Search Kad")))
+                        return;
+
+                    // Kad notes arrive asynchronously over UDP; re-fetch details a couple
+                    // of times so the open dialog picks up the new File Names / Comments.
+                    auto refresh = [ipc, dlgPtr, detailsRequest, fileHash]() {
+                        if (!dlgPtr || !ipc->isConnected())
+                            return;
+                        Ipc::IpcMessage req(detailsRequest);
+                        req.append(fileHash);
+                        ipc->sendRequest(std::move(req), [dlgPtr](const Ipc::IpcMessage& r) {
+                            if (dlgPtr && r.fieldBool(0))
+                                dlgPtr->applyDetails(r.field(1).toMap());
+                        });
+                    };
+                    QTimer::singleShot(8000, dlgPtr, refresh);
+                    QTimer::singleShot(20000, dlgPtr, refresh);
+                });
+        });
 }
 
 } // namespace eMule

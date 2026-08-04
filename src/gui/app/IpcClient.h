@@ -12,6 +12,7 @@
 
 #include <QHostAddress>
 #include <QObject>
+#include <QStringList>
 #include <QTcpSocket>
 #include <QTimer>
 
@@ -70,6 +71,17 @@ public:
     /// Returns the sequence ID used for this request.
     int sendRequest(Ipc::IpcMessage msg, ResponseCallback callback = nullptr);
 
+    /// Fan one request per hash out to the daemon, then run @p onAllDone once the last
+    /// reply lands. @p build makes the message for a hash, so callers can attach their own
+    /// payload (a priority, a category, …).
+    ///
+    /// @p onAllDone runs at most once, and is skipped when @p context has been destroyed
+    /// by then. A request that cannot be queued counts as completed, so a mid-batch
+    /// disconnect can never leave the completion hanging.
+    void sendBatchRequest(const QStringList& hashes,
+                          const std::function<Ipc::IpcMessage(const QString& hash)>& build,
+                          QObject* context, std::function<void()> onAllDone);
+
     /// Send a Shutdown request to the daemon, then disconnect.
     /// Use this when the GUI launched the daemon and is about to close.
     void sendShutdown();
@@ -101,6 +113,8 @@ signals:
     void chatMessageReceived(const Ipc::IpcMessage& msg);
     void friendListChanged(const Ipc::IpcMessage& msg);
     void clientSharedFilesReceived(const Ipc::IpcMessage& msg);
+    /// Port-mapping status changed (protocol chosen, mapping gained or lost).
+    void portMapStatusChanged(const Ipc::IpcMessage& msg);
 
     /// Emitted for every outgoing request and incoming message when enableIpcLog is on.
     void ipcLogMessage(const QString& text, bool outgoing);

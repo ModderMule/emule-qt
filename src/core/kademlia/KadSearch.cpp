@@ -215,6 +215,14 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     }
 
     tags.emplace_back(FT_ENCRYPTION, static_cast<uint32>(p.cryptOptions));
+
+    // IPv6 (string-named hex tags, matching the reference CKadTagStr encoding) — lets a
+    // v6-capable peer reach this source over IPv6. Additive: legacy peers skip them.
+    if (!p.ipv6Hex.isEmpty())
+        tags.emplace_back(QByteArrayLiteral(TAG_IPV6), p.ipv6Hex);
+    if (!p.buddyIPv6Hex.isEmpty())
+        tags.emplace_back(QByteArrayLiteral(TAG_SERVINGBUDDYIPV6), p.buddyIPv6Hex);
+
     return tags;
 }
 
@@ -591,6 +599,21 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
 
     ++m_answers; // Only count accepted types (MFC Search.cpp:958)
 
+    // IPv6 source tags — string-named hex, decoded like FT_BUDDYHASH via strmd4.
+    // Present when the source is reachable over IPv6 (any accepted type).
+    uint8 sourceIPv6[16]{};
+    uint8 buddyIPv6Bytes[16]{};
+    bool hasSourceIPv6 = false;
+    bool hasBuddyIPv6 = false;
+    for (const auto& tag : info) {
+        if (!tag.isStr() || tag.nameId() != 0)
+            continue;
+        if (tag.name() == QByteArrayLiteral(TAG_IPV6))
+            hasSourceIPv6 = strmd4(tag.strValue(), sourceIPv6);
+        else if (tag.name() == QByteArrayLiteral(TAG_SERVINGBUDDYIPV6))
+            hasBuddyIPv6 = strmd4(tag.strValue(), buddyIPv6Bytes);
+    }
+
     // Report via callback to DownloadQueue
     const auto& cb = Kademlia::kadSourceResultCallback();
     if (cb) {
@@ -603,7 +626,9 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
         uint8 sourceClientHash[16];
         answer.toByteArray(sourceClientHash);
         cb(m_searchID, fileHash, sourceIP, sourcePort, buddyIP, buddyPort, cryptOptions,
-           sourceType, buddyHash, sourceClientHash, udpPort);
+           sourceType, buddyHash, sourceClientHash, udpPort,
+           hasSourceIPv6 ? sourceIPv6 : nullptr,
+           hasBuddyIPv6 ? buddyIPv6Bytes : nullptr);
     }
 
     logKad(QStringLiteral("Kad search %1: got file source %2, type=%3 IP=%4:%5 buddy=%6:%7")
@@ -1197,6 +1222,15 @@ void Search::storePacket(bool flushRemaining)
             sp.internKadPort    = prefs ? prefs->internKadPort() : 0;
             sp.useExternKadPort = !prefs || prefs->useExternKadPort();
 
+            // Publish our public IPv6 so v6-capable peers can reach this source — but only
+            // through the single advertise gate shared with the hello and the server login,
+            // so a server's failed dial-back suppresses every advertisement, not just some.
+            if (theApp.shouldAdvertisePublicIPv6()) {
+                const Address ourIPv6 = theApp.publicIPv6();
+                sp.ipv6Hex = QString::fromLatin1(
+                    QByteArray(reinterpret_cast<const char*>(ourIPv6.ipv6Bytes().data()), 16).toHex());
+            }
+
             auto* kadInst = Kademlia::instance();
             sp.firewalled = kadInst && kadInst->isFirewalled();
             if (sp.firewalled) {
@@ -1215,6 +1249,9 @@ void Search::storePacket(bool flushRemaining)
                         // FT_BUDDYHASH: KadID XOR all-ones (MFC: md4str(uBuddyID))
                         sp.buddyHash = UInt128(true);
                         sp.buddyHash.xorWith(prefs ? prefs->kadId() : RoutingZone::localKadId());
+                        if (!buddy->userIPv6().isNull())
+                            sp.buddyIPv6Hex = QString::fromLatin1(
+                                QByteArray(reinterpret_cast<const char*>(buddy->userIPv6().ipv6Bytes().data()), 16).toHex());
                     }
                 }
             }

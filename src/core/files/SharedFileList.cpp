@@ -179,9 +179,10 @@ bool SharedFileList::isDuplicate(const MD4Key& key, KnownFile* file) const
 
 void SharedFileList::onEntityAdded(KnownFile* file)
 {
-    addKeywords(file);
-
-    // Auto-detect .emulecollection files and attach parsed collection
+    // Auto-detect .emulecollection files and attach parsed collection.
+    // This must happen before addKeywords(): setCollection() rebuilds the Kad keyword
+    // list to include the collection's author key, and publishing that key is what makes
+    // "Search Author's Collections" work (srchybrid/SharedFileList.cpp:703-721).
     if (!file->isPartFile() && !file->collection()
         && Collection::hasCollectionExtension(file->fileName()))
     {
@@ -189,6 +190,8 @@ void SharedFileList::onEntityAdded(KnownFile* file)
         if (coll->initFromFile(file->filePath(), file->fileName()))
             file->setCollection(std::move(coll));
     }
+
+    addKeywords(file);
 
     if (!m_pendingOnlyAdd)
         file->setLastSeen(std::time(nullptr));

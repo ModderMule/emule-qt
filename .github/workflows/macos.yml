@@ -1,9 +1,13 @@
 name: macOS CI
 
+# Tag pushes are handled by release.yml, which calls this workflow -- do not add a
+# push/tags trigger here or a tag would build twice.
 on:
-#  push:
-#    tags: ['v*']
+  workflow_call:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -60,7 +64,10 @@ jobs:
         run: scripts/bundle-macos.sh --dmg build
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: eMuleQt-v${{ env.APP_VERSION }}-macOS
-          path: build/eMuleQt-v${{ env.APP_VERSION }}-macOS.dmg
+          path: build/eMuleQt-v*-macOS.dmg
+          # Default is 'warn', which would leave the job green with no artifact
+          # if the bundle script produced nothing.
+          if-no-files-found: error

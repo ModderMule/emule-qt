@@ -11,6 +11,11 @@
 
 namespace eMule::kad {
 
+/// Minimum length (in UTF-8 bytes) a word must have to be usable as a Kad
+/// keyword. Shorter words are dropped by getWords() and can therefore never
+/// become a search target.
+inline constexpr qsizetype kMinKadKeywordBytes = 3;
+
 /// Format a uint32 IP address (host byte order) as dotted string.
 QString ipToString(uint32 ip);
 

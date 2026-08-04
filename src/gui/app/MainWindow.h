@@ -138,6 +138,9 @@ public:
     void updateTransferRates(double upKBs, double downKBs,
                              double upOverheadKBs, double downOverheadKBs);
 
+    /// Replace the free-text message on the left of the status bar.
+    void setStatusMessage(const QString& text);
+
     /// Show a system tray notification popup (with optional sound).
     void showNotification(const QString& title, const QString& message);
 

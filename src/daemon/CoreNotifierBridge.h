@@ -7,6 +7,8 @@
 /// SearchList, SharedFileList, and UploadQueue, then broadcasts
 /// corresponding IPC push messages to all connected GUI clients.
 
+#include "portmap/PortMapTypes.h"
+
 #include <QCborArray>
 #include <QObject>
 
@@ -70,8 +72,8 @@ private slots:
                                      const QString& userName,
                                      const QCborArray& files);
 
-    // UPnP signals
-    void onUPnPDiscoveryComplete(bool success);
+    // Port-mapping signals
+    void onPortMapStatusChanged(eMule::PortMapStatus status);
 
 private:
     void connectClientChatSignal(eMule::UpDownClient* client);

@@ -32,8 +32,10 @@ QVariant FriendListModel::data(const QModelIndex& index, int role) const
         return row.name.isEmpty() ? row.hash : row.name;
     case Qt::DecorationRole:
         if (thePrefs.useOriginalIcons()) {
-            // Friends1 = no client, Friends2 = has client info (offline), Friends3 = connected
-            if (row.ip == 0 && row.kadID.isEmpty())
+            // Friends1 = no client, Friends2 = has client info (offline), Friends3 = connected.
+            // Test the address string, not row.ip: the numeric form is 0 for an IPv6 friend,
+            // which would show "no client info" for a friend we know perfectly well.
+            if (!row.hasAddress() && row.kadID.isEmpty())
                 return QIcon(QStringLiteral(":/icons/Friends1.ico"));
             if (row.lastSeen > 0)
                 return QIcon(QStringLiteral(":/icons/Friends2.ico"));
@@ -56,6 +58,7 @@ void FriendListModel::refreshFromCborArray(const QCborArray& arr)
         row.hash       = m.value(QStringLiteral("hash")).toString();
         row.name       = m.value(QStringLiteral("name")).toString();
         row.ip         = m.value(QStringLiteral("ip")).toInteger();
+        row.addr       = m.value(QStringLiteral("addr")).toString();
         row.port       = static_cast<int>(m.value(QStringLiteral("port")).toInteger());
         row.lastSeen   = m.value(QStringLiteral("lastSeen")).toInteger();
         row.lastChatted = m.value(QStringLiteral("lastChatted")).toInteger();

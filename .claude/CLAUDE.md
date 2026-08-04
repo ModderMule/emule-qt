@@ -15,6 +15,7 @@
 
 ## GUI
 - make the GUI look as close to the original MFC GUI as possible by comparing with sreenshots at `docs/eMuleScreensGUI`
+- no need for backwards compatibility between GUI and core. Latest GUI working with latest core is preferred
 
 
 ## eMule protocol

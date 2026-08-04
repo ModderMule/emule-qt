@@ -33,8 +33,11 @@ struct ServerRow {
     bool obfuscation = false;
     uint32_t files = 0;
 
-    // Numeric IP for IPC connect-to-specific-server
+    // Server identity for IPC connect-to-specific-server. numericIp is 0 for an IPv6
+    // server, so addr (the literal, both families) is what actually keys the request;
+    // numericIp is still sent so an older daemon keeps working.
     uint32_t numericIp = 0;
+    QString  addr;
 
     // Unique server identity for connected-server highlighting
     uint32_t serverId = 0;

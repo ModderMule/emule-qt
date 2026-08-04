@@ -80,22 +80,62 @@ Search* SearchManager::prepareLookup(SearchType type, bool start, const UInt128&
     return search;
 }
 
-Search* SearchManager::prepareFindKeywords(const QString& keyword,
-                                            uint32 searchTermsSize,
-                                            const uint8* searchTermsData)
+KeywordSelection SearchManager::selectKeyword(const QString& expression)
 {
-    // Split keywords first, then hash only the first word (MFC behavior).
+    KeywordSelection sel;
+
+    std::vector<QString> words;
+    getWords(kadTagStrToLower(expression), words);
+    if (words.empty())
+        return sel;   // status stays TooShort
+
+    sel.primaryKeyword = words.front();
+
+    // The Kad DHT indexes every keyword of a file individually, so any word of
+    // the expression is a valid target. Take the first one that is not already
+    // being searched for — otherwise "ubuntu desktop" would block "ubuntu server".
+    for (const auto& word : words) {
+        UInt128 target;
+        getKeywordHash(word, target);
+        if (alreadySearchingFor(target))
+            continue;
+        sel.status = KeywordStatus::Ok;
+        sel.keyword = word;
+        sel.isFallback = (word != sel.primaryKeyword);
+        return sel;
+    }
+
+    sel.status = KeywordStatus::AllActive;
+    return sel;
+}
+
+Search* SearchManager::prepareFindKeywords(const QString& expression,
+                                            uint32 searchTermsSize,
+                                            const uint8* searchTermsData,
+                                            const QString& targetKeyword)
+{
+    // Split keywords first, then hash only a single word (MFC behavior).
     // The Kad DHT indexes keywords individually, so the target for "test file"
     // is MD4("test"), not MD4("test file").
-    QString lowerKeyword = kadTagStrToLower(keyword);
+    QString lowerExpression = kadTagStrToLower(expression);
     std::vector<QString> words;
-    getWords(lowerKeyword, words);
+    getWords(lowerExpression, words);
     if (words.empty())
         return nullptr;
-    // Same keyword selection the search-terms blob is built against —
-    // see kadSearchKeyword().
+
+    // Callers that already built a search-terms blob pass the keyword it was
+    // built against, so target hash and blob can never disagree. Everyone else
+    // gets the same selection here.
+    QString keyword = targetKeyword;
+    if (keyword.isEmpty()) {
+        const KeywordSelection sel = selectKeyword(expression);
+        if (sel.status != KeywordStatus::Ok)
+            return nullptr;
+        keyword = sel.keyword;
+    }
+
     UInt128 target;
-    getKeywordHash(words.front(), target);
+    getKeywordHash(keyword, target);
 
     // Check for duplicate
     if (alreadySearchingFor(target))
@@ -104,7 +144,7 @@ Search* SearchManager::prepareFindKeywords(const QString& keyword,
     auto* search = new Search();
     search->setTargetID(target);
     search->setSearchType(SearchType::Keyword);
-    search->setGUIName(keyword);
+    search->setGUIName(expression);
 
     // Copy split words for search term matching
     search->m_words = std::move(words);
@@ -264,36 +304,31 @@ bool SearchManager::alreadySearchingFor(const UInt128& target)
     return s_searches.count(target) > 0;
 }
 
-QString SearchManager::findActiveKeyword(const QString& expression)
-{
-    QString lower = kadTagStrToLower(expression);
-    std::vector<QString> words;
-    getWords(lower, words);
-    if (words.empty())
-        return {};
-
-    UInt128 target;
-    getKeywordHash(words.front(), target);
-    if (alreadySearchingFor(target))
-        return words.front();
-    return {};
-}
-
 void SearchManager::cancelNodeFWCheckUDPSearch()
 {
-    for (auto it = s_searches.begin(); it != s_searches.end(); ++it) {
+    // Cancel *every* match, not just the first. MFC SearchManager.cpp:487-493.
+    bool removed = false;
+    for (auto it = s_searches.begin(); it != s_searches.end();) {
         if (it->second->getSearchType() == SearchType::NodeFwCheckUDP) {
             it->second->prepareToStop();
             delete it->second;
-            s_searches.erase(it);
-            notifySearchesChanged();
-            return;
+            it = s_searches.erase(it);
+            removed = true;
+        } else {
+            ++it;
         }
     }
+    if (removed)
+        notifySearchesChanged();
 }
 
 bool SearchManager::findNodeFWCheckUDP()
 {
+    // The target is random, so alreadySearchingFor() can never dedupe this
+    // search type — cancel any previous lookup explicitly instead, otherwise
+    // repeated firewall rechecks stack up. MFC SearchManager.cpp:464.
+    cancelNodeFWCheckUDPSearch();
+
     UInt128 target;
     target.setValueRandom();
     auto* search = prepareLookup(SearchType::NodeFwCheckUDP, true, target);
@@ -306,6 +341,13 @@ bool SearchManager::isFWCheckUDPSearch(const UInt128& target)
     if (it != s_searches.end())
         return it->second->getSearchType() == SearchType::NodeFwCheckUDP;
     return false;
+}
+
+bool SearchManager::isNodeFWCheckUDPSearchActive()
+{
+    return std::ranges::any_of(s_searches, [](const auto& entry) {
+        return entry.second->getSearchType() == SearchType::NodeFwCheckUDP;
+    });
 }
 
 // ---------------------------------------------------------------------------

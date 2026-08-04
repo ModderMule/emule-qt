@@ -4,16 +4,15 @@
 /// @brief Server UDP communication socket — replaces MFC CUDPSocket.
 ///
 /// Uses QUdpSocket + ThrottledControlSocket for bandwidth-controlled
-/// UDP communication with ED2K servers. Replaces the CUDPSocketWnd DNS
-/// helper window with QDnsLookup.
+/// UDP communication with ED2K servers. The CUDPSocketWnd DNS helper window is
+/// replaced by the shared HostResolver, which resolves a dynIP server's hostname
+/// for both address families.
 
 #include "net/Address.h"
 #include "net/Packet.h"
 #include "net/ThrottledSocket.h"
 #include "utils/Types.h"
 
-#include <QDnsLookup>
-#include <QElapsedTimer>
 #include <QUdpSocket>
 
 #include <deque>
@@ -23,6 +22,7 @@
 
 namespace eMule {
 
+class HostResolver;
 class Server;
 
 // ---------------------------------------------------------------------------
@@ -32,18 +32,6 @@ class Server;
 struct ServerUDPPacket {
     std::vector<uint8> data;
     Endpoint destination;   ///< Destination address + port.
-};
-
-// ---------------------------------------------------------------------------
-// Pending DNS request for dynamic-IP servers
-// ---------------------------------------------------------------------------
-
-struct ServerDNSRequest {
-    std::unique_ptr<QDnsLookup> lookup;
-    uint32 createdTime = 0;
-    std::vector<ServerUDPPacket> pendingPackets;
-    uint32 serverIP = 0;
-    uint16 serverPort = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -105,22 +93,26 @@ signals:
 
 private slots:
     void onReadyRead();
-    void onDnsFinished();
 
 private:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode,
-                       uint32 senderIP, uint16 senderPort);
+                       const Endpoint& sender);
 
-    void sendBuffer(uint32 ip, uint16 port, const uint8* data, uint32 size);
-    void cleanupStaleDNSRequests();
+    // Endpoint-typed: an IPv6 server's address does not fit a uint32, and projecting it
+    // through toNetworkUint32() addressed the datagram to 0.0.0.0 — the server then
+    // never answered a stat ping and was reaped as dead.
+    void sendBuffer(const Endpoint& dest, const uint8* data, uint32 size);
+
+    /// Resolve @p server's dynIP hostname, then send @p data to the resolved address.
+    /// IPv4-preferred by default, IPv6-preferred when serverPreferIPv6 is set; a single
+    /// query covers both families, so an AAAA-only hostname is reached either way.
+    void queueDNSRequest(const Server& server, uint16 port, const uint8* data, uint32 size);
 
     QUdpSocket m_socket;
     std::deque<ServerUDPPacket> m_controlQueue;
-    std::vector<std::unique_ptr<ServerDNSRequest>> m_dnsRequests;
+    HostResolver* m_hostResolver = nullptr;   // created on first dynIP send
     mutable std::mutex m_sendLock;
     bool m_wouldBlock = false;
-
-    QElapsedTimer m_elapsedTimer;
 };
 
 } // namespace eMule

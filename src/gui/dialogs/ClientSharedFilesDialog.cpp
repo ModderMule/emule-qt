@@ -5,6 +5,7 @@
 #include "dialogs/ClientSharedFilesDialog.h"
 
 #include "app/IpcClient.h"
+#include "controls/AbstractListView.h"
 
 #include "IpcMessage.h"
 
@@ -74,7 +75,8 @@ ClientSharedFilesDialog::ClientSharedFilesDialog(const QString& clientName,
         m_model->appendRow({nameItem, sizeItem, hashItem});
     }
 
-    m_view = new QTreeView(this);
+    auto* view = new ListTreeView(this);
+    m_view = view;
     m_view->setModel(m_model);
     m_view->setRootIsDecorated(false);
     m_view->setAlternatingRowColors(true);
@@ -82,8 +84,8 @@ ClientSharedFilesDialog::ClientSharedFilesDialog(const QString& clientName,
     m_view->setSortingEnabled(true);
     m_view->setAllColumnsShowFocus(true);
     m_view->header()->setStretchLastSection(true);
-    m_view->setColumnWidth(0, 300);
-    m_view->setColumnWidth(1, 100);
+    // File Name, Size, Hash.
+    view->bindColumns(QStringLiteral("clientSharedFiles"), {300, 100, 260});
     layout->addWidget(m_view);
 
     auto* btnLayout = new QHBoxLayout;

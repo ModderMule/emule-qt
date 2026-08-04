@@ -24,6 +24,13 @@ Server::Server(uint32 ip, uint16 port)
 {
 }
 
+Server::Server(const Address& addr, uint16 port)
+    : m_serverId(s_nextServerId++)
+    , m_address(addr)
+    , m_port(port)
+{
+}
+
 Server::Server(FileDataIO& data, bool optUTF8)
     : m_serverId(s_nextServerId++)
 {
@@ -80,6 +87,36 @@ Server::Server(const Server& other)
 QString Server::address() const
 {
     return m_dynIP.isEmpty() ? ipstr(m_address) : m_dynIP;
+}
+
+QString Server::addressWithPort() const
+{
+    if (m_dynIP.isEmpty() && m_address.isIPv6())
+        return Endpoint(m_address, m_port).toString();
+    return QStringLiteral("%1:%2").arg(address()).arg(m_port);
+}
+
+// ---------------------------------------------------------------------------
+// fromAddressString()
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<Server> Server::fromAddressString(const QString& host, uint16 port)
+{
+    QString bare = host.trimmed();
+    if (bare.size() > 2 && bare.startsWith(u'[') && bare.endsWith(u']'))
+        bare = bare.mid(1, bare.size() - 2);
+    if (bare.isEmpty())
+        return nullptr;
+
+    if (const Address addr = Address::fromString(bare); !addr.isNull())
+        return std::make_unique<Server>(addr, port);
+
+    // Not a literal — keep it as a hostname so ServerSocket re-resolves it on every
+    // connect (A first, then AAAA). Storing a one-shot resolved IP instead would
+    // silently pin a dynamic-IP server to a stale address.
+    auto server = std::make_unique<Server>(uint32{0}, port);
+    server->setDynIP(bare);
+    return server;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +186,13 @@ void Server::addTagFromFile(const Tag& tag)
             m_dynIP = tag.strValue();
             m_address = Address();  // reset outdated IP when dynIP is set
         }
+        break;
+    case ST_IPV6:
+        // Local extension: the address of an IPv6 server. Unlike ST_IP this is not a
+        // redirect vector — the header IP was 0, so this tag carries the only address
+        // the entry has. A dynIP wins, matching the ST_DYNIP case above.
+        if (tag.isHash() && m_address.isNull() && m_dynIP.isEmpty())
+            m_address = Address::fromIPv6Bytes(tag.hashValue());
         break;
     case ST_PORT:
     case ST_IP:
@@ -244,6 +288,13 @@ uint32 Server::writeTags(FileDataIO& file) const
 
     if (!m_dynIP.isEmpty()) {
         Tag(ST_DYNIP, m_dynIP).writeNewEd2kTag(file, UTF8Mode::OptBOM);
+        ++count;
+    }
+
+    // An IPv6 server's address does not fit the 4-byte header field, which stays 0 —
+    // so persist it here or the entry is lost on the next load.
+    if (m_address.isIPv6()) {
+        Tag(ST_IPV6, m_address.ipv6Bytes().data()).writeNewEd2kTag(file);
         ++count;
     }
 

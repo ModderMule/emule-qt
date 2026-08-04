@@ -183,6 +183,124 @@ private:
 };
 
 // ===========================================================================
+// MockCallbackPeer — dials US and opens with OP_HELLO.
+//
+// This is the LowID-callback direction: we asked the peer (via server or Kad) to call
+// back, so the peer is the one connecting and the one sending the first hello. It records
+// whether we answer with a file request, which is the observable proof that the inbound
+// socket was attached to the source that was waiting for it.
+// ===========================================================================
+
+class MockCallbackPeer : public EMSocket {
+    Q_OBJECT
+
+public:
+    /// `muleTags` controls whether the opening hello carries CT_EMULE_VERSION and
+    /// CT_EMULE_MISCOPTIONS1. Without them the hello is a plain eD2K one and
+    /// processHelloTypePacket() reports isMule == false — which is the input the
+    /// inbound OP_EMULEINFO branch keys off (MFC ListenSocket.cpp:274-275).
+    /// `allowBrowse` clears the "no view shared files" bit of CT_EMULE_MISCOPTIONS1.
+    /// It defaults to false because that is what the original mock advertised and the
+    /// other tests in this class are written against it.
+    MockCallbackPeer(const std::array<uint8, 16>& userHash, uint16 advertisedPort,
+                     QObject* parent = nullptr, bool muleTags = true,
+                     bool allowBrowse = false)
+        : EMSocket(parent)
+        , m_userHash(userHash)
+        , m_advertisedPort(advertisedPort)
+        , m_muleTags(muleTags)
+        , m_allowBrowse(allowBrowse)
+    {}
+
+    /// Send the opening OP_HELLO, exactly as a callback source would.
+    void sendOpeningHello()
+    {
+        SafeMemFile data;
+        data.writeUInt8(16);                    // hash-size prefix — OP_HELLO only
+        data.writeHash16(m_userHash.data());
+        data.writeUInt32(htonl(0x7F000001));
+        data.writeUInt16(m_advertisedPort);
+
+        data.writeUInt32(m_muleTags ? 4 : 2);
+        Tag(CT_NAME, QStringLiteral("MockCallbackPeer")).writeTagToFile(data);
+        Tag(CT_VERSION, static_cast<uint32>(EDONKEYVERSION)).writeTagToFile(data);
+
+        // Deliberately no CT_EMULE_UDPPORTS: a zero Kad port keeps UpDownClient::compare()
+        // out of its kadPort branch, so this peer can only match the source under test and
+        // never some leftover 127.0.0.1 client from an earlier test in this class.
+        if (m_muleTags) {
+            // Bit 2 is "no view shared files" — the peer refusing to be browsed.
+            const uint32 miscOpts1 =
+                (1u << 29) | (1u << 28) | (4u << 24) | (1u << 20) |
+                (static_cast<uint32>(SOURCEEXCHANGE2_VERSION) << 12) |
+                (2u << 8) | (1u << 4) | (m_allowBrowse ? 0u : (1u << 2)) | (1u << 1);
+            Tag(CT_EMULE_MISCOPTIONS1, miscOpts1).writeTagToFile(data);
+
+            const uint32 emuleVer =
+                (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17) |
+                (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10) |
+                (static_cast<uint32>(SEND_EMULE_VERSION_UPD) << 7);
+            Tag(CT_EMULE_VERSION, emuleVer).writeTagToFile(data);
+        }
+
+        data.writeUInt32(0); // server IP
+        data.writeUInt16(0); // server port
+
+        sendPacket(std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HELLO));
+    }
+
+    bool receivedHelloAnswer() const { return m_receivedHelloAnswer; }
+    bool receivedFileRequest() const { return m_receivedFileRequest; }
+    bool receivedEmuleInfo() const { return m_receivedEmuleInfo; }
+    bool receivedAskSharedFiles() const { return m_receivedAskSharedFiles; }
+    bool receivedAskSharedDirs() const { return m_receivedAskSharedDirs; }
+    void clearSharedFileListFlags()
+    {
+        m_receivedAskSharedFiles = false;
+        m_receivedAskSharedDirs = false;
+    }
+
+protected:
+    void onError(int /*errorCode*/) override {}
+
+    bool packetReceived(Packet* packet) override
+    {
+        if (packet->prot == OP_EDONKEYPROT) {
+            switch (packet->opcode) {
+            case OP_HELLOANSWER:  m_receivedHelloAnswer = true; break;
+            // Either shape counts — which one we send depends on the extended-request
+            // version negotiated from the hello.
+            case OP_REQUESTFILENAME:
+            case OP_SETREQFILEID: m_receivedFileRequest = true; break;
+            case OP_ASKSHAREDFILES: m_receivedAskSharedFiles = true; break;
+            case OP_ASKSHAREDDIRS:  m_receivedAskSharedDirs = true; break;
+            default: break;
+            }
+        } else if (packet->prot == OP_EMULEPROT) {
+            switch (packet->opcode) {
+            case OP_MULTIPACKET:
+            case OP_MULTIPACKET_EXT:
+            case OP_MULTIPACKET_EXT2: m_receivedFileRequest = true; break;
+            case OP_EMULEINFO: m_receivedEmuleInfo = true; break;
+            default: break;
+            }
+        }
+        return true;
+    }
+
+private:
+    std::array<uint8, 16> m_userHash;
+    uint16 m_advertisedPort;
+    bool m_muleTags = true;
+    bool m_allowBrowse = false;
+    bool m_receivedHelloAnswer = false;
+    bool m_receivedFileRequest = false;
+    bool m_receivedEmuleInfo = false;
+    bool m_receivedAskSharedFiles = false;
+    bool m_receivedAskSharedDirs = false;
+};
+
+// ===========================================================================
 // MockSourceServer — QTcpServer wrapper, optionally with encryption
 // ===========================================================================
 
@@ -288,6 +406,16 @@ private slots:
     void udpReaskViaCallback_sendsRealPacket();
     // A4AF swap between two files
     void swapToAnotherFile_swapsSourceAndTracksA4AF();
+    // LowID callback completion — inbound socket attaches to the waiting source
+    void lowIdCallback_attachesInboundSocketToWaitingSource();
+    void incomingHello_unknownPeer_staysSeparateClient();
+    // Inbound OP_EMULEINFO — MFC ListenSocket.cpp:274-275
+    void incomingHello_legacyEmulePeer_receivesEmuleInfo();
+    void incomingHello_muleHelloPeer_getsNoEmuleInfo();
+    // Deferred shared-file-list request — MFC BaseClient.cpp:1567-1573, :1783-1791
+    void requestSharedFileList_sendsAfterHandshakeAndRefusesDuplicate();
+    // OP_REASKCALLBACKTCP — the IPv6 sentinel relay form
+    void reaskCallbackTcp_parsesIPv6SentinelForm();
 
 private:
     // Shared helper for TCP QR tests
@@ -373,8 +501,8 @@ void tst_CallbackAndQueueRank::initTestCase()
         this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
-            auto* sender = theApp.clientList->findByIP_UDP(
-                senderEP.address().toUint32(), senderEP.port());
+            auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
+                                                                 senderEP.port());
             if (!sender || !sender->reaskPending())
                 return;
             SafeMemFile io(data, size);
@@ -509,10 +637,13 @@ void tst_CallbackAndQueueRank::doUdpReaskTest(bool encrypted)
     // Create a client that's already OnQueue.  The sender UDP socket pretends
     // to be this remote source sending OP_REASKACK back to our receiver.
     auto* client = new UpDownClient();
-    // IP matches what the UDP datagram source will be (127.0.0.1 host order)
-    client->setUserAddress(Address::fromNetworkOrder(0x7F000001));
-    client->setConnectAddress(Address::fromNetworkOrder(0x7F000001));
-    client->setUserIDHybrid(htonl(0x7F000001)); // high ID (> 16M)
+    // IP matches what the UDP datagram source will be. Build it from the string form:
+    // feeding a host-order constant into fromNetworkOrder() used to cancel out against
+    // the inverted byte order in the lookup, so this test passed for the wrong reason.
+    const Address loopback = Address::fromString(QStringLiteral("127.0.0.1"));
+    client->setUserAddress(loopback);
+    client->setConnectAddress(loopback);
+    client->setUserIDHybrid(loopback.toUint32()); // high ID (> 16M)
     client->setUserPort(4662);
     client->setDownloadState(DownloadState::OnQueue);
 
@@ -919,6 +1050,304 @@ void tst_CallbackAndQueueRank::swapToAnotherFile_swapsSourceAndTracksA4AF()
     m_clientList->removeClient(client);
     m_downloadQueue->removeFile(fileA);
     m_downloadQueue->removeFile(fileB);
+}
+
+// ===========================================================================
+// LowID callback completion (real TCP, 2 nodes)
+//
+// The whole point of the callback dance: we cannot dial a firewalled source, so we ask it
+// to dial us. Before the attach fix the inbound socket landed on a brand-new, empty client
+// while the real source sat in WaitCallback until the 45 s watchdog filed it as dead.
+// ===========================================================================
+
+void tst_CallbackAndQueueRank::lowIdCallback_attachesInboundSocketToWaitingSource()
+{
+    std::array<uint8, 16> peerHash{};
+    peerHash.fill(0x5A);
+    constexpr uint16 kPeerPort = 4999;   // unique in this class — see MockCallbackPeer
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("callbackfile.bin"));
+    partFile->setFileSize(EMFileSize(1024 * 1024));
+    std::array<uint8, 16> fileHash{};
+    fileHash.fill(0x5B);
+    partFile->setFileHash(fileHash.data());
+    QVERIFY(partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
+
+    // The source we asked to call back: firewalled, so it has no socket of its own and
+    // sits in WaitCallback with the file it owes us already attached.
+    auto* source = new UpDownClient();
+    source->setUserHash(peerHash.data());
+    source->setUserAddress(Address::fromNetworkOrder(htonl(0x7F000001)));
+    source->setUserPort(kPeerPort);
+    source->setReqFile(partFile);
+    source->setDownloadState(DownloadState::WaitCallback);
+    m_clientList->addClient(source);
+
+    const int clientsBefore = m_clientList->clientCount();
+    QCOMPARE(source->socket(), nullptr);
+
+    // The peer dials us and speaks first, exactly as a callback source does.
+    auto* peer = new MockCallbackPeer(peerHash, kPeerPort, this);
+    peer->connectToHost(QHostAddress::LocalHost, m_listenSocket->connectedPort());
+    QVERIFY2(peer->waitForConnected(5000), "callback peer could not reach the listen socket");
+    peer->sendOpeningHello();
+
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedHelloAnswer(), 5000);
+
+    // The inbound socket must have been re-homed onto the waiting source...
+    QTRY_VERIFY_WITH_TIMEOUT(source->socket() != nullptr, 5000);
+    // ...which then leaves WaitCallback...
+    QCOMPARE(source->downloadState(), DownloadState::Connected);
+    // ...and asks for the file. This is what never happened before the fix: the deferred
+    // request waited on an OP_HELLOANSWER that an inbound peer never sends.
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedFileRequest(), 5000);
+
+    // The throwaway client created for the accepted socket is gone again.
+    QCOMPARE(m_clientList->clientCount(), clientsBefore);
+
+    peer->close();
+    peer->deleteLater();
+    QCoreApplication::processEvents();
+
+    source->setDownloadState(DownloadState::None);
+    source->setReqFile(nullptr);
+    m_clientList->removeClient(source);
+    delete source;
+    delete partFile;
+}
+
+// ===========================================================================
+// Negative control — an unrelated peer must NOT be merged into anything
+// ===========================================================================
+
+void tst_CallbackAndQueueRank::incomingHello_unknownPeer_staysSeparateClient()
+{
+    std::array<uint8, 16> waitingHash{};
+    waitingHash.fill(0x6A);
+    std::array<uint8, 16> strangerHash{};
+    strangerHash.fill(0x6B);
+    constexpr uint16 kWaitingPort = 4998;
+    constexpr uint16 kStrangerPort = 4997;
+
+    auto* waiting = new UpDownClient();
+    waiting->setUserHash(waitingHash.data());
+    waiting->setUserAddress(Address::fromNetworkOrder(htonl(0x7F000001)));
+    waiting->setUserPort(kWaitingPort);
+    waiting->setDownloadState(DownloadState::WaitCallback);
+    m_clientList->addClient(waiting);
+
+    const int clientsBefore = m_clientList->clientCount();
+
+    auto* peer = new MockCallbackPeer(strangerHash, kStrangerPort, this);
+    peer->connectToHost(QHostAddress::LocalHost, m_listenSocket->connectedPort());
+    QVERIFY(peer->waitForConnected(5000));
+    peer->sendOpeningHello();
+
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedHelloAnswer(), 5000);
+
+    // The stranger keeps its own client object and leaves the waiting source alone.
+    QCOMPARE(m_clientList->clientCount(), clientsBefore + 1);
+    QCOMPARE(waiting->socket(), nullptr);
+    QCOMPARE(waiting->downloadState(), DownloadState::WaitCallback);
+
+    peer->close();
+    peer->deleteLater();
+    QCoreApplication::processEvents();
+
+    waiting->setDownloadState(DownloadState::None);
+    m_clientList->removeClient(waiting);
+    delete waiting;
+}
+
+void tst_CallbackAndQueueRank::incomingHello_legacyEmulePeer_receivesEmuleInfo()
+{
+    // A pre-0.42 eMule opens with a plain eD2K hello — its user hash is the only thing
+    // that identifies it as an eMule. MFC answers such a peer with an unsolicited
+    // OP_EMULEINFO so it learns our capabilities (ListenSocket.cpp:274-275); this port
+    // never did, so those peers saw us as a bare eDonkey client.
+    std::array<uint8, 16> legacyHash{};
+    legacyHash.fill(0x71);
+    legacyHash[5] = 14;         // the eMule user-hash marker that hashType() reads
+    legacyHash[14] = 111;
+    constexpr uint16 kLegacyPort = 4996;
+
+    auto* peer = new MockCallbackPeer(legacyHash, kLegacyPort, this, /*muleTags*/ false);
+    peer->connectToHost(QHostAddress::LocalHost, m_listenSocket->connectedPort());
+    QVERIFY(peer->waitForConnected(5000));
+    peer->sendOpeningHello();
+
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedHelloAnswer(), 5000);
+    QVERIFY2(peer->receivedEmuleInfo(),
+             "an eMule-hashed peer that sent a plain eD2K hello must get OP_EMULEINFO");
+
+    auto* created = m_clientList->findByUserHash(legacyHash.data());
+    QVERIFY(created != nullptr);
+
+    peer->close();
+    peer->deleteLater();
+    QCoreApplication::processEvents();
+
+    m_clientList->removeClient(created);
+    delete created;
+}
+
+void tst_CallbackAndQueueRank::incomingHello_muleHelloPeer_getsNoEmuleInfo()
+{
+    // The negative control that makes the test above meaningful. A peer that already
+    // sent CT_EMULE_VERSION told us everything in the hello; sending OP_EMULEINFO back
+    // would overwrite its "version came from hello" marker with our legacy version byte,
+    // which anti-leech modules read as a forged version and ban us for.
+    std::array<uint8, 16> muleHash{};
+    muleHash.fill(0x72);
+    muleHash[5] = 14;           // eMule-shaped hash too, so ONLY isMule differs
+    muleHash[14] = 111;
+    constexpr uint16 kMulePort = 4995;
+
+    auto* peer = new MockCallbackPeer(muleHash, kMulePort, this, /*muleTags*/ true);
+    peer->connectToHost(QHostAddress::LocalHost, m_listenSocket->connectedPort());
+    QVERIFY(peer->waitForConnected(5000));
+    peer->sendOpeningHello();
+
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedHelloAnswer(), 5000);
+    QVERIFY2(!peer->receivedEmuleInfo(),
+             "a peer that sent an extended (mule) hello must NOT be sent OP_EMULEINFO");
+
+    auto* created = m_clientList->findByUserHash(muleHash.data());
+    QVERIFY(created != nullptr);
+
+    peer->close();
+    peer->deleteLater();
+    QCoreApplication::processEvents();
+
+    m_clientList->removeClient(created);
+    delete created;
+}
+
+void tst_CallbackAndQueueRank::requestSharedFileList_sendsAfterHandshakeAndRefusesDuplicate()
+{
+    // requestSharedFileList() used to send inline and bail entirely when there was no
+    // socket, so the counter could never be 1 at connect time — which is the value the
+    // whole OP_ASKSHAREDDIRS answer chain keys off. It now arms the counter and lets
+    // onHandshakeCompleted() do the sending.
+    std::array<uint8, 16> browseHash{};
+    browseHash.fill(0x73);
+    constexpr uint16 kBrowsePort = 4994;
+
+    auto* peer = new MockCallbackPeer(browseHash, kBrowsePort, this,
+                                      /*muleTags*/ true, /*allowBrowse*/ true);
+    peer->connectToHost(QHostAddress::LocalHost, m_listenSocket->connectedPort());
+    QVERIFY(peer->waitForConnected(5000));
+    peer->sendOpeningHello();
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedHelloAnswer(), 5000);
+
+    auto* client = m_clientList->findByUserHash(browseHash.data());
+    QVERIFY(client != nullptr);
+    QVERIFY(client->checkHandshakeFinished());
+
+    // Already connected, so tryToConnect() reaches onHandshakeCompleted() synchronously.
+    const bool expectDirs = client->supportsSharedDirectories();
+    client->requestSharedFileList();
+    QCOMPARE(client->fileListRequested(), 1);
+
+    if (expectDirs)
+        QTRY_VERIFY_WITH_TIMEOUT(peer->receivedAskSharedDirs(), 5000);
+    else
+        QTRY_VERIFY_WITH_TIMEOUT(peer->receivedAskSharedFiles(), 5000);
+
+    // A second request while one is in flight is refused outright (MFC :1789-1790) —
+    // nothing new goes on the wire and the counter is untouched.
+    peer->clearSharedFileListFlags();
+    client->requestSharedFileList();
+    QCOMPARE(client->fileListRequested(), 1);
+    QTest::qWait(300);
+    QVERIFY2(!peer->receivedAskSharedDirs() && !peer->receivedAskSharedFiles(),
+             "a duplicate browse request must not re-send");
+
+    // ...and the counter is released on disconnect, or the refusal would latch forever.
+    client->disconnected(QStringLiteral("test teardown"));
+    QCOMPARE(client->fileListRequested(), 0);
+
+    peer->close();
+    peer->deleteLater();
+    QCoreApplication::processEvents();
+
+    m_clientList->removeClient(client);
+    delete client;
+
+    // A peer that advertised "no view shared files" is refused before the counter is
+    // ever armed — otherwise it would latch at 1 with nothing on the wire to clear it.
+    std::array<uint8, 16> privateHash{};
+    privateHash.fill(0x74);
+    constexpr uint16 kPrivatePort = 4993;
+
+    auto* shy = new MockCallbackPeer(privateHash, kPrivatePort, this,
+                                     /*muleTags*/ true, /*allowBrowse*/ false);
+    shy->connectToHost(QHostAddress::LocalHost, m_listenSocket->connectedPort());
+    QVERIFY(shy->waitForConnected(5000));
+    shy->sendOpeningHello();
+    QTRY_VERIFY_WITH_TIMEOUT(shy->receivedHelloAnswer(), 5000);
+
+    auto* shyClient = m_clientList->findByUserHash(privateHash.data());
+    QVERIFY(shyClient != nullptr);
+    shyClient->requestSharedFileList();
+    QCOMPARE(shyClient->fileListRequested(), 0);
+    QTest::qWait(300);
+    QVERIFY(!shy->receivedAskSharedDirs() && !shy->receivedAskSharedFiles());
+
+    shy->close();
+    shy->deleteLater();
+    QCoreApplication::processEvents();
+
+    m_clientList->removeClient(shyClient);
+    delete shyClient;
+}
+
+void tst_CallbackAndQueueRank::reaskCallbackTcp_parsesIPv6SentinelForm()
+{
+    // A buddy relaying an IPv6 requester writes
+    //     <0xFFFFFFFF 4><ipv6 16><port 2><filehash 16>[...]
+    // instead of the classic <ip 4><port 2><filehash 16>. Before the sentinel branch
+    // existed we read 0xFFFFFFFF as the address and the first 16 address bytes as the file
+    // hash — silent corruption rather than a clean miss. Asking for a file we do not share
+    // proves both halves: a correct parse answers OP_FILENOTFOUND *at the v6 endpoint*,
+    // which a corrupt parse could not even address.
+    QUdpSocket requester;
+    if (!requester.bind(QHostAddress::LocalHostIPv6, 0))
+        QSKIP("IPv6 loopback is not available on this host");
+    const uint16 requesterPort = requester.localPort();
+
+    auto* buddy = new UpDownClient();
+    m_clientList->addClient(buddy);
+    m_clientList->setBuddy(buddy, BuddyStatus::Connected);
+
+    const Address requesterV6 = Address::fromString(QStringLiteral("::1"));
+
+    std::array<uint8, 16> unknownHash{};
+    unknownHash.fill(0xEE);   // deliberately not in m_sharedFiles
+
+    std::vector<uint8> payload;
+    payload.resize(4 + 16 + 2 + 16);
+    pokeUInt32(payload.data(), IPV6_SOURCE_SENTINEL);
+    std::memcpy(payload.data() + 4, requesterV6.ipv6Bytes().data(), 16);
+    pokeUInt16(payload.data() + 20, requesterPort);
+    std::memcpy(payload.data() + 22, unknownHash.data(), 16);
+
+    buddy->processReaskCallbackTCP(payload.data(), static_cast<uint32>(payload.size()));
+
+    // Flush the UDP send queue (theApp.clientUDP is m_receiverUDP here).
+    flushUDPSocket(m_receiverUDP);
+    QTRY_VERIFY_WITH_TIMEOUT(requester.hasPendingDatagrams(), 3000);
+
+    const QByteArray data = requester.receiveDatagram().data();
+    QVERIFY(data.size() >= 2);
+    const auto* raw = reinterpret_cast<const uint8*>(data.constData());
+    QCOMPARE(raw[0], static_cast<uint8>(OP_EMULEPROT));
+    QCOMPARE(raw[1], static_cast<uint8>(OP_FILENOTFOUND));
+
+    m_clientList->setBuddy(nullptr, BuddyStatus::None);
+    m_clientList->removeClient(buddy);
+    delete buddy;
 }
 
 QTEST_MAIN(tst_CallbackAndQueueRank)

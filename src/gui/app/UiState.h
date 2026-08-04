@@ -15,7 +15,10 @@
 #include <QSet>
 #include <QSplitter>
 #include <QString>
+#include <QTimer>
 #include <QTreeWidget>
+
+#include <memory>
 
 namespace eMule {
 
@@ -26,6 +29,16 @@ public:
 
     /// Write current state to {configDir}/uistate.yml.
     void save(const QString& configDir);
+
+    /// Write current state to the directory last passed to load(). No-op when
+    /// load() was never called. Lets callers that don't carry the config dir
+    /// (e.g. MainWindow::closeEvent) flush the state before the process ends.
+    void save();
+
+    /// Write the state a short while after the last change, so a session that
+    /// never exits cleanly (crash, kill, logout) still keeps its layout. Called
+    /// automatically by every bind* capture; coalesces bursts into one write.
+    void scheduleSave();
 
     /// Restore a splitter from saved sizes, connect it to auto-update.
     void bindServerSplitter(QSplitter* splitter);
@@ -43,7 +56,15 @@ public:
 
     /// Restore a header view's column widths/sort order, connect it to auto-update.
     /// Also installs a selection guard on the owning view (see guardSelectionOnReset).
+    /// Call this only once the view has a model — a header with no sections cannot
+    /// take a restore, and QHeaderView::restoreState() rejects it on a column count
+    /// mismatch.
     void bindHeaderView(QHeaderView* header, const QString& key);
+
+    /// Re-apply the cached state for @p key. Call right after a setModel() on an
+    /// already-bound view: setModel() clears every section, so the layout has to be
+    /// pushed back once the new model's columns exist.
+    void applyHeaderState(QHeaderView* header, const QString& key);
 
     /// Clear a view's selection/current index the moment its model begins a reset,
     /// before the (proxy) persistent-index mapping is torn down. Prevents a deferred
@@ -81,6 +102,10 @@ public:
     void setSkinProfilePath(const QString& path) { m_skinProfilePath = path; }
 
 private:
+    /// Restore @p sizes into @p splitter and capture every later drag into it.
+    /// Shared by all eight bind*Splitter() entry points.
+    void bindSplitter(QSplitter* splitter, QList<int>& sizes);
+
     QList<int> m_serverSplitSizes;
     QList<int> m_kadSplitSizes;
     QList<int> m_transferSplitSizes;
@@ -99,6 +124,8 @@ private:
     QString m_skinProfilePath;
     QMap<QString, QByteArray> m_headerStates;
     QSet<QString> m_statsTreeExpanded;
+    QString m_configDir;   ///< Remembered by load() so save() can run without it.
+    std::unique_ptr<QTimer> m_saveTimer;   ///< Debounce for scheduleSave().
 };
 
 /// Global UI state instance (GUI process only).

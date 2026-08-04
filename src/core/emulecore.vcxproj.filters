@@ -42,6 +42,12 @@
     <ClCompile Include="archive\ArchiveRecovery.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="archive\ArchiveUnpack.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\HttpFileDownload.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="client\ClientCredits.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -174,6 +180,36 @@
     <ClCompile Include="net\ListenSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\DefaultGateway.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="portmap\PortMapTypes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="portmap\PortMapWire.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="portmap\NatPmpMessages.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="portmap\PcpMessages.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="portmap\PortMapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="portmap\UPnPBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="portmap\UPnPWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\HostResolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\LocalIPv6.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\Log.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -285,9 +321,6 @@
     <ClCompile Include="net\UDPSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="upnp\UPnPManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="client\URLClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -347,6 +380,12 @@
     <ClInclude Include="archive\ArchiveReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="archive\ArchiveUnpack.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\HttpFileDownload.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="archive\ArchiveRecovery.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -375,6 +414,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\ContainerUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\CorroborationTally.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="app\CoreSession.h">
@@ -533,6 +575,39 @@
     <ClInclude Include="utils\OtherFunctions.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="net\HostResolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\DefaultGateway.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="portmap\PortMapTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="portmap\PortMapWire.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="portmap\NatPmpMessages.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="portmap\PcpMessages.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="portmap\PortMapBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="portmap\PortMapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="portmap\UPnPBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="portmap\UPnPWorker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\LocalIPv6.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="net\Packet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -642,9 +717,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="net\UDPSocket.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="upnp\UPnPManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="client\URLClient.h">

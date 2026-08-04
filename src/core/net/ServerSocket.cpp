@@ -73,17 +73,25 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt)
 
     // If server has a dynamic IP, resolve it first
     if (m_curServer->hasDynIP()) {
-        logServerVerbose(QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
-                             .arg(m_curServer->dynIP()).arg(m_curServer->name()));
-        m_dnsLookup = std::make_unique<QDnsLookup>(QDnsLookup::A, m_curServer->dynIP(), this);
-        connect(m_dnsLookup.get(), &QDnsLookup::finished, this, &ServerSocket::onDnsLookupFinished);
-        m_dnsLookup->lookup();
-        return;
+        // A literal that ended up in the dynIP slot (a legacy staticservers.dat line, an
+        // [emDynIP:] echo) must never reach the resolver: QDnsLookup(A, "8.8.8.8")
+        // NXDOMAINs and the server is marked dead.
+        if (const Address literal = Address::fromString(m_curServer->dynIP()); !literal.isNull()) {
+            logServerVerbose(QStringLiteral("connectTo: dynIP '%1' is a literal — no DNS needed")
+                                 .arg(m_curServer->dynIP()));
+            m_curServer->setIpAddress(literal);
+        } else {
+            logServerVerbose(QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
+                                 .arg(m_curServer->dynIP()).arg(m_curServer->name()));
+            m_dnsTriedFallback = false;
+            startDnsLookup(thePrefs.serverPreferIPv6() ? QDnsLookup::AAAA : QDnsLookup::A);
+            return;
+        }
     }
 
-    // Direct connection via IP
-    uint32 ip = m_curServer->ipAddress().toNetworkUint32();
-    QHostAddress addr(ntohl(ip)); // Convert from network to host byte order
+    // Direct connection via IP. toQHostAddress() dials both families — an IPv6 server
+    // (from an OP_SERVERLIST v6 block) connects over IPv6, an IPv4 one exactly as before.
+    QHostAddress addr = m_curServer->ipAddress().toQHostAddress();
     uint16 port = m_curServer->port();
 
     // Configure encryption
@@ -310,14 +318,53 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     name = tag.strValue();
                 else if (tag.nameId() == ST_DESCRIPTION && tag.isStr())
                     description = tag.strValue();
+                else if (tag.nameId() == CT_MOD_SVR_IP_V6 && tag.isHash()) {
+                    // The server's own public IPv6 (informational — we still reach it on
+                    // the address we dialed). Self-describing tags skip cleanly; unknown
+                    // tags such as ST_NAT_PORT are consumed and ignored (S6 out of scope).
+                    logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: server IPv6 %1")
+                                         .arg(Address::fromIPv6Bytes(tag.hashValue()).toString()));
+                }
+                else if (tag.nameId() == CT_MOD_YOUR_IP && tag.isHash()) {
+                    // The server tells us the IPv6 it observed our session arriving on — the
+                    // most authoritative source of our own public IPv6. A server can only
+                    // observe that for a session that actually connected over IPv6, so a v4
+                    // session sending it is either buggy or hostile: enforce the family here
+                    // rather than trusting the sender. m_curServer->ipAddress() is exact —
+                    // connectTo() dials it, and the dynIP path writes the resolved address
+                    // back before connecting.
+                    const Address observed = Address::fromIPv6Bytes(tag.hashValue());
+                    if (!m_curServer || !m_curServer->ipAddress().isIPv6()) {
+                        logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: ignoring CT_MOD_YOUR_IP "
+                                                        "(%1): this session is IPv4")
+                                             .arg(observed.toString()));
+                    } else {
+                        theApp.setPublicIPv6Observed(observed, m_curServer->address());
+                    }
+                }
+                else if (tag.nameId() == ST_IPV6_STATUS && tag.isInt()) {
+                    // The server's verdict on whether the IPv6 we advertised is reachable.
+                    const uint8 status = static_cast<uint8>(tag.intValue());
+                    theApp.setPublicIPv6Status(status);
+                    logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: IPv6 status have=%1 reachable=%2 probed=%3")
+                                         .arg((status & IPV6ST_HAVE) ? 1 : 0)
+                                         .arg((status & IPV6ST_REACHABLE) ? 1 : 0)
+                                         .arg((status & IPV6ST_PROBED) ? 1 : 0));
+                }
             }
         } catch (...) {
             // Tag parsing failed — acceptable, name/desc may be partial
         }
 
         if (m_curServer) {
-            // Update server's reported IP if different
-            if (serverIP != 0)
+            // Update server's reported IP if different — but never over an IPv6 session.
+            // The ident body has a 4-byte IP field, so a dual-stack server always reports
+            // its IPv4 there. Applying it to a server we reached over IPv6 replaced the
+            // address we are connected to, which then (a) made the CT_MOD_YOUR_IP family
+            // guard above fail on every later ident — and a server sends a second one in
+            // reply to OP_GETSERVERLIST, which we request right after connecting — and
+            // (b) pointed reconnects at the IPv4.
+            if (serverIP != 0 && !m_curServer->ipAddress().isIPv6())
                 m_curServer->setIpAddress(Address::fromNetworkOrder(serverIP));
         }
 
@@ -368,6 +415,20 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         }
 
         emit callbackRequested(clientIP, clientPort, cryptOptions, cryptSize);
+        break;
+    }
+
+    case OP_CALLBACKREQUESTED_IPV6: {
+        // Format: ipv6[16] (network order), port[2] (LITTLE-endian — PR_NAT is the only
+        // BE path). The server sends this to a v6-capable LowID target when the requester
+        // is reachable only over IPv6; we call the requester back over IPv6.
+        if (size < 18)
+            return false;
+
+        const Endpoint requester(Address::fromIPv6Bytes(packet), peekUInt16(packet + 16));
+        logServerVerbose(QStringLiteral("<<< OP_CALLBACKREQUESTED_IPV6 from %1")
+                             .arg(requester.toString()));
+        emit callbackRequestedIPv6(requester);
         break;
     }
 
@@ -512,12 +573,44 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
     }
 }
 
+void ServerSocket::startDnsLookup(QDnsLookup::Type type)
+{
+    // Never destroy the old QDnsLookup from inside its own finished handler.
+    if (m_dnsLookup) {
+        m_dnsLookup->disconnect(this);
+        m_dnsLookup.release()->deleteLater();
+    }
+
+    m_dnsLookup = std::make_unique<QDnsLookup>(type, m_curServer->dynIP(), this);
+    connect(m_dnsLookup.get(), &QDnsLookup::finished, this, &ServerSocket::onDnsLookupFinished);
+    m_dnsLookup->lookup();
+}
+
 void ServerSocket::onDnsLookupFinished()
 {
     if (!m_dnsLookup || !m_curServer)
         return;
 
-    if (m_dnsLookup->error() != QDnsLookup::NoError) {
+    const bool failed = m_dnsLookup->error() != QDnsLookup::NoError
+                        || m_dnsLookup->hostAddressRecords().isEmpty();
+    if (failed) {
+        // Try the other family once. This is what makes an AAAA-only server hostname
+        // reachable; the default order is A first because a server reached over IPv6
+        // with no routable IPv4 hands out a LowID unconditionally.
+        if (!m_dnsTriedFallback) {
+            m_dnsTriedFallback = true;
+            const auto next = (m_dnsLookup->type() == QDnsLookup::A) ? QDnsLookup::AAAA
+                                                                     : QDnsLookup::A;
+            logServerVerbose(QStringLiteral("DNS %1 lookup for %2 found nothing — trying %3")
+                                 .arg(m_dnsLookup->type() == QDnsLookup::A
+                                          ? QStringLiteral("A") : QStringLiteral("AAAA"))
+                                 .arg(m_curServer->dynIP())
+                                 .arg(next == QDnsLookup::A
+                                          ? QStringLiteral("A") : QStringLiteral("AAAA")));
+            startDnsLookup(next);
+            return;
+        }
+
         logWarning(QStringLiteral("DNS lookup failed for %1: %2")
                        .arg(m_curServer->dynIP())
                        .arg(m_dnsLookup->errorString()));
@@ -525,28 +618,20 @@ void ServerSocket::onDnsLookupFinished()
         return;
     }
 
-    const auto records = m_dnsLookup->hostAddressRecords();
-    if (records.isEmpty()) {
-        logWarning(QStringLiteral("DNS lookup returned no results for %1")
-                       .arg(m_curServer->dynIP()));
-        setConnectionState(ServerConnState::ServerDead);
-        return;
-    }
-
-    QHostAddress addr = records.first().value();
-    uint32 ip = htonl(addr.toIPv4Address());
+    const QHostAddress addr = m_dnsLookup->hostAddressRecords().first().value();
+    const Address resolved = Address::fromQHostAddress(addr);   // either family
 
     if (auto* filter = theApp.ipFilter) {
-        if (filter->isFiltered(ip, thePrefs.ipFilterLevel())) {
+        if (filter->isFiltered(resolved, thePrefs.ipFilterLevel())) {
             logWarning(QStringLiteral("DNS resolved IP %1 is filtered by IPFilter")
-                           .arg(ipstr(ip)));
+                           .arg(ipstr(resolved)));
             setConnectionState(ServerConnState::ServerDead);
             return;
         }
     }
 
-    m_curServer->setIpAddress(Address::fromNetworkOrder(ip));
-    emit dynIPResolved(ip, m_curServer->dynIP());
+    m_curServer->setIpAddress(resolved);
+    emit dynIPResolved(resolved, m_curServer->dynIP());
 
     // Now connect
     uint16 port = m_curServer->port();

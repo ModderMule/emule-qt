@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "files/AbstractFile.h"
+#include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
@@ -41,6 +42,10 @@ private slots:
     void getED2kLink_basic();
     void getED2kLink_html();
     void getED2kLink_aichHash();
+    void getED2kLink_noHintUnchanged();
+    void getED2kLink_hostnameHint();
+    void getED2kLink_ipv4LiteralHint();
+    void getED2kLink_ipv6LiteralHint();
     void intTag_setAndGet();
     void intTag_overwrite();
     void int64Tag_setAndGet();
@@ -241,6 +246,95 @@ void tst_AbstractFile::getED2kLink_aichHash()
 
     QString link = file.getED2kLink();
     QVERIFY(link.contains(QStringLiteral("h=")));
+}
+
+void tst_AbstractFile::getED2kLink_noHintUnchanged()
+{
+    const uint16 savedPort = thePrefs.port();
+    thePrefs.setPort(4662);   // a source hint needs a port to advertise
+    const QString savedHostname = thePrefs.ed2kHostname();
+    thePrefs.setEd2kHostname(QString());
+
+    TestFile file;
+    file.setFileName(QStringLiteral("test.txt"), false, false);
+    file.setFileSize(100);
+    uint8 hash[16] = {};
+    file.setFileHash(hash);
+
+    // Nothing to advertise ⇒ byte-identical to the plain form, hint flag or not.
+    QCOMPARE(file.getED2kLink(false, false, true), file.getED2kLink(false, false, false));
+    QVERIFY(!file.getED2kLink(false, false, true).contains(QStringLiteral("sources")));
+
+    thePrefs.setEd2kHostname(savedHostname);
+    thePrefs.setPort(savedPort);
+}
+
+void tst_AbstractFile::getED2kLink_hostnameHint()
+{
+    const uint16 savedPort = thePrefs.port();
+    thePrefs.setPort(4662);   // a source hint needs a port to advertise
+    const QString savedHostname = thePrefs.ed2kHostname();
+    thePrefs.setEd2kHostname(QStringLiteral("host.example.com"));
+
+    TestFile file;
+    file.setFileName(QStringLiteral("test.txt"), false, false);
+    file.setFileSize(100);
+    uint8 hash[16] = {};
+    file.setFileHash(hash);
+
+    const QString link = file.getED2kLink(false, false, true);
+    // MFC's shape: the '/' terminator comes BEFORE the source block, or stock eMule's
+    // tokenizer stops at the empty token and rejects the whole link.
+    QVERIFY(link.contains(QStringLiteral("|/|sources,host.example.com:%1|/")
+                              .arg(thePrefs.port())));
+
+    thePrefs.setEd2kHostname(savedHostname);
+    thePrefs.setPort(savedPort);
+}
+
+void tst_AbstractFile::getED2kLink_ipv4LiteralHint()
+{
+    const uint16 savedPort = thePrefs.port();
+    thePrefs.setPort(4662);
+    const QString savedHostname = thePrefs.ed2kHostname();
+    thePrefs.setEd2kHostname(QStringLiteral("88.77.66.55"));
+
+    TestFile file;
+    file.setFileName(QStringLiteral("test.txt"), false, false);
+    file.setFileSize(100);
+    uint8 hash[16] = {};
+    file.setFileHash(hash);
+
+    // An IPv4 literal was accepted by the old "contains a dot" test and must stay so —
+    // it belongs in the classic block, where legacy clients can use it.
+    const QString link = file.getED2kLink(false, false, true);
+    QVERIFY(link.contains(QStringLiteral("|/|sources,88.77.66.55:4662|/")));
+
+    thePrefs.setEd2kHostname(savedHostname);
+    thePrefs.setPort(savedPort);
+}
+
+void tst_AbstractFile::getED2kLink_ipv6LiteralHint()
+{
+    const uint16 savedPort = thePrefs.port();
+    thePrefs.setPort(4662);   // a source hint needs a port to advertise
+    const QString savedHostname = thePrefs.ed2kHostname();
+    thePrefs.setEd2kHostname(QStringLiteral("2a01:4f8::1"));
+
+    TestFile file;
+    file.setFileName(QStringLiteral("test.txt"), false, false);
+    file.setFileSize(100);
+    uint8 hash[16] = {};
+    file.setFileHash(hash);
+
+    const QString link = file.getED2kLink(false, false, true);
+    // An IPv6 literal in ed2kHostname is accepted (the old "contains a dot" test dropped
+    // it) and lands in s6=, never in the legacy sources block.
+    QVERIFY(link.contains(QStringLiteral("|s6=[2a01:4f8::1]:%1|/").arg(thePrefs.port())));
+    QVERIFY(!link.contains(QStringLiteral("sources")));
+
+    thePrefs.setEd2kHostname(savedHostname);
+    thePrefs.setPort(savedPort);
 }
 
 void tst_AbstractFile::intTag_setAndGet()

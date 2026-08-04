@@ -9,7 +9,10 @@
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "files/KnownFile.h"
+#include "files/KnownFileList.h"
+#include "files/SharedFileList.h"
 #include "kademlia/KadPrefs.h"
+#include "kademlia/KadUDPListener.h"
 #include "kademlia/Kademlia.h"
 #include "net/ClientReqSocket.h"
 #include "protocol/Tag.h"
@@ -92,6 +95,10 @@ private slots:
 
     // Phase 2 tests — send format
     void sendHelloTypePacket_format();
+    void processHelloPacket_parsesIPv6Tags();
+    void processHelloPacket_rejectsNonPublicIPv6();
+    void processHelloPacket_parsesExtSXSkipTagsBit();
+    void processChangeClientIP_acceptsPublicAndRejectsOthers();
 
     // Phase 2 tests — helpers
     void checkForGPLEvildoer_match();
@@ -108,6 +115,7 @@ private slots:
     void processEmuleQueueRank_setsRank();
     void processEdonkeyQueueRank_setsRank();
     void checkFailedFileIdReqs_bansAfterMax();
+    void checkFailedFileIdReqs_ignoresKnownMisses();
     void publicIPAnswer_unsolicitedIsIgnored();
     void publicIPAnswer_shortPacketIsIgnored();
 
@@ -138,6 +146,15 @@ private slots:
 
     // Phase 3 tests — Kad firewall-check ACK guard
     void processKadFwTcpCheckAck_countsOnlyRequestedPeer();
+
+    // onHandshakeCompleted / maybeBootstrapKadFromPeer — MFC BaseClient.cpp:1550-1573,
+    // ListenSocket.cpp:289-290
+    void onHandshakeCompleted_reaskOnQueue_reconnectsAndClears();
+    void onHandshakeCompleted_reaskWhileDownloading_clearsWithoutStateChange();
+    void onHandshakeCompleted_reaskWhileNone_clearsWithoutStateChange();
+    void onHandshakeCompleted_fileListArmed_sendsAskSharedFiles();
+    void onHandshakeCompleted_fileListDirCount_doesNotResend();
+    void maybeBootstrapKadFromPeer_guards();
 };
 
 // ---------------------------------------------------------------------------
@@ -1101,6 +1118,171 @@ void tst_UpDownClient::sendHelloTypePacket_format()
     QCOMPARE(client.emuleVersion(), uint8{0x99});
 }
 
+void tst_UpDownClient::processHelloPacket_parsesIPv6Tags()
+{
+    // A hello carrying CT_MOD_MISCOPTIONS (SupportsIPv6) and CT_MOD_IP_V6 (the peer's
+    // public IPv6) must be parsed into m_supportsIPv6/m_openIPv6/m_userIPv6.
+    SafeMemFile data;
+    data.writeUInt8(16); // hashSz
+
+    uint8 hash[16];
+    fillHash(hash, 0xC6);
+    data.writeHash16(hash);
+
+    data.writeUInt32(0);      // clientID (LowID)
+    data.writeUInt16(4662);   // port
+
+    // A genuine global-unicast address: the hello parser now validates CT_MOD_IP_V6 with
+    // isPublicIP() before latching m_openIPv6, and 2001:db8::/32 (documentation) is one of
+    // the ranges it refuses. See processHelloPacket_rejectsNonPublicIPv6.
+    std::array<uint8, 16> v6bytes{
+        0x2a, 0x01, 0x04, 0xf8, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0xab, 0xcd, 0xef, 0x01};
+
+    // 3 tags: CT_VERSION, CT_MOD_MISCOPTIONS, CT_MOD_IP_V6
+    data.writeUInt32(3);
+    Tag(CT_VERSION, static_cast<uint32>(EDONKEYVERSION)).writeTagToFile(data);
+    Tag(CT_MOD_MISCOPTIONS, static_cast<uint32>(MODMISC_IPV6)).writeTagToFile(data);
+    Tag(CT_MOD_IP_V6, v6bytes.data()).writeTagToFile(data);
+
+    data.writeUInt32(0);      // server IP
+    data.writeUInt16(0);      // server port
+
+    const auto& buf = data.buffer();
+
+    UpDownClient client;
+    client.processHelloPacket(
+        reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size()));
+
+    QVERIFY(client.supportsIPv6());
+    QVERIFY(client.openIPv6());
+    QVERIFY(client.userIPv6().isIPv6());
+    QCOMPARE(client.userIPv6(), Address::fromIPv6Bytes(v6bytes.data()));
+}
+
+void tst_UpDownClient::processHelloPacket_rejectsNonPublicIPv6()
+{
+    // An unvalidated CT_MOD_IP_V6 used to latch m_openIPv6 for any 16 bytes, which then
+    // became the address tryToConnect() dials and kept an unreachable source alive in the
+    // source-exchange candidate set. Link-local must be refused outright.
+    SafeMemFile data;
+    data.writeUInt8(16);
+
+    uint8 hash[16];
+    fillHash(hash, 0xC7);
+    data.writeHash16(hash);
+
+    data.writeUInt32(0);
+    data.writeUInt16(4662);
+
+    // fe80::1 — link-local
+    std::array<uint8, 16> linkLocal{
+        0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+
+    data.writeUInt32(3);
+    Tag(CT_VERSION, static_cast<uint32>(EDONKEYVERSION)).writeTagToFile(data);
+    Tag(CT_MOD_MISCOPTIONS, static_cast<uint32>(MODMISC_IPV6)).writeTagToFile(data);
+    Tag(CT_MOD_IP_V6, linkLocal.data()).writeTagToFile(data);
+
+    data.writeUInt32(0);
+    data.writeUInt16(0);
+
+    const auto& buf = data.buffer();
+
+    UpDownClient client;
+    client.processHelloPacket(
+        reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size()));
+
+    // The capability bit is still honoured — it is a claim about the peer's software, not
+    // about this address — but the address itself is dropped.
+    QVERIFY(client.supportsIPv6());
+    QVERIFY(!client.openIPv6());
+    QVERIFY(client.userIPv6().isNull());
+}
+
+void tst_UpDownClient::processHelloPacket_parsesExtSXSkipTagsBit()
+{
+    // Bit 5 of CT_MOD_MISCOPTIONS is what makes it safe to put new tags in an ExtSX
+    // record; without it a peer may be one that discards the whole answer instead.
+    SafeMemFile data;
+    data.writeUInt8(16);
+
+    uint8 hash[16];
+    fillHash(hash, 0xC8);
+    data.writeHash16(hash);
+
+    data.writeUInt32(0);
+    data.writeUInt16(4662);
+
+    data.writeUInt32(2);
+    Tag(CT_VERSION, static_cast<uint32>(EDONKEYVERSION)).writeTagToFile(data);
+    Tag(CT_MOD_MISCOPTIONS,
+        static_cast<uint32>(MODMISC_IPV6 | MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS))
+        .writeTagToFile(data);
+
+    data.writeUInt32(0);
+    data.writeUInt16(0);
+
+    const auto& buf = data.buffer();
+
+    UpDownClient client;
+    client.processHelloPacket(
+        reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size()));
+
+    QVERIFY(client.supportsIPv6());
+    QVERIFY(client.supportsExtendedXS());
+    QVERIFY(client.supportsExtSXSkipTags());
+
+    // A peer that sets only the older two bits must NOT be treated as tolerant.
+    SafeMemFile legacy;
+    legacy.writeUInt8(16);
+    legacy.writeHash16(hash);
+    legacy.writeUInt32(0);
+    legacy.writeUInt16(4662);
+    legacy.writeUInt32(2);
+    Tag(CT_VERSION, static_cast<uint32>(EDONKEYVERSION)).writeTagToFile(legacy);
+    Tag(CT_MOD_MISCOPTIONS, static_cast<uint32>(MODMISC_IPV6 | MODMISC_EXTXS))
+        .writeTagToFile(legacy);
+    legacy.writeUInt32(0);
+    legacy.writeUInt16(0);
+
+    const auto& legacyBuf = legacy.buffer();
+    UpDownClient legacyClient;
+    legacyClient.processHelloPacket(
+        reinterpret_cast<const uint8*>(legacyBuf.constData()),
+        static_cast<uint32>(legacyBuf.size()));
+
+    QVERIFY(legacyClient.supportsExtendedXS());
+    QVERIFY(!legacyClient.supportsExtSXSkipTags());
+}
+
+void tst_UpDownClient::processChangeClientIP_acceptsPublicAndRejectsOthers()
+{
+    // OP_CHANGE_CLIENT_IP payload is 16 raw IPv6 bytes, no tag wrapper.
+    const std::array<uint8, 16> global{
+        0x2a, 0x01, 0x04, 0xf8, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09};
+
+    UpDownClient client;
+    client.processChangeClientIP(global.data(), 16);
+    QVERIFY(client.openIPv6());
+    QCOMPARE(client.userIPv6(), Address::fromIPv6Bytes(global.data()));
+
+    // A short payload is a different packet, not a truncated address — ignore it whole.
+    UpDownClient shortPacket;
+    shortPacket.processChangeClientIP(global.data(), 15);
+    QVERIFY(!shortPacket.openIPv6());
+    QVERIFY(shortPacket.userIPv6().isNull());
+
+    // Unique-local must not be adopted, and must not clobber a good address either.
+    const std::array<uint8, 16> ula{
+        0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+    client.processChangeClientIP(ula.data(), 16);
+    QCOMPARE(client.userIPv6(), Address::fromIPv6Bytes(global.data()));
+}
+
 // ---------------------------------------------------------------------------
 // Phase 2 tests — helpers
 // ---------------------------------------------------------------------------
@@ -1270,17 +1452,83 @@ void tst_UpDownClient::processEdonkeyQueueRank_setsRank()
     QCOMPARE(client.remoteQueueRank(), 99u);
 }
 
+// A file-ID request flood is two-strikes and scoped to the peer's ADDRESS, not to the
+// UpDownClient object (MFC BaseClient.cpp:2538-2555). The first flood only records a
+// strike; the second bans. Crucially the strike lives in ClientList's tracked map, so
+// dropping the client and reconnecting does NOT wipe it — the whole point of moving the
+// counter off the object.
 void tst_UpDownClient::checkFailedFileIdReqs_bansAfterMax()
 {
+    ClientList clientList;
+    theApp.clientList = &clientList;
+    const Address addr = Address::fromString(QStringLiteral("10.20.30.40"));
+
+    // First flood: warned, not banned. Threshold is 6, matching the reference.
+    UpDownClient first;
+    first.setUserName(QStringLiteral("BadClient"));
+    first.setUserAddress(addr);
+    first.setUserPort(4662);
+    for (int i = 0; i < 6; ++i)
+        first.checkFailedFileIdReqs(nullptr);
+
+    QCOMPARE(first.uploadState(), UploadState::None);
+    QCOMPARE(clientList.badRequests(&first), 1u);
+
+    // Second flood from a FRESH object at the same address — simulating a reconnect.
+    // The strike carried over, so this one bans.
+    UpDownClient second;
+    second.setUserName(QStringLiteral("BadClient"));
+    second.setUserAddress(addr);
+    second.setUserPort(4662);
+    for (int i = 0; i < 6; ++i)
+        second.checkFailedFileIdReqs(nullptr);
+
+    QCOMPARE(second.uploadState(), UploadState::Banned);
+    // Counter is zeroed on ban so the client isn't re-banned the instant it expires.
+    QCOMPARE(clientList.badRequests(&second), 0u);
+
+    // A different address is unaffected — strikes never leak across peers.
+    UpDownClient other;
+    other.setUserAddress(Address::fromString(QStringLiteral("10.20.30.41")));
+    other.setUserPort(4662);
+    QCOMPARE(clientList.badRequests(&other), 0u);
+
+    theApp.clientList = nullptr;
+}
+
+// A request for a file we deliberately unshared, or one we are still downloading, is a
+// legitimate miss: it must not accrue strikes. The old code ignored the hash entirely
+// and punished honest clients for it.
+void tst_UpDownClient::checkFailedFileIdReqs_ignoresKnownMisses()
+{
+    ClientList clientList;
+    theApp.clientList = &clientList;
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+
+    // A file becomes "unshared" by being removed from the shared list — that is the
+    // only way the set is populated (SharedFileList::onEntityRemoved).
+    std::array<uint8, 16> hash{};
+    std::memset(hash.data(), 0x5A, hash.size());
+    auto* file = new KnownFile();
+    file->setFileHash(hash.data());
+    file->setFileName(QStringLiteral("unshared.txt"));
+    QVERIFY(sharedFiles.safeAddKFile(file));
+    QVERIFY(sharedFiles.removeFile(file));
+    QVERIFY(sharedFiles.isUnsharedFile(hash.data()));
+
     UpDownClient client;
-    client.setUserName(QStringLiteral("BadClient"));
+    client.setUserAddress(Address::fromString(QStringLiteral("10.20.30.42")));
+    client.setUserPort(4662);
+    for (int i = 0; i < 12; ++i)
+        client.checkFailedFileIdReqs(hash.data());
 
-    // Increment failed requests beyond BADCLIENTBAN (4)
-    for (int i = 0; i <= BADCLIENTBAN; ++i)
-        client.checkFailedFileIdReqs(nullptr);
+    QCOMPARE(client.uploadState(), UploadState::None);
+    QCOMPARE(clientList.badRequests(&client), 0u);
 
-    // Should be banned after exceeding the limit
-    QCOMPARE(client.uploadState(), UploadState::Banned);
+    theApp.sharedFileList = nullptr;
+    theApp.clientList = nullptr;
 }
 
 // MFC: CUpDownClient::ProcessPublicIPAnswer() — BaseClient.cpp:3896. A peer is
@@ -1660,6 +1908,201 @@ void tst_UpDownClient::processKadFwTcpCheckAck_countsOnlyRequestedPeer()
     sock->deleteLater();
     QCoreApplication::processEvents();
     theApp.clientList = nullptr;
+    kad.stop();
+}
+
+// ---------------------------------------------------------------------------
+// onHandshakeCompleted — MFC BaseClient.cpp:1550-1573
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Connect a ClientReqSocket to a throwaway local server so sendPacket() has
+/// somewhere to write, and hand back the accepted server-side socket to read from.
+/// Caller owns nothing: `server` and `client` stay on the caller's stack.
+QTcpSocket* wireLoopbackSocket(QTcpServer& server, UpDownClient& client)
+{
+    if (!server.listen(QHostAddress::LocalHost, 0))
+        return nullptr;
+    auto* sock = new ClientReqSocket();
+    sock->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    if (!sock->waitForConnected(5000) || !server.waitForNewConnection(5000)) {
+        delete sock;
+        return nullptr;
+    }
+    client.setSocket(sock);
+    return server.nextPendingConnection();
+}
+
+/// Wait for a whole eD2K frame header to land on `peer`.
+/// EMSocket::sendPacket() queues control packets and flushes them from a
+/// QTimer::singleShot(0), so a bare waitForReadyRead() would time out — the event
+/// loop has to spin first. Returns false if nothing arrives within `ms`.
+bool waitForFrame(QTcpSocket* peer, int ms)
+{
+    QDeadlineTimer deadline(ms);
+    while (peer->bytesAvailable() < 6 && !deadline.hasExpired()) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        peer->waitForReadyRead(10);
+    }
+    return peer->bytesAvailable() >= 6;
+}
+
+/// Read one eD2K frame and return its opcode. Returns 0 when nothing arrives.
+/// Wire layout: [prot 1][size 4 LE][opcode 1][payload...]
+uint8 readOpcode(QTcpSocket* peer)
+{
+    if (!waitForFrame(peer, 2000))
+        return 0;
+    const QByteArray raw = peer->readAll();
+    if (raw.size() < 6)
+        return 0;
+    return static_cast<uint8>(raw[5]);
+}
+
+} // namespace
+
+void tst_UpDownClient::onHandshakeCompleted_reaskOnQueue_reconnectsAndClears()
+{
+    // The bug this pins: a source goes UDP-reask-pending, the reask is never answered,
+    // and it ends up connected over TCP in some state other than Connecting/WaitCallback.
+    // connectionEstablished() only clears m_reaskPending for those three states, so
+    // without this block the flag latches and every later udpReaskForDownload() dies at
+    // its m_reaskPending early-return.
+    UpDownClient client;
+    client.setDownloadState(DownloadState::OnQueue);
+    client.setReaskPending(true);
+
+    client.onHandshakeCompleted();
+
+    QVERIFY2(!client.reaskPending(), "the pending re-ask must be consumed");
+    QCOMPARE(client.downloadState(), DownloadState::Connected);
+}
+
+void tst_UpDownClient::onHandshakeCompleted_reaskWhileDownloading_clearsWithoutStateChange()
+{
+    // MFC clears the flag BEFORE testing the state (BaseClient.cpp:1551-1552), so a
+    // rejected re-ask still releases the latch. Downloading must not be interrupted.
+    UpDownClient client;
+    client.setDownloadState(DownloadState::Downloading);
+    client.setReaskPending(true);
+
+    client.onHandshakeCompleted();
+
+    QVERIFY2(!client.reaskPending(), "flag is cleared even when the inner guard rejects");
+    QCOMPARE(client.downloadState(), DownloadState::Downloading);
+}
+
+void tst_UpDownClient::onHandshakeCompleted_reaskWhileNone_clearsWithoutStateChange()
+{
+    UpDownClient client;
+    client.setDownloadState(DownloadState::None);
+    client.setReaskPending(true);
+
+    client.onHandshakeCompleted();
+
+    QVERIFY(!client.reaskPending());
+    QCOMPARE(client.downloadState(), DownloadState::None);
+}
+
+void tst_UpDownClient::onHandshakeCompleted_fileListArmed_sendsAskSharedFiles()
+{
+    // requestSharedFileList() arms the counter and dials; the request itself is deferred
+    // to here so it can also serve a client we were not yet connected to.
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    client.setFileListRequested(1);
+    client.onHandshakeCompleted();
+    QCOMPARE(readOpcode(peer), static_cast<uint8>(OP_ASKSHAREDFILES));
+
+    // A peer that advertised directory support gets the directory opcode instead
+    // (MFC picks on m_fSharedDirectories, BaseClient.cpp:1570). The counter is left
+    // alone by this block — the answer handlers own it — so it is still armed.
+    client.setSupportsSharedDirectories(true);
+    client.onHandshakeCompleted();
+    QCOMPARE(readOpcode(peer), static_cast<uint8>(OP_ASKSHAREDDIRS));
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::onHandshakeCompleted_fileListDirCount_doesNotResend()
+{
+    // Once the peer answers with a directory list the counter becomes the directory
+    // count. MFC's guard is a strict "== 1" precisely so a reconnect mid-enumeration
+    // does not restart the whole exchange.
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    client.setFileListRequested(3);
+    client.onHandshakeCompleted();
+    QVERIFY2(!waitForFrame(peer, 300), "counter != 1 must not re-request the list");
+
+    // ...and a counter of 0 (nothing requested) is silent too.
+    client.setFileListRequested(0);
+    client.onHandshakeCompleted();
+    QVERIFY(!waitForFrame(peer, 300));
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::maybeBootstrapKadFromPeer_guards()
+{
+    QTemporaryDir cfgDir;
+    QVERIFY(cfgDir.isValid());
+    kad::KadPrefs prefs(cfgDir.path());
+    kad::Kademlia kad;
+    kad.start(&prefs);
+
+    QSignalSpy sent(kad.getUDPListener(), &kad::KademliaUDPListener::packetToSend);
+    QVERIFY(sent.isValid());
+
+    constexpr uint32 kPeerIP = 0x0A000001;   // 10.0.0.1, host order
+    constexpr uint16 kKadPort = 5678;
+
+    // Every rejection case runs first: Kademlia::bootstrap() rate-limits itself to one
+    // attempt per 10s, so a successful call would mask everything after it.
+    UpDownClient noPort;
+    noPort.setUserAddress(Address::fromHostOrder(kPeerIP));
+    noPort.setKadVersion(KADEMLIA_VERSION2_47a);
+    noPort.maybeBootstrapKadFromPeer();
+    QCOMPARE(sent.count(), 0);               // no Kad port advertised
+
+    UpDownClient oldVersion;
+    oldVersion.setUserAddress(Address::fromHostOrder(kPeerIP));
+    oldVersion.setKadPort(kKadPort);
+    oldVersion.setKadVersion(KADEMLIA_VERSION2_47a - 1);
+    oldVersion.maybeBootstrapKadFromPeer();
+    QCOMPARE(sent.count(), 0);               // too old to answer KADEMLIA2_BOOTSTRAP_REQ
+
+    UpDownClient v6Peer;
+    v6Peer.setUserAddress(Address::fromString(QStringLiteral("2001:db8::1")));
+    v6Peer.setKadPort(kKadPort);
+    v6Peer.setKadVersion(KADEMLIA_VERSION2_47a);
+    v6Peer.maybeBootstrapKadFromPeer();
+    QVERIFY2(sent.count() == 0,
+             "an IPv6 peer has no usable v4 address — bootstrapping it would target 0.0.0.0");
+
+    // ...and the accepted case actually reaches the wire, at the right destination.
+    UpDownClient good;
+    good.setUserAddress(Address::fromHostOrder(kPeerIP));
+    good.setKadPort(kKadPort);
+    good.setKadVersion(KADEMLIA_VERSION2_47a);
+    good.maybeBootstrapKadFromPeer();
+    QCOMPARE(sent.count(), 1);
+
+    const QList<QVariant> args = sent.takeFirst();
+    QCOMPARE(args.at(1).toUInt(), kPeerIP);          // host order, as Kademlia expects
+    QCOMPARE(static_cast<uint16>(args.at(2).toUInt()), kKadPort);
+
     kad.stop();
 }
 

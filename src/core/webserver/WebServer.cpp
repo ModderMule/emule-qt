@@ -918,6 +918,12 @@ QHttpServerResponse WebServer::handlePostFriend(const QJsonObject& body)
     const auto ip = static_cast<uint32>(body[QStringLiteral("ip")].toDouble());
     const auto friendPort = static_cast<uint16>(body[QStringLiteral("port")].toInt());
 
+    // "addr" is the IPv6-capable form the GET side emits; "ip" remains accepted for
+    // IPv4-only callers, which is all the numeric field can express.
+    Address friendAddr = Address::fromString(body[QStringLiteral("addr")].toString());
+    if (friendAddr.isNull())
+        friendAddr = Address::fromNetworkOrder(ip);
+
     bool hasHash = !hashStr.isEmpty() && hashStr.size() == 32;
     std::array<uint8, 16> hashBytes{};
 
@@ -925,7 +931,7 @@ QHttpServerResponse WebServer::handlePostFriend(const QJsonObject& body)
         hasHash = decodeBase16(hashStr, hashBytes.data(), 16) > 0;
 
     auto* f = m_friendList->addFriend(hasHash ? hashBytes.data() : nullptr,
-                                       ip, friendPort, name, hasHash);
+                                       friendAddr, friendPort, name, hasHash);
     if (!f)
         return jsonError(400, QStringLiteral("Failed to add friend"));
 
@@ -1264,7 +1270,7 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
                 kadInst->stop();
         } else if (cmd == QStringLiteral("rcfirewall")) {
             if (auto* kadInst = kad::Kademlia::instance())
-                kadInst->recheckFirewalled();
+                (void)kadInst->recheckFirewalled();
         }
         return;
     }

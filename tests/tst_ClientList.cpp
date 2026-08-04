@@ -2,13 +2,17 @@
 /// @brief Tests for client/ClientList — client management, find operations, banning.
 
 #include "TestHelpers.h"
+#include "app/AppContext.h"
+#include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "net/Address.h"
+#include "net/ClientReqSocket.h"
 #include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
 
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTest>
 
 #include <cstring>
@@ -50,6 +54,16 @@ private slots:
     void signal_clientAdded();
     void signal_clientRemoved();
     void globalDeadSourceList_initialized();
+
+    // attachToAlreadyKnown — MFC CClientList::AttachToAlreadyKnown
+    void attach_matchesByUserHash();
+    void attach_matchesByAddressWithoutHash();
+    void attach_noMatchReturnsNull();
+    void attach_skipsTheNewClientItself();
+    void attach_leavesNewClientInList();
+    void attach_rehomesSocketToKnownClient();
+    void attach_refusesAndBansIdentifiedImpostor();
+    void attach_refusesUnidentifiedCollisionWithoutBanning();
 };
 
 // ---------------------------------------------------------------------------
@@ -207,11 +221,26 @@ void tst_ClientList::findByUserHash_fallback()
 void tst_ClientList::findByIP_UDP()
 {
     ClientList list;
-    UpDownClient client;
-    client.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
-    client.setUDPPort(4672);
-    list.addClient(&client);
-    QCOMPARE(list.findByIP_UDP(0xC0A80001u, 4672), &client);
+    UpDownClient v4;
+    const Address addr = Address::fromString(QStringLiteral("10.20.30.40"));
+    v4.setUserAddress(addr);
+    v4.setUDPPort(4672);
+    list.addClient(&v4);
+
+    // Deliberately non-palindromic: the old uint32 API compared network order while
+    // every caller passed the host-order value out of an Endpoint, so this never matched.
+    QCOMPARE(list.findByEndpoint_UDP(addr, 4672), &v4);
+    QCOMPARE(list.findByEndpoint_UDP(addr, 4673), nullptr);
+
+    // An IPv6 peer is findable at all — the uint32 form could not represent one.
+    UpDownClient v6;
+    const Address addr6 = Address::fromString(QStringLiteral("2001:db8::1"));
+    v6.setUserAddress(addr6);
+    v6.setUDPPort(4672);
+    list.addClient(&v6);
+    QCOMPARE(list.findByEndpoint_UDP(addr6, 4672), &v6);
+    // Same port, different family — must not cross-match.
+    QCOMPARE(list.findByEndpoint_UDP(addr, 4672), &v4);
 }
 
 void tst_ClientList::findByServerID()
@@ -319,6 +348,252 @@ void tst_ClientList::globalDeadSourceList_initialized()
     key.port = 4662;
     list.globalDeadSourceList.addDeadSource(key, false);
     QVERIFY(list.globalDeadSourceList.isDeadSource(key));
+}
+
+// ---------------------------------------------------------------------------
+// attachToAlreadyKnown
+//
+// These drive the matcher directly. A null `sender` exercises matching alone, which is
+// why the function deliberately does not delete or de-list anything: stack-allocated
+// clients stay valid and the socket-free cases need no networking at all.
+// ---------------------------------------------------------------------------
+
+void tst_ClientList::attach_matchesByUserHash()
+{
+    ClientList list;
+    UpDownClient known, incoming;
+    uint8 hash[16];
+    fillHash(hash, 0xAA);
+
+    // Same identity, different address/port — only the user hash can match these two.
+    known.setUserHash(hash);
+    known.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    known.setUserPort(4662);
+    incoming.setUserHash(hash);
+    incoming.setUserAddress(Address::fromNetworkOrder(0x0A0A0A0A));
+    incoming.setUserPort(5000);
+
+    list.addClient(&known);
+    list.addClient(&incoming);
+
+    QCOMPARE(list.attachToAlreadyKnown(&incoming, nullptr), &known);
+}
+
+void tst_ClientList::attach_matchesByAddressWithoutHash()
+{
+    ClientList list;
+    UpDownClient known, incoming;
+
+    // No user hashes at all, so the address/port branch is the only one that can fire.
+    known.setUserAddress(Address::fromNetworkOrder(0xC0A80005));
+    known.setUserPort(4662);
+    incoming.setUserAddress(Address::fromNetworkOrder(0xC0A80005));
+    incoming.setUserPort(4662);
+
+    list.addClient(&known);
+    list.addClient(&incoming);
+
+    QCOMPARE(list.attachToAlreadyKnown(&incoming, nullptr), &known);
+}
+
+void tst_ClientList::attach_noMatchReturnsNull()
+{
+    ClientList list;
+    UpDownClient known, incoming;
+    uint8 hashA[16], hashB[16];
+    fillHash(hashA, 0xAA);
+    fillHash(hashB, 0xBB);
+
+    known.setUserHash(hashA);
+    known.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    known.setUserPort(4662);
+    incoming.setUserHash(hashB);
+    incoming.setUserAddress(Address::fromNetworkOrder(0x0A0A0A0A));
+    incoming.setUserPort(5000);
+
+    list.addClient(&known);
+    list.addClient(&incoming);
+
+    QCOMPARE(list.attachToAlreadyKnown(&incoming, nullptr), nullptr);
+}
+
+void tst_ClientList::attach_skipsTheNewClientItself()
+{
+    // handleIncomingConnection() adds the throwaway before its hello arrives, so it is
+    // always in the list when we look. It must never match itself — otherwise the scan
+    // would short-circuit on its own address and never reach the real client.
+    ClientList list;
+    UpDownClient incoming;
+    uint8 hash[16];
+    fillHash(hash, 0xCC);
+    incoming.setUserHash(hash);
+    incoming.setUserAddress(Address::fromNetworkOrder(0xC0A80009));
+    incoming.setUserPort(4662);
+
+    list.addClient(&incoming);
+    QCOMPARE(list.clientCount(), 1);
+
+    QCOMPARE(list.attachToAlreadyKnown(&incoming, nullptr), nullptr);
+}
+
+void tst_ClientList::attach_leavesNewClientInList()
+{
+    // Contract: unlike MFC, this never deletes or de-lists newClient — the caller does,
+    // because the only production caller runs inside newClient's own signal handler.
+    ClientList list;
+    UpDownClient known, incoming;
+    uint8 hash[16];
+    fillHash(hash, 0xDD);
+    known.setUserHash(hash);
+    known.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    known.setUserPort(4662);
+    incoming.setUserHash(hash);
+    incoming.setUserAddress(Address::fromNetworkOrder(0x0A0A0A0A));
+    incoming.setUserPort(5000);
+
+    list.addClient(&known);
+    list.addClient(&incoming);
+
+    QCOMPARE(list.attachToAlreadyKnown(&incoming, nullptr), &known);
+    QCOMPARE(list.clientCount(), 2);
+    QVERIFY(list.isValidClient(&incoming));
+}
+
+void tst_ClientList::attach_rehomesSocketToKnownClient()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    auto* sender = new ClientReqSocket();
+    sender->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(sender->waitForConnected(5000));
+
+    ClientList list;
+    UpDownClient known, incoming;
+    uint8 hash[16];
+    fillHash(hash, 0xEE);
+    known.setUserHash(hash);
+    known.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    known.setUserPort(4662);
+    incoming.setUserHash(hash);
+    incoming.setUserAddress(Address::fromNetworkOrder(0x0A0A0A0A));
+    incoming.setUserPort(5000);
+    incoming.wireIncomingSocket(sender);
+    QCOMPARE(incoming.socket(), sender);
+
+    list.addClient(&known);
+    list.addClient(&incoming);
+
+    QCOMPARE(list.attachToAlreadyKnown(&incoming, sender), &known);
+    QCOMPARE(known.socket(), sender);          // the survivor now owns the connection
+    QCOMPARE(incoming.socket(), nullptr);      // and the throwaway has let go
+
+    known.setSocket(nullptr);
+    sender->deleteLater();
+    QCoreApplication::processEvents();
+}
+
+void tst_ClientList::attach_refusesAndBansIdentifiedImpostor()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    auto* knownSocket = new ClientReqSocket();
+    knownSocket->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(knownSocket->waitForConnected(5000));
+    auto* sender = new ClientReqSocket();
+    sender->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(sender->waitForConnected(5000));
+
+    ClientList list;
+    theApp.clientList = &list;   // UpDownClient::ban() posts the ban through theApp
+
+    UpDownClient known, incoming;
+    uint8 hash[16];
+    fillHash(hash, 0xAB);
+
+    const uint32 knownIPNet = 0xC0A80001;
+    known.setUserHash(hash);
+    known.setUserAddress(Address::fromNetworkOrder(knownIPNet));
+    known.setUserPort(4662);
+    known.setSocket(knownSocket);
+
+    // Secure identification pins the hash to this address, so a same-hash peer arriving
+    // from anywhere else is the forger.
+    ClientCredits credits(hash);
+    uint8 pubKey[10];
+    std::memset(pubKey, 0xBB, sizeof(pubKey));
+    QVERIFY(credits.setSecureIdent(pubKey, 10));
+    credits.verified(known.userAddress().toNetworkUint32());
+    QCOMPARE(credits.currentIdentState(known.userAddress().toNetworkUint32()),
+             IdentState::Identified);
+    known.setCredits(&credits);
+
+    incoming.setUserHash(hash);
+    incoming.setUserAddress(Address::fromNetworkOrder(0x0A0A0A0A));
+    incoming.setUserPort(5000);
+    incoming.wireIncomingSocket(sender);
+
+    list.addClient(&known);
+    list.addClient(&incoming);
+
+    QCOMPARE(list.attachToAlreadyKnown(&incoming, sender), nullptr);   // merge refused
+    QCOMPARE(incoming.uploadState(), UploadState::Banned);
+    QVERIFY(list.isBannedClient(incoming.connectAddress()));
+    QCOMPARE(known.socket(), knownSocket);     // the identified client keeps its socket
+
+    known.setSocket(nullptr);
+    incoming.setSocket(nullptr);
+    theApp.clientList = nullptr;
+    knownSocket->deleteLater();
+    sender->deleteLater();
+    QCoreApplication::processEvents();
+}
+
+void tst_ClientList::attach_refusesUnidentifiedCollisionWithoutBanning()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    auto* knownSocket = new ClientReqSocket();
+    knownSocket->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(knownSocket->waitForConnected(5000));
+    auto* sender = new ClientReqSocket();
+    sender->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(sender->waitForConnected(5000));
+
+    ClientList list;
+    theApp.clientList = &list;
+
+    UpDownClient known, incoming;
+    uint8 hash[16];
+    fillHash(hash, 0xAC);
+
+    // Same collision as above, but without secure identification there is no way to tell
+    // which side is lying — so refuse the merge and ban nobody.
+    known.setUserHash(hash);
+    known.setUserAddress(Address::fromNetworkOrder(0xC0A80001));
+    known.setUserPort(4662);
+    known.setSocket(knownSocket);
+
+    incoming.setUserHash(hash);
+    incoming.setUserAddress(Address::fromNetworkOrder(0x0A0A0A0A));
+    incoming.setUserPort(5000);
+    incoming.wireIncomingSocket(sender);
+
+    list.addClient(&known);
+    list.addClient(&incoming);
+
+    QCOMPARE(list.attachToAlreadyKnown(&incoming, sender), nullptr);
+    QVERIFY(incoming.uploadState() != UploadState::Banned);
+    QVERIFY(!list.isBannedClient(incoming.connectAddress()));
+
+    known.setSocket(nullptr);
+    incoming.setSocket(nullptr);
+    theApp.clientList = nullptr;
+    knownSocket->deleteLater();
+    sender->deleteLater();
+    QCoreApplication::processEvents();
 }
 
 QTEST_MAIN(tst_ClientList)

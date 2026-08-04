@@ -165,7 +165,10 @@ void UpDownClient::sendFileRequest()
         if (isSourceRequestAllowed()) {
             if (supportsSourceExchange2()) {
                 data.writeUInt8(OP_REQUESTSOURCES2);
-                data.writeUInt8(SOURCEEXCHANGE2_VERSION);
+                // Ask for the Extended-SX version (1) when the peer supports it, so it
+                // answers with the tag-block format that can carry IPv6 sources.
+                data.writeUInt8(supportsExtendedXS() ? SOURCEEXCHANGEEXT_VERSION
+                                                     : SOURCEEXCHANGE2_VERSION);
                 const uint16 sxOptions = 0;
                 data.writeUInt16(sxOptions);
             } else {
@@ -215,7 +218,8 @@ void UpDownClient::sendFileRequest()
         if (isSourceRequestAllowed()) {
             if (supportsSourceExchange2()) {
                 auto sxPacket = std::make_unique<Packet>(OP_REQUESTSOURCES2, 19, OP_EMULEPROT);
-                sxPacket->pBuffer[0] = static_cast<char>(SOURCEEXCHANGE2_VERSION);
+                sxPacket->pBuffer[0] = static_cast<char>(
+                    supportsExtendedXS() ? SOURCEEXCHANGEEXT_VERSION : SOURCEEXCHANGE2_VERSION);
                 pokeUInt16(reinterpret_cast<uint8*>(sxPacket->pBuffer + 1), 0);
                 std::memcpy(sxPacket->pBuffer + 3, m_reqUpFileId.data(), 16);
                 sendPacket(std::move(sxPacket));
@@ -245,6 +249,12 @@ void UpDownClient::sendStartupLoadReq()
 {
     if (!m_socket || !m_reqFile)
         return;
+
+    // We are asking for a queue slot, so a rank answer is now expected (MFC
+    // DownloadClient.cpp:433). Anything that arrives without this flag set is
+    // unsolicited and feeds the flood detector.
+    m_queueRankPending = true;
+    m_unaskQueueRankRecv = 0;
 
     auto packet = std::make_unique<Packet>(OP_STARTUPLOADREQ, 16);
     std::memcpy(packet->pBuffer, m_reqUpFileId.data(), 16);
@@ -467,6 +477,9 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
 void UpDownClient::processAcceptUpload()
 {
     m_remoteQueueFull = false;
+    // An accept is normally followed by a rank update — expect one (MFC
+    // DownloadClient.cpp:1964).
+    m_queueRankPending = true;
     logDebug(QStringLiteral("processAcceptUpload: downloadState=%1 from %2")
                  .arg(static_cast<int>(m_downloadState)).arg(userName()));
 
@@ -1126,8 +1139,16 @@ void UpDownClient::udpReaskForDownload()
             return;
     }
 
+    // A source reachable over IPv6 takes the direct branch even though its ed2k ID reads as
+    // a LowID: an IPv6-only source is constructed with the kNoIPv4SourceId placeholder, so
+    // hasLowID() is true for every one of them and they would otherwise fall through to the
+    // buddy branch and wait forever for a buddy they will never have. Same predicate as the
+    // dial-address choice in tryToConnect().
+    const bool directReachable =
+        !hasLowID() || m_connectAddress.isIPv6() || (m_openIPv6 && !m_userIPv6.isNull());
+
     // MFC DownloadClient.cpp:1347-1401
-    if (!hasLowID()) {
+    if (directReachable) {
         // High-ID: direct OP_REASKFILEPING to the source
         // Don't use UDP to ask for sources (use TCP for that)
         if (isSourceRequestAllowed())
@@ -1161,8 +1182,17 @@ void UpDownClient::udpReaskForDownload()
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);
         if (theApp.clientUDP) {
             const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
-            theApp.clientUDP->sendPacket(std::move(packet), m_connectAddress.toUint32(), m_udpPort,
-                                         encrypt, m_userHash.data(), false, 0);
+            // m_connectAddress is only filled in by tryToConnect(), so a source we have not
+            // dialled yet still needs its advertised IPv6 as the destination.
+            const Address& target =
+                m_connectAddress.isNull() ? m_userIPv6 : m_connectAddress;
+            // Endpoint form — toUint32() is 0 for an IPv6 peer, which sent every reask
+            // to 0.0.0.0 and silently starved v6 sources of queue-rank refreshes.
+            if (!target.isNull()) {
+                theApp.clientUDP->sendPacket(std::move(packet),
+                                             Endpoint(target, m_udpPort),
+                                             encrypt, m_userHash.data(), false, 0);
+            }
         }
     } else if (hasLowID() && !m_buddyAddress.isNull() && m_buddyPort != 0 && hasValidBuddyID()) {
         // Low-ID with buddy: send OP_REASKCALLBACKUDP to buddy for relay.
@@ -1191,7 +1221,8 @@ void UpDownClient::udpReaskForDownload()
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKCALLBACKUDP);
         // MFC FIXME: We don't know which kad version the buddy has, so send unencrypted
         if (theApp.clientUDP)
-            theApp.clientUDP->sendPacket(std::move(packet), m_buddyAddress.toUint32(), m_buddyPort,
+            theApp.clientUDP->sendPacket(std::move(packet),
+                                          Endpoint(m_buddyAddress, m_buddyPort),
                                           false, nullptr, true, 0);
     }
 }

@@ -254,13 +254,20 @@
     <ClCompile Include="app\VersionChecker.cpp" />
     <ClCompile Include="app\SkinEngine.cpp" />
     <ClCompile Include="app\main.cpp" />
+    <ClCompile Include="utils\Ed2kLinkImporter.cpp" />
+    <ClCompile Include="utils\IpcFeedback.cpp" />
     <ClCompile Include="utils\PreviewLauncher.cpp" />
+    <ClCompile Include="utils\StatusBarNotifier.cpp" />
     <ClCompile Include="utils\WebServices.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="controls\AbstractListView.h" />
     <ClInclude Include="controls\AbstractTableModel.h" />
+    <ClInclude Include="utils\Ed2kLinkImporter.h" />
+    <ClInclude Include="utils\IpcFeedback.h" />
     <ClInclude Include="utils\PreviewLauncher.h" />
+    <ClInclude Include="utils\StatusBarNotifier.h" />
     <ClInclude Include="utils\WebServices.h" />
     <ClInclude Include="app\SkinEngine.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />

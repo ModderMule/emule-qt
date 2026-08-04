@@ -98,6 +98,36 @@ public:
     void setServerAddress(const Address& a)  { m_serverAddress = a; }
     void setBuddyAddress(const Address& a)   { m_buddyAddress = a; }
 
+    // IPv6 — the peer's advertised public IPv6 (from CT_MOD_IP_V6 in hello / SX / Kad).
+    // m_openIPv6 latches true once we learn a reachable IPv6, letting the connection
+    // logic prefer IPv6 even for an IPv4-LowID peer.
+    [[nodiscard]] const Address& userIPv6() const  { return m_userIPv6; }
+    void setUserIPv6(const Address& a)             { m_userIPv6 = a; }
+    [[nodiscard]] const Address& buddyIPv6() const { return m_buddyIPv6; }
+    void setBuddyIPv6(const Address& a)            { m_buddyIPv6 = a; }
+    [[nodiscard]] bool openIPv6() const            { return m_openIPv6; }
+    void setOpenIPv6(bool v)                       { m_openIPv6 = v; }
+    [[nodiscard]] bool supportsIPv6() const        { return m_supportsIPv6; }
+    [[nodiscard]] bool supportsExtendedXS() const  { return m_supportsExtendedXS; }
+    void setSupportsExtendedXS(bool s)             { m_supportsExtendedXS = s; }
+    /// Peer promises to skip ExtSX tags it does not know rather than discarding the whole
+    /// answer, so it is safe to send it CT_EMULE_USERHASH / CT_EMULE_CONOPTS.
+    [[nodiscard]] bool supportsExtSXSkipTags() const { return m_supportsExtSXSkipTags; }
+    void setSupportsExtSXSkipTags(bool s)            { m_supportsExtSXSkipTags = s; }
+
+    /// Our own public IPv6 changed — remember to tell this peer. Deliberately lazy: the
+    /// packet goes out the next time we walk this client anyway (upload queue or source
+    /// list), so a temporary-address rotation cannot fan a write out to every open socket
+    /// at once. Mirrors the compatibility target's TrigReask/m_bSendIP pair.
+    void markSendIPPending()                       { m_sendIPPending = true; }
+    void flushPendingIPChange();
+
+    /// Which family the traffic to this peer actually travels over — the live socket
+    /// wins, since that is what carries the data; the addresses we would dial are the
+    /// fallback. Distinct from supportsIPv6()/openIPv6(), which only say the peer *has*
+    /// an IPv6 we could use. Used for upload-slot fairness and the per-IPv6 queue limit.
+    [[nodiscard]] bool isIPv6Connection() const;
+
     [[nodiscard]] uint32 userIDHybrid() const { return m_userIDHybrid; }
     void setUserIDHybrid(uint32 id) { m_userIDHybrid = id; }
     [[nodiscard]] bool hasLowID() const;
@@ -178,6 +208,10 @@ public:
         return m_supportsFileIdent && !m_testDisableMultiPacket;
     }
     void setTestDisableMultiPacket(bool disable) { m_testDisableMultiPacket = disable; }
+    /// Peer understands OP_ASKSHAREDDIRS, i.e. its shares can be browsed per directory
+    /// rather than as one flat list. Set from the hello for hybrids and eMule >= 0.28.
+    [[nodiscard]] bool supportsSharedDirectories() const { return m_sharedDirectories; }
+    void setSupportsSharedDirectories(bool v) { m_sharedDirectories = v; }
     [[nodiscard]] bool supportsUDP() const { return m_udpPort != 0 && m_udpVer != 0; }
     [[nodiscard]] bool supportsCryptLayer() const { return m_supportsCryptLayer; }
     [[nodiscard]] bool requestsCryptLayer() const { return m_requestsCryptLayer; }
@@ -322,6 +356,14 @@ public:
     [[nodiscard]] bool helloAnswerPending() const { return m_helloAnswerPending; }
     void setHelloAnswerPending(bool v) { m_helloAnswerPending = v; }
 
+    /// True while this client's current socket was accepted rather than dialled.
+    /// The inbound and outbound handshakes differ in ways connectionEstablished() and the
+    /// OP_HELLO handler both have to know about: an accepted peer has already sent its
+    /// hello (so we must not send one) and will never send us an OP_HELLOANSWER (so a
+    /// deferred file request would never fire). Analogous to MFC's `bNewClient`
+    /// (srchybrid/ListenSocket.cpp:237).
+    [[nodiscard]] bool incomingConnection() const { return m_incomingConnection; }
+
     [[nodiscard]] bool addNextConnect() const { return m_addNextConnect; }
     void setAddNextConnect(bool v) { m_addNextConnect = v; }
 
@@ -414,6 +456,28 @@ public:
 
     virtual bool tryToConnect(bool ignoreMaxCon = false);
     virtual void connectionEstablished();
+
+    /// The three post-hello actions from MFC's ConnectionEstablished
+    /// (BaseClient.cpp:1550-1573): the pending re-ask, the upload-slot activation,
+    /// and the deferred shared-file-list request.
+    ///
+    /// This is the other half of connectionEstablished(), split out because the two
+    /// run at different moments in this port. MFC calls ConnectionEstablished() only
+    /// once the hello exchange has happened (ListenSocket.cpp:229 for OP_HELLOANSWER,
+    /// :280 for OP_HELLO, BaseClient.cpp:1278 for a socket that was already up),
+    /// whereas connectionEstablished() here is wired to the socket's connected signal
+    /// — it runs as soon as TCP is up, which is where it sends OP_HELLO. Running these
+    /// three blocks there would put OP_ACCEPTUPLOADREQ and OP_ASKSHAREDFILES on the
+    /// wire before our own hello, and would fire the file-list request a second time
+    /// when the hello answer arrived. So this is invoked from MFC's three real trigger
+    /// points instead.
+    void onHandshakeCompleted();
+
+    /// Bootstrap Kad off a peer that just told us its Kad port (MFC
+    /// ListenSocket.cpp:289-290, :866, :1057). Must run AFTER the hello has been
+    /// parsed — clearHelloProperties() zeroes m_kadPort and m_kadVersion.
+    void maybeBootstrapKadFromPeer();
+
     virtual bool disconnected(const QString& reason, bool fromSocket = false);
     void connect();
     virtual void onSocketConnected(int errorCode);
@@ -435,6 +499,9 @@ public:
     void checkFailedFileIdReqs(const uint8* fileHash);
     void sendPublicIPRequest();
     void processPublicIPAnswer(const uint8* data, uint32 size);
+    /// OP_CHANGE_CLIENT_IP — the peer's new public IPv6, 16 raw bytes, no tag wrapper.
+    /// Reachable from both protocol dispatchers; see the opcode comment in Opcodes.h.
+    void processChangeClientIP(const uint8* data, uint32 size);
     void sendSharedDirectories();
     bool safeConnectAndSendPacket(std::unique_ptr<Packet> packet);
     [[nodiscard]] bool isObfuscatedConnectionEstablished() const;
@@ -500,6 +567,10 @@ public:
     void addRequestCount(const uint8* fileID);
     void unBan();
     void ban(const QString& reason = {});
+    /// Record one abuse strike against this peer's ADDRESS and ban on the second.
+    /// Shared by every flood detector; the counter survives this object's destruction,
+    /// so reconnecting does not wipe a strike. See ClientList::trackBadRequest.
+    void registerBadRequest(const QString& reason);
     [[nodiscard]] uint32 waitStartTime() const;
     [[nodiscard]] uint32 getWaitTimeDelay() const;
     void setWaitStartTime();
@@ -535,6 +606,7 @@ public:
     [[nodiscard]] bool isPartAvailable(uint32 part) const;
     void setRemoteQueueRank(uint32 rank, bool updateDisplay = false);
     [[nodiscard]] bool reaskPending() const { return m_reaskPending; }
+    void setReaskPending(bool v) { m_reaskPending = v; }
     void udpReaskACK(uint16 newQR);
     void udpReaskFNF();
     void udpReaskForDownload();
@@ -669,6 +741,8 @@ private:
     uint16 m_buddyPort = 0;
     std::array<uint8, 16> m_buddyID{};
     bool m_buddyIDValid = false;
+    Address m_userIPv6;              // peer's advertised public IPv6
+    Address m_buddyIPv6;             // serving buddy's public IPv6
 
     // -- Protocol version ---------------------------------------------------
     uint32 m_clientVersion = 0;
@@ -765,6 +839,11 @@ private:
     bool m_supportsCaptcha = false;
     bool m_directUDPCallback = false;
     bool m_supportsFileIdent = false;
+    bool m_supportsIPv6 = false;        // peer set CT_MOD_MISCOPTIONS bit 2
+    bool m_openIPv6 = false;            // peer has a reachable public IPv6
+    bool m_supportsExtendedXS = false;  // peer set CT_MOD_MISCOPTIONS bit 0
+    bool m_supportsExtSXSkipTags = false; // peer set CT_MOD_MISCOPTIONS bit 5
+    bool m_sendIPPending = false;       // owe this peer an OP_CHANGE_CLIENT_IP
     bool m_hashsetRequestingAICH = false;
     bool m_testDisableMultiPacket = false;
 
@@ -812,6 +891,7 @@ private:
     bool m_gplEvildoer = false;
     bool m_helloAnswerPending = false;
     bool m_pendingFileRequest = false;
+    bool m_incomingConnection = false;
     bool m_addNextConnect = false;
     bool m_sourceExchangeSwapped = false;
     bool m_secIdentSent = false;

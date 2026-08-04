@@ -59,8 +59,8 @@ file(GLOB_RECURSE FRIEND_SOURCES  CONFIGURE_DEPENDS "friends/*.cpp" "friends/*.h
 # Module 19: Web server
 file(GLOB_RECURSE WEB_SOURCES     CONFIGURE_DEPENDS "webserver/*.cpp" "webserver/*.h")
 
-# Module 6: Firewall & UPnP
-file(GLOB_RECURSE UPNP_SOURCES    CONFIGURE_DEPENDS "upnp/*.cpp"    "upnp/*.h")
+# Module 6b: Port mapping — PCP / NAT-PMP / UPnP backends behind one facade
+file(GLOB_RECURSE PORTMAP_SOURCES CONFIGURE_DEPENDS "portmap/*.cpp" "portmap/*.h")
 
 # Module 20: Media & preview
 file(GLOB_RECURSE MEDIA_SOURCES   CONFIGURE_DEPENDS "media/*.cpp"   "media/*.h")
@@ -77,7 +77,7 @@ add_library(emulecore STATIC
     ${UTILS_SOURCES}
     ${CRYPTO_SOURCES}
     ${NET_SOURCES}
-    ${UPNP_SOURCES}
+    ${PORTMAP_SOURCES}
     ${PROTO_SOURCES}
     ${SERVER_SOURCES}
     ${CLIENT_SOURCES}
@@ -164,7 +164,7 @@ target_precompile_headers(emulecore PRIVATE
 
 # Source groups for IDE navigation (mirrors directory structure)
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
-    ${UTILS_SOURCES}  ${CRYPTO_SOURCES} ${NET_SOURCES}    ${UPNP_SOURCES}
+    ${UTILS_SOURCES}  ${CRYPTO_SOURCES} ${NET_SOURCES}    ${PORTMAP_SOURCES}
     ${PROTO_SOURCES}   ${SERVER_SOURCES}  ${CLIENT_SOURCES} ${KAD_SOURCES}
     ${FILES_SOURCES}   ${XFER_SOURCES}    ${SEARCH_SOURCES} ${IPFILT_SOURCES}
     ${STATS_SOURCES}   ${PREFS_SOURCES}   ${CHAT_SOURCES}   ${FRIEND_SOURCES}

@@ -15,6 +15,7 @@
 #include <compare>
 #include <cstdint>
 #include <functional>
+#include <optional>
 
 namespace eMule {
 
@@ -75,6 +76,19 @@ public:
     /// True if this is a publicly routable IP (not reserved, not private, not null).
     /// Checks all IANA reserved ranges for both IPv4 and IPv6.
     [[nodiscard]] bool isPublicIP() const;
+
+    /// Lab mode — set once at startup from `!thePrefs.filterLANIPs()`, i.e. the existing
+    /// "this is a private network" switch. It widens isPublicIP() **for IPv6 only** to every
+    /// unicast address (loopback, ULA, link-local, 2001:db8::/32), leaving only multicast and
+    /// the unspecified address rejected. Every IPv6 acceptance decision in the client goes
+    /// through isPublicIP(), so this one switch covers the hello tag, ExtSX, Kad results,
+    /// server sources and our own advertise gate together.
+    ///
+    /// Needed because interop harnesses run on the documentation prefix and single-host rigs
+    /// run on ::1, both of which the production rules refuse — correctly, in production.
+    /// net/ cannot include prefs/, so the value is pushed in; see CoreSession startup.
+    static void setLabNetworkMode(bool enabled);
+    [[nodiscard]] static bool labNetworkMode();
 
     /// True if this is a valid routable IP (not LAN, not 0.x.x.x, not null).
     /// Legacy compat — equivalent to isPublicIP() when allowLan=false.
@@ -170,6 +184,13 @@ public:
     /// From host byte order IP + port (Kademlia convention).
     [[nodiscard]] static constexpr Endpoint fromHostOrder(uint32 ip, uint16 port) noexcept;
 
+    /// Parse "1.2.3.4:port", "[2001:db8::1]:port", "[2001:db8::1]" or a bare IPv6
+    /// literal. The inverse of toString(). Returns nullopt when the host part is not
+    /// an IP literal (use parseHostPort() when a DNS name is acceptable) or when the
+    /// resulting port would be 0.
+    [[nodiscard]] static std::optional<Endpoint> fromString(QStringView text,
+                                                            uint16 defaultPort = 0);
+
     [[nodiscard]] constexpr const Address& address() const noexcept { return m_address; }
     [[nodiscard]] constexpr uint16 port() const noexcept { return m_port; }
 
@@ -196,11 +217,77 @@ constexpr Endpoint Endpoint::fromHostOrder(uint32 ip, uint16 port) noexcept
 }
 
 // ============================================================================
+// Textual host:port parsing / formatting (family-agnostic)
+// ============================================================================
+
+/// A textual host with an optional port. @p host is never bracketed.
+struct HostPort {
+    QString host;                   ///< IP literal (brackets stripped) or DNS name
+    uint16  port = 0;
+    bool    hostIsLiteral = false;  ///< true when Address::fromString(host) succeeds
+};
+
+/// Split a textual endpoint into host and port. Accepts:
+///   "host", "host:port", "1.2.3.4", "1.2.3.4:port",
+///   "[2001:db8::1]", "[2001:db8::1]:port", and a bare "2001:db8::1".
+///
+/// An unbracketed string holding two or more colons is only accepted when the WHOLE
+/// string is a valid IPv6 literal — it is never split at the last colon, because
+/// "2001:db8::1:4662" is itself a valid address and guessing silently corrupts it.
+/// Bracketed forms require the bracketed text to be an IPv6 literal, so
+/// "[example.com]:80" is rejected.
+///
+/// Returns nullopt on an empty host, a malformed port, or a resulting port of 0
+/// (a port of 0 is never a usable endpoint).
+[[nodiscard]] std::optional<HostPort> parseHostPort(QStringView text, uint16 defaultPort = 0);
+
+/// Inverse of parseHostPort(): brackets @p host iff it contains ':' (i.e. is an IPv6
+/// literal), so IPv4 and DNS output is unchanged.
+[[nodiscard]] QString formatHostPort(QStringView host, uint16 port);
+
+// ============================================================================
 // ipstr overloads for Address / Endpoint
 // ============================================================================
 
 [[nodiscard]] QString ipstr(const Address& addr);
 [[nodiscard]] QString ipstr(const Endpoint& ep);
+
+// ============================================================================
+// isGoodIP / isGoodIPPort — Address-typed forms
+// ============================================================================
+//
+// These live here rather than beside the uint32 forms in OtherFunctions.h, which
+// deliberately does not include this header (same split as ipstr above).
+//
+// The IPv4 branch delegates to the existing uint32 isGoodIP so its exact acceptance
+// set is preserved — notably it is LOOSER than Address::isPublicIP(), which also
+// rejects CGNAT, TEST-NETs and 6to4 relay anycast. Swapping the two would silently
+// change which IPv4 sources we accept.
+
+/// True when the address is usable as a peer address. IPv4 keeps the classic ed2k
+/// rules; IPv6 rejects loopback, link-local, ULA, v4-mapped, NAT64, Teredo, 6to4,
+/// documentation and multicast. @p forceCheck permits LAN/private ranges.
+[[nodiscard]] bool isGoodIP(const Address& addr, bool forceCheck = false);
+
+/// isGoodIP plus a non-zero port.
+[[nodiscard]] bool isGoodIPPort(const Address& addr, uint16 port);
+
+/// Scoped Address::setLabNetworkMode() override. Lab mode is process-wide, so a test that
+/// flips it directly leaks into every test that runs after it; use this instead.
+class ScopedLabNetworkMode {
+public:
+    explicit ScopedLabNetworkMode(bool enabled) : m_previous(Address::labNetworkMode())
+    {
+        Address::setLabNetworkMode(enabled);
+    }
+    ~ScopedLabNetworkMode() { Address::setLabNetworkMode(m_previous); }
+
+    ScopedLabNetworkMode(const ScopedLabNetworkMode&) = delete;
+    ScopedLabNetworkMode& operator=(const ScopedLabNetworkMode&) = delete;
+
+private:
+    bool m_previous;
+};
 
 } // namespace eMule
 
@@ -215,3 +302,10 @@ template <>
 struct std::hash<eMule::Endpoint> {
     std::size_t operator()(const eMule::Endpoint& e) const noexcept { return e.hash(); }
 };
+
+// -- Qt metatypes --------------------------------------------------------------
+// Needed to carry an Address through a signal argument (IPFilter::ipBlocked) and to
+// read one back out of a QSignalSpy.
+
+Q_DECLARE_METATYPE(eMule::Address)
+Q_DECLARE_METATYPE(eMule::Endpoint)

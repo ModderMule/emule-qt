@@ -10,12 +10,12 @@
 #include "prefs/Preferences.h"
 #include "files/PartFile.h"
 #include "net/ClientReqSocket.h"
+#include "net/HostResolver.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 
 #include "utils/Log.h"
 
-#include <QHostInfo>
 #include <QUrl>
 
 
@@ -40,6 +40,11 @@ URLClient::~URLClient() = default;
 
 bool URLClient::setUrl(const QString& url, uint32 fromIP)
 {
+    return setUrl(url, Address::fromNetworkOrder(fromIP));
+}
+
+bool URLClient::setUrl(const QString& url, const Address& fromAddr)
+{
     if (url.isEmpty())
         return false;
 
@@ -63,9 +68,9 @@ bool URLClient::setUrl(const QString& url, uint32 fromIP)
     // Set user identity from URL
     setUserName(m_urlHost);
 
-    // If we have an IP from the caller, use it
-    if (fromIP != 0)
-        setUserAddress(Address::fromNetworkOrder(fromIP));
+    // If the caller already knows the host's address (either family), use it
+    if (!fromAddr.isNull())
+        setUserAddress(fromAddr);
 
     // Set port for connection
     setUserPort(m_urlPort);
@@ -113,26 +118,24 @@ bool URLClient::tryToConnect(bool ignoreMaxCon)
         return true;
     }
 
-    // Resolve hostname to IP asynchronously
+    // Resolve hostname to IP asynchronously. IPv4-preferred with an IPv6 fallback: an
+    // HTTP source is fine over either family, but IPv4 is the safer default for a random
+    // web server. The shared resolver handles the timeout and cancels on destruction.
     logDebug(QStringLiteral("URLClient::tryToConnect: resolving %1").arg(m_urlHost));
-    QHostInfo::lookupHost(m_urlHost, this, [this](const QHostInfo& info) {
-        if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-            logDebug(QStringLiteral("URLClient: DNS resolution failed for %1: %2").arg(m_urlHost, info.errorString()));
-            disconnected(QStringLiteral("DNS resolution failed"));
-            return;
-        }
-        // Use the first IPv4 address
-        for (const auto& addr : info.addresses()) {
-            if (addr.protocol() == QAbstractSocket::IPv4Protocol) {
-                setUserAddress(Address::fromQHostAddress(addr));
-                connectToHost();
+    if (!m_hostResolver)
+        m_hostResolver = new HostResolver(this);
+
+    m_hostResolver->resolve(m_urlHost, HostResolver::Preference::PreferIPv4, this,
+        [this](const HostResolver::Result& result) {
+            if (!result.ok()) {
+                logDebug(QStringLiteral("URLClient: DNS resolution failed for %1: %2")
+                             .arg(m_urlHost, result.errorString));
+                disconnected(QStringLiteral("DNS resolution failed"));
                 return;
             }
-        }
-        // Fallback to first address if no IPv4
-        setUserAddress(Address::fromQHostAddress(info.addresses().first()));
-        connectToHost();
-    });
+            setUserAddress(result.first());
+            connectToHost();
+        });
 
     return true;
 }

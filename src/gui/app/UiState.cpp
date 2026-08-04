@@ -44,6 +44,7 @@ static void writeIntList(YAML::Emitter& out, const char* key, const QList<int>& 
 
 void UiState::load(const QString& configDir)
 {
+    m_configDir = configDir;
     const QString path = configDir + QStringLiteral("/uistate.yml");
 
     try {
@@ -92,6 +93,29 @@ void UiState::load(const QString& configDir)
         logWarning(QStringLiteral("Failed to parse uistate.yml: %1 — using defaults")
                        .arg(QString::fromStdString(ex.what())));
     }
+}
+
+void UiState::save()
+{
+    if (!m_configDir.isEmpty())
+        save(m_configDir);
+}
+
+void UiState::scheduleSave()
+{
+    if (m_configDir.isEmpty())
+        return;   // load() hasn't run — nowhere to write yet
+
+    if (!m_saveTimer) {
+        m_saveTimer = std::make_unique<QTimer>();
+        m_saveTimer->setSingleShot(true);
+        m_saveTimer->setInterval(2000);
+        QObject::connect(m_saveTimer.get(), &QTimer::timeout, m_saveTimer.get(),
+                         [this] { save(); });
+    }
+    // start() on a running single-shot timer restarts it, so a burst of resize
+    // events (dragging a column edge) collapses into a single write.
+    m_saveTimer->start();
 }
 
 void UiState::save(const QString& configDir)
@@ -162,82 +186,42 @@ void UiState::save(const QString& configDir)
 
 void UiState::bindServerSplitter(QSplitter* splitter)
 {
-    if (m_serverSplitSizes.size() == 2)
-        splitter->setSizes(m_serverSplitSizes);
-
-    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
-        m_serverSplitSizes = splitter->sizes();
-    });
+    bindSplitter(splitter, m_serverSplitSizes);
 }
 
 void UiState::bindKadSplitter(QSplitter* splitter)
 {
-    if (m_kadSplitSizes.size() == 2)
-        splitter->setSizes(m_kadSplitSizes);
-
-    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
-        m_kadSplitSizes = splitter->sizes();
-    });
+    bindSplitter(splitter, m_kadSplitSizes);
 }
 
 void UiState::bindTransferSplitter(QSplitter* splitter)
 {
-    if (m_transferSplitSizes.size() == 2)
-        splitter->setSizes(m_transferSplitSizes);
-
-    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
-        m_transferSplitSizes = splitter->sizes();
-    });
+    bindSplitter(splitter, m_transferSplitSizes);
 }
 
 void UiState::bindSharedHorzSplitter(QSplitter* splitter)
 {
-    if (m_sharedHorzSplitSizes.size() == 2)
-        splitter->setSizes(m_sharedHorzSplitSizes);
-
-    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
-        m_sharedHorzSplitSizes = splitter->sizes();
-    });
+    bindSplitter(splitter, m_sharedHorzSplitSizes);
 }
 
 void UiState::bindSharedVertSplitter(QSplitter* splitter)
 {
-    if (m_sharedVertSplitSizes.size() == 2)
-        splitter->setSizes(m_sharedVertSplitSizes);
-
-    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
-        m_sharedVertSplitSizes = splitter->sizes();
-    });
+    bindSplitter(splitter, m_sharedVertSplitSizes);
 }
 
 void UiState::bindMessagesSplitter(QSplitter* splitter)
 {
-    if (m_messagesSplitSizes.size() == 2)
-        splitter->setSizes(m_messagesSplitSizes);
-
-    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
-        m_messagesSplitSizes = splitter->sizes();
-    });
+    bindSplitter(splitter, m_messagesSplitSizes);
 }
 
 void UiState::bindIrcSplitter(QSplitter* splitter)
 {
-    if (m_ircSplitSizes.size() == 2)
-        splitter->setSizes(m_ircSplitSizes);
-
-    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
-        m_ircSplitSizes = splitter->sizes();
-    });
+    bindSplitter(splitter, m_ircSplitSizes);
 }
 
 void UiState::bindStatsSplitter(QSplitter* splitter)
 {
-    if (m_statsSplitSizes.size() == 2)
-        splitter->setSizes(m_statsSplitSizes);
-
-    QObject::connect(splitter, &QSplitter::splitterMoved, splitter, [this, splitter]() {
-        m_statsSplitSizes = splitter->sizes();
-    });
+    bindSplitter(splitter, m_statsSplitSizes);
 }
 
 // ---------------------------------------------------------------------------
@@ -288,12 +272,16 @@ void UiState::bindStatsTree(QTreeWidget* tree)
 
     // Auto-capture on expand/collapse (depth 0 and 1 only)
     QObject::connect(tree, &QTreeWidget::itemExpanded, tree, [this](QTreeWidgetItem* item) {
-        if (itemDepth(item) <= 1)
+        if (itemDepth(item) <= 1) {
             m_statsTreeExpanded.insert(itemPath(item));
+            scheduleSave();
+        }
     });
     QObject::connect(tree, &QTreeWidget::itemCollapsed, tree, [this](QTreeWidgetItem* item) {
-        if (itemDepth(item) <= 1)
+        if (itemDepth(item) <= 1) {
             m_statsTreeExpanded.remove(itemPath(item));
+            scheduleSave();
+        }
     });
 }
 
@@ -323,12 +311,17 @@ void UiState::bindHeaderView(QHeaderView* header, const QString& key)
     if (auto it = m_headerStates.constFind(key); it != m_headerStates.constEnd() && !it->isEmpty())
         header->restoreState(*it);
 
-    // Cache current state and auto-update on any change
-    m_headerStates[key] = header->saveState();
-
+    // Cache current state and auto-update on any change.
+    // A header with no sections (model not attached yet, or just swapped to
+    // nullptr) serialises to an empty state that restoreState() later rejects on
+    // a column count mismatch — caching it would silently destroy the saved layout.
     auto capture = [this, header, key]() {
+        if (header->count() == 0)
+            return;
         m_headerStates[key] = header->saveState();
+        scheduleSave();
     };
+    capture();
 
     QObject::connect(header, &QHeaderView::sectionResized, header, capture);
     QObject::connect(header, &QHeaderView::sectionMoved,   header, capture);
@@ -338,6 +331,12 @@ void UiState::bindHeaderView(QHeaderView* header, const QString& key)
     // model reset can't leave a stale index for a deferred header repaint to crash on.
     if (auto* view = qobject_cast<QAbstractItemView*>(header->parentWidget()))
         guardSelectionOnReset(view);
+}
+
+void UiState::applyHeaderState(QHeaderView* header, const QString& key)
+{
+    if (auto it = m_headerStates.constFind(key); it != m_headerStates.constEnd() && !it->isEmpty())
+        header->restoreState(*it);
 }
 
 void UiState::guardSelectionOnReset(QAbstractItemView* view)
@@ -358,6 +357,25 @@ void UiState::guardSelectionOnReset(QAbstractItemView* view)
             sel->clearCurrentIndex();   // currentIndex also holds a persistent index
             sel->clearSelection();
         }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+void UiState::bindSplitter(QSplitter* splitter, QList<int>& sizes)
+{
+    // Only restore a size list that matches the pane count — a mismatch means the
+    // splitter was saved by a different layout, and QSplitter would silently
+    // ignore the extra/missing entries.
+    if (!sizes.isEmpty() && sizes.size() == splitter->count())
+        splitter->setSizes(sizes);
+
+    QObject::connect(splitter, &QSplitter::splitterMoved, splitter,
+                     [this, splitter, &sizes]() {
+        sizes = splitter->sizes();
+        scheduleSave();
     });
 }
 

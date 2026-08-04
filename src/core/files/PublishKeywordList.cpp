@@ -55,8 +55,14 @@ void PublishKeywordList::addKeywords(KnownFile* file)
 
     bool wasEmpty = m_keywords.empty();
 
-    std::vector<QString> words;
-    kad::getWords(file->fileName(), words);
+    // KnownFile::setFileName keeps this list up to date and, for a collection with an
+    // author key, prepends that key — which is what makes "Search Author's Collections"
+    // findable (srchybrid/SharedFileList.cpp:709). Fall back to the file name for any
+    // path that set a name without going through KnownFile::setFileName, so a file can
+    // never end up unpublished.
+    std::vector<QString> words = file->kadKeywords();
+    if (words.empty())
+        kad::getWords(file->fileName(), words);
 
     for (const auto& word : words) {
         QString lower = kad::kadTagStrToLower(word);

@@ -22,6 +22,16 @@
 
 namespace eMule {
 
+namespace {
+
+/// Bumped whenever load() gains a one-time migration; see the migration block at the end
+/// of load().  Stored as `startVersion` in the YAML.
+///   1 — video player resolved on first run
+///   2 — ipFilterLevel raised off the legacy 100, which filtered nothing
+constexpr uint32 kCurrentPrefsVersion = 2;
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // AES-256-CBC helpers for SMTP password encryption in YAML
 // ---------------------------------------------------------------------------
@@ -124,6 +134,30 @@ struct Preferences::Data {
     // eMule 2026 bandwidth: modern OS handles hundreds of half-open connections. MFC default: 9
     uint16 maxHalfConnections = 50;
     QString bindAddress;
+    QString publicIPv6Override;
+    // How many distinct peers must independently report the same public IPv6 (via their
+    // client-to-client CT_MOD_YOUR_IP), within the window below, before we adopt it as ours
+    // — used only when no eNode-go server has observed our egress. YAML-only, no UI.
+    uint32 ipv6PublicPeerConfirmThreshold = 3;
+    uint32 ipv6PublicPeerConfirmWindowSecs = 300;
+    // The same idea for IPv4, fed by the address servers reflect back in the trailing field
+    // of OP_GLOBSERVSTATRES — used only when neither Kad nor an ED2K session knows our
+    // address. Two rather than three: in that state the obfuscated stat ping is what carries
+    // the reflection, so the pool of servers able to vote at all is small. The window is long
+    // because a given server is re-asked at most every UDPSERVSTATREASKTIME (4.5 h), and one
+    // stat ping goes out every 5 s, so a large list still takes tens of minutes to sweep.
+    // YAML-only, no UI.
+    uint32 ipv4PublicServerConfirmThreshold = 2;
+    uint32 ipv4PublicServerConfirmWindowSecs = 3600;
+    // Alternate freed upload slots between IPv4 and IPv6 peers when both are waiting,
+    // so a small IPv6 population isn't permanently outbid on score alone.
+    bool separateIPv6Queue = true;
+    // Resolve a server hostname AAAA-first instead of A-first. Off by default: a client
+    // that reaches a server over IPv6 with no routable IPv4 is assigned a LowID
+    // unconditionally, so preferring AAAA on a dual-stack server costs a HighID for
+    // nothing. Either way the other family is tried when the first finds no records.
+    // YAML-only, no UI.
+    bool serverPreferIPv6 = false;
 
     // Bandwidth (KB/s)
     uint32 maxUpload = 250;
@@ -156,9 +190,12 @@ struct Preferences::Data {
 
     // UPnP
     bool enableUPnP = true;
-    bool skipWANIPSetup = false;
-    bool skipWANPPPSetup = false;
     bool closeUPnPOnExit = true;
+    uint32 portMapProtocols = 7;   // PCP | NAT-PMP | UPnP
+    uint32 portMapLeaseSecs = 3600;
+    bool portMapIPv6 = true;
+    int portMapMethod = 0;         // learned: PortMapMethod::None
+    QString portMapSecret;         // learned: hex, minted on first use
 
     // Logging
     bool logToDisk = false;
@@ -204,7 +241,8 @@ struct Preferences::Data {
     bool useCreditSystem = true;     // Reward uploaders
     bool a4afSaveCpu = false;        // Skip A4AF swap checks
     bool autoArchivePreviewStart = true; // Auto-scan archive contents in file details
-    QString ed2kHostname;            // Hostname for own eD2K links
+    QString ed2kHostname;            // Hostname (or IPv6 literal) for own eD2K links
+    bool ed2kLinkAdvertiseIPv6 = true; // Add our public IPv6 as an s6= source hint
     bool showExtControls = true;     // Show advanced mode controls in context menus
     int commitFiles = 1;             // 0=never, 1=on shutdown, 2=always
     int extractMetaData = 1;         // 0=never, 1=MediaInfo library
@@ -332,7 +370,11 @@ struct Preferences::Data {
     uint64 recMaxLargestFile = 0;
 
     // Security
-    uint32 ipFilterLevel = 100;  // DFLT_FILTER_LEVEL — lower = more restrictive
+    // Threshold list entries are tested against, not the level assigned to a level-less
+    // entry (that is IPFilter's kDefaultFilterLevel = 100).  MFC keeps the two apart and
+    // ships 127 here (srchybrid/Preferences.cpp:2040); at 100 the test `level < 127`
+    // would read `100 < 100` for every level-less entry and block nothing.
+    uint32 ipFilterLevel = 127;  // lower = more restrictive
     bool warnUntrustedFiles = true;
     bool useSafeKad = true;
     bool useFastKad = true;
@@ -470,7 +512,7 @@ struct Preferences::Data {
     QString logFont;  // Empty = system default; QFont::toString() format
 
     // GUI (Files page)
-    bool watchClipboard4ED2KLinks = false;
+    bool watchClipboard4ED2KLinks = true;
     bool useAdvancedCalcRemainingTime = true;
     QString videoPlayerCommand;
     QString videoPlayerArgs;
@@ -635,6 +677,34 @@ QString Preferences::bindAddress() const { return get(&Data::bindAddress); }
 
 void Preferences::setBindAddress(const QString& val) { set(&Data::bindAddress, val); }
 
+QString Preferences::publicIPv6Override() const { return get(&Data::publicIPv6Override); }
+
+void Preferences::setPublicIPv6Override(const QString& val) { set(&Data::publicIPv6Override, val); }
+
+uint32 Preferences::ipv6PublicPeerConfirmThreshold() const { return get(&Data::ipv6PublicPeerConfirmThreshold); }
+
+void Preferences::setIpv6PublicPeerConfirmThreshold(uint32 val) { set(&Data::ipv6PublicPeerConfirmThreshold, val); }
+
+uint32 Preferences::ipv6PublicPeerConfirmWindowSecs() const { return get(&Data::ipv6PublicPeerConfirmWindowSecs); }
+
+void Preferences::setIpv6PublicPeerConfirmWindowSecs(uint32 val) { set(&Data::ipv6PublicPeerConfirmWindowSecs, val); }
+
+uint32 Preferences::ipv4PublicServerConfirmThreshold() const { return get(&Data::ipv4PublicServerConfirmThreshold); }
+
+void Preferences::setIpv4PublicServerConfirmThreshold(uint32 val) { set(&Data::ipv4PublicServerConfirmThreshold, val); }
+
+uint32 Preferences::ipv4PublicServerConfirmWindowSecs() const { return get(&Data::ipv4PublicServerConfirmWindowSecs); }
+
+void Preferences::setIpv4PublicServerConfirmWindowSecs(uint32 val) { set(&Data::ipv4PublicServerConfirmWindowSecs, val); }
+
+bool Preferences::separateIPv6Queue() const { return get(&Data::separateIPv6Queue); }
+
+void Preferences::setSeparateIPv6Queue(bool val) { set(&Data::separateIPv6Queue, val); }
+
+bool Preferences::serverPreferIPv6() const { return get(&Data::serverPreferIPv6); }
+
+void Preferences::setServerPreferIPv6(bool val) { set(&Data::serverPreferIPv6, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Bandwidth
 // ---------------------------------------------------------------------------
@@ -752,17 +822,29 @@ bool Preferences::enableUPnP() const { return get(&Data::enableUPnP); }
 
 void Preferences::setEnableUPnP(bool val) { set(&Data::enableUPnP, val); }
 
-bool Preferences::skipWANIPSetup() const { return get(&Data::skipWANIPSetup); }
-
-void Preferences::setSkipWANIPSetup(bool val) { set(&Data::skipWANIPSetup, val); }
-
-bool Preferences::skipWANPPPSetup() const { return get(&Data::skipWANPPPSetup); }
-
-void Preferences::setSkipWANPPPSetup(bool val) { set(&Data::skipWANPPPSetup, val); }
-
 bool Preferences::closeUPnPOnExit() const { return get(&Data::closeUPnPOnExit); }
 
 void Preferences::setCloseUPnPOnExit(bool val) { set(&Data::closeUPnPOnExit, val); }
+
+uint32 Preferences::portMapProtocols() const { return get(&Data::portMapProtocols); }
+
+void Preferences::setPortMapProtocols(uint32 val) { set(&Data::portMapProtocols, val); }
+
+uint32 Preferences::portMapLeaseSecs() const { return get(&Data::portMapLeaseSecs); }
+
+void Preferences::setPortMapLeaseSecs(uint32 val) { set(&Data::portMapLeaseSecs, val); }
+
+bool Preferences::portMapIPv6() const { return get(&Data::portMapIPv6); }
+
+void Preferences::setPortMapIPv6(bool val) { set(&Data::portMapIPv6, val); }
+
+int Preferences::portMapMethod() const { return get(&Data::portMapMethod); }
+
+void Preferences::setPortMapMethod(int val) { set(&Data::portMapMethod, val); }
+
+QString Preferences::portMapSecret() const { return get(&Data::portMapSecret); }
+
+void Preferences::setPortMapSecret(const QString& val) { set(&Data::portMapSecret, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Logging
@@ -892,6 +974,10 @@ void Preferences::setAutoArchivePreviewStart(bool val) { set(&Data::autoArchiveP
 QString Preferences::ed2kHostname() const { return get(&Data::ed2kHostname); }
 
 void Preferences::setEd2kHostname(const QString& val) { set(&Data::ed2kHostname, val); }
+
+bool Preferences::ed2kLinkAdvertiseIPv6() const { return get(&Data::ed2kLinkAdvertiseIPv6); }
+
+void Preferences::setEd2kLinkAdvertiseIPv6(bool val) { set(&Data::ed2kLinkAdvertiseIPv6, val); }
 
 bool Preferences::showExtControls() const { return get(&Data::showExtControls); }
 
@@ -1781,6 +1867,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->kadEnabled       = p.value(QStringLiteral("kadEnabled")).toBool();
     m_data->schedulerEnabled = p.value(QStringLiteral("schedulerEnabled")).toBool();
     m_data->enableUPnP       = p.value(QStringLiteral("enableUPnP")).toBool();
+    // Defaults to true, so a missing key (older daemon) must NOT read back as false.
+    m_data->separateIPv6Queue = p.value(QStringLiteral("separateIPv6Queue")).toBool(true);
 
     // Server
     m_data->safeServerConnect       = p.value(QStringLiteral("safeServerConnect")).toBool();
@@ -1877,13 +1965,12 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logPublicIP                 = p.value(QStringLiteral("logPublicIP")).toBool();
     m_data->serverVerboseLog            = p.value(QStringLiteral("serverVerboseLog")).toBool();
     m_data->closeUPnPOnExit             = p.value(QStringLiteral("closeUPnPOnExit")).toBool();
-    m_data->skipWANIPSetup              = p.value(QStringLiteral("skipWANIPSetup")).toBool();
-    m_data->skipWANPPPSetup             = p.value(QStringLiteral("skipWANPPPSetup")).toBool();
     m_data->fileBufferSize              = static_cast<uint32>(p.value(QStringLiteral("fileBufferSize")).toInteger());
     m_data->useCreditSystem             = p.value(QStringLiteral("useCreditSystem")).toBool();
     m_data->a4afSaveCpu                 = p.value(QStringLiteral("a4afSaveCpu")).toBool();
     m_data->autoArchivePreviewStart     = p.value(QStringLiteral("autoArchivePreviewStart")).toBool();
     m_data->ed2kHostname                = p.value(QStringLiteral("ed2kHostname")).toString();
+    m_data->ed2kLinkAdvertiseIPv6       = p.value(QStringLiteral("ed2kLinkAdvertiseIPv6")).toBool();
     m_data->showExtControls             = p.value(QStringLiteral("showExtControls")).toBool();
     m_data->commitFiles                 = static_cast<int>(p.value(QStringLiteral("commitFiles")).toInteger());
     m_data->extractMetaData             = static_cast<int>(p.value(QStringLiteral("extractMetaData")).toInteger());
@@ -2113,7 +2200,7 @@ bool Preferences::load(const QString& filePath)
         validate();
         resolveDefaultDirectories();
         resolveDefaultVideoPlayer();
-        m_data->startVersion = 1;
+        m_data->startVersion = kCurrentPrefsVersion;  // fresh config, nothing to migrate
         m_data->webServerApiKey = generateApiKey();
 
         // Create directories and persist initial preferences
@@ -2188,6 +2275,13 @@ bool Preferences::load(const QString& filePath)
             m_data->maxConnections = static_cast<uint16>(n["maxConnections"].as<int>(m_data->maxConnections));
             m_data->maxHalfConnections = static_cast<uint16>(n["maxHalfConnections"].as<int>(m_data->maxHalfConnections));
             m_data->bindAddress = QString::fromStdString(n["bindAddress"].as<std::string>(m_data->bindAddress.toStdString()));
+            m_data->publicIPv6Override = QString::fromStdString(n["publicIPv6Override"].as<std::string>(m_data->publicIPv6Override.toStdString()));
+            m_data->ipv6PublicPeerConfirmThreshold = static_cast<uint32>(n["ipv6PublicPeerConfirmThreshold"].as<int>(static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold)));
+            m_data->ipv6PublicPeerConfirmWindowSecs = static_cast<uint32>(n["ipv6PublicPeerConfirmWindowSecs"].as<int>(static_cast<int>(m_data->ipv6PublicPeerConfirmWindowSecs)));
+            m_data->ipv4PublicServerConfirmThreshold = static_cast<uint32>(n["ipv4PublicServerConfirmThreshold"].as<int>(static_cast<int>(m_data->ipv4PublicServerConfirmThreshold)));
+            m_data->ipv4PublicServerConfirmWindowSecs = static_cast<uint32>(n["ipv4PublicServerConfirmWindowSecs"].as<int>(static_cast<int>(m_data->ipv4PublicServerConfirmWindowSecs)));
+            m_data->separateIPv6Queue = n["separateIPv6Queue"].as<bool>(m_data->separateIPv6Queue);
+            m_data->serverPreferIPv6 = n["serverPreferIPv6"].as<bool>(m_data->serverPreferIPv6);
             m_data->maxConsPerFive = static_cast<uint16>(n["maxConsPerFive"].as<int>(m_data->maxConsPerFive));
             m_data->showOverhead = n["showOverhead"].as<bool>(m_data->showOverhead);
             m_data->networkED2K = n["networkED2K"].as<bool>(m_data->networkED2K);
@@ -2253,9 +2347,13 @@ bool Preferences::load(const QString& filePath)
         // UPnP
         if (auto u = root["upnp"]) {
             m_data->enableUPnP = u["enableUPnP"].as<bool>(m_data->enableUPnP);
-            m_data->skipWANIPSetup = u["skipWANIPSetup"].as<bool>(m_data->skipWANIPSetup);
-            m_data->skipWANPPPSetup = u["skipWANPPPSetup"].as<bool>(m_data->skipWANPPPSetup);
             m_data->closeUPnPOnExit = u["closeUPnPOnExit"].as<bool>(m_data->closeUPnPOnExit);
+            m_data->portMapProtocols = u["portMapProtocols"].as<uint32>(m_data->portMapProtocols);
+            m_data->portMapLeaseSecs = u["portMapLeaseSecs"].as<uint32>(m_data->portMapLeaseSecs);
+            m_data->portMapIPv6 = u["portMapIPv6"].as<bool>(m_data->portMapIPv6);
+            m_data->portMapMethod = u["portMapMethod"].as<int>(m_data->portMapMethod);
+            m_data->portMapSecret = QString::fromStdString(
+                u["portMapSecret"].as<std::string>(m_data->portMapSecret.toStdString()));
         }
 
         // Logging
@@ -2307,6 +2405,7 @@ bool Preferences::load(const QString& filePath)
             m_data->a4afSaveCpu = t["a4afSaveCpu"].as<bool>(m_data->a4afSaveCpu);
             m_data->autoArchivePreviewStart = t["autoArchivePreviewStart"].as<bool>(m_data->autoArchivePreviewStart);
             m_data->ed2kHostname = QString::fromStdString(t["ed2kHostname"].as<std::string>(m_data->ed2kHostname.toStdString()));
+            m_data->ed2kLinkAdvertiseIPv6 = t["ed2kLinkAdvertiseIPv6"].as<bool>(m_data->ed2kLinkAdvertiseIPv6);
             m_data->showExtControls = t["showExtControls"].as<bool>(m_data->showExtControls);
             m_data->commitFiles = t["commitFiles"].as<int>(m_data->commitFiles);
             m_data->extractMetaData = t["extractMetaData"].as<int>(m_data->extractMetaData);
@@ -2628,10 +2727,22 @@ bool Preferences::load(const QString& filePath)
         saveImpl(m_filePath);
     }
 
-    // One-time migrations keyed by startVersion
-    if (m_data->startVersion == 0) {
-        resolveDefaultVideoPlayer();
-        m_data->startVersion = 1;
+    // One-time migrations keyed by startVersion.  Persist immediately: without the save
+    // the counter never reaches disk and every migration re-runs on the next start.
+    if (m_data->startVersion < kCurrentPrefsVersion) {
+        if (m_data->startVersion < 1)
+            resolveDefaultVideoPlayer();
+
+        // v2: the shipped default used to be 100, which is also the level given to a list
+        // entry with no level column.  Since the test is `level < filterLevel`, that made
+        // the filter a no-op for most lists.  Only the old default is rewritten, so a
+        // level deliberately set to anything else is left alone; a user who genuinely
+        // chose 100 is bumped once, which nothing in the config lets us distinguish.
+        if (m_data->startVersion < 2 && m_data->ipFilterLevel == 100)
+            m_data->ipFilterLevel = 127;
+
+        m_data->startVersion = kCurrentPrefsVersion;
+        saveImpl(m_filePath);
     }
 
     return true;
@@ -2793,6 +2904,13 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxConnections" << YAML::Value << static_cast<int>(m_data->maxConnections);
     out << YAML::Key << "maxHalfConnections" << YAML::Value << static_cast<int>(m_data->maxHalfConnections);
     out << YAML::Key << "bindAddress" << YAML::Value << m_data->bindAddress.toStdString();
+    out << YAML::Key << "publicIPv6Override" << YAML::Value << m_data->publicIPv6Override.toStdString();
+    out << YAML::Key << "ipv6PublicPeerConfirmThreshold" << YAML::Value << static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold);
+    out << YAML::Key << "ipv6PublicPeerConfirmWindowSecs" << YAML::Value << static_cast<int>(m_data->ipv6PublicPeerConfirmWindowSecs);
+    out << YAML::Key << "ipv4PublicServerConfirmThreshold" << YAML::Value << static_cast<int>(m_data->ipv4PublicServerConfirmThreshold);
+    out << YAML::Key << "ipv4PublicServerConfirmWindowSecs" << YAML::Value << static_cast<int>(m_data->ipv4PublicServerConfirmWindowSecs);
+    out << YAML::Key << "separateIPv6Queue" << YAML::Value << m_data->separateIPv6Queue;
+    out << YAML::Key << "serverPreferIPv6" << YAML::Value << m_data->serverPreferIPv6;
     out << YAML::Key << "maxConsPerFive" << YAML::Value << static_cast<int>(m_data->maxConsPerFive);
     out << YAML::Key << "showOverhead" << YAML::Value << m_data->showOverhead;
     out << YAML::Key << "networkED2K" << YAML::Value << m_data->networkED2K;
@@ -2851,9 +2969,12 @@ bool Preferences::saveImpl(const QString& filePath) const
     // UPnP
     out << YAML::Key << "upnp" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enableUPnP" << YAML::Value << m_data->enableUPnP;
-    out << YAML::Key << "skipWANIPSetup" << YAML::Value << m_data->skipWANIPSetup;
-    out << YAML::Key << "skipWANPPPSetup" << YAML::Value << m_data->skipWANPPPSetup;
     out << YAML::Key << "closeUPnPOnExit" << YAML::Value << m_data->closeUPnPOnExit;
+    out << YAML::Key << "portMapProtocols" << YAML::Value << m_data->portMapProtocols;
+    out << YAML::Key << "portMapLeaseSecs" << YAML::Value << m_data->portMapLeaseSecs;
+    out << YAML::Key << "portMapIPv6" << YAML::Value << m_data->portMapIPv6;
+    out << YAML::Key << "portMapMethod" << YAML::Value << m_data->portMapMethod;
+    out << YAML::Key << "portMapSecret" << YAML::Value << m_data->portMapSecret.toStdString();
     out << YAML::EndMap;
 
     // Logging
@@ -2905,6 +3026,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "a4afSaveCpu" << YAML::Value << m_data->a4afSaveCpu;
     out << YAML::Key << "autoArchivePreviewStart" << YAML::Value << m_data->autoArchivePreviewStart;
     out << YAML::Key << "ed2kHostname" << YAML::Value << m_data->ed2kHostname.toStdString();
+    out << YAML::Key << "ed2kLinkAdvertiseIPv6" << YAML::Value << m_data->ed2kLinkAdvertiseIPv6;
     out << YAML::Key << "showExtControls" << YAML::Value << m_data->showExtControls;
     out << YAML::Key << "commitFiles" << YAML::Value << m_data->commitFiles;
     out << YAML::Key << "extractMetaData" << YAML::Value << m_data->extractMetaData;

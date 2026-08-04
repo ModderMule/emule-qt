@@ -2209,115 +2209,26 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
     if (m_srcList.empty() || !forClient)
         return nullptr;
 
-    // Only answer in SX2 when the peer actually asked for it; otherwise fall back to
-    // the SX1 version it announced at handshake. SX1 carries no version byte and uses
-    // its own opcode, so the two formats must not be mixed.
-    uint8 usedVersion;
-    bool isSX2;
-    if (forClient->supportsSourceExchange2() && version > 0) {
-        usedVersion = std::min(version, static_cast<uint8>(SOURCEEXCHANGE2_VERSION));
-        isSX2 = true;
-    } else {
-        usedVersion = forClient->sourceExchange1Ver();
-        isSX2 = false;
-    }
-
-    SafeMemFile data;
-
-    // SX2 header: version byte. SX1 has none.
-    if (isSX2)
-        data.writeUInt8(usedVersion);
-
-    // File hash (16 bytes)
-    data.writeHash16(fileHash());
-
-    // Placeholder for source count (will seek back to fill in)
-    const auto countPos = data.position();
-    data.writeUInt16(0);
-
-    const uint16 maxSources = (usedVersion >= 4) ? 500 : 50;
-    uint16 count = 0;
-
-    // Get forClient's part status for filtering
+    // Download side: candidates are this file's sources, judged on their *download*
+    // part status (what they hold of the file we want) — the upload side reads
+    // upPartStatus() instead, which is the only reason the two sides need separate
+    // predicates. Everything about the packet format itself lives in the base.
     const auto& clientParts = forClient->upPartStatus();
-
-    for (const auto* src : m_srcList) {
-        if (count >= maxSources)
-            break;
-
-        // Skip low-ID clients (they can't be contacted directly)
-        if (src->hasLowID())
-            continue;
-
-        // Skip invalid IPs
-        if (src->userAddress().isNull())
-            continue;
-
-        // Skip the requesting client itself
-        if (src == forClient)
-            continue;
-
-        // Check if this source has parts the requester needs
-        const auto& srcParts = src->partStatus();
-        if (!srcParts.empty() && !clientParts.empty() &&
-            srcParts.size() == clientParts.size())
-        {
-            bool hasNeededPart = false;
+    return buildSrcInfoPacket(
+        forClient, version, m_srcList,
+        [&clientParts](const UpDownClient* src) {
+            const auto& srcParts = src->partStatus();
+            // Only diffable when both sides reported a bitmap of the same shape;
+            // otherwise send it and let the requester find out.
+            if (srcParts.empty() || clientParts.empty()
+                || srcParts.size() != clientParts.size())
+                return true;
             for (size_t p = 0; p < srcParts.size(); ++p) {
-                if (srcParts[p] != 0 && clientParts[p] == 0) {
-                    hasNeededPart = true;
-                    break;
-                }
+                if (srcParts[p] != 0 && clientParts[p] == 0)
+                    return true;
             }
-            if (!hasNeededPart)
-                continue;
-        }
-
-        // Write per-source data.
-        // v3+ sends IDs in hybrid (host order) format so that high-ID clients
-        // with an address ending in .0 aren't falsely read back as low-ID.
-        data.writeUInt32(usedVersion >= 3 ? src->userIDHybrid()
-                                          : src->userAddress().toNetworkUint32()); // userId (4 bytes)
-        data.writeUInt16(src->userPort());                     // port (2 bytes)
-        data.writeUInt32(src->serverAddress().toNetworkUint32()); // serverIP (4 bytes)
-        data.writeUInt16(src->serverPort());   // serverPort (2 bytes)
-
-        if (usedVersion >= 2)
-            data.writeHash16(src->userHash()); // userHash (16 bytes)
-
-        if (usedVersion >= 4) {
-            // Crypt options byte.
-            // Bit 3 (direct UDP callback) is deliberately never set: the SX record
-            // carries no Kad UDP port, so the receiver can't act on it and forces
-            // it off anyway (setConnectOptions(..., callback=false)).
-            uint8 cryptOpts = 0;
-            if (src->supportsCryptLayer())
-                cryptOpts |= 0x01;
-            if (src->requestsCryptLayer())
-                cryptOpts |= 0x02;
-            if (src->requiresCryptLayer())
-                cryptOpts |= 0x04;
-            data.writeUInt8(cryptOpts);
-        }
-
-        ++count;
-    }
-
-    if (count == 0)
-        return nullptr;
-
-    // Seek back and write actual count
-    const auto endPos = data.position();
-    data.seek(static_cast<int>(countPos), SEEK_SET);
-    data.writeUInt16(count);
-    data.seek(static_cast<int>(endPos), SEEK_SET);
-
-    auto packet = std::make_unique<Packet>(
-        data, OP_EMULEPROT, isSX2 ? OP_ANSWERSOURCES2 : OP_ANSWERSOURCES);
-    if (packet->size > 354)
-        packet->packPacket();
-
-    return packet;
+            return false;
+        });
 }
 
 // ===========================================================================
@@ -2327,8 +2238,6 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
 void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool isSX2,
                                 const UpDownClient* sender)
 {
-    Q_UNUSED(sender);
-
     if (isStopped())
         return;
 
@@ -2343,11 +2252,19 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         return n;
     };
 
+    // Extended SX (variable-length tag-block records) is used only when the sender
+    // advertised the capability AND sent the extended version byte. The fixed-size
+    // integrity check below does not apply then; records are parsed defensively.
+    const bool extSX = isSX2 && sender && sender->supportsExtendedXS()
+                       && clientSXVersion == SOURCEEXCHANGEEXT_VERSION;
+
     // The version actually used to lay out the records, which is not necessarily the
     // one the peer announced.
     uint8 version;
 
-    if (!isSX2) {
+    if (extSX) {
+        version = SOURCEEXCHANGEEXT_VERSION;   // 1 — tag-block layout, no fixed record size
+    } else if (!isSX2) {
         // SX1 has no version byte, so infer the layout from the record size and only
         // then check the peer announced at least that much. Trusting the announced
         // version instead would mis-slice the records and yield garbage user hashes.
@@ -2386,19 +2303,67 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         }
     }
 
+    // The ExtSX per-source record is variable length and carries no size check, so a
+    // truncated packet is caught here (FileException) rather than over-reading.
+    try {
     for (uint16 i = 0; i < srcCount; ++i) {
         uint32 userId = data.readUInt32();
         uint16 port = data.readUInt16();
-        uint32 serverIP = data.readUInt32();
-        uint16 serverPort = data.readUInt16();
-
+        uint32 serverIP = 0;
+        uint16 serverPort = 0;
         std::array<uint8, 16> userHash{};
-        if (version >= 2)
-            data.readHash16(userHash.data());
-
         uint8 cryptFlags = 0;
-        if (version >= 4)
-            cryptFlags = data.readUInt8();
+        bool haveUserHash = false;
+        bool haveCryptFlags = false;
+        Address userIPv6;   // set only when a valid CT_MOD_IP_V6 tag is present
+
+        if (extSX) {
+            // Variable tag block: serverIP/port ride as tags; a reachable public IPv6
+            // as CT_MOD_IP_V6. Unknown tags are skipped by type (forward-compatible).
+            const uint8 tagCount = data.readUInt8();
+            for (uint8 t = 0; t < tagCount; ++t) {
+                Tag tag(data, true);
+                switch (tag.nameId()) {
+                case CT_EMULE_SERVERIP:
+                    if (tag.isInt()) serverIP = tag.intValue();
+                    break;
+                case CT_EMULE_SERVERTCP:
+                    if (tag.isInt()) serverPort = static_cast<uint16>(tag.intValue());
+                    break;
+                case CT_MOD_IP_V6:
+                    if (tag.isHash()) {
+                        const Address a = Address::fromIPv6Bytes(tag.hashValue());
+                        if (a.isPublicIP()) userIPv6 = a;
+                    }
+                    break;
+                case CT_EMULE_USERHASH:
+                    // The classic record's version >= 2 field, as a tag. Only a peer that
+                    // set MODMISC_EXTXS_SKIPTAGS is ever sent these, but accept them from
+                    // anyone — the tag block is self-describing either way.
+                    if (tag.isHash()) {
+                        std::memcpy(userHash.data(), tag.hashValue(), 16);
+                        haveUserHash = true;
+                    }
+                    break;
+                case CT_EMULE_CONOPTS:
+                    // The classic record's version >= 4 field, as a tag.
+                    if (tag.isInt()) {
+                        cryptFlags = static_cast<uint8>(tag.intValue());
+                        haveCryptFlags = true;
+                    }
+                    break;
+                default:
+                    break;   // skip unknown tag by type
+                }
+            }
+        } else {
+            serverIP = data.readUInt32();
+            serverPort = data.readUInt16();
+            if (version >= 2)
+                data.readHash16(userHash.data());
+            if (version >= 4)
+                cryptFlags = data.readUInt8();
+        }
 
         // v3+ clients send IDs in hybrid (host order) format so high-ID clients
         // with an address ending in .0 aren't falsely switched to a low-ID.
@@ -2414,36 +2379,63 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
             : userId;
 
         // If we're firewalled too, neither side can accept the other's connection,
-        // so a low-ID source is dead weight.
-        if (isLowID(userIdHybrid) && theApp.isFirewalled())
+        // so a low-ID source is dead weight — unless it has a reachable public IPv6,
+        // which we can connect to directly.
+        if (isLowID(userIdHybrid) && theApp.isFirewalled() && userIPv6.isNull())
             continue;
 
-        if (!isLowID(userIdEd2k)) {
-            // Validate IP (for high-ID clients, userId == IP)
-            if (!isGoodIP(userIdEd2k))
-                continue;
-
-            // IPFilter check
-            if (theApp.ipFilter && theApp.ipFilter->isFiltered(userIdEd2k))
-                continue;
-
-            // Don't re-admit a peer we've already banned via another path.
-            if (theApp.clientList &&
-                theApp.clientList->isBannedClient(Address::fromNetworkOrder(userIdEd2k)))
-                continue;
+        // Reject an IPv6 we can't use before it can rescue an unusable v4 below.
+        if (!userIPv6.isNull()) {
+            const bool v6Bad =
+                !isGoodIP(userIPv6)
+                || (theApp.clientList && theApp.clientList->isBannedClient(userIPv6));
+            if (v6Bad)
+                userIPv6 = Address{};
         }
+
+        // Whether the v4 field alone is enough to reach this source. A source can carry
+        // a deliberately unusable v4 — the reference marks an IPv6-only peer with the
+        // HighID sentinel 0xFFFFFFFF, which fails isGoodIP as a broadcast address.
+        bool v4Usable = true;
+        if (!isLowID(userIdEd2k)) {
+            // For high-ID clients, userId == IP: validate it, IP-filter it, and don't
+            // re-admit a peer we've already banned via another path.
+            v4Usable = isGoodIP(userIdEd2k)
+                       && !(theApp.ipFilter && theApp.ipFilter->isFiltered(userIdEd2k))
+                       && !(theApp.clientList
+                            && theApp.clientList->isBannedClient(
+                                   Address::fromNetworkOrder(userIdEd2k)));
+        }
+
+        // Drop only when neither family can reach the source. Previously an unusable v4
+        // discarded the record outright, throwing away an IPv6 that had already been
+        // parsed — which is why IPv6-only sources never propagated.
+        if (!v4Usable && userIPv6.isNull())
+            continue;
 
         // Max sources check
         if (sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
             break;
 
-        auto* client = new UpDownClient(port, userId, serverIP, serverPort, this, version < 3);
+        // A source reachable only over IPv6 is constructed as a LowID client: its v4
+        // field is meaningless, and feeding it through would have us dialing garbage
+        // (0xFFFFFFFF becomes 255.255.255.255).
+        const uint32 ctorId = v4Usable ? userId : 1u;
+        auto* client = new UpDownClient(port, ctorId, serverIP, serverPort, this,
+                                        v4Usable && version < 3);
         client->setSourceFrom(SourceFrom::SourceExchange);
 
-        if (version >= 2)
+        if (!userIPv6.isNull()) {
+            client->setUserIPv6(userIPv6);
+            client->setOpenIPv6(true);
+        }
+
+        // Classic SX carries these as version-gated fixed fields; ExtSX carries them as
+        // optional tags, so on that path presence is what decides, not the version.
+        if (extSX ? haveUserHash : (version >= 2))
             client->setUserHash(userHash.data());
 
-        if (version >= 4)
+        if (extSX ? haveCryptFlags : (version >= 4))
             client->setConnectOptions(cryptFlags, true, false);
 
         if (theApp.downloadQueue) {
@@ -2455,6 +2447,9 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         } else {
             delete client;
         }
+    }
+    } catch (...) {
+        logWarning(QStringLiteral("Truncated or corrupt source-exchange packet for %1").arg(fileName()));
     }
 }
 

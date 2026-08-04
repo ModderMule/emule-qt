@@ -5,10 +5,14 @@
 /// Ported from MFC CClientList (srchybrid/ClientList.cpp).
 
 #include "client/ClientList.h"
+#include "client/ClientCredits.h"
 #include "client/UpDownClient.h"
 #include "app/AppContext.h"
+#include "prefs/Preferences.h"
+#include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "net/ClientReqSocket.h"
+#include "net/ListenSocket.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
@@ -76,6 +80,88 @@ void ClientList::handleIncomingConnection(ClientReqSocket* socket)
     addClient(client);
 }
 
+UpDownClient* ClientList::attachToAlreadyKnown(UpDownClient* newClient, ClientReqSocket* sender)
+{
+    if (!newClient)
+        return nullptr;
+
+    // MFC's two-priority scan: remember the first user-hash match, but let an address match
+    // win outright and stop the search (srchybrid/ClientList.cpp:193-203).
+    //
+    // Divergence: newClient is skipped. MFC's throwaway is not in the list yet at this point
+    // (it calls AddClient only when no match is found), which is why MFC needs its
+    // "found_client == tocheck" early-return. Ours is added by handleIncomingConnection the
+    // moment the socket is accepted, so an unguarded scan would always match itself on
+    // address and never reach the real client. Skipping self reproduces MFC's self-match
+    // outcome ("nothing to merge") and, unlike MFC's, does not depend on list order.
+    UpDownClient* found = nullptr;
+    for (auto* candidate : m_items) {
+        if (candidate == newClient)
+            continue;
+        if (!found && newClient->compare(candidate, /*ignoreUserHash*/ false))
+            found = candidate;                       // matching user hash
+        if (newClient->compare(candidate, /*ignoreUserHash*/ true)) {
+            found = candidate;                       // matching address — wins
+            break;
+        }
+    }
+
+    if (!found)
+        return nullptr;
+
+    if (sender) {
+        if (auto* oldSocket = qobject_cast<ClientReqSocket*>(found->socket())) {
+            if (oldSocket->isConnected()
+                && (found->userAddress() != newClient->userAddress()
+                    || found->userPort() != newClient->userPort()))
+            {
+                // The known client is live on a different address, so one of the two is
+                // lying about its user hash. MFC ClientList.cpp:213-226.
+                if (found->credits()
+                    && found->credits()->currentIdentState(found->userAddress().toNetworkUint32())
+                           == IdentState::Identified)
+                {
+                    // found is cryptographically identified, so the newcomer is the bad guy.
+                    if (thePrefs.logBannedClients()) {
+                        logWarning(QStringLiteral("Clients: %1 (%2), Ban reason: Userhash invalid")
+                                       .arg(newClient->userName(),
+                                            ipstr(newClient->connectAddress())));
+                    }
+                    newClient->ban(QStringLiteral("Userhash invalid"));
+                } else if (thePrefs.logBannedClients()) {
+                    logWarning(QStringLiteral("Found matching client, to a currently connected "
+                                              "client: %1 (%2) and %3 (%4)")
+                                   .arg(newClient->userName(), ipstr(newClient->connectAddress()),
+                                        found->userName(), ipstr(found->connectAddress())));
+                }
+                return nullptr;
+            }
+
+            // The known client's socket is stale — drop it before taking the new one.
+            // safeDelete() does not call removeSocket(), so the pool entry must go first
+            // or ListenSocket::process() would walk a dangling pointer.
+            if (theApp.listenSocket)
+                theApp.listenSocket->removeSocket(oldSocket);
+            // MFC clears the socket's back-pointer here (`socket->client = NULL`) so the
+            // dying socket cannot report back. The Qt equivalent has to cut the signal
+            // connections too, otherwise a clientDisconnected from the close below would
+            // reach `found` and null out the socket we are about to give it.
+            QObject::disconnect(oldSocket, nullptr, found, nullptr);
+            oldSocket->setClient(nullptr);
+            oldSocket->safeDelete();
+            found->setSocket(nullptr);
+        }
+
+        // Re-home the socket. Disconnecting during the very emission that got us here is
+        // safe in Qt — the running slot completes, later signals go to `found` instead.
+        QObject::disconnect(sender, nullptr, newClient, nullptr);
+        newClient->setSocket(nullptr);
+        found->wireIncomingSocket(sender);
+    }
+
+    return found;
+}
+
 // ===========================================================================
 // Find operations (linear scan, matching MFC)
 // ===========================================================================
@@ -93,6 +179,17 @@ UpDownClient* ClientList::findByIP(uint32 ip, uint16 port) const
 {
     for (auto* c : m_items) {
         if (c->userAddress().toNetworkUint32() == ip && c->userPort() == port)
+            return c;
+    }
+    return nullptr;
+}
+
+UpDownClient* ClientList::findByAddress(const Address& addr, uint16 port) const
+{
+    if (addr.isNull())
+        return nullptr;
+    for (auto* c : m_items) {
+        if (c->userAddress() == addr && c->userPort() == port)
             return c;
     }
     return nullptr;
@@ -127,10 +224,12 @@ UpDownClient* ClientList::findByUserHash(const uint8* hash, uint32 ip, uint16 po
     return hashOnlyMatch;
 }
 
-UpDownClient* ClientList::findByIP_UDP(uint32 ip, uint16 udpPort) const
+UpDownClient* ClientList::findByEndpoint_UDP(const Address& addr, uint16 udpPort) const
 {
+    if (addr.isNull())
+        return nullptr;
     for (auto* c : m_items) {
-        if (c->userAddress().toNetworkUint32() == ip && c->udpPort() == udpPort)
+        if (c->userAddress() == addr && c->udpPort() == udpPort)
             return c;
     }
     return nullptr;
@@ -317,6 +416,7 @@ void ClientList::forEachClient(const std::function<void(UpDownClient*)>& callbac
 void ClientList::process()
 {
     cleanUpBannedList();
+    cleanUpTrackedList();
     processConnectingClients();
 
     // Remove clients that serve no purpose — matches MFC CClientList::Process()
@@ -423,6 +523,93 @@ void ClientList::removeAllBannedClients()
 }
 
 // ===========================================================================
+// Tracked clients — MFC CClientList::m_trackedClientsMap
+// ===========================================================================
+
+void ClientList::addTrackClient(const UpDownClient* client)
+{
+    if (!client)
+        return;
+    const Address& addr = client->userAddress();
+    if (addr.isNull())
+        return;
+
+    auto& record = m_trackedClients[addr];
+    // Refresh the whole record, not just the matching port: MFC keeps an address alive
+    // as long as any client behind it is active.
+    record.inserted = static_cast<uint32>(getTickCount());
+
+    const uint16 port = client->userPort();
+    for (auto& item : record.items) {
+        if (item.port == port) {
+            item.credits = client->credits();
+            return;
+        }
+    }
+    record.items.push_back({port, client->credits()});
+}
+
+int ClientList::clientsFromIP(const Address& addr) const
+{
+    if (addr.isNull())
+        return 0;
+    auto it = m_trackedClients.find(addr);
+    return it == m_trackedClients.end() ? 0 : static_cast<int>(it->second.items.size());
+}
+
+bool ClientList::comparePriorUserhash(const Address& addr, uint16 port,
+                                      const ClientCredits* credits) const
+{
+    auto it = m_trackedClients.find(addr);
+    if (it == m_trackedClients.end())
+        return true;   // never seen — nothing to contradict
+    for (const auto& item : it->second.items) {
+        if (item.port == port)
+            return item.credits == credits;
+    }
+    return true;
+}
+
+void ClientList::trackBadRequest(const UpDownClient* client, int increaseCounter)
+{
+    if (!client)
+        return;
+    const Address& addr = client->userAddress();
+    if (addr.isNull())
+        return;
+
+    auto& record = m_trackedClients[addr];
+    record.inserted = static_cast<uint32>(getTickCount());
+
+    // Saturate at 0 rather than wrapping: callers pass a negative delta to reset the
+    // counter, and an unsigned underflow there would read back as a huge strike count.
+    if (increaseCounter < 0) {
+        const auto decrease = static_cast<uint32>(-increaseCounter);
+        record.badRequests = (record.badRequests > decrease) ? record.badRequests - decrease : 0;
+    } else {
+        record.badRequests += static_cast<uint32>(increaseCounter);
+    }
+}
+
+uint32 ClientList::badRequests(const UpDownClient* client) const
+{
+    if (!client)
+        return 0;
+    auto it = m_trackedClients.find(client->userAddress());
+    return it == m_trackedClients.end() ? 0 : it->second.badRequests;
+}
+
+int ClientList::trackedCount() const
+{
+    return static_cast<int>(m_trackedClients.size());
+}
+
+void ClientList::removeAllTrackedClients()
+{
+    m_trackedClients.clear();
+}
+
+// ===========================================================================
 // Private helpers
 // ===========================================================================
 
@@ -435,6 +622,18 @@ void ClientList::cleanUpBannedList()
     m_lastBanCleanUp = now;
     std::erase_if(m_bannedList, [now](const auto& pair) {
         return now >= pair.second + CLIENTBANTIME;
+    });
+}
+
+void ClientList::cleanUpTrackedList()
+{
+    const auto now = static_cast<uint32>(getTickCount());
+    if (now - m_lastTrackedCleanUp < TRACKED_CLEANUP_TIME)
+        return;
+
+    m_lastTrackedCleanUp = now;
+    std::erase_if(m_trackedClients, [now](const auto& pair) {
+        return now >= pair.second.inserted + KEEPTRACK_TIME;
     });
 }
 

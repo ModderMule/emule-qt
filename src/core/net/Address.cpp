@@ -2,6 +2,7 @@
 /// @brief Non-inline implementations for Address and Endpoint.
 
 #include "net/Address.h"
+#include "utils/OtherFunctions.h"   // the uint32 isGoodIP the IPv4 branch delegates to
 
 #ifdef Q_OS_WIN
 #include <winsock2.h>
@@ -11,6 +12,8 @@
 
 #include <QHostAddress>
 
+#include <algorithm>
+#include <atomic>
 #include <bit>
 #include <cstring>
 
@@ -110,6 +113,23 @@ QString Address::toString() const
 // Address — validation
 // ============================================================================
 
+namespace {
+/// Set once at startup from !thePrefs.filterLANIPs(); read from every isPublicIP() call,
+/// including ones on the socket threads, hence atomic. net/ must not depend on prefs/, so
+/// the value is pushed in rather than pulled.
+std::atomic<bool> g_labNetworkMode{false};
+} // namespace
+
+void Address::setLabNetworkMode(bool enabled)
+{
+    g_labNetworkMode.store(enabled, std::memory_order_relaxed);
+}
+
+bool Address::labNetworkMode()
+{
+    return g_labNetworkMode.load(std::memory_order_relaxed);
+}
+
 bool Address::isPublicIP() const
 {
     // Comprehensive check against all IANA reserved ranges.
@@ -141,6 +161,21 @@ bool Address::isPublicIP() const
     }
 
     if (m_family == Family::IPv6) {
+        if (labNetworkMode()) {
+            // Lab mode: the operator has told us this is a private/test network by clearing
+            // filterLANIPs, so accept every unicast IPv6 — loopback for a single-host rig, ULA
+            // and link-local for a LAN rig, and 2001:db8::/32 because interop harnesses run on
+            // the documentation prefix. Multicast and the unspecified address stay rejected:
+            // they are not peer addresses under any configuration.
+            //
+            // Deliberately IPv6-only. The IPv4 acceptance set is the classic ed2k one and is
+            // relaxed for LAN through isGoodIP(forceCheck) / isRoutable(!filterLANIPs) instead;
+            // widening it here would silently change which IPv4 sources we accept.
+            const bool unspecified =
+                std::all_of(m_v6.begin(), m_v6.end(), [](uint8 b) { return b == 0; });
+            return !unspecified && m_v6[0] != 0xFF;
+        }
+
         // ::/128 unspecified, ::1/128 loopback
         if (m_v6[0] == 0 && m_v6[1] == 0 && m_v6[2] == 0 && m_v6[3] == 0 &&
             m_v6[4] == 0 && m_v6[5] == 0 && m_v6[6] == 0 && m_v6[7] == 0 &&
@@ -324,6 +359,14 @@ Endpoint Endpoint::fromNetworkOrder(uint32 ip, uint16 port) noexcept
     return Endpoint(Address::fromNetworkOrder(ip), port);
 }
 
+std::optional<Endpoint> Endpoint::fromString(QStringView text, uint16 defaultPort)
+{
+    const auto hp = parseHostPort(text, defaultPort);
+    if (!hp || !hp->hostIsLiteral)
+        return std::nullopt;
+    return Endpoint(Address::fromString(hp->host), hp->port);
+}
+
 QString Endpoint::toString() const
 {
     if (m_address.isIPv6())
@@ -339,6 +382,95 @@ std::size_t Endpoint::hash() const noexcept
 }
 
 // ============================================================================
+// Textual host:port parsing / formatting
+// ============================================================================
+
+namespace {
+
+/// Parse a decimal port. Returns nullopt unless every character is a digit and the
+/// value fits a uint16 (0 is rejected by the caller, not here).
+std::optional<uint16> parsePortDigits(QStringView text)
+{
+    if (text.isEmpty() || text.size() > 5)
+        return std::nullopt;
+    uint32 value = 0;
+    for (const QChar ch : text) {
+        if (ch < u'0' || ch > u'9')
+            return std::nullopt;
+        value = value * 10 + static_cast<uint32>(ch.unicode() - u'0');
+    }
+    if (value > 65535)
+        return std::nullopt;
+    return static_cast<uint16>(value);
+}
+
+} // namespace
+
+std::optional<HostPort> parseHostPort(QStringView text, uint16 defaultPort)
+{
+    const QStringView trimmed = text.trimmed();
+    if (trimmed.isEmpty())
+        return std::nullopt;
+
+    QStringView hostPart;
+    uint16 port = defaultPort;
+
+    if (trimmed.startsWith(u'[')) {
+        // "[v6]" or "[v6]:port" — the bracketed text must be an IPv6 literal, so
+        // "[example.com]:80" is rejected rather than silently treated as a hostname.
+        const qsizetype close = trimmed.indexOf(u']');
+        if (close < 0)
+            return std::nullopt;
+        hostPart = trimmed.sliced(1, close - 1);
+        const QStringView tail = trimmed.sliced(close + 1);
+        if (!tail.isEmpty()) {
+            if (!tail.startsWith(u':'))
+                return std::nullopt;
+            const auto parsed = parsePortDigits(tail.sliced(1));
+            if (!parsed)
+                return std::nullopt;
+            port = *parsed;
+        }
+        if (!Address::fromString(hostPart.toString()).isIPv6())
+            return std::nullopt;
+    } else if (trimmed.count(u':') >= 2) {
+        // Two or more colons and no brackets: this can only be a bare IPv6 literal.
+        // Splitting at the last colon would be a coin flip — "2001:db8::1:4662" is
+        // itself a valid address — so require the whole string to parse as one.
+        if (!Address::fromString(trimmed.toString()).isIPv6())
+            return std::nullopt;
+        hostPart = trimmed;
+    } else {
+        const qsizetype colon = trimmed.indexOf(u':');
+        if (colon < 0) {
+            hostPart = trimmed;
+        } else {
+            hostPart = trimmed.first(colon);
+            const auto parsed = parsePortDigits(trimmed.sliced(colon + 1));
+            if (!parsed)
+                return std::nullopt;
+            port = *parsed;
+        }
+    }
+
+    if (hostPart.isEmpty() || port == 0)
+        return std::nullopt;
+
+    HostPort result;
+    result.host = hostPart.toString();
+    result.port = port;
+    result.hostIsLiteral = !Address::fromString(result.host).isNull();
+    return result;
+}
+
+QString formatHostPort(QStringView host, uint16 port)
+{
+    if (host.contains(u':'))
+        return QStringLiteral("[%1]:%2").arg(host).arg(port);
+    return QStringLiteral("%1:%2").arg(host).arg(port);
+}
+
+// ============================================================================
 // ipstr overloads
 // ============================================================================
 
@@ -350,6 +482,33 @@ QString ipstr(const Address& addr)
 QString ipstr(const Endpoint& ep)
 {
     return ep.toString();
+}
+
+// ============================================================================
+// isGoodIP / isGoodIPPort — Address-typed forms
+// ============================================================================
+
+bool isGoodIP(const Address& addr, bool forceCheck)
+{
+    if (addr.isIPv4()) {
+        // Delegate so the IPv4 acceptance set stays byte-identical to the classic rule.
+        return eMule::isGoodIP(addr.toNetworkUint32(), forceCheck);
+    }
+    if (addr.isIPv6()) {
+        // forceCheck mirrors the IPv4 rule: skip only the LAN test. Multicast and the
+        // unspecified address stay rejected, since the IPv4 form keeps rejecting
+        // 0.x.x.x and 224+ regardless of forceCheck. isPublicIP() and isLan() are
+        // disjoint and together cover exactly the unicast space we want.
+        if (addr.isPublicIP())
+            return true;
+        return forceCheck && addr.isLan();
+    }
+    return false;   // null address
+}
+
+bool isGoodIPPort(const Address& addr, uint16 port)
+{
+    return isGoodIP(addr) && port != 0;
 }
 
 } // namespace eMule

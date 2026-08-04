@@ -195,7 +195,7 @@ void tst_KadLiveNetwork::onReadyRead()
 
         auto dr = EncryptedDatagramSocket::decryptReceivedClient(
             const_cast<uint8*>(buf), static_cast<int>(bufLen),
-            senderIP, userHash.data(), kadIDPtr, kadRecvKey);
+            Address::fromHostOrder(senderIP), userHash.data(), kadIDPtr, kadRecvKey);
 
         // Check whether decryption actually succeeded: on success dr.data
         // points past the crypto header; on failure dr.data == buf (pass-through).
@@ -380,7 +380,7 @@ void tst_KadLiveNetwork::initTestCase()
         if (canEncrypt) {
             uint32 totalLen = EncryptedDatagramSocket::encryptSendClient(
                 raw, static_cast<uint32>(plainLen),
-                kadIDBytes, true, receiverVerifyKey, senderVerifyKey, 0);
+                kadIDBytes, true, receiverVerifyKey, senderVerifyKey, Address{});
             qint64 written = m_socket.writeDatagram(
                 reinterpret_cast<const char*>(raw),
                 static_cast<qint64>(totalLen),

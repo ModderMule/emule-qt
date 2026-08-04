@@ -22,7 +22,9 @@
 #include "kademlia/KadUDPListener.h"
 #include "net/Address.h"
 #include "net/ClientUDPSocket.h"
+#include "net/HttpFileDownload.h"
 #include "net/ListenSocket.h"
+#include "net/LocalIPv6.h"
 #include "net/UDPSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
@@ -37,14 +39,11 @@
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
-#include "upnp/UPnPManager.h"
+#include "portmap/PortMapper.h"
 #include "utils/Log.h"
 
 #include <QDir>
-#include <QEventLoop>
 #include <QFile>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
 #include <QTimer>
 
 
@@ -62,7 +61,7 @@ CoreSession::~CoreSession()
     stop();
     stopWorkerThreads();
     shutdownScheduler();
-    shutdownUPnP();
+    shutdownPortMapper();
     shutdownKademlia();
     shutdownClientUDP();
     shutdownServerConnect();
@@ -78,6 +77,9 @@ void CoreSession::start()
 {
     logInfo(QStringLiteral("Starting core — TCP port %1, UDP port %2")
                 .arg(thePrefs.port()).arg(thePrefs.udpPort()));
+    // Before initClientUDP (obfuscation key material), initServerConnect (CT_MOD_IP_V6
+    // in the login packet) and initKademlia — all three read theApp.publicIPv6().
+    initLocalIPv6();
     initStatistics();
     initUploadPipeline();
     initUSS();
@@ -87,7 +89,7 @@ void CoreSession::start()
     initClientUDP();
     initServerConnect();
     initKademlia();
-    initUPnP();
+    initPortMapper();
     initScheduler();
     m_tickCounter = 0;
     m_timer.start();
@@ -290,9 +292,19 @@ void CoreSession::onTimer()
             theApp.serverList->serverStats();
         }
 
-        // UPnP refresh every ~30s (300 ticks)
-        if (m_upnpManager && m_tickCounter % 300 == 0)
-            m_upnpManager->checkAndRefresh();
+        // No port-mapping work on the tick ladder. Renewal is driven by one
+        // timer per mapping, sized from the lifetime the router actually
+        // granted. The old 30 s checkAndRefresh() ran synchronous SOAP right
+        // here, so an unreachable router stalled the whole event loop.
+
+        // Re-scan local IPv6 every ~5 min (3000 ticks). Without this the only triggers are
+        // startup and a server connect, so a prefix renumber or a privacy-address rotation
+        // goes unnoticed for as long as the session stays connected — and we keep
+        // advertising an address we no longer hold. updatePublicIPv6() funnels into
+        // noteEffectiveIPv6Change(), which is a no-op when the effective address is
+        // unchanged, so the common case costs one interface scan.
+        if (m_tickCounter % 3000 == 0)
+            updatePublicIPv6(scanLocalIPv6());
     }
 }
 
@@ -512,26 +524,20 @@ void CoreSession::autoUpdateServerList()
     const QString url = thePrefs.serverListURL();
     logInfo(QStringLiteral("Auto-updating server list from %1").arg(url));
 
-    QNetworkAccessManager nam;
-    QNetworkRequest request{QUrl(url)};
-    request.setTransferTimeout(10000); // 10 seconds
+    // Deliberately blocking, same as MFC's modal download: our caller connects to a
+    // server immediately afterwards, so the merge below has to have happened first.
+    // Compressed mirrors are unwrapped transparently.
+    HttpFileDownload::Options opts;
+    opts.preferredNames = {QStringLiteral("server.met")};
+    opts.timeoutMs = 10000;
 
-    auto* reply = nam.get(request);
-
-    // Block briefly with event loop (same pattern as MFC's modal download)
-    QEventLoop loop;
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    QTimer::singleShot(10000, &loop, &QEventLoop::quit); // safety timeout
-    loop.exec();
-
-    if (reply->error() != QNetworkReply::NoError) {
-        logWarning(QStringLiteral("Failed to download server list: %1").arg(reply->errorString()));
-        reply->deleteLater();
+    QByteArray data;
+    QString entryName;
+    QString error;
+    if (!HttpFileDownload::getBlocking(QUrl(url), opts, data, entryName, error)) {
+        logWarning(QStringLiteral("Failed to download server list: %1").arg(error));
         return;
     }
-
-    const QByteArray data = reply->readAll();
-    reply->deleteLater();
 
     if (data.isEmpty()) {
         logWarning(QStringLiteral("Downloaded server list is empty"));
@@ -774,9 +780,8 @@ void CoreSession::initClientUDP()
         this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
-            uint32 senderIP = senderEP.address().toUint32();
-            uint16 senderPort = senderEP.port();
-            auto* sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+            auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
+                                                                 senderEP.port());
             if (!sender || !sender->reaskPending())
                 return;
             SafeMemFile io(data, size);
@@ -794,8 +799,8 @@ void CoreSession::initClientUDP()
         this, [](const Endpoint& senderEP) {
             if (!theApp.clientList)
                 return;
-            auto* sender = theApp.clientList->findByIP_UDP(
-                senderEP.address().toUint32(), senderEP.port());
+            auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
+                                                                 senderEP.port());
             if (sender && sender->reaskPending())
                 sender->udpReaskFNF(); // may delete sender
         });
@@ -805,8 +810,8 @@ void CoreSession::initClientUDP()
         this, [](const Endpoint& senderEP) {
             if (!theApp.clientList)
                 return;
-            auto* sender = theApp.clientList->findByIP_UDP(
-                senderEP.address().toUint32(), senderEP.port());
+            auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
+                                                                 senderEP.port());
             if (sender && sender->reaskPending()) {
                 sender->setRemoteQueueFull(true);
                 sender->udpReaskACK(0);
@@ -825,13 +830,40 @@ void CoreSession::initClientUDP()
             // First 16 bytes = buddy ID that must match our buddy
             if (!md4equ(data, buddy->buddyID()))
                 return;
-            // Patch bytes 10-15 with sender IP:port, then relay bytes 10+ as OP_REASKCALLBACKTCP
-            std::vector<uint8> buf(data, data + size);
-            pokeUInt32(buf.data() + 10, senderEP.address().toUint32());
-            pokeUInt16(buf.data() + 14, senderEP.port());
-            uint32 relaySize = size - 10;
+            // Strip the 16-byte buddy ID and prepend the requester's address, producing the
+            // OP_REASKCALLBACKTCP body processReaskCallbackTCP expects:
+            //
+            //   IPv4:  <ip 4><port 2><rest>                            header 6
+            //   IPv6:  <0xFFFFFFFF 4><ipv6 16><port 2><rest>           header 22
+            //
+            // Stock builds the IPv4 form by poking the address over buddy-ID bytes 10-15 and
+            // slicing from 10, which works only because 6 bytes happen to fit. There is no
+            // room for 16, so both forms are rebuilt here instead; the IPv4 bytes come out
+            // identical to the in-place version. The 0xFFFFFFFF sentinel and the trailing
+            // 16-byte address are the compatibility target's layout, so its buddies and ours
+            // relay for each other.
+            //
+            // Network byte order for the IPv4 field: the buddy forwards these bytes verbatim
+            // and processReaskCallbackTCP reads them as an ED2K wire IP. Writing host order
+            // here made the two ends of the relay disagree about the requester's address.
+            constexpr uint32 kBuddyIdLen = 16;
+            const Address& requester = senderEP.address();
+            const bool useIPv6 = requester.isIPv6();
+            const uint32 headerLen = useIPv6 ? (4u + 16u + 2u) : 6u;
+            const uint32 tailLen = size - kBuddyIdLen;
+            const uint32 relaySize = tailLen + headerLen;
+
             auto packet = std::make_unique<Packet>(OP_REASKCALLBACKTCP, relaySize, OP_EMULEPROT);
-            std::memcpy(packet->pBuffer, buf.data() + 10, relaySize);
+            auto* out = reinterpret_cast<uint8*>(packet->pBuffer);
+            if (useIPv6) {
+                pokeUInt32(out, IPV6_SOURCE_SENTINEL);
+                std::memcpy(out + 4, requester.ipv6Bytes().data(), 16);
+                pokeUInt16(out + 20, senderEP.port());
+            } else {
+                pokeUInt32(out, requester.toNetworkUint32());
+                pokeUInt16(out + 4, senderEP.port());
+            }
+            std::memcpy(out + headerLen, data + kBuddyIdLen, tailLen);
             buddy->sendPacket(std::move(packet));
         });
 
@@ -856,15 +888,40 @@ void CoreSession::initClientUDP()
             io.readHash16(userHash);
             uint8 connectOptions = io.readUInt8();
 
-            uint32 senderIP = senderEP.address().toNetworkUint32();
-            auto* client = theApp.clientList->findByUserHash(userHash, senderIP, tcpPort);
+            // Everything here is keyed on the full sender Address. The previous code
+            // projected it through toNetworkUint32(), which is 0 for IPv6: the lookup then
+            // matched on hash alone and, worse, the else-branch overwrote a good connect
+            // address with a null one. It also passed the sender in the ctor's *serverIP*
+            // slot with userId = 0, so the address landed in m_serverAddress and
+            // m_connectAddress was never set at all — an IPv4 bug of its own.
+            const Address& senderAddr = senderEP.address();
+            if (!isGoodIP(senderAddr) || theApp.clientList->isBannedClient(senderAddr))
+                return;
+            if (theApp.ipFilter && theApp.ipFilter->isFiltered(senderAddr))
+                return;
+
+            auto* client = theApp.clientList->findByEndpoint_UDP(senderAddr, senderEP.port());
+            if (!client)
+                client = theApp.clientList->findByAddress(senderAddr, tcpPort);
+
             if (!client) {
-                client = new UpDownClient(tcpPort, 0, senderIP, 0, nullptr);
+                client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
                 client->setUserHash(userHash);
+                // setUserAddress fills m_userAddress *and* m_connectAddress; the former is
+                // what findByEndpoint_UDP matches, so the next datagram finds this client.
+                client->setUserAddress(senderAddr);
+                if (senderAddr.isIPv6()) {
+                    client->setUserIPv6(senderAddr);
+                    client->setOpenIPv6(true);
+                }
                 theApp.clientList->addClient(client);
             } else {
-                client->setConnectAddress(Address::fromNetworkOrder(senderIP));
+                client->setConnectAddress(senderAddr);
                 client->setUserPort(tcpPort);
+                if (senderAddr.isIPv6()) {
+                    client->setUserIPv6(senderAddr);
+                    client->setOpenIPv6(true);
+                }
             }
             client->setConnectOptions(connectOptions, true, false);
             client->tryToConnect();
@@ -926,12 +983,13 @@ void CoreSession::initKademlia()
         [](uint32 searchID, const uint8* fileHash, uint32 ip, uint16 tcpPort,
            uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
            uint8 sourceType, const uint8* buddyHash, const uint8* clientHash,
-           uint16 udpPort) {
+           uint16 udpPort, const uint8* sourceIPv6, const uint8* buddyIPv6) {
             if (theApp.downloadQueue)
                 theApp.downloadQueue->addKadSourceResult(
                     searchID, fileHash, ip, tcpPort,
                     buddyIP, buddyPort, buddyCrypt,
-                    sourceType, buddyHash, clientHash, udpPort);
+                    sourceType, buddyHash, clientHash, udpPort,
+                    sourceIPv6, buddyIPv6);
         });
 
     // Wire Kad notes result callback → DownloadQueue. A notes search is the only
@@ -986,18 +1044,22 @@ void CoreSession::wireKadListener()
     connect(udp, &ClientUDPSocket::kadPacketReceived,
         listener, [listener](uint8 opcode, const uint8* data, uint32 size,
                              const Endpoint& sender,
-                             bool validReceiverKey, uint32 receiverVerifyKey) {
+                             bool validReceiverKey, uint32 senderVerifyKey) {
             uint32 senderIP = sender.address().toUint32();
             uint16 senderPort = sender.port();
             QByteArray buf(1 + static_cast<qsizetype>(size), Qt::Uninitialized);
             buf[0] = static_cast<char>(opcode);
             if (size > 0)
                 std::memcpy(buf.data() + 1, data, size);
+            // The contact's UDP key is the *sender* key it just gave us, bound to
+            // OUR public IP — that is the address the key was minted against, so
+            // getKeyValue() only releases it while our IP is unchanged. MFC
+            // ClientUDPSocket.cpp:122 builds CKadUDPKey(nSenderVerifyKey, GetPublicIP()).
             listener->processPacket(reinterpret_cast<const uint8*>(buf.constData()),
                                     static_cast<uint32>(buf.size()),
                                     senderIP, senderPort,
                                     validReceiverKey,
-                                    kad::KadUDPKey(receiverVerifyKey, senderIP));
+                                    kad::KadUDPKey(senderVerifyKey, theApp.publicIP()));
         });
 
     // Send bridge: KademliaUDPListener → ClientUDPSocket
@@ -1017,20 +1079,20 @@ void CoreSession::wireKadListener()
             }
 
             // Determine encryption parameters
-            const uint8* targetHash = nullptr;
-            uint32 receiverVerifyKey = 0;
-            bool hasTarget = !(cryptTargetID == kad::UInt128());
-            if (hasTarget) {
-                targetHash = cryptTargetID.getData();
-            } else {
-                auto* prefs = kad::Kademlia::getInstancePrefs();
-                receiverVerifyKey = targetKey.getKeyValue(
-                    prefs ? prefs->ipAddress() : 0);
-            }
+            const bool hasTarget = !(cryptTargetID == kad::UInt128());
+            const uint8* targetHash = hasTarget ? cryptTargetID.getData() : nullptr;
+
+            // The target's own key rides along on EVERY Kad packet, crypt target or
+            // not — MFC KademliaUDPListener.cpp:1885 passes it unconditionally. It is
+            // what the peer recognises to mark our contact IP-verified, so gating it
+            // on the absence of a KadID stripped it from precisely the packets the
+            // verification handshake runs over (HELLO_RES, HELLO_RES_ACK), leaving
+            // every contact permanently unverified.
+            const uint32 receiverVerifyKey = targetKey.getKeyValue(theApp.publicIP());
 
             udp->sendPacket(std::move(pkt), destIP, destPort,
                             hasTarget || (receiverVerifyKey != 0),
-                            hasTarget ? targetHash : nullptr,
+                            targetHash,
                             true, receiverVerifyKey);
         });
 }
@@ -1111,48 +1173,185 @@ void CoreSession::shutdownScheduler()
 }
 
 // ---------------------------------------------------------------------------
-// initUPnP — create and start UPnP port mapping if enabled
+// initPortMapper — race PCP / NAT-PMP / UPnP and keep the mappings alive
 // ---------------------------------------------------------------------------
 
-void CoreSession::initUPnP()
+void CoreSession::initPortMapper()
 {
-    if (!thePrefs.enableUPnP() || m_upnpManager)
+    if (!thePrefs.enableUPnP() || m_portMapper)
         return;
 
-    m_upnpManager = std::make_unique<UPnPManager>(this);
-    theApp.upnpManager = m_upnpManager.get();
+    m_portMapper = std::make_unique<PortMapper>(this);
+    theApp.portMapper = m_portMapper.get();
 
-    connect(m_upnpManager.get(), &UPnPManager::discoveryComplete,
-            this, [](bool success) {
-        if (success)
-            logInfo(QStringLiteral("UPnP: port mapping successful"));
-        else
-            logWarning(QStringLiteral("UPnP: port mapping failed — check router settings"));
-    });
+    m_portMapper->setEnabledMethods(thePrefs.portMapProtocols());
+    m_portMapper->setLeaseSeconds(thePrefs.portMapLeaseSecs());
+    m_portMapper->setPreferredMethod(
+        static_cast<PortMapMethod>(thePrefs.portMapMethod()));
 
-    m_upnpManager->startDiscovery(
-        static_cast<uint16>(thePrefs.port()),
-        static_cast<uint16>(thePrefs.udpPort()));
+    connect(m_portMapper.get(), &PortMapper::statusChanged, this,
+            [](PortMapStatus status) {
+                logInfo(QStringLiteral("Port mapping: %1").arg(portMapStatusName(status)));
+            });
 
-    logInfo(QStringLiteral("UPnP: discovery started for TCP %1 / UDP %2")
-                .arg(thePrefs.port()).arg(thePrefs.udpPort()));
+    connect(m_portMapper.get(), &PortMapper::mappingChanged, this,
+            [](const PortMapping& mapping, bool ok) {
+                if (!ok)
+                    return;
+                logInfo(QStringLiteral("Port mapping: %1 port %2 -> external %3 (%4, %5s lease)")
+                            .arg(portMapPurposeName(mapping.request.purpose))
+                            .arg(mapping.request.internalPort)
+                            .arg(mapping.externalPort)
+                            .arg(portMapMethodName(mapping.method))
+                            .arg(mapping.lifetimeSecs));
+            });
+
+    connect(m_portMapper.get(), &PortMapper::externalAddressChanged, this,
+            [](const Address& address) {
+                // Adopt the router's WAN address only when it is genuinely
+                // routable and nothing better is known. setPublicIP() expires
+                // the server UDP keys and drives the Kad-disagreement path, and
+                // under CGNAT the IGD reports 100.64.0.0/10, which is flatly
+                // wrong to publish as ours.
+                if (!address.isIPv4() || !address.isPublicIP())
+                    return;
+                if (theApp.publicIP() != 0)
+                    return;
+                theApp.setPublicIP(address.toNetworkUint32());
+            });
+
+    // Remember the winner so the next run does not have to re-derive it.
+    connect(m_portMapper.get(), &PortMapper::preferredMethodLearned, this,
+            [](PortMapMethod method) {
+                thePrefs.setPortMapMethod(static_cast<int>(method));
+            });
+
+    m_portMapper->setDesiredMappings(buildPortMapRequests());
+    m_portMapper->start();
 }
 
 // ---------------------------------------------------------------------------
-// shutdownUPnP — remove port mappings and release manager
+// shutdownPortMapper — release mappings and drop the subsystem
 // ---------------------------------------------------------------------------
 
-void CoreSession::shutdownUPnP()
+void CoreSession::shutdownPortMapper()
 {
-    if (!m_upnpManager)
+    if (!m_portMapper)
         return;
 
-    if (thePrefs.closeUPnPOnExit())
-        m_upnpManager->deletePorts();
+    m_portMapper->stop(thePrefs.closeUPnPOnExit());
 
-    if (theApp.upnpManager == m_upnpManager.get())
-        theApp.upnpManager = nullptr;
-    m_upnpManager.reset();
+    if (theApp.portMapper == m_portMapper.get())
+        theApp.portMapper = nullptr;
+    m_portMapper.reset();
+}
+
+// ---------------------------------------------------------------------------
+// updatePortMappings — re-declare desired state after a port change
+// ---------------------------------------------------------------------------
+
+void CoreSession::updatePortMappings()
+{
+    if (m_portMapper)
+        m_portMapper->setDesiredMappings(buildPortMapRequests());
+}
+
+// ---------------------------------------------------------------------------
+// buildPortMapRequests — the mappings that should currently exist
+// ---------------------------------------------------------------------------
+
+std::vector<PortMapRequest> CoreSession::buildPortMapRequests() const
+{
+    std::vector<PortMapRequest> requests;
+
+    auto add = [&requests](PortMapPurpose purpose, PortMapProtocol protocol, uint16 port,
+                           const QString& description) {
+        if (port == 0)
+            return;
+        PortMapRequest request;
+        request.purpose = purpose;
+        request.protocol = protocol;
+        request.family = PortMapFamily::IPv4;
+        request.internalPort = port;
+        request.description = description;
+        requests.push_back(request);
+
+        // IPv6 has no NAT: the same port is opened as a firewall pinhole. On a
+        // CGNAT line this is the only path that yields real inbound reachability,
+        // so it is requested whenever we hold a routable address.
+        if (thePrefs.portMapIPv6() && theApp.hasConfidentPublicIPv6()) {
+            PortMapRequest v6 = request;
+            v6.family = PortMapFamily::IPv6;
+            v6.internalClient = theApp.publicIPv6();
+            requests.push_back(v6);
+        }
+    };
+
+    // Read the bound ports, not the preferences: with port 0 the OS assigns one,
+    // and forwarding the configured value would open a port nothing listens on.
+    const uint16 tcpPort = m_listenSocket ? m_listenSocket->connectedPort()
+                                          : static_cast<uint16>(thePrefs.port());
+    const uint16 udpPort = m_clientUDP ? m_clientUDP->connectedPort()
+                                       : static_cast<uint16>(thePrefs.udpPort());
+
+    add(PortMapPurpose::Ed2kTcp, PortMapProtocol::Tcp, tcpPort, QStringLiteral("eMule TCP"));
+    add(PortMapPurpose::Ed2kClientUdp, PortMapProtocol::Udp, udpPort,
+        QStringLiteral("eMule UDP"));
+
+    // The server UDP port is deliberately absent. UDPSocket only ever receives
+    // OP_GLOBSEARCHRES / OP_GLOBFOUNDSOURCES / OP_GLOBSERVSTATRES /
+    // OP_SERVER_DESC_RES, every one of them a reply to a request we sent first,
+    // so our own outbound datagram already opens the NAT binding. Mapping it
+    // would add inbound attack surface for no gain — do not "fix" this.
+
+    if (thePrefs.webServerEnabled() && thePrefs.webServerUPnP()) {
+        add(PortMapPurpose::WebServer, PortMapProtocol::Tcp,
+            static_cast<uint16>(thePrefs.webServerPort()), QStringLiteral("eMule Web"));
+    }
+
+    return requests;
+}
+
+// ---------------------------------------------------------------------------
+// Local IPv6
+// ---------------------------------------------------------------------------
+
+void CoreSession::initLocalIPv6()
+{
+    // filterLANIPs is the existing "this is a real network" switch. Clearing it already means
+    // "I am on a private/test network, stop rejecting non-routable peers" for Kad and the
+    // server list; extend the same intent to IPv6 acceptance so an interop rig on ::1 or
+    // 2001:db8::/32 works without a second, near-identical preference.
+    Address::setLabNetworkMode(!thePrefs.filterLANIPs());
+    if (Address::labNetworkMode())
+        logWarning(QStringLiteral("IPv6: lab mode active (filterLANIPs is off) — accepting "
+                                  "loopback, ULA, link-local and documentation addresses"));
+
+    // Queue an IPv6 IP-change notification for every connected peer that can use it. Only
+    // marks them: the packet goes out when the upload queue or a source list next walks the
+    // client, so an address rotation never fans a write out to every socket at once.
+    theApp.onPublicIPv6Changed = [](const Address& effective) {
+        if (effective.isNull() || !theApp.clientList || !theApp.shouldAdvertisePublicIPv6())
+            return;
+        int marked = 0;
+        theApp.clientList->forEachClient([&](UpDownClient* client) {
+            if (!client || !client->supportsIPv6())
+                return;
+            if (!client->socket() || !client->socket()->isConnected())
+                return;
+            client->markSendIPPending();
+            ++marked;
+        });
+        if (marked > 0)
+            logInfo(QStringLiteral("IPv6: queued IP-change notice for %1 connected peer(s)")
+                        .arg(marked));
+    };
+
+    // Publish first, then narrate: the advisory reports the address actually in effect,
+    // which may come from publicIPv6Override rather than auto-selection.
+    const IPv6PrivacyReport report = scanLocalIPv6();
+    const Address effective = updatePublicIPv6(report);
+    logIPv6PrivacyAdvisory(report, effective);   // the one and only call site
 }
 
 } // namespace eMule

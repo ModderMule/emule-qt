@@ -75,6 +75,14 @@ private slots:
     void statusResponse_unknownSenderIgnored();
     void statusResponse_defaultObfuscationPorts();
 
+    // OP_GLOBSERVSTATRES trailing observed-IPv4 reflection (+40)
+    void observedIPv4_adoptedAfterThresholdDistinctServers();
+    void observedIPv4_needsExactly44Bytes();
+    void observedIPv4_rejectsImplausibleValues();
+    void observedIPv4_shadowedByEd2kSession();
+    void observedIPv4_stickyWhenNoNewWinner();
+    void observedIPv4_expiresServerUDPKeys();
+
     // OP_SERVERLIST parsing
     void serverListPacket_addsServers();
     void serverListPacket_rejectsTruncated();
@@ -109,6 +117,18 @@ private slots:
     void textImport_ed2kLink();
     void textImport_mixed();
     void textImport_comments();
+
+    // IPv6 servers
+    void add_ipv6Server_accepted();
+    void add_ipv6_notDuplicateOfDynIP();
+    void add_ipv6_duplicateRejectedOnce();
+    void serverMet_ipv6RoundTrip();
+    void serverMet_ipv6MixedList();
+    void staticServers_ipv6RoundTrip();
+    void staticServers_numericIPv4NotDynIP();
+    void textImport_ipv6Bracketed();
+    void textImport_ed2kLinkIPv6();
+    void findByIPUdp_ipv6();
 
     // Stats
     void stats_aggregation();
@@ -149,6 +169,7 @@ private slots:
 
     // Obfuscated stat crypt-ping (port+12) — serverStats() two-branch state machine
     void serverStats_sendsObfuscatedCryptPingFirst();
+    void serverStats_cryptPingSentWithoutAKnownPublicIP();
     void serverStats_fallsBackToPlaintextWhenPending();
 };
 
@@ -475,6 +496,215 @@ void tst_ServerList::staticServers_roundTrip()
 }
 
 // ---------------------------------------------------------------------------
+// IPv6 servers
+//
+// 2a01:4f8::1 is genuine global unicast; 2001:db8::/32 is documentation space and is
+// rejected by Address::isPublicIP(), so it would never reach the list.
+// ---------------------------------------------------------------------------
+
+static std::unique_ptr<Server> makeIPv6Server(const char* literal, uint16 port,
+                                              const QString& name = {})
+{
+    auto srv = std::make_unique<Server>(Address::fromString(QString::fromLatin1(literal)), port);
+    if (!name.isEmpty())
+        srv->setName(name);
+    return srv;
+}
+
+void tst_ServerList::add_ipv6Server_accepted()
+{
+    ServerList list;
+    auto* srv = list.addServer(makeIPv6Server("2a01:4f8::1", 4661, QStringLiteral("v6")));
+    QVERIFY(srv != nullptr);
+    QCOMPARE(list.serverCount(), size_t{1});
+    QVERIFY(srv->ipAddress().isIPv6());
+
+    const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::1"));
+    QCOMPARE(list.findByIPTcp(v6, 4661), srv);
+    QCOMPARE(list.findByAddress(QStringLiteral("2a01:4f8::1"), 4661), srv);
+}
+
+void tst_ServerList::add_ipv6_notDuplicateOfDynIP()
+{
+    // Regression: both projected through toNetworkUint32() == 0, so the IPv6 server was
+    // rejected as the dynIP server's duplicate — and reset that server's failed count.
+    ServerList list;
+    auto dyn = makeDynServer(QStringLiteral("dyn.example.com"), 4661, QStringLiteral("dyn"));
+    dyn->setFailedCount(3);
+    Server* dynEntry = list.addServer(std::move(dyn));
+    QVERIFY(dynEntry != nullptr);
+
+    QVERIFY(list.addServer(makeIPv6Server("2a01:4f8::1", 4661, QStringLiteral("v6"))) != nullptr);
+    QCOMPARE(list.serverCount(), size_t{2});
+    QCOMPARE(dynEntry->failedCount(), uint32{3});   // untouched
+}
+
+void tst_ServerList::add_ipv6_duplicateRejectedOnce()
+{
+    ServerList list;
+    Server* first = list.addServer(makeIPv6Server("2a01:4f8::1", 4661));
+    QVERIFY(first != nullptr);
+    first->setFailedCount(4);
+
+    QVERIFY(list.addServer(makeIPv6Server("2a01:4f8::1", 4661)) == nullptr);
+    QCOMPARE(list.serverCount(), size_t{1});
+    QCOMPARE(first->failedCount(), uint32{0});   // re-announced ⇒ revived
+}
+
+void tst_ServerList::serverMet_ipv6RoundTrip()
+{
+    TempDir tmp;
+    const QString metPath = tmp.filePath(QStringLiteral("server.met"));
+
+    ServerList original;
+    {
+        auto srv = makeIPv6Server("2a01:4f8::1", 4661, QStringLiteral("v6 server"));
+        srv->setDescription(QStringLiteral("IPv6 only"));
+        original.addServer(std::move(srv));
+    }
+    QVERIFY(original.saveServerMet(metPath));
+
+    // Without the ST_IPV6 tag the entry would come back with a null address and be
+    // rejected by isGoodServerIP — i.e. vanish.
+    ServerList loaded;
+    QVERIFY(loaded.loadServerMet(metPath));
+    QCOMPARE(loaded.serverCount(), size_t{1});
+
+    auto* s = loaded.serverAt(0);
+    QVERIFY(s != nullptr);
+    QVERIFY(s->ipAddress().isIPv6());
+    QCOMPARE(s->address(), QStringLiteral("2a01:4f8::1"));
+    QCOMPARE(s->port(), uint16{4661});
+    QCOMPARE(s->name(), QStringLiteral("v6 server"));
+    QVERIFY(!s->hasDynIP());
+}
+
+void tst_ServerList::serverMet_ipv6MixedList()
+{
+    TempDir tmp;
+    const QString metPath = tmp.filePath(QStringLiteral("server.met"));
+
+    ServerList original;
+    original.addServer(makeServer(0x08080808, 4661, QStringLiteral("v4")));
+    original.addServer(makeIPv6Server("2a01:4f8::1", 4662, QStringLiteral("v6")));
+    original.addServer(makeDynServer(QStringLiteral("dyn.example.com"), 4663,
+                                     QStringLiteral("dyn")));
+    QVERIFY(original.saveServerMet(metPath));
+
+    ServerList loaded;
+    QVERIFY(loaded.loadServerMet(metPath));
+    QCOMPARE(loaded.serverCount(), size_t{3});
+    QVERIFY(loaded.serverAt(0)->ipAddress().isIPv4());
+    QVERIFY(loaded.serverAt(1)->ipAddress().isIPv6());
+    QCOMPARE(loaded.serverAt(2)->dynIP(), QStringLiteral("dyn.example.com"));
+}
+
+void tst_ServerList::staticServers_ipv6RoundTrip()
+{
+    TempDir tmp;
+    const QString staticPath = tmp.filePath(QStringLiteral("staticservers.dat"));
+
+    ServerList original;
+    {
+        auto srv = makeIPv6Server("2a01:4f8::1", 4661, QStringLiteral("v6 static"));
+        srv->setStaticMember(true);
+        srv->setPreference(ServerPriority::High);
+        original.addServer(std::move(srv));
+    }
+    QVERIFY(original.saveStaticServers(staticPath));
+
+    // The line must carry the bracketed endpoint form so it parses back.
+    QFile f(staticPath);
+    QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString content = QString::fromUtf8(f.readAll());
+    f.close();
+    QVERIFY(content.contains(QStringLiteral("[2a01:4f8::1]:4661")));
+
+    ServerList loaded;
+    QVERIFY(loaded.loadStaticServers(staticPath));
+    auto* found = loaded.findByAddress(QStringLiteral("2a01:4f8::1"), 4661);
+    QVERIFY(found != nullptr);
+    QVERIFY(found->isStaticMember());
+    QVERIFY(found->ipAddress().isIPv6());
+    QVERIFY(!found->hasDynIP());          // a literal must not be resolved at connect time
+    QCOMPARE(found->preference(), ServerPriority::High);
+}
+
+void tst_ServerList::staticServers_numericIPv4NotDynIP()
+{
+    TempDir tmp;
+    const QString staticPath = tmp.filePath(QStringLiteral("staticservers.dat"));
+
+    QFile f(staticPath);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream s(&f);
+    s << "8.8.8.8:4661,1,NumericStatic\n";
+    f.close();
+
+    // Regression: loadStaticServers() used to call setDynIP() unconditionally, so every
+    // connect issued QDnsLookup(A, "8.8.8.8"), NXDOMAINed and marked the server dead.
+    ServerList list;
+    QVERIFY(list.loadStaticServers(staticPath));
+    auto* srv = list.findByAddress(QStringLiteral("8.8.8.8"), 4661);
+    QVERIFY(srv != nullptr);
+    QVERIFY(!srv->hasDynIP());
+    QVERIFY(srv->ipAddress().isIPv4());
+}
+
+void tst_ServerList::textImport_ipv6Bracketed()
+{
+    TempDir tmp;
+    const QString filePath = tmp.filePath(QStringLiteral("servers.txt"));
+
+    QFile f(filePath);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream s(&f);
+    s << "[2a01:4f8::1]:4661\n";
+    f.close();
+
+    ServerList list;
+    QCOMPARE(list.addServersFromTextFile(filePath), 1);
+    auto* srv = list.serverAt(0);
+    QVERIFY(srv != nullptr);
+    QVERIFY(srv->ipAddress().isIPv6());
+    QCOMPARE(srv->port(), uint16{4661});
+    QVERIFY(!srv->hasDynIP());
+}
+
+void tst_ServerList::textImport_ed2kLinkIPv6()
+{
+    TempDir tmp;
+    const QString filePath = tmp.filePath(QStringLiteral("servers.txt"));
+
+    QFile f(filePath);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream s(&f);
+    s << "ed2k://|server|[2a01:4f8::1]|4661|/\n";
+    f.close();
+
+    ServerList list;
+    QCOMPARE(list.addServersFromTextFile(filePath), 1);
+    auto* srv = list.serverAt(0);
+    QVERIFY(srv != nullptr);
+    QVERIFY(srv->ipAddress().isIPv6());
+    QVERIFY(!srv->hasDynIP());
+    QCOMPARE(srv->address(), QStringLiteral("2a01:4f8::1"));
+}
+
+void tst_ServerList::findByIPUdp_ipv6()
+{
+    ServerList list;
+    auto* srv = list.addServer(makeIPv6Server("2a01:4f8::1", 4661));
+    QVERIFY(srv != nullptr);
+
+    const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::1"));
+    QCOMPARE(list.findByIPUdp(v6, 4665), srv);                 // TCP + 4
+    QCOMPARE(list.findByIPUdp(v6, 4673), srv);                 // TCP + 12 (obfuscated)
+    QVERIFY(list.findByIPUdp(v6, 9999) == nullptr);
+    QVERIFY(list.findByIPUdp(Address{}, 4665) == nullptr);     // a null address never matches
+}
+
+// ---------------------------------------------------------------------------
 // Text import
 // ---------------------------------------------------------------------------
 
@@ -673,11 +903,12 @@ void tst_ServerList::checkExpiredUDPKeys_staggersRecentlyPinged()
 
 namespace {
 /// Restores theApp.publicIP() on scope exit so case ordering stays independent.
-/// Reads through publicIP(true): the ED2K-only value is what setPublicIP() writes,
-/// so restoring the Kad-inclusive one would store Kad's address as an ED2K value.
+/// Reads the raw ED2K slot: that is what setPublicIP() writes, so restoring through
+/// either of the tiered getters would store Kad's address — or a server-corroborated
+/// one — as though a session had reported it.
 class PublicIPGuard {
 public:
-    explicit PublicIPGuard(uint32 ip) : m_saved(theApp.publicIP(true)) { theApp.setPublicIP(ip); }
+    explicit PublicIPGuard(uint32 ip) : m_saved(theApp.ed2kSessionIP()) { theApp.setPublicIP(ip); }
     ~PublicIPGuard() { theApp.setPublicIP(m_saved); }
     PublicIPGuard(const PublicIPGuard&) = delete;
     PublicIPGuard& operator=(const PublicIPGuard&) = delete;
@@ -814,6 +1045,10 @@ void tst_ServerList::setPublicIP_noExpiryOnClear()
     // Server disconnect clears the IP. MFC skips the expiry sweep for 0 (the
     // dwIP != 0 guard): we have not learned a *new* address, so re-pinging the
     // whole list would be pointless churn on every disconnect.
+    //
+    // The sweep does still run if a *lower* tier now supplies a different address —
+    // see observedIPv4_expiresServerUDPKeys. Here there is no corroborated address, so
+    // the effective one really is gone and this stays the no-op MFC intends.
     theApp.setPublicIP(0);
 
     QCOMPARE(srv->realLastPingedTime(), pingedBefore);
@@ -1064,6 +1299,211 @@ void tst_ServerList::statusResponse_defaultObfuscationPorts()
 
     QCOMPARE(s->obfuscationPortTCP(), quint16{4661});
     QCOMPARE(s->obfuscationPortUDP(), quint16{4673});
+}
+
+// ---------------------------------------------------------------------------
+// The 4 trailing bytes at payload offset +40: the IPv4 the server observed us on.
+// eNode-go appends it on both the plain and the obfuscated channel; the original
+// eserver only on the obfuscated one. eMule discards it. We adopt it, but only as
+// the lowest tier of theApp.publicIP() and only once several distinct servers
+// independently agree — a single unauthenticated datagram is not evidence.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A 44-byte status body: the standard 40 plus the reflected address.
+QByteArray withObservedIP(QByteArray body, uint32 ipNet)
+{
+    const auto at = body.size();
+    body.resize(at + 4);
+    pokeUInt32(reinterpret_cast<uint8*>(body.data()) + at, ipNet);
+    return body;
+}
+
+/// Feeds one 44-byte reply from a distinct server, wiring up the challenge first so
+/// the reflection is reached at all.
+void feedObservedIP(ServerList& list, uint32 serverIP, uint32 observedNet, int extraTail = 0)
+{
+    constexpr uint16 kPort = 4661;
+    auto srv = makeServer(serverIP, kPort);
+    srv->setChallenge(0x55AA1234);
+    Server* s = list.addServer(std::move(srv));
+    QVERIFY(s != nullptr);
+
+    QByteArray body = withObservedIP(makeStatusBody(0x55AA1234, 1, 2), observedNet);
+    if (extraTail > 0)
+        body.append(QByteArray(extraTail, '\xAB'));
+
+    list.processStatusResponse(reinterpret_cast<const uint8*>(body.constData()),
+                               static_cast<uint32>(body.size()),
+                               udpSenderFor(serverIP, kPort));
+}
+
+/// Clears the corroborated tier and pins the threshold/window for the duration of a
+/// case. Required: the tier is sticky by design, so without this an adopted address
+/// would leak into every later case in the same binary.
+class ServerCorroborationGuard {
+public:
+    ServerCorroborationGuard(uint32 threshold, uint32 windowSecs)
+        : m_savedThreshold(thePrefs.ipv4PublicServerConfirmThreshold())
+        , m_savedWindow(thePrefs.ipv4PublicServerConfirmWindowSecs())
+    {
+        theApp.clearServerCorroboratedIP();
+        thePrefs.setIpv4PublicServerConfirmThreshold(threshold);
+        thePrefs.setIpv4PublicServerConfirmWindowSecs(windowSecs);
+    }
+    ~ServerCorroborationGuard()
+    {
+        theApp.clearServerCorroboratedIP();
+        thePrefs.setIpv4PublicServerConfirmThreshold(m_savedThreshold);
+        thePrefs.setIpv4PublicServerConfirmWindowSecs(m_savedWindow);
+    }
+    ServerCorroborationGuard(const ServerCorroborationGuard&) = delete;
+    ServerCorroborationGuard& operator=(const ServerCorroborationGuard&) = delete;
+private:
+    uint32 m_savedThreshold;
+    uint32 m_savedWindow;
+};
+
+// Wire form is the ed2k ID convention — first octet in the LSB. The documentation and
+// TEST-NET ranges would be rejected as non-public, so the fixtures use routable ones.
+constexpr uint32 kObservedA  = 0x04030281;   // 129.2.3.4
+constexpr uint32 kObservedB  = 0x08070685;   // 133.6.7.8
+
+} // namespace
+
+void tst_ServerList::observedIPv4_adoptedAfterThresholdDistinctServers()
+{
+    ServerCorroborationGuard corr(2, 900);
+    PublicIPGuard guard(0);            // no ED2K session; Kad is not running here
+    ServerList list;
+
+    feedObservedIP(list, 0x08080808, kObservedA);
+    QCOMPARE(theApp.serverCorroboratedIP(), uint32{0});   // one server is not evidence
+    QCOMPARE(theApp.publicIP(), uint32{0});
+
+    feedObservedIP(list, 0x09090909, kObservedA);
+    QCOMPARE(theApp.serverCorroboratedIP(), kObservedA);
+    QCOMPARE(theApp.publicIP(), kObservedA);              // lowest tier now supplies it
+}
+
+void tst_ServerList::observedIPv4_needsExactly44Bytes()
+{
+    // ed2kNET extends the same packet past +40 with a tag block. Its leading bytes can
+    // decode as a plausible address, so a longer tail must never be read as one.
+    ServerCorroborationGuard corr(2, 900);
+    PublicIPGuard guard(0);
+    ServerList list;
+
+    feedObservedIP(list, 0x08080808, kObservedA, /*extraTail*/ 60);
+    feedObservedIP(list, 0x09090909, kObservedA, /*extraTail*/ 60);
+    feedObservedIP(list, 0x04040404, kObservedA, /*extraTail*/ 60);
+
+    QCOMPARE(theApp.serverCorroboratedIP(), uint32{0});
+    QCOMPARE(theApp.publicIP(), uint32{0});
+}
+
+void tst_ServerList::observedIPv4_rejectsImplausibleValues()
+{
+    ServerCorroborationGuard corr(2, 900);
+    PublicIPGuard guard(0);
+
+    // Each value is offered by more servers than the threshold, so anything that got
+    // through the ladder would be adopted.
+    const uint32 cases[] = {
+        0,             // "no routable IPv4 for you"
+        0x00FFFFFF,    // LowID range
+        0x0101A8C0,    // 192.168.1.1 — private
+    };
+
+    for (uint32 raw : cases) {
+        ServerList list;
+        feedObservedIP(list, 0x08080808, raw);
+        feedObservedIP(list, 0x09090909, raw);
+        feedObservedIP(list, 0x04040404, raw);
+        QCOMPARE(theApp.serverCorroboratedIP(), uint32{0});
+    }
+
+    // A server naming its own address as ours is describing itself, not us.
+    {
+        ServerList selfList;
+        feedObservedIP(selfList, 0x08080808, 0x08080808);
+        feedObservedIP(selfList, 0x09090909, 0x09090909);
+        feedObservedIP(selfList, 0x04040404, 0x04040404);
+        QCOMPARE(theApp.serverCorroboratedIP(), uint32{0});
+    }
+
+    // The packet itself is still parsed — a bad reflection must not cost us the rest.
+    ServerList list;
+    auto srv = makeServer(0x08080808, 4661);
+    srv->setChallenge(0x55AA1234);
+    Server* s = list.addServer(std::move(srv));
+    const QByteArray body = withObservedIP(
+        makeStatusBody(0x55AA1234, 77, 88, 0, 0, 0, 0, 0, 0, 0, 0xCAFEBABE), 0x0101A8C0);
+    list.processStatusResponse(reinterpret_cast<const uint8*>(body.constData()),
+                               static_cast<uint32>(body.size()),
+                               udpSenderFor(0x08080808, 4661));
+    QCOMPARE(s->users(), 77u);
+    QCOMPARE(s->serverKeyUDPRaw(), 0xCAFEBABEu);
+}
+
+void tst_ServerList::observedIPv4_shadowedByEd2kSession()
+{
+    ServerCorroborationGuard corr(2, 900);
+    ServerList list;
+
+    {
+        PublicIPGuard guard(0);
+        feedObservedIP(list, 0x08080808, kObservedA);
+        feedObservedIP(list, 0x09090909, kObservedA);
+        QCOMPARE(theApp.publicIP(), kObservedA);
+
+        // A logged-in server outranks any amount of UDP agreement.
+        theApp.setPublicIP(kObservedB);
+        QCOMPARE(theApp.publicIP(), kObservedB);
+        QCOMPARE(theApp.serverCorroboratedIP(), kObservedA);   // still held underneath
+
+        // ...and losing the session falls back to it rather than to "unknown".
+        theApp.setPublicIP(0);
+        QCOMPARE(theApp.publicIP(), kObservedA);
+    }
+}
+
+void tst_ServerList::observedIPv4_stickyWhenNoNewWinner()
+{
+    ServerCorroborationGuard corr(2, 900);
+    PublicIPGuard guard(0);
+    ServerList list;
+
+    feedObservedIP(list, 0x08080808, kObservedA);
+    feedObservedIP(list, 0x09090909, kObservedA);
+    QCOMPARE(theApp.publicIP(), kObservedA);
+
+    // A single server now claims something else. Stat pings re-ask a given server at
+    // most every 4.5 h, so the tier must hold what N servers agreed on rather than
+    // flapping to "unknown" — every flip would invalidate all server UDP keys.
+    thePrefs.setIpv4PublicServerConfirmThreshold(5);
+    feedObservedIP(list, 0x04040404, kObservedB);
+    QCOMPARE(theApp.serverCorroboratedIP(), kObservedA);
+    QCOMPARE(theApp.publicIP(), kObservedA);
+}
+
+void tst_ServerList::observedIPv4_expiresServerUDPKeys()
+{
+    ServerCorroborationGuard corr(2, 900);
+    PublicIPGuard guard(0);
+    ServerList list;
+    ScopedServerList installed(&list);
+
+    // A key stamped before we knew our address is dead once we learn a real one.
+    auto* keyed = addKeyedServer(list, 0);
+    feedObservedIP(list, 0x09090909, kObservedA);
+    feedObservedIP(list, 0x04040404, kObservedA);
+
+    QCOMPARE(theApp.publicIP(), kObservedA);
+    QCOMPARE(keyed->serverKeyUDP(), uint32{0});   // hidden until re-issued
+    // ...and re-queued for a stat ping, or it would sit unusable for UDPSERVSTATREASKTIME.
+    QCOMPARE(keyed->lastPingedTime(), uint32{0});
 }
 
 // ---------------------------------------------------------------------------
@@ -1325,7 +1765,8 @@ void tst_ServerList::applyUserOrder_reordersList()
     list.addServer(makeServer(c, 4661, QStringLiteral("C")));
 
     // Ask for C, A first; B is unlisted and must end up last.
-    list.applyUserOrder({{c, 4661}, {a, 4661}});
+    list.applyUserOrder({{Address::fromNetworkOrder(c), 4661},
+                         {Address::fromNetworkOrder(a), 4661}});
 
     QCOMPARE(list.serverCount(), size_t{3});
     QCOMPARE(list.serverAt(0)->name(), QStringLiteral("C"));
@@ -1505,6 +1946,37 @@ void tst_ServerList::serverStats_sendsObfuscatedCryptPingFirst()
     const uint32 dueAt = srv->lastPingedTime() + static_cast<uint32>(UDPSERVSTATREASKTIME);
     QVERIFY(dueAt >= before + 19 && dueAt <= before + 22);
     // The free obfuscated probe must NOT bump the failure counter.
+    QCOMPARE(srv->failedCount(), 0u);
+}
+
+void tst_ServerList::serverStats_cryptPingSentWithoutAKnownPublicIP()
+{
+    // MFC gates the obfuscated probe on already knowing our public IP. We do not: the
+    // challenge is random and the reply is keyed on it, so the probe needs no address of
+    // ours — and this is the one state where the reflection it carries back matters, since
+    // the original eserver only sends the extended reply on the obfuscated channel.
+    ServerList list;
+    ServerCorroborationGuard corr(2, 900);
+    CryptPingFixture fx(list, /*publicIP*/ 0, /*crypt*/ true);
+    QVERIFY(theApp.isConnected());
+    // The fixture needs a *connected* Kad to satisfy isConnected(), but Kad seeds an
+    // address of its own — clear it, or this would not be the "nobody knows our address"
+    // state that the old gate refused to probe in.
+    if (auto* kadInst = kad::Kademlia::instance())
+        kadInst->getPrefs()->setIPAddress(0);
+    QCOMPARE(theApp.publicIP(), uint32{0});
+
+    auto* srv = list.addServer(makeServer(0x08080808, 5555, QStringLiteral("cryptsrv")));
+    QVERIFY(srv != nullptr);
+
+    list.serverStats();
+
+    // Obfuscated branch, not the plaintext one. Falling through to OP_GLOBSERVSTATREQ
+    // would clear pending and bump the failure counter — and would never see the
+    // extended reply. (Not asserted on the challenge's high half: the obfuscated one is
+    // fully random and can legitimately collide with the 0x55AA marker.)
+    QVERIFY(srv->cryptPingReplyPending());
+    QVERIFY(srv->challenge() != 0);
     QCOMPARE(srv->failedCount(), 0u);
 }
 

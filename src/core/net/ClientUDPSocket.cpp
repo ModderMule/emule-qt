@@ -54,7 +54,7 @@ ClientUDPSocket::~ClientUDPSocket()
 
 bool ClientUDPSocket::create()
 {
-    if (!m_socket.bind(QHostAddress::AnyIPv4, 0)) {
+    if (!m_socket.bind(QHostAddress::Any, 0)) {   // dual-stack (AF_INET6, IPV6_V6ONLY=0)
         logError(QStringLiteral("ClientUDPSocket: Failed to bind: %1").arg(m_socket.errorString()));
         return false;
     }
@@ -65,7 +65,7 @@ bool ClientUDPSocket::create()
 bool ClientUDPSocket::rebind(uint16 port)
 {
     m_socket.close();
-    if (!m_socket.bind(QHostAddress::AnyIPv4, port)) {
+    if (!m_socket.bind(QHostAddress::Any, port)) {   // dual-stack
         logError(QStringLiteral("ClientUDPSocket: Failed to rebind to port %1: %2")
                      .arg(port).arg(m_socket.errorString()));
         return false;
@@ -79,6 +79,14 @@ bool ClientUDPSocket::rebind(uint16 port)
 // ---------------------------------------------------------------------------
 
 bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, uint32 ip, uint16 port,
+                                 bool encrypt, const uint8* targetHash, bool isKad,
+                                 uint32 receiverVerifyKey)
+{
+    return sendPacket(std::move(packet), Endpoint::fromHostOrder(ip, port),
+                      encrypt, targetHash, isKad, receiverVerifyKey);
+}
+
+bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Endpoint& dest,
                                  bool encrypt, const uint8* targetHash, bool isKad,
                                  uint32 receiverVerifyKey)
 {
@@ -97,7 +105,7 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, uint32 ip, uint
 
     UDPPack pack;
     pack.packet = std::move(packet);
-    pack.destination = Endpoint::fromHostOrder(ip, port);
+    pack.destination = dest;
     pack.queueTime = static_cast<uint32>(m_elapsedTimer.elapsed());
     pack.encrypt = encrypt;
     pack.kad = isKad;
@@ -152,15 +160,33 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
         if (pkt->pBuffer && pkt->size > 0)
             std::memcpy(buf.data() + offset + 2, pkt->pBuffer, pkt->size);
 
-        // Encrypt if requested.
+        // Encrypt if requested. The ED2K key mixes in OUR public IP, in the same
+        // family as the destination (v6 key for a v6 peer, v4 key otherwise).
         if (pack.encrypt) {
-            uint32 publicIP = theApp.publicIP();
+            const Address publicIP = pack.destination.address().isIPv6()
+                ? theApp.publicIPv6()
+                : Address::fromHostOrder(theApp.publicIP());
             uint32 cryptOverhead = static_cast<uint32>(
                 EncryptedDatagramSocket::encryptOverheadSize(pack.kad));
+
+            // Sender verify key: derived from our secret plus the *destination*
+            // address, so a peer that receives it can only have received it at that
+            // address. It echoes the value back as the receiver key on its next
+            // packet, which is what marks a Kad contact IP-verified.
+            // MFC ClientUDPSocket.cpp:449 computes this for every Kad packet; we used
+            // to send a literal 0, so no contact learned at runtime ever became
+            // verified — and RoutingBin::getClosestTo only ever hands out verified
+            // contacts, so routing answers could never carry anything beyond the
+            // bootstrap set. Non-Kad packets carry no key, exactly as in MFC.
+            const uint32 senderVerifyKey =
+                (pack.kad && pack.destination.address().isIPv4())
+                    ? kad::KadPrefs::getUDPVerifyKey(pack.destination.address().toUint32())
+                    : 0u;
+
             uint32 encryptedLen = EncryptedDatagramSocket::encryptSendClient(
                 buf.data() + offset - cryptOverhead, rawSize,
                 pack.targetHash.data(), pack.kad,
-                pack.receiverVerifyKey, 0, publicIP);
+                pack.receiverVerifyKey, senderVerifyKey, publicIP);
 
             uint32 actualStart = offset - (encryptedLen - rawSize);
             rawSize = encryptedLen;
@@ -221,22 +247,23 @@ void ClientUDPSocket::onReadyRead()
         if (data.size() < 2)
             continue;
 
-        QHostAddress senderAddr = datagram.senderAddress();
-        uint32 senderIP = senderAddr.toIPv4Address(); // host byte order
-        uint16 senderPort = static_cast<uint16>(datagram.senderPort());
-        const Endpoint senderEP = Endpoint::fromHostOrder(senderIP, senderPort);
+        const Address senderAddress = Address::fromQHostAddress(datagram.senderAddress());
+        const uint16 senderPort = static_cast<uint16>(datagram.senderPort());
+        const Endpoint senderEP(senderAddress, senderPort);
+        // Host-order IPv4 for the IPv4-only Kad verify-key store; 0 for IPv6 (no Kad over v6).
+        const uint32 senderIPv4Host = senderAddress.isIPv4() ? senderAddress.toUint32() : 0;
 
-        // IP filter and ban checks expect network byte order
-        const uint32 senderIPnbo = htonl(senderIP);
+        // Address-typed: the filter now holds a per-family range table, so an IPv6 sender
+        // is checked against the IPv6 ranges instead of passing unfiltered.
         if (auto* filter = theApp.ipFilter) {
-            if (filter->isFiltered(senderIPnbo, thePrefs.ipFilterLevel())) {
+            if (filter->isFiltered(senderAddress, thePrefs.ipFilterLevel())) {
                 if (auto* stats = theApp.statistics)
                     stats->addFilteredClient();
                 continue;
             }
         }
         if (auto* cl = theApp.clientList) {
-            if (cl->isBannedClient(Address::fromHostOrder(senderIP)))
+            if (cl->isBannedClient(senderAddress))
                 continue;
         }
 
@@ -252,7 +279,7 @@ void ClientUDPSocket::onReadyRead()
         if (protoByte == OP_EMULEPROT) {
             // Unencrypted eMule client UDP packet
             uint8 opcode = buf[1];
-            processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderIP, senderPort);
+            processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderEP);
         } else if (protoByte == OP_KADEMLIAHEADER) {
             // Uncompressed Kademlia packet — forward directly
             if (auto* stats = theApp.statistics)
@@ -279,7 +306,7 @@ void ClientUDPSocket::onReadyRead()
             // arrive in the clear. No payload semantics are defined yet — dispatch to
             // a named stub instead of dropping them silently.
             processReservedProtPacket(protoByte, buf + 2, static_cast<uint32>(bufLen - 2),
-                                      buf[1], senderIP, senderPort);
+                                      buf[1], senderIPv4Host, senderPort);
         } else {
             // May be encrypted — use our userHash and kadID for decryption
             auto userHash = thePrefs.userHash();
@@ -290,10 +317,10 @@ void ClientUDPSocket::onReadyRead()
                 // byte-swaps.  The wire format uses the raw uint32 representation,
                 // so encryption keys must match that byte order.
                 kadIDPtr = eMule::kad::RoutingZone::localKadId().getData();
-                kadRecvKey = kadPrefs->getUDPVerifyKey(senderIP);
+                kadRecvKey = kadPrefs->getUDPVerifyKey(senderIPv4Host);
             }
             DecryptResult dr = EncryptedDatagramSocket::decryptReceivedClient(
-                buf, static_cast<int>(bufLen), senderIP, userHash.data(), kadIDPtr, kadRecvKey);
+                buf, static_cast<int>(bufLen), senderAddress, userHash.data(), kadIDPtr, kadRecvKey);
 
             if (dr.length > 1 && dr.data != nullptr) {
                 uint8 innerProto = dr.data[0];
@@ -301,28 +328,33 @@ void ClientUDPSocket::onReadyRead()
 
                 if (innerProto == OP_EMULEPROT) {
                     processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2),
-                                  opcode, senderIP, senderPort);
+                                  opcode, senderEP);
                 } else if (innerProto == OP_KADEMLIAHEADER) {
                     if (auto* stats = theApp.statistics)
                         stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
-                    bool validKey = (dr.senderVerifyKey != 0) &&
-                        (dr.senderVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIP));
+                    // The two keys are not interchangeable. The *receiver* key is the
+                    // one we minted for this peer's IP and handed to it earlier; seeing
+                    // it echoed back proves the peer really lives at that address. The
+                    // *sender* key is the peer's own key for us, which we keep and echo
+                    // back on our next packet. MFC ClientUDPSocket.cpp:121,137.
+                    const bool validKey = (dr.receiverVerifyKey != 0) &&
+                        (dr.receiverVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIPv4Host));
                     emit kadPacketReceived(opcode, dr.data + 2,
                                            static_cast<uint32>(dr.length - 2),
                                            senderEP,
-                                           validKey, dr.receiverVerifyKey);
+                                           validKey, dr.senderVerifyKey);
                 } else if (innerProto == OP_KADEMLIAPACKEDPROT) {
                     if (auto* stats = theApp.statistics)
                         stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
-                    bool validKey = (dr.senderVerifyKey != 0) &&
-                        (dr.senderVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIP));
+                    const bool validKey = (dr.receiverVerifyKey != 0) &&
+                        (dr.receiverVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIPv4Host));
                     QByteArray decompressed = decompressKadPayload(dr.data + 2, dr.length - 2);
                     if (!decompressed.isEmpty()) {
                         emit kadPacketReceived(opcode,
                                                reinterpret_cast<const uint8*>(decompressed.constData()),
                                                static_cast<uint32>(decompressed.size()),
                                                senderEP,
-                                               validKey, dr.receiverVerifyKey);
+                                               validKey, dr.senderVerifyKey);
                     }
                 }
             }
@@ -335,12 +367,10 @@ void ClientUDPSocket::onReadyRead()
 // ---------------------------------------------------------------------------
 
 bool ClientUDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
-                                    uint32 senderIP, uint16 senderPort)
+                                    const Endpoint& senderEP)
 {
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadOther(size);
-
-    const Endpoint senderEP = Endpoint::fromHostOrder(senderIP, senderPort);
 
     switch (opcode) {
     case OP_REASKCALLBACKUDP:

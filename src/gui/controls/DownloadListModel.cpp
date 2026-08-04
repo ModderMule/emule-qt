@@ -4,6 +4,8 @@
 
 #include "controls/DownloadListModel.h"
 
+#include "utils/OtherFunctions.h"
+
 #include <QDateTime>
 
 namespace eMule {
@@ -551,13 +553,13 @@ const SourceRow* DownloadListModel::sourceAt(const QModelIndex& index) const
 bool DownloadListModel::containsHash(const QString& hexHash) const
 {
     return std::any_of(m_downloads.begin(), m_downloads.end(),
-        [&](const DownloadRow& r) { return r.hash == hexHash; });
+        [&](const DownloadRow& r) { return sameHash(r.hash, hexHash); });
 }
 
 const DownloadRow* DownloadListModel::findByHash(const QString& hexHash) const
 {
     auto it = std::find_if(m_downloads.begin(), m_downloads.end(),
-        [&](const DownloadRow& r) { return r.hash == hexHash; });
+        [&](const DownloadRow& r) { return sameHash(r.hash, hexHash); });
     return (it != m_downloads.end()) ? &(*it) : nullptr;
 }
 

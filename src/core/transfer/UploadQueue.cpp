@@ -180,6 +180,13 @@ UpDownClient* UploadQueue::findBestClientInQueue()
     uint32 bestLowScore = 0;
     UpDownClient* newClient = nullptr;
     UpDownClient* lowClient = nullptr;
+    // Per-family bests, tracked alongside the global one. The global best alone can't
+    // serve the alternating policy: whichever family scores higher would win every
+    // slot, which is exactly how a small IPv6 population gets starved.
+    uint32 bestScoreV4 = 0;
+    uint32 bestScoreV6 = 0;
+    UpDownClient* bestV4 = nullptr;
+    UpDownClient* bestV6 = nullptr;
     const uint32 curTick = static_cast<uint32>(getTickCount());
 
     for (auto it = m_waitingList.begin(); it != m_waitingList.end(); ) {
@@ -198,9 +205,28 @@ UpDownClient* UploadQueue::findBestClientInQueue()
             continue;
         }
 
-        uint32 curScore = cur->score(false);
+        // Natural send point for a queued OP_CHANGE_CLIENT_IP — we are touching this client
+        // anyway, so telling it our new IPv6 costs no extra wakeup.
+        cur->flushPendingIPChange();
+
+        const uint32 curScore = cur->score(false);
+        const bool connectable =
+            !cur->hasLowID() || (cur->socket() && cur->socket()->isConnected());
+
+        if (connectable) {
+            if (cur->isIPv6Connection()) {
+                if (curScore > bestScoreV6) {
+                    bestScoreV6 = curScore;
+                    bestV6 = cur;
+                }
+            } else if (curScore > bestScoreV4) {
+                bestScoreV4 = curScore;
+                bestV4 = cur;
+            }
+        }
+
         if (curScore > bestScore) {
-            if (!cur->hasLowID() || (cur->socket() && cur->socket()->isConnected())) {
+            if (connectable) {
                 bestScore = curScore;
                 newClient = cur;
             } else if (!cur->addNextConnect()) {
@@ -213,8 +239,15 @@ UpDownClient* UploadQueue::findBestClientInQueue()
         ++it;
     }
 
+    // Low-ID deferral is compared against the global best, not the alternation winner,
+    // so slot fairness never changes who gets flagged for the next-connect shortcut.
     if (lowClient && bestLowScore > bestScore)
         lowClient->setAddNextConnect(true);
+
+    // Alternate only when both families actually have a candidate — otherwise fall
+    // through to the plain best, so a slot is never held back for an absent family.
+    if (thePrefs.separateIPv6Queue() && bestV4 && bestV6)
+        return m_lastSlotWasIPv6 ? bestV4 : bestV6;
 
     return newClient;
 }
@@ -365,6 +398,11 @@ void UploadQueue::addUpNextClient(UpDownClient* directadd)
     m_uploadingList.push_back(newClient);
     newClient->setSlotNumber(static_cast<uint32>(m_uploadingList.size()));
 
+    // Record the family on EVERY promotion, including the directadd paths (low-ID
+    // reconnect, empty-queue fast path). Updating it only in findBestClientInQueue()
+    // would let those paths silently desync the alternation.
+    m_lastSlotWasIPv6 = newClient->isIPv6Connection();
+
     m_lastStartUpload = static_cast<uint32>(getTickCount());
 
     // Update statistics on the requested file
@@ -428,6 +466,10 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
             return true;
         }
         if (client->compare(cur)) {
+            // Same ip:port or user hash as a queued client. Track it regardless — MFC
+            // keeps a record of every client that reaches this branch.
+            if (theApp.clientList)
+                theApp.clientList->addTrackClient(client);
             logDebug(QStringLiteral("addClientToQueue: rejected duplicate client %1")
                          .arg(client->userName()));
             return false;
@@ -440,6 +482,39 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
         logDebug(QStringLiteral("addClientToQueue: rejected %1 — 3+ clients from same IP")
                      .arg(client->userName()));
         return false;
+    }
+
+    // Second, independent per-address gate (MFC UploadQueue.cpp:614). Unlike the loop
+    // above it counts distinct TCP ports seen from the address over KEEPTRACK_TIME, not
+    // clients queued right now, so it also catches a peer that keeps reconnecting from
+    // fresh ports. IPv4 only — IPv6 has its own, stricter rule below.
+    if (client->userAddress().isIPv4() && theApp.clientList
+        && theApp.clientList->clientsFromIP(client->userAddress()) >= 3)
+    {
+        logDebug(QStringLiteral("addClientToQueue: rejected %1 — 3+ tracked clients from %2")
+                     .arg(client->userName(), ipstr(client->userAddress())));
+        return false;
+    }
+
+    // IPv6: at most one client per address, counting active uploads as well as the
+    // waiting list. Deliberately an exact 128-bit match — no prefix/range logic, since
+    // a single /64 legitimately belongs to one subscriber.
+    //
+    // Gated on the address rather than isIPv6Connection() so the test and the comparison
+    // below use the same value: a peer whose socket is v6 but whose userAddress is v4
+    // would otherwise be compared against IPv4 addresses.
+    if (client->userAddress().isIPv6()) {
+        const Address& v6 = client->userAddress();
+        const auto sameV6 = [&](const UpDownClient* other) {
+            return other != client && other->userAddress() == v6;
+        };
+        if (std::any_of(m_waitingList.begin(), m_waitingList.end(), sameV6)
+            || std::any_of(m_uploadingList.begin(), m_uploadingList.end(), sameV6))
+        {
+            logDebug(QStringLiteral("addClientToQueue: rejected %1 — IPv6 %2 already queued or uploading")
+                         .arg(client->userName(), ipstr(v6)));
+            return false;
+        }
     }
 
     // If already downloading, just send accept
@@ -484,6 +559,11 @@ bool UploadQueue::removeFromUploadQueue(UpDownClient* client)
     } else {
         ++m_failedUpCount;
     }
+
+    // Keep track of this client — it has now consumed an upload slot, which is what the
+    // per-address queue gate in addClientToQueue counts.
+    if (theApp.clientList)
+        theApp.clientList->addTrackClient(client);
 
     client->setAddNextConnect(false);
     client->setUploadState(UploadState::None);
@@ -692,13 +772,12 @@ void UploadQueue::onReaskFilePing(const Endpoint& senderEP,
     if (!data || size < 16)
         return;
 
-    uint32 senderIP = senderEP.address().toUint32();
-    uint16 senderPort = senderEP.port();
-
-    // Look up the requesting client by IP + UDP port
+    // Keep the Endpoint intact end-to-end. Flattening it to a uint32 loses the family
+    // (an IPv6 sender collapses to 0) and mixes host order into a network-order lookup,
+    // which is why this handler never resolved a sender and no rank was ever returned.
     UpDownClient* sender = nullptr;
     if (theApp.clientList)
-        sender = theApp.clientList->findByIP_UDP(senderIP, senderPort);
+        sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(), senderEP.port());
 
     // Look up the requested file by hash
     KnownFile* reqFile = nullptr;
@@ -718,11 +797,11 @@ void UploadQueue::onReaskFilePing(const Endpoint& senderEP,
         if (theApp.clientUDP) {
             auto pkt = std::make_unique<Packet>(OP_FILENOTFOUND, 0, OP_EMULEPROT);
             if (sender)
-                theApp.clientUDP->sendPacket(std::move(pkt), senderIP, senderPort,
+                theApp.clientUDP->sendPacket(std::move(pkt), senderEP,
                                               sender->shouldReceiveCryptUDPPackets(),
                                               sender->userHash(), false, 0);
             else
-                theApp.clientUDP->sendPacket(std::move(pkt), senderIP, senderPort,
+                theApp.clientUDP->sendPacket(std::move(pkt), senderEP,
                                               false, nullptr, false, 0);
         }
         return;
@@ -748,7 +827,7 @@ void UploadQueue::onReaskFilePing(const Endpoint& senderEP,
 
         auto response = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_REASKACK);
         if (theApp.clientUDP) {
-            theApp.clientUDP->sendPacket(std::move(response), senderIP, senderPort,
+            theApp.clientUDP->sendPacket(std::move(response), senderEP,
                                           sender->shouldReceiveCryptUDPPackets(),
                                           sender->userHash(), false, 0);
         }
@@ -757,7 +836,7 @@ void UploadQueue::onReaskFilePing(const Endpoint& senderEP,
         if (theApp.clientUDP) {
             if (waitingUserCount() + 50 > 200) {
                 auto pkt = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
-                theApp.clientUDP->sendPacket(std::move(pkt), senderIP, senderPort,
+                theApp.clientUDP->sendPacket(std::move(pkt), senderEP,
                                               false, nullptr, false, 0);
             }
         }

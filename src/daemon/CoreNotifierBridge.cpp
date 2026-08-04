@@ -16,7 +16,7 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadPrefs.h"
-#include "upnp/UPnPManager.h"
+#include "portmap/PortMapper.h"
 #include "utils/Log.h"
 #include "files/SharedFileList.h"
 #include "search/SearchList.h"
@@ -145,10 +145,10 @@ void CoreNotifierBridge::connectAll()
                 this, [this](uint32_t, uint32_t) { onKadStateChanged(); });
     }
 
-    // UPnP
-    if (theApp.upnpManager) {
-        connect(theApp.upnpManager, &UPnPManager::discoveryComplete,
-                this, &CoreNotifierBridge::onUPnPDiscoveryComplete);
+    // Port mapping
+    if (theApp.portMapper) {
+        connect(theApp.portMapper, &PortMapper::statusChanged,
+                this, &CoreNotifierBridge::onPortMapStatusChanged);
     }
 }
 
@@ -198,10 +198,12 @@ void CoreNotifierBridge::onServerStateChanged()
     if (connected && theApp.serverConnect) {
         info.insert(QStringLiteral("publicIP"),
                     static_cast<qint64>(theApp.publicIP()));
+        info.insert(QStringLiteral("publicIPv6"), theApp.publicIPv6().toString());
         info.insert(QStringLiteral("obfuscated"),
                     theApp.serverConnect->isConnectedObfuscated());
         if (const auto* srv = theApp.serverConnect->currentServer()) {
             info.insert(QStringLiteral("serverIP"), static_cast<qint64>(srv->ipAddress().toNetworkUint32()));
+            info.insert(QStringLiteral("serverAddr"), srv->ipAddress().toString());
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
@@ -351,10 +353,27 @@ void CoreNotifierBridge::onClientSharedFilesReceived(const QByteArray& userHash,
     m_ipcServer->broadcast(msg);
 }
 
-void CoreNotifierBridge::onUPnPDiscoveryComplete(bool success)
+void CoreNotifierBridge::onPortMapStatusChanged(eMule::PortMapStatus status)
 {
-    logInfo(QStringLiteral("UPnP: discovery %1")
-                .arg(success ? QStringLiteral("succeeded") : QStringLiteral("failed")));
+    // Push it, rather than only logging as the old UPnP handler did: the GUI
+    // needs the state to show real forwarding status instead of the wizard's
+    // 30-second guess.
+    if (m_ipcServer == nullptr)
+        return;
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::PushPortMapStatus, 0);
+    QCborMap info;
+    info.insert(QStringLiteral("status"), static_cast<int>(status));
+    info.insert(QStringLiteral("statusText"), eMule::portMapStatusName(status));
+    if (theApp.portMapper != nullptr) {
+        info.insert(QStringLiteral("method"), static_cast<int>(theApp.portMapper->activeMethod()));
+        info.insert(QStringLiteral("methodText"),
+                    eMule::portMapMethodName(theApp.portMapper->activeMethod()));
+        info.insert(QStringLiteral("externalAddress"),
+                    theApp.portMapper->externalAddress().toString());
+    }
+    msg.append(info);
+    m_ipcServer->broadcast(msg);
 }
 
 void CoreNotifierBridge::sendEmailNotification(const QString& subject, const QString& body)

@@ -254,6 +254,10 @@ void UDPFirewallTester::reset()
     s_lastSucceededTime = 0;
     s_possibleTestClients.clear();
     s_usedTestClients.clear();
+
+    // Drop any in-flight lookup too, so a stop/start cycle can't leave a stale
+    // NodeFwCheckUDP search behind. MFC UDPFirewallTester.cpp:197-212.
+    SearchManager::cancelNodeFWCheckUDPSearch();
 }
 
 void UDPFirewallTester::connected()

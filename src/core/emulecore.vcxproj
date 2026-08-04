@@ -174,6 +174,8 @@
     <ClCompile Include="app\AppContext.cpp" />
     <ClCompile Include="archive\ArchiveReader.cpp" />
     <ClCompile Include="archive\ArchiveRecovery.cpp" />
+    <ClCompile Include="archive\ArchiveUnpack.cpp" />
+    <ClCompile Include="net\HttpFileDownload.cpp" />
     <ClCompile Include="client\ClientCredits.cpp" />
     <ClCompile Include="client\ClientList.cpp" />
     <ClCompile Include="net\ClientReqSocket.cpp" />
@@ -223,6 +225,16 @@
     <ClCompile Include="files\KnownFileList.cpp" />
     <ClCompile Include="net\LastCommonRouteFinder.cpp" />
     <ClCompile Include="net\ListenSocket.cpp" />
+    <ClCompile Include="net\DefaultGateway.cpp" />
+    <ClCompile Include="portmap\PortMapTypes.cpp" />
+    <ClCompile Include="portmap\PortMapWire.cpp" />
+    <ClCompile Include="portmap\NatPmpMessages.cpp" />
+    <ClCompile Include="portmap\PcpMessages.cpp" />
+    <ClCompile Include="portmap\PortMapper.cpp" />
+    <ClCompile Include="portmap\UPnPBackend.cpp" />
+    <ClCompile Include="portmap\UPnPWorker.cpp" />
+    <ClCompile Include="net\HostResolver.cpp" />
+    <ClCompile Include="net\LocalIPv6.cpp" />
     <ClCompile Include="utils\CrashHandler.cpp" />
     <ClCompile Include="utils\Log.cpp" />
     <ClCompile Include="crypto\MD4Hash.cpp" />
@@ -261,7 +273,6 @@
     <ClCompile Include="utils\StringUtils.cpp" />
     <ClCompile Include="protocol\Tag.cpp" />
     <ClCompile Include="net\UDPSocket.cpp" />
-    <ClCompile Include="upnp\UPnPManager.cpp" />
     <ClCompile Include="client\URLClient.cpp" />
     <ClCompile Include="client\UpDownClient.cpp" />
     <ClCompile Include="transfer\UploadBandwidthThrottler.cpp" />
@@ -283,6 +294,8 @@
     <ClInclude Include="app\AppContext.h" />
     <ClInclude Include="archive\ArchiveReader.h" />
     <ClInclude Include="archive\ArchiveRecovery.h" />
+    <ClInclude Include="archive\ArchiveUnpack.h" />
+    <ClInclude Include="net\HttpFileDownload.h" />
     <ClInclude Include="utils\ByteOrder.h" />
     <ClInclude Include="client\ClientCredits.h" />
     <QtMoc Include="client\ClientList.h" />
@@ -294,6 +307,7 @@
     <ClInclude Include="files\CollectionFile.h" />
     <ClInclude Include="files\CollectionKeys.h" />
     <ClInclude Include="utils\ContainerUtils.h" />
+    <ClInclude Include="utils\CorroborationTally.h" />
     <QtMoc Include="app\CoreSession.h" />
     <ClInclude Include="client\CorruptionBlackBox.h" />
     <ClInclude Include="client\DeadSourceList.h" />
@@ -310,6 +324,11 @@
     <QtMoc Include="media\FrameGrabThread.h" />
     <ClInclude Include="friends\Friend.h" />
     <QtMoc Include="friends\FriendList.h" />
+    <QtMoc Include="net\HostResolver.h" />
+    <QtMoc Include="portmap\PortMapBackend.h" />
+    <QtMoc Include="portmap\PortMapper.h" />
+    <QtMoc Include="portmap\UPnPBackend.h" />
+    <QtMoc Include="portmap\UPnPWorker.h" />
     <QtMoc Include="net\HttpClientReqSocket.h" />
     <QtMoc Include="ipfilter\IPFilter.h" />
     <ClInclude Include="transfer\ImportParts.h" />
@@ -352,6 +371,12 @@
     <ClInclude Include="utils\MapKey.h" />
     <ClInclude Include="media\MediaInfo.h" />
     <ClInclude Include="utils\OtherFunctions.h" />
+    <ClInclude Include="net\DefaultGateway.h" />
+    <ClInclude Include="portmap\PortMapTypes.h" />
+    <ClInclude Include="portmap\PortMapWire.h" />
+    <ClInclude Include="portmap\NatPmpMessages.h" />
+    <ClInclude Include="portmap\PcpMessages.h" />
+    <ClInclude Include="net\LocalIPv6.h" />
     <ClInclude Include="net\Packet.h" />
     <QtMoc Include="files\PartFile.h" />
     <QtMoc Include="files\PartFileConvert.h" />
@@ -390,7 +415,6 @@
     <ClInclude Include="utils\TimeUtils.h" />
     <ClInclude Include="utils\Types.h" />
     <QtMoc Include="net\UDPSocket.h" />
-    <QtMoc Include="upnp\UPnPManager.h" />
     <QtMoc Include="client\URLClient.h" />
     <QtMoc Include="client\UpDownClient.h" />
     <QtMoc Include="transfer\UploadBandwidthThrottler.h" />

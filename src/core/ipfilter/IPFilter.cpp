@@ -3,6 +3,7 @@
 /// @brief IP range filter implementation — replaces MFC CIPFilter.
 
 #include "ipfilter/IPFilter.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
@@ -15,6 +16,200 @@
 
 
 namespace eMule {
+
+namespace {
+
+// ---------------------------------------------------------------------------
+// Range-key helpers — let one merge algorithm serve both families
+// ---------------------------------------------------------------------------
+
+using V6Key = std::array<uint8, 16>;
+
+/// std::array compares lexicographically, which for network-order bytes is numeric
+/// order, so the keys need no conversion — only successor/predecessor.
+[[nodiscard]] uint32 keyNext(uint32 k) { return k + 1; }
+[[nodiscard]] uint32 keyPrev(uint32 k) { return k - 1; }
+[[nodiscard]] bool keyIsMax(uint32 k) { return k == UINT32_MAX; }
+[[nodiscard]] bool keyIsMin(uint32 k) { return k == 0; }
+
+[[nodiscard]] V6Key keyNext(V6Key k)
+{
+    for (int i = 15; i >= 0; --i) {
+        if (++k[static_cast<size_t>(i)] != 0)
+            break;      // no carry out of this byte
+    }
+    return k;
+}
+
+[[nodiscard]] V6Key keyPrev(V6Key k)
+{
+    for (int i = 15; i >= 0; --i) {
+        if (k[static_cast<size_t>(i)]-- != 0)
+            break;      // no borrow out of this byte
+    }
+    return k;
+}
+
+[[nodiscard]] bool keyIsMax(const V6Key& k)
+{
+    return std::all_of(k.begin(), k.end(), [](uint8 b) { return b == 0xFF; });
+}
+
+[[nodiscard]] bool keyIsMin(const V6Key& k)
+{
+    return std::all_of(k.begin(), k.end(), [](uint8 b) { return b == 0; });
+}
+
+// ---------------------------------------------------------------------------
+// sortAndMergeRanges — shared by the IPv4 and IPv6 tables
+// ---------------------------------------------------------------------------
+//
+// Sorts by start (then by level, stricter first) and merges. Overlaps between entries
+// of *different* levels are split into segments rather than collapsed: the lookup only
+// ever inspects the single entry with the largest start <= the address, so a range left
+// nested inside another would never be found.
+template <typename Entry>
+void sortAndMergeRanges(std::vector<Entry>& entries, bool& modified)
+{
+    if (entries.size() < 2)
+        return;
+
+    std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+        if (a.start != b.start)
+            return a.start < b.start;
+        return a.level < b.level;
+    });
+
+    std::vector<Entry> merged;
+    merged.reserve(entries.size());
+    merged.push_back(std::move(entries[0]));
+
+    for (size_t i = 1; i < entries.size(); ++i) {
+        auto& cur = entries[i];
+        auto& prev = merged.back();
+
+        const bool overlapping = cur.start >= prev.start && cur.start <= prev.end;
+        const bool adjacent = !keyIsMax(prev.end) && cur.start == keyNext(prev.end)
+                              && cur.level == prev.level;
+
+        if (!overlapping && !adjacent) {
+            merged.push_back(std::move(cur));
+            continue;
+        }
+
+        if (cur.start == prev.start && cur.end == prev.end) {
+            // Duplicate range: keep the lowest (strictest) level
+            if (cur.level < prev.level)
+                prev.level = cur.level;
+        } else if (prev.level == cur.level) {
+            if (cur.end > prev.end)
+                prev.end = cur.end;
+        } else if (overlapping) {
+            // prev = [A..B, levelP], cur = [C..D, levelC], with A <= C <= B.
+            const auto a = prev.start;
+            const auto b = prev.end;
+            const auto c = cur.start;
+            const auto d = cur.end;
+            const uint32 levelP = prev.level;
+            const uint32 levelC = cur.level;
+            const uint32 minLevel = std::min(levelP, levelC);
+            const std::string descP = prev.desc;
+
+            merged.pop_back();
+
+            if (a < c && !keyIsMin(c))
+                merged.push_back(Entry{a, keyPrev(c), levelP, 0, descP});
+
+            merged.push_back(Entry{c, std::min(b, d), minLevel, 0, descP});
+
+            if (b > d && !keyIsMax(d))
+                merged.push_back(Entry{keyNext(d), b, levelP, 0, descP});
+            else if (d > b && !keyIsMax(b))
+                merged.push_back(Entry{keyNext(b), d, levelC, 0, cur.desc});
+        }
+        modified = true;
+    }
+
+    entries = std::move(merged);
+}
+
+/// Zero every bit after @p prefixLen, giving the first address of the prefix.
+[[nodiscard]] V6Key prefixFloor(V6Key addr, int prefixLen)
+{
+    for (int bit = prefixLen; bit < 128; ++bit)
+        addr[static_cast<size_t>(bit / 8)] &= static_cast<uint8>(~(0x80u >> (bit % 8)));
+    return addr;
+}
+
+/// Set every bit after @p prefixLen, giving the last address of the prefix.
+[[nodiscard]] V6Key prefixCeiling(V6Key addr, int prefixLen)
+{
+    for (int bit = prefixLen; bit < 128; ++bit)
+        addr[static_cast<size_t>(bit / 8)] |= static_cast<uint8>(0x80u >> (bit % 8));
+    return addr;
+}
+
+/// Parse an IPv6 literal into 16 network-order bytes. Rejects IPv4 and hostnames.
+[[nodiscard]] bool parseV6Literal(const std::string& text, V6Key& out)
+{
+    const Address addr = Address::fromString(
+        QString::fromLatin1(text.c_str(), static_cast<qsizetype>(text.size())).trimmed());
+    if (!addr.isIPv6())
+        return false;
+    out = addr.ipv6Bytes();
+    return true;
+}
+
+[[nodiscard]] std::string trimmed(std::string s)
+{
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r'))
+        s.pop_back();
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
+        s.erase(s.begin());
+    return s;
+}
+
+/// "2001:db8::/32", "a - b", or a bare literal → an inclusive range.
+[[nodiscard]] bool parseV6RangeSpec(const std::string& spec, V6Key& start, V6Key& end)
+{
+    const std::string s = trimmed(spec);
+    if (s.empty())
+        return false;
+
+    if (const auto slash = s.find('/'); slash != std::string::npos) {
+        V6Key addr{};
+        if (!parseV6Literal(s.substr(0, slash), addr))
+            return false;
+        const std::string lenText = trimmed(s.substr(slash + 1));
+        if (lenText.empty()
+            || lenText.find_first_not_of("0123456789") != std::string::npos)
+            return false;
+        const int prefixLen = std::atoi(lenText.c_str());
+        if (prefixLen < 0 || prefixLen > 128)
+            return false;
+        start = prefixFloor(addr, prefixLen);
+        end = prefixCeiling(addr, prefixLen);
+        return true;
+    }
+
+    // "a - b". Only a dash flanked by whitespace can be a separator: a bare '-' is not
+    // valid inside an IPv6 literal, but requiring the spaces keeps the intent explicit
+    // and matches how every list in the wild writes it.
+    if (const auto dash = s.find(" - "); dash != std::string::npos) {
+        if (!parseV6Literal(s.substr(0, dash), start))
+            return false;
+        if (!parseV6Literal(s.substr(dash + 3), end))
+            return false;
+        return start <= end;
+    }
+
+    if (!parseV6Literal(s, start))
+        return false;
+    end = start;
+    return true;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -80,6 +275,12 @@ int IPFilter::loadFromFile(const QString& filePath)
             || (version != 1 && version != 2)) {
             return 0;
         }
+        // PeerGuardian2 has no standardised IPv6 record — both published versions store a
+        // pair of 32-bit bounds. A v6 list therefore has to arrive in one of the text
+        // formats; say so rather than silently filtering nothing.
+        logInfo(QStringLiteral("IP filter: \"%1\" is PeerGuardian2 binary (IPv4 only) — "
+                               "IPv6 ranges must come from a text list")
+                    .arg(filePath));
 
         while (!file.atEnd()) {
             // Read null-terminated name
@@ -119,8 +320,28 @@ int IPFilter::loadFromFile(const QString& filePath)
             while (!line.empty() && (line.front() == ' ' || line.front() == '\t'))
                 line.erase(line.begin());
 
-            // Skip comments and short lines
-            if (line.empty() || line[0] == '#' || line[0] == '/' || line.size() < 15)
+            // Skip comments
+            if (line.empty() || line[0] == '#' || line[0] == '/')
+                continue;
+
+            // IPv6 entries are recognised on their own, before the IPv4 length guard and
+            // outside the v4 format-detection state machine below: "2001:db8::/32" is only
+            // 13 characters, and a mixed-family list must not have its v4 detection thrown
+            // off by a v6 line it cannot parse.
+            {
+                std::array<uint8, 16> v6Start{};
+                std::array<uint8, 16> v6End{};
+                uint32 v6Level = kDefaultFilterLevel;
+                std::string v6Desc;
+                if (parseIPv6Line(line, v6Start, v6End, v6Level, v6Desc)) {
+                    addIPRange6(v6Start, v6End, v6Level, v6Desc);
+                    ++foundRanges;
+                    continue;
+                }
+            }
+
+            // Skip lines too short to hold an IPv4 range
+            if (line.size() < 15)
                 continue;
 
             // Auto-detect format if unknown — keep trying on each line until detected
@@ -217,6 +438,21 @@ bool IPFilter::saveToFile(const QString& filePath) const
         file.write(buf);
     }
 
+    // IPv6 ranges in the same shape, so parseIPv6Line reads back what we wrote. Written
+    // as explicit bounds rather than CIDR: a merged range is not necessarily a prefix.
+    for (const auto& entry : m_entries6) {
+        const QByteArray startStr =
+            Address::fromIPv6Bytes(entry.start.data()).toString().toLatin1();
+        const QByteArray endStr =
+            Address::fromIPv6Bytes(entry.end.data()).toString().toLatin1();
+
+        char buf[256];
+        std::snprintf(buf, sizeof(buf), "%s - %s , %3u , %s\n",
+                      startStr.constData(), endStr.constData(),
+                      entry.level, entry.desc.c_str());
+        file.write(buf);
+    }
+
     if (!file.commit()) {
         logError(QStringLiteral("Failed to commit IP filter file: %1").arg(filePath));
         return false;
@@ -229,21 +465,60 @@ bool IPFilter::saveToFile(const QString& filePath) const
 // Filtering
 // ---------------------------------------------------------------------------
 
+// The level-less overloads take the *user's* filter level, not kDefaultFilterLevel.
+// The two constants are unrelated and must not be confused: kDefaultFilterLevel is the
+// level assigned to a list entry that carries no level column, while the preference is
+// the threshold those entries are tested against.  Feeding the entry default back in as
+// the threshold makes the test `level < filterLevel` read `100 < 100` for every such
+// entry — which is every bare-CIDR line, every PeerGuardian line and every .p2b record —
+// so the whole list would load and then block nothing.  MFC delegates the same way
+// (srchybrid/IPFilter.cpp:378-380).
 bool IPFilter::isFiltered(uint32 ip) const
 {
-    return isFiltered(ip, kDefaultFilterLevel);
+    return isFiltered(ip, thePrefs.ipFilterLevel());
 }
 
 bool IPFilter::isFiltered(const Address& addr, uint32 filterLevel) const
 {
-    if (!addr.isIPv4())
-        return false; // IPv6 filtering not yet implemented
-    return isFiltered(addr.toNetworkUint32(), filterLevel);
+    if (addr.isIPv4())
+        return isFiltered(addr.toNetworkUint32(), filterLevel);
+    if (addr.isIPv6())
+        return isFilteredV6(addr, filterLevel);
+    return false;   // null address
+}
+
+bool IPFilter::isFilteredV6(const Address& addr, uint32 filterLevel) const
+{
+    if (m_entries6.empty())
+        return false;
+
+    const std::array<uint8, 16> key = addr.ipv6Bytes();
+
+    // Same shape as the IPv4 lookup: find the first entry starting after the address,
+    // step back one, and test that single candidate. sortAndMergeRanges guarantees no
+    // entry is nested inside another, which is what makes one candidate sufficient.
+    auto it = std::upper_bound(m_entries6.begin(), m_entries6.end(), key,
+        [](const std::array<uint8, 16>& val, const IPFilterEntry6& entry) {
+            return val < entry.start;
+        });
+
+    if (it != m_entries6.begin()) {
+        --it;
+        if (key >= it->start && key <= it->end && it->level < filterLevel) {
+            it->hits++;
+            m_lastHit6 = &(*it);
+            emit const_cast<IPFilter*>(this)->ipBlocked(
+                addr, QString::fromStdString(it->desc));
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool IPFilter::isFiltered(const Address& addr) const
 {
-    return isFiltered(addr, kDefaultFilterLevel);
+    return isFiltered(addr, thePrefs.ipFilterLevel());
 }
 
 bool IPFilter::isFiltered(uint32 ip, uint32 filterLevel) const
@@ -267,7 +542,7 @@ bool IPFilter::isFiltered(uint32 ip, uint32 filterLevel) const
             it->hits++;
             m_lastHit = &(*it);
             emit const_cast<IPFilter*>(this)->ipBlocked(
-                ip, QString::fromStdString(it->desc));
+                Address::fromNetworkOrder(ip), QString::fromStdString(it->desc));
             return true;
         }
     }
@@ -283,6 +558,16 @@ void IPFilter::addIPRange(uint32 start, uint32 end, uint32 level,
                           const std::string& desc)
 {
     m_entries.push_back(IPFilterEntry{start, end, level, 0, desc});
+    m_modified = true;
+}
+
+void IPFilter::addIPRange6(const std::array<uint8, 16>& start,
+                           const std::array<uint8, 16>& end, uint32 level,
+                           const std::string& desc)
+{
+    if (end < start)
+        return;
+    m_entries6.push_back(IPFilterEntry6{start, end, level, 0, desc});
     m_modified = true;
 }
 
@@ -303,7 +588,9 @@ bool IPFilter::removeFilter(int index)
 void IPFilter::removeAllFilters()
 {
     m_entries.clear();
+    m_entries6.clear();
     m_lastHit = nullptr;
+    m_lastHit6 = nullptr;
     m_modified = false;
 }
 
@@ -311,6 +598,8 @@ QString IPFilter::lastHitDescription() const
 {
     if (m_lastHit)
         return QString::fromStdString(m_lastHit->desc);
+    if (m_lastHit6)
+        return QString::fromStdString(m_lastHit6->desc);
     return QStringLiteral("Not available");
 }
 
@@ -320,78 +609,11 @@ QString IPFilter::lastHitDescription() const
 
 void IPFilter::sortAndMerge()
 {
-    if (m_entries.size() < 2)
-        return;
-
-    // Sort by start IP, then by level (lower/stricter first)
-    std::sort(m_entries.begin(), m_entries.end(),
-              [](const IPFilterEntry& a, const IPFilterEntry& b) {
-                  if (a.start != b.start)
-                      return a.start < b.start;
-                  return a.level < b.level;
-              });
-
-    // Merge overlapping/adjacent ranges, splitting when levels differ
-    std::vector<IPFilterEntry> merged;
-    merged.reserve(m_entries.size());
-    merged.push_back(std::move(m_entries[0]));
-
-    for (size_t i = 1; i < m_entries.size(); ++i) {
-        auto& cur = m_entries[i];
-        auto& prev = merged.back();
-
-        const bool overlapping = cur.start >= prev.start && cur.start <= prev.end;
-        const bool adjacent = cur.start == prev.end + 1 && cur.level == prev.level;
-
-        if (overlapping || adjacent) {
-            if (cur.start == prev.start && cur.end == prev.end) {
-                // Duplicate range: keep lowest (strictest) level
-                if (cur.level < prev.level)
-                    prev.level = cur.level;
-            } else if (prev.level == cur.level) {
-                // Same level: simply extend
-                if (cur.end > prev.end)
-                    prev.end = cur.end;
-            } else if (overlapping) {
-                // Overlapping entries with different levels — split into segments.
-                // prev = [A..B, level_p], cur = [C..D, level_c], where A <= C <= B.
-                const uint32 A = prev.start;
-                const uint32 B = prev.end;
-                const uint32 C = cur.start;
-                const uint32 D = cur.end;
-                const uint32 levelP = prev.level;
-                const uint32 levelC = cur.level;
-                const uint32 minLevel = std::min(levelP, levelC);
-
-                // Remove prev — we'll re-add the split segments
-                merged.pop_back();
-
-                // Segment 1: [A..C-1] at prev's level (non-overlapping left part)
-                if (A < C) {
-                    merged.push_back({A, C - 1, levelP, 0, prev.desc});
-                }
-
-                // Segment 2: [C..min(B,D)] at the stricter (lower) level
-                const uint32 overlapEnd = std::min(B, D);
-                merged.push_back({C, overlapEnd, minLevel, 0, prev.desc});
-
-                // Segment 3: the remainder beyond the overlap
-                if (B > D) {
-                    // prev extends beyond cur: [D+1..B] at prev's level
-                    merged.push_back({D + 1, B, levelP, 0, prev.desc});
-                } else if (D > B) {
-                    // cur extends beyond prev: [B+1..D] at cur's level
-                    merged.push_back({B + 1, D, levelC, 0, cur.desc});
-                }
-                // else B == D: no remainder
-            }
-            m_modified = true;
-        } else {
-            merged.push_back(std::move(cur));
-        }
-    }
-
-    m_entries = std::move(merged);
+    sortAndMergeRanges(m_entries, m_modified);
+    sortAndMergeRanges(m_entries6, m_modified);
+    // The tables are rebuilt, so any cached hit pointer now dangles.
+    m_lastHit = nullptr;
+    m_lastHit6 = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -431,6 +653,58 @@ bool IPFilter::parseFilterDatLine(const std::string& line, uint32& ip1,
     }
 
     return true;
+}
+
+bool IPFilter::parseIPv6Line(const std::string& line, std::array<uint8, 16>& start,
+                             std::array<uint8, 16>& end, uint32& level, std::string& desc)
+{
+    // Cheap reject first: this runs on every line of a v4 list, which never has a colon
+    // in the address position. (A PeerGuardian v4 line does have a colon, but its address
+    // half is dotted quad, so parseV6RangeSpec below rejects it.)
+    if (line.find(':') == std::string::npos)
+        return false;
+
+    level = kDefaultFilterLevel;
+    desc.clear();
+
+    // Optional FilterDat-style tail: "<range> , <level> , <description>".
+    std::string spec = line;
+    if (const auto comma = spec.find(','); comma != std::string::npos) {
+        const std::string tail = spec.substr(comma + 1);
+        spec = spec.substr(0, comma);
+
+        std::string levelText = tail;
+        if (const auto comma2 = tail.find(','); comma2 != std::string::npos) {
+            levelText = tail.substr(0, comma2);
+            desc = trimmed(tail.substr(comma2 + 1));
+        }
+        levelText = trimmed(levelText);
+        if (!levelText.empty()
+            && levelText.find_first_not_of("0123456789") == std::string::npos) {
+            level = static_cast<uint32>(std::atoi(levelText.c_str()));
+        }
+    }
+
+    if (parseV6RangeSpec(spec, start, end))
+        return true;
+
+    // PeerGuardian style, "description:<range>". The description itself may contain
+    // colons, and so does every IPv6 literal, so there is no unambiguous split — try the
+    // whole string first (done above), then successively shorter suffixes. Trying longest
+    // first matters: for a bare "2001:db8::/32" the suffix "db8::/32" is *also* a valid
+    // address, and taking it would silently filter the wrong range.
+    for (size_t colon = spec.find(':'); colon != std::string::npos;
+         colon = spec.find(':', colon + 1)) {
+        if (parseV6RangeSpec(spec.substr(colon + 1), start, end)) {
+            std::string candidate = trimmed(spec.substr(0, colon));
+            if (auto pos = candidate.find("PGIPDB"); pos != std::string::npos)
+                candidate.erase(pos, 6);
+            desc = trimmed(std::move(candidate));
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool IPFilter::parsePeerGuardianLine(const std::string& line, uint32& ip1,

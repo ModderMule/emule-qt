@@ -37,6 +37,8 @@ namespace SrvTcpFlag {
     inline constexpr uint32 TypeTagInteger  = 0x00000080;
     inline constexpr uint32 LargeFiles      = 0x00000100;
     inline constexpr uint32 TcpObfuscation  = 0x00000400;
+    inline constexpr uint32 Ipv6            = 0x00004000;   // server speaks the IPv6 extension
+    inline constexpr uint32 NatRendezvous   = 0x00008000;   // PR_NAT rendezvous (parsed, unused — S6 out of scope)
 }
 
 namespace SrvUdpFlag {
@@ -48,6 +50,7 @@ namespace SrvUdpFlag {
     inline constexpr uint32 LargeFiles      = 0x00000100;
     inline constexpr uint32 UdpObfuscation  = 0x00000200;
     inline constexpr uint32 TcpObfuscation  = 0x00000400;
+    inline constexpr uint32 Ipv6            = 0x00004000;   // server speaks the IPv6 extension (UDP)
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +64,10 @@ public:
     /// Construct from IP (network byte order) and port.
     Server(uint32 ip, uint16 port);
 
+    /// Construct from an address of either family and a port. Prefer this over the
+    /// uint32 form: it carries no byte-order ambiguity and can hold an IPv6.
+    Server(const Address& addr, uint16 port);
+
     /// Deserialize from a server.met stream (reads ip, port, tagCount, tags).
     explicit Server(FileDataIO& data, bool optUTF8 = true);
 
@@ -69,6 +76,13 @@ public:
 
     Server& operator=(const Server&) = delete;
     ~Server() = default;
+
+    /// Build from a user- or file-supplied address string, without ever doing DNS.
+    /// An IPv4/IPv6 literal (brackets optional) becomes the address; anything else is
+    /// kept as a dynIP hostname and resolved at connect time. Returns nullptr when
+    /// @p host is empty. Mirrors MFC CServer(uint16, LPCTSTR) — srchybrid/Server.cpp:66.
+    [[nodiscard]] static std::unique_ptr<Server> fromAddressString(const QString& host,
+                                                                   uint16 port);
 
     // -- Network ----------------------------------------------------------
 
@@ -82,8 +96,13 @@ public:
     [[nodiscard]] bool hasDynIP() const         { return !m_dynIP.isEmpty(); }
     void setDynIP(const QString& dynIP)         { m_dynIP = dynIP; }
 
-    /// Returns dynIP if set, otherwise formatted numeric IP.
+    /// Returns dynIP if set, otherwise formatted numeric IP. Never bracketed — this is
+    /// the dedup key used by ServerList::findByAddress()/isDuplicate().
     [[nodiscard]] QString address() const;
+
+    /// "host:port", or "[2001:db8::1]:port" for an IPv6 literal — the round-trippable
+    /// endpoint form used by staticservers.dat and anything parsing with parseHostPort().
+    [[nodiscard]] QString addressWithPort() const;
 
     // -- Metadata ---------------------------------------------------------
 
@@ -211,6 +230,8 @@ public:
     [[nodiscard]] bool supportsObfuscationUDP() const   { return (m_udpFlags & SrvUdpFlag::UdpObfuscation) != 0; }
     [[nodiscard]] bool supportsGetSourcesObfuscation() const { return (m_tcpFlags & SrvTcpFlag::TcpObfuscation) != 0; }
     [[nodiscard]] bool supportsObfuscationTCP() const   { return m_obfuscationPortTCP != 0 && (supportsObfuscationUDP() || supportsGetSourcesObfuscation()); }
+    [[nodiscard]] bool supportsIPv6() const             { return (m_tcpFlags & SrvTcpFlag::Ipv6) != 0; }
+    [[nodiscard]] bool supportsIPv6UDP() const          { return (m_udpFlags & SrvUdpFlag::Ipv6) != 0; }
 
     /// Check if we hold a valid UDP key for the given client IP. The stored IP
     /// must itself be known: a key stamped before we learned our public IP

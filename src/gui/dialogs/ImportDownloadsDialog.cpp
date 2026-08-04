@@ -4,6 +4,7 @@
 
 #include "dialogs/ImportDownloadsDialog.h"
 #include "app/IpcClient.h"
+#include "controls/AbstractListView.h"
 #include "IpcMessage.h"
 
 #include <QCborArray>
@@ -57,14 +58,13 @@ ImportDownloadsDialog::ImportDownloadsDialog(IpcClient* ipc, QWidget* parent)
     auto* queueGroup = new QGroupBox(tr("Job Queue"), this);
     auto* queueLayout = new QVBoxLayout(queueGroup);
 
-    m_jobList = new QTreeWidget(queueGroup);
+    auto* jobList = new ListTreeWidget(queueGroup);
+    m_jobList = jobList;
     m_jobList->setHeaderLabels({tr("Filename"), tr("Status"), tr("Size"), tr("File Hash")});
     m_jobList->setRootIsDecorated(false);
     m_jobList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_jobList->header()->setStretchLastSection(true);
-    m_jobList->setColumnWidth(0, 220);
-    m_jobList->setColumnWidth(1, 100);
-    m_jobList->setColumnWidth(2, 80);
+    jobList->bindColumns(QStringLiteral("importDownloads"), {220, 100, 80, 260});
     queueLayout->addWidget(m_jobList);
 
     mainLayout->addWidget(queueGroup, 1);

@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QVBoxLayout>
 
+#include "net/Address.h"
 #include "utils/OtherFunctions.h"
 #include "utils/StringUtils.h"
 
@@ -81,15 +82,22 @@ ClientDetailDialog::ClientDetailDialog(const QCborMap& d, QWidget* parent)
 
         addRow(form, tr("Client Software"), str(d, QLatin1StringView("software")));
 
-        // Server
+        // Server. Prefer the string form: "serverIP" is 0 for an IPv6 server, which would
+        // otherwise render the row as "\u2014" even though the address is known.
         const auto srvIP   = static_cast<uint32>(num(d, QLatin1StringView("serverIP")));
         const auto srvPort = static_cast<uint16>(num(d, QLatin1StringView("serverPort")));
         const QString srvName = str(d, QLatin1StringView("serverName"));
-        if (srvIP != 0) {
-            const QString srvStr = srvName.isEmpty()
-                ? ipstr(srvIP, srvPort)
-                : QStringLiteral("%1 - %2").arg(srvName, ipstr(srvIP, srvPort));
-            addRow(form, tr("Server"), srvStr);
+        const QString srvAddr = str(d, QLatin1StringView("serverAddr"));
+        QString srvEndpoint;
+        if (!srvAddr.isEmpty())
+            srvEndpoint = Endpoint(Address::fromString(srvAddr), srvPort).toString();
+        else if (srvIP != 0)
+            srvEndpoint = ipstr(srvIP, srvPort);
+
+        if (!srvEndpoint.isEmpty()) {
+            addRow(form, tr("Server"), srvName.isEmpty()
+                                           ? srvEndpoint
+                                           : QStringLiteral("%1 - %2").arg(srvName, srvEndpoint));
         } else {
             addRow(form, tr("Server"), QStringLiteral("\u2014"));
         }

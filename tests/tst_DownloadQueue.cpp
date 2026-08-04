@@ -12,6 +12,7 @@
 #include "ipfilter/IPFilter.h"
 #include "net/Address.h"
 #include "prefs/Preferences.h"
+#include "protocol/ED2KLink.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -84,6 +85,17 @@ private slots:
     void addServerSources_dropsLowIdWhenFirewalled();
     void addServerSources_dropsIpFilteredHighId();
     void addServerSources_dropsBannedHighId();
+    void addServerSources_parsesIPv6Sentinel();
+    void addServerSources_vetsIPv6LikeIPv4();
+
+    // eD2K link sources
+    void linkSources_ipv6LiteralAdded();
+    void linkSources_ipv4AndIPv6BecomeOneClient();
+    void linkSources_dropsIpFilteredV4();
+    void linkSources_dropsBannedV6();
+    void linkSources_respectsMaxSourcesPerFile();
+    void linkSources_ipv6NotDedupedAgainstAddresslessClient();
+
     void udpGlobalSourcesSingleBlock();
     void udpGlobalSourcesMultiBlock();
 
@@ -471,6 +483,114 @@ void tst_DownloadQueue::addServerSources_dropsLowIdWhenFirewalled()
     dq.deleteAll();
 }
 
+// S3a: a classic OP_FOUNDSOURCES block may carry an inline IPv6 source, marked by the
+// ClientID sentinel 0xFFFFFFFF followed by 16 IPv6 bytes. The v6 source must be parsed
+// (with openIPv6 set and NOT dropped for being firewalled), AND a following normal source
+// must still parse — proving the 16 sentinel bytes were consumed and the list stays in sync.
+void tst_DownloadQueue::addServerSources_parsesIPv6Sentinel()
+{
+    QVERIFY(theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hash[16] = {40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    auto* pf = createTestPartFile(hash, QStringLiteral("server_source_ipv6.bin"));
+    dq.addDownload(pf);
+
+    // 2a01:4f8::1122:3333 — genuine global unicast. Server sources are vetted with
+    // isGoodIP like every other family, so the documentation prefix 2001:db8::/32 would
+    // be dropped before the parse could be observed (same reason as the link tests below).
+    const std::array<uint8, 16> v6bytes{
+        0x2a, 0x01, 0x04, 0xf8, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33};
+    const uint32 highIdNet =
+        Address::fromString(QStringLiteral("88.77.66.55")).toNetworkUint32();
+
+    // Body: hash[16], count=2, [sentinel source: 0xFFFFFFFF + port + 16 IPv6 bytes],
+    // then [normal high-ID source]. Sentinel FIRST so a mis-count desyncs the second.
+    QByteArray body(reinterpret_cast<const char*>(hash), 16);
+    body.append(static_cast<char>(2));                       // count
+    const uint16 port = 4662;
+    auto appendU32 = [&](uint32 v) { for (int i = 0; i < 4; ++i) body.append(static_cast<char>((v >> (8 * i)) & 0xFF)); };
+    auto appendU16 = [&](uint16 v) { body.append(static_cast<char>(v & 0xFF)); body.append(static_cast<char>((v >> 8) & 0xFF)); };
+    appendU32(IPV6_SOURCE_SENTINEL);                         // sentinel ClientID
+    appendU16(port);
+    body.append(reinterpret_cast<const char*>(v6bytes.data()), 16);  // inline IPv6
+    appendU32(highIdNet);                                    // normal high-ID source
+    appendU16(port);
+
+    feedServerSources(dq, body);
+
+    // Both sources parsed: no desync from the sentinel's 16 bytes.
+    QCOMPARE(pf->sourceCount(), 2);
+
+    bool foundIPv6 = false, foundHighID = false;
+    for (const UpDownClient* src : pf->srcList()) {
+        if (src->openIPv6()) {
+            foundIPv6 = true;
+            QCOMPARE(src->userIPv6(), Address::fromIPv6Bytes(v6bytes.data()));
+        } else if (src->userIDHybrid() == Address::fromString(QStringLiteral("88.77.66.55")).toUint32()) {
+            foundHighID = true;
+        }
+    }
+    QVERIFY2(foundIPv6, "IPv6 sentinel source not parsed");
+    QVERIFY2(foundHighID, "high-ID source after the sentinel desynced");
+
+    dq.deleteAll();
+}
+
+// A server-supplied IPv6 source gets the same vetting as its IPv4 twin. The IP filter
+// itself runs downstream in checkAndAddSource (makeSourceClient points userAddress at
+// the IPv6 when there is no usable IPv4), but isGoodIP and the ban list have no such
+// coverage and must be applied inline — they used to be skipped outright.
+void tst_DownloadQueue::addServerSources_vetsIPv6LikeIPv4()
+{
+    const std::array<uint8, 16> bogonV6{      // 2001:db8::1 — documentation space
+        0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+    const std::array<uint8, 16> bannedV6{     // 2a01:4f8::dead
+        0x2a, 0x01, 0x04, 0xf8, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xde, 0xad};
+    const std::array<uint8, 16> filteredV6{   // 2a02:26f0::beef
+        0x2a, 0x02, 0x26, 0xf0, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xbe, 0xef};
+    const std::array<uint8, 16> cleanV6{      // 2a03:2880::1
+        0x2a, 0x03, 0x28, 0x80, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+
+    DownloadQueue dq;
+
+    ClientList cl;
+    cl.addBannedClient(Address::fromIPv6Bytes(bannedV6.data()));
+    dq.setClientList(&cl);
+
+    IPFilter ipf;
+    ipf.addIPRange6(filteredV6, filteredV6, 0, "test-block-v6");
+    ipf.sortAndMerge();
+    dq.setIPFilter(&ipf);
+
+    uint8 hash[16] = {43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5};
+    auto* pf = createTestPartFile(hash, QStringLiteral("server_source_ipv6_vet.bin"));
+    dq.addDownload(pf);
+
+    QByteArray body(reinterpret_cast<const char*>(hash), 16);
+    body.append(static_cast<char>(4));                       // count
+    for (const auto* v6 : {&bogonV6, &bannedV6, &filteredV6, &cleanV6}) {
+        for (int i = 0; i < 4; ++i)
+            body.append(static_cast<char>((IPV6_SOURCE_SENTINEL >> (8 * i)) & 0xFF));
+        body.append(static_cast<char>(4662 & 0xFF));
+        body.append(static_cast<char>((4662 >> 8) & 0xFF));
+        body.append(reinterpret_cast<const char*>(v6->data()), 16);
+    }
+
+    feedServerSources(dq, body);
+
+    // Only the clean global-unicast source survives all three gates.
+    QCOMPARE(pf->sourceCount(), 1);
+    QCOMPARE(pf->srcList().front()->userIPv6(), Address::fromIPv6Bytes(cleanV6.data()));
+
+    dq.deleteAll();
+}
+
 // An ipfiltered high-ID server source must be dropped. checkAndAddSource's own
 // ipfilter is skipped for server sources (they carry no userAddress), so the
 // drop has to happen inline in addServerSourceResult — mirroring CPartFile::
@@ -533,6 +653,156 @@ void tst_DownloadQueue::addServerSources_dropsBannedHighId()
     QCOMPARE(pf->sourceCount(), 1);
     QCOMPARE(pf->srcList().front()->userIDHybrid(),
              Address::fromString(QStringLiteral("88.77.66.55")).toUint32());
+
+    dq.deleteAll();
+}
+
+// ---------------------------------------------------------------------------
+// eD2K link sources
+//
+// Link text is untrusted, so addLinkSources() vets each family independently. Only
+// literals are exercised here — a hostname would need DNS, which HostResolver covers.
+// 2a01:4f8::1 is genuine global unicast (2001:db8::/32 fails isGoodIP as documentation
+// space, and 88.77.66.55 is a routable IPv4).
+// ---------------------------------------------------------------------------
+
+void tst_DownloadQueue::linkSources_ipv6LiteralAdded()
+{
+    // We are firewalled here (the harness default), which must NOT stop an IPv6 source:
+    // it is dialable over v6 no matter what our ED2K ID is.
+    QVERIFY(theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("link_v6.bin"));
+    dq.addDownload(pf);
+
+    const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::1"));
+    dq.addLinkSources(pf, {{QStringLiteral("2a01:4f8::1"), 4662, v6, {}}});
+
+    QCOMPARE(pf->sourceCount(), 1);
+    const UpDownClient* src = pf->srcList().front();
+    QVERIFY(src->openIPv6());
+    QCOMPARE(src->userIPv6(), v6);
+    QCOMPARE(src->userAddress(), v6);       // dialed directly over IPv6
+    QCOMPARE(src->sourceFrom(), SourceFrom::Link);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::linkSources_ipv4AndIPv6BecomeOneClient()
+{
+    DownloadQueue dq;
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    auto* pf = createTestPartFile(hash, QStringLiteral("link_dual.bin"));
+    dq.addDownload(pf);
+
+    const Address v4 = Address::fromString(QStringLiteral("88.77.66.55"));
+    const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::1"));
+    dq.addLinkPeerSource(pf, v4, v6, 4662);
+
+    // One peer, one client — both families attached, so tryToConnect() can choose.
+    QCOMPARE(pf->sourceCount(), 1);
+    const UpDownClient* src = pf->srcList().front();
+    QVERIFY(src->openIPv6());
+    QCOMPARE(src->userIPv6(), v6);
+    QCOMPARE(src->userIDHybrid(), v4.toUint32());   // HighID from the IPv4
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::linkSources_dropsIpFilteredV4()
+{
+    DownloadQueue dq;
+
+    IPFilter filter;
+    const uint32 filteredHost = Address::fromString(QStringLiteral("88.77.66.55")).toUint32();
+    filter.addIPRange(filteredHost, filteredHost, 0, "test-filter");
+    dq.setIPFilter(&filter);
+
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    auto* pf = createTestPartFile(hash, QStringLiteral("link_filtered.bin"));
+    dq.addDownload(pf);
+
+    const Address v4 = Address::fromString(QStringLiteral("88.77.66.55"));
+    dq.addLinkSources(pf, {{QStringLiteral("88.77.66.55"), 4662, v4, {}}});
+    QCOMPARE(pf->sourceCount(), 0);
+
+    // The same peer with a usable IPv6 alongside is still worth keeping.
+    const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::1"));
+    dq.addLinkPeerSource(pf, v4, v6, 4662);
+    QCOMPARE(pf->sourceCount(), 1);
+    QVERIFY(pf->srcList().front()->openIPv6());
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::linkSources_dropsBannedV6()
+{
+    DownloadQueue dq;
+
+    ClientList cl;
+    const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::1"));
+    cl.addBannedClient(v6);
+    dq.setClientList(&cl);
+
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4};
+    auto* pf = createTestPartFile(hash, QStringLiteral("link_banned.bin"));
+    dq.addDownload(pf);
+
+    dq.addLinkSources(pf, {{QStringLiteral("2a01:4f8::1"), 4662, v6, {}}});
+    QCOMPARE(pf->sourceCount(), 0);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::linkSources_respectsMaxSourcesPerFile()
+{
+    const uint32 savedMax = thePrefs.maxSourcesPerFile();
+    thePrefs.setMaxSourcesPerFile(2);
+
+    DownloadQueue dq;
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5};
+    auto* pf = createTestPartFile(hash, QStringLiteral("link_cap.bin"));
+    dq.addDownload(pf);
+
+    std::vector<ED2KLinkSource> sources;
+    for (int i = 1; i <= 5; ++i) {
+        const QString literal = QStringLiteral("2a01:4f8::%1").arg(i);
+        sources.push_back({literal, uint16{4662}, Address::fromString(literal), {}});
+    }
+    dq.addLinkSources(pf, sources);
+
+    QCOMPARE(pf->sourceCount(), 2);
+
+    dq.deleteAll();
+    thePrefs.setMaxSourcesPerFile(savedMax);
+}
+
+void tst_DownloadQueue::linkSources_ipv6NotDedupedAgainstAddresslessClient()
+{
+    // Regression: checkAndAddSource() looked the source up with
+    // findByIP(userAddress().toNetworkUint32(), port), which is 0 for every IPv6
+    // address — matching any client with no user address (every server-supplied source)
+    // on the same port, so the IPv6 source was rejected as a bogus duplicate.
+    DownloadQueue dq;
+    ClientList cl;
+    dq.setClientList(&cl);
+
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6};
+    auto* pf = createTestPartFile(hash, QStringLiteral("link_dedup.bin"));
+    dq.addDownload(pf);
+
+    // A LowID client with no user address on port 4662, as a server source would be.
+    auto* addressless = new UpDownClient(4662, /*userId=*/5, 0, 0, pf, true);
+    QVERIFY(addressless->userAddress().isNull());
+    cl.addClient(addressless);
+
+    const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::1"));
+    dq.addLinkSources(pf, {{QStringLiteral("2a01:4f8::1"), 4662, v6, {}}});
+
+    QCOMPARE(pf->sourceCount(), 1);
+    QCOMPARE(pf->srcList().front()->userIPv6(), v6);
 
     dq.deleteAll();
 }

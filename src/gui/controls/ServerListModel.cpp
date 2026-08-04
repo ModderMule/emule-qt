@@ -141,6 +141,10 @@ void ServerListModel::refreshFromServerList(const ServerList* serverList)
             row.obfuscation = srv->supportsObfuscationTCP();
             row.files = srv->files();
             row.numericIp = srv->ipAddress().toNetworkUint32();
+            // Fall back to address() (the dynIP hostname) when there is no numeric
+            // address yet, so a request keyed on this row can still find the entry
+            // instead of matching whichever server has a null address.
+            row.addr = srv->ipAddress().isNull() ? srv->address() : srv->ipAddress().toString();
             row.serverId = srv->serverId();
             row.serverPtr = srv.get();
             rows.push_back(std::move(row));
@@ -183,6 +187,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         }
 
         row.numericIp = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
+        row.addr      = m.value(QStringLiteral("addr")).toString();
         row.serverId  = static_cast<uint32_t>(m.value(QStringLiteral("serverId")).toInteger());
         row.serverPtr = nullptr; // no direct pointer in IPC mode
         rows.push_back(std::move(row));

@@ -28,7 +28,8 @@ struct SourceRow {
     int partCount = 0;
     int sourceFrom = 0;        // SourceFrom enum
     QString userHash;
-    int64_t ip = 0;
+    int64_t ip = 0;      ///< eD2K byte order; 0 for an IPv6 peer — prefer addr.
+    QString addr;        ///< Literal address, both families. Empty when unknown.
     int64_t port = 0;
     bool isFriend = false;
     QByteArray partMap;  // per-part: 0=no, 1=both, 2=client-only, 3=pending, 4=receiving

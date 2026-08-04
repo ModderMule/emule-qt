@@ -2,27 +2,20 @@
 #include "dialogs/PasteLinksDialog.h"
 
 #include "app/IpcClient.h"
-#include "controls/DownloadListModel.h"
-#include "controls/SharedFilesModel.h"
-#include "IpcMessage.h"
-#include "protocol/ED2KLink.h"
+#include "utils/Ed2kLinkImporter.h"
 
 #include <QLabel>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QVBoxLayout>
 
 namespace eMule {
 
-PasteLinksDialog::PasteLinksDialog(IpcClient* ipc,
-                                   DownloadListModel* dlModel,
-                                   SharedFilesModel* sfModel,
-                                   QWidget* parent)
+PasteLinksDialog::PasteLinksDialog(IpcClient* ipc, QWidget* parent)
     : QDialog(parent)
     , m_ipc(ipc)
-    , m_dlModel(dlModel)
-    , m_sfModel(sfModel)
 {
     setWindowTitle(tr("Paste eD2K Links"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/eD2kLinkPaste.ico")));
@@ -65,61 +58,30 @@ void PasteLinksDialog::onDownload()
         return;
     }
 
-    const QString text = m_edit->toPlainText().trimmed();
-    const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    // Manual: this dialog is the confirmation, so no second prompt. Only files that are
+    // already downloading or shared are dropped — pasting the link of a completed or
+    // cancelled file is how you deliberately re-download it.
+    const QPointer<PasteLinksDialog> self(this);
+    Ed2kLinkImporter::importLinks(
+        m_edit->toPlainText().trimmed(), m_ipc, this,
+        Ed2kLinkImporter::Source::Manual,
+        Ed2kLinkImporter::Prompt::Silent,
+        [self](const Ed2kLinkImporter::Result& result) {
+            if (!self)
+                return;
 
-    int downloaded = 0;
-    int skipped = 0;
-    QStringList invalid;
+            if (!result.invalid.isEmpty()) {
+                QMessageBox::warning(self, tr("Invalid Links"),
+                    tr("The following links could not be parsed:\n\n%1")
+                        .arg(result.invalid.join(QLatin1Char('\n'))));
+            }
 
-    for (const QString& line : lines) {
-        const QString trimmed = line.trimmed();
-        if (trimmed.isEmpty())
-            continue;
-
-        auto parsed = parseED2KLink(trimmed);
-        if (!parsed) {
-            invalid << trimmed;
-            continue;
-        }
-
-        auto* fileLink = std::get_if<ED2KFileLink>(&*parsed);
-        if (!fileLink) {
-            invalid << trimmed;
-            continue;
-        }
-
-        QString hashHex;
-        for (uint8 b : fileLink->hash)
-            hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
-
-        if ((m_dlModel && m_dlModel->containsHash(hashHex))
-            || (m_sfModel && m_sfModel->containsHash(hashHex))) {
-            ++skipped;
-            continue;
-        }
-
-        Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
-        msg.append(hashHex);
-        msg.append(fileLink->name);
-        msg.append(static_cast<qint64>(fileLink->size));
-        m_ipc->sendRequest(std::move(msg));
-        ++downloaded;
-    }
-
-    if (!invalid.isEmpty()) {
-        QMessageBox::warning(this, tr("Invalid Links"),
-            tr("The following links could not be parsed:\n\n%1")
-                .arg(invalid.join(QLatin1Char('\n'))));
-    }
-
-    if (skipped > 0) {
-        QMessageBox::information(this, tr("Links Skipped"),
-            tr("%n file(s) skipped (already downloading or shared).", nullptr, skipped));
-    }
-
-    if (downloaded > 0)
-        accept();
+            // Skipped links report themselves — the importer logs each one and, for a single
+            // pasted link, shows the "you already have it" box. A summary here on top of that
+            // would make this dialog behave differently from the Transfers context menu.
+            if (result.added > 0)
+                self->accept();
+        });
 }
 
 } // namespace eMule

@@ -13,6 +13,8 @@
 
 namespace eMule {
 
+class HostResolver;
+
 class URLClient : public UpDownClient {
     Q_OBJECT
 
@@ -21,6 +23,11 @@ public:
     ~URLClient() override;
 
     /// Parse URL into host/port/path components. Returns false on invalid URL.
+    /// @param fromAddr  Already-known address of the host (either family), or null to
+    ///                  resolve the hostname at connect time.
+    bool setUrl(const QString& url, const Address& fromAddr);
+
+    /// Network-byte-order IPv4 convenience overload.
     bool setUrl(const QString& url, uint32 fromIP = 0);
 
     /// Set the file this URL client is downloading.
@@ -59,6 +66,7 @@ private:
     void sendHelloPacket() override {} // no-op for HTTP
     void connectToHost(); // create socket and initiate TCP connection
 
+    HostResolver* m_hostResolver = nullptr;   // created on first hostname connect
     QString m_urlHost;
     uint16 m_urlPort = 80;
     QByteArray m_urlPathLocal;

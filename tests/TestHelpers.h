@@ -99,6 +99,114 @@ inline QMap<QString, QString> loadEnvFile(const QString& path)
     return env;
 }
 
+// ---------------------------------------------------------------------------
+// Archive fixtures
+// ---------------------------------------------------------------------------
+//
+// Built in-process rather than checked in as binaries, so the bytes under test are
+// visible in the test source and no fixture files can drift out of sync.
+
+/// CRC-32 (the ZIP/gzip polynomial).
+inline uint32_t archiveCrc32(const QByteArray& data)
+{
+    static uint32_t table[256];
+    static bool initialized = false;
+    if (!initialized) {
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int j = 0; j < 8; ++j)
+                c = (c >> 1) ^ ((c & 1) ? 0xEDB88320u : 0u);
+            table[i] = c;
+        }
+        initialized = true;
+    }
+    uint32_t crc = 0xFFFFFFFF;
+    for (int i = 0; i < data.size(); ++i)
+        crc = table[(crc ^ static_cast<uint8_t>(data[i])) & 0xFF] ^ (crc >> 8);
+    return ~crc;
+}
+
+/// One member of a generated ZIP.
+struct ZipMember {
+    QByteArray name;
+    QByteArray content;
+};
+
+/// Minimal multi-member ZIP generator (store method, no compression).
+inline QByteArray buildMinimalZip(const QList<ZipMember>& members)
+{
+    QByteArray zip;
+    struct Placed { uint32_t offset, crc, size; };
+    QList<Placed> placed;
+
+    auto put = [&zip](const auto& value) {
+        zip.append(reinterpret_cast<const char*>(&value), sizeof(value));
+    };
+
+    for (const ZipMember& m : members) {
+        Placed p{static_cast<uint32_t>(zip.size()), archiveCrc32(m.content),
+                 static_cast<uint32_t>(m.content.size())};
+        placed.append(p);
+
+        put(uint32_t{0x04034b50});                        // local header signature
+        put(uint16_t{20});                                // version needed
+        put(uint16_t{0});                                 // flags
+        put(uint16_t{0});                                 // method: store
+        put(uint16_t{0});                                 // mod time
+        put(uint16_t{0});                                 // mod date
+        put(p.crc);
+        put(p.size);                                      // compressed size
+        put(p.size);                                      // uncompressed size
+        put(static_cast<uint16_t>(m.name.size()));
+        put(uint16_t{0});                                 // extra length
+        zip.append(m.name);
+        zip.append(m.content);
+    }
+
+    const auto cdStart = static_cast<uint32_t>(zip.size());
+    for (int i = 0; i < members.size(); ++i) {
+        const ZipMember& m = members[i];
+        const Placed& p = placed[i];
+
+        put(uint32_t{0x02014b50});                        // central directory signature
+        put(uint16_t{20});                                // version made by
+        put(uint16_t{20});                                // version needed
+        put(uint16_t{0});                                 // flags
+        put(uint16_t{0});                                 // method
+        put(uint16_t{0});                                 // mod time
+        put(uint16_t{0});                                 // mod date
+        put(p.crc);
+        put(p.size);
+        put(p.size);
+        put(static_cast<uint16_t>(m.name.size()));
+        put(uint16_t{0});                                 // extra length
+        put(uint16_t{0});                                 // comment length
+        put(uint16_t{0});                                 // disk start
+        put(uint16_t{0});                                 // internal attrs
+        put(uint32_t{0});                                 // external attrs
+        put(p.offset);
+        zip.append(m.name);
+    }
+    const auto cdSize = static_cast<uint32_t>(zip.size()) - cdStart;
+
+    put(uint32_t{0x06054b50});                            // end of central directory
+    put(uint16_t{0});                                     // disk number
+    put(uint16_t{0});                                     // disk with CD
+    put(static_cast<uint16_t>(members.size()));
+    put(static_cast<uint16_t>(members.size()));
+    put(cdSize);
+    put(cdStart);
+    put(uint16_t{0});                                     // comment length
+
+    return zip;
+}
+
+/// Single-member convenience overload.
+inline QByteArray buildMinimalZip(const QByteArray& filename, const QByteArray& content)
+{
+    return buildMinimalZip(QList<ZipMember>{{filename, content}});
+}
+
 /// Load the project-root .env file and set each key as a process env var
 /// (only if not already set, so explicit env vars still win).
 inline void loadProjectEnv()

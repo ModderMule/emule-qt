@@ -333,6 +333,21 @@ bool UpDownClient::hasLowID() const
     return isLowID(m_userIDHybrid);
 }
 
+bool UpDownClient::isIPv6Connection() const
+{
+    // The live socket is authoritative: it is the link the data actually rides.
+    // fromQHostAddress() normalizes IPv4-mapped (::ffff:a.b.c.d) peers back to plain
+    // IPv4, so a dual-stack listener never misreports an IPv4 peer as v6.
+    if (m_socket) {
+        const Address peer = Address::fromQHostAddress(m_socket->peerAddress());
+        if (!peer.isNull())
+            return peer.isIPv6();
+    }
+    if (!m_connectAddress.isNull())
+        return m_connectAddress.isIPv6();
+    return m_userAddress.isIPv6();
+}
+
 void UpDownClient::setBuddyID(const uint8* id)
 {
     if (id) {
@@ -467,6 +482,11 @@ void UpDownClient::clearHelloProperties()
     m_supportsCaptcha = false;
     m_directUDPCallback = false;
     m_supportsFileIdent = false;
+    m_supportsIPv6 = false;
+    m_openIPv6 = false;
+    m_supportsExtendedXS = false;
+    m_userIPv6 = Address{};
+    m_buddyIPv6 = Address{};
 }
 
 // ===========================================================================
@@ -920,6 +940,58 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
             }
             break;
 
+        case CT_MOD_MISCOPTIONS:
+            if (tag.isInt()) {
+                const uint32 opts = tag.intValue();
+                m_supportsIPv6           = (opts & MODMISC_IPV6) != 0;
+                m_supportsExtendedXS     = (opts & MODMISC_EXTXS) != 0;
+                m_supportsExtSXSkipTags  = (opts & MODMISC_EXTXS_SKIPTAGS) != 0;
+            }
+            break;
+
+        case CT_MOD_YOUR_IP:
+            // A peer reports the IPv6 address it sees us coming from. A single claim is
+            // unverifiable, so it is not adopted directly: it is fed to the corroboration
+            // tracker, which makes it our public IPv6 only once enough distinct peers agree
+            // (and only while no server has observed our egress). The IPv4 form is ignored
+            // here — our public IPv4 comes from the server (OP_IDCHANGE) and Kad.
+            if (tag.isHash()) {
+                // Key the vote on the address we *observe* the peer at, never on its
+                // self-declared user hash: a hash costs nothing to invent, so hash-keying
+                // would let a single host cast the whole threshold on its own. Without a
+                // socket there is no observed address, so the claim is unverifiable and
+                // simply does not count.
+                const Address peerAddr = m_socket ? Address::fromQHostAddress(m_socket->peerAddress())
+                                                  : Address{};
+                if (!peerAddr.isNull()) {
+                    theApp.recordPeerObservedIPv6(Address::fromIPv6Bytes(tag.hashValue()),
+                                                  peerAddr.toString().toUtf8());
+                }
+            }
+            break;
+
+        case CT_MOD_IP_V6:
+            // Validate before latching m_openIPv6, matching the ExtSX ingest path. An
+            // unvalidated fe80:: or ::1 here becomes the address tryToConnect() dials and
+            // keeps an unreachable source alive in the SX candidate set. isPublicIP() is
+            // lab-mode aware, so a test network still works (Address::setLabNetworkMode).
+            if (tag.isHash()) {
+                const Address advertised = Address::fromIPv6Bytes(tag.hashValue());
+                if (advertised.isPublicIP()) {
+                    m_userIPv6 = advertised;
+                    m_openIPv6 = true;
+                }
+            }
+            break;
+
+        case CT_EMULE_SERVINGBUDDYIPV6:
+            if (tag.isHash()) {
+                const Address buddyV6 = Address::fromIPv6Bytes(tag.hashValue());
+                if (buddyV6.isPublicIP())
+                    m_buddyIPv6 = buddyV6;
+            }
+            break;
+
         default:
             // Check for string-named "pr" tag (eDonkeyHybrid marker)
             if (!tag.nameId() && tag.name() == QByteArrayLiteral("pr"))
@@ -966,8 +1038,10 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     if (theApp.friendList)
         m_friend = theApp.friendList->searchFriend(m_userHash.data(), m_userAddress.toNetworkUint32(), m_userPort);
 
-    // High-ID conversion: if not low-ID, convert userIDHybrid to match userAddress
-    if (!m_userAddress.isNull()) {
+    // High-ID conversion: if not low-ID, convert userIDHybrid to match userAddress.
+    // IPv4 only — for an IPv6 peer toUint32() is 0, which would clobber the LowID the
+    // peer was assigned; a v6 peer keeps the hybrid ID read from the hello above.
+    if (m_userAddress.isIPv4()) {
         if (!hasLowID() || m_userIDHybrid == 0 || m_userIDHybrid == m_userAddress.toNetworkUint32())
             m_userIDHybrid = m_userAddress.toUint32();
     }
@@ -1028,9 +1102,16 @@ void UpDownClient::sendHelloAnswer()
     SafeMemFile data;
     sendHelloTypePacket(data);
 
+    // Via sendPacket() so the answer lands in the overhead statistics, as MFC does
+    // (BaseClient.cpp:902).
     auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HELLOANSWER);
-    m_socket->sendPacket(std::move(packet));
+    sendPacket(std::move(packet));
     m_helloAnswerPending = false;
+
+    if (thePrefs.verbose())
+        logDebug(QStringLiteral("sendHelloAnswer: sent OP_HELLOANSWER to %1:%2")
+                     .arg(m_socket->peerAddress().toString())
+                     .arg(m_socket->peerPort()));
 }
 
 // ===========================================================================
@@ -1052,7 +1133,22 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     // Determine if we need buddy tags (Low-ID + have buddy for Kad callback)
     const bool sendBuddyTags = theApp.clientList && theApp.clientList->getBuddy()
                                 && theApp.isFirewalled();
-    const uint32 tagCount = sendBuddyTags ? 9 : 7;
+    UpDownClient* buddy = sendBuddyTags ? theApp.clientList->getBuddy() : nullptr;
+
+    // IPv6 / extended-capability MOD tags (additive; a legacy peer skips unknown tags,
+    // so only the exact count matters). CT_MOD_MISCOPTIONS is always sent; the address
+    // tags are sent only when we actually have the value.
+    const bool haveYourIP    = !m_userAddress.isNull();          // the peer's IP as we see it
+    const Address ourIPv6    = theApp.publicIPv6();
+    // The single advertise gate — shared with the Kad source publish and the server login.
+    const bool haveIPv6      = theApp.shouldAdvertisePublicIPv6();
+    const bool haveBuddyIPv6 = buddy && !buddy->userIPv6().isNull();
+
+    const uint32 tagCount = (sendBuddyTags ? 9u : 7u)
+                          + 1u                            // CT_MOD_MISCOPTIONS (always)
+                          + (haveYourIP    ? 1u : 0u)     // CT_MOD_YOUR_IP
+                          + (haveIPv6      ? 1u : 0u)     // CT_MOD_IP_V6
+                          + (haveBuddyIPv6 ? 1u : 0u);    // CT_EMULE_SERVINGBUDDYIPV6
     data.writeUInt32(tagCount);
 
     // CT_NAME — our nickname
@@ -1134,12 +1230,38 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     // CT_MOD_VERSION — identify ourselves as eMule Qt
     Tag(CT_MOD_VERSION, QStringLiteral("eMule Qt " EMULE_VERSION_STRING)).writeTagToFile(data);
 
+    // CT_MOD_MISCOPTIONS — extended capability bitfield. We advertise IPv6 and Extended
+    // Source Exchange. ExtSX rides at source-exchange version 1: each per-source record is a
+    // self-describing tag block, so it cannot desync a correct tag-skipping reader. Both ends
+    // gate on this bit before using the tag-block format; a legacy peer that lacks it gets the
+    // classic fixed-format SX2 records unchanged.
+    Tag(CT_MOD_MISCOPTIONS,
+        static_cast<uint32>(MODMISC_IPV6 | MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS))
+        .writeTagToFile(data);
+
+    // CT_MOD_YOUR_IP — tell the peer the address we see it coming from, so it can learn
+    // its own public IP. uint32 (network order) for IPv4, hash16 for IPv6.
+    if (haveYourIP) {
+        if (m_userAddress.isIPv6())
+            Tag(CT_MOD_YOUR_IP, m_userAddress.ipv6Bytes().data()).writeTagToFile(data);
+        else
+            Tag(CT_MOD_YOUR_IP, m_userAddress.toNetworkUint32()).writeTagToFile(data);
+    }
+
+    // CT_MOD_IP_V6 — our public IPv6 as a 16-byte hash tag (only when we have one).
+    if (haveIPv6)
+        Tag(CT_MOD_IP_V6, ourIPv6.ipv6Bytes().data()).writeTagToFile(data);
+
     // CT_EMULE_BUDDYIP + CT_EMULE_BUDDYUDP — MFC: sent when firewalled with buddy
     if (sendBuddyTags) {
-        auto* buddy = theApp.clientList->getBuddy();
         Tag(CT_EMULE_BUDDYIP, buddy->connectAddress().toNetworkUint32()).writeTagToFile(data);
         Tag(CT_EMULE_BUDDYUDP, static_cast<uint32>(buddy->udpPort())).writeTagToFile(data);
     }
+
+    // CT_EMULE_SERVINGBUDDYIPV6 — our serving buddy's public IPv6 (hash16), so a v6 peer
+    // can reach us through the buddy over IPv6.
+    if (haveBuddyIPv6)
+        Tag(CT_EMULE_SERVINGBUDDYIPV6, buddy->userIPv6().ipv6Bytes().data()).writeTagToFile(data);
 
     // Write server info
     if (theApp.serverConnect && theApp.serverConnect->isConnected()) {
@@ -1390,6 +1512,12 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
             setDownloadState(DownloadState::Connected);
             sendFileRequest();
         }
+        // MFC BaseClient.cpp:1274-1282 runs ConnectionEstablished() here when the socket
+        // is up and the handshake is done, which is what services a request that arrived
+        // while we were already connected (an armed m_fileListRequested, say). The
+        // DS_NONE block above has no MFC counterpart and stays as-is; it covers doSwap().
+        if (checkHandshakeFinished())
+            onHandshakeCompleted();
         return true;
     }
 
@@ -1399,21 +1527,43 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     }
     m_lastTriedToConnect = curTick;
 
-    // IP filter check
-    if (theApp.ipFilter && theApp.ipFilter->isFiltered(m_connectAddress.toNetworkUint32())) {
-        logDebug(QStringLiteral("tryToConnect: IP filtered: %1").arg(m_connectAddress.toNetworkUint32()));
-        return false;
-    }
-
     // Socket limit check
     if (theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
         logDebug(QStringLiteral("tryToConnect: too many sockets"));
         return false;
     }
 
-    // Derive connect IP from user ID for high-ID clients
-    if (m_connectAddress.isNull() && !hasLowID()) {
-        m_connectAddress = Address::fromHostOrder(m_userIDHybrid);
+    // Choose the address to dial when none is set yet. Prefer IPv6 for a peer that
+    // advertised a reachable IPv6 and for which we have a public IPv6 — this bypasses
+    // the IPv4 Low-ID restriction, since a v6-open peer accepts a direct inbound v6
+    // connection even when its IPv4 side is firewalled. Otherwise fall back to the
+    // High-ID → IPv4 derivation.
+    // Note this is the *confidence* gate, not shouldAdvertisePublicIPv6(): dialling out over
+    // v6 stays valid even when a server probed our inbound v6 and found it closed.
+    if (m_connectAddress.isNull()) {
+        if (m_openIPv6 && !m_userIPv6.isNull() && theApp.hasConfidentPublicIPv6())
+            m_connectAddress = m_userIPv6;
+        else if (!hasLowID())
+            m_connectAddress = Address::fromHostOrder(m_userIDHybrid);
+    }
+
+    // IP filter, on the address we are actually about to dial.  Received IPs are already
+    // filtered where they enter (server sources, source exchange, Kad, incoming accepts),
+    // but the list may have been reloaded since, so outgoing attempts are filtered too —
+    // MFC BaseClient.cpp:1310-1330, which likewise resolves the target address first and
+    // only then filters.  Address-typed, so an IPv6 target is checked against the v6
+    // range table rather than skipped: it used to be gated on isIPv4(), which a v6-only
+    // source fails, and running before the resolution above meant a v6-only source was
+    // still null-addressed here and escaped the check either way.
+    if (theApp.ipFilter && !m_connectAddress.isNull()
+        && theApp.ipFilter->isFiltered(m_connectAddress, thePrefs.ipFilterLevel())) {
+        if (thePrefs.logFilteredIPs()) {
+            logWarning(QStringLiteral("Refused to connect to filtered client (IP=%1) - IP filter (%2)")
+                           .arg(ipstr(m_connectAddress), theApp.ipFilter->lastHitDescription()));
+        }
+        if (theApp.statistics)
+            theApp.statistics->addFilteredClient();
+        return false;
     }
 
     // MFC BaseClient.cpp:1379 — track connecting client for 45s timeout
@@ -1421,8 +1571,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         theApp.clientList->addConnectingClient(this);
 
     // ---- Path 3: Normal outgoing TCP connection (high-ID clients) ----
-    // MFC BaseClient.cpp:1383-1396
-    if (!hasLowID() || m_kadState == KadState::QueuedFwCheck
+    // MFC BaseClient.cpp:1383-1396. Also taken for an IPv6 target: a peer reachable
+    // over IPv6 accepts a direct inbound connection regardless of its IPv4 Low-ID.
+    if (!hasLowID() || m_connectAddress.isIPv6()
+        || m_kadState == KadState::QueuedFwCheck
         || m_kadState == KadState::QueuedFwCheckUDP)
     {
         // Transition Kad FW check states before connecting
@@ -1435,10 +1587,11 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         if (m_reqFile && m_downloadState == DownloadState::None)
             setDownloadState(DownloadState::Connecting);
 
-        const QHostAddress dbgAddr(m_connectAddress.toUint32());
-        logDebug(QStringLiteral("tryToConnect: DIRECT TCP to %1:%2 (connectIP=0x%3, userIDHybrid=0x%4)")
-                     .arg(dbgAddr.toString()).arg(m_userPort)
-                     .arg(m_connectAddress.toNetworkUint32(), 8, 16, QLatin1Char('0'))
+        // Endpoint::toString() renders both families and brackets IPv6 ([addr]:port).
+        // The old connectIP=0x%x field is gone on purpose: it came from toUint32(),
+        // which is 0 for every IPv6 address — it printed 0.0.0.0 on exactly this branch.
+        logDebug(QStringLiteral("tryToConnect: DIRECT TCP to %1 (userIDHybrid=0x%2)")
+                     .arg(Endpoint(m_connectAddress, m_userPort).toString())
                      .arg(m_userIDHybrid, 8, 16, QLatin1Char('0')));
 
         m_connectingState = ConnectingState::DirectTCP;
@@ -1454,10 +1607,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         // Build connect options byte: MFC GetMyConnectOptions(true, false)
         // Bit 0: CryptLayer supported, Bit 1: CryptLayer requested,
         // Bit 2: CryptLayer required, Bit 3: Direct UDP callback (disabled for outgoing)
-        const uint8 connectOpts =
+        const auto connectOpts = static_cast<uint8>(
             (static_cast<uint8>(thePrefs.cryptLayerSupported()) << 0) |
             (static_cast<uint8>(thePrefs.cryptLayerRequested()) << 1) |
-            (static_cast<uint8>(thePrefs.cryptLayerRequired()) << 2);
+            (static_cast<uint8>(thePrefs.cryptLayerRequired()) << 2));
 
         SafeMemFile data;
         data.writeUInt16(thePrefs.port());              // our TCP port
@@ -1466,7 +1619,11 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_DIRECTCALLBACKREQ);
         if (theApp.clientUDP) {
-            theApp.clientUDP->sendPacket(std::move(packet), m_connectAddress.toNetworkUint32(), m_kadPort,
+            // Endpoint form: the uint32 overload takes host order, so passing
+            // toNetworkUint32() there reversed the octets — and an IPv6 target
+            // collapsed to 0 entirely.
+            theApp.clientUDP->sendPacket(std::move(packet),
+                                          Endpoint(m_connectAddress, m_kadPort),
                                           shouldReceiveCryptUDPPackets(),
                                           m_userHash.data(), false, 0);
         }
@@ -1527,8 +1684,9 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
             m_connectingState = ConnectingState::KadCallback;
             // MFC FIXME: We don't know which kad version the buddy has, so we need to send unencrypted
             if (theApp.clientUDP)
-                theApp.clientUDP->sendPacket(std::move(packet), m_buddyAddress.toNetworkUint32(),
-                                             m_buddyPort, false, nullptr, true, 0);
+                theApp.clientUDP->sendPacket(std::move(packet),
+                                             Endpoint(m_buddyAddress, m_buddyPort),
+                                             false, nullptr, true, 0);
             setDownloadState(DownloadState::WaitCallbackKad);
             logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2")
                          .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort));
@@ -1565,9 +1723,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     }
 
     logDebug(QStringLiteral("tryToConnect: no viable connection path for %1 "
-                            "(connectIP=0x%2 lowID=%3 buddyValid=%4)")
+                            "(connectAddr=%2 lowID=%3 buddyValid=%4)")
                  .arg(userName())
-                 .arg(m_connectAddress.toNetworkUint32(), 8, 16, QLatin1Char('0'))
+                 .arg(m_connectAddress.isNull() ? QStringLiteral("<none>")
+                                                : Endpoint(m_connectAddress, m_userPort).toString())
                  .arg(hasLowID())
                  .arg(hasValidBuddyID()));
     return false;
@@ -1589,6 +1748,7 @@ void UpDownClient::connect()
     }
 
     setSocket(reqSocket);
+    m_incomingConnection = false;   // we are dialling out
 
     // Register with ListenSocket for connection tracking
     if (theApp.listenSocket)
@@ -1660,8 +1820,9 @@ void UpDownClient::connect()
     // Configure proxy
     reqSocket->initProxySupport(thePrefs.proxySettings());
 
-    // Initiate TCP connection
-    const QHostAddress addr(m_connectAddress.toUint32());
+    // Initiate TCP connection. toQHostAddress() dials both families — an IPv6
+    // m_connectAddress connects over IPv6, an IPv4 one exactly as before.
+    const QHostAddress addr = m_connectAddress.toQHostAddress();
     logDebug(QStringLiteral("connect: connectToHost(%1, %2) encrypted=%3 socketState=%4 fd=%5")
                  .arg(addr.toString()).arg(m_userPort)
                  .arg(encrypted)
@@ -1687,6 +1848,7 @@ void UpDownClient::wireIncomingSocket(ClientReqSocket* socket)
 {
     setSocket(socket);
     socket->setClient(this);
+    m_incomingConnection = true;
 
     QObject::connect(socket, &ClientReqSocket::clientDisconnected,
                      this, [this](const QString& reason) {
@@ -1736,7 +1898,11 @@ void UpDownClient::connectionEstablished()
     logDebug(QStringLiteral("connectionEstablished: handshakeFinished=%1 helloAnswerPending=%2 downloadState=%3")
                  .arg(checkHandshakeFinished()).arg(m_helloAnswerPending)
                  .arg(static_cast<int>(m_downloadState)));
-    if (!checkHandshakeFinished() && !m_helloAnswerPending) {
+    // Only on an outgoing connection. On an accepted one the peer opened with OP_HELLO and
+    // we have just answered it, so sending our own hello here would be a spurious extra
+    // packet — and checkHandshakeFinished() stays false for a plain eDonkey/MLDonkey peer
+    // (InfoPacketState::Both is never reached), so the guard above does not catch it.
+    if (!m_incomingConnection && !checkHandshakeFinished() && !m_helloAnswerPending) {
         sendHelloPacket();
     }
 
@@ -1746,10 +1912,24 @@ void UpDownClient::connectionEstablished()
         || m_downloadState == DownloadState::WaitCallback
         || m_downloadState == DownloadState::WaitCallbackKad)
     {
-        logDebug(QStringLiteral("connectionEstablished: deferring file request until HELLO_ANSWER (downloadState=%1)")
-                     .arg(static_cast<int>(m_downloadState)));
+        m_reaskPending = false;                         // MFC BaseClient.cpp:1545
         setDownloadState(DownloadState::Connected);
-        m_pendingFileRequest = true; // defer until HELLO_ANSWER
+        if (m_helloAnswerPending) {
+            // Outgoing: we sent OP_HELLO and owe the peer's OP_HELLOANSWER before we know
+            // its extended-request version, so the request is built there instead.
+            logDebug(QStringLiteral("connectionEstablished: deferring file request until "
+                                    "HELLO_ANSWER (downloadState=%1)")
+                         .arg(static_cast<int>(m_downloadState)));
+            m_pendingFileRequest = true;
+        } else {
+            // Inbound (typically a LowID source answering our OP_CALLBACKREQUEST): its
+            // OP_HELLO already carried everything, and no OP_HELLOANSWER will ever arrive
+            // to release a deferred request. Send it now, as MFC does inline.
+            logDebug(QStringLiteral("connectionEstablished: sending file request inline "
+                                    "(downloadState=%1)")
+                         .arg(static_cast<int>(m_downloadState)));
+            sendFileRequest();
+        }
     }
 
     if (m_uploadState == UploadState::Connecting) {
@@ -1792,6 +1972,77 @@ void UpDownClient::connectionEstablished()
 }
 
 // ===========================================================================
+// onHandshakeCompleted — MFC BaseClient.cpp:1550-1573
+//
+// See the declaration in UpDownClient.h for why these three blocks live here
+// rather than in connectionEstablished().
+// ===========================================================================
+
+void UpDownClient::onHandshakeCompleted()
+{
+    // (a) A UDP re-ask went unanswered and we ended up connected over TCP instead.
+    //     MFC BaseClient.cpp:1550-1556. The flag is cleared unconditionally, even
+    //     when the inner guard rejects — otherwise it would latch and block every
+    //     later udpReaskForDownload() at its m_reaskPending early-return.
+    if (m_reaskPending) {
+        m_reaskPending = false;
+        if (m_downloadState != DownloadState::None
+            && m_downloadState != DownloadState::Downloading)
+        {
+            setDownloadState(DownloadState::Connected);
+            sendFileRequest();
+        }
+    }
+
+    // (b) The upload queue granted this client a slot and asked us to dial it; the
+    //     handshake is now done, so activate the slot. MFC BaseClient.cpp:1558-1565.
+    //     isDownloading() is an m_uploadingList membership test — without it we
+    //     would promote clients that were never granted a slot at all.
+    if (m_uploadState == UploadState::Connecting
+        && theApp.uploadQueue && theApp.uploadQueue->isDownloading(this))
+    {
+        setUploadState(UploadState::Uploading);
+        auto packet = std::make_unique<Packet>(OP_ACCEPTUPLOADREQ, 0);
+        packet->prot = OP_EDONKEYPROT;
+        sendPacket(std::move(packet));
+    }
+
+    // (c) requestSharedFileList() armed the counter and dialled; send the request
+    //     now. MFC BaseClient.cpp:1567-1573 — note the strict "== 1": once the peer
+    //     answers with a directory list the counter becomes the directory count, and
+    //     this must not re-fire. The counter is cleared by the answer handlers, not
+    //     here, exactly as in MFC.
+    if (m_fileListRequested == 1) {
+        auto packet = std::make_unique<Packet>(
+            m_sharedDirectories ? OP_ASKSHAREDDIRS : OP_ASKSHAREDFILES, 0);
+        packet->prot = OP_EDONKEYPROT;
+        sendPacket(std::move(packet));
+    }
+}
+
+// ===========================================================================
+// maybeBootstrapKadFromPeer — MFC ListenSocket.cpp:289-290
+// ===========================================================================
+
+void UpDownClient::maybeBootstrapKadFromPeer()
+{
+    if (m_kadPort == 0 || m_kadVersion < KADEMLIA_VERSION2_47a)
+        return;
+
+    // KADEMLIA2_BOOTSTRAP_REQ goes out over UDPv4, and toUint32() is 0 for a v6
+    // address — bootstrapping off an IPv6 peer would target 0.0.0.0.
+    if (!m_userAddress.isIPv4())
+        return;
+
+    // Kademlia::bootstrap() already no-ops while connected and rate-limits itself to
+    // one attempt per 10s, matching MFC CKademlia::Bootstrap — so calling it on every
+    // qualifying hello is cheap. It wants host byte order, which toUint32() returns
+    // (MFC does the same conversion with ntohl(GetIP())).
+    if (auto* kadInst = kad::Kademlia::instance())
+        kadInst->bootstrap(m_userAddress.toUint32(), m_kadPort);
+}
+
+// ===========================================================================
 // disconnected — MFC BaseClient.cpp:1101-1233
 // ===========================================================================
 
@@ -1815,14 +2066,28 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     m_infoPacketsReceived = InfoPacketState::None;
     m_helloAnswerPending  = false;
     m_secIdentSent        = false;
+    m_incomingConnection  = false;
 
-    // Save session stats
-    if (m_uploadState == UploadState::Uploading) {
+    // Save session stats.
+    // Connecting counts as well as Uploading: addUpNextClient() pushes the client onto
+    // m_uploadingList on BOTH of its branches, so a client whose connect never completed
+    // is still holding a slot. Clearing the state alone would leak it. MFC removes for
+    // both states too (BaseClient.cpp:1118-1120).
+    if (m_uploadState == UploadState::Uploading
+        || m_uploadState == UploadState::Connecting)
+    {
         setUploadState(UploadState::None);
         if (theApp.uploadQueue)
             theApp.uploadQueue->removeFromUploadQueue(this);
-    } else if (m_uploadState == UploadState::Connecting) {
-        setUploadState(UploadState::None);
+    }
+
+    // A shared-file-list request died with the connection. Reset the counter, or
+    // requestSharedFileList()'s "already in progress" refusal would latch forever.
+    // MFC BaseClient.cpp:1152-1155.
+    if (m_fileListRequested) {
+        m_fileListRequested = 0;
+        logWarning(QStringLiteral("Failed to retrieve shared files from user %1")
+                       .arg(userName()));
     }
 
     if (m_downloadState == DownloadState::Downloading ||
@@ -1976,13 +2241,29 @@ void UpDownClient::processEdonkeyQueueRank(const uint8* data, uint32 size)
 // checkQueueRankFlood
 // ===========================================================================
 
+// A queue-rank packet we did not ask for. Three in a row without an intervening
+// request is a flood (MFC DownloadClient.cpp:1997-2015). This used to only log — it
+// now feeds the address-scoped two-strikes counter like the other detectors.
 void UpDownClient::checkQueueRankFlood()
 {
-    m_unaskQueueRankRecv++;
-    if (m_unaskQueueRankRecv >= 3) {
+    if (m_queueRankPending) {
+        // Solicited: this is the answer we were waiting for, so the streak resets.
+        m_queueRankPending = false;
         m_unaskQueueRankRecv = 0;
-        // Possible flood — log warning
+        return;
+    }
+
+    // A client actively sending us data is exempt — its rank updates are part of a
+    // legitimate transfer.
+    if (m_downloadState == DownloadState::Downloading)
+        return;
+
+    if (m_unaskQueueRankRecv < 3)
+        ++m_unaskQueueRankRecv;
+
+    if (m_unaskQueueRankRecv == 3) {
         logDebug(QStringLiteral("Queue rank flood detected from %1").arg(userName()));
+        registerBadRequest(QStringLiteral("QR flood"));
     }
 }
 
@@ -1992,18 +2273,24 @@ void UpDownClient::checkQueueRankFlood()
 
 void UpDownClient::requestSharedFileList()
 {
-    if (!m_socket)
-        return;
-
     if (m_noViewSharedFiles) {
         logDebug(QStringLiteral("Client %1 doesn't allow viewing shared files").arg(userName()));
         return;
     }
 
-    auto packet = std::make_unique<Packet>(OP_ASKSHAREDFILES, 0);
-    packet->prot = OP_EDONKEYPROT;
-    sendPacket(std::move(packet));
-    m_fileListRequested++;
+    // MFC BaseClient.cpp:1783-1791. Arm the counter and connect; the request itself goes
+    // out from onHandshakeCompleted() once the hello exchange is done. Sending it here
+    // instead would mean giving up on every client we are not already connected to — and
+    // would leave the counter at 0 at connect time, which is the value the whole
+    // OP_ASKSHAREDDIRS answer chain keys off.
+    if (m_fileListRequested != 0) {
+        logWarning(QStringLiteral("Requesting shared files from user %1 is already in progress")
+                       .arg(userName()));
+        return;
+    }
+
+    m_fileListRequested = 1;
+    tryToConnect(true);
 }
 
 // ===========================================================================
@@ -2061,13 +2348,26 @@ void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const Q
 // checkFailedFileIdReqs
 // ===========================================================================
 
+// MFC BaseClient.cpp:2538-2555. The hash matters: asking for a file we deliberately
+// unshared, or one we are still downloading, is a legitimate miss and must not count —
+// ignoring it (as this did) accumulated strikes against honest clients.
 void UpDownClient::checkFailedFileIdReqs(const uint8* fileHash)
 {
-    Q_UNUSED(fileHash);
+    if (fileHash) {
+        if (theApp.sharedFileList && theApp.sharedFileList->isUnsharedFile(fileHash))
+            return;
+        if (theApp.downloadQueue && theApp.downloadQueue->fileByID(fileHash))
+            return;
+    }
 
-    m_failedFileIdReqs++;
-    if (m_failedFileIdReqs > BADCLIENTBAN) {
-        ban(QStringLiteral("Too many failed file ID requests"));
+    // Threshold 6, matching the reference. File-request floods are never exempt, not
+    // even for a client we are downloading from.
+    if (m_failedFileIdReqs < 6)
+        ++m_failedFileIdReqs;
+
+    if (m_failedFileIdReqs == 6) {
+        logDebug(QStringLiteral("FileReq flood detected from %1").arg(userName()));
+        registerBadRequest(QStringLiteral("FileReq flood"));
     }
 }
 
@@ -2320,6 +2620,11 @@ void UpDownClient::sendSignaturePacket()
 
 void UpDownClient::processPublicKeyPacket(const uint8* data, uint32 size)
 {
+    // Track before validating: MFC records the client on entry, so a peer cannot dodge
+    // the per-address accounting by sending a malformed key.
+    if (theApp.clientList)
+        theApp.clientList->addTrackClient(this);
+
     // MFC: strict validation — keyLen must fill entire packet, size 10-250
     if (!m_socket || !m_credits || !data || data[0] != size - 1 || size < 10 || size > 250)
         return;
@@ -3045,6 +3350,12 @@ void UpDownClient::processCallbackPacket(const uint8* data, uint32 size)
 // reask from a firewalled client. We respond with OP_REASKACK,
 // OP_QUEUEFULL, or OP_FILENOTFOUND back via UDP to the requester.
 // Packet: <ip 4><port 2><filehash 16>[...]
+//     or: <0xFFFFFFFF 4><ipv6 16><port 2><filehash 16>[...]
+//
+// The 0xFFFFFFFF form is the compatibility target's IPv6 relay (its ClientUDPSocket writer
+// and ListenSocket reader). 255.255.255.255 is never a real requester, so the sentinel is
+// unambiguous. Without this branch a v6 relay was read as destIP=255.255.255.255 with the
+// first 16 address bytes consumed as the file hash — silent corruption, not a miss.
 // ===========================================================================
 
 void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
@@ -3064,8 +3375,25 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
 
     SafeMemFile dataIn(data, size);
 
+    // The IP field is an ED2K wire address: network byte order. Wrap it as an Endpoint
+    // once here — sendPacket's uint32 overload takes HOST order, so passing destIP to it
+    // directly reversed the octets and sent every reply to a bogus address.
     const uint32 destIP = dataIn.readUInt32();
+
+    Address destAddr;
+    if (destIP == IPV6_SOURCE_SENTINEL) {
+        // IPv6 form: 16 raw address bytes follow, then the port. Needs 4+16+2+16 bytes.
+        if (size < 38)
+            return;
+        uint8 destIPv6[16];
+        dataIn.readHash16(destIPv6);
+        destAddr = Address::fromIPv6Bytes(destIPv6);
+    } else {
+        destAddr = Address::fromNetworkOrder(destIP);
+    }
+
     const uint16 destPort = dataIn.readUInt16();
+    const Endpoint destEP(destAddr, destPort);
 
     uint8 reqFileHash[16];
     dataIn.readHash16(reqFileHash);
@@ -3074,7 +3402,7 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
     // so we can encrypt the response if possible. Matches MFC ListenSocket.cpp:1453.
     UpDownClient* sender = nullptr;
     if (theApp.clientList)
-        sender = theApp.clientList->findByIP_UDP(destIP, destPort);
+        sender = theApp.clientList->findByEndpoint_UDP(destEP.address(), destPort);
 
     // Look up the requested file in shared files
     KnownFile* reqFile = nullptr;
@@ -3086,11 +3414,11 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
         if (theApp.clientUDP) {
             auto response = std::make_unique<Packet>(OP_FILENOTFOUND, 0, OP_EMULEPROT);
             if (sender)
-                theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                theApp.clientUDP->sendPacket(std::move(response), destEP,
                                              sender->shouldReceiveCryptUDPPackets(),
                                              sender->userHash(), false, 0);
             else
-                theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                theApp.clientUDP->sendPacket(std::move(response), destEP,
                                              false, nullptr, false, 0);
         }
         return;
@@ -3117,13 +3445,13 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
 
             auto response = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_REASKACK);
             if (theApp.clientUDP) {
-                theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                theApp.clientUDP->sendPacket(std::move(response), destEP,
                                              sender->shouldReceiveCryptUDPPackets(),
                                              sender->userHash(), false, 0);
             }
         } else {
-            logDebug(QStringLiteral("processReaskCallbackTCP: reqfile mismatch for client at %1:%2")
-                     .arg(destIP).arg(destPort));
+            logDebug(QStringLiteral("processReaskCallbackTCP: reqfile mismatch for client at %1")
+                     .arg(destEP.toString()));
         }
     } else {
         // Unknown client — if queue is full, inform; otherwise ignore
@@ -3131,7 +3459,7 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
             // MFC default queue size is 200; use the same threshold
             if (theApp.uploadQueue->waitingUserCount() + 50 > 200) {
                 auto response = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
-                theApp.clientUDP->sendPacket(std::move(response), destIP, destPort,
+                theApp.clientUDP->sendPacket(std::move(response), destEP,
                                              false, nullptr, false, 0);
             }
         }
@@ -3297,6 +3625,12 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         processPublicIPAnswer(data, size);
         break;
 
+    case OP_CHANGE_CLIENT_IP:
+        // Accepted here too, defensively. The compatibility target sends it under
+        // OP_EDONKEYPROT (see onPacketForClient), which is the path that actually fires.
+        processChangeClientIP(data, size);
+        break;
+
     case OP_AICHREQUEST:
         processAICHRequest(data, size);
         break;
@@ -3421,6 +3755,14 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         // Server notifies of client ID change — not used in peer-to-peer context
         break;
 
+    case OP_CHANGE_CLIENT_IP:
+        // The IPv6 counterpart of OP_CHANGE_CLIENT_ID, and it arrives on the same
+        // protocol byte: the compatibility target builds it with Packet(opcode, size),
+        // whose protocol argument defaults to OP_EDONKEYPROT. We used to accept it only
+        // under OP_EMULEPROT and therefore never saw a single one.
+        processChangeClientIP(data, size);
+        break;
+
     case OP_CHANGE_SLOT:
         // Slot change notification — no action needed
         break;
@@ -3483,17 +3825,53 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
         // matching processHelloPacket() (MFC BaseClient.cpp:340-355).
         io.readUInt8();
         clearHelloProperties();
-        processHelloTypePacket(io);
-        // Send hello answer back
-        SafeMemFile response;
-        sendHelloTypePacket(response);
-        auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_HELLOANSWER);
-        sendPacket(std::move(packet));
-        if (thePrefs.verbose())
-            logDebug(QStringLiteral("onHelloReceived: sent OP_HELLOANSWER to %1:%2")
-                         .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("?"))
-                         .arg(m_socket ? m_socket->peerPort() : 0));
+        const bool isMule = processHelloTypePacket(io);
+
+        // The peer has now identified itself, so this throwaway can finally be matched
+        // against clients we already know — in particular a LowID source sitting in
+        // WaitCallback because we asked it, via server or Kad, to dial us.
+        // MFC ListenSocket.cpp:262-266.
+        if (m_incomingConnection && theApp.clientList) {
+            auto* sender = qobject_cast<ClientReqSocket*>(m_socket);
+            if (auto* known = theApp.clientList->attachToAlreadyKnown(this, sender)) {
+                // The socket now belongs to `known`. Re-parse the hello onto it (MFC
+                // re-runs ProcessHelloPacket on the survivor) and let it finish the
+                // handshake in our place.
+                SafeMemFile again(data, size);
+                again.readUInt8();
+                known->clearHelloProperties();
+                const bool knownIsMule = known->processHelloTypePacket(again);
+                if (known->hashType() == static_cast<int>(ClientSoftware::eMule) && !knownIsMule)
+                    known->sendMuleInfoPacket(false);
+                known->sendHelloAnswer();
+                known->connectionEstablished();
+                known->onHandshakeCompleted();
+                known->onInfoPacketsReceived();
+                known->maybeBootstrapKadFromPeer();
+
+                // `this` is now socket-less and redundant. deleteLater() is what makes it
+                // safe to retire an object from inside its own signal handler; nothing
+                // below may touch `this`.
+                theApp.clientList->removeClient(this);
+                deleteLater();
+                return;
+            }
+        }
+
+        // Pre-0.42 eMules open with a plain eD2K hello and expect an unsolicited
+        // OP_EMULEINFO to learn our capabilities. MFC ListenSocket.cpp:274-275 sends it
+        // BEFORE the hello answer. hashType() rather than isEmuleClient(): the latter is
+        // also true when m_emuleProtocol is set, which processHelloTypePacket() does for a
+        // mule hello — that would defeat the !isMule half of the guard and get us flagged
+        // by anti-leech modules, as documented on the OP_HELLOANSWER path below.
+        if (hashType() == static_cast<int>(ClientSoftware::eMule) && !isMule)
+            sendMuleInfoPacket(false);
+
+        sendHelloAnswer();
+        connectionEstablished();   // MFC ListenSocket.cpp:279 — also runs for inbound peers
+        onHandshakeCompleted();    // MFC folds this into ConnectionEstablished; see its decl
         onInfoPacketsReceived();
+        maybeBootstrapKadFromPeer();   // MFC ListenSocket.cpp:289-290
     } else if (opcode == OP_HELLOANSWER) {
         if (thePrefs.verbose())
             logDebug(QStringLiteral("onHelloReceived: OP_HELLOANSWER from %1:%2")
@@ -3522,6 +3900,10 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
         if (!isMule)
             sendMuleInfoPacket(false);
         onInfoPacketsReceived();
+        // MFC ListenSocket.cpp:229 calls ConnectionEstablished() here, AFTER
+        // InfoPacketsReceived() — the reverse of the OP_HELLO ordering above. This is the
+        // point at which an outgoing connection's handshake is actually complete.
+        onHandshakeCompleted();
     }
 }
 
@@ -4078,6 +4460,67 @@ void UpDownClient::processSharedDenied()
     m_fileListRequested = 0;
     m_noViewSharedFiles = true;
     logDebug(QStringLiteral("Client %1 denied shared file browse request").arg(userName()));
+}
+
+// ===========================================================================
+// processChangeClientIP — handle OP_CHANGE_CLIENT_IP
+// ===========================================================================
+
+void UpDownClient::flushPendingIPChange()
+{
+    if (!m_sendIPPending)
+        return;
+
+    // Clear unconditionally. If the peer cannot be told now it is either gone or not
+    // IPv6-capable, and re-queueing would leave the flag set forever.
+    m_sendIPPending = false;
+
+    if (!m_supportsIPv6 || !m_socket || !m_socket->isConnected())
+        return;
+
+    // The advertise gate, not the confidence gate: if the server probed our address and
+    // found it unreachable we must not push it to peers either.
+    if (!theApp.shouldAdvertisePublicIPv6())
+        return;
+
+    const Address ourIPv6 = theApp.publicIPv6();
+    if (!ourIPv6.isIPv6())
+        return;
+
+    auto packet = std::make_unique<Packet>(OP_CHANGE_CLIENT_IP, 16, OP_EDONKEYPROT);
+    std::memcpy(packet->pBuffer, ourIPv6.ipv6Bytes().data(), 16);
+    if (theApp.statistics)
+        theApp.statistics->addUpDataOverheadOther(packet->size);
+    sendPacket(std::move(packet));
+
+    logDebug(QStringLiteral("OP_CHANGE_CLIENT_IP to %1: our IPv6 is now %2")
+                 .arg(userName(), ourIPv6.toString()));
+}
+
+void UpDownClient::processChangeClientIP(const uint8* data, uint32 size)
+{
+    // Payload is 16 raw IPv6 bytes, network order, with no tag wrapper. Anything shorter
+    // is not a truncated address we can use, it is a different packet.
+    if (!data || size < 16)
+        return;
+
+    const Address announced = Address::fromIPv6Bytes(data);
+    if (!announced.isPublicIP()) {
+        logDebug(QStringLiteral("OP_CHANGE_CLIENT_IP from %1: ignoring non-public address %2")
+                     .arg(userName(), announced.toString()));
+        return;
+    }
+
+    m_userIPv6 = announced;
+    m_openIPv6 = true;
+
+    // Only re-point the dial address if we were already going to use IPv6 for this peer;
+    // an IPv4 connection in progress must not be redirected mid-flight.
+    if (m_connectAddress.isIPv6())
+        m_connectAddress = m_userIPv6;
+
+    logDebug(QStringLiteral("OP_CHANGE_CLIENT_IP from %1: new IPv6 %2")
+                 .arg(userName(), announced.toString()));
 }
 
 } // namespace eMule

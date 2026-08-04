@@ -239,6 +239,10 @@ bool ClientReqSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
 
     // Other protocol control
     case OP_CHANGE_CLIENT_ID:
+    // OP_CHANGE_CLIENT_IP is the IPv6 counterpart and travels on this protocol byte too —
+    // the compatibility target sends it with Packet(opcode, size), which defaults to
+    // OP_EDONKEYPROT. It is also still accepted under OP_EMULEPROT in processExtPacket.
+    case OP_CHANGE_CLIENT_IP:
     case OP_ASKSHAREDFILES:
     case OP_ASKSHAREDFILESANSWER:
     case OP_ASKSHAREDDIRS:
@@ -317,6 +321,7 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_PREVIEWANSWER:
     case OP_PUBLICIP_REQ:
     case OP_PUBLICIP_ANSWER:
+    case OP_CHANGE_CLIENT_IP:
     case OP_CALLBACK:
     case OP_REASKCALLBACKTCP:
     case OP_BUDDYPING:

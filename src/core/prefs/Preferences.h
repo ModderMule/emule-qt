@@ -110,6 +110,39 @@ public:
     [[nodiscard]] QString bindAddress() const;
     void setBindAddress(const QString& val);
 
+    /// Pin the public IPv6 we advertise, instead of auto-selecting a stable address.
+    /// Must be a global-unicast IPv6 literal assigned to a local interface; anything
+    /// else is reported and ignored. Independent of bindAddress, which stays IPv4.
+    [[nodiscard]] QString publicIPv6Override() const;
+    void setPublicIPv6Override(const QString& val);
+
+    // Distinct peers that must independently report the same public IPv6, within the
+    // window, before we adopt it (only when no server has observed our egress). YAML-only.
+    [[nodiscard]] uint32 ipv6PublicPeerConfirmThreshold() const;
+    void setIpv6PublicPeerConfirmThreshold(uint32 val);
+    [[nodiscard]] uint32 ipv6PublicPeerConfirmWindowSecs() const;
+    void setIpv6PublicPeerConfirmWindowSecs(uint32 val);
+
+    // Distinct ED2K servers that must independently reflect the same IPv4 back to us, within
+    // the window, before we adopt it (only when neither Kad nor a session knows it). YAML-only.
+    [[nodiscard]] uint32 ipv4PublicServerConfirmThreshold() const;
+    void setIpv4PublicServerConfirmThreshold(uint32 val);
+    [[nodiscard]] uint32 ipv4PublicServerConfirmWindowSecs() const;
+    void setIpv4PublicServerConfirmWindowSecs(uint32 val);
+
+    /// Give IPv6 peers their own share of the upload slots: when clients of both
+    /// families are waiting, each freed slot alternates between them instead of going
+    /// to the highest score outright. Off restores plain score ordering.
+    [[nodiscard]] bool separateIPv6Queue() const;
+    void setSeparateIPv6Queue(bool val);
+
+    /// Resolve a server hostname AAAA-first instead of A-first. Off by default: reaching
+    /// a server over IPv6 without a routable IPv4 yields a LowID unconditionally, so
+    /// preferring AAAA on a dual-stack server would cost a HighID for nothing. The other
+    /// family is tried whenever the first returns no records. YAML-only.
+    [[nodiscard]] bool serverPreferIPv6() const;
+    void setServerPreferIPv6(bool val);
+
     // -- Bandwidth ------------------------------------------------------------
 
     [[nodiscard]] uint32 maxUpload() const;
@@ -188,14 +221,36 @@ public:
     [[nodiscard]] bool enableUPnP() const;
     void setEnableUPnP(bool val);
 
-    [[nodiscard]] bool skipWANIPSetup() const;
-    void setSkipWANIPSetup(bool val);
-
-    [[nodiscard]] bool skipWANPPPSetup() const;
-    void setSkipWANPPPSetup(bool val);
-
     [[nodiscard]] bool closeUPnPOnExit() const;
     void setCloseUPnPOnExit(bool val);
+
+    /// Enabled port-mapping protocols, as a bitmask: 1 = PCP, 2 = NAT-PMP,
+    /// 4 = UPnP. One mask rather than three booleans keeps the IPC and GUI
+    /// plumbing to a single key.
+    [[nodiscard]] uint32 portMapProtocols() const;
+    void setPortMapProtocols(uint32 val);
+
+    /// Lease length requested from the router, in seconds. Routers routinely
+    /// grant less; the granted value is what gets renewed.
+    [[nodiscard]] uint32 portMapLeaseSecs() const;
+    void setPortMapLeaseSecs(uint32 val);
+
+    /// Also open IPv6 firewall pinholes. On a CGNAT line this is the only path
+    /// to real inbound reachability, so it defaults on.
+    [[nodiscard]] bool portMapIPv6() const;
+    void setPortMapIPv6(bool val);
+
+    /// Learned state, not a user knob: the protocol that won the race last run,
+    /// tried first on the next start. Values match PortMapMethod.
+    [[nodiscard]] int portMapMethod() const;
+    void setPortMapMethod(int val);
+
+    /// Learned state, not a user knob: a per-install random secret (hex) that
+    /// PCP mapping nonces are derived from. It has to survive restarts, because
+    /// the nonce is what owns a mapping — coming back with a fresh one leaves
+    /// the router refusing to renew or delete mappings we still hold.
+    [[nodiscard]] QString portMapSecret() const;
+    void setPortMapSecret(const QString& val);
 
     // -- Logging --------------------------------------------------------------
 
@@ -315,6 +370,11 @@ public:
 
     [[nodiscard]] QString ed2kHostname() const;
     void setEd2kHostname(const QString& val);
+
+    /// Append our public IPv6 as an `s6=` source hint in generated eD2K links.
+    /// Gated additionally by AppContext::shouldAdvertisePublicIPv6().
+    [[nodiscard]] bool ed2kLinkAdvertiseIPv6() const;
+    void setEd2kLinkAdvertiseIPv6(bool val);
 
     [[nodiscard]] bool showExtControls() const;
     void setShowExtControls(bool val);

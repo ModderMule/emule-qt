@@ -5,6 +5,7 @@
 #include "panels/IrcPanel.h"
 
 #include "app/UiState.h"
+#include "controls/AbstractListView.h"
 #include "chat/IrcClient.h"
 #include "prefs/Preferences.h"
 
@@ -854,12 +855,13 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
 
     if (type == IrcChannel::ChannelList) {
         // Channel list tab with QTreeWidget
-        auto* tree = new QTreeWidget(this);
+        auto* tree = new ListTreeWidget(this);
         tree->setHeaderLabels({tr("Channel"), tr("Users"), tr("Topic")});
         tree->setRootIsDecorated(false);
         tree->setSelectionMode(QAbstractItemView::SingleSelection);
         tree->setSortingEnabled(true);
         tree->header()->setStretchLastSection(true);
+        tree->bindColumns(QStringLiteral("ircChannelList"), {220, 70, 400});
 
         connect(tree, &QTreeWidget::itemDoubleClicked, this,
                 [this](QTreeWidgetItem* item, int /*column*/) {

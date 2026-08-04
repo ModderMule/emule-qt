@@ -45,6 +45,12 @@ public:
                       uint16 lastUsedPort, const QString& name = {},
                       bool hasHash = true);
 
+    /// Same, for a peer whose address may be IPv6. The uint32 overload delegates here;
+    /// duplicate detection and the "hash or address required" rule are shared.
+    Friend* addFriend(const uint8* userHash, const Address& lastUsedAddress,
+                      uint16 lastUsedPort, const QString& name = {},
+                      bool hasHash = true);
+
     /// Remove a friend. Returns true if found and removed.
     bool removeFriend(Friend* f);
 

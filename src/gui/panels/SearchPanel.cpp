@@ -6,9 +6,11 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/AbstractListView.h"
 #include "controls/DownloadListModel.h"
 #include "controls/SearchResultsModel.h"
 #include "utils/PreviewLauncher.h"
+#include "utils/StatusBarNotifier.h"
 #include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
@@ -37,7 +39,6 @@
 #include <QSpinBox>
 #include <QStringList>
 #include <QStringListModel>
-#include <QStatusBar>
 #include <QTabBar>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -45,6 +46,13 @@
 namespace eMule {
 
 using namespace Ipc;
+
+namespace {
+
+/// UiState key for the shared search-results header layout (all tabs share it).
+const QString kSearchHeaderKey = QStringLiteral("searchResults");
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -86,10 +94,27 @@ void SearchPanel::setIpcClient(IpcClient* client)
     refreshKnownTypes();
 }
 
-void SearchPanel::startSearchFromExternal(const QString& expression)
+void SearchPanel::startSearchFromExternal(const QString& expression,
+                                          const QString& fileType,
+                                          int method,
+                                          const QString& tabTitle)
 {
-    m_nameEdit->setText(expression);
-    onStartSearch();
+    if (fileType.isEmpty() && method < 0 && tabTitle.isEmpty()) {
+        // Plain hand-off ("Search Related Files"): behave as if the user typed and pressed
+        // Start, so the visible filter settings apply.
+        m_nameEdit->setText(expression);
+        onStartSearch();
+        return;
+    }
+
+    // Parameterized hand-off: build the request from the arguments alone and leave the
+    // filter UI untouched, so a leftover filter cannot discard every result.
+    SearchRequest req;
+    req.expression = expression;
+    req.fileType   = fileType;
+    req.method     = method >= 0 ? method : m_methodCombo->currentData().toInt();
+    req.tabTitle   = tabTitle;
+    sendSearchRequest(req);
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +140,7 @@ void SearchPanel::setupUi()
     mainLayout->addWidget(m_tabBar, 0, Qt::AlignLeft);
 
     // Results tree view
-    m_resultView = new QTreeView(this);
+    m_resultView = new ListTreeView(this);
     m_resultView->setRootIsDecorated(false);
     m_resultView->setAlternatingRowColors(true);
     m_resultView->setSortingEnabled(true);
@@ -146,8 +171,8 @@ void SearchPanel::setupUi()
     bottomLayout->addWidget(m_closeAllBtn);
     mainLayout->addLayout(bottomLayout);
 
-    // Bind header state persistence
-    theUiState.bindHeaderView(m_resultView->header(), QStringLiteral("searchResults"));
+    // The header is bound in setupResultHeader() once a tab's model is attached —
+    // binding here, with no model and therefore no sections, cannot restore.
 
     // Context menu
     m_contextMenu = new QMenu(this);
@@ -300,55 +325,56 @@ QWidget* SearchPanel::createSearchBar()
 void SearchPanel::onStartSearch()
 {
     if (!m_ipc || !m_ipc->isConnected()) {
-        if (auto* sb = window() ? window()->findChild<QStatusBar*>() : nullptr)
-            sb->showMessage(tr("Not connected to daemon — search cannot be started."), 4000);
+        StatusBarNotifier::post(tr("Not connected to daemon — search cannot be started."), 4000);
         return;
     }
 
-    const QString expression = m_nameEdit->text().trimmed();
-    if (expression.isEmpty())
+    const SearchRequest req = requestFromUi();
+    if (req.expression.isEmpty())
         return;
 
-    addToSearchHistory(expression);
-
-    // Build search params
-    const QString fileType = m_typeCombo->currentData().toString();
-    const int method = m_methodCombo->currentData().toInt();
-    const qint64 minSize = m_minSizeSpin->value() > 0
-        ? static_cast<qint64>(m_minSizeSpin->value()) * 1024 * 1024 : 0;
-    const qint64 maxSize = m_maxSizeSpin->value() > 0
-        ? static_cast<qint64>(m_maxSizeSpin->value()) * 1024 * 1024 : 0;
-    const int avail = m_availSpin->value();
-    const QString extension = m_extensionEdit->text().trimmed();
-    const int completeSources = m_completeSpin->value();
-    const QString codec = m_codecEdit->text().trimmed();
-    const int minBitrate = m_minBitrateSpin->value();
-    const int minLength = m_minLengthSpin->value();
-    const QString title = m_titleEdit->text().trimmed();
-    const QString album = m_albumEdit->text().trimmed();
-    const QString artist = m_artistEdit->text().trimmed();
+    addToSearchHistory(req.expression);
 
     // Save last-used method
     QSettings settings;
     settings.setValue(QStringLiteral("search/lastMethod"), m_methodCombo->currentIndex());
 
-    IpcMessage msg(IpcMsgType::StartSearch);
-    msg.append(expression);              // field 0
-    msg.append(fileType);                // field 1
-    msg.append(static_cast<qint64>(method));  // field 2
-    msg.append(minSize);                 // field 3
-    msg.append(maxSize);                 // field 4
-    msg.append(static_cast<qint64>(avail));   // field 5
-    msg.append(extension);               // field 6
-    msg.append(static_cast<qint64>(completeSources)); // field 7
-    msg.append(codec);                                    // field 8
-    msg.append(static_cast<qint64>(minBitrate));         // field 9
-    msg.append(static_cast<qint64>(minLength));          // field 10
-    msg.append(title);                                    // field 11
-    msg.append(album);                                    // field 12
-    msg.append(artist);                                   // field 13
+    sendSearchRequest(req);
+}
 
-    m_ipc->sendRequest(std::move(msg), [this, expression, method](const IpcMessage& resp) {
+void SearchPanel::sendSearchRequest(const SearchRequest& req)
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        StatusBarNotifier::post(tr("Not connected to daemon — search cannot be started."), 4000);
+        return;
+    }
+    if (req.expression.isEmpty())
+        return;
+
+    IpcMessage msg(IpcMsgType::StartSearch);
+    msg.append(req.expression);          // field 0
+    msg.append(req.fileType);            // field 1
+    msg.append(static_cast<qint64>(req.method));  // field 2
+    msg.append(req.minSize);             // field 3
+    msg.append(req.maxSize);             // field 4
+    msg.append(static_cast<qint64>(req.avail));   // field 5
+    msg.append(req.extension);           // field 6
+    msg.append(static_cast<qint64>(req.completeSources)); // field 7
+    msg.append(req.codec);                                // field 8
+    msg.append(static_cast<qint64>(req.minBitrate));      // field 9
+    msg.append(static_cast<qint64>(req.minLength));       // field 10
+    msg.append(req.title);                                // field 11
+    msg.append(req.album);                                // field 12
+    msg.append(req.artist);                               // field 13
+
+    const QString expression = req.expression;
+    const int method = req.method;
+    // MFC's strSpecialTitle: the collection search runs on a long author-key hex that
+    // would be unreadable as a tab caption, so the caller can name the tab instead.
+    const QString tabTitle = req.tabTitle.isEmpty() ? req.expression : req.tabTitle;
+
+    m_ipc->sendRequest(std::move(msg),
+                       [this, expression, method, tabTitle](const IpcMessage& resp) {
         if (!resp.fieldBool(0)) {
             const QString error = resp.fieldString(1);
             if (!error.isEmpty())
@@ -362,7 +388,7 @@ void SearchPanel::onStartSearch()
         // Create new tab
         SearchTab tab;
         tab.searchID = searchID;
-        tab.title = expression;
+        tab.title = tabTitle;
         tab.method = method;
         tab.model = new SearchResultsModel(this);
         tab.proxy = new QSortFilterProxyModel(this);
@@ -380,13 +406,24 @@ void SearchPanel::onStartSearch()
             };
             const int mi = (method >= 0 && method <= 3) ? method : 0;
             idx = m_tabBar->addTab(QIcon(QString::fromLatin1(methodIcons[mi])),
-                                   QStringLiteral("%1 (0)").arg(expression));
+                                   QStringLiteral("%1 (0)").arg(tabTitle));
         } else {
-            idx = m_tabBar->addTab(QStringLiteral("%1 (0)").arg(expression));
+            idx = m_tabBar->addTab(QStringLiteral("%1 (0)").arg(tabTitle));
         }
         m_tabBar->setVisible(true);
         m_tabBar->setCurrentIndex(idx);
         m_cancelBtn->setEnabled(true);
+
+        // A Kad search is indexed under a single keyword; when the first one is
+        // already busy the daemon falls back to a later word of the expression.
+        const QString keyword = data.value(QStringLiteral("keyword")).toString();
+        const QString primaryKeyword = data.value(QStringLiteral("primaryKeyword")).toString();
+        if (!keyword.isEmpty() && keyword != primaryKeyword) {
+            StatusBarNotifier::post(tr("Kad: \"%1\" is already being searched — using \"%2\" as "
+                                       "the search target.")
+                                        .arg(primaryKeyword, keyword),
+                                    6000);
+        }
     });
 }
 
@@ -754,9 +791,9 @@ void SearchPanel::closeSearch(int tabIndex)
 
     if (m_tabs.empty()) {
         m_tabBar->setVisible(false);
-        const auto hdrState = m_resultView->header()->saveState();
+        // setModel(nullptr) wipes every section; UiState keeps the cached layout
+        // and switchToTab() re-applies it once a model is attached again.
         m_resultView->setModel(nullptr);
-        m_resultView->header()->restoreState(hdrState);
         m_statusLabel->clear();
         m_cancelBtn->setEnabled(false);
     }
@@ -782,9 +819,7 @@ void SearchPanel::closeAllSearches()
     while (m_tabBar->count() > 0)
         m_tabBar->removeTab(0);
     m_tabBar->setVisible(false);
-    const auto hdrState = m_resultView->header()->saveState();
     m_resultView->setModel(nullptr);
-    m_resultView->header()->restoreState(hdrState);
     m_statusLabel->clear();
     m_cancelBtn->setEnabled(false);
 }
@@ -796,19 +831,18 @@ void SearchPanel::closeAllSearches()
 void SearchPanel::switchToTab(int index)
 {
     if (index < 0 || index >= static_cast<int>(m_tabs.size())) {
-        const auto hdrState = m_resultView->header()->saveState();
         m_resultView->setModel(nullptr);
-        m_resultView->header()->restoreState(hdrState);
         m_downloadBtn->setEnabled(false);
         return;
     }
 
-    const auto hdrState = m_resultView->header()->saveState();
     auto& tab = m_tabs[static_cast<size_t>(index)];
     m_resultView->setModel(tab.proxy);
-    m_resultView->header()->restoreState(hdrState);
-    // bindHeaderView ran in the ctor while the view had no model, so guard the
-    // selection here now that this tab's proxy is attached (re-show is idempotent).
+    // setModel() clears every section, so the layout has to be pushed back each
+    // time. The first call also binds the header, now that the columns exist.
+    setupResultHeader();
+    theUiState.applyHeaderState(m_resultView->header(), kSearchHeaderKey);
+    // Every tab has its own proxy, so re-guard the selection on the new model.
     theUiState.guardSelectionOnReset(m_resultView);
     connect(m_resultView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &SearchPanel::updateDownloadButton);
@@ -1107,6 +1141,44 @@ void SearchPanel::refreshKnownTypes()
             model->updateKnownTypes(typesByHash);
         });
     }
+}
+
+// ---------------------------------------------------------------------------
+// Results header — bound once, on the first tab that attaches a model
+// ---------------------------------------------------------------------------
+
+void SearchPanel::setupResultHeader()
+{
+    if (m_headerBound)
+        return;
+    m_headerBound = true;
+
+    // File Name, Size, Availability, Complete, Type, Artist, Album, Title,
+    // Length, Bitrate, Codec, Known. A saved layout overrides these defaults.
+    m_resultView->bindColumns(kSearchHeaderKey,
+        {300, 80, 70, 70, 70, 100, 100, 100, 60, 60, 60, 60});
+}
+
+SearchPanel::SearchRequest SearchPanel::requestFromUi() const
+{
+    SearchRequest req;
+    req.expression = m_nameEdit->text().trimmed();
+    req.fileType   = m_typeCombo->currentData().toString();
+    req.method     = m_methodCombo->currentData().toInt();
+    req.minSize    = m_minSizeSpin->value() > 0
+        ? static_cast<qint64>(m_minSizeSpin->value()) * 1024 * 1024 : 0;
+    req.maxSize    = m_maxSizeSpin->value() > 0
+        ? static_cast<qint64>(m_maxSizeSpin->value()) * 1024 * 1024 : 0;
+    req.avail           = m_availSpin->value();
+    req.extension       = m_extensionEdit->text().trimmed();
+    req.completeSources = m_completeSpin->value();
+    req.codec           = m_codecEdit->text().trimmed();
+    req.minBitrate      = m_minBitrateSpin->value();
+    req.minLength       = m_minLengthSpin->value();
+    req.title           = m_titleEdit->text().trimmed();
+    req.album           = m_albumEdit->text().trimmed();
+    req.artist          = m_artistEdit->text().trimmed();
+    return req;
 }
 
 } // namespace eMule

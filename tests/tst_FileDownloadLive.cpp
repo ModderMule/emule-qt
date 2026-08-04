@@ -181,7 +181,7 @@ void tst_FileDownloadLive::onReadyRead()
 
         auto dr = EncryptedDatagramSocket::decryptReceivedClient(
             const_cast<uint8*>(buf), static_cast<int>(bufLen),
-            senderIP, userHash.data(), kadIDPtr, kadRecvKey);
+            Address::fromHostOrder(senderIP), userHash.data(), kadIDPtr, kadRecvKey);
 
         const bool decrypted = (dr.data != buf);
         if (!decrypted) {
@@ -318,13 +318,15 @@ void tst_FileDownloadLive::initTestCase()
                uint32 ip, uint16 tcpPort,
                uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
                uint8 sourceType, const uint8* buddyHash,
-               const uint8* clientHash, uint16 udpPort) {
+               const uint8* clientHash, uint16 udpPort,
+               const uint8* sourceIPv6, const uint8* buddyIPv6) {
             m_kadSourcesFound.fetch_add(1, std::memory_order_relaxed);
             m_downloadQueue->addKadSourceResult(searchID, fileHash,
                                                  ip, tcpPort,
                                                  buddyIP, buddyPort, buddyCrypt,
                                                  sourceType, buddyHash,
-                                                 clientHash, udpPort);
+                                                 clientHash, udpPort,
+                                                 sourceIPv6, buddyIPv6);
         });
 
     // 8. Start Kademlia
@@ -360,7 +362,7 @@ void tst_FileDownloadLive::initTestCase()
         if (canEncrypt) {
             uint32 totalLen = EncryptedDatagramSocket::encryptSendClient(
                 raw, static_cast<uint32>(plainLen),
-                kadIDBytes, true, receiverVerifyKey, senderVerifyKey, 0);
+                kadIDBytes, true, receiverVerifyKey, senderVerifyKey, Address{});
             m_socket.writeDatagram(
                 reinterpret_cast<const char*>(raw),
                 static_cast<qint64>(totalLen),

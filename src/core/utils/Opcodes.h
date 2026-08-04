@@ -35,6 +35,9 @@
 #define PARTFILE_SPLITTEDVERSION        0xe1
 #define PARTFILE_VERSION_LARGEFILE      0xe2
 #define SOURCEEXCHANGE2_VERSION         4    // replaces the version sent in MISC_OPTIONS flag from SX1
+#define SOURCEEXCHANGEEXT_VERSION       1    // Extended SX (tag-block per-source): version byte stays 1,
+                                             // gated by MODMISC_EXTXS; never bump (a >1 value re-enables
+                                             // the legacy userHash/crypt tail and breaks compatibility)
 
 // Version reported in CT_EMULE_VERSION to other clients (compatClient=0, major.minor+update)
 #define SEND_EMULE_VERSION_MJR          0
@@ -212,6 +215,12 @@
 #define OP_GETSOURCES_OBFU          0x23
 #define OP_FOUNDSOURCES_OBFU        0x44
 
+// IPv6 server extension (additive, opt-in; only used against a server that
+// advertises SRV_TCPFLG_IPV6). Classic packets stay byte-identical for legacy servers.
+#define OP_GETSOURCES_IPV6          0x24    // client -> server: request IPv6 tag-block sources
+#define OP_FOUNDSOURCES_IPV6        0x25    // server -> client: IPv6 tag-block sources reply
+#define OP_CALLBACKREQUESTED_IPV6   0x26    // server -> client: IPv6 LowID callback (16B IPv6 + LE port)
+
 // ---------------------------------------------------------------------------
 // Client <-> UDP server opcodes
 // ---------------------------------------------------------------------------
@@ -232,6 +241,8 @@
 #define OP_SERVER_DESC_REQ          0xA2
 #define OP_SERVER_DESC_RES          0xA3
 #define OP_SERVER_LIST_REQ2         0xA4
+#define OP_GLOBGETSOURCES_IPV6      0xA5    // client -> server, UDP: request IPv6 tag-block sources
+#define OP_GLOBFOUNDSOURCES_IPV6    0xA6    // server -> client, UDP: IPv6 tag-block sources reply
 
 #define INV_SERV_DESC_LEN           0xF0FF
 
@@ -354,6 +365,15 @@
 #define ST_UDPKEYIP                 0x96
 #define ST_TCPPORTOBFUSCATION       0x97
 #define ST_UDPPORTOBFUSCATION       0x98
+// Local server.met extension, never sent on the wire: the 16-byte IPv6 address of an
+// IPv6 server (TAGTYPE_HASH, network order). The ServerMet_Struct header IP stays 0 for
+// such an entry, so this tag is the only address it has.
+// 0x99 is free in the ST_ prefix — the reference list in srchybrid/opcodes.h:299-319
+// ends at 0x98 (0x86 is commented out as no longer used), and 0x9D / 0xAB / 0xAD-0xAF
+// are taken by ST_NAT_PORT / ST_IPV6_STATUS / the CT_MOD_* family.
+// Stock eMule drops unknown server.met tags (srchybrid/Server.cpp:243) and then rejects
+// the ip==0 entry in AddServer, so it ignores IPv6 servers rather than mis-dialing them.
+#define ST_IPV6                     0x99
 
 // ---------------------------------------------------------------------------
 // File tags
@@ -472,6 +492,32 @@
 #define FT_SOURCETYPE               0xFF
 #define TAG_SOURCETYPE              "\xFF"
 
+// IPv6 Kad source tags — genuine multi-character string names (CKadTagStr),
+// each a 32-char hex string of the 16 IPv6 bytes (NOT a binary blob or byte tag).
+#define TAG_IPV6                    "ip6"   // source's public IPv6
+#define TAG_SERVINGBUDDYIPV6        "bi6"   // serving buddy's public IPv6
+
+// CT_MOD_MISCOPTIONS (0xAA) bitfield.
+// Bits 1, 3 and 4 are taken by the compatibility target (uTP NAT traversal, serving-buddy
+// pull, QUIC NAT traversal) — do not reuse them even though we implement none of the three.
+#define MODMISC_EXTXS               (1u << 0)   // supports Extended Source Exchange
+#define MODMISC_IPV6                (1u << 2)   // supports IPv6
+// "My ExtSX reader skips tags it does not recognise instead of discarding the whole answer."
+// That is what the tag format already mandates, but the compatibility target's reader appends
+// every unknown tag to an error string and then returns out of the entire source-exchange
+// parse — one unrecognised tag in the first record drops every source in the packet. So new
+// ExtSX tags may only be sent to a peer that sets this bit. Bit 5 is the first free one.
+#define MODMISC_EXTXS_SKIPTAGS      (1u << 5)   // safe to send unknown ExtSX tags to this peer
+
+// ST_IPV6_STATUS (0xAB, uint8) bitfield — server's verdict on our advertised IPv6 (OP_SERVERIDENT).
+// Unset bits mean "no"; the whole tag is omitted when the server has no verdict to report.
+#define IPV6ST_HAVE                 0x01        // server holds a public IPv6 for this session
+#define IPV6ST_REACHABLE            0x02        // that address is treated reachable (we're published as a v6 source)
+#define IPV6ST_PROBED               0x04        // verdict came from a real dial-back, not a trust default
+
+// ClientID sentinel marking an inline IPv6 source inside a classic OP_FOUNDSOURCES block
+#define IPV6_SOURCE_SENTINEL        0xFFFFFFFFu
+
 // ---------------------------------------------------------------------------
 // Tag types
 // ---------------------------------------------------------------------------
@@ -558,6 +604,29 @@
 #define CT_VERSION                  0x11
 #define CT_SERVER_FLAGS             0x20
 #define CT_MOD_VERSION              0x55
+// IPv6 MOD tags (compatibility target's 0xA0-0xAF MOD-tag family; additive, opt-in).
+#define CT_EMULE_SERVINGBUDDYIPV6   0xA0    // hash16: serving buddy's public IPv6
+#define CT_MOD_MISCOPTIONS          0xAA    // uint32 bitfield (see MODMISC_* below)
+#define ST_IPV6_STATUS              0xAB    // uint8 bitfield (see IPV6ST_* above): server's IPv6 verdict (OP_SERVERIDENT)
+// c2c opcode, NOT a tag: 16 raw IPv6 bytes, no tag wrapper. Sent under OP_EDONKEYPROT (0xE3),
+// not OP_EMULEPROT — the compatibility target builds it with Packet(opcode, size), whose protocol
+// argument defaults to OP_EDONKEYPROT, and dispatches it from its eDonkey handler. 0xAC is unused
+// in the stock eDonkey c2c opcode space (srchybrid/opcodes.h has no 0xAC), so there is no clash.
+#define OP_CHANGE_CLIENT_IP         0xAC    // c2c: 16-byte IPv6 IP-change notification
+#define CT_MOD_YOUR_IP              0xAD    // visible IP: from a peer (c2c hello) or the server-observed egress (OP_SERVERIDENT); uint32 if IPv4, hash16 if IPv6
+#define CT_MOD_IP_V6                0xAE    // hash16: our public IPv6 (c2c hello + OP_LOGINREQUEST)
+#define CT_MOD_SVR_IP_V6            0xAF    // hash16: server's own public IPv6 (OP_SERVERIDENT)
+// Extended Source Exchange per-source tag-block fields (replace the fixed serverIP/serverPort record)
+#define CT_EMULE_SERVERIP           0xBA    // uint32: source's server IP (ExtSX tag block)
+#define CT_EMULE_SERVERTCP          0xBB    // uint16: source's server TCP port (ExtSX tag block)
+// The classic SX record carried the user hash at version >= 2 and the crypt options at
+// version >= 4. ExtSX pins the version at 1, so both fields are structurally unreachable there
+// and have to ride as tags. Only ever sent to a peer advertising MODMISC_EXTXS_SKIPTAGS.
+// 0xBC is free in the compatibility target, MorphXT and stock; 0xBE is the target's own
+// CT_EMULE_CONOPTS, declared "MOD SX" and never used — reusing it keeps us aligned if they
+// ever implement it.
+#define CT_EMULE_USERHASH           0xBC    // hash16: source's user hash (ExtSX tag block)
+#define CT_EMULE_CONOPTS            0xBE    // uint8: source's crypt/connect options (ExtSX tag block)
 #define CT_EMULECOMPAT_OPTIONS1     0xef
 #define CT_EMULE_RESERVED1          0xf0
 #define CT_EMULE_RESERVED2          0xf1
@@ -590,6 +659,7 @@
 #define SRVCAP_SUPPORTCRYPT         0x0200
 #define SRVCAP_REQUESTCRYPT         0x0400
 #define SRVCAP_REQUIRECRYPT         0x0800
+#define SRVCAP_IPV6                 0x1000    // login bit: "I speak the IPv6 server extension"
 
 // Values for CT_SERVER_UDPSEARCH_FLAGS
 #define SRVCAP_UDP_NEWTAGS_LARGEFILES   0x01

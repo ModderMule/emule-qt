@@ -23,7 +23,10 @@
 #include <list>
 #include <memory>
 
-namespace eMule { class UpDownClient; }
+namespace eMule {
+class HostResolver;
+class UpDownClient;
+}
 
 namespace eMule::kad {
 
@@ -77,6 +80,8 @@ signals:
                       KadUDPKey targetKey, UInt128 cryptTargetID);
 
 private:
+    HostResolver* m_hostResolver = nullptr;   // created on first bootstrap-by-hostname
+
     // Packet handlers
     bool addContact_KADEMLIA2(const uint8* data, uint32 len, uint32 ip, uint16& udpPort,
                               uint8* outVersion, const KadUDPKey& udpKey, bool& ipVerified,

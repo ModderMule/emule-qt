@@ -42,7 +42,8 @@ struct ClientRow {
     int remoteQueueRank = 0;
     int sourceFrom = 0;
     int softwareId = -1;
-    uint32_t ip = 0;
+    uint32_t ip = 0;     ///< eD2K byte order; 0 for an IPv6 peer — prefer addr.
+    QString  addr;       ///< Literal address, both families. Empty when unknown.
     uint16_t port = 0;
     bool isBanned = false;
     bool hasCredit = false;

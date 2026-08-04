@@ -48,17 +48,12 @@ static void unixSignalHandler(int)
 #include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
 #include "app/AppConfig.h"
-#include "controls/DownloadListModel.h"
-#include "controls/SharedFilesModel.h"
 #include "prefs/Preferences.h"
 #include "utils/CrashHandler.h"
+#include "utils/Ed2kLinkImporter.h"
 #include "utils/Log.h"
 
 #include "IpcMessage.h"
-#include "protocol/ED2KLink.h"
-
-using eMule::ED2KFileLink;
-using eMule::parseED2KLink;
 
 namespace {
 
@@ -119,59 +114,23 @@ void handleEd2kUrl(const QString& urlStr, eMule::MainWindow& mainWindow, eMule::
 {
     if (!urlStr.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive))
         return;
-    if (!ipcClient.isConnected())
-        return;
 
-    const QStringList lines = urlStr.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-    QStringList fileNames;
-    auto* dlModel = mainWindow.transferPanel()->downloadModel();
-    auto* sfModel = mainWindow.sharedFilesPanel()->sharedFilesModel();
-    for (const QString& line : lines) {
-        auto parsed = parseED2KLink(line.trimmed());
-        if (!parsed) continue;
-        if (auto* fl = std::get_if<ED2KFileLink>(&*parsed)) {
-            QString hashHex;
-            for (uint8_t b : fl->hash)
-                hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
-            if ((dlModel && dlModel->containsHash(hashHex))
-                || (sfModel && sfModel->containsHash(hashHex)))
-                continue;
-            fileNames << fl->name;
-        }
-    }
-    if (fileNames.isEmpty())
-        return;
-
-    if (eMule::thePrefs.bringToFrontOnLinkClick()) {
-        mainWindow.raise();
-        mainWindow.activateWindow();
-    }
-
-    const QString preview = fileNames.join(QLatin1Char('\n'));
-    const auto result = QMessageBox::question(
-        &mainWindow, QObject::tr("eD2K Link"),
-        QObject::tr("Do you want to download the following file(s)?\n\n%1").arg(preview),
-        QMessageBox::Yes | QMessageBox::No);
-    if (result != QMessageBox::Yes)
-        return;
-
-    for (const QString& line : lines) {
-        auto parsed = parseED2KLink(line.trimmed());
-        if (!parsed) continue;
-        auto* fl = std::get_if<ED2KFileLink>(&*parsed);
-        if (!fl) continue;
-
-        QString hashHex;
-        for (uint8_t b : fl->hash)
-            hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
-
-        eMule::Ipc::IpcMessage msg(eMule::Ipc::IpcMsgType::DownloadSearchFile);
-        msg.append(hashHex);
-        msg.append(fl->name);
-        msg.append(static_cast<qint64>(fl->size));
-        ipcClient.sendRequest(std::move(msg));
-    }
-    mainWindow.switchToTab(eMule::MainWindow::TabTransfers);
+    // Manual: the user clicked this link, so a completed or cancelled file is a genuine
+    // re-download request and is left alone.
+    eMule::Ed2kLinkImporter::importLinks(
+        urlStr, &ipcClient, &mainWindow,
+        eMule::Ed2kLinkImporter::Source::Manual,
+        eMule::Ed2kLinkImporter::Prompt::Ask,
+        [&mainWindow](const eMule::Ed2kLinkImporter::Result& result) {
+            if (result.added > 0)
+                mainWindow.switchToTab(eMule::MainWindow::TabTransfers);
+        },
+        [&mainWindow] {
+            if (eMule::thePrefs.bringToFrontOnLinkClick()) {
+                mainWindow.raise();
+                mainWindow.activateWindow();
+            }
+        });
 }
 
 } // anonymous namespace
@@ -391,6 +350,8 @@ int main(int argc, char* argv[])
                 logWidget->appendKad(colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.server"))
                 logWidget->appendServerInfo(colored);
+            else if (cat == QStringLiteral("emule.net"))
+                logWidget->appendVerbose(colored, timestamp, seqId);
             else if (severity == QtDebugMsg || severity == QtWarningMsg)
                 logWidget->appendVerbose(colored, timestamp, seqId);
             else

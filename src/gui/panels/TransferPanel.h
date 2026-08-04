@@ -12,6 +12,8 @@
 #include <QSet>
 #include <QWidget>
 
+#include <initializer_list>
+
 #include "dialogs/FileDetailDialog.h"
 
 class QAction;
@@ -67,7 +69,8 @@ private:
     QWidget* createDownloadsSection();
     QWidget* createBottomPane();
     QToolBar* createActionToolbar();
-    QTreeView* createClientView(ClientListModel* model, const QString& headerKey);
+    QTreeView* createClientView(ClientListModel* model, const QString& headerKey,
+                                std::initializer_list<int> columnWidths);
     void requestDownloads();
     void requestDownloadSources(const QString& hash);
     void requestUploads();

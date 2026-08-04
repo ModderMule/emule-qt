@@ -21,6 +21,15 @@ inline constexpr QLatin1StringView kAppVersion{EMULE_VERSION_STRING};
 /// User-Agent header value for all outgoing HTTP requests.
 inline const QString kUserAgent = QStringLiteral("eMuleQt/") + kAppVersion;
 
+/// Project website — base for the port test, bug report and version check endpoints.
+inline constexpr QLatin1StringView kWebsiteUrl{"https://emule-qt.org"};
+
+/// Port test page. Reachable over both IPv4 and IPv6 and reports each family separately, unlike
+/// porttest.emule-project.net which has no AAAA record and can only ever answer for IPv4.
+/// Accepts tcpport, udpport and — because the server observes only the family the browser used —
+/// optional ip4/ip6 hints for the other one.
+inline constexpr QLatin1StringView kPortTestPath{"/test-ports/"};
+
 
 class AppConfig {
 public:

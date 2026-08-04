@@ -6,18 +6,25 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/AbstractListView.h"
 #include "controls/SharedFilesModel.h"
 #include "controls/SharedPartsDelegate.h"
 #include "dialogs/ArchivePreviewPanel.h"
 #include "dialogs/FileDetailDialog.h"
 #include "dialogs/MediaInfoPanel.h"
 #include "prefs/Preferences.h"
+#include "utils/IpcFeedback.h"
+#include "utils/Log.h"
+#include "utils/StatusBarNotifier.h"
 #include "utils/WebServices.h"
 #include "dialogs/CollectionCreateDialog.h"
 #include "dialogs/CollectionViewDialog.h"
 
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
+#include "search/SearchParams.h"
+#include "utils/Opcodes.h"
+#include "utils/OtherFunctions.h"
 
 #include "IpcMessage.h"
 
@@ -57,6 +64,8 @@
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace eMule {
 
@@ -178,6 +187,9 @@ void SharedFilesPanel::onFolderSelectionChanged()
 
 void SharedFilesPanel::onFileSelectionChanged()
 {
+    if (m_restoringSelection)
+        return;   // our own doing, and the tabs are refreshed once the restore completes
+
     updateStatsTab();
     updateContentTab();
     updateEd2kTab();
@@ -185,16 +197,28 @@ void SharedFilesPanel::onFileSelectionChanged()
 
 void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 {
-    // Resolve item under cursor
-    const SharedFileRow* file = nullptr;
-    QString hash;
-    const QModelIndex proxyIdx = m_fileView->indexAt(pos);
-    if (proxyIdx.isValid()) {
-        const QModelIndex srcIdx = m_proxy->mapToSource(proxyIdx);
-        hash = m_model->hashAt(srcIdx.row());
-        file = m_model->fileAt(srcIdx.row());
+    // Act on the selection, not on the row under the cursor: Qt leaves a multi-selection
+    // intact on a right-click, and right-clicking below the last row must still target it.
+    const QStringList hashes = selectedHashes();
+    const bool hasSel = !hashes.isEmpty();
+    const bool singleSel = hashes.size() == 1;
+
+    // Snapshot for building the menu only — every action captures hashes by value and
+    // re-resolves through findByHash, because a refresh replaces the model's rows while
+    // the menu (or a dialog it opened) is still up.
+    const std::vector<const SharedFileRow*> sel = rowsForHashes(hashes);
+    const SharedFileRow* single = (singleSel && !sel.empty()) ? sel.front() : nullptr;
+
+    // A part file is an unfinished download: deleting it destroys the transfer, and it
+    // cannot be unshared either (MFC greys both, srchybrid/SharedFilesCtrl.cpp:768-769).
+    const bool allComplete = hasSel && std::ranges::none_of(sel, &SharedFileRow::isPartFile);
+    QStringList completeHashes;
+    for (const SharedFileRow* f : sel) {
+        if (!f->isPartFile)
+            completeHashes << f->hash;
     }
-    const bool hasSel = (file != nullptr && !hash.isEmpty());
+
+    const bool localConn = m_ipc && m_ipc->isLocalConnection();
 
     // Rebuild menu
     if (!m_contextMenu)
@@ -208,36 +232,45 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
                            : QIcon();
     };
 
-    // Open File
+    // Open File — single, complete file only, and only when the daemon runs on this machine
     {
-        auto* act = m_contextMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this, [file]() {
-            if (file)
-                QDesktopServices::openUrl(QUrl::fromLocalFile(file->filePath));
+        auto* act = m_contextMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this,
+                                             [this, hashes]() {
+            if (const SharedFileRow* f = m_model->findByHash(hashes.value(0)))
+                QDesktopServices::openUrl(QUrl::fromLocalFile(f->filePath));
         });
-        act->setEnabled(hasSel && m_ipc && m_ipc->isLocalConnection());
+        const bool canOpen = singleSel && single && !single->isPartFile && localConn;
+        act->setEnabled(canOpen);
+        if (canOpen)
+            m_contextMenu->setDefaultAction(act);   // MFC SetDefaultItem(MP_OPEN)
     }
 
     // Open Folder
     {
-        auto* act = m_contextMenu->addAction(ico("FolderOpen.ico"), tr("Open Folder"), this, [file]() {
-            if (file)
-                QDesktopServices::openUrl(QUrl::fromLocalFile(file->path));
+        auto* act = m_contextMenu->addAction(ico("FolderOpen.ico"), tr("Open Folder"), this,
+                                             [this, hashes]() {
+            if (const SharedFileRow* f = m_model->findByHash(hashes.value(0)))
+                QDesktopServices::openUrl(QUrl::fromLocalFile(f->path));
         });
-        act->setEnabled(hasSel && m_ipc && m_ipc->isLocalConnection());
+        act->setEnabled(singleSel && single && !single->isPartFile && localConn);
     }
 
     m_contextMenu->addSeparator();
 
     // Rename
     {
-        auto* act = m_contextMenu->addAction(ico("Rename.ico"), tr("Rename..."), this, [this, hash, file]() {
-            if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
+        auto* act = m_contextMenu->addAction(ico("Rename.ico"), tr("Rename..."), this,
+                                             [this, hashes]() {
+            const SharedFileRow* f = m_model->findByHash(hashes.value(0));
+            if (!f || !m_ipc || !m_ipc->isConnected())
                 return;
+            const QString hash = f->hash;
+            const QString oldName = f->fileName;
             bool ok = false;
             const QString newName = QInputDialog::getText(
                 this, tr("Rename File"), tr("New file name:"),
-                QLineEdit::Normal, file->fileName, &ok);
-            if (!ok || newName.trimmed().isEmpty() || newName.trimmed() == file->fileName)
+                QLineEdit::Normal, oldName, &ok);
+            if (!ok || newName.trimmed().isEmpty() || newName.trimmed() == oldName)
                 return;
             IpcMessage msg(IpcMsgType::RenameSharedFile);
             msg.append(hash);
@@ -246,47 +279,24 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
                 requestSharedFiles();
             });
         });
-        act->setEnabled(hasSel);
+        act->setEnabled(singleSel && single && !single->isPartFile);
     }
 
-    // Delete From Disk
+    // Delete From Disk — every selected file must be complete, or an in-progress
+    // download would be destroyed (the daemon's handler has no such guard).
     {
-        auto* act = m_contextMenu->addAction(ico("Delete.ico"), tr("Delete From Disk"), this, [this, hash, file]() {
-            if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
-                return;
-            const auto answer = QMessageBox::warning(
-                this, tr("Delete File"),
-                tr("Are you sure you want to permanently delete \"%1\" from disk?").arg(file->fileName),
-                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-            if (answer != QMessageBox::Yes)
-                return;
-            IpcMessage msg(IpcMsgType::DeleteSharedFile);
-            msg.append(hash);
-            m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-                requestSharedFiles();
-            });
-        });
-        act->setEnabled(hasSel);
+        auto* act = m_contextMenu->addAction(ico("Delete.ico"), tr("Delete From Disk"), this,
+                                             [this, hashes]() { sendDeleteFilesBatch(hashes); });
+        act->setEnabled(hasSel && allComplete);
     }
 
-    // Unshare
+    // Unshare — acts on the complete files in the selection; part files stay put
     {
-        auto* act = m_contextMenu->addAction(ico("ListRemove.ico"), tr("Unshare"), this, [this, hash, file]() {
-            if (!file || hash.isEmpty() || !m_ipc || !m_ipc->isConnected())
-                return;
-            const auto answer = QMessageBox::question(
-                this, tr("Unshare File"),
-                tr("Remove \"%1\" from the shared files list?\n\nThe file will remain on disk.").arg(file->fileName),
-                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-            if (answer != QMessageBox::Yes)
-                return;
-            IpcMessage msg(IpcMsgType::UnshareFile);
-            msg.append(hash);
-            m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-                requestSharedFiles();
-            });
+        auto* act = m_contextMenu->addAction(ico("ListRemove.ico"), tr("Unshare"), this,
+                                             [this, completeHashes]() {
+            sendUnshareBatch(completeHashes);
         });
-        act->setEnabled(hasSel);
+        act->setEnabled(!completeHashes.isEmpty());
     }
 
     m_contextMenu->addSeparator();
@@ -296,11 +306,16 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         auto* prioMenu = m_contextMenu->addMenu(ico("FilePriority.ico"), tr("Priority (Upload)"));
         prioMenu->setEnabled(hasSel);
         if (hasSel) {
+            // A mixed selection gets no check mark at all — MFC clears uPrioMenuItem the
+            // same way (srchybrid/SharedFilesCtrl.cpp:735).
             auto addPrioAction = [&](const QString& text, int prio) {
-                auto* act = prioMenu->addAction(text, this, [this, hash, prio]() {
-                    sendSetPriority(hash, prio, false);
+                auto* act = prioMenu->addAction(text, this, [this, hashes, prio]() {
+                    sendSetPriorityBatch(hashes, prio, false);
                 });
-                if (!file->isAutoUpPriority && file->upPriority == prio)
+                const bool allMatch = std::ranges::all_of(sel, [prio](const SharedFileRow* f) {
+                    return !f->isAutoUpPriority && f->upPriority == prio;
+                });
+                if (allMatch)
                     act->setCheckable(true), act->setChecked(true);
             };
             addPrioAction(tr("Very Low"),  PrVeryLow);
@@ -309,30 +324,24 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             addPrioAction(tr("High"),      PrHigh);
             addPrioAction(tr("Very High"), PrVeryHigh);
             prioMenu->addSeparator();
-            auto* autoAct = prioMenu->addAction(tr("Auto"), this, [this, hash]() {
-                sendSetPriority(hash, PrNormal, true);
+            auto* autoAct = prioMenu->addAction(tr("Auto"), this, [this, hashes]() {
+                sendSetPriorityBatch(hashes, PrNormal, true);
             });
-            if (file->isAutoUpPriority)
+            if (std::ranges::all_of(sel, &SharedFileRow::isAutoUpPriority))
                 autoAct->setCheckable(true), autoAct->setChecked(true);
         }
     }
 
     // Collection submenu
     {
-        const bool singleSel = hasSel && m_fileView->selectionModel()->selectedRows().size() == 1;
-        const bool isColl = singleSel && file && file->isCollection;
-        const bool hasAuthorKey = isColl && file->hasCollectionAuthorKey;
+        const bool isColl = singleSel && single && single->isCollection;
+        const bool hasAuthorKey = isColl && single->hasCollectionAuthorKey;
+        const QString hash = hasSel ? hashes.constFirst() : QString{};
 
         auto* collMenu = m_contextMenu->addMenu(ico("SharedFilesList.ico"), tr("Collection"));
 
         // Create Collection...
-        auto* createAct = collMenu->addAction(tr("Create Collection..."), this, [this]() {
-            QStringList hashes;
-            const auto selRows = m_fileView->selectionModel()->selectedRows();
-            for (const auto& idx : selRows) {
-                const QModelIndex srcIdx = m_proxy->mapToSource(idx);
-                hashes.append(m_model->hashAt(srcIdx.row()));
-            }
+        auto* createAct = collMenu->addAction(tr("Create Collection..."), this, [this, hashes]() {
             auto* dlg = new CollectionCreateDialog(m_ipc, hashes, this);
             dlg->setAttribute(Qt::WA_DeleteOnClose);
             dlg->show();
@@ -406,50 +415,82 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         viewAct->setEnabled(isColl);
 
         // Search Author's Collections...
+        // Like MFC's MP_SEARCHAUTHOR (srchybrid/SharedFilesCtrl.cpp:1013), this is just an
+        // ordinary Kad keyword search on the author's public key, restricted to collection
+        // files and captioned with the author's name.
         auto* searchAct = collMenu->addAction(tr("Search Author's Collections..."), this, [this, hash]() {
-            Ipc::IpcMessage msg(Ipc::IpcMsgType::SearchAuthorCollections);
+            if (!m_ipc || !m_ipc->isConnected())
+                return;
+            Ipc::IpcMessage msg(Ipc::IpcMsgType::GetCollectionInfo);
             msg.append(hash);
-            m_ipc->sendRequest(std::move(msg), [](const Ipc::IpcMessage&) {});
+            QPointer<SharedFilesPanel> self(this);
+            m_ipc->sendRequest(std::move(msg), [self](const Ipc::IpcMessage& resp) {
+                if (!self)
+                    return;
+                if (!IpcFeedback::checkOrWarn(resp, self, tr("Search Author's Collections")))
+                    return;
+
+                const QCborMap data = resp.fieldMap(1);
+                const QString authorKeyHex = data.value(QStringLiteral("authorKeyHex")).toString();
+                if (authorKeyHex.isEmpty()) {
+                    QMessageBox::warning(self, tr("Search Author's Collections"),
+                        tr("This collection carries no author key, so its author's other "
+                           "collections cannot be looked up."));
+                    return;
+                }
+
+                const QString authorName = data.value(QStringLiteral("authorName")).toString();
+                emit self->searchRequested(authorKeyHex,
+                                           QStringLiteral(ED2KFTSTR_EMULECOLLECTION),
+                                           static_cast<int>(SearchType::Kademlia),
+                                           stringLimit(authorName, 50));
+            });
         });
         searchAct->setEnabled(hasAuthorKey);
     }
 
     m_contextMenu->addSeparator();
 
-    // Details...
+    // Details... — the dialog shows one file, so single selection only (as in Transfers)
     {
-        auto* act = m_contextMenu->addAction(ico("FileInfo.ico"), tr("Details..."), this, [this, hash]() {
+        const QString hash = hasSel ? hashes.constFirst() : QString{};
+        auto* act = m_contextMenu->addAction(ico("FileInfo.ico"), tr("Details..."), this,
+                                             [this, hash]() {
             fetchAndShowSharedFileDetails(hash, FileDetailDialog::General);
         });
-        act->setEnabled(hasSel);
+        act->setEnabled(singleSel);
     }
 
     // Comments...
     {
-        auto* act = m_contextMenu->addAction(ico("FileComments.ico"), tr("Comments..."), this, [this, hash]() {
+        const QString hash = hasSel ? hashes.constFirst() : QString{};
+        auto* act = m_contextMenu->addAction(ico("FileComments.ico"), tr("Comments..."), this,
+                                             [this, hash]() {
             fetchAndShowSharedFileDetails(hash, FileDetailDialog::Comments);
         });
-        act->setEnabled(hasSel);
+        act->setEnabled(singleSel);
     }
 
-    // eD2K Links
+    // eD2K Links — one link per selected file, as MFC's MP_GETED2KLINK does
     {
-        auto* act = m_contextMenu->addAction(ico("eD2kLink.ico"), tr("eD2K Links..."), this, [this]() {
-            copyEd2kLink();
-        });
+        auto* act = m_contextMenu->addAction(ico("eD2kLink.ico"), tr("eD2K Links..."), this,
+                                             [this, hashes]() { copyEd2kLinks(hashes); });
         act->setEnabled(hasSel);
     }
 
-    // Find
-    connect(m_contextMenu->addAction(ico("Search.ico"), tr("Find...")),
-            &QAction::triggered, this, &SharedFilesPanel::showFindDialog);
+    // Find — searches the list itself, so it only needs the list to be non-empty
+    {
+        auto* act = m_contextMenu->addAction(ico("Search.ico"), tr("Find..."));
+        connect(act, &QAction::triggered, this, &SharedFilesPanel::showFindDialog);
+        act->setEnabled(m_proxy->rowCount() > 0);
+    }
 
-    // Web Services submenu
+    // Web Services submenu — the macros describe one file (MFC greys it for a multi-selection)
     {
         auto* webMenu = m_contextMenu->addMenu(ico("Web.ico"), tr("Web Services"));
-        if (hasSel) {
-            WebServices::instance().populateFileMenu(webMenu, file->hash, file->fileName,
-                                                      static_cast<uint64_t>(file->fileSize));
+        if (single) {
+            WebServices::instance().populateFileMenu(webMenu, single->hash, single->fileName,
+                                                      static_cast<uint64_t>(single->fileSize));
         }
         if (webMenu->isEmpty())
             webMenu->setEnabled(false);
@@ -533,9 +574,11 @@ QWidget* SharedFilesPanel::createTopSection()
         QStringLiteral("QSplitter::handle { background: palette(mid); }"));
 
     // --- Folder tree ---
-    m_folderTree = new QTreeWidget;
+    auto* folderTree = new ListTreeWidget;
+    m_folderTree = folderTree;
     m_folderTree->setHeaderLabel(tr("File Name"));
     m_folderTree->setIndentation(16);
+    folderTree->bindColumns(QStringLiteral("sharedFolders"), {220});
 
     // Build tree structure matching MFC
     m_allSharedItem = new QTreeWidgetItem(m_folderTree, {tr("All Shared Files")});
@@ -581,36 +624,37 @@ QWidget* SharedFilesPanel::createTopSection()
     rightLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->setSpacing(0);
 
-    m_fileView = new QTreeView;
+    auto* fileView = new ListTreeView;
+    m_fileView = fileView;
     m_fileView->setModel(m_proxy);
     m_fileView->setRootIsDecorated(false);
     m_fileView->setAlternatingRowColors(true);
     m_fileView->setSortingEnabled(true);
-    m_fileView->setSelectionMode(QAbstractItemView::SingleSelection);
+    // MFC's list is multi-select too (srchybrid/SharedFilesCtrl.cpp:262 asserts no LVS_SINGLESEL).
+    m_fileView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_fileView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_fileView->setUniformRowHeights(true);
     m_fileView->setContextMenuPolicy(Qt::CustomContextMenu);
 
     connect(m_fileView, &QTreeView::customContextMenuRequested,
             this, &SharedFilesPanel::onFileContextMenu);
+    // Both signals are needed: ctrl+arrow moves the current row without changing the
+    // selection, and ctrl-clicking a non-current row changes the selection without moving
+    // the current row. The bottom tabs have to follow either one.
     connect(m_fileView->selectionModel(), &QItemSelectionModel::currentChanged,
+            this, &SharedFilesPanel::onFileSelectionChanged);
+    connect(m_fileView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &SharedFilesPanel::onFileSelectionChanged);
 
     auto* header = m_fileView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(90);
-    header->resizeSection(SharedFilesModel::ColFileName, 220);
-    header->resizeSection(SharedFilesModel::ColSize, 75);
-    header->resizeSection(SharedFilesModel::ColType, 70);
-    header->resizeSection(SharedFilesModel::ColPriority, 80);
-    header->resizeSection(SharedFilesModel::ColRequests, 80);
-    header->resizeSection(SharedFilesModel::ColTransferred, 120);
-    header->resizeSection(SharedFilesModel::ColSharedParts, 80);
-    header->resizeSection(SharedFilesModel::ColCompleteSources, 100);
-    header->resizeSection(SharedFilesModel::ColSharedNetworks, 100);
     // Hide Folder column by default (like MFC)
     header->hideSection(SharedFilesModel::ColFolder);
-    theUiState.bindHeaderView(header, QStringLiteral("sharedfiles"));
+    // File Name, Size, Type, Priority, Requests, Transferred, Shared Parts,
+    // Complete Sources, Shared Networks, Folder.
+    fileView->bindColumns(QStringLiteral("sharedfiles"),
+        {220, 75, 70, 80, 80, 120, 80, 100, 100, 200});
 
     m_fileView->setItemDelegateForColumn(SharedFilesModel::ColSharedParts,
                                           new SharedPartsDelegate(m_fileView));
@@ -806,14 +850,21 @@ QWidget* SharedFilesPanel::createBottomTabs()
     connect(m_ed2kHashsetCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
     connect(m_ed2kHostnameCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
 
-    // Hostname enabled only if configured
-    const bool hostnameOk = thePrefs.ed2kHostname().contains(u'.');
-    m_ed2kHostnameCheck->setEnabled(hostnameOk);
-    if (!hostnameOk)
-        m_ed2kHostnameCheck->setToolTip(tr("Requires a hostname configured in Preferences"));
+    // Enabled once the daemon reports it has something to advertise (a hostname or a
+    // confirmed public IPv6) — see the GetEd2kLink reply in rebuildEd2kLink().
+    m_ed2kHostnameCheck->setEnabled(false);
+    m_ed2kHostnameCheck->setToolTip(
+        tr("Requires a hostname configured in Preferences, or a public IPv6"));
 
-    m_bottomTabs->addTab(ed2kWidget, QIcon(QStringLiteral(":/icons/eD2kLink.ico")),
-                         tr("eD2K Links"));
+    m_ed2kTabIndex = m_bottomTabs->addTab(ed2kWidget,
+                                          QIcon(QStringLiteral(":/icons/eD2kLink.ico")),
+                                          tr("eD2K Links"));
+
+    // Links are only built while this tab is on screen, so build them when it comes up.
+    connect(m_bottomTabs, &QTabWidget::currentChanged, this, [this](int index) {
+        if (index == m_ed2kTabIndex)
+            updateEd2kTab();
+    });
 
     return m_bottomTabs;
 }
@@ -835,7 +886,7 @@ void SharedFilesPanel::requestSharedFiles()
             return;
         }
 
-        const QString selectedHash = saveSelection();
+        const SelectionState selection = saveSelection();
 
         // Response is a map: { "files": [...], "totalRequests": N, ... }
         const QCborMap resultMap = resp.fieldMap(1);
@@ -904,29 +955,80 @@ void SharedFilesPanel::requestSharedFiles()
             rows.push_back(std::move(row));
         }
 
-        const int sfScroll = m_fileView->verticalScrollBar()->value();
         m_proxy->setIncomingDir(m_incomingDir);
         m_model->setFiles(std::move(rows));
         m_headerLabel->setText(tr("Shared Files (%1)").arg(m_model->fileCount()));
-        restoreSelection(selectedHash);
-        m_fileView->verticalScrollBar()->setValue(sfScroll);
+        restoreSelection(selection);
         updateStatsTab();
+        updateContentTab();
         updateEd2kTab();
     });
 }
 
-void SharedFilesPanel::sendSetPriority(const QString& hash, int priority, bool isAuto)
+void SharedFilesPanel::sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto)
 {
-    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+    if (!m_ipc)
         return;
 
-    IpcMessage msg(IpcMsgType::SetSharedFilePriority);
-    msg.append(hash);
-    msg.append(static_cast<qint64>(priority));
-    msg.append(isAuto);
-    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-        requestSharedFiles();
-    });
+    m_ipc->sendBatchRequest(hashes, [priority, isAuto](const QString& hash) {
+        IpcMessage msg(IpcMsgType::SetSharedFilePriority);
+        msg.append(hash);
+        msg.append(static_cast<qint64>(priority));
+        msg.append(isAuto);
+        return msg;
+    }, this, [this]() { requestSharedFiles(); });
+}
+
+void SharedFilesPanel::sendDeleteFilesBatch(const QStringList& hashes)
+{
+    if (hashes.isEmpty() || !m_ipc || !m_ipc->isConnected())
+        return;
+
+    const SharedFileRow* first = m_model->findByHash(hashes.value(0));
+    const QString question = (hashes.size() == 1)
+        ? tr("Are you sure you want to permanently delete \"%1\" from disk?")
+              .arg(first ? first->fileName : hashes.constFirst())
+        : tr("Are you sure you want to permanently delete %n selected file(s) from disk?",
+             nullptr, static_cast<int>(hashes.size()));
+
+    if (QMessageBox::warning(this,
+                             hashes.size() == 1 ? tr("Delete File") : tr("Delete Files"),
+                             question, QMessageBox::Yes | QMessageBox::No,
+                             QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    logInfo(tr("Deleting %n shared file(s) from disk", nullptr, static_cast<int>(hashes.size())));
+
+    m_ipc->sendBatchRequest(hashes, [](const QString& hash) {
+        IpcMessage msg(IpcMsgType::DeleteSharedFile);
+        msg.append(hash);
+        return msg;
+    }, this, [this]() { requestSharedFiles(); });
+}
+
+void SharedFilesPanel::sendUnshareBatch(const QStringList& hashes)
+{
+    if (hashes.isEmpty() || !m_ipc || !m_ipc->isConnected())
+        return;
+
+    const SharedFileRow* first = m_model->findByHash(hashes.value(0));
+    const QString question = (hashes.size() == 1)
+        ? tr("Remove \"%1\" from the shared files list?\n\nThe file will remain on disk.")
+              .arg(first ? first->fileName : hashes.constFirst())
+        : tr("Remove %n selected file(s) from the shared files list?\n\n"
+             "The files will remain on disk.", nullptr, static_cast<int>(hashes.size()));
+
+    if (QMessageBox::question(this,
+                              hashes.size() == 1 ? tr("Unshare File") : tr("Unshare Files"),
+                              question, QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    m_ipc->sendBatchRequest(hashes, [](const QString& hash) {
+        IpcMessage msg(IpcMsgType::UnshareFile);
+        msg.append(hash);
+        return msg;
+    }, this, [this]() { requestSharedFiles(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -944,8 +1046,10 @@ void SharedFilesPanel::updateStatsTab()
         m_barTotalTransferred->setValue(0);
     };
 
-    const QModelIndex proxyIdx = m_fileView->selectionModel()->currentIndex();
-    if (!proxyIdx.isValid()) {
+    // The anchor row, not the whole selection: a popularity rank or a percentage bar
+    // summed over several files would mean nothing.
+    const SharedFileRow* f = currentFile();
+    if (!f) {
         m_statSessionRequests->setText(QStringLiteral("0"));
         m_statSessionAccepted->setText(QStringLiteral("0"));
         m_statSessionTransferred->setText(QStringLiteral("0 B"));
@@ -959,11 +1063,6 @@ void SharedFilesPanel::updateStatsTab()
         clearBars();
         return;
     }
-
-    const QModelIndex srcIdx = m_proxy->mapToSource(proxyIdx);
-    const auto* f = m_model->fileAt(srcIdx.row());
-    if (!f)
-        return;
 
     m_statSessionRequests->setText(QString::number(f->requests));
     m_statSessionAccepted->setText(QString::number(f->acceptedUploads));
@@ -996,16 +1095,22 @@ void SharedFilesPanel::updateStatsTab()
 
 void SharedFilesPanel::updateEd2kTab()
 {
-    const auto* f = selectedFile();
-    if (!f) {
+    const QStringList hashes = selectedHashes();
+    if (hashes.isEmpty()) {
         m_ed2kText->clear();
         m_ed2kHashsetCheck->setEnabled(false);
+        m_ed2kLastHashes.clear();
         return;
     }
 
-    // Enable/disable checkboxes based on file capabilities
-    m_ed2kHashsetCheck->setEnabled(!f->partHashesStr.isEmpty());
-    if (f->partHashesStr.isEmpty())
+    // A hashset can be offered as soon as any selected file carries one; the daemon
+    // simply leaves it out of the links that have none.
+    const auto rows = rowsForHashes(hashes);
+    const bool anyHashset = std::ranges::any_of(rows, [](const SharedFileRow* f) {
+        return !f->partHashesStr.isEmpty();
+    });
+    m_ed2kHashsetCheck->setEnabled(anyHashset);
+    if (!anyHashset)
         m_ed2kHashsetCheck->setChecked(false);
 
     rebuildEd2kLink();
@@ -1013,77 +1118,108 @@ void SharedFilesPanel::updateEd2kTab()
 
 void SharedFilesPanel::rebuildEd2kLink()
 {
-    const auto* f = selectedFile();
-    if (!f) {
+    const QStringList hashes = selectedHashes();
+    if (hashes.isEmpty()) {
         m_ed2kText->clear();
+        m_ed2kLastHashes.clear();
         return;
     }
 
-    // Build ed2k link from components, matching AbstractFile::getED2kLink()
-    // The basic ed2kLink contains: ed2k://|file|NAME|SIZE|HASH|[h=AICH|]/
-    // We rebuild with optional parts based on checkbox state
-
-    // Parse base components from the existing basic link
-    // Format: ed2k://|file|ENCODED_NAME|SIZE|HASH|[h=AICH|]/
-    const QString& base = f->ed2kLink;
-    // Find the hash field (4th pipe-delimited segment)
-    // ed2k://|file|NAME|SIZE|HASH|.../
-    int pipeCount = 0;
-    int hashStart = -1;
-    int hashEnd = -1;
-    for (int i = 0; i < base.size(); ++i) {
-        if (base[i] == u'|') {
-            ++pipeCount;
-            if (pipeCount == 4)
-                hashStart = i + 1;
-            else if (pipeCount == 5) {
-                hashEnd = i;
-                break;
-            }
+    if (!m_ipc || !m_ipc->isConnected()) {
+        // Last known basic links, straight from the model.
+        QStringList basic;
+        for (const SharedFileRow* f : rowsForHashes(hashes)) {
+            if (!f->ed2kLink.isEmpty())
+                basic << f->ed2kLink;
         }
-    }
-
-    if (hashStart < 0 || hashEnd < 0) {
-        m_ed2kText->setPlainText(base);
+        m_ed2kText->setPlainText(basic.join(QLatin1Char('\n')));
+        m_ed2kLastHashes.clear();
         return;
     }
 
-    // Extract components from the base link
-    // "ed2k://|file|" is 14 chars
-    const QString encodedName = base.mid(14, base.indexOf(u'|', 14) - 14);
-    const auto nameEnd = 14 + encodedName.size();
-    const QString sizeStr = base.mid(nameEnd + 1, base.indexOf(u'|', nameEnd + 1) - nameEnd - 1);
-    const QString hashStr = base.mid(hashStart, hashEnd - hashStart);
+    const int flags = (m_ed2kHashsetCheck->isChecked()  ? 1 : 0)
+                    | (m_ed2kHostnameCheck->isChecked() ? 2 : 0)
+                    | (m_ed2kHtmlCheck->isChecked()     ? 4 : 0);
 
-    // Reconstruct link
-    QString link = QStringLiteral("ed2k://|file|%1|%2|%3|").arg(encodedName, sizeStr, hashStr);
+    // This runs on every poll. Nothing changed means nothing to ask for — MFC's
+    // CED2kLinkDlg::UpdateLink skips the same way.
+    if (flags == m_ed2kLastFlags && hashes == m_ed2kLastHashes)
+        return;
 
-    // Optional hashset (part hashes)
-    if (m_ed2kHashsetCheck->isChecked() && !f->partHashesStr.isEmpty())
-        link += f->partHashesStr;
+    // Building links for a selection nobody is looking at would be pure socket traffic.
+    if (m_ed2kTabIndex >= 0 && m_bottomTabs->currentIndex() != m_ed2kTabIndex)
+        return;
 
-    // AICH hash (always include if available)
-    if (!f->aichHashStr.isEmpty())
-        link += f->aichHashStr;
+    m_ed2kLastHashes = hashes;
+    m_ed2kLastFlags = flags;
 
-    // Hostname source
-    if (m_ed2kHostnameCheck->isChecked()) {
-        const QString& hostname = thePrefs.ed2kHostname();
-        if (hostname.contains(u'.'))
-            link += QStringLiteral("|sources,%1:%2|/").arg(hostname).arg(thePrefs.port());
-        else
-            link += QChar(u'/');
-    } else {
-        link += QChar(u'/');
+    // Bumped here and nowhere else — the clipboard action shares requestEd2kLinks() and
+    // must not void a tab refresh that is still in flight.
+    const int generation = ++m_ed2kLinkGeneration;
+
+    requestEd2kLinks(hashes, flags & 1, flags & 2, flags & 4,
+        [this, generation](const QStringList& links, bool hintAvailable) {
+            // Drop a stale reply: the selection or a checkbox may have changed since.
+            if (generation != m_ed2kLinkGeneration)
+                return;
+            if (links.isEmpty())
+                return;   // nothing resolved — keep the last good text
+
+            // Plain text even in HTML mode: "Add HTML" is there so the user can copy the
+            // <a href=…> source, exactly as MFC's CED2kLinkDlg shows it in a CEdit.
+            m_ed2kText->setPlainText(links.join(QLatin1Char('\n')));
+
+            // A source hint is offerable when the daemon has something to advertise —
+            // an IPv6-only advertise included, which the old "hostname contains a dot"
+            // test could never enable.
+            m_ed2kHostnameCheck->setEnabled(hintAvailable);
+            m_ed2kHostnameCheck->setToolTip(hintAvailable
+                ? tr("Add your hostname or public IPv6 as a source")
+                : tr("Requires a hostname configured in Preferences, or a public IPv6"));
+            if (!hintAvailable && m_ed2kHostnameCheck->isChecked())
+                m_ed2kHostnameCheck->setChecked(false);   // re-triggers this request
+        });
+}
+
+void SharedFilesPanel::requestEd2kLinks(
+    const QStringList& hashes, bool hashset, bool sourceHint, bool html,
+    std::function<void(const QStringList& links, bool hintAvailable)> apply)
+{
+    if (hashes.isEmpty() || !m_ipc || !m_ipc->isConnected())
+        return;
+
+    const int count = std::min<int>(static_cast<int>(hashes.size()), Ipc::MaxEd2kLinkBatch);
+    if (count < hashes.size()) {
+        StatusBarNotifier::post(tr("Showing eD2K links for the first %1 of %2 selected files.")
+                                    .arg(count).arg(hashes.size()));
     }
 
-    // HTML wrapping
-    if (m_ed2kHtmlCheck->isChecked()) {
-        const QString fileName = f->fileName;
-        link = QStringLiteral("<a href=\"%1\">%2</a>").arg(link, fileName);
-    }
+    QCborArray hashArray;
+    for (int i = 0; i < count; ++i)
+        hashArray.append(hashes.at(i));
 
-    m_ed2kText->setPlainText(link);
+    // The daemon builds the links: the grammar lives in ED2KFileLink::toLink(), and only
+    // the core knows what may be advertised (our public IPv6 is runtime state).
+    IpcMessage req(IpcMsgType::GetEd2kLink);
+    req.append(hashArray);
+    req.append(hashset);
+    req.append(sourceHint);
+    req.append(html);
+
+    m_ipc->sendRequest(std::move(req), [apply = std::move(apply)](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+
+        const QCborArray result = resp.fieldArray(1);
+        QStringList links;
+        for (const auto& value : result.at(0).toArray()) {
+            // Empty means the daemon no longer knows that hash — skip it rather than
+            // printing a blank line.
+            if (const QString link = value.toString(); !link.isEmpty())
+                links << link;
+        }
+        apply(links, result.at(1).toBool());
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1107,19 +1243,19 @@ bool SharedFilesPanel::isArchiveFile(const QString& fileType, const QString& fil
 
 void SharedFilesPanel::updateContentTab()
 {
-    const QModelIndex proxyIdx = m_fileView->selectionModel()->currentIndex();
-    if (!proxyIdx.isValid()) {
-        m_archivePreview->clear();
-        m_mediaInfoPanel->clear();
-        m_contentStack->setCurrentIndex(0);
-        return;
-    }
+    const SharedFileRow* f = currentFile();
 
-    const QModelIndex srcIdx = m_proxy->mapToSource(proxyIdx);
-    const auto* f = m_model->fileAt(srcIdx.row());
+    // Both panels restart a background scan on every setFile(), and this runs on every
+    // poll — so do nothing at all while the shown file has not changed.
+    const QString path = f ? f->filePath : QString{};
+    if (path == m_shownContentPath)
+        return;
+    m_shownContentPath = path;
+
     if (!f) {
         m_archivePreview->clear();
         m_mediaInfoPanel->clear();
+        m_contentStack->setCurrentIndex(0);
         return;
     }
 
@@ -1220,7 +1356,25 @@ void SharedFilesPanel::copyEd2kLink()
         QApplication::clipboard()->setText(text);
 }
 
-const SharedFileRow* SharedFilesPanel::selectedFile() const
+void SharedFilesPanel::copyEd2kLinks(const QStringList& hashes)
+{
+    if (hashes.isEmpty())
+        return;
+
+    // Ask for the links rather than copying whatever the eD2K tab happens to hold: that
+    // text is stale whenever another bottom tab is showing. The checkboxes still apply —
+    // the user set them, visibly.
+    requestEd2kLinks(hashes,
+                     m_ed2kHashsetCheck->isChecked(),
+                     m_ed2kHostnameCheck->isChecked(),
+                     m_ed2kHtmlCheck->isChecked(),
+        [](const QStringList& links, bool) {
+            if (!links.isEmpty())
+                QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+        });
+}
+
+const SharedFileRow* SharedFilesPanel::currentFile() const
 {
     const QModelIndex proxyIdx = m_fileView->selectionModel()->currentIndex();
     if (!proxyIdx.isValid())
@@ -1248,32 +1402,93 @@ int SharedFilesPanel::computePopularityRank(int64_t value,
 // Selection save/restore
 // ---------------------------------------------------------------------------
 
-QString SharedFilesPanel::saveSelection() const
+QStringList SharedFilesPanel::selectedHashes() const
 {
-    const auto sel = m_fileView->selectionModel()->currentIndex();
-    if (!sel.isValid())
-        return {};
+    auto rows = m_fileView->selectionModel()->selectedRows(0);
 
-    const QModelIndex srcIdx = m_proxy->mapToSource(sel);
-    return m_model->hashAt(srcIdx.row());
+    // Selection order is the order rows were clicked; the user thinks in list order, and so
+    // do the link lists and the batch confirmations.
+    std::ranges::sort(rows, {}, &QModelIndex::row);
+
+    QStringList hashes;
+    hashes.reserve(rows.size());
+    for (const QModelIndex& proxyIdx : rows) {
+        const QString hash = m_model->hashAt(m_proxy->mapToSource(proxyIdx).row());
+        if (!hash.isEmpty() && !hashes.contains(hash))
+            hashes.append(hash);
+    }
+    return hashes;
 }
 
-void SharedFilesPanel::restoreSelection(const QString& key)
+std::vector<const SharedFileRow*> SharedFilesPanel::rowsForHashes(const QStringList& hashes) const
 {
-    if (key.isEmpty())
+    std::vector<const SharedFileRow*> rows;
+    rows.reserve(static_cast<size_t>(hashes.size()));
+    for (const QString& hash : hashes) {
+        if (const SharedFileRow* row = m_model->findByHash(hash))
+            rows.push_back(row);
+    }
+    return rows;
+}
+
+SharedFilesPanel::SelectionState SharedFilesPanel::saveSelection() const
+{
+    SelectionState state;
+    state.hashes = selectedHashes();
+    state.scrollValue = m_fileView->verticalScrollBar()->value();
+
+    // The anchor, not hashes.first(): it is what the bottom tabs show.
+    const QModelIndex current = m_fileView->selectionModel()->currentIndex();
+    if (current.isValid())
+        state.currentHash = m_model->hashAt(m_proxy->mapToSource(current).row());
+
+    return state;
+}
+
+void SharedFilesPanel::restoreSelection(const SelectionState& state)
+{
+    m_fileView->verticalScrollBar()->setValue(state.scrollValue);
+    if (state.hashes.isEmpty())
         return;
 
-    for (int row = 0; row < m_model->fileCount(); ++row) {
-        if (m_model->hashAt(row) == key) {
-            const QModelIndex srcIdx = m_model->index(row, 0);
-            const QModelIndex proxyIdx = m_proxy->mapFromSource(srcIdx);
-            if (proxyIdx.isValid()) {
-                m_fileView->setCurrentIndex(proxyIdx);
-                m_fileView->scrollTo(proxyIdx);
-            }
-            return;
-        }
+    // One pass over the model instead of a linear scan per selected hash.
+    QHash<QString, int> rowByHash;
+    rowByHash.reserve(m_model->fileCount());
+    for (int row = 0; row < m_model->fileCount(); ++row)
+        rowByHash.insert(m_model->hashAt(row), row);
+
+    QItemSelection selection;
+    QModelIndex currentIdx;
+    for (const QString& hash : state.hashes) {
+        const auto it = rowByHash.constFind(hash);
+        if (it == rowByHash.cend())
+            continue;   // gone from the share since the request went out
+
+        const QModelIndex proxyIdx = m_proxy->mapFromSource(m_model->index(it.value(), 0));
+        if (!proxyIdx.isValid())
+            continue;   // hidden by the folder filter
+
+        // selectedRows() only reports a row when every model column is selected — the
+        // hidden Folder column included — so select the whole row, not just column 0.
+        selection.select(proxyIdx,
+                         m_proxy->index(proxyIdx.row(), SharedFilesModel::ColCount - 1));
+        if (hash == state.currentHash)
+            currentIdx = proxyIdx;
     }
+
+    if (selection.isEmpty())
+        return;
+    if (!currentIdx.isValid())
+        currentIdx = selection.indexes().constFirst();   // anchor vanished — take a survivor
+
+    m_restoringSelection = true;
+    // QAbstractItemView::setCurrentIndex() would ClearAndSelect and collapse the whole
+    // selection to one row, so go through the selection model.
+    m_fileView->selectionModel()->setCurrentIndex(currentIdx, QItemSelectionModel::NoUpdate);
+    m_fileView->selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect);
+    m_restoringSelection = false;
+
+    m_fileView->verticalScrollBar()->setValue(state.scrollValue);
 }
 
 // ---------------------------------------------------------------------------
@@ -1369,31 +1584,8 @@ void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int ta
         const QCborMap details = resp.field(1).toMap();
         auto* dlg = new FileDetailDialog(details,
                                           static_cast<FileDetailDialog::Tab>(tab), this);
-        QPointer<FileDetailDialog> dlgPtr(dlg);
-        connect(dlg, &FileDetailDialog::searchKadNotes, this,
-                [this, dlgPtr](const QString& fileHash, const QString& fileName) {
-            if (!m_ipc || !m_ipc->isConnected())
-                return;
-            IpcMessage kadMsg(IpcMsgType::SearchKadNotes);
-            kadMsg.append(fileHash);
-            kadMsg.append(fileName);
-            m_ipc->sendRequest(std::move(kadMsg), [](const IpcMessage&) {});
-
-            // Kad notes arrive asynchronously over UDP; re-fetch details a couple
-            // of times so the open dialog picks up the new File Names / Comments.
-            auto refresh = [this, dlgPtr, fileHash]() {
-                if (!dlgPtr || !m_ipc || !m_ipc->isConnected())
-                    return;
-                IpcMessage req(IpcMsgType::GetSharedFileDetails);
-                req.append(fileHash);
-                m_ipc->sendRequest(std::move(req), [dlgPtr](const IpcMessage& r) {
-                    if (dlgPtr && r.fieldBool(0))
-                        dlgPtr->applyDetails(r.field(1).toMap());
-                });
-            };
-            QTimer::singleShot(8000, this, refresh);
-            QTimer::singleShot(20000, this, refresh);
-        });
+        connectEd2kLinkRequests(dlg, m_ipc);
+        connectKadNotesSearch(dlg, m_ipc, IpcMsgType::GetSharedFileDetails);
         dlg->show();
     });
 }

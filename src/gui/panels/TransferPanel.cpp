@@ -6,11 +6,13 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/AbstractListView.h"
 #include "controls/ClientListModel.h"
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/TransferToolbar.h"
 #include "dialogs/ClientDetailDialog.h"
+#include "utils/Ed2kLinkImporter.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/WebServices.h"
 
@@ -18,7 +20,6 @@
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
-#include "protocol/ED2KLink.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -80,6 +81,7 @@ ClientRow parseClient(const QCborMap& m)
     row.remoteQueueRank = static_cast<int>(m.value(QStringLiteral("remoteQueueRank")).toInteger());
     row.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());
     row.ip              = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
+    row.addr            = m.value(QStringLiteral("addr")).toString();
     row.port            = static_cast<uint16_t>(m.value(QStringLiteral("port")).toInteger());
     row.isBanned        = m.value(QStringLiteral("isBanned")).toBool();
     row.softwareId      = static_cast<int>(m.value(QStringLiteral("softwareId")).toInteger(-1));
@@ -453,24 +455,11 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive);
         pasteAct->setEnabled(hasFileLink && m_ipc && m_ipc->isConnected());
         connect(pasteAct, &QAction::triggered, this, [this, clipText]() {
-            const QStringList lines = clipText.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-            for (const QString& line : lines) {
-                auto parsed = parseED2KLink(line.trimmed());
-                if (!parsed)
-                    continue;
-                auto* fileLink = std::get_if<ED2KFileLink>(&*parsed);
-                if (!fileLink)
-                    continue;
-                // Convert 16-byte MD4 hash to hex string
-                QString hashHex;
-                for (uint8 b : fileLink->hash)
-                    hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
-                Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
-                msg.append(hashHex);
-                msg.append(fileLink->name);
-                msg.append(static_cast<qint64>(fileLink->size));
-                m_ipc->sendRequest(std::move(msg));
-            }
+            // Manual: picking the menu entry is the confirmation, and a completed or
+            // cancelled file is left alone so it can be re-downloaded on purpose.
+            Ed2kLinkImporter::importLinks(clipText, m_ipc, this,
+                                          Ed2kLinkImporter::Source::Manual,
+                                          Ed2kLinkImporter::Prompt::Silent);
         });
     }
 
@@ -617,7 +606,8 @@ QWidget* TransferPanel::createDownloadsSection()
     catProxy->setSortRole(Qt::UserRole);
     m_categoryProxy = catProxy;
 
-    m_downloadView = new QTreeView;
+    auto* downloadView = new ListTreeView;
+    m_downloadView = downloadView;
     m_downloadView->setModel(m_categoryProxy);
     m_downloadView->setRootIsDecorated(true);
     m_downloadView->setAlternatingRowColors(true);
@@ -697,20 +687,10 @@ QWidget* TransferPanel::createDownloadsSection()
     auto* header = m_downloadView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(90);
-    header->resizeSection(DownloadListModel::ColFileName, 220);
-    header->resizeSection(DownloadListModel::ColSize, 65);
-    header->resizeSection(DownloadListModel::ColCompleted, 65);
-    header->resizeSection(DownloadListModel::ColSpeed, 65);
-    header->resizeSection(DownloadListModel::ColProgress, 90);
-    header->resizeSection(DownloadListModel::ColSources, 65);
-    header->resizeSection(DownloadListModel::ColPriority, 70);
-    header->resizeSection(DownloadListModel::ColStatus, 65);
-    header->resizeSection(DownloadListModel::ColRemaining, 80);
-    header->resizeSection(DownloadListModel::ColSeenComplete, 80);
-    header->resizeSection(DownloadListModel::ColLastReception, 80);
-    header->resizeSection(DownloadListModel::ColCategory, 60);
-    header->resizeSection(DownloadListModel::ColAddedOn, 120);
-    theUiState.bindHeaderView(header, QStringLiteral("downloads"));
+    // Name, Size, Completed, Speed, Progress, Sources, Priority, Status,
+    // Remaining, Last Seen Complete, Last Reception, Category, Added On.
+    downloadView->bindColumns(QStringLiteral("downloads"),
+        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120});
 
     layout->addWidget(m_downloadView, 1);
 
@@ -743,10 +723,23 @@ QWidget* TransferPanel::createBottomPane()
     // Bottom client stack — 4 separate views
     m_bottomClientStack = new QStackedWidget;
 
-    m_uploadingView   = createClientView(m_uploadingModel,   QStringLiteral("clientsUploading2"));
-    m_downloadingView = createClientView(m_downloadingModel, QStringLiteral("clientsDownloading2"));
-    m_onQueueView     = createClientView(m_onQueueModel,     QStringLiteral("clientsOnQueue2"));
-    m_knownView       = createClientView(m_knownModel,       QStringLiteral("clientsKnown2"));
+    // Column widths follow ClientListModel::headerLabel() order. The keys carry a
+    // "3" because the "2" generation was saved with a flat 100 px per column;
+    // reusing them would let that stale layout override these defaults.
+    m_uploadingView = createClientView(m_uploadingModel, QStringLiteral("clientsUploading3"),
+        // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts
+        {150, 220, 70, 90, 80, 80, 90, 120});
+    m_downloadingView = createClientView(m_downloadingModel, QStringLiteral("clientsDownloading3"),
+        // User Name, Software, File, Speed, Available Parts, Transferred, Transferred, Source Type
+        {150, 90, 220, 70, 100, 90, 90, 100});
+    m_onQueueView = createClientView(m_onQueueModel, QStringLiteral("clientsOnQueue3"),
+        // User Name, File, File Priority, Rating, Score, Asked, Last Seen,
+        // Entered Queue, Banned, Obtained Parts
+        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120});
+    m_knownView = createClientView(m_knownModel, QStringLiteral("clientsKnown3"),
+        // User Name, Upload Status, Transferred, Download Status, Transferred Down,
+        // Software, Connected, Hash
+        {150, 100, 90, 100, 110, 90, 80, 240});
 
     m_bottomClientStack->addWidget(m_uploadingView);
     m_bottomClientStack->addWidget(m_downloadingView);
@@ -958,13 +951,14 @@ QToolBar* TransferPanel::createActionToolbar()
 }
 
 QTreeView* TransferPanel::createClientView(ClientListModel* model,
-                                            const QString& headerKey)
+                                            const QString& headerKey,
+                                            std::initializer_list<int> columnWidths)
 {
     auto* proxy = new QSortFilterProxyModel(this);
     proxy->setSourceModel(model);
     proxy->setSortRole(Qt::UserRole);
 
-    auto* view = new QTreeView;
+    auto* view = new ListTreeView;
     view->setModel(proxy);
     view->setRootIsDecorated(false);
     view->setAlternatingRowColors(true);
@@ -977,8 +971,7 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     auto* hdr = view->header();
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
-    hdr->resizeSection(0, 140); // User Name column
-    theUiState.bindHeaderView(hdr, headerKey);
+    view->bindColumns(headerKey, columnWidths);
 
     return view;
 }
@@ -1089,6 +1082,7 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());
             src.userHash        = m.value(QStringLiteral("userHash")).toString();
             src.ip              = m.value(QStringLiteral("ip")).toInteger();
+            src.addr            = m.value(QStringLiteral("addr")).toString();
             src.port            = m.value(QStringLiteral("port")).toInteger();
             src.isFriend        = m.value(QStringLiteral("isFriend")).toBool();
             if (auto spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
@@ -1232,15 +1226,11 @@ void TransferPanel::sendDownloadActionBatch(const QStringList& hashes, int actio
     default: return;
     }
 
-    auto pending = std::make_shared<int>(hashes.size());
-    for (const QString& hash : hashes) {
+    m_ipc->sendBatchRequest(hashes, [msgType](const QString& hash) {
         IpcMessage msg(msgType);
         msg.append(hash);
-        m_ipc->sendRequest(std::move(msg), [this, pending](const IpcMessage&) {
-            if (--(*pending) == 0)
-                requestDownloads();
-        });
-    }
+        return msg;
+    }, this, [this]() { requestDownloads(); });
 }
 
 void TransferPanel::sendSetPriority(const QString& hash, int priority, bool isAuto)
@@ -1259,19 +1249,16 @@ void TransferPanel::sendSetPriority(const QString& hash, int priority, bool isAu
 
 void TransferPanel::sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto)
 {
-    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+    if (!m_ipc)
         return;
-    auto pending = std::make_shared<int>(hashes.size());
-    for (const QString& hash : hashes) {
+
+    m_ipc->sendBatchRequest(hashes, [priority, isAuto](const QString& hash) {
         IpcMessage msg(IpcMsgType::SetDownloadPriority);
         msg.append(hash);
         msg.append(static_cast<qint64>(priority));
         msg.append(isAuto);
-        m_ipc->sendRequest(std::move(msg), [this, pending](const IpcMessage&) {
-            if (--(*pending) == 0)
-                requestDownloads();
-        });
-    }
+        return msg;
+    }, this, [this]() { requestDownloads(); });
 }
 
 void TransferPanel::sendClearCompleted()
@@ -1332,17 +1319,14 @@ void TransferPanel::sendStopDownload(const QString& hash)
 
 void TransferPanel::sendStopDownloadBatch(const QStringList& hashes)
 {
-    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+    if (!m_ipc)
         return;
-    auto pending = std::make_shared<int>(hashes.size());
-    for (const QString& hash : hashes) {
+
+    m_ipc->sendBatchRequest(hashes, [](const QString& hash) {
         IpcMessage msg(IpcMsgType::StopDownload);
         msg.append(hash);
-        m_ipc->sendRequest(std::move(msg), [this, pending](const IpcMessage&) {
-            if (--(*pending) == 0)
-                requestDownloads();
-        });
-    }
+        return msg;
+    }, this, [this]() { requestDownloads(); });
 }
 
 void TransferPanel::sendOpenFile(const QString& hash)
@@ -1438,18 +1422,15 @@ void TransferPanel::sendSetCategory(const QString& hash, int category)
 
 void TransferPanel::sendSetCategoryBatch(const QStringList& hashes, int category)
 {
-    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+    if (!m_ipc)
         return;
-    auto pending = std::make_shared<int>(hashes.size());
-    for (const QString& hash : hashes) {
+
+    m_ipc->sendBatchRequest(hashes, [category](const QString& hash) {
         IpcMessage msg(IpcMsgType::SetDownloadCategory);
         msg.append(hash);
         msg.append(static_cast<qint64>(category));
-        m_ipc->sendRequest(std::move(msg), [this, pending](const IpcMessage&) {
-            if (--(*pending) == 0)
-                requestDownloads();
-        });
-    }
+        return msg;
+    }, this, [this]() { requestDownloads(); });
 }
 
 void TransferPanel::showDownloadDetails(const QString& hash)
@@ -1474,31 +1455,8 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
             return;
         const QCborMap details = resp.field(1).toMap();
         auto* dlg = new FileDetailDialog(details, tab, this);
-        QPointer<FileDetailDialog> dlgPtr(dlg);
-        connect(dlg, &FileDetailDialog::searchKadNotes, this,
-                [this, dlgPtr](const QString& fileHash, const QString& fileName) {
-            if (!m_ipc || !m_ipc->isConnected())
-                return;
-            IpcMessage kadMsg(IpcMsgType::SearchKadNotes);
-            kadMsg.append(fileHash);
-            kadMsg.append(fileName);
-            m_ipc->sendRequest(std::move(kadMsg), [](const IpcMessage&) {});
-
-            // Kad notes arrive asynchronously over UDP; re-fetch details a couple
-            // of times so the open dialog picks up the new File Names / Comments.
-            auto refresh = [this, dlgPtr, fileHash]() {
-                if (!dlgPtr || !m_ipc || !m_ipc->isConnected())
-                    return;
-                IpcMessage req(IpcMsgType::GetDownloadDetails);
-                req.append(fileHash);
-                m_ipc->sendRequest(std::move(req), [dlgPtr](const IpcMessage& r) {
-                    if (dlgPtr && r.fieldBool(0))
-                        dlgPtr->applyDetails(r.field(1).toMap());
-                });
-            };
-            QTimer::singleShot(8000, this, refresh);
-            QTimer::singleShot(20000, this, refresh);
-        });
+        connectEd2kLinkRequests(dlg, m_ipc);
+        connectKadNotesSearch(dlg, m_ipc, IpcMsgType::GetDownloadDetails);
         dlg->show();
     });
 }
@@ -1912,8 +1870,9 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
         const QString hash = client->userHash;
         const QString name = client->userName;
         const auto ip   = client->ip;
+        const QString addr = client->addr;
         const auto port = client->port;
-        connect(addFriendAct, &QAction::triggered, this, [this, hash, name, ip, port]() {
+        connect(addFriendAct, &QAction::triggered, this, [this, hash, name, ip, addr, port]() {
             if (!m_ipc || !m_ipc->isConnected())
                 return;
             IpcMessage msg(IpcMsgType::AddFriend);
@@ -1921,6 +1880,7 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
             msg.append(name);
             msg.append(static_cast<qint64>(ip));
             msg.append(static_cast<qint64>(port));
+            msg.append(addr);   // IPv6-capable form; ip is 0 for an IPv6 peer
             m_ipc->sendRequest(std::move(msg));
         });
     }
@@ -1995,8 +1955,9 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QPoint& gl
         const QString hash = src.userHash;
         const QString name = src.userName;
         const auto ip   = src.ip;
+        const QString addr = src.addr;
         const auto port = src.port;
-        connect(addFriendAct, &QAction::triggered, this, [this, hash, name, ip, port]() {
+        connect(addFriendAct, &QAction::triggered, this, [this, hash, name, ip, addr, port]() {
             if (!m_ipc || !m_ipc->isConnected())
                 return;
             IpcMessage msg(IpcMsgType::AddFriend);
@@ -2004,6 +1965,7 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QPoint& gl
             msg.append(name);
             msg.append(static_cast<qint64>(ip));
             msg.append(static_cast<qint64>(port));
+            msg.append(addr);   // IPv6-capable form; ip is 0 for an IPv6 peer
             m_ipc->sendRequest(std::move(msg));
         });
     }

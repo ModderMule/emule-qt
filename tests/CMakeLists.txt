@@ -95,6 +95,7 @@ emule_add_test(tst_AtomicOps        FOLDER "Platform")
 emule_add_test(tst_OtherFunctions  FOLDER "Utils")
 emule_add_test(tst_SafeFile        FOLDER "Utils")
 emule_add_test(tst_Log             FOLDER "Utils")
+emule_add_test(tst_CorroborationTally FOLDER "Utils")
 
 # Module 29c: Cryptography
 emule_add_test(tst_MD4              FOLDER "Crypto")
@@ -106,10 +107,15 @@ emule_add_test(tst_FileIdentifier   FOLDER "Crypto")
 
 # Module 29d: Networking
 emule_add_test(tst_Address            FOLDER "Net")
+emule_add_test(tst_LocalIPv6         FOLDER "Net")
 emule_add_test(tst_Packet            FOLDER "Net")
 emule_add_test(tst_EncryptedDatagram FOLDER "Net")
 emule_add_test(tst_EMSocket          FOLDER "Net")
 emule_add_test(tst_Pinger            FOLDER "Net")
+emule_add_test(tst_HostResolver      FOLDER "Net")
+emule_add_test(tst_DefaultGateway    FOLDER "Net")
+emule_add_test(tst_PortMapWire       FOLDER "PortMap")
+emule_add_test(tst_PortMapper        FOLDER "PortMap")
 
 # Module 5: Remaining networking classes
 emule_add_test(tst_LastCommonRouteFinder FOLDER "Net")
@@ -117,12 +123,13 @@ emule_add_test(tst_ServerSocket          FOLDER "Net")
 emule_add_test(tst_UDPSocket             FOLDER "Net")
 emule_add_test(tst_ListenSocket          FOLDER "Net")
 emule_add_test(tst_HttpClientReqSocket   FOLDER "Net")
+emule_add_test(tst_HttpFileDownload      FOLDER "Net")
 emule_add_test(tst_ClientUDPSocket       FOLDER "Net")
 emule_add_test(tst_TcpConnect            FOLDER "Net")
 set_tests_properties(tst_TcpConnect PROPERTIES TIMEOUT 30)
 
 # Module 29e: Firewall & UPnP
-emule_add_test(tst_UPnPManager   FOLDER "UPnP")
+emule_add_test(tst_UPnPBackend   FOLDER "PortMap")
 
 # Module 29f: Protocol
 emule_add_test(tst_Tags            FOLDER "Protocol")
@@ -200,6 +207,7 @@ emule_add_test(tst_PartFileWriteThread FOLDER "Files")
 emule_add_test(tst_PartFileConvert     FOLDER "Files")
 emule_add_test(tst_ArchiveReader       FOLDER "Archive")
 emule_add_test(tst_ArchiveRecovery     FOLDER "Archive")
+emule_add_test(tst_ArchiveUnpack       FOLDER "Archive")
 
 # Module 12: Upload Queue & Transfer Engine
 emule_add_test(tst_UploadBandwidthThrottler FOLDER "Transfer")
@@ -261,6 +269,17 @@ target_include_directories(tst_WebServicesData PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_WebServicesData PRIVATE Qt6::Widgets)
 
+# eD2K link import skip policy — pulls in IpcClient, which Ed2kLinkImporter.cpp calls into.
+emule_add_test(tst_Ed2kLinkImporter FOLDER "Ipc"
+    SOURCES tst_Ed2kLinkImporter.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Ed2kLinkImporter.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+target_include_directories(tst_Ed2kLinkImporter PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_Ed2kLinkImporter PRIVATE eMule::Ipc Qt6::Widgets)
+
 # Live network integration tests (requires real network connectivity)
 if(EMULE_LIVE_TESTS)
     emule_add_test(tst_KadLiveNetwork FOLDER "LiveNetwork")
@@ -284,7 +303,7 @@ if(EMULE_LIVE_TESTS)
 
     emule_add_test(tst_ServerLocalTest FOLDER "LiveNetwork")
     target_compile_definitions(tst_ServerLocalTest PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
-    set_tests_properties(tst_ServerLocalTest PROPERTIES LABELS "live" TIMEOUT 120)
+    set_tests_properties(tst_ServerLocalTest PROPERTIES LABELS "live" TIMEOUT 180)
 
     emule_add_test(tst_IrcLiveConnect FOLDER "LiveNetwork")
     target_compile_definitions(tst_IrcLiveConnect PRIVATE QTEST_FUNCTION_TIMEOUT=30000)
@@ -297,4 +316,8 @@ if(EMULE_LIVE_TESTS)
     emule_add_test(tst_PortTestLive FOLDER "LiveNetwork")
     target_compile_definitions(tst_PortTestLive PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
     set_tests_properties(tst_PortTestLive PROPERTIES LABELS "live" TIMEOUT 60)
+
+    emule_add_test(tst_PortMapLive FOLDER "LiveNetwork")
+    target_compile_definitions(tst_PortMapLive PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
+    set_tests_properties(tst_PortMapLive PROPERTIES LABELS "live" TIMEOUT 90)
 endif()

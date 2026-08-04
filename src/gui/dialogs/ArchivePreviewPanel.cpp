@@ -4,6 +4,7 @@
 
 #include "dialogs/ArchivePreviewPanel.h"
 #include "archive/ArchiveReader.h"
+#include "controls/AbstractListView.h"
 
 #include <QHeaderView>
 #include <QLabel>
@@ -228,14 +229,19 @@ void ArchivePreviewPanel::buildUi()
         tr("Attributes"), tr("Last Modified"), tr("Comment")
     });
 
-    m_treeView = new QTreeView(this);
+    auto* treeView = new ListTreeView(this);
+    m_treeView = treeView;
     m_treeView->setModel(m_model);
     m_treeView->setRootIsDecorated(false);
     m_treeView->setAlternatingRowColors(true);
     m_treeView->setSortingEnabled(true);
     m_treeView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    // Name is Interactive, not Stretch: a Qt-owned width can't be resized by the
+    // user, so there would be nothing to remember.
     m_treeView->header()->setStretchLastSection(true);
-    m_treeView->header()->setSectionResizeMode(ColName, QHeaderView::Stretch);
+    // Name, Size, CRC, Attributes, Last Modified, Comment.
+    treeView->bindColumns(QStringLiteral("archivePreview"),
+        {280, 90, 90, 90, 130, 160});
     mainLayout->addWidget(m_treeView, 1);
 
     // Progress bar (hidden by default)

@@ -182,21 +182,13 @@ bool ServerList::loadStaticServers(const QString& filePath)
         if (line.startsWith(QChar(0xFEFF)))
             line = line.mid(1);
 
-        // Format: host:port,priority,Name
-        qsizetype colonPos = line.indexOf(u':');
-        if (colonPos < 0) {
-            colonPos = line.indexOf(u',');
-            if (colonPos < 0)
-                continue;
-        }
-        const QString host = line.left(colonPos);
-        line = line.mid(colonPos + 1);
-
+        // Format: host:port,priority,Name — where host:port may be "[2001:db8::1]:4661".
         qsizetype commaPos = line.indexOf(u',');
-        if (commaPos < 0)
+        const QString hostPort = (commaPos < 0) ? line : line.left(commaPos);
+        const auto hp = parseHostPort(hostPort);
+        if (!hp)
             continue;
-        const uint16 nPort = static_cast<uint16>(line.left(commaPos).toUInt());
-        line = line.mid(commaPos + 1);
+        line = (commaPos < 0) ? QString() : line.mid(commaPos + 1);
 
         // Parse priority
         commaPos = line.indexOf(u',');
@@ -211,13 +203,17 @@ bool ServerList::loadStaticServers(const QString& filePath)
             srvName = line.trimmed();
         }
 
-        auto srv = std::make_unique<Server>(0, nPort);
-        srv->setDynIP(host);
+        // Classify: a numeric address must NOT become a dynIP, or every connect fires a
+        // pointless QDnsLookup on a literal and marks the server dead.
+        auto srv = Server::fromAddressString(hp->host, hp->port);
+        if (!srv)
+            continue;
+        const uint16 nPort = hp->port;
         srv->setName(srvName);
         srv->setStaticMember(true);
         srv->setPreference(priority);
 
-        Server* existing = findByAddress(host, nPort);
+        Server* existing = findByAddress(srv->address(), nPort);
         if (existing) {
             existing->setName(srvName);
             existing->setStaticMember(true);
@@ -243,7 +239,8 @@ bool ServerList::saveStaticServers(const QString& filePath) const
 
     for (const auto& srv : m_servers) {
         if (srv->isStaticMember()) {
-            stream << srv->address() << u':' << srv->port()
+            // addressWithPort() brackets an IPv6 literal so the line parses back.
+            stream << srv->addressWithPort()
                    << u',' << static_cast<uint32>(srv->preference())
                    << u',' << srv->name() << QStringLiteral("\r\n");
         }
@@ -276,35 +273,25 @@ int ServerList::addServersFromTextFile(const QString& filePath)
             auto linkOpt = parseED2KLink(line);
             if (linkOpt && std::holds_alternative<ED2KServerLink>(*linkOpt)) {
                 const auto& srvLink = std::get<ED2KServerLink>(*linkOpt);
-                auto srv = std::make_unique<Server>(0, srvLink.port);
-                srv->setDynIP(srvLink.address);
-                srv->setName(srvLink.address);
-                if (addServer(std::move(srv)))
-                    ++added;
+                // The link address may be an IPv4/IPv6 literal or a hostname.
+                if (auto srv = Server::fromAddressString(srvLink.address, srvLink.port)) {
+                    srv->setName(srvLink.address);
+                    if (addServer(std::move(srv)))
+                        ++added;
+                }
             }
             continue;
         }
 
-        // Try ip:port format
-        const qsizetype colonPos = line.indexOf(u':');
-        if (colonPos < 1)
+        // Try host:port format ("[2001:db8::1]:4661" included)
+        const auto hp = parseHostPort(line);
+        if (!hp)
             continue;
 
-        const QString host = line.left(colonPos);
-        bool portOk = false;
-        const uint16 nPort = static_cast<uint16>(line.mid(colonPos + 1).toUInt(&portOk));
-        if (!portOk || nPort == 0)
+        auto srv = Server::fromAddressString(hp->host, hp->port);
+        if (!srv)
             continue;
-
-        // Try to parse as numeric IP
-        QHostAddress addr(host);
-        auto srv = std::make_unique<Server>(0, nPort);
-        if (!addr.isNull()) {
-            srv->setIpAddress(Address::fromQHostAddress(addr));
-        } else {
-            srv->setDynIP(host);
-        }
-        srv->setName(host);
+        srv->setName(hp->host);
         if (addServer(std::move(srv)))
             ++added;
     }
@@ -328,9 +315,10 @@ Server* ServerList::addServer(std::unique_ptr<Server> server)
     // Reject IP-filtered servers. dynIP servers are filtered post-DNS in
     // ServerSocket::onDnsLookupFinished, so skip them here (matching MFC).
     // MFC: CServerList::AddServer() — ServerList.cpp:210-222.
+    // The Address overload is load-bearing, not a convenience: toNetworkUint32() is 0 for
+    // every IPv6 server, so the uint32 form would test the wrong value for all of them.
     if (!server->hasDynIP() && thePrefs.filterServerByIP() && theApp.ipFilter
-        && theApp.ipFilter->isFiltered(server->ipAddress().toNetworkUint32(),
-                                       thePrefs.ipFilterLevel())) {
+        && theApp.ipFilter->isFiltered(server->ipAddress(), thePrefs.ipFilterLevel())) {
         logWarning(QStringLiteral("IPFilter(addServer): filtered server %1 (%2)")
                        .arg(server->name(), theApp.ipFilter->lastHitDescription()));
         return nullptr;
@@ -344,7 +332,7 @@ Server* ServerList::addServer(std::unique_ptr<Server> server)
     if (isDuplicate(*server)) {
         Server* existing = findByAddress(server->address(), server->port());
         if (existing == nullptr)
-            existing = findByIPTcp(server->ipAddress().toNetworkUint32(), server->port());
+            existing = findByIPTcp(server->ipAddress(), server->port());
         if (existing != nullptr) {
             existing->resetFailedCount();
             emit serverUpdated(existing);
@@ -384,6 +372,28 @@ void ServerList::addServersFromPacket(const uint8* data, uint32 size)
         srv->setName(srv->address());
         if (addServer(std::move(srv)))  // handles IP-validity + dedup
             ++added;
+    }
+
+    // S5: eNode-go widens the packet with an optional trailing IPv6 block after the
+    // self-terminating v4 count — <v6count:uint8> then v6count × (<ipv6:16><port:2 LE>).
+    // Absent against a legacy server (not even a zero byte), so classic lists are
+    // unaffected; a v4-only parser simply stops here.
+    if (offset < size) {
+        const uint32 v6count = peekUInt8(data + offset);
+        ++offset;
+        if (offset + v6count * 18u <= size) {
+            for (uint32 i = 0; i < v6count; ++i) {
+                const Address v6 = Address::fromIPv6Bytes(data + offset);
+                const uint16 port = peekUInt16(data + offset + 16);
+                offset += 18;
+
+                auto srv = std::make_unique<Server>(v6, port);
+                srv->setPreference(ServerPriority::Low);
+                srv->setName(v6.toString());
+                if (addServer(std::move(srv)))  // isGoodServerIP accepts a routable IPv6
+                    ++added;
+            }
+        }
     }
 
     if (added > 0)
@@ -465,17 +475,18 @@ void ServerList::moveServerDown(const Server* server)
     }
 }
 
-void ServerList::applyUserOrder(const std::vector<std::pair<uint32, uint16>>& order)
+void ServerList::applyUserOrder(const std::vector<std::pair<Address, uint16>>& order)
 {
     std::vector<std::unique_ptr<Server>> reordered;
     reordered.reserve(m_servers.size());
     std::vector<bool> placed(m_servers.size(), false);
 
-    // Place the servers named in `order`, in the order given.
-    for (const auto& [ip, port] : order) {
+    // Place the servers named in `order`, in the order given. Matching on Address rather
+    // than its uint32 projection keeps IPv6 servers addressable — theirs is always 0.
+    for (const auto& [addr, port] : order) {
         for (size_t i = 0; i < m_servers.size(); ++i) {
             if (!placed[i] && m_servers[i]
-                && m_servers[i]->ipAddress().toNetworkUint32() == ip
+                && m_servers[i]->ipAddress() == addr
                 && m_servers[i]->port() == port) {
                 reordered.push_back(std::move(m_servers[i]));
                 placed[i] = true;
@@ -503,8 +514,13 @@ void ServerList::applyUserOrder(const std::vector<std::pair<uint32, uint16>>& or
 
 Server* ServerList::findByIPTcp(uint32 ip, uint16 port) const
 {
+    return findByIPTcp(Address::fromNetworkOrder(ip), port);
+}
+
+Server* ServerList::findByIPTcp(const Address& addr, uint16 port) const
+{
     for (const auto& srv : m_servers) {
-        if (srv->ipAddress().toNetworkUint32() == ip && srv->port() == port)
+        if (srv->ipAddress() == addr && srv->port() == port)
             return srv.get();
     }
     return nullptr;
@@ -512,8 +528,15 @@ Server* ServerList::findByIPTcp(uint32 ip, uint16 port) const
 
 Server* ServerList::findByIPUdp(uint32 ip, uint16 udpPort, bool obfuscationPorts) const
 {
+    return findByIPUdp(Address::fromNetworkOrder(ip), udpPort, obfuscationPorts);
+}
+
+Server* ServerList::findByIPUdp(const Address& addr, uint16 udpPort, bool obfuscationPorts) const
+{
+    if (addr.isNull())
+        return nullptr;
     for (const auto& srv : m_servers) {
-        if (srv->ipAddress().toNetworkUint32() == ip
+        if (srv->ipAddress() == addr
             && (udpPort == srv->port() + 4
                 || (obfuscationPorts
                     && (udpPort == srv->obfuscationPortUDP()
@@ -719,8 +742,25 @@ void ServerList::serverStats()
     // server comes due again in ~20s and falls through to the plain probe below.
     // No failed-count bump here — the obfuscated attempt is free.
     // MFC: CServerList::ServerStats() — ServerList.cpp:273-294.
-    if (!target->cryptPingReplyPending() && theApp.publicIP() != 0
-        && thePrefs.cryptLayerSupported()) {
+    //
+    // Dropping MFC's address precondition is ours. It gates on GetPublicIP() alone, which is
+    // IPv4-only, so a v6-only session never sent the obfuscated probe and fell through to the
+    // plain one — and the plain branch *does* bump the failed count, so those servers hit
+    // deadServerRetries and were reaped. As the code right here already says, the challenge is
+    // random and the reply is decrypted with that challenge rather than a key derived from our
+    // address, so the probe itself never needed an address of ours.
+    //
+    // MFC's gate exists for a different reason: the key the probe earns is stamped with our
+    // public IP (Server::setServerKeyUDP()) and serverKeyUDP() hides a key whose stamp no
+    // longer matches, so learning one at publicIP() == 0 was wasted work. It is not wasted any
+    // more — the same datagram carries the server's view of our address, adopting it fires
+    // checkForExpiredUDPKeys(), the 0-stamped key is dropped and the server is re-asked for a
+    // correctly stamped one. That costs one extra round trip and is self-healing.
+    //
+    // It also buys the reflection itself: the original eserver answers a *plain* 0x96 with the
+    // short form and only sends the trailing observed-IP field on the obfuscated channel. With
+    // the old gate we could never reach that channel in the one state the reflection is for.
+    if (!target->cryptPingReplyPending() && thePrefs.cryptLayerSupported()) {
         auto* rng = QRandomGenerator::global();
         const uint32 padding = rng->generate() & 0x0Fu;      // 0..15 padding bytes
         const uint32 rawLen = 4 + padding;
@@ -753,8 +793,8 @@ void ServerList::serverStats()
     }
 
     // Plain (non-obfuscated) status request — the fallback taken when the crypt
-    // layer is off, our public IP is unknown, or an obfuscated probe went
-    // unanswered. The challenge convention 0x55AA<random16> matches original eMule
+    // layer is off or an obfuscated probe went unanswered.
+    // The challenge convention 0x55AA<random16> matches original eMule
     // — some servers key extended reply formats off the 0x55AA marker, so keep it
     // exactly. MFC: CServerList::ServerStats() — ServerList.cpp:295-316.
     target->setCryptPingReplyPending(false);
@@ -812,14 +852,15 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
     //  +32  uint16 udpObfuscationPort  (size >= 40)
     //  +34  uint16 tcpObfuscationPort  (size >= 40)
     //  +36  uint32 serverUDPKey        (size >= 40)
-    // Anything past 40 bytes is a vendor extension and is ignored (ed2kNET
+    //  +40  uint32 observedClientIPv4  (size == 44 exactly — see below)
+    // Anything else past 40 bytes is a vendor extension and is ignored (ed2kNET
     // appends a tagged X25519 public key here) — tolerate, do not reject.
     if (data == nullptr || size < 12)
         return;
 
     // The reply arrives on the server's UDP port (tcpPort + 4) or its
     // obfuscation port; findByIPUdp handles both.
-    Server* server = findByIPUdp(from.address().toNetworkUint32(), from.port(), true);
+    Server* server = findByIPUdp(from.address(), from.port(), true);
     if (server == nullptr) {
         logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from unknown server %1:%2")
                      .arg(ipstr(from.address()))
@@ -867,15 +908,30 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
     if (size >= 40) {
         udpObfPort = peekUInt16(data + 32);
         tcpObfPort = peekUInt16(data + 34);
-        // setServerKeyUDP() stamps our current public IP itself, as MFC does.
-        server->setServerKeyUDP(peekUInt32(data + 36));
 
-        if (size > 40) {
+        // Consume the reflected address BEFORE stamping the UDP key. Adopting it can move
+        // theApp.publicIP(), and setServerKeyUDP() stamps whatever publicIP() is at that
+        // instant (Server.cpp:154); stamping first would bind this key to the pre-adoption
+        // address and Server::serverKeyUDP() would then hide it until the next stat ping —
+        // up to UDPSERVSTATREASKTIME (4.5 h) away.
+        //
+        // Exactly 44, never ">= 44": ed2kNET extends this same packet past +40 with a tag
+        // block whose leading bytes would decode as a plausible address, so a longer tail
+        // must keep taking the vendor-extension path. A compact 4-byte tag block could in
+        // theory land on exactly 44 and pass the ladder below; two independent servers would
+        // have to emit the identical tail for that to be adopted, which is what the
+        // distinct-server threshold is for.
+        if (size == 44) {
+            noteObservedIPv4(*server, from, peekUInt32(data + 40));
+        } else if (size > 40) {
             logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 has %2 extra bytes "
                                     "(vendor extension, ignored)")
                          .arg(server->name())
                          .arg(size - 40));
         }
+
+        // setServerKeyUDP() stamps our current public IP itself, as MFC does.
+        server->setServerKeyUDP(peekUInt32(data + 36));
     }
 
     // Apply default obfuscation ports when a short packet carried no port data
@@ -933,7 +989,7 @@ void ServerList::processDescResponse(const uint8* data, uint32 size, const Endpo
     if (data == nullptr || size == 0)
         return;
 
-    Server* server = findByIPUdp(from.address().toNetworkUint32(), from.port(), true);
+    Server* server = findByIPUdp(from.address(), from.port(), true);
     if (server == nullptr)
         return;
 
@@ -1062,8 +1118,12 @@ bool ServerList::isDuplicate(const Server& server) const
     if (findByAddress(server.address(), server.port()))
         return true;
 
-    // For non-dynIP servers, also check by IP + port
-    if (!server.hasDynIP() && !server.ipAddress().isNull() && findByIPTcp(server.ipAddress().toNetworkUint32(), server.port()))
+    // For non-dynIP servers, also check by IP + port. Address-typed: projecting through
+    // toNetworkUint32() gave 0 for an IPv6 server, which then matched the first entry
+    // with a null address (an unresolved dynIP server) — so a v6 server was dropped as
+    // that server's "duplicate", resetting its failed count too.
+    if (!server.hasDynIP() && !server.ipAddress().isNull()
+        && findByIPTcp(server.ipAddress(), server.port()))
         return true;
 
     return false;
@@ -1080,6 +1140,51 @@ void ServerList::adjustPositionsAfterRemoval(size_t removedIndex)
     adjust(m_serverPos);
     adjust(m_searchServerPos);
     adjust(m_statServerPos);
+}
+
+void ServerList::noteObservedIPv4(const Server& server, const Endpoint& from, uint32 raw)
+{
+    // Reached only after the challenge echoed in this reply matched one we generated, so an
+    // off-path forger has to guess a 32-bit value. That binding is what makes a single
+    // datagram worth counting as a vote at all; the rest is plausibility.
+    const QString who = server.name().isEmpty() ? ipstr(server.ipAddress().toNetworkUint32())
+                                                : server.name();
+    const auto reject = [&who](const QString& why) {
+        logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — %2").arg(who, why));
+    };
+
+    // A v4 reflection cannot describe a path it did not arrive on. Servers omit the field
+    // entirely for an IPv6 requester; one that sends it anyway is describing someone else.
+    if (!from.address().isIPv4()) {
+        reject(QStringLiteral("reflected IPv4 ignored — the reply arrived over IPv6"));
+        return;
+    }
+    if (raw == 0)
+        return;   // documented "no routable IPv4 for you" encoding; not worth a line
+
+    // Same rule and the same reason as OP_IDCHANGE's observed IP (ServerSocket.cpp:196-198):
+    // the whole point of the field is to report a routable address.
+    if (isLowID(raw)) {
+        reject(QStringLiteral("reflected IPv4 %1 is in the LowID range — ignored")
+                   .arg(ipstr(raw)));
+        return;
+    }
+
+    const Address observed = Address::fromNetworkOrder(raw);
+    if (!observed.isPublicIP()) {
+        reject(QStringLiteral("reflected IPv4 %1 is not publicly routable — ignored")
+                   .arg(observed.toString()));
+        return;
+    }
+    if (observed == server.ipAddress()) {
+        reject(QStringLiteral("reflected IPv4 %1 is the server's own address — ignored")
+                   .arg(observed.toString()));
+        return;
+    }
+
+    // One host, one vote: keyed on the address the datagram actually came from, so two
+    // servers sharing a host correctly count once.
+    theApp.recordServerObservedIP(observed, from.address(), who);
 }
 
 } // namespace eMule

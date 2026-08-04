@@ -7,7 +7,9 @@
 #include "app/UiState.h"
 #include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
+#include "controls/AbstractListView.h"
 #include "panels/StatisticsPanel.h"
+#include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
 
 #include "IpcMessage.h"
@@ -40,9 +42,6 @@
 #include <QScrollArea>
 #include <QSoundEffect>
 #include <QMessageBox>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QLocale>
 #include <QPainter>
 #include <QProcess>
@@ -55,6 +54,7 @@
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QUrlQuery>
 #include <QDialogButtonBox>
 #include <QDirIterator>
 #include <QVBoxLayout>
@@ -135,8 +135,13 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
     connect(m_applyBtn, &QPushButton::clicked, this, &OptionsDialog::onApply);
 
-    // Restore last selected page
-    m_sidebar->setCurrentRow(theUiState.optionsLastPage());
+    // Restore last selected page — General when unset or out of range (a stale
+    // index from an older build must not silently land on some other page).
+    const int storedPage = theUiState.optionsLastPage();
+    const int lastPage =
+        (storedPage >= 0 && storedPage < PageCount) ? storedPage : int{PageGeneral};
+    m_sidebar->setCurrentRow(lastPage);
+    onPageChanged(lastPage);
 
     // Load current settings into controls (before wiring change signals
     // so that loading doesn't immediately mark the dialog dirty).
@@ -192,6 +197,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_overheadCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_kadEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ed2kEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_separateIPv6QueueCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Server page
     connect(m_addServersFromServerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -283,6 +289,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_a4afSaveCpuCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_disableArchPreviewCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ed2kHostnameEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_ed2kLinkAdvertiseIPv6Check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_checkDiskspaceCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_minFreeDiskSpaceSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_commitFilesGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
@@ -306,8 +313,11 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_enableIpcLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_startCoreWithConsoleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_closeUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_skipWANIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_skipWANPPPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_portMapPcpCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_portMapNatPmpCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_portMapUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_portMapIPv6Check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_portMapLeaseSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_fileBufferSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_queueSizeSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -382,6 +392,17 @@ void OptionsDialog::selectPage(int page)
         m_sidebar->setCurrentRow(page);
 }
 
+void OptionsDialog::done(int result)
+{
+    // Remember the page across every close path — OK, Cancel, Esc and the
+    // window close button all route through QDialog::done().
+    const int row = m_sidebar->currentRow();
+    if (row >= 0 && row < PageCount)
+        theUiState.setOptionsLastPage(row);
+
+    QDialog::done(result);
+}
+
 // ---------------------------------------------------------------------------
 // Slots
 // ---------------------------------------------------------------------------
@@ -398,14 +419,12 @@ void OptionsDialog::onPageChanged(int row)
 
 void OptionsDialog::onOk()
 {
-    theUiState.setOptionsLastPage(m_sidebar->currentRow());
     saveSettings();
     accept();
 }
 
 void OptionsDialog::onApply()
 {
-    theUiState.setOptionsLastPage(m_sidebar->currentRow());
     saveSettings();
     m_applyBtn->setEnabled(false);
 }
@@ -913,17 +932,17 @@ QWidget* OptionsDialog::createConnectionPage()
     portLayout->addWidget(m_udpDisableCheck, 1, 2);
 
     auto* testPortsBtn = new QPushButton(tr("Test Ports"), portGroup);
-    connect(testPortsBtn, &QPushButton::clicked, this, [this] {
-        int tcp = m_tcpPortSpin->value();
-        int udp = m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value();
-        QDesktopServices::openUrl(QUrl(
-            QStringLiteral("https://porttest.emule-project.net/connectiontest.php?tcpport=%1&udpport=%2")
-                .arg(tcp).arg(udp)));
-    });
+    connect(testPortsBtn, &QPushButton::clicked, this, [this] { openPortTest(); });
     portLayout->addWidget(testPortsBtn, 1, 3);
 
     m_upnpCheck = new QCheckBox(tr("Use UPnP to Setup Ports"), portGroup);
-    portLayout->addWidget(m_upnpCheck, 2, 0, 1, 4);
+    portLayout->addWidget(m_upnpCheck, 2, 0, 1, 2);
+
+    // Real forwarding status, rather than the first-start wizard's 30-second
+    // guess. Populated from GetNetworkInfo's portmap section.
+    m_portMapStatusLabel = new QLabel(tr("Port forwarding: unknown"), portGroup);
+    m_portMapStatusLabel->setEnabled(false);
+    portLayout->addWidget(m_portMapStatusLabel, 2, 2, 1, 2);
 
     layout->addWidget(portGroup);
 
@@ -975,6 +994,12 @@ QWidget* OptionsDialog::createConnectionPage()
     netLayout->addWidget(m_kadEnabledCheck);
     m_ed2kEnabledCheck = new QCheckBox(tr("eD2K"), netGroup);
     netLayout->addWidget(m_ed2kEnabledCheck);
+    m_separateIPv6QueueCheck = new QCheckBox(tr("Separate IPv6 queue"), netGroup);
+    m_separateIPv6QueueCheck->setToolTip(
+        tr("Alternate freed upload slots between IPv4 and IPv6 clients when both are "
+           "waiting, so IPv6 peers are not outbid on score alone. When only one family "
+           "is waiting, no slot is held back."));
+    netLayout->addWidget(m_separateIPv6QueueCheck);
     row4->addWidget(netGroup);
 
     layout->addLayout(row4);
@@ -1395,14 +1420,14 @@ QWidget* OptionsDialog::createFilesPage()
             tr("Define patterns to automatically clean up filenames of new downloads.\n"
                "Each rule replaces a regex pattern with a replacement string.")));
 
-        auto* table = new QTreeWidget(dlg);
+        auto* table = new ListTreeWidget(dlg);
         table->setHeaderLabels({tr("Pattern"), tr("Replacement"), tr("Enabled")});
         table->setRootIsDecorated(false);
         table->setColumnCount(3);
-        table->header()->setStretchLastSection(false);
-        table->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-        table->header()->setSectionResizeMode(1, QHeaderView::Stretch);
-        table->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+        // Interactive, not Stretch/ResizeToContents: a Qt-owned width can't be
+        // resized by the user, so there would be nothing to remember.
+        table->header()->setStretchLastSection(true);
+        table->bindColumns(QStringLiteral("optionsFilenameRules"), {240, 200, 90});
         layout->addWidget(table);
 
         // Default cleanup rules (common in eMule)
@@ -1813,6 +1838,8 @@ QWidget* OptionsDialog::createIRCPage()
     // --- Miscellaneous group ---
     auto* miscGroup = new QGroupBox(tr("Miscellaneous"), page);
     auto* miscLayout = new QVBoxLayout(miscGroup);
+    // Not a ListTreeWidget: single column with a hidden header, so there is no
+    // column layout to persist.
     m_ircMiscTree = new QTreeWidget(miscGroup);
     m_ircMiscTree->setHeaderHidden(true);
     m_ircMiscTree->setRootIsDecorated(true);
@@ -1982,7 +2009,8 @@ QWidget* OptionsDialog::createSecurityPage()
 
     // Update from URL row
     ipFilterLayout->addWidget(new QLabel(
-        tr("Update from URL: (filter.dat- or PeerGuardian-format)"), ipFilterGroup));
+        tr("Update from URL: (filter.dat- or PeerGuardian-format, .gz/.zip accepted)"),
+        ipFilterGroup));
     auto* urlRow = new QHBoxLayout;
     m_ipFilterUpdateUrlEdit = new QLineEdit(ipFilterGroup);
     m_ipFilterUpdateUrlEdit->setPlaceholderText(tr("http://example.com/ipfilter.dat"));
@@ -1994,30 +2022,51 @@ QWidget* OptionsDialog::createSecurityPage()
             return;
         loadBtn->setEnabled(false);
         loadBtn->setText(tr("Loading..."));
-        auto* nam = new QNetworkAccessManager(this);
-        auto* reply = nam->get(QNetworkRequest(QUrl(url)));
-        connect(reply, &QNetworkReply::finished, this, [this, reply, loadBtn, nam]() {
-            reply->deleteLater();
-            nam->deleteLater();
-            loadBtn->setEnabled(true);
-            loadBtn->setText(tr("Load"));
-            if (reply->error() != QNetworkReply::NoError) {
-                QMessageBox::warning(this, tr("IP Filter"),
-                    tr("Failed to download IP filter: %1").arg(reply->errorString()));
-                return;
-            }
-            const QString path = QDir(thePrefs.configDir()).filePath(QStringLiteral("ipfilter.dat"));
-            QFile f(path);
-            if (f.open(QIODevice::WriteOnly)) {
-                f.write(reply->readAll());
+
+        // Most public lists ship compressed; the names are the ones MFC looks for inside
+        // an archive (srchybrid/PPgSecurity.cpp:246-250).
+        eMule::HttpFileDownload::Options opts;
+        opts.preferredNames = {QStringLiteral("ipfilter.dat"),
+                               QStringLiteral("guarding.p2p"),
+                               QStringLiteral("guardian.p2p")};
+
+        eMule::HttpFileDownload::get(this, QUrl(url), opts,
+            [this, loadBtn](bool ok, const QByteArray& data, const QString& entryName,
+                            const QString& error) {
+                loadBtn->setEnabled(true);
+                loadBtn->setText(tr("Load"));
+
+                if (!ok) {
+                    QMessageBox::warning(this, tr("IP Filter"),
+                        tr("Failed to download IP filter: %1").arg(error));
+                    return;
+                }
+                if (data.isEmpty()) {
+                    QMessageBox::warning(this, tr("IP Filter"),
+                        tr("Downloaded IP filter is empty."));
+                    return;
+                }
+
+                const QString path = QDir(thePrefs.configDir())
+                                         .filePath(QStringLiteral("ipfilter.dat"));
+                QFile f(path);
+                if (!f.open(QIODevice::WriteOnly)) {
+                    QMessageBox::warning(this, tr("IP Filter"),
+                        tr("Failed to save IP filter: %1").arg(f.errorString()));
+                    return;
+                }
+                f.write(data);
                 f.close();
+
                 if (m_ipc && m_ipc->isConnected()) {
                     Ipc::IpcMessage msg(Ipc::IpcMsgType::ReloadIPFilter);
                     m_ipc->sendRequest(std::move(msg));
                 }
-                QMessageBox::information(this, tr("IP Filter"), tr("IP filter updated and reloaded."));
-            }
-        });
+                QMessageBox::information(this, tr("IP Filter"),
+                    entryName.isEmpty()
+                        ? tr("IP filter updated and reloaded.")
+                        : tr("IP filter updated and reloaded (unpacked \"%1\").").arg(entryName));
+            });
     });
     urlRow->addWidget(loadBtn);
     ipFilterLayout->addLayout(urlRow);
@@ -2579,9 +2628,16 @@ QWidget* OptionsDialog::createExtendedPage()
     auto* hostnameRow = new QHBoxLayout;
     hostnameRow->addWidget(new QLabel(tr("Host name for own eD2K links:"), scrollWidget));
     m_ed2kHostnameEdit = new QLineEdit(scrollWidget);
+    m_ed2kHostnameEdit->setToolTip(tr("A DNS name or an IPv6 literal"));
     hostnameRow->addWidget(m_ed2kHostnameEdit);
     hostnameRow->addStretch();
     scrollLayout->addLayout(hostnameRow);
+
+    m_ed2kLinkAdvertiseIPv6Check = new QCheckBox(
+        tr("Add own IPv6 address to eD2K links"), scrollWidget);
+    m_ed2kLinkAdvertiseIPv6Check->setToolTip(
+        tr("Only when a public IPv6 address is confirmed. Legacy clients ignore it."));
+    scrollLayout->addWidget(m_ed2kLinkAdvertiseIPv6Check);
 
 #ifdef Q_OS_WIN
     m_sparsePartFilesCheck = new QCheckBox(
@@ -2794,11 +2850,30 @@ QWidget* OptionsDialog::createExtendedPage()
     m_closeUPnPCheck = new QCheckBox(tr("Remove UPnP port forwarding on exit"), upnpGroup);
     upnpLayout->addWidget(m_closeUPnPCheck);
 
-    m_skipWANIPCheck = new QCheckBox(tr("Skip WAN IP setup"), upnpGroup);
-    upnpLayout->addWidget(m_skipWANIPCheck);
+    // The old "Skip WAN IP/PPP setup" checkboxes are gone: miniupnpc picks the
+    // WANIPConnection vs WANPPPConnection service itself, so nothing could
+    // honour them and nothing in core ever read them.
+    m_portMapPcpCheck = new QCheckBox(tr("PCP (RFC 6887) — preferred, supports IPv6"), upnpGroup);
+    upnpLayout->addWidget(m_portMapPcpCheck);
 
-    m_skipWANPPPCheck = new QCheckBox(tr("Skip WAN PPP setup"), upnpGroup);
-    upnpLayout->addWidget(m_skipWANPPPCheck);
+    m_portMapNatPmpCheck = new QCheckBox(tr("NAT-PMP (RFC 6886) — IPv4 only"), upnpGroup);
+    upnpLayout->addWidget(m_portMapNatPmpCheck);
+
+    m_portMapUPnPCheck = new QCheckBox(tr("UPnP IGD — fallback"), upnpGroup);
+    upnpLayout->addWidget(m_portMapUPnPCheck);
+
+    m_portMapIPv6Check = new QCheckBox(tr("Open IPv6 firewall pinholes"), upnpGroup);
+    upnpLayout->addWidget(m_portMapIPv6Check);
+
+    auto* leaseRow = new QHBoxLayout();
+    leaseRow->addWidget(new QLabel(tr("Requested lease:"), upnpGroup));
+    m_portMapLeaseSpin = new QSpinBox(upnpGroup);
+    m_portMapLeaseSpin->setRange(120, 86400);
+    m_portMapLeaseSpin->setSingleStep(60);
+    m_portMapLeaseSpin->setSuffix(tr(" s"));
+    leaseRow->addWidget(m_portMapLeaseSpin);
+    leaseRow->addStretch();
+    upnpLayout->addLayout(leaseRow);
 
     scrollLayout->addWidget(upnpGroup);
 
@@ -2916,12 +2991,14 @@ QWidget* OptionsDialog::createSchedulerPage()
     mainLayout->addLayout(btnRow);
 
     // Schedule table: Title | Days | Start Time
-    m_schedTable = new QTreeWidget(page);
+    auto* schedTable = new ListTreeWidget(page);
+    m_schedTable = schedTable;
     m_schedTable->setHeaderLabels({tr("Title"), tr("Days"), tr("Start Time")});
     m_schedTable->setRootIsDecorated(false);
     m_schedTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_schedTable->setColumnCount(3);
     m_schedTable->header()->setStretchLastSection(true);
+    schedTable->bindColumns(QStringLiteral("optionsScheduler"), {200, 180, 100});
     mainLayout->addWidget(m_schedTable);
 
     // Details group box
@@ -2968,12 +3045,14 @@ QWidget* OptionsDialog::createSchedulerPage()
     // Action group
     auto* actionGroup = new QGroupBox(tr("Action"), detailsGroup);
     auto* actionLayout = new QVBoxLayout(actionGroup);
-    m_schedActionsTable = new QTreeWidget(actionGroup);
+    auto* schedActionsTable = new ListTreeWidget(actionGroup);
+    m_schedActionsTable = schedActionsTable;
     m_schedActionsTable->setHeaderLabels({tr("Action"), tr("Value")});
     m_schedActionsTable->setRootIsDecorated(false);
     m_schedActionsTable->setColumnCount(2);
     m_schedActionsTable->setContextMenuPolicy(Qt::CustomContextMenu);
     m_schedActionsTable->header()->setStretchLastSection(true);
+    schedActionsTable->bindColumns(QStringLiteral("optionsSchedulerActions"), {260, 160});
     actionLayout->addWidget(m_schedActionsTable);
     detailsLayout->addWidget(actionGroup);
 
@@ -3606,6 +3685,8 @@ void OptionsDialog::saveSettings()
         req.append(m_schedEnabledCheck->isChecked());
         req.append(QStringLiteral("networkED2K"));
         req.append(m_ed2kEnabledCheck->isChecked());
+        req.append(QStringLiteral("separateIPv6Queue"));
+        req.append(m_separateIPv6QueueCheck->isChecked());
 
         // Server page
         req.append(QStringLiteral("safeServerConnect"));
@@ -3826,10 +3907,12 @@ void OptionsDialog::saveSettings()
         req.append(m_verboseCheck->isChecked());
         req.append(QStringLiteral("closeUPnPOnExit"));
         req.append(m_closeUPnPCheck->isChecked());
-        req.append(QStringLiteral("skipWANIPSetup"));
-        req.append(m_skipWANIPCheck->isChecked());
-        req.append(QStringLiteral("skipWANPPPSetup"));
-        req.append(m_skipWANPPPCheck->isChecked());
+        req.append(QStringLiteral("portMapProtocols"));
+        req.append(static_cast<qint64>(portMapProtocolMask()));
+        req.append(QStringLiteral("portMapIPv6"));
+        req.append(m_portMapIPv6Check->isChecked());
+        req.append(QStringLiteral("portMapLeaseSecs"));
+        req.append(static_cast<qint64>(m_portMapLeaseSpin->value()));
         req.append(QStringLiteral("fileBufferSize"));
         req.append(static_cast<qint64>(m_fileBufferSlider->value()) * 16384); // slider to bytes
         req.append(QStringLiteral("useCreditSystem"));
@@ -3840,6 +3923,8 @@ void OptionsDialog::saveSettings()
         req.append(!m_disableArchPreviewCheck->isChecked());
         req.append(QStringLiteral("ed2kHostname"));
         req.append(m_ed2kHostnameEdit->text());
+        req.append(QStringLiteral("ed2kLinkAdvertiseIPv6"));
+        req.append(m_ed2kLinkAdvertiseIPv6Check->isChecked());
         req.append(QStringLiteral("showExtControls"));
         req.append(m_showExtControlsCheck->isChecked());
         req.append(QStringLiteral("commitFiles"));
@@ -4047,6 +4132,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setShowOverhead(m_overheadCheck->isChecked());
         thePrefs.setKadEnabled(m_kadEnabledCheck->isChecked());
         thePrefs.setNetworkED2K(m_ed2kEnabledCheck->isChecked());
+        thePrefs.setSeparateIPv6Queue(m_separateIPv6QueueCheck->isChecked());
 
         // Server page fallback
         thePrefs.setSafeServerConnect(m_safeServerConnectCheck->isChecked());
@@ -4145,13 +4231,15 @@ void OptionsDialog::saveSettings()
         thePrefs.setLogToDisk(m_logToDiskCheck->isChecked());
         thePrefs.setVerbose(m_verboseCheck->isChecked());
         thePrefs.setCloseUPnPOnExit(m_closeUPnPCheck->isChecked());
-        thePrefs.setSkipWANIPSetup(m_skipWANIPCheck->isChecked());
-        thePrefs.setSkipWANPPPSetup(m_skipWANPPPCheck->isChecked());
+        thePrefs.setPortMapProtocols(portMapProtocolMask());
+        thePrefs.setPortMapIPv6(m_portMapIPv6Check->isChecked());
+        thePrefs.setPortMapLeaseSecs(static_cast<uint32>(m_portMapLeaseSpin->value()));
         thePrefs.setFileBufferSize(static_cast<uint32>(m_fileBufferSlider->value()) * 16384);
         thePrefs.setUseCreditSystem(m_useCreditSystemCheck->isChecked());
         thePrefs.setA4afSaveCpu(m_a4afSaveCpuCheck->isChecked());
         thePrefs.setAutoArchivePreviewStart(!m_disableArchPreviewCheck->isChecked());
         thePrefs.setEd2kHostname(m_ed2kHostnameEdit->text());
+        thePrefs.setEd2kLinkAdvertiseIPv6(m_ed2kLinkAdvertiseIPv6Check->isChecked());
         thePrefs.setCommitFiles(m_commitFilesGroup->checkedId());
         thePrefs.setExtractMetaData(m_extractMetaDataGroup->checkedId());
         thePrefs.setLogLevel(m_logLevelSpin->value());
@@ -4248,6 +4336,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_overheadCheck->setChecked(prefs.value(QStringLiteral("showOverhead")).toBool());
     m_kadEnabledCheck->setChecked(prefs.value(QStringLiteral("kadEnabled")).toBool());
     m_ed2kEnabledCheck->setChecked(prefs.value(QStringLiteral("networkED2K")).toBool());
+    // Defaults to true — bare toBool() would silently uncheck it against an older daemon.
+    m_separateIPv6QueueCheck->setChecked(
+        prefs.value(QStringLiteral("separateIPv6Queue")).toBool(true));
 
     // Server page
     m_safeServerConnectCheck->setChecked(prefs.value(QStringLiteral("safeServerConnect")).toBool());
@@ -4398,6 +4489,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_a4afSaveCpuCheck->setChecked(prefs.value(QStringLiteral("a4afSaveCpu")).toBool());
     m_disableArchPreviewCheck->setChecked(!prefs.value(QStringLiteral("autoArchivePreviewStart")).toBool(true));
     m_ed2kHostnameEdit->setText(prefs.value(QStringLiteral("ed2kHostname")).toString());
+    m_ed2kLinkAdvertiseIPv6Check->setChecked(
+        prefs.value(QStringLiteral("ed2kLinkAdvertiseIPv6")).toBool(true));
     bool diskCheck = prefs.value(QStringLiteral("checkDiskspace")).toBool();
     m_checkDiskspaceCheck->setChecked(diskCheck);
     m_minFreeDiskSpaceSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("minFreeDiskSpace")).toInteger(20971520)) / (1024 * 1024));
@@ -4457,8 +4550,14 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_dynUpNumPingsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpNumberOfPings")).toInteger(1)));
     m_dynUpNumPingsSpin->setEnabled(ussOn);
     m_closeUPnPCheck->setChecked(prefs.value(QStringLiteral("closeUPnPOnExit")).toBool(true));
-    m_skipWANIPCheck->setChecked(prefs.value(QStringLiteral("skipWANIPSetup")).toBool());
-    m_skipWANPPPCheck->setChecked(prefs.value(QStringLiteral("skipWANPPPSetup")).toBool());
+    const auto mask = static_cast<uint32>(
+        prefs.value(QStringLiteral("portMapProtocols")).toInteger(7));
+    m_portMapPcpCheck->setChecked((mask & 1u) != 0);
+    m_portMapNatPmpCheck->setChecked((mask & 2u) != 0);
+    m_portMapUPnPCheck->setChecked((mask & 4u) != 0);
+    m_portMapIPv6Check->setChecked(prefs.value(QStringLiteral("portMapIPv6")).toBool(true));
+    m_portMapLeaseSpin->setValue(
+        static_cast<int>(prefs.value(QStringLiteral("portMapLeaseSecs")).toInteger(3600)));
     m_fileBufferSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("fileBufferSize")).toInteger(245760)) / 16384);
     m_queueSizeSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("queueSize")).toInteger(5000)) / 100);
 
@@ -4497,6 +4596,7 @@ void OptionsDialog::fillDaemonSettingsFromPrefs()
     p.insert(QStringLiteral("showOverhead"), thePrefs.showOverhead());
     p.insert(QStringLiteral("kadEnabled"), thePrefs.kadEnabled());
     p.insert(QStringLiteral("networkED2K"), thePrefs.networkED2K());
+    p.insert(QStringLiteral("separateIPv6Queue"), thePrefs.separateIPv6Queue());
     p.insert(QStringLiteral("safeServerConnect"), thePrefs.safeServerConnect());
     p.insert(QStringLiteral("autoConnectStaticOnly"), thePrefs.autoConnectStaticOnly());
     p.insert(QStringLiteral("useServerPriorities"), thePrefs.useServerPriorities());
@@ -4598,6 +4698,68 @@ void OptionsDialog::updateWebEnabledStates()
     m_webAdminHiLevCheck->setEnabled(webOn);
     m_webGuestEnabledCheck->setEnabled(webOn);
     m_webGuestPasswordEdit->setEnabled(webOn && m_webGuestEnabledCheck->isChecked());
+}
+
+// ---------------------------------------------------------------------------
+// Port test
+// ---------------------------------------------------------------------------
+
+void OptionsDialog::openPortTest()
+{
+    const int tcp = m_tcpPortSpin->value();
+    const int udp = m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value();
+
+    // Legacy IPv4-only tester, kept in case it is wanted again: porttest.emule-project.net has no
+    // AAAA record and dials back to the IPv4 address it observes, so behind CGNAT or any shared
+    // egress its verdict is guaranteed to be "failed" regardless of how the ports are configured.
+    //QDesktopServices::openUrl(QUrl(
+    //    QStringLiteral("https://porttest.emule-project.net/connectiontest.php?tcpport=%1&udpport=%2")
+    //        .arg(tcp).arg(udp)));
+
+    // The page can only observe the family the browser happens to reach it over, so hand it our
+    // own public addresses for the other one — otherwise a v6-preferring browser silently leaves
+    // IPv4 untested, and vice versa. The daemon is the authority here: it may run on a different
+    // host than this GUI, in which case our own addresses would be the wrong ones to test.
+    if (!m_ipc) {
+        openPortTestUrl(tcp, udp, QString(), QString());
+        return;
+    }
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetNetworkInfo);
+    m_ipc->sendRequest(std::move(req), [this, tcp, udp](const Ipc::IpcMessage& resp) {
+        const QCborMap ed2k = resp.fieldMap(1).value(QStringLiteral("ed2k")).toMap();
+        openPortTestUrl(tcp, udp,
+                        ed2k.value(QStringLiteral("publicIPv4")).toString(),
+                        ed2k.value(QStringLiteral("publicIPv6")).toString());
+    });
+}
+
+void OptionsDialog::openPortTestUrl(int tcpPort, int udpPort,
+                                    const QString& ipv4, const QString& ipv6)
+{
+    QUrl url(QLatin1String(kWebsiteUrl) + QLatin1String(kPortTestPath));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("tcpport"), QString::number(tcpPort));
+    query.addQueryItem(QStringLiteral("udpport"), QString::number(udpPort));
+    if (!ipv4.isEmpty())
+        query.addQueryItem(QStringLiteral("ip4"), ipv4);
+    if (!ipv6.isEmpty())
+        query.addQueryItem(QStringLiteral("ip6"), ipv6);
+    url.setQuery(query);
+
+    QDesktopServices::openUrl(url);
+}
+
+quint32 OptionsDialog::portMapProtocolMask() const
+{
+    quint32 mask = 0;
+    if (m_portMapPcpCheck != nullptr && m_portMapPcpCheck->isChecked())
+        mask |= 1u;
+    if (m_portMapNatPmpCheck != nullptr && m_portMapNatPmpCheck->isChecked())
+        mask |= 2u;
+    if (m_portMapUPnPCheck != nullptr && m_portMapUPnPCheck->isChecked())
+        mask |= 4u;
+    return mask;
 }
 
 } // namespace eMule

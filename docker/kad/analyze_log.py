@@ -162,33 +162,47 @@ def analyze_firewall_udp(lines: list[str], nodes: set[str]):
         if "Initiated UDP FW check via TCP" in l and (n := parse_node(l)):
             initiated[n] += 1
 
+    # Match the strings KadFirewallTester actually logs. There is no
+    # "firewalled: yes/no" line and no errorCode= anywhere in the core — an older
+    # revision of this script grepped for both and therefore always reported zero
+    # completions no matter how well the check ran.
     completed = {}
     for l in lines:
-        m = re.search(r"UDP FW check complete — firewalled: (\w+)", l)
-        if m and (n := parse_node(l)):
-            completed[n] = m.group(1)
+        n = parse_node(l)
+        if not n:
+            continue
+        if "UDP FW check succeeded" in l:
+            completed[n] = "no"
+        elif "UDP FW check complete — firewalled" in l:
+            completed[n] = "yes"
+        elif "UDP FW check timed out" in l:
+            completed[n] = "timeout"
 
     succeeded_count = sum(1 for v in completed.values() if v == "no")
     firewalled_count = sum(1 for v in completed.values() if v == "yes")
+    timeout_count = sum(1 for v in completed.values() if v == "timeout")
+
+    # A responder that already has the requester in its routing table sets MFC's
+    # errorAlreadyKnown flag, which cancels that probe. In a fully-meshed LAN this
+    # is the common case and is not a failure.
+    cancelled = sum(1 for l in lines if "UDP FW check from" in l and "cancelled" in l)
 
     print(f"Nodes that initiated UDP FW check: {len(initiated)}")
     print(f"  Total TCP connections for FW:    {sum(initiated.values())}")
     print(f"Nodes that completed UDP FW check: {len(completed)}")
     print(f"  Not firewalled (good):           {succeeded_count}")
     print(f"  Firewalled (bad):                {firewalled_count}")
+    print(f"  Timed out:                       {timeout_count}")
+    print(f"  Probes cancelled (already known):{cancelled}")
 
     # Individual probe results
-    probes_ok = 0
-    probes_fail = 0
-    for l in lines:
-        if "FIREWALLUDP from" in l:
-            if "errorCode=0" in l:
-                probes_ok += 1
-            elif "errorCode=1" in l:
-                probes_fail += 1
-    print(f"\nUDP FW probes received:            {probes_ok + probes_fail}")
-    print(f"  errorCode=0 (success):           {probes_ok}")
-    print(f"  errorCode=1 (failed):            {probes_fail}")
+    probes_ok = sum(1 for l in lines if "FIREWALLUDP from" in l and "— incoming port" in l)
+    probes_fail = sum(1 for l in lines if "FIREWALLUDP from" in l and "remote error code" in l)
+    probes_badport = sum(1 for l in lines if "unexpected incoming port" in l)
+    print(f"\nUDP FW probes received:            {probes_ok + probes_fail + probes_badport}")
+    print(f"  answered (incoming port):        {probes_ok}")
+    print(f"  remote error code:               {probes_fail}")
+    print(f"  unexpected incoming port:        {probes_badport}")
 
     not_completed = set(initiated) - set(completed)
     if not_completed:
@@ -530,8 +544,13 @@ def analyze_summary(lines: list[str], nodes: set[str]):
     if len(search2_nodes) < len(nodes) * 0.3:
         issues.append(f"SIGNIFICANT: Only {len(search2_nodes)}/{len(nodes)} nodes reached second random lookup")
 
-    # Check FW
-    fw_complete = {n for l in lines if "UDP FW check complete" in l and (n := parse_node(l))}
+    # Check FW. "complete" alone only ever appears on the firewalled path, so a run
+    # where every node came back open scored 0/100 here — count both outcomes.
+    fw_complete = {
+        n for l in lines
+        if ("UDP FW check succeeded" in l or "UDP FW check complete — firewalled" in l)
+        and (n := parse_node(l))
+    }
     if len(fw_complete) < len(nodes) * 0.3:
         issues.append(f"SIGNIFICANT: Only {len(fw_complete)}/{len(nodes)} nodes completed UDP FW check")
 
@@ -550,8 +569,11 @@ def analyze_summary(lines: list[str], nodes: set[str]):
     if total_tcp > 0 and unenc / total_tcp > 0.2:
         issues.append(f"MINOR: {unenc}/{total_tcp} TCP connections unencrypted ({unenc/total_tcp*100:.0f}%)")
 
-    # Check errors
-    noise = {"pipewire", "locale", "QtMultimedia", "ANSI_X3", "CrashHandler", "No QtMultimedia"}
+    # Check errors. "Previous crash dumps found" is the entrypoint reporting files
+    # left in the bind-mounted crashes/ directory by an *earlier* run — counting it
+    # as a crash makes every run after a single old dump look fatal.
+    noise = {"pipewire", "locale", "QtMultimedia", "ANSI_X3", "CrashHandler",
+             "No QtMultimedia", "Previous crash dumps found"}
     real_errors = [
         l for l in lines
         if any(kw in l.lower() for kw in ["crash", "segfault", "sigseg", "abort", "assert"])

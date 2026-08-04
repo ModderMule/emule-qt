@@ -5,6 +5,7 @@
 #include "dialogs/CollectionViewDialog.h"
 
 #include "app/IpcClient.h"
+#include "controls/AbstractListView.h"
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
 #include "utils/StringUtils.h"
@@ -46,14 +47,17 @@ CollectionViewDialog::CollectionViewDialog(const Collection& collection,
     layout->addWidget(new QLabel(tr("Collection List (%1)").arg(collection.fileCount())));
 
     // File tree
-    m_tree = new QTreeWidget(this);
+    auto* tree = new ListTreeWidget(this);
+    m_tree = tree;
     m_tree->setHeaderLabels({tr("File Name"), tr("Size"), tr("Hash")});
     m_tree->setRootIsDecorated(false);
     m_tree->setAlternatingRowColors(true);
     m_tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_tree->setSortingEnabled(true);
+    // File Name is Interactive, not Stretch: a Qt-owned width can't be resized
+    // by the user, so there would be nothing to remember.
     m_tree->header()->setStretchLastSection(true);
-    m_tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    tree->bindColumns(QStringLiteral("collectionView"), {280, 90, 230});
 
     for (const auto& [key, cf] : collection.files()) {
         auto* item = new QTreeWidgetItem(m_tree);

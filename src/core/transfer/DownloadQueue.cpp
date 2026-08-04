@@ -11,6 +11,8 @@
 #include "kademlia/Kademlia.h"
 #include "client/DeadSourceList.h"
 #include "client/UpDownClient.h"
+#include "client/URLClient.h"
+#include "net/HostResolver.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
@@ -36,6 +38,11 @@
 
 
 namespace eMule {
+
+/// ED2K user ID standing in for "this source has no usable IPv4". A value below
+/// 0x01000000 reads back as a LowID, which is exactly the semantics we want; Kad buddy
+/// sources use the same marker.
+static constexpr uint32 kNoIPv4SourceId = 1;
 
 // ===========================================================================
 // Construction / Destruction
@@ -274,9 +281,10 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
         return false;
     }
 
-    // IPFilter check — reject filtered IPs
+    // IPFilter check — reject filtered IPs. The Address overload covers both families
+    // and keeps IPv6 sources out of the uint32 path, where they would collapse to 0.
     if (m_ipFilter && !source->userAddress().isNull()) {
-        if (m_ipFilter->isFiltered(source->userAddress().toNetworkUint32())) {
+        if (m_ipFilter->isFiltered(source->userAddress())) {
             logDebug(QStringLiteral("Source rejected by IPFilter: %1").arg(ipstr(source->userAddress())));
             return false;
         }
@@ -301,8 +309,12 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
         UpDownClient* existing = nullptr;
         if (source->hasValidHash())
             existing = m_clientList->findByUserHash(source->userHash(), source->userAddress().toNetworkUint32(), source->userPort());
-        if (!existing && !source->userAddress().isNull())
-            existing = m_clientList->findByIP(source->userAddress().toNetworkUint32(), source->userPort());
+        // Address-typed lookup: findByIP() would compare toNetworkUint32(), which is 0
+        // for an IPv6 source, so it matched every address-less client (server sources
+        // are built without a userAddress) on the same port and rejected the IPv6
+        // source as a bogus duplicate.
+        if (!existing)
+            existing = m_clientList->findByAddress(source->userAddress(), source->userPort());
         if (existing && existing != source) {
             logDebug(QStringLiteral("Source rejected — duplicate in ClientList: IP=%1:%2")
                          .arg(ipstr(source->userAddress())).arg(source->userPort()));
@@ -364,7 +376,8 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
                                         uint32 buddyIP, uint16 buddyPort,
                                         uint8 buddyCrypt, uint8 sourceType,
                                         const uint8* buddyHash,
-                                        const uint8* clientHash, uint16 udpPort)
+                                        const uint8* clientHash, uint16 udpPort,
+                                        const uint8* sourceIPv6, const uint8* buddyIPv6)
 {
     Q_UNUSED(searchID);
 
@@ -391,6 +404,13 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
 
     // Common finalization: checkAndAddSource + tryToConnect or delete
     auto finalizeSource = [&](UpDownClient* client) {
+        // Attach any IPv6 the Kad result carried so the connection logic can prefer it.
+        if (sourceIPv6) {
+            client->setUserIPv6(Address::fromIPv6Bytes(sourceIPv6));
+            client->setOpenIPv6(true);
+        }
+        if (buddyIPv6)
+            client->setBuddyIPv6(Address::fromIPv6Bytes(buddyIPv6));
         if (checkAndAddSource(file, client)) {
             logDebug(QStringLiteral("addKadSourceResult: source ADDED type=%1 file=%2 totalSources=%3")
                          .arg(sourceType).arg(file->fileName()).arg(file->sourceCount()));
@@ -539,6 +559,16 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     // Check for duplicate
     if (isFileExisting(fileLink->hash.data())) {
         logInfo(QStringLiteral("addDownloadFromED2KLink: file already exists: %1").arg(fileLink->name));
+        // The download is already here, but the link may still carry sources and an
+        // AICH hash we lack. MFC seeds an existing download the same way
+        // (srchybrid/DownloadQueue.cpp:271-289).
+        if (PartFile* existing = fileByID(fileLink->hash.data());
+            existing && static_cast<uint64>(existing->fileSize()) == fileLink->size)
+        {
+            if (fileLink->hasValidAICHHash && !existing->fileIdentifier().hasAICHHash())
+                existing->fileIdentifier().setAICHHash(fileLink->aichHash);
+            addLinkSources(existing, fileLink->hostnameSources);
+        }
         return false;
     }
 
@@ -561,6 +591,9 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     }
 
     addDownload(partFile, paused);
+
+    // After addDownload: the file must be queued before sources are attached.
+    addLinkSources(partFile, fileLink->hostnameSources);
     return true;
 }
 
@@ -667,11 +700,30 @@ uint32 DownloadQueue::parseServerSourceBlock(PartFile* file, const uint8* data, 
             }
         }
 
+        // IPv6 sentinel (S3a): ClientID 0xFFFFFFFF marks an inline IPv6 source; the 16
+        // IPv6 bytes are the LAST field, after any obfuscation fields above. Consuming
+        // them keeps the rest of the source list in sync — the mandatory counterpart to
+        // advertising v6 capability at login.
+        std::array<uint8, 16> ipv6{};
+        bool hasIPv6 = false;
+        if (userId == IPV6_SOURCE_SENTINEL) {
+            if (offset + 16 > size)
+                return size;  // truncated
+            std::memcpy(ipv6.data(), data + offset, 16);
+            offset += 16;
+            hasIPv6 = true;
+        }
+
         // file == null means the block is for a file we don't have — the offset
         // still advances (skipping the sources) so the next block is found.
-        if (file)
-            addServerSourceClient(file, userId, port, obfuscated, cryptFlags,
-                                  userHash.data(), hasHash, srvIP, srvPort);
+        if (file) {
+            if (hasIPv6)
+                addServerSourceClientIPv6(file, ipv6.data(), port, obfuscated, cryptFlags,
+                                          userHash.data(), hasHash);
+            else
+                addServerSourceClient(file, userId, port, obfuscated, cryptFlags,
+                                      userHash.data(), hasHash, srvIP, srvPort);
+        }
     }
 
     return offset;
@@ -707,14 +759,208 @@ void DownloadQueue::addServerSourceClient(PartFile* file, uint32 userId, uint16 
     if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
         return;
 
-    auto* client = new UpDownClient(port, userId, srvIP, srvPort, file, true);
-    client->setSourceFrom(SourceFrom::Server);
+    auto* client = makeSourceClient(file, userId, Address(), port,
+                                    SourceFrom::Server, srvIP, srvPort);
 
     if (obfuscated)
         client->setConnectOptions(cryptFlags, true, false);
 
     if (hasHash)
         client->setUserHash(userHash);
+
+    if (checkAndAddSource(file, client))
+        client->tryToConnect();
+    else
+        delete client;
+}
+
+void DownloadQueue::addServerSourceClientIPv6(PartFile* file, const uint8* ipv6, uint16 port,
+                                              bool obfuscated, uint8 cryptFlags,
+                                              const uint8* userHash, bool hasHash)
+{
+    const Address v6 = Address::fromIPv6Bytes(ipv6);
+
+    // Same vetting the IPv4 twin does above. The IP filter itself runs downstream in
+    // checkAndAddSource — makeSourceClient points userAddress at the IPv6 for a source
+    // with no usable IPv4 — but isGoodIP and the ban list have no such coverage.
+    if (!isGoodIP(v6))
+        return;
+    if (m_clientList && m_clientList->isBannedClient(v6))
+        return;
+
+    // Unlike an IPv4 LowID source, an IPv6 source is NOT dropped when we are
+    // IPv4-firewalled: it is directly reachable over IPv6 regardless of our ED2K ID.
+    if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+        return;
+
+    auto* client = makeSourceClient(file, kNoIPv4SourceId, v6, port, SourceFrom::Server);
+
+    if (obfuscated)
+        client->setConnectOptions(cryptFlags, true, false);
+    if (hasHash)
+        client->setUserHash(userHash);
+
+    if (checkAndAddSource(file, client))
+        client->tryToConnect();
+    else
+        delete client;
+}
+
+UpDownClient* DownloadQueue::makeSourceClient(PartFile* file, uint32 ed2kUserId,
+                                              const Address& v6, uint16 port,
+                                              SourceFrom from, uint32 srvIP, uint16 srvPort)
+{
+    auto* client = new UpDownClient(port, ed2kUserId, srvIP, srvPort, file, true);
+    client->setSourceFrom(from);
+
+    if (!v6.isNull()) {
+        client->setUserIPv6(v6);
+        client->setOpenIPv6(true);
+
+        // With no usable IPv4 the ID is only a LowID marker, so point userAddress and
+        // connectAddress at the IPv6 — tryToConnect() then dials it directly.
+        if (ed2kUserId == kNoIPv4SourceId)
+            client->setUserAddress(v6);
+    }
+
+    return client;
+}
+
+// ===========================================================================
+// eD2K link sources
+// ===========================================================================
+
+void DownloadQueue::addLinkSources(PartFile* file, const std::vector<ED2KLinkSource>& sources)
+{
+    if (!file || sources.empty())
+        return;
+
+    // Re-look the file up by hash after an async resolve: the download may be gone by
+    // then. MFC does the same in its hostname-source callback (DownloadQueue.cpp:1477).
+    std::array<uint8, 16> fileHash{};
+    md4cpy(fileHash.data(), file->fileHash());
+
+    int dnsBudget = kMaxLinkDnsSources;
+    int skippedForDns = 0;
+
+    for (const auto& src : sources) {
+        if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+            break;
+        if (src.port == 0)
+            continue;
+
+        if (!src.url.isEmpty()) {
+            addLinkUrlSource(file, src);
+            continue;
+        }
+
+        if (!src.address.isNull()) {
+            addLinkPeerSource(file,
+                              src.address.isIPv4() ? src.address : Address(),
+                              src.address.isIPv6() ? src.address : Address(),
+                              src.port);
+            continue;
+        }
+
+        if (dnsBudget <= 0) {
+            ++skippedForDns;
+            continue;
+        }
+        --dnsBudget;
+
+        if (!m_hostResolver)
+            m_hostResolver = new HostResolver(this);
+
+        const uint16 port = src.port;
+        const QString host = src.hostname;
+        m_hostResolver->resolve(host, HostResolver::Preference::Any, this,
+            [this, fileHash, host, port](const HostResolver::Result& result) {
+                if (!result.ok()) {
+                    logDebug(QStringLiteral("Link source %1: %2").arg(host, result.errorString));
+                    return;
+                }
+                PartFile* target = fileByID(fileHash.data());
+                if (!target)
+                    return;
+                // One client per host, carrying whichever families resolved.
+                addLinkPeerSource(target, result.firstIPv4(), result.firstIPv6(), port);
+            });
+    }
+
+    if (skippedForDns > 0) {
+        logInfo(QStringLiteral("eD2K link: ignored %1 hostname source(s) beyond the "
+                               "per-link lookup limit of %2")
+                    .arg(skippedForDns).arg(kMaxLinkDnsSources));
+    }
+}
+
+void DownloadQueue::addLinkPeerSource(PartFile* file, const Address& v4, const Address& v6,
+                                      uint16 port)
+{
+    if (!file || port == 0)
+        return;
+
+    // A link is untrusted input, so vet each family independently and keep whichever
+    // survives — same rule as ExtSX (PartFile::addClientSources).
+    Address usableV4 = v4;
+    if (!usableV4.isNull()) {
+        if (!isGoodIP(usableV4)
+            || (m_ipFilter && m_ipFilter->isFiltered(usableV4))
+            || (m_clientList && m_clientList->isBannedClient(usableV4)))
+            usableV4 = Address();
+    }
+
+    Address usableV6 = v6;
+    if (!usableV6.isNull()) {
+        if (!isGoodIP(usableV6)
+            || (m_ipFilter && m_ipFilter->isFiltered(usableV6))
+            || (m_clientList && m_clientList->isBannedClient(usableV6)))
+            usableV6 = Address();
+    }
+
+    if (usableV4.isNull() && usableV6.isNull())
+        return;
+
+    // Two firewalled IPv4 peers can never connect, but an IPv6 peer is dialable
+    // whatever our ED2K ID is, so only drop when IPv4 is all we have.
+    if (usableV6.isNull() && theApp.isFirewalled() && isLowID(usableV4.toNetworkUint32()))
+        return;
+
+    if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+        return;
+
+    const uint32 userId = usableV4.isNull() ? kNoIPv4SourceId : usableV4.toNetworkUint32();
+    auto* client = makeSourceClient(file, userId, usableV6, port, SourceFrom::Link);
+
+    if (checkAndAddSource(file, client))
+        client->tryToConnect();
+    else
+        delete client;
+}
+
+void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& source)
+{
+    if (!file || source.url.isEmpty())
+        return;
+
+    // A literal host is vetted here; a hostname is resolved by URLClient itself.
+    if (!source.address.isNull()) {
+        if (!isGoodIP(source.address)
+            || (m_ipFilter && m_ipFilter->isFiltered(source.address))
+            || (m_clientList && m_clientList->isBannedClient(source.address)))
+            return;
+    }
+
+    if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+        return;
+
+    auto* client = new URLClient();
+    if (!client->setUrl(source.url, source.address)) {
+        delete client;
+        return;
+    }
+    client->setRequestFile(file);
+    client->setSourceFrom(SourceFrom::Link);
 
     if (checkAndAddSource(file, client))
         client->tryToConnect();
@@ -817,6 +1063,8 @@ void DownloadQueue::process()
                 continue;
             // Trigger UDP re-asks for each source that supports UDP
             for (auto* src : file->srcList()) {
+                // The download-side natural send point for a queued OP_CHANGE_CLIENT_IP.
+                src->flushPendingIPChange();
                 if (src->supportsUDP() && src->isSourceRequestAllowed())
                     src->udpReaskForDownload();
             }

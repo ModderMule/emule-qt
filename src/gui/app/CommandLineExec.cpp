@@ -7,10 +7,8 @@
 #include "dialogs/OptionsDialog.h"
 #include "panels/KadPanel.h"
 #include "panels/TransferPanel.h"
+#include "utils/Ed2kLinkImporter.h"
 #include "utils/Log.h"
-
-#include "IpcMessage.h"
-#include "protocol/ED2KLink.h"
 
 #include <QApplication>
 #include <QPixmap>
@@ -152,25 +150,16 @@ void CommandLineExec::handleEd2kLinks(MainWindow& mainWindow, IpcClient& ipcClie
     for (const QString& arg : m_positionalArgs) {
         if (arg.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)) {
             QTimer::singleShot(3000, &mainWindow, [arg, &mainWindow, &ipcClient]() {
-                // Inline the ed2k handling — same as handleEd2kUrl in main.cpp
-                if (!ipcClient.isConnected())
-                    return;
-
-                auto parsed = parseED2KLink(arg.trimmed());
-                if (!parsed) return;
-                auto* fl = std::get_if<ED2KFileLink>(&*parsed);
-                if (!fl) return;
-
-                QString hashHex;
-                for (uint8_t b : fl->hash)
-                    hashHex += QStringLiteral("%1").arg(b, 2, 16, QLatin1Char('0'));
-
-                Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
-                msg.append(hashHex);
-                msg.append(fl->name);
-                msg.append(static_cast<qint64>(fl->size));
-                ipcClient.sendRequest(std::move(msg));
-                mainWindow.switchToTab(MainWindow::TabTransfers);
+                // Manual: the link came from the command line, so a completed or cancelled
+                // file is a deliberate re-download and is not filtered out.
+                Ed2kLinkImporter::importLinks(
+                    arg, &ipcClient, &mainWindow,
+                    Ed2kLinkImporter::Source::Manual,
+                    Ed2kLinkImporter::Prompt::Ask,
+                    [&mainWindow](const Ed2kLinkImporter::Result& result) {
+                        if (result.added > 0)
+                            mainWindow.switchToTab(MainWindow::TabTransfers);
+                    });
             });
             break;
         }

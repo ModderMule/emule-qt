@@ -67,6 +67,7 @@ SOURCES += \
     app/CoreSession.cpp \
     archive/ArchiveReader.cpp \
     archive/ArchiveRecovery.cpp \
+    archive/ArchiveUnpack.cpp \
     chat/IrcClient.cpp \
     client/ClientCredits.cpp \
     client/ClientList.cpp \
@@ -125,6 +126,7 @@ SOURCES += \
     net/EncryptedDatagramSocket.cpp \
     net/EncryptedStreamSocket.cpp \
     net/HttpClientReqSocket.cpp \
+    net/HttpFileDownload.cpp \
     net/LastCommonRouteFinder.cpp \
     net/ListenSocket.cpp \
     net/Packet.cpp \
@@ -169,6 +171,7 @@ HEADERS += \
     app/CoreSession.h \
     archive/ArchiveReader.h \
     archive/ArchiveRecovery.h \
+    archive/ArchiveUnpack.h \
     chat/IrcClient.h \
     chat/IrcMessage.h \
     client/ClientCredits.h \
@@ -233,6 +236,7 @@ HEADERS += \
     net/EncryptedDatagramSocket.h \
     net/EncryptedStreamSocket.h \
     net/HttpClientReqSocket.h \
+    net/HttpFileDownload.h \
     net/LastCommonRouteFinder.h \
     net/ListenSocket.h \
     net/Packet.h \
@@ -262,6 +266,7 @@ HEADERS += \
     upnp/UPnPManager.h \
     utils/ByteOrder.h \
     utils/ContainerUtils.h \
+    utils/CorroborationTally.h \
     utils/DebugUtils.h \
     utils/Exceptions.h \
     utils/Log.h \

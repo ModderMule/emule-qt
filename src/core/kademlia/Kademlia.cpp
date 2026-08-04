@@ -114,7 +114,12 @@ void Kademlia::start(KadPrefs* prefs)
     m_bigTimer = now;  // MFC: m_tBigTimer = tNow (per-zone timers gate first fire)
     m_consolidate = now + MIN2S(45);
     m_externPortLookup = now;
-    m_bootstrap = now;
+    // Zero, not `now` — MFC Kademlia.cpp:131. This is a "last bootstrap attempt"
+    // stamp, and stamping it at startup arms both rate limits against us during the
+    // one window where bootstrapping matters most: process() step 1 would wait 2-15s
+    // before probing the bootstrap list, and bootstrap() would ignore every peer that
+    // advertises a Kad port in the first 10 seconds.
+    m_bootstrap = 0;
 
     // Start process timer (1-second interval)
     m_processTimer = new QTimer(this);
@@ -213,10 +218,20 @@ bool Kademlia::isFirewalled() const
     return m_prefs->firewalled();
 }
 
-void Kademlia::recheckFirewalled()
+RecheckFirewallResult Kademlia::recheckFirewalled()
 {
-    if (!m_running || !m_prefs || isRunningInLANMode())
-        return;
+    if (!m_running || !m_prefs)
+        return RecheckFirewallResult::NotRunning;
+    if (isRunningInLANMode())
+        return RecheckFirewallResult::LanMode;
+
+    // Only one NodeFwCheckUDP lookup at a time — each one queries 11 contacts,
+    // so an unguarded "Recheck Firewall" button stacks them up. The guard clears
+    // itself: jumpStart() reaps the lookup after kSearchNodeLifetime.
+    if (SearchManager::isNodeFWCheckUDPSearchActive()) {
+        logKad(QStringLiteral("Kad: Firewall recheck ignored — a check is already running"));
+        return RecheckFirewallResult::AlreadyRunning;
+    }
 
     // Stop any pending buddy search and force a firewall re-check.
     // Matches MFC Kademlia.cpp:409-426.
@@ -231,6 +246,7 @@ void Kademlia::recheckFirewalled()
     if (m_nextFindBuddy < now + MIN2S(5))
         m_nextFindBuddy = now + MIN2S(5);
     m_nextFirewallCheck = now + HR2S(1);
+    return RecheckFirewallResult::Started;
 }
 
 uint32 Kademlia::getKademliaUsers(bool newMethod) const
@@ -500,9 +516,13 @@ void Kademlia::process()
     // 5. Firewall recheck (hourly, matching MFC Kademlia.cpp:216-217)
     //    Also triggers UDPFirewallTester::connected() which starts the
     //    NodeFwCheckUDP search if needed.  connected() has its own guard
-    //    (!s_nodeSearchStarted && getUDPCheckClientsNeeded()).
+    //    (!s_nodeSearchStarted && isFWCheckUDPRunning()).
     if (now >= m_nextFirewallCheck) {
-        recheckFirewalled();
+        // Back off here rather than relying on recheckFirewalled() to advance
+        // the timer: it only does so on the success path, so a rejected check
+        // (LAN mode, or one already running) would re-fire on every tick.
+        m_nextFirewallCheck = now + HR2S(1);
+        (void)recheckFirewalled();
         UDPFirewallTester::connected();
     }
 

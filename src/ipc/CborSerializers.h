@@ -126,6 +126,9 @@ namespace eMule::Ipc {
         {QStringLiteral("name"),        s.name()},
         {QStringLiteral("address"),     s.address()},
         {QStringLiteral("ip"),          static_cast<qint64>(s.ipAddress().toNetworkUint32())},
+        // "address" may be a dynIP hostname; "addr" is always the literal we dialed, and is
+        // the only field that survives an IPv6 server ("ip" is 0 for those).
+        {QStringLiteral("addr"),        s.ipAddress().toString()},
         {QStringLiteral("port"),        s.port()},
         {QStringLiteral("description"), s.description()},
         {QStringLiteral("version"),     s.version()},
@@ -149,6 +152,7 @@ namespace eMule::Ipc {
         {QStringLiteral("hash"),        f.hasUserhash() ? md4str(f.userHash().data()) : QString()},
         {QStringLiteral("name"),        f.name()},
         {QStringLiteral("ip"),          static_cast<qint64>(f.lastUsedAddress().toNetworkUint32())},
+        {QStringLiteral("addr"),        f.lastUsedAddress().toString()},   // IPv6-capable form
         {QStringLiteral("port"),        f.lastUsedPort()},
         {QStringLiteral("lastSeen"),    static_cast<qint64>(f.lastSeen())},
         {QStringLiteral("lastChatted"), static_cast<qint64>(f.lastChatted())},
@@ -265,8 +269,10 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("softwareId"), static_cast<int>(c.clientSoft()));
     m.insert(QStringLiteral("hasCredit"),  c.credits() ? (c.credits()->scoreRatio(c.connectAddress().toNetworkUint32()) > 1.0f) : false);
     m.insert(QStringLiteral("isFriend"),   c.friendPtr() != nullptr);
-    // Network address
+    // Network address. "ip" stays for compatibility but is 0 for an IPv6 peer — "addr"
+    // carries both families, so anything that must survive IPv6 reads that instead.
     m.insert(QStringLiteral("ip"),   static_cast<qint64>(c.connectAddress().toNetworkUint32()));
+    m.insert(QStringLiteral("addr"), c.connectAddress().toString());
     m.insert(QStringLiteral("port"), static_cast<qint64>(c.userPort()));
     // Upload timing and connection state
     m.insert(QStringLiteral("uploadStartDelay"), static_cast<qint64>(c.getUpStartTimeDelay()));
@@ -304,6 +310,7 @@ namespace eMule::Ipc {
 
     // Server info
     m.insert(QStringLiteral("serverIP"),   static_cast<qint64>(c.serverAddress().toNetworkUint32()));
+    m.insert(QStringLiteral("serverAddr"), c.serverAddress().toString());   // IPv6-capable form
     m.insert(QStringLiteral("serverPort"), static_cast<qint64>(c.serverPort()));
     if (!c.serverAddress().isNull() && app.serverList) {
         if (auto* srv = app.serverList->findByIPTcp(c.serverAddress().toNetworkUint32(), c.serverPort()))

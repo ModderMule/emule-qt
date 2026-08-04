@@ -73,6 +73,7 @@ private:
     void handleGetSharedFiles(const Ipc::IpcMessage& msg);
     void handleSetSharedFilePriority(const Ipc::IpcMessage& msg);
     void handleReloadSharedFiles(const Ipc::IpcMessage& msg);
+    void handleGetEd2kLink(const Ipc::IpcMessage& msg);
     void handleGetFriends(const Ipc::IpcMessage& msg);
     void handleAddFriend(const Ipc::IpcMessage& msg);
     void handleRemoveFriend(const Ipc::IpcMessage& msg);
@@ -117,7 +118,12 @@ private:
     void handleSearchKadNotes(const Ipc::IpcMessage& msg);
     void handleGetCollectionInfo(const Ipc::IpcMessage& msg);
     void handleSaveCollection(const Ipc::IpcMessage& msg);
-    void handleSearchAuthorCollections(const Ipc::IpcMessage& msg);
+
+    /// Reject @p msg when Kad cannot serve it, using the same wording as the Kad branch of
+    /// handleStartSearch so every rejection reads alike in the GUI.
+    /// @param requireConnected  true demands a live Kad connection, false only that Kad runs.
+    /// @return true when the caller must return without doing any work.
+    bool rejectIfKadUnavailable(const Ipc::IpcMessage& msg, bool requireConnected);
 
     // Preference application helpers (split to avoid MSVC C1061 nesting limit)
     bool applyPreferenceA(const QString& key, const QCborValue& val);

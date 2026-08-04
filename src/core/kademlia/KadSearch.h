@@ -75,6 +75,8 @@ public:
         bool    hasFileSize       = false;
         uint64  fileSize          = 0;
         uint8   cryptOptions      = 0;
+        QString ipv6Hex;                    ///< our public IPv6 as 32-char hex, empty if none
+        QString buddyIPv6Hex;               ///< serving buddy's IPv6 as 32-char hex, empty if none
     };
 
     /// Build the source-publish tag list. Sets @p outCanPublish to false when we

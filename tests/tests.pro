@@ -68,6 +68,7 @@ SOURCES += \
     tst_AICHHashTree.cpp \
     tst_ArchiveReader.cpp \
     tst_ArchiveRecovery.cpp \
+    tst_ArchiveUnpack.cpp \
     tst_AtomicOps.cpp \
     tst_ClientCredits.cpp \
     tst_ClientList.cpp \
@@ -86,6 +87,7 @@ SOURCES += \
     tst_Friend.cpp \
     tst_FriendList.cpp \
     tst_HttpClientReqSocket.cpp \
+    tst_HttpFileDownload.cpp \
     tst_ImportParts.cpp \
     tst_IPFilter.cpp \
     tst_IPFilterMatch.cpp \

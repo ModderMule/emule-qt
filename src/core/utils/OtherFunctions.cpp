@@ -4,6 +4,7 @@
 
 #include "OtherFunctions.h"
 #include "Opcodes.h"
+#include "prefs/Preferences.h"
 
 #include <QUrl>
 
@@ -158,16 +159,19 @@ QString encodeUrlQueryParam(const QString& query)
 
 bool isGoodIP(uint32 nIP, bool forceCheck)
 {
-    // filter LAN IPs
-    // ---IsLanIP()---IsGoodIP()IsGoodIPPort()IsGoodIP()---
-    if (isLanIP(nIP) && !forceCheck)
-        return false;
-
     // 0.x.x.x is invalid, and so is anything from 224.0.0.0 up (multicast +
     // reserved + broadcast). MFC OtherFunctions.cpp:2060 rejects both; without
     // the 224+ check a peer can hand us multicast addresses as Kad contacts.
     const auto a = static_cast<uint8>(nIP);
     if (nIP == 0 || a == 0 || a >= 224)
+        return false;
+
+    // LAN IPs are filtered only when the user asks for it. MFC otherfunctions.cpp:2068
+    // gates the same test on FilterLANIPs() so a LAN-only network (lab rig, closed
+    // site install) becomes usable by turning the preference off; we used to reject
+    // LAN unconditionally, which silently discarded every peer on such a network.
+    // forceCheck additionally lets an individual call site accept LAN regardless.
+    if (isLanIP(nIP) && !forceCheck && thePrefs.filterLANIPs())
         return false;
 
     return true;

@@ -15,12 +15,19 @@ namespace eMule {
 struct FriendRow {
     QString hash;
     QString name;
-    int64_t ip = 0;
+    int64_t ip = 0;      ///< eD2K byte order; 0 for an IPv6 friend — prefer addr.
+    QString addr;        ///< Literal address, both families. Empty when unknown.
     int     port = 0;
     int64_t lastSeen = 0;
     int64_t lastChatted = 0;
     bool    friendSlot = false;
     QString kadID;
+
+    /// True when we know any address for this friend, IPv4 or IPv6.
+    [[nodiscard]] bool hasAddress() const
+    {
+        return ip != 0 || (!addr.isEmpty() && addr != QLatin1String("0.0.0.0"));
+    }
 };
 
 class FriendListModel : public QAbstractListModel {
