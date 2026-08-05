@@ -43,6 +43,17 @@ UdpMappingBackend::UdpMappingBackend(QObject* parent)
 
 UdpMappingBackend::~UdpMappingBackend()
 {
+    // A transaction can still be in flight, and its socket has our slots attached. Detach
+    // them before the transaction vector deletes the sockets inline, so a notification that
+    // arrives mid-teardown cannot reach a half-destroyed backend. This is retire() minus the
+    // deleteLater: we are going away, and deferring here would leak whenever the event loop
+    // is already gone.
+    for (auto& transaction : m_transactions) {
+        if (transaction->timer)
+            transaction->timer->disconnect(this);
+        if (transaction->socket)
+            transaction->socket->disconnect(this);
+    }
     closeChannels();
 }
 
@@ -123,6 +134,12 @@ void UdpMappingBackend::releaseMapping(const PortMapping& mapping)
     // section 15.1 exactly, so waiting for a reply would stall every shutdown by
     // the full ladder. The finite lease is the real cleanup mechanism; this is
     // the polite early release.
+    //
+    // The socket dies at the end of this scope, right after write() buffers the datagram,
+    // which looks like the trap ClientReqSocket::disconnect() flushes for
+    // (ClientReqSocket.cpp:66-73) — but it is not one: closing a QAbstractSocket pushes its
+    // pending write out first, and tst_UdpMappingBackend::releaseSendsTheDatagram holds that
+    // down. No flush here, so shutdown cannot stall on a router that never answers.
     if (auto socket = makeSocket(mapping.request.family))
         socket->write(payload);
 }
@@ -353,6 +370,15 @@ void UdpMappingBackend::transmit(Transaction& transaction)
     // Over IPv6 the FRITZ!Box answers only the first request per source port and
     // ignores the rest, so reusing one socket would make every retransmission —
     // and every later request — silently disappear.
+    //
+    // The previous attempt's socket has to go out through the event loop, exactly like
+    // retire() does. It is still connected to our readyRead/error handlers and still
+    // reachable by a late reply from the gateway, and we are called from that transaction's
+    // own timer callback — so letting the unique_ptr assignment below destroy it inline is
+    // the use-after-free retire() was written to avoid. It crashed tst_PortMapLive in
+    // QAbstractSocketPrivate::canReadNotification(), a read notification delivered into
+    // freed memory about two seconds in, i.e. on the first retransmit.
+    retireSocket(transaction);
     transaction.socket = makeSocket(transaction.family);
     if (!transaction.socket) {
         if (transaction.isProbe) {
@@ -419,11 +445,16 @@ void UdpMappingBackend::retire(Transaction& transaction)
         transaction.timer->disconnect(this);
         transaction.timer.release()->deleteLater();
     }
-    if (transaction.socket) {
-        transaction.socket->disconnect(this);
-        transaction.socket->close();
-        transaction.socket.release()->deleteLater();
-    }
+    retireSocket(transaction);
+}
+
+void UdpMappingBackend::retireSocket(Transaction& transaction)
+{
+    if (!transaction.socket)
+        return;
+    transaction.socket->disconnect(this);
+    transaction.socket->close();
+    transaction.socket.release()->deleteLater();
 }
 
 

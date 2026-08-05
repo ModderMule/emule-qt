@@ -110,7 +110,13 @@ protected:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode);
 
     /// Process eMule extended protocol packet.
-    bool processExtPacket(const uint8* packet, uint32 size, uint8 opcode);
+    ///
+    /// @param size    payload size after any decompression — what the parsers must read.
+    /// @param rawSize what arrived on the wire, i.e. the compressed size for an
+    ///                OP_PACKEDPROT packet. Overhead statistics are metered against this,
+    ///                mirroring MFC's uRawSize (srchybrid/ListenSocket.h:71). The two are
+    ///                equal for every uncompressed packet.
+    bool processExtPacket(const uint8* packet, uint32 size, uint8 opcode, uint32 rawSize);
 
     void setPeerSocketState(PeerSocketState val);
 

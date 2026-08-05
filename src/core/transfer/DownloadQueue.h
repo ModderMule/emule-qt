@@ -213,7 +213,6 @@ private:
     uint64 m_totalDownTime = 0;  // seconds
     std::deque<TransferredData> m_averageDRList;  // 10-second averaging window
     uint32 m_udCounter = 0;
-    uint32 m_lastUDPSourceRequestTime = 0;
     uint32 m_lastKademliaFileRequest = 0;
 
     // Global-UDP-source rotation cursors (port of CDownloadQueue members).

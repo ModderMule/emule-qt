@@ -868,64 +868,10 @@ void CoreSession::initClientUDP()
         });
 
     // Direct callback: remote firewalled client asks us to connect back via UDP.
-    // Self-guards on Kad running + firewalled, so it is safe to wire even when
-    // Kad has not been started yet.
+    // The handler self-guards on Kad running + firewalled, so it is safe to wire
+    // even when Kad has not been started yet.
     connect(m_clientUDP.get(), &ClientUDPSocket::directCallbackReceived,
-        this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
-            if (!theApp.clientList)
-                return;
-            // Only accept if we're firewalled and Kad is running
-            auto* kadInst = kad::Kademlia::instance();
-            if (!kadInst || !kadInst->isRunning() || !kadInst->isFirewalled())
-                return;
-            // tcpPort(2) + userHash(16) + connectOptions(1) = 19 bytes minimum
-            if (size < 19)
-                return;
-
-            SafeMemFile io(data, size);
-            uint16 tcpPort = io.readUInt16();
-            uint8 userHash[16];
-            io.readHash16(userHash);
-            uint8 connectOptions = io.readUInt8();
-
-            // Everything here is keyed on the full sender Address. The previous code
-            // projected it through toNetworkUint32(), which is 0 for IPv6: the lookup then
-            // matched on hash alone and, worse, the else-branch overwrote a good connect
-            // address with a null one. It also passed the sender in the ctor's *serverIP*
-            // slot with userId = 0, so the address landed in m_serverAddress and
-            // m_connectAddress was never set at all — an IPv4 bug of its own.
-            const Address& senderAddr = senderEP.address();
-            if (!isGoodIP(senderAddr) || theApp.clientList->isBannedClient(senderAddr))
-                return;
-            if (theApp.ipFilter && theApp.ipFilter->isFiltered(senderAddr))
-                return;
-
-            auto* client = theApp.clientList->findByEndpoint_UDP(senderAddr, senderEP.port());
-            if (!client)
-                client = theApp.clientList->findByAddress(senderAddr, tcpPort);
-
-            if (!client) {
-                client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
-                client->setUserHash(userHash);
-                // setUserAddress fills m_userAddress *and* m_connectAddress; the former is
-                // what findByEndpoint_UDP matches, so the next datagram finds this client.
-                client->setUserAddress(senderAddr);
-                if (senderAddr.isIPv6()) {
-                    client->setUserIPv6(senderAddr);
-                    client->setOpenIPv6(true);
-                }
-                theApp.clientList->addClient(client);
-            } else {
-                client->setConnectAddress(senderAddr);
-                client->setUserPort(tcpPort);
-                if (senderAddr.isIPv6()) {
-                    client->setUserIPv6(senderAddr);
-                    client->setOpenIPv6(true);
-                }
-            }
-            client->setConnectOptions(connectOptions, true, false);
-            client->tryToConnect();
-        });
+            this, &CoreSession::handleDirectCallbackRequest);
 
     // UDP port test → send reply on TCP port-test connection.
     connect(m_clientUDP.get(), &ClientUDPSocket::portTestReceived,
@@ -933,6 +879,70 @@ void CoreSession::initClientUDP()
             if (m_listenSocket)
                 m_listenSocket->sendPortTestReply('1', true);
         });
+}
+
+// ---------------------------------------------------------------------------
+// handleDirectCallbackRequest — OP_DIRECTCALLBACKREQ receive handler.
+// Kept as a static next to the wiring above rather than inline in it, so the
+// guard ladder is reachable from a test without a whole CoreSession.
+// ---------------------------------------------------------------------------
+
+void CoreSession::handleDirectCallbackRequest(const Endpoint& senderEP,
+                                              const uint8* data, uint32 size)
+{
+    if (!theApp.clientList)
+        return;
+    // Only accept if we're firewalled and Kad is running
+    auto* kadInst = kad::Kademlia::instance();
+    if (!kadInst || !kadInst->isRunning() || !kadInst->isFirewalled())
+        return;
+    // tcpPort(2) + userHash(16) + connectOptions(1) = 19 bytes minimum
+    if (size < 19)
+        return;
+
+    SafeMemFile io(data, size);
+    uint16 tcpPort = io.readUInt16();
+    uint8 userHash[16];
+    io.readHash16(userHash);
+    uint8 connectOptions = io.readUInt8();
+
+    // Everything here is keyed on the full sender Address. The previous code
+    // projected it through toNetworkUint32(), which is 0 for IPv6: the lookup then
+    // matched on hash alone and, worse, the else-branch overwrote a good connect
+    // address with a null one. It also passed the sender in the ctor's *serverIP*
+    // slot with userId = 0, so the address landed in m_serverAddress and
+    // m_connectAddress was never set at all — an IPv4 bug of its own.
+    const Address& senderAddr = senderEP.address();
+    if (!isGoodIP(senderAddr) || theApp.clientList->isBannedClient(senderAddr))
+        return;
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(senderAddr))
+        return;
+
+    auto* client = theApp.clientList->findByEndpoint_UDP(senderAddr, senderEP.port());
+    if (!client)
+        client = theApp.clientList->findByAddress(senderAddr, tcpPort);
+
+    if (!client) {
+        client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+        client->setUserHash(userHash);
+        // setUserAddress fills m_userAddress *and* m_connectAddress; the former is
+        // what findByEndpoint_UDP matches, so the next datagram finds this client.
+        client->setUserAddress(senderAddr);
+        if (senderAddr.isIPv6()) {
+            client->setUserIPv6(senderAddr);
+            client->setOpenIPv6(true);
+        }
+        theApp.clientList->addClient(client);
+    } else {
+        client->setConnectAddress(senderAddr);
+        client->setUserPort(tcpPort);
+        if (senderAddr.isIPv6()) {
+            client->setUserIPv6(senderAddr);
+            client->setOpenIPv6(true);
+        }
+    }
+    client->setConnectOptions(connectOptions, true, false);
+    client->tryToConnect();
 }
 
 // ---------------------------------------------------------------------------
@@ -1327,31 +1337,40 @@ void CoreSession::initLocalIPv6()
         logWarning(QStringLiteral("IPv6: lab mode active (filterLANIPs is off) — accepting "
                                   "loopback, ULA, link-local and documentation addresses"));
 
-    // Queue an IPv6 IP-change notification for every connected peer that can use it. Only
-    // marks them: the packet goes out when the upload queue or a source list next walks the
-    // client, so an address rotation never fans a write out to every socket at once.
-    theApp.onPublicIPv6Changed = [](const Address& effective) {
-        if (effective.isNull() || !theApp.clientList || !theApp.shouldAdvertisePublicIPv6())
-            return;
-        int marked = 0;
-        theApp.clientList->forEachClient([&](UpDownClient* client) {
-            if (!client || !client->supportsIPv6())
-                return;
-            if (!client->socket() || !client->socket()->isConnected())
-                return;
-            client->markSendIPPending();
-            ++marked;
-        });
-        if (marked > 0)
-            logInfo(QStringLiteral("IPv6: queued IP-change notice for %1 connected peer(s)")
-                        .arg(marked));
-    };
+    theApp.onPublicIPv6Changed = &CoreSession::markPeersForIPChange;
 
     // Publish first, then narrate: the advisory reports the address actually in effect,
     // which may come from publicIPv6Override rather than auto-selection.
     const IPv6PrivacyReport report = scanLocalIPv6();
     const Address effective = updatePublicIPv6(report);
     logIPv6PrivacyAdvisory(report, effective);   // the one and only call site
+}
+
+// ---------------------------------------------------------------------------
+// markPeersForIPChange — AppContext::onPublicIPv6Changed hook, installed above.
+//
+// Queue an IPv6 IP-change notification for every connected peer that can use it.
+// Only marks them: the packet goes out when the upload queue or a source list
+// next walks the client, so an address rotation never fans a write out to every
+// socket at once.
+// ---------------------------------------------------------------------------
+
+void CoreSession::markPeersForIPChange(const Address& effective)
+{
+    if (effective.isNull() || !theApp.clientList || !theApp.shouldAdvertisePublicIPv6())
+        return;
+    int marked = 0;
+    theApp.clientList->forEachClient([&](UpDownClient* client) {
+        if (!client || !client->supportsIPv6())
+            return;
+        if (!client->socket() || !client->socket()->isConnected())
+            return;
+        client->markSendIPPending();
+        ++marked;
+    });
+    if (marked > 0)
+        logInfo(QStringLiteral("IPv6: queued IP-change notice for %1 connected peer(s)")
+                    .arg(marked));
 }
 
 } // namespace eMule

@@ -126,6 +126,10 @@ private:
     void eraseTransaction(int id);
     /// Detach a transaction's socket and timer for deferred deletion.
     void retire(Transaction& transaction);
+    /// The socket half of retire(). Also used by transmit() between attempts, where the
+    /// transaction lives on but its socket is replaced — that swap must defer the old
+    /// socket's deletion just the same, since it can still have a read notification pending.
+    void retireSocket(Transaction& transaction);
 
     Channel m_v4;
     Channel m_v6;

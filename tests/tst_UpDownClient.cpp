@@ -2,6 +2,7 @@
 /// @brief Tests for client/UpDownClient — identity, state, Compare, version,
 ///        hello handshake, mule info exchange, connection, upload, download.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
@@ -16,6 +17,7 @@
 #include "kademlia/Kademlia.h"
 #include "net/ClientReqSocket.h"
 #include "protocol/Tag.h"
+#include "stats/Statistics.h"
 #include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
@@ -32,6 +34,7 @@
 #include <zlib.h>
 
 using namespace eMule;
+using namespace eMule::testing;
 
 class tst_UpDownClient : public QObject {
     Q_OBJECT
@@ -99,6 +102,17 @@ private slots:
     void processHelloPacket_rejectsNonPublicIPv6();
     void processHelloPacket_parsesExtSXSkipTagsBit();
     void processChangeClientIP_acceptsPublicAndRejectsOthers();
+
+    // OP_CHANGE_CLIENT_IP send path — flushPendingIPChange()
+    void flushPendingIPChange_sendsExactWireBytes();
+    void flushPendingIPChange_accountsOverheadTwice();
+    void flushPendingIPChange_notPending_sendsNothing();
+    void flushPendingIPChange_peerWithoutIPv6Support_sendsNothing();
+    void flushPendingIPChange_noSocket_sendsNothing();
+    void flushPendingIPChange_socketNotConnected_sendsNothing();
+    void flushPendingIPChange_probedUnreachable_sendsNothing();
+    void flushPendingIPChange_noPublicIPv6_sendsNothing();
+    void flushPendingIPChange_isOneShot();
 
     // Phase 2 tests — helpers
     void checkForGPLEvildoer_match();
@@ -1862,12 +1876,9 @@ void tst_UpDownClient::dontSwapTo_preventsSwap()
 // branches.
 void tst_UpDownClient::processKadFwTcpCheckAck_countsOnlyRequestedPeer()
 {
-    // Kad prefs the guard will mutate, owned by this test (stop() won't free it).
-    QTemporaryDir cfgDir;
-    QVERIFY(cfgDir.isValid());
-    kad::KadPrefs prefs(cfgDir.path());
-    kad::Kademlia kad;
-    kad.start(&prefs);
+    // Kad prefs the guard will mutate, owned by the fixture (stop() won't free them).
+    KadFixture fx;
+    kad::KadPrefs& prefs = fx.kadPrefs();
     QCOMPARE(kad::Kademlia::getInstancePrefs(), &prefs);
 
     // clientList the guard queries.
@@ -1908,7 +1919,6 @@ void tst_UpDownClient::processKadFwTcpCheckAck_countsOnlyRequestedPeer()
     sock->deleteLater();
     QCoreApplication::processEvents();
     theApp.clientList = nullptr;
-    kad.stop();
 }
 
 // ---------------------------------------------------------------------------
@@ -1917,35 +1927,26 @@ void tst_UpDownClient::processKadFwTcpCheckAck_countsOnlyRequestedPeer()
 
 namespace {
 
-/// Connect a ClientReqSocket to a throwaway local server so sendPacket() has
-/// somewhere to write, and hand back the accepted server-side socket to read from.
-/// Caller owns nothing: `server` and `client` stay on the caller's stack.
-QTcpSocket* wireLoopbackSocket(QTcpServer& server, UpDownClient& client)
-{
-    if (!server.listen(QHostAddress::LocalHost, 0))
-        return nullptr;
-    auto* sock = new ClientReqSocket();
-    sock->connectToHost(QHostAddress::LocalHost, server.serverPort());
-    if (!sock->waitForConnected(5000) || !server.waitForNewConnection(5000)) {
-        delete sock;
-        return nullptr;
-    }
-    client.setSocket(sock);
-    return server.nextPendingConnection();
-}
-
-/// Wait for a whole eD2K frame header to land on `peer`.
-/// EMSocket::sendPacket() queues control packets and flushes them from a
-/// QTimer::singleShot(0), so a bare waitForReadyRead() would time out — the event
-/// loop has to spin first. Returns false if nothing arrives within `ms`.
+/// Wait for a whole eD2K frame header — [prot 1][size 4][opcode 1] — to land on `peer`.
 bool waitForFrame(QTcpSocket* peer, int ms)
 {
-    QDeadlineTimer deadline(ms);
-    while (peer->bytesAvailable() < 6 && !deadline.hasExpired()) {
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        peer->waitForReadyRead(10);
-    }
-    return peer->bytesAvailable() >= 6;
+    return waitForBytes(peer, 6, ms);
+}
+
+/// Read one OP_CHANGE_CLIENT_IP frame off `peer` and check every byte of it against
+/// @p expected. The frame is 22 bytes: [prot 1][size 4 LE][opcode 1][16 raw IPv6 bytes].
+void verifyChangeClientIPFrame(QTcpSocket* peer, const Address& expected)
+{
+    QVERIFY(waitForBytes(peer, 22));
+    const QByteArray raw = peer->readAll();
+    QCOMPARE(raw.size(), 22);
+    QCOMPARE(static_cast<uint8>(raw[0]), static_cast<uint8>(OP_EDONKEYPROT));
+    QCOMPARE(qFromLittleEndian<quint32>(
+                 reinterpret_cast<const uchar*>(raw.constData() + 1)),
+             17u);                                          // opcode + 16-byte payload
+    QCOMPARE(static_cast<uint8>(raw[5]), static_cast<uint8>(OP_CHANGE_CLIENT_IP));
+    QCOMPARE(raw.mid(6, 16),
+             QByteArray(reinterpret_cast<const char*>(expected.ipv6Bytes().data()), 16));
 }
 
 /// Read one eD2K frame and return its opcode. Returns 0 when nothing arrives.
@@ -2056,13 +2057,9 @@ void tst_UpDownClient::onHandshakeCompleted_fileListDirCount_doesNotResend()
 
 void tst_UpDownClient::maybeBootstrapKadFromPeer_guards()
 {
-    QTemporaryDir cfgDir;
-    QVERIFY(cfgDir.isValid());
-    kad::KadPrefs prefs(cfgDir.path());
-    kad::Kademlia kad;
-    kad.start(&prefs);
+    KadFixture fx;
 
-    QSignalSpy sent(kad.getUDPListener(), &kad::KademliaUDPListener::packetToSend);
+    QSignalSpy sent(fx.kad().getUDPListener(), &kad::KademliaUDPListener::packetToSend);
     QVERIFY(sent.isValid());
 
     constexpr uint32 kPeerIP = 0x0A000001;   // 10.0.0.1, host order
@@ -2102,8 +2099,248 @@ void tst_UpDownClient::maybeBootstrapKadFromPeer_guards()
     const QList<QVariant> args = sent.takeFirst();
     QCOMPARE(args.at(1).toUInt(), kPeerIP);          // host order, as Kademlia expects
     QCOMPARE(static_cast<uint16>(args.at(2).toUInt()), kKadPort);
+}
 
-    kad.stop();
+// ---------------------------------------------------------------------------
+// OP_CHANGE_CLIENT_IP send path — UpDownClient::flushPendingIPChange()
+//
+// Every case shares the same shape: a peer on a loopback socket, a public IPv6
+// published through IPv6AdvertiseGuard, and one precondition removed. The flag is
+// cleared before any other check (UpDownClient.cpp:4476), so a client reused across
+// sub-assertions has to be re-marked each time or the second half asserts nothing —
+// several cases below use exactly that to prove the clear happens first.
+// ---------------------------------------------------------------------------
+
+void tst_UpDownClient::flushPendingIPChange_sendsExactWireBytes()
+{
+    IPv6AdvertiseGuard guard;
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    feedIPv6CapableHello(client);
+    QVERIFY(client.supportsIPv6());
+
+    client.markSendIPPending();
+    QVERIFY(client.sendIPPending());
+    client.flushPendingIPChange();
+
+    verifyChangeClientIPFrame(peer, IPv6AdvertiseGuard::testPublicIPv6());
+    QVERIFY(!client.sendIPPending());
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::flushPendingIPChange_accountsOverheadTwice()
+{
+    // Pins current behaviour: flushPendingIPChange() accounts the packet
+    // (UpDownClient.cpp:4492) and then UpDownClient::sendPacket() accounts it again
+    // (UpDownClient.cpp:1467), so one 16-byte notice shows up as 32 bytes of overhead.
+    // De-duplicating that later should be a deliberate change, not a silent one.
+    IPv6AdvertiseGuard guard;
+    Statistics stats;
+    theApp.statistics = &stats;
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    feedIPv6CapableHello(client);
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    QVERIFY(waitForBytes(peer, 22));
+
+    QCOMPARE(stats.upDataOverheadOther(), static_cast<uint64>(32));
+
+    client.setSocket(nullptr);
+    peer->close();
+    theApp.statistics = nullptr;    // before `stats` leaves scope
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::flushPendingIPChange_notPending_sendsNothing()
+{
+    IPv6AdvertiseGuard guard;
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    feedIPv6CapableHello(client);
+    client.flushPendingIPChange();
+    QVERIFY2(!waitForFrame(peer, 300), "nothing queued must not put a packet on the wire");
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::flushPendingIPChange_peerWithoutIPv6Support_sendsNothing()
+{
+    IPv6AdvertiseGuard guard;
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    QVERIFY(!client.supportsIPv6());        // no hello yet
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    QVERIFY2(!waitForFrame(peer, 300), "a peer that cannot use IPv6 must not be told ours");
+
+    // The flag was consumed by that refused attempt, so becoming capable later does not
+    // resurrect it — the peer has to be marked again.
+    feedIPv6CapableHello(client);
+    QVERIFY(client.supportsIPv6());
+    QVERIFY(!client.sendIPPending());
+    client.flushPendingIPChange();
+    QVERIFY(!waitForFrame(peer, 300));
+
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    verifyChangeClientIPFrame(peer, IPv6AdvertiseGuard::testPublicIPv6());
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::flushPendingIPChange_noSocket_sendsNothing()
+{
+    IPv6AdvertiseGuard guard;
+
+    UpDownClient client;
+    feedIPv6CapableHello(client);
+    client.markSendIPPending();
+    client.flushPendingIPChange();          // no socket at all — must not crash
+    QVERIFY(!client.sendIPPending());
+
+    // Same one-shot proof: wiring a socket afterwards does not replay the notice.
+    QTcpServer server;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+    client.flushPendingIPChange();
+    QVERIFY(!waitForFrame(peer, 300));
+
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    verifyChangeClientIPFrame(peer, IPv6AdvertiseGuard::testPublicIPv6());
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::flushPendingIPChange_socketNotConnected_sendsNothing()
+{
+    IPv6AdvertiseGuard guard;
+
+    // A socket that was never dialled: EMSocket::isConnected() is false until
+    // onConnected() fires, and a half-open peer must not be written to.
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    auto* sock = new ClientReqSocket();
+
+    UpDownClient client;
+    client.setSocket(sock);
+    QVERIFY(!sock->isConnected());
+    feedIPv6CapableHello(client);
+
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    QVERIFY(!client.sendIPPending());
+    QVERIFY2(!server.waitForNewConnection(300), "an undialled socket must stay undialled");
+
+    client.setSocket(nullptr);
+    sock->deleteLater();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::flushPendingIPChange_probedUnreachable_sendsNothing()
+{
+    IPv6AdvertiseGuard guard;
+    guard.setProbedUnreachable();
+    QVERIFY(theApp.hasConfidentPublicIPv6());        // we still know the address...
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());    // ...but a probe said it is dead
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    feedIPv6CapableHello(client);
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    QVERIFY2(!waitForFrame(peer, 300),
+             "an address the server probed and could not reach must not be pushed to peers");
+
+    // Positive control — the same client sends once the probe verdict turns good, so the
+    // assertion above is about the gate and not about some other missing precondition.
+    guard.setProbedReachable();
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    verifyChangeClientIPFrame(peer, IPv6AdvertiseGuard::testPublicIPv6());
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::flushPendingIPChange_noPublicIPv6_sendsNothing()
+{
+    IPv6AdvertiseGuard guard{Address{}};             // no address in any tier
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    feedIPv6CapableHello(client);
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    QVERIFY2(!waitForFrame(peer, 300), "with no public IPv6 there is nothing to announce");
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+}
+
+void tst_UpDownClient::flushPendingIPChange_isOneShot()
+{
+    IPv6AdvertiseGuard guard;
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    feedIPv6CapableHello(client);
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    verifyChangeClientIPFrame(peer, IPv6AdvertiseGuard::testPublicIPv6());
+
+    // One mark, one packet: every later walk of this client is silent until our address
+    // changes again. Without this the upload queue would re-announce on every pass.
+    client.flushPendingIPChange();
+    QVERIFY(!waitForFrame(peer, 300));
+
+    client.markSendIPPending();
+    client.flushPendingIPChange();
+    verifyChangeClientIPFrame(peer, IPv6AdvertiseGuard::testPublicIPv6());
+
+    client.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
 }
 
 QTEST_MAIN(tst_UpDownClient)

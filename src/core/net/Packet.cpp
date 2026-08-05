@@ -162,14 +162,18 @@ bool Packet::unPackPacket(uint32 maxDecompressedSize)
     if (nNewSize > maxDecompressedSize)
         nNewSize = maxDecompressedSize;
 
-    Bytef* unpack = nullptr;
+    // char, not Bytef: this buffer becomes pBuffer, and the destructor frees pBuffer with
+    // delete[] on a char*. MFC allocates BYTE here and takes the mismatched delete (Packets.cpp
+    // :233-243); matching the types costs nothing and keeps the array delete well-defined.
+    char* unpack = nullptr;
     uLongf unpackedSize = 0;
     int result = Z_OK;
     do {
         delete[] unpack;
-        unpack = new Bytef[nNewSize];
+        unpack = new char[nNewSize];
         unpackedSize = nNewSize;
-        result = uncompress(unpack, &unpackedSize, reinterpret_cast<const Bytef*>(pBuffer), size);
+        result = uncompress(reinterpret_cast<Bytef*>(unpack), &unpackedSize,
+                            reinterpret_cast<const Bytef*>(pBuffer), size);
         nNewSize *= 2;
     } while (result == Z_BUF_ERROR && nNewSize < maxDecompressedSize);
 
@@ -182,7 +186,7 @@ bool Packet::unPackPacket(uint32 maxDecompressedSize)
         } else {
             delete[] pBuffer;
         }
-        pBuffer = reinterpret_cast<char*>(unpack);
+        pBuffer = unpack;
         prot = (prot == OP_KADEMLIAPACKEDPROT) ? OP_KADEMLIAHEADER : OP_EMULEPROT;
         return true;
     }

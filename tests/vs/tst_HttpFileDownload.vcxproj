@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{9B2E5C74-1D63-4A08-8F51-6C4E07B3A29D}</ProjectGuid>
+    <ProjectGuid>{398952A7-CAC6-5976-95EA-2570C22B3D46}</ProjectGuid>
     <RootNamespace>tst_HttpFileDownload</RootNamespace>
     <Keyword>QtVS_v304</Keyword>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>

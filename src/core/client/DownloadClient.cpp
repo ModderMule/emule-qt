@@ -110,9 +110,6 @@ void UpDownClient::sendFileRequest()
     if (!m_reqFile)
         return;
 
-    // MFC: Mark the time of this file request
-    setLastAskedTime();
-
     logDebug(QStringLiteral("sendFileRequest: reqFile=%1")
                  .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
 
@@ -239,6 +236,10 @@ void UpDownClient::sendFileRequest()
             sendPacket(std::move(aichPacket));
         }
     }
+
+    // MFC DownloadClient.cpp:424 — the re-ask baseline is stamped at the *end*, after the
+    // source request has had its chance to read the pre-request timings.
+    setLastAskedTime();
 }
 
 // ===========================================================================
@@ -1113,6 +1114,10 @@ void UpDownClient::udpReaskACK(uint16 newQR)
 {
     m_reaskPending = false;
     setRemoteQueueRank(newQR);
+    // An answered UDP re-ask advances this peer's re-ask clock, exactly like a TCP one —
+    // MFC DownloadClient.cpp:1310. Without it timeUntilReask() never leaves 0 on the UDP
+    // path and the source would be re-asked on every pass.
+    setLastAskedTime();
 }
 
 void UpDownClient::udpReaskFNF()
@@ -1518,21 +1523,23 @@ uint32 UpDownClient::timeUntilReask(const PartFile* file) const
     return reaskTime - elapsed;
 }
 
+// MFC DownloadClient.cpp:2019-2023. Purely the per-file re-ask map, keyed on the current
+// request file when none is named, and 0 — "never asked" — when the file is absent.
 uint32 UpDownClient::lastAskedTime(const PartFile* file) const
 {
-    if (file) {
-        auto it = m_fileReaskTimes.find(file);
-        if (it != m_fileReaskTimes.end())
-            return it->second;
-    }
-    return m_lastAskedForSources;
+    const PartFile* key = file ? file : m_reqFile;
+    const auto it = m_fileReaskTimes.find(key);
+    return (it != m_fileReaskTimes.end()) ? it->second : 0;
 }
 
+// MFC UpDownClient.h:285 — this is the file *re-ask* stamp and nothing else. It must not
+// touch m_lastAskedForSources (MFC's separate m_dwLastAskedForSources), which gates source
+// exchange: writing both here made isSourceRequestAllowed() false from the very first file
+// request onwards, so we never asked a peer for sources over TCP at all.
 void UpDownClient::setLastAskedTime()
 {
-    m_lastAskedForSources = static_cast<uint32>(getTickCount());
     if (m_reqFile)
-        m_fileReaskTimes[m_reqFile] = m_lastAskedForSources;
+        m_fileReaskTimes[m_reqFile] = static_cast<uint32>(getTickCount());
 }
 
 // ===========================================================================

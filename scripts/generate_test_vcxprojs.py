@@ -334,7 +334,10 @@ def generate_sln(test_names: list[str]) -> str:
     lines.append("\tEndGlobalSection")
     lines.append("EndGlobal")
 
-    return "\r\n".join(lines) + "\r\n"
+    # Plain "\n" here on purpose: main() opens the file with newline="\r\n", which
+    # translates every "\n" on write. Joining with "\r\n" as well produced "\r\r\n" on
+    # every line — a solution file VS tolerates but git sees as a whole-file rewrite.
+    return "\n".join(lines) + "\n"
 
 
 def main():

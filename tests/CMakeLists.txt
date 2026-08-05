@@ -116,6 +116,7 @@ emule_add_test(tst_HostResolver      FOLDER "Net")
 emule_add_test(tst_DefaultGateway    FOLDER "Net")
 emule_add_test(tst_PortMapWire       FOLDER "PortMap")
 emule_add_test(tst_PortMapper        FOLDER "PortMap")
+emule_add_test(tst_UdpMappingBackend FOLDER "PortMap")
 
 # Module 5: Remaining networking classes
 emule_add_test(tst_LastCommonRouteFinder FOLDER "Net")
@@ -194,7 +195,8 @@ emule_add_test(tst_FrameGrabThread FOLDER "Media")
 
 # Module 11: PartFile & Download Integration
 emule_add_test(tst_PartFile          FOLDER "Files")
-emule_add_test(tst_SourceExchange    FOLDER "Files")
+emule_add_test(tst_SourceExchange       FOLDER "Files")
+emule_add_test(tst_SourceExchangeCompat FOLDER "Files")
 emule_add_test(tst_DownloadQueue     FOLDER "Transfer")
 
 # Module 11 Phase 3: Complete File Management
@@ -222,6 +224,9 @@ set_tests_properties(tst_MockPeerDownload PROPERTIES TIMEOUT 300)
 emule_add_test(tst_CallbackAndQueueRank     FOLDER "Net")
 target_compile_definitions(tst_CallbackAndQueueRank PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
 set_tests_properties(tst_CallbackAndQueueRank PROPERTIES TIMEOUT 60)
+emule_add_test(tst_CoreSessionHandlers      FOLDER "Net")
+target_compile_definitions(tst_CoreSessionHandlers PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
+set_tests_properties(tst_CoreSessionHandlers PROPERTIES TIMEOUT 60)
 emule_add_test(tst_Scheduler                FOLDER "Transfer")
 emule_add_test(tst_ImportParts              FOLDER "Transfer")
 

@@ -120,6 +120,7 @@ public:
     /// list), so a temporary-address rotation cannot fan a write out to every open socket
     /// at once. Mirrors the compatibility target's TrigReask/m_bSendIP pair.
     void markSendIPPending()                       { m_sendIPPending = true; }
+    [[nodiscard]] bool sendIPPending() const       { return m_sendIPPending; }
     void flushPendingIPChange();
 
     /// Which family the traffic to this peer actually travels over — the live socket
@@ -698,6 +699,12 @@ private:
     void processMultiPacketLegacy(const uint8* data, uint32 size, bool hasFileSize);
     void processMultiPacketAnswer(const uint8* data, uint32 size);
     void processMultiPacketAnswerLegacy(const uint8* data, uint32 size);
+
+    /// Rate-limit and answer a source request, whatever opcode carried it: the standalone
+    /// OP_REQUESTSOURCES/OP_REQUESTSOURCES2, or the same two as multipacket sub-opcodes.
+    /// MFC ListenSocket.cpp:996-1028 served all of them from one code path; keeping one
+    /// here is what stops the standalone and bundled forms from drifting apart.
+    void answerSourceRequest(KnownFile* file, uint8 requestedVersion, uint16 requestedOptions);
 
     // Helpers for upload-side file lookup
     KnownFile* findUploadFile(const uint8* fileHash) const;

@@ -402,6 +402,8 @@ private slots:
     void connectingTimeout_cleansUpStuckClient();
     // Direct callback state
     void directCallback_setsCorrectState();
+    // Direct callback — the OP_DIRECTCALLBACKREQ datagram itself
+    void directCallback_sendsRequestPayload();
     // UDP reask via buddy — real UDP packet (3 nodes)
     void udpReaskViaCallback_sendsRealPacket();
     // A4AF swap between two files
@@ -891,6 +893,82 @@ void tst_CallbackAndQueueRank::directCallback_setsCorrectState()
     m_clientList->removeClient(client);
     delete partFile;
     delete client;
+}
+
+// ===========================================================================
+// Direct callback — the request datagram, byte for byte
+//
+// The state assertion above says we chose path 4 of tryToConnect(); this one says
+// what actually left the socket. Two things it pins that the state cannot: the
+// request goes to the peer's *Kad* port (not its client UDP port — the old
+// toNetworkUint32() form sent it to a wrong address entirely, and collapsed an IPv6
+// target to 0), and bit 3 of the connect-options byte is clear, because
+// GetMyConnectOptions(true, false) never offers direct callback on an outgoing
+// request. MFC BaseClient.cpp:1399-1413.
+// ===========================================================================
+
+void tst_CallbackAndQueueRank::directCallback_sendsRequestPayload()
+{
+    // Both endpoints of the peer, so "went to the right port" is a real assertion.
+    QUdpSocket kadReceiver;
+    QVERIFY(kadReceiver.bind(QHostAddress::LocalHost, 0));
+    QUdpSocket clientUdpReceiver;
+    QVERIFY(clientUdpReceiver.bind(QHostAddress::LocalHost, 0));
+
+    // An asymmetric crypt pattern: 0b101 cannot be confused with its own bit-reversal,
+    // so a swapped supported/required pair fails instead of passing by symmetry.
+    const bool savedSupported = thePrefs.cryptLayerSupported();
+    const bool savedRequested = thePrefs.cryptLayerRequested();
+    const bool savedRequired = thePrefs.cryptLayerRequired();
+    thePrefs.setCryptLayerSupported(true);
+    thePrefs.setCryptLayerRequested(false);
+    thePrefs.setCryptLayerRequired(true);
+
+    auto* client = new UpDownClient();
+    client->setUserIDHybrid(200);                       // LowID → skips the direct-TCP path
+    client->setConnectAddress(Address::fromNetworkOrder(htonl(0x7F000001)));
+    client->setUserPort(4662);
+    client->setKadPort(kadReceiver.localPort());
+    client->setUDPPort(clientUdpReceiver.localPort());
+
+    uint8 peerHash[16];
+    std::memset(peerHash, 0x5C, sizeof(peerHash));
+    client->setUserHash(peerHash);
+
+    // Bit 3 only — the peer accepts direct callbacks, and its own crypt bits stay clear so
+    // shouldReceiveCryptUDPPackets() is false and the datagram goes out in the clear.
+    client->setConnectOptions(0x08, true, true);
+    QVERIFY(client->supportsDirectUDPCallback());
+    QVERIFY(!client->shouldReceiveCryptUDPPackets());
+
+    m_clientList->addClient(client);
+    QVERIFY(client->tryToConnect());
+    QCOMPARE(client->connectingState(), ConnectingState::DirectCallback);
+
+    flushUDPSocket(m_receiverUDP);                      // theApp.clientUDP in this fixture
+    QVERIFY(QTest::qWaitFor([&kadReceiver] { return kadReceiver.hasPendingDatagrams(); }, 2000));
+
+    const QByteArray dg = kadReceiver.receiveDatagram().data();
+    QCOMPARE(dg.size(), 21);                            // 2-byte UDP header + 19-byte body
+    const auto* raw = reinterpret_cast<const uint8*>(dg.constData());
+    QCOMPARE(raw[0], static_cast<uint8>(OP_EMULEPROT));
+    QCOMPARE(raw[1], static_cast<uint8>(OP_DIRECTCALLBACKREQ));
+    QCOMPARE(qFromLittleEndian<quint16>(raw + 2), thePrefs.port());
+    QVERIFY2(md4equ(raw + 4, thePrefs.userHash().data()),
+             "the peer dials back on our hash — it must be ours, not the target's");
+    QCOMPARE(raw[20], static_cast<uint8>(0x05));        // supported | required, not requested
+    QVERIFY2((raw[20] & 0x08) == 0,
+             "bit 3 (direct UDP callback) must be clear on an outgoing request");
+
+    QVERIFY2(!clientUdpReceiver.hasPendingDatagrams(),
+             "a direct callback goes to the peer's Kad port, not its client UDP port");
+
+    m_clientList->removeClient(client);
+    delete client;
+
+    thePrefs.setCryptLayerSupported(savedSupported);
+    thePrefs.setCryptLayerRequested(savedRequested);
+    thePrefs.setCryptLayerRequired(savedRequired);
 }
 
 // ===========================================================================

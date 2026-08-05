@@ -1,6 +1,7 @@
 /// @file tst_UploadQueue.cpp
 /// @brief Tests for transfer/UploadQueue.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "transfer/UploadQueue.h"
 #include "transfer/UploadBandwidthThrottler.h"
@@ -13,12 +14,16 @@
 #include "files/SharedFileList.h"
 #include "prefs/Preferences.h"
 #include "net/Address.h"
+#include "net/ClientReqSocket.h"
 #include "utils/Opcodes.h"
 
 #include <QSignalSpy>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTest>
 
 using namespace eMule;
+using namespace eMule::testing;
 
 class tst_UploadQueue : public QObject {
     Q_OBJECT
@@ -42,6 +47,7 @@ private slots:
     void addClientToQueue_ipv6LimitIsOnePerAddress();
     void addClientToQueue_trackedClientsGate();
     void slotAssignment_alternatesBetweenFamilies();
+    void process_flushesPendingIPChangeForWaitingClients();
 
     // UploadState::Connecting must not be a dead end — MFC BaseClient.cpp:1558-1565, :1118-1120
     void connectingSlot_activatedByHandshake();
@@ -521,6 +527,88 @@ void tst_UploadQueue::slotAssignment_alternatesBetweenFamilies()
 
     thePrefs.setSeparateIPv6Queue(true);   // restore the default
     theApp.sharedFileList = nullptr;
+}
+
+// The upload-side send point for a queued OP_CHANGE_CLIENT_IP: findBestClientInQueue()
+// walks the waiting list anyway, so telling those peers our new IPv6 costs no extra
+// wakeup. Two things are pinned here — that the walk really does flush, and that a client
+// purged as stale is skipped, because the purge `continue`s above the flush.
+void tst_UploadQueue::process_flushesPendingIPChangeForWaitingClients()
+{
+    IPv6AdvertiseGuard guard;
+    ClientList clientList;
+    theApp.clientList = &clientList;
+
+    UploadQueue queue;   // deliberately no shared file list — the noFile purge stays off
+
+    // Occupy the free slots, or addClientToQueue promotes directly and nothing ever
+    // reaches the waiting list. Same trick as slotAssignment_alternatesBetweenFamilies.
+    UpDownClient filler1, filler2;
+    setupClient(filler1, QStringLiteral("172.31.0.1"), 0xF1, 4000);
+    setupClient(filler2, QStringLiteral("172.31.0.2"), 0xF2, 4001);
+    QVERIFY(queue.addClientToQueue(&filler1));
+    QVERIFY(queue.addClientToQueue(&filler2));
+
+    QTcpServer freshServer;
+    UpDownClient fresh;
+    setupClient(fresh, QStringLiteral("10.20.30.40"), 0x21, 4662);
+    QTcpSocket* freshPeer = wireLoopbackSocket(freshServer, fresh);
+    QVERIFY(freshPeer != nullptr);
+    feedIPv6CapableHello(fresh, 0x21);
+
+    QTcpServer staleServer;
+    UpDownClient stale;
+    setupClient(stale, QStringLiteral("10.20.30.41"), 0x22, 4663);
+    QTcpSocket* stalePeer = wireLoopbackSocket(staleServer, stale);
+    QVERIFY(stalePeer != nullptr);
+    feedIPv6CapableHello(stale, 0x22);
+
+    QVERIFY(queue.addClientToQueue(&fresh));
+    QVERIFY(queue.addClientToQueue(&stale));
+    QCOMPARE(queue.waitingUserCount(), 2);
+
+    // addClientToQueue stamps lastUpRequest, so the purge has to be armed afterwards.
+    stale.setLastUpRequest(0);
+
+    // Drain the ranking info both peers were sent when they queued up.
+    QCoreApplication::processEvents();
+    freshPeer->readAll();
+    stalePeer->readAll();
+
+    fresh.markSendIPPending();
+    stale.markSendIPPending();
+
+    QTest::qWait(1100);          // forceNewClient() throttles promotions to one per second
+    queue.process();
+
+    QDeadlineTimer deadline(2000);
+    while (freshPeer->bytesAvailable() < 22 && !deadline.hasExpired()) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        freshPeer->waitForReadyRead(10);
+    }
+    const QByteArray raw = freshPeer->readAll();
+    QVERIFY2(raw.size() >= 22, "the waiting client was walked but never told our new IPv6");
+    // First frame only: a client that also wins the slot is sent OP_ACCEPTUPLOADREQ right
+    // after, and the IP change is what has to come out of the walk itself.
+    QCOMPARE(static_cast<uint8>(raw[0]), static_cast<uint8>(OP_EDONKEYPROT));
+    QCOMPARE(static_cast<uint8>(raw[5]), static_cast<uint8>(OP_CHANGE_CLIENT_IP));
+
+    // The purge `continue`s above the flush, so the stale client's flag is still armed —
+    // it was never even offered the notice — and nothing reached its socket.
+    QVERIFY2(stale.sendIPPending(), "a purged client must be skipped before the flush");
+    QVERIFY(!waitForBytes(stalePeer, 1, 300));
+
+    // The stale client left the queue; the fresh one is still on it. Neither is promoted —
+    // with no credits and no upload file it scores 0 — which is the point: the flush comes
+    // out of the walk itself, not out of winning the slot.
+    QCOMPARE(queue.waitingUserCount(), 1);
+
+    fresh.setSocket(nullptr);
+    stale.setSocket(nullptr);
+    freshPeer->close();
+    stalePeer->close();
+    QCoreApplication::processEvents();
+    theApp.clientList = nullptr;
 }
 
 // ---------------------------------------------------------------------------

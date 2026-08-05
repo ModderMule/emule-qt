@@ -836,6 +836,24 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
             hasResponse = true;
             break;
 
+        case OP_REQUESTSOURCES2:
+        case OP_REQUESTSOURCES: {
+            // MFC ListenSocket.cpp:988-1029. Only the SX2 form carries version + options,
+            // and consuming them is what keeps the rest of the multipacket aligned — the
+            // version byte would otherwise be read as the next sub-opcode.
+            uint8 requestedVersion = 0;
+            uint16 requestedOptions = 0;
+            if (subOpcode == OP_REQUESTSOURCES2) {
+                requestedVersion = dataIn.readUInt8();
+                requestedOptions = dataIn.readUInt16();
+            }
+            // "We still send the source packet separately" (MFC ListenSocket.cpp:987), so
+            // hasResponse stays untouched: a multipacket asking only for sources produces
+            // an OP_ANSWERSOURCES* packet and no multipacket answer.
+            answerSourceRequest(reqFile, requestedVersion, requestedOptions);
+            break;
+        }
+
         default:
             logDebug(QStringLiteral("MultiPacketExt2: unknown sub-opcode 0x%1")
                          .arg(subOpcode, 2, 16, QLatin1Char('0')));
@@ -936,6 +954,20 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
             }
             hasResponse = true;
             break;
+
+        case OP_REQUESTSOURCES2:
+        case OP_REQUESTSOURCES: {
+            // Same case as the EXT2 path: MFC ListenSocket.cpp:852-854 routed all three
+            // multipacket opcodes into one handler, so both of our handlers need it.
+            uint8 requestedVersion = 0;
+            uint16 requestedOptions = 0;
+            if (subOpcode == OP_REQUESTSOURCES2) {
+                requestedVersion = dataIn.readUInt8();
+                requestedOptions = dataIn.readUInt16();
+            }
+            answerSourceRequest(reqFile, requestedVersion, requestedOptions);
+            break;
+        }
 
         default:
             // Unknown sub-opcode with unknown length — stop parsing

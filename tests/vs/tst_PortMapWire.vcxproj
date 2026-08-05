@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{0E30E7A5-A2DD-6476-E8FE-DF81FABB97E6}</ProjectGuid>
+    <ProjectGuid>{15086AB1-E429-5BE8-A25D-0873EEC0D268}</ProjectGuid>
     <RootNamespace>tst_PortMapWire</RootNamespace>
     <Keyword>QtVS_v304</Keyword>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>

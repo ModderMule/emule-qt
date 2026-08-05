@@ -4087,10 +4087,6 @@ void UpDownClient::processRequestSources(const uint8* data, uint32 size)
     if (!data || size < 16)
         return;
 
-    // v1: just a 16-byte file hash, no version/options
-    if (m_sourceExchange1Ver <= 1)
-        return;
-
     SafeMemFile io(data, size);
     uint8 fileHash[16];
     io.readHash16(fileHash);
@@ -4105,24 +4101,9 @@ void UpDownClient::processRequestSources(const uint8* data, uint32 size)
     if (!file)
         return;
 
-    // Rate-limit source requests (same logic as v2)
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-    if (m_lastSourceRequest != 0) {
-        const int srcCount = file->isPartFile()
-            ? static_cast<PartFile*>(file)->sourceCount()
-            : file->uploadingClientCount();
-        const uint32 interval = (srcCount <= RARE_FILE)
-            ? SOURCECLIENTREASKS
-            : SOURCECLIENTREASKS * MINCOMMONPENALTY;
-        if ((curTick - m_lastSourceRequest) < (interval - CONNECTION_LATENCY))
-            return;
-    }
-    m_lastSourceRequest = curTick;
-
-    // Respond with v1 format (version=0, options=0)
-    auto packet = file->createSrcInfoPacket(this, 0, 0);
-    if (packet)
-        sendPacket(std::move(packet));
+    // SX1 carries no version byte, so a requested version of 0 is what the shared gate
+    // sees; it then falls back to the version the peer announced at handshake.
+    answerSourceRequest(file, 0, 0);
 }
 
 // ===========================================================================
@@ -4164,7 +4145,6 @@ void UpDownClient::processRequestSources2(const uint8* data, uint32 size)
     SafeMemFile io(data, size);
     const uint8 version = io.readUInt8();
     const uint16 options = io.readUInt16();
-    Q_UNUSED(options);
 
     uint8 fileHash[16];
     io.readHash16(fileHash);
@@ -4181,23 +4161,7 @@ void UpDownClient::processRequestSources2(const uint8* data, uint32 size)
         return;
     }
 
-    // Rate-limit source requests
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-    if (m_lastSourceRequest != 0) {
-        const int srcCount = file->isPartFile()
-            ? static_cast<PartFile*>(file)->sourceCount()
-            : file->uploadingClientCount();
-        const uint32 interval = (srcCount <= RARE_FILE)
-            ? SOURCECLIENTREASKS
-            : SOURCECLIENTREASKS * MINCOMMONPENALTY;
-        if ((curTick - m_lastSourceRequest) < (interval - CONNECTION_LATENCY))
-            return;
-    }
-    m_lastSourceRequest = curTick;
-
-    auto packet = file->createSrcInfoPacket(this, version, options);
-    if (packet)
-        sendPacket(std::move(packet));
+    answerSourceRequest(file, version, options);
 }
 
 // ===========================================================================
@@ -4226,6 +4190,46 @@ void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
     file->setLastAnsweredTime();
 
     file->addClientSources(io, version, /*isSX2*/ true, this);
+}
+
+// ===========================================================================
+// answerSourceRequest — private; shared by every opcode that asks for sources
+// MFC ListenSocket.cpp:996-1028
+// ===========================================================================
+
+void UpDownClient::answerSourceRequest(KnownFile* file, uint8 requestedVersion,
+                                       uint16 requestedOptions)
+{
+    if (!file)
+        return;
+
+    // "Although this shouldn't happen, it's just in case for any Mods that mess with
+    // version numbers" — MFC ListenSocket.cpp:1003. A peer that announced only SX1 v1
+    // and sent no requested version gets nothing.
+    if (requestedVersion == 0 && m_sourceExchange1Ver <= 1)
+        return;
+
+    // MFC ListenSocket.cpp:1004-1015, kept expression-for-expression: the latency
+    // allowance is added to the elapsed time rather than subtracted from the interval,
+    // and the rare-file shortcut applies to part files only.
+    const uint32 timePassed =
+        static_cast<uint32>(getTickCount()) - m_lastSourceRequest + CONNECTION_LATENCY;
+    const bool neverAskedBefore = (m_lastSourceRequest == 0);
+    const bool rareFile = file->isPartFile()
+                          && static_cast<PartFile*>(file)->sourceCount() <= RARE_FILE;
+
+    if (!((rareFile && (neverAskedBefore || timePassed > SOURCECLIENTREASKS))
+          || neverAskedBefore
+          || timePassed > SOURCECLIENTREASKS * MINCOMMONPENALTY))
+        return;
+
+    m_lastSourceRequest = static_cast<uint32>(getTickCount());
+
+    // ToDo: MFC meters this as AddUpDataOverheadSourceExchange; our sendPacket already
+    // books it as "other" overhead, so categorising it here would double-count.
+    auto packet = file->createSrcInfoPacket(this, requestedVersion, requestedOptions);
+    if (packet)
+        sendPacket(std::move(packet));
 }
 
 // ===========================================================================

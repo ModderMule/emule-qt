@@ -17,7 +17,108 @@
 #include <QTcpSocket>
 #include <QTest>
 
+#include <cstring>
+#include <vector>
+
 using namespace eMule;
+
+namespace {
+
+// ---------------------------------------------------------------------------
+// A ClientReqSocket that can be handed a packet without a wire
+//
+// packetReceived() is protected, so a subclass is the way in. deliver() frames the payload
+// exactly the way EMSocket::onReadyRead does — the Packet(const char* header) ctor plus a
+// standalone `new char[size + 1]` pBuffer — because that is the ownership shape
+// unPackPacket() then frees (EMSocket.cpp:265-268 vs Packet.cpp:179-185). Building the
+// Packet any other way would exercise a buffer arrangement production never sees.
+// ---------------------------------------------------------------------------
+
+class PacketProbeSocket : public ClientReqSocket {
+    Q_OBJECT
+
+public:
+    /// Which dispatch a packet came out of, plus what it carried.
+    struct Received {
+        QByteArray payload;
+        uint8 opcode = 0;
+        uint8 protocol = 0;      ///< only packetForClient reports one; else 0
+        QByteArray via;          ///< "ext" | "client" | "hello" | "fileRequest"
+    };
+
+    std::vector<Received> received;
+
+    PacketProbeSocket()
+    {
+        const auto record = [this](const QByteArray& via) {
+            return [this, via](const uint8* data, uint32 size, uint8 opcode) {
+                received.push_back({ QByteArray(reinterpret_cast<const char*>(data),
+                                                static_cast<int>(size)),
+                                     opcode, 0, via });
+            };
+        };
+        connect(this, &ClientReqSocket::extPacketReceived, this, record("ext"));
+        connect(this, &ClientReqSocket::helloReceived, this, record("hello"));
+        connect(this, &ClientReqSocket::fileRequestReceived, this, record("fileRequest"));
+        connect(this, &ClientReqSocket::packetForClient, this,
+                [this](const uint8* data, uint32 size, uint8 opcode, uint8 protocol) {
+                    received.push_back({ QByteArray(reinterpret_cast<const char*>(data),
+                                                    static_cast<int>(size)),
+                                         opcode, protocol, "client" });
+                });
+    }
+
+    /// Run one framed packet through the real dispatch. Returns packetReceived()'s verdict,
+    /// which is what EMSocket uses to decide whether to keep draining the read buffer.
+    bool deliver(uint8 protocol, uint8 opcode, const QByteArray& payload)
+    {
+        char header[kPacketHeaderSize];
+        auto* h = reinterpret_cast<HeaderStruct*>(header);
+        h->eDonkeyID = protocol;
+        h->packetLength = static_cast<uint32>(payload.size()) + 1;
+        h->command = opcode;
+
+        Packet packet(header);
+        packet.pBuffer = new char[packet.size + 1];
+        std::memcpy(packet.pBuffer, payload.constData(), packet.size);
+        return packetReceived(&packet);
+    }
+
+    [[nodiscard]] bool isTornDown() const { return m_deleteThis; }
+};
+
+/// Payload with a realistic compression ratio. Deliberately not a run of zeros: those
+/// compress ~1000:1 and land the inflate ladder somewhere no real packet reaches (see
+/// packedPacket_underCapButOver50kSucceeds for why the ratio decides the outcome).
+QByteArray compressibleBody(int bytes)
+{
+    QByteArray out;
+    out.reserve(bytes + 8);
+    quint32 x = 0x12345678u;
+    while (out.size() < bytes) {
+        x = x * 1664525u + 1013904223u;      // deterministic — no seeded RNG in tests
+        out.append(static_cast<char>(x >> 24));
+        out.append(static_cast<char>(x >> 16));
+        out.append("\x00\x01\x02\x03", 4);   // structure, so zlib has something to find
+    }
+    out.truncate(bytes);
+    return out;
+}
+
+/// The wire bytes a peer sends after zlib-packing `body`, produced by the very same
+/// Packet::packPacket() our own emitter uses for source answers over 354 bytes
+/// (KnownFile.cpp:915-917). Returns an empty array when the body did not compress.
+QByteArray packBody(const QByteArray& body, uint8 opcode)
+{
+    Packet packet(opcode, static_cast<uint32>(body.size()), OP_EMULEPROT);
+    std::memcpy(packet.pBuffer, body.constData(), static_cast<std::size_t>(body.size()));
+    packet.packPacket();
+    if (packet.prot != OP_PACKEDPROT)
+        return {};
+    return QByteArray(packet.pBuffer, static_cast<int>(packet.size));
+}
+
+} // namespace
 
 class tst_ListenSocket : public QObject {
     Q_OBJECT
@@ -38,6 +139,17 @@ private slots:
     void incomingConnection_rejectsFilteredIP();
     void incomingConnection_rejectsBannedClient();
     void incomingConnection_acceptsCleanIP();
+
+    // OP_PACKEDPROT decompression — MFC CClientReqSocket::PacketReceived
+    // (srchybrid/ListenSocket.cpp:1804-1809)
+    void packedPacket_isDecompressedBeforeDispatch();
+    void packedPacket_reportsWireSizeToStatistics();
+    void uncompressedEmulePacket_dispatchIsUnchanged();
+    void edonkeyPacket_dispatchIsUnchanged();
+    void corruptPackedPayload_isDroppedWithoutDisconnect();
+    void packedPacket_underCapButOver50kSucceeds();
+    void packedPacket_overCapIsDroppedGracefully();
+    void packedPacket_alwaysRoutesToExtDispatch();
 
 private:
     /// Open a connection to `listener` and give it a chance to be accepted or rejected.
@@ -256,6 +368,151 @@ void tst_ListenSocket::incomingConnection_acceptsCleanIP()
 
     listener.killAllSockets();
     listener.stopListening();
+}
+
+// ---------------------------------------------------------------------------
+// OP_PACKEDPROT
+//
+// Any answer our own emitter compresses (source answers over 354 bytes,
+// KnownFile.cpp:915-917) comes back at us from every peer running the same code. Before
+// the unPackPacket() call in packetReceived those arrived as zlib bytes parsed as protocol,
+// misparsed, and were dropped — so peer source exchange did not work at all.
+// ---------------------------------------------------------------------------
+
+void tst_ListenSocket::packedPacket_isDecompressedBeforeDispatch()
+{
+    const QByteArray body = compressibleBody(2000);
+    const QByteArray wire = packBody(body, OP_ANSWERSOURCES2);
+    QVERIFY(!wire.isEmpty());
+    QVERIFY(wire.size() < body.size());
+
+    PacketProbeSocket socket;
+    QVERIFY(socket.deliver(OP_PACKEDPROT, OP_ANSWERSOURCES2, wire));
+
+    QCOMPARE(socket.received.size(), std::size_t(1));
+    QCOMPARE(socket.received[0].via, QByteArray("ext"));
+    QCOMPARE(socket.received[0].opcode, uint8(OP_ANSWERSOURCES2));
+    // The whole point: the parsers see the inflated bytes, not what came off the wire.
+    QCOMPARE(socket.received[0].payload, body);
+}
+
+void tst_ListenSocket::packedPacket_reportsWireSizeToStatistics()
+{
+    const QByteArray body = compressibleBody(2000);
+    const QByteArray wire = packBody(body, OP_ANSWERSOURCES2);
+    QVERIFY(!wire.isEmpty());
+
+    const uint64 before = m_statistics->downDataOverheadSourceExchange();
+
+    PacketProbeSocket socket;
+    QVERIFY(socket.deliver(OP_PACKEDPROT, OP_ANSWERSOURCES2, wire));
+
+    // Overhead means bytes off the wire. Charging the inflated size would overstate our
+    // download overhead by exactly what zlib saved — MFC meters uRawSize for the same
+    // reason (srchybrid/ListenSocket.cpp:1790, :1820).
+    const uint64 charged = m_statistics->downDataOverheadSourceExchange() - before;
+    QCOMPARE(charged, uint64(wire.size()));
+    QVERIFY(charged < uint64(body.size()));
+}
+
+void tst_ListenSocket::uncompressedEmulePacket_dispatchIsUnchanged()
+{
+    const QByteArray body = compressibleBody(64);
+
+    PacketProbeSocket socket;
+    QVERIFY(socket.deliver(OP_EMULEPROT, OP_ANSWERSOURCES2, body));
+
+    QCOMPARE(socket.received.size(), std::size_t(1));
+    QCOMPARE(socket.received[0].via, QByteArray("ext"));
+    QCOMPARE(socket.received[0].payload, body);
+}
+
+void tst_ListenSocket::edonkeyPacket_dispatchIsUnchanged()
+{
+    const QByteArray body = compressibleBody(48);
+
+    PacketProbeSocket socket;
+    QVERIFY(socket.deliver(OP_EDONKEYPROT, OP_MESSAGE, body));
+
+    QCOMPARE(socket.received.size(), std::size_t(1));
+    QCOMPARE(socket.received[0].via, QByteArray("client"));
+    QCOMPARE(socket.received[0].protocol, uint8(OP_EDONKEYPROT));
+    QCOMPARE(socket.received[0].payload, body);
+}
+
+void tst_ListenSocket::corruptPackedPayload_isDroppedWithoutDisconnect()
+{
+    // Not a zlib stream at all.
+    QByteArray garbage(120, '\x7f');
+    garbage[0] = '\x00';
+
+    PacketProbeSocket socket;
+    // MFC breaks out of the switch and returns true: the packet is dropped, the connection
+    // lives. Returning false would make EMSocket::onReadyRead abandon the rest of the read
+    // buffer along with any partial header in it, desyncing the stream over one bad packet.
+    QVERIFY(socket.deliver(OP_PACKEDPROT, OP_ANSWERSOURCES2, garbage));
+
+    QVERIFY(socket.received.empty());
+    QVERIFY(!socket.isTornDown());
+}
+
+void tst_ListenSocket::packedPacket_underCapButOver50kSucceeds()
+{
+    const QByteArray body = compressibleBody(200000);
+    const QByteArray wire = packBody(body, OP_ANSWERSOURCES2);
+    QVERIFY(!wire.isEmpty());
+
+    // What actually decides this is not the cap alone. unPackPacket starts its output
+    // buffer at size * 10 + 300 (clamped to the cap) and doubles on Z_BUF_ERROR only while
+    // the *next* rung is still below the cap — so the ladder can stop short of the cap
+    // itself. Assert the first rung already clears the body, which is the case for any
+    // realistic ratio, so this test measures the cap and not zlib's mood.
+    QVERIFY(uint32(wire.size()) * 10 + 300 >= uint32(body.size()));
+    QVERIFY(wire.size() < 250000);      // ... and the cap is what lets that rung be allocated
+
+    PacketProbeSocket socket;
+    QVERIFY(socket.deliver(OP_PACKEDPROT, OP_ANSWERSOURCES2, wire));
+
+    QCOMPARE(socket.received.size(), std::size_t(1));
+    QCOMPARE(socket.received[0].payload, body);
+}
+
+void tst_ListenSocket::packedPacket_overCapIsDroppedGracefully()
+{
+    const QByteArray body = compressibleBody(400000);
+    const QByteArray wire = packBody(body, OP_ANSWERSOURCES2);
+    QVERIFY(!wire.isEmpty());
+    QVERIFY(body.size() > 250000);
+
+    PacketProbeSocket socket;
+    QVERIFY(socket.deliver(OP_PACKEDPROT, OP_ANSWERSOURCES2, wire));
+
+    QVERIFY(socket.received.empty());
+    QVERIFY(!socket.isTornDown());
+}
+
+void tst_ListenSocket::packedPacket_alwaysRoutesToExtDispatch()
+{
+    // unPackPacket rewrites prot to OP_EMULEPROT unconditionally (Packet.cpp:186), so a
+    // packed packet lands in the extended dispatch even when its opcode also exists on the
+    // eDonkey side. OP_CHANGE_CLIENT_IP is handled in both switches, which is what makes
+    // the two routes distinguishable here. MFC behaves identically — its OP_PACKEDPROT
+    // case falls through to OP_EMULEPROT, never to ProcessPacket.
+    const QByteArray body = compressibleBody(600);
+    const QByteArray wire = packBody(body, OP_CHANGE_CLIENT_IP);
+    QVERIFY(!wire.isEmpty());
+
+    PacketProbeSocket socket;
+    QVERIFY(socket.deliver(OP_PACKEDPROT, OP_CHANGE_CLIENT_IP, wire));
+
+    QCOMPARE(socket.received.size(), std::size_t(1));
+    QCOMPARE(socket.received[0].via, QByteArray("ext"));
+
+    // Control: the same opcode unpacked goes the other way.
+    PacketProbeSocket plain;
+    QVERIFY(plain.deliver(OP_EDONKEYPROT, OP_CHANGE_CLIENT_IP, body));
+    QCOMPARE(plain.received.size(), std::size_t(1));
+    QCOMPARE(plain.received[0].via, QByteArray("client"));
 }
 
 QTEST_MAIN(tst_ListenSocket)

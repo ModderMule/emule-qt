@@ -17,11 +17,13 @@
 
 namespace eMule {
 
+class Address;
 class ClientCreditsList;
 class ClientList;
 class ClientUDPSocket;
 class CollectionKeys;
 class DownloadQueue;
+class Endpoint;
 class FriendList;
 class IPFilter;
 class LastCommonRouteFinder;
@@ -59,6 +61,24 @@ public:
     /// which ports need forwarding — notably the web server starting or
     /// stopping, which is what finally gives the webServerUPnP pref an effect.
     void updatePortMappings();
+
+    // -- Protocol handlers installed on the shared sockets ---------------------
+    // Static and state-free, so the wiring below stays a one-liner and the
+    // behaviour is reachable without standing up a whole session.
+
+    /// OP_DIRECTCALLBACKREQ receive handler: a firewalled peer asks us to open the
+    /// TCP connection. Guards on Kad running + us firewalled, the 19-byte minimum
+    /// and the sender passing isGoodIP / ban / IP-filter, then creates or refreshes
+    /// the client and dials it. Wired to ClientUDPSocket::directCallbackReceived.
+    static void handleDirectCallbackRequest(const Endpoint& senderEP,
+                                            const uint8* data, uint32 size);
+
+    /// Our effective public IPv6 changed: queue an OP_CHANGE_CLIENT_IP for every
+    /// connected peer that can use it. Marks only — the packet goes out when the
+    /// upload queue or a source list next walks the client, so an address rotation
+    /// never fans a write out to every socket at once. Installed as
+    /// AppContext::onPublicIPv6Changed.
+    static void markPeersForIPChange(const Address& effective);
 
 private slots:
     void onTimer();

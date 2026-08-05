@@ -1054,18 +1054,30 @@ void DownloadQueue::process()
     // Add this tick's rate to the averaging window
     m_averageDRList.push_back({curTickRate, curTick});
 
-    // UDP source request batching — send re-ask requests via UDP
-    if (curTick >= m_lastUDPSourceRequestTime + FILEREASKTIME) {
-        m_lastUDPSourceRequestTime = curTick;
+    // UDP file re-asks. MFC has no queue-wide re-ask window here: CDownloadQueue::Process()
+    // stamps only the two *server* UDP timers (DownloadQueue.cpp:397-410). The file re-ask
+    // clock is per (client, file) — SetLastAskedTime() writes m_fileReaskTimes[m_reqfile]
+    // (UpdownClient.h:285) and GetTimeUntilReask() measures FILEREASKTIME from it
+    // (DownloadClient.cpp:1882). One shared stamp measured process uptime instead: starting
+    // from 0 against a boot-relative getTickCount() it never fired below 29 minutes of
+    // uptime, fired on the very first tick above it, and then re-asked every source of every
+    // file in one synchronized burst.
+    //
+    // Once per second, matching MFC's Process() cadence — this runs at 10 Hz.
+    if (m_udCounter == 0) {
         for (auto* file : m_items) {
             if (file->status() != PartFileStatus::Ready &&
                 file->status() != PartFileStatus::Empty)
                 continue;
-            // Trigger UDP re-asks for each source that supports UDP
             for (auto* src : file->srcList()) {
                 // The download-side natural send point for a queued OP_CHANGE_CLIENT_IP.
                 src->flushPendingIPChange();
-                if (src->supportsUDP() && src->isSourceRequestAllowed())
+                // No isSourceRequestAllowed() gate here: udpReaskForDownload() owns that
+                // decision and *returns* when a source request is allowed, because then a
+                // TCP connection is preferable — MFC DownloadClient.cpp:1352. Requiring it
+                // to be true before calling inverted the test, so direct-reachable sources
+                // hit that early return every time and never got an OP_REASKFILEPING.
+                if (src->supportsUDP() && src->timeUntilReask(file) == 0)
                     src->udpReaskForDownload();
             }
         }

@@ -16,6 +16,19 @@
 
 namespace eMule {
 
+namespace {
+
+/// Ceiling on the inflated size of an incoming OP_PACKEDPROT packet.
+///
+/// MFC's client-side call takes the 50 KB default (`srchybrid/Packets.h:64`,
+/// `ListenSocket.cpp:1805`); its server path passes 250 KB. We use 250 KB on both, matching
+/// ServerSocket.cpp. The cap only bounds the inflate output buffer, so a wider one can accept
+/// more packets and never fewer — and a mod that packs a large OP_HASHSETANSWER2 for a
+/// multi-GB file would otherwise be dropped with no way to tell why.
+constexpr uint32 kMaxDecompressedClientPacket = 250000;
+
+} // anonymous namespace
+
 // ---------------------------------------------------------------------------
 // Construction / destruction
 // ---------------------------------------------------------------------------
@@ -154,36 +167,61 @@ bool ClientReqSocket::packetReceived(Packet* packet)
                      .arg(peerAddress().toString()).arg(peerPort()));
     resetTimeOutTimer();
 
-    const auto* data = reinterpret_cast<const uint8*>(packet->pBuffer);
-    uint32 size = packet->size;
-    uint8 opcode = packet->opcode;
+    // The size that crossed the wire, read before unPackPacket() rewrites packet->size.
+    // MFC keeps the same value as uRawSize (ListenSocket.cpp:1790) for one reason: overhead
+    // statistics must meter what arrived, not what zlib produced.
+    const uint32 rawSize = packet->size;
+    const uint8 opcode = packet->opcode;
     uint8 protocol = packet->prot;
 
     try {
+        if (protocol == OP_PACKEDPROT) {
+            // MFC ListenSocket.cpp:1804-1809 — unpack, then fall through to the OP_EMULEPROT
+            // case. On failure it logs and breaks out of the switch: the packet is dropped
+            // but the connection survives, which is what returning true here means. Returning
+            // false would make EMSocket::onReadyRead abandon the rest of the read buffer and
+            // discard the leftover partial header with it (EMSocket.cpp:284-285, :299-302),
+            // desyncing the stream over a single bad packet.
+            if (!packet->unPackPacket(kMaxDecompressedClientPacket)) {
+                logWarning(QStringLiteral("ClientReqSocket::packetReceived — failed to "
+                                          "decompress packed packet (opcode=0x%1 size=%2 "
+                                          "peer=%3:%4)")
+                               .arg(opcode, 2, 16, QLatin1Char('0'))
+                               .arg(rawSize)
+                               .arg(peerAddress().toString()).arg(peerPort()));
+                return true;
+            }
+            // unPackPacket rewrites prot to OP_EMULEPROT (Packet.cpp:186), so a packed packet
+            // always lands in the extended dispatch — even when it carries an eDonkey opcode.
+            // Same in MFC, which is why the fallthrough works there.
+            protocol = packet->prot;
+        }
+
+        // Read only after the unpack: pBuffer and size both move.
+        const auto* data = reinterpret_cast<const uint8*>(packet->pBuffer);
+        const uint32 size = packet->size;
+
         if (protocol == OP_EDONKEYPROT) {
             return processPacket(data, size, opcode);
         } else if (protocol == OP_EMULEPROT) {
-            return processExtPacket(data, size, opcode);
-        } else if (protocol == OP_PACKEDPROT) {
-            // Compressed eMule packet — decompress handled by EMSocket
-            return processExtPacket(data, size, opcode);
+            return processExtPacket(data, size, opcode, rawSize);
         }
     } catch (const FileException& ex) {
         logWarning(QStringLiteral("ClientReqSocket::packetReceived — malformed packet: %1 "
-                                  "(proto=0x%2 opcode=0x%3 size=%4 peer=%5:%6)")
+                                  "(proto=0x%2 opcode=0x%3 wireSize=%4 peer=%5:%6)")
                        .arg(QLatin1String(ex.what()))
                        .arg(protocol, 2, 16, QLatin1Char('0'))
                        .arg(opcode, 2, 16, QLatin1Char('0'))
-                       .arg(size)
+                       .arg(rawSize)
                        .arg(peerAddress().toString()).arg(peerPort()));
         return false;
     } catch (const std::exception& ex) {
         logWarning(QStringLiteral("ClientReqSocket::packetReceived — exception: %1 "
-                                  "(proto=0x%2 opcode=0x%3 size=%4)")
+                                  "(proto=0x%2 opcode=0x%3 wireSize=%4)")
                        .arg(QLatin1String(ex.what()))
                        .arg(protocol, 2, 16, QLatin1Char('0'))
                        .arg(opcode, 2, 16, QLatin1Char('0'))
-                       .arg(size));
+                       .arg(rawSize));
         return false;
     }
 
@@ -266,10 +304,17 @@ bool ClientReqSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
     return true;
 }
 
-bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 opcode)
+bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 opcode,
+                                       uint32 rawSize)
 {
     auto* stats = theApp.statistics;
 
+    // Overhead is metered against rawSize, not size: for an OP_PACKEDPROT packet only the
+    // compressed bytes crossed the wire, and charging the inflated size would overstate the
+    // download overhead by whatever zlib saved us. MFC does the same (ListenSocket.cpp:1820
+    // hands ProcessExtPacket both, and the stats calls take uRawSize). The three block-data
+    // cases below stay on their fixed header sizes — the rest of those packets is payload,
+    // not overhead.
     switch (opcode) {
     // File data — header-only overhead
     case OP_COMPRESSEDPART:
@@ -290,7 +335,7 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_ANSWERSOURCES:
     case OP_REQUESTSOURCES2:
     case OP_ANSWERSOURCES2:
-        if (stats) stats->addDownDataOverheadSourceExchange(size);
+        if (stats) stats->addDownDataOverheadSourceExchange(rawSize);
         emit extPacketReceived(packet, size, opcode);
         break;
 
@@ -307,7 +352,7 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_MULTIPACKET_EXT:
     case OP_MULTIPACKET_EXT2:
     case OP_MULTIPACKETANSWER_EXT2:
-        if (stats) stats->addDownDataOverheadFileRequest(size);
+        if (stats) stats->addDownDataOverheadFileRequest(rawSize);
         emit extPacketReceived(packet, size, opcode);
         break;
 
@@ -330,7 +375,7 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_CHATCAPTCHARES:
     case OP_FWCHECKUDPREQ:
     case OP_KAD_FWTCPCHECK_ACK:
-        if (stats) stats->addDownDataOverheadOther(size);
+        if (stats) stats->addDownDataOverheadOther(rawSize);
         emit extPacketReceived(packet, size, opcode);
         break;
 

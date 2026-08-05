@@ -2,6 +2,7 @@
 /// @brief Tests for transfer/DownloadQueue — file management, lookup,
 ///        priority sorting, source management.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
 #include "files/KnownFileList.h"
@@ -27,6 +28,7 @@
 #include <cstring>
 
 using namespace eMule;
+using namespace eMule::testing;
 
 namespace {
 
@@ -106,6 +108,10 @@ private slots:
     void udpSourceRotation_skipsDeadServers();
     void udpSourceRotation_batchesAndSplitsByPacketCap();
     void udpSourceRotation_bailsWhenCryptRequired();
+
+    // Per-source walk in process(): the OP_CHANGE_CLIENT_IP flush and the re-ask clock.
+    void process_flushesPendingIPChangeForSources();
+    void process_udpReaskHonoursPerPeerReaskTime();
 
 private:
     QTemporaryDir m_tempDir;
@@ -1046,6 +1052,105 @@ void tst_DownloadQueue::udpSourceRotation_bailsWhenCryptRequired()
     QVERIFY(!dq.sendNextUDPPacket());
     QCOMPARE(dq.m_curUdpServer, nullptr);      // never started a pass
 
+    dq.deleteAll();
+}
+
+// ---------------------------------------------------------------------------
+// The per-source walk in process()
+//
+// MFC has no queue-wide re-ask window: CDownloadQueue::Process() stamps only the two
+// *server* UDP timers, and the file re-ask clock is per (client, file) —
+// SetLastAskedTime() / GetTimeUntilReask(), DownloadClient.cpp:1882. These two pin the
+// walk that replaced it: it flushes a queued IP change for every source, and it asks a
+// source for a re-ask only once that source's own clock has run out.
+// ---------------------------------------------------------------------------
+
+/// Run enough process() passes to reach the m_udCounter == 0 sub-tick (~1 s of ticks).
+static void runOneSecondOfTicks(DownloadQueue& dq)
+{
+    for (int i = 0; i < 10; ++i)
+        dq.process();
+}
+
+void tst_DownloadQueue::process_flushesPendingIPChangeForSources()
+{
+    IPv6AdvertiseGuard guard;
+
+    DownloadQueue dq;
+    uint8 hash[16];
+    std::memset(hash, 0x51, sizeof(hash));
+    auto* pf = createTestPartFile(hash, QStringLiteral("ipchange_flush.bin"));
+    dq.addDownload(pf);
+
+    QTcpServer server;
+    UpDownClient source;
+    QTcpSocket* peer = wireLoopbackSocket(server, source);
+    QVERIFY(peer != nullptr);
+    feedIPv6CapableHello(source, 0x31);
+    // Deliberately UDP-incapable: the flush sits *above* the supportsUDP() gate, so a
+    // refactor that folded it inside would fail here.
+    QVERIFY(!source.supportsUDP());
+    // OnQueue with a live socket, so PartFile::process() does not also try to dial it and
+    // put unrelated frames on the wire.
+    source.setDownloadState(DownloadState::OnQueue);
+    pf->addSource(&source);
+
+    QCoreApplication::processEvents();
+    peer->readAll();                          // drain anything the setup produced
+    source.markSendIPPending();
+
+    runOneSecondOfTicks(dq);
+
+    QVERIFY2(waitForBytes(peer, 22), "a source on a Ready/Empty file must be flushed");
+    const QByteArray raw = peer->readAll();
+    QCOMPARE(static_cast<uint8>(raw[0]), static_cast<uint8>(OP_EDONKEYPROT));
+    QCOMPARE(static_cast<uint8>(raw[5]), static_cast<uint8>(OP_CHANGE_CLIENT_IP));
+    QVERIFY(!source.sendIPPending());
+
+    pf->srcList().clear();
+    source.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::process_udpReaskHonoursPerPeerReaskTime()
+{
+    DownloadQueue dq;
+    uint8 hash[16];
+    std::memset(hash, 0x52, sizeof(hash));
+    auto* pf = createTestPartFile(hash, QStringLiteral("reask_clock.bin"));
+    dq.addDownload(pf);
+
+    UpDownClient source;
+    source.setUserIDHybrid(0x0A141E28u);      // HighID → the direct re-ask branch
+    source.setUserAddress(Address::fromString(QStringLiteral("10.20.30.40")));
+    source.setUserPort(4662);
+    uint8 userHash[16];
+    std::memset(userHash, 0x32, sizeof(userHash));
+    source.setUserHash(userHash);
+    feedMuleInfoUDP(source, 4672);
+    QVERIFY(source.supportsUDP());
+    source.setReqFile(pf);
+    pf->addSource(&source);
+
+    // Never asked before, so its clock reads zero and the first pass re-asks it. That is
+    // MFC's GetTimeUntilReask() contract for an unknown (client, file) pair.
+    QCOMPARE(source.timeUntilReask(pf), 0u);
+    runOneSecondOfTicks(dq);
+    QVERIFY2(source.reaskPending(), "a source that has never been asked must be re-asked");
+
+    // The answer stamps the clock — MFC UDPReaskACK(), DownloadClient.cpp:1310 — and the
+    // source then goes quiet for FILEREASKTIME instead of being re-asked every pass.
+    source.udpReaskACK(0);
+    QVERIFY(!source.reaskPending());
+    QVERIFY(source.timeUntilReask(pf) > 0);
+
+    runOneSecondOfTicks(dq);
+    QVERIFY2(!source.reaskPending(),
+             "an answered source must not be re-asked again inside FILEREASKTIME");
+
+    pf->srcList().clear();
     dq.deleteAll();
 }
 

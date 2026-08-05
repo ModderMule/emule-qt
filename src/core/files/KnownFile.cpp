@@ -932,7 +932,9 @@ void KnownFile::writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownC
         tags.emplace_back(CT_EMULE_SERVERIP, serverIp);
         tags.emplace_back(CT_EMULE_SERVERTCP, static_cast<uint32>(src->serverPort()));
     }
-    if (src->openIPv6() && src->userIPv6().isPublicIP())
+    // isIPv6() as well as isPublicIP(): the tag is 16 raw bytes with no family marker, so
+    // an address that is not actually IPv6 would go out as 16 bytes of nothing.
+    if (src->openIPv6() && src->userIPv6().isIPv6() && src->userIPv6().isPublicIP())
         tags.emplace_back(CT_MOD_IP_V6, src->userIPv6().ipv6Bytes().data());
 
     // The user hash and crypt options lived in the classic record's version-gated tail
