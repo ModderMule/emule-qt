@@ -7,7 +7,6 @@
 /// time, clients, servers, shared files, total downloads).
 /// Right side: 3 stacked StatsGraph widgets (Download, Upload, Connections).
 
-#include <QCborMap>
 #include <QWidget>
 
 class QSplitter;
@@ -18,6 +17,7 @@ class QTreeWidgetItem;
 namespace eMule {
 
 class IpcClient;
+class PanelPoller;
 class StatsGraph;
 
 /// Statistics panel matching the MFC eMule Statistics tab.
@@ -41,31 +41,45 @@ public:
     static QString formatPercent(qint64 part, qint64 whole);
 
 private slots:
-    void onRefreshTimer();
-    void onGraphTimer();
     void onContextMenu(const QPoint& pos);
 
 private:
     void setupUi();
     void buildTree();
     void requestStats();
+    /// Ask the daemon for graph samples newer than m_statsSeq.
+    void requestGraphHistory();
     void updateTree(const class QCborMap& stats);
-    void feedGraphs(const class QCborMap& stats);
+    /// Apply one GetStatsHistory reply, clearing the graphs first if what we hold is
+    /// no longer a prefix of the daemon's history.
+    void applyGraphHistory(const class QCborMap& data);
 
     // Context menu actions
+    /// Build the tree menu, shared by the right-click and the header-bar button.
+    /// Deletes itself when it closes; the caller pops it up.
+    class QMenu* buildStatsMenu();
     void copyBranch();
     void copyAllVisible();
     void copyAllStats();
     void resetStats();
+    void restoreStats();
     QString treeItemText(QTreeWidgetItem* item, int depth) const;
 
     IpcClient* m_ipc = nullptr;
-    QTimer* m_refreshTimer = nullptr;
-    QTimer* m_graphTimer = nullptr;
-    QCborMap m_lastStats;
+    PanelPoller* m_treePoller = nullptr;
+    PanelPoller* m_graphPoller = nullptr;
+
+    // Which slice of the daemon's sample history the three graphs currently hold.
+    quint32 m_statsSeq = 0;
+    quint32 m_statsEpoch = 0;
+
+    /// Set from the last stats poll; gates the Restore Statistics menu item.
+    bool m_backupAvailable = false;
 
     // Layout
     QSplitter* m_hSplitter = nullptr;
+    class QToolButton* m_menuButton = nullptr;
+    class QLabel* m_labelLastReset = nullptr;
     QTreeWidget* m_tree = nullptr;
     StatsGraph* m_graphDown = nullptr;
     StatsGraph* m_graphUp = nullptr;
@@ -175,6 +189,7 @@ private:
 
     // Time Statistics
     QTreeWidgetItem* m_itemTimeHeader = nullptr;
+    QTreeWidgetItem* m_itemStatsLastReset = nullptr;
     QTreeWidgetItem* m_itemTimeSinceReset = nullptr;
     // Session
     QTreeWidgetItem* m_itemRuntime = nullptr;

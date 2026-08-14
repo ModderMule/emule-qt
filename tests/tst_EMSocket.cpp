@@ -6,11 +6,14 @@
 #include "net/Packet.h"
 #include "utils/Opcodes.h"
 
+#include <QEventLoop>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+#include <QTimer>
 
+#include <array>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -68,6 +71,7 @@ private slots:
     void wrongHeaderRejection();
     void oversizedPacketRejection();
     void downloadRateLimiting();
+    void retryChainQuiescesWhenEncryptionNotReady();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -284,6 +288,54 @@ void tst_EMSocket::downloadRateLimiting()
     clientSocket.setDownloadLimit(1000);
 
     QTRY_COMPARE_WITH_TIMEOUT(clientSocket.receivedPackets.size(), static_cast<std::size_t>(1), 3000);
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+// ---------------------------------------------------------------------------
+// Send-retry chain must not poll while the encryption layer is not ready
+// ---------------------------------------------------------------------------
+
+void tst_EMSocket::retryChainQuiescesWhenEncryptionNotReady()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket clientSocket;
+
+    // Outgoing obfuscation: the state parks in Negotiating until the peer answers
+    // the handshake, and this server never will. send() therefore early-returns
+    // without draining, which used to make scheduleRetryIfNeeded() re-arm its 10 ms
+    // timer forever — 100 Hz per socket, indefinitely.
+    const std::array<uint8, 16> peerHash{};
+    clientSocket.setConnectionEncryption(true, peerHash.data(), false);
+    clientSocket.connectToHost(QHostAddress::LocalHost, server.serverPort());
+
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+    QVERIFY(!clientSocket.isEncryptionLayerReady());
+
+    QCOMPARE(clientSocket.sendRetryCount(), uint64(0));
+
+    // Queue a control packet — this starts the retry chain.
+    clientSocket.sendPacket(std::make_unique<Packet>(OP_EDONKEYPROT, 4), true);
+
+    // A plain nested event loop, not QTest::qWait — qWait polls the event loop and
+    // would perturb timer delivery.
+    QEventLoop loop;
+    QTimer::singleShot(500, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    // The chain must have started (otherwise the test proves nothing) but must have
+    // backed off: retries land at 10/30/70/150/310 ms, so 5 in a 500 ms window.
+    // A flat 10 ms re-arm gives 18+ here and 100/s in the field.
+    const uint64 retries = clientSocket.sendRetryCount();
+    QVERIFY2(retries > 0, "retry chain never started — the test would prove nothing");
+    QVERIFY2(retries < 10,
+             qPrintable(QStringLiteral("retry chain fired %1 times in 500ms").arg(retries)));
 
     serverSide->close();
     clientSocket.close();

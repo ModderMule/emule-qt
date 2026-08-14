@@ -30,6 +30,14 @@ void StatsGraph::setSeriesInfo(int index, const QString& label,
     update();
 }
 
+void StatsGraph::setSeriesColor(int index, const QColor& color)
+{
+    if (index < 0 || index >= m_seriesCount || !color.isValid())
+        return;
+    m_series[static_cast<size_t>(index)].color = color;
+    update();
+}
+
 void StatsGraph::setYRange(double lower, double upper)
 {
     m_yLower = lower;
@@ -57,12 +65,16 @@ void StatsGraph::reset()
 
 void StatsGraph::setBackgroundColor(const QColor& c)
 {
+    if (!c.isValid())
+        return;   // keep the last good colour rather than painting on an invalid one
     m_bgColor = c;
     update();
 }
 
 void StatsGraph::setGridColor(const QColor& c)
 {
+    if (!c.isValid())
+        return;
     m_gridColor = c;
     update();
 }

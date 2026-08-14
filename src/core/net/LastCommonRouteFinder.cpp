@@ -109,6 +109,7 @@ bool LastCommonRouteFinder::setPrefs(const USSParams& params)
         m_lowestInitialPingAllowed = params.lowestInitialPingAllowed;
         m_useMillisecondPingTolerance = params.useMillisecondPingTolerance;
         m_enabled = params.enabled;
+        m_prefsReceived = true;
     }
     m_prefsCV.notify_all();
     return true;
@@ -152,10 +153,15 @@ void LastCommonRouteFinder::run()
     Pinger pinger;
 
     // --- Phase 0: Wait for preferences ---
+    // Wake on m_prefsReceived as well as m_enabled: CoreSession pushes prefs every second,
+    // but with USS disabled (the default) m_enabled never turns true, so waiting on it alone
+    // burned the whole kPrefsTimeoutMs before the loop below could publish the pass-through
+    // limit or the status string. The disabled-branch wait further down deliberately does
+    // NOT test m_prefsReceived — the flag stays set, so it would spin.
     {
         std::unique_lock lock(m_prefsMutex);
         m_prefsCV.wait_for(lock, std::chrono::milliseconds(kPrefsTimeoutMs),
-                           [this] { return !m_run.load() || m_enabled; });
+                           [this] { return !m_run.load() || m_enabled || m_prefsReceived; });
     }
 
     while (m_run.load()) {

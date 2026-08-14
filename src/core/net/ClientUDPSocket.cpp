@@ -128,6 +128,12 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Endpoint&
 // ThrottledControlSocket: bandwidth-limited send
 // ---------------------------------------------------------------------------
 
+bool ClientUDPSocket::hasControlQueue() const
+{
+    std::lock_guard lock(m_sendLock);
+    return !m_controlQueue.empty();
+}
+
 SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, uint32 /*minFragSize*/)
 {
     // Called from the UploadBandwidthThrottler thread.

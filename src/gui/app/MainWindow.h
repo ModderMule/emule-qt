@@ -19,10 +19,12 @@
 
 class QAction;
 class QActionGroup;
+class QCborMap;
 class QLabel;
 class QMenu;
 class QSoundEffect;
 class QStackedWidget;
+class QTimer;
 class QToolBar;
 
 namespace eMule {
@@ -125,8 +127,9 @@ public:
     [[nodiscard]] IrcPanel* ircPanel() const { return m_ircPanel; }
     [[nodiscard]] StatisticsPanel* statisticsPanel() const { return m_statsPanel; }
 
-    /// Update the eD2K status label in the footer.
-    void setEd2kStatus(bool connected, bool connecting, bool firewalled);
+    /// Update the eD2K status label in the footer. \p firewalled is the combined
+    /// ed2k+kad state (tray icon), \p lowID the per-network eD2K LowID (label colour).
+    void setEd2kStatus(bool connected, bool connecting, bool firewalled, bool lowID);
 
     /// Update the Kad status label in the footer.
     void setKadStatus(bool running, bool kadConnected, bool firewalled);
@@ -149,6 +152,15 @@ public:
 
     /// Bypass minimize-to-tray and promptOnExit, then close and quit.
     void forceQuit();
+
+    /// Run a version check. \p manual reports the "up to date" and "check failed"
+    /// outcomes too, which the automatic background check stays silent about, and
+    /// ignores both the versionCheckEnabled setting and the interval.
+    void checkForUpdates(bool manual);
+
+    /// Start the automatic check: one now if due, then hourly. Idempotent, so the
+    /// IPC connected handler can call it again on every reconnect.
+    void startVersionChecks();
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -180,6 +192,24 @@ private:
     void setupStatusBar();
     void setupPages();
     void updateConnectButton();
+
+    /// Redraw the tray icon: connection-state base plus MFC's download-rate meter bar.
+    /// Cheap to call at 1 Hz — it returns early unless the picture would change.
+    /// @param force repaint even then (startup, and after a settings change).
+    void updateTrayIcon(bool force = false);
+
+    /// Colour of the meter bar: stats colour 11, or the system scheme when that is
+    /// left on "auto".
+    [[nodiscard]] QColor trayMeterColor() const;
+
+    /// Version, connection state and both rates, as MFC's tray tooltip carries.
+    void updateTrayToolTip();
+
+    /// Ask the daemon for toolbar-graph samples newer than m_speedSeq.
+    void pollSpeedHistory();
+    /// Apply one GetSpeedHistory reply, clearing the widget first if what we hold is
+    /// no longer a prefix of the daemon's history.
+    void applySpeedHistory(const QCborMap& data);
 
     QStackedWidget* m_pages = nullptr;
     QToolBar* m_toolbar = nullptr;
@@ -221,12 +251,18 @@ private:
     QSystemTrayIcon* m_trayIcon = nullptr;
     QSoundEffect* m_notifySound = nullptr;
 
-    // Speed graph in toolbar
+    // Speed graph in toolbar. The samples are the daemon's, fetched by seq — see
+    // pollSpeedHistory(). m_speedSeq/m_speedEpoch say which slice of the daemon's
+    // history the widget currently holds.
     SpeedGraph* m_speedGraph = nullptr;
+    QTimer* m_speedHistoryTimer = nullptr;
+    quint32 m_speedSeq = 0;
+    quint32 m_speedEpoch = 0;
 
     // Cached status for world icon
     bool m_ed2kConnected = false;
-    bool m_ed2kFirewalled = false;
+    bool m_ed2kFirewalled = false;   ///< combined ed2k+kad firewall state (tray icon)
+    bool m_ed2kLowID = false;        ///< eD2K-only LowID
     bool m_kadRunning = false;
     bool m_kadConnected = false;
     bool m_kadFirewalled = false;
@@ -243,6 +279,12 @@ private:
     // Tray context menu
     TrayMenuManager* m_trayMenu = nullptr;
     bool m_forceQuit = false;
+
+    // What the tray icon currently shows, so an unchanged picture costs nothing.
+    int     m_trayMeterLevel = -1;
+    QString m_trayIconPath;
+    QColor  m_trayMeterColor;
+    QString m_trayToolTip;
 
 #ifdef Q_OS_WIN
     MiniMuleWidget* m_miniMule = nullptr;

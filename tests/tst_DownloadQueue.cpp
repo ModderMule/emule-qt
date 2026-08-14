@@ -79,6 +79,8 @@ private slots:
     void deleteAll_keepsCompletedFileOwnedByKnownList();
     void fileByID_found();
     void fileByID_notFound();
+    void fileByKadFileSearchID_found();
+    void fileByKadFileSearchID_ignoresZero();
     void isFileExisting_basic();
     void sortByPriority_ordering();
     void startNextFile_resumesPaused();
@@ -324,6 +326,43 @@ void tst_DownloadQueue::fileByID_notFound()
 
     PartFile* found = dq.fileByID(hash2);
     QVERIFY(found == nullptr);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::fileByKadFileSearchID_found()
+{
+    DownloadQueue dq;
+
+    uint8 hashA[16] = {0x4A, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x4A};
+    uint8 hashB[16] = {0x4B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x4B};
+    auto* a = createTestPartFile(hashA, QStringLiteral("kadA.bin"));
+    auto* b = createTestPartFile(hashB, QStringLiteral("kadB.bin"));
+    dq.addDownload(a);
+    dq.addDownload(b);
+
+    a->setKadFileSearchID(77);
+    b->setKadFileSearchID(78);
+
+    QCOMPARE(dq.fileByKadFileSearchID(77), a);
+    QCOMPARE(dq.fileByKadFileSearchID(78), b);
+    QVERIFY(dq.fileByKadFileSearchID(79) == nullptr);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::fileByKadFileSearchID_ignoresZero()
+{
+    DownloadQueue dq;
+
+    uint8 hash[16] = {0x4C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x4C};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kadZero.bin"));
+    dq.addDownload(pf);
+
+    // 0 means "no search". Matching on it would hand a file to the first
+    // expiring search that happens to have no owner.
+    QCOMPARE(pf->kadFileSearchID(), 0U);
+    QVERIFY(dq.fileByKadFileSearchID(0) == nullptr);
 
     dq.deleteAll();
 }

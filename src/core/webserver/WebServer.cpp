@@ -22,10 +22,12 @@
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
+#include "stats/StatsHistory.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
 #include "kademlia/Kademlia.h"
 #include "utils/Log.h"
+#include "utils/StringUtils.h"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -44,6 +46,9 @@
 #include <QTcpServer>
 #include <QUrlQuery>
 #include <QUuid>
+
+#include <algorithm>
+#include <chrono>
 
 namespace eMule {
 
@@ -265,6 +270,7 @@ void WebServer::setSearchList(SearchList* search)     { m_searchList = search; }
 void WebServer::setSharedFileList(SharedFileList* sf) { m_sharedFiles = sf; }
 void WebServer::setFriendList(FriendList* fl)         { m_friendList = fl; }
 void WebServer::setStatistics(Statistics* stats)      { m_statistics = stats; }
+void WebServer::setStatsHistory(StatsHistory* history) { m_statsHistory = history; }
 void WebServer::setPreferences(Preferences* prefs)    { m_preferences = prefs; }
 
 // ---------------------------------------------------------------------------
@@ -972,7 +978,7 @@ QHttpServerResponse WebServer::handleGetStats()
         {QStringLiteral("sessionReceivedBytes"), static_cast<qint64>(m_statistics->sessionReceivedBytes())},
         {QStringLiteral("sessionSentBytes"),     static_cast<qint64>(m_statistics->sessionSentBytes())},
         {QStringLiteral("reconnects"),           m_statistics->reconnects()},
-        {QStringLiteral("uptimeSeconds"),        static_cast<qint64>(m_statistics->transferTime())},
+        {QStringLiteral("uptimeSeconds"),        static_cast<qint64>(m_statistics->uptimeSecs())},
     };
 
     return jsonSuccess(obj);
@@ -1624,16 +1630,137 @@ QString WebServer::buildStatisticsPage()
         vars[QStringLiteral("SessionReceived")] = QString::number(m_statistics->sessionReceivedBytes());
         vars[QStringLiteral("SessionSent")] = QString::number(m_statistics->sessionSentBytes());
         vars[QStringLiteral("Reconnects")] = QString::number(m_statistics->reconnects());
-        vars[QStringLiteral("Uptime")] = QString::number(m_statistics->transferTime());
+        vars[QStringLiteral("Uptime")] = QString::number(m_statistics->uptimeSecs());
     }
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("STATS")), vars);
 }
 
+namespace {
+
+/// Sample window the page shows — MFC's WEB_GRAPH_WIDTH (srchybrid/WebServer.h:8).
+/// Core keeps 1024 samples, so the newest 500 are handed over.
+constexpr size_t kWebGraphWidth = 500;
+
+/// SVG viewBox the shipped template draws into. The width matches the sample window
+/// one-to-one; the height is MFC's WEB_GRAPH_HEIGHT.
+constexpr int kGraphViewWidth  = 500;
+constexpr int kGraphViewHeight = 120;
+
+/// One series as the template sees it.
+struct GraphSeries {
+    QString csv;      ///< comma-separated values, oldest first (MFC's variable)
+    QString points;   ///< "x,y x,y …" for an SVG <polyline>
+};
+
+/// @param csvScale factor from @p values into the units the CSV variable carries —
+///                 1024 for the rates, which MFC writes in bytes/s.
+/// @param maxValue full-scale value for the Y axis, in the units of @p values.
+GraphSeries buildSeries(const std::vector<double>& values, double maxValue,
+                        double csvScale, int viewW, int viewH)
+{
+    GraphSeries out;
+    if (values.empty())
+        return out;   // an empty variable, not a stray placeholder
+
+    const double top = maxValue > 0.0 ? maxValue : 1.0;
+    const auto count = static_cast<int>(values.size());
+
+    QStringList csv;
+    QStringList points;
+    csv.reserve(count);
+    points.reserve(count);
+
+    for (int i = 0; i < count; ++i) {
+        const double value = values[static_cast<size_t>(i)];
+        csv << QString::number(static_cast<uint64>(std::max(0.0, value) * csvScale));
+
+        // A short history still spans the full width, so the page reads the same
+        // whether the daemon started a minute or an hour ago.
+        const double x = count > 1 ? (i * static_cast<double>(viewW - 1)) / (count - 1)
+                                   : 0.0;
+        const double y = viewH - std::clamp(value / top, 0.0, 1.0) * viewH;
+        points << QStringLiteral("%1,%2").arg(QString::number(x, 'f', 1),
+                                              QString::number(y, 'f', 1));
+    }
+
+    out.csv = csv.join(u',');
+    out.points = points.join(u' ');
+    return out;
+}
+
+} // namespace
+
+QHash<QString, QString> WebServer::graphVars(const std::vector<StatsGraphSample>& samples,
+                                             uint32 maxDown, uint32 maxUp, uint32 maxConn,
+                                             int viewW, int viewH)
+{
+    std::vector<double> down;
+    std::vector<double> up;
+    std::vector<double> conn;
+    down.reserve(samples.size());
+    up.reserve(samples.size());
+    conn.reserve(samples.size());
+    for (const StatsGraphSample& s : samples) {
+        // The three values MFC pushes into its web ring: the current rates and the
+        // active connection count (srchybrid/StatisticsDlg.cpp:600-607).
+        down.push_back(s.downCurrent);
+        up.push_back(s.upCurrent);
+        conn.push_back(s.connActive);
+    }
+
+    // The rates are KB/s here; MFC's CSV is bytes/s, so it multiplies by 1024
+    // (srchybrid/WebServer.cpp:3038-3043). Connections are a plain count.
+    const GraphSeries downSeries = buildSeries(down, maxDown, 1024.0, viewW, viewH);
+    const GraphSeries upSeries   = buildSeries(up, maxUp, 1024.0, viewW, viewH);
+    const GraphSeries connSeries = buildSeries(conn, maxConn, 1.0, viewW, viewH);
+
+    QHash<QString, QString> vars;
+    vars[QStringLiteral("GraphDownload")]       = downSeries.csv;
+    vars[QStringLiteral("GraphUpload")]         = upSeries.csv;
+    vars[QStringLiteral("GraphConnections")]    = connSeries.csv;
+    vars[QStringLiteral("GraphDownloadPts")]    = downSeries.points;
+    vars[QStringLiteral("GraphUploadPts")]      = upSeries.points;
+    vars[QStringLiteral("GraphConnectionsPts")] = connSeries.points;
+    vars[QStringLiteral("MaxDownload")]         = QString::number(maxDown);
+    vars[QStringLiteral("MaxUpload")]           = QString::number(maxUp);
+    vars[QStringLiteral("MaxConnections")]      = QString::number(maxConn);
+    return vars;
+}
+
 QString WebServer::buildGraphsPage()
 {
+    std::vector<StatsGraphSample> samples;
+    if (m_statsHistory) {
+        samples = m_statsHistory->statsSince(0);
+        if (samples.size() > kWebGraphWidth)
+            samples.erase(samples.begin(), samples.end() - kWebGraphWidth);
+    }
+
+    // MFC pads its axis maxima the same way, so a trace at the limit still has air
+    // above it (srchybrid/WebServer.cpp:3053-3059).
+    const uint32 maxDown = (m_preferences ? m_preferences->maxGraphDownloadRate() : 0) + 4;
+    const uint32 maxUp   = (m_preferences ? m_preferences->maxGraphUploadRate() : 0) + 4;
+    const uint32 maxConn = (m_preferences ? m_preferences->maxConnections() : 0) + 20;
+
+    // The desktop graphs' palette is GUI-only state in uistate.yml — the daemon cannot
+    // see it, so the template paints in eMule's factory colours instead.
+    QHash<QString, QString> vars =
+        graphVars(samples, maxDown, maxUp, maxConn, kGraphViewWidth, kGraphViewHeight);
+
+    const uint32 interval = m_preferences ? m_preferences->graphsUpdateSec() : 0;
+    vars[QStringLiteral("ScaleTime")] = formatDuration(
+        std::chrono::seconds(static_cast<int64_t>(interval > 0 ? interval : 3)
+                             * static_cast<int64_t>(kWebGraphWidth)));
+
+    vars[QStringLiteral("TxtDownload")]    = QStringLiteral("Downloads");
+    vars[QStringLiteral("TxtUpload")]      = QStringLiteral("Uploads");
+    vars[QStringLiteral("TxtConnections")] = QStringLiteral("Active Connections");
+    vars[QStringLiteral("TxtTime")]        = QStringLiteral("Time");
+    vars[QStringLiteral("KByteSec")]       = QStringLiteral("KB/s");
+
     return WebTemplateEngine::substitute(
-        m_templateEngine->section(QStringLiteral("GRAPHS")), {});
+        m_templateEngine->section(QStringLiteral("GRAPHS")), vars);
 }
 
 QString WebServer::buildPreferencesPage(bool /*isAdmin*/)

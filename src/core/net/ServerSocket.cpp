@@ -163,12 +163,19 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (size < 2u + msgLen)
             return false;
 
-        // ED2K servers send UTF-8 or Latin-1 text
-        QString msg = QString::fromUtf8(reinterpret_cast<const char*>(packet + 2), msgLen);
-        if (msg.isEmpty())
-            msg = QString::fromLatin1(reinterpret_cast<const char*>(packet + 2), msgLen);
+        // Charset follows the server's advertised Unicode support, as the reference does
+        // (CSafeMemFile::ReadString(pServer && pServer->GetUnicodeSupport())). Sniffing
+        // does not work here: QString::fromUtf8 substitutes U+FFFD for invalid input and
+        // never returns an empty string, so the old `if (msg.isEmpty())` fallback to
+        // Latin-1 could not fire and legacy servers came through as replacement chars.
+        const char* text = reinterpret_cast<const char*>(packet + 2);
+        const QString msg = (m_curServer && m_curServer->supportsUnicode())
+            ? QString::fromUtf8(text, msgLen)
+            : QString::fromLatin1(text, msgLen);
 
-        logInfo(QStringLiteral("Server message: %1").arg(msg));
+        // The reference only Debug()s here — the message text belongs in the Server Info
+        // pane, not the log. Keeping it on the verbose channel preserves diagnostics.
+        logServerVerbose(QStringLiteral("<<< OP_SERVERMESSAGE (%1 bytes): %2").arg(msgLen).arg(msg));
         emit serverMessage(msg);
         break;
     }
@@ -468,10 +475,20 @@ void ServerSocket::setConnectionState(ServerConnState newState)
     m_connectionState = newState;
     emit connectionStateChanged(newState);
 
-    if (newState == ServerConnState::ServerDead ||
-        newState == ServerConnState::FatalError ||
-        newState == ServerConnState::ServerFull) {
+    // The reference fires ConnectionFailed() for every state below CS_CONNECTING —
+    // CServerSocket::SetConnectionState(), srchybrid/ServerSocket.cpp:726-733. Its
+    // constants are negative for the terminal states (CS_FATALERROR=-5 ...
+    // CS_SERVERFULL=-1, CS_NOTCONNECTED=0), so CS_DISCONNECTED is in that set.
+    // Narrowing this to ServerDead/FatalError/ServerFull is what made the
+    // Disconnected branch of ServerConnect::connectionFailed() dead code.
+    switch (newState) {
+    case ServerConnState::Connecting:
+    case ServerConnState::WaitForLogin:
+    case ServerConnState::Connected:
+        break;
+    default:
         emit connectionFailed(newState);
+        break;
     }
 }
 
@@ -488,8 +505,21 @@ void ServerSocket::onError(int errorCode)
                    .arg(static_cast<int>(m_connectionState))
                    .arg(static_cast<int>(m_streamCryptState)));
 
-    if (m_connectionState == ServerConnState::Connecting ||
-        m_connectionState == ServerConnState::WaitForLogin) {
+    // Any socket error on an *established* connection is a lost connection, not a
+    // dead server or a fatal error. Qt reports the peer's FIN as an error before
+    // disconnected(), so without this an ordinary server drop landed in FatalError:
+    // the wrong log line, no auto-reconnect, and on the sibling ServerDead route
+    // Server::incFailedCount() could eventually delete a healthy server from the
+    // list. The reference sees the close directly and maps CS_CONNECTED to
+    // CS_DISCONNECTED — CServerSocket::OnClose(), srchybrid/ServerSocket.cpp:713-724.
+    //
+    // Both this and onSocketError() are live entry points — EMSocket funnels its
+    // errors here, Qt's errorOccurred goes to onSocketError() — and either can land
+    // first, so they must make the same decision.
+    if (m_connectionState == ServerConnState::Connected) {
+        setConnectionState(ServerConnState::Disconnected);
+    } else if (m_connectionState == ServerConnState::Connecting ||
+               m_connectionState == ServerConnState::WaitForLogin) {
         setConnectionState(ServerConnState::ServerDead);
     } else {
         setConnectionState(ServerConnState::FatalError);
@@ -534,9 +564,13 @@ void ServerSocket::onSocketDisconnected()
 
     if (m_connectionState == ServerConnState::Connected) {
         setConnectionState(ServerConnState::Disconnected);
-    } else if (m_connectionState != ServerConnState::NotConnected) {
+    } else if (m_connectionState == ServerConnState::Connecting ||
+               m_connectionState == ServerConnState::WaitForLogin) {
         setConnectionState(ServerConnState::ServerDead);
     }
+    // Any other state is already terminal: onSocketError() normally runs first (Qt
+    // reports the peer's FIN as an error before disconnected()) and has set it.
+    // Overwriting it here would re-fire connectionFailed() with the wrong reason.
 }
 
 void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
@@ -550,6 +584,14 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
                    .arg(peerAddress().toString()).arg(peerPort())
                    .arg(static_cast<int>(m_connectionState))
                    .arg(static_cast<int>(m_streamCryptState)));
+
+    // A drop on an established connection is a disconnect — see onError() above for
+    // why. In practice EMSocket routes the error to onError() first and this is the
+    // second notification, but the decision has to be the same either way.
+    if (m_connectionState == ServerConnState::Connected) {
+        setConnectionState(ServerConnState::Disconnected);
+        return;
+    }
 
     switch (error) {
     case QAbstractSocket::ConnectionRefusedError:

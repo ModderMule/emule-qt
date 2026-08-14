@@ -12,8 +12,11 @@
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/TransferToolbar.h"
 #include "dialogs/ClientDetailDialog.h"
+#include "dialogs/FindInListDialog.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
+#include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
 
 #include "IpcMessage.h"
@@ -45,7 +48,6 @@
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QPointer>
-#include <QStackedWidget>
 #include <QTabBar>
 #include <QTimer>
 #include <QToolBar>
@@ -159,67 +161,77 @@ TransferPanel::TransferPanel(QWidget* parent)
 {
     setupUi();
 
-    m_refreshTimer = new QTimer(this);
-    connect(m_refreshTimer, &QTimer::timeout, this, &TransferPanel::onRefreshTimer);
+    m_poller = new PanelPoller(this, [this] { onRefreshTimer(); });
 }
 
 TransferPanel::~TransferPanel() = default;
 
 void TransferPanel::switchToSubTab(int index)
 {
-    if (index >= 0 && index <= 3)
-        setBottomClientView(index);
+    if (index >= 0 && index < ClientViewCount)
+        setBottomView(index);
+}
+
+void TransferPanel::switchToTopView(int index)
+{
+    if (index >= 0 && index <= ClientViewCount)
+        setTopView(index);
 }
 
 void TransferPanel::setIpcClient(IpcClient* client)
 {
     m_ipc = client;
 
-    if (m_ipc && m_ipc->isConnected()) {
-        m_refreshTimer->setInterval(m_ipc->pollingInterval());
-        m_refreshTimer->start();
-        onRefreshTimer();
-    } else if (m_ipc) {
-        connect(m_ipc, &IpcClient::connected, this, [this]() {
-            m_refreshTimer->setInterval(m_ipc->pollingInterval());
-            m_refreshTimer->start();
-            onRefreshTimer();
-        });
-        connect(m_ipc, &IpcClient::disconnected, this, [this]() {
-            m_refreshTimer->stop();
-            m_downloadModel->clear();
-            m_uploadingModel->clear();
-            m_downloadingModel->clear();
-            m_onQueueModel->clear();
-            m_knownModel->clear();
-            updateToolbarLabels();
-        });
-
-        // Wire push events for immediate refresh
-        connect(m_ipc, &IpcClient::downloadAdded, this, [this](const IpcMessage&) {
-            requestDownloads();
-        });
-        connect(m_ipc, &IpcClient::downloadRemoved, this, [this](const IpcMessage&) {
-            requestDownloads();
-        });
-        connect(m_ipc, &IpcClient::downloadUpdated, this, [this](const IpcMessage&) {
-            requestDownloads();
-            requestDownloadClients();  // sources may have changed too
-        });
-        connect(m_ipc, &IpcClient::uploadUpdated, this, [this](const IpcMessage&) {
-            requestUploads();
-        });
-        connect(m_ipc, &IpcClient::knownClientsChanged, this, [this](const IpcMessage&) {
-            requestKnownClients();
-        });
-    } else {
-        m_refreshTimer->stop();
+    auto clearAll = [this] {
         m_downloadModel->clear();
-        m_uploadingModel->clear();
-        m_downloadingModel->clear();
-        m_onQueueModel->clear();
-        m_knownModel->clear();
+        for (const auto& slot : m_clients)
+            slot.model->clear();
+        m_queueCount = -1;
         updateToolbarLabels();
+    };
+
+    if (!m_ipc) {
+        m_poller->setEnabled(false);
+        clearAll();
+        return;
+    }
+
+    connect(m_ipc, &IpcClient::connected, this, [this]() {
+        m_poller->setInterval(m_ipc->pollingInterval());
+        m_poller->setEnabled(true);
+    });
+    connect(m_ipc, &IpcClient::disconnected, this, [this, clearAll]() {
+        m_poller->setEnabled(false);
+        clearAll();
+    });
+
+    // Push events pull the next poll forward rather than issuing their own
+    // refetch. PushDownloadUpdate alone fires once per source added or removed
+    // on every download, and answering each one with a full list refetch — on
+    // top of the poll that was going to fetch it anyway — is what made the
+    // socket unusable for anything else during a busy transfer.
+    auto nudge = [this](const IpcMessage&) { m_poller->nudge(); };
+    connect(m_ipc, &IpcClient::downloadAdded,       this, nudge);
+    connect(m_ipc, &IpcClient::downloadRemoved,     this, nudge);
+    connect(m_ipc, &IpcClient::downloadUpdated,     this, nudge);
+    connect(m_ipc, &IpcClient::uploadUpdated,       this, nudge);
+    connect(m_ipc, &IpcClient::knownClientsChanged, this, nudge);
+
+    // "Clients on queue: N" sits under the bottom pane whichever list is showing, but
+    // the count is all it needs. Taking it off the stats push — which the daemon
+    // broadcasts about once a second anyway — is what lets the tick skip GetUploads
+    // when neither queue list is up.
+    connect(m_ipc, &IpcClient::statsUpdated, this, [this](const IpcMessage& msg) {
+        const QCborValue waiting = msg.fieldMap(0).value(QStringLiteral("upWaiting"));
+        if (waiting.isInteger()) {
+            m_queueCount = static_cast<int>(waiting.toInteger());
+            updateToolbarLabels();
+        }
+    });
+
+    if (m_ipc->isConnected()) {
+        m_poller->setInterval(m_ipc->pollingInterval());
+        m_poller->setEnabled(true);
     }
 }
 
@@ -229,10 +241,28 @@ void TransferPanel::setIpcClient(IpcClient* client)
 
 void TransferPanel::onRefreshTimer()
 {
-    requestDownloads();
-    requestUploads();
-    requestDownloadClients();
-    requestKnownClients();
+    // Fetch only what is mounted. A list lives in at most one pane, so this is two
+    // lists at most — one when the top pane is on Downloads. Everything skipped here
+    // is expensive to skip for a hidden list: GetKnownClients serialises every client
+    // the session has seen and GetDownloadClients walks every PartFile against every
+    // one of its sources. applyViews() refreshes on a switch, so a list just switched
+    // to is never left blank.
+    const int topClient = (m_topView == TopView::Downloads)
+                        ? -1 : m_topView - TopView::TopClientFirst;
+    auto onScreen = [this, topClient](int clientView) {
+        return clientView == topClient || clientView == m_bottomView;
+    };
+
+    if (m_topView == TopView::Downloads)
+        requestDownloads();
+
+    // One GetUploads reply fills both the Uploading and the On Queue list.
+    if (onScreen(Uploading) || onScreen(OnQueue))
+        requestUploads();
+    if (onScreen(Downloading))
+        requestDownloadClients();
+    if (onScreen(Known))
+        requestKnownClients();
 }
 
 void TransferPanel::onDownloadContextMenu(const QPoint& pos)
@@ -244,7 +274,8 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
         if (m_downloadModel->isSourceRow(srcIdx)) {
             if (const auto* src = m_downloadModel->sourceAt(srcIdx))
-                showSourceContextMenu(*src, m_downloadView->viewport()->mapToGlobal(pos));
+                showSourceContextMenu(*src, m_downloadModel->hashAt(srcIdx.parent().row()),
+                                      m_downloadView->viewport()->mapToGlobal(pos));
             return;
         }
     }
@@ -516,11 +547,17 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 void TransferPanel::setupUi()
 {
     // Create models first (needed by both panes)
-    m_downloadModel    = new DownloadListModel(this);
-    m_uploadingModel   = new ClientListModel(ClientListMode::Uploading, this);
-    m_downloadingModel = new ClientListModel(ClientListMode::Downloading, this);
-    m_onQueueModel     = new ClientListModel(ClientListMode::OnQueue, this);
-    m_knownModel       = new ClientListModel(ClientListMode::KnownClients, this);
+    m_downloadModel = new DownloadListModel(this);
+
+    clientSlot(Uploading).model   = new ClientListModel(ClientListMode::Uploading, this);
+    clientSlot(Downloading).model = new ClientListModel(ClientListMode::Downloading, this);
+    clientSlot(OnQueue).model     = new ClientListModel(ClientListMode::OnQueue, this);
+    clientSlot(Known).model       = new ClientListModel(ClientListMode::KnownClients, this);
+
+    clientSlot(Uploading).icon   = ":/icons/Upload.ico";
+    clientSlot(Downloading).icon = ":/icons/Download.ico";
+    clientSlot(OnQueue).icon     = ":/icons/ClientsOnQueue.ico";
+    clientSlot(Known).icon       = ":/icons/ClientsKnown.ico";
 
     auto* mainLayout = new QHBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -546,10 +583,14 @@ void TransferPanel::setupUi()
 
     mainLayout->addWidget(m_vertSplitter, 1);
 
-    // Restore saved bottom view
+    // Restore both saved views. The top pane wins a clash, which also repairs a
+    // bottomView written before the top pane could hold that list.
     QSettings settings;
-    const int savedBottom = settings.value(QStringLiteral("transfer/bottomView"), 0).toInt();
-    setBottomClientView(savedBottom);
+    const int savedTop =
+        settings.value(QStringLiteral("transfer/topView"), TopView::Downloads).toInt();
+    const int savedBottom =
+        settings.value(QStringLiteral("transfer/bottomView"), ClientView::Uploading).toInt();
+    applyViews(savedTop, savedBottom, Pane::Top);
 }
 
 QWidget* TransferPanel::createDownloadsSection()
@@ -559,26 +600,23 @@ QWidget* TransferPanel::createDownloadsSection()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // --- Header row: icon + bold label (left) + category tab bar (right) ---
+    // --- Header row: view switcher (left) + category tab bar (right) ---
     auto* headerRow = new QHBoxLayout;
-    headerRow->setContentsMargins(4, 0, 0, 0);
+    headerRow->setContentsMargins(0, 0, 0, 0);
     headerRow->setSpacing(2);
 
-    // Green arrow icon matching MFC downloads header
-    auto* dlIcon = new QLabel;
-    dlIcon->setFixedSize(16, 16);
-    dlIcon->setScaledContents(true);
-    dlIcon->setPixmap(QIcon(QStringLiteral(":/icons/DownloadFiles.ico")).pixmap(16, 16));
-    headerRow->addWidget(dlIcon);
+    // Same switcher widget and icons as the bottom pane, with the download list added
+    // in front — MFC's m_btnWnd1 offers the download list on top of wnd2's four.
+    m_toolbar1 = new TransferToolbar;
+    m_toolbar1->addButton(QIcon(QStringLiteral(":/icons/DownloadFiles.ico")), tr("Downloads"));
+    for (int v = 0; v < ClientViewCount; ++v)
+        m_toolbar1->addButton(QIcon(QString::fromLatin1(clientSlot(v).icon)), clientViewName(v));
 
-    m_downloadsLabel = new QLabel(tr("Downloads (0)"));
-    QFont bold = m_downloadsLabel->font();
-    bold.setBold(true);
-    m_downloadsLabel->setFont(bold);
-    m_downloadsLabel->setFixedHeight(22);
-    headerRow->addWidget(m_downloadsLabel);
+    connect(m_toolbar1, &TransferToolbar::buttonClicked, this, [this](int id) {
+        setTopView(id);
+    });
 
-    headerRow->addStretch(1);
+    headerRow->addWidget(m_toolbar1, 1);
 
     // Category tab bar — right-aligned
     m_categoryTabBar = new QTabBar;
@@ -595,7 +633,7 @@ QWidget* TransferPanel::createDownloadsSection()
     headerRow->addWidget(m_categoryTabBar);
     layout->addLayout(headerRow);
 
-    // --- Download view (always visible) ---
+    // --- Download view (mounted while the top switcher is on Downloads) ---
     m_downloadProxy = new QSortFilterProxyModel(this);
     m_downloadProxy->setSourceModel(m_downloadModel);
     m_downloadProxy->setSortRole(Qt::UserRole);
@@ -606,7 +644,9 @@ QWidget* TransferPanel::createDownloadsSection()
     catProxy->setSortRole(Qt::UserRole);
     m_categoryProxy = catProxy;
 
-    auto* downloadView = new ListTreeView;
+    // Parented on the panel from the start: the top pane may open on a client list,
+    // and an unparented view would be owned by nobody until it is first mounted.
+    auto* downloadView = new ListTreeView(this);
     m_downloadView = downloadView;
     m_downloadView->setModel(m_categoryProxy);
     m_downloadView->setRootIsDecorated(true);
@@ -636,8 +676,11 @@ QWidget* TransferPanel::createDownloadsSection()
         if (proxyIdx.parent().isValid()) {
             const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
             const QModelIndex srcIdx = m_downloadProxy->mapToSource(catSrcIdx);
-            if (const auto* src = m_downloadModel->sourceAt(srcIdx))
-                fetchAndShowClientDetails(src->userHash);
+            if (const auto* src = m_downloadModel->sourceAt(srcIdx)) {
+                const QString parentHash = m_downloadModel->hashAt(srcIdx.parent().row());
+                fetchAndShowClientDetails(src->userHash,
+                                          makeSourceWalker(parentHash, src->userHash));
+            }
             return;
         }
 
@@ -692,7 +735,14 @@ QWidget* TransferPanel::createDownloadsSection()
     downloadView->bindColumns(QStringLiteral("downloads"),
         {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120});
 
-    layout->addWidget(m_downloadView, 1);
+    // Hidden until mounted, for the reason given in createClientView().
+    downloadView->hide();
+
+    // The view itself is mounted by applyViews() — this pane shows whichever list the
+    // top switcher is on.
+    m_topContent = new QVBoxLayout;
+    m_topContent->setContentsMargins(0, 0, 0, 0);
+    layout->addLayout(m_topContent, 1);
 
     return widget;
 }
@@ -704,75 +754,65 @@ QWidget* TransferPanel::createBottomPane()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // Bottom toolbar header
+    // Bottom toolbar header — the same four lists the top switcher offers, minus
+    // Downloads, which the top pane keeps to itself.
     m_toolbar2 = new TransferToolbar;
-    m_toolbar2->setLabelText(tr("Uploading (0)"));
-    m_toolbar2->addButton(QIcon(QStringLiteral(":/icons/Upload.ico")),         tr("Uploading"));
-    m_toolbar2->addButton(QIcon(QStringLiteral(":/icons/Download.ico")),       tr("Downloading"));
-    m_toolbar2->addButton(QIcon(QStringLiteral(":/icons/ClientsOnQueue.ico")), tr("On Queue"));
-    m_toolbar2->addButton(QIcon(QStringLiteral(":/icons/ClientsKnown.ico")),   tr("Known Clients"));
-    m_toolbar2->checkButton(0);
-    m_toolbar2->setLeadingIcon(QIcon(QStringLiteral(":/icons/Upload.ico")));
+    for (int v = 0; v < ClientViewCount; ++v)
+        m_toolbar2->addButton(QIcon(QString::fromLatin1(clientSlot(v).icon)), clientViewName(v));
 
     connect(m_toolbar2, &TransferToolbar::buttonClicked, this, [this](int id) {
-        setBottomClientView(id);
+        setBottomView(id);
     });
 
     layout->addWidget(m_toolbar2);
 
-    // Bottom client stack — 4 separate views
-    m_bottomClientStack = new QStackedWidget;
-
     // Column widths follow ClientListModel::headerLabel() order. The keys carry a
     // "3" because the "2" generation was saved with a flat 100 px per column;
     // reusing them would let that stale layout override these defaults.
-    m_uploadingView = createClientView(m_uploadingModel, QStringLiteral("clientsUploading3"),
+    clientSlot(Uploading).view = createClientView(
+        clientSlot(Uploading).model, QStringLiteral("clientsUploading3"),
         // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts
         {150, 220, 70, 90, 80, 80, 90, 120});
-    m_downloadingView = createClientView(m_downloadingModel, QStringLiteral("clientsDownloading3"),
+    clientSlot(Downloading).view = createClientView(
+        clientSlot(Downloading).model, QStringLiteral("clientsDownloading3"),
         // User Name, Software, File, Speed, Available Parts, Transferred, Transferred, Source Type
         {150, 90, 220, 70, 100, 90, 90, 100});
-    m_onQueueView = createClientView(m_onQueueModel, QStringLiteral("clientsOnQueue3"),
+    clientSlot(OnQueue).view = createClientView(
+        clientSlot(OnQueue).model, QStringLiteral("clientsOnQueue3"),
         // User Name, File, File Priority, Rating, Score, Asked, Last Seen,
         // Entered Queue, Banned, Obtained Parts
         {150, 220, 80, 70, 60, 60, 100, 110, 60, 120});
-    m_knownView = createClientView(m_knownModel, QStringLiteral("clientsKnown3"),
+    clientSlot(Known).view = createClientView(
+        clientSlot(Known).model, QStringLiteral("clientsKnown3"),
         // User Name, Upload Status, Transferred, Download Status, Transferred Down,
         // Software, Connected, Hash
         {150, 100, 90, 100, 110, 90, 80, 240});
 
-    m_bottomClientStack->addWidget(m_uploadingView);
-    m_bottomClientStack->addWidget(m_downloadingView);
-    m_bottomClientStack->addWidget(m_onQueueView);
-    m_bottomClientStack->addWidget(m_knownView);
+    // Context menu and double-click are wired per view, and a view keeps them when it
+    // moves to the other pane.
+    for (const auto& slot : m_clients) {
+        QTreeView* view = slot.view;
+        ClientListModel* model = slot.model;
 
-    // Wire context menus on all 4 client views
-    connect(m_uploadingView, &QTreeView::customContextMenuRequested,
-            this, [this](const QPoint& p) { onClientContextMenu(m_uploadingView, m_uploadingModel, p); });
-    connect(m_downloadingView, &QTreeView::customContextMenuRequested,
-            this, [this](const QPoint& p) { onClientContextMenu(m_downloadingView, m_downloadingModel, p); });
-    connect(m_onQueueView, &QTreeView::customContextMenuRequested,
-            this, [this](const QPoint& p) { onClientContextMenu(m_onQueueView, m_onQueueModel, p); });
-    connect(m_knownView, &QTreeView::customContextMenuRequested,
-            this, [this](const QPoint& p) { onClientContextMenu(m_knownView, m_knownModel, p); });
+        connect(view, &QTreeView::customContextMenuRequested, this,
+                [this, view, model](const QPoint& p) { onClientContextMenu(view, model, p); });
 
-    // Wire double-click on all 4 client views to open client details
-    auto connectClientDoubleClick = [this](QTreeView* view, ClientListModel* model) {
-        connect(view, &QTreeView::doubleClicked, this, [this, view, model](const QModelIndex& proxyIdx) {
+        connect(view, &QTreeView::doubleClicked, this,
+                [this, view, model](const QModelIndex& proxyIdx) {
             auto* proxy = qobject_cast<QSortFilterProxyModel*>(view->model());
             if (!proxy) return;
             const QModelIndex srcIdx = proxy->mapToSource(proxyIdx);
             const auto* client = model->clientAt(srcIdx.row());
             if (client)
-                fetchAndShowClientDetails(client->userHash);
+                fetchAndShowClientDetails(client->userHash,
+                                          makeClientWalker(view, model, client->userHash));
         });
-    };
-    connectClientDoubleClick(m_uploadingView,   m_uploadingModel);
-    connectClientDoubleClick(m_downloadingView, m_downloadingModel);
-    connectClientDoubleClick(m_onQueueView,     m_onQueueModel);
-    connectClientDoubleClick(m_knownView,       m_knownModel);
+    }
 
-    layout->addWidget(m_bottomClientStack, 1);
+    // The view itself is mounted by applyViews().
+    m_bottomContent = new QVBoxLayout;
+    m_bottomContent->setContentsMargins(0, 0, 0, 0);
+    layout->addLayout(m_bottomContent, 1);
 
     // Bottom status label matching MFC: "Clients on queue:    N"
     m_queueLabel = new QLabel(tr("Clients on queue:   0"));
@@ -958,7 +998,9 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     proxy->setSourceModel(model);
     proxy->setSortRole(Qt::UserRole);
 
-    auto* view = new ListTreeView;
+    // Parented on the panel: a view is unparented from its pane's layout whenever it
+    // moves to the other one, and must stay owned in between.
+    auto* view = new ListTreeView(this);
     view->setModel(proxy);
     view->setRootIsDecorated(false);
     view->setAlternatingRowColors(true);
@@ -972,6 +1014,12 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
     view->bindColumns(headerKey, columnWidths);
+
+    // A child widget that is in no layout is still shown with its parent, at its
+    // default geometry — an unmounted list would float over the pane headers at the
+    // top-left corner. A view is visible only while a pane holds it; attachView()
+    // shows it again.
+    view->hide();
 
     return view;
 }
@@ -1123,16 +1171,8 @@ void TransferPanel::requestUploads()
         for (const auto& val : waitingArr)
             waitingRows.push_back(parseClient(val.toMap()));
 
-        const int upScroll = m_uploadingView->verticalScrollBar()->value();
-        const int qScroll  = m_onQueueView->verticalScrollBar()->value();
-        const QString selUp = saveClientSelection(m_uploadingView, m_uploadingModel);
-        const QString selQ  = saveClientSelection(m_onQueueView, m_onQueueModel);
-        m_uploadingModel->setClients(std::move(uploadingRows));
-        m_onQueueModel->setClients(std::move(waitingRows));
-        restoreClientSelection(m_uploadingView, m_uploadingModel, selUp);
-        restoreClientSelection(m_onQueueView, m_onQueueModel, selQ);
-        m_uploadingView->verticalScrollBar()->setValue(upScroll);
-        m_onQueueView->verticalScrollBar()->setValue(qScroll);
+        applyClients(Uploading, std::move(uploadingRows));
+        applyClients(OnQueue, std::move(waitingRows));
         updateToolbarLabels();
     });
 }
@@ -1154,11 +1194,7 @@ void TransferPanel::requestDownloadClients()
         for (const auto& val : arr)
             rows.push_back(parseClient(val.toMap()));
 
-        const int dlClScroll = m_downloadingView->verticalScrollBar()->value();
-        const QString selDl = saveClientSelection(m_downloadingView, m_downloadingModel);
-        m_downloadingModel->setClients(std::move(rows));
-        restoreClientSelection(m_downloadingView, m_downloadingModel, selDl);
-        m_downloadingView->verticalScrollBar()->setValue(dlClScroll);
+        applyClients(Downloading, std::move(rows));
         updateToolbarLabels();
     });
 }
@@ -1180,13 +1216,23 @@ void TransferPanel::requestKnownClients()
         for (const auto& val : arr)
             rows.push_back(parseClient(val.toMap()));
 
-        const int knScroll = m_knownView->verticalScrollBar()->value();
-        const QString selKn = saveClientSelection(m_knownView, m_knownModel);
-        m_knownModel->setClients(std::move(rows));
-        restoreClientSelection(m_knownView, m_knownModel, selKn);
-        m_knownView->verticalScrollBar()->setValue(knScroll);
+        applyClients(Known, std::move(rows));
         updateToolbarLabels();
     });
+}
+
+void TransferPanel::applyClients(int clientView, std::vector<ClientRow> rows)
+{
+    // setClients() resets the model, which drops the view's selection and scroll
+    // position — both are keyed back on afterwards.
+    const ClientSlot& slot = clientSlot(clientView);
+    const int scroll = slot.view->verticalScrollBar()->value();
+    const QString selected = saveClientSelection(slot.view, slot.model);
+
+    slot.model->setClients(std::move(rows));
+
+    restoreClientSelection(slot.view, slot.model, selected);
+    slot.view->verticalScrollBar()->setValue(scroll);
 }
 
 // ---------------------------------------------------------------------------
@@ -1450,30 +1496,40 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
         return;
     IpcMessage msg(IpcMsgType::GetDownloadDetails);
     msg.append(hash);
-    m_ipc->sendRequest(std::move(msg), [this, tab](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, tab, hash](const IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;
         const QCborMap details = resp.field(1).toMap();
         auto* dlg = new FileDetailDialog(details, tab, this);
         connectEd2kLinkRequests(dlg, m_ipc);
         connectKadNotesSearch(dlg, m_ipc, IpcMsgType::GetDownloadDetails);
+        connectCommentFilter(dlg, m_ipc);
+        dlg->setWalker(makeDownloadWalker(hash));
+        connectDetailNavigation(dlg, m_ipc, IpcMsgType::GetDownloadDetails);
         dlg->show();
     });
 }
 
-void TransferPanel::fetchAndShowClientDetails(const QString& clientHash)
+void TransferPanel::fetchAndShowClientDetails(const QString& clientHash, DetailWalker walker)
 {
     if (!m_ipc || !m_ipc->isConnected() || clientHash.isEmpty())
         return;
     IpcMessage msg(IpcMsgType::GetClientDetails);
     msg.append(clientHash);
-    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
-        if (!resp.fieldBool(0))
-            return;
-        const QCborMap details = resp.field(1).toMap();
-        auto* dlg = new ClientDetailDialog(details, this);
-        dlg->show();
-    });
+    m_ipc->sendRequest(std::move(msg),
+        [this, walker = std::move(walker)](const IpcMessage& resp) {
+            if (!resp.fieldBool(0))
+                return;
+            const QCborMap details = resp.field(1).toMap();
+            auto* dlg = new ClientDetailDialog(details, this);
+            // No walker when the dialog was not opened from a list — MFC likewise
+            // omits the arrows for ChatSelector / FriendListCtrl.
+            if (walker.step) {
+                dlg->setWalker(walker);
+                connectDetailNavigation(dlg, m_ipc, IpcMsgType::GetClientDetails);
+            }
+            dlg->show();
+        });
 }
 
 void TransferPanel::searchRelated(const QString& fileName)
@@ -1579,25 +1635,103 @@ void TransferPanel::restoreClientSelection(QTreeView* view, ClientListModel* mod
 // View switching
 // ---------------------------------------------------------------------------
 
-void TransferPanel::setBottomClientView(int index)
+void TransferPanel::setTopView(int topId)
 {
-    if (index >= 0 && index < m_bottomClientStack->count()) {
-        m_bottomClientStack->setCurrentIndex(index);
-        m_toolbar2->checkButton(index);
-        QSettings settings;
-        settings.setValue(QStringLiteral("transfer/bottomView"), index);
+    applyViews(topId, m_bottomView, Pane::Top);
+}
 
-        // Update leading icon to match selected client view
-        static constexpr const char* iconPaths[] = {
-            ":/icons/Upload.ico",
-            ":/icons/Download.ico",
-            ":/icons/ClientsOnQueue.ico",
-            ":/icons/ClientsKnown.ico",
-        };
-        m_toolbar2->setLeadingIcon(QIcon(QString::fromLatin1(iconPaths[index])));
+void TransferPanel::setBottomView(int clientView)
+{
+    applyViews(m_topView, clientView, Pane::Bottom);
+}
 
-        updateToolbarLabels();
+void TransferPanel::detachView(QVBoxLayout* layout, QTreeView*& slot, QTreeView* keep)
+{
+    if (!slot || slot == keep)
+        return;
+
+    // QLayout::removeWidget drops the layout item but leaves the parent alone, so the
+    // outgoing view stays owned — and stays visible unless it is hidden by hand.
+    layout->removeWidget(slot);
+    slot->hide();
+    slot = nullptr;
+}
+
+void TransferPanel::attachView(QVBoxLayout* layout, QTreeView*& slot, QTreeView* view)
+{
+    if (slot == view)
+        return;
+
+    layout->addWidget(view, 1); // reparents, which hides it again
+    view->show();
+    slot = view;
+}
+
+void TransferPanel::applyViews(int topId, int clientView, Pane priority)
+{
+    topId      = std::clamp(topId, 0, static_cast<int>(ClientViewCount));
+    clientView = std::clamp(clientView, 0, static_cast<int>(ClientViewCount) - 1);
+
+    // There is one view per list, so the two panes cannot both show it. Whichever
+    // pane asked last keeps what it asked for and the other one moves: the bottom
+    // pane falls to the first list still free, the top pane falls back to Downloads,
+    // which no other pane can be holding.
+    int topClient = (topId == TopView::Downloads) ? -1 : topId - TopView::TopClientFirst;
+    if (topClient == clientView) {
+        if (priority == Pane::Top) {
+            for (int v = 0; v < ClientViewCount; ++v) {
+                if (v != topClient) {
+                    clientView = v;
+                    break;
+                }
+            }
+        } else {
+            topId = TopView::Downloads;
+            topClient = -1;
+        }
     }
+
+    // Both panes let go before either takes hold: a list moving from one pane to the
+    // other must leave its old layout first, or it is reparented out from under a
+    // live layout item.
+    QTreeView* topWidget = (topClient < 0) ? m_downloadView : clientSlot(topClient).view;
+    QTreeView* bottomWidget = clientSlot(clientView).view;
+    detachView(m_topContent, m_topMounted, topWidget);
+    detachView(m_bottomContent, m_bottomMounted, bottomWidget);
+    attachView(m_topContent, m_topMounted, topWidget);
+    attachView(m_bottomContent, m_bottomMounted, bottomWidget);
+
+    m_topView = topId;
+    m_bottomView = clientView;
+
+    m_toolbar1->checkButton(topId);
+    m_toolbar1->setLeadingIcon(QIcon(QString::fromLatin1(
+        topClient < 0 ? ":/icons/DownloadFiles.ico" : clientSlot(topClient).icon)));
+
+    m_toolbar2->checkButton(clientView);
+    m_toolbar2->setLeadingIcon(QIcon(QString::fromLatin1(clientSlot(clientView).icon)));
+
+    // Grey out the list the top pane is holding, as the MFC toolbar does for a list
+    // that is not available. The clash was resolved above, so this never disables the
+    // bottom pane's own checked button.
+    for (int v = 0; v < ClientViewCount; ++v)
+        m_toolbar2->setButtonEnabled(v, v != topClient);
+
+    // Both belong to the download list and mean nothing while it is off screen.
+    const bool showingDownloads = (topId == TopView::Downloads);
+    m_categoryTabBar->setVisible(showingDownloads);
+    m_actionToolbar->setEnabled(showingDownloads);
+
+    QSettings settings;
+    settings.setValue(QStringLiteral("transfer/topView"), topId);
+    settings.setValue(QStringLiteral("transfer/bottomView"), clientView);
+
+    updateToolbarLabels();
+
+    // The poll only fetches the lists that are showing, so a list just switched to
+    // holds whatever it had when it was last visible — refill it now.
+    if (m_poller)
+        m_poller->refreshNow();
 }
 
 void TransferPanel::updateActionStates()
@@ -1638,28 +1772,42 @@ void TransferPanel::updateActionStates()
     m_actCancel->setEnabled(hasSelection);
 }
 
+QString TransferPanel::clientViewName(int clientView)
+{
+    switch (clientView) {
+    case Uploading:   return tr("Uploading");
+    case Downloading: return tr("Downloading");
+    case OnQueue:     return tr("On Queue");
+    case Known:       return tr("Known Clients");
+    default:          return {};
+    }
+}
+
+QString TransferPanel::clientLabelText(int clientView) const
+{
+    const int n = clientSlot(clientView).model->clientCount();
+    switch (clientView) {
+    case Uploading:   return tr("Uploading (%1)").arg(n);
+    case Downloading: return tr("Downloading (%1)").arg(n);
+    case OnQueue:     return tr("On Queue (%1)").arg(n);
+    case Known:       return tr("Known Clients (%1)").arg(n);
+    default:          return {};
+    }
+}
+
 void TransferPanel::updateToolbarLabels()
 {
-    const int dlCount  = m_downloadModel->downloadCount();
-    const int ulCount  = m_uploadingModel->clientCount();
-    const int dlcCount = m_downloadingModel->clientCount();
-    const int qCount   = m_onQueueModel->clientCount();
-    const int knCount  = m_knownModel->clientCount();
+    m_toolbar1->setLabelText(m_topView == TopView::Downloads
+        ? tr("Downloads (%1)").arg(m_downloadModel->downloadCount())
+        : clientLabelText(m_topView - TopView::TopClientFirst));
 
-    // Top label always shows download count
-    m_downloadsLabel->setText(tr("Downloads (%1)").arg(dlCount));
+    m_toolbar2->setLabelText(clientLabelText(m_bottomView));
 
-    // Bottom toolbar label — based on selected bottom client view
-    const int bottomIdx = m_bottomClientStack->currentIndex();
-    switch (bottomIdx) {
-    case 0: m_toolbar2->setLabelText(tr("Uploading (%1)").arg(ulCount));      break;
-    case 1: m_toolbar2->setLabelText(tr("Downloading (%1)").arg(dlcCount));   break;
-    case 2: m_toolbar2->setLabelText(tr("On Queue (%1)").arg(qCount));        break;
-    case 3: m_toolbar2->setLabelText(tr("Known Clients (%1)").arg(knCount));  break;
-    default: break;
-    }
-
-    m_queueLabel->setText(tr("Clients on queue:   %1").arg(qCount));
+    // The count rides along with the stats push, so this label stays live even when
+    // neither queue list is on screen and GetUploads is not being issued at all. The
+    // model's own count stands in until the first push lands.
+    m_queueLabel->setText(tr("Clients on queue:   %1").arg(
+        m_queueCount >= 0 ? m_queueCount : clientSlot(OnQueue).model->clientCount()));
 }
 
 void TransferPanel::updateCategoryTabs()
@@ -1779,54 +1927,7 @@ void TransferPanel::showPriorityMenu()
 
 void TransferPanel::showFindDialog()
 {
-    auto* dlg = new QDialog(this);
-    dlg->setWindowTitle(tr("Search"));
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-
-    auto* layout = new QFormLayout(dlg);
-
-    auto* searchEdit = new QLineEdit(dlg);
-    layout->addRow(tr("Search for:"), searchEdit);
-
-    auto* columnCombo = new QComboBox(dlg);
-    columnCombo->addItem(tr("File Name"),       DownloadListModel::ColFileName);
-    columnCombo->addItem(tr("Size"),            DownloadListModel::ColSize);
-    columnCombo->addItem(tr("Transferred"),     DownloadListModel::ColCompleted);
-    columnCombo->addItem(tr("Speed"),           DownloadListModel::ColSpeed);
-    columnCombo->addItem(tr("Progress"),        DownloadListModel::ColProgress);
-    columnCombo->addItem(tr("Sources"),         DownloadListModel::ColSources);
-    columnCombo->addItem(tr("Priority"),        DownloadListModel::ColPriority);
-    columnCombo->addItem(tr("Status"),          DownloadListModel::ColStatus);
-    columnCombo->addItem(tr("Remaining"),       DownloadListModel::ColRemaining);
-    columnCombo->addItem(tr("Last reception"),  DownloadListModel::ColLastReception);
-    columnCombo->addItem(tr("Category"),        DownloadListModel::ColCategory);
-    columnCombo->addItem(tr("Added On"),        DownloadListModel::ColAddedOn);
-    layout->addRow(tr("Search in column:"), columnCombo);
-
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
-    layout->addRow(buttons);
-
-    connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
-
-    connect(dlg, &QDialog::accepted, this, [this, searchEdit, columnCombo]() {
-        const QString term = searchEdit->text().trimmed();
-        if (term.isEmpty())
-            return;
-
-        const int column = columnCombo->currentData().toInt();
-
-        for (int row = 0; row < m_categoryProxy->rowCount(); ++row) {
-            const QModelIndex idx = m_categoryProxy->index(row, column);
-            if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
-                m_downloadView->setCurrentIndex(idx);
-                m_downloadView->scrollTo(idx);
-                return;
-            }
-        }
-    });
-
-    dlg->exec();
+    showFindInListDialog(this, m_downloadView);
 }
 
 void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
@@ -1854,9 +1955,10 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     // 1. Details...
     if (client) {
         const QString clientHash = client->userHash;
-        auto* detailsAct = menu.addAction(ico("UserDetails.ico"), tr("Details..."), this, [this, clientHash]() {
-            fetchAndShowClientDetails(clientHash);
-        });
+        auto* detailsAct = menu.addAction(ico("UserDetails.ico"), tr("Details..."), this,
+            [this, view, model, clientHash]() {
+                fetchAndShowClientDetails(clientHash, makeClientWalker(view, model, clientHash));
+            });
         detailsAct->setEnabled(true);
         QFont f = detailsAct->font();
         f.setBold(true);
@@ -1927,7 +2029,8 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     menu.exec(view->viewport()->mapToGlobal(pos));
 }
 
-void TransferPanel::showSourceContextMenu(const SourceRow& src, const QPoint& globalPos)
+void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& parentHash,
+                                          const QPoint& globalPos)
 {
     QMenu menu(this);
 
@@ -1940,9 +2043,10 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QPoint& gl
     // 1. Details...
     {
         const QString srcHash = src.userHash;
-        auto* detailsAct = menu.addAction(ico("UserDetails.ico"), tr("Details..."), this, [this, srcHash]() {
-            fetchAndShowClientDetails(srcHash);
-        });
+        auto* detailsAct = menu.addAction(ico("UserDetails.ico"), tr("Details..."), this,
+            [this, srcHash, parentHash]() {
+                fetchAndShowClientDetails(srcHash, makeSourceWalker(parentHash, srcHash));
+            });
         QFont f = detailsAct->font();
         f.setBold(true);
         detailsAct->setFont(f);
@@ -2010,52 +2114,7 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QPoint& gl
 
 void TransferPanel::showClientFindDialog(QTreeView* view)
 {
-    auto* proxy = qobject_cast<QSortFilterProxyModel*>(view->model());
-    if (!proxy)
-        return;
-
-    auto* dlg = new QDialog(this);
-    dlg->setWindowTitle(tr("Search"));
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-
-    auto* layout = new QFormLayout(dlg);
-
-    auto* searchEdit = new QLineEdit(dlg);
-    layout->addRow(tr("Search for:"), searchEdit);
-
-    auto* columnCombo = new QComboBox(dlg);
-    const int colCount = proxy->columnCount();
-    for (int col = 0; col < colCount; ++col) {
-        const QString label = proxy->headerData(col, Qt::Horizontal, Qt::DisplayRole).toString();
-        if (!label.isEmpty())
-            columnCombo->addItem(label, col);
-    }
-    layout->addRow(tr("Search in column:"), columnCombo);
-
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
-    layout->addRow(buttons);
-
-    connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
-
-    connect(dlg, &QDialog::accepted, this, [view, proxy, searchEdit, columnCombo]() {
-        const QString term = searchEdit->text().trimmed();
-        if (term.isEmpty())
-            return;
-
-        const int column = columnCombo->currentData().toInt();
-
-        for (int row = 0; row < proxy->rowCount(); ++row) {
-            const QModelIndex idx = proxy->index(row, column);
-            if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
-                view->setCurrentIndex(idx);
-                view->scrollTo(idx);
-                return;
-            }
-        }
-    });
-
-    dlg->exec();
+    showFindInListDialog(this, view);
 }
 
 void TransferPanel::updateClearCompletedState()
@@ -2071,6 +2130,130 @@ void TransferPanel::updateClearCompletedState()
         }
     }
     m_clearCompletedAction->setEnabled(hasCompleted);
+}
+
+// ---------------------------------------------------------------------------
+// Detail-dialog Prev/Next walkers
+// ---------------------------------------------------------------------------
+
+QModelIndex TransferPanel::downloadIndexFor(const QString& fileHash) const
+{
+    if (fileHash.isEmpty())
+        return {};
+    for (int row = 0; row < m_downloadModel->downloadCount(); ++row)
+        if (m_downloadModel->hashAt(row) == fileHash)
+            return ViewNav::fromSource(m_downloadView, m_downloadModel->index(row, 0));
+    return {};
+}
+
+QModelIndex TransferPanel::sourceIndexFor(const QString& fileHash,
+                                          const QString& userHash) const
+{
+    if (fileHash.isEmpty() || userHash.isEmpty())
+        return {};
+
+    for (int row = 0; row < m_downloadModel->downloadCount(); ++row) {
+        if (m_downloadModel->hashAt(row) != fileHash)
+            continue;
+        const QModelIndex parent = m_downloadModel->index(row, 0);
+        for (int child = 0; child < m_downloadModel->rowCount(parent); ++child) {
+            const QModelIndex childIdx = m_downloadModel->index(child, 0, parent);
+            const auto* src = m_downloadModel->sourceAt(childIdx);
+            if (src && src->userHash == userHash)
+                return ViewNav::fromSource(m_downloadView, childIdx);
+        }
+        return {};
+    }
+    return {};
+}
+
+QModelIndex TransferPanel::clientIndexFor(const QTreeView* view,
+                                          const ClientListModel* model,
+                                          const QString& userHash) const
+{
+    if (!view || !model || userHash.isEmpty())
+        return {};
+    for (int row = 0; row < model->clientCount(); ++row) {
+        const auto* client = model->clientAt(row);
+        if (client && client->userHash == userHash)
+            return ViewNav::fromSource(view, model->index(row, 0));
+    }
+    return {};
+}
+
+DetailWalker TransferPanel::makeDownloadWalker(const QString& fileHash)
+{
+    // Shared anchor: the walker advances it on the click so a second Next before
+    // the daemon has answered still makes progress.
+    auto anchor = std::make_shared<QString>(fileHash);
+
+    DetailWalker walker;
+    walker.step = [this, anchor](int delta) -> QString {
+        const QModelIndex to = ViewNav::step(m_downloadView, downloadIndexFor(*anchor),
+                                             delta, &ViewNav::isTopLevel);
+        if (!to.isValid())
+            return {};
+        *anchor = m_downloadModel->hashAt(ViewNav::toSource(to).row());
+        return *anchor;
+    };
+    walker.canStep = [this, anchor](int delta) {
+        return ViewNav::peekStep(m_downloadView, downloadIndexFor(*anchor),
+                                 delta, &ViewNav::isTopLevel).isValid();
+    };
+    return walker;
+}
+
+DetailWalker TransferPanel::makeSourceWalker(const QString& parentHash,
+                                             const QString& userHash)
+{
+    // A user hash alone is ambiguous — the same peer is a source of several
+    // downloads — so the anchor is the (download, source) pair.
+    auto anchor = std::make_shared<std::pair<QString, QString>>(parentHash, userHash);
+
+    DetailWalker walker;
+    walker.step = [this, anchor](int delta) -> QString {
+        const QModelIndex from = sourceIndexFor(anchor->first, anchor->second);
+        const QModelIndex to = ViewNav::step(m_downloadView, from, delta, &ViewNav::isChild);
+        if (!to.isValid())
+            return {};
+
+        // isChild lets the walk cross into the next expanded download's sources,
+        // matching CDownloadListListCtrlItemWalk over MFC's flat list.
+        const QModelIndex srcIdx = ViewNav::toSource(to);
+        const auto* row = m_downloadModel->sourceAt(srcIdx);
+        if (!row)
+            return {};
+        anchor->first  = m_downloadModel->hashAt(srcIdx.parent().row());
+        anchor->second = row->userHash;
+        return row->userHash;
+    };
+    walker.canStep = [this, anchor](int delta) {
+        return ViewNav::peekStep(m_downloadView, sourceIndexFor(anchor->first, anchor->second),
+                                 delta, &ViewNav::isChild).isValid();
+    };
+    return walker;
+}
+
+DetailWalker TransferPanel::makeClientWalker(QTreeView* view, ClientListModel* model,
+                                             const QString& userHash)
+{
+    auto anchor = std::make_shared<QString>(userHash);
+
+    DetailWalker walker;
+    walker.step = [this, view, model, anchor](int delta) -> QString {
+        const QModelIndex to = ViewNav::step(view, clientIndexFor(view, model, *anchor), delta);
+        if (!to.isValid())
+            return {};
+        const auto* row = model->clientAt(ViewNav::toSource(to).row());
+        if (!row)
+            return {};
+        *anchor = row->userHash;
+        return *anchor;
+    };
+    walker.canStep = [this, view, model, anchor](int delta) {
+        return ViewNav::peekStep(view, clientIndexFor(view, model, *anchor), delta).isValid();
+    };
+    return walker;
 }
 
 } // namespace eMule

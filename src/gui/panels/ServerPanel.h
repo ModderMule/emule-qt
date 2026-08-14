@@ -22,13 +22,14 @@ class QTreeView;
 namespace eMule {
 
 class IpcClient;
+class PanelPoller;
 class LogWidget;
 class ServerListModel;
 
-class ServerConnect;
-class ServerList;
-
 /// Full Server tab page matching the MFC eMule Server window.
+///
+/// Every action goes through the daemon over IPC — this panel holds no core
+/// objects. The GUI process has no ServerList or ServerConnect to hand it.
 class ServerPanel : public QWidget {
     Q_OBJECT
 
@@ -39,10 +40,6 @@ public:
     /// Connect this panel to the IPC client for data updates.
     void setIpcClient(IpcClient* client);
 
-    /// Connect this panel to live core objects for data and events.
-    void setServerList(ServerList* serverList);
-    void setServerConnect(ServerConnect* serverConnect);
-
     /// Get the log widget so it can be shared with MainWindow if needed.
     [[nodiscard]] LogWidget* logWidget() const { return m_logWidget; }
 
@@ -51,11 +48,7 @@ private slots:
     void onAddServerClicked();
     void onUpdateServerMetClicked();
     void onRefreshTimer();
-    void onServerListChanged();
-    void onConnectedToServer();
-    void onDisconnectedFromServer();
     void updateConnectButton(bool connected, bool connecting);
-    void onServerMessage(const QString& msg);
     void onServerDoubleClicked(const QModelIndex& index);
     void onServerContextMenu(const QPoint& pos);
 
@@ -106,14 +99,11 @@ private:
     QSplitter* m_vertSplitter = nullptr;
 
     // Refresh timer
-    QTimer* m_refreshTimer = nullptr;
+    /// Server list refresh, suspended while this panel is not the visible tab.
+    PanelPoller* m_poller = nullptr;
 
     // IPC client
     IpcClient* m_ipc = nullptr;
-
-    // Core links
-    ServerList* m_serverList = nullptr;
-    ServerConnect* m_serverConnect = nullptr;
 
     // Kad status (updated via IPC push events)
     bool m_kadRunning    = false;
@@ -123,7 +113,8 @@ private:
     // eD2K status (updated via IPC push events)
     bool m_ed2kConnected  = false;
     bool m_ed2kConnecting = false;
-    bool m_ed2kFirewalled = false;
+    bool m_ed2kFirewalled = false;   ///< combined ed2k+kad firewall state
+    bool m_ed2kLowID      = false;   ///< eD2K-only LowID
     uint32_t m_ed2kClientID = 0;
     QString m_ed2kServerName;
     uint32_t m_ed2kPublicIP = 0;

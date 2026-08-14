@@ -19,8 +19,13 @@ class SpeedGraph : public QWidget {
 public:
     explicit SpeedGraph(QWidget* parent = nullptr);
 
-    /// Append one sample (called every second from the rate polling timer).
+    /// Append one sample. The samples come from the daemon's StatsHistory, not from
+    /// this process — see MainWindow's GetSpeedHistory poll.
     void appendSample(double downKBs, double upKBs);
+
+    /// Drop every sample. Used when the daemon reports a different history epoch,
+    /// i.e. what we hold is no longer a prefix of what it has.
+    void clear();
 
     /// Set the visible time range; resizes the internal ring buffer.
     void setTimeRangeMinutes(int minutes);

@@ -41,6 +41,14 @@ int main(int argc, char* argv[])
 
     QCoreApplication app(argc, argv);
 
+    // Before anything can log: scripts/debug-gui.sh runs the daemon and the GUI
+    // into one terminal, so every console line needs a time and a process tag.
+    eMule::installConsoleMessagePattern(QStringLiteral("core"));
+    // Installed here, not in installLogForwarder(), so the file also captures
+    // the lines emitted before DaemonApp exists. The sink stays closed until
+    // applyLogFileSettings() below opens it.
+    eMule::installLogFileMessageHandler();
+
 #ifndef Q_OS_WIN
     // Self-pipe trick: convert SIGTERM/SIGINT/SIGHUP into Qt events for graceful shutdown
     ::socketpair(AF_UNIX, SOCK_STREAM, 0, s_sigFd);
@@ -90,6 +98,7 @@ int main(int argc, char* argv[])
     // serverVerboseLog) so the corresponding logDebug()/logKad()/logServerVerbose()
     // lines reach the message handler and are forwarded to the GUI.
     eMule::DaemonApp::applyLogFilterRules();
+    eMule::DaemonApp::applyLogFileSettings();
 
     eMule::logInfo(QStringLiteral("eMule Core Daemon starting..."));
 

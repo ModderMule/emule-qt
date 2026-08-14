@@ -11,6 +11,7 @@
 #include <QString>
 
 #include <cstdint>
+#include <optional>
 
 namespace eMule {
 
@@ -27,6 +28,31 @@ enum class SearchType : uint8 {
     Kademlia    = 3,
     ContentDB   = 4
 };
+
+// ---------------------------------------------------------------------------
+// Automatic search-method resolution
+// ---------------------------------------------------------------------------
+
+/// The observable state that decides which network an Automatic search runs on.
+/// Passed by value so the rule itself stays free of theApp/Kademlia coupling and
+/// can be unit-tested without a network stack.
+struct AutoSearchState {
+    bool   serverConnected = false;
+    bool   kadConnected    = false;   ///< Kad is running *and* connected
+    bool   serverIsStatic  = false;   ///< the connected server is a static list member
+    uint32 serverUsers     = 0;       ///< users reported by the connected server
+    uint32 serverFiles     = 0;       ///< files reported by the connected server
+    size_t serverCount     = 0;       ///< size of our whole server list
+};
+
+/// Resolve SearchType::Automatic down to the one network the search will use.
+///
+/// Returns std::nullopt when neither network is available — the caller reports
+/// that to the user and starts nothing (MFC shows IDS_NOTCONNECTEDANY).
+/// The result is never Automatic, Ed2kGlobal or ContentDB.
+///
+/// MFC: CSearchResultsWnd::StartNewSearch — srchybrid/SearchResultsWnd.cpp:1134-1165.
+[[nodiscard]] std::optional<SearchType> resolveAutomaticSearchType(const AutoSearchState& state);
 
 // ---------------------------------------------------------------------------
 // SearchParams — all parameters for a single search query

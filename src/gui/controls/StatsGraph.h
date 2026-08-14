@@ -31,6 +31,10 @@ public:
     void setSeriesInfo(int index, const QString& label, const QColor& color,
                        bool filled = false);
 
+    /// Restyle one series without restating its label — the options page changes
+    /// colours long after setSeriesInfo() named everything.
+    void setSeriesColor(int index, const QColor& color);
+
     /// Set the Y-axis unit label (e.g. "KB/s" or "").
     void setYUnits(const QString& units) { m_yUnits = units; update(); }
 

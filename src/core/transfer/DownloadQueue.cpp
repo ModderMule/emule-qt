@@ -39,11 +39,6 @@
 
 namespace eMule {
 
-/// ED2K user ID standing in for "this source has no usable IPv4". A value below
-/// 0x01000000 reads back as a LowID, which is exactly the semantics we want; Kad buddy
-/// sources use the same marker.
-static constexpr uint32 kNoIPv4SourceId = 1;
-
 // ===========================================================================
 // Construction / Destruction
 // ===========================================================================
@@ -99,7 +94,16 @@ void DownloadQueue::init(const QStringList& tempDirs)
             if (result == PartFileLoadResult::LoadSuccess) {
                 connectPartFileSignals(partFile);
                 m_items.push_back(partFile);
-                logInfo(QStringLiteral("Loaded part file: %1").arg(partFile->fileName()));
+                // Record the state the file came back in — a download that silently
+                // loads paused, or with an empty gap list (status Completing), is
+                // skipped by process() and will never ask for sources.
+                logInfo(QStringLiteral("Loaded part file: %1 — status=%2 paused=%3 gaps=%4 completed=%5/%6")
+                            .arg(partFile->fileName())
+                            .arg(static_cast<int>(partFile->status()))
+                            .arg(partFile->isPaused() ? 1 : 0)
+                            .arg(partFile->gapList().size())
+                            .arg(static_cast<uint64>(partFile->completedSize()))
+                            .arg(static_cast<uint64>(partFile->fileSize())));
             } else {
                 logWarning(QStringLiteral("Failed to load part file: %1 (result=%2)")
                                .arg(filename)
@@ -212,6 +216,20 @@ PartFile* DownloadQueue::fileByIndex(int index) const
     if (index < 0 || index >= static_cast<int>(m_items.size()))
         return nullptr;
     return m_items[static_cast<size_t>(index)];
+}
+
+// A search ID of 0 means "no search"; never match on it, or the first file in the
+// queue would be handed every expiring search. MFC DownloadQueue.cpp:439-448.
+PartFile* DownloadQueue::fileByKadFileSearchID(uint32 id) const
+{
+    if (id == 0)
+        return nullptr;
+
+    for (auto* file : m_items) {
+        if (file->kadFileSearchID() == id)
+            return file;
+    }
+    return nullptr;
 }
 
 bool DownloadQueue::isFileExisting(const uint8* hash) const
@@ -902,40 +920,62 @@ void DownloadQueue::addLinkPeerSource(PartFile* file, const Address& v4, const A
 
     // A link is untrusted input, so vet each family independently and keep whichever
     // survives — same rule as ExtSX (PartFile::addClientSources).
-    Address usableV4 = v4;
-    if (!usableV4.isNull()) {
-        if (!isGoodIP(usableV4)
-            || (m_ipFilter && m_ipFilter->isFiltered(usableV4))
-            || (m_clientList && m_clientList->isBannedClient(usableV4)))
-            usableV4 = Address();
-    }
-
-    Address usableV6 = v6;
-    if (!usableV6.isNull()) {
-        if (!isGoodIP(usableV6)
-            || (m_ipFilter && m_ipFilter->isFiltered(usableV6))
-            || (m_clientList && m_clientList->isBannedClient(usableV6)))
-            usableV6 = Address();
-    }
+    const Address usableV4 = vetPeerAddress(v4);
+    const Address usableV6 = vetPeerAddress(v6);
 
     if (usableV4.isNull() && usableV6.isNull())
         return;
 
+    const uint32 userId = usableV4.isNull() ? kNoIPv4SourceId : usableV4.toNetworkUint32();
+    addVettedSource(file, userId, usableV6, port, SourceFrom::Link);
+}
+
+Address DownloadQueue::vetPeerAddress(const Address& addr) const
+{
+    if (addr.isNull())
+        return {};
+    if (!isGoodIP(addr))
+        return {};
+    if (m_ipFilter && m_ipFilter->isFiltered(addr))
+        return {};
+    if (m_clientList && m_clientList->isBannedClient(addr))
+        return {};
+    return addr;
+}
+
+bool DownloadQueue::addVettedSource(PartFile* file, uint32 ed2kUserId, const Address& v6,
+                                    uint16 port, SourceFrom from, const SourceHints& hints)
+{
+    if (!file || port == 0)
+        return false;
+
     // Two firewalled IPv4 peers can never connect, but an IPv6 peer is dialable
     // whatever our ED2K ID is, so only drop when IPv4 is all we have.
-    if (usableV6.isNull() && theApp.isFirewalled() && isLowID(usableV4.toNetworkUint32()))
-        return;
+    if (v6.isNull() && theApp.isFirewalled() && isLowID(ed2kUserId))
+        return false;
 
     if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
-        return;
+        return false;
 
-    const uint32 userId = usableV4.isNull() ? kNoIPv4SourceId : usableV4.toNetworkUint32();
-    auto* client = makeSourceClient(file, userId, usableV6, port, SourceFrom::Link);
+    auto* client = makeSourceClient(file, ed2kUserId, v6, port, from,
+                                    hints.serverIP, hints.serverPort);
 
-    if (checkAndAddSource(file, client))
-        client->tryToConnect();
-    else
+    if (hints.userHash)
+        client->setUserHash(hints.userHash);
+    if (hints.connectOptions != 0)
+        client->setConnectOptions(hints.connectOptions, true, true);
+    if (hints.kadPort != 0)
+        client->setKadPort(hints.kadPort);
+    if (hints.udpPort != 0)
+        client->setUDPPort(hints.udpPort);
+
+    if (!checkAndAddSource(file, client)) {
         delete client;
+        return false;
+    }
+
+    client->tryToConnect();
+    return true;
 }
 
 void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& source)

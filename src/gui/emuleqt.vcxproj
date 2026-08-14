@@ -217,7 +217,12 @@
     <ClCompile Include="app\Ed2kSchemeHandler.cpp" />
     <ClCompile Include="dialogs\CollectionCreateDialog.cpp" />
     <ClCompile Include="dialogs\CollectionViewDialog.cpp" />
+    <ClCompile Include="dialogs\CommentsPanel.cpp" />
+    <ClCompile Include="dialogs\DetailDialog.cpp" />
     <ClCompile Include="dialogs\FileDetailDialog.cpp" />
+    <ClCompile Include="dialogs\FindInListDialog.cpp" />
+    <ClCompile Include="dialogs\MetadataPage.cpp" />
+    <ClCompile Include="dialogs\SearchDetailDialog.cpp" />
     <ClCompile Include="dialogs\FirstStartWizard.cpp" />
     <ClCompile Include="controls\FriendListModel.cpp" />
     <ClCompile Include="dialogs\ImportDownloadsDialog.cpp" />
@@ -247,6 +252,7 @@
     <ClCompile Include="panels\StatisticsPanel.cpp" />
     <ClCompile Include="controls\SpeedGraph.cpp" />
     <ClCompile Include="controls\StatsGraph.cpp" />
+    <ClCompile Include="controls\TrayMeterIcon.cpp" />
     <ClCompile Include="app\TrayMenuManager.cpp" />
     <ClCompile Include="panels\TransferPanel.cpp" />
     <ClCompile Include="controls\TransferToolbar.cpp" />
@@ -256,6 +262,8 @@
     <ClCompile Include="app\main.cpp" />
     <ClCompile Include="utils\Ed2kLinkImporter.cpp" />
     <ClCompile Include="utils\IpcFeedback.cpp" />
+    <ClCompile Include="utils\ViewNavigation.cpp" />
+    <ClCompile Include="utils\PanelPoller.cpp" />
     <ClCompile Include="utils\PreviewLauncher.cpp" />
     <ClCompile Include="utils\StatusBarNotifier.cpp" />
     <ClCompile Include="utils\WebServices.cpp" />
@@ -264,9 +272,15 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="controls\AbstractListView.h" />
     <ClInclude Include="controls\AbstractTableModel.h" />
+    <ClInclude Include="controls\TrayMeterIcon.h" />
     <ClInclude Include="utils\Ed2kLinkImporter.h" />
+    <ClInclude Include="dialogs\FindInListDialog.h" />
+    <ClInclude Include="dialogs\MetadataPage.h" />
     <ClInclude Include="utils\IpcFeedback.h" />
+    <ClInclude Include="utils\ViewNavigation.h" />
+    <QtMoc Include="utils\PanelPoller.h" />
     <ClInclude Include="utils\PreviewLauncher.h" />
+    <ClInclude Include="utils\TextLinks.h" />
     <ClInclude Include="utils\StatusBarNotifier.h" />
     <ClInclude Include="utils\WebServices.h" />
     <ClInclude Include="app\SkinEngine.h" />
@@ -286,7 +300,10 @@
     <ClInclude Include="app\Ed2kSchemeHandler.h" />
     <QtMoc Include="dialogs\CollectionCreateDialog.h" />
     <QtMoc Include="dialogs\CollectionViewDialog.h" />
+    <QtMoc Include="dialogs\CommentsPanel.h" />
+    <QtMoc Include="dialogs\DetailDialog.h" />
     <QtMoc Include="dialogs\FileDetailDialog.h" />
+    <QtMoc Include="dialogs\SearchDetailDialog.h" />
     <QtMoc Include="dialogs\FirstStartWizard.h" />
     <QtMoc Include="controls\FriendListModel.h" />
     <QtMoc Include="dialogs\ImportDownloadsDialog.h" />

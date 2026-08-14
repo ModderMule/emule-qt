@@ -133,6 +133,9 @@ private:
     uint32 m_numberOfPingsForAverage = 3;
     bool m_useMillisecondPingTolerance = false;
     bool m_enabled = false;
+    /// Set once the first setPrefs() lands. Lets run()'s startup wait finish as soon as
+    /// real preferences exist, instead of blocking for the full timeout when USS is off.
+    bool m_prefsReceived = false;
 
     // --- Ping data (guarded by m_pingMutex) ---
     std::deque<uint32> m_pingDelays;

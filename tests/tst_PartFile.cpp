@@ -3,9 +3,11 @@
 ///        priority, persistence, block selection, source tracking.
 
 #include "TestHelpers.h"
+#include "app/AppContext.h"
 #include "files/PartFile.h"
 #include "client/UpDownClient.h"
 #include "prefs/Preferences.h"
+#include "stats/Statistics.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 
@@ -14,7 +16,10 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
 #include <cstring>
+#include <span>
+#include <vector>
 
 using namespace eMule;
 
@@ -50,6 +55,8 @@ private slots:
     void rightFileHasHigherPrio_ordering();
     void writePartStatus_basic();
     void getFilledArray_basic();
+    void writeToBuffer_countsCompressionGain();
+    void ich_recoversCorruptedPartOnRehash();
 
 private:
     QTemporaryDir m_tempDir;
@@ -556,6 +563,119 @@ void tst_PartFile::getFilledArray_basic()
     QCOMPARE(filled[0].end, 299ULL);
     QCOMPARE(filled[1].start, 500ULL);
     QCOMPARE(filled[1].end, 699ULL);
+}
+
+namespace {
+
+/// Publishes a Statistics instance as theApp.statistics for the duration of a
+/// test, so a failed assertion cannot leave the global dangling.
+class ScopedStatistics {
+public:
+    ScopedStatistics() { theApp.statistics = &m_stats; }
+    ~ScopedStatistics() { theApp.statistics = nullptr; }
+    ScopedStatistics(const ScopedStatistics&) = delete;
+    ScopedStatistics& operator=(const ScopedStatistics&) = delete;
+
+    Statistics* operator->() { return &m_stats; }
+
+private:
+    Statistics m_stats;
+};
+
+/// Deterministic filler so a re-written block is byte-identical to the first one.
+std::vector<uint8> makePattern(size_t size)
+{
+    std::vector<uint8> data(size);
+    for (size_t i = 0; i < size; ++i)
+        data[i] = static_cast<uint8>((i * 31 + 7) & 0xFF);
+    return data;
+}
+
+} // namespace
+
+// A compressed block covers more of the file than it took on the wire; that
+// difference is the gain. Before this, writeToBuffer() dropped transize on the
+// floor and both compression rows sat at whatever the .part.met last held.
+void tst_PartFile::writeToBuffer_countsCompressionGain()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/temp");
+    QDir().mkpath(tempDir);
+
+    ScopedStatistics stats;
+
+    PartFile pf;
+    pf.setFileSize(10000);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    const auto data = makePattern(1000);
+
+    // 1000 bytes of file arrived as 400 bytes on the wire.
+    pf.writeToBuffer(400, data.data(), 0, 999, nullptr);
+    QCOMPARE(pf.compressionGain(), uint64{600});
+    QCOMPARE(stats->sesCompressionGain(), uint64{600});
+
+    // An uncompressed block costs exactly what it covers and counts nothing.
+    pf.writeToBuffer(1000, data.data(), 1000, 1999, nullptr);
+    QCOMPARE(pf.compressionGain(), uint64{600});
+    QCOMPARE(stats->sesCompressionGain(), uint64{600});
+}
+
+// ICH: a part that failed its hash keeps its bytes on disk — they are only
+// distrusted. When the part hashes clean on a later flush, the gaps were never
+// really missing, so they are filled instead of re-downloaded.
+void tst_PartFile::ich_recoversCorruptedPartOnRehash()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/temp");
+    QDir().mkpath(tempDir);
+
+    ScopedStatistics stats;
+    QVERIFY(thePrefs.useICH());
+
+    // Two parts, so recovering the first one does not complete the file and send
+    // us down the file-move path.
+    const uint64 fileSize = PARTSIZE + 1000;
+    PartFile pf;
+    pf.setFileSize(fileSize);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    const auto part0 = makePattern(PARTSIZE);
+
+    uint8 goodHash[16]{};
+    QVERIFY(KnownFile::createHashFromMemory(part0.data(), PARTSIZE, goodHash, nullptr));
+
+    // Claim a hash the data does not have, so the first check condemns the part.
+    auto& hashSet = pf.fileIdentifier().getRawMD4HashSet();
+    hashSet.resize(2);
+    hashSet[0].fill(0xEE);
+    hashSet[1].fill(0xEE);
+
+    pf.writeToBuffer(PARTSIZE, part0.data(), 0, PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+
+    QVERIFY(pf.isCorruptedPart(0));
+    QCOMPARE(pf.totalGapSizeInPart(0), uint64{PARTSIZE});
+    QCOMPARE(pf.corruptionLoss(), uint64{PARTSIZE});
+    QCOMPARE(stats->sesCorruptionLoss(), uint64{PARTSIZE});
+    QCOMPARE(stats->sesIchPartsSaved(), uint32{0});
+
+    // The hashset turned out to be the liar, not the data: now one block of the
+    // part is re-received and the part is asked to prove itself again.
+    std::ranges::copy(std::span(goodHash, 16), hashSet[0].begin());
+    pf.writeToBuffer(1000, part0.data(), 0, 999, nullptr);
+    pf.flushBuffer();
+
+    QVERIFY(!pf.isCorruptedPart(0));
+    QCOMPARE(pf.totalGapSizeInPart(0), uint64{0});
+    QCOMPARE(stats->sesIchPartsSaved(), uint32{1});
+
+    // Everything but the re-received block was credited back.
+    QCOMPARE(pf.corruptionLoss(), uint64{1000});
+    QCOMPARE(stats->sesCorruptionLoss(), uint64{1000});
+
+    // The second part is untouched, so the file is not complete.
+    QVERIFY(pf.totalGapSize() > 0);
 }
 
 QTEST_GUILESS_MAIN(tst_PartFile)

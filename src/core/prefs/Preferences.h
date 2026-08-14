@@ -145,8 +145,17 @@ public:
 
     // -- Bandwidth ------------------------------------------------------------
 
+    /// Raw upload limit in KB/s. 0 means "no limit" — that is what the YAML store,
+    /// the IPC prefs map and both GUI limit controls read and write.
     [[nodiscard]] uint32 maxUpload() const;
     void setMaxUpload(uint32 val);
+
+    /// Upload limit in KB/s using MFC's sentinel: UNLIMITED when no limit is set.
+    /// MFC normalises 0 to UNLIMITED inside SetMaxUpload (srchybrid/Preferences.cpp:2610),
+    /// so every bandwidth path ported from MFC compares against UNLIMITED. Those paths
+    /// must read this, not maxUpload() — with the raw 0 they silently degrade to a
+    /// zero-byte budget (throttler) or a zero slot cap (upload queue).
+    [[nodiscard]] uint32 maxUploadLimit() const;
 
     [[nodiscard]] uint32 maxDownload() const;
     void setMaxDownload(uint32 val);
@@ -254,8 +263,17 @@ public:
 
     // -- Logging --------------------------------------------------------------
 
-    [[nodiscard]] bool logToDisk() const;
-    void setLogToDisk(bool val);
+    /// Write emulecored.log, emulecored_Verbose.log and emulecored_Kad.log in the
+    /// config directory. One switch per process: the daemon and the GUI keep
+    /// separate files, so a line's origin is never in doubt. @see logToDiskGui
+    [[nodiscard]] bool logToDiskCore() const;
+    void setLogToDiskCore(bool val);
+
+    /// Write emuleqt.log, emuleqt_Verbose.log and emuleqt_Kad.log in the config
+    /// directory (the Kad file stays empty — Kad runs in the daemon).
+    /// Set by the GUI but persisted by the daemon, which owns preferences.yml.
+    [[nodiscard]] bool logToDiskGui() const;
+    void setLogToDiskGui(bool val);
 
     [[nodiscard]] uint32 maxLogFileSize() const;
     void setMaxLogFileSize(uint32 val);
@@ -277,9 +295,6 @@ public:
 
     [[nodiscard]] int logLevel() const;
     void setLogLevel(int val);
-
-    [[nodiscard]] bool verboseLogToDisk() const;
-    void setVerboseLogToDisk(bool val);
 
     [[nodiscard]] bool logSourceExchange() const;
     void setLogSourceExchange(bool val);
@@ -468,6 +483,16 @@ public:
     [[nodiscard]] uint32 statsConnectionsRatio() const;
     void setStatsConnectionsRatio(uint32 val);
 
+    /// Seconds between two writes of the cumulative statistics; 0 = only at
+    /// shutdown. MFC: [Statistics] SaveInterval, ini-only, default 60.
+    [[nodiscard]] uint32 statsSaveInterval() const;
+    void setStatsSaveInterval(uint32 val);
+
+    /// Wall-clock second at which the statistics were last reset; 0 = never
+    /// (MFC: statsDateTimeLastReset).
+    [[nodiscard]] uint64 statsLastReset() const;
+    void setStatsLastReset(uint64 val);
+
     // -- Cumulative Statistics ------------------------------------------------
 
     // Transfer totals
@@ -633,6 +658,31 @@ public:
     void setRecMaxAvgFileSize(uint64 val);
     [[nodiscard]] uint64 recMaxLargestFile() const;
     void setRecMaxLargestFile(uint64 val);
+
+    /// Zero every cumulative counter above and stamp statsLastReset with @p now.
+    /// The records (rec*) and the session counters are left alone, as in MFC's
+    /// CPreferences::ResetCumulativeStatistics.
+    void resetCumulativeStats(uint64 now);
+
+    /// Absolute path of the statistics backup, a sibling of the preferences file
+    /// (MFC: statbkup.ini in the config directory).
+    [[nodiscard]] QString cumulativeStatsBackupPath() const;
+
+    /// True when a backup exists, i.e. when a restore is possible. The Restore
+    /// Statistics menu item is greyed out when this is false, as in MFC
+    /// (srchybrid/StatisticsTree.cpp:127).
+    [[nodiscard]] bool hasCumulativeStatsBackup() const;
+
+    /// Write the current cumulative counters, the records and statsLastReset to
+    /// the backup file, so that a following resetCumulativeStats() can be undone.
+    /// MFC does this from ResetCumulativeStatistics via SaveStats(1).
+    bool backupCumulativeStats() const;
+
+    /// Load the backup back into the cumulative counters. Returns false when there
+    /// is no backup to load. The current values become the new backup, so calling
+    /// this twice undoes the restore — MFC's statbkuptmp.ini rename
+    /// (srchybrid/Preferences.cpp:1330-1334).
+    bool restoreCumulativeStats();
 
     // -- Security -------------------------------------------------------------
 
@@ -875,6 +925,11 @@ public:
     [[nodiscard]] bool addNewFilesPaused() const;
     void setAddNewFilesPaused(bool val);
 
+    /// Save/Load Sources — write each download's best sources to a MorphXT-compatible
+    /// `<TempDir>/Source Lists/*.txtsrc` and restore them on the next run.
+    [[nodiscard]] bool useSaveLoadSources() const;
+    void setUseSaveLoadSources(bool val);
+
     // -- Disk space -----------------------------------------------------------
 
     [[nodiscard]] bool checkDiskspace() const;
@@ -928,9 +983,8 @@ public:
 
     [[nodiscard]] int versionCheckDays() const;
     void setVersionCheckDays(int val);
-
-    [[nodiscard]] int64_t lastVersionCheck() const;
-    void setLastVersionCheck(int64_t val);
+    // The timestamp of the last check lives in UiState, not here: the daemon owns
+    // preferences.yml but never runs a check, so only the GUI can record one.
 
     [[nodiscard]] bool bringToFrontOnLinkClick() const;
     void setBringToFrontOnLinkClick(bool val);
@@ -1087,6 +1141,20 @@ private:
     // Data layout stays fully encapsulated. Locking lives here in one place.
     template<class T> [[nodiscard]] T get(T Data::*member) const;
     template<class T> void           set(T Data::*member, const T& value);
+
+    /// Visit every field a statistics reset clears — the cumulative counters plus
+    /// the six cumulative rate records — as (key, reference) pairs. Reset, backup
+    /// and restore all walk this, so the field list exists in exactly one place.
+    /// @p D is Data or const Data, so one walk serves both the mutating visitors
+    /// and the const one.
+    template<class D, class F> static void forEachCumulativeStat(D& d, F&& f);
+    /// Visit the all-time records, which a reset leaves alone and a restore merges
+    /// with max() so a record set after the reset is not thrown away (MFC's
+    /// "Smart Load For Restores", srchybrid/Preferences.cpp:1299).
+    template<class D, class F> static void forEachStatRecord(D& d, F&& f);
+
+    /// Write the cumulative block of @p d to @p filePath. Caller holds the lock.
+    static bool writeStatsBackup(const Data& d, const QString& filePath);
 
     void validate();
     void resolveDefaultDirectories();

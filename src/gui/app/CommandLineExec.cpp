@@ -26,6 +26,7 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_screenshotOption);
     m_parser.addOption(m_tabOption);
     m_parser.addOption(m_subtabOption);
+    m_parser.addOption(m_subtabTopOption);
     m_parser.addOption(m_delayOption);
     m_parser.addOption(m_optionsOption);
     m_parser.addOption(m_configOption);
@@ -72,6 +73,12 @@ void CommandLineExec::parse(QApplication& app)
         m_subtab = m_parser.value(m_subtabOption).toInt();
     }
 
+    // Parse --subtab-top
+    if (m_parser.isSet(m_subtabTopOption)) {
+        m_hasSubtabTop = true;
+        m_subtabTop = m_parser.value(m_subtabTopOption).toInt();
+    }
+
     // Parse --options
     if (m_parser.isSet(m_optionsOption)) {
         const QString optArg = m_parser.value(m_optionsOption).toLower();
@@ -115,6 +122,11 @@ void CommandLineExec::applyTabArgs(MainWindow& mainWindow) const
         else if (m_activeTab == MainWindow::TabTransfers)
             mainWindow.transferPanel()->switchToSubTab(m_subtab);
     }
+
+    // After --subtab: the two Transfers panes cannot show the same list, and the top
+    // pane wins that clash — so asking for both lands --subtab-top exactly as given.
+    if (m_hasSubtabTop && m_activeTab == MainWindow::TabTransfers)
+        mainWindow.transferPanel()->switchToTopView(m_subtabTop);
 }
 
 void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWindow) const
@@ -132,9 +144,18 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
                 QPixmap pixmap = dlg.grab();
                 pixmap.save(path);
             } else {
-                mainWindow.repaint();
+                // A dialog is its own top-level window, so grabbing the main window
+                // would miss it and the shot would look like nothing happened.
+                // Prefer whatever is blocking input, then whatever has focus — the
+                // detail dialogs are modeless, so only the latter finds them.
+                QWidget* target = QApplication::activeModalWidget();
+                if (!target)
+                    target = QApplication::activeWindow();
+                if (!target)
+                    target = &mainWindow;
+                target->repaint();
                 QApplication::processEvents();
-                QPixmap pixmap = mainWindow.grab();
+                QPixmap pixmap = target->grab();
                 pixmap.save(path);
             }
             logInfo(QStringLiteral("Screenshot saved to %1").arg(path));

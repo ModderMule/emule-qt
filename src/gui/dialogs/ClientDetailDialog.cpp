@@ -4,7 +4,6 @@
 
 #include "ClientDetailDialog.h"
 
-#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
@@ -57,15 +56,35 @@ void addRow(QFormLayout* form, const QString& label, const QString& value)
 // ── constructor ────────────────────────────────────────────────────────
 
 ClientDetailDialog::ClientDetailDialog(const QCborMap& d, QWidget* parent)
-    : QDialog(parent)
+    : DetailDialog(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
-    setWindowTitle(tr("Client Details: %1")
-        .arg(str(d, QLatin1StringView("userName"))));
     setMinimumSize(580, 580);
     resize(620, 620);
 
-    auto* mainLayout = new QVBoxLayout(this);
+    ClientDetailDialog::setDetails(d);
+}
+
+// ── re-target ──────────────────────────────────────────────────────────
+
+void ClientDetailDialog::setDetails(const QCborMap& d)
+{
+    delete m_content;
+    m_content = buildContent(d);
+    contentLayout()->addWidget(m_content);
+
+    setSubjectKey(str(d, QLatin1StringView("userHash")));
+    setWindowTitle(tr("Client Details: %1")
+        .arg(str(d, QLatin1StringView("userName"))));
+}
+
+// ── private helpers ────────────────────────────────────────────────────
+
+QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
+{
+    auto* page = new QWidget;
+    auto* mainLayout = new QVBoxLayout(page);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
 
     // ── General group ──────────────────────────────────────────────────
     {
@@ -172,10 +191,7 @@ ClientDetailDialog::ClientDetailDialog(const QCborMap& d, QWidget* parent)
     }
 
     mainLayout->addStretch();
-
-    auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close);
-    connect(btnBox, &QDialogButtonBox::rejected, this, &QDialog::close);
-    mainLayout->addWidget(btnBox);
+    return page;
 }
 
 } // namespace eMule

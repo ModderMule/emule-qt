@@ -22,6 +22,14 @@ class ThrottledControlSocket {
 public:
     virtual SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) = 0;
 
+    /// Whether this socket still has control data waiting to be sent.
+    /// The throttler enqueues one entry per packet but sendControlData() drains the
+    /// socket's whole queue in one call, so re-queueing on "sent 0 bytes" alone never
+    /// terminates — the queue would stay permanently non-empty. Pure virtual on
+    /// purpose: a defaulted `return false` would silently strand datagrams if a future
+    /// implementer forgot to override it.
+    [[nodiscard]] virtual bool hasControlQueue() const = 0;
+
 protected:
     virtual ~ThrottledControlSocket() = default;
 };

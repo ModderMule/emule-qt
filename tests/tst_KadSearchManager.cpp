@@ -3,11 +3,14 @@
 
 #include "TestHelpers.h"
 
+#include "app/AppContext.h"
+#include "files/PartFile.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUInt128.h"
+#include "transfer/DownloadQueue.h"
 
 #include <QTest>
 
@@ -31,6 +34,8 @@ private slots:
     void prepareFindKeywords_fallbackTarget();
     void findNodeFWCheckUDP_onlyOneSearch();
     void cancelNodeFWCheckUDPSearch_removesAll();
+    void destroyedFileSearch_releasesPartFile();
+    void destroyedFileSearch_allowsNextSearch();
 
 private:
     /// Start a keyword search for @p expression, asserting it starts.
@@ -190,6 +195,67 @@ void tst_KadSearchManager::cancelNodeFWCheckUDPSearch_removesAll()
     QCOMPARE(countFWCheckSearches(), 0);
     QVERIFY(!SearchManager::isNodeFWCheckUDPSearchActive());
     QVERIFY(SearchManager::alreadySearchingFor(nodeTarget));
+}
+
+// MFC CSearch::~CSearch (Search.cpp:130-134) hands the part file back when a source
+// search dies. Without it the file keeps a search ID that refers to nothing and
+// PartFile::process()'s `if (!kadFileSearchID())` guard blocks every later search.
+void tst_KadSearchManager::destroyedFileSearch_releasesPartFile()
+{
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;
+
+    uint8 hash[16] = {0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11};
+    auto* pf = new PartFile;
+    pf->setFileName(QStringLiteral("kadsearch.bin"));
+    pf->setFileHash(hash);
+    dq.addDownload(pf);
+
+    auto* search = SearchManager::prepareLookup(SearchType::File, true, UInt128(hash));
+    QVERIFY(search != nullptr);
+    pf->setKadFileSearchID(search->getSearchID());   // what PartFile::process() does
+    QVERIFY(pf->kadFileSearchID() != 0);
+
+    SearchManager::stopSearch(pf->kadFileSearchID(), true);
+
+    QCOMPARE(pf->kadFileSearchID(), 0U);
+
+    dq.deleteAll();
+    theApp.downloadQueue = nullptr;
+}
+
+void tst_KadSearchManager::destroyedFileSearch_allowsNextSearch()
+{
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;
+
+    uint8 hash[16] = {0x22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x22};
+    auto* pf = new PartFile;
+    pf->setFileName(QStringLiteral("kadsearch2.bin"));
+    pf->setFileHash(hash);
+    dq.addDownload(pf);
+
+    auto* first = SearchManager::prepareLookup(SearchType::File, true, UInt128(hash));
+    QVERIFY(first != nullptr);
+    const uint32 firstID = first->getSearchID();
+    pf->setKadFileSearchID(firstID);
+
+    // stopAllSearches() is the shutdown path; jumpStart()'s lifetime prune ends up in
+    // the same destructor, so covering one covers the release for both.
+    SearchManager::stopAllSearches();   // `first` is destroyed here
+    QCOMPARE(pf->kadFileSearchID(), 0U);
+
+    // The file must be able to search again — this is the regression: previously the
+    // stale ID made every later re-ask a no-op for the rest of the session.
+    QVERIFY(!SearchManager::alreadySearchingFor(UInt128(hash)));
+    auto* second = SearchManager::prepareLookup(SearchType::File, true, UInt128(hash));
+    QVERIFY(second != nullptr);
+    QVERIFY(second->getSearchID() != firstID);
+
+    SearchManager::stopAllSearches();
+
+    dq.deleteAll();
+    theApp.downloadQueue = nullptr;
 }
 
 // ---------------------------------------------------------------------------

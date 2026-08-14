@@ -15,8 +15,10 @@
 #include "utils/Opcodes.h"
 #include "utils/Types.h"
 
+#include <QByteArray>
 #include <QString>
 
+#include <map>
 #include <vector>
 
 namespace eMule {
@@ -99,10 +101,16 @@ public:
 
     virtual void updateFileRatingCommentAvail(bool forceUpdate = false) = 0;
 
-    // Kad notes cache (rating, comment pairs from Kad search results)
-    void addKadNote(uint8 rating, const QString& comment);
+    // Kad notes cache — the rating/comment pairs a NOTES lookup returned for this
+    // file. Keyed by publisher so re-running the search cannot double-count the
+    // same peer, matching KnownFile::m_kadNotes.
+    struct KadNote {
+        uint8   rating = 0;
+        QString comment;
+    };
+    void addKadNote(const QByteArray& publisherId, uint8 rating, const QString& comment);
     void clearKadNotes();
-    [[nodiscard]] const std::vector<std::pair<uint8, QString>>& kadNotesCache() const { return m_kadNotesCache; }
+    [[nodiscard]] const std::map<QByteArray, KadNote>& kadNotesCache() const { return m_kadNotesCache; }
 
     // Kad comment search state
     [[nodiscard]] bool isKadCommentSearchRunning() const { return m_kadCommentSearchRunning; }
@@ -117,7 +125,7 @@ protected:
     QString m_fileType;
     uint32 m_rating = 0;
     uint32 m_userRating = 0;
-    std::vector<std::pair<uint8, QString>> m_kadNotesCache;
+    std::map<QByteArray, KadNote> m_kadNotesCache;
     bool m_commentLoaded = false;
     bool m_hasComment = false;
     bool m_kadCommentSearchRunning = false;

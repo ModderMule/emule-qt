@@ -60,6 +60,13 @@ public:
     // Slot limit calculation
     uint32 getSlotLimit(uint32 currentUpSpeed) const;
 
+    /// Number of send-loop iterations run so far. Exposed for tests and wakeup
+    /// diagnostics: an idle throttler must advance this only a few times a second.
+    [[nodiscard]] uint64 loopIterations() const
+    {
+        return m_loopIterations.load(std::memory_order_relaxed);
+    }
+
 protected:
     void run() override;
 
@@ -68,6 +75,11 @@ private:
     bool removeFromStandardListNoLock(ThrottledFileSocket* socket);
     void removeFromAllQueuesNoLock(ThrottledControlSocket* socket);
     static uint32 calculateChangeDelta(uint32 numberOfConsecutiveChanges);
+
+    /// Publish "there is work to do" and wake the send loop. Producers must have
+    /// pushed the work onto their queue *before* calling this — see the ordering
+    /// note on m_wakeMutex.
+    void signalWorkAvailable();
 
     // Socket queues (guarded by m_sendMutex)
     std::list<ThrottledControlSocket*> m_controlQueue;
@@ -79,10 +91,16 @@ private:
     // Synchronization
     mutable std::mutex m_sendMutex;
     mutable std::mutex m_tempMutex;
-    std::mutex m_dataAvailableMutex;
-    std::condition_variable m_dataAvailableCV;
-    std::mutex m_socketAvailableMutex;
-    std::condition_variable m_socketAvailableCV;
+
+    /// Single wake channel for the send loop. One CV rather than one per flag so
+    /// that *any* producer breaks the wait regardless of which branch the loop is
+    /// parked in. Both m_dataAvailable and m_socketAvailable are stored under this
+    /// mutex: the waiter holds it across its predicate check and its block, so a
+    /// notify can no longer land in between and be lost. That was harmless while
+    /// the loop polled every 1 ms; with the 100 ms idle wait it would be a stall.
+    std::mutex m_wakeMutex;
+    std::condition_variable m_wakeCV;
+
     std::mutex m_pauseMutex;
     std::condition_variable m_pauseCV;
 
@@ -100,6 +118,7 @@ private:
     std::atomic<bool> m_paused{false};
     std::atomic<bool> m_dataAvailable{false};
     std::atomic<bool> m_socketAvailable{false};
+    std::atomic<uint64> m_loopIterations{0};
 };
 
 } // namespace eMule

@@ -29,12 +29,14 @@ class IPFilter;
 class LastCommonRouteFinder;
 class KnownFileList;
 class ListenSocket;
+class GlobalSearchScheduler;
 class SearchList;
 class ServerConnect;
 class ServerList;
 class SharedFileList;
 class Scheduler;
 class Statistics;
+class StatsHistory;
 class UDPSocket;
 class PortMapper;
 struct PortMapRequest;
@@ -89,6 +91,7 @@ private:
 
     QTimer m_timer;
     uint32 m_tickCounter = 0;
+    uint32 m_lastStatsFlushTick = 0;
 
     void initClientInfra();
     void shutdownClientInfra();
@@ -139,12 +142,14 @@ private:
     std::unique_ptr<FriendList> m_friendList;
     std::unique_ptr<ListenSocket> m_listenSocket;
     std::unique_ptr<SearchList> m_searchList;
+    std::unique_ptr<GlobalSearchScheduler> m_globalSearch;
     std::unique_ptr<ServerList> m_serverList;
     std::unique_ptr<ServerConnect> m_serverConnect;
     std::unique_ptr<UDPSocket> m_serverUDP;
     std::unique_ptr<LastCommonRouteFinder> m_lastCommonRouteFinder;
     std::unique_ptr<Scheduler> m_scheduler;
     std::unique_ptr<Statistics> m_statistics;
+    std::unique_ptr<StatsHistory> m_statsHistory;
     std::unique_ptr<PortMapper> m_portMapper;
     std::unique_ptr<CollectionKeys> m_collectionKeys;
 };

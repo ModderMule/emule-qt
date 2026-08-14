@@ -63,6 +63,12 @@ private:
         QStringLiteral("Sub-tab index within the active panel."),
         QStringLiteral("index")};
 
+    QCommandLineOption m_subtabTopOption{
+        QStringLiteral("subtab-top"),
+        QStringLiteral("Transfers upper-pane list (0=downloads, 1=uploading, "
+                       "2=downloading, 3=on queue, 4=known clients)."),
+        QStringLiteral("index")};
+
     QCommandLineOption m_delayOption{
         QStringLiteral("delay"),
         QStringLiteral("Screenshot delay in milliseconds (default: 3000)."),
@@ -88,6 +94,8 @@ private:
     bool m_hasTab = false;
     bool m_hasSubtab = false;
     int m_subtab = 0;
+    bool m_hasSubtabTop = false;
+    int m_subtabTop = 0;
     QStringList m_positionalArgs;
 };
 

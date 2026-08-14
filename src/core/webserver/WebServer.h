@@ -16,6 +16,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 class QHttpServer;
 class QHttpServerRequest;
@@ -33,7 +34,9 @@ class ServerConnect;
 class ServerList;
 class SharedFileList;
 class Statistics;
+class StatsHistory;
 class UploadQueue;
+struct StatsGraphSample;
 
 // ---------------------------------------------------------------------------
 // WebServerConfig — startup configuration
@@ -78,6 +81,11 @@ public:
     void setSharedFileList(SharedFileList* shared);
     void setFriendList(FriendList* fl);
     void setStatistics(Statistics* stats);
+    /// Sample history behind the Graphs page. MFC fills its own 500-point ring from the
+    /// statistics dialog (CWebServer::AddStatsLine, srchybrid/WebServer.cpp:321) — a
+    /// GUI-process hook a headless daemon does not have, so we read core's history
+    /// instead. Optional: without it the page renders empty axes.
+    void setStatsHistory(StatsHistory* history);
     void setPreferences(Preferences* prefs);
     void setLogProvider(std::function<QString()> provider) { m_logProvider = std::move(provider); }
 
@@ -92,6 +100,21 @@ public:
 
     /// Reload the template file (called from "Reload" button in options).
     void reloadTemplate();
+
+    /// Template variables for the Graphs page, from @p samples (oldest first).
+    ///
+    /// Emits MFC's own variables so a stock eMule template keeps working —
+    /// [GraphDownload], [GraphUpload] and [GraphConnections] as comma-separated
+    /// values, the two rates in bytes/s exactly as _GetGraphs writes them
+    /// (srchybrid/WebServer.cpp:3038-3043) — plus [GraphDownloadPts] and friends,
+    /// which are the same series already scaled to a @p viewW x @p viewH SVG viewBox
+    /// so a template can draw them without scripting.
+    ///
+    /// Public and static because it is the whole of the page worth testing; the page
+    /// itself only adds labels around it.
+    [[nodiscard]] static QHash<QString, QString> graphVars(
+        const std::vector<StatsGraphSample>& samples,
+        uint32 maxDown, uint32 maxUp, uint32 maxConn, int viewW, int viewH);
 
 signals:
     void started(uint16 port);
@@ -185,6 +208,7 @@ private:
     SharedFileList* m_sharedFiles   = nullptr;
     FriendList*     m_friendList    = nullptr;
     Statistics*     m_statistics    = nullptr;
+    StatsHistory*   m_statsHistory  = nullptr;
     Preferences*    m_preferences   = nullptr;
 
     // Log provider callback (injected by DaemonApp)

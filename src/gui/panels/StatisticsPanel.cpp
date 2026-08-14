@@ -8,16 +8,24 @@
 #include "app/UiState.h"
 #include "controls/StatsGraph.h"
 #include "prefs/Preferences.h"
+#include "utils/PanelPoller.h"
 
 #include "IpcMessage.h"
 
 #include <QApplication>
+#include <QCborArray>
 #include <QCborMap>
 #include <QClipboard>
+#include <QDateTime>
+#include <QHBoxLayout>
 #include <QIcon>
+#include <QLabel>
+#include <QLocale>
 #include <QMenu>
+#include <QMessageBox>
 #include <QSplitter>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -66,12 +74,14 @@ StatisticsPanel::StatisticsPanel(QWidget* parent)
 {
     setupUi();
 
-    m_refreshTimer = new QTimer(this);
-    connect(m_refreshTimer, &QTimer::timeout, this, &StatisticsPanel::onRefreshTimer);
-
-    m_graphTimer = new QTimer(this);
-    m_graphTimer->setInterval(3000);
-    connect(m_graphTimer, &QTimer::timeout, this, &StatisticsPanel::onGraphTimer);
+    // Both pollers are gated on this panel being on screen, like every other panel.
+    // That used to be unsafe here — the graphs were fed from whatever the last poll
+    // returned, so a hidden panel would have drawn a flat line of stale values — but
+    // the daemon owns the sampling now, and the next GetStatsHistory replays every
+    // sample taken while we were away.
+    m_treePoller = new PanelPoller(this, [this] { requestStats(); });
+    m_graphPoller = new PanelPoller(this, [this] { requestGraphHistory(); });
+    m_graphPoller->setInterval(3000);
 }
 
 void StatisticsPanel::setIpcClient(IpcClient* client)
@@ -79,60 +89,70 @@ void StatisticsPanel::setIpcClient(IpcClient* client)
     m_ipc = client;
 
     if (m_ipc && m_ipc->isConnected()) {
-        m_refreshTimer->setInterval(m_ipc->pollingInterval());
-        m_refreshTimer->start();
-        m_graphTimer->start();
+        m_treePoller->setInterval(m_ipc->pollingInterval());
+        m_treePoller->setEnabled(true);
+        m_graphPoller->setEnabled(true);
         applySettings();
-        onRefreshTimer();
     } else if (m_ipc) {
         connect(m_ipc, &IpcClient::connected, this, [this]() {
-            m_refreshTimer->setInterval(m_ipc->pollingInterval());
-            m_refreshTimer->start();
-            m_graphTimer->start();
+            m_treePoller->setInterval(m_ipc->pollingInterval());
+            m_treePoller->setEnabled(true);
+            m_graphPoller->setEnabled(true);
             applySettings();
-            onRefreshTimer();
         });
         connect(m_ipc, &IpcClient::disconnected, this, [this]() {
-            m_refreshTimer->stop();
-            m_graphTimer->stop();
-            m_lastStats = {};
-            m_graphDown->reset();
-            m_graphUp->reset();
-            m_graphConn->reset();
+            m_treePoller->setEnabled(false);
+            m_graphPoller->setEnabled(false);
+            // Leave the traces on screen: they are the daemon's, and reconnecting to
+            // the same daemon resumes them. A daemon that restarted reports a new
+            // epoch, which clears them at that point instead.
         });
     } else {
-        m_refreshTimer->stop();
-        m_graphTimer->stop();
+        m_treePoller->setEnabled(false);
+        m_graphPoller->setEnabled(false);
     }
 }
 
 void StatisticsPanel::applySettings()
 {
-    uint32_t graphSec = thePrefs.graphsUpdateSec();
-    if (graphSec > 0) {
-        m_graphTimer->setInterval(static_cast<int>(graphSec) * 1000);
-        if (!m_graphTimer->isActive())
-            m_graphTimer->start();
-    } else {
-        m_graphTimer->stop();
-    }
+    // graphsUpdateSec is the daemon's sampling interval; here it only says how often
+    // to collect what the daemon has taken. Polling stays on when it is 0 (graphs
+    // disabled) — the replies are simply empty, and turning it back on needs no
+    // restart of anything.
+    const uint32_t graphSec = thePrefs.graphsUpdateSec();
+    m_graphPoller->setInterval(static_cast<int>(graphSec > 0 ? graphSec : 3) * 1000);
 
-    uint32_t statsSec = thePrefs.statsUpdateSec();
+    const uint32_t statsSec = thePrefs.statsUpdateSec();
     if (statsSec > 0) {
-        m_refreshTimer->setInterval(static_cast<int>(statsSec) * 1000);
-        if (!m_refreshTimer->isActive() && m_ipc && m_ipc->isConnected())
-            m_refreshTimer->start();
+        m_treePoller->setInterval(static_cast<int>(statsSec) * 1000);
+        m_treePoller->setEnabled(m_ipc && m_ipc->isConnected());
     } else {
-        m_refreshTimer->stop();
+        m_treePoller->setEnabled(false);
     }
 
-    const QColor bg(0, 0, 64);
-    const QColor grid(192, 192, 255);
+    // Colours come from uistate.yml, keyed by MFC's own indices — the mapping is
+    // CStatisticsDlg::ApplyStatsColor (srchybrid/StatisticsDlg.cpp:522-543). They are
+    // GUI-only state: the daemon owns preferences.yml and has no use for a palette.
     for (auto* graph : {m_graphDown, m_graphUp, m_graphConn}) {
-        graph->setBackgroundColor(bg);
-        graph->setGridColor(grid);
+        graph->setBackgroundColor(theUiState.statsColor(0));
+        graph->setGridColor(theUiState.statsColor(1));
         graph->setFillAll(thePrefs.fillGraphs());
     }
+
+    m_graphDown->setSeriesColor(0, theUiState.statsColor(4));    // Session average
+    m_graphDown->setSeriesColor(1, theUiState.statsColor(3));    // Average
+    m_graphDown->setSeriesColor(2, theUiState.statsColor(2));    // Current
+
+    m_graphUp->setSeriesColor(0, theUiState.statsColor(7));      // Session average
+    m_graphUp->setSeriesColor(1, theUiState.statsColor(6));      // Average
+    m_graphUp->setSeriesColor(2, theUiState.statsColor(5));      // Current
+    m_graphUp->setSeriesColor(3, theUiState.statsColor(14));     // Current excl. overhead
+    m_graphUp->setSeriesColor(4, theUiState.statsColor(13));     // Friend slots
+
+    m_graphConn->setSeriesColor(0, theUiState.statsColor(8));    // Active connections
+    m_graphConn->setSeriesColor(1, theUiState.statsColor(10));   // Active uploads
+    m_graphConn->setSeriesColor(2, theUiState.statsColor(9));    // Total uploads
+    m_graphConn->setSeriesColor(3, theUiState.statsColor(12));   // Active downloads
 
     auto connMax = static_cast<double>(thePrefs.statsConnectionsMax());
     if (connMax > 0)
@@ -157,6 +177,30 @@ void StatisticsPanel::setupUi()
     auto* treeLayout = new QVBoxLayout(treeContainer);
     treeLayout->setContentsMargins(2, 2, 2, 2);
 
+    // Header bar: MFC puts the tree menu behind a button here and shows the last
+    // reset date beside it (IDC_BNMENU / IDC_STATIC_LASTRESET,
+    // srchybrid/StatisticsDlg.cpp:2566-2578).
+    auto* headerBar = new QWidget(treeContainer);
+    auto* headerLayout = new QHBoxLayout(headerBar);
+    headerLayout->setContentsMargins(2, 0, 2, 2);
+    headerLayout->setSpacing(6);
+
+    m_menuButton = new QToolButton(headerBar);
+    m_menuButton->setArrowType(Qt::DownArrow);
+    m_menuButton->setAutoRaise(true);
+    m_menuButton->setFixedSize(20, 20);   // MFC's is a small square, about text height
+    m_menuButton->setToolTip(tr("Statistics Tree"));
+    connect(m_menuButton, &QToolButton::clicked, this, [this]() {
+        QMenu* menu = buildStatsMenu();
+        menu->popup(m_menuButton->mapToGlobal(QPoint(0, m_menuButton->height())));
+    });
+    headerLayout->addWidget(m_menuButton);
+
+    m_labelLastReset = new QLabel(tr("Statistics last reset: %1").arg(tr("Unknown")), headerBar);
+    headerLayout->addWidget(m_labelLastReset, 1);
+
+    treeLayout->addWidget(headerBar);
+
     // Not a ListTreeWidget: single column with a hidden header, so there is no
     // column layout to persist. Its expansion state is kept by bindStatsTree().
     m_tree = new QTreeWidget(treeContainer);
@@ -173,27 +217,29 @@ void StatisticsPanel::setupUi()
 
     auto* graphSplitter = new QSplitter(Qt::Vertical, this);
 
+    // Labels here, colours from applySettings() — which is also what a change in
+    // Options re-runs, so the two can never disagree.
     m_graphDown = new StatsGraph(3, this);
-    m_graphDown->setSeriesInfo(0, tr("Session average"), QColor(0, 128, 0));
-    m_graphDown->setSeriesInfo(1, tr("Average (3 min)"), QColor(0, 210, 0));
-    m_graphDown->setSeriesInfo(2, tr("Current"), QColor(128, 255, 128));
+    m_graphDown->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(4));
+    m_graphDown->setSeriesInfo(1, tr("Average (3 min)"), theUiState.statsColor(3));
+    m_graphDown->setSeriesInfo(2, tr("Current"), theUiState.statsColor(2));
     m_graphDown->setYUnits(tr("KB/s"));
     graphSplitter->addWidget(m_graphDown);
 
     m_graphUp = new StatsGraph(5, this);
-    m_graphUp->setSeriesInfo(0, tr("Session average"), QColor(140, 0, 0));
-    m_graphUp->setSeriesInfo(1, tr("Average (3 min)"), QColor(200, 0, 0));
-    m_graphUp->setSeriesInfo(2, tr("Current"), QColor(255, 128, 128));
-    m_graphUp->setSeriesInfo(3, tr("Current (excl. overhead)"), QColor(255, 190, 190));
-    m_graphUp->setSeriesInfo(4, tr("Friend slots"), QColor(255, 255, 255));
+    m_graphUp->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(7));
+    m_graphUp->setSeriesInfo(1, tr("Average (3 min)"), theUiState.statsColor(6));
+    m_graphUp->setSeriesInfo(2, tr("Current"), theUiState.statsColor(5));
+    m_graphUp->setSeriesInfo(3, tr("Current (excl. overhead)"), theUiState.statsColor(14));
+    m_graphUp->setSeriesInfo(4, tr("Friend slots"), theUiState.statsColor(13));
     m_graphUp->setYUnits(tr("KB/s"));
     graphSplitter->addWidget(m_graphUp);
 
     m_graphConn = new StatsGraph(4, this);
-    m_graphConn->setSeriesInfo(0, tr("Active connections"), QColor(150, 150, 255));
-    m_graphConn->setSeriesInfo(1, tr("Active uploads"), QColor(255, 255, 128));
-    m_graphConn->setSeriesInfo(2, tr("Total uploads"), QColor(192, 0, 192));
-    m_graphConn->setSeriesInfo(3, tr("Active downloads"), QColor(255, 255, 255));
+    m_graphConn->setSeriesInfo(0, tr("Active connections"), theUiState.statsColor(8));
+    m_graphConn->setSeriesInfo(1, tr("Active uploads"), theUiState.statsColor(10));
+    m_graphConn->setSeriesInfo(2, tr("Total uploads"), theUiState.statsColor(9));
+    m_graphConn->setSeriesInfo(3, tr("Active downloads"), theUiState.statsColor(12));
     graphSplitter->addWidget(m_graphConn);
 
     m_hSplitter->addWidget(graphSplitter);
@@ -202,6 +248,7 @@ void StatisticsPanel::setupUi()
     m_hSplitter->setStretchFactor(1, 7);
 
     theUiState.bindStatsSplitter(m_hSplitter);
+    theUiState.bindStatsGraphSplitter(graphSplitter);
 
     buildTree();
 }
@@ -424,6 +471,8 @@ void StatisticsPanel::buildTree()
     // ===== Time Statistics =====
     m_itemTimeHeader = new QTreeWidgetItem(m_tree, {tr("Time Statistics")});
     m_itemTimeHeader->setIcon(0, QIcon(QStringLiteral(":/icons/StatsTime.ico")));
+    m_itemStatsLastReset = new QTreeWidgetItem(m_itemTimeHeader,
+                                               {tr("Statistics Last Reset: %1").arg(tr("Unknown"))});
     m_itemTimeSinceReset = new QTreeWidgetItem(m_itemTimeHeader,
                                                {tr("Time Since Last Reset: -")});
 
@@ -497,17 +546,6 @@ void StatisticsPanel::buildTree()
 // IPC polling
 // ---------------------------------------------------------------------------
 
-void StatisticsPanel::onRefreshTimer()
-{
-    requestStats();
-}
-
-void StatisticsPanel::onGraphTimer()
-{
-    if (!m_lastStats.isEmpty())
-        feedGraphs(m_lastStats);
-}
-
 void StatisticsPanel::requestStats()
 {
     if (!m_ipc || !m_ipc->isConnected())
@@ -518,9 +556,21 @@ void StatisticsPanel::requestStats()
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
             return;
 
-        const QCborMap stats = resp.fieldMap(1);
-        updateTree(stats);
-        m_lastStats = stats;
+        updateTree(resp.fieldMap(1));
+    });
+}
+
+void StatisticsPanel::requestGraphHistory()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    IpcMessage req(IpcMsgType::GetStatsHistory);
+    req.append(static_cast<qint64>(m_statsSeq));
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+        applyGraphHistory(resp.fieldMap(1));
     });
 }
 
@@ -528,32 +578,44 @@ void StatisticsPanel::requestStats()
 // Feed graph data
 // ---------------------------------------------------------------------------
 
-void StatisticsPanel::feedGraphs(const QCborMap& stats)
+void StatisticsPanel::applyGraphHistory(const QCborMap& data)
 {
-    m_graphDown->appendPoints({
-        cborDouble(stats, QLatin1StringView("avgDownSession")),
-        cborDouble(stats, QLatin1StringView("avgDownTime")),
-        cborDouble(stats, QLatin1StringView("rateDown"))
-    });
+    const auto epoch = static_cast<quint32>(
+        data.value(QStringLiteral("epoch")).toInteger());
+    const auto oldestSeq = static_cast<quint32>(
+        data.value(QStringLiteral("oldestSeq")).toInteger());
 
-    const double upTotal = cborDouble(stats, QLatin1StringView("rateUp"));
-    const double upDataOnly = cborDouble(stats, QLatin1StringView("upDatarate")) / 1024.0;
-    const double upFriend = cborDouble(stats, QLatin1StringView("upFriendDatarate")) / 1024.0;
+    // What we hold is only usable if it is still a prefix of the daemon's history:
+    // a different epoch means the daemon restarted or statistics were reset, and an
+    // oldestSeq past our own means samples aged out while the panel was hidden.
+    if (epoch != m_statsEpoch || oldestSeq > m_statsSeq + 1) {
+        m_graphDown->reset();
+        m_graphUp->reset();
+        m_graphConn->reset();
+        m_statsSeq = 0;
+        m_statsEpoch = epoch;
+    }
 
-    m_graphUp->appendPoints({
-        cborDouble(stats, QLatin1StringView("avgUpSession")),
-        cborDouble(stats, QLatin1StringView("avgUpTime")),
-        upTotal,
-        upDataOnly,
-        upFriend
-    });
+    // Positional unpack of StatsGraphSample, whose field order is MFC's scope order
+    // (srchybrid/StatisticsDlg.cpp:569-600).
+    constexpr int kFieldCount = 14;
+    const QCborArray samples = data.value(QStringLiteral("samples")).toArray();
+    for (const auto& v : samples) {
+        const QCborArray s = v.toArray();
+        if (s.size() < kFieldCount)
+            continue;
+        m_statsSeq = static_cast<quint32>(s.at(0).toInteger());
 
-    m_graphConn->appendPoints({
-        static_cast<double>(cborInt(stats, QLatin1StringView("connActive"))),
-        static_cast<double>(cborInt(stats, QLatin1StringView("upWaiting"))),
-        static_cast<double>(cborInt(stats, QLatin1StringView("upQueueLength"))),
-        static_cast<double>(cborInt(stats, QLatin1StringView("downFileCount")))
-    });
+        m_graphDown->appendPoints({s.at(2).toDouble(), s.at(3).toDouble(),
+                                   s.at(4).toDouble()});
+        m_graphUp->appendPoints({s.at(5).toDouble(), s.at(6).toDouble(),
+                                 s.at(7).toDouble(), s.at(8).toDouble(),
+                                 s.at(9).toDouble()});
+        m_graphConn->appendPoints({static_cast<double>(s.at(10).toInteger()),
+                                   static_cast<double>(s.at(11).toInteger()),
+                                   static_cast<double>(s.at(12).toInteger()),
+                                   static_cast<double>(s.at(13).toInteger())});
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -724,6 +786,8 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         tr("Gain Due To Compression: %1 %2").arg(formatBytes(sesCompression), formatPercent(sesCompression, recv)));
     m_itemDownSesCorruption->setText(0,
         tr("Lost Due To Corruption: %1 %2").arg(formatBytes(sesCorruption), formatPercent(sesCorruption, recv)));
+    m_itemDownSesIchSaved->setText(0,
+        tr("Parts Saved Due To ICH: %1").arg(cborInt(stats, QLatin1StringView("sesIchPartsSaved"))));
 
     setOH(m_itemDownOverheadTotal, tr("Total Overhead (Packets)"), "downOverheadTotal", "downOverheadTotalPackets");
     setOH(m_itemDownOverheadFileReq, tr("File Request Overhead (Packets)"), "downOverheadFileReq", "downOverheadFileReqPkt");
@@ -802,8 +866,26 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     m_itemConnCumMaxAvgDown->setText(0, tr("Max Average Download Rate: %1").arg(formatRate(cborDouble(stats, QLatin1StringView("maxCumDownAvg")))));
 
     // === Time Statistics ===
-    m_itemTimeSinceReset->setText(0,
-        tr("Time Since Last Reset: %1").arg(formatDuration(uptime)));
+    // Counted from the last reset, not from session start — MFC shows the two as
+    // separate numbers (srchybrid/StatisticsDlg.cpp:1543-1556).
+    const qint64 lastReset = cborInt(stats, QLatin1StringView("statsLastReset"));
+    const QString lastResetText = lastReset > 0
+        ? QLocale().toString(QDateTime::fromSecsSinceEpoch(lastReset), QLocale::ShortFormat)
+        : tr("Unknown");
+    if (lastReset > 0) {
+        m_itemStatsLastReset->setText(0, tr("Statistics Last Reset: %1").arg(lastResetText));
+        m_itemTimeSinceReset->setText(0, tr("Time Since Last Reset: %1")
+            .arg(formatDuration(cborInt(stats, QLatin1StringView("timeSinceReset")))));
+    } else {
+        m_itemStatsLastReset->setText(0, tr("Statistics Last Reset: %1").arg(lastResetText));
+        m_itemTimeSinceReset->setText(0, tr("Time Since Last Reset: %1").arg(tr("Unknown")));
+    }
+    // Same date in the header bar; MFC shows it in both places too.
+    m_labelLastReset->setText(tr("Statistics last reset: %1").arg(lastResetText));
+
+    // Whether the Restore item in the menu is live. It comes from the poll rather
+    // than a request of its own, so the menu can be built synchronously.
+    m_backupAvailable = stats.value(QStringLiteral("statsBackupAvailable")).toBool(false);
 
     // Session
     m_itemRuntime->setText(0, tr("Runtime: %1").arg(formatDuration(uptime)));
@@ -989,30 +1071,44 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
 // Context menu
 // ---------------------------------------------------------------------------
 
-void StatisticsPanel::onContextMenu(const QPoint& pos)
+// One menu for the right-click and for the header-bar button, so the two cannot
+// drift apart — MFC drives both from CStatisticsTree::DoMenu
+// (srchybrid/StatisticsTree.cpp:126). The caller pops it up; it deletes itself
+// when it closes.
+QMenu* StatisticsPanel::buildStatsMenu()
 {
-    QMenu menu(this);
+    auto* menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
 
-    menu.addAction(tr("Reset Statistics"), this, &StatisticsPanel::resetStats);
-    menu.addSeparator();
+    menu->addAction(tr("Reset Statistics"), this, &StatisticsPanel::resetStats);
+    QAction* restore = menu->addAction(tr("Restore Statistics"), this, &StatisticsPanel::restoreStats);
+    // Greyed until a reset has left something to restore, as in MFC, which tests
+    // for statbkup.ini (srchybrid/StatisticsTree.cpp:127).
+    restore->setEnabled(m_backupAvailable);
+    menu->addSeparator();
 
-    menu.addAction(tr("Expand Main Sections"), this, [this]() {
+    menu->addAction(tr("Expand Main Sections"), this, [this]() {
         for (int i = 0; i < m_tree->topLevelItemCount(); ++i)
             m_tree->topLevelItem(i)->setExpanded(true);
     });
-    menu.addAction(tr("Expand All Sections"), this, [this]() {
+    menu->addAction(tr("Expand All Sections"), this, [this]() {
         m_tree->expandAll();
     });
-    menu.addAction(tr("Collapse All Sections"), this, [this]() {
+    menu->addAction(tr("Collapse All Sections"), this, [this]() {
         m_tree->collapseAll();
     });
-    menu.addSeparator();
+    menu->addSeparator();
 
-    menu.addAction(tr("Copy Branch"), this, &StatisticsPanel::copyBranch);
-    menu.addAction(tr("Copy All Visible"), this, &StatisticsPanel::copyAllVisible);
-    menu.addAction(tr("Copy All Statistics"), this, &StatisticsPanel::copyAllStats);
+    menu->addAction(tr("Copy Branch"), this, &StatisticsPanel::copyBranch);
+    menu->addAction(tr("Copy All Visible"), this, &StatisticsPanel::copyAllVisible);
+    menu->addAction(tr("Copy All Statistics"), this, &StatisticsPanel::copyAllStats);
 
-    menu.exec(m_tree->viewport()->mapToGlobal(pos));
+    return menu;
+}
+
+void StatisticsPanel::onContextMenu(const QPoint& pos)
+{
+    buildStatsMenu()->popup(m_tree->viewport()->mapToGlobal(pos));
 }
 
 void StatisticsPanel::resetStats()
@@ -1020,10 +1116,42 @@ void StatisticsPanel::resetStats()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
+    // MFC asks first, and says where the undo lives (IDS_STATS_MBRESET_TXT,
+    // srchybrid/emule.rc:3053). It is worth asking: the reset zeroes the
+    // cumulative totals in preferences.yml, not just what is on screen.
+    if (QMessageBox::question(this, tr("Reset Statistics"),
+                              tr("Are you sure you wish to reset your cumulative statistics?\n\n"
+                                 "If you change your mind, you can reverse this action by "
+                                 "clicking the 'Restore Stats' button."),
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::No) != QMessageBox::Yes)
+        return;
+
     IpcMessage req(IpcMsgType::ResetStats);
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() == IpcMsgType::Result && resp.fieldBool(0))
             requestStats();
+    });
+}
+
+void StatisticsPanel::restoreStats()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    if (QMessageBox::question(this, tr("Restore Statistics"),
+                              tr("Are you sure you wish to restore your cumulative statistics "
+                                 "from the backup file?\n\n"
+                                 "Clicking 'Restore Stats' again will reload your current "
+                                 "statistics."),
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    IpcMessage req(IpcMsgType::RestoreStats);
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+        if (resp.type() == IpcMsgType::Result && resp.fieldBool(0))
+            requestStats();  // repaint now rather than at the next poll
     });
 }
 

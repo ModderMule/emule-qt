@@ -13,10 +13,10 @@
 
 namespace eMule {
 
-class Server;
-class ServerList;
-
 /// Row data snapshot for one server.
+///
+/// Rows are built from the daemon's CBOR payload — the GUI process holds no core
+/// Server objects to point at.
 struct ServerRow {
     QString name;
     QString ip;
@@ -41,9 +41,6 @@ struct ServerRow {
 
     // Unique server identity for connected-server highlighting
     uint32_t serverId = 0;
-
-    // Internal reference for double-click / context menu
-    const Server* serverPtr = nullptr;
 };
 
 /// Table model backing the server list tree view.
@@ -73,14 +70,8 @@ public:
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
 
-    /// Rebuild model from a ServerList.
-    void refreshFromServerList(const ServerList* serverList);
-
     /// Rebuild model from CBOR array received via IPC.
     void refreshFromCborArray(const QCborArray& servers);
-
-    /// Get the server pointer for a given row index.
-    [[nodiscard]] const Server* serverAtRow(int row) const;
 
     /// Set the currently connected server (0 to clear).
     void setConnectedServer(uint32_t serverId);

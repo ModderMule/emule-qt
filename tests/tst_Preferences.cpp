@@ -7,6 +7,7 @@
 #include "prefs/Preferences.h"
 #include "net/EMSocket.h"
 #include "net/EncryptedStreamSocket.h"
+#include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
 #include <QFile>
@@ -47,6 +48,27 @@ private slots:
         QCOMPARE(prefs.maxUpload(), 250u);
         QCOMPARE(prefs.maxDownload(), 500u);
         QCOMPARE(prefs.minUpload(), 1u);
+    }
+
+    /// maxUpload() stores "no limit" as 0; every bandwidth path ported from MFC compares
+    /// against UNLIMITED instead (srchybrid normalises in SetMaxUpload). maxUploadLimit()
+    /// is the bridge, and the whole upload pipeline depends on it: with the raw 0 the
+    /// throttler computes a zero byte budget and UploadQueue derives a zero slot cap.
+    void maxUploadLimit_mapsZeroToUnlimited()
+    {
+        Preferences prefs;
+
+        prefs.setMaxUpload(0);
+        QCOMPARE(prefs.maxUpload(), 0u);            // raw pref keeps the storage form
+        QCOMPARE(prefs.maxUploadLimit(), UNLIMITED); // callers see MFC's sentinel
+
+        prefs.setMaxUpload(250);
+        QCOMPARE(prefs.maxUploadLimit(), 250u);      // a real limit passes through as-is
+
+        // Already-UNLIMITED input must survive untouched, so the two spellings of
+        // "no limit" converge rather than one of them wrapping to a tiny number.
+        prefs.setMaxUpload(UNLIMITED);
+        QCOMPARE(prefs.maxUploadLimit(), UNLIMITED);
     }
 
     void defaults_encryption()
@@ -135,11 +157,15 @@ private slots:
             p1.setEnableUPnP(false);
             p1.setCloseUPnPOnExit(false);
             p1.setSeparateIPv6Queue(false);   // non-default, so a lost key would show
-            p1.setLogToDisk(true);
+            // One switch per process — both must survive the round trip
+            p1.setLogToDiskCore(true);
+            p1.setLogToDiskGui(true);
             p1.setMaxLogFileSize(2048);
             p1.setVerbose(true);
             p1.setMaxSourcesPerFile(1000);
             p1.setUseICH(false);
+            p1.setStatsSaveInterval(120);
+            p1.setStatsLastReset(1700000000);
             p1.setIncomingDir(QStringLiteral("/tmp/incoming"));
             p1.setTempDirs({QStringLiteral("/tmp/t1"), QStringLiteral("/tmp/t2")});
             p1.setBindAddress(QStringLiteral("192.168.1.100"));
@@ -173,11 +199,14 @@ private slots:
         QCOMPARE(p2.enableUPnP(), false);
         QCOMPARE(p2.closeUPnPOnExit(), false);
         QCOMPARE(p2.separateIPv6Queue(), false);
-        QCOMPARE(p2.logToDisk(), true);
+        QCOMPARE(p2.logToDiskCore(), true);
+        QCOMPARE(p2.logToDiskGui(), true);
         QCOMPARE(p2.maxLogFileSize(), 2048u);
         QCOMPARE(p2.verbose(), true);
         QCOMPARE(p2.maxSourcesPerFile(), static_cast<uint16>(1000));
         QCOMPARE(p2.useICH(), false);
+        QCOMPARE(p2.statsSaveInterval(), 120u);
+        QCOMPARE(p2.statsLastReset(), uint64{1700000000});
         QCOMPARE(p2.incomingDir(), QStringLiteral("/tmp/incoming"));
         QCOMPARE(p2.tempDirs(), QStringList({QStringLiteral("/tmp/t1"), QStringLiteral("/tmp/t2")}));
         QCOMPARE(p2.bindAddress(), QStringLiteral("192.168.1.100"));

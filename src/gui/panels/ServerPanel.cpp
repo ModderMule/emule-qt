@@ -3,18 +3,17 @@
 
 #include "app/IpcClient.h"
 #include "core/app/AppConfig.h"
-#include "core/app/AppContext.h"
 #include "controls/AbstractListView.h"
 #include "controls/LogWidget.h"
 #include "controls/ServerListModel.h"
+#include "dialogs/FindInListDialog.h"
 
 #include "app/UiState.h"
+#include "utils/PanelPoller.h"
 #include "IpcMessage.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
-#include "server/Server.h"
-#include "server/ServerConnect.h"
-#include "server/ServerList.h"
+#include "server/Server.h"   // ServerPriority, Address
 
 #include "protocol/ED2KLink.h"
 
@@ -23,12 +22,8 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QClipboard>
-#include <QComboBox>
 #include <QDataStream>
-#include <QDialog>
-#include <QDialogButtonBox>
 #include <QFont>
-#include <QFormLayout>
 #include <QFrame>
 #include <QHostAddress>
 #include <QHostInfo>
@@ -54,10 +49,9 @@ ServerPanel::ServerPanel(QWidget* parent)
 {
     setupUi();
 
-    m_refreshTimer = new QTimer(this);
-    m_refreshTimer->setInterval(5000);
-    connect(m_refreshTimer, &QTimer::timeout, this, &ServerPanel::onRefreshTimer);
-    m_refreshTimer->start();
+    m_poller = new PanelPoller(this, [this] { onRefreshTimer(); });
+    m_poller->setInterval(5000);
+    m_poller->setEnabled(true);
 }
 
 ServerPanel::~ServerPanel() = default;
@@ -80,6 +74,7 @@ void ServerPanel::setIpcClient(IpcClient* client)
             m_ed2kConnected  = info.value(QStringLiteral("connected")).toBool();
             m_ed2kConnecting = info.value(QStringLiteral("connecting")).toBool();
             m_ed2kFirewalled = info.value(QStringLiteral("firewalled")).toBool();
+            m_ed2kLowID      = info.value(QStringLiteral("lowID")).toBool();
             m_ed2kClientID   = static_cast<uint32_t>(info.value(QStringLiteral("clientID")).toInteger());
             m_ed2kServerName = info.value(QStringLiteral("serverName")).toString();
             m_ed2kPublicIP   = static_cast<uint32_t>(info.value(QStringLiteral("publicIP")).toInteger());
@@ -125,70 +120,23 @@ void ServerPanel::setIpcClient(IpcClient* client)
     }
 }
 
-void ServerPanel::setServerList(ServerList* serverList)
-{
-    m_serverList = serverList;
-
-    if (m_serverList) {
-        connect(m_serverList, &ServerList::serverAdded, this, &ServerPanel::onServerListChanged);
-        connect(m_serverList, &ServerList::serverAboutToBeRemoved, this, &ServerPanel::onServerListChanged);
-        connect(m_serverList, &ServerList::listReloaded, this, &ServerPanel::onServerListChanged);
-        onServerListChanged();
-    }
-}
-
-void ServerPanel::setServerConnect(ServerConnect* serverConnect)
-{
-    m_serverConnect = serverConnect;
-
-    if (m_serverConnect) {
-        connect(m_serverConnect, &ServerConnect::connectedToServer,
-                this, &ServerPanel::onConnectedToServer);
-        connect(m_serverConnect, &ServerConnect::disconnectedFromServer,
-                this, &ServerPanel::onDisconnectedFromServer);
-        connect(m_serverConnect, &ServerConnect::serverMessageReceived,
-                this, &ServerPanel::onServerMessage);
-        connect(m_serverConnect, &ServerConnect::stateChanged,
-                this, [this]() {
-            refreshMyInfo();
-            updateConnectButton(m_serverConnect->isConnected(),
-                                m_serverConnect->isConnecting());
-        });
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Slots
 // ---------------------------------------------------------------------------
 
 void ServerPanel::onConnectClicked()
 {
-    // IPC mode: send connect/disconnect to daemon
-    if (m_ipc && m_ipc->isConnected()) {
-        // Check button text to determine action
-        if (m_connectBtn->text() == tr("Disconnect") || m_connectBtn->text() == tr("Cancel")) {
-            Ipc::IpcMessage req(Ipc::IpcMsgType::DisconnectFromServer);
-            m_ipc->sendRequest(std::move(req));
-            m_connectBtn->setText(tr("Connect"));
-        } else {
-            Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
-            m_ipc->sendRequest(std::move(req));
-            m_connectBtn->setText(tr("Cancel"));
-        }
-        return;
-    }
-
-    // Direct mode: call core objects directly
-    if (!m_serverConnect)
+    if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    if (m_serverConnect->isConnected() || m_serverConnect->isConnecting()) {
-        if (m_serverConnect->isConnecting())
-            m_serverConnect->stopConnectionTry();
-        m_serverConnect->disconnect();
+    // Check button text to determine action
+    if (m_connectBtn->text() == tr("Disconnect") || m_connectBtn->text() == tr("Cancel")) {
+        Ipc::IpcMessage req(Ipc::IpcMsgType::DisconnectFromServer);
+        m_ipc->sendRequest(std::move(req));
         m_connectBtn->setText(tr("Connect"));
     } else {
-        m_serverConnect->connectToAnyServer();
+        Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
+        m_ipc->sendRequest(std::move(req));
         m_connectBtn->setText(tr("Cancel"));
     }
 }
@@ -202,41 +150,24 @@ void ServerPanel::onAddServerClicked()
     if (ip.isEmpty() || port == 0)
         return;
 
-    if (m_ipc && m_ipc->isConnected()) {
-        Ipc::IpcMessage req(Ipc::IpcMsgType::AddServer);
-        req.append(ip);
-        req.append(static_cast<qint64>(port));
-        req.append(name);
-        m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
-            if (resp.fieldBool(0)) {
-                m_newServerIp->clear();
-                m_newServerPort->setText(QStringLiteral("4661"));
-                m_newServerName->clear();
-                requestServerList();
-            }
-        });
-        return;
-    }
-
-    if (!m_serverList)
+    if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    // Classify without resolving: a hostname is stored as a dynIP and re-resolved on
-    // every connect (A then AAAA), so an AAAA-only host works and nothing blocks the
-    // GUI thread. Accepts an IPv6 literal, bracketed or bare.
-    auto server = Server::fromAddressString(ip, port);
-    if (!server)
-        return;
-    if (!name.isEmpty())
-        server->setName(name);
-    if (thePrefs.manualServerHighPriority())
-        server->setPreference(ServerPriority::High);
-
-    if (m_serverList->addServer(std::move(server))) {
-        m_newServerIp->clear();
-        m_newServerPort->setText(QStringLiteral("4661")); // default port, not translatable
-        m_newServerName->clear();
-    }
+    // The daemon classifies without resolving: a hostname is stored as a dynIP and
+    // re-resolved on every connect (A then AAAA), so an AAAA-only host works and
+    // nothing blocks the GUI thread. Accepts an IPv6 literal, bracketed or bare.
+    Ipc::IpcMessage req(Ipc::IpcMsgType::AddServer);
+    req.append(ip);
+    req.append(static_cast<qint64>(port));
+    req.append(name);
+    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+        if (resp.fieldBool(0)) {
+            m_newServerIp->clear();
+            m_newServerPort->setText(QStringLiteral("4661")); // default port, not translatable
+            m_newServerName->clear();
+            requestServerList();
+        }
+    });
 }
 
 void ServerPanel::onUpdateServerMetClicked()
@@ -290,41 +221,6 @@ void ServerPanel::onRefreshTimer()
     refreshMyInfo();
 }
 
-void ServerPanel::onServerListChanged()
-{
-    const int srvScroll = m_serverListView->verticalScrollBar()->value();
-    const QString key = saveSelection();
-    m_serverListModel->refreshFromServerList(m_serverList);
-    m_serversLabel->setText(
-        tr("\u25B8 Servers (%1)").arg(m_serverListModel->rowCount()));
-    restoreSelection(key);
-    m_serverListView->verticalScrollBar()->setValue(srvScroll);
-}
-
-void ServerPanel::onConnectedToServer()
-{
-    m_connectBtn->setText(tr("Disconnect"));
-    refreshMyInfo();
-
-    if (m_serverConnect) {
-        if (auto* srv = m_serverConnect->currentServer()) {
-            m_logWidget->appendServerInfo(
-                tr("Connected to <b>%1</b> (%2:%3)")
-                    .arg(srv->name(), srv->address())
-                    .arg(srv->port()));
-            m_serverListModel->setConnectedServer(srv->serverId());
-        }
-    }
-}
-
-void ServerPanel::onDisconnectedFromServer()
-{
-    m_connectBtn->setText(tr("Connect"));
-    refreshMyInfo();
-    m_logWidget->appendServerInfo(tr("Disconnected from server."));
-    m_serverListModel->setConnectedServer(0);
-}
-
 void ServerPanel::updateConnectButton(bool connected, bool connecting)
 {
     if (connected)
@@ -335,44 +231,26 @@ void ServerPanel::updateConnectButton(bool connected, bool connecting)
         m_connectBtn->setText(tr("Connect"));
 }
 
-void ServerPanel::onServerMessage(const QString& msg)
-{
-    m_logWidget->appendServerInfo(msg);
-}
-
 void ServerPanel::onServerDoubleClicked(const QModelIndex& index)
 {
     // Map proxy index to source model index
     auto* proxy = qobject_cast<QSortFilterProxyModel*>(m_serverListView->model());
     const QModelIndex srcIndex = proxy ? proxy->mapToSource(index) : index;
 
-    // IPC mode: send ConnectToServer with IP and port
-    if (m_ipc && m_ipc->isConnected()) {
-        const auto* row = m_serverListModel->rowAt(srcIndex.row());
-        // numericIp is 0 for an IPv6 server, so identity rests on addr.
-        if (!row || (row->numericIp == 0 && row->addr.isEmpty()))
-            return;
-
-        Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
-        req.append(static_cast<qint64>(row->numericIp));
-        req.append(static_cast<qint64>(row->port));
-        req.append(row->addr);
-        m_ipc->sendRequest(std::move(req));
-        m_connectBtn->setText(tr("Cancel"));
-        return;
-    }
-
-    // Direct mode: connect via core objects
-    if (!m_serverConnect || !m_serverList)
+    if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    const auto* srv = m_serverListModel->serverAtRow(srcIndex.row());
-    if (!srv)
+    const auto* row = m_serverListModel->rowAt(srcIndex.row());
+    // numericIp is 0 for an IPv6 server, so identity rests on addr.
+    if (!row || (row->numericIp == 0 && row->addr.isEmpty()))
         return;
 
-    auto* mutableSrv = m_serverList->findByIPTcp(srv->ipAddress(), srv->port());
-    if (mutableSrv)
-        m_serverConnect->connectToServer(mutableSrv);
+    Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
+    req.append(static_cast<qint64>(row->numericIp));
+    req.append(static_cast<qint64>(row->port));
+    req.append(row->addr);
+    m_ipc->sendRequest(std::move(req));
+    m_connectBtn->setText(tr("Cancel"));
 }
 
 void ServerPanel::onServerContextMenu(const QPoint& pos)
@@ -421,10 +299,6 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                 req.append(addr);
                 m_ipc->sendRequest(std::move(req));
                 m_connectBtn->setText(tr("Cancel"));
-            } else if (m_serverConnect && m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
-                if (srv)
-                    m_serverConnect->connectToServer(srv);
             }
         });
     }
@@ -470,12 +344,6 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
-            } else if (m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
-                if (srv) {
-                    srv->setPreference(prio);
-                    onServerListChanged();
-                }
             }
         };
 
@@ -535,13 +403,6 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
-            } else if (m_serverList) {
-                std::vector<std::pair<Address, uint16_t>> coreOrder;
-                coreOrder.reserve(order.size());
-                for (const auto& e : order)
-                    coreOrder.emplace_back(Address::fromString(e.addr), e.port);
-                m_serverList->applyUserOrder(coreOrder);
-                onServerListChanged();
             }
         };
 
@@ -581,12 +442,6 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
-            } else if (m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
-                if (srv) {
-                    srv->setStaticMember(true);
-                    onServerListChanged();
-                }
             }
         });
     }
@@ -609,12 +464,6 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
-            } else if (m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
-                if (srv) {
-                    srv->setStaticMember(false);
-                    onServerListChanged();
-                }
             }
         });
     }
@@ -664,9 +513,6 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                     m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                         requestServerList();
                     });
-                } else if (m_serverList) {
-                    if (auto server = Server::fromAddressString(srvLink->address, srvLink->port))
-                        m_serverList->addServer(std::move(server));
                 }
             }
         }
@@ -689,10 +535,6 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
                 m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                     requestServerList();
                 });
-            } else if (m_serverList) {
-                auto* srv = m_serverList->findByIPTcp(Address::fromString(addr), port);
-                if (srv)
-                    m_serverList->removeServer(srv);
             }
         });
     }
@@ -707,8 +549,6 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
             m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
                 requestServerList();
             });
-        } else if (m_serverList) {
-            m_serverList->removeAllServers();
         }
     });
 
@@ -880,7 +720,6 @@ QWidget* ServerPanel::createControlsPanel()
     m_updateUrlEdit = new QLineEdit;
     urlRow->addWidget(m_updateUrlEdit, 1);
     m_updateBtn = new QPushButton(tr("Update"));
-    m_updateBtn->setFixedWidth(55);
     urlRow->addWidget(m_updateBtn);
     layout->addLayout(urlRow);
     connect(m_updateBtn, &QPushButton::clicked, this, &ServerPanel::onUpdateServerMetClicked);
@@ -930,21 +769,25 @@ void ServerPanel::refreshMyInfo()
 
     // ---- eD2K Network -------------------------------------------------------
     html += QStringLiteral("<b>") + tr("eD2K Network") + QStringLiteral("</b><br>");
-    const bool ed2kConn    = m_serverConnect ? m_serverConnect->isConnected()  : m_ed2kConnected;
-    const bool ed2kConning = m_serverConnect ? m_serverConnect->isConnecting() : m_ed2kConnecting;
+    const bool ed2kConn    = m_ed2kConnected;
+    const bool ed2kConning = m_ed2kConnecting;
+    const bool lowId       = m_ed2kLowID;
     if (ed2kConn) {
-        html += sp + tr("Status:") + QStringLiteral(" <font color='green'>") + tr("Connected") + QStringLiteral("</font><br>");
+        // Orange for LowID, green for HighID — same convention as the Kad section below.
+        html += sp + tr("Status:")
+              + (lowId ? QStringLiteral(" <font color='orange'>")
+                       : QStringLiteral(" <font color='green'>"))
+              + tr("Connected") + QStringLiteral("</font><br>");
 
         // IP:Port (public IP from server, or Unknown if low ID and no public IP)
-        const uint32_t pubIP = m_serverConnect ? theApp.publicIP() : m_ed2kPublicIP;
-        const bool lowId = m_serverConnect ? m_serverConnect->isLowID() : m_ed2kFirewalled;
+        const uint32_t pubIP = m_ed2kPublicIP;
         if (lowId && pubIP == 0)
             html += sp + tr("IP:Port:") + QStringLiteral("\t") + tr("Unknown") + QStringLiteral("<br>");
         else
             html += sp + tr("IP:Port:") + QStringLiteral("\t") + QStringLiteral("%1:%2").arg(fmtIPSwap(pubIP)).arg(thePrefs.port()) + QStringLiteral("<br>");
 
         // Client ID
-        const uint32_t clientId = m_serverConnect ? m_serverConnect->clientID() : m_ed2kClientID;
+        const uint32_t clientId = m_ed2kClientID;
         html += sp + tr("ID:") + QStringLiteral("\t%1<br>").arg(clientId);
         html += sp + QStringLiteral("\t%1<br>")
                     .arg(lowId
@@ -952,31 +795,14 @@ void ServerPanel::refreshMyInfo()
                              : QStringLiteral("<font color='green'>") + tr("High ID") + QStringLiteral("</font>"));
 
         // eD2K Server details
-        QString srvName, srvDesc, srvAddr, srvVersion;
-        uint16_t srvPort = 0;
-        uint32_t srvUsers = 0, srvFiles = 0;
-        bool obfuscated = false;
-        if (m_serverConnect) {
-            if (auto* srv = m_serverConnect->currentServer()) {
-                srvName    = srv->name();
-                srvDesc    = srv->description();
-                srvAddr    = srv->address();
-                srvPort    = srv->port();
-                srvVersion = srv->version();
-                srvUsers   = srv->users();
-                srvFiles   = srv->files();
-                obfuscated = m_serverConnect->isConnectedObfuscated();
-            }
-        } else {
-            srvName    = m_ed2kServerName;
-            srvDesc    = m_ed2kServerDesc;
-            srvAddr    = m_ed2kServerAddr;
-            srvPort    = m_ed2kServerPort;
-            srvVersion = m_ed2kServerVersion;
-            srvUsers   = m_ed2kServerUsers;
-            srvFiles   = m_ed2kServerFiles;
-            obfuscated = m_ed2kObfuscated;
-        }
+        const QString&  srvName    = m_ed2kServerName;
+        const QString&  srvDesc    = m_ed2kServerDesc;
+        const QString&  srvAddr    = m_ed2kServerAddr;
+        const QString&  srvVersion = m_ed2kServerVersion;
+        const uint16_t  srvPort    = m_ed2kServerPort;
+        const uint32_t  srvUsers   = m_ed2kServerUsers;
+        const uint32_t  srvFiles   = m_ed2kServerFiles;
+        const bool      obfuscated = m_ed2kObfuscated;
         if (!srvName.isEmpty()) {
             html += QStringLiteral("<br>") + sp + QStringLiteral("<b>") + tr("eD2K Server") + QStringLiteral("</b><br>");
             html += sp + tr("Name:") + QStringLiteral("\t") + srvName + QStringLiteral("<br>");
@@ -1130,58 +956,7 @@ void ServerPanel::restoreSelection(const QString& key)
 
 void ServerPanel::showFindDialog()
 {
-    auto* dlg = new QDialog(this);
-    dlg->setWindowTitle(tr("Search"));
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-
-    auto* layout = new QFormLayout(dlg);
-
-    auto* searchEdit = new QLineEdit;
-    layout->addRow(tr("Search for:"), searchEdit);
-
-    auto* columnCombo = new QComboBox;
-    columnCombo->addItem(tr("Server Name"),     ServerListModel::ColName);
-    columnCombo->addItem(tr("IP"),              ServerListModel::ColIP);
-    columnCombo->addItem(tr("Description"),     ServerListModel::ColDescription);
-    columnCombo->addItem(tr("Ping"),            ServerListModel::ColPing);
-    columnCombo->addItem(tr("Users"),           ServerListModel::ColUsers);
-    columnCombo->addItem(tr("Max Users"),       ServerListModel::ColMaxUsers);
-    columnCombo->addItem(tr("Preference"),      ServerListModel::ColPreference);
-    columnCombo->addItem(tr("Failed"),          ServerListModel::ColFailed);
-    columnCombo->addItem(tr("Static"),          ServerListModel::ColStatic);
-    columnCombo->addItem(tr("Soft File Limit"), ServerListModel::ColSoftFiles);
-    columnCombo->addItem(tr("Low ID"),          ServerListModel::ColLowID);
-    columnCombo->addItem(tr("Obfuscation"),     ServerListModel::ColObfuscation);
-    layout->addRow(tr("Search in column:"), columnCombo);
-
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    layout->addRow(buttons);
-
-    connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
-
-    connect(dlg, &QDialog::accepted, this, [this, searchEdit, columnCombo]() {
-        const QString term = searchEdit->text().trimmed();
-        if (term.isEmpty())
-            return;
-
-        const int column = columnCombo->currentData().toInt();
-        auto* proxyModel = qobject_cast<QSortFilterProxyModel*>(
-            m_serverListView->model());
-        if (!proxyModel)
-            return;
-
-        for (int row = 0; row < proxyModel->rowCount(); ++row) {
-            const QModelIndex idx = proxyModel->index(row, column);
-            if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
-                m_serverListView->setCurrentIndex(idx);
-                m_serverListView->scrollTo(idx);
-                return;
-            }
-        }
-    });
-
-    dlg->exec();
+    showFindInListDialog(this, m_serverListView);
 }
 
 void ServerPanel::requestKadStatus()
@@ -1225,6 +1000,7 @@ void ServerPanel::requestServerState()
         m_ed2kConnected  = info.value(QStringLiteral("connected")).toBool();
         m_ed2kConnecting = info.value(QStringLiteral("connecting")).toBool();
         m_ed2kFirewalled = info.value(QStringLiteral("firewalled")).toBool();
+        m_ed2kLowID      = info.value(QStringLiteral("lowID")).toBool();
         m_ed2kClientID   = static_cast<uint32_t>(info.value(QStringLiteral("clientID")).toInteger());
         m_ed2kServerName = info.value(QStringLiteral("serverName")).toString();
         m_ed2kPublicIP   = static_cast<uint32_t>(info.value(QStringLiteral("publicIP")).toInteger());
@@ -1473,19 +1249,6 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
             req.append(serverName);
             m_ipc->sendRequest(std::move(req));
             ++addedCount;
-        } else if (m_serverList) {
-            // fromAddressString classifies literal vs hostname and gets the byte order
-            // right — the old call passed a host-order uint32 to a network-order ctor.
-            auto server = Server::fromAddressString(address, port);
-            if (!server) {
-                ++skippedCount;
-                continue;
-            }
-            server->setName(serverName);
-            if (m_serverList->addServer(std::move(server)))
-                ++addedCount;
-            else
-                ++skippedCount;
         }
     }
 

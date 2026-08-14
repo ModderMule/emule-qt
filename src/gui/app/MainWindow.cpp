@@ -4,12 +4,14 @@
 #ifdef Q_OS_WIN
 #include "app/MiniMuleWidget.h"
 #endif
+#include "app/AppConfig.h"
 #include "app/IpcClient.h"
 #include "app/TrayMenuManager.h"
 #include "app/VersionChecker.h"
 #include "app/UiState.h"
 #include "controls/LogWidget.h"
 #include "controls/SpeedGraph.h"
+#include "controls/TrayMeterIcon.h"
 #include "dialogs/NetworkInfoDialog.h"
 #include "dialogs/ImportDownloadsDialog.h"
 #include "dialogs/FirstStartWizard.h"
@@ -54,10 +56,14 @@
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
+#include <QStyleHints>
 #include <QSystemTrayIcon>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrl>
+
+#include <algorithm>
+#include <cmath>
 
 namespace eMule {
 
@@ -92,9 +98,9 @@ MainWindow::MainWindow(QWidget* parent)
 
     // System tray icon for popup notifications
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
-        m_trayIcon = new QSystemTrayIcon(
-            QIcon(QStringLiteral(":/icons/TrayDisconnected.ico")), this);
-        m_trayIcon->setToolTip(QStringLiteral("eMule Qt"));
+        m_trayIcon = new QSystemTrayIcon(this);
+        updateTrayIcon(/*force*/ true);
+        updateTrayToolTip();   // before the first rate arrives a second from now
         m_trayIcon->show();
         connect(m_trayIcon, &QSystemTrayIcon::activated,
                 this, &MainWindow::onTrayIconClicked);
@@ -137,23 +143,46 @@ MainWindow::MainWindow(QWidget* parent)
     // Version checker
     m_versionChecker = new VersionChecker(this);
     connect(m_versionChecker, &VersionChecker::newVersionAvailable,
-            this, [this](const QString& version, const QString& downloadUrl) {
+            this, [this](const VersionChecker::Manifest& info, bool /*manual*/) {
+        // Announced for both the menu item and the interval check — a new release is
+        // worth interrupting for either way.
+        if (thePrefs.notifyOnNewVersion())
+            showNotification(tr("New Version Available"),
+                             tr("eMule Qt %1 has been released.").arg(info.latest));
+
+        const QString released = info.date.isValid()
+            ? tr("Version %1 of eMule Qt was released on %2.")
+                  .arg(info.latest, QLocale().toString(info.date, QLocale::LongFormat))
+            : tr("Version %1 of eMule Qt is available.").arg(info.latest);
+
         const auto result = QMessageBox::question(
             this, tr("New Version Available"),
-            tr("A new version (%1) of eMule Qt is available.\n\n"
-               "Would you like to open the download page?").arg(version),
+            tr("%1\n\nYou are running %2. Open the eMule Qt website?")
+                .arg(released, QCoreApplication::applicationVersion()),
             QMessageBox::Yes | QMessageBox::No);
-        if (result == QMessageBox::Yes) {
-            const QUrl parsed(downloadUrl);
-            const bool validUrl = parsed.isValid()
-                && (parsed.scheme() == QStringLiteral("https") || parsed.scheme() == QStringLiteral("http"));
-            const QUrl url = validUrl ? parsed : QUrl(QStringLiteral("https://emule-qt.org/"));
-            QDesktopServices::openUrl(url);
-        }
+        if (result == QMessageBox::Yes)
+            QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl)));
     });
     connect(m_versionChecker, &VersionChecker::upToDate,
-            this, []() {
-        // Only show dialog on manual check
+            this, [this](const QString& current, bool manual) {
+        // The interval check stays silent — nobody asked it anything.
+        if (manual)
+            QMessageBox::information(
+                this, tr("Version Check"),
+                tr("You are running the latest version of eMule Qt (v%1).").arg(current));
+    });
+    connect(m_versionChecker, &VersionChecker::checkFailed,
+            this, [this](const QString& reason, bool manual) {
+        if (manual)
+            QMessageBox::warning(
+                this, tr("Version Check"),
+                tr("Could not check for a new version:\n\n%1").arg(reason));
+    });
+    connect(m_versionChecker, &VersionChecker::checkCompleted,
+            this, [](qint64 whenSecs) {
+        // UiState, not thePrefs: the daemon owns preferences.yml and never runs a
+        // check, so this is the only store the GUI can write (see UiState.h).
+        theUiState.setLastVersionCheck(whenSecs);
     });
 }
 
@@ -232,6 +261,14 @@ void MainWindow::setIpcClient(IpcClient* ipc)
     m_ipc = ipc;
     if (m_trayMenu)
         m_trayMenu->setIpcClient(ipc);
+
+    if (!m_speedHistoryTimer) {
+        m_speedHistoryTimer = new QTimer(this);
+        m_speedHistoryTimer->setInterval(1000);   // core samples once a second
+        connect(m_speedHistoryTimer, &QTimer::timeout,
+                this, &MainWindow::pollSpeedHistory);
+    }
+    m_speedHistoryTimer->start();
 }
 
 void MainWindow::showOptionsDialog(int page)
@@ -252,6 +289,9 @@ void MainWindow::showOptionsDialog(int page)
 
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
 
+    // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.
+    LogWidget::applyLogFileSettings();
+
     // Re-apply custom font if changed
     if (!thePrefs.logFont().isEmpty()) {
         QFont f;
@@ -267,18 +307,23 @@ void MainWindow::onOptionsClicked()
     showOptionsDialog();
 }
 
-void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled)
+void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
+                               bool lowID)
 {
     m_ed2kConnected = connected;
     m_ed2kFirewalled = firewalled;
+    m_ed2kLowID = lowID;
 
     if (connected) {
-        const QString label = firewalled
+        // Orange for LowID, green for HighID — same convention as setKadStatus().
+        const QString label = lowID
             ? tr("eD2K: Connected (LowID)")
             : tr("eD2K: Connected");
         m_statusEd2k->setText(label);
-        m_statusEd2k->setStyleSheet(QStringLiteral("color: green;"));
-        m_connStatus->setEd2kState(firewalled
+        m_statusEd2k->setStyleSheet(lowID
+            ? QStringLiteral("color: orange;")
+            : QStringLiteral("color: green;"));
+        m_connStatus->setEd2kState(lowID
             ? ConnectionStatusWidget::Firewalled
             : ConnectionStatusWidget::Connected);
     } else if (connecting) {
@@ -348,8 +393,34 @@ void MainWindow::updateTransferRates(double upKBs, double downKBs,
         m_statusDownLabel->setText(QStringLiteral("Down: %1").arg(downKBs, 0, 'f', 1));
     }
 
-    if (m_speedGraph)
-        m_speedGraph->appendSample(downKBs, upKBs);
+    // The graph is not fed from here: its samples come from the daemon's
+    // StatsHistory via pollSpeedHistory(), so they survive a GUI restart and read
+    // the same for every GUI attached to this core.
+
+    // The tray meter is, though — this is our CemuleDlg::ShowTransferRate
+    // (srchybrid/EmuleDlg.cpp:1120-1145), which draws the bar and retitles the tooltip
+    // from the same rates.
+    updateTrayIcon();
+    updateTrayToolTip();
+}
+
+void MainWindow::updateTrayToolTip()
+{
+    if (!m_trayIcon)
+        return;
+
+    const QString state = (m_ed2kConnected || m_kadConnected)
+        ? tr("Connected") : tr("Disconnected");
+    const QString text = tr("eMule Qt v%1 (%2)\nUp: %3 | Down: %4")
+        .arg(QApplication::applicationVersion(), state)
+        .arg(m_cachedUpKBs, 0, 'f', 1)
+        .arg(m_cachedDownKBs, 0, 'f', 1);
+
+    // Same reason as the icon: on Linux this is a DBus property write, once a second.
+    if (text == m_trayToolTip)
+        return;
+    m_trayToolTip = text;
+    m_trayIcon->setToolTip(text);
 }
 
 void MainWindow::showNotification(const QString& title, const QString& message)
@@ -407,6 +478,27 @@ void MainWindow::forceQuit()
 {
     m_forceQuit = true;
     close();
+}
+
+void MainWindow::checkForUpdates(bool manual)
+{
+    if (!m_versionChecker)
+        return;
+    m_versionChecker->setLastCheck(theUiState.lastVersionCheck());
+    if (manual)
+        m_versionChecker->checkNow();
+    else
+        m_versionChecker->checkIfDue();
+}
+
+void MainWindow::startVersionChecks()
+{
+    if (!m_versionChecker)
+        return;
+    // Re-seeding on every call is deliberate: uistate.yml is the source of truth and
+    // may have been rewritten since the last tick.
+    m_versionChecker->setLastCheck(theUiState.lastVersionCheck());
+    m_versionChecker->startPeriodicChecks();
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
@@ -511,7 +603,7 @@ void MainWindow::buildToolsMenu()
         QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com/home/perl/help.cgi")));
     });
     linksMenu->addAction(tr("Version Check"), this, [this] {
-        m_versionChecker->check(true);
+        checkForUpdates(true);
     });
 
     // Scheduler submenu
@@ -815,6 +907,12 @@ void MainWindow::rebuildToolbar()
         m_speedGraph->setTimeRangeMinutes(
             static_cast<int>(thePrefs.speedGraphTimeRangeMin()));
         m_toolbar->addWidget(m_speedGraph);
+
+        // A rebuilt toolbar carries a brand new, empty widget, so the next poll has
+        // to refetch the whole window rather than continue from where the old one
+        // left off.
+        m_speedSeq = 0;
+        m_speedEpoch = 0;
     } else {
         m_speedGraph = nullptr;
     }
@@ -1045,18 +1143,59 @@ void MainWindow::updateConnectButton()
                         : style()->standardIcon(QStyle::SP_MediaPlay));
     }
 
-    // Update tray icon to reflect connection state (always use 3-state icons)
-    if (m_trayIcon) {
-        if (m_ed2kConnected || m_kadConnected) {
-            const bool lowId = (m_ed2kConnected && m_ed2kFirewalled)
-                            || (m_kadConnected && m_kadFirewalled);
-            m_trayIcon->setIcon(QIcon(lowId
-                ? QStringLiteral(":/icons/TrayLowID.ico")
-                : QStringLiteral(":/icons/TrayConnected.ico")));
-        } else {
-            m_trayIcon->setIcon(QIcon(QStringLiteral(":/icons/TrayDisconnected.ico")));
-        }
+    updateTrayIcon();
+}
+
+QColor MainWindow::trayMeterColor() const
+{
+    // MFC probes the taskbar's brightness once at startup and stores white or black in
+    // stats colour 11, unless the user picked one (srchybrid/EmuleDlg.cpp:3786-3797).
+    // The colour scheme is the portable version of that question.
+    if (const QColor chosen = theUiState.statsColor(11); chosen.isValid())
+        return chosen;
+
+    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark
+        ? QColor(Qt::white)
+        : QColor(Qt::black);
+}
+
+void MainWindow::updateTrayIcon(bool force)
+{
+    if (!m_trayIcon)
+        return;
+
+    // Base icon: the same three states the icon has always had.
+    QString iconPath = QStringLiteral(":/icons/TrayDisconnected.ico");
+    if (m_ed2kConnected || m_kadConnected) {
+        const bool lowId = (m_ed2kConnected && m_ed2kFirewalled)
+                        || (m_kadConnected && m_kadFirewalled);
+        iconPath = lowId ? QStringLiteral(":/icons/TrayLowID.ico")
+                         : QStringLiteral(":/icons/TrayConnected.ico");
     }
+
+    // Download rate against the configured capacity, exactly MFC's arithmetic
+    // (srchybrid/EmuleDlg.cpp:1131). A zero capacity would divide by zero, and it is a
+    // legal value in preferences.yml, so it means "no bar" rather than "full bar".
+    const auto capacity = static_cast<int>(thePrefs.maxGraphDownloadRate());
+    const int percent = capacity > 0
+        ? std::min(100, static_cast<int>(std::ceil(m_cachedDownKBs * 100.0 / capacity)))
+        : 0;
+
+    const int level = TrayMeterIcon::levelForPercent(percent);
+    const QColor barColor = trayMeterColor();
+
+    // Regenerating an icon that would look identical is pure waste — and on Linux each
+    // setIcon() crosses DBus, at one update per second. MFC skips the same way with its
+    // icon cookie (srchybrid/EmuleDlg.cpp:2025-2031).
+    if (!force && level == m_trayMeterLevel && iconPath == m_trayIconPath
+        && barColor == m_trayMeterColor) {
+        return;
+    }
+    m_trayMeterLevel = level;
+    m_trayIconPath = iconPath;
+    m_trayMeterColor = barColor;
+
+    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(QIcon(iconPath), percent, barColor)));
 }
 
 void MainWindow::showNetworkInfo()
@@ -1303,6 +1442,50 @@ void MainWindow::applySkinProfile(const QString& path)
 
     // Re-apply toolbar icons from skin overrides
     rebuildToolbar();
+}
+
+// ---------------------------------------------------------------------------
+// Toolbar speed graph — replayed from the daemon
+// ---------------------------------------------------------------------------
+
+void MainWindow::pollSpeedHistory()
+{
+    if (!m_ipc || !m_ipc->isConnected() || !m_speedGraph)
+        return;
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetSpeedHistory);
+    req.append(static_cast<qint64>(m_speedSeq));
+    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+        if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0) || !m_speedGraph)
+            return;
+        applySpeedHistory(resp.fieldMap(1));
+    });
+}
+
+void MainWindow::applySpeedHistory(const QCborMap& data)
+{
+    const auto epoch = static_cast<quint32>(
+        data.value(QStringLiteral("epoch")).toInteger());
+    const auto oldestSeq = static_cast<quint32>(
+        data.value(QStringLiteral("oldestSeq")).toInteger());
+
+    // What we hold is only usable if it is still a prefix of the daemon's history:
+    // a different epoch means the daemon restarted or statistics were reset, and an
+    // oldestSeq past our own means samples aged out while we were away.
+    if (epoch != m_speedEpoch || oldestSeq > m_speedSeq + 1) {
+        m_speedGraph->clear();
+        m_speedSeq = 0;
+        m_speedEpoch = epoch;
+    }
+
+    const QCborArray samples = data.value(QStringLiteral("samples")).toArray();
+    for (const auto& v : samples) {
+        const QCborArray s = v.toArray();
+        if (s.size() < 3)
+            continue;
+        m_speedSeq = static_cast<quint32>(s.at(0).toInteger());
+        m_speedGraph->appendSample(s.at(1).toDouble(), s.at(2).toDouble());
+    }
 }
 
 } // namespace eMule

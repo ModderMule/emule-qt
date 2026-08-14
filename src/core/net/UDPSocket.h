@@ -78,6 +78,9 @@ public:
     /// ThrottledControlSocket: send queued control data up to bandwidth limit.
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
 
+    /// ThrottledControlSocket: whether queued datagrams remain.
+    [[nodiscard]] bool hasControlQueue() const override;
+
 signals:
     /// Global search results received from server.
     void globalSearchResult(const uint8* data, uint32 size, const Endpoint& server);

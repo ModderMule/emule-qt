@@ -14,6 +14,9 @@
 #include <QWidget>
 
 #include "controls/AbstractListView.h"
+#include "dialogs/SearchDetailDialog.h"
+
+#include <QSet>
 
 #include <cstdint>
 #include <vector>
@@ -23,11 +26,13 @@ class QCompleter;
 class QLabel;
 class QLineEdit;
 class QMenu;
+class QProgressBar;
 class QPushButton;
 class QSortFilterProxyModel;
 class QSpinBox;
 class QStringListModel;
 class QTabBar;
+class QTimer;
 class QTreeView;
 
 namespace eMule {
@@ -87,7 +92,10 @@ private slots:
     void onTabCloseRequested(int index);
     void onResultContextMenu(const QPoint& pos);
     void onResultDoubleClicked(const QModelIndex& index);
-    void onSearchResultPush();
+    void onSearchResultPush(const Ipc::IpcMessage& msg);
+
+protected:
+    void showEvent(QShowEvent* event) override;
 
 private:
     /// One StartSearch request. Mirrors the daemon's SearchParams field order.
@@ -133,6 +141,27 @@ private:
     void sendPreview(const QString& hash);
     void refreshKnownTypes();
 
+    /// Open the MFC-style search-result detail sheet for @p hash in tab @p searchID.
+    void fetchAndShowSearchDetails(uint32_t searchID, const QString& hash,
+                                   SearchDetailDialog::Page page);
+
+    /// Locate @p hash in the results view (proxy coordinates), or an invalid index
+    /// when the tab no longer holds it — including after the user switched tabs,
+    /// which swaps the view's model out from under an open dialog.
+    [[nodiscard]] QModelIndex resultIndexFor(uint32_t searchID, const QString& hash);
+
+    /// The detail dialog's Prev/Next walk over one search tab's results.
+    [[nodiscard]] DetailWalker makeSearchWalker(uint32_t searchID, const QString& hash);
+
+    /// Refetch every search whose results changed since the last drain. No-op while
+    /// the panel is hidden; showEvent() drains what accumulated.
+    void drainDirtySearches();
+
+    /// Show the global-sweep progress bar only when the tab on screen is the search
+    /// doing the sweeping. Called on progress pushes and on every tab switch.
+    void updateSweepProgress();
+
+
     // Search controls
     QLineEdit* m_nameEdit = nullptr;
     QPushButton* m_startBtn = nullptr;
@@ -140,6 +169,12 @@ private:
     QComboBox* m_typeCombo = nullptr;
     QComboBox* m_methodCombo = nullptr;
     QPushButton* m_resetBtn = nullptr;
+    QProgressBar* m_sweepProgress = nullptr;
+
+    // Live ED2K global (UDP) sweep, as reported by PushGlobalSearchProgress.
+    uint32_t m_sweepSearchID = 0;   ///< 0 = no sweep running
+    int m_sweepAsked = 0;
+    int m_sweepTotal = 0;
 
     // Filter area (collapsible)
     QWidget* m_filterWidget = nullptr;
@@ -174,6 +209,17 @@ private:
 
     // IPC
     IpcClient* m_ipc = nullptr;
+
+    /// Coalescing window for result refreshes. The daemon pushes one event per
+    /// arriving result *and* per source-count bump, and a refresh refetches the
+    /// tab's entire result list — so refreshing per push is quadratic in the
+    /// result count. A Kad search for "video" produced 1500 pushes over a
+    /// 1262-result list in ~10s: 363 MB of CBOR and 1500 model resets, which
+    /// starved every other reply on the socket for over a second at a time.
+    QTimer* m_resultRefreshTimer = nullptr;
+
+    /// Search IDs that have pending pushes, drained by m_resultRefreshTimer.
+    QSet<uint32_t> m_dirtySearchIDs;
 
     // Preview support
     QString m_streamToken;

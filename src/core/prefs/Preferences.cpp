@@ -7,13 +7,17 @@
 #include "app/AppConfig.h"
 #include "net/EMSocket.h"
 #include "utils/Log.h"
+#include "utils/Opcodes.h"
 
 #include <QCborArray>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSaveFile>
 #include <QStandardPaths>
+
+#include <algorithm>
 
 #include <yaml-cpp/yaml.h>
 
@@ -198,7 +202,8 @@ struct Preferences::Data {
     QString portMapSecret;         // learned: hex, minted on first use
 
     // Logging
-    bool logToDisk = false;
+    bool logToDiskCore = false;    // daemon writes emulecored[_Verbose|_Kad].log
+    bool logToDiskGui = false;     // GUI writes emuleqt[_Verbose|_Kad].log
     uint32 maxLogFileSize = 1048576; // 1 MB
     bool verbose = true;
     bool logPublicIP = false;
@@ -206,7 +211,6 @@ struct Preferences::Data {
     bool serverVerboseLog = false;  // Gated server TCP/UDP/search handshake logging
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
     int logLevel = 5;               // 0-5, higher = more verbose
-    bool verboseLogToDisk = false;
     bool logSourceExchange = false;
     bool logBannedClients = true;
     bool logRatingDescReceived = true;
@@ -280,6 +284,8 @@ struct Preferences::Data {
     bool fillGraphs = false;         // Draw filled graphs
     uint32 statsConnectionsMax = 100;   // Connections graph Y-axis scale
     uint32 statsConnectionsRatio = 3;   // Active connections ratio (1,2,3,4,5,10,20)
+    uint32 statsSaveInterval = 60;      // Seconds between cumulative flushes (0=shutdown only)
+    uint64 statsLastReset = 0;          // Wall clock of the last statistics reset (0=never)
 
     // Cumulative Statistics
     uint64 cumTotalUploaded = 0;
@@ -469,6 +475,7 @@ struct Preferences::Data {
     // Download behavior
     bool autoDownloadPriority = true;  // Auto-adjust download priority by source count
     bool addNewFilesPaused = false;    // Pause newly added download files
+    bool useSaveLoadSources = true;    // Remember a download's sources across restarts (SLS)
 
     // Disk space
     bool checkDiskspace = true;          // Monitor free disk space
@@ -489,7 +496,6 @@ struct Preferences::Data {
     uint32 startVersion = 0;  // Migration counter: 0=first run, 1+=migrations applied
     bool versionCheckEnabled = true;
     int versionCheckDays = 2;          // Check interval in days (1-14)
-    int64_t lastVersionCheck = 0;      // Epoch seconds of last check
     bool bringToFrontOnLinkClick = true;
 
     // GUI (Display page)
@@ -713,6 +719,12 @@ uint32 Preferences::maxUpload() const { return get(&Data::maxUpload); }
 
 void Preferences::setMaxUpload(uint32 val) { set(&Data::maxUpload, val); }
 
+uint32 Preferences::maxUploadLimit() const
+{
+    const uint32 val = maxUpload();
+    return val ? val : UNLIMITED;
+}
+
 uint32 Preferences::maxDownload() const { return get(&Data::maxDownload); }
 
 void Preferences::setMaxDownload(uint32 val) { set(&Data::maxDownload, val); }
@@ -850,9 +862,13 @@ void Preferences::setPortMapSecret(const QString& val) { set(&Data::portMapSecre
 // Getters / setters — Logging
 // ---------------------------------------------------------------------------
 
-bool Preferences::logToDisk() const { return get(&Data::logToDisk); }
+bool Preferences::logToDiskCore() const { return get(&Data::logToDiskCore); }
 
-void Preferences::setLogToDisk(bool val) { set(&Data::logToDisk, val); }
+void Preferences::setLogToDiskCore(bool val) { set(&Data::logToDiskCore, val); }
+
+bool Preferences::logToDiskGui() const { return get(&Data::logToDiskGui); }
+
+void Preferences::setLogToDiskGui(bool val) { set(&Data::logToDiskGui, val); }
 
 uint32 Preferences::maxLogFileSize() const { return get(&Data::maxLogFileSize); }
 
@@ -881,10 +897,6 @@ void Preferences::setMaxLogLines(uint32 val) { set(&Data::maxLogLines, val); }
 int Preferences::logLevel() const { return get(&Data::logLevel); }
 
 void Preferences::setLogLevel(int val) { set(&Data::logLevel, val); }
-
-bool Preferences::verboseLogToDisk() const { return get(&Data::verboseLogToDisk); }
-
-void Preferences::setVerboseLogToDisk(bool val) { set(&Data::verboseLogToDisk, val); }
 
 bool Preferences::logSourceExchange() const { return get(&Data::logSourceExchange); }
 
@@ -1107,6 +1119,14 @@ uint32 Preferences::statsConnectionsRatio() const { return get(&Data::statsConne
 
 void Preferences::setStatsConnectionsRatio(uint32 val) { set(&Data::statsConnectionsRatio, val); }
 
+uint32 Preferences::statsSaveInterval() const { return get(&Data::statsSaveInterval); }
+
+void Preferences::setStatsSaveInterval(uint32 val) { set(&Data::statsSaveInterval, val); }
+
+uint64 Preferences::statsLastReset() const { return get(&Data::statsLastReset); }
+
+void Preferences::setStatsLastReset(uint64 val) { set<uint64>(&Data::statsLastReset, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Cumulative Statistics
 // ---------------------------------------------------------------------------
@@ -1206,6 +1226,185 @@ PREF_GS(uint64, recMaxLargestFile, RecMaxLargestFile)
 
 #undef PREF_GET_SET
 #undef PREF_GS
+
+// The one and only list of what "cumulative statistics" means. Templated on the
+// Data type so the same walk serves a mutating visitor (reset, restore) and a
+// const one (backup); anything added to the cumulative block belongs here and
+// nowhere else.
+template<class D, class F>
+void Preferences::forEachCumulativeStat(D& d, F&& f)
+{
+    f("cumTotalUploaded", d.cumTotalUploaded);
+    f("cumTotalDownloaded", d.cumTotalDownloaded);
+    f("cumTotalUploadedToFriend", d.cumTotalUploadedToFriend);
+
+    f("cumUpSuccessfulSessions", d.cumUpSuccessfulSessions);
+    f("cumUpFailedSessions", d.cumUpFailedSessions);
+    f("cumUpAvgTime", d.cumUpAvgTime);
+    f("cumDownSuccessfulSessions", d.cumDownSuccessfulSessions);
+    f("cumDownFailedSessions", d.cumDownFailedSessions);
+    f("cumDownCompletedFiles", d.cumDownCompletedFiles);
+    f("cumDownAvgTime", d.cumDownAvgTime);
+
+    f("cumUpOverheadTotal", d.cumUpOverheadTotal);
+    f("cumUpOverheadTotalPackets", d.cumUpOverheadTotalPackets);
+    f("cumUpOverheadFileReq", d.cumUpOverheadFileReq);
+    f("cumUpOverheadFileReqPackets", d.cumUpOverheadFileReqPackets);
+    f("cumUpOverheadSrcExch", d.cumUpOverheadSrcExch);
+    f("cumUpOverheadSrcExchPackets", d.cumUpOverheadSrcExchPackets);
+    f("cumUpOverheadServer", d.cumUpOverheadServer);
+    f("cumUpOverheadServerPackets", d.cumUpOverheadServerPackets);
+    f("cumUpOverheadKad", d.cumUpOverheadKad);
+    f("cumUpOverheadKadPackets", d.cumUpOverheadKadPackets);
+
+    f("cumDownOverheadTotal", d.cumDownOverheadTotal);
+    f("cumDownOverheadTotalPackets", d.cumDownOverheadTotalPackets);
+    f("cumDownOverheadFileReq", d.cumDownOverheadFileReq);
+    f("cumDownOverheadFileReqPackets", d.cumDownOverheadFileReqPackets);
+    f("cumDownOverheadSrcExch", d.cumDownOverheadSrcExch);
+    f("cumDownOverheadSrcExchPackets", d.cumDownOverheadSrcExchPackets);
+    f("cumDownOverheadServer", d.cumDownOverheadServer);
+    f("cumDownOverheadServerPackets", d.cumDownOverheadServerPackets);
+    f("cumDownOverheadKad", d.cumDownOverheadKad);
+    f("cumDownOverheadKadPackets", d.cumDownOverheadKadPackets);
+
+    f("cumConnPeak", d.cumConnPeak);
+    f("cumConnMaxLimitReached", d.cumConnMaxLimitReached);
+    f("cumConnReconnects", d.cumConnReconnects);
+
+    f("cumRunTime", d.cumRunTime);
+    f("cumTransferTime", d.cumTransferTime);
+    f("cumUploadTime", d.cumUploadTime);
+    f("cumDownloadTime", d.cumDownloadTime);
+    f("cumServerDuration", d.cumServerDuration);
+
+    f("cumCompressionGain", d.cumCompressionGain);
+    f("cumCorruptionLoss", d.cumCorruptionLoss);
+    f("cumIchPartsSaved", d.cumIchPartsSaved);
+
+    f("cumUpEmule", d.cumUpEmule);
+    f("cumUpEDHybrid", d.cumUpEDHybrid);
+    f("cumUpEDonkey", d.cumUpEDonkey);
+    f("cumUpAMule", d.cumUpAMule);
+    f("cumUpMLdonkey", d.cumUpMLdonkey);
+    f("cumUpShareaza", d.cumUpShareaza);
+    f("cumUpEMCompat", d.cumUpEMCompat);
+
+    f("cumDownEmule", d.cumDownEmule);
+    f("cumDownEDHybrid", d.cumDownEDHybrid);
+    f("cumDownEDonkey", d.cumDownEDonkey);
+    f("cumDownAMule", d.cumDownAMule);
+    f("cumDownMLdonkey", d.cumDownMLdonkey);
+    f("cumDownShareaza", d.cumDownShareaza);
+    f("cumDownEMCompat", d.cumDownEMCompat);
+    f("cumDownURL", d.cumDownURL);
+
+    f("cumUpPort4662", d.cumUpPort4662);
+    f("cumUpPortOther", d.cumUpPortOther);
+    f("cumDownPort4662", d.cumDownPort4662);
+    f("cumDownPortOther", d.cumDownPortOther);
+
+    f("cumUpFromFile", d.cumUpFromFile);
+    f("cumUpFromPartfile", d.cumUpFromPartfile);
+
+    // The cumulative rates are records rather than sums, but MFC clears them
+    // with the rest (srchybrid/Preferences.cpp:1140-1163), so they travel with
+    // the cumulative block through backup and restore too.
+    f("connMaxDownRate", d.connMaxDownRate);
+    f("connAvgDownRate", d.connAvgDownRate);
+    f("connMaxAvgDownRate", d.connMaxAvgDownRate);
+    f("connAvgUpRate", d.connAvgUpRate);
+    f("connMaxAvgUpRate", d.connMaxAvgUpRate);
+    f("connMaxUpRate", d.connMaxUpRate);
+}
+
+template<class D, class F>
+void Preferences::forEachStatRecord(D& d, F&& f)
+{
+    f("recMaxWorkingServers", d.recMaxWorkingServers);
+    f("recMaxUsersOnline", d.recMaxUsersOnline);
+    f("recMaxFilesAvail", d.recMaxFilesAvail);
+    f("recMaxSharedFiles", d.recMaxSharedFiles);
+    f("recMaxSharedSize", d.recMaxSharedSize);
+    f("recMaxAvgFileSize", d.recMaxAvgFileSize);
+    f("recMaxLargestFile", d.recMaxLargestFile);
+}
+
+void Preferences::resetCumulativeStats(uint64 now)
+{
+    QWriteLocker lock(&m_lock);
+    Data& d = *m_data;
+
+    forEachCumulativeStat(d, [](const char*, auto& value) { value = {}; });
+    d.statsLastReset = now;
+}
+
+QString Preferences::cumulativeStatsBackupPath() const
+{
+    // Next to the preferences file it mirrors, not next to configDir(): a
+    // --config run must not reach into the default directory's backup.
+    const QString dir = m_filePath.isEmpty() ? configDir() : QFileInfo(m_filePath).absolutePath();
+    return dir + QStringLiteral("/statsbackup.yml");
+}
+
+bool Preferences::hasCumulativeStatsBackup() const
+{
+    return QFileInfo::exists(cumulativeStatsBackupPath());
+}
+
+bool Preferences::backupCumulativeStats() const
+{
+    // Resolve the path before locking: it reads configDir(), which locks too, and
+    // m_lock is not recursive.
+    const QString path = cumulativeStatsBackupPath();
+    QReadLocker lock(&m_lock);
+    return writeStatsBackup(*m_data, path);
+}
+
+bool Preferences::restoreCumulativeStats()
+{
+    const QString path = cumulativeStatsBackupPath();
+    if (!QFileInfo::exists(path))
+        return false;
+
+    QWriteLocker lock(&m_lock);
+    Data& d = *m_data;
+
+    // Stash what we are about to overwrite before reading, so a restore can
+    // itself be undone by restoring again (MFC renames statbkuptmp.ini over
+    // statbkup.ini at the end of LoadStats, srchybrid/Preferences.cpp:1330-1334).
+    const QString tmpPath = path + QStringLiteral(".undo");
+    if (!writeStatsBackup(d, tmpPath))
+        return false;
+
+    try {
+        const YAML::Node root = YAML::LoadFile(path.toStdString());
+
+        forEachCumulativeStat(d, [&root](const char* key, auto& value) {
+            value = root[key].as<std::decay_t<decltype(value)>>(value);
+        });
+
+        // Records are merged, not overwritten: a record set after the reset is
+        // still a record (MFC's "Smart Load For Restores", :1299).
+        forEachStatRecord(d, [&root](const char* key, auto& value) {
+            value = std::max(value, root[key].as<std::decay_t<decltype(value)>>(value));
+        });
+
+        d.statsLastReset = root["statsLastReset"].as<uint64>(d.statsLastReset);
+    } catch (const YAML::Exception& ex) {
+        logError(QStringLiteral("Failed to read statistics backup %1: %2")
+                     .arg(path, QString::fromStdString(ex.what())));
+        QFile::remove(tmpPath);
+        return false;
+    }
+
+    QFile::remove(path);
+    if (!QFile::rename(tmpPath, path)) {
+        logError(QStringLiteral("Failed to swap the statistics backup: %1").arg(tmpPath));
+        return false;
+    }
+    return true;
+}
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Security
@@ -1543,6 +1742,10 @@ bool Preferences::addNewFilesPaused() const { return get(&Data::addNewFilesPause
 
 void Preferences::setAddNewFilesPaused(bool val) { set(&Data::addNewFilesPaused, val); }
 
+bool Preferences::useSaveLoadSources() const { return get(&Data::useSaveLoadSources); }
+
+void Preferences::setUseSaveLoadSources(bool val) { set(&Data::useSaveLoadSources, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Files (extended)
 // ---------------------------------------------------------------------------
@@ -1654,10 +1857,6 @@ void Preferences::setVersionCheckDays(int val)
     QWriteLocker lock(&m_lock);
     m_data->versionCheckDays = std::clamp(val, 1, 14);
 }
-
-int64_t Preferences::lastVersionCheck() const { return get(&Data::lastVersionCheck); }
-
-void Preferences::setLastVersionCheck(int64_t val) { set(&Data::lastVersionCheck, val); }
 
 bool Preferences::bringToFrontOnLinkClick() const { return get(&Data::bringToFrontOnLinkClick); }
 
@@ -1893,6 +2092,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
 
     // Files
     m_data->addNewFilesPaused             = p.value(QStringLiteral("addNewFilesPaused")).toBool();
+    // Defaults to true: an older peer that omits the key must not silently disable SLS.
+    m_data->useSaveLoadSources            = p.value(QStringLiteral("useSaveLoadSources")).toBool(true);
     m_data->autoDownloadPriority          = p.value(QStringLiteral("autoDownloadPriority")).toBool();
     m_data->autoSharedFilesPriority       = p.value(QStringLiteral("autoSharedFilesPriority")).toBool();
     m_data->transferFullChunks            = p.value(QStringLiteral("transferFullChunks")).toBool();
@@ -1960,7 +2161,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->skipFirewalledChecksInLanMode = p.value(QStringLiteral("skipFirewalledChecksInLanMode")).toBool();
     m_data->checkDiskspace              = p.value(QStringLiteral("checkDiskspace")).toBool();
     m_data->minFreeDiskSpace            = static_cast<uint64>(p.value(QStringLiteral("minFreeDiskSpace")).toInteger());
-    m_data->logToDisk                   = p.value(QStringLiteral("logToDisk")).toBool();
+    m_data->logToDiskCore               = p.value(QStringLiteral("logToDiskCore")).toBool();
+    m_data->logToDiskGui                = p.value(QStringLiteral("logToDiskGui")).toBool();
     m_data->verbose                     = p.value(QStringLiteral("verbose")).toBool();
     m_data->logPublicIP                 = p.value(QStringLiteral("logPublicIP")).toBool();
     m_data->serverVerboseLog            = p.value(QStringLiteral("serverVerboseLog")).toBool();
@@ -1975,7 +2177,6 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->commitFiles                 = static_cast<int>(p.value(QStringLiteral("commitFiles")).toInteger());
     m_data->extractMetaData             = static_cast<int>(p.value(QStringLiteral("extractMetaData")).toInteger());
     m_data->logLevel                    = static_cast<int>(p.value(QStringLiteral("logLevel")).toInteger());
-    m_data->verboseLogToDisk            = p.value(QStringLiteral("verboseLogToDisk")).toBool();
     m_data->logSourceExchange           = p.value(QStringLiteral("logSourceExchange")).toBool();
     m_data->logBannedClients            = p.value(QStringLiteral("logBannedClients")).toBool();
     m_data->logRatingDescReceived       = p.value(QStringLiteral("logRatingDescReceived")).toBool();
@@ -2233,7 +2434,6 @@ bool Preferences::load(const QString& filePath)
             m_data->startVersion = g["startVersion"].as<uint32>(m_data->startVersion);
             m_data->versionCheckEnabled = g["versionCheckEnabled"].as<bool>(m_data->versionCheckEnabled);
             m_data->versionCheckDays = std::clamp(g["versionCheckDays"].as<int>(m_data->versionCheckDays), 1, 14);
-            m_data->lastVersionCheck = g["lastVersionCheck"].as<int64_t>(m_data->lastVersionCheck);
             m_data->bringToFrontOnLinkClick = g["bringToFrontOnLinkClick"].as<bool>(m_data->bringToFrontOnLinkClick);
             if (g["appToken"])
                 m_data->appToken = QString::fromStdString(g["appToken"].as<std::string>());
@@ -2358,7 +2558,8 @@ bool Preferences::load(const QString& filePath)
 
         // Logging
         if (auto l = root["logging"]) {
-            m_data->logToDisk = l["logToDisk"].as<bool>(m_data->logToDisk);
+            m_data->logToDiskCore = l["logToDiskCore"].as<bool>(m_data->logToDiskCore);
+            m_data->logToDiskGui = l["logToDiskGui"].as<bool>(m_data->logToDiskGui);
             m_data->maxLogFileSize = l["maxLogFileSize"].as<uint32>(m_data->maxLogFileSize);
             m_data->verbose = l["verbose"].as<bool>(m_data->verbose);
             m_data->logPublicIP = l["logPublicIP"].as<bool>(m_data->logPublicIP);
@@ -2366,7 +2567,6 @@ bool Preferences::load(const QString& filePath)
             m_data->serverVerboseLog = l["serverVerboseLog"].as<bool>(m_data->serverVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
             m_data->logLevel = l["logLevel"].as<int>(m_data->logLevel);
-            m_data->verboseLogToDisk = l["verboseLogToDisk"].as<bool>(m_data->verboseLogToDisk);
             m_data->logSourceExchange = l["logSourceExchange"].as<bool>(m_data->logSourceExchange);
             m_data->logBannedClients = l["logBannedClients"].as<bool>(m_data->logBannedClients);
             m_data->logRatingDescReceived = l["logRatingDescReceived"].as<bool>(m_data->logRatingDescReceived);
@@ -2401,6 +2601,7 @@ bool Preferences::load(const QString& filePath)
             m_data->fileBufferTimeLimit = t["fileBufferTimeLimit"].as<uint32>(m_data->fileBufferTimeLimit);
             m_data->autoDownloadPriority = t["autoDownloadPriority"].as<bool>(m_data->autoDownloadPriority);
             m_data->addNewFilesPaused = t["addNewFilesPaused"].as<bool>(m_data->addNewFilesPaused);
+            m_data->useSaveLoadSources = t["useSaveLoadSources"].as<bool>(m_data->useSaveLoadSources);
             m_data->useCreditSystem = t["useCreditSystem"].as<bool>(m_data->useCreditSystem);
             m_data->a4afSaveCpu = t["a4afSaveCpu"].as<bool>(m_data->a4afSaveCpu);
             m_data->autoArchivePreviewStart = t["autoArchivePreviewStart"].as<bool>(m_data->autoArchivePreviewStart);
@@ -2434,6 +2635,8 @@ bool Preferences::load(const QString& filePath)
             m_data->fillGraphs = st["fillGraphs"].as<bool>(m_data->fillGraphs);
             m_data->statsConnectionsMax = st["statsConnectionsMax"].as<uint32>(m_data->statsConnectionsMax);
             m_data->statsConnectionsRatio = st["statsConnectionsRatio"].as<uint32>(m_data->statsConnectionsRatio);
+            m_data->statsSaveInterval = st["statsSaveInterval"].as<uint32>(m_data->statsSaveInterval);
+            m_data->statsLastReset = st["statsLastReset"].as<uint64>(m_data->statsLastReset);
 
             // Cumulative transfer totals
             m_data->cumTotalUploaded = st["cumTotalUploaded"].as<uint64>(m_data->cumTotalUploaded);
@@ -2872,7 +3075,6 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "startVersion" << YAML::Value << m_data->startVersion;
     out << YAML::Key << "versionCheckEnabled" << YAML::Value << m_data->versionCheckEnabled;
     out << YAML::Key << "versionCheckDays" << YAML::Value << m_data->versionCheckDays;
-    out << YAML::Key << "lastVersionCheck" << YAML::Value << m_data->lastVersionCheck;
     out << YAML::Key << "bringToFrontOnLinkClick" << YAML::Value << m_data->bringToFrontOnLinkClick;
     if (!m_data->appToken.isEmpty())
         out << YAML::Key << "appToken" << YAML::Value << m_data->appToken.toStdString();
@@ -2979,7 +3181,8 @@ bool Preferences::saveImpl(const QString& filePath) const
 
     // Logging
     out << YAML::Key << "logging" << YAML::Value << YAML::BeginMap;
-    out << YAML::Key << "logToDisk" << YAML::Value << m_data->logToDisk;
+    out << YAML::Key << "logToDiskCore" << YAML::Value << m_data->logToDiskCore;
+    out << YAML::Key << "logToDiskGui" << YAML::Value << m_data->logToDiskGui;
     out << YAML::Key << "maxLogFileSize" << YAML::Value << m_data->maxLogFileSize;
     out << YAML::Key << "verbose" << YAML::Value << m_data->verbose;
     out << YAML::Key << "logPublicIP" << YAML::Value << m_data->logPublicIP;
@@ -2987,7 +3190,6 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "serverVerboseLog" << YAML::Value << m_data->serverVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
     out << YAML::Key << "logLevel" << YAML::Value << m_data->logLevel;
-    out << YAML::Key << "verboseLogToDisk" << YAML::Value << m_data->verboseLogToDisk;
     out << YAML::Key << "logSourceExchange" << YAML::Value << m_data->logSourceExchange;
     out << YAML::Key << "logBannedClients" << YAML::Value << m_data->logBannedClients;
     out << YAML::Key << "logRatingDescReceived" << YAML::Value << m_data->logRatingDescReceived;
@@ -3022,6 +3224,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "fileBufferTimeLimit" << YAML::Value << m_data->fileBufferTimeLimit;
     out << YAML::Key << "autoDownloadPriority" << YAML::Value << m_data->autoDownloadPriority;
     out << YAML::Key << "addNewFilesPaused" << YAML::Value << m_data->addNewFilesPaused;
+    out << YAML::Key << "useSaveLoadSources" << YAML::Value << m_data->useSaveLoadSources;
     out << YAML::Key << "useCreditSystem" << YAML::Value << m_data->useCreditSystem;
     out << YAML::Key << "a4afSaveCpu" << YAML::Value << m_data->a4afSaveCpu;
     out << YAML::Key << "autoArchivePreviewStart" << YAML::Value << m_data->autoArchivePreviewStart;
@@ -3055,6 +3258,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "fillGraphs" << YAML::Value << m_data->fillGraphs;
     out << YAML::Key << "statsConnectionsMax" << YAML::Value << m_data->statsConnectionsMax;
     out << YAML::Key << "statsConnectionsRatio" << YAML::Value << m_data->statsConnectionsRatio;
+    out << YAML::Key << "statsSaveInterval" << YAML::Value << m_data->statsSaveInterval;
+    out << YAML::Key << "statsLastReset" << YAML::Value << m_data->statsLastReset;
 
     // Cumulative transfer totals
     out << YAML::Key << "cumTotalUploaded" << YAML::Value << m_data->cumTotalUploaded;
@@ -3328,6 +3533,38 @@ bool Preferences::saveImpl(const QString& filePath) const
 
     if (!file.commit()) {
         logError(QStringLiteral("Failed to commit preferences file: %1").arg(filePath));
+        return false;
+    }
+
+    return true;
+}
+
+bool Preferences::writeStatsBackup(const Data& d, const QString& filePath)
+{
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+
+    forEachCumulativeStat(d, [&out](const char* key, const auto& value) {
+        out << YAML::Key << key << YAML::Value << value;
+    });
+    forEachStatRecord(d, [&out](const char* key, const auto& value) {
+        out << YAML::Key << key << YAML::Value << value;
+    });
+    out << YAML::Key << "statsLastReset" << YAML::Value << d.statsLastReset;
+
+    out << YAML::EndMap;
+
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        logError(QStringLiteral("Failed to open statistics backup for writing: %1").arg(filePath));
+        return false;
+    }
+
+    file.write(out.c_str(), static_cast<qint64>(out.size()));
+    file.write("\n", 1);
+
+    if (!file.commit()) {
+        logError(QStringLiteral("Failed to commit statistics backup: %1").arg(filePath));
         return false;
     }
 

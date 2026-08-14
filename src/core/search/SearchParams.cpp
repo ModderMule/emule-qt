@@ -8,6 +8,35 @@
 namespace eMule {
 
 // ---------------------------------------------------------------------------
+// Automatic search-method resolution
+// ---------------------------------------------------------------------------
+
+std::optional<SearchType> resolveAutomaticSearchType(const AutoSearchState& state)
+{
+    // Easy if only one network is up.
+    if (!state.serverConnected && state.kadConnected)
+        return SearchType::Kademlia;
+    if (state.serverConnected && !state.kadConnected)
+        return SearchType::Ed2kServer;
+    if (!state.serverConnected && !state.kadConnected)
+        return std::nullopt;
+
+    // Connected to both. We choose Kad, except
+    // - if we are connected to a static server
+    // - or a server with more than 40k and less than 2mio users connected,
+    //      more than 5 mio files and if our serverlist contains less than 40 servers
+    //      (otherwise we have assume that its polluted with fake servers and we might
+    //      just as well to be connected to one)
+    // might be further optimized in the future
+    const bool preferServer = state.serverIsStatic
+                              || (state.serverUsers > 40000
+                                  && state.serverCount < 40
+                                  && state.serverUsers < 2000000 //was 5M - copy & paste bug
+                                  && state.serverFiles > 5000000);
+    return preferServer ? SearchType::Ed2kServer : SearchType::Kademlia;
+}
+
+// ---------------------------------------------------------------------------
 // Persistence — partial serialization for search tab state
 // ---------------------------------------------------------------------------
 

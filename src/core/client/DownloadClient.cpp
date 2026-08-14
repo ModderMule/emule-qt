@@ -621,8 +621,14 @@ void UpDownClient::sendBlockRequests()
 
     createBlockRequests(blockCount);
 
-    logDebug(QStringLiteral("sendBlockRequests: pendingBlocks=%1 from %2")
-                 .arg(m_pendingBlocks.size()).arg(userName()));
+    // Gated: this runs once per completed block, straight out of the socket read
+    // path, and every line costs a write(2) plus an IPC broadcast frame to each
+    // connected GUI. MFC gates the same output behind GetDebugClientTCPLevel() > 0
+    // (srchybrid/DownloadClient.cpp:1126). logDebug() is a plain function, so the
+    // gate also skips the eager QString formatting.
+    if (thePrefs.logRawSocketPackets())
+        logDebug(QStringLiteral("sendBlockRequests: pendingBlocks=%1 from %2")
+                     .arg(m_pendingBlocks.size()).arg(userName()));
 
     if (m_pendingBlocks.empty()) {
         logDebug(QStringLiteral("sendBlockRequests: no blocks available — NoNeededParts"));
@@ -646,7 +652,10 @@ void UpDownClient::sendBlockRequests()
     }
 
     if (nr == 0) {
-        logDebug(QStringLiteral("sendBlockRequests: all blocks already queued"));
+        // The common case for eMule peers once the pending list is at its ceiling —
+        // gated for the same reason as the line above.
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("sendBlockRequests: all blocks already queued"));
         return;
     }
 
@@ -676,10 +685,12 @@ void UpDownClient::sendBlockRequests()
     const uint8 proto  = m_supportsLargeFiles ? OP_EMULEPROT : OP_EDONKEYPROT;
     auto packet = std::make_unique<Packet>(data, proto, opcode);
 
-    for (int i = 0; i < nr; ++i) {
-        logDebug(QStringLiteral("sendBlockRequests: block[%1] start=%2 end=%3 to %4")
-                     .arg(i).arg(pblock[i]->block->startOffset)
-                     .arg(pblock[i]->block->endOffset).arg(userName()));
+    if (thePrefs.logRawSocketPackets()) {
+        for (int i = 0; i < nr; ++i) {
+            logDebug(QStringLiteral("sendBlockRequests: block[%1] start=%2 end=%3 to %4")
+                         .arg(i).arg(pblock[i]->block->startOffset)
+                         .arg(pblock[i]->block->endOffset).arg(userName()));
+        }
     }
 
     sendPacket(std::move(packet));

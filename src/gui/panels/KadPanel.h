@@ -31,6 +31,7 @@ class KadContactHistogram;
 class KadContactsModel;
 class KadLookupGraph;
 class KadSearchesModel;
+class PanelPoller;
 
 /// Full Kad tab page matching the MFC eMule Kad window.
 class KadPanel : public QWidget {
@@ -96,10 +97,11 @@ private:
     // Splitters
     QSplitter* m_vertSplitter = nullptr;
 
-    // Refresh timer (1.4 s — contacts list + searches + status)
-    QTimer* m_refreshTimer = nullptr;
+    /// Contacts list + searches + status, suspended while this panel is hidden.
+    PanelPoller* m_poller = nullptr;
 
-    // Graph timer (60 s — responded nodes per minute)
+    // Graph timer (60 s — responded nodes per minute). Keeps running while hidden:
+    // it accumulates history, so a pause would leave a gap in the trace.
     QTimer*  m_graphTimer        = nullptr;
     int64_t  m_lastResponseCount = 0;
 

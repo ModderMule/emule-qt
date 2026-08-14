@@ -6,6 +6,8 @@
 /// Left sidebar with category icons, right stacked widget for page content,
 /// and OK/Cancel/Apply buttons at the bottom.
 
+#include "app/UiState.h"   // kStatsColorCount — the palette this dialog edits
+
 #include <QColor>
 #include <QDialog>
 #include <QIcon>
@@ -235,6 +237,7 @@ private:
 
     // Files page controls
     QCheckBox* m_addFilesPausedCheck = nullptr;
+    QCheckBox* m_saveLoadSourcesCheck = nullptr;
     QCheckBox* m_autoSharedFilesPrioCheck = nullptr;
     QCheckBox* m_autoDownloadPrioCheck = nullptr;
     QCheckBox* m_autoCleanupFilenamesCheck = nullptr;
@@ -341,7 +344,8 @@ private:
     QComboBox*   m_statsRatioCombo = nullptr;
     QSlider*     m_statsTreeUpdateSlider = nullptr;
     QLabel*      m_statsTreeUpdateLabel = nullptr;
-    std::array<QColor, 15> m_statsColors;
+    /// Working copy of the graph palette; committed to theUiState on Apply.
+    std::array<QColor, UiState::kStatsColorCount> m_statsColors;
     StatisticsPanel* m_statsPanel = nullptr;
 
     // Extended page controls
@@ -358,9 +362,9 @@ private:
     QLineEdit*    m_ed2kHostnameEdit = nullptr;
     QCheckBox*    m_ed2kLinkAdvertiseIPv6Check = nullptr;
     QCheckBox*    m_checkDiskspaceCheck = nullptr;
-    QCheckBox*    m_logToDiskCheck = nullptr;
+    QCheckBox*    m_logToDiskCoreCheck = nullptr;
+    QCheckBox*    m_logToDiskGuiCheck = nullptr;
     QCheckBox*    m_verboseCheck = nullptr;
-    QCheckBox*    m_verboseLogToDiskCheck = nullptr;
     QCheckBox*    m_logSourceExchangeCheck = nullptr;
     QCheckBox*    m_serverVerboseCheck = nullptr;
     QCheckBox*    m_logBannedClientsCheck = nullptr;

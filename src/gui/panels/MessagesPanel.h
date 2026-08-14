@@ -30,6 +30,7 @@ namespace eMule {
 
 class FriendListModel;
 class IpcClient;
+class PanelPoller;
 
 struct ChatMsg {
     QString sender;
@@ -49,6 +50,12 @@ public:
 
     /// Set a custom font on the chat browser.
     void setCustomFont(const QFont& font);
+
+signals:
+    /// A link in the chat was clicked. Carries the link as PLAIN TEXT, not a QUrl:
+    /// an eD2K link is not a representable QUrl, and one built from it stringifies
+    /// back to an empty string (see TextLinks.h). main.cpp routes it.
+    void linkActivated(const QString& link);
 
 private slots:
     void onFriendClicked(const QModelIndex& index);
@@ -111,7 +118,8 @@ private:
     QSplitter* m_splitter = nullptr;
 
     // Refresh timer
-    QTimer* m_refreshTimer = nullptr;
+    /// Friend list refresh, suspended while this panel is not the visible tab.
+    PanelPoller* m_poller = nullptr;
 
     // IPC client
     IpcClient* m_ipc = nullptr;

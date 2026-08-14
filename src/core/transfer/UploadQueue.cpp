@@ -29,6 +29,25 @@
 
 namespace eMule {
 
+namespace {
+
+/// The upload cap both slot gates work against, in KB/s; UNLIMITED when uncapped.
+/// USS on → the finder's live limit; USS off → thePrefs.maxUploadLimit(), which maps
+/// eMuleQt's "no limit" (a raw 0) onto the UNLIMITED sentinel every MFC-derived
+/// comparison below expects.
+///
+/// Unlike MFC (srchybrid/UploadQueue.cpp:405) the finder pointer is null-checked — it is
+/// only constructed by CoreSession, so anything driving the queue without one falls back
+/// to prefs rather than crashing.
+uint32 uploadCapKB()
+{
+    if (thePrefs.dynUpEnabled() && theApp.lastCommonRouteFinder)
+        return theApp.lastCommonRouteFinder->getUpload() / 1024;
+    return thePrefs.maxUploadLimit();
+}
+
+} // namespace
+
 UploadQueue::UploadQueue(QObject* parent)
     : QObject(parent)
 {
@@ -259,27 +278,43 @@ UpDownClient* UploadQueue::findBestClientInQueue()
 bool UploadQueue::acceptNewClient(bool addOnNextConnect) const
 {
     int curUploadSlots = static_cast<int>(m_uploadingList.size());
+    // We allow ONE extra slot to accommodate lowID users, who get skipped when it was
+    // actually their turn. MFC srchybrid/UploadQueue.cpp:388-391.
     if (addOnNextConnect && curUploadSlots > 0)
         --curUploadSlots;
 
+    return acceptNewClient(curUploadSlots, m_datarate);
+}
+
+bool UploadQueue::acceptNewClient(int curUploadSlots, uint32 datarate) const
+{
     if (curUploadSlots < std::max(static_cast<int>(MIN_UP_CLIENTS_ALLOWED), 4))
         return true;
     if (curUploadSlots >= MAX_UP_CLIENTS_ALLOWED)
         return false;
 
-    uint32 maxSpeed;
-    if (thePrefs.dynUpEnabled() && theApp.lastCommonRouteFinder)
-        maxSpeed = theApp.lastCommonRouteFinder->getUpload() / 1024;
-    else
-        maxSpeed = thePrefs.maxUpload();
+    const uint32 maxSpeed = uploadCapKB();
     uint32 tgtRate = targetClientDataRate(false);
     uint32 minTgtRate = targetClientDataRate(true);
 
-    if (static_cast<uint32>(curUploadSlots) >= m_datarate / minTgtRate ||
-        static_cast<uint32>(curUploadSlots) >= maxSpeed * 1024 / tgtRate)
+    if (static_cast<uint32>(curUploadSlots) >= datarate / minTgtRate)
+        return false;
+    // MFC lets UNLIMITED * 1024 wrap and relies on the ~1.4M result being out of reach
+    // (srchybrid/UploadQueue.cpp:410); say it outright instead.
+    if (maxSpeed != UNLIMITED && static_cast<uint32>(curUploadSlots) >= maxSpeed * 1024 / tgtRate)
         return false;
 
-    return true;
+    // An unlimited limit is still bounded by the configured line capacity — MFC
+    // srchybrid/UploadQueue.cpp:413-416. There MaxGraphUploadRate uses UNLIMITED for
+    // "capacity unknown" and falls back to an estimate; here that state is 0, and there
+    // is no maxGraphUploadRateEstimated to fall back to, so 0 simply means "no cap".
+    return maxSpeed != UNLIMITED
+        // Unreachable when USS is on: the cap is then getUpload()/1024, which cannot reach
+        // UINT32_MAX, so the disjunct above has already returned. Kept for MFC fidelity —
+        // srchybrid/UploadQueue.cpp:414 carries the same redundant test.
+        || thePrefs.dynUpEnabled()
+        || thePrefs.maxGraphUploadRate() == 0
+        || static_cast<uint32>(curUploadSlots) < thePrefs.maxGraphUploadRate() * 1024 / tgtRate;
 }
 
 // ===========================================================================
@@ -307,56 +342,61 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
     if (!acceptNewClient())
         return false;
 
-    uint32 maxSpeed;
-    if (thePrefs.dynUpEnabled() && theApp.lastCommonRouteFinder)
-        maxSpeed = theApp.lastCommonRouteFinder->getUpload() / 1024;
-    else
-        maxSpeed = thePrefs.maxUpload();
+    if (slotLadderAllows(curUploadSlots, m_datarate))
+        return true;
+
+    // The ladder said no, but the throttler saw more slots fully active than we have
+    // open — that is evidence the line can carry another one anyway.
+    return m_highestNumberOfFullyActivatedSlotsSinceLastCall >
+           static_cast<int>(m_uploadingList.size());
+}
+
+// ===========================================================================
+// slotLadderAllows — tail of MFC CUploadQueue::ForceNewClient
+// ===========================================================================
+
+bool UploadQueue::slotLadderAllows(int curUploadSlots, uint32 datarate) const
+{
+    const uint32 maxSpeed = uploadCapKB();
     uint32 upPerClient = targetClientDataRate(false);
 
     // eMule 2026 bandwidth: tiered upPerClient scaling matching getSlotLimit(). MFC default: single tier at >49 KB/s with /43 divisor.
     if (maxSpeed > 500) {
-        upPerClient += m_datarate / 20;
+        upPerClient += datarate / 20;
         if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
             upPerClient = UPLOAD_CLIENT_MAXDATARATE;
     } else if (maxSpeed > 200) {
-        upPerClient += m_datarate / 30;
+        upPerClient += datarate / 30;
         if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
             upPerClient = UPLOAD_CLIENT_MAXDATARATE;
     } else if (maxSpeed > 49) {
-        upPerClient += m_datarate / 43;
+        upPerClient += datarate / 43;
         if (upPerClient > UPLOAD_CLIENT_MAXDATARATE)
             upPerClient = UPLOAD_CLIENT_MAXDATARATE;
     }
 
-    if (maxSpeed == UNLIMITED) {
-        if (static_cast<uint32>(curUploadSlots) < m_datarate / upPerClient)
-            return true;
-    } else {
-        // eMule 2026 bandwidth: higher slot floors for broadband. MFC default: max tier at >25 KB/s.
-        uint32 nMaxSlots;
-        if (maxSpeed > 200)
-            nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
-                                 static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 5));
-        else if (maxSpeed > 100)
-            nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
-                                 static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 4));
-        else if (maxSpeed > 25)
-            nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
-                                 static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 3));
-        else if (maxSpeed > 16)
-            nMaxSlots = MIN_UP_CLIENTS_ALLOWED + 2;
-        else if (maxSpeed > 9)
-            nMaxSlots = MIN_UP_CLIENTS_ALLOWED + 1;
-        else
-            nMaxSlots = MIN_UP_CLIENTS_ALLOWED;
+    if (maxSpeed == UNLIMITED)
+        return static_cast<uint32>(curUploadSlots) < datarate / upPerClient;
 
-        if (static_cast<uint32>(curUploadSlots) < nMaxSlots)
-            return true;
-    }
+    // eMule 2026 bandwidth: higher slot floors for broadband. MFC default: max tier at >25 KB/s.
+    uint32 nMaxSlots;
+    if (maxSpeed > 200)
+        nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
+                             static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 5));
+    else if (maxSpeed > 100)
+        nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
+                             static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 4));
+    else if (maxSpeed > 25)
+        nMaxSlots = std::max((maxSpeed * 1024) / upPerClient,
+                             static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED + 3));
+    else if (maxSpeed > 16)
+        nMaxSlots = MIN_UP_CLIENTS_ALLOWED + 2;
+    else if (maxSpeed > 9)
+        nMaxSlots = MIN_UP_CLIENTS_ALLOWED + 1;
+    else
+        nMaxSlots = MIN_UP_CLIENTS_ALLOWED;
 
-    return m_highestNumberOfFullyActivatedSlotsSinceLastCall >
-           static_cast<int>(m_uploadingList.size());
+    return static_cast<uint32>(curUploadSlots) < nMaxSlots;
 }
 
 // ===========================================================================

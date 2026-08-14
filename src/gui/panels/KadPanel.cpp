@@ -11,6 +11,7 @@
 
 #include "app/UiState.h"
 #include "utils/IpcFeedback.h"
+#include "utils/PanelPoller.h"
 
 #include "IpcMessage.h"
 
@@ -50,9 +51,11 @@ KadPanel::KadPanel(QWidget* parent)
 {
     setupUi();
 
-    m_refreshTimer = new QTimer(this);
-    connect(m_refreshTimer, &QTimer::timeout, this, &KadPanel::onRefreshTimer);
+    m_poller = new PanelPoller(this, [this] { onRefreshTimer(); });
 
+    // Deliberately not a PanelPoller: this one accumulates the contacts graph's
+    // history from its own GetKadStatus request, so it has to keep running while
+    // the panel is hidden or the trace grows a hole for every tab switch.
     m_graphTimer = new QTimer(this);
     m_graphTimer->setInterval(60'000);
     connect(m_graphTimer, &QTimer::timeout, this, &KadPanel::onGraphTimer);
@@ -82,26 +85,24 @@ void KadPanel::setIpcClient(IpcClient* client)
 
     if (m_ipc) {
         connect(m_ipc, &IpcClient::kadSearchesChanged, this, [this]() {
-            requestSearches();
+            m_poller->nudge();
         });
     }
 
     if (m_ipc && m_ipc->isConnected()) {
-        m_refreshTimer->setInterval(m_ipc->pollingInterval());
-        m_refreshTimer->start();
+        m_poller->setInterval(m_ipc->pollingInterval());
+        m_poller->setEnabled(true);
         m_graphTimer->start();
-        onRefreshTimer();
     } else if (m_ipc) {
         // Start polling once connected
         connect(m_ipc, &IpcClient::connected, this, [this]() {
-            m_refreshTimer->setInterval(m_ipc->pollingInterval());
-            m_refreshTimer->start();
+            m_poller->setInterval(m_ipc->pollingInterval());
+            m_poller->setEnabled(true);
             m_graphTimer->start();
             m_lastResponseCount = 0;
-            onRefreshTimer();
         });
         connect(m_ipc, &IpcClient::disconnected, this, [this]() {
-            m_refreshTimer->stop();
+            m_poller->setEnabled(false);
             m_graphTimer->stop();
             m_lastResponseCount = 0;
             m_contactsModel->clear();
@@ -113,7 +114,7 @@ void KadPanel::setIpcClient(IpcClient* client)
             m_searchesLabel->setText(tr("\u25B8 Current Searches (0)"));
         });
     } else {
-        m_refreshTimer->stop();
+        m_poller->setEnabled(false);
         m_graphTimer->stop();
         m_lastResponseCount = 0;
         m_contactsModel->clear();

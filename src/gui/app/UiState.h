@@ -8,6 +8,7 @@
 /// cannot clobber GUI-only state when it saves preferences.yml.
 
 #include <QByteArray>
+#include <QColor>
 #include <QHeaderView>
 #include <QList>
 #include <QMainWindow>
@@ -18,6 +19,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 
+#include <array>
 #include <memory>
 
 namespace eMule {
@@ -49,6 +51,11 @@ public:
     void bindMessagesSplitter(QSplitter* splitter);
     void bindIrcSplitter(QSplitter* splitter);
     void bindStatsSplitter(QSplitter* splitter);
+
+    /// The vertical splitter stacking the three statistics graphs. One QSplitter with
+    /// three children holds both dividers, so this covers MFC's SplitterbarPositionStat_HL
+    /// *and* _HR (srchybrid/StatisticsDlg.cpp:245-273).
+    void bindStatsGraphSplitter(QSplitter* splitter);
 
     /// Restore stats tree expansion state, connect to auto-capture on expand/collapse.
     /// Tracks root and first-level sub-items only.
@@ -85,6 +92,20 @@ public:
     [[nodiscard]] int optionsLastPage() const { return m_optionsLastPage; }
     void setOptionsLastPage(int page) { m_optionsLastPage = page; }
 
+    /// Epoch seconds of the last completed version check; 0 when none ever ran.
+    ///
+    /// GUI-only on purpose. The daemon never runs a version check, and it owns
+    /// preferences.yml in the normal local setup — so a timestamp kept in thePrefs
+    /// could only be persisted by pushing it over SetPreferences, whose handler ends
+    /// in emit webServerConfigChanged() and restarts the web server. Recording a
+    /// version check is not worth dropping every web session.
+    [[nodiscard]] int64_t lastVersionCheck() const { return m_lastVersionCheck; }
+    void setLastVersionCheck(int64_t secs)
+    {
+        m_lastVersionCheck = secs;
+        scheduleSave();   // a session that never exits cleanly still keeps it
+    }
+
     /// Toolbar button order (empty = default).
     [[nodiscard]] const QList<int>& toolbarButtonOrder() const { return m_toolbarButtonOrder; }
     void setToolbarButtonOrder(const QList<int>& order) { m_toolbarButtonOrder = order; }
@@ -101,6 +122,27 @@ public:
     [[nodiscard]] const QString& skinProfilePath() const { return m_skinProfilePath; }
     void setSkinProfilePath(const QString& path) { m_skinProfilePath = path; }
 
+    /// Number of statistics colours, in MFC's index order
+    /// (srchybrid/Preferences.h:198 — m_adwStatsColors[15]).
+    static constexpr int kStatsColorCount = 15;
+
+    /// MFC's factory palette, indexed exactly as CPreferences::ResetStatsColor does
+    /// (srchybrid/Preferences.cpp:1817-1821). Slot 11 (the tray meter bar) is an
+    /// invalid QColor: MFC derives it from the taskbar's brightness at startup, and
+    /// we follow the system colour scheme instead — see MainWindow::trayMeterColor().
+    [[nodiscard]] static const std::array<QColor, kStatsColorCount>& defaultStatsColors();
+
+    /// One statistics colour. Out-of-range indices return an invalid colour.
+    [[nodiscard]] QColor statsColor(int index) const;
+
+    [[nodiscard]] const std::array<QColor, kStatsColorCount>& statsColors() const
+    {
+        return m_statsColors;
+    }
+
+    /// Replace the whole palette (the options page edits a copy, then applies it).
+    void setStatsColors(const std::array<QColor, kStatsColorCount>& colors);
+
 private:
     /// Restore @p sizes into @p splitter and capture every later drag into it.
     /// Shared by all eight bind*Splitter() entry points.
@@ -114,14 +156,17 @@ private:
     QList<int> m_messagesSplitSizes;
     QList<int> m_ircSplitSizes;
     QList<int> m_statsSplitSizes;
+    QList<int> m_statsGraphSplitSizes;
     int  m_windowWidth     = 0;
     int  m_windowHeight    = 0;
     bool m_windowMaximized = false;
     int  m_optionsLastPage = 0;
+    int64_t m_lastVersionCheck = 0;
     QList<int> m_toolbarButtonOrder;
     int  m_toolbarButtonStyle = 3;
     QString m_toolbarSkinPath;
     QString m_skinProfilePath;
+    std::array<QColor, kStatsColorCount> m_statsColors = defaultStatsColors();
     QMap<QString, QByteArray> m_headerStates;
     QSet<QString> m_statsTreeExpanded;
     QString m_configDir;   ///< Remembered by load() so save() can run without it.

@@ -8,6 +8,7 @@
 /// Inherits KnownFile (non-QObject); uses PartFileNotifier for signals.
 
 #include "files/KnownFile.h"
+#include "files/SourceSaver.h"
 #include "crypto/AICHHashSet.h"
 #include "client/ClientStructs.h"
 #include "utils/Opcodes.h"
@@ -235,6 +236,15 @@ public:
     [[nodiscard]] int transferringSrcCount() const { return static_cast<int>(m_downloadingSources.size()); }
     [[nodiscard]] const std::vector<UpDownClient*>& downloadingSources() const { return m_downloadingSources; }
 
+    /// Sources currently usable for this download — OnQueue + Downloading.
+    /// MFC CPartFile::GetAvailableSrcCount() (PartFile.cpp:3179); MorphXT's Save/Load Sources
+    /// uses it to decide whether a file is rare enough to be worth remembering.
+    [[nodiscard]] int availableSourceCount() const;
+
+    /// Save/Load Sources driver for this file. Held per file so its resave/reload timers and
+    /// their jitter stay independent — mirrors MorphXT CPartFile::m_sourcesaver.
+    [[nodiscard]] SourceSaver& sourceSaver() { return m_sourceSaver; }
+
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
     [[nodiscard]] uint64 transferred() const { return m_transferred; }
 
@@ -284,6 +294,8 @@ public:
     std::vector<uint16>& srcPartFrequency() { return m_srcPartFrequency; }
     [[nodiscard]] const std::list<Requested_Block_Struct*>& requestedBlockList() const { return m_requestedBlocks; }
     [[nodiscard]] const std::vector<uint16>& corruptedParts() const { return m_corruptedParts; }
+    /// True while @p partNumber has failed a hash check and has not been recovered.
+    [[nodiscard]] bool isCorruptedPart(uint32 partNumber) const;
     [[nodiscard]] std::vector<uint16> calcDownloadingParts(const UpDownClient* exclude) const;
 
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
@@ -310,6 +322,11 @@ private:
     void completeFile();
     void performFileMove(const QString& srcPath, const QString& destPath);
     bool hashSinglePart(uint32 partNumber, bool* aichAgreed = nullptr);
+    /// Take @p partNumber off the corrupted list; true if it was on it.
+    bool dropCorruptedPart(uint32 partNumber);
+    /// Report — at most once per kKadSkipLogInterval — why process() wanted a Kad
+    /// source search for this file but did not start one.
+    void logKadSourceSearchSkipped(uint32 curTick, const QString& reason);
 
     // -- Private members ------------------------------------------------------
 
@@ -378,6 +395,9 @@ private:
     uint32 m_dlActiveTime = 0;
     uint32 m_clientSrcAnswered = 0;  // MFC: m_ClientSrcAnswered
 
+    // Save/Load Sources (MorphXT CPartFile::m_sourcesaver)
+    SourceSaver m_sourceSaver;
+
     // Hashset
     bool m_md4HashsetNeeded = true;
     bool m_aichPartHashsetNeeded = true;
@@ -391,6 +411,7 @@ private:
     // Kad source search state
     uint32 m_lastSearchTimeKad = 0;
     uint8  m_totalSearchesKad = 0;
+    uint32 m_lastKadSkipLogTime = 0;   // throttle for logKadSourceSearchSkipped()
 
     // Per-download-state source counts
     std::array<uint32, 17> m_anStates{};

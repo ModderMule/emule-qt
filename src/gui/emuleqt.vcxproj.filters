@@ -61,7 +61,22 @@
     <ClCompile Include="app\Ed2kSchemeHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\CommentsPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\DetailDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\FileDetailDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\FindInListDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\MetadataPage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\SearchDetailDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\FirstStartWizard.cpp">
@@ -77,6 +92,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\IpcFeedback.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\ViewNavigation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\PanelPoller.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="panels\IrcPanel.cpp">
@@ -148,6 +169,9 @@
     <ClCompile Include="controls\StatsGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\TrayMeterIcon.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="panels\TransferPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -195,9 +219,24 @@
     <ClInclude Include="controls\AbstractListView.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="controls\TrayMeterIcon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dialogs\FindInListDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dialogs\MetadataPage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\IpcFeedback.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\ViewNavigation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="utils\PanelPoller.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\ClientDetailDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -222,7 +261,16 @@
     <ClInclude Include="app\Ed2kSchemeHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <QtMoc Include="dialogs\CommentsPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\DetailDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\FileDetailDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\SearchDetailDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\FirstStartWizard.h">

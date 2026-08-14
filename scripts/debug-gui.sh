@@ -12,7 +12,9 @@ if [ "$1" = "--lldb" ]; then
     shift
 fi
 
-. scripts/build.sh
+# Run, don't source: build.sh parses "$@", so sourcing hands it this script's GUI
+# arguments and the first one becomes its build directory ("cmake -B --tab").
+scripts/build.sh
 
 # Kill any leftover daemon from a previous run
 pkill -f emulecored 2>/dev/null || true

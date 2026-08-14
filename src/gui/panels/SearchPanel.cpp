@@ -9,9 +9,14 @@
 #include "controls/AbstractListView.h"
 #include "controls/DownloadListModel.h"
 #include "controls/SearchResultsModel.h"
+#include "dialogs/FindInListDialog.h"
+#include "utils/IpcFeedback.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/ViewNavigation.h"
+#include "utils/WebServices.h"
 #include "prefs/Preferences.h"
+#include "search/SearchParams.h"
 
 #include "IpcMessage.h"
 
@@ -32,6 +37,7 @@
 #include <QLineEdit>
 #include <QProcess>
 #include <QMenu>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
@@ -43,6 +49,8 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 
+#include <utility>
+
 namespace eMule {
 
 using namespace Ipc;
@@ -51,6 +59,11 @@ namespace {
 
 /// UiState key for the shared search-results header layout (all tabs share it).
 const QString kSearchHeaderKey = QStringLiteral("searchResults");
+
+/// Longest a newly arrived result may wait before it shows up in the list.
+/// Small enough that the list still fills visibly in real time, large enough
+/// that a Kad flood collapses ~1500 full-list refetches into a few dozen.
+constexpr int ResultRefreshWindowMs = 400;
 
 } // namespace
 
@@ -80,15 +93,31 @@ void SearchPanel::setIpcClient(IpcClient* client)
     if (!m_ipc)
         return;
 
+    m_resultRefreshTimer = new QTimer(this);
+    m_resultRefreshTimer->setSingleShot(true);
+    m_resultRefreshTimer->setInterval(ResultRefreshWindowMs);
+    connect(m_resultRefreshTimer, &QTimer::timeout, this, [this] { drainDirtySearches(); });
+
     connect(m_ipc, &IpcClient::searchResultReceived, this, &SearchPanel::onSearchResultPush);
     connect(m_ipc, &IpcClient::downloadAdded, this, [this]{ refreshKnownTypes(); });
     connect(m_ipc, &IpcClient::downloadRemoved, this, [this]{ refreshKnownTypes(); });
+    connect(m_ipc, &IpcClient::globalSearchProgress, this, [this](const IpcMessage& msg) {
+        const auto searchID = static_cast<uint32_t>(msg.fieldInt(0));
+        const bool running = msg.fieldBool(3);
+        m_sweepSearchID = running ? searchID : 0;
+        m_sweepAsked = static_cast<int>(msg.fieldInt(1));
+        m_sweepTotal = static_cast<int>(msg.fieldInt(2));
+        updateSweepProgress();
+    });
 
-    // Restore last-used search method from settings (default: Kademlia = index 1)
+    // Restore the last-used search method. Stored as the SearchType value, not the
+    // combo index — startSearchFromExternal() already reads the combo as data, and an
+    // index would silently mean a different method if the entries were ever reordered.
     QSettings settings;
-    const int lastMethod = settings.value(QStringLiteral("search/lastMethod"), 1).toInt();
-    if (lastMethod >= 0 && lastMethod < m_methodCombo->count())
-        m_methodCombo->setCurrentIndex(lastMethod);
+    const int lastMethod = settings.value(QStringLiteral("search/lastMethodType"),
+                                          static_cast<int>(SearchType::Kademlia)).toInt();
+    if (const int idx = m_methodCombo->findData(lastMethod); idx >= 0)
+        m_methodCombo->setCurrentIndex(idx);
 
     loadSearches();
     refreshKnownTypes();
@@ -312,6 +341,16 @@ QWidget* SearchPanel::createSearchBar()
     // Column 2: Scrollable filter area spanning both rows
     grid->addWidget(filterScroll, 0, 2, 2, 1);
 
+    // Row 2: global-search progress, across the whole bar. A paced sweep takes
+    // servers × 750ms, so without this the search looks stalled. Hidden unless the
+    // tab on screen is the one sweeping. MFC has the same bar at the bottom of its
+    // search parameters window.
+    m_sweepProgress = new QProgressBar(container);
+    m_sweepProgress->setTextVisible(true);
+    m_sweepProgress->setMaximumHeight(14);
+    m_sweepProgress->setVisible(false);
+    grid->addWidget(m_sweepProgress, 2, 0, 1, 3);
+
     // Left column stretches, buttons+filters are fixed width
     grid->setColumnStretch(0, 1);
 
@@ -335,9 +374,9 @@ void SearchPanel::onStartSearch()
 
     addToSearchHistory(req.expression);
 
-    // Save last-used method
+    // Save last-used method, by type rather than by combo position
     QSettings settings;
-    settings.setValue(QStringLiteral("search/lastMethod"), m_methodCombo->currentIndex());
+    settings.setValue(QStringLiteral("search/lastMethodType"), m_methodCombo->currentData().toInt());
 
     sendSearchRequest(req);
 }
@@ -385,11 +424,17 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
         const auto data = resp.fieldMap(1);
         const auto searchID = static_cast<uint32_t>(data.value(QStringLiteral("searchID")).toInteger());
 
+        // "Automatic" is resolved daemon-side to the network the search actually ran
+        // on, so the tab is labelled with that rather than with the request.
+        const auto typeValue = data.value(QStringLiteral("type"));
+        const int resolvedMethod = typeValue.isInteger() ? static_cast<int>(typeValue.toInteger())
+                                                         : method;
+
         // Create new tab
         SearchTab tab;
         tab.searchID = searchID;
         tab.title = tabTitle;
-        tab.method = method;
+        tab.method = resolvedMethod;
         tab.model = new SearchResultsModel(this);
         tab.proxy = new QSortFilterProxyModel(this);
         tab.proxy->setSourceModel(tab.model);
@@ -404,7 +449,7 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
                 ":/icons/Global.ico",      // 2 = Ed2k Global
                 ":/icons/SearchKad.ico",   // 3 = Kademlia
             };
-            const int mi = (method >= 0 && method <= 3) ? method : 0;
+            const int mi = (resolvedMethod >= 0 && resolvedMethod <= 3) ? resolvedMethod : 0;
             idx = m_tabBar->addTab(QIcon(QString::fromLatin1(methodIcons[mi])),
                                    QStringLiteral("%1 (0)").arg(tabTitle));
         } else {
@@ -471,6 +516,8 @@ void SearchPanel::onResetFilters()
 void SearchPanel::onTabChanged(int index)
 {
     switchToTab(index);
+    // The sweep belongs to one search; arriving at another tab must not show its bar.
+    updateSweepProgress();
 }
 
 // ---------------------------------------------------------------------------
@@ -486,13 +533,24 @@ void SearchPanel::onTabCloseRequested(int index)
 // Slot: Push event — search result arrived
 // ---------------------------------------------------------------------------
 
-void SearchPanel::onSearchResultPush()
+void SearchPanel::onSearchResultPush(const IpcMessage& msg)
 {
-    // Request fresh results for all active tabs (skip stored searches with ID 0)
-    for (const auto& tab : m_tabs) {
-        if (tab.searchID != 0)
-            requestSearchResults(tab.searchID);
+    // Field 0 is the search this result belongs to; only that tab is stale.
+    // A push with no field (0) predates that and means "refresh everything".
+    const auto searchID = static_cast<uint32_t>(msg.fieldInt(0));
+    if (searchID != 0) {
+        m_dirtySearchIDs.insert(searchID);
+    } else {
+        for (const auto& tab : m_tabs) {
+            if (tab.searchID != 0)
+                m_dirtySearchIDs.insert(tab.searchID);
+        }
     }
+
+    // Fixed-window rate limit, not a restart-on-every-event debounce: during a
+    // burst the latter would never fire until the search went quiet.
+    if (!m_resultRefreshTimer->isActive())
+        m_resultRefreshTimer->start();
 }
 
 // ---------------------------------------------------------------------------
@@ -501,8 +559,11 @@ void SearchPanel::onSearchResultPush()
 
 void SearchPanel::onResultContextMenu(const QPoint& pos)
 {
-    const bool hasSelection = m_resultView->selectionModel()
-                              && m_resultView->selectionModel()->hasSelection();
+    const auto selection = m_resultView->selectionModel()
+                               ? m_resultView->selectionModel()->selectedRows()
+                               : QModelIndexList{};
+    const bool hasSelection = !selection.isEmpty();
+    const bool singleSel    = (selection.size() == 1);
     m_contextMenu->clear();
 
     const bool useOriginal = thePrefs.useOriginalIcons();
@@ -511,14 +572,64 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                            : QIcon();
     };
 
-    // Download
+    // Walk the selection once, as MFC does (SearchListCtrl.cpp:680-693): whether
+    // anything is still downloadable, and whether anything is not yet spam — the
+    // latter decides which way the spam item reads.
+    auto* tab = currentTab();
+    bool anyNotSpam    = false;
+    bool anyDownloadable = false;
+    QString singleHash;
+    QString singleName;
+    int64_t singleSize = 0;
+    for (const auto& idx : selection) {
+        if (!tab)
+            break;
+        const auto* result = tab->model->resultAt(tab->proxy->mapToSource(idx).row());
+        if (!result)
+            continue;
+        if (!result->isSpam)
+            anyNotSpam = true;
+        if (!m_downloadModel || !m_downloadModel->findByHash(result->hash))
+            anyDownloadable = true;
+        if (singleSel) {
+            singleHash = result->hash;
+            singleName = result->fileName;
+            singleSize = result->fileSize;
+        }
+    }
+
+    // Download — the default action, bold, as in MFC (SetDefaultItem at :731).
     auto* downloadAction = m_contextMenu->addAction(ico("Download.ico"), tr("Download"));
-    downloadAction->setEnabled(hasSelection);
+    downloadAction->setEnabled(hasSelection && anyDownloadable);
     connect(downloadAction, &QAction::triggered, this, [this] {
         const auto sel = m_resultView->selectionModel()->selectedRows();
         for (const auto& i : sel)
             downloadResult(i.row());
     });
+    if (downloadAction->isEnabled())
+        m_contextMenu->setDefaultAction(downloadAction);
+
+    // Details... — extended controls only, exactly as MFC gates it, because the
+    // sheet's Metadata page is itself an extended-controls feature.
+    if (thePrefs.showExtControls()) {
+        auto* detailsAction = m_contextMenu->addAction(ico("FileInfo.ico"), tr("Details..."));
+        detailsAction->setEnabled(singleSel && tab);
+        const uint32_t searchID = tab ? tab->searchID : 0;
+        connect(detailsAction, &QAction::triggered, this, [this, searchID, singleHash] {
+            fetchAndShowSearchDetails(searchID, singleHash, SearchDetailDialog::Metadata);
+        });
+    }
+
+    // Comments... — the same sheet, forced onto its Comments page (MFC passes
+    // IDD_COMMENTLST for MP_CMT, SearchListCtrl.cpp:817-824).
+    {
+        auto* commentsAction = m_contextMenu->addAction(ico("FileComments.ico"), tr("Comments..."));
+        commentsAction->setEnabled(singleSel && tab);
+        const uint32_t searchID = tab ? tab->searchID : 0;
+        connect(commentsAction, &QAction::triggered, this, [this, searchID, singleHash] {
+            fetchAndShowSearchDetails(searchID, singleHash, SearchDetailDialog::Comments);
+        });
+    }
 
     m_contextMenu->addSeparator();
 
@@ -552,50 +663,32 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             QApplication::clipboard()->setText(links.join(QStringLiteral("<br>\n")));
     });
 
-    // Preview (single selection, must match an active download that is previewable)
-    {
-        const auto sel = m_resultView->selectionModel()
-                             ? m_resultView->selectionModel()->selectedRows()
-                             : QModelIndexList{};
-        bool canPreview = false;
-        QString previewHash;
-        if (sel.size() == 1 && m_downloadModel && !m_streamToken.isEmpty()) {
+    // Mark as Spam / Mark as not Spam — MFC inserts this right before Remove, with
+    // no separator of its own, and only when the search spam filter is enabled
+    // (SearchListCtrl.cpp:716-720). The label points at what the click will do.
+    if (thePrefs.enableSearchResultFilter()) {
+        const bool markAsSpam = anyNotSpam || !hasSelection;
+        auto* spamAction = m_contextMenu->addAction(
+            ico("Spam.ico"), markAsSpam ? tr("Mark as Spam") : tr("Mark as not Spam"));
+        spamAction->setEnabled(hasSelection);
+        connect(spamAction, &QAction::triggered, this, [this, markAsSpam] {
             auto* tab = currentTab();
-            if (tab) {
-                const auto srcIdx = tab->proxy->mapToSource(sel.first());
+            if (!tab || !m_ipc) return;
+            for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+                const auto srcIdx = tab->proxy->mapToSource(i);
                 const auto* result = tab->model->resultAt(srcIdx.row());
-                if (result) {
-                    previewHash = result->hash;
-                    const auto* dl = m_downloadModel->findByHash(previewHash);
-                    canPreview = dl && dl->isPreviewPossible;
-                }
+                if (!result) continue;
+                IpcMessage msg(IpcMsgType::MarkSearchSpam);
+                msg.append(static_cast<qint64>(tab->searchID));
+                msg.append(result->hash);
+                msg.append(markAsSpam);
+                m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
+                    IpcFeedback::checkOrWarn(resp, this, tr("Mark as Spam"));
+                });
             }
-        }
-        auto* previewAction = m_contextMenu->addAction(ico("Preview.ico"), tr("Preview"));
-        previewAction->setEnabled(canPreview);
-        connect(previewAction, &QAction::triggered, this, [this, previewHash]() {
-            sendPreview(previewHash);
+            requestSearchResults(tab->searchID);   // spam re-scoring changed the rows
         });
     }
-
-    m_contextMenu->addSeparator();
-
-    // Mark as Spam
-    auto* spamAction = m_contextMenu->addAction(ico("Spam.ico"), tr("Mark as Spam"));
-    spamAction->setEnabled(hasSelection);
-    connect(spamAction, &QAction::triggered, this, [this] {
-        auto* tab = currentTab();
-        if (!tab || !m_ipc) return;
-        for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
-            const auto srcIdx = tab->proxy->mapToSource(i);
-            const auto* result = tab->model->resultAt(srcIdx.row());
-            if (!result) continue;
-            IpcMessage msg(IpcMsgType::MarkSearchSpam);
-            msg.append(static_cast<qint64>(tab->searchID));
-            msg.append(result->hash);
-            m_ipc->sendRequest(std::move(msg));
-        }
-    });
 
     // Remove (remove from local results list)
     auto* removeAction = m_contextMenu->addAction(ico("ListRemove.ico"), tr("Remove"));
@@ -629,6 +722,41 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     auto* closeAllAction = m_contextMenu->addAction(ico("DeleteAll.ico"), tr("Close All Search Results"));
     closeAllAction->setEnabled(!m_tabs.empty());
     connect(closeAllAction, &QAction::triggered, this, &SearchPanel::closeAllSearches);
+
+    m_contextMenu->addSeparator();
+
+    // Preview — MFC inserts it here, immediately above Find, and only when exactly
+    // one previewable file is selected (SearchListCtrl.cpp:710-713).
+    if (singleSel && m_downloadModel && !m_streamToken.isEmpty()) {
+        const auto* dl = m_downloadModel->findByHash(singleHash);
+        if (dl && dl->isPreviewPossible) {
+            connect(m_contextMenu->addAction(ico("Preview.ico"), tr("Preview")),
+                    &QAction::triggered, this, [this, singleHash] { sendPreview(singleHash); });
+        }
+    }
+
+    // Find... — over the whole result list, so selection is irrelevant.
+    auto* findAction = m_contextMenu->addAction(ico("Search.ico"), tr("Find..."));
+    findAction->setEnabled(tab && tab->proxy->rowCount() > 0);
+    connect(findAction, &QAction::triggered, this,
+            [this] { showFindInListDialog(this, m_resultView); });
+
+    // Search Related Files — MFC turns the file name into a fresh search.
+    auto* relatedAction = m_contextMenu->addAction(ico("KadFileSearch.ico"),
+                                                   tr("Search Related Files"));
+    relatedAction->setEnabled(singleSel && !singleName.isEmpty());
+    connect(relatedAction, &QAction::triggered, this, [this, singleName] {
+        const qsizetype dotIdx = singleName.lastIndexOf(QLatin1Char('.'));
+        startSearchFromExternal(dotIdx > 0 ? singleName.left(dotIdx) : singleName);
+    });
+
+    // Web Services — greyed when webservices.dat is empty or the selection is not
+    // exactly one file, matching MFC's flag2 (SearchListCtrl.cpp:724-727).
+    auto* webMenu = m_contextMenu->addMenu(ico("Web.ico"), tr("Web Services"));
+    if (singleSel)
+        WebServices::instance().populateFileMenu(webMenu, singleHash, singleName,
+                                                 static_cast<uint64_t>(singleSize));
+    webMenu->setEnabled(!webMenu->isEmpty());
 
     m_contextMenu->popup(m_resultView->viewport()->mapToGlobal(pos));
 }
@@ -1100,6 +1228,82 @@ void SearchPanel::sendPreview(const QString& hash)
 }
 
 // ---------------------------------------------------------------------------
+// Search-result details (MFC CSearchResultFileDetailSheet)
+// ---------------------------------------------------------------------------
+
+void SearchPanel::fetchAndShowSearchDetails(uint32_t searchID, const QString& hash,
+                                            SearchDetailDialog::Page page)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+
+    IpcMessage msg(IpcMsgType::GetSearchResultDetails);
+    msg.append(static_cast<qint64>(searchID));
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg),
+        [this, page, searchID, hash](const IpcMessage& resp) {
+            if (!resp.fieldBool(0))
+                return;
+            auto* dlg = new SearchDetailDialog(resp.field(1).toMap(), page, this);
+
+            // Two-field request, hence the factory overload rather than the opcode one.
+            const auto makeRequest = [searchID](const QString& key) {
+                IpcMessage req(IpcMsgType::GetSearchResultDetails);
+                req.append(static_cast<qint64>(searchID));
+                req.append(key);
+                return req;
+            };
+            connectKadNotesSearch(dlg, m_ipc, makeRequest);
+            connectCommentFilter(dlg, m_ipc);
+            dlg->setWalker(makeSearchWalker(searchID, hash));
+            connectDetailNavigation(dlg, m_ipc, makeRequest);
+            dlg->show();
+        });
+}
+
+QModelIndex SearchPanel::resultIndexFor(uint32_t searchID, const QString& hash)
+{
+    // Bail out when the user has switched tabs: switchToTab() swaps the view's
+    // model, so walking would silently step through a different search's results.
+    const auto* tab = currentTab();
+    if (!tab || tab->searchID != searchID || hash.isEmpty())
+        return {};
+
+    for (int row = 0; row < tab->model->rowCount(); ++row) {
+        const auto* result = tab->model->resultAt(row);
+        if (result && result->hash == hash)
+            return ViewNav::fromSource(m_resultView, tab->model->index(row, 0));
+    }
+    return {};
+}
+
+DetailWalker SearchPanel::makeSearchWalker(uint32_t searchID, const QString& hash)
+{
+    auto anchor = std::make_shared<QString>(hash);
+
+    DetailWalker walker;
+    walker.step = [this, searchID, anchor](int delta) -> QString {
+        auto* tab = currentTab();
+        if (!tab || tab->searchID != searchID)
+            return {};
+        const QModelIndex to =
+            ViewNav::step(m_resultView, resultIndexFor(searchID, *anchor), delta);
+        if (!to.isValid())
+            return {};
+        const auto* result = tab->model->resultAt(ViewNav::toSource(to).row());
+        if (!result)
+            return {};
+        *anchor = result->hash;
+        return *anchor;
+    };
+    walker.canStep = [this, searchID, anchor](int delta) {
+        return ViewNav::peekStep(m_resultView, resultIndexFor(searchID, *anchor),
+                                 delta).isValid();
+    };
+    return walker;
+}
+
+// ---------------------------------------------------------------------------
 // Refresh knownType for all results in all tabs via daemon lookup
 // ---------------------------------------------------------------------------
 
@@ -1179,6 +1383,52 @@ SearchPanel::SearchRequest SearchPanel::requestFromUi() const
     req.album           = m_albumEdit->text().trimmed();
     req.artist          = m_artistEdit->text().trimmed();
     return req;
+}
+
+void SearchPanel::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+
+    // Results that arrived while this tab was hidden are still marked dirty; fetch
+    // them now so the list is current the moment it comes back on screen.
+    drainDirtySearches();
+}
+
+void SearchPanel::updateSweepProgress()
+{
+    if (!m_sweepProgress)
+        return;
+
+    const auto* tab = currentTab();
+    const bool show = m_sweepSearchID != 0 && m_sweepTotal > 0
+                      && tab != nullptr && tab->searchID == m_sweepSearchID;
+    if (show) {
+        m_sweepProgress->setRange(0, m_sweepTotal);
+        m_sweepProgress->setValue(m_sweepAsked);
+        m_sweepProgress->setFormat(tr("Asking servers: %1 / %2")
+                                       .arg(m_sweepAsked)
+                                       .arg(m_sweepTotal));
+    }
+    m_sweepProgress->setVisible(show);
+}
+
+void SearchPanel::drainDirtySearches()
+{
+    // A hidden panel fetches nothing — a Kad search left running while the user
+    // works in Transfers would otherwise keep refetching a list nobody can see.
+    // The IDs stay dirty and showEvent() picks them up.
+    if (!isVisible())
+        return;
+
+    // Take a copy: requestSearchResults() replies asynchronously, and more
+    // pushes for the same search may arrive before those replies land.
+    const auto dirty = std::exchange(m_dirtySearchIDs, {});
+    for (const uint32_t searchID : dirty) {
+        const bool stillOpen = std::ranges::any_of(m_tabs,
+            [searchID](const SearchTab& tab) { return tab.searchID == searchID; });
+        if (stillOpen)
+            requestSearchResults(searchID);
+    }
 }
 
 } // namespace eMule

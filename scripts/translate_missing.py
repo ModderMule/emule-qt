@@ -31,8 +31,10 @@ def ts_path(lang: str) -> Path:
     return LANG_DIR / f"emuleqt_{lang}.ts"
 
 
-def get_untranslated(lang: str) -> list[tuple[str, str]]:
-    """Return list of (context_name, source_text) for unfinished translations."""
+def get_untranslated(lang: str) -> list[tuple[str, str, int]]:
+    """Return list of (context_name, source_text, plural_forms) for unfinished
+    translations. plural_forms is 0 for a plain string and otherwise the number
+    of <numerusform> slots this language expects for a %n message."""
     path = ts_path(lang)
     if not path.exists():
         return []
@@ -45,7 +47,7 @@ def get_untranslated(lang: str) -> list[tuple[str, str]]:
             if trans is not None and trans.get("type") == "unfinished":
                 src = msg.findtext("source", "")
                 if src:
-                    results.append((ctx_name, src))
+                    results.append((ctx_name, src, len(trans.findall("numerusform"))))
     return results
 
 
@@ -58,9 +60,10 @@ def cmd_show():
             continue
         any_missing = True
         print(f"\n  {lang} ({len(missing)} missing):")
-        for ctx, src in missing:
+        for ctx, src, forms in missing:
             display = src.replace("\n", "\\n")
-            print(f"    [{ctx}] {display}")
+            plural = f" ({forms} plural forms)" if forms else ""
+            print(f"    [{ctx}] {display}{plural}")
     if not any_missing:
         print("  All languages are fully translated.")
 
@@ -77,29 +80,35 @@ def cmd_export():
             ...
         }
     }
+
+    A %n (plural) source exports a list of empty strings instead — one per
+    <numerusform> the language declares, so e.g. German gets two slots and
+    Japanese one.
     """
     # Collect unique source strings and their contexts across all languages
     sources: dict[str, str] = {}  # source -> context
-    per_lang_missing: dict[str, set[str]] = {}
+    per_lang_missing: dict[str, dict[str, int]] = {}  # lang -> source -> plural forms
 
     for lang in LANGUAGES:
         missing = get_untranslated(lang)
-        per_lang_missing[lang] = set()
-        for ctx, src in missing:
+        per_lang_missing[lang] = {}
+        for ctx, src, forms in missing:
             sources[src] = ctx
-            per_lang_missing[lang].add(src)
+            per_lang_missing[lang][src] = forms
 
     if not sources:
         print("  Nothing to export — all languages are fully translated.")
         return
 
     # Build export structure
-    export: dict[str, dict[str, str]] = {}
+    export: dict[str, dict[str, str | list[str]]] = {}
     for src, ctx in sources.items():
-        entry: dict[str, str] = {"_context": ctx}
+        entry: dict[str, str | list[str]] = {"_context": ctx}
         for lang in LANGUAGES:
-            if src in per_lang_missing[lang]:
-                entry[lang] = ""
+            forms = per_lang_missing[lang].get(src)
+            if forms is None:
+                continue
+            entry[lang] = [""] * forms if forms else ""
         export[src] = entry
 
     DEFAULT_EXPORT.write_text(json.dumps(export, indent=2, ensure_ascii=False) + "\n",
@@ -114,14 +123,19 @@ def cmd_apply(json_path: Path = DEFAULT_EXPORT):
         print(f"  Error: {json_path} not found. Run 'export' first.", file=sys.stderr)
         sys.exit(1)
 
-    data: dict[str, dict[str, str]] = json.loads(json_path.read_text(encoding="utf-8"))
+    data: dict[str, dict[str, str | list[str]]] = json.loads(json_path.read_text(encoding="utf-8"))
 
-    # Build lookup: source_text -> {lang: translation}
-    translations: dict[str, dict[str, str]] = {}
+    # Build lookup: source_text -> {lang: translation}. A plural entry is a list
+    # of forms; it counts as filled only when every form has text, since a half
+    # written plural would compile into an empty form at runtime.
+    translations: dict[str, dict[str, str | list[str]]] = {}
     for src, entry in data.items():
         for lang in LANGUAGES:
             val = entry.get(lang, "")
-            if val:
+            if isinstance(val, list):
+                if val and all(val):
+                    translations.setdefault(src, {})[lang] = val
+            elif val:
                 translations.setdefault(src, {})[lang] = val
 
     if not translations:
@@ -143,10 +157,28 @@ def cmd_apply(json_path: Path = DEFAULT_EXPORT):
                 if trans is None or trans.get("type") != "unfinished":
                     continue
                 src = msg.findtext("source", "")
-                if src in translations and lang in translations[src]:
-                    trans.text = translations[src][lang]
-                    del trans.attrib["type"]
-                    count += 1
+                if src not in translations or lang not in translations[src]:
+                    continue
+                value = translations[src][lang]
+                forms = trans.findall("numerusform")
+                if forms:
+                    # Never assign trans.text here: that would leave stray text
+                    # in front of the <numerusform> children and lrelease would
+                    # drop the plural.
+                    if not isinstance(value, list) or len(value) != len(forms):
+                        print(f"  {lang}: skipping {src!r} — expected "
+                              f"{len(forms)} plural forms", file=sys.stderr)
+                        continue
+                    for form, text in zip(forms, value):
+                        form.text = text
+                elif isinstance(value, list):
+                    print(f"  {lang}: skipping {src!r} — plural forms given for "
+                          f"a singular string", file=sys.stderr)
+                    continue
+                else:
+                    trans.text = value
+                del trans.attrib["type"]
+                count += 1
 
         if count > 0:
             tree.write(str(path), encoding="utf-8", xml_declaration=True)

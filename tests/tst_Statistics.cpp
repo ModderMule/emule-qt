@@ -42,6 +42,10 @@ private slots:
     void recordRate_appendsHistory();
     void sessionBytesChanged_signal();
     void overheadStatsUpdated_signal();
+    void uptimeSecs_countsFromTheStartTick();
+    void init_stampsStartTickOnceOnly();
+    void init_stampsLastResetOnFreshInstallOnly();
+    void init_raisesCumRunTimeToItsLowerBound();
 };
 
 void tst_Statistics::construct_default()
@@ -58,7 +62,8 @@ void tst_Statistics::construct_default()
     QCOMPARE(stats.sessionSentBytesToFriend(), uint64{0});
     QCOMPARE(stats.reconnects(), uint16{0});
     QCOMPARE(stats.filteredClients(), uint32{0});
-    QCOMPARE(stats.startTime(), uint32{0});
+    QCOMPARE(stats.startTick(), uint64{0});
+    QCOMPARE(stats.uptimeSecs(), uint32{0});
     QCOMPARE(stats.transferStartTime(), uint32{0});
     QCOMPARE(stats.serverConnectTime(), uint32{0});
     QCOMPARE(stats.transferTime(), uint32{0});
@@ -283,8 +288,8 @@ void tst_Statistics::globalState_gettersSetters()
     stats.addFilteredClient();
     QCOMPARE(stats.filteredClients(), uint32{11});
 
-    stats.setStartTime(12345);
-    QCOMPARE(stats.startTime(), uint32{12345});
+    stats.setStartTick(12345);
+    QCOMPARE(stats.startTick(), uint64{12345});
 
     stats.setTransferStartTime(67890);
     QCOMPARE(stats.transferStartTime(), uint32{67890});
@@ -385,6 +390,79 @@ void tst_Statistics::overheadStatsUpdated_signal()
     stats.addUpDataOverheadServer(200);
     stats.compUpDatarateOverhead();
     QCOMPARE(spy.count(), 2);
+}
+
+// The uptime bug this replaces: setStartTime() had no caller, so the tick stayed
+// 0 and the snapshot's `now - startTime()` reported seconds since 1970.
+void tst_Statistics::uptimeSecs_countsFromTheStartTick()
+{
+    Statistics stats;
+
+    // Unstarted means 0, not "since the epoch".
+    QCOMPARE(stats.uptimeSecs(), uint32{0});
+
+    stats.setStartTick(getTickCount() - SEC2MS(90));
+    QCOMPARE(stats.uptimeSecs(), uint32{90});
+}
+
+void tst_Statistics::init_stampsStartTickOnceOnly()
+{
+    Preferences prefs;
+    Statistics stats;
+
+    stats.init(prefs);
+    QVERIFY(stats.startTick() != 0);
+
+    // Backdate the session by an hour — two init() calls in the same millisecond
+    // would otherwise agree no matter what — then re-initialise. Reloading
+    // preferences must not restart the session clock.
+    const uint64 backdated = stats.startTick() - SEC2MS(3600);
+    stats.setStartTick(backdated);
+
+    stats.init(prefs);
+    QCOMPARE(stats.startTick(), backdated);
+    QVERIFY(stats.uptimeSecs() >= 3600);
+}
+
+void tst_Statistics::init_stampsLastResetOnFreshInstallOnly()
+{
+    // Nothing has ever been counted -> the statistics are "as of now".
+    Preferences fresh;
+    QCOMPARE(fresh.statsLastReset(), uint64{0});
+    Statistics statsFresh;
+    statsFresh.init(fresh);
+    QVERIFY(fresh.statsLastReset() > 0);
+
+    // An existing install with history keeps "never reset" until it is reset.
+    Preferences used;
+    used.setCumTotalDownloaded(12345);
+    Statistics statsUsed;
+    statsUsed.init(used);
+    QCOMPARE(used.statsLastReset(), uint64{0});
+}
+
+// Installs that ran with the broken session clock have transfer time but no run
+// time, which makes every cumulative percentage nonsense.
+void tst_Statistics::init_raisesCumRunTimeToItsLowerBound()
+{
+    Preferences prefs;
+    prefs.setCumRunTime(0);
+    prefs.setCumTransferTime(18329);
+    prefs.setCumUploadTime(4000);
+    prefs.setCumDownloadTime(15000);
+    prefs.setCumServerDuration(9000);
+
+    Statistics stats;
+    stats.init(prefs);
+    QCOMPARE(prefs.cumRunTime(), uint64{18329});
+
+    // A run time that already exceeds the bound is left alone.
+    Preferences healthy;
+    healthy.setCumRunTime(50000);
+    healthy.setCumTransferTime(18329);
+    Statistics stats2;
+    stats2.init(healthy);
+    QCOMPARE(healthy.cumRunTime(), uint64{50000});
 }
 
 QTEST_MAIN(tst_Statistics)

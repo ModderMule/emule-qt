@@ -11,11 +11,14 @@
 #include "controls/SharedPartsDelegate.h"
 #include "dialogs/ArchivePreviewPanel.h"
 #include "dialogs/FileDetailDialog.h"
+#include "dialogs/FindInListDialog.h"
 #include "dialogs/MediaInfoPanel.h"
 #include "prefs/Preferences.h"
 #include "utils/IpcFeedback.h"
 #include "utils/Log.h"
+#include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
 #include "dialogs/CollectionCreateDialog.h"
 #include "dialogs/CollectionViewDialog.h"
@@ -120,8 +123,7 @@ SharedFilesPanel::SharedFilesPanel(QWidget* parent)
 {
     setupUi();
 
-    m_refreshTimer = new QTimer(this);
-    connect(m_refreshTimer, &QTimer::timeout, this, &SharedFilesPanel::onRefreshTimer);
+    m_poller = new PanelPoller(this, [this] { onRefreshTimer(); });
 }
 
 SharedFilesPanel::~SharedFilesPanel() = default;
@@ -135,27 +137,27 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
     m_ipc = client;
 
     if (m_ipc && m_ipc->isConnected()) {
-        m_refreshTimer->setInterval(m_ipc->pollingInterval());
-        m_refreshTimer->start();
-        onRefreshTimer();
+        m_poller->setInterval(m_ipc->pollingInterval());
+        m_poller->setEnabled(true);
     } else if (m_ipc) {
         connect(m_ipc, &IpcClient::connected, this, [this]() {
-            m_refreshTimer->setInterval(m_ipc->pollingInterval());
-            m_refreshTimer->start();
-            onRefreshTimer();
+            m_poller->setInterval(m_ipc->pollingInterval());
+            m_poller->setEnabled(true);
         });
         connect(m_ipc, &IpcClient::disconnected, this, [this]() {
-            m_refreshTimer->stop();
+            m_poller->setEnabled(false);
             m_model->clear();
             m_headerLabel->setText(tr("Shared Files (0)"));
         });
 
-        // Push events for immediate refresh
+        // Pull the next poll forward rather than refetching here. SharedFileList
+        // emits fileAdded once per file *inside* the directory scan, so a reload of
+        // a large share used to mean one full-list refetch per file shared.
         connect(m_ipc, &IpcClient::sharedFileUpdated, this, [this](const IpcMessage&) {
-            requestSharedFiles();
+            m_poller->nudge();
         });
     } else {
-        m_refreshTimer->stop();
+        m_poller->setEnabled(false);
         m_model->clear();
         m_headerLabel->setText(tr("Shared Files (0)"));
     }
@@ -1297,52 +1299,7 @@ void SharedFilesPanel::showPriorityMenu()
 
 void SharedFilesPanel::showFindDialog()
 {
-    auto* dlg = new QDialog(this);
-    dlg->setWindowTitle(tr("Search"));
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-
-    auto* layout = new QFormLayout(dlg);
-
-    auto* searchEdit = new QLineEdit(dlg);
-    layout->addRow(tr("Search for:"), searchEdit);
-
-    auto* columnCombo = new QComboBox(dlg);
-    columnCombo->addItem(tr("File Name"),        SharedFilesModel::ColFileName);
-    columnCombo->addItem(tr("Size"),             SharedFilesModel::ColSize);
-    columnCombo->addItem(tr("Type"),             SharedFilesModel::ColType);
-    columnCombo->addItem(tr("Priority"),         SharedFilesModel::ColPriority);
-    columnCombo->addItem(tr("Requests"),         SharedFilesModel::ColRequests);
-    columnCombo->addItem(tr("Transferred Data"), SharedFilesModel::ColTransferred);
-    columnCombo->addItem(tr("Shared parts"),     SharedFilesModel::ColSharedParts);
-    columnCombo->addItem(tr("Complete Sources"), SharedFilesModel::ColCompleteSources);
-    columnCombo->addItem(tr("Shared eD2K/Kad"), SharedFilesModel::ColSharedNetworks);
-    columnCombo->addItem(tr("Folder"),           SharedFilesModel::ColFolder);
-    layout->addRow(tr("Search in column:"), columnCombo);
-
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
-    layout->addRow(buttons);
-
-    connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
-
-    connect(dlg, &QDialog::accepted, this, [this, searchEdit, columnCombo]() {
-        const QString term = searchEdit->text().trimmed();
-        if (term.isEmpty())
-            return;
-
-        const int column = columnCombo->currentData().toInt();
-
-        for (int row = 0; row < m_proxy->rowCount(); ++row) {
-            const QModelIndex idx = m_proxy->index(row, column);
-            if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
-                m_fileView->setCurrentIndex(idx);
-                m_fileView->scrollTo(idx);
-                return;
-            }
-        }
-    });
-
-    dlg->exec();
+    showFindInListDialog(this, m_fileView);
 }
 
 // ---------------------------------------------------------------------------
@@ -1578,7 +1535,7 @@ void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int ta
         return;
     IpcMessage msg(IpcMsgType::GetSharedFileDetails);
     msg.append(hash);
-    m_ipc->sendRequest(std::move(msg), [this, tab](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, tab, hash](const IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;
         const QCborMap details = resp.field(1).toMap();
@@ -1586,8 +1543,41 @@ void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int ta
                                           static_cast<FileDetailDialog::Tab>(tab), this);
         connectEd2kLinkRequests(dlg, m_ipc);
         connectKadNotesSearch(dlg, m_ipc, IpcMsgType::GetSharedFileDetails);
+        connectCommentFilter(dlg, m_ipc);
+        dlg->setWalker(makeSharedFileWalker(hash));
+        connectDetailNavigation(dlg, m_ipc, IpcMsgType::GetSharedFileDetails);
         dlg->show();
     });
+}
+
+QModelIndex SharedFilesPanel::fileIndexFor(const QString& hash) const
+{
+    if (hash.isEmpty())
+        return {};
+    for (int row = 0; row < m_model->fileCount(); ++row)
+        if (m_model->hashAt(row) == hash)
+            return ViewNav::fromSource(m_fileView, m_model->index(row, 0));
+    return {};
+}
+
+DetailWalker SharedFilesPanel::makeSharedFileWalker(const QString& hash)
+{
+    // Anchored on the hash, not a row: setFiles() resets the model on every poll
+    // tick and UiState::guardSelectionOnReset() clears the current index with it.
+    auto anchor = std::make_shared<QString>(hash);
+
+    DetailWalker walker;
+    walker.step = [this, anchor](int delta) -> QString {
+        const QModelIndex to = ViewNav::step(m_fileView, fileIndexFor(*anchor), delta);
+        if (!to.isValid())
+            return {};
+        *anchor = m_model->hashAt(ViewNav::toSource(to).row());
+        return *anchor;
+    };
+    walker.canStep = [this, anchor](int delta) {
+        return ViewNav::peekStep(m_fileView, fileIndexFor(*anchor), delta).isValid();
+    };
+    return walker;
 }
 
 // ---------------------------------------------------------------------------

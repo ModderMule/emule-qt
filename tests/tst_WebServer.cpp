@@ -9,6 +9,7 @@
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
+#include "stats/StatsHistory.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
 #include "files/KnownFileList.h"
@@ -78,6 +79,12 @@ private slots:
     // Web UI / REST API independence
     void restApiWithoutWebUi();
     void webUiWithoutRestApi();
+
+    // Graphs page data
+    void graphVars_carryTheSeriesOldestFirst();
+    void graphVars_ratesAreBytesPerSecond();
+    void graphVars_pointsStayInsideTheViewBox();
+    void graphVars_withNoSamplesAreEmpty();
 
 private:
     // Helper: send HTTP request and block until response
@@ -510,6 +517,91 @@ void tst_WebServer::webUiWithoutRestApi()
     QCOMPARE(rawGetStatus(port, QStringLiteral("/api/v1/stats"), /*withKey*/ true), 404);
 
     server->stop();
+}
+
+// ---------------------------------------------------------------------------
+// Graphs page — the variables the GRAPHS template section is substituted with.
+//
+// MFC fills a 500-point ring from its statistics dialog and joins it into
+// [GraphDownload]/[GraphUpload]/[GraphConnections] (srchybrid/WebServer.cpp:3027).
+// A headless daemon has no dialog, so the same numbers come out of core's StatsHistory
+// — and the page also gets them pre-scaled as SVG points, because a template that has
+// to run JavaScript to draw is one that shows nothing when JavaScript is off.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Samples with distinct, hand-checkable values.
+std::vector<StatsGraphSample> makeSamples(int count)
+{
+    std::vector<StatsGraphSample> samples;
+    samples.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        StatsGraphSample s;
+        s.seq = static_cast<uint32>(i + 1);
+        s.downCurrent = static_cast<float>(i + 1);        // 1, 2, 3 … KB/s
+        s.upCurrent = static_cast<float>((i + 1) * 2);
+        s.connActive = static_cast<uint32>((i + 1) * 10);
+        samples.push_back(s);
+    }
+    return samples;
+}
+
+} // namespace
+
+void tst_WebServer::graphVars_carryTheSeriesOldestFirst()
+{
+    const auto vars = WebServer::graphVars(makeSamples(3), 100, 100, 500, 500, 120);
+
+    // Oldest first, the order MFC writes and a graph reads left to right.
+    QCOMPARE(vars.value(QStringLiteral("GraphConnections")), QStringLiteral("10,20,30"));
+    QCOMPARE(vars.value(QStringLiteral("MaxConnections")), QStringLiteral("500"));
+}
+
+void tst_WebServer::graphVars_ratesAreBytesPerSecond()
+{
+    const auto vars = WebServer::graphVars(makeSamples(2), 100, 100, 500, 500, 120);
+
+    // The samples are KB/s; MFC's variables are bytes/s (srchybrid/WebServer.cpp:3038).
+    QCOMPARE(vars.value(QStringLiteral("GraphDownload")), QStringLiteral("1024,2048"));
+    QCOMPARE(vars.value(QStringLiteral("GraphUpload")), QStringLiteral("2048,4096"));
+}
+
+void tst_WebServer::graphVars_pointsStayInsideTheViewBox()
+{
+    // A rate well over the axis maximum must clamp to the top of the box rather than
+    // draw outside it — the capacity pref is a guess, not a limit.
+    std::vector<StatsGraphSample> samples = makeSamples(2);
+    samples[1].downCurrent = 10000.0f;
+
+    const auto vars = WebServer::graphVars(samples, 100, 100, 500, 500, 120);
+    const QStringList points =
+        vars.value(QStringLiteral("GraphDownloadPts")).split(u' ', Qt::SkipEmptyParts);
+
+    QCOMPARE(points.size(), 2);
+    for (const QString& point : points) {
+        const QStringList xy = point.split(u',');
+        QCOMPARE(xy.size(), 2);
+        const double x = xy[0].toDouble();
+        const double y = xy[1].toDouble();
+        QVERIFY(x >= 0.0 && x <= 499.0);
+        QVERIFY(y >= 0.0 && y <= 120.0);
+    }
+    // Two samples span the full width, and the over-scale one sits on the ceiling.
+    QCOMPARE(points.first(), QStringLiteral("0.0,118.8"));
+    QCOMPARE(points.last(), QStringLiteral("499.0,0.0"));
+}
+
+void tst_WebServer::graphVars_withNoSamplesAreEmpty()
+{
+    // A daemon that has not sampled yet leaves the series empty — an empty variable
+    // still substitutes, where a missing one would leave "[GraphDownload]" on the page.
+    const auto vars = WebServer::graphVars({}, 100, 100, 500, 500, 120);
+
+    QVERIFY(vars.contains(QStringLiteral("GraphDownload")));
+    QVERIFY(vars.value(QStringLiteral("GraphDownload")).isEmpty());
+    QVERIFY(vars.value(QStringLiteral("GraphDownloadPts")).isEmpty());
+    QCOMPARE(vars.value(QStringLiteral("MaxDownload")), QStringLiteral("100"));
 }
 
 // ---------------------------------------------------------------------------

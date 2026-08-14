@@ -85,6 +85,9 @@ public:
     /// ThrottledControlSocket: send queued data up to bandwidth limit.
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
 
+    /// ThrottledControlSocket: whether queued datagrams remain.
+    [[nodiscard]] bool hasControlQueue() const override;
+
 signals:
     /// Reask callback received from firewalled client.
     void reaskCallbackReceived(const Endpoint& sender,

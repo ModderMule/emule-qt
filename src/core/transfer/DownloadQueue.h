@@ -35,6 +35,23 @@ class SharedFileList;
 class UpDownClient;
 struct ED2KLinkSource;
 
+/// ED2K user ID standing in for "this source has no usable IPv4". A value below
+/// 0x01000000 reads back as a LowID, which is exactly the semantics we want; Kad buddy
+/// sources use the same marker.
+inline constexpr uint32 kNoIPv4SourceId = 1;
+
+/// Identity and capability hints a source ingress may carry beyond address and port.
+/// Namespace scope rather than nested in DownloadQueue: a nested type's default member
+/// initializers are not yet parsed where addVettedSource() names `{}` as a default argument.
+struct SourceHints {
+    uint32       serverIP       = 0;        ///< network byte order
+    uint16       serverPort     = 0;
+    const uint8* userHash       = nullptr;  ///< 16 bytes, or null
+    uint8        connectOptions = 0;        ///< bits setConnectOptions() decodes
+    uint16       kadPort        = 0;
+    uint16       udpPort        = 0;
+};
+
 class DownloadQueue : public EntityList<PartFile> {
     Q_OBJECT
 
@@ -66,6 +83,9 @@ public:
 
     [[nodiscard]] PartFile* fileByID(const uint8* hash) const;
     [[nodiscard]] PartFile* fileByIndex(int index) const;
+    /// The file that owns the Kad source search @p id, if any.
+    /// MFC CDownloadQueue::GetFileByKadFileSearchID (DownloadQueue.cpp:439).
+    [[nodiscard]] PartFile* fileByKadFileSearchID(uint32 id) const;
     [[nodiscard]] bool isFileExisting(const uint8* hash) const;
     [[nodiscard]] const std::vector<PartFile*>& files() const { return items(); }
 
@@ -73,6 +93,19 @@ public:
 
     bool checkAndAddSource(PartFile* file, UpDownClient* source);
     void removeSource(UpDownClient* source);
+
+    /// Vet one peer address the way every untrusted source ingress must: isGoodIP, the IP
+    /// filter and the ban list. Returns a null Address when the address is unusable.
+    [[nodiscard]] Address vetPeerAddress(const Address& addr) const;
+
+    /// Build, inject and dial one peer source that has already been address-vetted.
+    ///
+    /// Owns the checks shared by every ingress — the firewalled-LowID drop and the
+    /// per-file source cap — plus client construction and the connect attempt.
+    /// @param ed2kUserId network-order IPv4 for a HighID, the raw low value for a LowID,
+    ///                   or kNoIPv4SourceId when only IPv6 is usable.
+    bool addVettedSource(PartFile* file, uint32 ed2kUserId, const Address& v6, uint16 port,
+                         SourceFrom from, const SourceHints& hints = {});
 
     /// Seed @p file with the source hints carried by an eD2K link.
     ///

@@ -4,6 +4,7 @@
 
 #include "FileDetailDialog.h"
 #include "ArchivePreviewPanel.h"
+#include "MetadataPage.h"
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
 #include "prefs/Preferences.h"
@@ -14,7 +15,6 @@
 #include <QIcon>
 #include <QClipboard>
 #include <QDateTime>
-#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QGuiApplication>
@@ -57,109 +57,50 @@ QString fmtTime(qint64 epoch)
     return QLocale().toString(QDateTime::fromSecsSinceEpoch(epoch), QLocale::ShortFormat);
 }
 
-/// Convert a numeric rating (0-5) to a star string.
-QString ratingStars(int rating)
-{
-    if (rating <= 0 || rating > 5)
-        return {};
-    static constexpr const char* labels[] = {
-        nullptr, "Poor", "Fair", "Good", "Very Good", "Excellent"
-    };
-    const QString stars = QString(rating, QChar(0x2605));   // ★
-    return QStringLiteral("%1 (%2)").arg(stars, QLatin1StringView(labels[rating]));
-}
-
-/// Map a well-known ED2K tag nameId to a human-readable string.
-QString tagNameFromId(int nameId)
-{
-    static const QHash<int, QString> names{
-        {0x01, QStringLiteral("Filename")},
-        {0x02, QStringLiteral("File Size")},
-        {0x03, QStringLiteral("File Type")},
-        {0x04, QStringLiteral("File Format")},
-        {0x05, QStringLiteral("Last Seen Complete")},
-        {0x08, QStringLiteral("Transferred")},
-        {0x09, QStringLiteral("Gap Start")},
-        {0x0A, QStringLiteral("Gap End")},
-        {0x0B, QStringLiteral("Description")},
-        {0x12, QStringLiteral("Part Filename")},
-        {0x14, QStringLiteral("Status")},
-        {0x15, QStringLiteral("Sources")},
-        {0x16, QStringLiteral("Permissions")},
-        {0x18, QStringLiteral("Download Priority")},
-        {0x19, QStringLiteral("Upload Priority")},
-        {0x1A, QStringLiteral("Compression")},
-        {0x1B, QStringLiteral("Corrupted")},
-        {0x20, QStringLiteral("Kad Last Publish Key")},
-        {0x21, QStringLiteral("Kad Last Publish Src")},
-        {0x22, QStringLiteral("Flags")},
-        {0x23, QStringLiteral("DL Active Time")},
-        {0x24, QStringLiteral("Corrupted Parts")},
-        {0x25, QStringLiteral("DL Preview")},
-        {0x26, QStringLiteral("Kad Last Publish Notes")},
-        {0x27, QStringLiteral("AICH Hash")},
-        {0x28, QStringLiteral("File Hash")},
-        {0x30, QStringLiteral("Complete Sources")},
-        {0x31, QStringLiteral("Collection Author")},
-        {0x32, QStringLiteral("Collection Author Key")},
-        {0x33, QStringLiteral("Publish Info")},
-        {0x34, QStringLiteral("Last Shared")},
-        {0x35, QStringLiteral("AICH Hashset")},
-        {0x38, QStringLiteral("Folder Name")},
-        {0x3A, QStringLiteral("File Size Hi")},
-        {0x50, QStringLiteral("All-Time Transferred")},
-        {0x51, QStringLiteral("All-Time Requested")},
-        {0x52, QStringLiteral("All-Time Accepted")},
-        {0x53, QStringLiteral("Category")},
-        {0x54, QStringLiteral("All-Time Transferred Hi")},
-        {0x55, QStringLiteral("Max Sources")},
-        {0xD0, QStringLiteral("Media Artist")},
-        {0xD1, QStringLiteral("Media Album")},
-        {0xD2, QStringLiteral("Media Title")},
-        {0xD3, QStringLiteral("Media Length")},
-        {0xD4, QStringLiteral("Media Bitrate")},
-        {0xD5, QStringLiteral("Media Codec")},
-        {0xF6, QStringLiteral("File Comment")},
-        {0xF7, QStringLiteral("File Rating")},
-    };
-    auto it = names.find(nameId);
-    return it != names.end() ? *it : QStringLiteral("0x%1").arg(nameId, 2, 16, QLatin1Char('0'));
-}
-
-/// Map a TAGTYPE value to a display string.
-QString tagTypeName(int type)
-{
-    switch (type) {
-    case 0x01: return QStringLiteral("Hash");
-    case 0x02: return QStringLiteral("String");
-    case 0x03: return QStringLiteral("UInt32");
-    case 0x04: return QStringLiteral("Float");
-    case 0x05: return QStringLiteral("Bool");
-    case 0x06: return QStringLiteral("Bool Array");
-    case 0x07: return QStringLiteral("Blob");
-    case 0x08: return QStringLiteral("UInt16");
-    case 0x09: return QStringLiteral("UInt8");
-    case 0x0A: return QStringLiteral("Blob Unsi");
-    case 0x0B: return QStringLiteral("UInt64");
-    default:   return QStringLiteral("0x%1").arg(type, 2, 16, QLatin1Char('0'));
-    }
-}
-
 } // anonymous namespace
 
 // ── constructor ────────────────────────────────────────────────────────
 
 FileDetailDialog::FileDetailDialog(const QCborMap& details, Tab initialTab,
                                    QWidget* parent)
-    : QDialog(parent)
+    : DetailDialog(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
-    setWindowTitle(tr("File Details: %1")
-        .arg(str(details, QLatin1StringView("fileName"))));
     setMinimumSize(680, 420);
     resize(720, 480);
 
-    auto* mainLayout = new QVBoxLayout(this);
+    // Explicitly qualified: a constructor must not dispatch virtually.
+    m_pendingTab = initialTab;
+    FileDetailDialog::setDetails(details);
+}
+
+// ── re-target ──────────────────────────────────────────────────────────
+
+void FileDetailDialog::setDetails(const QCborMap& details)
+{
+    const int keepTab = m_tabs ? m_tabs->currentIndex() : m_pendingTab;
+
+    // Null the retained members *before* the delete: a GetEd2kLink reply for the
+    // previous file can still be queued and would land in applyEd2kLink().
+    m_fileNamesTree       = nullptr;
+    m_fileNamesEmptyLabel = nullptr;
+    m_commentsPanel       = nullptr;
+    m_linkEdit            = nullptr;
+    m_chkHashset          = nullptr;
+    m_chkHostname         = nullptr;
+    m_chkHtml             = nullptr;
+    delete m_tabs;
+    m_tabs = nullptr;
+
+    setSubjectKey(str(details, QLatin1StringView("hash")));
+    setWindowTitle(tr("File Details: %1")
+        .arg(str(details, QLatin1StringView("fileName"))));
+
+    buildTabs(details, keepTab);
+}
+
+void FileDetailDialog::buildTabs(const QCborMap& details, int tabToSelect)
+{
     m_tabs = new QTabWidget;
 
     if (thePrefs.useOriginalIcons()) {
@@ -189,12 +130,10 @@ FileDetailDialog::FileDetailDialog(const QCborMap& details, Tab initialTab,
             m_tabs->addTab(createArchivePreviewTab(details), tr("Archive Preview"));
     }
 
-    m_tabs->setCurrentIndex(std::min(static_cast<int>(initialTab), m_tabs->count() - 1));
-    mainLayout->addWidget(m_tabs);
-
-    auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close);
-    connect(btnBox, &QDialogButtonBox::rejected, this, &QDialog::close);
-    mainLayout->addWidget(btnBox);
+    // Clamp, not wrap: navigating from an archive (7 tabs) onto a plain file
+    // (6 tabs) must not leave the tab widget on an out-of-range index.
+    m_tabs->setCurrentIndex(std::clamp(tabToSelect, 0, m_tabs->count() - 1));
+    contentLayout()->addWidget(m_tabs);
 }
 
 // ── General tab ────────────────────────────────────────────────────────
@@ -296,37 +235,15 @@ QWidget* FileDetailDialog::createFileNamesTab(const QCborMap& d)
 
 QWidget* FileDetailDialog::createCommentsTab(const QCborMap& d)
 {
-    auto* page = new QWidget;
-    auto* layout = new QVBoxLayout(page);
-
-    auto* commentsTree = new ListTreeWidget;
-    m_commentsTree = commentsTree;
-    m_commentsTree->setHeaderLabels({tr("User Name"), tr("Rating"), tr("Comment")});
-    m_commentsTree->setRootIsDecorated(false);
-    m_commentsTree->setAlternatingRowColors(true);
-    m_commentsTree->setSortingEnabled(true);
-    m_commentsTree->header()->setStretchLastSection(true);
-    commentsTree->bindColumns(QStringLiteral("fileDetailComments"), {160, 80, 320});
-
-    m_commentsEmptyLabel =
-        new QLabel(tr("No comments or ratings available for this file."));
-    m_commentsEmptyLabel->setWordWrap(true);
-    layout->addWidget(m_commentsEmptyLabel);
-    layout->addWidget(m_commentsTree);
-
-    populateComments(d);
-
-    // "Search Kad" button — triggers a Kad notes lookup for this file
-    const QString fileHash = d.value(QLatin1StringView("hash")).toString();
-    const QString fileName = str(d, QLatin1StringView("fileName"));
-    auto* searchKadBtn = new QPushButton(tr("Search Kad"));
-    searchKadBtn->setIcon(QIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
-    connect(searchKadBtn, &QPushButton::clicked, this, [this, fileHash, fileName]() {
-        emit searchKadNotes(fileHash, fileName);
-    });
-    layout->addWidget(searchKadBtn);
-
-    return page;
+    // Same page widget the search-result detail dialog uses, mirroring MFC where
+    // both sheets host one CCommentDialogLst.
+    m_commentsPanel = new CommentsPanel(QStringLiteral("fileDetailComments"));
+    connect(m_commentsPanel, &CommentsPanel::searchKadNotes,
+            this, &DetailDialog::searchKadNotes);
+    connect(m_commentsPanel, &CommentsPanel::commentFilterChanged,
+            this, &DetailDialog::commentFilterChanged);
+    m_commentsPanel->setDetails(d);
+    return m_commentsPanel;
 }
 
 // ── Dynamic-tab population / refresh ───────────────────────────────────
@@ -351,31 +268,11 @@ void FileDetailDialog::populateFileNames(const QCborMap& d)
         m_fileNamesEmptyLabel->setVisible(names.isEmpty());
 }
 
-void FileDetailDialog::populateComments(const QCborMap& d)
-{
-    if (!m_commentsTree)
-        return;
-
-    m_commentsTree->clear();
-    const QCborArray commentArr = d.value(QLatin1StringView("comments")).toArray();
-    for (const auto& entry : commentArr) {
-        const QCborMap m = entry.toMap();
-        auto* item = new QTreeWidgetItem(m_commentsTree);
-        item->setText(0, m.value(QLatin1StringView("userName")).toString());
-        const int rating = static_cast<int>(m.value(QLatin1StringView("rating")).toInteger());
-        item->setText(1, ratingStars(rating));
-        item->setData(1, Qt::UserRole, rating); // for sorting
-        item->setText(2, m.value(QLatin1StringView("comment")).toString());
-    }
-
-    if (m_commentsEmptyLabel)
-        m_commentsEmptyLabel->setVisible(commentArr.isEmpty());
-}
-
 void FileDetailDialog::applyDetails(const QCborMap& details)
 {
     populateFileNames(details);
-    populateComments(details);
+    if (m_commentsPanel)
+        m_commentsPanel->setDetails(details);
 }
 
 // ── Media Info tab ─────────────────────────────────────────────────────
@@ -431,58 +328,7 @@ QWidget* FileDetailDialog::createMediaInfoTab(const QCborMap& d)
 
 QWidget* FileDetailDialog::createMetadataTab(const QCborMap& d)
 {
-    auto* page = new QWidget;
-    auto* layout = new QVBoxLayout(page);
-
-    const QCborArray tagArr = d.value(QLatin1StringView("tags")).toArray();
-
-    if (tagArr.isEmpty()) {
-        layout->addWidget(new QLabel(tr("No metadata tags available.")));
-        layout->addStretch();
-        return page;
-    }
-
-    auto* tree = new ListTreeWidget;
-    tree->setHeaderLabels({tr("Tag Name"), tr("Type"), tr("Value")});
-    tree->setRootIsDecorated(false);
-    tree->setAlternatingRowColors(true);
-    tree->setSortingEnabled(true);
-    tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    tree->header()->setStretchLastSection(true);
-    tree->bindColumns(QStringLiteral("fileDetailTags"), {200, 100, 260});
-
-    for (const auto& entry : tagArr) {
-        const QCborMap t = entry.toMap();
-        auto* item = new QTreeWidgetItem(tree);
-
-        // Tag name: prefer string name, fall back to numeric nameId
-        const QString tagName = t.value(QLatin1StringView("name")).toString();
-        const qint64 nameId = t.value(QLatin1StringView("nameId")).toInteger();
-        if (!tagName.isEmpty())
-            item->setText(0, tagName);
-        else if (nameId > 0)
-            item->setText(0, tagNameFromId(static_cast<int>(nameId)));
-        else
-            item->setText(0, tr("Unknown"));
-
-        // Tag type
-        const int tagType = static_cast<int>(t.value(QLatin1StringView("type")).toInteger());
-        item->setText(1, tagTypeName(tagType));
-
-        // Tag value
-        if (t.contains(QLatin1StringView("strValue")))
-            item->setText(2, t.value(QLatin1StringView("strValue")).toString());
-        else if (t.contains(QLatin1StringView("intValue")))
-            item->setText(2, QString::number(t.value(QLatin1StringView("intValue")).toInteger()));
-        else if (t.contains(QLatin1StringView("floatValue")))
-            item->setText(2, QString::number(t.value(QLatin1StringView("floatValue")).toDouble(), 'g', 6));
-        else if (t.contains(QLatin1StringView("hashValue")))
-            item->setText(2, t.value(QLatin1StringView("hashValue")).toString());
-    }
-
-    tree->sortByColumn(0, Qt::AscendingOrder);
-    layout->addWidget(tree);
-    return page;
+    return createMetadataPage(d, QStringLiteral("fileDetailTags"));
 }
 
 // ── ED2K Link tab ──────────────────────────────────────────────────────
@@ -556,6 +402,11 @@ QWidget* FileDetailDialog::createArchivePreviewTab(const QCborMap& d)
 
 void FileDetailDialog::updateEd2kLinkDisplay()
 {
+    // A queued signal can outlive the tab it came from — setDetails() tears the
+    // whole tab set down and rebuilds it when the walker moves to another file.
+    if (!m_chkHtml || !m_chkHashset || !m_chkHostname || !m_linkEdit)
+        return;
+
     // Ask the daemon for this exact flag combination. Picking between pre-generated
     // variants used to drop the hostname whenever the hashset box was ticked, and the
     // GUI cannot build the link itself: only the core knows what may be advertised.
@@ -574,6 +425,9 @@ void FileDetailDialog::updateEd2kLinkDisplay()
 
 void FileDetailDialog::applyEd2kLink(const QString& link, bool sourceHintAvailable)
 {
+    if (!m_chkHtml || !m_chkHostname || !m_linkEdit)
+        return;   // the ED2K tab was torn down by a navigation
+
     if (m_chkHtml->isChecked())
         m_linkEdit->setHtml(link);
     else
@@ -620,51 +474,6 @@ void connectEd2kLinkRequests(FileDetailDialog* dialog, IpcClient* ipc)
                     const QString link = result.at(0).toArray().at(0).toString();
                     if (!link.isEmpty())
                         dlgPtr->applyEd2kLink(link, result.at(1).toBool());
-                });
-        });
-}
-
-// ── shared SearchKadNotes wiring ───────────────────────────────────────
-
-void connectKadNotesSearch(FileDetailDialog* dialog, IpcClient* ipc,
-                           Ipc::IpcMsgType detailsRequest)
-{
-    if (!dialog || !ipc)
-        return;
-
-    QPointer<FileDetailDialog> dlgPtr(dialog);
-
-    QObject::connect(dialog, &FileDetailDialog::searchKadNotes, dialog,
-        [ipc, dlgPtr, detailsRequest](const QString& fileHash, const QString& fileName) {
-            if (!ipc->isConnected())
-                return;
-
-            Ipc::IpcMessage kadMsg(Ipc::IpcMsgType::SearchKadNotes);
-            kadMsg.append(fileHash);
-            kadMsg.append(fileName);
-            ipc->sendRequest(std::move(kadMsg),
-                [ipc, dlgPtr, detailsRequest, fileHash](const Ipc::IpcMessage& resp) {
-                    if (!dlgPtr)
-                        return;
-                    // Kad down, or a notes lookup for this file is already running.
-                    if (!IpcFeedback::checkOrWarn(resp, dlgPtr,
-                                                  FileDetailDialog::tr("Search Kad")))
-                        return;
-
-                    // Kad notes arrive asynchronously over UDP; re-fetch details a couple
-                    // of times so the open dialog picks up the new File Names / Comments.
-                    auto refresh = [ipc, dlgPtr, detailsRequest, fileHash]() {
-                        if (!dlgPtr || !ipc->isConnected())
-                            return;
-                        Ipc::IpcMessage req(detailsRequest);
-                        req.append(fileHash);
-                        ipc->sendRequest(std::move(req), [dlgPtr](const Ipc::IpcMessage& r) {
-                            if (dlgPtr && r.fieldBool(0))
-                                dlgPtr->applyDetails(r.field(1).toMap());
-                        });
-                    };
-                    QTimer::singleShot(8000, dlgPtr, refresh);
-                    QTimer::singleShot(20000, dlgPtr, refresh);
                 });
         });
 }

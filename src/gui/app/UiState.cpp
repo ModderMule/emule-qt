@@ -12,6 +12,8 @@
 
 #include "utils/Log.h"
 
+#include <algorithm>
+
 namespace eMule {
 
 UiState theUiState;
@@ -38,6 +40,21 @@ static void writeIntList(YAML::Emitter& out, const char* key, const QList<int>& 
     out << YAML::EndSeq;
 }
 
+/// "auto" stands for an invalid QColor — the tray meter slot, which follows the
+/// system colour scheme until the user picks something.
+static constexpr const char* kAutoColor = "auto";
+
+static QColor readColor(const YAML::Node& node, const QColor& fallback)
+{
+    const auto text = QString::fromStdString(node.as<std::string>(std::string{}));
+    if (text.isEmpty())
+        return fallback;
+    if (text == QLatin1StringView(kAutoColor))
+        return {};
+    const QColor c(text);
+    return c.isValid() ? c : fallback;
+}
+
 // ---------------------------------------------------------------------------
 // load / save
 // ---------------------------------------------------------------------------
@@ -60,11 +77,13 @@ void UiState::load(const QString& configDir)
         m_messagesSplitSizes   = readIntList(root, "messagesSplitSizes");
         m_ircSplitSizes        = readIntList(root, "ircSplitSizes");
         m_statsSplitSizes      = readIntList(root, "statsSplitSizes");
+        m_statsGraphSplitSizes = readIntList(root, "statsGraphSplitSizes");
 
         m_windowWidth      = root["windowWidth"].as<int>(m_windowWidth);
         m_windowHeight     = root["windowHeight"].as<int>(m_windowHeight);
         m_windowMaximized  = root["windowMaximized"].as<bool>(m_windowMaximized);
         m_optionsLastPage  = root["optionsLastPage"].as<int>(m_optionsLastPage);
+        m_lastVersionCheck = root["lastVersionCheck"].as<int64_t>(m_lastVersionCheck);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
 
         m_toolbarSkinPath = QString::fromStdString(
@@ -73,6 +92,14 @@ void UiState::load(const QString& configDir)
             root["skinProfilePath"].as<std::string>(std::string{}));
 
         m_toolbarButtonOrder = readIntList(root, "toolbarButtonOrder");
+
+        if (auto colors = root["statsColors"]; colors && colors.IsSequence()) {
+            // Read what is there and leave the rest at the factory palette, so a file
+            // written by an older build (or a hand-edited short list) still loads.
+            const auto count = std::min<size_t>(colors.size(), m_statsColors.size());
+            for (size_t i = 0; i < count; ++i)
+                m_statsColors[i] = readColor(colors[i], defaultStatsColors()[i]);
+        }
 
         if (auto hdr = root["headers"]; hdr && hdr.IsMap()) {
             for (const auto& pair : hdr) {
@@ -133,11 +160,13 @@ void UiState::save(const QString& configDir)
     writeIntList(out, "messagesSplitSizes",   m_messagesSplitSizes);
     writeIntList(out, "ircSplitSizes",        m_ircSplitSizes);
     writeIntList(out, "statsSplitSizes",      m_statsSplitSizes);
+    writeIntList(out, "statsGraphSplitSizes", m_statsGraphSplitSizes);
 
     out << YAML::Key << "windowWidth"      << YAML::Value << m_windowWidth;
     out << YAML::Key << "windowHeight"     << YAML::Value << m_windowHeight;
     out << YAML::Key << "windowMaximized"  << YAML::Value << m_windowMaximized;
     out << YAML::Key << "optionsLastPage"  << YAML::Value << m_optionsLastPage;
+    out << YAML::Key << "lastVersionCheck" << YAML::Value << m_lastVersionCheck;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
 
     if (!m_toolbarSkinPath.isEmpty())
@@ -147,6 +176,15 @@ void UiState::save(const QString& configDir)
 
     if (!m_toolbarButtonOrder.isEmpty())
         writeIntList(out, "toolbarButtonOrder", m_toolbarButtonOrder);
+
+    // Only once the user has moved away from MFC's palette — an untouched install
+    // keeps its uistate.yml free of fifteen lines that say nothing.
+    if (m_statsColors != defaultStatsColors()) {
+        out << YAML::Key << "statsColors" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+        for (const QColor& c : m_statsColors)
+            out << (c.isValid() ? c.name(QColor::HexRgb).toStdString() : kAutoColor);
+        out << YAML::EndSeq;
+    }
 
     if (!m_headerStates.isEmpty()) {
         out << YAML::Key << "headers" << YAML::Value << YAML::BeginMap;
@@ -178,6 +216,50 @@ void UiState::save(const QString& configDir)
 
     if (!file.commit())
         logError(QStringLiteral("Failed to commit uistate.yml: %1").arg(path));
+}
+
+// ---------------------------------------------------------------------------
+// Statistics colours
+// ---------------------------------------------------------------------------
+
+const std::array<QColor, UiState::kStatsColorCount>& UiState::defaultStatsColors()
+{
+    // MFC's defcol table, same order (srchybrid/Preferences.cpp:1817-1821). Slot 11
+    // is the tray meter bar: MFC stores black there and overwrites it at startup from
+    // the taskbar's brightness, so an invalid colour is the honest default for us.
+    static const std::array<QColor, kStatsColorCount> defaults = {{
+        QColor(0, 0, 64),        //  0 Background
+        QColor(192, 192, 255),   //  1 Grid
+        QColor(128, 255, 128),   //  2 Download current
+        QColor(0, 210, 0),       //  3 Download average
+        QColor(0, 128, 0),       //  4 Download session average
+        QColor(255, 128, 128),   //  5 Upload current
+        QColor(200, 0, 0),       //  6 Upload average
+        QColor(140, 0, 0),       //  7 Upload session average
+        QColor(150, 150, 255),   //  8 Active connections
+        QColor(192, 0, 192),     //  9 Total uploads (queue length)
+        QColor(255, 255, 128),   // 10 Active uploads
+        QColor(),                // 11 Tray meter bar — follows the system theme
+        QColor(255, 255, 255),   // 12 Active downloads
+        QColor(255, 255, 255),   // 13 Upload friend slots
+        QColor(255, 190, 190),   // 14 Upload current (excl. overhead)
+    }};
+    return defaults;
+}
+
+QColor UiState::statsColor(int index) const
+{
+    if (index < 0 || index >= kStatsColorCount)
+        return {};
+    return m_statsColors[static_cast<size_t>(index)];
+}
+
+void UiState::setStatsColors(const std::array<QColor, kStatsColorCount>& colors)
+{
+    if (m_statsColors == colors)
+        return;
+    m_statsColors = colors;
+    scheduleSave();
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +304,11 @@ void UiState::bindIrcSplitter(QSplitter* splitter)
 void UiState::bindStatsSplitter(QSplitter* splitter)
 {
     bindSplitter(splitter, m_statsSplitSizes);
+}
+
+void UiState::bindStatsGraphSplitter(QSplitter* splitter)
+{
+    bindSplitter(splitter, m_statsGraphSplitSizes);
 }
 
 // ---------------------------------------------------------------------------

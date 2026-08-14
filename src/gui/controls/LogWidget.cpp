@@ -1,8 +1,12 @@
 #include "pch.h"
 #include "controls/LogWidget.h"
 
+#include "app/AppConfig.h"
 #include "prefs/Preferences.h"
+#include "utils/Log.h"
+#include "utils/TextLinks.h"
 
+#include <QColor>
 #include <QDateTime>
 #include <QIcon>
 #include <QStackedWidget>
@@ -19,6 +23,17 @@ namespace eMule {
 
 LogWidget* LogWidget::s_instance = nullptr;
 QtMessageHandler LogWidget::s_previousHandler = nullptr;
+
+namespace {
+
+/// Server Info is the first tab, as in the reference (CServerWnd::PaneServerInfo).
+constexpr int kServerInfoTabIndex = 0;
+
+/// Internal URL for the banner's version-check link — not a real scheme, just a
+/// sentinel the panel recognises and turns into an in-app check.
+constexpr QLatin1StringView kVersionCheckUrl{"emuleqt:versioncheck"};
+
+} // namespace
 
 LogWidget::LogWidget(QWidget* parent)
     : QWidget(parent)
@@ -41,7 +56,11 @@ LogWidget::LogWidget(QWidget* parent)
     // Server Info tab
     m_serverInfoBrowser = new QTextBrowser;
     m_serverInfoBrowser->setReadOnly(true);
-    m_serverInfoBrowser->setOpenExternalLinks(true);
+    // Links are re-emitted rather than opened here: ed2k:// must reach the in-app
+    // importer, and the banner's version-check link is an internal action. The
+    // reference routes clicks the same way (CServerWnd::OnEnLinkServerBox).
+    TextLinks::wireLinkClicks(m_serverInfoBrowser, this,
+                              [this](const QString& link) { emit linkActivated(link); });
     m_serverInfoBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     if (thePrefs.useOriginalIcons())
         m_tabBar->addTab(QIcon(QStringLiteral(":/icons/ServerInfo.ico")), tr("Server Info"));
@@ -91,8 +110,15 @@ LogWidget::LogWidget(QWidget* parent)
     m_stack->addWidget(m_ipcLogBrowser);
     setIpcTabVisible(thePrefs.enableIpcLog());
 
+    // Clear a tab's highlight once the user actually looks at it.
+    connect(m_tabBar, &QTabBar::currentChanged, this, [this](int index) {
+        m_tabBar->setTabTextColor(index, QColor{});
+    });
+
     // Initial info message
-    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.2.0 ready</font>"));
+    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v%1 ready</font>")
+                  .arg(QString(kAppVersion)));
+    writeServerInfoBanner();
 
     // Install handler to capture core log output
     installMessageHandler();
@@ -103,9 +129,37 @@ LogWidget::~LogWidget()
     removeMessageHandler();
 }
 
-void LogWidget::appendServerInfo(const QString& msg)
+void LogWidget::appendServerInfo(const QString& text, ServerMsgType type)
 {
-    m_serverInfoBrowser->append(msg);
+    // Colours mirror the reference's log-line palette defaults
+    // (srchybrid/Preferences.cpp:368-370). Info deliberately carries no colour so
+    // it follows the widget's own text colour, as CLR_DEFAULT does there — but it
+    // still gets a <span>, see below.
+    QString open;
+    switch (type) {
+    case ServerMsgType::Success: open = QStringLiteral("<span style='color:#0000FF'>"); break;
+    case ServerMsgType::Error:   open = QStringLiteral("<span style='color:#FF0000;font-weight:bold'>"); break;
+    case ServerMsgType::Warning: open = QStringLiteral("<span style='color:#800080'>"); break;
+    case ServerMsgType::Info:    open = QStringLiteral("<span>"); break;
+    }
+
+    // The wrapping <span> is load-bearing: QTextBrowser::append() guesses between
+    // HTML and plain text via Qt::mightBeRichText(), and a line with no tags is
+    // taken as plain text — which would print our escaped "&amp;" verbatim. Opening
+    // with a tag makes the rich-text branch unconditional.
+    //
+    // One append() per line, too: in HTML a raw newline is whitespace, not a break,
+    // so a multi-line payload passed as one string renders as a single run-on line.
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString& line : lines) {
+        const QString body = line.trimmed().isEmpty()
+            ? QStringLiteral("&nbsp;")            // keep blank separators visible
+            : TextLinks::escapeAndLinkify(line);
+        m_serverInfoBrowser->append(open + body + QStringLiteral("</span>"));
+    }
+
+    trimToLimit(m_serverInfoBrowser);
+    highlightTab(kServerInfoTabIndex);
 }
 
 void LogWidget::appendLog(const QString& msg, const QString& ts, qint64 seqId)
@@ -234,7 +288,10 @@ void LogWidget::clearAll()
     m_logSeqIds.clear();
     m_verboseSeqIds.clear();
     m_kadSeqIds.clear();
-    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v0.2.0 ready</font>"));
+    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v%1 ready</font>")
+                  .arg(QString(kAppVersion)));
+    // The reference's Reset leaves the Server Info pane empty — the startup banner
+    // is not re-written (srchybrid/ServerWnd.cpp:539).
 }
 
 QString LogWidget::logText() const { return m_logBrowser->toPlainText(); }
@@ -260,7 +317,14 @@ void LogWidget::removeMessageHandler()
         qInstallMessageHandler(s_previousHandler);
         s_previousHandler = nullptr;
         s_instance = nullptr;
+        closeLogFileSink();
     }
+}
+
+void LogWidget::applyLogFileSettings()
+{
+    applyLogFileSink(AppConfig::configDir(), QStringLiteral("emuleqt"),
+                     thePrefs.logToDiskGui(), thePrefs.maxLogFileSize());
 }
 
 void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context,
@@ -270,14 +334,14 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
     if (s_previousHandler)
         s_previousHandler(type, context, msg);
 
-    if (!s_instance)
-        return;
-
     // Determine which category this message belongs to
     const char* cat = context.category ? context.category : "";
     const bool isEmuleCategory = (std::strncmp(cat, "emule.", 6) == 0);
 
     if (!isEmuleCategory)
+        return;
+
+    if (!s_instance)
         return;
 
     // Color the message based on severity
@@ -301,11 +365,21 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
     const bool isKad = (std::strcmp(cat, "emule.kad") == 0);
     const bool isVerbose = (type == QtDebugMsg || type == QtWarningMsg);
 
-    // Server category messages go to Server Info
-    if (isServer)
-        QMetaObject::invokeMethod(s_instance, [colored]() {
-            if (s_instance) s_instance->appendServerInfo(colored);
+    // Server category messages go to Server Info. The pane's real feed is the
+    // dedicated PushServerMessage IPC event, not the log — this branch only
+    // catches anything logged to emule.server in-process. It passes the RAW text
+    // because appendServerInfo escapes internally, and returns so a message
+    // cannot also land in the Log/Verbose tab below.
+    if (isServer) {
+        const ServerMsgType stype = (type == QtCriticalMsg || type == QtFatalMsg)
+                                        ? ServerMsgType::Error
+                                    : (type == QtWarningMsg) ? ServerMsgType::Warning
+                                                             : ServerMsgType::Info;
+        QMetaObject::invokeMethod(s_instance, [msg, stype]() {
+            if (s_instance) s_instance->appendServerInfo(msg, stype);
         }, Qt::QueuedConnection);
+        return;
+    }
 
     // Kad category messages go to the Kad tab
     if (isKad) {
@@ -325,6 +399,31 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
             if (s_instance) s_instance->appendLog(colored);
         }, Qt::QueuedConnection);
     }
+}
+
+void LogWidget::writeServerInfoBanner()
+{
+    // MFC: CServerWnd::OnInitDialog — srchybrid/ServerWnd.cpp:131-138. The version
+    // line, then the update-check hyperlink, then a blank separator. MFC writes
+    // "eMule v%s"; kAppVersion is this app's version, so the name has to match it.
+    m_serverInfoBrowser->append(
+        QStringLiteral("<span>eMule Qt v%1</span>").arg(QString(kAppVersion).toHtmlEscaped()));
+    m_serverInfoBrowser->append(
+        QStringLiteral("<span><a href='%1'>%2</a></span>")
+            .arg(QString(kVersionCheckUrl),
+                 tr("Click here to check if a new version is available").toHtmlEscaped()));
+    m_serverInfoBrowser->append(QStringLiteral("<span>&nbsp;</span>"));
+
+    // The banner is not "new activity" — don't highlight the tab for it.
+    m_tabBar->setTabTextColor(kServerInfoTabIndex, QColor{});
+}
+
+void LogWidget::highlightTab(int index)
+{
+    // MFC highlights the tab when the pane it feeds is not the visible one
+    // (StatusSelector.HighlightItem — srchybrid/EmuleDlg.cpp:969-971).
+    if (m_tabBar->currentIndex() != index)
+        m_tabBar->setTabTextColor(index, QColor(Qt::red));
 }
 
 } // namespace eMule

@@ -127,10 +127,12 @@ void tst_TcpConnect::initTestCase()
     thePrefs.setCryptLayerSupported(false);
     thePrefs.setCryptLayerRequested(false);
 
-    // 3. Set finite max upload so UploadQueue slot allocation works
-    //    (with UNLIMITED speed and 0 data rate, forceNewClient() never
-    //    grants a slot because m_datarate / upPerClient == 0)
-    thePrefs.setMaxUpload(UNLIMITED);  // No upload speed limit for loopback tests
+    // 3. No upload speed limit for loopback tests. 0 is how eMuleQt stores "unlimited";
+    //    thePrefs.maxUploadLimit() maps it onto UNLIMITED for the MFC-derived bandwidth
+    //    code. Note that with an unlimited limit and a 0 data rate, forceNewClient() still
+    //    won't grant slots beyond MIN_UP_CLIENTS_ALLOWED — acceptNewClient() bails on
+    //    m_datarate / minTgtRate == 0 first. These tests don't need more than that.
+    thePrefs.setMaxUpload(0);
 
     // 4. Client credits — needed by sendHelloPacket()
     auto* creditsList = new ClientCreditsList();

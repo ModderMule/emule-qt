@@ -82,6 +82,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::OpenDownloadFolder:   return QStringLiteral("OpenDownloadFolder");
     case T::MarkSearchSpam:       return QStringLiteral("MarkSearchSpam");
     case T::ResetStats:           return QStringLiteral("ResetStats");
+    case T::RestoreStats:         return QStringLiteral("RestoreStats");
     case T::RenameSharedFile:     return QStringLiteral("RenameSharedFile");
     case T::DeleteSharedFile:     return QStringLiteral("DeleteSharedFile");
     case T::UnshareFile:          return QStringLiteral("UnshareFile");
@@ -376,13 +377,16 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         const QString newToken = msg.fieldString(2);
         if (newToken != m_daemonToken) {
             m_lastKadId = m_lastServerId = m_lastLogId = m_lastVerboseId = 0;
+            m_lastServerMsgId = 0;
             m_daemonToken = newToken;
         }
         // Delay the initial log sync by 500 ms so any brief startup instability
         // has settled before we fetch the buffer.
         QTimer::singleShot(500, this, [this]() {
-            if (m_handshaked)
+            if (m_handshaked) {
                 requestLogSync();
+                requestServerMessages();
+            }
         });
 
         emit connected();
@@ -482,7 +486,16 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushDownloadAdded:    emit downloadAdded(msg); break;
     case IpcMsgType::PushDownloadRemoved:  emit downloadRemoved(msg); break;
     case IpcMsgType::PushServerState:      emit serverStateChanged(msg); break;
+    case IpcMsgType::PushServerMessage: {
+        // Track the checkpoint here so a live push and a replayed backlog entry
+        // advance the same counter — a reconnect must not re-show either.
+        if (const qint64 id = msg.fieldInt(0); id > m_lastServerMsgId)
+            m_lastServerMsgId = id;
+        emit serverMessageReceived(msg);
+        break;
+    }
     case IpcMsgType::PushSearchResult:     emit searchResultReceived(msg); break;
+    case IpcMsgType::PushGlobalSearchProgress: emit globalSearchProgress(msg); break;
     case IpcMsgType::PushLogMessage: {
         const qint64 logId  = msg.fieldInt(0);
         const QString cat    = msg.fieldString(1);
@@ -558,6 +571,33 @@ void IpcClient::requestLogSync()
             synth.append(entry[3].toString());                       // message
             synth.append(entry.size() >= 5 ? entry[4].toInteger() : qint64(0));
             emit logMessageReceived(synth);
+        }
+    });
+}
+
+void IpcClient::requestServerMessages()
+{
+    IpcMessage req(IpcMsgType::GetServerMessages);
+    req.append(static_cast<qint64>(m_lastServerMsgId));
+
+    sendRequest(std::move(req), [this](const IpcMessage& resp) {
+        const QCborArray entries = resp.fieldArray(1);
+        for (int i = 0; i < entries.size(); ++i) {
+            const QCborArray entry = entries[i].toArray();
+            if (entry.size() < 3)
+                continue;
+
+            const qint64 id = entry[0].toInteger();
+            if (id <= m_lastServerMsgId)
+                continue;   // already displayed
+            m_lastServerMsgId = id;
+
+            // Replay as a synthetic push so the GUI has a single handling path.
+            IpcMessage synth(IpcMsgType::PushServerMessage, 0);
+            synth.append(id);
+            synth.append(entry[1].toInteger());
+            synth.append(entry[2].toString());
+            emit serverMessageReceived(synth);
         }
     });
 }

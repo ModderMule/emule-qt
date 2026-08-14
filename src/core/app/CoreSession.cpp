@@ -16,6 +16,7 @@
 #include "friends/FriendList.h"
 #include "files/SharedFileList.h"
 #include "kademlia/Kademlia.h"
+#include "search/GlobalSearchScheduler.h"
 #include "search/SearchList.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadUDPKey.h"
@@ -28,11 +29,14 @@
 #include "net/UDPSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
+#include "stats/StatsHistory.h"
+#include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
+#include "stats/StatsSnapshot.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/Scheduler.h"
 #include "net/LastCommonRouteFinder.h"
@@ -42,6 +46,7 @@
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QTimer>
@@ -130,6 +135,11 @@ void CoreSession::initStatistics()
     m_statistics = std::make_unique<Statistics>(this);
     m_statistics->init(thePrefs);
     theApp.statistics = m_statistics.get();
+
+    // Graph history belongs to the daemon, not to whichever GUI happens to be
+    // attached: it has to outlive a GUI restart and read the same for two GUIs.
+    m_statsHistory = std::make_unique<StatsHistory>(this);
+    theApp.statsHistory = m_statsHistory.get();
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +148,10 @@ void CoreSession::initStatistics()
 
 void CoreSession::shutdownStatistics()
 {
+    if (m_statsHistory && theApp.statsHistory == m_statsHistory.get())
+        theApp.statsHistory = nullptr;
+    m_statsHistory.reset();
+
     if (m_statistics && theApp.statistics == m_statistics.get())
         theApp.statistics = nullptr;
     m_statistics.reset();
@@ -273,6 +287,13 @@ void CoreSession::onTimer()
             theApp.statistics->updateConnectionStats(upRate, downRate);
             theApp.statistics->compUpDatarateOverhead();
             theApp.statistics->compDownDatarateOverhead();
+
+            // After the rates are recomputed, so a sample never carries last
+            // second's figures. MFC drives its graphs from the same ladder
+            // (srchybrid/UploadQueue.cpp:939-951).
+            if (theApp.statsHistory)
+                theApp.statsHistory->sample(
+                    static_cast<uint32>(QDateTime::currentSecsSinceEpoch()));
         }
         if (theApp.clientList)
             theApp.clientList->process();
@@ -305,6 +326,18 @@ void CoreSession::onTimer()
         // unchanged, so the common case costs one interface scan.
         if (m_tickCounter % 3000 == 0)
             updatePublicIPv6(scanLocalIPv6());
+
+        // Bank the cumulative statistics periodically, so an unclean exit costs at
+        // most one interval instead of the whole session. MFC does the same from
+        // its upload timer (srchybrid/UploadQueue.cpp:1021). The flush is absolute
+        // rather than additive, so repeating it changes nothing.
+        if (const uint32 interval = thePrefs.statsSaveInterval();
+            interval > 0 && theApp.statistics
+            && m_tickCounter - m_lastStatsFlushTick >= interval * 10) {
+            m_lastStatsFlushTick = m_tickCounter;
+            flushCumulativeStats(thePrefs);
+            thePrefs.save();
+        }
     }
 }
 
@@ -379,8 +412,9 @@ void CoreSession::updateUSSParams()
     p.goingDownDivider = static_cast<uint32>(thePrefs.dynUpGoingDownDivider());
     p.numberOfPingsForAverage = static_cast<uint32>(thePrefs.dynUpNumberOfPings());
     p.minUpload = thePrefs.minUpload();  // KB/s — setPrefs() converts to bytes/s
-    p.maxUpload = (thePrefs.maxUpload() == 0) ? UINT32_MAX : thePrefs.maxUpload();
-    p.curUpload = (thePrefs.maxUpload() == 0) ? UINT32_MAX : thePrefs.maxUpload() * 1024;
+    // maxUploadLimit() already maps "no limit" (0) onto the UNLIMITED sentinel USSParams uses.
+    p.maxUpload = thePrefs.maxUploadLimit();
+    p.curUpload = (p.maxUpload == UNLIMITED) ? UNLIMITED : p.maxUpload * 1024;
     m_lastCommonRouteFinder->setPrefs(p);
 }
 
@@ -464,6 +498,20 @@ void CoreSession::initServerConnect()
                 auto* srv = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
                 theApp.searchList->processSearchAnswer(data, size, true,
                     srv ? srv->ipAddress().toNetworkUint32() : 0, srv ? srv->port() : 0);
+
+                // The local server has answered — a global search may now start
+                // walking the rest of the list. MFC: CSearchResultsWnd::LocalEd2kSearchEnd
+                // (srchybrid/SearchResultsWnd.cpp:455-470).
+                if (theApp.globalSearch)
+                    theApp.globalSearch->onLocalAnswerReceived();
+            });
+
+    // Losing the server connection ends a running global search, as in MFC
+    // CServerConnect::ConnectionFailed (srchybrid/ServerConnect.cpp:346).
+    connect(m_serverConnect.get(), &ServerConnect::disconnectedFromServer,
+            this, [] {
+                if (theApp.globalSearch)
+                    theApp.globalSearch->cancel();
             });
 
     // 7. Wire UDP global search results → SearchList
@@ -710,7 +758,14 @@ void CoreSession::initDownloadQueue()
     m_downloadQueue->setKnownFileList(theApp.knownFileList);
     m_downloadQueue->setIPFilter(theApp.ipFilter);
     m_downloadQueue->setClientList(theApp.clientList);
-    m_downloadQueue->setServerConnect(theApp.serverConnect);
+    // No setServerConnect() here: initServerConnect() runs after us and creates it,
+    // so the pointer would still be null. It wires the queue itself (step 4).
+
+    // The "Source Lists" subfolder must exist before the first save (MorphXT does this in
+    // CPreferences::Init, Preferences.cpp:1084-1092). A category can still point a download
+    // at some other directory, which is why SourceListFile::write() also creates it.
+    if (thePrefs.useSaveLoadSources())
+        SourceSaver::ensureDirectories(thePrefs.tempDirs());
 
     // Load existing .part files from configured temp directories
     m_downloadQueue->init(thePrefs.tempDirs());
@@ -727,10 +782,16 @@ void CoreSession::shutdownDownloadQueue()
 {
     // Save all active downloads before destruction (matches MFC EmuleDlg::OnClose)
     if (m_downloadQueue) {
+        const bool saveSources = thePrefs.useSaveLoadSources();
         for (auto* file : m_downloadQueue->files()) {
             if (file->status() != PartFileStatus::Complete) {
                 file->flushBuffer();
                 file->savePartFile();
+                // Capture the live source list now: the 10-minute timer would otherwise
+                // leave up to ten minutes of connections unrecorded, and the PartFile
+                // destructor clears m_srcList before anything else could read it.
+                if (saveSources)
+                    file->sourceSaver().saveNow(file);
             }
         }
     }
@@ -1002,12 +1063,21 @@ void CoreSession::initKademlia()
                     sourceIPv6, buddyIPv6);
         });
 
-    // Wire Kad notes result callback → DownloadQueue. A notes search is the only
-    // Kad lookup that returns filenames (and comments/ratings) for a given file
-    // hash, so this populates the File Names + Comments tabs of the detail dialog.
+    // Wire Kad notes result callback. A notes search is the only Kad lookup that
+    // returns filenames (and comments/ratings) for a given file hash, so this
+    // populates the File Names + Comments tabs of the detail dialogs.
+    //
+    // Both sinks are offered the note, as in MFC
+    // (srchybrid/kademlia/kademlia/Search.cpp:1015-1032): the hash may belong to a
+    // download or shared file, to a plain search hit, or to both at once — the
+    // user can ask for comments on a result that is not local in any way.
     kad::Kademlia::setKadNotesResultCallback(
         [](uint32 /*searchID*/, const uint8* fileHash, const uint8* publisherId,
            const QString& name, uint8 rating, const QString& comment) {
+            if (theApp.searchList && publisherId) {
+                const QByteArray pub(reinterpret_cast<const char*>(publisherId), 16);
+                theApp.searchList->addNotes(fileHash, pub, rating, comment);
+            }
             if (theApp.downloadQueue)
                 theApp.downloadQueue->addKadNoteResult(
                     fileHash, publisherId, name, rating, comment);
@@ -1132,6 +1202,19 @@ void CoreSession::initSearch()
         m_searchList = std::make_unique<SearchList>(this);
         theApp.searchList = m_searchList.get();
     }
+
+    if (!theApp.globalSearch) {
+        m_globalSearch = std::make_unique<GlobalSearchScheduler>(this);
+        theApp.globalSearch = m_globalSearch.get();
+
+        // A search that has already collected more than MAX_RESULTS hits stops
+        // asking the rest of the server list — the query was too broad to be worth
+        // it. tabHeaderUpdated is emitted on every batch of results.
+        if (theApp.searchList) {
+            connect(theApp.searchList, &SearchList::tabHeaderUpdated,
+                    m_globalSearch.get(), &GlobalSearchScheduler::onResultCountChanged);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,6 +1223,11 @@ void CoreSession::initSearch()
 
 void CoreSession::shutdownSearch()
 {
+    // The scheduler's timers reach into serverList/serverConnect, so it goes first.
+    if (m_globalSearch && theApp.globalSearch == m_globalSearch.get())
+        theApp.globalSearch = nullptr;
+    m_globalSearch.reset();
+
     if (m_searchList && theApp.searchList == m_searchList.get())
         theApp.searchList = nullptr;
     m_searchList.reset();

@@ -20,6 +20,7 @@
 
 #include <QHostAddress>
 #include <QNetworkInterface>
+#include <QTime>
 
 
 
@@ -463,6 +464,12 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     if (!m_connecting && sender != m_connectedSocket)
         return;
 
+    const ServerConnState failState = sender->connectionState();
+
+    // Was this our live connection? Read up front: destroySocket() at the tail of
+    // this function clears m_connectedSocket and m_connected.
+    const bool lostLiveConnection = m_connected && sender == m_connectedSocket;
+
     const Server* cserver = sender->currentServer();
     Server* listServer = cserver
         ? m_serverList.findByAddress(cserver->address(), cserver->port())
@@ -544,15 +551,9 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     }
 
     case ServerConnState::Disconnected:
-        m_connected = false;
-        clearServerIdentity();
-        if (m_connectedSocket) {
-            m_connectedSocket = nullptr;
-        }
-        emit disconnectedFromServer();
-
-        if (m_config.reconnectOnDisconnect && !m_connecting)
-            connectToAnyServer();
+        // The teardown, the disconnectedFromServer() signal and the auto-reconnect
+        // are all handled uniformly after destroySocket() below, so that FatalError
+        // and ServerFull on a live connection get the same treatment.
         break;
 
     case ServerConnState::Error:
@@ -589,9 +590,30 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
         break;
     }
 
-    // Clean up the failed socket
+    // Clean up the failed socket (this also clears m_connectedSocket / m_connected)
     destroySocket(sender);
+
+    // Any terminal state on the live socket is a disconnect for everyone downstream.
+    // Normally that is Disconnected — ServerSocket maps a peer close on an
+    // established connection there — but FatalError and ServerFull reach here too
+    // and must not leave a stale client ID or public IP behind: both were this
+    // server's claim about us. MFC: CServerConnect::Disconnect() — sockets.cpp:506.
+    if (lostLiveConnection) {
+        clearServerIdentity();
+        emit disconnectedFromServer();
+    }
+
     emit stateChanged();
+
+    // Auto-reconnect only for a clean drop, and only once the dead socket is gone:
+    // stopConnectionTry() inside connectToAnyServer() skips m_connectedSocket, so
+    // reconnecting before destroySocket() would strand it. FatalError keeps its own
+    // 30-second retry-timer path above, matching MFC — autoretry is false for a live
+    // connection, so a fatal error deliberately leaves us disconnected.
+    if (lostLiveConnection && failState == ServerConnState::Disconnected
+        && m_config.reconnectOnDisconnect && !m_connecting) {
+        connectToAnyServer();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -826,6 +848,19 @@ void ServerConnect::destroySocket(ServerSocket* socket)
             m_connectionAttempts.erase(atIt);
             break;
         }
+    }
+
+    // Never leave m_connectedSocket pointing at a socket we are about to delete.
+    // connectionFailed() funnels every terminal state here, but only its
+    // ServerConnState::Disconnected case clears the pointer — FatalError, Error,
+    // NotConnected, ServerDead and ServerFull all fall through to destroySocket()
+    // with m_connectedSocket still set and m_connected still true. The stale
+    // pointer is then dereferenced by disconnect(), sendPacket(), currentServer(),
+    // isConnectedTo() and isObfuscating(); the shutdown path
+    // (~CoreSession → disconnect()) hits it deterministically and segfaults.
+    if (m_connectedSocket == socket) {
+        m_connectedSocket = nullptr;
+        m_connected = false;
     }
 
     // Disconnect all signals from this socket
@@ -1112,16 +1147,58 @@ void ServerConnect::onServerStatus(ServerSocket* socket, uint32 users, uint32 fi
 
 void ServerConnect::onServerMessage(ServerSocket* socket, const QString& message)
 {
-    // 16.40+ servers batch several lines into one OP_SERVERMESSAGE separated by
-    // CRLF. Parse each for control markers before display. MFC: CServerSocket::
-    // ProcessPacket() OP_SERVERMESSAGE — ServerSocket.cpp:176-231.
-    const QStringList lines = message.split(QLatin1String("\r\n"), Qt::SkipEmptyParts);
+    // 16.40+ servers batch several lines into one OP_SERVERMESSAGE. Parse each for
+    // control markers before display. MFC: CServerSocket::ProcessPacket()
+    // OP_SERVERMESSAGE — ServerSocket.cpp:170-232.
+    //
+    // The reference tokenises on _T("\r\n"), and CString::Tokenize treats that as a
+    // SET OF CHARACTERS, not a substring — so it breaks on a lone \r or \n too.
+    // Splitting on the literal "\r\n" missed servers that use bare newlines (eMule
+    // Sunrise does), collapsing the whole greeting into one "line" so an ERROR or
+    // [emDynIP:] marker after the first newline was never recognised.
+    QString normalised = message;
+    normalised.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    const QStringList lines = normalised.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
     const QStringList& iter = lines.isEmpty() ? QStringList{message} : lines;
 
-    QStringList display;
+    Server* entry = resolveListEntry(socket);
+
     for (const QString& line : iter) {
+        bool outputMessage = true;
+
+        // "server version X.Y" — record the version, and still show the line. The
+        // reference anchors this at the start of the line (_tcsnicmp(msg, ..., 14)),
+        // so a server whose greeting merely mentions the phrase mid-sentence does
+        // not overwrite the recorded version with the rest of that sentence.
+        if (line.startsWith(QLatin1String("server version"), Qt::CaseInsensitive)) {
+            QString ver = line.mid(14).trimmed();
+            if (!ver.isEmpty() && entry) {
+                // Normalise "16.4" to "16.04" as the reference does, so the server
+                // list sorts and compares versions consistently.
+                if (const auto dot = ver.indexOf(QLatin1Char('.')); dot > 0) {
+                    bool majOk = false, minOk = false;
+                    const uint maj = QStringView{ver}.left(dot).toUInt(&majOk);
+                    const uint min = QStringView{ver}.mid(dot + 1).toUInt(&minOk);
+                    if (majOk && minOk)
+                        ver = QStringLiteral("%1.%2").arg(maj).arg(min, 2, 10, QLatin1Char('0'));
+                }
+                entry->setVersion(ver);
+                theApp.serverList->notifyServerUpdated(entry);
+            }
+        } else if (line.startsWith(QLatin1String("ERROR"))) {
+            // Case-sensitive, matching the reference's _tcsncmp. Diverted to the log
+            // (with the server identified) and never echoed into the info pane.
+            logError(serverMessageLogLine(QStringLiteral("ERROR"), entry, socket, line.mid(5)));
+            outputMessage = false;
+        } else if (line.startsWith(QLatin1String("WARNING"))) {
+            logWarning(serverMessageLogLine(QStringLiteral("WARNING"), entry, socket, line.mid(7)));
+            outputMessage = false;
+        }
+
         // "[emDynIP: host]" — refresh the server's dynamic DN and collapse any
         // duplicate entries that now share it. Only accept a real DN, not an IP.
+        // The marker is consumed for its side effect but the line is still shown,
+        // as in the reference (bOutputMessage is left untouched here).
         const qsizetype dynStart = line.indexOf(QLatin1String("[emDynIP:"));
         if (dynStart >= 0) {
             const qsizetype dynEnd = line.indexOf(QLatin1Char(']'), dynStart);
@@ -1133,48 +1210,62 @@ void ServerConnect::onServerMessage(ServerSocket* socket, const QString& message
                 QString dn = dynField;
                 if (const auto hp = parseHostPort(dynField); hp)
                     dn = hp->host;
-                if (!dn.isEmpty() && Address::fromString(dn).isNull()) {
-                    if (Server* entry = resolveListEntry(socket)) {
-                        if (entry->dynIP() != dn) {
-                            entry->setDynIP(dn);
-                            theApp.serverList->removeDuplicatesByAddress(entry);
-                            theApp.serverList->notifyServerUpdated(entry);
-                        }
+                if (!dn.isEmpty() && Address::fromString(dn).isNull() && entry) {
+                    if (entry->dynIP() != dn) {
+                        entry->setDynIP(dn);
+                        theApp.serverList->removeDuplicatesByAddress(entry);
+                        theApp.serverList->notifyServerUpdated(entry);
                     }
                 }
             }
-            continue;   // control marker — do not echo
         }
 
-        // "server version X.Y" — record the version, and still show the line.
-        const qsizetype verIdx = line.indexOf(QLatin1String("server version"), 0, Qt::CaseInsensitive);
-        if (verIdx >= 0) {
-            const QString ver = line.mid(verIdx + 14).trimmed();
-            if (!ver.isEmpty()) {
-                if (Server* entry = resolveListEntry(socket)) {
-                    entry->setVersion(ver);
-                    theApp.serverList->notifyServerUpdated(entry);
-                }
+        if (!outputMessage)
+            continue;
+
+        // First displayed line of this connection opens a new block in the pane:
+        // a blank separator plus a timestamped, blue "connection established"
+        // header. MFC: m_bStartNewMessageLog — ServerSocket.cpp:234-245.
+        if (socket && socket->startNewMessageLog()) {
+            socket->clearStartNewMessageLog();
+            emit serverMessageReceived(ServerMsgType::Info, QString{});
+            if (const Server* srv = socket->currentServer()) {
+                // MFC: "<time>: Connection established on: <listname> (<addr>:<port>)"
+                // — ServerSocket.cpp:238-244. The obfuscated variant reports the
+                // obfuscation port, which is the one actually connected.
+                const bool obfu = socket->isObfuscating();
+                emit serverMessageReceived(
+                    ServerMsgType::Success,
+                    QStringLiteral("%1: %2 %3 (%4:%5)")
+                        .arg(QTime::currentTime().toString(QStringLiteral("HH:mm:ss")),
+                             obfu ? tr("Connection established on (obfuscated):")
+                                  : tr("Connection established on:"),
+                             srv->name().isEmpty() ? srv->address() : srv->name(),
+                             srv->address())
+                        .arg(obfu ? srv->obfuscationPortTCP() : srv->port()));
             }
-            display << line;
-            continue;
         }
 
-        // ERROR / WARNING — route to the proper log level and suppress the echo.
-        if (line.startsWith(QLatin1String("ERROR"), Qt::CaseInsensitive)) {
-            logError(QStringLiteral("Server message: %1").arg(line));
-            continue;
-        }
-        if (line.startsWith(QLatin1String("WARNING"), Qt::CaseInsensitive)) {
-            logWarning(QStringLiteral("Server message: %1").arg(line));
-            continue;
-        }
-
-        display << line;
+        emit serverMessageReceived(ServerMsgType::Info, line);
     }
+}
 
-    if (!display.isEmpty())
-        emit serverMessageReceived(display.join(QLatin1String("\r\n")));
+QString ServerConnect::serverMessageLogLine(const QString& prefix, const Server* entry,
+                                            const ServerSocket* socket, const QString& body)
+{
+    // MFC: "%s %s (%s:%u) - %s" — ServerSocket.cpp:189-201. The prefix is stripped
+    // from the body and any leading " :" separator trimmed off with it.
+    const Server* srv = entry ? entry : (socket ? socket->currentServer() : nullptr);
+    QString rest = body;
+    while (!rest.isEmpty() && (rest.front() == QLatin1Char(' ') || rest.front() == QLatin1Char(':')))
+        rest.remove(0, 1);
+
+    return QStringLiteral("%1 %2 (%3:%4) - %5")
+        .arg(prefix,
+             srv && !srv->name().isEmpty() ? srv->name() : tr("Server"),
+             srv ? srv->address() : QString{})
+        .arg(srv ? srv->port() : 0)
+        .arg(rest.trimmed());
 }
 
 } // namespace eMule

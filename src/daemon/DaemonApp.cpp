@@ -7,11 +7,12 @@
 
 #include "IpcMessage.h"
 
+#include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
-#include "transfer/UploadQueue.h"
+#include "stats/StatsSnapshot.h"
 #include "webserver/WebServer.h"
 #include "utils/Log.h"
 
@@ -129,16 +130,11 @@ void DaemonApp::stop()
     if (!m_running)
         return;
 
-    // Save cumulative statistics before tearing down
+    // Bank this session's statistics before tearing down. The periodic flush in
+    // CoreSession has probably already done it; the flush is idempotent, so this
+    // only picks up whatever happened since.
     if (theApp.statistics) {
-        theApp.statistics->saveCumulativeToPrefs(thePrefs);
-        // Also save upload session counts
-        if (theApp.uploadQueue) {
-            thePrefs.setCumUpSuccessfulSessions(
-                thePrefs.cumUpSuccessfulSessions() + theApp.uploadQueue->successfulUploadCount());
-            thePrefs.setCumUpFailedSessions(
-                thePrefs.cumUpFailedSessions() + theApp.uploadQueue->failedUploadCount());
-        }
+        flushCumulativeStats(thePrefs);
         thePrefs.save();
     }
 
@@ -181,6 +177,7 @@ void DaemonApp::startWebServer()
     m_webServer->setSharedFileList(theApp.sharedFileList);
     m_webServer->setFriendList(theApp.friendList);
     m_webServer->setStatistics(theApp.statistics);
+    m_webServer->setStatsHistory(theApp.statsHistory);
     m_webServer->setPreferences(&thePrefs);
 
     m_webServer->setLogProvider([] {
@@ -271,6 +268,7 @@ void DaemonApp::removeLogForwarder()
         qInstallMessageHandler(s_previousHandler);
         s_previousHandler = nullptr;
         s_instance = nullptr;
+        closeLogFileSink();
     }
 }
 
@@ -345,6 +343,12 @@ void DaemonApp::applyLogFilterRules()
         rules << QStringLiteral("emule.serverv.debug=true");
 
     QLoggingCategory::setFilterRules(rules.join(QLatin1Char('\n')));
+}
+
+void DaemonApp::applyLogFileSettings()
+{
+    applyLogFileSink(AppConfig::configDir(), QStringLiteral("emulecored"),
+                     thePrefs.logToDiskCore(), thePrefs.maxLogFileSize());
 }
 
 } // namespace eMule

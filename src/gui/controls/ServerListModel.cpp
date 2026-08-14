@@ -1,27 +1,10 @@
 #include "pch.h"
 #include "controls/ServerListModel.h"
 
-#include "server/Server.h"
-#include "server/ServerList.h"
-
 #include <QCborMap>
 #include <QColor>
 
 namespace eMule {
-
-namespace {
-
-QString priorityString(ServerPriority pref)
-{
-    switch (pref) {
-    case ServerPriority::High:   return QObject::tr("High");
-    case ServerPriority::Low:    return QObject::tr("Low");
-    case ServerPriority::Normal:
-    default:                     return QObject::tr("Normal");
-    }
-}
-
-} // anonymous namespace
 
 ServerListModel::ServerListModel(QObject* parent)
     : AbstractTableModel<ServerRow>(parent)
@@ -116,44 +99,6 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
     }
 }
 
-void ServerListModel::refreshFromServerList(const ServerList* serverList)
-{
-    std::vector<ServerRow> rows;
-
-    if (serverList) {
-        const auto& servers = serverList->servers();
-        rows.reserve(servers.size());
-
-        for (const auto& srv : servers) {
-            ServerRow row;
-            row.name = srv->name();
-            row.ip = srv->address();
-            row.port = srv->port();
-            row.description = srv->description();
-            row.ping = srv->ping();
-            row.users = srv->users();
-            row.maxUsers = srv->maxUsers();
-            row.preference = priorityString(srv->preference());
-            row.failed = srv->failedCount();
-            row.isStatic = srv->isStaticMember();
-            row.softFiles = srv->softFiles();
-            row.lowIdUsers = srv->lowIDUsers();
-            row.obfuscation = srv->supportsObfuscationTCP();
-            row.files = srv->files();
-            row.numericIp = srv->ipAddress().toNetworkUint32();
-            // Fall back to address() (the dynIP hostname) when there is no numeric
-            // address yet, so a request keyed on this row can still find the entry
-            // instead of matching whichever server has a null address.
-            row.addr = srv->ipAddress().isNull() ? srv->address() : srv->ipAddress().toString();
-            row.serverId = srv->serverId();
-            row.serverPtr = srv.get();
-            rows.push_back(std::move(row));
-        }
-    }
-
-    setRows(std::move(rows));
-}
-
 void ServerListModel::refreshFromCborArray(const QCborArray& servers)
 {
     std::vector<ServerRow> rows;
@@ -189,7 +134,6 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         row.numericIp = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
         row.addr      = m.value(QStringLiteral("addr")).toString();
         row.serverId  = static_cast<uint32_t>(m.value(QStringLiteral("serverId")).toInteger());
-        row.serverPtr = nullptr; // no direct pointer in IPC mode
         rows.push_back(std::move(row));
     }
 
@@ -199,12 +143,6 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
     // server row reliably shows blue through the sort proxy model.
     if (m_connectedServerId != 0 && !m_rows.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole});
-}
-
-const Server* ServerListModel::serverAtRow(int row) const
-{
-    const ServerRow* r = rowAt(row);
-    return r ? r->serverPtr : nullptr;
 }
 
 void ServerListModel::setConnectedServer(uint32_t serverId)

@@ -227,6 +227,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
 
     // Files page
     connect(m_addFilesPausedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_saveLoadSourcesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoSharedFilesPrioCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoDownloadPrioCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoCleanupFilenamesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -294,10 +295,10 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_minFreeDiskSpaceSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_commitFilesGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
     connect(m_extractMetaDataGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
-    connect(m_logToDiskCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logToDiskCoreCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logToDiskGuiCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_verboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logLevelSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
-    connect(m_verboseLogToDiskCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logSourceExchangeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverVerboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logBannedClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1405,6 +1406,13 @@ QWidget* OptionsDialog::createFilesPage()
     m_autoDownloadPrioCheck = new QCheckBox(tr("Add new downloads with auto priority"), initGroup);
     initLayout->addWidget(m_autoDownloadPrioCheck);
 
+    m_saveLoadSourcesCheck = new QCheckBox(tr("Remember download sources between restarts"),
+                                           initGroup);
+    m_saveLoadSourcesCheck->setToolTip(
+        tr("Stores each download's best sources in the temp folder and reconnects to them on "
+           "the next start, so a rare file does not have to find its peers again."));
+    initLayout->addWidget(m_saveLoadSourcesCheck);
+
     auto* cleanupRow = new QHBoxLayout;
     m_autoCleanupFilenamesCheck = new QCheckBox(tr("Auto cleanup file names of new downloads"), initGroup);
     cleanupRow->addWidget(m_autoCleanupFilenamesCheck);
@@ -1653,7 +1661,9 @@ QWidget* OptionsDialog::createNotificationsPage()
     m_notifyDownloadFinishedCheck = new QCheckBox(tr("Download finished (*)"), whenGroup);
     whenLayout->addWidget(m_notifyDownloadFinishedCheck);
 
-    m_notifyNewVersionCheck = new QCheckBox(tr("New eMule version detected"), whenGroup);
+    // MFC says "New eMule version detected"; this fires on a new version of *this*
+    // app (VersionChecker's newVersionAvailable), so the name has to match it.
+    m_notifyNewVersionCheck = new QCheckBox(tr("New eMule Qt version detected"), whenGroup);
     whenLayout->addWidget(m_notifyNewVersionCheck);
 
     m_notifyUrgentCheck = new QCheckBox(tr("Urgent: out of disk space, server connection lost (*)"), whenGroup);
@@ -2144,24 +2154,9 @@ QWidget* OptionsDialog::createStatisticsPage()
     auto* page = new QWidget(this);
     auto* mainLayout = new QVBoxLayout(page);
 
-    // Initialize default MFC colors
-    m_statsColors = {{
-        QColor(0, 0, 64),       //  0 Background
-        QColor(192, 192, 255),   //  1 Grid
-        QColor(128, 255, 128),   //  2 DL current
-        QColor(0, 210, 0),       //  3 DL average
-        QColor(0, 128, 0),       //  4 DL session
-        QColor(255, 128, 128),   //  5 UL current
-        QColor(200, 0, 0),       //  6 UL average
-        QColor(140, 0, 0),       //  7 UL session
-        QColor(150, 150, 255),   //  8 Active connections
-        QColor(192, 0, 192),     //  9 Total uploads
-        QColor(255, 255, 128),   // 10 Active uploads
-        QColor(0, 0, 0),         // 11 Icon bar (unused)
-        QColor(255, 255, 255),   // 12 Active downloads
-        QColor(255, 255, 255),   // 13 UL friend slots
-        QColor(255, 190, 190),   // 14 UL slots no overhead
-    }};
+    // The palette the user is editing. It lives in uistate.yml, not preferences.yml:
+    // these colours only ever paint in this process, and the daemon owns the prefs file.
+    m_statsColors = theUiState.statsColors();
 
     // --- Graphs group ---
     auto* graphsGroup = new QGroupBox(tr("Graphs"), page);
@@ -2201,47 +2196,87 @@ QWidget* OptionsDialog::createStatisticsPage()
     auto* colorsGroup = new QGroupBox(tr("Colors"), graphsGroup);
     auto* colorsLayout = new QVBoxLayout(colorsGroup);
 
-    // Color selector row
+    // Color selector row. The entry order and the index behind each entry are MFC's
+    // (srchybrid/PPgStats.cpp:207-238) — the list is grouped for reading, so the index
+    // must ride along as item data rather than being the row number.
     auto* colorRow = new QHBoxLayout;
     m_statsColorSelector = new QComboBox(colorsGroup);
-    m_statsColorSelector->addItems({
-        tr("Background"), tr("Grid"),
-        tr("Download Current"), tr("Download Average"), tr("Download Session"),
-        tr("Upload Current"), tr("Upload Average"), tr("Upload Session"),
-        tr("Active Connections"), tr("Total Uploads"), tr("Active Uploads"),
-        tr("Icon Bar"), tr("Active Downloads"),
-        tr("Upload Friend Slots"), tr("Upload Slots (no overhead)")
-    });
+    const std::array<std::pair<QString, int>, UiState::kStatsColorCount> colorEntries = {{
+        {tr("Background"), 0},
+        {tr("Grid"), 1},
+        {tr("Download Session"), 4},
+        {tr("Download Average"), 3},
+        {tr("Download Current"), 2},
+        {tr("Upload Session"), 7},
+        {tr("Upload Average"), 6},
+        {tr("Upload Current"), 5},
+        {tr("Upload Slots (no overhead)"), 14},
+        {tr("Upload Friend Slots"), 13},
+        {tr("Active Connections"), 8},
+        {tr("Active Uploads"), 10},
+        {tr("Total Uploads"), 9},
+        {tr("Active Downloads"), 12},
+        {tr("Icon Bar"), 11},
+    }};
+    for (const auto& [label, index] : colorEntries)
+        m_statsColorSelector->addItem(label, index);
+
     m_statsColorBtn = new QPushButton(colorsGroup);
     m_statsColorBtn->setFixedSize(48, 24);
     m_statsColorBtn->setFlat(true);
     m_statsColorBtn->setAutoFillBackground(true);
 
-    auto updateColorBtn = [this]() {
-        int idx = m_statsColorSelector->currentIndex();
-        if (idx >= 0 && idx < 15) {
-            QPalette pal = m_statsColorBtn->palette();
-            pal.setColor(QPalette::Button, m_statsColors[static_cast<size_t>(idx)]);
-            m_statsColorBtn->setPalette(pal);
-            m_statsColorBtn->setStyleSheet(
-                QStringLiteral("background-color: %1; border: 1px solid gray;")
-                    .arg(m_statsColors[static_cast<size_t>(idx)].name()));
-        }
+    auto* defaultBtn = new QPushButton(tr("Default"), colorsGroup);
+    defaultBtn->setToolTip(tr("Restore this colour to the eMule default"));
+
+    auto selectedColorIndex = [this]() {
+        const QVariant data = m_statsColorSelector->currentData();
+        const int idx = data.isValid() ? data.toInt() : -1;
+        return (idx >= 0 && idx < UiState::kStatsColorCount) ? idx : -1;
+    };
+
+    auto updateColorBtn = [this, selectedColorIndex]() {
+        const int idx = selectedColorIndex();
+        if (idx < 0)
+            return;
+        const QColor& c = m_statsColors[static_cast<size_t>(idx)];
+        // An invalid colour is the tray meter's "follow the system theme" state; it has
+        // no swatch to show, so the button says so instead.
+        m_statsColorBtn->setText(c.isValid() ? QString() : tr("Auto"));
+        m_statsColorBtn->setStyleSheet(c.isValid()
+            ? QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name())
+            : QStringLiteral("border: 1px solid gray;"));
     };
     connect(m_statsColorSelector, &QComboBox::currentIndexChanged, this, updateColorBtn);
-    connect(m_statsColorBtn, &QPushButton::clicked, this, [this, updateColorBtn]() {
-        int idx = m_statsColorSelector->currentIndex();
-        if (idx < 0 || idx >= 15) return;
-        QColor chosen = QColorDialog::getColor(
-            m_statsColors[static_cast<size_t>(idx)], this, tr("Select Color"));
+    connect(m_statsColorBtn, &QPushButton::clicked, this,
+            [this, updateColorBtn, selectedColorIndex]() {
+        const int idx = selectedColorIndex();
+        if (idx < 0)
+            return;
+        const QColor current = m_statsColors[static_cast<size_t>(idx)];
+        const QColor chosen = QColorDialog::getColor(
+            current.isValid() ? current : QColor(Qt::white), this, tr("Select Color"));
         if (chosen.isValid()) {
             m_statsColors[static_cast<size_t>(idx)] = chosen;
             updateColorBtn();
             markDirty();
         }
     });
+    connect(defaultBtn, &QPushButton::clicked, this,
+            [this, updateColorBtn, selectedColorIndex]() {
+        const int idx = selectedColorIndex();
+        if (idx < 0)
+            return;
+        m_statsColors[static_cast<size_t>(idx)] =
+            UiState::defaultStatsColors()[static_cast<size_t>(idx)];
+        updateColorBtn();
+        markDirty();
+    });
+    updateColorBtn();
+
     colorRow->addWidget(m_statsColorSelector, 1);
     colorRow->addWidget(m_statsColorBtn);
+    colorRow->addWidget(defaultBtn);
     colorsLayout->addLayout(colorRow);
 
     // Fill graphs checkbox
@@ -2697,8 +2732,16 @@ QWidget* OptionsDialog::createExtendedPage()
 #endif
 
     // --- Save log to disk ---
-    m_logToDiskCheck = new QCheckBox(tr("Save log to disk"), scrollWidget);
-    scrollLayout->addWidget(m_logToDiskCheck);
+    // One switch per process: the daemon and the GUI write their own set of files
+    // (<name>.log plus <name>_Verbose.log and <name>_Kad.log) in the config
+    // directory, so a line can always be traced back to the process that emitted
+    // it. Kad gets a file of its own because it would otherwise swamp the verbose
+    // log — the same reason it has its own tab.
+    m_logToDiskCoreCheck = new QCheckBox(tr("Write eMule core logs to disk"), scrollWidget);
+    scrollLayout->addWidget(m_logToDiskCoreCheck);
+
+    m_logToDiskGuiCheck = new QCheckBox(tr("Write eMule GUI logs to disk"), scrollWidget);
+    scrollLayout->addWidget(m_logToDiskGuiCheck);
 
     // --- Verbose group ---
     auto* verboseGroup = new QGroupBox(tr("Verbose (additional program feedback)"), scrollWidget);
@@ -2715,9 +2758,6 @@ QWidget* OptionsDialog::createExtendedPage()
     logLevelRow->addWidget(m_logLevelSpin);
     logLevelRow->addStretch();
     verboseLayout->addLayout(logLevelRow);
-
-    m_verboseLogToDiskCheck = new QCheckBox(tr("Save log to disk"), verboseGroup);
-    verboseLayout->addWidget(m_verboseLogToDiskCheck);
 
     m_logSourceExchangeCheck = new QCheckBox(
         tr("Log client source exchange and server source queries/answers"), verboseGroup);
@@ -2947,7 +2987,6 @@ QWidget* OptionsDialog::createExtendedPage()
     // Verbose sub-controls depend on verbose checkbox
     connect(m_verboseCheck, &QCheckBox::toggled, this, [this](bool on) {
         m_logLevelSpin->setEnabled(on);
-        m_verboseLogToDiskCheck->setEnabled(on);
         m_logSourceExchangeCheck->setEnabled(on);
         m_logBannedClientsCheck->setEnabled(on);
         m_logRatingDescCheck->setEnabled(on);
@@ -3742,6 +3781,8 @@ void OptionsDialog::saveSettings()
         // Files page (daemon-side)
         req.append(QStringLiteral("addNewFilesPaused"));
         req.append(m_addFilesPausedCheck->isChecked());
+        req.append(QStringLiteral("useSaveLoadSources"));
+        req.append(m_saveLoadSourcesCheck->isChecked());
         req.append(QStringLiteral("autoDownloadPriority"));
         req.append(m_autoDownloadPrioCheck->isChecked());
         req.append(QStringLiteral("autoSharedFilesPriority"));
@@ -3901,8 +3942,10 @@ void OptionsDialog::saveSettings()
         req.append(m_checkDiskspaceCheck->isChecked());
         req.append(QStringLiteral("minFreeDiskSpace"));
         req.append(static_cast<qint64>(m_minFreeDiskSpaceSpin->value()) * 1024 * 1024); // MB to bytes
-        req.append(QStringLiteral("logToDisk"));
-        req.append(m_logToDiskCheck->isChecked());
+        req.append(QStringLiteral("logToDiskCore"));
+        req.append(m_logToDiskCoreCheck->isChecked());
+        req.append(QStringLiteral("logToDiskGui"));
+        req.append(m_logToDiskGuiCheck->isChecked());
         req.append(QStringLiteral("verbose"));
         req.append(m_verboseCheck->isChecked());
         req.append(QStringLiteral("closeUPnPOnExit"));
@@ -3933,8 +3976,6 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_extractMetaDataGroup->checkedId()));
         req.append(QStringLiteral("logLevel"));
         req.append(static_cast<qint64>(m_logLevelSpin->value()));
-        req.append(QStringLiteral("verboseLogToDisk"));
-        req.append(m_verboseLogToDiskCheck->isChecked());
         req.append(QStringLiteral("logSourceExchange"));
         req.append(m_logSourceExchangeCheck->isChecked());
         req.append(QStringLiteral("serverVerboseLog"));
@@ -4162,6 +4203,7 @@ void OptionsDialog::saveSettings()
 
         // Files page (daemon-side) fallback
         thePrefs.setAddNewFilesPaused(m_addFilesPausedCheck->isChecked());
+        thePrefs.setUseSaveLoadSources(m_saveLoadSourcesCheck->isChecked());
         thePrefs.setAutoDownloadPriority(m_autoDownloadPrioCheck->isChecked());
         thePrefs.setAutoSharedFilesPriority(m_autoSharedFilesPrioCheck->isChecked());
         thePrefs.setTransferFullChunks(m_transferFullChunksCheck->isChecked());
@@ -4228,7 +4270,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setFilterLANIPs(m_filterLANIPsCheck->isChecked());
         thePrefs.setCheckDiskspace(m_checkDiskspaceCheck->isChecked());
         thePrefs.setMinFreeDiskSpace(static_cast<uint64>(m_minFreeDiskSpaceSpin->value()) * 1024 * 1024);
-        thePrefs.setLogToDisk(m_logToDiskCheck->isChecked());
+        thePrefs.setLogToDiskCore(m_logToDiskCoreCheck->isChecked());
+        thePrefs.setLogToDiskGui(m_logToDiskGuiCheck->isChecked());
         thePrefs.setVerbose(m_verboseCheck->isChecked());
         thePrefs.setCloseUPnPOnExit(m_closeUPnPCheck->isChecked());
         thePrefs.setPortMapProtocols(portMapProtocolMask());
@@ -4243,7 +4286,6 @@ void OptionsDialog::saveSettings()
         thePrefs.setCommitFiles(m_commitFilesGroup->checkedId());
         thePrefs.setExtractMetaData(m_extractMetaDataGroup->checkedId());
         thePrefs.setLogLevel(m_logLevelSpin->value());
-        thePrefs.setVerboseLogToDisk(m_verboseLogToDiskCheck->isChecked());
         thePrefs.setLogSourceExchange(m_logSourceExchangeCheck->isChecked());
         thePrefs.setServerVerboseLog(m_serverVerboseCheck->isChecked());
         thePrefs.setLogBannedClients(m_logBannedClientsCheck->isChecked());
@@ -4283,6 +4325,10 @@ void OptionsDialog::saveSettings()
     }
 
     saveSchedulerData();
+
+    // The graph palette is GUI-only state, so it goes to uistate.yml rather than over
+    // SetPreferences. The tray meter picks its colour up on the next 1 s rate tick.
+    theUiState.setStatsColors(m_statsColors);
 
     // Apply settings to live statistics panel
     if (m_statsPanel)
@@ -4383,6 +4429,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     // Files page (daemon-side)
     m_addFilesPausedCheck->setChecked(prefs.value(QStringLiteral("addNewFilesPaused")).toBool());
+    m_saveLoadSourcesCheck->setChecked(
+        prefs.value(QStringLiteral("useSaveLoadSources")).toBool(true));
     m_autoSharedFilesPrioCheck->setChecked(prefs.value(QStringLiteral("autoSharedFilesPriority")).toBool(true));
     m_autoDownloadPrioCheck->setChecked(prefs.value(QStringLiteral("autoDownloadPriority")).toBool(true));
     m_transferFullChunksCheck->setChecked(prefs.value(QStringLiteral("transferFullChunks")).toBool(true));
@@ -4499,13 +4547,12 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         btn->setChecked(true);
     if (auto* btn = m_extractMetaDataGroup->button(static_cast<int>(prefs.value(QStringLiteral("extractMetaData")).toInteger(1))))
         btn->setChecked(true);
-    m_logToDiskCheck->setChecked(prefs.value(QStringLiteral("logToDisk")).toBool());
+    m_logToDiskCoreCheck->setChecked(prefs.value(QStringLiteral("logToDiskCore")).toBool());
+    m_logToDiskGuiCheck->setChecked(prefs.value(QStringLiteral("logToDiskGui")).toBool());
     bool verboseOn = prefs.value(QStringLiteral("verbose")).toBool(true);
     m_verboseCheck->setChecked(verboseOn);
     m_logLevelSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("logLevel")).toInteger(5)));
     m_logLevelSpin->setEnabled(verboseOn);
-    m_verboseLogToDiskCheck->setChecked(prefs.value(QStringLiteral("verboseLogToDisk")).toBool());
-    m_verboseLogToDiskCheck->setEnabled(verboseOn);
     m_logSourceExchangeCheck->setChecked(prefs.value(QStringLiteral("logSourceExchange")).toBool());
     m_logSourceExchangeCheck->setEnabled(verboseOn);
     // Independent channel — stays enabled regardless of the verbose master toggle.
@@ -4618,6 +4665,7 @@ void OptionsDialog::fillDaemonSettingsFromPrefs()
     { QCborArray arr; for (const auto& d : thePrefs.tempDirs()) arr.append(d); p.insert(QStringLiteral("tempDirs"), arr); }
     { QCborArray arr; for (const auto& d : thePrefs.sharedDirs()) arr.append(d); p.insert(QStringLiteral("sharedDirs"), arr); }
     p.insert(QStringLiteral("addNewFilesPaused"), thePrefs.addNewFilesPaused());
+    p.insert(QStringLiteral("useSaveLoadSources"), thePrefs.useSaveLoadSources());
     p.insert(QStringLiteral("autoSharedFilesPriority"), thePrefs.autoSharedFilesPriority());
     p.insert(QStringLiteral("autoDownloadPriority"), thePrefs.autoDownloadPriority());
     p.insert(QStringLiteral("transferFullChunks"), thePrefs.transferFullChunks());

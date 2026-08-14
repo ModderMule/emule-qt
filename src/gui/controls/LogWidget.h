@@ -6,6 +6,8 @@
 /// Installs a Qt message handler to capture qCInfo/qCWarning/qCDebug output
 /// from the core logging categories and routes them to the appropriate tabs.
 
+#include "server/ServerMsgType.h"
+
 #include <QWidget>
 
 #include <cstdint>
@@ -26,8 +28,16 @@ public:
     explicit LogWidget(QWidget* parent = nullptr);
     ~LogWidget() override;
 
-    /// Append a message to the Server Info tab.
-    void appendServerInfo(const QString& msg);
+    /// Append one or more lines to the Server Info tab.
+    ///
+    /// Takes PLAIN TEXT — escaping, link detection and colouring happen here. The
+    /// pane is a QTextBrowser, so `append()` parses its argument as HTML: callers
+    /// must not pre-format, or a server message containing '<' or '&' is swallowed
+    /// (or injects markup) and embedded newlines collapse onto a single line.
+    ///
+    /// Unlike the log tabs this one carries no timestamp, mirroring the reference's
+    /// CemuleDlg::AddServerMessageLine (srchybrid/EmuleDlg.cpp:961-972).
+    void appendServerInfo(const QString& text, ServerMsgType type = ServerMsgType::Info);
 
     /// Append a message to the Log tab.
     /// If @p ts is non-empty it is used as the timestamp; otherwise current time.
@@ -64,6 +74,23 @@ public:
     /// Remove the global message handler.
     void removeMessageHandler();
 
+    /// Open or close the GUI's own log files (emuleqt.log, emuleqt_Verbose.log
+    /// and emuleqt_Kad.log in the config directory) to match the logToDiskGui
+    /// pref. The daemon runs DaemonApp::applyLogFileSettings() for its own set
+    /// — one switch per process. Safe to call at startup and whenever the pref
+    /// changes at runtime.
+    static void applyLogFileSettings();
+
+signals:
+    /// A link in one of the panes was clicked. Emitted instead of letting
+    /// QTextBrowser open it, so ed2k:// can be routed to the in-app importer
+    /// rather than handed to the OS.
+    ///
+    /// Carries the link as PLAIN TEXT, not a QUrl: an eD2K link is not a
+    /// representable QUrl, and one built from it stringifies back to an empty
+    /// string (see TextLinks.h).
+    void linkActivated(const QString& link);
+
 private:
     /// Insert a formatted log line into @p browser in sequence-order.
     /// If seqId >= the last entry's seqId, appends (fast path).
@@ -74,6 +101,14 @@ private:
     /// Remove oldest lines from @p browser if it exceeds the configured limit.
     void trimToLimit(QTextBrowser* browser, QList<qint64>& seqIds);
     static void trimToLimit(QTextBrowser* browser);
+
+    /// Write the startup banner (version + version-check link) into the Server
+    /// Info pane, as the reference does in CServerWnd::OnInitDialog.
+    void writeServerInfoBanner();
+
+    /// Draw attention to a tab that is not currently selected.
+    void highlightTab(int index);
+
     QTabBar* m_tabBar = nullptr;
     QStackedWidget* m_stack = nullptr;
     QTextBrowser* m_serverInfoBrowser = nullptr;

@@ -23,10 +23,12 @@ win32 {
 SOURCES += \
     IpcConnection.cpp \
     IpcMessage.cpp \
-    IpcProtocol.cpp
+    IpcProtocol.cpp \
+    PushCoalescer.cpp
 
 HEADERS += \
     CborSerializers.h \
     IpcConnection.h \
     IpcMessage.h \
-    IpcProtocol.h
+    IpcProtocol.h \
+    PushCoalescer.h

@@ -77,6 +77,13 @@ public:
     /// Get a copy of the connected server's data (may be null if not connected).
     [[nodiscard]] Server* currentServer() const { return m_curServer.get(); }
 
+    /// True until the first server message of this connection has been displayed.
+    /// ServerConnect uses it to emit the "Connection established on:" header into the
+    /// Server Info pane exactly once per connection, mirroring the reference's
+    /// m_bStartNewMessageLog (srchybrid CServerSocket::ProcessPacket:234-245).
+    [[nodiscard]] bool startNewMessageLog() const { return m_startNewMessageLog; }
+    void clearStartNewMessageLog() { m_startNewMessageLog = false; }
+
     // Override to track last transmission time
     void sendPacket(std::unique_ptr<Packet> packet, bool controlPacket = true,
                     uint32 actualPayloadSize = 0, bool forceImmediateSend = false) override;

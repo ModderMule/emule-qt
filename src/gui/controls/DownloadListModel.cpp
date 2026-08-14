@@ -75,16 +75,20 @@ QString fileTypeDisplay(const QString& type)
 }
 
 /// Map SourceFrom enum to display string.
+///
+/// The daemon sends the raw core value — CborSerializers.h pushes
+/// static_cast<int>(client->sourceFrom()) — so these cases must track SourceFrom
+/// (ClientStateDefs.h) exactly. This table used to start at "Local Server" and was shifted
+/// one position off the enum, mislabelling every source in the panel.
 QString sourceFromDisplay(int sourceFrom)
 {
     switch (sourceFrom) {
-    case 0:  return QObject::tr("Local Server");
-    case 1:  return QObject::tr("eD2K Server");
-    case 2:  return QObject::tr("Kademlia");
-    case 3:  return QObject::tr("Source Exchange");
-    case 4:  return QObject::tr("Passive");
-    case 5:  return QObject::tr("URL");
-    case 6:  return QObject::tr("SLS");
+    case 0:  return QObject::tr("eD2K Server");     // SourceFrom::Server
+    case 1:  return QObject::tr("Kademlia");        // SourceFrom::Kademlia
+    case 2:  return QObject::tr("Source Exchange"); // SourceFrom::SourceExchange
+    case 3:  return QObject::tr("Passive");         // SourceFrom::Passive
+    case 4:  return QObject::tr("Link");            // SourceFrom::Link
+    case 7:  return QObject::tr("SLS");             // SourceFrom::SLS (saved source list)
     default: return QObject::tr("Unknown");
     }
 }

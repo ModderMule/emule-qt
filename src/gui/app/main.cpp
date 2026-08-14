@@ -1,5 +1,6 @@
 #include "pch.h"
 #include <QApplication>
+#include <QDesktopServices>
 #include <QFile>
 #include <QFileOpenEvent>
 #include <QFileInfo>
@@ -34,7 +35,6 @@ static void unixSignalHandler(int)
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
 #include "app/PowerManager.h"
-#include "app/VersionChecker.h"
 #include "app/UiState.h"
 #include "dialogs/ClientSharedFilesDialog.h"
 #include "dialogs/CoreConnectDialog.h"
@@ -133,11 +133,40 @@ void handleEd2kUrl(const QString& urlStr, eMule::MainWindow& mainWindow, eMule::
         });
 }
 
+/// Act on a link clicked in the Server Info, chat or IRC panes.
+///
+/// @p link is plain text, never a QUrl — an eD2K link has no QUrl spelling and one
+/// built from it stringifies back to an empty string (see TextLinks.h). Routing it
+/// here is also what lets IrcPanel start downloads without owning an IpcClient.
+void routeLink(const QString& link, eMule::MainWindow& mainWindow, eMule::IpcClient& ipcClient)
+{
+    if (link == QStringLiteral("emuleqt:versioncheck")) {
+        // The reference opens the version-check page in a browser rather than
+        // checking in-place (CServerWnd::OnEnLinkServerBox —
+        // srchybrid/ServerWnd.cpp:682-695). Tools -> Links -> Version Check is
+        // where the in-app manifest check lives.
+        QDesktopServices::openUrl(QUrl(QString(eMule::kWebsiteUrl)));
+    } else if (link.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)) {
+        handleEd2kUrl(link, mainWindow, ipcClient);
+    } else if (!link.isEmpty()) {
+        QDesktopServices::openUrl(QUrl::fromUserInput(link));
+    }
+}
+
 } // anonymous namespace
 
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+
+    // Before anything can log: scripts/debug-gui.sh runs the daemon and the GUI
+    // into one terminal, so every console line needs a time and a process tag.
+    eMule::installConsoleMessagePattern(QStringLiteral("gui"));
+    // Installed here, not in LogWidget, so the file also captures the lines
+    // emitted before the window exists. The sink stays closed until
+    // LogWidget::applyLogFileSettings() below opens it.
+    eMule::installLogFileMessageHandler();
+
 #ifdef Q_OS_LINUX
     QApplication::setApplicationName(QStringLiteral("GUI"));
 #else
@@ -176,6 +205,10 @@ int main(int argc, char* argv[])
 
     const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
     eMule::thePrefs.load(prefsPath);
+
+    // Opens emuleqt.log / emuleqt_Verbose.log if the GUI switch is on. Re-run
+    // once the daemon's GetPreferences answer lands, and after the Options dialog.
+    eMule::LogWidget::applyLogFileSettings();
 
     // Determine locale: user-selected language or system default
     QLocale appLocale;
@@ -323,6 +356,28 @@ int main(int argc, char* argv[])
         auto* logWidget = mainWindow.serverPanel()->logWidget();
         QObject::connect(&ipcClient, &eMule::IpcClient::ipcLogMessage,
                          logWidget, &eMule::LogWidget::appendIpcMessage);
+        // Server Info pane. Deliberately NOT the log path: the daemon delivers these
+        // over a dedicated push event carrying the reference's LOG_INFO/LOG_SUCCESS
+        // distinction, and appendServerInfo takes plain text (it escapes internally).
+        QObject::connect(&ipcClient, &eMule::IpcClient::serverMessageReceived,
+                         logWidget, [logWidget](const eMule::Ipc::IpcMessage& msg) {
+            logWidget->appendServerInfo(
+                msg.fieldString(2),
+                static_cast<eMule::ServerMsgType>(msg.fieldInt(1)));
+        });
+
+        // Every pane that shows text somebody else sent us routes its links in-app
+        // rather than handing them to the OS. They arrive as plain text — see
+        // TextLinks.h for why they cannot be QUrls.
+        const auto onLink = [&mainWindow, &ipcClient](const QString& link) {
+            routeLink(link, mainWindow, ipcClient);
+        };
+        QObject::connect(logWidget, &eMule::LogWidget::linkActivated, &mainWindow, onLink);
+        QObject::connect(mainWindow.messagesPanel(), &eMule::MessagesPanel::linkActivated,
+                         &mainWindow, onLink);
+        QObject::connect(mainWindow.ircPanel(), &eMule::IrcPanel::linkActivated,
+                         &mainWindow, onLink);
+
         QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
                          logWidget, [logWidget](const eMule::Ipc::IpcMessage& msg) {
             const QString cat = msg.fieldString(1);
@@ -349,7 +404,14 @@ int main(int argc, char* argv[])
             if (cat == QStringLiteral("emule.kad"))
                 logWidget->appendKad(colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.server"))
-                logWidget->appendServerInfo(colored);
+                // Raw text, not `colored` — appendServerInfo escapes internally.
+                // The pane's real feed is PushServerMessage; this only catches
+                // anything the daemon happens to log to emule.server.
+                logWidget->appendServerInfo(
+                    text, severity == QtCriticalMsg || severity == QtFatalMsg
+                              ? eMule::ServerMsgType::Error
+                          : severity == QtWarningMsg ? eMule::ServerMsgType::Warning
+                                                     : eMule::ServerMsgType::Info);
             else if (cat == QStringLiteral("emule.net"))
                 logWidget->appendVerbose(colored, timestamp, seqId);
             else if (severity == QtDebugMsg || severity == QtWarningMsg)
@@ -377,7 +439,8 @@ int main(int argc, char* argv[])
                 mainWindow.setEd2kStatus(
                     info.value(QStringLiteral("connected")).toBool(),
                     info.value(QStringLiteral("connecting")).toBool(),
-                    info.value(QStringLiteral("firewalled")).toBool());
+                    info.value(QStringLiteral("firewalled")).toBool(),
+                    info.value(QStringLiteral("lowID")).toBool());
             });
 
             // Request initial Kad state
@@ -398,12 +461,17 @@ int main(int argc, char* argv[])
             ipcClient.sendRequest(std::move(reqPrefs),
                                   [](const eMule::Ipc::IpcMessage& resp) {
                 eMule::thePrefs.updateFromCbor(resp.fieldMap(1));
+                // logToDiskGui is stored by the daemon (it owns preferences.yml)
+                // but acted on here, so the sink follows the value that just landed.
+                eMule::LogWidget::applyLogFileSettings();
             });
 
-            // Auto version check after connection is established
+            // Automatic version check: one now if the interval has elapsed, then
+            // hourly for as long as the app runs. Started here rather than at
+            // construction so the preferences reload just above has landed first;
+            // idempotent, because connected() fires again on every reconnect.
             QTimer::singleShot(2000, &mainWindow, [&mainWindow]() {
-                auto* vc = mainWindow.findChild<eMule::VersionChecker*>();
-                if (vc) vc->check(false);
+                mainWindow.startVersionChecks();
             });
         });
 
@@ -465,7 +533,8 @@ int main(int argc, char* argv[])
             mainWindow.setEd2kStatus(
                 info.value(QStringLiteral("connected")).toBool(),
                 info.value(QStringLiteral("connecting")).toBool(),
-                info.value(QStringLiteral("firewalled")).toBool());
+                info.value(QStringLiteral("firewalled")).toBool(),
+                info.value(QStringLiteral("lowID")).toBool());
         });
 
         // Wire Kad push events to the status bar
@@ -535,7 +604,7 @@ int main(int argc, char* argv[])
         // Reset status when IPC connection to daemon is lost
         QObject::connect(&ipcClient, &eMule::IpcClient::disconnected,
                          &mainWindow, [&mainWindow]() {
-            mainWindow.setEd2kStatus(false, false, false);
+            mainWindow.setEd2kStatus(false, false, false, false);
             mainWindow.setKadStatus(false, false, false);
             mainWindow.setNetworkStats(0, 0);
             mainWindow.updateTransferRates(0.0, 0.0, 0.0, 0.0);

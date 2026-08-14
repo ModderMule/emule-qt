@@ -15,6 +15,7 @@
 #include <QMutex>
 #include <QString>
 #include <QTextStream>
+#include <QtLogging>
 
 #include <cstdint>
 #include <limits>
@@ -106,6 +107,50 @@ void logError(const QString& msg);
 
 /// Log a debug message (only in debug/verbose mode).
 void logDebug(const QString& msg);
+
+// ---------------------------------------------------------------------------
+// Console output format
+// ---------------------------------------------------------------------------
+
+/// Give this process's console output the format
+/// `HH:mm:ss.zzz [tag] category: message`.
+///
+/// @p processTag names the process ("core" / "gui") so the two can be told
+/// apart when they share a terminal — scripts/debug-gui.sh runs both. It is
+/// padded to four columns so the category always starts at the same offset.
+///
+/// Only the default handler is affected; a handler installed with
+/// qInstallMessageHandler still receives the unformatted message.
+void installConsoleMessagePattern(const QString& processTag);
+
+// ---------------------------------------------------------------------------
+// Rotating log file sink
+// ---------------------------------------------------------------------------
+//
+// Three files per process — `<baseName>.log`, `<baseName>_Verbose.log` and
+// `<baseName>_Kad.log` — mirroring the reference's theLog / theVerboseLog plus a
+// dedicated Kad log. Both message handlers feed it, so what lands on disk is
+// what the GUI log tabs show, Kad tab included.
+
+/// Open (or with @p enabled false, close) this process's three log files in
+/// @p dir. Safe to call repeatedly — the settings are user-togglable.
+/// Reports an open failure via logError() and leaves the sink closed.
+void applyLogFileSink(const QString& dir, const QString& baseName,
+                      bool enabled, uint32 maxSize);
+
+/// Append one line to the sink, or do nothing if it is closed. Thread-safe.
+/// emule.kad goes to the _Kad file whatever its severity; of the rest,
+/// QtDebugMsg goes to the _Verbose file and every other severity to the main one.
+void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg);
+
+/// Route every emule.* message into the sink, chaining to the handler already
+/// installed. Call it at the top of main(): installed there it also catches the
+/// startup lines emitted before the daemon's log forwarder or the GUI's
+/// LogWidget exist, which their own handlers necessarily miss.
+void installLogFileMessageHandler();
+
+/// Close all three files.
+void closeLogFileSink();
 
 // ---------------------------------------------------------------------------
 // Gated server-verbose logging (server TCP/UDP/search handshake detail)

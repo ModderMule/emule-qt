@@ -24,6 +24,9 @@
     <ClCompile Include="IpcProtocol.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PushCoalescer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CborSerializers.h">
@@ -38,6 +41,9 @@
     <ClInclude Include="IpcProtocol.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <QtMoc Include="PushCoalescer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

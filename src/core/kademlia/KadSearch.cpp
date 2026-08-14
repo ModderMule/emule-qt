@@ -55,6 +55,15 @@ Search::~Search()
         m_nodeSpecialSearchRequester = nullptr;
     }
 
+    // Release the part file that owns this source search. MFC Search.cpp:130-134.
+    // Without this the file keeps a search ID that no longer refers to anything, and
+    // PartFile::process()'s `if (!kadFileSearchID())` guard blocks every later source
+    // search for the rest of the session — the file only recovers if it is paused.
+    if (theApp.downloadQueue) {
+        if (auto* partFile = theApp.downloadQueue->fileByKadFileSearchID(getSearchID()))
+            partFile->setKadFileSearchID(0);
+    }
+
     // Release the routing-zone contacts we pinned; the zone owns them.
     // MFC Search.cpp:149-150.
     for (auto& [dist, contact] : m_inUse) {

@@ -95,6 +95,7 @@ SOURCES += \
     files/PublishKeywordList.cpp \
     files/ShareableFile.cpp \
     files/SharedFileList.cpp \
+    files/SourceSaver.cpp \
     files/StatisticFile.cpp \
     friends/Friend.cpp \
     friends/FriendList.cpp \
@@ -137,6 +138,7 @@ SOURCES += \
     prefs/Preferences.cpp \
     protocol/ED2KLink.cpp \
     protocol/Tag.cpp \
+    search/GlobalSearchScheduler.cpp \
     search/SearchExpr.cpp \
     search/SearchExprParser.cpp \
     search/SearchFile.cpp \
@@ -146,6 +148,8 @@ SOURCES += \
     server/ServerConnect.cpp \
     server/ServerList.cpp \
     stats/Statistics.cpp \
+    stats/StatsHistory.cpp \
+    stats/StatsSnapshot.cpp \
     transfer/DownloadQueue.cpp \
     transfer/ImportParts.cpp \
     transfer/Scheduler.cpp \
@@ -200,6 +204,7 @@ HEADERS += \
     files/PublishKeywordList.h \
     files/ShareableFile.h \
     files/SharedFileList.h \
+    files/SourceSaver.h \
     files/StatisticFile.h \
     friends/Friend.h \
     friends/FriendList.h \
@@ -248,6 +253,7 @@ HEADERS += \
     prefs/Preferences.h \
     protocol/ED2KLink.h \
     protocol/Tag.h \
+    search/GlobalSearchScheduler.h \
     search/SearchExpr.h \
     search/SearchExprParser.h \
     search/SearchFile.h \
@@ -257,6 +263,8 @@ HEADERS += \
     server/ServerConnect.h \
     server/ServerList.h \
     stats/Statistics.h \
+    stats/StatsHistory.h \
+    stats/StatsSnapshot.h \
     transfer/DownloadQueue.h \
     transfer/ImportParts.h \
     transfer/Scheduler.h \

@@ -350,7 +350,7 @@ void tst_ServerLocalTest::connectToLocalServer(bool noCrypt, quint16 overridePor
     }, 15'000);
 
     for (int i = 0; i < messageSpy.count(); ++i)
-        qDebug() << "Server message:" << messageSpy.at(i).first().toString();
+        qDebug() << "Server message:" << messageSpy.at(i).at(1).toString();
 
     QVERIFY2(connected, "Failed to connect to local eNode server within 15s");
 
@@ -804,7 +804,7 @@ void tst_ServerLocalTest::searchForKeywordUDP()
 
     // Register the server IP so SearchList accepts the UDP response
     const uint32 serverIP = htonl(0x7F000001); // 127.0.0.1 in network byte order
-    m_searchList->addSentUDPRequestIP(serverIP);
+    m_searchList->addSentUDPRequestIP(searchID, serverIP);
 
     // Build OP_GLOBSEARCHREQ packet (same keyword payload format as OP_SEARCHREQUEST)
     const QByteArray keywordUtf8 = keyword.toUtf8();

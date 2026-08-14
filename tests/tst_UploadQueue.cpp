@@ -15,6 +15,7 @@
 #include "prefs/Preferences.h"
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
+#include "net/LastCommonRouteFinder.h"
 #include "utils/Opcodes.h"
 
 #include <QSignalSpy>
@@ -53,6 +54,27 @@ private slots:
     void connectingSlot_activatedByHandshake();
     void connectingSlot_notGrantedASlot_staysConnecting();
     void connectingSlot_releasedOnDisconnect();
+
+    // Slot gating — acceptNewClient, USS off (the cap comes from thePrefs)
+    void acceptNewClient_slotFloorAndCeiling();
+    void acceptNewClient_lowIdGetsOneExtraSlot();
+    void acceptNewClient_datarateGate();
+    void acceptNewClient_finiteLimitFromPrefs();
+    void acceptNewClient_unlimitedSkipsTheLimitGate();
+    void acceptNewClient_unlimitedCappedByGraphUploadRate();
+    void acceptNewClient_finiteLimitIgnoresGraphUploadRate();
+
+    // ...and USS on (the cap comes from LastCommonRouteFinder)
+    void acceptNewClient_ussSuppliesTheLimit();
+    void acceptNewClient_ussWithNoMeasurementBlocks();
+    void acceptNewClient_ussWithoutFinderFallsBackToPrefs();
+
+    // Slot gating — the forceNewClient ladder
+    void slotLadder_flatFloorsBelowTheComputedTiers();
+    void slotLadder_computedTiersScaleWithDatarate();
+    void slotLadder_upPerClientCappedAtMaxDatarate();
+    void slotLadder_unlimitedUsesTheDatarateDivisor();
+    void slotLadder_ussSuppliesTheLimit();
 };
 
 namespace {
@@ -65,6 +87,65 @@ void setupClient(UpDownClient& c, const QString& ip, uint8 hashByte, uint16 port
     uint8 hash[16]{};
     std::memset(hash, hashByte, sizeof(hash));
     c.setUserHash(hash);
+}
+
+/// Saves and restores every global the two slot gates read: the three preferences and the
+/// USS finder. Without this a slot that leaves dynUpEnabled on would silently change the
+/// verdict of every later slot in the binary.
+class SlotGateGuard {
+public:
+    SlotGateGuard()
+        : m_maxUpload(thePrefs.maxUpload())
+        , m_maxGraph(thePrefs.maxGraphUploadRate())
+        , m_dynUp(thePrefs.dynUpEnabled())
+        , m_finder(theApp.lastCommonRouteFinder)
+    {
+    }
+    ~SlotGateGuard()
+    {
+        theApp.lastCommonRouteFinder = m_finder;
+        thePrefs.setDynUpEnabled(m_dynUp);
+        thePrefs.setMaxGraphUploadRate(m_maxGraph);
+        thePrefs.setMaxUpload(m_maxUpload);
+    }
+
+    SlotGateGuard(const SlotGateGuard&) = delete;
+    SlotGateGuard& operator=(const SlotGateGuard&) = delete;
+
+private:
+    uint32 m_maxUpload;
+    uint32 m_maxGraph;
+    bool m_dynUp;
+    LastCommonRouteFinder* m_finder;
+};
+
+/// Run @p finder purely as a programmable source of getUpload().
+///
+/// setPrefs({enabled = false}) puts run() on its pass-through branch
+/// (LastCommonRouteFinder.cpp:174-179), which stores maxUpload and nothing else — no
+/// traceroute, no ICMP, no timing. UploadQueue only ever reads getUpload(), so pass-through
+/// versus actively-measuring is invisible to the gates, and this is the only deterministic
+/// way to hand them a chosen value: the active branch needs a real route to ping.
+///
+/// One finder per value. The published limit cannot be changed afterwards — the
+/// disabled-branch wait at :189 deliberately does not test m_prefsReceived, so a second
+/// setPrefs() would not be picked up for another 180 s.
+///
+/// This doubles as a regression pin for that m_prefsReceived fix: before it, phase 0 burned
+/// the full 180 s timeout before publishing anything and this would return false.
+[[nodiscard]] bool startFinderReporting(LastCommonRouteFinder& finder, uint32 kbPerSec)
+{
+    USSParams params;
+    params.enabled = false;
+    params.maxUpload = kbPerSec;      // setPrefs converts KB/s → bytes/s
+    finder.setPrefs(params);
+    finder.start();
+
+    const uint32 want = kbPerSec * 1024;
+    QDeadlineTimer deadline(5000);
+    while (finder.getUpload() != want && !deadline.hasExpired())
+        QTest::qWait(10);
+    return finder.getUpload() == want;
 }
 
 } // namespace
@@ -693,6 +774,375 @@ void tst_UploadQueue::connectingSlot_releasedOnDisconnect()
 
     theApp.uploadQueue = nullptr;
     theApp.clientList = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Slot gating — acceptNewClient
+//
+// Every slot below drives a fresh, EMPTY UploadQueue, which pins
+// targetClientDataRate(false) == 3072 and (true) == 2304 (the `openSlots <= 3` branch of
+// UploadQueue.cpp:139-150). All the expected slot counts are computed from that pair, so
+// the first test asserts it explicitly rather than leaving it implicit everywhere else.
+//
+// The slot count and the datarate are passed in rather than built up on the queue: the
+// datarate only moves when real bytes flow through the throttler, and with m_datarate == 0
+// the `curUploadSlots >= datarate / minTgtRate` gate short-circuits before any of the
+// interesting logic. That is why the parameterised overload exists — MFC has it too
+// (srchybrid/UploadQueue.h:99).
+// ---------------------------------------------------------------------------
+
+void tst_UploadQueue::acceptNewClient_slotFloorAndCeiling()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);            // unlimited
+    thePrefs.setMaxGraphUploadRate(0);
+
+    UploadQueue queue;
+    QCOMPARE(queue.targetClientDataRate(false), 3072u);
+    QCOMPARE(queue.targetClientDataRate(true), 2304u);
+
+    // Below max(MIN_UP_CLIENTS_ALLOWED, 4) nothing else is consulted — not even a zero
+    // datarate, which every gate below the floor would refuse.
+    QVERIFY(queue.acceptNewClient(3, 0));
+
+    // ...and at MAX_UP_CLIENTS_ALLOWED nothing rescues it, however much headroom there is.
+    QVERIFY(!queue.acceptNewClient(MAX_UP_CLIENTS_ALLOWED, 10'000'000));
+}
+
+// The one extra slot lowID users get: they are skipped when it was actually their turn,
+// so the gate is re-asked with one slot discounted. MFC srchybrid/UploadQueue.cpp:388-391.
+void tst_UploadQueue::acceptNewClient_lowIdGetsOneExtraSlot()
+{
+    qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(250);          // 83-slot ladder, so promotion is not what blocks
+    thePrefs.setMaxGraphUploadRate(0);
+
+    ClientList clientList;
+    theApp.clientList = &clientList;
+
+    UploadQueue queue;
+    theApp.uploadQueue = &queue;
+
+    // Fill the uploading list to exactly the floor. Each client is socketless, so it lands
+    // in UploadState::Connecting and stays on the list as long as process() is not called.
+    UpDownClient clients[4];
+    for (int i = 0; i < 4; ++i) {
+        setupClient(clients[i], QStringLiteral("10.40.0.%1").arg(i + 1),
+                    static_cast<uint8>(0xA0 + i));
+        // forceNewClient() throttles promotions to one per second once the first two free
+        // slots are gone, so promotions 3 and 4 have to wait it out.
+        if (i >= 2)
+            QTest::qWait(1100);
+        QVERIFY(queue.addClientToQueue(&clients[i]));
+    }
+    QCOMPARE(queue.uploadQueueLength(), 4);
+
+    // At the floor the real datarate (still 0) refuses another slot...
+    QVERIFY(!queue.acceptNewClient(false));
+    // ...but discounting the lowID slot drops the count back under the floor.
+    QVERIFY(queue.acceptNewClient(true));
+
+    for (auto& c : clients)
+        queue.removeFromUploadQueue(&c);
+    theApp.uploadQueue = nullptr;
+    theApp.clientList = nullptr;
+}
+
+void tst_UploadQueue::acceptNewClient_datarateGate()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);            // UNLIMITED — skips the cap gate below it
+    thePrefs.setMaxGraphUploadRate(0);   // ...and the tail clause
+
+    UploadQueue queue;
+
+    // minTgtRate is 2304 B/s, so the measured datarate has to buy strictly more than the
+    // slots already open. Exactly ten slots' worth is not enough for an eleventh.
+    QVERIFY(!queue.acceptNewClient(10, 10 * 2304));
+    QVERIFY(queue.acceptNewClient(10, 11 * 2304));
+}
+
+void tst_UploadQueue::acceptNewClient_finiteLimitFromPrefs()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(30);
+    thePrefs.setMaxGraphUploadRate(0);
+
+    UploadQueue queue;
+
+    // 30 KB/s at 3072 B/s per client = 10 slots. The datarate is far above what the gate
+    // above needs (10'000'000 / 2304 = 4340 slots), so this pins the cap gate alone.
+    QVERIFY(!queue.acceptNewClient(10, 10'000'000));
+    QVERIFY(queue.acceptNewClient(9, 10'000'000));
+}
+
+// Regression pin for the maxUpload sentinel fix. eMuleQt stores "no limit" as a raw 0;
+// reading that instead of maxUploadLimit()'s UNLIMITED turned this gate into
+// `curUploadSlots >= 0`, hard-capping an unlimited upload at 4 slots.
+void tst_UploadQueue::acceptNewClient_unlimitedSkipsTheLimitGate()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);
+    thePrefs.setMaxGraphUploadRate(0);
+
+    UploadQueue queue;
+    QVERIFY2(queue.acceptNewClient(100, 10'000'000),
+             "an unlimited upload limit must skip the cap gate, not derive a zero cap");
+}
+
+// The tail clause restored from MFC srchybrid/UploadQueue.cpp:413-416: unlimited is still
+// bounded by the configured line capacity. eMuleQt had dropped it for a bare `return true`.
+void tst_UploadQueue::acceptNewClient_unlimitedCappedByGraphUploadRate()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);
+    thePrefs.setMaxGraphUploadRate(250);
+
+    UploadQueue queue;
+
+    // 250 KB/s at 3072 B/s per client = 83 slots.
+    QVERIFY(!queue.acceptNewClient(83, 10'000'000));
+    QVERIFY(queue.acceptNewClient(82, 10'000'000));
+
+    // 0 means "line capacity unknown" here — MFC uses UNLIMITED for that state and falls
+    // back to an estimate, but there is no maxGraphUploadRateEstimated in this port, so 0
+    // simply lifts the cap.
+    thePrefs.setMaxGraphUploadRate(0);
+    QVERIFY(queue.acceptNewClient(100, 10'000'000));
+}
+
+// ...and the mirror image: the tail clause only ever binds an UNLIMITED cap, because a
+// finite one has already been enforced by the gate above it. Capping it again by the line
+// capacity would cap it twice.
+//
+// Written USS-off deliberately, even though it is the USS case that motivates it. With USS
+// on the cap is getUpload()/1024, which cannot reach UINT32_MAX, so `maxSpeed != UNLIMITED`
+// is *always* true there and the tail clause can never bind — which in turn makes that
+// clause's `|| thePrefs.dynUpEnabled()` disjunct unreachable. The same holds in MFC
+// (srchybrid/UploadQueue.cpp:405,414); the disjunct is kept for fidelity, not for effect.
+// A USS-on version of this test would assert a value that two independent disjuncts both
+// produce, so no change to the clause could ever fail it.
+void tst_UploadQueue::acceptNewClient_finiteLimitIgnoresGraphUploadRate()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(300);          // finite → 100 slots
+    thePrefs.setMaxGraphUploadRate(1);   // 1 KB/s → 0 slots, if it were applied as well
+
+    UploadQueue queue;
+    QVERIFY(queue.acceptNewClient(50, 10'000'000));
+    QVERIFY(!queue.acceptNewClient(100, 10'000'000));   // still capped by its own limit
+}
+
+// ---------------------------------------------------------------------------
+// ...the same gate with USS enabled, where the cap comes from the finder instead.
+//
+// Not covered, and not coverable here: forceNewClient()'s USS veto
+// (`!theApp.lastCommonRouteFinder->acceptNewClient()`). That flag is only cleared inside
+// the active ping loop (LastCommonRouteFinder.cpp:487), which needs a real route to
+// traceroute and ping; faking it would mean making the finder's accessors virtual.
+// ---------------------------------------------------------------------------
+
+void tst_UploadQueue::acceptNewClient_ussSuppliesTheLimit()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(true);
+    thePrefs.setMaxGraphUploadRate(0);
+
+    UploadQueue queue;
+
+    // Prefs would allow 1000 KB/s → 333 slots. The finder says 30 KB/s → 10.
+    thePrefs.setMaxUpload(1000);
+    LastCommonRouteFinder slow;
+    QVERIFY(startFinderReporting(slow, 30));
+    theApp.lastCommonRouteFinder = &slow;
+
+    QVERIFY2(!queue.acceptNewClient(10, 10'000'000),
+             "with USS on the finder's limit must win, not the (larger) prefs limit");
+    QVERIFY(queue.acceptNewClient(9, 10'000'000));
+
+    // ...and the other way round, so neither direction can pass by accident: prefs would
+    // allow only 3 slots, the finder 100.
+    thePrefs.setMaxUpload(10);
+    LastCommonRouteFinder fast;
+    QVERIFY(startFinderReporting(fast, 300));
+    theApp.lastCommonRouteFinder = &fast;
+
+    QVERIFY2(queue.acceptNewClient(50, 10'000'000),
+             "with USS on the finder's limit must win, not the (smaller) prefs limit");
+}
+
+void tst_UploadQueue::acceptNewClient_ussWithNoMeasurementBlocks()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(true);
+    thePrefs.setMaxUpload(0);            // would be UNLIMITED if prefs were consulted
+    thePrefs.setMaxGraphUploadRate(0);
+
+    LastCommonRouteFinder idle;          // never started, so nothing was ever published
+    QCOMPARE(idle.getUpload(), 0u);
+    theApp.lastCommonRouteFinder = &idle;
+
+    UploadQueue queue;
+
+    // USS on with nothing measured yet is a cap of 0 KB/s, and that blocks every slot
+    // above the floor. Deliberately distinct from the unlimited case above: maxUpload is
+    // 0 in both, but with USS on the prefs value is never read.
+    QVERIFY(!queue.acceptNewClient(10, 10'000'000));
+    QVERIFY(queue.acceptNewClient(3, 10'000'000));   // the floor still wins
+}
+
+// eMuleQt null-checks the finder where MFC dereferences it unconditionally
+// (srchybrid/UploadQueue.cpp:405). Anything driving the queue without a CoreSession — this
+// test binary included — takes that path.
+void tst_UploadQueue::acceptNewClient_ussWithoutFinderFallsBackToPrefs()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(true);
+    thePrefs.setMaxUpload(30);
+    thePrefs.setMaxGraphUploadRate(0);
+    theApp.lastCommonRouteFinder = nullptr;
+
+    UploadQueue queue;
+
+    // Same 10-slot cap as acceptNewClient_finiteLimitFromPrefs: the prefs limit was used.
+    QVERIFY(!queue.acceptNewClient(10, 10'000'000));
+    QVERIFY(queue.acceptNewClient(9, 10'000'000));
+}
+
+// ---------------------------------------------------------------------------
+// Slot gating — the forceNewClient ladder
+//
+// Same empty-queue setup as above, so upPerClient starts at targetClientDataRate(false)
+// == 3072 everywhere. The divisors (/20, /30, /43) and the MIN_UP_CLIENTS_ALLOWED+5/+4/+3
+// floors are the deliberate "eMule 2026 bandwidth" divergence; MFC has one /43 tier and
+// stops at +3, so these numbers cannot be checked against srchybrid — they are pinned here
+// so a later edit to the ladder has to be a deliberate one.
+// ---------------------------------------------------------------------------
+
+void tst_UploadQueue::slotLadder_flatFloorsBelowTheComputedTiers()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxGraphUploadRate(0);
+
+    UploadQueue queue;
+
+    // With no datarate measured, none of the tier bumps apply and upPerClient stays 3072.
+    // Each pair is (floor - 1) → allowed, floor → refused.
+    struct { uint32 maxUploadKB; int floor; } cases[] = {
+        {   9, MIN_UP_CLIENTS_ALLOWED     },   // ≤9 KB/s: the bare minimum, 2
+        {  10, MIN_UP_CLIENTS_ALLOWED + 1 },   // >9:  3
+        {  17, MIN_UP_CLIENTS_ALLOWED + 2 },   // >16: 4
+        {  30, 10 },                           // >25: max(30*1024/3072, 5)  = 10
+        { 150, 50 },                           // >100: max(150*1024/3072, 6) = 50
+    };
+
+    for (const auto& c : cases) {
+        thePrefs.setMaxUpload(c.maxUploadKB);
+        QVERIFY2(queue.slotLadderAllows(c.floor - 1, 0),
+                 qPrintable(QStringLiteral("%1 KB/s should justify %2 slots")
+                                .arg(c.maxUploadKB).arg(c.floor)));
+        QVERIFY2(!queue.slotLadderAllows(c.floor, 0),
+                 qPrintable(QStringLiteral("%1 KB/s should stop at %2 slots")
+                                .arg(c.maxUploadKB).arg(c.floor)));
+    }
+}
+
+// The three upPerClient divisors. Each case is chosen so the two divisors it is NOT using
+// would give a different answer at the asserted boundary, so a mis-tiered edit fails here.
+void tst_UploadQueue::slotLadder_computedTiersScaleWithDatarate()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxGraphUploadRate(0);
+
+    UploadQueue queue;
+
+    // >49 KB/s → /43. upPerClient = 3072 + 430'000/43 = 13'072;
+    //   max(60*1024 / 13'072, 5) = max(4, 5) = 5.   (Without the bump it would be 20.)
+    thePrefs.setMaxUpload(60);
+    QVERIFY(queue.slotLadderAllows(4, 430'000));
+    QVERIFY(!queue.slotLadderAllows(5, 430'000));
+
+    // >200 KB/s → /30. upPerClient = 3072 + 300'000/30 = 13'072;
+    //   max(300*1024 / 13'072, 7) = 23.   (/43 would give 30, /20 would give 17.)
+    thePrefs.setMaxUpload(300);
+    QVERIFY(queue.slotLadderAllows(22, 300'000));
+    QVERIFY(!queue.slotLadderAllows(23, 300'000));
+
+    // >500 KB/s → /20. upPerClient = 3072 + 205'000/20 = 13'322;
+    //   max(600*1024 / 13'322, 7) = 46.   (/30 would give 62.)
+    thePrefs.setMaxUpload(600);
+    QVERIFY(queue.slotLadderAllows(45, 205'000));
+    QVERIFY(!queue.slotLadderAllows(46, 205'000));
+}
+
+void tst_UploadQueue::slotLadder_upPerClientCappedAtMaxDatarate()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxGraphUploadRate(0);
+    thePrefs.setMaxUpload(2000);
+
+    UploadQueue queue;
+
+    // 3072 + 4'000'000/20 = 203'072, which is above UPLOAD_CLIENT_MAXDATARATE and so gets
+    // clamped to 131'072 — raising the ladder from max(2'048'000/203'072, 7) = 10 slots to
+    // max(2'048'000/131'072, 7) = 15. Slot 12 is inside that gap, so it only passes if the
+    // clamp is applied.
+    QCOMPARE(uint32(UPLOAD_CLIENT_MAXDATARATE), 131'072u);
+    QVERIFY2(queue.slotLadderAllows(12, 4'000'000),
+             "upPerClient must be clamped at UPLOAD_CLIENT_MAXDATARATE");
+    QVERIFY(queue.slotLadderAllows(14, 4'000'000));
+    QVERIFY(!queue.slotLadderAllows(15, 4'000'000));
+}
+
+// Second regression pin for the maxUpload sentinel fix. Unlimited takes a wholly different
+// branch here — slots are derived from the measured datarate rather than from a cap. With
+// the raw 0 the ladder instead fell all the way through to nMaxSlots = MIN_UP_CLIENTS_ALLOWED,
+// so an unlimited upload was pinned to 2 slots.
+void tst_UploadQueue::slotLadder_unlimitedUsesTheDatarateDivisor()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);
+    thePrefs.setMaxGraphUploadRate(0);
+
+    UploadQueue queue;
+
+    // UNLIMITED is > 500, so upPerClient = 3072 + 1'000'000/20 = 53'072, and the ladder is
+    // the measured datarate divided by that: 1'000'000 / 53'072 = 18.
+    QVERIFY2(queue.slotLadderAllows(17, 1'000'000),
+             "unlimited must derive its slot count from the datarate, not fall to the minimum");
+    QVERIFY(!queue.slotLadderAllows(18, 1'000'000));
+}
+
+void tst_UploadQueue::slotLadder_ussSuppliesTheLimit()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(true);
+    thePrefs.setMaxGraphUploadRate(0);
+    thePrefs.setMaxUpload(10);           // prefs alone would allow 3 slots
+
+    LastCommonRouteFinder finder;
+    QVERIFY(startFinderReporting(finder, 300));
+    theApp.lastCommonRouteFinder = &finder;
+
+    UploadQueue queue;
+
+    // 300 KB/s with no datarate measured: max(300*1024 / 3072, 7) = 100 slots.
+    QVERIFY2(queue.slotLadderAllows(50, 0),
+             "the ladder must read the finder's limit, not the (much smaller) prefs limit");
+    QVERIFY(queue.slotLadderAllows(99, 0));
+    QVERIFY(!queue.slotLadderAllows(100, 0));
 }
 
 QTEST_GUILESS_MAIN(tst_UploadQueue)

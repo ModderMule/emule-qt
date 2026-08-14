@@ -30,6 +30,23 @@ namespace eMule {
 
 class IrcClient;
 
+/// mIRC formatting state, carried across the pieces of one message.
+///
+/// A message is split at its links so they can be linkified from the raw text, and
+/// bold/italic/colour has to survive those cuts — hence the state lives here rather
+/// than inside renderMircCodes().
+struct MircFormat {
+    bool bold      = false;
+    bool italic    = false;
+    bool underline = false;
+    int  fg        = -1;
+    int  bg        = -1;
+    bool inSpan    = false;
+
+    /// Close the open <span>, if any. Returns the markup to append.
+    [[nodiscard]] QString close();
+};
+
 /// Per-channel state for the IRC panel.
 struct IrcChannel {
     enum Type { Status, ChannelList, Normal, Private };
@@ -52,6 +69,13 @@ public:
 
     /// Set a custom font on all IRC text browsers.
     void setCustomFont(const QFont& font);
+
+signals:
+    /// A link in a channel, private or status tab was clicked. Carries the link as
+    /// PLAIN TEXT, not a QUrl: an eD2K link is not a representable QUrl, and one
+    /// built from it stringifies back to an empty string (see TextLinks.h).
+    /// main.cpp routes it, which is why this panel needs no IpcClient of its own.
+    void linkActivated(const QString& link);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -110,9 +134,8 @@ private:
     void appendToChannel(const QString& channel, const QString& html);
     void appendToStatus(const QString& html);
     [[nodiscard]] QString formatTimestamp() const;
-    [[nodiscard]] QString renderMircCodes(const QString& text) const;
+    [[nodiscard]] QString renderMircCodes(QStringView text, MircFormat& fmt) const;
     [[nodiscard]] QString renderSmileys(const QString& text) const;
-    [[nodiscard]] QString detectUrls(const QString& text) const;
     [[nodiscard]] QString formatMessage(const QString& text) const;
 
     // Nick list

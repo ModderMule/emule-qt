@@ -101,13 +101,18 @@ SOURCES += \
     dialogs/AddFriendDialog.cpp \
     dialogs/ArchivePreviewPanel.cpp \
     dialogs/ClientDetailDialog.cpp \
+    dialogs/CommentsPanel.cpp \
     dialogs/CoreConnectDialog.cpp \
+    dialogs/DetailDialog.cpp \
     dialogs/FileDetailDialog.cpp \
+    dialogs/FindInListDialog.cpp \
     dialogs/FirstStartWizard.cpp \
     dialogs/ImportDownloadsDialog.cpp \
+    dialogs/MetadataPage.cpp \
     dialogs/NetworkInfoDialog.cpp \
     dialogs/OptionsDialog.cpp \
     dialogs/PasteLinksDialog.cpp \
+    dialogs/SearchDetailDialog.cpp \
     panels/IrcPanel.cpp \
     panels/KadPanel.cpp \
     panels/MessagesPanel.cpp \
@@ -146,13 +151,18 @@ HEADERS += \
     dialogs/AddFriendDialog.h \
     dialogs/ArchivePreviewPanel.h \
     dialogs/ClientDetailDialog.h \
+    dialogs/CommentsPanel.h \
     dialogs/CoreConnectDialog.h \
+    dialogs/DetailDialog.h \
     dialogs/FileDetailDialog.h \
+    dialogs/FindInListDialog.h \
     dialogs/FirstStartWizard.h \
     dialogs/ImportDownloadsDialog.h \
+    dialogs/MetadataPage.h \
     dialogs/NetworkInfoDialog.h \
     dialogs/OptionsDialog.h \
     dialogs/PasteLinksDialog.h \
+    dialogs/SearchDetailDialog.h \
     panels/IrcPanel.h \
     panels/KadPanel.h \
     panels/MessagesPanel.h \

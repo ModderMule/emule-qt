@@ -115,6 +115,7 @@ public:
 
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
     SocketSentBytes sendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
+    [[nodiscard]] bool hasControlQueue() const override;
     [[nodiscard]] uint32 getLastCalledSend() const override { return m_lastCalledSend; }
     [[nodiscard]] uint32 getNeededBytes() override;
     [[nodiscard]] bool isBusyExtensiveCheck() override;
@@ -126,6 +127,11 @@ public:
     // --- Proxy ---
 
     void initProxySupport(const ProxySettings& settings);
+
+    /// How many times the send-retry timer has fired on this socket. Exposed for
+    /// tests and wakeup diagnostics: a socket that cannot send must back off rather
+    /// than retry at a fixed 10 ms. Only touched on the socket's own thread.
+    [[nodiscard]] uint64 sendRetryCount() const { return m_sendRetryCount; }
 
 protected:
     // --- Abstract methods (subclasses must implement) ---
@@ -199,6 +205,14 @@ private:
     bool m_busy = false;
     bool m_useBigSendBuffers = false;
     bool m_retryScheduled = false;
+
+    /// Backoff for the send-retry chain. send() drains nothing while the encryption
+    /// layer is not ready, so a fixed 10 ms re-arm polls at 100 Hz forever on a socket
+    /// whose handshake never completes. Doubling up to kRetryMaxMs caps that at 1 Hz.
+    static constexpr int kRetryBaseMs = 10;
+    static constexpr int kRetryMaxMs = 1000;
+    int m_retryDelayMs = kRetryBaseMs;
+    uint64 m_sendRetryCount = 0;
 
     /// Cached value of bytesToWrite() for thread-safe congestion detection.
     /// Qt's write() buffers internally unlike MFC Winsock, so we use buffer

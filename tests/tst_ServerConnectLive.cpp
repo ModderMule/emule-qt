@@ -354,7 +354,7 @@ void tst_ServerConnectLive::connectToFirstReachableServer()
                    .arg(r.ms);
     }
     for (int i = 0; i < messageSpy.count(); ++i)
-        qDebug() << "Server message:" << messageSpy.at(i).first().toString();
+        qDebug() << "Server message:" << messageSpy.at(i).at(1).toString();
 
     // Success = at least one server accepted us (concludes on the first).
     QVERIFY2(m_serverConnect->isConnected(),
@@ -460,7 +460,7 @@ void tst_ServerConnectLive::udpGlobalSearch()
                      && obfServer->supportsObfuscationUDP(),
                  "Obfuscation preconditions not met — the send would go out in the clear");
 
-        m_searchList->addSentUDPRequestIP(obfServer->ipAddress().toNetworkUint32());
+        m_searchList->addSentUDPRequestIP(searchID, obfServer->ipAddress().toNetworkUint32());
         const uint16 udpPort = static_cast<uint16>(obfServer->port() + 4);
         qDebug() << "Sending OBFUSCATED OP_GLOBSEARCHREQ3 \"" << keyword << "\" to"
                  << obfServer->name() << "keyUDP:" << Qt::hex << obfServer->serverKeyUDP();
@@ -483,7 +483,7 @@ void tst_ServerConnectLive::udpGlobalSearch()
             addTarget(m_serverList->serverAt(i));
 
         for (Server* srv : targets)
-            m_searchList->addSentUDPRequestIP(srv->ipAddress().toNetworkUint32());
+            m_searchList->addSentUDPRequestIP(searchID, srv->ipAddress().toNetworkUint32());
 
         for (Server* srv : targets) {
             auto pkt = buildGlobalSearchPacket(*srv, payload, /*is64BitSearch*/ false);

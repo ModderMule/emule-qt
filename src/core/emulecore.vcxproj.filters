@@ -273,6 +273,9 @@
     <ClCompile Include="search\SearchExprParser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="search\GlobalSearchScheduler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="search\SearchFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -306,10 +309,19 @@
     <ClCompile Include="net\SmtpClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="files\SourceSaver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="files\StatisticFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stats\Statistics.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stats\StatsHistory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stats\StatsSnapshot.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\StringUtils.cpp">
@@ -653,6 +665,9 @@
     <QtMoc Include="transfer\Scheduler.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="search\GlobalSearchScheduler.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <ClInclude Include="search\SearchExpr.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -686,6 +701,9 @@
     <ClInclude Include="files\ShareableFile.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="files\SourceSaver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="files\SharedFileList.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -698,6 +716,12 @@
     <QtMoc Include="stats\Statistics.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="stats\StatsHistory.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="stats\StatsSnapshot.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\StringUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>

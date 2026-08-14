@@ -43,6 +43,13 @@ void SpeedGraph::appendSample(double downKBs, double upKBs)
     update();
 }
 
+void SpeedGraph::clear()
+{
+    m_downData.clear();
+    m_upData.clear();
+    update();
+}
+
 void SpeedGraph::setTimeRangeMinutes(int minutes)
 {
     m_maxPoints = std::max(1, minutes) * 60;

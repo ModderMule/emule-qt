@@ -11,6 +11,7 @@
 #include "app/AppContext.h"
 #include "net/LastCommonRouteFinder.h"
 #include "prefs/Preferences.h"
+#include "utils/Log.h"
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
@@ -64,13 +65,20 @@ void UploadBandwidthThrottler::addToStandardList(int index, ThrottledFileSocket*
     if (!socket)
         return;
 
-    std::lock_guard lock(m_sendMutex);
-    removeFromStandardListNoLock(socket);
+    {
+        std::lock_guard lock(m_sendMutex);
+        removeFromStandardListNoLock(socket);
 
-    if (index > static_cast<int>(m_standardOrder.size()))
-        index = static_cast<int>(m_standardOrder.size());
+        if (index > static_cast<int>(m_standardOrder.size()))
+            index = static_cast<int>(m_standardOrder.size());
 
-    m_standardOrder.insert(m_standardOrder.begin() + index, socket);
+        m_standardOrder.insert(m_standardOrder.begin() + index, socket);
+    }
+
+    // A new upload slot may need the trickle loop before any standard packet is
+    // queued — the OP_ACCEPTUPLOADREQ that precedes it is a *control* packet, which
+    // does not set wakeThrottler in EMSocket::sendPacket().
+    signalWorkAvailable();
 }
 
 bool UploadBandwidthThrottler::removeFromStandardList(ThrottledFileSocket* socket)
@@ -98,8 +106,14 @@ void UploadBandwidthThrottler::queueForSendingControlPacket(ThrottledControlSock
     if (!m_run.load())
         return;
 
-    std::lock_guard lock(m_tempMutex);
-    m_tempControlQueue.push_back(socket);
+    {
+        std::lock_guard lock(m_tempMutex);
+        m_tempControlQueue.push_back(socket);
+    }
+
+    // All Kad and server UDP traffic arrives here (ClientUDPSocket, UDPSocket).
+    // Without this the idle wait would add up to kIdleSleepMs of datagram latency.
+    signalWorkAvailable();
 }
 
 void UploadBandwidthThrottler::removeFromAllQueuesNoLock(ThrottledControlSocket* socket)
@@ -135,26 +149,30 @@ void UploadBandwidthThrottler::removeFromAllQueues(ThrottledControlSocket* socke
 
 void UploadBandwidthThrottler::newUploadDataAvailable()
 {
-    if (m_run.load()) {
-        m_dataAvailable.store(true);
-        m_dataAvailableCV.notify_one();
-    }
+    signalWorkAvailable();
 }
 
 void UploadBandwidthThrottler::socketAvailable()
 {
-    if (m_run.load()) {
+    if (!m_run.load())
+        return;
+    {
+        std::lock_guard lock(m_wakeMutex);
         m_socketAvailable.store(true);
-        m_socketAvailableCV.notify_one();
     }
+    m_wakeCV.notify_all();
 }
 
 void UploadBandwidthThrottler::endThread()
 {
-    m_run.store(false);
+    // m_run must go false under m_wakeMutex too, or the send loop can miss it and
+    // sit out the full idle timeout before noticing shutdown.
+    {
+        std::lock_guard lock(m_wakeMutex);
+        m_run.store(false);
+    }
+    m_wakeCV.notify_all();
     pause(false);
-    m_dataAvailableCV.notify_all();
-    m_socketAvailableCV.notify_all();
 
     if (isRunning())
         wait();
@@ -233,6 +251,8 @@ void UploadBandwidthThrottler::runInternal()
     uint32 lastTickReachedBandwidth = lastLoopTick;
 
     while (m_run.load()) {
+        m_loopIterations.fetch_add(1, std::memory_order_relaxed);
+
         // Pause check
         if (m_paused.load()) {
             std::unique_lock lock(m_pauseMutex);
@@ -248,8 +268,10 @@ void UploadBandwidthThrottler::runInternal()
         if (theApp.lastCommonRouteFinder)
             allowedDataRate = theApp.lastCommonRouteFinder->getUpload();
         if (allowedDataRate == 0) {
-            // USS not running or returned 0 — fall back to raw prefs
-            allowedDataRate = thePrefs.maxUpload();
+            // USS not running or returned 0 — fall back to prefs. maxUploadLimit(), not
+            // maxUpload(): the raw pref stores "no limit" as 0, which would survive the
+            // *1024 as 0 and starve every send loop below down to the 1 Hz trickle.
+            allowedDataRate = thePrefs.maxUploadLimit();
             if (allowedDataRate != UNLIMITED)
                 allowedDataRate *= 1024;
         }
@@ -257,9 +279,15 @@ void UploadBandwidthThrottler::runInternal()
         // Check busy level for slots
         uint32 nBusy = 0;
         uint32 nCanSend = 0;
+        bool standardListEmpty = false;
+        bool controlQueuesEmpty = false;
 
         {
             std::lock_guard lock(m_sendMutex);
+            // Reset the flags BEFORE snapshotting the queues. Producers publish their
+            // work and only then set the flag, so either the reset wins the race and
+            // this snapshot may miss the work but the flag is set again (no block), or
+            // the set wins and the push necessarily precedes this snapshot.
             m_dataAvailable.store(false);
             m_socketAvailable.store(false);
 
@@ -274,17 +302,34 @@ void UploadBandwidthThrottler::runInternal()
                     nBusy += static_cast<uint32>(pSocket->isBusyExtensiveCheck());
                 }
             }
+
+            // Idleness test for the wait below. It keys off the *whole* standard list,
+            // not nCanSend: nCanSend only scans the first slotLimit entries, while the
+            // trickle / equal-bandwidth / full-priority loops all walk the full list.
+            standardListEmpty = m_standardOrder.empty();
+            controlQueuesEmpty = m_controlQueue.empty();
+            if (controlQueuesEmpty) {
+                std::lock_guard tempLock(m_tempMutex);  // same nesting as the drain below
+                controlQueuesEmpty = m_tempControlQueue.empty();
+            }
         }
 
-        // When no upload limit has been set, try to guess a good upload limit
-        if (thePrefs.maxUpload() == UNLIMITED) {
+        // When no upload limit has been set, try to guess a good upload limit.
+        // maxUploadLimit(), not maxUpload(): the raw pref never equals UNLIMITED, which
+        // left this whole block unreachable (and changesCount below never incremented).
+        if (thePrefs.maxUploadLimit() == UNLIMITED) {
             ++loopsCount;
             if (nCanSend > 0) {
                 const int iBusyFraction = static_cast<int>((nBusy << 5) / nCanSend);
-                if (nBusy > 2 && iBusyFraction > 24 && nSlotsBusyLevel < 255)
+                // changesCount counts busy-level movements — it damps the change-delta
+                // ramp below once the estimate starts hunting. srchybrid:413,418.
+                if (nBusy > 2 && iBusyFraction > 24 && nSlotsBusyLevel < 255) {
                     ++nSlotsBusyLevel;
-                else if ((nBusy <= 2 || iBusyFraction < 8) && nSlotsBusyLevel > -255)
+                    ++changesCount;
+                } else if ((nBusy <= 2 || iBusyFraction < 8) && nSlotsBusyLevel > -255) {
                     --nSlotsBusyLevel;
+                    ++changesCount;
+                }
             }
 
             if (nUploadStartTime == 0) {
@@ -293,12 +338,21 @@ void UploadBandwidthThrottler::runInternal()
             } else if (static_cast<uint32>(getTickCount()) >= nUploadStartTime + SEC2MS(60)) {
                 if (nEstimatedDataRate == 0) {
                     if (nSlotsBusyLevel >= 250) {
+                        // MFC seeds straight from the queue datarate (srchybrid:430); the
+                        // fallbacks are ours, for the case where the queue has no reading
+                        // yet. Never seed UNLIMITED — the deltas below top out at 4 KB per
+                        // change, so an estimate starting at 4 GB/s would never converge.
                         nEstimatedDataRate = (m_uploadQueue && m_uploadQueue->datarate() > 0)
                             ? m_uploadQueue->datarate()
-                            : (allowedDataRate > 0 ? allowedDataRate : 10u * 1024u);
+                            : ((allowedDataRate > 0 && allowedDataRate != UNLIMITED)
+                                   ? allowedDataRate
+                                   : 10u * 1024u);
                         nSlotsBusyLevel = -200;
                         changesCount = 0;
                         loopsCount = 0;
+                        if (thePrefs.verbose())
+                            logDebug(QStringLiteral("Throttler: initial guessed upload limit %1 KB/s")
+                                         .arg(nEstimatedDataRate / 1024.0, 0, 'f', 1));
                     }
                 } else if (nSlotsBusyLevel > 250) {
                     if (changesCount > 500 || (changesCount > 300 && loopsCount > 1000) || loopsCount > 2000)
@@ -311,6 +365,12 @@ void UploadBandwidthThrottler::runInternal()
                     nEstimatedDataRate -= changeDelta;
                     numberOfConsecutiveUpChanges = 0;
                     nSlotsBusyLevel = 0;
+                    if (thePrefs.verbose())
+                        logDebug(QStringLiteral("Throttler: REDUCED guessed limit #%1 by %2 bytes to %3 KB/s "
+                                                "(changes %4, loops %5)")
+                                     .arg(numberOfConsecutiveDownChanges).arg(changeDelta)
+                                     .arg(nEstimatedDataRate / 1024.0, 0, 'f', 1)
+                                     .arg(changesCount).arg(loopsCount));
                     changesCount = 0;
                     loopsCount = 0;
                 } else if (nSlotsBusyLevel < -250) {
@@ -320,15 +380,27 @@ void UploadBandwidthThrottler::runInternal()
                         ++numberOfConsecutiveUpChanges;
                     uint32 changeDelta = calculateChangeDelta(numberOfConsecutiveUpChanges);
                     nEstimatedDataRate += changeDelta;
-                    if (nEstimatedDataRate > allowedDataRate && allowedDataRate != UNLIMITED)
+                    // Don't raise the estimate above the rate we are actually allowed to
+                    // send at. No UNLIMITED guard — nothing exceeds UINT32_MAX, so this is
+                    // already a no-op in the unlimited case (srchybrid:465-470).
+                    if (nEstimatedDataRate > allowedDataRate)
                         nEstimatedDataRate = allowedDataRate;
                     numberOfConsecutiveDownChanges = 0;
                     nSlotsBusyLevel = 0;
+                    if (thePrefs.verbose())
+                        logDebug(QStringLiteral("Throttler: INCREASED guessed limit #%1 by %2 bytes to %3 KB/s "
+                                                "(changes %4, loops %5)")
+                                     .arg(numberOfConsecutiveUpChanges).arg(changeDelta)
+                                     .arg(nEstimatedDataRate / 1024.0, 0, 'f', 1)
+                                     .arg(changesCount).arg(loopsCount));
                     changesCount = 0;
                     loopsCount = 0;
                 }
 
-                if (allowedDataRate > nEstimatedDataRate && allowedDataRate != UNLIMITED)
+                // The guessed limit replaces "unlimited" — this is the whole point of the
+                // block, so it must NOT be skipped when allowedDataRate is UNLIMITED
+                // (srchybrid:481-482).
+                if (allowedDataRate > nEstimatedDataRate)
                     allowedDataRate = nEstimatedDataRate;
             }
 
@@ -367,16 +439,27 @@ void UploadBandwidthThrottler::runInternal()
                 sleepTime = kTimeBetweenUploadLoops;
         }
 
+        // Idle cadence. MFC polls at 1 ms unconditionally (TIME_BETWEEN_UPLOAD_LOOPS,
+        // srchybrid/UploadBandwidthThrottler.cpp:501); on macOS that trips the kernel
+        // wakeup monitor, which allows 150 wakes/s sustained. Every producer now
+        // signals m_wakeCV, so the long timeout is a safety net rather than the
+        // delivery mechanism — it costs no latency. The 1 ms cadence is kept verbatim
+        // the moment there is anything at all in the throttler.
+        constexpr uint32 kIdleSleepMs = 100;
+
         if (timeSinceLastLoop < sleepTime) {
             uint32 dwSleep = sleepTime - timeSinceLastLoop;
             if (nCanSend == 0 && !recentlySentData) {
-                // No active sockets and nothing sent recently — wait for new data
-                std::unique_lock lock(m_dataAvailableMutex);
-                m_dataAvailableCV.wait_for(lock, std::chrono::milliseconds(dwSleep),
-                    [this] { return m_dataAvailable.load() || !m_run.load(); });
+                // No active sockets and nothing sent recently — wait for new data.
+                // std::max keeps the bandwidth pacing floor intact.
+                if (standardListEmpty && controlQueuesEmpty)
+                    dwSleep = std::max(dwSleep, kIdleSleepMs);
+                std::unique_lock lock(m_wakeMutex);
+                m_wakeCV.wait_for(lock, std::chrono::milliseconds(dwSleep),
+                    [this] { return m_dataAvailable.load() || m_socketAvailable.load() || !m_run.load(); });
             } else if (nCanSend == nBusy && nCanSend > 0) {
-                std::unique_lock lock(m_socketAvailableMutex);
-                m_socketAvailableCV.wait_for(lock, std::chrono::milliseconds(dwSleep),
+                std::unique_lock lock(m_wakeMutex);
+                m_wakeCV.wait_for(lock, std::chrono::milliseconds(dwSleep),
                     [this] { return m_socketAvailable.load() || !m_run.load(); });
             } else {
                 sleepMs(dwSleep);
@@ -440,13 +523,26 @@ void UploadBandwidthThrottler::runInternal()
                     uint32 totalSent = sent.sentBytesStandardPackets + sent.sentBytesControlPackets;
                     spentBytes += totalSent;
                     spentOverhead += sent.sentBytesControlPackets;
-                    // Re-queue if the socket still has unsent control data
-                    // (e.g. kernel buffer was full from data packets).
-                    // Break so the throttler can drain data packets first,
-                    // then retry on the next loop iteration.
-                    if (!sent.success || totalSent == 0) {
+                    // Re-queue if the socket still has unsent control data (e.g. the
+                    // kernel buffer was full from data packets, or the byte budget ran
+                    // out mid-drain). Ask the socket rather than inferring it from
+                    // "sent 0 bytes": queueForSendingControlPacket() enqueues one entry
+                    // per packet while sendControlData() drains the socket's whole
+                    // queue, so every entry after the first legitimately sends nothing.
+                    // Re-queueing on totalSent == 0 alone left m_controlQueue
+                    // permanently non-empty, which kept this loop churning at 1 kHz and
+                    // made throttler idleness undetectable. MFC drops the socket
+                    // unconditionally (srchybrid/UploadBandwidthThrottler.cpp:588-593),
+                    // which instead strands datagrams when the budget runs out.
+                    if (!sent.success) {
                         m_controlQueue.push_back(socket);
                         break;
+                    }
+                    if (socket->hasControlQueue()) {
+                        m_controlQueue.push_back(socket);
+                        // No progress — let data packets drain and retry next loop.
+                        if (totalSent == 0)
+                            break;
                     }
                 }
             }
@@ -565,6 +661,22 @@ void UploadBandwidthThrottler::runInternal()
         m_controlQueue.clear();
         m_standardOrder.clear();
     }
+}
+
+void UploadBandwidthThrottler::signalWorkAvailable()
+{
+    if (!m_run.load())
+        return;
+    {
+        // The store must happen under m_wakeMutex. The send loop holds that mutex
+        // across both its predicate evaluation and its block, so this can no longer
+        // slip in between the two and be lost.
+        std::lock_guard lock(m_wakeMutex);
+        m_dataAvailable.store(true);
+    }
+    // notify_all rather than notify_one: there is one waiter today, so the cost is
+    // nil, and it stays correct if a second one is ever added.
+    m_wakeCV.notify_all();
 }
 
 } // namespace eMule

@@ -139,6 +139,23 @@ public:
         return true;
     }
 
+    // --- Kad notes (comments/ratings) ---
+
+    /// Offer a Kad NOTES result to every search list holding @p fileHash.
+    ///
+    /// A note may arrive for a hash that is neither downloading nor shared — the
+    /// user asked for comments on a plain search hit. Without this the note is
+    /// dropped and the Comments tab stays empty forever. MFC does the same, and
+    /// first: CSearchList::AddNotes (srchybrid/SearchList.cpp:665-677).
+    /// @return true if at least one search result took the note.
+    bool addNotes(const uint8* fileHash, const QByteArray& publisherId,
+                  uint8 rating, const QString& comment);
+
+    /// Flag every search result with @p fileHash as having a NOTES lookup in
+    /// flight, so the detail dialog can show "(Kad search in progress...)".
+    /// MFC: CSearchList::SetNotesSearchStatus (srchybrid/SearchList.cpp:679-690).
+    void setNotesSearchStatus(const uint8* fileHash, bool running);
+
     // --- Spam detection ---
 
     /// Calculate spam rating for a search file.
@@ -159,8 +176,15 @@ public:
 
     // --- ED2K server tracking ---
 
-    /// Register an IP that we've sent a UDP search request to.
-    void addSentUDPRequestIP(uint32 ip) { m_curED2KSentRequestsIPs.insert({ip, true}); }
+    /// Register an IP that we've sent a UDP search request to. Answers from a server
+    /// that is not in this set are dropped as unsolicited, so the set must not be
+    /// grown by a search that has already been superseded.
+    /// MFC: CSearchList::SentUDPRequestNotification — srchybrid/SearchList.cpp:1183-1187.
+    void addSentUDPRequestIP(uint32 searchID, uint32 ip)
+    {
+        if (searchID == m_currentEd2kSearchID)
+            m_curED2KSentRequestsIPs.insert({ip, true});
+    }
 
     // --- Persistence ---
 
@@ -212,6 +236,9 @@ private:
     // Current session state
     QString m_resultFileType;
     uint32 m_currentSearchID = 0;
+    /// The newest *ED2K* search — server answers (TCP and UDP) are filed under this,
+    /// not under m_currentSearchID, which a Kad search started meanwhile would own.
+    uint32 m_currentEd2kSearchID = 0;
     uint32 m_nextSearchID = 1;
 };
 

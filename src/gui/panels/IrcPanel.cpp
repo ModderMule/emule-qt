@@ -8,6 +8,7 @@
 #include "controls/AbstractListView.h"
 #include "chat/IrcClient.h"
 #include "prefs/Preferences.h"
+#include "utils/TextLinks.h"
 
 #include <QDateTime>
 #include <QEvent>
@@ -642,8 +643,9 @@ void IrcPanel::setupUi()
 
     // --- Status tab (always present) ---
     m_statusBrowser = new QTextBrowser(this);
-    m_statusBrowser->setOpenExternalLinks(true);
     m_statusBrowser->setReadOnly(true);
+    TextLinks::wireLinkClicks(m_statusBrowser, this,
+                              [this](const QString& link) { emit linkActivated(link); });
 
     IrcChannel statusCh;
     statusCh.name = QStringLiteral("Status");
@@ -885,8 +887,10 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
 
     // Normal channel or private — QTextBrowser
     auto* browser = new QTextBrowser(this);
-    browser->setOpenExternalLinks(true);
     browser->setReadOnly(true);
+    // Channels are full of ed2k:// links; those belong to the importer, not the OS.
+    TextLinks::wireLinkClicks(browser, this,
+                              [this](const QString& link) { emit linkActivated(link); });
     if (!m_customFont.family().isEmpty())
         browser->setFont(m_customFont);
     ch.widget = browser;
@@ -986,24 +990,29 @@ QString IrcPanel::formatTimestamp() const
         .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")));
 }
 
-QString IrcPanel::renderMircCodes(const QString& text) const
+QString MircFormat::close()
+{
+    if (!inSpan)
+        return {};
+    inSpan = false;
+    return QStringLiteral("</span>");
+}
+
+QString IrcPanel::renderMircCodes(QStringView text, MircFormat& fmt) const
 {
     QString result;
     result.reserve(text.size() * 2);
 
-    bool bold = false;
-    bool italic = false;
-    bool underline = false;
-    int fgColor = -1;
-    int bgColor = -1;
-    bool inSpan = false;
+    // The state lives in the caller's MircFormat so a line split around a URL keeps
+    // its colour: formatMessage() renders the pieces either side of the link with
+    // the same fmt, then closes whatever is still open.
+    bool& bold      = fmt.bold;
+    bool& italic    = fmt.italic;
+    bool& underline = fmt.underline;
+    int&  fgColor   = fmt.fg;
+    int&  bgColor   = fmt.bg;
 
-    auto closeSpan = [&]() {
-        if (inSpan) {
-            result += QStringLiteral("</span>");
-            inSpan = false;
-        }
-    };
+    auto closeSpan = [&]() { result += fmt.close(); };
 
     auto openSpan = [&]() {
         closeSpan();
@@ -1021,7 +1030,7 @@ QString IrcPanel::renderMircCodes(const QString& text) const
 
         if (!style.isEmpty()) {
             result += QStringLiteral("<span style=\"%1\">").arg(style);
-            inSpan = true;
+            fmt.inSpan = true;
         }
     };
 
@@ -1091,7 +1100,8 @@ QString IrcPanel::renderMircCodes(const QString& text) const
         }
     }
 
-    closeSpan();
+    // Deliberately no closeSpan() here — an open span has to survive into the next
+    // segment. formatMessage() closes it once, after the last one.
     return result;
 }
 
@@ -1121,36 +1131,19 @@ QString IrcPanel::renderSmileys(const QString& text) const
     return result;
 }
 
-QString IrcPanel::detectUrls(const QString& text) const
-{
-    static const QRegularExpression urlRe(
-        QStringLiteral("((?:https?|ftp|ed2k)://[^\\s<>\"]+)"),
-        QRegularExpression::CaseInsensitiveOption);
-
-    QString result = text;
-    // Process URLs in reverse order to preserve indices
-    QVector<QRegularExpressionMatch> matches;
-    auto it = urlRe.globalMatch(result);
-    while (it.hasNext())
-        matches.append(it.next());
-
-    for (qsizetype i = matches.size() - 1; i >= 0; --i) {
-        const auto& match = matches[i];
-        const QString url = match.captured(1);
-        const QString link = QStringLiteral("<a href=\"%1\">%1</a>").arg(url);
-        result.replace(match.capturedStart(1), match.capturedLength(1), link);
-    }
-    return result;
-}
-
 QString IrcPanel::formatMessage(const QString& text) const
 {
-    // Order: mIRC codes → HTML-escape happens inside renderMircCodes,
-    //        then smileys, then URLs
-    QString html = renderMircCodes(text);
-    html = renderSmileys(html);
-    html = detectUrls(html);
-    return html;
+    // Links are found in the RAW message and everything around them is rendered
+    // through mIRC codes (which escape) and then smileys. The old order — render
+    // first, then regex the HTML for URLs — captured "&amp;" inside a query string
+    // and only worked because the parser unescaped the href again; percent-encoding
+    // it into an emuleqt:link wrapper would not survive that. It also handed
+    // ed2k:// links straight to QUrl, where they vanish (TextLinks.h).
+    MircFormat fmt;
+    QString html = TextLinks::linkify(text, [this, &fmt](const QString& segment) {
+        return renderSmileys(renderMircCodes(segment, fmt));
+    });
+    return html + fmt.close();
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@
 #include "app/UiState.h"
 #include "controls/FriendListModel.h"
 #include "dialogs/AddFriendDialog.h"
+#include "utils/PanelPoller.h"
+#include "utils/TextLinks.h"
 
 
 #include <QAction>
@@ -59,10 +61,11 @@ void MessagesPanel::setIpcClient(IpcClient* client)
             this, &MessagesPanel::onFriendListPush);
 
     // Start refresh timer
-    m_refreshTimer = new QTimer(this);
-    m_refreshTimer->setInterval(5000);
-    connect(m_refreshTimer, &QTimer::timeout, this, &MessagesPanel::onRefreshTimer);
-    m_refreshTimer->start();
+    // Only the friend list is polled. Incoming chat arrives on its own push, so
+    // messages still land while this tab is hidden.
+    m_poller = new PanelPoller(this, [this] { onRefreshTimer(); });
+    m_poller->setInterval(5000);
+    m_poller->setEnabled(true);
 
     if (m_ipc->isConnected())
         requestFriendList();
@@ -262,8 +265,10 @@ void MessagesPanel::setupUi()
 
     // Chat browser
     m_chatBrowser = new QTextBrowser(rightWidget);
-    m_chatBrowser->setOpenExternalLinks(false);
     m_chatBrowser->setReadOnly(true);
+    // A friend's ed2k:// link has to reach the importer, not the OS.
+    TextLinks::wireLinkClicks(m_chatBrowser, this,
+                              [this](const QString& link) { emit linkActivated(link); });
     rightLayout->addWidget(m_chatBrowser, 1);
 
     // Message input + buttons
@@ -437,7 +442,10 @@ void MessagesPanel::updateChatDisplay()
                                .toString(QStringLiteral("HH:mm:ss"));
         const QString color = msg.outgoing ? QStringLiteral("#3399FF")
                                             : QStringLiteral("#CC0000");
-        const QString escapedText = renderSmileys(msg.text.toHtmlEscaped());
+        // Linkify the raw message; smileys are rendered into the gaps between links
+        // only, so a ':/' inside a URL cannot turn into an image (TextLinks.h).
+        const QString escapedText = TextLinks::linkify(
+            msg.text, [this](const QString& text) { return renderSmileys(text.toHtmlEscaped()); });
         m_chatBrowser->append(
             QStringLiteral("<font color='gray'>[%1]</font> "
                            "<font color='%2'><b>%3:</b></font> %4")

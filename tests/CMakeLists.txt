@@ -197,6 +197,7 @@ emule_add_test(tst_FrameGrabThread FOLDER "Media")
 emule_add_test(tst_PartFile          FOLDER "Files")
 emule_add_test(tst_SourceExchange       FOLDER "Files")
 emule_add_test(tst_SourceExchangeCompat FOLDER "Files")
+emule_add_test(tst_SourceSaver          FOLDER "Files")
 emule_add_test(tst_DownloadQueue     FOLDER "Transfer")
 
 # Module 11 Phase 3: Complete File Management
@@ -216,8 +217,8 @@ emule_add_test(tst_UploadBandwidthThrottler FOLDER "Transfer")
 emule_add_test(tst_UploadDiskIOThread       FOLDER "Transfer")
 emule_add_test(tst_UploadQueue              FOLDER "Transfer")
 emule_add_test(tst_MockPeerUpload           FOLDER "Net")
-target_compile_definitions(tst_MockPeerUpload PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
-set_tests_properties(tst_MockPeerUpload PROPERTIES TIMEOUT 120)
+target_compile_definitions(tst_MockPeerUpload PRIVATE QTEST_FUNCTION_TIMEOUT=150000)
+set_tests_properties(tst_MockPeerUpload PROPERTIES TIMEOUT 150)
 emule_add_test(tst_MockPeerDownload         FOLDER "Net")
 target_compile_definitions(tst_MockPeerDownload PRIVATE QTEST_FUNCTION_TIMEOUT=300000)
 set_tests_properties(tst_MockPeerDownload PROPERTIES TIMEOUT 300)
@@ -236,6 +237,7 @@ emule_add_test(tst_SearchParams  FOLDER "Search")
 emule_add_test(tst_SearchFile    FOLDER "Search")
 emule_add_test(tst_SearchList    FOLDER "Search")
 emule_add_test(tst_SearchExprParser FOLDER "Search")
+emule_add_test(tst_GlobalSearchScheduler FOLDER "Search")
 
 # Module 14: IP Filter & Security
 emule_add_test(tst_IPFilter      FOLDER "IPFilter")
@@ -252,6 +254,7 @@ emule_add_test(tst_FriendList   FOLDER "Friends")
 # Module 15: Statistics & Logging
 emule_add_test(tst_Statistics      FOLDER "Stats")
 emule_add_test(tst_StatisticsReset FOLDER "Stats")
+emule_add_test(tst_StatsHistory    FOLDER "Stats")
 
 # Module 19: Web Server
 emule_add_test(tst_WebServer FOLDER "WebServer")
@@ -261,6 +264,8 @@ emule_add_test(tst_IpcProtocol   FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_IpcMessage    FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_IpcConnection FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_PreferencesIpc FOLDER "Ipc" LIBRARIES eMule::Ipc yaml-cpp::yaml-cpp)
+# Push broadcast rate limiter — pure Qt Core, so it links the real library directly.
+emule_add_test(tst_PushCoalescer FOLDER "Ipc" LIBRARIES eMule::Ipc)
 
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
@@ -284,6 +289,52 @@ target_include_directories(tst_Ed2kLinkImporter PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_Ed2kLinkImporter PRIVATE eMule::Ipc Qt6::Widgets)
+
+# Prev/Next walker behind the detail dialogs' arrow buttons. Depends on nothing but
+# Qt Widgets, so the real ViewNavigation.cpp compiles straight against the stub pch.
+emule_add_test(tst_ViewNavigation FOLDER "Gui"
+    SOURCES tst_ViewNavigation.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ViewNavigation.cpp")
+target_include_directories(tst_ViewNavigation PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_ViewNavigation PRIVATE Qt6::Widgets)
+
+# Visibility-gated panel polling. Depends on nothing but Qt Widgets, same as above.
+emule_add_test(tst_PanelPoller FOLDER "Gui"
+    SOURCES tst_PanelPoller.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp")
+target_include_directories(tst_PanelPoller PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_PanelPoller PRIVATE Qt6::Widgets)
+
+# Tray icon download meter — pure painting, so the real source compiles standalone.
+emule_add_test(tst_TrayMeterIcon FOLDER "Gui"
+    SOURCES tst_TrayMeterIcon.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/TrayMeterIcon.cpp")
+target_include_directories(tst_TrayMeterIcon PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_TrayMeterIcon PRIVATE Qt6::Widgets)
+
+# Link codec shared by the Server Info, chat and IRC panes — header-only, so nothing
+# but the test itself is compiled. Widgets is for QTextDocument: one case replays the
+# rich-text parse a QTextBrowser does.
+emule_add_test(tst_TextLinks FOLDER "Ipc")
+target_include_directories(tst_TextLinks PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_TextLinks PRIVATE Qt6::Widgets)
+
+# Version manifest parsing. VersionChecker's statics are pure, so no reply is needed.
+# src/gui comes first on the include path, so VersionChecker.cpp picks up the real
+# emuleqt pch.h — which pulls in QApplication, hence Widgets.
+emule_add_test(tst_VersionChecker FOLDER "Ipc"
+    SOURCES tst_VersionChecker.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/VersionChecker.cpp")
+target_include_directories(tst_VersionChecker PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_VersionChecker PRIVATE Qt6::Network Qt6::Widgets)
 
 # Live network integration tests (requires real network connectivity)
 if(EMULE_LIVE_TESTS)

@@ -29,6 +29,10 @@ public:
     /// Programmatically check a button by ID.
     void checkButton(int id);
 
+    /// Enable or disable a button by ID. A list the other pane is showing is greyed
+    /// out here, matching the MFC toolbar's `fsState = 0` for unavailable lists.
+    void setButtonEnabled(int id, bool on);
+
     /// Update the bold text label (e.g. "Downloads (5)").
     void setLabelText(const QString& text);
 

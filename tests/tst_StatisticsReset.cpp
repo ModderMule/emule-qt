@@ -2,6 +2,7 @@
 /// @brief Tests for stats/Statistics — session reset vs. cumulative stats.
 
 #include "TestHelpers.h"
+#include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/Opcodes.h"
@@ -26,7 +27,29 @@ private slots:
     void statsAverageMinutes_defaultValue();
     void statsAverageMinutes_roundTrip();
     void connRates_roundTrip();
+    void flush_isIdempotent();
+    void flush_addsToWhatWasAlreadyInPrefs();
+    void flush_connPeakIsAHighWaterMark();
+    void resetCumulativeStats_zeroesAndStamps();
+    void resetThenFlush_doesNotResurrectOldTotals();
+    void backupThenRestore_returnsThePreResetTotals();
+    void restore_swapsSoASecondOneUndoesIt();
+    void restore_keepsARecordRaisedAfterTheReset();
+    void restore_withoutABackupFails();
 };
+
+namespace {
+
+/// A Preferences bound to a file inside @p dir, which is what gives it somewhere
+/// to put the statistics backup (the path is derived from the preferences file).
+void bindToDir(Preferences& prefs, const QTemporaryDir& dir)
+{
+    const QString filePath = dir.path() + QStringLiteral("/prefs.yaml");
+    prefs.saveTo(filePath);
+    prefs.load(filePath);
+}
+
+} // namespace
 
 void tst_StatisticsReset::resetDownOverhead_preservesCumulativeCounters()
 {
@@ -203,6 +226,249 @@ void tst_StatisticsReset::connRates_roundTrip()
         QVERIFY(qFuzzyCompare(prefs.connMaxAvgUpRate(), 60.5f));
         QVERIFY(qFuzzyCompare(prefs.connMaxUpRate(), 90.0f));
     }
+}
+
+namespace {
+
+/// A session with one of everything, so a flush has something to bank.
+void makeSomeSessionActivity(Statistics& stats)
+{
+    stats.addSessionSentBytes(1000);
+    stats.addSessionReceivedBytes(2000);
+    stats.addSessionSentBytesToFriend(300);
+    stats.addReconnect();
+    stats.addUpDataOverheadServer(64);
+    stats.addDownDataOverheadKad(32);
+    stats.addCompressionGain(500);
+    stats.addCorruptionLoss(700);
+    stats.addIchPartSaved();
+    stats.addTransferData(ClientSoftware::eMule, 4662, false, true, 800);
+    stats.addTransferData(ClientSoftware::aMule, 5000, true, false, 900);
+}
+
+Statistics::ExternalSessionCounters someExternalCounters()
+{
+    Statistics::ExternalSessionCounters ext;
+    ext.upSuccessfulSessions = 4;
+    ext.upFailedSessions = 1;
+    ext.downSuccessfulSessions = 3;
+    ext.downFailedSessions = 2;
+    ext.downCompletedFiles = 3;
+    ext.connPeak = 42;
+    ext.connMaxLimitReached = 5;
+    return ext;
+}
+
+} // namespace
+
+// The property that lets the flush run on a timer: it writes absolute totals, so
+// repeating it is a no-op. The old additive version doubled every counter.
+void tst_StatisticsReset::flush_isIdempotent()
+{
+    Preferences prefs;
+    Statistics stats;
+    stats.init(prefs);
+    makeSomeSessionActivity(stats);
+
+    const auto ext = someExternalCounters();
+    stats.flushCumulativeToPrefs(prefs, ext);
+
+    const uint64 up = prefs.cumTotalUploaded();
+    const uint64 down = prefs.cumTotalDownloaded();
+    const uint64 friendUp = prefs.cumTotalUploadedToFriend();
+    const uint64 compression = prefs.cumCompressionGain();
+    const uint64 corruption = prefs.cumCorruptionLoss();
+    const uint32 ich = prefs.cumIchPartsSaved();
+    const uint64 upEmule = prefs.cumUpEmule();
+    const uint64 upServerOh = prefs.cumUpOverheadServer();
+    const uint32 reconnects = prefs.cumConnReconnects();
+    const uint32 upSessions = prefs.cumUpSuccessfulSessions();
+    const uint32 downSessions = prefs.cumDownSuccessfulSessions();
+    const uint32 limitReached = prefs.cumConnMaxLimitReached();
+
+    QCOMPARE(up, uint64{1000});
+    QCOMPARE(down, uint64{2000});
+    QCOMPARE(ich, uint32{1});
+
+    stats.flushCumulativeToPrefs(prefs, ext);
+    stats.flushCumulativeToPrefs(prefs, ext);
+
+    QCOMPARE(prefs.cumTotalUploaded(), up);
+    QCOMPARE(prefs.cumTotalDownloaded(), down);
+    QCOMPARE(prefs.cumTotalUploadedToFriend(), friendUp);
+    QCOMPARE(prefs.cumCompressionGain(), compression);
+    QCOMPARE(prefs.cumCorruptionLoss(), corruption);
+    QCOMPARE(prefs.cumIchPartsSaved(), ich);
+    QCOMPARE(prefs.cumUpEmule(), upEmule);
+    QCOMPARE(prefs.cumUpOverheadServer(), upServerOh);
+    QCOMPARE(prefs.cumConnReconnects(), reconnects);
+    QCOMPARE(prefs.cumUpSuccessfulSessions(), upSessions);
+    QCOMPARE(prefs.cumDownSuccessfulSessions(), downSessions);
+    QCOMPARE(prefs.cumConnMaxLimitReached(), limitReached);
+}
+
+void tst_StatisticsReset::flush_addsToWhatWasAlreadyInPrefs()
+{
+    Preferences prefs;
+    prefs.setCumTotalUploaded(5000);
+    prefs.setCumTotalDownloaded(7000);
+    prefs.setCumIchPartsSaved(9);
+    prefs.setCumUpSuccessfulSessions(11);
+
+    Statistics stats;
+    stats.init(prefs);           // captures the baseline
+    makeSomeSessionActivity(stats);
+    stats.flushCumulativeToPrefs(prefs, someExternalCounters());
+
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{6000});
+    QCOMPARE(prefs.cumTotalDownloaded(), uint64{9000});
+    QCOMPARE(prefs.cumIchPartsSaved(), uint32{10});
+    QCOMPARE(prefs.cumUpSuccessfulSessions(), uint32{15});
+}
+
+void tst_StatisticsReset::flush_connPeakIsAHighWaterMark()
+{
+    Preferences prefs;
+    prefs.setCumConnPeak(100);
+
+    Statistics stats;
+    stats.init(prefs);
+
+    auto ext = someExternalCounters();
+    ext.connPeak = 40;                      // this session peaked lower
+    stats.flushCumulativeToPrefs(prefs, ext);
+    QCOMPARE(prefs.cumConnPeak(), uint32{100});
+
+    ext.connPeak = 160;                     // ...and then beat the record
+    stats.flushCumulativeToPrefs(prefs, ext);
+    QCOMPARE(prefs.cumConnPeak(), uint32{160});
+}
+
+void tst_StatisticsReset::resetCumulativeStats_zeroesAndStamps()
+{
+    Preferences prefs;
+    prefs.setCumTotalUploaded(5000);
+    prefs.setCumTotalDownloaded(7000);
+    prefs.setCumConnPeak(80);
+    prefs.setCumRunTime(3600);
+    prefs.setCumIchPartsSaved(4);
+    prefs.setConnMaxDownRate(123.0f);
+    prefs.setRecMaxUsersOnline(999);
+
+    prefs.resetCumulativeStats(1700000000);
+
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{0});
+    QCOMPARE(prefs.cumTotalDownloaded(), uint64{0});
+    QCOMPARE(prefs.cumConnPeak(), uint32{0});
+    QCOMPARE(prefs.cumRunTime(), uint64{0});
+    QCOMPARE(prefs.cumIchPartsSaved(), uint32{0});
+    QCOMPARE(prefs.connMaxDownRate(), 0.0f);
+    QCOMPARE(prefs.statsLastReset(), uint64{1700000000});
+
+    // Records are not cumulative counters; MFC leaves them alone.
+    QCOMPARE(prefs.recMaxUsersOnline(), uint32{999});
+}
+
+void tst_StatisticsReset::resetThenFlush_doesNotResurrectOldTotals()
+{
+    Preferences prefs;
+    prefs.setCumTotalUploaded(5000);
+
+    Statistics stats;
+    stats.init(prefs);
+    makeSomeSessionActivity(stats);
+
+    prefs.resetCumulativeStats(1700000000);
+    stats.rebaseCumulative(prefs);   // what handleResetStats does via init()
+
+    stats.flushCumulativeToPrefs(prefs, {});
+    // Only what the session has counted since — the pre-reset 5000 is gone for good.
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{1000});
+}
+
+void tst_StatisticsReset::backupThenRestore_returnsThePreResetTotals()
+{
+    QTemporaryDir tmp;
+    Preferences prefs;
+    bindToDir(prefs, tmp);
+
+    prefs.setCumTotalUploaded(5000);
+    prefs.setCumConnPeak(80);
+    prefs.setConnMaxDownRate(123.0f);
+    prefs.setStatsLastReset(1000);
+
+    QVERIFY(!prefs.hasCumulativeStatsBackup());
+    QVERIFY(prefs.backupCumulativeStats());
+    QVERIFY(prefs.hasCumulativeStatsBackup());
+
+    prefs.resetCumulativeStats(2000);
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{0});
+
+    QVERIFY(prefs.restoreCumulativeStats());
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{5000});
+    QCOMPARE(prefs.cumConnPeak(), uint32{80});
+    QCOMPARE(prefs.connMaxDownRate(), 123.0f);   // the rates travel with the block
+    QCOMPARE(prefs.statsLastReset(), uint64{1000});
+}
+
+void tst_StatisticsReset::restore_swapsSoASecondOneUndoesIt()
+{
+    QTemporaryDir tmp;
+    Preferences prefs;
+    bindToDir(prefs, tmp);
+
+    prefs.setCumTotalUploaded(5000);
+    prefs.setStatsLastReset(1000);
+    QVERIFY(prefs.backupCumulativeStats());
+    prefs.resetCumulativeStats(2000);
+
+    QVERIFY(prefs.restoreCumulativeStats());
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{5000});
+
+    // Restoring made the post-reset values the new backup, so doing it again
+    // walks back — MFC's statbkuptmp.ini rename, and what its dialog promises.
+    QVERIFY(prefs.restoreCumulativeStats());
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{0});
+    QCOMPARE(prefs.statsLastReset(), uint64{2000});
+
+    QVERIFY(prefs.restoreCumulativeStats());
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{5000});
+}
+
+void tst_StatisticsReset::restore_keepsARecordRaisedAfterTheReset()
+{
+    QTemporaryDir tmp;
+    Preferences prefs;
+    bindToDir(prefs, tmp);
+
+    prefs.setRecMaxUsersOnline(100);
+    prefs.setRecMaxFilesAvail(900);
+    QVERIFY(prefs.backupCumulativeStats());
+    prefs.resetCumulativeStats(2000);
+
+    // A record set while the statistics were zeroed is still a record.
+    prefs.setRecMaxUsersOnline(500);
+    prefs.setRecMaxFilesAvail(300);
+
+    QVERIFY(prefs.restoreCumulativeStats());
+    QCOMPARE(prefs.recMaxUsersOnline(), uint32{500});   // kept, not overwritten by 100
+    QCOMPARE(prefs.recMaxFilesAvail(), uint32{900});    // raised back from the backup
+}
+
+void tst_StatisticsReset::restore_withoutABackupFails()
+{
+    QTemporaryDir tmp;
+    Preferences prefs;
+    bindToDir(prefs, tmp);
+
+    prefs.setCumTotalUploaded(5000);
+
+    QVERIFY(!prefs.hasCumulativeStatsBackup());
+    QVERIFY(!prefs.restoreCumulativeStats());
+    QCOMPARE(prefs.cumTotalUploaded(), uint64{5000});
+    // A failed restore must not leave a backup behind, or the menu item would
+    // come alive with nothing behind it.
+    QVERIFY(!prefs.hasCumulativeStatsBackup());
 }
 
 QTEST_MAIN(tst_StatisticsReset)

@@ -159,12 +159,14 @@
     <ClCompile Include="IpcConnection.cpp" />
     <ClCompile Include="IpcMessage.cpp" />
     <ClCompile Include="IpcProtocol.cpp" />
+    <ClCompile Include="PushCoalescer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CborSerializers.h" />
     <QtMoc Include="IpcConnection.h" />
     <ClInclude Include="IpcMessage.h" />
     <ClInclude Include="IpcProtocol.h" />
+    <QtMoc Include="PushCoalescer.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

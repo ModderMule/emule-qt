@@ -88,15 +88,20 @@ QString ratingStr(uint8_t r)
 }
 
 /// SourceFrom enum to display string.
+///
+/// The daemon sends the raw core value — CborSerializers.h pushes
+/// static_cast<int>(client->sourceFrom()) — so these cases must track SourceFrom
+/// (ClientStateDefs.h) exactly. This table used to start at "None" and was shifted one
+/// position off the enum, mislabelling every source in the panel.
 QString sourceFromStr(int sf)
 {
     switch (sf) {
-    case 0:  return QObject::tr("None");
-    case 1:  return QObject::tr("Server");
-    case 2:  return QObject::tr("Kad");
-    case 3:  return QObject::tr("Source Exch.");
-    case 4:  return QObject::tr("Passive");
-    case 5:  return QObject::tr("Link");
+    case 0:  return QObject::tr("Server");        // SourceFrom::Server
+    case 1:  return QObject::tr("Kad");           // SourceFrom::Kademlia
+    case 2:  return QObject::tr("Source Exch.");  // SourceFrom::SourceExchange
+    case 3:  return QObject::tr("Passive");       // SourceFrom::Passive
+    case 4:  return QObject::tr("Link");          // SourceFrom::Link
+    case 7:  return QObject::tr("SLS");           // SourceFrom::SLS (saved source list)
     default: return QStringLiteral("?");
     }
 }

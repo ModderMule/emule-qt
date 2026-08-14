@@ -56,7 +56,36 @@ public:
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
     [[nodiscard]] bool hasActiveUploads() const { return !m_uploadingList.empty(); }
     [[nodiscard]] uint32 friendDatarate() const { return m_friendDatarate; }
+
+    /// Slots that were fully active over the last short window — MFC's
+    /// GetActiveUploadsCount() (srchybrid/UploadQueue.h:63), which is what the
+    /// statistics "Active uploads" series plots. Distinct from uploadQueueLength(),
+    /// the current size of the uploading list.
+    [[nodiscard]] int maxActiveClientsShortTime() const { return m_maxActiveClientsShortTime; }
     [[nodiscard]] uint32 targetClientDataRate(bool minRate) const;
+
+    // Slot gating
+    //
+    // Both queries take the inputs they cannot otherwise be handed, the same way
+    // UploadBandwidthThrottler::getSlotLimit(uint32 currentUpSpeed) does. The upload cap
+    // itself is resolved internally (USS when dynUp is on, thePrefs.maxUploadLimit()
+    // otherwise), so callers and tests exercise that selection rather than bypassing it.
+
+    /// Whether another client may start downloading from us.
+    /// MFC CUploadQueue::AcceptNewClient (srchybrid/UploadQueue.cpp:383).
+    [[nodiscard]] bool acceptNewClient(bool addOnNextConnect = false) const;
+
+    /// @param curUploadSlots  slot count to test against — the overload above passes
+    ///                        m_uploadingList.size(), minus one for the lowID extra slot.
+    /// @param datarate        current upload datarate in bytes/s.
+    /// MFC CUploadQueue::AcceptNewClient(INT_PTR) (srchybrid/UploadQueue.cpp:397).
+    [[nodiscard]] bool acceptNewClient(int curUploadSlots, uint32 datarate) const;
+
+    /// Whether the slot ladder justifies opening one more slot at this cap and datarate.
+    /// Tail of MFC CUploadQueue::ForceNewClient (srchybrid/UploadQueue.cpp:432-455). The
+    /// upPerClient divisors and slot floors are the deliberate "eMule 2026 bandwidth"
+    /// divergence — MFC has a single /43 tier and tops out at MIN_UP_CLIENTS_ALLOWED+3.
+    [[nodiscard]] bool slotLadderAllows(int curUploadSlots, uint32 datarate) const;
 
     // Stats
     [[nodiscard]] uint32 successfulUploadCount() const { return m_successfulUpCount; }
@@ -92,7 +121,6 @@ private slots:
 private:
     // Slot management
     UpDownClient* findBestClientInQueue();
-    bool acceptNewClient(bool addOnNextConnect = false) const;
     bool forceNewClient(bool allowEmptyWaitingQueue = false);
     void addUpNextClient(UpDownClient* directadd = nullptr);
     bool checkForTimeOver(const UpDownClient* client);

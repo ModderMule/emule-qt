@@ -191,6 +191,11 @@ void EMSocket::onReadyRead()
                         logDebug(QStringLiteral("EMSocket::onReadyRead — post-enc flush: ctrl=%1 std=%2 success=%3 peer=%4:%5")
                                      .arg(result.sentBytesControlPackets).arg(result.sentBytesStandardPackets)
                                      .arg(result.success).arg(peerAddress().toString()).arg(peerPort()));
+                    // scheduleRetryIfNeeded() deliberately does not re-arm at full rate
+                    // while encryption is pending, so this flush owns restarting the
+                    // chain — otherwise a control packet that hits EAGAIN right here
+                    // would never be retried.
+                    scheduleRetryIfNeeded();
                 }
             });
         }
@@ -605,18 +610,36 @@ void EMSocket::scheduleRetryIfNeeded()
         hasPending = (m_sendBuffer != nullptr) || !m_controlQueue.empty();
     }
 
-    if (hasPending) {
-        m_retryScheduled = true;
-        QTimer::singleShot(10, this, [this] {
-            m_retryScheduled = false;
-            if (m_conState.load(std::memory_order_acquire) == EMSState::Connected) {
-                // Only retry control packets — standard (file data) packets
-                // are sent by the UploadBandwidthThrottler on its own thread.
-                send(1024 * 64, 0, true);
-                scheduleRetryIfNeeded();
-            }
-        });
+    if (!hasPending) {
+        m_retryDelayMs = kRetryBaseMs;
+        return;
     }
+
+    // send() early-returns while the encryption layer is not ready, draining nothing,
+    // so a flat 10 ms chain would poll at 100 Hz indefinitely on a socket whose
+    // handshake never completes. Handshake completion is delivered by the flush hook
+    // in onReadyRead(); back off here instead of polling, so a socket wedged for any
+    // other reason still gets a 1 Hz retry rather than 100 Hz.
+    const int delay = isEncryptionLayerReady() ? kRetryBaseMs : m_retryDelayMs;
+
+    m_retryScheduled = true;
+    QTimer::singleShot(delay, this, [this] {
+        m_retryScheduled = false;
+        ++m_sendRetryCount;
+        if (m_conState.load(std::memory_order_acquire) != EMSState::Connected) {
+            m_retryDelayMs = kRetryBaseMs;
+            return;
+        }
+        if (isEncryptionLayerReady()) {
+            m_retryDelayMs = kRetryBaseMs;
+            // Only retry control packets — standard (file data) packets
+            // are sent by the UploadBandwidthThrottler on its own thread.
+            send(1024 * 64, 0, true);
+        } else {
+            m_retryDelayMs = std::min(m_retryDelayMs * 2, kRetryMaxMs);
+        }
+        scheduleRetryIfNeeded();
+    });
 }
 
 uint32 EMSocket::getNextFragSize(uint32 current, uint32 minFragSize)
@@ -748,6 +771,14 @@ bool EMSocket::hasQueues(bool onlyStandardPackets) const
     return m_sendBuffer != nullptr
         || !m_standardQueue.empty()
         || (!m_controlQueue.empty() && !onlyStandardPackets);
+}
+
+bool EMSocket::hasControlQueue() const
+{
+    // Takes m_sendLock, matching sendControlData() — the throttler calls both from
+    // its own thread while holding its m_sendMutex, so the order is unchanged.
+    std::lock_guard lock(m_sendLock);
+    return m_sendBuffer != nullptr || !m_controlQueue.empty();
 }
 
 bool EMSocket::isEnoughFileDataQueued(uint32 nMinFilePayloadBytes) const

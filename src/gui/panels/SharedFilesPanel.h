@@ -14,6 +14,8 @@
 #include <functional>
 #include <vector>
 
+#include "dialogs/DetailDialog.h"
+
 class QCheckBox;
 class QGroupBox;
 class QLabel;
@@ -33,6 +35,7 @@ namespace eMule {
 
 class ArchivePreviewPanel;
 class IpcClient;
+class PanelPoller;
 struct SharedFileRow;
 class MediaInfoPanel;
 class SharedFilesModel;
@@ -102,6 +105,15 @@ private:
     [[nodiscard]] SelectionState saveSelection() const;
     void restoreSelection(const SelectionState& state);
     void fetchAndShowSharedFileDetails(const QString& hash, int tab);
+
+    /// Locate @p hash in the view (proxy coordinates); invalid when the folder
+    /// filter hides it or the file has left the share.
+    [[nodiscard]] QModelIndex fileIndexFor(const QString& hash) const;
+
+    /// The detail dialog's Prev/Next walk over the shared-files list. Moving the
+    /// view's current row is deliberate: it also drives the bottom Statistics /
+    /// Content / eD2K tabs, exactly as MFC's EnsureVisible side effect does.
+    [[nodiscard]] DetailWalker makeSharedFileWalker(const QString& hash);
     void sendShareDirsUpdate(const QStringList& dirs);
     static void collectSubdirectories(const QString& root, QStringList& list);
 
@@ -180,7 +192,9 @@ private:
 
     // IPC
     IpcClient* m_ipc = nullptr;
-    QTimer* m_refreshTimer = nullptr;
+
+    /// Periodic refetch, suspended while this panel is not the visible tab.
+    PanelPoller* m_poller = nullptr;
 
     // Context menu
     QMenu* m_contextMenu = nullptr;

@@ -136,6 +136,26 @@ public:
     void addSessionSentBytes(uint64 bytes);
     void addSessionSentBytesToFriend(uint64 bytes);
 
+    // --- Download quality counters ---
+    //
+    // MFC keeps these as session counters in Preferences
+    // (srchybrid/Preferences.h:750-751) and bumps them where the event happens.
+    // They cannot be derived by summing the download queue: a file that leaves
+    // the queue would take its contribution with it, and a session total that
+    // can go down is useless as the basis for a cumulative one.  The per-file
+    // totals stay on PartFile, which persists them in .part.met.
+
+    [[nodiscard]] uint64 sesCompressionGain() const { return m_sesCompressionGain.load(); }
+    [[nodiscard]] uint64 sesCorruptionLoss() const { return m_sesCorruptionLoss.load(); }
+    [[nodiscard]] uint32 sesIchPartsSaved() const { return m_sesIchPartsSaved.load(); }
+
+    void addCompressionGain(uint64 bytes);
+    void addCorruptionLoss(uint64 bytes);
+    /// Credit recovered bytes back to the session loss, saturating at 0
+    /// (MFC: srchybrid/PartFile.cpp:4222).
+    void subCorruptionLoss(uint64 bytes);
+    void addIchPartSaved();
+
     // --- Global state ---
 
     [[nodiscard]] uint16 reconnects() const { return m_reconnects; }
@@ -146,8 +166,15 @@ public:
     void setFilteredClients(uint32 val) { m_filteredClients = val; }
     void addFilteredClient() { ++m_filteredClients; }
 
-    [[nodiscard]] uint32 startTime() const { return m_startTime; }
-    void setStartTime(uint32 val) { m_startTime = val; }
+    /// Monotonic getTickCount() value at which this session started; 0 = not
+    /// started yet.  MFC stamps the same thing in CemuleDlg::OnInitDialog
+    /// (srchybrid/EmuleDlg.cpp:375) — ours is stamped by init().  It is a tick,
+    /// not a wall clock: never subtract it from time(nullptr).
+    [[nodiscard]] uint64 startTick() const { return m_startTick; }
+    void setStartTick(uint64 val) { m_startTick = val; }
+
+    /// Seconds since the session started; 0 until it has been stamped.
+    [[nodiscard]] uint32 uptimeSecs() const;
 
     [[nodiscard]] uint32 transferStartTime() const { return m_transferStartTime; }
     void setTransferStartTime(uint32 val) { m_transferStartTime = val; }
@@ -185,8 +212,104 @@ public:
     [[nodiscard]] uint64 sesUpFromFile() const { return m_sesUpFromFile.load(); }
     [[nodiscard]] uint64 sesUpFromPartfile() const { return m_sesUpFromPartfile.load(); }
 
-    /// Save current session cumulative values into Preferences and persist.
-    void saveCumulativeToPrefs(Preferences& prefs) const;
+    // --- Cumulative totals ---
+
+    /// Session counters that live outside Statistics but still feed the
+    /// cumulative totals.  The caller collects them, so Statistics never has to
+    /// reach into theApp.
+    struct ExternalSessionCounters {
+        uint32 upSuccessfulSessions = 0;
+        uint32 upFailedSessions = 0;
+        uint32 downSuccessfulSessions = 0;
+        uint32 downFailedSessions = 0;
+        uint32 downCompletedFiles = 0;
+        uint32 connPeak = 0;
+        uint32 connMaxLimitReached = 0;
+    };
+
+    /// Every cumulative counter the Statistics tree shows.  Each field is the
+    /// value read out of Preferences when the session started plus what this
+    /// session has added since — so display and flush cannot drift, and writing
+    /// it back is idempotent.  Field names mirror the Preferences::cum* getters.
+    struct CumulativeTotals {
+        // Transfer totals
+        uint64 totalUploaded = 0;
+        uint64 totalDownloaded = 0;
+        uint64 totalUploadedToFriend = 0;
+
+        // Sessions
+        uint32 upSuccessfulSessions = 0;
+        uint32 upFailedSessions = 0;
+        uint32 downSuccessfulSessions = 0;
+        uint32 downFailedSessions = 0;
+        uint32 downCompletedFiles = 0;
+
+        // Connections
+        uint32 connPeak = 0;              ///< a maximum, not a sum
+        uint32 connMaxLimitReached = 0;
+        uint32 connReconnects = 0;
+
+        // Times (seconds)
+        uint64 runTime = 0;
+        uint64 transferTime = 0;
+        uint64 uploadTime = 0;
+        uint64 downloadTime = 0;
+        uint64 serverDuration = 0;
+
+        // Download quality
+        uint64 compressionGain = 0;
+        uint64 corruptionLoss = 0;
+        uint32 ichPartsSaved = 0;
+
+        // Upload overhead
+        uint64 upOverheadTotal = 0;
+        uint64 upOverheadTotalPackets = 0;
+        uint64 upOverheadFileReq = 0;
+        uint64 upOverheadFileReqPackets = 0;
+        uint64 upOverheadSrcExch = 0;
+        uint64 upOverheadSrcExchPackets = 0;
+        uint64 upOverheadServer = 0;
+        uint64 upOverheadServerPackets = 0;
+        uint64 upOverheadKad = 0;
+        uint64 upOverheadKadPackets = 0;
+
+        // Download overhead
+        uint64 downOverheadTotal = 0;
+        uint64 downOverheadTotalPackets = 0;
+        uint64 downOverheadFileReq = 0;
+        uint64 downOverheadFileReqPackets = 0;
+        uint64 downOverheadSrcExch = 0;
+        uint64 downOverheadSrcExchPackets = 0;
+        uint64 downOverheadServer = 0;
+        uint64 downOverheadServerPackets = 0;
+        uint64 downOverheadKad = 0;
+        uint64 downOverheadKadPackets = 0;
+
+        // Per-client / per-port / per-source
+        std::array<uint64, kUpClientCount> upByClient{};
+        std::array<uint64, kDownClientCount> downByClient{};
+        uint64 upPort4662 = 0;
+        uint64 upPortOther = 0;
+        uint64 downPort4662 = 0;
+        uint64 downPortOther = 0;
+        uint64 upFromFile = 0;
+        uint64 upFromPartfile = 0;
+    };
+
+    /// Cumulative totals as of right now — what both the Statistics tree and the
+    /// flush must use.  Reading Preferences::cum* directly and adding the session
+    /// on top double-counts once the periodic flush has banked it.
+    [[nodiscard]] CumulativeTotals cumulativeTotals(const ExternalSessionCounters& ext) const;
+
+    /// Write cumulativeTotals() into @p prefs.  Absolute, not additive: running
+    /// it twice changes nothing, which is what lets it run on a timer instead of
+    /// only at shutdown.  Does not save the file — the caller decides when.
+    void flushCumulativeToPrefs(Preferences& prefs,
+                                const ExternalSessionCounters& ext) const;
+
+    /// Re-read the cumulative baseline from @p prefs.  Needed after the totals in
+    /// preferences are changed behind our back — i.e. by a statistics reset.
+    void rebaseCumulative(const Preferences& prefs);
 
     // --- Global progress (for taskbar / status) ---
 
@@ -257,9 +380,12 @@ private:
     // Global state
     uint16 m_reconnects = 0;
     uint32 m_filteredClients = 0;
-    uint32 m_startTime = 0;
+    uint64 m_startTick = 0;
     uint32 m_transferStartTime = 0;
     uint32 m_serverConnectTime = 0;
+
+    // Cumulative values as they stood in Preferences when the session started.
+    CumulativeTotals m_cumBase;
 
     // Global progress
     float m_globalDone = 0.0f;
@@ -317,6 +443,11 @@ private:
     // Per-source session breakdown (upload only)
     std::atomic<uint64> m_sesUpFromFile{0};
     std::atomic<uint64> m_sesUpFromPartfile{0};
+
+    // Download quality session counters
+    std::atomic<uint64> m_sesCompressionGain{0};
+    std::atomic<uint64> m_sesCorruptionLoss{0};
+    std::atomic<uint32> m_sesIchPartsSaved{0};
 };
 
 } // namespace eMule

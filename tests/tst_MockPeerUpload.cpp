@@ -41,6 +41,7 @@
 
 #include <zlib.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <map>
@@ -244,6 +245,7 @@ private slots:
     void uploadFlow_sendingPartMatchesFile();
     void uploadFlow_longDurationRateLimited();
     void uploadFlow_throttlerEnforcesSpeedLimit();
+    void uploadFlow_unlimitedIsNotTrickled();
     void cleanupTestCase();
 
 private:
@@ -849,6 +851,138 @@ void tst_MockPeerUpload::uploadFlow_throttlerEnforcesSpeedLimit()
     m_throttler = new UploadBandwidthThrottler(this);
 
     // Restart default process timer for cleanup
+    m_processTimer.start(100);
+}
+
+// ---------------------------------------------------------------------------
+// Unlimited upload must actually run at full speed.
+//
+// eMuleQt stores "no upload limit" as maxUpload() == 0, but the throttler is a port of
+// MFC code that spells the same thing UNLIMITED. Reading the raw pref gave
+// allowedDataRate = 0 * 1024 = 0, so bytesToSpend stayed 0 and the equal-bandwidth and
+// full-priority send loops were skipped entirely — only the once-per-second trickle loop
+// and a 500-byte control budget ran. thePrefs.maxUploadLimit() is what closes that gap.
+//
+// The trickle loop paces each socket via getNeededBytes(), which spreads the current send
+// buffer over a 3-5 second deadline: roughly one EMBLOCKSIZE buffer per 3 s on a single
+// socket, i.e. a ceiling around 60 KB/s. The assertion below sits well above that and far
+// below what loopback delivers unthrottled, so it separates the two regimes cleanly
+// without depending on the host's actual loopback speed.
+// ---------------------------------------------------------------------------
+
+void tst_MockPeerUpload::uploadFlow_unlimitedIsNotTrickled()
+{
+    m_processTimer.stop();
+
+    constexpr int measureSec = 8;
+    // ~190 KB/s averaged over the window: >3x the trickle ceiling, and a small fraction
+    // of unthrottled loopback throughput.
+    constexpr uint64 minTotalBytes = 1500u * 1024u;
+
+    thePrefs.setMaxUpload(0);   // the GUI's "Unlimited"
+    QCOMPARE(thePrefs.maxUploadLimit(), UNLIMITED);
+
+    m_uploadQueue->setThrottler(m_throttler);
+    m_throttler->setUploadQueue(m_uploadQueue);
+    m_throttler->setDiskIOThread(m_diskIO);
+    m_throttler->start();
+
+    // 1. Connect with encryption
+    MockDownloader mock;
+    mock.setObfuscationConfig(thePrefs.obfuscationConfig());
+    mock.setConnectionEncryption(true, thePrefs.userHash().data(), false);
+    mock.connectToHost(QHostAddress::LocalHost, m_listenSocket->serverPort());
+    QVERIFY(mock.waitForConnected(5000));
+
+    {
+        int rcvBuf = 4 * 1024 * 1024;
+        ::setsockopt(static_cast<int>(mock.socketDescriptor()), SOL_SOCKET, SO_RCVBUF,
+                     reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
+    }
+
+    QTRY_VERIFY_WITH_TIMEOUT(mock.isEncryptionLayerReady(), 5000);
+
+    // 2. ED2K handshake
+    mock.sendPacket(buildHelloPacket());
+    QTRY_VERIFY_WITH_TIMEOUT(mock.hasOpcode(OP_HELLOANSWER), 5000);
+
+    mock.sendPacket(buildEmuleInfo());
+    QTRY_VERIFY_WITH_TIMEOUT(mock.hasOpcode(OP_EMULEINFOANSWER, OP_EMULEPROT), 5000);
+
+    // 3. File request + upload negotiation
+    mock.sendPacket(buildSetReqFileId(m_randomFileHash.data()));
+    mock.sendPacket(buildRequestFileName(m_randomFileHash.data()));
+    QTRY_VERIFY_WITH_TIMEOUT(mock.hasOpcode(OP_FILESTATUS), 5000);
+
+    mock.sendPacket(buildStartUploadReq(m_randomFileHash.data()));
+    QTRY_VERIFY_WITH_TIMEOUT(mock.hasOpcode(OP_ACCEPTUPLOADREQ), 10000);
+
+    // 4. Same block pump as the speed-limit test — the throttler does the sending.
+    constexpr uint64 blockSize = EMBLOCKSIZE;
+    const uint64 fileSize = m_randomFileSize;
+    uint64 nextOffset = 0;
+    uint64 prevMockBytes = 0;
+
+    QTimer processTimer;
+    connect(&processTimer, &QTimer::timeout, this, [this, &mock, &nextOffset, &prevMockBytes, fileSize] {
+        m_uploadQueue->process();
+        m_listenSocket->process();
+
+        uint64 curBytes = mock.totalDataBytes();
+        if (curBytes > prevMockBytes || nextOffset == 0) {
+            prevMockBytes = curBytes;
+            for (int r = 0; r < 2 && nextOffset + blockSize * 3 <= fileSize; ++r) {
+                mock.sendPacket(buildRequestParts(m_randomFileHash.data(),
+                    nextOffset, nextOffset + blockSize,
+                    nextOffset + blockSize, nextOffset + blockSize * 2,
+                    nextOffset + blockSize * 2, nextOffset + blockSize * 3));
+                nextOffset += blockSize * 3;
+            }
+        }
+    });
+
+    mock.sendPacket(buildRequestParts(m_randomFileHash.data(),
+        0, blockSize, blockSize, blockSize * 2, blockSize * 2, blockSize * 3));
+    nextOffset = blockSize * 3;
+    QTest::qWait(100);
+
+    processTimer.start(100);
+    QElapsedTimer elapsed;
+    elapsed.start();
+
+    // 5. Run the window, stopping early once the bar is cleared — on a fast host the
+    //    whole file drains in a couple of seconds and there is nothing left to measure.
+    uint32 peakSampleRate = 0;
+    uint64 prevReceived = 0;
+    for (int sec = 0; sec < measureSec; ++sec) {
+        QTest::qWait(1000);
+        const uint64 curReceived = mock.totalDataBytes();
+        peakSampleRate = std::max(peakSampleRate,
+                                  static_cast<uint32>(curReceived - prevReceived));
+        prevReceived = curReceived;
+        if (curReceived >= minTotalBytes)
+            break;
+    }
+
+    processTimer.stop();
+    const qint64 elapsedMs = elapsed.elapsed();
+    const uint64 totalReceived = mock.totalDataBytes();
+
+    qDebug("Unlimited upload test: %lld ms, %llu bytes, peak sample %u bytes/s",
+           elapsedMs, static_cast<unsigned long long>(totalReceived), peakSampleRate);
+
+    QVERIFY2(totalReceived >= minTotalBytes,
+             qPrintable(QStringLiteral(
+                 "Unlimited upload moved only %1 bytes in %2 ms (need >=%3). "
+                 "A figure near the ~60 KB/s trickle ceiling means the throttler read the "
+                 "raw maxUpload() 0 as a zero byte budget instead of UNLIMITED.")
+                 .arg(totalReceived).arg(elapsedMs).arg(minTotalBytes)));
+
+    // Cleanup: stop throttler and disconnect from queue
+    m_throttler->endThread();
+    m_uploadQueue->setThrottler(nullptr);
+    m_throttler = new UploadBandwidthThrottler(this);
+
     m_processTimer.start(100);
 }
 

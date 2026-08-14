@@ -51,6 +51,17 @@ static void writeRawPacket(QTcpSocket* sock, uint8 prot, uint8 opcode,
     sock->flush();
 }
 
+/// Helper: write an OP_SERVERMESSAGE packet (uint16 length + text bytes).
+static void writeServerMessage(QTcpSocket* sock, const QByteArray& text)
+{
+    QByteArray payload;
+    const auto len = static_cast<uint16>(text.size());
+    payload.append(reinterpret_cast<const char*>(&len), 2);
+    payload.append(text);
+    writeRawPacket(sock, OP_EDONKEYPROT, OP_SERVERMESSAGE,
+                   payload.constData(), static_cast<uint32>(payload.size()));
+}
+
 /// Helper: write an OP_IDCHANGE packet to simulate login success.
 static void writeIdChange(QTcpSocket* sock, uint32 clientID, uint32 tcpFlags = 0)
 {
@@ -122,6 +133,8 @@ private slots:
     // Disconnect
     void disconnect_whileConnected();
     void disconnect_whileNotConnected_returnsFalse();
+    void serverDropsConnection_clearsConnectedSocket();
+    void serverDropsConnection_autoReconnects();
 
     // Public IP derived from the login answer
     void setClientID_highIDBecomesPublicIP();
@@ -147,6 +160,14 @@ private slots:
 
     // SendPacket
     void sendPacket_notConnected_returnsFalse();
+
+    // OP_SERVERMESSAGE → Server Info pane
+    void serverMessage_emitsHeaderThenLines();
+    void serverMessage_headerOnlyOncePerConnection();
+    void serverMessage_dynIPLineStillShown();
+    void serverMessage_errorAndWarningNotShown();
+    void serverMessage_recordsServerVersion();
+    void serverMessage_splitsOnBareNewlines();
 };
 
 // ---------------------------------------------------------------------------
@@ -444,6 +465,100 @@ void tst_ServerConnect::disconnect_whileNotConnected_returnsFalse()
     QVERIFY(!conn.disconnect());
 }
 
+/// Regression: a server that drops us must not leave m_connectedSocket dangling,
+/// must tell the rest of the app, and must release the identity that server gave us.
+///
+/// connectionFailed() funnels every terminal state into destroySocket() — which used
+/// to delete the socket while m_connectedSocket still pointed at it and m_connected
+/// was still true. The stale pointer was then dereferenced by disconnect(),
+/// sendPacket() and currentServer(); shutdown (~CoreSession → disconnect()) hit it
+/// every time and segfaulted. Separately, only the Disconnected case emitted
+/// disconnectedFromServer() and cleared the client ID — and that case was
+/// unreachable, since ServerSocket used to map the peer's close to ServerDead.
+void tst_ServerConnect::serverDropsConnection_clearsConnectedSocket()
+{
+    QTcpServer tcpServer;
+    QVERIFY(tcpServer.listen(QHostAddress::LocalHost, 0));
+
+    Server srv = makeLoopbackServer(tcpServer.serverPort());
+
+    ServerList list;
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+
+    conn.connectToServer(&srv, false, true);
+
+    QVERIFY(tcpServer.waitForNewConnection(5000));
+    auto* serverSide = tcpServer.nextPendingConnection();
+    QVERIFY(serverSide);
+
+    QTest::qWait(200);
+    writeIdChange(serverSide, 0x12345678);
+    QTRY_VERIFY_WITH_TIMEOUT(conn.isConnected(), 5000);
+    QCOMPARE(conn.clientID(), uint32{0x12345678});
+
+    QSignalSpy disconnSpy(&conn, &ServerConnect::disconnectedFromServer);
+
+    // The server drops us mid-session.
+    serverSide->abort();
+
+    // Before the fix this stayed true forever, because only the Disconnected case
+    // cleared it and this path reported ServerDead.
+    QTRY_VERIFY_WITH_TIMEOUT(!conn.isConnected(), 5000);
+
+    // Both of these dereferenced freed memory before the fix.
+    QVERIFY(conn.currentServer() == nullptr);
+    QVERIFY(!conn.disconnect());
+
+    // Nobody downstream used to be told, and the departed server's claim about our
+    // identity outlived it — theApp.publicIP() still stamped server-UDP crypt keys.
+    QTRY_COMPARE(disconnSpy.count(), 1);
+    QCOMPARE(conn.clientID(), uint32{0});
+    QCOMPARE(theApp.publicIP(), uint32{0});
+}
+
+/// The Disconnected branch of connectionFailed() was dead code: ServerSocket only
+/// emitted connectionFailed for ServerDead/FatalError/ServerFull, and Qt reports the
+/// peer's FIN as an error before disconnected(), so a dropped session never reached
+/// it. Auto-reconnect is the observable proof that the branch now runs — MFC:
+/// CServerConnect::ConnectionFailed() CS_DISCONNECTED, srchybrid/ServerConnect.cpp:339.
+void tst_ServerConnect::serverDropsConnection_autoReconnects()
+{
+    QTcpServer tcpServer;
+    QVERIFY(tcpServer.listen(QHostAddress::LocalHost, 0));
+
+    Server srv = makeLoopbackServer(tcpServer.serverPort());
+
+    // A routable-looking entry for the reconnect to aim at; the loopback server we
+    // actually connect to cannot be added (isGoodServerIP rejects 127.x).
+    ServerList list;
+    QVERIFY(list.addServer(makePublicServer(0x08080808, 4661, QStringLiteral("Retry"))));
+
+    ServerConnect conn(list);
+    ServerConnectConfig cfg = makeTestConfig();
+    cfg.reconnectOnDisconnect = true;
+    conn.setConfig(cfg);
+
+    conn.connectToServer(&srv, false, true);
+
+    QVERIFY(tcpServer.waitForNewConnection(5000));
+    auto* serverSide = tcpServer.nextPendingConnection();
+    QVERIFY(serverSide);
+
+    QTest::qWait(200);
+    writeIdChange(serverSide, 0x12345678);
+    QTRY_VERIFY_WITH_TIMEOUT(conn.isConnected(), 5000);
+    QVERIFY(!conn.isConnecting());
+
+    serverSide->abort();
+
+    QTRY_VERIFY_WITH_TIMEOUT(conn.isConnecting(), 5000);
+    QVERIFY(!conn.isConnected());
+
+    // Don't leave an attempt against 8.8.8.8 running into the next case.
+    conn.stopConnectionTry();
+}
+
 // ---------------------------------------------------------------------------
 // Tests: StopConnectionTry
 // ---------------------------------------------------------------------------
@@ -587,6 +702,179 @@ void tst_ServerConnect::sendPacket_notConnected_returnsFalse()
     auto packet = std::make_unique<Packet>(OP_GETSERVERLIST, 0);
     bool result = conn.sendPacket(std::move(packet));
     QVERIFY(!result);
+}
+
+// ---------------------------------------------------------------------------
+// Tests: OP_SERVERMESSAGE → Server Info pane
+//
+// The reference feeds this pane from CServerSocket::ProcessPacket via
+// CemuleDlg::AddServerMessageLine — a channel separate from the log
+// (srchybrid/ServerSocket.cpp:170-250). These cases pin the emission contract
+// the daemon then forwards over IpcMsgType::PushServerMessage.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Point theApp.serverList at a local list for the duration of a case, so
+/// ServerConnect::resolveListEntry() can find the entry under test.
+struct ScopedServerList {
+    explicit ScopedServerList(ServerList* list) : m_saved(theApp.serverList) { theApp.serverList = list; }
+    ~ScopedServerList() { theApp.serverList = m_saved; }
+    ServerList* m_saved;
+};
+
+/// A connected ServerConnect talking to a loopback QTcpServer, with a spy on the
+/// Server Info signal. Every case below needs the same six steps to get there.
+struct ConnectedFixture {
+    QTcpServer tcpServer;
+    ServerList list;
+    std::unique_ptr<ServerConnect> conn;
+    std::unique_ptr<Server> srv;
+    QTcpSocket* serverSide = nullptr;
+    std::unique_ptr<QSignalSpy> msgSpy;
+
+    [[nodiscard]] bool start()
+    {
+        if (!tcpServer.listen(QHostAddress::LocalHost, 0))
+            return false;
+        srv = std::make_unique<Server>(makeLoopbackServer(tcpServer.serverPort()));
+        conn = std::make_unique<ServerConnect>(list);
+        conn->setConfig(makeTestConfig());
+        msgSpy = std::make_unique<QSignalSpy>(conn.get(), &ServerConnect::serverMessageReceived);
+        if (!msgSpy->isValid())
+            return false;
+
+        conn->connectToServer(srv.get(), false, true);
+        if (!tcpServer.waitForNewConnection(5000))
+            return false;
+        serverSide = tcpServer.nextPendingConnection();
+        if (!serverSide)
+            return false;
+
+        QTest::qWait(200);
+        writeIdChange(serverSide, 0x12345678, SRVCAP_ZLIB | SRVCAP_NEWTAGS);
+        return true;
+    }
+
+    ~ConnectedFixture()
+    {
+        if (conn) conn->disconnect();
+        if (serverSide) serverSide->close();
+    }
+};
+
+} // namespace
+
+void tst_ServerConnect::serverMessage_emitsHeaderThenLines()
+{
+    ConnectedFixture fx;
+    QVERIFY(fx.start());
+    QTRY_VERIFY_WITH_TIMEOUT(fx.conn->isConnected(), 5000);
+
+    writeServerMessage(fx.serverSide, "Welcome!\r\nEnjoy your stay.");
+
+    // Blank separator + blue header + the two greeting lines.
+    QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 4, 5000);
+
+    QCOMPARE(fx.msgSpy->at(0).at(0).value<ServerMsgType>(), ServerMsgType::Info);
+    QCOMPARE(fx.msgSpy->at(0).at(1).toString(), QString{});
+
+    QCOMPARE(fx.msgSpy->at(1).at(0).value<ServerMsgType>(), ServerMsgType::Success);
+    QVERIFY(fx.msgSpy->at(1).at(1).toString().contains(
+        QStringLiteral("Connection established on")));
+
+    QCOMPARE(fx.msgSpy->at(2).at(0).value<ServerMsgType>(), ServerMsgType::Info);
+    QCOMPARE(fx.msgSpy->at(2).at(1).toString(), QStringLiteral("Welcome!"));
+    QCOMPARE(fx.msgSpy->at(3).at(1).toString(), QStringLiteral("Enjoy your stay."));
+}
+
+void tst_ServerConnect::serverMessage_headerOnlyOncePerConnection()
+{
+    ConnectedFixture fx;
+    QVERIFY(fx.start());
+    QTRY_VERIFY_WITH_TIMEOUT(fx.conn->isConnected(), 5000);
+
+    writeServerMessage(fx.serverSide, "First");
+    QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 3, 5000);
+
+    writeServerMessage(fx.serverSide, "Second");
+    QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 4, 5000);
+
+    // The second message adds only its own line — no second header block.
+    QCOMPARE(fx.msgSpy->at(3).at(0).value<ServerMsgType>(), ServerMsgType::Info);
+    QCOMPARE(fx.msgSpy->at(3).at(1).toString(), QStringLiteral("Second"));
+}
+
+void tst_ServerConnect::serverMessage_dynIPLineStillShown()
+{
+    ConnectedFixture fx;
+    QVERIFY(fx.start());
+    QTRY_VERIFY_WITH_TIMEOUT(fx.conn->isConnected(), 5000);
+
+    // The reference consumes the marker for its side effect but leaves
+    // bOutputMessage true, so the line is still displayed.
+    writeServerMessage(fx.serverSide, "[emDynIP: my.server.example]");
+    QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 3, 5000);
+
+    QCOMPARE(fx.msgSpy->at(2).at(1).toString(),
+             QStringLiteral("[emDynIP: my.server.example]"));
+}
+
+void tst_ServerConnect::serverMessage_errorAndWarningNotShown()
+{
+    ConnectedFixture fx;
+    QVERIFY(fx.start());
+    QTRY_VERIFY_WITH_TIMEOUT(fx.conn->isConnected(), 5000);
+
+    // ERROR/WARNING go to the log, never the info pane. Matching is
+    // case-sensitive, so "Errors happen" is ordinary text and IS shown.
+    writeServerMessage(fx.serverSide,
+                       "ERROR: bad login\r\nWARNING: slow down\r\nErrors happen");
+    QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 3, 5000);
+
+    QCOMPARE(fx.msgSpy->at(2).at(1).toString(), QStringLiteral("Errors happen"));
+    for (int i = 0; i < fx.msgSpy->count(); ++i) {
+        const QString line = fx.msgSpy->at(i).at(1).toString();
+        QVERIFY(!line.contains(QStringLiteral("bad login")));
+        QVERIFY(!line.contains(QStringLiteral("slow down")));
+    }
+}
+
+void tst_ServerConnect::serverMessage_recordsServerVersion()
+{
+    ConnectedFixture fx;
+    QVERIFY(fx.start());
+    ScopedServerList scoped(&fx.list);
+    QTRY_VERIFY_WITH_TIMEOUT(fx.conn->isConnected(), 5000);
+
+    // Anchored at the start of the line, and still echoed to the pane.
+    writeServerMessage(fx.serverSide, "server version 16.4");
+    QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 3, 5000);
+    QCOMPARE(fx.msgSpy->at(2).at(1).toString(), QStringLiteral("server version 16.4"));
+
+    // A mid-sentence mention must not be treated as a version report.
+    writeServerMessage(fx.serverSide, "Ask about the server version please");
+    QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 4, 5000);
+    QCOMPARE(fx.msgSpy->at(3).at(1).toString(),
+             QStringLiteral("Ask about the server version please"));
+}
+
+void tst_ServerConnect::serverMessage_splitsOnBareNewlines()
+{
+    ConnectedFixture fx;
+    QVERIFY(fx.start());
+    QTRY_VERIFY_WITH_TIMEOUT(fx.conn->isConnected(), 5000);
+
+    // Regression: the reference tokenises on the CHARACTER SET "\r\n", so a lone
+    // \n is a separator too. Real servers (eMule Sunrise) send bare newlines;
+    // splitting on the literal "\r\n" collapsed the greeting into one line and
+    // hid every control marker after the first newline.
+    writeServerMessage(fx.serverSide, "Welcome\nERROR: hidden\nLast line");
+
+    // Blank + header + "Welcome" + "Last line"; the ERROR line is diverted.
+    QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 4, 5000);
+    QCOMPARE(fx.msgSpy->at(2).at(1).toString(), QStringLiteral("Welcome"));
+    QCOMPARE(fx.msgSpy->at(3).at(1).toString(), QStringLiteral("Last line"));
 }
 
 // ---------------------------------------------------------------------------

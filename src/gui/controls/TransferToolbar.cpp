@@ -66,6 +66,12 @@ void TransferToolbar::checkButton(int id)
         btn->setChecked(true);
 }
 
+void TransferToolbar::setButtonEnabled(int id, bool on)
+{
+    if (auto* btn = m_group->button(id))
+        btn->setEnabled(on);
+}
+
 void TransferToolbar::setLabelText(const QString& text)
 {
     m_label->setText(text);

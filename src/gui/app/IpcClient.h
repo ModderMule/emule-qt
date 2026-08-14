@@ -103,7 +103,11 @@ signals:
     void downloadAdded(const Ipc::IpcMessage& msg);
     void downloadRemoved(const Ipc::IpcMessage& msg);
     void serverStateChanged(const Ipc::IpcMessage& msg);
+    /// One Server Info line: [type: ServerMsgType, text: string].
+    void serverMessageReceived(const Ipc::IpcMessage& msg);
     void searchResultReceived(const Ipc::IpcMessage& msg);
+    /// ED2K global (UDP) sweep progress: [searchID, asked, total, running].
+    void globalSearchProgress(const Ipc::IpcMessage& msg);
     void logMessageReceived(const Ipc::IpcMessage& msg);
     void sharedFileUpdated(const Ipc::IpcMessage& msg);
     void uploadUpdated(const Ipc::IpcMessage& msg);
@@ -131,6 +135,11 @@ private:
     void performHandshake();
     void dispatchPushEvent(const Ipc::IpcMessage& msg);
     void requestLogSync();
+
+    /// Fetch the daemon's Server Info backlog and replay it through
+    /// serverMessageReceived. The daemon outlives the GUI, so without this a GUI
+    /// restart shows an empty pane even though the greeting already arrived.
+    void requestServerMessages();
     void scheduleReconnect();
     void resetConnection();
 
@@ -151,6 +160,8 @@ private:
     int64_t m_lastServerId  = 0;
     int64_t m_lastLogId     = 0;  // Log tab
     int64_t m_lastVerboseId = 0;
+    /// Highest Server Info line id displayed, so a reconnect replays only the gap.
+    int64_t m_lastServerMsgId = 0;
     QString m_daemonToken;
     QString m_authToken;
     std::unordered_map<int, ResponseCallback> m_pendingCallbacks;

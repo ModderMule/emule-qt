@@ -17,6 +17,16 @@ private slots:
     void storeAndLoad_roundTrip();
     void searchType_values();
     void fields_initialValues();
+
+    // Automatic method resolution
+    void automatic_kadOnly_picksKad();
+    void automatic_serverOnly_picksServer();
+    void automatic_neitherNetwork_picksNothing();
+    void automatic_bothNetworks_prefersKad();
+    void automatic_staticServer_picksServer();
+    void automatic_bigServerAndShortList_picksServer();
+    void automatic_bigServerButLongList_picksKad();
+    void automatic_serverThresholds_areExact();
 };
 
 void tst_SearchParams::construct_default()
@@ -84,6 +94,112 @@ void tst_SearchParams::fields_initialValues()
     QVERIFY(p.artist.isEmpty());
     QCOMPARE(p.minBitrate, uint32{0});
     QCOMPARE(p.minLength, uint32{0});
+}
+
+// ---------------------------------------------------------------------------
+// Automatic method resolution — MFC CSearchResultsWnd::StartNewSearch
+// (srchybrid/SearchResultsWnd.cpp:1134-1165)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Both networks up, connected to a server that on its own would *not* tip the
+/// choice away from Kad. Cases below move one field at a time from here.
+AutoSearchState bothNetworks()
+{
+    AutoSearchState s;
+    s.serverConnected = true;
+    s.kadConnected = true;
+    s.serverIsStatic = false;
+    s.serverUsers = 1000;
+    s.serverFiles = 100000;
+    s.serverCount = 100;
+    return s;
+}
+
+} // namespace
+
+void tst_SearchParams::automatic_kadOnly_picksKad()
+{
+    AutoSearchState s;
+    s.kadConnected = true;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Kademlia);
+}
+
+void tst_SearchParams::automatic_serverOnly_picksServer()
+{
+    AutoSearchState s;
+    s.serverConnected = true;
+    // A server good enough to be preferred when both are up must not change the
+    // answer here — there is no Kad to choose instead.
+    s.serverIsStatic = true;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Ed2kServer);
+}
+
+void tst_SearchParams::automatic_neitherNetwork_picksNothing()
+{
+    QVERIFY(!resolveAutomaticSearchType(AutoSearchState{}).has_value());
+}
+
+void tst_SearchParams::automatic_bothNetworks_prefersKad()
+{
+    QCOMPARE(resolveAutomaticSearchType(bothNetworks()), SearchType::Kademlia);
+}
+
+void tst_SearchParams::automatic_staticServer_picksServer()
+{
+    // A static server is one the user chose deliberately, so it wins outright —
+    // no user/file/list-size test applies.
+    AutoSearchState s = bothNetworks();
+    s.serverIsStatic = true;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Ed2kServer);
+}
+
+void tst_SearchParams::automatic_bigServerAndShortList_picksServer()
+{
+    AutoSearchState s = bothNetworks();
+    s.serverUsers = 50000;
+    s.serverFiles = 6000000;
+    s.serverCount = 39;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Ed2kServer);
+}
+
+void tst_SearchParams::automatic_bigServerButLongList_picksKad()
+{
+    // Same server, but a list long enough that eMule assumes it is polluted with
+    // fakes — so the server's own numbers stop being evidence of anything.
+    AutoSearchState s = bothNetworks();
+    s.serverUsers = 50000;
+    s.serverFiles = 6000000;
+    s.serverCount = 40;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Kademlia);
+}
+
+void tst_SearchParams::automatic_serverThresholds_areExact()
+{
+    // Each bound checked from both sides. These constants are copied from MFC
+    // verbatim — including the 2,000,000 upper user bound that eMule's own comment
+    // calls a copy & paste bug — so a later "cleanup" has to fail a test first.
+    AutoSearchState s = bothNetworks();
+    s.serverUsers = 50000;
+    s.serverFiles = 6000000;
+    s.serverCount = 30;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Ed2kServer);
+
+    s.serverUsers = 40000;                                  // must be > 40000
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Kademlia);
+    s.serverUsers = 40001;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Ed2kServer);
+
+    s.serverUsers = 2000000;                                // must be < 2000000
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Kademlia);
+    s.serverUsers = 1999999;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Ed2kServer);
+
+    s.serverFiles = 5000000;                                // must be > 5000000
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Kademlia);
+    s.serverFiles = 5000001;
+    QCOMPARE(resolveAutomaticSearchType(s), SearchType::Ed2kServer);
 }
 
 QTEST_MAIN(tst_SearchParams)

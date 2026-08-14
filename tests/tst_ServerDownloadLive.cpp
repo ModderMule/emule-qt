@@ -248,7 +248,7 @@ void tst_ServerDownloadLive::connectAndShareFiles()
     if (!m_serverConnect->isConnected()) {
         // Log server messages for diagnostics
         for (int i = 0; i < messageSpy.count(); ++i)
-            qDebug() << "Server message:" << messageSpy.at(i).first().toString();
+            qDebug() << "Server message:" << messageSpy.at(i).at(1).toString();
         QSKIP("No ED2K server accepted our connection (may require port forwarding)");
     }
 
@@ -258,7 +258,7 @@ void tst_ServerDownloadLive::connectAndShareFiles()
 
     // Log server messages if any
     for (int i = 0; i < messageSpy.count(); ++i)
-        qDebug() << "Server message:" << messageSpy.at(i).first().toString();
+        qDebug() << "Server message:" << messageSpy.at(i).at(1).toString();
 
     // Allow the login response / server status to settle
     QTest::qWait(1000);

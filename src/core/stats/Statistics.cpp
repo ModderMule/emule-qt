@@ -9,6 +9,8 @@
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
+#include <algorithm>
+
 namespace eMule {
 
 // 40-second window for overhead rate averaging (matches MFC MAXAVERAGETIME)
@@ -39,6 +41,37 @@ void Statistics::init(Preferences& prefs)
     m_cumDownAvg    = prefs.connAvgDownRate();
     m_maxCumUpAvg   = prefs.connMaxAvgUpRate();
     m_maxCumUp      = prefs.connMaxUpRate();
+
+    // Upgrade path. cumRunTime was never accumulated while the session clock was
+    // broken, so an existing install has hours of cumulative transfer time against
+    // zero run time and every percentage under Cumulative reads in the thousands.
+    // The daemon cannot have transferred for longer than it was running, so raise
+    // the run time to that lower bound instead of inventing one.
+    if (const uint64 lowerBound = std::max({prefs.cumTransferTime(), prefs.cumUploadTime(),
+                                            prefs.cumDownloadTime(), prefs.cumServerDuration()});
+        prefs.cumRunTime() < lowerBound)
+        prefs.setCumRunTime(lowerBound);
+
+    rebaseCumulative(prefs);
+
+    // Fresh install: nothing has ever been counted, so the statistics are "as of
+    // now" rather than "never reset" (MFC: srchybrid/Preferences.cpp:1381).
+    if (prefs.statsLastReset() == 0 && prefs.cumTotalUploaded() == 0
+        && prefs.cumTotalDownloaded() == 0)
+        prefs.setStatsLastReset(static_cast<uint64>(QDateTime::currentSecsSinceEpoch()));
+
+    // The session clock starts here (MFC: CemuleDlg::OnInitDialog,
+    // srchybrid/EmuleDlg.cpp:375).  Guarded, so re-initialising to pick up new
+    // preferences does not silently restart the uptime.
+    if (m_startTick == 0)
+        m_startTick = getTickCount();
+}
+
+uint32 Statistics::uptimeSecs() const
+{
+    if (m_startTick == 0)
+        return 0;
+    return static_cast<uint32>((getTickCount() - m_startTick) / SEC2MS(1));
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +314,38 @@ void Statistics::addSessionSentBytesToFriend(uint64 bytes)
 }
 
 // ---------------------------------------------------------------------------
+// Download quality counters
+// ---------------------------------------------------------------------------
+
+void Statistics::addCompressionGain(uint64 bytes)
+{
+    m_sesCompressionGain.fetch_add(bytes, std::memory_order_relaxed);
+}
+
+void Statistics::addCorruptionLoss(uint64 bytes)
+{
+    m_sesCorruptionLoss.fetch_add(bytes, std::memory_order_relaxed);
+}
+
+void Statistics::subCorruptionLoss(uint64 bytes)
+{
+    // Saturate rather than wrap: the recovered bytes may have been charged to a
+    // previous session, in which case this session's loss is already smaller.
+    uint64 cur = m_sesCorruptionLoss.load(std::memory_order_relaxed);
+    while (true) {
+        const uint64 next = (cur > bytes) ? cur - bytes : 0;
+        if (m_sesCorruptionLoss.compare_exchange_weak(cur, next,
+                                                      std::memory_order_relaxed))
+            break;
+    }
+}
+
+void Statistics::addIchPartSaved()
+{
+    m_sesIchPartsSaved.fetch_add(1, std::memory_order_relaxed);
+}
+
+// ---------------------------------------------------------------------------
 // Download overhead
 // ---------------------------------------------------------------------------
 
@@ -478,88 +543,240 @@ void Statistics::addTransferData(ClientSoftware clientType, uint16 port,
 }
 
 // ---------------------------------------------------------------------------
-// Save cumulative stats to Preferences on shutdown
+// Cumulative totals
 // ---------------------------------------------------------------------------
 
-void Statistics::saveCumulativeToPrefs(Preferences& prefs) const
+void Statistics::rebaseCumulative(const Preferences& prefs)
 {
-    // Transfer totals
-    prefs.setCumTotalUploaded(prefs.cumTotalUploaded() + m_sessionSentBytes.load());
-    prefs.setCumTotalDownloaded(prefs.cumTotalDownloaded() + m_sessionReceivedBytes.load());
-    prefs.setCumTotalUploadedToFriend(prefs.cumTotalUploadedToFriend() + m_sessionSentBytesToFriend.load());
+    CumulativeTotals& b = m_cumBase;
 
-    // Connection stats
-    prefs.setCumConnReconnects(prefs.cumConnReconnects() + m_reconnects);
+    b.totalUploaded = prefs.cumTotalUploaded();
+    b.totalDownloaded = prefs.cumTotalDownloaded();
+    b.totalUploadedToFriend = prefs.cumTotalUploadedToFriend();
 
-    // Times
-    const uint32 uptime = (m_startTime > 0)
-        ? (static_cast<uint32>(getTickCount()) - m_startTime) / SEC2MS(1) : 0;
-    prefs.setCumRunTime(prefs.cumRunTime() + uptime);
-    prefs.setCumTransferTime(prefs.cumTransferTime() + transferTime());
-    prefs.setCumUploadTime(prefs.cumUploadTime() + uploadTime());
-    prefs.setCumDownloadTime(prefs.cumDownloadTime() + downloadTime());
-    prefs.setCumServerDuration(prefs.cumServerDuration() + serverDuration());
+    b.upSuccessfulSessions = prefs.cumUpSuccessfulSessions();
+    b.upFailedSessions = prefs.cumUpFailedSessions();
+    b.downSuccessfulSessions = prefs.cumDownSuccessfulSessions();
+    b.downFailedSessions = prefs.cumDownFailedSessions();
+    b.downCompletedFiles = prefs.cumDownCompletedFiles();
 
-    // Overhead — upload
-    prefs.setCumUpOverheadTotal(prefs.cumUpOverheadTotal()
-        + m_upOverheadFileRequest.load() + m_upOverheadSourceExchange.load()
-        + m_upOverheadServer.load() + m_upOverheadKad.load() + m_upOverheadOther.load());
-    prefs.setCumUpOverheadTotalPackets(prefs.cumUpOverheadTotalPackets()
-        + m_upOverheadFileRequestPackets.load() + m_upOverheadSourceExchangePackets.load()
-        + m_upOverheadServerPackets.load() + m_upOverheadKadPackets.load() + m_upOverheadOtherPackets.load());
-    prefs.setCumUpOverheadFileReq(prefs.cumUpOverheadFileReq() + m_upOverheadFileRequest.load());
-    prefs.setCumUpOverheadFileReqPackets(prefs.cumUpOverheadFileReqPackets() + m_upOverheadFileRequestPackets.load());
-    prefs.setCumUpOverheadSrcExch(prefs.cumUpOverheadSrcExch() + m_upOverheadSourceExchange.load());
-    prefs.setCumUpOverheadSrcExchPackets(prefs.cumUpOverheadSrcExchPackets() + m_upOverheadSourceExchangePackets.load());
-    prefs.setCumUpOverheadServer(prefs.cumUpOverheadServer() + m_upOverheadServer.load());
-    prefs.setCumUpOverheadServerPackets(prefs.cumUpOverheadServerPackets() + m_upOverheadServerPackets.load());
-    prefs.setCumUpOverheadKad(prefs.cumUpOverheadKad() + m_upOverheadKad.load());
-    prefs.setCumUpOverheadKadPackets(prefs.cumUpOverheadKadPackets() + m_upOverheadKadPackets.load());
+    b.connPeak = prefs.cumConnPeak();
+    b.connMaxLimitReached = prefs.cumConnMaxLimitReached();
+    b.connReconnects = prefs.cumConnReconnects();
 
-    // Overhead — download
-    prefs.setCumDownOverheadTotal(prefs.cumDownOverheadTotal()
-        + m_downOverheadFileRequest.load() + m_downOverheadSourceExchange.load()
-        + m_downOverheadServer.load() + m_downOverheadKad.load() + m_downOverheadOther.load());
-    prefs.setCumDownOverheadTotalPackets(prefs.cumDownOverheadTotalPackets()
-        + m_downOverheadFileRequestPackets.load() + m_downOverheadSourceExchangePackets.load()
-        + m_downOverheadServerPackets.load() + m_downOverheadKadPackets.load() + m_downOverheadOtherPackets.load());
-    prefs.setCumDownOverheadFileReq(prefs.cumDownOverheadFileReq() + m_downOverheadFileRequest.load());
-    prefs.setCumDownOverheadFileReqPackets(prefs.cumDownOverheadFileReqPackets() + m_downOverheadFileRequestPackets.load());
-    prefs.setCumDownOverheadSrcExch(prefs.cumDownOverheadSrcExch() + m_downOverheadSourceExchange.load());
-    prefs.setCumDownOverheadSrcExchPackets(prefs.cumDownOverheadSrcExchPackets() + m_downOverheadSourceExchangePackets.load());
-    prefs.setCumDownOverheadServer(prefs.cumDownOverheadServer() + m_downOverheadServer.load());
-    prefs.setCumDownOverheadServerPackets(prefs.cumDownOverheadServerPackets() + m_downOverheadServerPackets.load());
-    prefs.setCumDownOverheadKad(prefs.cumDownOverheadKad() + m_downOverheadKad.load());
-    prefs.setCumDownOverheadKadPackets(prefs.cumDownOverheadKadPackets() + m_downOverheadKadPackets.load());
+    b.runTime = prefs.cumRunTime();
+    b.transferTime = prefs.cumTransferTime();
+    b.uploadTime = prefs.cumUploadTime();
+    b.downloadTime = prefs.cumDownloadTime();
+    b.serverDuration = prefs.cumServerDuration();
 
-    // Per-client — upload
-    prefs.setCumUpEmule(prefs.cumUpEmule() + m_sesUpByClient[0].load());
-    prefs.setCumUpEDHybrid(prefs.cumUpEDHybrid() + m_sesUpByClient[1].load());
-    prefs.setCumUpEDonkey(prefs.cumUpEDonkey() + m_sesUpByClient[2].load());
-    prefs.setCumUpAMule(prefs.cumUpAMule() + m_sesUpByClient[3].load());
-    prefs.setCumUpMLdonkey(prefs.cumUpMLdonkey() + m_sesUpByClient[4].load());
-    prefs.setCumUpShareaza(prefs.cumUpShareaza() + m_sesUpByClient[5].load());
-    prefs.setCumUpEMCompat(prefs.cumUpEMCompat() + m_sesUpByClient[6].load());
+    b.compressionGain = prefs.cumCompressionGain();
+    b.corruptionLoss = prefs.cumCorruptionLoss();
+    b.ichPartsSaved = prefs.cumIchPartsSaved();
 
-    // Per-client — download
-    prefs.setCumDownEmule(prefs.cumDownEmule() + m_sesDownByClient[0].load());
-    prefs.setCumDownEDHybrid(prefs.cumDownEDHybrid() + m_sesDownByClient[1].load());
-    prefs.setCumDownEDonkey(prefs.cumDownEDonkey() + m_sesDownByClient[2].load());
-    prefs.setCumDownAMule(prefs.cumDownAMule() + m_sesDownByClient[3].load());
-    prefs.setCumDownMLdonkey(prefs.cumDownMLdonkey() + m_sesDownByClient[4].load());
-    prefs.setCumDownShareaza(prefs.cumDownShareaza() + m_sesDownByClient[5].load());
-    prefs.setCumDownEMCompat(prefs.cumDownEMCompat() + m_sesDownByClient[6].load());
-    prefs.setCumDownURL(prefs.cumDownURL() + m_sesDownByClient[7].load());
+    b.upOverheadTotal = prefs.cumUpOverheadTotal();
+    b.upOverheadTotalPackets = prefs.cumUpOverheadTotalPackets();
+    b.upOverheadFileReq = prefs.cumUpOverheadFileReq();
+    b.upOverheadFileReqPackets = prefs.cumUpOverheadFileReqPackets();
+    b.upOverheadSrcExch = prefs.cumUpOverheadSrcExch();
+    b.upOverheadSrcExchPackets = prefs.cumUpOverheadSrcExchPackets();
+    b.upOverheadServer = prefs.cumUpOverheadServer();
+    b.upOverheadServerPackets = prefs.cumUpOverheadServerPackets();
+    b.upOverheadKad = prefs.cumUpOverheadKad();
+    b.upOverheadKadPackets = prefs.cumUpOverheadKadPackets();
 
-    // Per-port
-    prefs.setCumUpPort4662(prefs.cumUpPort4662() + m_sesUpPort4662.load());
-    prefs.setCumUpPortOther(prefs.cumUpPortOther() + m_sesUpPortOther.load());
-    prefs.setCumDownPort4662(prefs.cumDownPort4662() + m_sesDownPort4662.load());
-    prefs.setCumDownPortOther(prefs.cumDownPortOther() + m_sesDownPortOther.load());
+    b.downOverheadTotal = prefs.cumDownOverheadTotal();
+    b.downOverheadTotalPackets = prefs.cumDownOverheadTotalPackets();
+    b.downOverheadFileReq = prefs.cumDownOverheadFileReq();
+    b.downOverheadFileReqPackets = prefs.cumDownOverheadFileReqPackets();
+    b.downOverheadSrcExch = prefs.cumDownOverheadSrcExch();
+    b.downOverheadSrcExchPackets = prefs.cumDownOverheadSrcExchPackets();
+    b.downOverheadServer = prefs.cumDownOverheadServer();
+    b.downOverheadServerPackets = prefs.cumDownOverheadServerPackets();
+    b.downOverheadKad = prefs.cumDownOverheadKad();
+    b.downOverheadKadPackets = prefs.cumDownOverheadKadPackets();
 
-    // Per-source
-    prefs.setCumUpFromFile(prefs.cumUpFromFile() + m_sesUpFromFile.load());
-    prefs.setCumUpFromPartfile(prefs.cumUpFromPartfile() + m_sesUpFromPartfile.load());
+    b.upByClient = {prefs.cumUpEmule(), prefs.cumUpEDHybrid(), prefs.cumUpEDonkey(),
+                    prefs.cumUpAMule(), prefs.cumUpMLdonkey(), prefs.cumUpShareaza(),
+                    prefs.cumUpEMCompat()};
+    b.downByClient = {prefs.cumDownEmule(), prefs.cumDownEDHybrid(), prefs.cumDownEDonkey(),
+                      prefs.cumDownAMule(), prefs.cumDownMLdonkey(), prefs.cumDownShareaza(),
+                      prefs.cumDownEMCompat(), prefs.cumDownURL()};
+
+    b.upPort4662 = prefs.cumUpPort4662();
+    b.upPortOther = prefs.cumUpPortOther();
+    b.downPort4662 = prefs.cumDownPort4662();
+    b.downPortOther = prefs.cumDownPortOther();
+
+    b.upFromFile = prefs.cumUpFromFile();
+    b.upFromPartfile = prefs.cumUpFromPartfile();
+}
+
+Statistics::CumulativeTotals
+Statistics::cumulativeTotals(const ExternalSessionCounters& ext) const
+{
+    CumulativeTotals t = m_cumBase;
+
+    t.totalUploaded += m_sessionSentBytes.load();
+    t.totalDownloaded += m_sessionReceivedBytes.load();
+    t.totalUploadedToFriend += m_sessionSentBytesToFriend.load();
+
+    t.upSuccessfulSessions += ext.upSuccessfulSessions;
+    t.upFailedSessions += ext.upFailedSessions;
+    t.downSuccessfulSessions += ext.downSuccessfulSessions;
+    t.downFailedSessions += ext.downFailedSessions;
+    t.downCompletedFiles += ext.downCompletedFiles;
+
+    // Peak is a high-water mark across sessions, not a sum.
+    t.connPeak = std::max(t.connPeak, ext.connPeak);
+    t.connMaxLimitReached += ext.connMaxLimitReached;
+    t.connReconnects += m_reconnects;
+
+    t.runTime += uptimeSecs();
+    t.transferTime += transferTime();
+    t.uploadTime += uploadTime();
+    t.downloadTime += downloadTime();
+    t.serverDuration += serverDuration();
+
+    t.compressionGain += m_sesCompressionGain.load();
+    t.corruptionLoss += m_sesCorruptionLoss.load();
+    t.ichPartsSaved += m_sesIchPartsSaved.load();
+
+    const uint64 upOhFileReq = m_upOverheadFileRequest.load();
+    const uint64 upOhSrcExch = m_upOverheadSourceExchange.load();
+    const uint64 upOhServer = m_upOverheadServer.load();
+    const uint64 upOhKad = m_upOverheadKad.load();
+    const uint64 upOhFileReqPkt = m_upOverheadFileRequestPackets.load();
+    const uint64 upOhSrcExchPkt = m_upOverheadSourceExchangePackets.load();
+    const uint64 upOhServerPkt = m_upOverheadServerPackets.load();
+    const uint64 upOhKadPkt = m_upOverheadKadPackets.load();
+
+    t.upOverheadTotal += upOhFileReq + upOhSrcExch + upOhServer + upOhKad
+                         + m_upOverheadOther.load();
+    t.upOverheadTotalPackets += upOhFileReqPkt + upOhSrcExchPkt + upOhServerPkt + upOhKadPkt
+                                + m_upOverheadOtherPackets.load();
+    t.upOverheadFileReq += upOhFileReq;
+    t.upOverheadFileReqPackets += upOhFileReqPkt;
+    t.upOverheadSrcExch += upOhSrcExch;
+    t.upOverheadSrcExchPackets += upOhSrcExchPkt;
+    t.upOverheadServer += upOhServer;
+    t.upOverheadServerPackets += upOhServerPkt;
+    t.upOverheadKad += upOhKad;
+    t.upOverheadKadPackets += upOhKadPkt;
+
+    const uint64 downOhFileReq = m_downOverheadFileRequest.load();
+    const uint64 downOhSrcExch = m_downOverheadSourceExchange.load();
+    const uint64 downOhServer = m_downOverheadServer.load();
+    const uint64 downOhKad = m_downOverheadKad.load();
+    const uint64 downOhFileReqPkt = m_downOverheadFileRequestPackets.load();
+    const uint64 downOhSrcExchPkt = m_downOverheadSourceExchangePackets.load();
+    const uint64 downOhServerPkt = m_downOverheadServerPackets.load();
+    const uint64 downOhKadPkt = m_downOverheadKadPackets.load();
+
+    t.downOverheadTotal += downOhFileReq + downOhSrcExch + downOhServer + downOhKad
+                           + m_downOverheadOther.load();
+    t.downOverheadTotalPackets += downOhFileReqPkt + downOhSrcExchPkt + downOhServerPkt
+                                  + downOhKadPkt + m_downOverheadOtherPackets.load();
+    t.downOverheadFileReq += downOhFileReq;
+    t.downOverheadFileReqPackets += downOhFileReqPkt;
+    t.downOverheadSrcExch += downOhSrcExch;
+    t.downOverheadSrcExchPackets += downOhSrcExchPkt;
+    t.downOverheadServer += downOhServer;
+    t.downOverheadServerPackets += downOhServerPkt;
+    t.downOverheadKad += downOhKad;
+    t.downOverheadKadPackets += downOhKadPkt;
+
+    for (size_t i = 0; i < static_cast<size_t>(kUpClientCount); ++i)
+        t.upByClient[i] += m_sesUpByClient[i].load();
+    for (size_t i = 0; i < static_cast<size_t>(kDownClientCount); ++i)
+        t.downByClient[i] += m_sesDownByClient[i].load();
+
+    t.upPort4662 += m_sesUpPort4662.load();
+    t.upPortOther += m_sesUpPortOther.load();
+    t.downPort4662 += m_sesDownPort4662.load();
+    t.downPortOther += m_sesDownPortOther.load();
+
+    t.upFromFile += m_sesUpFromFile.load();
+    t.upFromPartfile += m_sesUpFromPartfile.load();
+
+    return t;
+}
+
+void Statistics::flushCumulativeToPrefs(Preferences& prefs,
+                                        const ExternalSessionCounters& ext) const
+{
+    const CumulativeTotals t = cumulativeTotals(ext);
+
+    prefs.setCumTotalUploaded(t.totalUploaded);
+    prefs.setCumTotalDownloaded(t.totalDownloaded);
+    prefs.setCumTotalUploadedToFriend(t.totalUploadedToFriend);
+
+    prefs.setCumUpSuccessfulSessions(t.upSuccessfulSessions);
+    prefs.setCumUpFailedSessions(t.upFailedSessions);
+    prefs.setCumDownSuccessfulSessions(t.downSuccessfulSessions);
+    prefs.setCumDownFailedSessions(t.downFailedSessions);
+    prefs.setCumDownCompletedFiles(t.downCompletedFiles);
+
+    prefs.setCumConnPeak(t.connPeak);
+    prefs.setCumConnMaxLimitReached(t.connMaxLimitReached);
+    prefs.setCumConnReconnects(t.connReconnects);
+
+    prefs.setCumRunTime(t.runTime);
+    prefs.setCumTransferTime(t.transferTime);
+    prefs.setCumUploadTime(t.uploadTime);
+    prefs.setCumDownloadTime(t.downloadTime);
+    prefs.setCumServerDuration(t.serverDuration);
+
+    prefs.setCumCompressionGain(t.compressionGain);
+    prefs.setCumCorruptionLoss(t.corruptionLoss);
+    prefs.setCumIchPartsSaved(t.ichPartsSaved);
+
+    prefs.setCumUpOverheadTotal(t.upOverheadTotal);
+    prefs.setCumUpOverheadTotalPackets(t.upOverheadTotalPackets);
+    prefs.setCumUpOverheadFileReq(t.upOverheadFileReq);
+    prefs.setCumUpOverheadFileReqPackets(t.upOverheadFileReqPackets);
+    prefs.setCumUpOverheadSrcExch(t.upOverheadSrcExch);
+    prefs.setCumUpOverheadSrcExchPackets(t.upOverheadSrcExchPackets);
+    prefs.setCumUpOverheadServer(t.upOverheadServer);
+    prefs.setCumUpOverheadServerPackets(t.upOverheadServerPackets);
+    prefs.setCumUpOverheadKad(t.upOverheadKad);
+    prefs.setCumUpOverheadKadPackets(t.upOverheadKadPackets);
+
+    prefs.setCumDownOverheadTotal(t.downOverheadTotal);
+    prefs.setCumDownOverheadTotalPackets(t.downOverheadTotalPackets);
+    prefs.setCumDownOverheadFileReq(t.downOverheadFileReq);
+    prefs.setCumDownOverheadFileReqPackets(t.downOverheadFileReqPackets);
+    prefs.setCumDownOverheadSrcExch(t.downOverheadSrcExch);
+    prefs.setCumDownOverheadSrcExchPackets(t.downOverheadSrcExchPackets);
+    prefs.setCumDownOverheadServer(t.downOverheadServer);
+    prefs.setCumDownOverheadServerPackets(t.downOverheadServerPackets);
+    prefs.setCumDownOverheadKad(t.downOverheadKad);
+    prefs.setCumDownOverheadKadPackets(t.downOverheadKadPackets);
+
+    prefs.setCumUpEmule(t.upByClient[0]);
+    prefs.setCumUpEDHybrid(t.upByClient[1]);
+    prefs.setCumUpEDonkey(t.upByClient[2]);
+    prefs.setCumUpAMule(t.upByClient[3]);
+    prefs.setCumUpMLdonkey(t.upByClient[4]);
+    prefs.setCumUpShareaza(t.upByClient[5]);
+    prefs.setCumUpEMCompat(t.upByClient[6]);
+
+    prefs.setCumDownEmule(t.downByClient[0]);
+    prefs.setCumDownEDHybrid(t.downByClient[1]);
+    prefs.setCumDownEDonkey(t.downByClient[2]);
+    prefs.setCumDownAMule(t.downByClient[3]);
+    prefs.setCumDownMLdonkey(t.downByClient[4]);
+    prefs.setCumDownShareaza(t.downByClient[5]);
+    prefs.setCumDownEMCompat(t.downByClient[6]);
+    prefs.setCumDownURL(t.downByClient[7]);
+
+    prefs.setCumUpPort4662(t.upPort4662);
+    prefs.setCumUpPortOther(t.upPortOther);
+    prefs.setCumDownPort4662(t.downPort4662);
+    prefs.setCumDownPortOther(t.downPortOther);
+
+    prefs.setCumUpFromFile(t.upFromFile);
+    prefs.setCumUpFromPartfile(t.upFromPartfile);
 }
 
 } // namespace eMule

@@ -80,6 +80,8 @@ private:
     void handleSendChatMessage(const Ipc::IpcMessage& msg);
     void handleSetFriendSlot(const Ipc::IpcMessage& msg);
     void handleGetStats(const Ipc::IpcMessage& msg);
+    void handleGetSpeedHistory(const Ipc::IpcMessage& msg);
+    void handleGetStatsHistory(const Ipc::IpcMessage& msg);
     void handleGetPreferences(const Ipc::IpcMessage& msg);
     void handleSetPreferences(const Ipc::IpcMessage& msg);
     void handleSubscribe(const Ipc::IpcMessage& msg);
@@ -105,6 +107,7 @@ private:
     void handleOpenDownloadFolder(const Ipc::IpcMessage& msg);
     void handleMarkSearchSpam(const Ipc::IpcMessage& msg);
     void handleResetStats(const Ipc::IpcMessage& msg);
+    void handleRestoreStats(const Ipc::IpcMessage& msg);
     void handleRenameSharedFile(const Ipc::IpcMessage& msg);
     void handleDeleteSharedFile(const Ipc::IpcMessage& msg);
     void handleUnshareFile(const Ipc::IpcMessage& msg);
@@ -114,7 +117,9 @@ private:
     void handleRequestClientSharedFiles(const Ipc::IpcMessage& msg);
     void handleGetClientDetails(const Ipc::IpcMessage& msg);
     void handleGetSharedFileDetails(const Ipc::IpcMessage& msg);
+    void handleGetSearchResultDetails(const Ipc::IpcMessage& msg);
     void handleGetServerState(const Ipc::IpcMessage& msg);
+    void handleGetServerMessages(const Ipc::IpcMessage& msg);
     void handleSearchKadNotes(const Ipc::IpcMessage& msg);
     void handleGetCollectionInfo(const Ipc::IpcMessage& msg);
     void handleSaveCollection(const Ipc::IpcMessage& msg);

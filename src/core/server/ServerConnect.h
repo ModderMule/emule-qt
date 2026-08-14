@@ -8,6 +8,7 @@
 /// GUI and global state via Qt signals and a configuration struct.
 
 #include "server/Server.h"
+#include "server/ServerMsgType.h"
 #include "net/ServerSocket.h"
 #include "net/UDPSocket.h"
 #include "net/Packet.h"
@@ -184,8 +185,10 @@ signals:
     /// Client ID was assigned or changed.
     void clientIDChanged(uint32 newID);
 
-    /// Forwarded server message.
-    void serverMessageReceived(const QString& msg);
+    /// One line destined for the GUI "Server Info" pane, already stripped of the
+    /// control markers the reference consumes. Emitted once per line — the pane
+    /// renders HTML, so a multi-line payload cannot be delivered as one string.
+    void serverMessageReceived(eMule::ServerMsgType type, const QString& text);
 
     /// Forwarded: search results received from connected server.
     void searchResultReceived(const uint8* data, uint32 size, bool moreResults);
@@ -218,6 +221,12 @@ private:
                        const QString& name, const QString& description);
     void onServerStatus(ServerSocket* socket, uint32 users, uint32 files);
     void onServerMessage(ServerSocket* socket, const QString& message);
+
+    /// Format an ERROR/WARNING server line for the log, identifying the server.
+    /// These never reach the Server Info pane — the reference diverts them to the
+    /// log and status bar instead (srchybrid/ServerSocket.cpp:189-201).
+    static QString serverMessageLogLine(const QString& prefix, const Server* entry,
+                                        const ServerSocket* socket, const QString& body);
 
     /// Shared teardown for both disconnect paths — the explicit disconnect() and
     /// the socket-initiated ServerConnState::Disconnected case. Clears the client

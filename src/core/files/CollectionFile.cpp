@@ -160,11 +160,11 @@ void CollectionFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
     uint32 ratingCount = 0;
 
     // Aggregate from Kad notes cache
-    for (const auto& [rating, comment] : m_kadNotesCache) {
-        if (!comment.isEmpty())
+    for (const auto& [publisherId, note] : m_kadNotesCache) {
+        if (!note.comment.isEmpty())
             hasNewComment = true;
-        if (rating > 0 && rating <= 5) {
-            ratingSum += rating;
+        if (note.rating > 0 && note.rating <= 5) {
+            ratingSum += note.rating;
             ++ratingCount;
         }
     }

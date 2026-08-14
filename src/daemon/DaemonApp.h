@@ -72,6 +72,12 @@ public:
     /// at startup and whenever a logging pref changes at runtime.
     static void applyLogFilterRules();
 
+    /// Open or close the daemon's own log files (emulecored.log,
+    /// emulecored_Verbose.log and emulecored_Kad.log in the config directory) to
+    /// match the logToDiskCore pref. The GUI runs the same call for its own set —
+    /// one switch per process, so a line's origin is never in doubt. Safe to call
+    /// at startup and whenever the pref changes at runtime.
+    static void applyLogFileSettings();
 
     /// Maximum number of log entries to buffer (per daemon instance).
     static constexpr int MaxLogBuffer = 500;

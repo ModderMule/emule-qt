@@ -182,6 +182,12 @@ void UDPSocket::sendRawPacket(const Server& server, uint16 specialPort,
 // ThrottledControlSocket: bandwidth-limited send
 // ---------------------------------------------------------------------------
 
+bool UDPSocket::hasControlQueue() const
+{
+    std::lock_guard lock(m_sendLock);
+    return !m_controlQueue.empty();
+}
+
 SocketSentBytes UDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, uint32 /*minFragSize*/)
 {
     std::lock_guard lock(m_sendLock);

@@ -96,7 +96,9 @@ enum class IpcMsgType : int {
     StopDownload         = 240,  ///< [hash: string] — stop (not pause) a download
     OpenDownloadFile     = 241,  ///< [hash: string] — open completed file on daemon
     OpenDownloadFolder   = 242,  ///< [hash: string] — open folder containing file on daemon
-    MarkSearchSpam       = 243,  ///< [searchID: int, hash: string] — mark search result as spam
+    /// [searchID: int, hash: string, isSpam: bool = true] — mark/unmark a search
+    /// result as spam. Field 2 is optional so older senders keep marking as spam.
+    MarkSearchSpam       = 243,
     ResetStats           = 244,  ///< [] — reset session statistics
     RenameSharedFile     = 245,  ///< [hash: string, newName: string]
     DeleteSharedFile     = 246,  ///< [hash: string] — delete file from disk + shared list
@@ -113,6 +115,24 @@ enum class IpcMsgType : int {
     GetCollectionInfo       = 256, ///< [hash: string] → collection metadata for shared file
     SaveCollection          = 257, ///< [name, fileHashes[], textFormat, sign] → create & share
     // 258 was SearchAuthorCollections; the GUI now drives that search through StartSearch.
+    GetServerMessages       = 259, ///< [fromId] → CborArray of [id, type, text] — Server Info backlog
+    /// [searchID: int, hash: string] → comments/tags for one search result.
+    /// The searchID is required because a hash is only unique within a search tab.
+    GetSearchResultDetails  = 260,
+
+    /// [fromSeq: int] -> {epoch, oldestSeq, samples: [[seq, down, up], ...]}
+    /// Sample history for the toolbar download/upload graph. Core samples once a
+    /// second and every GUI replays from its own seq, so a restarted GUI comes back
+    /// to a full trace and two GUIs draw the same one.
+    GetSpeedHistory         = 261,
+    /// [fromSeq: int] -> {epoch, intervalSec, oldestSeq, samples: [[seq, ts, ...], ...]}
+    /// Same replay for the three statistics graphs; see StatsGraphSample for the
+    /// field order inside each sample.
+    GetStatsHistory         = 262,
+    /// [] — put the cumulative counters back to the values ResetStats saved.
+    /// The current values become the new backup, so sending it twice undoes the
+    /// restore (MFC: srchybrid/StatisticsTree.cpp:175).
+    RestoreStats            = 263,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -127,7 +147,9 @@ enum class IpcMsgType : int {
     PushDownloadAdded    = 411,
     PushDownloadRemoved  = 412,
     PushServerState      = 420,
+    PushServerMessage    = 421,  ///< [id, type: ServerMsgType, text: string] — one Server Info line
     PushSearchResult     = 430,
+    PushGlobalSearchProgress = 431,  ///< [searchID, asked, total, running] — ED2K global UDP sweep
     PushLogMessage       = 450,
     PushSharedFileUpdate = 460,
     PushUploadUpdate     = 470,

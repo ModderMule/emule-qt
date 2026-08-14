@@ -17,11 +17,14 @@
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
+#include "utils/StringUtils.h"
 #include "utils/TimeUtils.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadSearch.h"
 #include "server/ServerConnect.h"
@@ -314,6 +317,12 @@ uint64 PartFile::totalGapSize() const
     return total;
 }
 
+bool PartFile::isCorruptedPart(uint32 partNumber) const
+{
+    return std::ranges::find(m_corruptedParts, static_cast<uint16>(partNumber))
+           != m_corruptedParts.end();
+}
+
 void PartFile::updateCompletedInfos()
 {
     const uint64 fs = static_cast<uint64>(fileSize());
@@ -342,10 +351,18 @@ void PartFile::writeToBuffer(uint64 transize, const uint8* data,
                               uint64 start, uint64 end,
                               Requested_Block_Struct* block)
 {
-    Q_UNUSED(transize);
-
     if (!data || start > end)
         return;
+
+    // A compressed block covers more of the file than it took on the wire; the
+    // difference is what compression saved (MFC: srchybrid/PartFile.cpp:3959-3963).
+    // For an uncompressed block the two are equal and nothing is counted.
+    if (const uint64 lenData = end - start + 1; lenData > transize) {
+        const uint64 gain = lenData - transize;
+        m_compressionGain += gain;
+        if (theApp.statistics)
+            theApp.statistics->addCompressionGain(gain);
+    }
 
     // Create buffered data entry with copy of data
     BufferedData bd;
@@ -402,16 +419,20 @@ void PartFile::flushBuffer(bool forceICH)
     m_bufferedData.clear();
     m_totalBufferData = 0;
 
-    // Hash verification per changed part (MD4 + AICH)
+    // Hash verification per changed part (MD4 + AICH), mirroring MFC's
+    // CPartFile::FlushBuffer (srchybrid/PartFile.cpp:4160-4220).
     for (uint32 p = 0; p < partCount(); ++p) {
-        if (!isComplete(p))
-            continue;
+        const uint64 partStart = static_cast<uint64>(p) * PARTSIZE;
+        const uint64 partEnd = std::min(partStart + PARTSIZE - 1,
+                                        static_cast<uint64>(fileSize()) - 1);
 
-        bool aichAgreed = false;
-        if (!hashSinglePart(p, &aichAgreed)) {
-            const uint64 partStart = static_cast<uint64>(p) * PARTSIZE;
-            const uint64 partEnd = std::min(partStart + PARTSIZE - 1,
-                                             static_cast<uint64>(fileSize()) - 1);
+        if (isComplete(p)) {
+            bool aichAgreed = false;
+            if (hashSinglePart(p, &aichAgreed)) {
+                // The part verified, so it is no longer a candidate for recovery.
+                dropCorruptedPart(p);
+                continue;
+            }
 
             logWarning(QStringLiteral("PartFile: hash mismatch for part %1 of '%2' — re-downloading")
                            .arg(p).arg(fileName()));
@@ -428,6 +449,30 @@ void PartFile::flushBuffer(bool forceICH)
             // Track corruption loss
             const uint64 lost = partEnd - partStart + 1;
             m_corruptionLoss += lost;
+            if (theApp.statistics)
+                theApp.statistics->addCorruptionLoss(lost);
+
+        } else if (isCorruptedPart(p) && (thePrefs.useICH() || forceICH)) {
+            // Intelligent Corruption Handling: the part still has gaps, but the
+            // bytes behind them were never erased — only distrusted. If MD4 over
+            // the whole part matches, they were fine all along and re-downloading
+            // them would be wasted traffic.
+            if (!hashSinglePart(p))
+                continue;
+
+            const uint64 recovered = totalGapSizeInPart(p);
+            fillGap(partStart, partEnd);
+            removeBlockFromList(partStart, partEnd);
+            dropCorruptedPart(p);
+
+            m_corruptionLoss = (m_corruptionLoss >= recovered) ? m_corruptionLoss - recovered : 0;
+            if (theApp.statistics) {
+                theApp.statistics->subCorruptionLoss(recovered);
+                theApp.statistics->addIchPartSaved();
+            }
+
+            logInfo(QStringLiteral("PartFile: ICH recovered %1 bytes of part %2 of '%3'")
+                        .arg(recovered).arg(p).arg(fileName()));
         }
     }
 
@@ -755,6 +800,8 @@ void PartFile::setStatus(PartFileStatus s)
 
 void PartFile::pauseFile(bool insufficient)
 {
+    const bool wasPaused = m_paused;
+
     m_paused = true;
     m_insufficient = insufficient;
 
@@ -771,6 +818,15 @@ void PartFile::pauseFile(bool insufficient)
     m_lastSearchTimeServer = 0;
 
     m_datarate = 0;
+
+    // m_stopped is already set when stopFile() routes through here — it logs its own
+    // line, so don't announce the intermediate pause.
+    if (!wasPaused && !m_stopped) {
+        logInfo(insufficient
+                    ? QStringLiteral("Download paused (insufficient disk space): %1").arg(fileName())
+                    : QStringLiteral("Download paused: %1").arg(fileName()));
+    }
+
     savePartFile();
 }
 
@@ -785,6 +841,11 @@ void PartFile::resumeFile()
 
     setStatus(m_gapList.empty() ? PartFileStatus::Completing : PartFileStatus::Ready);
 
+    logInfo(QStringLiteral("Download resumed: %1 — status=%2 gaps=%3")
+                .arg(fileName())
+                .arg(static_cast<int>(status()))
+                .arg(m_gapList.size()));
+
     // If we had a completion error but no gaps, retry completion
     if (m_completionError && m_gapList.empty()) {
         m_completionError = false;
@@ -796,8 +857,16 @@ void PartFile::resumeFile()
 
 void PartFile::stopFile(bool cancel)
 {
-    m_paused = true;
+    // MFC CPartFile::StopFile() starts with PauseFile() so a stop inherits the pause
+    // teardown — most importantly stopping the running Kad source search and clearing
+    // its ID. Doing it by hand here used to leave the search dangling, so Stop/Start
+    // did not recover a file whose search ID had gone stale (Pause/Resume did).
     m_stopped = true;
+    pauseFile(false);
+
+    logInfo(QStringLiteral("Download %1: %2")
+                .arg(cancel ? QStringLiteral("cancelled") : QStringLiteral("stopped"))
+                .arg(fileName()));
 
     // Flush any buffered data
     if (!m_bufferedData.empty())
@@ -823,6 +892,10 @@ void PartFile::stopFile(bool cancel)
         QFile::remove(partPath);                              // NNN.part
         QFile::remove(metPath);                               // NNN.part.met
         QFile::remove(metPath + QStringLiteral(".bak"));      // NNN.part.met.bak
+
+        // Must happen before m_partMetFilename is cleared below — the list path cannot be
+        // derived without it (MorphXT CPartFile::Delete, PartFile.cpp:4841).
+        SourceSaver::removeFile(m_tmpPath, m_partMetFilename);
 
         // Prevent destructor from saving to deleted files
         m_partMetFilename.clear();
@@ -890,6 +963,16 @@ bool PartFile::rightFileHasHigherPrio(const PartFile* left, const PartFile* righ
 // ===========================================================================
 // Source Tracking
 // ===========================================================================
+
+int PartFile::availableSourceCount() const
+{
+    // MFC keeps a cached m_anStates[] histogram; walking the list is cheap enough here
+    // because the only caller is the Save/Load Sources tick, once per file per 10 minutes.
+    return static_cast<int>(std::ranges::count_if(m_srcList, [](const UpDownClient* client) {
+        const DownloadState state = client->downloadState();
+        return state == DownloadState::OnQueue || state == DownloadState::Downloading;
+    }));
+}
 
 void PartFile::addSource(UpDownClient* client)
 {
@@ -1500,6 +1583,12 @@ void PartFile::completeFile()
 {
     setStatus(PartFileStatus::Completing);
 
+    // A completed file needs no more sources. MFC PartFile.cpp:4334-4335.
+    if (kadFileSearchID()) {
+        kad::SearchManager::stopSearch(kadFileSearchID(), false);
+        setKadFileSearchID(0);
+    }
+
     // Flush any remaining buffer
     if (!m_bufferedData.empty())
         flushBuffer();
@@ -1542,8 +1631,6 @@ void PartFile::completeFile()
 
 uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
 {
-    Q_UNUSED(counter);
-
     if (m_paused || m_stopped)
         return 0;
 
@@ -1655,6 +1742,12 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         ++i;
     }
 
+    // -- Save/Load Sources (MorphXT CPartFile::Process, PartFile.cpp:3564-3567) --
+    // MorphXT runs this every third of its own ticks; ours arrive at 10 Hz, so once a second
+    // is the equivalent cadence. The real gating is SourceSaver's own 10-minute resave timer.
+    if (counter == 3 && thePrefs.useSaveLoadSources())
+        m_sourceSaver.process(this);
+
     // -- Server TCP source request (MFC PartFile.cpp:2347-2362) --
     if (theApp.serverConnect && theApp.serverConnect->isConnected()
         && !m_stopped
@@ -1675,29 +1768,58 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
 
     if (maxSrcUDP > sourceCount()) {
         auto* kad = kad::Kademlia::instance();
-        if (kad && theApp.downloadQueue
-            && theApp.downloadQueue->doKademliaFileRequest()
-            && kad->getTotalFile() < KADEMLIATOTALFILE
-            && curTick >= m_lastSearchTimeKad
-            //&& kad->isKadReady()
-            && kad->isConnected()
-            && kad::SearchManager::getTotalResponsesReceived() > 0
-            && !m_stopped)
-        {
+
+        // Name the first unmet precondition so a file that never asks Kad for sources
+        // can be diagnosed from the log instead of guessed at. Throttled per file.
+        const char* skipReason = nullptr;
+        QString skipDetail;   // optional suffix; only reasons with a deadline fill this in
+        if (!kad || !theApp.downloadQueue)
+            skipReason = "kad/queue unavailable";
+        else if (!kad->isConnected())
+            skipReason = "kad not connected";
+        else if (kad::SearchManager::getTotalResponsesReceived() == 0)
+            skipReason = "no kad responses yet";
+        else if (m_stopped)
+            skipReason = "file stopped";
+        else if (curTick < m_lastSearchTimeKad) {
+            // The reask window is 1-7 hours, so a bare "reask timer" reads the same as a file
+            // that is stuck. Print what is left: a countdown that shrinks between two of these
+            // lines is a healthy wait, one that does not is a bug.
+            skipReason = "reask timer";
+            skipDetail = QStringLiteral(" (%1 left)")
+                             .arg(formatDuration(std::chrono::seconds(
+                                 (m_lastSearchTimeKad - curTick) / 1000)));
+        }
+        else if (kad->getTotalFile() >= KADEMLIATOTALFILE)
+            skipReason = "KADEMLIATOTALFILE reached";
+        else if (kadFileSearchID())
+            skipReason = "search id already set";
+        else if (!theApp.downloadQueue->doKademliaFileRequest())
+            skipReason = "queue ask throttle";
+
+        if (!skipReason) {
+            // MFC stamps the queue-wide throttle before the search-ID check
+            // (PartFile.cpp:2365). Doing that lets a file which can never start a
+            // search — one holding a stale ID — burn the one-per-KADEMLIAASKTIME slot
+            // every second and starve every file behind it in the queue. Stamp it only
+            // when a lookup is actually attempted; the ordering above already
+            // guarantees kadFileSearchID() is 0 here.
             theApp.downloadQueue->setLastKademliaFileRequest();
-            if (!kadFileSearchID()) {
-                auto* search = kad::SearchManager::prepareLookup(
-                    kad::SearchType::File, true, kad::UInt128(fileHash()));
-                if (search) {
-                    if (m_totalSearchesKad < 7)
-                        ++m_totalSearchesKad;
-                    m_lastSearchTimeKad = curTick + (KADEMLIAREASKTIME * m_totalSearchesKad);
-                    search->setGUIName(fileName());
-                    setKadFileSearchID(search->getSearchID());
-                } else {
-                    setKadFileSearchID(0);
-                }
+
+            auto* search = kad::SearchManager::prepareLookup(
+                kad::SearchType::File, true, kad::UInt128(fileHash()));
+            if (search) {
+                if (m_totalSearchesKad < 7)
+                    ++m_totalSearchesKad;
+                m_lastSearchTimeKad = curTick + (KADEMLIAREASKTIME * m_totalSearchesKad);
+                search->setGUIName(fileName());
+                setKadFileSearchID(search->getSearchID());
+            } else {
+                setKadFileSearchID(0);
+                logKadSourceSearchSkipped(curTick, QStringLiteral("prepareLookup failed"));
             }
+        } else {
+            logKadSourceSearchSkipped(curTick, QString::fromLatin1(skipReason) + skipDetail);
         }
     } else if (kadFileSearchID()) {
         kad::SearchManager::stopSearch(kadFileSearchID(), true);
@@ -1761,11 +1883,11 @@ void PartFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
     uint32 ratingCount = 0;
 
     // Aggregate from Kad notes cache
-    for (const auto& [rating, comment] : m_kadNotesCache) {
-        if (!comment.isEmpty())
+    for (const auto& [publisherId, note] : m_kadNotesCache) {
+        if (!note.comment.isEmpty())
             hasNewComment = true;
-        if (rating > 0 && rating <= 5) {
-            ratingSum += rating;
+        if (note.rating > 0 && note.rating <= 5) {
+            ratingSum += note.rating;
             ++ratingCount;
         }
     }
@@ -1887,6 +2009,10 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath)
             // Delete .part.met and .bak
             QFile::remove(m_fullName);
             QFile::remove(m_fullName + QStringLiteral(".bak"));
+
+            // The download is finished, so its saved source list is dead weight
+            // (MorphXT CPartFile::PerformFileComplete, PartFile.cpp:4659).
+            SourceSaver::removeFile(m_tmpPath, m_partMetFilename);
 
             setStatus(PartFileStatus::Complete);
             setFilePath(finalPath);
@@ -2138,9 +2264,12 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
         }
     }
 
-    // Adjust corruption loss accounting
+    // Adjust corruption loss accounting (MFC: srchybrid/PartFile.cpp:5305-5308).
+    // No ICH credit here — MFC counts parts saved by ICH only on the re-hash path.
     if (m_corruptionLoss >= recovered)
         m_corruptionLoss -= recovered;
+    if (theApp.statistics)
+        theApp.statistics->subCorruptionLoss(recovered);
 
     // Sanity check: if the part became complete, verify with MD4 too
     if (isComplete(partStart, partStart + partLen - 1)) {
@@ -2156,9 +2285,7 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
         logInfo(QStringLiteral("PartFile AICH recovery: part %1 completed and MD4 verified").arg(partNumber));
 
         // Remove from corrupted list
-        auto corruptIt = std::ranges::find(m_corruptedParts, static_cast<uint16>(partNumber));
-        if (corruptIt != m_corruptedParts.end())
-            m_corruptedParts.erase(corruptIt);
+        dropCorruptedPart(partNumber);
 
         // Check if entire file is now complete
         if (m_gapList.empty() && m_bufferedData.empty())
@@ -2451,6 +2578,40 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
     } catch (...) {
         logWarning(QStringLiteral("Truncated or corrupt source-exchange packet for %1").arg(fileName()));
     }
+}
+
+// ===========================================================================
+// dropCorruptedPart (private)
+// ===========================================================================
+
+bool PartFile::dropCorruptedPart(uint32 partNumber)
+{
+    const auto it = std::ranges::find(m_corruptedParts, static_cast<uint16>(partNumber));
+    if (it == m_corruptedParts.end())
+        return false;
+    m_corruptedParts.erase(it);
+    return true;
+}
+
+// ===========================================================================
+// logKadSourceSearchSkipped (private)
+// ===========================================================================
+
+void PartFile::logKadSourceSearchSkipped(uint32 curTick, const QString& reason)
+{
+    // process() runs at 10 Hz, so the interesting part is *which* condition is
+    // blocking, not how often. One line per file per interval keeps the Kad tab usable.
+    static constexpr uint32 kKadSkipLogInterval = SEC2MS(30);
+
+    if (m_lastKadSkipLogTime != 0 && curTick - m_lastKadSkipLogTime < kKadSkipLogInterval)
+        return;
+    m_lastKadSkipLogTime = curTick;
+
+    kad::logKad(QStringLiteral("Kad: no source search for %1 — %2 (sources=%3 searchId=%4)")
+                    .arg(fileName())
+                    .arg(reason)
+                    .arg(sourceCount())
+                    .arg(kadFileSearchID()));
 }
 
 } // namespace eMule

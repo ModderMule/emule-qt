@@ -28,7 +28,7 @@ SearchList::~SearchList() = default;
 // Session management
 // ---------------------------------------------------------------------------
 
-uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& /*params*/,
+uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& params,
                              uint32 forcedID)
 {
     m_resultFileType = resultFileType;
@@ -40,16 +40,23 @@ uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& 
         m_currentSearchID = m_nextSearchID++;
     }
 
+    // Only an ED2K search takes over the server-answer routing. A Kad search started
+    // while a global sweep is still walking the server list must not steal the UDP
+    // answers still arriving for it, nor wipe the set of servers we asked — without
+    // that set those answers are dropped as unsolicited.
+    // MFC: CSearchList::NewSearch — srchybrid/SearchList.cpp:152-156.
+    if (params.type == SearchType::Ed2kServer || params.type == SearchType::Ed2kGlobal) {
+        m_currentEd2kSearchID = m_currentSearchID;
+        m_curED2KSentRequestsIPs.clear();
+        m_udpServerRecords.clear();
+    }
+
     SearchListEntry entry;
     entry.searchID = m_currentSearchID;
     m_fileLists.push_back(std::move(entry));
 
     m_foundFilesCount[m_currentSearchID] = 0;
     m_foundSourcesCount[m_currentSearchID] = 0;
-
-    // Clear per-session UDP tracking
-    m_curED2KSentRequestsIPs.clear();
-    m_udpServerRecords.clear();
 
     return m_currentSearchID;
 }
@@ -172,7 +179,7 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
     const uint32 resultCount = data.readUInt32();
     for (uint32 i = 0; i < resultCount; ++i) {
         auto* file = new SearchFile(data, optUTF8, serverIP, serverPort);
-        file->setSearchID(m_currentSearchID);
+        file->setSearchID(m_currentEd2kSearchID);
         addToList(file, false, 0);
     }
 
@@ -191,7 +198,7 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
     logServerVerbose(QStringLiteral("TCP search answer from %1:%2 — parsed %3 result(s), moreResults=%4")
                          .arg(ipstr(serverIP)).arg(serverPort).arg(resultCount).arg(moreResults));
 
-    emit tabHeaderUpdated(m_currentSearchID);
+    emit tabHeaderUpdated(m_currentEd2kSearchID);
     return moreResults;
 }
 
@@ -218,7 +225,7 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
     // (Matches MFC eMule: srchybrid/UDPSocket.cpp do-while loop)
     do {
         auto* file = new SearchFile(data, optUTF8, serverIP, serverPort);
-        file->setSearchID(m_currentSearchID);
+        file->setSearchID(m_currentEd2kSearchID);
 
         auto& record = m_udpServerRecords[serverIP];
         record.totalResults++;
@@ -245,7 +252,7 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
     logServerVerbose(QStringLiteral("UDP search answer from %1:%2 — parsed %3 result(s)")
                          .arg(ipstr(serverIP)).arg(serverPort).arg(parsedResults));
 
-    emit tabHeaderUpdated(m_currentSearchID);
+    emit tabHeaderUpdated(m_currentEd2kSearchID);
 }
 
 // ---------------------------------------------------------------------------
@@ -391,6 +398,46 @@ SearchFile* SearchList::searchFileByHash(const uint8* hash, uint32 searchID) con
             return file.get();
     }
     return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Kad notes
+// ---------------------------------------------------------------------------
+
+bool SearchList::addNotes(const uint8* fileHash, const QByteArray& publisherId,
+                          uint8 rating, const QString& comment)
+{
+    if (!fileHash)
+        return false;
+
+    // Every list, not just the active tab: the user may have several searches
+    // open and the same file can appear in more than one of them.
+    bool added = false;
+    for (const auto& entry : m_fileLists) {
+        for (const auto& file : entry.files) {
+            if (!md4equ(file->fileHash(), fileHash))
+                continue;
+            file->addKadNote(publisherId, rating, comment);
+            added = true;
+            emit resultUpdated(file.get());
+        }
+    }
+    return added;
+}
+
+void SearchList::setNotesSearchStatus(const uint8* fileHash, bool running)
+{
+    if (!fileHash)
+        return;
+
+    for (const auto& entry : m_fileLists) {
+        for (const auto& file : entry.files) {
+            if (!md4equ(file->fileHash(), fileHash))
+                continue;
+            file->setKadCommentSearchRunning(running);
+            emit resultUpdated(file.get());
+        }
+    }
 }
 
 uint32 SearchList::resultCount(uint32 searchID) const
