@@ -6,9 +6,9 @@ set -euo pipefail
 # Reads the current version from CMakeLists.txt (the VERSION field), lets you
 # either tag that version as-is or pick a new one. When a new version is chosen
 # it delegates the multi-file version bump to scripts/bump-version.sh (which
-# keeps CMakeLists.txt, AppConfig.h, config_win.h, LogWidget.cpp, tst_Smoke.cpp
-# and vcpkg.json in lockstep), then creates a release commit + annotated git tag
-# and pushes both.
+# keeps CMakeLists.txt, config_win.h and vcpkg.json in lockstep -- everything
+# else derives its version from those), then creates a release commit +
+# annotated git tag and pushes both.
 #
 # Finally it updates the update manifest that shipped clients poll
 # (src/gui/app/VersionChecker.cpp fetches https://emule-qt.org/pub/emuleqt-version.json)
