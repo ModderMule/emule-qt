@@ -24,6 +24,7 @@
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "transfer/DownloadQueue.h"
+#include "transfer/UploadQueue.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
@@ -418,6 +419,8 @@ private slots:
     void requestSharedFileList_sendsAfterHandshakeAndRefusesDuplicate();
     // OP_REASKCALLBACKTCP — the IPv6 sentinel relay form
     void reaskCallbackTcp_parsesIPv6SentinelForm();
+    // OP_QUEUEFULL threshold — MFC srchybrid/ClientUDPSocket.cpp:299
+    void reaskFilePing_queueFullThresholdFollowsQueueSizePref();
 
 private:
     // Shared helper for TCP QR tests
@@ -909,6 +912,18 @@ void tst_CallbackAndQueueRank::directCallback_setsCorrectState()
 
 void tst_CallbackAndQueueRank::directCallback_sendsRequestPayload()
 {
+    // ClientList::process() deletes any client with no socket, no reqFile, no up/download
+    // state and no Kad state (ClientList.cpp:434-461) — which is exactly what this client is
+    // between tryToConnect() taking the direct-callback path and the datagram arriving. The
+    // fixture drives that reaper from a 100 ms timer, and under load it fires inside the
+    // qWaitFor below, deleteLater()s the client, and leaves the rest of this test reading
+    // freed memory. Pause it for the duration.
+    struct ProcessTimerPause {
+        QTimer& timer;
+        explicit ProcessTimerPause(QTimer& t) : timer(t) { timer.stop(); }
+        ~ProcessTimerPause() { timer.start(100); }
+    } timerPause(m_processTimer);
+
     // Both endpoints of the peer, so "went to the right port" is a real assertion.
     QUdpSocket kadReceiver;
     QVERIFY(kadReceiver.bind(QHostAddress::LocalHost, 0));
@@ -1426,6 +1441,78 @@ void tst_CallbackAndQueueRank::reaskCallbackTcp_parsesIPv6SentinelForm()
     m_clientList->setBuddy(nullptr, BuddyStatus::None);
     m_clientList->removeClient(buddy);
     delete buddy;
+}
+
+// ===========================================================================
+// OP_QUEUEFULL threshold
+//
+// A reask from a peer we have no client object for is answered with OP_QUEUEFULL only when
+// the queue is nearly full. MFC gates that on thePrefs.GetQueueSize()
+// (srchybrid/ClientUDPSocket.cpp:299); this port used to hardcode 200, which meant we
+// claimed to be full at 151 waiting clients no matter what the user had configured.
+// ===========================================================================
+
+void tst_CallbackAndQueueRank::reaskFilePing_queueFullThresholdFollowsQueueSizePref()
+{
+    struct QueueSizeGuard {
+        uint32 prev = thePrefs.queueSize();
+        ~QueueSizeGuard() { thePrefs.setQueueSize(prev); }
+    } guard;
+
+    // A shared file, so the handler gets past the OP_FILENOTFOUND branch and reaches the
+    // unknown-sender case we actually want to exercise.
+    uint8 sharedHash[16];
+    std::memset(sharedHash, 0x6C, sizeof(sharedHash));
+    auto* shared = new KnownFile();
+    shared->setFileHash(sharedHash);
+    shared->setFileName(QStringLiteral("queuefull.bin"));
+    QVERIFY(m_sharedFiles->safeAddKFile(shared));
+
+    UploadQueue queue;
+    queue.setSharedFileList(m_sharedFiles);
+
+    // 60 waiting peers. Keep the queue limit far away while filling, or the soft limit
+    // would start refusing them and the count under test would be wrong.
+    thePrefs.setQueueSize(5000);
+    std::vector<std::unique_ptr<UpDownClient>> waiting;
+    for (int i = 0; i < 62; ++i) {
+        auto c = std::make_unique<UpDownClient>();
+        c->setUserAddress(Address::fromString(QStringLiteral("10.80.%1.1").arg(i)));
+        c->setUserPort(static_cast<uint16>(5000 + i));
+        uint8 hash[16]{};
+        hash[0] = static_cast<uint8>(i);
+        hash[1] = 0x9E;
+        c->setUserHash(hash);
+        queue.addClientToQueue(c.get());
+        waiting.push_back(std::move(c));
+    }
+    // The first MIN_UP_CLIENTS_ALLOWED go straight to an upload slot rather than the list.
+    QCOMPARE(queue.waitingUserCount(), 60);
+
+    // theApp.clientUDP is m_receiverUDP here, so the reply lands on m_senderUDP.
+    const Endpoint replyTo(Address::fromString(QStringLiteral("127.0.0.1")),
+                           m_senderUDP->connectedPort());
+    QVERIFY2(m_clientList->findByEndpoint_UDP(replyTo.address(), replyTo.port()) == nullptr,
+             "the sender must be unknown, or the handler takes the reask-ACK branch");
+
+    QSignalSpy fullSpy(m_senderUDP, &ClientUDPSocket::queueFullReceived);
+
+    // 60 + 50 <= 5000: not full, so nothing is sent.
+    queue.onReaskFilePing(replyTo, sharedHash, 16);
+    flushUDPSocket(m_receiverUDP);
+    QTest::qWait(200);
+    QCoreApplication::processEvents();
+    QCOMPARE(fullSpy.count(), 0);
+
+    // 60 + 50 > 100: full. The old hardcoded 200 would have stayed silent here.
+    thePrefs.setQueueSize(100);
+    queue.onReaskFilePing(replyTo, sharedHash, 16);
+    flushUDPSocket(m_receiverUDP);
+    QTRY_COMPARE_WITH_TIMEOUT(fullSpy.count(), 1, 3000);
+
+    // Leave the queue empty so the clients can be destroyed safely.
+    for (auto& c : waiting)
+        queue.removeFromWaitingQueue(c.get());
 }
 
 QTEST_MAIN(tst_CallbackAndQueueRank)

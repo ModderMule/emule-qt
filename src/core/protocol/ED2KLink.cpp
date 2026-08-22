@@ -8,6 +8,7 @@
 #include "prefs/Preferences.h"
 
 #include <QHostAddress>
+#include <QRegularExpression>
 #include <QUrl>
 
 #include <algorithm>
@@ -53,6 +54,84 @@ void appendLinkSources(ED2KFileLink& link, QStringView list, bool ipv6Only)
 
         link.hostnameSources.push_back(std::move(src));
     }
+}
+
+/// Value of one hex digit, or -1. QString::toUInt(&ok, 16) is not usable here:
+/// it accepts surrounding whitespace and a sign, so " 1" would pass for 0x01.
+int hexValue(char16_t ch)
+{
+    if (ch >= u'0' && ch <= u'9') return ch - u'0';
+    if (ch >= u'a' && ch <= u'f') return ch - u'a' + 10;
+    if (ch >= u'A' && ch <= u'F') return ch - u'A' + 10;
+    return -1;
+}
+
+/// Percent-decode one field of a config link (docs/protocol/http-cache-spec.md §8.1).
+/// False means the link is invalid and must be refused whole.
+///
+/// Stricter than urlDecode(): QUrl::fromPercentEncoding() passes a broken "%ZZ"
+/// through as literal text, and the spec makes that invalidate the link — one
+/// nobody can be sure how to read must never be half-applied. Decoded control
+/// octets are refused as well, which is what keeps a "%0A" out of a log line or
+/// a message box.
+///
+/// More liberal than the grammar in one place: a raw octet above ASCII is read as
+/// UTF-8 rather than rejected. A producer must encode it, but refusing to read a
+/// cache someone called "Zwischenspeicher für eMule" in the clear buys nothing,
+/// and it is not in the spec's rejection list.
+bool decodeLinkField(QStringView field, QString* out)
+{
+    QByteArray octets;
+    octets.reserve(field.size());
+    QString run;   // literal text between escapes, converted to UTF-8 in one go
+
+    for (qsizetype i = 0; i < field.size(); ++i) {
+        const char16_t ch = field[i].unicode();
+        if (ch != u'%') {
+            run += field[i];
+            continue;
+        }
+
+        if (i + 2 >= field.size())
+            return false;
+        const int hi = hexValue(field[i + 1].unicode());
+        const int lo = hexValue(field[i + 2].unicode());
+        if (hi < 0 || lo < 0)
+            return false;
+
+        octets += run.toUtf8();
+        run.clear();
+        octets.append(static_cast<char>((hi << 4) | lo));
+        i += 2;
+    }
+    octets += run.toUtf8();
+
+    const QString decoded = QString::fromUtf8(octets);
+    for (const QChar c : decoded) {
+        if (c.unicode() < 0x20 || c.unicode() == 0x7F)
+            return false;
+    }
+
+    *out = decoded;
+    return true;
+}
+
+/// Percent-encode one field: the two syntax octets plus everything outside
+/// printable ASCII. ':' and '/' stay literal, which is what keeps a base URL
+/// readable in the link.
+QString encodeLinkField(const QString& field)
+{
+    QString out;
+    for (const char raw : field.toUtf8()) {
+        const auto b = static_cast<uint8>(raw);
+        if (b < 0x21 || b > 0x7E || b == '%' || b == '|') {
+            out += QChar(u'%');
+            out += QString::number(b, 16).rightJustified(2, QLatin1Char('0')).toUpper();
+        } else {
+            out += QLatin1Char(static_cast<char>(b));
+        }
+    }
+    return out;
 }
 
 } // namespace
@@ -152,6 +231,20 @@ QString ED2KSearchLink::toLink() const
     return QStringLiteral("ed2k://|search|%1|/").arg(searchTerm);
 }
 
+QString ED2KHttpCacheLink::toLink() const
+{
+    QString out = QStringLiteral("ed2k://|httpcache|%1|%2|%3")
+                      .arg(encodeLinkField(name),
+                           encodeLinkField(baseUrl),
+                           encodeLinkField(secret));
+
+    if (!keyId.isEmpty())
+        out += QStringLiteral("|k=%1").arg(encodeLinkField(keyId));
+
+    out += QStringLiteral("|/");
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // linkType()
 // ---------------------------------------------------------------------------
@@ -168,6 +261,8 @@ ED2KLinkType linkType(const ED2KLink& link)
             return ED2KLinkType::ServerList;
         else if constexpr (std::is_same_v<T, ED2KNodesListLink>)
             return ED2KLinkType::NodesList;
+        else if constexpr (std::is_same_v<T, ED2KHttpCacheLink>)
+            return ED2KLinkType::HttpCache;
         else
             return ED2KLinkType::Search;
     }, link);
@@ -315,6 +410,76 @@ static std::optional<ED2KServerLink> parseServerLink(const QStringList& parts)
 }
 
 // ---------------------------------------------------------------------------
+// HTTP Cache configuration link parsing
+// ---------------------------------------------------------------------------
+
+/// ed2k://|httpcache|<name>|<baseUrl>|<secret>[|k=<id>][|<opt>=<val>]|/
+///
+/// Every failure returns nullopt rather than a partially populated link: the
+/// spec's step 1 is "on any failure, stop", because this link carries an upload
+/// credential and half of one is not a thing a client may act on.
+///
+/// @p parts is the raw '|' split — fields are decoded here, afterwards, and never
+/// before. Decoding first would let a "%7C" inside a name re-split the link into
+/// the wrong number of fields, which is the classic way a link format grows an
+/// injection bug.
+static std::optional<ED2KHttpCacheLink> parseHttpCacheLink(const QStringList& parts)
+{
+    // parts[0]="httpcache", [1]=name, [2]=baseUrl, [3]=secret, then options, then "/".
+    // The terminator is mandatory: without it the link may have been truncated by
+    // whatever carried it here, and a truncated secret is indistinguishable from a
+    // short one.
+    if (parts.size() < 5 || parts.back() != QStringLiteral("/"))
+        return std::nullopt;
+
+    ED2KHttpCacheLink link;
+    if (!decodeLinkField(parts[1], &link.name)
+        || !decodeLinkField(parts[2], &link.baseUrl)
+        || !decodeLinkField(parts[3], &link.secret))
+        return std::nullopt;
+
+    // The base URL is the whole point of the handshake that follows, so anything
+    // ambiguous about where it points is refused here rather than resolved later.
+    const QUrl url(link.baseUrl, QUrl::StrictMode);
+    const QString scheme = url.scheme().toLower();
+    if (!url.isValid() || url.isRelative() || url.host().isEmpty()
+        || (scheme != QStringLiteral("http") && scheme != QStringLiteral("https"))
+        || !url.userInfo().isEmpty() || url.hasQuery() || url.hasFragment())
+        return std::nullopt;
+
+    // Opaque, but bounded and free of anything that cannot survive a header.
+    if (link.secret.isEmpty() || link.secret.size() > 512)
+        return std::nullopt;
+    for (const QChar c : link.secret) {
+        if (c.unicode() < 0x21 || c.unicode() > 0x7E)
+            return std::nullopt;
+    }
+
+    static const QRegularExpression keyIdRe(QStringLiteral("\\A[A-Za-z0-9._-]{1,32}\\z"));
+
+    // Tail fields. An unknown key=value is skipped — that is the format's
+    // extension point — but one without '=' is refused: silently ignoring
+    // "k-default" would let a typo swallow a real option, and the user would
+    // never learn why their key id vanished.
+    for (int i = 4; i + 1 < parts.size(); ++i) {
+        const QString& option = parts[i];
+        const auto eq = option.indexOf(QChar(u'='));
+        if (eq <= 0)
+            return std::nullopt;
+
+        if (option.left(eq).compare(QStringLiteral("k"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        if (!decodeLinkField(QStringView(option).mid(eq + 1), &link.keyId))
+            return std::nullopt;
+        if (!keyIdRe.match(link.keyId).hasMatch())
+            return std::nullopt;
+    }
+
+    return link;
+}
+
+// ---------------------------------------------------------------------------
 // Magnet link parsing
 // ---------------------------------------------------------------------------
 
@@ -425,6 +590,15 @@ std::optional<ED2KLink> parseED2KLink(const QString& uri)
             link.address = parts[1];
             return ED2KLink{std::move(link)};
         }
+    } else if (type == QStringLiteral("httpcache")) {
+        // The size bound is the format's own, and it is checked before anything
+        // parses: a config link is something a user pastes, not something a page
+        // streams at us.
+        if (uri.toUtf8().size() <= kMaxHttpCacheLinkBytes) {
+            auto result = parseHttpCacheLink(parts);
+            if (result)
+                return ED2KLink{std::move(*result)};
+        }
     } else if (type == QStringLiteral("search")) {
         if (parts.size() >= 2 && !parts[1].isEmpty()) {
             ED2KSearchLink link;
@@ -434,6 +608,31 @@ std::optional<ED2KLink> parseED2KLink(const QString& uri)
     }
 
     return std::nullopt;
+}
+
+// ---------------------------------------------------------------------------
+// redactLinkSecret
+// ---------------------------------------------------------------------------
+
+QString redactLinkSecret(const QString& uri)
+{
+    const QString prefix = QStringLiteral("ed2k://|");
+    if (!uri.startsWith(prefix, Qt::CaseInsensitive))
+        return uri;
+
+    QStringList parts = uri.mid(prefix.size()).split(QChar(u'|'), Qt::KeepEmptyParts);
+    if (parts.size() < 4
+        || parts[0].compare(QStringLiteral("httpcache"), Qt::CaseInsensitive) != 0)
+        return uri;
+
+    // An empty field is left alone: putting an ellipsis where nothing was would
+    // report "invalid link" while showing a secret that was never there, and the
+    // missing secret is usually the reason the link was refused.
+    if (parts[3].isEmpty())
+        return uri;
+
+    parts[3] = QStringLiteral("…");
+    return uri.left(prefix.size()) + parts.join(QChar(u'|'));
 }
 
 // ---------------------------------------------------------------------------

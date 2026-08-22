@@ -532,8 +532,11 @@ void MainWindow::onClipboardChanged()
         return;
     m_lastClipboardContents = text;
 
-    // Check if any line contains an ed2k file link
-    if (!text.contains(QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive))
+    // Check if any line contains a link we act on. HTTP Cache configuration links
+    // count: copying one off a server's install page is how it is meant to be
+    // used, and Ed2kLinkImporter always confirms before storing anything.
+    if (!text.contains(QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive)
+        && !text.contains(QStringLiteral("ed2k://|httpcache|"), Qt::CaseInsensitive))
         return;
 
     // Automatic: files we already have — including ones only the daemon knows about, such as

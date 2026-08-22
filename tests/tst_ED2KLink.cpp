@@ -83,6 +83,18 @@ private slots:
     void invalid_fileLink_badSize();
     void invalid_serverLink_badPort();
 
+    // HTTP Cache configuration links (docs/protocol/http-cache-spec.md §8.1)
+    void httpCacheLink_accepted_data();
+    void httpCacheLink_accepted();
+    void httpCacheLink_rejected_data();
+    void httpCacheLink_rejected();
+    void httpCacheLink_roundTrip_data();
+    void httpCacheLink_roundTrip();
+    void httpCacheLink_optionsAndCase();
+    void httpCacheLink_rejectsControlCharacters();
+    void httpCacheLink_rejectsOversizedLink();
+    void redactLinkSecret_hidesTheSecret();
+
     // linkType helper
     void linkType_variants();
 };
@@ -706,6 +718,231 @@ void tst_ED2KLink::invalid_serverLink_badPort()
 }
 
 // ---------------------------------------------------------------------------
+// HTTP Cache configuration links
+//
+// The vectors are the reference table from the format's own specification
+// (emule-http-cache-php/docs/ed2k-httpcache-link.md), so a change on either side
+// shows up as a failure here rather than as a link nobody can apply.
+// ---------------------------------------------------------------------------
+
+void tst_ED2KLink::httpCacheLink_accepted_data()
+{
+    QTest::addColumn<QString>("uri");
+    QTest::addColumn<QString>("name");
+    QTest::addColumn<QString>("baseUrl");
+    QTest::addColumn<QString>("secret");
+    QTest::addColumn<QString>("keyId");
+
+    QTest::newRow("canonical")
+        << QStringLiteral("ed2k://|httpcache|HTTP%20Cache%20upload%20config|"
+                          "https://cache.example.com|1f4b9c02d7e35a68|/")
+        << QStringLiteral("HTTP Cache upload config")
+        << QStringLiteral("https://cache.example.com")
+        << QStringLiteral("1f4b9c02d7e35a68") << QString();
+
+    QTest::newRow("with key id and path")
+        << QStringLiteral("ed2k://|httpcache|HTTP%20Cache%20upload%20config|"
+                          "http://192.168.1.10/emule-http-cache-php|1f4b9c02d7e35a68|k=default|/")
+        << QStringLiteral("HTTP Cache upload config")
+        << QStringLiteral("http://192.168.1.10/emule-http-cache-php")
+        << QStringLiteral("1f4b9c02d7e35a68") << QStringLiteral("default");
+
+    // The one that proves fields are split before they are decoded: a literal '|'
+    // in the name arrives as %7C and must not become a field separator.
+    QTest::newRow("pipe in name")
+        << QStringLiteral("ed2k://|httpcache|Nachbars%20WLAN%20%7C%20Cache|"
+                          "https://cache.example.com|abc123|k=seedbox|/")
+        << QStringLiteral("Nachbars WLAN | Cache")
+        << QStringLiteral("https://cache.example.com")
+        << QStringLiteral("abc123") << QStringLiteral("seedbox");
+
+    // Non-ASCII is UTF-8 octets, not some other encoding.
+    QTest::newRow("utf-8 name")
+        << QStringLiteral("ed2k://|httpcache|Zwischenspeicher%20f%C3%BCr%20eMule|"
+                          "https://cache.example.com|abc123|/")
+        << QString::fromUtf8("Zwischenspeicher für eMule")
+        << QStringLiteral("https://cache.example.com")
+        << QStringLiteral("abc123") << QString();
+
+    QTest::newRow("empty name")
+        << QStringLiteral("ed2k://|httpcache||https://cache.example.com|abc123|/")
+        << QString() << QStringLiteral("https://cache.example.com")
+        << QStringLiteral("abc123") << QString();
+
+    // A raw umlaut is not what the grammar asks a producer to write, but reading
+    // one is harmless and refusing it would help nobody.
+    QTest::newRow("raw non-ascii name")
+        << QString::fromUtf8("ed2k://|httpcache|Zwischenspeicher für eMule|"
+                             "https://cache.example.com|abc123|/")
+        << QString::fromUtf8("Zwischenspeicher für eMule")
+        << QStringLiteral("https://cache.example.com")
+        << QStringLiteral("abc123") << QString();
+}
+
+void tst_ED2KLink::httpCacheLink_accepted()
+{
+    QFETCH(QString, uri);
+    QFETCH(QString, name);
+    QFETCH(QString, baseUrl);
+    QFETCH(QString, secret);
+    QFETCH(QString, keyId);
+
+    auto result = parseED2KLink(uri);
+    QVERIFY(result.has_value());
+
+    auto* link = std::get_if<ED2KHttpCacheLink>(&*result);
+    QVERIFY(link != nullptr);
+    QCOMPARE(link->name, name);
+    QCOMPARE(link->baseUrl, baseUrl);
+    QCOMPARE(link->secret, secret);
+    QCOMPARE(link->keyId, keyId);
+}
+
+void tst_ED2KLink::httpCacheLink_rejected_data()
+{
+    QTest::addColumn<QString>("uri");
+
+    QTest::newRow("only two fields")
+        << QStringLiteral("ed2k://|httpcache|name|https://h|/");
+    QTest::newRow("no terminator")
+        << QStringLiteral("ed2k://|httpcache|n|https://h|s");
+    QTest::newRow("not http(s)")
+        << QStringLiteral("ed2k://|httpcache|n|ftp://h|s|/");
+    QTest::newRow("relative url")
+        << QStringLiteral("ed2k://|httpcache|n|/relative|s|/");
+    QTest::newRow("carries credentials")
+        << QStringLiteral("ed2k://|httpcache|n|https://u:p@h|s|/");
+    QTest::newRow("carries a query")
+        << QStringLiteral("ed2k://|httpcache|n|https://h?q=1|s|/");
+    QTest::newRow("carries a fragment")
+        << QStringLiteral("ed2k://|httpcache|n|https://h#f|s|/");
+    QTest::newRow("tail field without =")
+        << QStringLiteral("ed2k://|httpcache|n|https://h|s|junk|/");
+    QTest::newRow("empty secret")
+        << QStringLiteral("ed2k://|httpcache|n|https://h||/");
+    QTest::newRow("malformed key id")
+        << QStringLiteral("ed2k://|httpcache|n|https://h|s|k=has%20spaces|/");
+    QTest::newRow("key id too long")
+        << QStringLiteral("ed2k://|httpcache|n|https://h|s|k=%1|/")
+               .arg(QString(33, QLatin1Char('a')));
+    QTest::newRow("broken percent escape")
+        << QStringLiteral("ed2k://|httpcache|n|https://h|s%ZZ|/");
+    QTest::newRow("truncated percent escape")
+        << QStringLiteral("ed2k://|httpcache|n|https://h|abc%2|/");
+    QTest::newRow("secret with whitespace")
+        << QStringLiteral("ed2k://|httpcache|n|https://h|ab%20cd|/");
+    QTest::newRow("secret too long")
+        << QStringLiteral("ed2k://|httpcache|n|https://h|%1|/")
+               .arg(QString(513, QLatin1Char('a')));
+    QTest::newRow("no host")
+        << QStringLiteral("ed2k://|httpcache|n|https://|s|/");
+}
+
+void tst_ED2KLink::httpCacheLink_rejected()
+{
+    QFETCH(QString, uri);
+    QVERIFY(!parseED2KLink(uri).has_value());
+}
+
+void tst_ED2KLink::httpCacheLink_roundTrip_data()
+{
+    httpCacheLink_accepted_data();
+}
+
+void tst_ED2KLink::httpCacheLink_roundTrip()
+{
+    QFETCH(QString, uri);
+
+    auto first = parseED2KLink(uri);
+    QVERIFY(first.has_value());
+    auto* link = std::get_if<ED2KHttpCacheLink>(&*first);
+    QVERIFY(link != nullptr);
+
+    const QString emitted = link->toLink();
+    auto second = parseED2KLink(emitted);
+    QVERIFY2(second.has_value(), qPrintable(emitted));
+    auto* again = std::get_if<ED2KHttpCacheLink>(&*second);
+    QVERIFY(again != nullptr);
+
+    QCOMPARE(again->name, link->name);
+    QCOMPARE(again->baseUrl, link->baseUrl);
+    QCOMPARE(again->secret, link->secret);
+    QCOMPARE(again->keyId, link->keyId);
+
+    // A producer always encodes, whatever it read: '|' and non-ASCII never appear
+    // literally, while ':' and '/' stay readable.
+    const qsizetype fields = emitted.count(QLatin1Char('|'));
+    QCOMPARE(fields, link->keyId.isEmpty() ? 5 : 6);
+    QVERIFY(emitted.contains(QStringLiteral("://")));
+}
+
+void tst_ED2KLink::httpCacheLink_optionsAndCase()
+{
+    // An unknown option is the extension point: skipped, while k= is still read.
+    auto extended = parseED2KLink(QStringLiteral("ed2k://|httpcache|n|https://h|s|x=1|k=abc|/"));
+    QVERIFY(extended.has_value());
+    auto* link = std::get_if<ED2KHttpCacheLink>(&*extended);
+    QVERIFY(link != nullptr);
+    QCOMPARE(link->keyId, QStringLiteral("abc"));
+
+    // Scheme and type token are ASCII case-insensitive; nothing else is.
+    auto shouted = parseED2KLink(QStringLiteral("ED2K://|HTTPCACHE|n|https://h|s|/"));
+    QVERIFY(shouted.has_value());
+    QVERIFY(std::holds_alternative<ED2KHttpCacheLink>(*shouted));
+
+    // A file link is still a file link — the new branch does not shadow it.
+    auto file = parseED2KLink(QStringLiteral("ed2k://|file|x|1|%1|/").arg(kTestHash));
+    QVERIFY(file.has_value());
+    QVERIFY(std::holds_alternative<ED2KFileLink>(*file));
+}
+
+void tst_ED2KLink::httpCacheLink_rejectsControlCharacters()
+{
+    // %0A in a name would otherwise reach a log line or a message box, where a
+    // second line reads as a message of its own.
+    QVERIFY(!parseED2KLink(
+        QStringLiteral("ed2k://|httpcache|a%0Ab|https://h|s|/")).has_value());
+    QVERIFY(!parseED2KLink(
+        QStringLiteral("ed2k://|httpcache|a%00b|https://h|s|/")).has_value());
+}
+
+void tst_ED2KLink::httpCacheLink_rejectsOversizedLink()
+{
+    const QString fits =
+        QStringLiteral("ed2k://|httpcache|%1|https://h|s|/").arg(QString(4000, QLatin1Char('a')));
+    QVERIFY(parseED2KLink(fits).has_value());
+
+    const QString tooBig =
+        QStringLiteral("ed2k://|httpcache|%1|https://h|s|/").arg(QString(4100, QLatin1Char('a')));
+    QVERIFY(!parseED2KLink(tooBig).has_value());
+}
+
+void tst_ED2KLink::redactLinkSecret_hidesTheSecret()
+{
+    const QString secret = QStringLiteral("1f4b9c02d7e35a68");
+
+    const QString good =
+        QStringLiteral("ed2k://|httpcache|n|https://cache.example.com|%1|k=default|/").arg(secret);
+    QVERIFY(!redactLinkSecret(good).contains(secret));
+    QVERIFY(redactLinkSecret(good).contains(QStringLiteral("cache.example.com")));
+
+    // The malformed case is the one that matters: those are the links that reach
+    // an error message in the first place.
+    const QString broken = QStringLiteral("ed2k://|httpcache|n|ftp://h|%1|/").arg(secret);
+    QVERIFY(!redactLinkSecret(broken).contains(secret));
+
+    // Case-insensitive on the type token, like the parser.
+    const QString shouted = QStringLiteral("ED2K://|HTTPCACHE|n|https://h|%1|/").arg(secret);
+    QVERIFY(!redactLinkSecret(shouted).contains(secret));
+
+    // Anything else comes back byte for byte, so this is safe to wrap around
+    // every place that reports link text.
+    const QString file = QStringLiteral("ed2k://|file|movie.avi|123|%1|/").arg(kTestHash);
+    QCOMPARE(redactLinkSecret(file), file);
+    QCOMPARE(redactLinkSecret(QStringLiteral("not a link")), QStringLiteral("not a link"));
+}
+
+// ---------------------------------------------------------------------------
 // linkType() helper test
 // ---------------------------------------------------------------------------
 
@@ -735,6 +972,13 @@ void tst_ED2KLink::linkType_variants()
         auto r = parseED2KLink(QStringLiteral("ed2k://|search|hello|/"));
         QVERIFY(r.has_value());
         QCOMPARE(linkType(*r), ED2KLinkType::Search);
+    }
+    {
+        // Without its own case this fell through to Search, which is the kind of
+        // wrong answer nothing else would ever contradict.
+        auto r = parseED2KLink(QStringLiteral("ed2k://|httpcache|n|https://h|s|/"));
+        QVERIFY(r.has_value());
+        QCOMPARE(linkType(*r), ED2KLinkType::HttpCache);
     }
 }
 

@@ -22,7 +22,7 @@
 
 namespace eMule {
 
-enum class ED2KLinkType { File, Server, ServerList, NodesList, Search };
+enum class ED2KLinkType { File, Server, ServerList, NodesList, Search, HttpCache };
 
 /// Upper bound on the sources one link may carry. Link text is untrusted input, and
 /// each entry can cost a DNS lookup plus a dial attempt.
@@ -81,9 +81,31 @@ struct ED2KSearchLink {
     [[nodiscard]] QString toLink() const;
 };
 
+/// Longest config link we will look at, in octets. The format's own bound —
+/// anything larger is not a link somebody typed, it is something being pushed.
+inline constexpr int kMaxHttpCacheLinkBytes = 4096;
+
+/// An HTTP Cache upload-configuration link:
+/// `ed2k://|httpcache|NAME|BASEURL|SECRET|k=ID|/`
+///
+/// @a secret is an upload credential. It must never be logged, never echoed back
+/// into a message a user did not ask for, and never sent anywhere except the
+/// server named by @a baseUrl — and then only after that server has proved it is
+/// a cache. See docs/protocol/http-cache-spec.md §8.1.
+struct ED2KHttpCacheLink {
+    QString name;      ///< Display label, may be empty. Never an identifier.
+    QString baseUrl;   ///< Absolute http/https; no query, fragment or user:pass@
+    QString secret;    ///< The API key. Opaque — never parse it.
+    QString keyId;     ///< Optional `k=`, display only. `[A-Za-z0-9._-]{1,32}`
+
+    /// Rebuild the link. Percent-encodes every field, so a name carrying `|` or
+    /// non-ASCII round-trips through parseED2KLink().
+    [[nodiscard]] QString toLink() const;
+};
+
 using ED2KLink = std::variant<ED2KFileLink, ED2KServerLink,
                                ED2KServerListLink, ED2KNodesListLink,
-                               ED2KSearchLink>;
+                               ED2KSearchLink, ED2KHttpCacheLink>;
 
 /// Parse an ed2k:// or magnet: URI. Returns std::nullopt on failure.
 [[nodiscard]] std::optional<ED2KLink> parseED2KLink(const QString& uri);
@@ -95,5 +117,14 @@ using ED2KLink = std::variant<ED2KFileLink, ED2KServerLink,
 
 /// Determine the type of an ED2KLink variant.
 [[nodiscard]] ED2KLinkType linkType(const ED2KLink& link);
+
+/// @p uri with an HTTP Cache secret replaced by an ellipsis, for a log line, an
+/// error message or anything else a user might paste onward. Any other link — and
+/// anything unparseable — comes back unchanged, so this is safe to wrap around
+/// every place that reports link text back.
+///
+/// Deliberately works on the raw `|` split rather than on a parsed link: the only
+/// links that reach an error path are the malformed ones.
+[[nodiscard]] QString redactLinkSecret(const QString& uri);
 
 } // namespace eMule

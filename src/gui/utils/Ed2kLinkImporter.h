@@ -8,6 +8,10 @@
 /// "Paste eD2K Links" action. Filtering is authoritative — the daemon is asked what it
 /// already knows (IpcMsgType::GetKnownTypes) rather than consulting the GUI's local
 /// models, which only see downloading and currently-shared files.
+///
+/// It is also where `ed2k://|httpcache|` configuration links are recognised and
+/// handed to HttpCacheLinkImporter, so every one of those callers accepts them
+/// without knowing anything about the format.
 
 #include "search/SearchFile.h"
 
@@ -45,6 +49,10 @@ public:
         int skipped = 0;               ///< links dropped because the core already has them
         QStringList invalid;           ///< lines that were not parseable file links
         QStringList skipDescriptions;  ///< "name — reason", one entry per skipped file
+        /// HTTP Cache configuration links handed to HttpCacheLinkImporter. Counted
+        /// separately from @a added: they start no download, so a caller must not
+        /// switch to the Transfers tab over one.
+        int httpCacheConfigs = 0;
     };
 
     /// Import every eD2K file link found in @p text (one per line).

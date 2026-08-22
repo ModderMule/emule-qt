@@ -83,6 +83,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::MarkSearchSpam:       return QStringLiteral("MarkSearchSpam");
     case T::ResetStats:           return QStringLiteral("ResetStats");
     case T::RestoreStats:         return QStringLiteral("RestoreStats");
+    case T::ProbeHttpCacheServer: return QStringLiteral("ProbeHttpCacheServer");
+    case T::ApplyHttpCacheConfig: return QStringLiteral("ApplyHttpCacheConfig");
     case T::RenameSharedFile:     return QStringLiteral("RenameSharedFile");
     case T::DeleteSharedFile:     return QStringLiteral("DeleteSharedFile");
     case T::UnshareFile:          return QStringLiteral("UnshareFile");
@@ -398,9 +400,16 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
     if (seqId > 0) {
         auto it = m_pendingCallbacks.find(seqId);
         if (it != m_pendingCallbacks.end()) {
-            if (it->second)
-                it->second(msg);
+            // Taken out of the map and onto the stack *before* it runs. A callback
+            // that opens a modal dialog — several do — spins a nested event loop,
+            // and the replies that arrive during it re-enter here: an insert can
+            // rehash this unordered_map and leave `it` dangling, a clear() on
+            // disconnect would destroy the std::function mid-call, and a nested
+            // erase of the same seqId would make the erase below a second one.
+            ResponseCallback callback = std::move(it->second);
             m_pendingCallbacks.erase(it);
+            if (callback)
+                callback(msg);
             return;
         }
     }

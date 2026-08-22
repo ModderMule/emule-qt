@@ -204,6 +204,17 @@ UpDownClient* ClientList::findByConnIP(uint32 ip, uint16 port) const
     return nullptr;
 }
 
+UpDownClient* ClientList::findByConnAddress(const Address& addr) const
+{
+    if (addr.isNull())
+        return nullptr;
+    for (auto* c : m_items) {
+        if (c->connectAddress() == addr)
+            return c;
+    }
+    return nullptr;
+}
+
 UpDownClient* ClientList::findByUserHash(const uint8* hash, uint32 ip, uint16 port) const
 {
     // Two-pass: prefer exact match (hash+IP+port), fallback to hash-only

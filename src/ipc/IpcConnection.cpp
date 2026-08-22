@@ -4,6 +4,8 @@
 #include "IpcConnection.h"
 
 #include <QCborValue>
+#include <QPointer>
+#include <QScopeGuard>
 
 namespace eMule::Ipc {
 
@@ -74,6 +76,23 @@ void IpcConnection::onReadyRead()
 {
     m_readBuffer.append(m_socket->readAll());
 
+    // Re-entrancy. Handlers of messageReceived open modal dialogs — the eD2K link
+    // confirmation and the HTTP Cache one both do — and a nested event loop
+    // delivers this socket's next readyRead right back into here. Decoding from a
+    // nested call would consume frames off the front of the buffer the outer call
+    // is still walking, and deliver them out of order on the way. Appending is
+    // safe and keeps the socket drained; the outer loop picks the bytes up on its
+    // next turn, because it re-reads m_readBuffer every iteration.
+    if (m_dispatching)
+        return;
+
+    m_dispatching = true;
+    const QPointer<IpcConnection> self(this);
+    const auto clearDispatching = qScopeGuard([self] {
+        if (self)
+            self->m_dispatching = false;
+    });
+
     // Decode as many complete frames as possible
     for (;;) {
         if (m_encryptionKey.isEmpty()) {
@@ -89,6 +108,10 @@ void IpcConnection::onReadyRead()
                 emit messageReceived(msg);
             else
                 emit protocolError(QStringLiteral("Invalid IPC message received"));
+
+            // A handler is allowed to tear this connection down — Shutdown does.
+            if (!self)
+                return;
         } else {
             // Encrypted path
             auto raw = tryExtractRawFrame(m_readBuffer);
@@ -116,6 +139,9 @@ void IpcConnection::onReadyRead()
                 emit messageReceived(msg);
             else
                 emit protocolError(QStringLiteral("Invalid IPC message received"));
+
+            if (!self)
+                return;
         }
     }
 

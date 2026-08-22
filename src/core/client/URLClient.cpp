@@ -11,6 +11,8 @@
 #include "files/PartFile.h"
 #include "net/ClientReqSocket.h"
 #include "net/HostResolver.h"
+#include "net/HttpClientReqSocket.h"
+#include "net/HttpDefaults.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 
@@ -212,20 +214,7 @@ bool URLClient::sendHttpBlockRequests()
         }
     }
 
-    // Build HTTP GET request
-    QByteArray request;
-    request += "GET ";
-    request += m_urlPathLocal;
-    request += " HTTP/1.1\r\n";
-    request += "Host: ";
-    request += m_urlHost.toUtf8();
-    if (m_urlPort != 80) {
-        request += ':';
-        request += QByteArray::number(m_urlPort);
-    }
-    request += "\r\n";
-    request += "Accept: */*\r\n";
-    request += "Connection: keep-alive\r\n";
+    QByteArray request = buildGetHeader();
 
     // Add Range header
     if (endPos > 0) {
@@ -238,12 +227,7 @@ bool URLClient::sendHttpBlockRequests()
 
     request += "\r\n";
 
-    // Send as raw packet
-    auto packet = std::make_unique<RawPacket>(request.constData(),
-                                               static_cast<uint32>(request.size()));
-    sendPacket(std::move(packet));
-
-    return true;
+    return sendRawRequest(request);
 }
 
 // ===========================================================================
@@ -256,16 +240,9 @@ bool URLClient::processHttpDownResponse(const QList<QByteArray>& headers)
         return false;
 
     // Parse status line: "HTTP/1.1 200 OK" or "HTTP/1.1 206 Partial Content"
-    const QByteArray& statusLine = headers.first();
-    if (!statusLine.startsWith("HTTP/"))
+    const int code = parseStatusCode(headers.first());
+    if (code < 0)
         return false;
-
-    const auto spaceIdx = statusLine.indexOf(' ');
-    if (spaceIdx < 0)
-        return false;
-
-    const QByteArray statusCode = statusLine.mid(spaceIdx + 1, 3);
-    const int code = statusCode.toInt();
 
     if (code != 200 && code != 206) {
         logDebug(QStringLiteral("URLClient: HTTP error %1 from %2").arg(code).arg(m_urlHost));
@@ -317,8 +294,16 @@ void URLClient::processHttpBlockPacket(const uint8* data, uint32 size)
     // Write data to PartFile
     PartFile* file = reqFile();
     if (file && data && size > 0) {
+        // writeToBuffer's `end` is INCLUSIVE — it copies end-start+1 bytes. Passing
+        // the exclusive end read one byte past `data` and filled one gap byte too
+        // many. MFC converts the same way (`--nEndPos` in URLClient.cpp:374 and
+        // DownloadClient.cpp:1005); this port does it on the ed2k path
+        // (DownloadClient.cpp:807) but used to miss it here.
         const uint64 startOffset = m_rangeStart;
-        const uint64 endOffset = m_rangeStart + size;
+        const uint64 endOffset = m_rangeStart + size - 1;
+        // No sender: an eD2K URL source is a web server, not a peer. Corruption
+        // attribution exists to ban peers, and there is nobody here to ban — banning
+        // the host would only take the URL out of our own reach.
         file->writeToBuffer(size, data, startOffset, endOffset, nullptr);
         m_rangeStart += size;
     }
@@ -361,13 +346,96 @@ void URLClient::onSocketConnected(int errorCode)
 }
 
 // ===========================================================================
+// buildGetHeader — protected: request line + headers common to every GET
+// ===========================================================================
+
+QByteArray URLClient::buildGetHeader() const
+{
+    QByteArray request;
+    request += "GET ";
+    request += m_urlPathLocal;
+    request += " HTTP/1.1\r\n";
+    request += "Host: ";
+    request += m_urlHost.toUtf8();
+    if (m_urlPort != 80) {
+        request += ':';
+        request += QByteArray::number(m_urlPort);
+    }
+    request += "\r\n";
+    // Identify ourselves. An anonymous GET is what a default WAF ruleset challenges,
+    // and a cache or web source behind one then looks broken rather than blocked.
+    request += Http::userAgentHeaderLine();
+    request += "Accept: */*\r\n";
+    request += "Connection: keep-alive\r\n";
+
+    return request;
+}
+
+// ===========================================================================
+// sendRawRequest — protected
+// ===========================================================================
+
+bool URLClient::sendRawRequest(const QByteArray& request)
+{
+    if (!socket())
+        return false;
+
+    auto packet = std::make_unique<RawPacket>(request.constData(),
+                                              static_cast<uint32>(request.size()));
+    sendPacket(std::move(packet));
+
+    return true;
+}
+
+// ===========================================================================
+// parseStatusCode — protected, static
+// ===========================================================================
+
+int URLClient::parseStatusCode(const QByteArray& statusLine)
+{
+    if (!statusLine.startsWith("HTTP/"))
+        return -1;
+
+    const auto spaceIdx = statusLine.indexOf(' ');
+    if (spaceIdx < 0)
+        return -1;
+
+    bool ok = false;
+    const int code = statusLine.mid(spaceIdx + 1, 3).toInt(&ok);
+
+    return ok ? code : -1;
+}
+
+// ===========================================================================
+// headerValue — protected, static
+// ===========================================================================
+
+QByteArray URLClient::headerValue(const QList<QByteArray>& headers, const char* name)
+{
+    const QByteArray prefix = QByteArray(name).toLower() + ':';
+
+    // Skip index 0: that is the status line, not a header.
+    for (qsizetype i = 1; i < headers.size(); ++i) {
+        if (headers[i].toLower().startsWith(prefix))
+            return headers[i].mid(headers[i].indexOf(':') + 1).trimmed();
+    }
+
+    return {};
+}
+
+// ===========================================================================
 // connectToHost — private: create socket and initiate TCP connection
 // ===========================================================================
 
 void URLClient::connectToHost()
 {
-    // Create a ClientReqSocket for this connection
-    auto* reqSocket = new ClientReqSocket(this);
+    // An HTTP response is not ed2k-framed, so it must arrive on a raw-data socket.
+    // A plain ClientReqSocket sends it through EMSocket's packet parser instead,
+    // where the 'H' of "HTTP/1.1" is not one of OP_EDONKEYPROT/OP_PACKEDPROT/
+    // OP_EMULEPROT and the connection dies with kErrWrongHeader before a single
+    // body byte reaches processHttpDownResponseBody(). MFC picks the same class
+    // here (srchybrid/URLClient.cpp:186 passes RUNTIME_CLASS(CHttpClientDownSocket)).
+    auto* reqSocket = new HttpClientDownSocket(this);
     reqSocket->createSocket();
     setSocket(reqSocket);
 
@@ -380,6 +448,12 @@ void URLClient::connectToHost()
                      this, [this](const QString& reason) {
         disconnected(reason, true);
     });
+
+    // Without this the TCP connection completes and then nothing happens: the
+    // request is only built from connectionEstablished(). UpDownClient::connectToHost()
+    // makes the same connection for ed2k peers (UpDownClient.cpp:1787).
+    QObject::connect(reqSocket, &ClientReqSocket::socketConnected,
+                     this, &URLClient::connectionEstablished);
 
     // Configure proxy
     reqSocket->initProxySupport(thePrefs.proxySettings());

@@ -5,13 +5,16 @@
 
 #include "IpcMessage.h"
 #include "protocol/ED2KLink.h"
+#include "utils/HttpCacheLinkImporter.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/StatusBarNotifier.h"
 
+#include <QApplication>
 #include <QCborArray>
 #include <QMessageBox>
 #include <QPointer>
+#include <QTimer>
 
 #include <utility>
 #include <vector>
@@ -33,16 +36,26 @@ struct ParsedLink {
     uint64 size = 0;
 };
 
-/// Split link text into file links, collecting unparseable candidates into @p invalid.
-std::vector<ParsedLink> parseLines(const QString& text, QStringList& invalid)
+/// Split link text into file links, collecting HTTP Cache configuration links into
+/// @p configs and unparseable candidates into @p invalid.
+std::vector<ParsedLink> parseLines(const QString& text, QStringList& invalid,
+                                   std::vector<ED2KHttpCacheLink>& configs)
 {
     std::vector<ParsedLink> links;
 
     for (const QString& candidate : Ed2kLinkImporter::splitLinks(text)) {
         auto parsed = parseED2KLink(candidate);
+
+        if (const auto* cfg = parsed ? std::get_if<ED2KHttpCacheLink>(&*parsed) : nullptr) {
+            configs.push_back(*cfg);
+            continue;
+        }
+
         const auto* fileLink = parsed ? std::get_if<ED2KFileLink>(&*parsed) : nullptr;
         if (!fileLink) {
-            invalid << candidate;
+            // Redacted: this list is logged and shown in a dialog, and a malformed
+            // config link is the only kind that reaches it still carrying a secret.
+            invalid << redactLinkSecret(candidate);
             continue;
         }
 
@@ -177,7 +190,22 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
                                    std::function<void()> beforePrompt)
 {
     Result result;
-    std::vector<ParsedLink> links = parseLines(text, result.invalid);
+    std::vector<ED2KHttpCacheLink> configs;
+    std::vector<ParsedLink> links = parseLines(text, result.invalid, configs);
+
+    // Configuration links take their own route: they start no download, and they
+    // always confirm with the user no matter what @p prompt says — pasting a batch
+    // of links is consent to download them, not to store somebody's credential.
+    if (!configs.empty()) {
+        result.httpCacheConfigs = static_cast<int>(configs.size());
+        HttpCacheLinkImporter::apply(configs.front(), ipc, parent, {}, beforePrompt);
+
+        // One at a time: chaining dialogs behind each other is worse than saying so.
+        if (configs.size() > 1) {
+            logWarning(tr("%n further HTTP Cache link(s) ignored — apply one at a time.",
+                          nullptr, static_cast<int>(configs.size()) - 1));
+        }
+    }
 
     if (links.empty() || !ipc || !ipc->isConnected()) {
         if (done)
@@ -203,11 +231,29 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
         if (!ipc->isConnected())
             return;
 
+        // Everything below can open a modal box, and a box must never be opened
+        // from inside the call stack that delivered this reply: it spins a nested
+        // event loop, and a quit arriving during that loop unwinds every loop at
+        // once — main() then destroys the IpcClient and its socket while the
+        // socket-read notification is still below us, and Qt returns into freed
+        // memory. One turn of the event loop puts the dialogs outside that stack.
+        QCborArray types;
+        if (resp.fieldBool(0))
+            types = resp.fieldArray(1);
+        const bool verdictOk = resp.fieldBool(0);
+
+        QTimer::singleShot(0, qApp,
+            [links = std::move(links), result, ipc, safeParent, source, prompt, types, verdictOk,
+             done = std::move(done), beforePrompt = std::move(beforePrompt)]() mutable
+    {
+        if (!ipc->isConnected())
+            return;
+
         std::vector<ParsedLink> wanted;
         QString singleSkipMessage;
         const size_t linkCount = links.size();  // links is moved from below
 
-        if (!resp.fieldBool(0)) {
+        if (!verdictOk) {
             // No verdict from the daemon. An automatic import must not guess and prompt;
             // a manual one goes ahead unfiltered, and DownloadQueue::addDownloadFromED2KLink
             // still rejects anything already in the transfer list.
@@ -219,7 +265,6 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
             }
             wanted = std::move(links);
         } else {
-            const QCborArray types = resp.fieldArray(1);
             wanted.reserve(links.size());
 
             for (size_t i = 0; i < links.size(); ++i) {
@@ -280,6 +325,7 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
         result.added = queueDownloads(wanted, ipc);
         if (done)
             done(result);
+        });
     });
 }
 

@@ -58,6 +58,7 @@ private slots:
     void downloadState_default();
     void setDownloadState_emitsSignal();
     void setDownloadState_clearsRateOnLeaveDownloading();
+    void uploadAndDownloadSenses_areIndependent();
     void chatState_roundTrip();
     void kadState_roundTrip();
     void compare_byHash();
@@ -143,6 +144,9 @@ private slots:
     void processExtendedInfo_parsesPartStatus();
     void uploadingStatistics_rateCalculation();
     void addRequestCount_tracksRequests();
+    void addReqBlock_rejectedWhenNotUploading();
+    void addReqBlock_collectionSlotRejectsOtherFile();
+    void addReqBlock_collectionSlotAcceptsCollection();
     void ban_setsState();
     void unBan_clearsState();
 
@@ -357,6 +361,37 @@ void tst_UpDownClient::setDownloadState_clearsRateOnLeaveDownloading()
     client.setDownloadState(DownloadState::Downloading);
     client.setDownloadState(DownloadState::None);
     QCOMPARE(client.downloadState(), DownloadState::None);
+}
+
+void tst_UpDownClient::uploadAndDownloadSenses_areIndependent()
+{
+    // The regression pin for a naming trap, not for any logic: MFC's
+    // CUpDownClient::IsDownloading() (srchybrid/UpdownClient.h:229) is m_eUploadState ==
+    // US_UPLOADING — "this peer is downloading FROM US" — which is the exact opposite of
+    // what the name reads as here. Transcribing one of its guards verbatim compiles, reads
+    // correctly and inverts silently, so this class deliberately has no isDownloading() at
+    // all: isUploadingToPeer() is MFC's, isDownloadingFromPeer() is ours.
+    UpDownClient client;
+    QVERIFY(!client.isUploadingToPeer());
+    QVERIFY(!client.isDownloadingFromPeer());
+
+    client.setUploadState(UploadState::Uploading);
+    QVERIFY(client.isUploadingToPeer());
+    QVERIFY(!client.isDownloadingFromPeer());
+
+    client.setDownloadState(DownloadState::Downloading);
+    QVERIFY(client.isUploadingToPeer());
+    QVERIFY(client.isDownloadingFromPeer());
+
+    // Neither direction implies the other, in either order.
+    client.setUploadState(UploadState::None);
+    QVERIFY(!client.isUploadingToPeer());
+    QVERIFY(client.isDownloadingFromPeer());
+
+    // Connecting holds a slot that is not live yet, so MFC's test is still false — see
+    // UploadQueue::isDownloading(), which is the list membership test and says otherwise.
+    client.setUploadState(UploadState::Connecting);
+    QVERIFY(!client.isUploadingToPeer());
 }
 
 void tst_UpDownClient::chatState_roundTrip()
@@ -1638,7 +1673,7 @@ void tst_UpDownClient::hasPassedSecureIdent_identified()
 void tst_UpDownClient::score_noFile_returnsZero()
 {
     UpDownClient client;
-    QCOMPARE(client.score(), 0u);
+    QCOMPARE(client.score(), quint64{0});
 }
 
 void tst_UpDownClient::processExtendedInfo_parsesPartStatus()
@@ -1700,6 +1735,110 @@ void tst_UpDownClient::addRequestCount_tracksRequests()
     client.addRequestCount(fileID);
     client.addRequestCount(fileID);
     QCOMPARE(client.uploadState(), UploadState::None);
+}
+
+// ---------------------------------------------------------------------------
+// addReqBlock guards — MFC srchybrid/UploadClient.cpp:327-345
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A shared file plus a block request naming it, which is all the two guards below read.
+Requested_Block_Struct* blockFor(const KnownFile* file)
+{
+    auto* block = new Requested_Block_Struct;
+    block->startOffset = 0;
+    block->endOffset = 10240;
+    md4cpy(block->fileID.data(), file->fileHash());
+    return block;
+}
+
+KnownFile* shareFile(SharedFileList& list, uint8 hashByte, const QString& name, uint64 size)
+{
+    std::array<uint8, 16> hash{};
+    std::memset(hash.data(), hashByte, hash.size());
+    auto* file = new KnownFile();
+    file->setFileHash(hash.data());
+    file->setFileName(name);
+    file->setFileSize(size);
+    return list.safeAddKFile(file) ? file : nullptr;
+}
+
+} // namespace
+
+void tst_UpDownClient::addReqBlock_rejectedWhenNotUploading()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+
+    KnownFile* file = shareFile(sharedFiles, 0x31, QStringLiteral("movie.avi"), 700u * 1024 * 1024);
+    QVERIFY(file);
+
+    // A peer only learns it may request parts from the OP_ACCEPTUPLOADREQ that accompanies
+    // the slot, so anything arriving beforehand is confused or probing.
+    UpDownClient client;
+    QCOMPARE(client.uploadState(), UploadState::None);
+    client.addReqBlock(blockFor(file));
+    QVERIFY(client.blockRequests().empty());
+
+    client.setUploadState(UploadState::Uploading);
+    client.addReqBlock(blockFor(file));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    theApp.sharedFileList = nullptr;
+}
+
+void tst_UpDownClient::addReqBlock_collectionSlotRejectsOtherFile()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+
+    KnownFile* movie = shareFile(sharedFiles, 0x32, QStringLiteral("movie.avi"), 700u * 1024 * 1024);
+    QVERIFY(movie);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+
+    // Without the flag this is an ordinary upload and the block is served.
+    client.addReqBlock(blockFor(movie));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    // With it, the slot was granted by the queue bypass for a small collection only — it
+    // must not become a free pass for a 700 MB file.
+    client.setCollectionUploadSlot(true);
+    client.addReqBlock(blockFor(movie));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    theApp.sharedFileList = nullptr;
+}
+
+void tst_UpDownClient::addReqBlock_collectionSlotAcceptsCollection()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+
+    KnownFile* small = shareFile(sharedFiles, 0x33,
+                                 QStringLiteral("albums.emulecollection"), 1024);
+    KnownFile* big = shareFile(sharedFiles, 0x34,
+                               QStringLiteral("huge.emulecollection"), MAXPRIORITYCOLL_SIZE + 1);
+    QVERIFY(small && big);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+    client.setCollectionUploadSlot(true);
+
+    client.addReqBlock(blockFor(small));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    // The extension alone is not enough: the bypass is justified by the size, so a
+    // collection over the cap is treated like any other oversized file.
+    client.addReqBlock(blockFor(big));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    theApp.sharedFileList = nullptr;
 }
 
 void tst_UpDownClient::ban_setsState()

@@ -6,6 +6,7 @@
 /// data rate tracking, and session time-over checks.
 
 #include "transfer/UploadQueue.h"
+#include "transfer/UploadQueueStore.h"
 #include "app/AppContext.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
@@ -14,6 +15,7 @@
 #include "net/ClientUDPSocket.h"
 #include "net/LastCommonRouteFinder.h"
 #include "transfer/DownloadQueue.h"
+#include "files/Collection.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
@@ -146,13 +148,50 @@ int UploadQueue::waitingPosition(const UpDownClient* client) const
     if (!isOnUploadQueue(client))
         return 0;
 
-    uint32 myScore = client->score(false);
+    uint64 myScore = client->score(false);
     int rank = 1;
     for (const auto* other : m_waitingList) {
         if (other->score(false) > myScore)
             ++rank;
     }
     return rank;
+}
+
+// ===========================================================================
+// getAverageCombinedFilePrioAndCredit — MFC CUploadQueue (srchybrid/UploadQueue.cpp:678)
+// ===========================================================================
+
+float UploadQueue::getAverageCombinedFilePrioAndCredit()
+{
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+
+    // Two guards MFC does not have.
+    //
+    // Empty list: MFC divides by waitinglist.GetCount() unguarded and only survives it
+    // because its single caller tests the soft limit first. Not depending on caller
+    // ordering costs one comparison.
+    //
+    // First call: MFC leans on Windows GetTickCount() being large at process start, so its
+    // "curTick >= last + 5 s" is true the first time round. Our getTickCount() is a
+    // truncated steady_clock and can be small, so treat a zero tick as "never computed".
+    if (m_lastCalculatedAverageCombined == 0
+        || curTick >= m_lastCalculatedAverageCombined + SEC2MS(5))
+    {
+        m_lastCalculatedAverageCombined = curTick;
+
+        if (m_waitingList.empty()) {
+            m_averageCombinedFilePrioAndCredit = 0.0f;
+        } else {
+            float sum = 0.0f;
+            for (const auto* client : m_waitingList)
+                sum += client->getCombinedFilePrioAndCredit();
+
+            m_averageCombinedFilePrioAndCredit =
+                sum / static_cast<float>(m_waitingList.size());
+        }
+    }
+
+    return m_averageCombinedFilePrioAndCredit;
 }
 
 uint32 UploadQueue::targetClientDataRate(bool minRate) const
@@ -195,15 +234,15 @@ void UploadQueue::forEachUploading(const std::function<void(UpDownClient*)>& cal
 
 UpDownClient* UploadQueue::findBestClientInQueue()
 {
-    uint32 bestScore = 0;
-    uint32 bestLowScore = 0;
+    uint64 bestScore = 0;
+    uint64 bestLowScore = 0;
     UpDownClient* newClient = nullptr;
     UpDownClient* lowClient = nullptr;
     // Per-family bests, tracked alongside the global one. The global best alone can't
     // serve the alternating policy: whichever family scores higher would win every
     // slot, which is exactly how a small IPv6 population gets starved.
-    uint32 bestScoreV4 = 0;
-    uint32 bestScoreV6 = 0;
+    uint64 bestScoreV4 = 0;
+    uint64 bestScoreV6 = 0;
     UpDownClient* bestV4 = nullptr;
     UpDownClient* bestV6 = nullptr;
     const uint32 curTick = static_cast<uint32>(getTickCount());
@@ -228,7 +267,7 @@ UpDownClient* UploadQueue::findBestClientInQueue()
         // anyway, so telling it our new IPv6 costs no extra wakeup.
         cur->flushPendingIPChange();
 
-        const uint32 curScore = cur->score(false);
+        const uint64 curScore = cur->score(false);
         const bool connectable =
             !cur->hasLowID() || (cur->socket() && cur->socket()->isConnected());
 
@@ -417,6 +456,17 @@ void UploadQueue::addUpNextClient(UpDownClient* directadd)
     if (isDownloading(newClient))
         return;
 
+    // Only the collection bypass in addClientToQueue() hands us a client with this flag set,
+    // and it always passes it as directadd. Reaching normal slot selection with the flag on
+    // means it survived a slot it should have been cleared by. MFC ASSERT(0)s here
+    // (srchybrid/UploadQueue.cpp:202-205); log and clear.
+    if (!directadd && newClient->collectionUploadSlot()) {
+        logDebug(QStringLiteral("addUpNextClient: %1 reached normal slot selection still "
+                                "holding a collection slot — clearing")
+                     .arg(newClient->userName()));
+        newClient->setCollectionUploadSlot(false);
+    }
+
     // Send accept upload request if connected
     EMSocket* sock = newClient->getFileUploadSocket();
     if (!sock || !sock->isConnected() || !newClient->checkHandshakeFinished()) {
@@ -459,69 +509,57 @@ void UploadQueue::addUpNextClient(UpDownClient* directadd)
 // addClientToQueue — MFC CUploadQueue::AddClientToQueue
 // ===========================================================================
 
-bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
+bool UploadQueue::lowIdAbuseGateRejects(const UpDownClient* client) const
 {
-    if (!client)
-        return false;
-
     // Prevent Low ID callback abuse (MFC UploadQueue.cpp:525-546)
     // Reject clients we can never reach when our queue is already long.
-    if (theApp.isConnected()
+    //
+    // Separate from checkWaitingListAdmission() because of where MFC puts it: this runs
+    // *before* the request counters, so a client rejected here does not get its asked-count
+    // bumped, while a client rejected by the ban/duplicate gates does.
+    return theApp.isConnected()
         && theApp.isFirewalled()
         && client->kadPort() == 0
         && client->downloadState() == DownloadState::None
         && !client->friendPtr()
         && theApp.serverConnect
-        && !theApp.serverConnect->isLocalServer(client->serverAddress().toNetworkUint32(), client->serverPort())
-        && static_cast<int>(m_waitingList.size()) > 50)
-    {
-        return false;
-    }
+        && !theApp.serverConnect->isLocalServer(client->serverAddress().toNetworkUint32(),
+                                                client->serverPort())
+        && static_cast<int>(m_waitingList.size()) > 50;
+}
 
-    client->incAskedCount();
-    client->setLastUpRequest(static_cast<uint32>(getTickCount()));
-
-    if (!ignoreTimeLimit)
-        client->addRequestCount(client->reqUpFileId());
-
+UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient* client,
+                                                                   const char* context)
+{
     if (client->isBanned()) {
-        logDebug(QStringLiteral("addClientToQueue: rejected banned client %1")
-                     .arg(client->userName()));
-        return false;
+        logDebug(QStringLiteral("%1: rejected banned client %2")
+                     .arg(QLatin1String(context), client->userName()));
+        return QueueAdmission::Rejected;
     }
 
     // Check for duplicates and IP limits
     uint16 sameIPCount = 0;
     for (auto it = m_waitingList.begin(); it != m_waitingList.end(); ++it) {
         UpDownClient* cur = *it;
-        if (cur == client) {
-            // Already in queue — handle lowID reconnect
-            if (client->addNextConnect() && acceptNewClient(true)) {
-                client->setAddNextConnect(false);
-                removeFromWaitingQueue(client);
-                addUpNextClient(client);
-            } else {
-                client->sendRankingInfo();
-            }
-            return true;
-        }
+        if (cur == client)
+            return QueueAdmission::AlreadyQueued;
         if (client->compare(cur)) {
             // Same ip:port or user hash as a queued client. Track it regardless — MFC
             // keeps a record of every client that reaches this branch.
             if (theApp.clientList)
                 theApp.clientList->addTrackClient(client);
-            logDebug(QStringLiteral("addClientToQueue: rejected duplicate client %1")
-                         .arg(client->userName()));
-            return false;
+            logDebug(QStringLiteral("%1: rejected duplicate client %2")
+                         .arg(QLatin1String(context), client->userName()));
+            return QueueAdmission::Rejected;
         }
         if (client->userAddress() == cur->userAddress())
             ++sameIPCount;
     }
 
     if (sameIPCount >= 3) {
-        logDebug(QStringLiteral("addClientToQueue: rejected %1 — 3+ clients from same IP")
-                     .arg(client->userName()));
-        return false;
+        logDebug(QStringLiteral("%1: rejected %2 — 3+ clients from same IP")
+                     .arg(QLatin1String(context), client->userName()));
+        return QueueAdmission::Rejected;
     }
 
     // Second, independent per-address gate (MFC UploadQueue.cpp:614). Unlike the loop
@@ -531,9 +569,9 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
     if (client->userAddress().isIPv4() && theApp.clientList
         && theApp.clientList->clientsFromIP(client->userAddress()) >= 3)
     {
-        logDebug(QStringLiteral("addClientToQueue: rejected %1 — 3+ tracked clients from %2")
-                     .arg(client->userName(), ipstr(client->userAddress())));
-        return false;
+        logDebug(QStringLiteral("%1: rejected %2 — 3+ tracked clients from %3")
+                     .arg(QLatin1String(context), client->userName(), ipstr(client->userAddress())));
+        return QueueAdmission::Rejected;
     }
 
     // IPv6: at most one client per address, counting active uploads as well as the
@@ -551,14 +589,149 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
         if (std::any_of(m_waitingList.begin(), m_waitingList.end(), sameV6)
             || std::any_of(m_uploadingList.begin(), m_uploadingList.end(), sameV6))
         {
-            logDebug(QStringLiteral("addClientToQueue: rejected %1 — IPv6 %2 already queued or uploading")
-                         .arg(client->userName(), ipstr(v6)));
-            return false;
+            logDebug(QStringLiteral("%1: rejected %2 — IPv6 %3 already queued or uploading")
+                         .arg(QLatin1String(context), client->userName(), ipstr(v6)));
+            return QueueAdmission::Rejected;
         }
     }
 
-    // If already downloading, just send accept
-    if (isDownloading(client)) {
+    return QueueAdmission::Ok;
+}
+
+void UploadQueue::countFileRequest(const UpDownClient* client)
+{
+    if (!m_sharedFiles)
+        return;
+
+    if (KnownFile* reqFile = m_sharedFiles->getFileByID(client->reqUpFileId()))
+        reqFile->statistic.addRequest();
+}
+
+bool UploadQueue::queueLimitRejects(const UpDownClient* client)
+{
+    // MFC srchybrid/UploadQueue.cpp:638-655. The queue limit in prefs is only a soft limit;
+    // the hard limit is up to 25% higher so powershare and other high-ranking clients can
+    // still get in after the soft limit has been reached.
+    const int softQueueLimit = static_cast<int>(thePrefs.queueSize());
+    const int hardQueueLimit = softQueueLimit + std::max(softQueueLimit, 800) / 4;
+
+    const int waiting = static_cast<int>(m_waitingList.size());
+    if (waiting < softQueueLimit)
+        return false;
+
+    if (waiting >= hardQueueLimit) {
+        logDebug(QStringLiteral("addClientToQueue: rejected %1 — hard queue limit %2 reached")
+                     .arg(client->userName())
+                     .arg(hardQueueLimit));
+        return true;
+    }
+
+    // Soft limit reached: a friend holding a friend slot always gets in. MFC's IsFriend()
+    // is m_Friend != NULL, which is friendPtr() here.
+    if (client->friendPtr() && client->friendSlot())
+        return false;
+
+    // ...and so does anyone wanting a higher-priority file, or carrying better credits,
+    // than the average client already waiting.
+    if (client->getCombinedFilePrioAndCredit() >= getAverageCombinedFilePrioAndCredit())
+        return false;
+
+    logDebug(QStringLiteral("addClientToQueue: rejected %1 — soft queue limit %2 reached "
+                            "and its rank %3 is below the queue average %4")
+                 .arg(client->userName())
+                 .arg(softQueueLimit)
+                 .arg(static_cast<double>(client->getCombinedFilePrioAndCredit()))
+                 .arg(static_cast<double>(m_averageCombinedFilePrioAndCredit)));
+    return true;
+}
+
+bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
+{
+    if (!client)
+        return false;
+
+    if (lowIdAbuseGateRejects(client))
+        return false;
+
+    client->incAskedCount();
+    client->setLastUpRequest(static_cast<uint32>(getTickCount()));
+
+    if (!ignoreTimeLimit)
+        client->addRequestCount(client->reqUpFileId());
+
+    switch (checkWaitingListAdmission(client, "addClientToQueue")) {
+    case QueueAdmission::Rejected:
+        return false;
+    case QueueAdmission::AlreadyQueued:
+        // Already in queue — handle lowID reconnect
+        if (client->addNextConnect() && acceptNewClient(true)) {
+            client->setAddNextConnect(false);
+            removeFromWaitingQueue(client);
+            // MFC srchybrid/UploadQueue.cpp:566-570 counts this one, because the client is
+            // being handed the slot it missed. The plain re-ask below is not a new request.
+            countFileRequest(client);
+            addUpNextClient(client);
+        } else {
+            client->sendRankingInfo();
+        }
+        return true;
+    case QueueAdmission::Ok:
+        break;
+    }
+
+    countFileRequest(client);
+
+    // An eMule collection bypasses the queue. It is a few KB of index that the peer needs
+    // before it can ask for anything real, so parking it behind a 5000-deep queue helps
+    // nobody. MFC srchybrid/UploadQueue.cpp:627-637.
+    //
+    // Deliberately not gated on acceptNewClient()/forceNewClient(), exactly as in MFC: this
+    // can push the slot count one over the configured limit, which the 50 KB size cap and
+    // checkForTimeOver()'s enforcement keep bounded.
+    KnownFile* reqFile = m_sharedFiles ? m_sharedFiles->getFileByID(client->reqUpFileId())
+                                       : nullptr;
+    //
+    // MFC's guard here is client->IsDownloading() — the US_UPLOADING state. This uses the
+    // uploading-*list* test instead, which is a strict superset: it also covers a client in
+    // UploadState::Connecting, whose slot is allocated but not yet live. That closes a hole
+    // MFC leaves open, because such a client already holds a slot and must not be handed a
+    // collection bypass on top of it. The early-accept below makes the opposite choice, for
+    // the reason given there.
+    if (reqFile
+        && Collection::hasCollectionExtension(reqFile->fileName())
+        && reqFile->fileSize() < MAXPRIORITYCOLL_SIZE
+        && !isDownloading(client)
+        && client->socket() && client->socket()->isConnected())
+    {
+        client->setCollectionUploadSlot(true);
+        // MFC calls RemoveFromWaitingQueue() here first; redundant for us, since
+        // addUpNextClient() does it itself and this path is only reachable when
+        // checkWaitingListAdmission() said Ok — i.e. the client is not on the list.
+        addUpNextClient(client);
+        return true;
+    }
+
+    // Not a collection request, so any slot this client still holds is an ordinary one.
+    // MFC guards its setter with ASSERT(!IsDownloading() || bValue == m_bCollectionUploadSlot);
+    // not ported, because a collection-slot holder that re-asks for a normal file reaches
+    // exactly this line while uploading and would trip it.
+    client->setCollectionUploadSlot(false);
+
+    // Cap the list. MFC puts this after the admission gates and the request statistics but
+    // before the already-downloading early-accept, so a peer over the limit cannot slip in
+    // by asking for a second file while it downloads a first.
+    if (queueLimitRejects(client))
+        return false;
+
+    // Already holding a live slot and probably just after a second file — acknowledge and
+    // let it request parts. MFC srchybrid/UploadQueue.cpp:656.
+    //
+    // isUploadingToPeer(), MFC's IsDownloading(), and NOT the uploading-list test used by the
+    // collection bypass above: a client still in UploadState::Connecting is on that list, so
+    // the list test would send it OP_ACCEPTUPLOADREQ and then have addReqBlock() drop every
+    // OP_REQUESTPARTS it makes in reply. Falling through to normal queueing instead is both
+    // MFC's behaviour and the honest answer to the peer.
+    if (client->isUploadingToPeer()) {
         auto packet = std::make_unique<Packet>(OP_ACCEPTUPLOADREQ, 0);
         client->sendPacket(std::move(packet));
         return true;
@@ -576,6 +749,55 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
     }
 
     return true;
+}
+
+// ===========================================================================
+// addRestoredClient — upload queue store load path
+// ===========================================================================
+
+bool UploadQueue::addRestoredClient(UpDownClient* client)
+{
+    if (!client)
+        return false;
+
+    // Same admission rules as a live request — a persisted record is untrusted input and
+    // must not smuggle a banned or duplicate peer past the gates. AlreadyQueued cannot
+    // happen for a freshly constructed object, so it counts as a rejection here.
+    if (lowIdAbuseGateRejects(client))
+        return false;
+    if (checkWaitingListAdmission(client, "addRestoredClient") != QueueAdmission::Ok)
+        return false;
+    // uploadqueue.met is untrusted input like any other; a restore must not push us past
+    // the hard limit. In practice the queue is near-empty when the one-shot load fires.
+    if (queueLimitRejects(client))
+        return false;
+
+    // Deliberately NOT addClientToQueue()'s tail: that promotes straight to an upload slot
+    // when the waiting list is empty and a slot is free, which on a bulk restore would dial
+    // one peer per free slot the instant we come online. Restored clients go on the waiting
+    // list and wait their turn; the next process() promotes whoever earns a slot.
+    //
+    // Also skipped: incAskedCount()/addRequestCount() and countFileRequest() (a restore is
+    // not a request — it must neither feed the flood counter nor inflate the per-file
+    // "Requests" statistic) and sendRankingInfo() (no socket yet — it would no-op).
+    m_waitingList.push_back(client);
+    client->setUploadState(UploadState::OnUploadQueue);
+    emit clientAddedToQueue(client);
+    return true;
+}
+
+// ===========================================================================
+// Upload queue store — see transfer/UploadQueueStore.h
+// ===========================================================================
+
+void UploadQueue::processStore(const QString& path)
+{
+    m_store.process(this, path);
+}
+
+bool UploadQueue::saveStoreNow(const QString& path)
+{
+    return m_store.saveNow(this, path);
 }
 
 // ===========================================================================
@@ -644,6 +866,29 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
 {
     if (m_waitingList.empty() || client->friendSlot())
         return false;
+
+    // A collection slot is granted for one specific small collection and is worth keeping
+    // only while the client is still on it. MFC srchybrid/UploadQueue.cpp:798-808.
+    if (client->collectionUploadSlot()) {
+        const KnownFile* reqFile = m_sharedFiles
+                                 ? m_sharedFiles->getFileByID(client->reqUpFileId())
+                                 : nullptr;
+        if (!reqFile)
+            return true;
+
+        if (Collection::hasCollectionExtension(reqFile->fileName())
+            && reqFile->fileSize() < MAXPRIORITYCOLL_SIZE)
+        {
+            return false;
+        }
+
+        if (thePrefs.logUlDlEvents()) {
+            logDebug(QStringLiteral("%1: upload session ended — client with a collection slot "
+                                    "requested blocks from another file")
+                         .arg(client->userName()));
+        }
+        return true;
+    }
 
     // Session max transfer check
     if (client->queueSessionPayloadUp() > SESSIONMAXTRANS && !forceNewClient())
@@ -874,7 +1119,8 @@ void UploadQueue::onReaskFilePing(const Endpoint& senderEP,
     } else {
         // Unknown client — check if queue is full
         if (theApp.clientUDP) {
-            if (waitingUserCount() + 50 > 200) {
+            // MFC srchybrid/ClientUDPSocket.cpp:299 — the same pref that caps the queue.
+            if (waitingUserCount() + 50 > static_cast<int>(thePrefs.queueSize())) {
                 auto pkt = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
                 theApp.clientUDP->sendPacket(std::move(pkt), senderEP,
                                               false, nullptr, false, 0);

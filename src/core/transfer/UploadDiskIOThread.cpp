@@ -108,17 +108,9 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
         return;
     }
 
-    // Determine file path
-    QString filePath;
-    if (req.file->isPartFile()) {
-        const auto* pf = static_cast<const PartFile*>(req.file);
-        filePath = pf->fullName();
-        // Remove .part.met extension to get the .part data file
-        if (filePath.endsWith(QStringLiteral(".met")))
-            filePath.chop(4); // remove .met
-    } else {
-        filePath = req.file->filePath();
-    }
+    // A completed share reads from itself, a partfile from its .part; the rule
+    // lives on KnownFile so every reader agrees on it.
+    const QString filePath = req.file->dataFilePath();
 
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {

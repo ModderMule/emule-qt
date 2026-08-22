@@ -11,6 +11,7 @@
 #include "files/SourceSaver.h"
 #include "crypto/AICHHashSet.h"
 #include "client/ClientStructs.h"
+#include "client/CorruptionBlackBox.h"
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
@@ -158,6 +159,18 @@ public:
     void fillGap(uint64 start, uint64 end);
     [[nodiscard]] bool isComplete(uint64 start, uint64 end) const;
     [[nodiscard]] bool isComplete(uint32 part) const;
+    /// KnownFile::isPartComplete — a partfile answers from its gap list.
+    [[nodiscard]] bool isPartComplete(uint32 part) const override { return isComplete(part); }
+
+    /// KnownFile::dataFilePath — the `.part` data file, i.e. fullName() (which is
+    /// the `.part.met`) with the `.met` suffix removed.
+    [[nodiscard]] QString dataFilePath() const override
+    {
+        QString path = m_fullName;
+        if (path.endsWith(QStringLiteral(".met")))
+            path.chop(4);
+        return path;
+    }
     [[nodiscard]] bool isPureGap(uint64 start, uint64 end) const;
     [[nodiscard]] bool isAlreadyRequested(uint64 start, uint64 end) const;
     [[nodiscard]] uint64 totalGapSizeInRange(uint64 start, uint64 end) const;
@@ -176,9 +189,14 @@ public:
 
     // -- Buffered I/O ---------------------------------------------------------
 
+    ///  sender  who supplied these bytes, for corruption attribution. MFC passes
+    ///                the CUpDownClient here; an Address is enough and lets a caller name
+    ///                somebody other than itself (see HttpCacheClient). A null Address means
+    ///                "nobody to blame" and records nothing.
     void writeToBuffer(uint64 transize, const uint8* data,
                        uint64 start, uint64 end,
-                       Requested_Block_Struct* block);
+                       Requested_Block_Struct* block,
+                       const Address& sender = {});
     void flushBuffer(bool forceICH = false);
 
     // -- Block selection ------------------------------------------------------
@@ -191,6 +209,24 @@ public:
                                 uint64 searchFrom = 0) const;
     bool removeBlockFromList(uint64 start, uint64 end);
     void removeAllRequestedBlocks();
+
+    /// Claim every still-missing block of one part for a non-ed2k transfer.
+    ///
+    /// HTTP Cache fetches a whole part in one HTTP request, so it has to stop
+    /// ed2k sources from pulling the same bytes at the same time. Registering the
+    /// part's gaps in m_requestedBlocks does exactly that for free:
+    /// getNextRequestedBlock() already skips anything isAlreadyRequested().
+    ///
+    /// The caller owns the returned blocks and MUST hand them back to
+    /// releaseReservedBlocks(), success or failure — they are not attached to any
+    /// client's pending list, so nothing else will ever free them.
+    ///
+    /// @return bytes covered; 0 when the part is already complete or fully claimed
+    uint64 reservePartForExternalTransfer(uint32 partNumber,
+                                          std::vector<Requested_Block_Struct*>& out);
+
+    /// Undo reservePartForExternalTransfer(): unregister and delete. Clears @p blocks.
+    void releaseReservedBlocks(std::vector<Requested_Block_Struct*>& blocks);
 
     // -- Status machine -------------------------------------------------------
 
@@ -327,6 +363,11 @@ private:
     /// Report — at most once per kKadSkipLogInterval — why process() wanted a Kad
     /// source search for this file but did not start one.
     void logKadSourceSearchSkipped(uint32 curTick, const QString& reason);
+    /// Ask the blackbox who ruined  part and ban whoever is over the threshold.
+    void punishCorruptionSenders(uint16 part);
+    /// Condemn a whole part in EMBLOCKSIZE steps, which is the only granularity
+    /// CorruptionBlackBox::corruptedData() accepts.
+    void markPartCorrupted(uint32 partNumber);
 
     // -- Private members ------------------------------------------------------
 
@@ -355,6 +396,7 @@ private:
     // Part frequency and corruption
     std::vector<uint16> m_srcPartFrequency;
     std::vector<uint16> m_corruptedParts;
+    CorruptionBlackBox m_corruptionBlackBox;
 
     // Open file handle for .part file
     QFile m_partFileHandle;

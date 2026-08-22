@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "ipfilter/IPFilter.h"
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
@@ -132,6 +133,12 @@ private slots:
     void acceptIncomingConnection();
     void clientReqSocketDefaults();
     void clientReqSocketTimeout();
+
+    // Timeout extensions — MFC srchybrid/ListenSocket.cpp:139-147
+    void clientReqSocketTimeout_extendedForBuddy();
+    void clientReqSocketTimeout_extendedForUploadingClient();
+    void clientReqSocketTimeout_extendedForChattingClient();
+    void clientReqSocketTimeout_notExtendedWhileDownloadingFromPeer();
     void tooManySockets();
     void statisticsUpdate();
 
@@ -279,6 +286,76 @@ void tst_ListenSocket::clientReqSocketTimeout()
 
     // Immediately after reset, should not be timed out
     QVERIFY(!reqSocket.checkTimeOut());
+}
+
+// ---------------------------------------------------------------------------
+// Timeout extensions — MFC CClientReqSocket::CheckTimeOut, ListenSocket.cpp:139-147
+//
+// An else-if chain over the associated client: buddy, then upload slow-start, then chat.
+// Each test drops the base timeout to zero so a few milliseconds of idling is already over
+// it, leaving the extension as the only thing that can keep the socket alive.
+// ---------------------------------------------------------------------------
+
+void tst_ListenSocket::clientReqSocketTimeout_extendedForBuddy()
+{
+    UpDownClient client;
+    ClientReqSocket reqSocket(&client);
+    reqSocket.setTimeOut(0);
+    reqSocket.resetTimeOutTimer();
+    QTest::qWait(20);
+
+    QVERIFY2(reqSocket.checkTimeOut(), "a client in no special state gets no extension");
+
+    client.setKadState(KadState::ConnectedBuddy);
+    QVERIFY(!reqSocket.checkTimeOut());
+}
+
+void tst_ListenSocket::clientReqSocketTimeout_extendedForUploadingClient()
+{
+    UpDownClient client;
+    ClientReqSocket reqSocket(&client);
+    reqSocket.setTimeOut(0);
+    reqSocket.resetTimeOutTimer();
+    QTest::qWait(20);
+
+    QVERIFY(reqSocket.checkTimeOut());
+
+    // MFC's guard is IsDownloading() — the upload state — because it is our send side that
+    // may sit silent while TCP flow control finds the peer's rate.
+    client.setUploadState(UploadState::Uploading);
+    QVERIFY(!reqSocket.checkTimeOut());
+}
+
+void tst_ListenSocket::clientReqSocketTimeout_extendedForChattingClient()
+{
+    UpDownClient client;
+    ClientReqSocket reqSocket(&client);
+    reqSocket.setTimeOut(0);
+    reqSocket.resetTimeOutTimer();
+    QTest::qWait(20);
+
+    QVERIFY(reqSocket.checkTimeOut());
+
+    client.setChatState(ChatState::Chatting);
+    QVERIFY(!reqSocket.checkTimeOut());
+}
+
+void tst_ListenSocket::clientReqSocketTimeout_notExtendedWhileDownloadingFromPeer()
+{
+    UpDownClient client;
+    ClientReqSocket reqSocket(&client);
+    reqSocket.setTimeOut(0);
+    reqSocket.resetTimeOutTimer();
+    QTest::qWait(20);
+
+    // This port used to extend the timeout here, having read MFC's IsDownloading() as the
+    // download direction. It is not, and MFC covers that direction elsewhere: entering
+    // DS_DOWNLOADING raises the socket's base timeout to CONNECTION_TIMEOUT * 4
+    // (srchybrid/DownloadClient.cpp:653, ported in UpDownClient::setDownloadState). A branch
+    // here as well stacked a second extension on top of that one.
+    client.setDownloadState(DownloadState::Downloading);
+    QVERIFY(client.isDownloadingFromPeer());
+    QVERIFY(reqSocket.checkTimeOut());
 }
 
 // ---------------------------------------------------------------------------

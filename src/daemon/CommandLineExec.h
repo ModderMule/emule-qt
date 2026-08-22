@@ -40,7 +40,8 @@ private:
 
     QCommandLineOption m_addLinkOption{
         QStringLiteral("add-link"),
-        QStringLiteral("Add a download from an ed2k:// link."),
+        QStringLiteral("Add a download from an ed2k:// file link, or apply an "
+                       "ed2k://|httpcache| configuration link."),
         QStringLiteral("link")};
 
     QCommandLineOption m_connectOption{

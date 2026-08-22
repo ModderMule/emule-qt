@@ -88,6 +88,11 @@ public:
     /// client that has no user address yet. A null @p addr never matches.
     [[nodiscard]] UpDownClient* findByAddress(const Address& addr, uint16 port) const;
     [[nodiscard]] UpDownClient* findByConnIP(uint32 ip, uint16 port) const;
+    /// Find by connect address alone, for either family. This is the identity the ban
+    /// list is keyed on (UpDownClient::ban() stores m_connectAddress, isBanned() reads it),
+    /// so corruption attribution uses it too and the three cannot disagree. A null
+    /// @p addr never matches.
+    [[nodiscard]] UpDownClient* findByConnAddress(const Address& addr) const;
     [[nodiscard]] UpDownClient* findByUserHash(const uint8* hash,
                                                 uint32 ip = 0, uint16 port = 0) const;
     /// Find by UDP endpoint. Address-typed on purpose: the previous uint32 form was

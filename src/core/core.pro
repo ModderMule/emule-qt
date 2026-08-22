@@ -83,6 +83,7 @@ SOURCES += \
     crypto/AICHSyncThread.cpp \
     crypto/FileIdentifier.cpp \
     crypto/MD4Hash.cpp \
+    crypto/AesCbc.cpp \
     crypto/MD5Hash.cpp \
     crypto/SHAHash.cpp \
     files/AbstractFile.cpp \
@@ -127,10 +128,16 @@ SOURCES += \
     net/EncryptedDatagramSocket.cpp \
     net/EncryptedStreamSocket.cpp \
     net/HttpClientReqSocket.cpp \
+    httpcache/HttpCacheClient.cpp \
+    httpcache/HttpCacheManager.cpp \
+    httpcache/HttpCacheOffer.cpp \
+    httpcache/HttpCachePublisher.cpp \
+    httpcache/HttpCacheServerProbe.cpp \
     net/HttpFileDownload.cpp \
     net/LastCommonRouteFinder.cpp \
     net/ListenSocket.cpp \
     net/Packet.cpp \
+    net/PeerVetting.cpp \
     net/Pinger.cpp \
     net/ServerSocket.cpp \
     net/SmtpClient.cpp \
@@ -156,6 +163,7 @@ SOURCES += \
     transfer/UploadBandwidthThrottler.cpp \
     transfer/UploadDiskIOThread.cpp \
     transfer/UploadQueue.cpp \
+    transfer/UploadQueueStore.cpp \
     upnp/UPnPManager.cpp \
     utils/DebugUtils.cpp \
     utils/Log.cpp \
@@ -192,6 +200,7 @@ HEADERS += \
     crypto/AICHSyncThread.h \
     crypto/FileIdentifier.h \
     crypto/MD4Hash.h \
+    crypto/AesCbc.h \
     crypto/MD5Hash.h \
     crypto/SHAHash.h \
     files/AbstractFile.h \
@@ -241,10 +250,18 @@ HEADERS += \
     net/EncryptedDatagramSocket.h \
     net/EncryptedStreamSocket.h \
     net/HttpClientReqSocket.h \
+    httpcache/HttpCacheClient.h \
+    httpcache/HttpCacheManager.h \
+    httpcache/HttpCacheOffer.h \
+    httpcache/HttpCachePublisher.h \
+    httpcache/HttpCacheServerProbe.h \
+    httpcache/HttpCacheTypes.h \
+    net/HttpDefaults.h \
     net/HttpFileDownload.h \
     net/LastCommonRouteFinder.h \
     net/ListenSocket.h \
     net/Packet.h \
+    net/PeerVetting.h \
     net/Pinger.h \
     net/ServerSocket.h \
     net/SmtpClient.h \
@@ -271,6 +288,7 @@ HEADERS += \
     transfer/UploadBandwidthThrottler.h \
     transfer/UploadDiskIOThread.h \
     transfer/UploadQueue.h \
+    transfer/UploadQueueStore.h \
     upnp/UPnPManager.h \
     utils/ByteOrder.h \
     utils/ContainerUtils.h \

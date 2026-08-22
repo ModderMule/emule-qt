@@ -212,6 +212,146 @@ private slots:
         QCOMPARE(p2.bindAddress(), QStringLiteral("192.168.1.100"));
     }
 
+    // -- HTTP Cache -----------------------------------------------------------
+
+    void httpCache_defaults()
+    {
+        Preferences prefs;
+
+        // Off until an operator turns it on and supplies a server: publishing
+        // without a URL and key cannot work, and silently trying would be worse.
+        QCOMPARE(prefs.httpCacheEnabled(), false);
+        QCOMPARE(prefs.httpCacheAllowDownload(), true);
+        QCOMPARE(prefs.httpCacheAllowUpload(), true);
+        QVERIFY(prefs.httpCacheBaseUrl().isEmpty());
+        QVERIFY(prefs.httpCacheApiKey().isEmpty());
+        QCOMPARE(prefs.httpCacheMinClients(), 2u);
+        QCOMPARE(prefs.httpCacheMaxConcurrentFetches(), 2u);
+    }
+
+    void httpCache_clampsNonsenseValues()
+    {
+        Preferences prefs;
+
+        // 1 is meaningful (single-peer testing); 0 would publish every part of
+        // every shared file the moment anything was queued.
+        prefs.setHttpCacheMinClients(0);
+        QCOMPARE(prefs.httpCacheMinClients(), 1u);
+
+        prefs.setHttpCacheMaxConcurrentPublishes(0);
+        QCOMPARE(prefs.httpCacheMaxConcurrentPublishes(), 1u);
+        prefs.setHttpCacheMaxConcurrentFetches(0);
+        QCOMPARE(prefs.httpCacheMaxConcurrentFetches(), 1u);
+
+        // A trailing slash would make every request path a double slash.
+        prefs.setHttpCacheBaseUrl(QStringLiteral("  http://localhost/cache//  "));
+        QCOMPARE(prefs.httpCacheBaseUrl(), QStringLiteral("http://localhost/cache"));
+    }
+
+    void httpCache_roundTripsAndEncryptsTheApiKey()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("hc.yaml"));
+        const QString secret = QStringLiteral("s3cr3t-api-key-0123456789");
+
+        {
+            Preferences p1;
+            p1.load(tmp.filePath(QStringLiteral("nonexistent.yaml")));
+
+            p1.setHttpCacheEnabled(true);
+            p1.setHttpCacheAllowDownload(false);
+            p1.setHttpCacheAllowUpload(true);
+            p1.setHttpCacheBaseUrl(QStringLiteral("http://localhost/emule-http-cache-php"));
+            p1.setHttpCacheApiKey(secret);
+            p1.setHttpCacheMinClients(3);
+            p1.setHttpCacheChunkTtlSeconds(900);
+            p1.setHttpCacheMaxPublishBytesPerDay(UINT64_C(104857600));
+            p1.setHttpCachePublishRateKBs(512);
+            p1.setHttpCacheMaxConcurrentPublishes(2);
+            p1.setHttpCacheMaxConcurrentFetches(4);
+
+            QVERIFY(p1.saveTo(file));
+        }
+
+        Preferences p2;
+        QVERIFY(p2.load(file));
+
+        QCOMPARE(p2.httpCacheEnabled(), true);
+        QCOMPARE(p2.httpCacheAllowDownload(), false);
+        QCOMPARE(p2.httpCacheAllowUpload(), true);
+        QCOMPARE(p2.httpCacheBaseUrl(),
+                 QStringLiteral("http://localhost/emule-http-cache-php"));
+        QCOMPARE(p2.httpCacheApiKey(), secret);
+        QCOMPARE(p2.httpCacheMinClients(), 3u);
+        QCOMPARE(p2.httpCacheChunkTtlSeconds(), 900u);
+        QCOMPARE(p2.httpCacheMaxPublishBytesPerDay(), UINT64_C(104857600));
+        QCOMPARE(p2.httpCachePublishRateKBs(), 512u);
+        QCOMPARE(p2.httpCacheMaxConcurrentPublishes(), 2u);
+        QCOMPARE(p2.httpCacheMaxConcurrentFetches(), 4u);
+
+        // The credential must never be readable in the file itself.
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray raw = f.readAll();
+        QVERIFY2(!raw.contains(secret.toUtf8()), "API key was written in the clear");
+        QVERIFY(raw.contains("apiKeyEnc"));
+    }
+
+    void httpCache_acceptsAHandWrittenPlaintextKey()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("hand.yaml"));
+
+        // What an operator actually types on first setup. It must work, and then
+        // be rewritten in encrypted form.
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(
+            "httpCache:\n"
+            "  enabled: true\n"
+            "  baseUrl: \"http://localhost/emule-http-cache-php/\"\n"
+            "  apiKey: \"typed-by-hand\"\n"
+            "  minClients: 1\n");
+        f.close();
+
+        Preferences p;
+        QVERIFY(p.load(file));
+        QCOMPARE(p.httpCacheEnabled(), true);
+        QCOMPARE(p.httpCacheApiKey(), QStringLiteral("typed-by-hand"));
+        // Trailing slash normalised on the way in, not just via the setter.
+        QCOMPARE(p.httpCacheBaseUrl(),
+                 QStringLiteral("http://localhost/emule-http-cache-php"));
+        QCOMPARE(p.httpCacheMinClients(), 1u);
+
+        const auto file2 = tmp.filePath(QStringLiteral("hand2.yaml"));
+        QVERIFY(p.saveTo(file2));
+
+        QFile g(file2);
+        QVERIFY(g.open(QIODevice::ReadOnly));
+        const QByteArray raw = g.readAll();
+        QVERIFY2(!raw.contains("typed-by-hand"), "plaintext key survived the save");
+    }
+
+    void httpCache_partialSectionKeepsDefaults()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("partial.yaml"));
+
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("httpCache:\n  enabled: true\n");
+        f.close();
+
+        Preferences p;
+        QVERIFY(p.load(file));
+        QCOMPARE(p.httpCacheEnabled(), true);
+        // Everything unmentioned must still be its compiled-in default — the
+        // section is hand-edited, so a partial block has to be valid.
+        QCOMPARE(p.httpCacheMinClients(), 2u);
+        QCOMPARE(p.httpCacheChunkTtlSeconds(), 21600u);
+        QCOMPARE(p.httpCacheAllowDownload(), true);
+    }
+
     void load_missingFile()
     {
         TempDir tmp;

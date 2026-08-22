@@ -108,6 +108,11 @@ private:
     void handleMarkSearchSpam(const Ipc::IpcMessage& msg);
     void handleResetStats(const Ipc::IpcMessage& msg);
     void handleRestoreStats(const Ipc::IpcMessage& msg);
+
+    // The only two handlers that answer after their call returns: both wait on a
+    // /v1/info round trip. See the QPointer note in the implementation.
+    void handleProbeHttpCacheServer(const Ipc::IpcMessage& msg);
+    void handleApplyHttpCacheConfig(const Ipc::IpcMessage& msg);
     void handleRenameSharedFile(const Ipc::IpcMessage& msg);
     void handleDeleteSharedFile(const Ipc::IpcMessage& msg);
     void handleUnshareFile(const Ipc::IpcMessage& msg);

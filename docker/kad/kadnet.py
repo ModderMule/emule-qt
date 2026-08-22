@@ -26,7 +26,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 COMPOSE_FILE = os.path.join(SCRIPT_DIR, "docker-compose.kadnet.yml")
 SEED_DIR = os.path.join(SCRIPT_DIR, "seed")
 NODES_DAT_FILE = os.path.join(SEED_DIR, "nodes.dat")
-DOCKERFILE = os.path.join(SCRIPT_DIR, "Dockerfile")
+# Shared with docker/httpcache: both rigs run the same emulecored image, so the
+# Dockerfile lives one level up rather than inside either rig.
+DOCKERFILE = os.path.join(PROJECT_ROOT, "docker", "daemon.Dockerfile")
 IMAGE_NAME = "emuleqt-daemon:latest"
 
 # nodes.dat v2 constants

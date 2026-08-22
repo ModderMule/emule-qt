@@ -42,7 +42,9 @@
 #include "net/LastCommonRouteFinder.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
+#include "httpcache/HttpCacheManager.h"
 #include "transfer/UploadQueue.h"
+#include "transfer/UploadQueueStore.h"
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
 
@@ -64,6 +66,10 @@ CoreSession::CoreSession(QObject* parent)
 CoreSession::~CoreSession()
 {
     stop();
+    // Before every shutdownXxx(): shutdownClientInfra() destroys ClientCredits, and the
+    // waiting clients point straight at those objects to compute their wait times. Saving
+    // any later than this reads freed memory.
+    saveUploadQueueStore();
     stopWorkerThreads();
     shutdownScheduler();
     shutdownPortMapper();
@@ -161,6 +167,17 @@ void CoreSession::shutdownStatistics()
 // initUploadPipeline — create and wire upload components
 // ---------------------------------------------------------------------------
 
+QString CoreSession::uploadQueuePath()
+{
+    return QDir(thePrefs.configDir()).filePath(QString::fromLatin1(kUploadQueueFileName));
+}
+
+void CoreSession::saveUploadQueueStore()
+{
+    if (theApp.uploadQueue)
+        static_cast<void>(theApp.uploadQueue->saveStoreNow(uploadQueuePath()));
+}
+
 void CoreSession::initUploadPipeline()
 {
     // Create KnownFileList if not already set
@@ -204,6 +221,16 @@ void CoreSession::initUploadPipeline()
         m_uploadQueue->setSharedFileList(theApp.sharedFileList);
     }
 
+    // HTTP Cache needs the upload queue to scan and the download queue to write
+    // into, so it comes up last. It is always constructed — the preferences gate
+    // what it does, not whether it exists, so a peer that flips the switch at
+    // runtime does not need a restart.
+    if (!theApp.httpCache) {
+        m_httpCache = std::make_unique<HttpCacheManager>();
+        theApp.httpCache = m_httpCache.get();
+        m_httpCache->start();
+    }
+
     // Initial scan of shared files
     if (theApp.sharedFileList)
         theApp.sharedFileList->reload();
@@ -215,6 +242,15 @@ void CoreSession::initUploadPipeline()
 
 void CoreSession::shutdownUploadPipeline()
 {
+    // Stop HTTP Cache first: it holds fetch clients that point into the download
+    // queue and reads the upload queue on a timer, so nothing below may go away
+    // while its tick can still fire.
+    if (m_httpCache)
+        m_httpCache->stop();
+    if (m_httpCache && theApp.httpCache == m_httpCache.get())
+        theApp.httpCache = nullptr;
+    m_httpCache.reset();
+
     // Stop disk IO thread
     if (m_uploadDiskIO) {
         m_uploadDiskIO->endThread();
@@ -274,6 +310,12 @@ void CoreSession::onTimer()
             theApp.knownFileList->process();
         if (theApp.sharedFileList)
             theApp.sharedFileList->process();
+        if (theApp.uploadQueue) {
+            // One-shot load once ED2K or Kad is up, then a 10-minute autosave. Placed after
+            // sharedFileList->process() because a restored waiter is dropped unless the file
+            // it queued for is currently shared.
+            theApp.uploadQueue->processStore(uploadQueuePath());
+        }
         if (theApp.serverList) {
             const QString serverMetPath = QDir(thePrefs.configDir()).filePath(
                 QStringLiteral("server.met"));

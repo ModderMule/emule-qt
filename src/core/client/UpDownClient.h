@@ -114,6 +114,10 @@ public:
     /// answer, so it is safe to send it CT_EMULE_USERHASH / CT_EMULE_CONOPTS.
     [[nodiscard]] bool supportsExtSXSkipTags() const { return m_supportsExtSXSkipTags; }
     void setSupportsExtSXSkipTags(bool s)            { m_supportsExtSXSkipTags = s; }
+    /// Peer understands OP_HTTPCACHE, so we may offer it a cached chunk instead of
+    /// spending our upstream on it. Nothing is ever sent to a peer without this.
+    [[nodiscard]] bool supportsHttpCache() const   { return m_supportsHttpCache; }
+    void setSupportsHttpCache(bool s)              { m_supportsHttpCache = s; }
 
     /// Our own public IPv6 changed — remember to tell this peer. Deliberately lazy: the
     /// packet goes out the next time we walk this client anyway (upload queue or source
@@ -168,8 +172,24 @@ public:
     [[nodiscard]] UploadState uploadState() const { return m_uploadState; }
     void setUploadState(UploadState state);
 
+    /// True while this peer is downloading *from us*, i.e. it holds an active upload slot.
+    /// MFC CUpDownClient::IsDownloading() (srchybrid/UpdownClient.h:229).
+    ///
+    /// There is deliberately no method named isDownloading() on this class. MFC's carries the
+    /// upload sense, so transcribing one of its guards verbatim compiles, reads correctly and
+    /// inverts silently — which is exactly what happened once already. Splitting the two senses
+    /// into names that cannot be confused turns that mistake into a compile error.
+    ///
+    /// Distinct from UploadQueue::isDownloading(const UpDownClient*), which is MFC's
+    /// CUploadQueue::IsDownloading (UploadQueue.h:54) — uploading-*list* membership, and so also
+    /// true for a client still in UploadState::Connecting.
+    [[nodiscard]] bool isUploadingToPeer() const { return m_uploadState == UploadState::Uploading; }
+
     [[nodiscard]] DownloadState downloadState() const { return m_downloadState; }
-    [[nodiscard]] bool isDownloading() const { return m_downloadState == DownloadState::Downloading; }
+
+    /// True while *we* are downloading from this peer. NOT the analogue of MFC's
+    /// CUpDownClient::IsDownloading(), which means the opposite — see isUploadingToPeer().
+    [[nodiscard]] bool isDownloadingFromPeer() const { return m_downloadState == DownloadState::Downloading; }
     [[nodiscard]] uint32 downStartTime() const { return m_downStartTime; }
     void setDownloadState(DownloadState state);
 
@@ -227,6 +247,10 @@ public:
 
     [[nodiscard]] uint8 dataCompVer() const { return m_dataCompVer; }
     [[nodiscard]] uint8 udpVer() const { return m_udpVer; }
+    /// Normally written only by hello parsing. The upload queue store sets it explicitly on
+    /// a restored client: udpVer > 3 is what gates the part-status block in the OP_REASKACK
+    /// reply (UploadQueue.cpp), i.e. whether a returning peer can see its queue rank again.
+    void setUdpVer(uint8 v) { m_udpVer = v; }
     [[nodiscard]] uint8 sourceExchange1Ver() const { return m_sourceExchange1Ver; }
     void setSourceExchange1Ver(uint8 v) { m_sourceExchange1Ver = v; }
     [[nodiscard]] bool supportsSourceExchange2() const { return m_supportsSourceEx2; }
@@ -508,7 +532,9 @@ public:
     [[nodiscard]] bool isObfuscatedConnectionEstablished() const;
     [[nodiscard]] bool shouldReceiveCryptUDPPackets() const;
     [[nodiscard]] uint8 getUnicodeSupport() const;
-    [[nodiscard]] QString downloadStateDisplayString() const;
+    /// Virtual so a transport that is not plain ed2k can say so — HttpCacheClient
+    /// appends its own marker, the way MFC's PeerCache appended " Cache".
+    [[nodiscard]] virtual QString downloadStateDisplayString() const;
     [[nodiscard]] QString uploadStateDisplayString() const;
 
     // -- Phase 3 — secure identity ------------------------------------------
@@ -541,6 +567,13 @@ public:
     void processFirewallCheckUDPRequest(SafeMemFile& data);
     void processKadFwTcpCheckAck();
 
+    // -- Phase 3 — HTTP Cache ------------------------------------------------
+
+    /// Route one OP_HTTPCACHE packet to HttpCacheManager. Kept as a thin hop so
+    /// UpDownClient stays free of cache state: the manager owns every decision,
+    /// this only supplies "which peer said it".
+    void processHttpCachePacket(const uint8* data, uint32 size);
+
     // -- Phase 3 — buddy / callback -----------------------------------------
 
     void processCallbackPacket(const uint8* data, uint32 size);
@@ -553,7 +586,22 @@ public:
 
     // -- Phase 3 — upload (UploadClient.cpp) --------------------------------
 
-    virtual uint32 score(bool sysValue = false, bool isDownloading = false,
+    /// Queue score — higher wins the next upload slot.
+    ///
+    /// 64-bit where MFC's is 32-bit, and deliberately so: MFC's base value is in *seconds*
+    /// (srchybrid/UploadClient.cpp:225 divides by SEC2MS(1.0f)) while this one is in
+    /// milliseconds, so the products run ~1000x hotter. Clamping them back into uint32 tied
+    /// every client past ~6.6 h of waiting — 12 s for a friend slot, which multiplies by
+    /// 2000 — at UINT32_MAX, and slot selection silently degraded to insertion order.
+    ///
+    /// @param sysValue       drop a low-ID client with no connected socket to 0.
+    /// @param isDownloading  MFC's sense — this peer is downloading *from us*, so pass
+    ///                       isUploadingToPeer(), never isDownloadingFromPeer(). It selects a
+    ///                       base value frozen at the moment the slot went live, so a client
+    ///                       that already holds one cannot outgrow the queue behind it.
+    /// @param onlyBaseValue  fixed base and no file priority, i.e. the credit ratio alone —
+    ///                       MFC's "Rating" figure as opposed to its "Score".
+    virtual uint64 score(bool sysValue = false, bool isDownloading = false,
                          bool onlyBaseValue = false) const;
     [[nodiscard]] float getCombinedFilePrioAndCredit() const;
     bool processExtendedInfo(SafeMemFile& data, KnownFile* file);
@@ -575,10 +623,20 @@ public:
     [[nodiscard]] uint32 waitStartTime() const;
     [[nodiscard]] uint32 getWaitTimeDelay() const;
     void setWaitStartTime();
+    /// Rebase this client's queue position onto the live tick clock — see
+    /// ClientCredits::restoreWaitStartTime(). Upload queue store load path only.
+    void restoreWaitStartTime(uint32 elapsedMs);
     void clearWaitStartTime();
     [[nodiscard]] EMSocket* getFileUploadSocket() const;
     [[nodiscard]] bool isUpPartAvailable(uint32 part) const;
     [[nodiscard]] KnownFile* uploadFile() const { return m_uploadFile; }
+    /// Blocks this peer has asked us to send but that have not been served yet.
+    /// HttpCacheManager reads it to learn which part the peer is actually pulling,
+    /// which is what makes an offer worth publishing rather than speculative.
+    [[nodiscard]] const std::list<Requested_Block_Struct*>& blockRequests() const
+    {
+        return m_blockRequests;
+    }
 
     // -- Phase 3 — download (DownloadClient.cpp) ----------------------------
 
@@ -674,6 +732,14 @@ private slots:
 
 protected:
     void accumulateDownBytes(uint32 bytes) { m_downDataRateMS += bytes; }
+    /// Credit payload bytes that did not arrive as ed2k block packets — the HTTP
+    /// paths write into the part file themselves, so processBlockPacket's own
+    /// accounting never runs for them.
+    void addPayloadDown(uint64 bytes)
+    {
+        m_transferredDown += bytes;
+        m_curSessionDown += bytes;
+    }
 
 private:
     void init();
@@ -850,6 +916,7 @@ private:
     bool m_openIPv6 = false;            // peer has a reachable public IPv6
     bool m_supportsExtendedXS = false;  // peer set CT_MOD_MISCOPTIONS bit 0
     bool m_supportsExtSXSkipTags = false; // peer set CT_MOD_MISCOPTIONS bit 5
+    bool m_supportsHttpCache = false;   // peer set CT_MOD_MISCOPTIONS bit 10
     bool m_sendIPPending = false;       // owe this peer an OP_CHANGE_CLIENT_IP
     bool m_hashsetRequestingAICH = false;
     bool m_testDisableMultiPacket = false;

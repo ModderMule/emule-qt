@@ -7,6 +7,7 @@
 #include "controls/LogWidget.h"
 #include "prefs/Preferences.h"
 #include "app/AppConfig.h"
+#include "net/HttpDefaults.h"
 
 #include "utils/CrashHandler.h"
 
@@ -285,9 +286,9 @@ void BugReportDialog::onSubmitClicked()
     const QString baseUrl = thePrefs.bugReportDomain().isEmpty()
                                 ? QString::fromLatin1(kBaseUrl) : thePrefs.bugReportDomain();
 
-    QNetworkRequest req(QUrl(QStringLiteral("%1/wp-json/emqt/v1/report").arg(baseUrl)));
+    QNetworkRequest req = eMule::Http::makeRequest(
+        QUrl(QStringLiteral("%1/wp-json/emqt/v1/report").arg(baseUrl)));
     req.setRawHeader("X-Api-Key", apiKey.toUtf8());
-    req.setHeader(QNetworkRequest::UserAgentHeader, eMule::kUserAgent);
 
     req.setTransferTimeout(30000); // 30 seconds
     QNetworkReply* reply = m_nam->post(req, multiPart);

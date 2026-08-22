@@ -332,6 +332,20 @@
 #define OP_HASHSETREQUEST2          0xB1
 #define OP_HASHSETANSWER2           0xB2
 
+// HTTP Cache — one opcode carrying a versioned sub-opcode, see HCOP_* below.
+// Layout: <version 1><subop 1><tagcount 1>[new-style eD2K tags]
+//
+// 0xB3-0xBB are NOT free: the compatibility target claims them for its eServer
+// buddy relay (OP_ESERVER_BUDDY_REQUEST .. OP_ESERVER_UDP_PROBE). Stock eMule,
+// MorphXT, Applejuice and eSE-LiveTV all stop at OP_HASHSETANSWER2 0xB2, so
+// 0xBC is the first value unclaimed everywhere. It also exists as a CT_* tag id
+// (CT_EMULE_USERHASH), but tags live inside payloads and opcodes in the header,
+// so the two never meet on the wire.
+//
+// Spending one opcode instead of three (as PeerCache did with 0x94-0x96) keeps
+// the sub-opcode space open for later message types at no namespace cost.
+#define OP_HTTPCACHE                0xBC
+
 // Extended protocol: Client <-> Client UDP opcodes
 #define OP_REASKFILEPING            0x90
 #define OP_REASKACK                 0x91
@@ -508,6 +522,10 @@
 // parse — one unrecognised tag in the first record drops every source in the packet. So new
 // ExtSX tags may only be sent to a peer that sets this bit. Bit 5 is the first free one.
 #define MODMISC_EXTXS_SKIPTAGS      (1u << 5)   // safe to send unknown ExtSX tags to this peer
+// Bits 6-9 are left unclaimed on purpose: the compatibility target's own
+// UModMiscOptions block currently ends at bit 4, and packing straight against it
+// would leave it no room to grow. HTTP Cache starts a fresh run at bit 10.
+#define MODMISC_HTTPCACHE           (1u << 10)  // supports HTTP Cache chunk offers
 
 // ST_IPV6_STATUS (0xAB, uint8) bitfield — server's verdict on our advertised IPv6 (OP_SERVERIDENT).
 // Unset bits mean "no"; the whole tag is omitted when the server has no verdict to report.
@@ -693,6 +711,44 @@
 #define PCTAG_PUBLICPORT            0x04
 #define PCTAG_PUSHID                0x05
 #define PCTAG_FILEID                0x06
+
+// ---------------------------------------------------------------------------
+// HTTP Cache (OP_HTTPCACHE, see docs/protocol/http-cache-spec.md)
+//
+// PeerCache's successor. Where PeerCache pushed one 184 KB block at a time into
+// an ISP-run HTTP proxy in the clear, HTTP Cache uploads a whole 9,728,000-byte
+// part once, AES-256-CBC encrypted under a key the uploader picks at random, and
+// hands the URL plus that key to every capable peer waiting for the same part.
+// The cache operator only ever holds ciphertext.
+//
+// Packet layout, always: <version 1><subop 1><tagcount 1>[tags]
+// Tags are new-style (short) eD2K tags; an unknown tag id MUST be skipped rather
+// than aborting the parse, so the set can grow without a version bump.
+// ---------------------------------------------------------------------------
+
+#define HCPCK_VERSION               0x01
+
+// Sub-opcodes
+#define HCOP_NONE                   0x00    // down -> up: declined, HCTAG_RESULT says why
+#define HCOP_OFFER                  0x01    // up   -> down: chunk is cached, here is where
+#define HCOP_RESULT                 0x02    // down -> up: outcome of the fetch
+#define HCOP_CANCEL                 0x03    // up   -> down: offer withdrawn, fall back to ed2k
+
+// Tags
+#define HCTAG_FILEID                0x01    // hash16: ed2k file hash
+#define HCTAG_PARTINDEX             0x02    // uint32: part number within that file
+#define HCTAG_PLAINLEN              0x03    // uint32: plaintext bytes in this part
+#define HCTAG_URL                   0x04    // string: absolute download URL
+#define HCTAG_KEYIV                 0x05    // blob48: 32-byte AES-256 key || 16-byte IV
+#define HCTAG_CIPHERLEN             0x06    // uint32: ciphertext byte length
+#define HCTAG_CIPHERSHA             0x07    // blob32: SHA-256 of the ciphertext
+#define HCTAG_EXPIRES               0x08    // uint32: unix time the URL stops working
+#define HCTAG_RESULT                0x09    // uint8:  HttpCacheResult
+#define HCTAG_BYTES                 0x0A    // uint32: bytes actually fetched
+
+// Longest URL accepted in HCTAG_URL. Generous for a signed CDN link, small
+// enough that a hostile peer cannot use an offer as a memory amplifier.
+#define HTTPCACHE_MAX_URL_LEN       1024
 
 // ---------------------------------------------------------------------------
 // Kademlia opcodes (UDP)

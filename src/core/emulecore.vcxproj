@@ -176,6 +176,11 @@
     <ClCompile Include="archive\ArchiveRecovery.cpp" />
     <ClCompile Include="archive\ArchiveUnpack.cpp" />
     <ClCompile Include="net\HttpFileDownload.cpp" />
+    <ClCompile Include="httpcache\HttpCacheClient.cpp" />
+    <ClCompile Include="httpcache\HttpCacheManager.cpp" />
+    <ClCompile Include="httpcache\HttpCacheOffer.cpp" />
+    <ClCompile Include="httpcache\HttpCachePublisher.cpp" />
+    <ClCompile Include="httpcache\HttpCacheServerProbe.cpp" />
     <ClCompile Include="client\ClientCredits.cpp" />
     <ClCompile Include="client\ClientList.cpp" />
     <ClCompile Include="net\ClientReqSocket.cpp" />
@@ -238,10 +243,12 @@
     <ClCompile Include="utils\CrashHandler.cpp" />
     <ClCompile Include="utils\Log.cpp" />
     <ClCompile Include="crypto\MD4Hash.cpp" />
+    <ClCompile Include="crypto\AesCbc.cpp" />
     <ClCompile Include="crypto\MD5Hash.cpp" />
     <ClCompile Include="media\MediaInfo.cpp" />
     <ClCompile Include="utils\OtherFunctions.cpp" />
     <ClCompile Include="net\Packet.cpp" />
+    <ClCompile Include="net\PeerVetting.cpp" />
     <ClCompile Include="files\PartFile.cpp" />
     <ClCompile Include="files\PartFileConvert.cpp" />
     <ClCompile Include="files\PartFileWriteThread.cpp" />
@@ -283,6 +290,7 @@
     <ClCompile Include="client\UploadClient.cpp" />
     <ClCompile Include="transfer\UploadDiskIOThread.cpp" />
     <ClCompile Include="transfer\UploadQueue.cpp" />
+    <ClCompile Include="transfer\UploadQueueStore.cpp" />
     <ClCompile Include="webserver\WebServer.cpp" />
     <ClCompile Include="webserver\WebSessionManager.cpp" />
     <ClCompile Include="webserver\WebTemplateEngine.cpp" />
@@ -299,7 +307,11 @@
     <ClInclude Include="archive\ArchiveReader.h" />
     <ClInclude Include="archive\ArchiveRecovery.h" />
     <ClInclude Include="archive\ArchiveUnpack.h" />
+    <ClInclude Include="net\HttpDefaults.h" />
     <ClInclude Include="net\HttpFileDownload.h" />
+    <ClInclude Include="httpcache\HttpCacheOffer.h" />
+    <ClInclude Include="httpcache\HttpCacheServerProbe.h" />
+    <ClInclude Include="httpcache\HttpCacheTypes.h" />
     <ClInclude Include="utils\ByteOrder.h" />
     <ClInclude Include="client\ClientCredits.h" />
     <QtMoc Include="client\ClientList.h" />
@@ -336,6 +348,7 @@
     <QtMoc Include="net\HttpClientReqSocket.h" />
     <QtMoc Include="ipfilter\IPFilter.h" />
     <ClInclude Include="transfer\ImportParts.h" />
+    <ClInclude Include="transfer\UploadQueueStore.h" />
     <QtMoc Include="chat\IrcClient.h" />
     <ClInclude Include="chat\IrcMessage.h" />
     <ClInclude Include="webserver\JsonSerializers.h" />
@@ -371,6 +384,7 @@
     <ClInclude Include="utils\CrashHandler.h" />
     <ClInclude Include="utils\Log.h" />
     <ClInclude Include="crypto\MD4Hash.h" />
+    <ClInclude Include="crypto\AesCbc.h" />
     <ClInclude Include="crypto\MD5Hash.h" />
     <ClInclude Include="utils\MapKey.h" />
     <ClInclude Include="media\MediaInfo.h" />
@@ -382,6 +396,7 @@
     <ClInclude Include="portmap\PcpMessages.h" />
     <ClInclude Include="net\LocalIPv6.h" />
     <ClInclude Include="net\Packet.h" />
+    <ClInclude Include="net\PeerVetting.h" />
     <QtMoc Include="files\PartFile.h" />
     <QtMoc Include="files\PartFileConvert.h" />
     <QtMoc Include="files\PartFileWriteThread.h" />
@@ -425,6 +440,9 @@
     <ClInclude Include="utils\Types.h" />
     <QtMoc Include="net\UDPSocket.h" />
     <QtMoc Include="client\URLClient.h" />
+    <QtMoc Include="httpcache\HttpCacheClient.h" />
+    <QtMoc Include="httpcache\HttpCacheManager.h" />
+    <QtMoc Include="httpcache\HttpCachePublisher.h" />
     <QtMoc Include="client\UpDownClient.h" />
     <QtMoc Include="transfer\UploadBandwidthThrottler.h" />
     <QtMoc Include="transfer\UploadDiskIOThread.h" />

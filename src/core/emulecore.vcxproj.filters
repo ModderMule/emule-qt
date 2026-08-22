@@ -48,6 +48,24 @@
     <ClCompile Include="net\HttpFileDownload.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="httpcache\HttpCacheClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="httpcache\HttpCacheManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="httpcache\HttpCacheOffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="httpcache\HttpCachePublisher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="httpcache\HttpCacheServerProbe.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\AesCbc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="client\ClientCredits.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -228,6 +246,9 @@
     <ClCompile Include="net\Packet.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\PeerVetting.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="files\PartFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -351,6 +372,9 @@
     <ClCompile Include="transfer\UploadQueue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="transfer\UploadQueueStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="webserver\WebServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -393,6 +417,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="archive\ArchiveUnpack.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\HttpDefaults.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\HttpFileDownload.h">
@@ -480,6 +507,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="transfer\ImportParts.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="transfer\UploadQueueStore.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="chat\IrcClient.h">
@@ -623,6 +653,9 @@
     <ClInclude Include="net\Packet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="net\PeerVetting.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="files\PartFile.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -746,6 +779,27 @@
     <QtMoc Include="client\URLClient.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="httpcache\HttpCacheClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="httpcache\HttpCacheManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="httpcache\HttpCachePublisher.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="httpcache\HttpCacheOffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="httpcache\HttpCacheServerProbe.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="httpcache\HttpCacheTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="crypto\AesCbc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="client\UpDownClient.h">
       <Filter>Header Files</Filter>
     </QtMoc>

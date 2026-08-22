@@ -44,6 +44,12 @@ void HttpClientReqSocket::dataReceived(const uint8* data, uint32 size)
     if (size == 0)
         return;
 
+    // Raw data mode bypasses packetReceived(), which is where every other socket
+    // in the port refreshes its clock. Without this a streaming body — a 9.28 MB
+    // HTTP Cache chunk is the worst case — ages out under ListenSocket's sweep
+    // mid-download even though bytes are arriving the whole time.
+    resetTimeOutTimer();
+
     processHttpPacket(data, size);
 }
 

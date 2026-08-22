@@ -1,10 +1,15 @@
 # ---------------------------------------------------------------------------
-# Dockerfile — emulecored daemon for Kademlia LAN test network
+# daemon.Dockerfile — emulecored daemon image, shared by every Docker test rig
 #
 # Usage:
-#   docker build -f docker/kad/Dockerfile -t emuleqt-daemon .
+#   docker build -f docker/daemon.Dockerfile -t emuleqt-daemon .
 #
 # Builds only the headless daemon (no GUI) in a minimal runtime image.
+#
+# Two rigs run on this image: docker/kad (Kademlia LAN network) and
+# docker/httpcache (HTTP Cache swarm). The Kad entrypoint is baked in below;
+# the HTTP Cache rig bind-mounts its own and overrides `entrypoint:` in its
+# compose file, so a rig's behaviour can be edited without a rebuild.
 # ---------------------------------------------------------------------------
 
 # === Stage 1: Build =========================================================

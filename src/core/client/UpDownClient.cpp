@@ -12,6 +12,7 @@
 #include "app/AppContext.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
+#include "httpcache/HttpCacheManager.h"
 #include "files/SharedFileList.h"
 #include "friends/Friend.h"
 #include "friends/FriendList.h"
@@ -485,6 +486,8 @@ void UpDownClient::clearHelloProperties()
     m_supportsIPv6 = false;
     m_openIPv6 = false;
     m_supportsExtendedXS = false;
+    m_supportsExtSXSkipTags = false;
+    m_supportsHttpCache = false;
     m_userIPv6 = Address{};
     m_buddyIPv6 = Address{};
 }
@@ -946,6 +949,7 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
                 m_supportsIPv6           = (opts & MODMISC_IPV6) != 0;
                 m_supportsExtendedXS     = (opts & MODMISC_EXTXS) != 0;
                 m_supportsExtSXSkipTags  = (opts & MODMISC_EXTXS_SKIPTAGS) != 0;
+                m_supportsHttpCache      = (opts & MODMISC_HTTPCACHE) != 0;
             }
             break;
 
@@ -1230,13 +1234,19 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     // CT_MOD_VERSION — identify ourselves as eMule Qt
     Tag(CT_MOD_VERSION, QStringLiteral("eMule Qt " EMULE_VERSION_STRING)).writeTagToFile(data);
 
-    // CT_MOD_MISCOPTIONS — extended capability bitfield. We advertise IPv6 and Extended
-    // Source Exchange. ExtSX rides at source-exchange version 1: each per-source record is a
-    // self-describing tag block, so it cannot desync a correct tag-skipping reader. Both ends
-    // gate on this bit before using the tag-block format; a legacy peer that lacks it gets the
-    // classic fixed-format SX2 records unchanged.
+    // CT_MOD_MISCOPTIONS — extended capability bitfield. We advertise IPv6, Extended
+    // Source Exchange and HTTP Cache. ExtSX rides at source-exchange version 1: each
+    // per-source record is a self-describing tag block, so it cannot desync a correct
+    // tag-skipping reader. Both ends gate on this bit before using the tag-block format;
+    // a legacy peer that lacks it gets the classic fixed-format SX2 records unchanged.
+    //
+    // MODMISC_HTTPCACHE is advertised unconditionally, the way MFC advertised its
+    // PeerCache bit: it says "I can parse OP_HTTPCACHE", not "I have it switched on".
+    // Whether we act on an offer is a local decision made in HttpCacheManager, and a
+    // peer must be free to change that at runtime without re-handshaking.
     Tag(CT_MOD_MISCOPTIONS,
-        static_cast<uint32>(MODMISC_IPV6 | MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS))
+        static_cast<uint32>(MODMISC_IPV6 | MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS
+                            | MODMISC_HTTPCACHE))
         .writeTagToFile(data);
 
     // CT_MOD_YOUR_IP — tell the peer the address we see it coming from, so it can learn
@@ -3264,6 +3274,20 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
 // processKadFwTcpCheckAck — MFC ListenSocket.cpp:1672-1681
 // ===========================================================================
 
+// ===========================================================================
+// processHttpCachePacket — hand OP_HTTPCACHE to the manager
+// ===========================================================================
+
+void UpDownClient::processHttpCachePacket(const uint8* data, uint32 size)
+{
+    // Deliberately no policy here. Whether we act on an offer depends on
+    // preferences, the download queue, the IP filter and how many fetches are
+    // already running — all of which the manager owns and none of which belongs
+    // on a per-peer object.
+    if (theApp.httpCache)
+        theApp.httpCache->handlePacket(this, data, size);
+}
+
 void UpDownClient::processKadFwTcpCheckAck()
 {
     // Only count the ACK from an IP we actually asked to firewall-check us — otherwise a
@@ -3456,8 +3480,10 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
     } else {
         // Unknown client — if queue is full, inform; otherwise ignore
         if (theApp.uploadQueue && theApp.clientUDP) {
-            // MFC default queue size is 200; use the same threshold
-            if (theApp.uploadQueue->waitingUserCount() + 50 > 200) {
+            // MFC srchybrid/ListenSocket.cpp:1508 — gated on the same pref that caps
+            // the queue, not on a hardcoded count.
+            if (theApp.uploadQueue->waitingUserCount() + 50
+                > static_cast<int>(thePrefs.queueSize())) {
                 auto response = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
                 theApp.clientUDP->sendPacket(std::move(response), destEP,
                                              false, nullptr, false, 0);
@@ -3674,6 +3700,10 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
 
     case OP_KAD_FWTCPCHECK_ACK:
         processKadFwTcpCheckAck();
+        break;
+
+    case OP_HTTPCACHE:
+        processHttpCachePacket(data, size);
         break;
 
     case OP_MULTIPACKET:

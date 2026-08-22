@@ -261,6 +261,7 @@
     <ClCompile Include="app\SkinEngine.cpp" />
     <ClCompile Include="app\main.cpp" />
     <ClCompile Include="utils\Ed2kLinkImporter.cpp" />
+    <ClCompile Include="utils\HttpCacheLinkImporter.cpp" />
     <ClCompile Include="utils\IpcFeedback.cpp" />
     <ClCompile Include="utils\ViewNavigation.cpp" />
     <ClCompile Include="utils\PanelPoller.cpp" />
@@ -274,6 +275,7 @@
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
     <ClInclude Include="utils\Ed2kLinkImporter.h" />
+    <ClInclude Include="utils\HttpCacheLinkImporter.h" />
     <ClInclude Include="dialogs\FindInListDialog.h" />
     <ClInclude Include="dialogs\MetadataPage.h" />
     <ClInclude Include="utils\IpcFeedback.h" />

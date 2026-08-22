@@ -5,6 +5,7 @@
 #include "prefs/Preferences.h"
 
 #include "app/AppConfig.h"
+#include "crypto/AesCbc.h"
 #include "net/EMSocket.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
@@ -21,8 +22,6 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include <openssl/rand.h>
-
 
 namespace eMule {
 
@@ -36,78 +35,8 @@ constexpr uint32 kCurrentPrefsVersion = 2;
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// AES-256-CBC helpers for SMTP password encryption in YAML
-// ---------------------------------------------------------------------------
-
-namespace {
-
-QString aesEncrypt(const QString& plaintext, const QByteArray& key)
-{
-    if (plaintext.isEmpty() || key.size() != 32)
-        return {};
-
-    const QByteArray pt = plaintext.toUtf8();
-    QByteArray iv(16, Qt::Uninitialized);
-    RAND_bytes(reinterpret_cast<unsigned char*>(iv.data()), 16);
-
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-    if (!ctx) return {};
-
-    QByteArray ct(pt.size() + 16, Qt::Uninitialized); // room for padding
-    int len = 0, totalLen = 0;
-
-    EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr,
-                       reinterpret_cast<const unsigned char*>(key.constData()),
-                       reinterpret_cast<const unsigned char*>(iv.constData()));
-    EVP_EncryptUpdate(ctx, reinterpret_cast<unsigned char*>(ct.data()), &len,
-                      reinterpret_cast<const unsigned char*>(pt.constData()), static_cast<int>(pt.size()));
-    totalLen = len;
-    EVP_EncryptFinal_ex(ctx, reinterpret_cast<unsigned char*>(ct.data()) + len, &len);
-    totalLen += len;
-    EVP_CIPHER_CTX_free(ctx);
-
-    ct.resize(totalLen);
-    QByteArray combined = iv;
-    combined.append(ct);
-    return QString::fromLatin1(combined.toBase64());
-}
-
-QString aesDecrypt(const QString& ciphertext, const QByteArray& key)
-{
-    if (ciphertext.isEmpty() || key.size() != 32)
-        return {};
-
-    const QByteArray raw = QByteArray::fromBase64(ciphertext.toLatin1());
-    if (raw.size() < 17) return {}; // min: 16-byte IV + 1 byte
-
-    const QByteArray iv = raw.left(16);
-    const QByteArray ct = raw.mid(16);
-
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-    if (!ctx) return {};
-
-    QByteArray pt(ct.size() + 16, Qt::Uninitialized);
-    int len = 0, totalLen = 0;
-
-    EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr,
-                       reinterpret_cast<const unsigned char*>(key.constData()),
-                       reinterpret_cast<const unsigned char*>(iv.constData()));
-    EVP_DecryptUpdate(ctx, reinterpret_cast<unsigned char*>(pt.data()), &len,
-                      reinterpret_cast<const unsigned char*>(ct.constData()), static_cast<int>(ct.size()));
-    totalLen = len;
-    if (!EVP_DecryptFinal_ex(ctx, reinterpret_cast<unsigned char*>(pt.data()) + len, &len)) {
-        EVP_CIPHER_CTX_free(ctx);
-        return {};
-    }
-    totalLen += len;
-    EVP_CIPHER_CTX_free(ctx);
-
-    pt.resize(totalLen);
-    return QString::fromUtf8(pt);
-}
-
-} // anonymous namespace
+// The SMTP password is stored AES-256-CBC encrypted in the YAML; the cipher now
+// lives in crypto/AesCbc.h, shared with HTTP Cache chunk encryption.
 
 // ---------------------------------------------------------------------------
 // Data struct — all settings with default values
@@ -365,6 +294,11 @@ struct Preferences::Data {
     // Per-source cumulative upload bytes
     uint64 cumUpFromFile = 0;
     uint64 cumUpFromPartfile = 0;
+    uint64 cumHttpCacheBytesPublished = 0;
+    uint64 cumHttpCacheBytesFetched = 0;
+    uint64 cumHttpCacheBytesSaved = 0;
+    uint32 cumHttpCacheChunksPublished = 0;
+    uint32 cumHttpCacheChunksFetched = 0;
 
     // Records
     uint32 recMaxWorkingServers = 0;
@@ -476,6 +410,7 @@ struct Preferences::Data {
     bool autoDownloadPriority = true;  // Auto-adjust download priority by source count
     bool addNewFilesPaused = false;    // Pause newly added download files
     bool useSaveLoadSources = true;    // Remember a download's sources across restarts (SLS)
+    bool rememberUploadQueue = true;   // Remember the upload queue across restarts (UQS)
 
     // Disk space
     bool checkDiskspace = true;          // Monitor free disk space
@@ -547,6 +482,21 @@ struct Preferences::Data {
     QString notifyEmailRecipient;
     QString notifyEmailSender;
     QByteArray notifyEmailEncKey;    // 32-byte AES key, not exposed via getter
+
+    // -- HTTP Cache ---------------------------------------------------------
+    // Encrypted chunk offload; see docs/protocol/http-cache-spec.md. YAML-only
+    // for now (no Options page) while the feature settles.
+    bool httpCacheEnabled = false;
+    bool httpCacheAllowDownload = true;
+    bool httpCacheAllowUpload = true;
+    QString httpCacheBaseUrl;
+    QString httpCacheApiKey;         // plaintext in memory, AES-encrypted in YAML
+    uint32 httpCacheMinClients = 2;
+    uint32 httpCacheChunkTtlSeconds = 21600;
+    uint64 httpCacheMaxPublishBytesPerDay = UINT64_C(2147483648);
+    uint32 httpCachePublishRateKBs = 0;   // 0 = derive from the upload limit
+    uint32 httpCacheMaxConcurrentPublishes = 1;
+    uint32 httpCacheMaxConcurrentFetches = 2;
 
 };
 
@@ -1215,6 +1165,11 @@ PREF_GS(uint64, cumDownPortOther, CumDownPortOther)
 
 PREF_GS(uint64, cumUpFromFile, CumUpFromFile)
 PREF_GS(uint64, cumUpFromPartfile, CumUpFromPartfile)
+PREF_GS(uint64, cumHttpCacheBytesPublished, CumHttpCacheBytesPublished)
+PREF_GS(uint64, cumHttpCacheBytesFetched, CumHttpCacheBytesFetched)
+PREF_GS(uint64, cumHttpCacheBytesSaved, CumHttpCacheBytesSaved)
+PREF_GS(uint32, cumHttpCacheChunksPublished, CumHttpCacheChunksPublished)
+PREF_GS(uint32, cumHttpCacheChunksFetched, CumHttpCacheChunksFetched)
 
 PREF_GS(uint32, recMaxWorkingServers, RecMaxWorkingServers)
 PREF_GS(uint32, recMaxUsersOnline, RecMaxUsersOnline)
@@ -1306,6 +1261,12 @@ void Preferences::forEachCumulativeStat(D& d, F&& f)
 
     f("cumUpFromFile", d.cumUpFromFile);
     f("cumUpFromPartfile", d.cumUpFromPartfile);
+
+    f("cumHttpCacheBytesPublished", d.cumHttpCacheBytesPublished);
+    f("cumHttpCacheBytesFetched", d.cumHttpCacheBytesFetched);
+    f("cumHttpCacheBytesSaved", d.cumHttpCacheBytesSaved);
+    f("cumHttpCacheChunksPublished", d.cumHttpCacheChunksPublished);
+    f("cumHttpCacheChunksFetched", d.cumHttpCacheChunksFetched);
 
     // The cumulative rates are records rather than sums, but MFC clears them
     // with the rest (srchybrid/Preferences.cpp:1140-1163), so they travel with
@@ -1404,6 +1365,104 @@ bool Preferences::restoreCumulativeStats()
         return false;
     }
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Getters / setters — HTTP Cache
+// ---------------------------------------------------------------------------
+
+bool Preferences::httpCacheEnabled() const { return get(&Data::httpCacheEnabled); }
+
+void Preferences::setHttpCacheEnabled(bool val) { set(&Data::httpCacheEnabled, val); }
+
+bool Preferences::httpCacheAllowDownload() const { return get(&Data::httpCacheAllowDownload); }
+
+void Preferences::setHttpCacheAllowDownload(bool val) { set(&Data::httpCacheAllowDownload, val); }
+
+bool Preferences::httpCacheAllowUpload() const { return get(&Data::httpCacheAllowUpload); }
+
+void Preferences::setHttpCacheAllowUpload(bool val) { set(&Data::httpCacheAllowUpload, val); }
+
+QString Preferences::httpCacheBaseUrl() const { return get(&Data::httpCacheBaseUrl); }
+
+void Preferences::setHttpCacheBaseUrl(const QString& val)
+{
+    // A trailing slash would turn every request path into a double slash, which
+    // some servers 404 — normalise once here rather than at each call site.
+    QString clean = val.trimmed();
+    while (clean.endsWith(QLatin1Char('/')))
+        clean.chop(1);
+
+    set(&Data::httpCacheBaseUrl, clean);
+}
+
+QString Preferences::httpCacheApiKey() const { return get(&Data::httpCacheApiKey); }
+
+void Preferences::setHttpCacheApiKey(const QString& val)
+{
+    set(&Data::httpCacheApiKey, val.trimmed());
+}
+
+uint32 Preferences::httpCacheMinClients() const
+{
+    // 1 is meaningful (single-peer testing), 0 is not — it would publish every
+    // part of every shared file the moment anything was queued.
+    return std::max(1u, get(&Data::httpCacheMinClients));
+}
+
+void Preferences::setHttpCacheMinClients(uint32 val)
+{
+    set(&Data::httpCacheMinClients, std::max(1u, val));
+}
+
+uint32 Preferences::httpCacheChunkTtlSeconds() const
+{
+    return get(&Data::httpCacheChunkTtlSeconds);
+}
+
+void Preferences::setHttpCacheChunkTtlSeconds(uint32 val)
+{
+    set(&Data::httpCacheChunkTtlSeconds, val);
+}
+
+uint64 Preferences::httpCacheMaxPublishBytesPerDay() const
+{
+    return get(&Data::httpCacheMaxPublishBytesPerDay);
+}
+
+void Preferences::setHttpCacheMaxPublishBytesPerDay(uint64 val)
+{
+    set(&Data::httpCacheMaxPublishBytesPerDay, val);
+}
+
+uint32 Preferences::httpCachePublishRateKBs() const
+{
+    return get(&Data::httpCachePublishRateKBs);
+}
+
+void Preferences::setHttpCachePublishRateKBs(uint32 val)
+{
+    set(&Data::httpCachePublishRateKBs, val);
+}
+
+uint32 Preferences::httpCacheMaxConcurrentPublishes() const
+{
+    return std::max(1u, get(&Data::httpCacheMaxConcurrentPublishes));
+}
+
+void Preferences::setHttpCacheMaxConcurrentPublishes(uint32 val)
+{
+    set(&Data::httpCacheMaxConcurrentPublishes, std::max(1u, val));
+}
+
+uint32 Preferences::httpCacheMaxConcurrentFetches() const
+{
+    return std::max(1u, get(&Data::httpCacheMaxConcurrentFetches));
+}
+
+void Preferences::setHttpCacheMaxConcurrentFetches(uint32 val)
+{
+    set(&Data::httpCacheMaxConcurrentFetches, std::max(1u, val));
 }
 
 // ---------------------------------------------------------------------------
@@ -1745,6 +1804,10 @@ void Preferences::setAddNewFilesPaused(bool val) { set(&Data::addNewFilesPaused,
 bool Preferences::useSaveLoadSources() const { return get(&Data::useSaveLoadSources); }
 
 void Preferences::setUseSaveLoadSources(bool val) { set(&Data::useSaveLoadSources, val); }
+
+bool Preferences::rememberUploadQueue() const { return get(&Data::rememberUploadQueue); }
+
+void Preferences::setRememberUploadQueue(bool val) { set(&Data::rememberUploadQueue, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Files (extended)
@@ -2094,6 +2157,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->addNewFilesPaused             = p.value(QStringLiteral("addNewFilesPaused")).toBool();
     // Defaults to true: an older peer that omits the key must not silently disable SLS.
     m_data->useSaveLoadSources            = p.value(QStringLiteral("useSaveLoadSources")).toBool(true);
+    m_data->rememberUploadQueue           = p.value(QStringLiteral("rememberUploadQueue")).toBool(true);
     m_data->autoDownloadPriority          = p.value(QStringLiteral("autoDownloadPriority")).toBool();
     m_data->autoSharedFilesPriority       = p.value(QStringLiteral("autoSharedFilesPriority")).toBool();
     m_data->transferFullChunks            = p.value(QStringLiteral("transferFullChunks")).toBool();
@@ -2602,6 +2666,7 @@ bool Preferences::load(const QString& filePath)
             m_data->autoDownloadPriority = t["autoDownloadPriority"].as<bool>(m_data->autoDownloadPriority);
             m_data->addNewFilesPaused = t["addNewFilesPaused"].as<bool>(m_data->addNewFilesPaused);
             m_data->useSaveLoadSources = t["useSaveLoadSources"].as<bool>(m_data->useSaveLoadSources);
+            m_data->rememberUploadQueue = t["rememberUploadQueue"].as<bool>(m_data->rememberUploadQueue);
             m_data->useCreditSystem = t["useCreditSystem"].as<bool>(m_data->useCreditSystem);
             m_data->a4afSaveCpu = t["a4afSaveCpu"].as<bool>(m_data->a4afSaveCpu);
             m_data->autoArchivePreviewStart = t["autoArchivePreviewStart"].as<bool>(m_data->autoArchivePreviewStart);
@@ -2891,8 +2956,56 @@ bool Preferences::load(const QString& filePath)
             // Decrypt SMTP password
             if (n["emailSmtpPasswordEnc"] && !m_data->notifyEmailEncKey.isEmpty()) {
                 auto enc = QString::fromStdString(n["emailSmtpPasswordEnc"].as<std::string>(""));
-                m_data->notifyEmailSmtpPassword = aesDecrypt(enc, m_data->notifyEmailEncKey);
+                m_data->notifyEmailSmtpPassword =
+                    aesDecryptFromBase64(enc, m_data->notifyEmailEncKey);
             }
+        }
+
+        // HTTP Cache — encrypted chunk offload. No Options page yet, so this
+        // section is hand-edited: every field falls back to its compiled-in
+        // default and a partial block is valid.
+        //
+        // Must come after `notifications`, which is where notifyEmailEncKey — the
+        // key the API key is encrypted under — gets loaded.
+        if (auto hc = root["httpCache"]) {
+            m_data->httpCacheEnabled = hc["enabled"].as<bool>(m_data->httpCacheEnabled);
+            m_data->httpCacheAllowDownload =
+                hc["allowDownload"].as<bool>(m_data->httpCacheAllowDownload);
+            m_data->httpCacheAllowUpload =
+                hc["allowUpload"].as<bool>(m_data->httpCacheAllowUpload);
+
+            if (hc["baseUrl"]) {
+                QString url = QString::fromStdString(hc["baseUrl"].as<std::string>("")).trimmed();
+                while (url.endsWith(QLatin1Char('/')))
+                    url.chop(1);
+                m_data->httpCacheBaseUrl = url;
+            }
+
+            // The API key is stored like the SMTP password: AES-encrypted under the
+            // notification key, so preferences.yml never holds a usable upload
+            // credential in the clear.
+            if (hc["apiKeyEnc"] && !m_data->notifyEmailEncKey.isEmpty()) {
+                const auto enc = QString::fromStdString(hc["apiKeyEnc"].as<std::string>(""));
+                m_data->httpCacheApiKey = aesDecryptFromBase64(enc, m_data->notifyEmailEncKey);
+            } else if (hc["apiKey"]) {
+                // Plaintext escape hatch for first setup and hand-editing; rewritten
+                // as apiKeyEnc on the next save.
+                m_data->httpCacheApiKey =
+                    QString::fromStdString(hc["apiKey"].as<std::string>("")).trimmed();
+            }
+
+            m_data->httpCacheMinClients =
+                hc["minClients"].as<uint32>(m_data->httpCacheMinClients);
+            m_data->httpCacheChunkTtlSeconds =
+                hc["chunkTtlSeconds"].as<uint32>(m_data->httpCacheChunkTtlSeconds);
+            m_data->httpCacheMaxPublishBytesPerDay =
+                hc["maxPublishBytesPerDay"].as<uint64>(m_data->httpCacheMaxPublishBytesPerDay);
+            m_data->httpCachePublishRateKBs =
+                hc["publishRateKBs"].as<uint32>(m_data->httpCachePublishRateKBs);
+            m_data->httpCacheMaxConcurrentPublishes =
+                hc["maxConcurrentPublishes"].as<uint32>(m_data->httpCacheMaxConcurrentPublishes);
+            m_data->httpCacheMaxConcurrentFetches =
+                hc["maxConcurrentFetches"].as<uint32>(m_data->httpCacheMaxConcurrentFetches);
         }
 
         // UI State is now in its own uistate.yml (managed by UiState class)
@@ -3225,6 +3338,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "autoDownloadPriority" << YAML::Value << m_data->autoDownloadPriority;
     out << YAML::Key << "addNewFilesPaused" << YAML::Value << m_data->addNewFilesPaused;
     out << YAML::Key << "useSaveLoadSources" << YAML::Value << m_data->useSaveLoadSources;
+    out << YAML::Key << "rememberUploadQueue" << YAML::Value << m_data->rememberUploadQueue;
     out << YAML::Key << "useCreditSystem" << YAML::Value << m_data->useCreditSystem;
     out << YAML::Key << "a4afSaveCpu" << YAML::Value << m_data->a4afSaveCpu;
     out << YAML::Key << "autoArchivePreviewStart" << YAML::Value << m_data->autoArchivePreviewStart;
@@ -3503,18 +3617,43 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "emailSmtpUser" << YAML::Value << m_data->notifyEmailSmtpUser.toStdString();
     out << YAML::Key << "emailRecipient" << YAML::Value << m_data->notifyEmailRecipient.toStdString();
     out << YAML::Key << "emailSender" << YAML::Value << m_data->notifyEmailSender.toStdString();
-    // Generate encryption key on first save if needed
+    // Generate the at-rest key on first save if needed. It protects every secret
+    // in this file, not just the SMTP password — the HTTP Cache API key rides on
+    // it too — so any of them being set is reason enough to mint one.
     QByteArray encKey = m_data->notifyEmailEncKey;
-    if (encKey.isEmpty() && !m_data->notifyEmailSmtpPassword.isEmpty()) {
-        encKey.resize(32);
-        RAND_bytes(reinterpret_cast<unsigned char*>(encKey.data()), 32);
+    if (encKey.isEmpty()
+        && (!m_data->notifyEmailSmtpPassword.isEmpty() || !m_data->httpCacheApiKey.isEmpty())) {
+        encKey = aesRandomKey();
         m_data->notifyEmailEncKey = encKey;
     }
     if (!encKey.isEmpty()) {
         out << YAML::Key << "emailEncryptionKey" << YAML::Value << encKey.toHex().toStdString();
         out << YAML::Key << "emailSmtpPasswordEnc" << YAML::Value
-            << aesEncrypt(m_data->notifyEmailSmtpPassword, encKey).toStdString();
+            << aesEncryptToBase64(m_data->notifyEmailSmtpPassword, encKey).toStdString();
     }
+    out << YAML::EndMap;
+
+    // HTTP Cache. Written after `notifications` so encKey above is already
+    // settled; the API key is stored encrypted under it and the plaintext
+    // `apiKey` form the loader accepts is never written back.
+    out << YAML::Key << "httpCache" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled" << YAML::Value << m_data->httpCacheEnabled;
+    out << YAML::Key << "allowDownload" << YAML::Value << m_data->httpCacheAllowDownload;
+    out << YAML::Key << "allowUpload" << YAML::Value << m_data->httpCacheAllowUpload;
+    out << YAML::Key << "baseUrl" << YAML::Value << m_data->httpCacheBaseUrl.toStdString();
+    if (!m_data->httpCacheApiKey.isEmpty() && !encKey.isEmpty()) {
+        out << YAML::Key << "apiKeyEnc" << YAML::Value
+            << aesEncryptToBase64(m_data->httpCacheApiKey, encKey).toStdString();
+    }
+    out << YAML::Key << "minClients" << YAML::Value << m_data->httpCacheMinClients;
+    out << YAML::Key << "chunkTtlSeconds" << YAML::Value << m_data->httpCacheChunkTtlSeconds;
+    out << YAML::Key << "maxPublishBytesPerDay" << YAML::Value
+        << m_data->httpCacheMaxPublishBytesPerDay;
+    out << YAML::Key << "publishRateKBs" << YAML::Value << m_data->httpCachePublishRateKBs;
+    out << YAML::Key << "maxConcurrentPublishes" << YAML::Value
+        << m_data->httpCacheMaxConcurrentPublishes;
+    out << YAML::Key << "maxConcurrentFetches" << YAML::Value
+        << m_data->httpCacheMaxConcurrentFetches;
     out << YAML::EndMap;
 
     // UI State is now in its own uistate.yml (managed by UiState class)

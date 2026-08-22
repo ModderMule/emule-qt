@@ -239,6 +239,26 @@ void ClientCredits::setSecWaitStartTime(uint32 forIP)
     m_waitTimeIP = forIP;
 }
 
+void ClientCredits::restoreWaitStartTime(uint32 forIP, uint32 elapsedMs)
+{
+    auto now = static_cast<uint32>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count() & 0xFFFFFFFF);
+
+    // Deliberate 32-bit wrap: score() computes curTick - waitStartTime, and every other
+    // tick comparison in the upload path relies on the same wrapping arithmetic.
+    uint32 started = now - elapsedMs;
+
+    // 0 is the "never started" sentinel — secureWaitStartTime() re-initialises on it, which
+    // would silently throw away the position we are restoring. One tick either way is noise.
+    if (started == 0)
+        started = 1;
+
+    m_unsecureWaitTime = started;
+    m_secureWaitTime   = started;
+    m_waitTimeIP       = forIP;
+}
+
 void ClientCredits::clearWaitStartTime()
 {
     m_unsecureWaitTime = 0;

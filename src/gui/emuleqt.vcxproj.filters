@@ -91,6 +91,9 @@
     <ClCompile Include="app\IpcClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\HttpCacheLinkImporter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\IpcFeedback.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -226,6 +229,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="dialogs\MetadataPage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\HttpCacheLinkImporter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\IpcFeedback.h">

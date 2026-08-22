@@ -8,6 +8,8 @@
 ///
 /// Test file: data/incoming/eMuleQt-testfile-20MB.bin
 
+#include "MockPeerSocket.h"
+#include "UploadPipelineFixture.h"
 #include "TestHelpers.h"
 
 #include "app/AppContext.h"
@@ -53,187 +55,6 @@ using namespace eMule;
 using namespace eMule::testing;
 
 // ---------------------------------------------------------------------------
-// MockDownloader — EMSocket subclass that records received packets
-// ---------------------------------------------------------------------------
-
-class MockDownloader : public EMSocket {
-    Q_OBJECT
-
-public:
-    using EMSocket::EMSocket;
-
-    struct ReceivedPacket {
-        uint8 opcode;
-        uint8 prot;
-        std::vector<char> data;
-    };
-
-    struct DataBlock {
-        uint64 start;
-        uint64 end;
-        QByteArray data;
-    };
-
-    std::vector<ReceivedPacket> receivedPackets;
-    int lastErrorCode = 0;
-
-    bool hasOpcode(uint8 op) const
-    {
-        for (const auto& rp : receivedPackets) {
-            if (rp.opcode == op)
-                return true;
-        }
-        return false;
-    }
-
-    bool hasOpcode(uint8 op, uint8 proto) const
-    {
-        for (const auto& rp : receivedPackets) {
-            if (rp.opcode == op && rp.prot == proto)
-                return true;
-        }
-        return false;
-    }
-
-    /// Total raw payload bytes across all data packets (header bytes excluded).
-    uint64 totalDataBytes() const
-    {
-        uint64 total = 0;
-        for (const auto& rp : receivedPackets) {
-            if (rp.opcode == OP_SENDINGPART && rp.data.size() > 24)
-                total += rp.data.size() - 24;
-            else if (rp.opcode == OP_SENDINGPART_I64 && rp.data.size() > 32)
-                total += rp.data.size() - 32;
-            else if (rp.opcode == OP_COMPRESSEDPART && rp.data.size() > 24)
-                total += rp.data.size() - 24;
-            else if (rp.opcode == OP_COMPRESSEDPART_I64 && rp.data.size() > 28)
-                total += rp.data.size() - 28;
-        }
-        return total;
-    }
-
-    /// Count of data packets received (OP_SENDINGPART* or OP_COMPRESSEDPART*).
-    int dataPacketCount() const
-    {
-        int count = 0;
-        for (const auto& rp : receivedPackets) {
-            if (rp.opcode == OP_SENDINGPART || rp.opcode == OP_SENDINGPART_I64
-                || rp.opcode == OP_COMPRESSEDPART || rp.opcode == OP_COMPRESSEDPART_I64)
-                ++count;
-        }
-        return count;
-    }
-
-    /// Extract received data blocks from OP_SENDINGPART* and OP_COMPRESSEDPART* packets.
-    /// Compressed blocks are decompressed with zlib before returning.
-    std::vector<DataBlock> receivedDataBlocks() const
-    {
-        std::vector<DataBlock> blocks;
-
-        // Collect compressed packet chunks keyed by start offset.
-        // Each OP_COMPRESSEDPART has: hash(16) + start(4) + totalCompressedLen(4) + chunk.
-        // Multiple packets with the same start offset form one block.
-        struct CompressedEntry {
-            uint64 start;
-            uint32 totalCompressedLen;
-            QByteArray compressedData;
-        };
-        std::map<uint64, CompressedEntry> compressedMap;
-
-        for (const auto& rp : receivedPackets) {
-            // --- Uncompressed ---
-            if (rp.opcode == OP_SENDINGPART && rp.prot == OP_EDONKEYPROT && rp.data.size() > 24) {
-                uint32 start = 0, end = 0;
-                std::memcpy(&start, rp.data.data() + 16, 4);
-                std::memcpy(&end, rp.data.data() + 20, 4);
-                DataBlock block;
-                block.start = start;
-                block.end = end;
-                block.data = QByteArray(rp.data.data() + 24,
-                                        static_cast<qsizetype>(rp.data.size() - 24));
-                blocks.push_back(std::move(block));
-            } else if (rp.opcode == OP_SENDINGPART_I64 && rp.prot == OP_EMULEPROT && rp.data.size() > 32) {
-                uint64 start = 0, end = 0;
-                std::memcpy(&start, rp.data.data() + 16, 8);
-                std::memcpy(&end, rp.data.data() + 24, 8);
-                DataBlock block;
-                block.start = start;
-                block.end = end;
-                block.data = QByteArray(rp.data.data() + 32,
-                                        static_cast<qsizetype>(rp.data.size() - 32));
-                blocks.push_back(std::move(block));
-            }
-            // --- Compressed (standard 32-bit offsets) ---
-            else if (rp.opcode == OP_COMPRESSEDPART && rp.prot == OP_EMULEPROT && rp.data.size() > 24) {
-                uint32 start32 = 0, compLen = 0;
-                std::memcpy(&start32, rp.data.data() + 16, 4);
-                std::memcpy(&compLen, rp.data.data() + 20, 4);
-                auto& entry = compressedMap[start32];
-                entry.start = start32;
-                entry.totalCompressedLen = compLen;
-                entry.compressedData.append(rp.data.data() + 24,
-                                            static_cast<qsizetype>(rp.data.size() - 24));
-            }
-            // --- Compressed (64-bit offsets) ---
-            else if (rp.opcode == OP_COMPRESSEDPART_I64 && rp.prot == OP_EMULEPROT && rp.data.size() > 28) {
-                uint64 start64 = 0;
-                uint32 compLen = 0;
-                std::memcpy(&start64, rp.data.data() + 16, 8);
-                std::memcpy(&compLen, rp.data.data() + 24, 4);
-                auto& entry = compressedMap[start64];
-                entry.start = start64;
-                entry.totalCompressedLen = compLen;
-                entry.compressedData.append(rp.data.data() + 28,
-                                            static_cast<qsizetype>(rp.data.size() - 28));
-            }
-        }
-
-        // Decompress collected compressed blocks
-        for (const auto& [offset, entry] : compressedMap) {
-            // Allocate generous output buffer (original block ≤ PARTSIZE)
-            uLongf destLen = entry.totalCompressedLen * 10 + 300;
-            if (destLen < 65536)
-                destLen = 65536;
-            std::vector<uint8> decompressed(destLen);
-
-            int zResult = uncompress(decompressed.data(), &destLen,
-                                     reinterpret_cast<const uint8*>(entry.compressedData.constData()),
-                                     static_cast<uLong>(entry.compressedData.size()));
-            if (zResult == Z_OK) {
-                DataBlock block;
-                block.start = entry.start;
-                block.end = entry.start + destLen;
-                block.data = QByteArray(reinterpret_cast<const char*>(decompressed.data()),
-                                        static_cast<qsizetype>(destLen));
-                blocks.push_back(std::move(block));
-            } else {
-                qWarning("zlib uncompress failed for block at offset %llu: error %d",
-                         static_cast<unsigned long long>(entry.start), zResult);
-            }
-        }
-
-        return blocks;
-    }
-
-protected:
-    bool packetReceived(Packet* packet) override
-    {
-        ReceivedPacket rp;
-        rp.opcode = packet->opcode;
-        rp.prot = packet->prot;
-        if (packet->pBuffer && packet->size > 0)
-            rp.data.assign(packet->pBuffer, packet->pBuffer + packet->size);
-        receivedPackets.push_back(std::move(rp));
-        return true;
-    }
-
-    void onError(int errorCode) override
-    {
-        lastErrorCode = errorCode;
-    }
-};
-
-// ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
 
@@ -260,19 +81,8 @@ private:
                                                uint64 s1, uint64 e1,
                                                uint64 s2, uint64 e2);
 
-    // Infrastructure
-    TempDir* m_tmpDir = nullptr;
-    ListenSocket* m_listenSocket = nullptr;
-    ClientList* m_clientList = nullptr;
-    UploadBandwidthThrottler* m_throttler = nullptr;
-    KnownFileList* m_knownFiles = nullptr;
-    SharedFileList* m_sharedFiles = nullptr;
-    UploadQueue* m_uploadQueue = nullptr;
-    UploadDiskIOThread* m_diskIO = nullptr;
-    QTimer m_processTimer;
-
-    // Helpers
-    void registerSharedFile(const QString& path, std::array<uint8, 16>& outHash, uint64& outSize);
+    // Infrastructure — listen socket, upload queue, disk IO, shared files
+    UploadPipelineFixture m_pipe;
 
     // File under test (compressible)
     QString m_testFilePath;
@@ -293,87 +103,13 @@ private:
 
 void tst_MockPeerUpload::initTestCase()
 {
-    m_tmpDir = new TempDir();
-
-    // 1. Preferences
-    thePrefs.load(m_tmpDir->filePath(QStringLiteral("prefs.yaml")));
-    thePrefs.setConfigDir(m_tmpDir->path());
-    thePrefs.setCryptLayerSupported(true);
-    thePrefs.setCryptLayerRequested(true);
-    thePrefs.setCryptLayerRequired(false);
-
-    const QString incomingDir = m_tmpDir->filePath(QStringLiteral("incoming"));
-    QDir().mkpath(incomingDir);
-    thePrefs.setIncomingDir(incomingDir);
-    thePrefs.setTempDirs({m_tmpDir->filePath(QStringLiteral("temp"))});
-
-    // 2. Client credits (generates RSA keys → user hash)
-    auto* creditsList = new ClientCreditsList();
-    theApp.clientCredits = creditsList;
-
-    // 3. Client list
-    m_clientList = new ClientList(this);
-    theApp.clientList = m_clientList;
-
-    // 4. Listen socket (port 0 = random)
-    m_listenSocket = new ListenSocket(this);
-    QVERIFY2(m_listenSocket->startListening(0), "Failed to start TCP listener");
-    theApp.listenSocket = m_listenSocket;
-    thePrefs.setPort(m_listenSocket->connectedPort());
-
-    // Wire incoming connections
-    connect(m_listenSocket, &ListenSocket::newClientConnection,
-            m_clientList, &ClientList::handleIncomingConnection);
-
-    // 5. Upload bandwidth throttler — NOT started and NOT set on the UploadQueue.
-    //    Qt 6 forbids QTcpSocket writes from non-owner threads, but the throttler
-    //    thread calls sendFileAndControlData() from its own thread. Instead, we
-    //    flush standard/file data packets from the main thread in the process timer.
-    //    The throttler object is kept alive (but idle) so theApp pointer is non-null.
-    m_throttler = new UploadBandwidthThrottler(this);
-
-    // 6. Known file list
-    m_knownFiles = new KnownFileList();
-    theApp.knownFileList = m_knownFiles;
-
-    // 7. Shared file list
-    m_sharedFiles = new SharedFileList(m_knownFiles, this);
-    theApp.sharedFileList = m_sharedFiles;
-
-    // 8. Upload disk IO thread
-    m_diskIO = new UploadDiskIOThread(this);
-    m_diskIO->start();
-
-    // 9. Upload queue — throttler intentionally NOT set (see note at step 5)
-    m_uploadQueue = new UploadQueue(this);
-    m_uploadQueue->setDiskIOThread(m_diskIO);
-    m_uploadQueue->setSharedFileList(m_sharedFiles);
-    theApp.uploadQueue = m_uploadQueue;
-
-    // 10. Process timer — drives upload queue and listen socket.
-    //     Also flushes file data packets from the main thread because
-    //     Qt 6 sockets don't support writes from non-owner threads
-    //     (the UploadBandwidthThrottler thread).
-    connect(&m_processTimer, &QTimer::timeout, this, [this] {
-        m_uploadQueue->process();
-        m_listenSocket->process();
-        // Flush any pending file data from the main thread
-        m_uploadQueue->forEachUploading([](UpDownClient* client) {
-            if (auto* sock = client->socket())
-                sock->sendFileAndControlData(UINT32_MAX, 1);
-        });
-    });
-    m_processTimer.start(100);
-
-    // -----------------------------------------------------------------------
-    // Hash and register shared files
-    // -----------------------------------------------------------------------
+    m_pipe.setup(this);
 
     m_testFilePath = projectDataDir() + QStringLiteral("/incoming/eMuleQt-testfile-20MB.bin");
-    registerSharedFile(m_testFilePath, m_fileHash, m_fileSize);
+    m_pipe.registerSharedFile(m_testFilePath, m_fileHash, m_fileSize);
 
     m_randomFilePath = projectDataDir() + QStringLiteral("/incoming/eMuleQt-testfile-20MB-random.bin");
-    registerSharedFile(m_randomFilePath, m_randomFileHash, m_randomFileSize);
+    m_pipe.registerSharedFile(m_randomFilePath, m_randomFileHash, m_randomFileSize);
 
     // Generate a random fake user hash for the mock peer
     std::mt19937 rng(std::random_device{}());
@@ -383,61 +119,6 @@ void tst_MockPeerUpload::initTestCase()
 
 }
 
-void tst_MockPeerUpload::registerSharedFile(const QString& path,
-                                             std::array<uint8, 16>& outHash, uint64& outSize)
-{
-    QVERIFY2(QFile::exists(path),
-             qPrintable(QStringLiteral("Test file not found: %1").arg(path)));
-
-    QFile f(path);
-    QVERIFY(f.open(QIODevice::ReadOnly));
-    outSize = static_cast<uint64>(f.size());
-    QVERIFY(outSize > 0);
-
-    const uint64 partSize = PARTSIZE;
-    const uint64 numParts = (outSize + partSize - 1) / partSize;
-    std::vector<std::array<uint8, 16>> partHashes;
-
-    for (uint64 p = 0; p < numParts; ++p) {
-        const uint64 offset = p * partSize;
-        const uint64 remaining = outSize - offset;
-        const auto chunkSize = static_cast<qint64>(std::min(remaining, partSize));
-
-        QByteArray chunk = f.read(chunkSize);
-        QCOMPARE(chunk.size(), chunkSize);
-
-        MD4Hasher hasher;
-        hasher.add(chunk.constData(), static_cast<std::size_t>(chunk.size()));
-        hasher.finish();
-
-        std::array<uint8, 16> h{};
-        std::memcpy(h.data(), hasher.getHash(), 16);
-        partHashes.push_back(h);
-    }
-
-    if (numParts == 1) {
-        std::memcpy(outHash.data(), partHashes[0].data(), 16);
-    } else {
-        MD4Hasher fileHasher;
-        for (const auto& ph : partHashes)
-            fileHasher.add(ph.data(), 16);
-        fileHasher.finish();
-        std::memcpy(outHash.data(), fileHasher.getHash(), 16);
-    }
-
-    auto* knownFile = new KnownFile();
-    knownFile->setFileName(QFileInfo(path).fileName());
-    knownFile->setFileSize(EMFileSize(outSize));
-    knownFile->setFileHash(outHash.data());
-    knownFile->setFilePath(path);
-    knownFile->setPath(QFileInfo(path).absolutePath() + QDir::separator());
-    knownFile->fileIdentifier().setMD4HashSet(partHashes);
-
-    QVERIFY(m_knownFiles->safeAddKFile(knownFile));
-    QVERIFY(m_sharedFiles->safeAddKFile(knownFile));
-    QVERIFY(m_sharedFiles->getFileByID(outHash.data()) != nullptr);
-}
-
 // ---------------------------------------------------------------------------
 // Test: Full upload flow with data verification
 // ---------------------------------------------------------------------------
@@ -445,10 +126,10 @@ void tst_MockPeerUpload::registerSharedFile(const QString& path,
 void tst_MockPeerUpload::uploadFlow_sendingPartMatchesFile()
 {
     // 1. Connect with encryption
-    MockDownloader mock;
+    MockPeerSocket mock;
     mock.setObfuscationConfig(thePrefs.obfuscationConfig());
     mock.setConnectionEncryption(true, thePrefs.userHash().data(), false);
-    mock.connectToHost(QHostAddress::LocalHost, m_listenSocket->serverPort());
+    mock.connectToHost(QHostAddress::LocalHost, m_pipe.listenSocket->serverPort());
     QVERIFY(mock.waitForConnected(5000));
 
     // 2. Wait for encryption handshake to complete
@@ -489,7 +170,7 @@ void tst_MockPeerUpload::uploadFlow_sendingPartMatchesFile()
     QTRY_VERIFY_WITH_TIMEOUT(mock.dataPacketCount() >= 3, 15000);
 
     // Stop the process timer before heavy verification to avoid interference
-    m_processTimer.stop();
+    m_pipe.processTimer.stop();
 
     // 12. Decompress and verify received blocks match the original file
     auto blocks = mock.receivedDataBlocks();
@@ -528,7 +209,7 @@ void tst_MockPeerUpload::uploadFlow_sendingPartMatchesFile()
 void tst_MockPeerUpload::uploadFlow_longDurationRateLimited()
 {
     // Stop the default unlimited-bandwidth process timer
-    m_processTimer.stop();
+    m_pipe.processTimer.stop();
 
     // Rate-limited process timer: ~1 KB per 100ms tick ≈ 10 KB/s.
     // We continuously request small blocks (10KB each like the existing test).
@@ -539,19 +220,19 @@ void tst_MockPeerUpload::uploadFlow_longDurationRateLimited()
 
     QTimer rateLimitedTimer;
     connect(&rateLimitedTimer, &QTimer::timeout, this, [this] {
-        m_uploadQueue->process();
-        m_listenSocket->process();
-        m_uploadQueue->forEachUploading([](UpDownClient* client) {
+        m_pipe.uploadQueue->process();
+        m_pipe.listenSocket->process();
+        m_pipe.uploadQueue->forEachUploading([](UpDownClient* client) {
             if (auto* sock = client->socket())
                 sock->sendFileAndControlData(bytesPerTick, 1);
         });
     });
 
     // 1. Connect with encryption
-    MockDownloader mock;
+    MockPeerSocket mock;
     mock.setObfuscationConfig(thePrefs.obfuscationConfig());
     mock.setConnectionEncryption(true, thePrefs.userHash().data(), false);
-    mock.connectToHost(QHostAddress::LocalHost, m_listenSocket->serverPort());
+    mock.connectToHost(QHostAddress::LocalHost, m_pipe.listenSocket->serverPort());
     QVERIFY(mock.waitForConnected(5000));
     QTRY_VERIFY_WITH_TIMEOUT(mock.isEncryptionLayerReady(), 5000);
 
@@ -659,7 +340,7 @@ void tst_MockPeerUpload::uploadFlow_longDurationRateLimited()
            static_cast<unsigned long long>(totalVerified), roundsSent);
 
     // Restart the default process timer for cleanup
-    m_processTimer.start(100);
+    m_pipe.processTimer.start(100);
 }
 
 // ---------------------------------------------------------------------------
@@ -670,7 +351,7 @@ void tst_MockPeerUpload::uploadFlow_throttlerEnforcesSpeedLimit()
 {
     // Stop the default process timer (it manually flushes data — we want the
     // real UploadBandwidthThrottler to drive sends instead).
-    m_processTimer.stop();
+    m_pipe.processTimer.stop();
 
     // Configure upload speed limit.
     // 500 KB/s × 30s = 15 MB = 73% of 20MB file, comfortably under 100%.
@@ -685,16 +366,16 @@ void tst_MockPeerUpload::uploadFlow_throttlerEnforcesSpeedLimit()
     // Wire up and start the REAL upload bandwidth throttler.
     // EMSocket::send() detects calls from the throttler's background thread
     // and uses native ::send() instead of Qt's write(), making this thread-safe.
-    m_uploadQueue->setThrottler(m_throttler);
-    m_throttler->setUploadQueue(m_uploadQueue);
-    m_throttler->setDiskIOThread(m_diskIO);
-    m_throttler->start();
+    m_pipe.uploadQueue->setThrottler(m_pipe.throttler);
+    m_pipe.throttler->setUploadQueue(m_pipe.uploadQueue);
+    m_pipe.throttler->setDiskIOThread(m_pipe.diskIO);
+    m_pipe.throttler->start();
 
     // 1. Connect with encryption
-    MockDownloader mock;
+    MockPeerSocket mock;
     mock.setObfuscationConfig(thePrefs.obfuscationConfig());
     mock.setConnectionEncryption(true, thePrefs.userHash().data(), false);
-    mock.connectToHost(QHostAddress::LocalHost, m_listenSocket->serverPort());
+    mock.connectToHost(QHostAddress::LocalHost, m_pipe.listenSocket->serverPort());
     QVERIFY(mock.waitForConnected(5000));
 
     // Increase mock receive buffer to prevent TCP backpressure stalling
@@ -731,8 +412,8 @@ void tst_MockPeerUpload::uploadFlow_throttlerEnforcesSpeedLimit()
 
     QTimer processTimer;
     connect(&processTimer, &QTimer::timeout, this, [this, &mock, &nextOffset, &prevMockBytes, fileSize] {
-        m_uploadQueue->process();
-        m_listenSocket->process();
+        m_pipe.uploadQueue->process();
+        m_pipe.listenSocket->process();
 
         // Request new blocks when the mock has received data from the previous round.
         // Keep 2 rounds (6 blocks) ahead to avoid pipeline stalls.
@@ -844,14 +525,14 @@ void tst_MockPeerUpload::uploadFlow_throttlerEnforcesSpeedLimit()
            samplesInRange, samplesChecked, lowerBound, upperBound, expectedBytesPerSec);
 
     // Cleanup: stop throttler and disconnect from queue
-    m_throttler->endThread();
-    m_uploadQueue->setThrottler(nullptr);
+    m_pipe.throttler->endThread();
+    m_pipe.uploadQueue->setThrottler(nullptr);
 
     // Recreate throttler for potential future tests
-    m_throttler = new UploadBandwidthThrottler(this);
+    m_pipe.throttler = new UploadBandwidthThrottler(this);
 
     // Restart default process timer for cleanup
-    m_processTimer.start(100);
+    m_pipe.processTimer.start(100);
 }
 
 // ---------------------------------------------------------------------------
@@ -872,7 +553,7 @@ void tst_MockPeerUpload::uploadFlow_throttlerEnforcesSpeedLimit()
 
 void tst_MockPeerUpload::uploadFlow_unlimitedIsNotTrickled()
 {
-    m_processTimer.stop();
+    m_pipe.processTimer.stop();
 
     constexpr int measureSec = 8;
     // ~190 KB/s averaged over the window: >3x the trickle ceiling, and a small fraction
@@ -882,16 +563,16 @@ void tst_MockPeerUpload::uploadFlow_unlimitedIsNotTrickled()
     thePrefs.setMaxUpload(0);   // the GUI's "Unlimited"
     QCOMPARE(thePrefs.maxUploadLimit(), UNLIMITED);
 
-    m_uploadQueue->setThrottler(m_throttler);
-    m_throttler->setUploadQueue(m_uploadQueue);
-    m_throttler->setDiskIOThread(m_diskIO);
-    m_throttler->start();
+    m_pipe.uploadQueue->setThrottler(m_pipe.throttler);
+    m_pipe.throttler->setUploadQueue(m_pipe.uploadQueue);
+    m_pipe.throttler->setDiskIOThread(m_pipe.diskIO);
+    m_pipe.throttler->start();
 
     // 1. Connect with encryption
-    MockDownloader mock;
+    MockPeerSocket mock;
     mock.setObfuscationConfig(thePrefs.obfuscationConfig());
     mock.setConnectionEncryption(true, thePrefs.userHash().data(), false);
-    mock.connectToHost(QHostAddress::LocalHost, m_listenSocket->serverPort());
+    mock.connectToHost(QHostAddress::LocalHost, m_pipe.listenSocket->serverPort());
     QVERIFY(mock.waitForConnected(5000));
 
     {
@@ -925,8 +606,8 @@ void tst_MockPeerUpload::uploadFlow_unlimitedIsNotTrickled()
 
     QTimer processTimer;
     connect(&processTimer, &QTimer::timeout, this, [this, &mock, &nextOffset, &prevMockBytes, fileSize] {
-        m_uploadQueue->process();
-        m_listenSocket->process();
+        m_pipe.uploadQueue->process();
+        m_pipe.listenSocket->process();
 
         uint64 curBytes = mock.totalDataBytes();
         if (curBytes > prevMockBytes || nextOffset == 0) {
@@ -979,11 +660,11 @@ void tst_MockPeerUpload::uploadFlow_unlimitedIsNotTrickled()
                  .arg(totalReceived).arg(elapsedMs).arg(minTotalBytes)));
 
     // Cleanup: stop throttler and disconnect from queue
-    m_throttler->endThread();
-    m_uploadQueue->setThrottler(nullptr);
-    m_throttler = new UploadBandwidthThrottler(this);
+    m_pipe.throttler->endThread();
+    m_pipe.uploadQueue->setThrottler(nullptr);
+    m_pipe.throttler = new UploadBandwidthThrottler(this);
 
-    m_processTimer.start(100);
+    m_pipe.processTimer.start(100);
 }
 
 // ---------------------------------------------------------------------------
@@ -1138,33 +819,7 @@ std::unique_ptr<Packet> tst_MockPeerUpload::buildRequestParts(
 
 void tst_MockPeerUpload::cleanupTestCase()
 {
-    m_processTimer.stop();
-
-    if (m_listenSocket)
-        m_listenSocket->stopListening();
-
-    if (m_diskIO) {
-        m_diskIO->endThread();
-        m_diskIO->wait(5000);
-    }
-
-    // Throttler was never started — no need to endThread/wait
-
-    // Reset all globals
-    theApp.uploadQueue = nullptr;
-    theApp.sharedFileList = nullptr;
-    theApp.knownFileList = nullptr;
-    theApp.clientList = nullptr;
-    theApp.listenSocket = nullptr;
-    theApp.uploadBandwidthThrottler = nullptr;
-    delete theApp.clientCredits;
-    theApp.clientCredits = nullptr;
-
-    delete m_knownFiles;
-    m_knownFiles = nullptr;
-
-    delete m_tmpDir;
-    m_tmpDir = nullptr;
+    m_pipe.teardown();
 }
 
 QTEST_MAIN(tst_MockPeerUpload)

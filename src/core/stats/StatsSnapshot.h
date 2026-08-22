@@ -182,6 +182,18 @@ struct StatsSnapshot {
     qint64 cumUpFromFile = 0;
     qint64 cumUpFromPartfile = 0;
 
+    // --- HTTP Cache ---
+    qint64 sesHttpCachePublished = 0;   ///< ciphertext bytes pushed to the cache
+    qint64 sesHttpCacheFetched = 0;     ///< plaintext bytes pulled back out
+    qint64 sesHttpCacheSaved = 0;       ///< upstream not spent thanks to it
+    qint64 sesHttpCacheChunksUp = 0;
+    qint64 sesHttpCacheChunksDown = 0;
+    qint64 cumHttpCachePublished = 0;
+    qint64 cumHttpCacheFetched = 0;
+    qint64 cumHttpCacheSaved = 0;
+    qint64 cumHttpCacheChunksUp = 0;
+    qint64 cumHttpCacheChunksDown = 0;
+
     // --- Cumulative sessions ---
     qint64 cumUpSuccessful = 0;
     qint64 cumUpFailed = 0;

@@ -10,6 +10,7 @@
 #include "client/ClientList.h"
 #include "app/AppContext.h"
 #include "crypto/FileIdentifier.h"
+#include "files/Collection.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
@@ -32,11 +33,14 @@ namespace eMule {
 // score — MFC UploadClient.cpp:182-233
 // ===========================================================================
 
-uint32 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue) const
+uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue) const
 {
-    Q_UNUSED(isDownloading);
-
     if (!m_uploadFile)
+        return 0;
+
+    // A URL client has no credits and never competes for a queue slot.
+    // MFC asserts on the type here (srchybrid/UploadClient.cpp:187-190).
+    if (!m_credits)
         return 0;
 
     // Verify upload file is still shared
@@ -46,28 +50,66 @@ uint32 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
     if (m_uploadState == UploadState::Banned)
         return 0;
 
-    // Base score from wait time
+    // Base value — MFC srchybrid/UploadClient.cpp:208-227, kept in milliseconds where MFC
+    // divides by SEC2MS(1.0f). See the note on the declaration for why.
     const uint32 curTick = static_cast<uint32>(getTickCount());
-    const uint32 waitTime = m_credits ? m_credits->secureWaitStartTime(m_connectAddress.toNetworkUint32()) : 0;
-    float score = (waitTime != 0) ? static_cast<float>(curTick - waitTime) : 0.0f;
+    const uint32 waitTime = waitStartTime();
 
-    // Apply file priority and credit multiplier
-    score *= getCombinedFilePrioAndCredit();
+    // double, not float: the product below outgrows float's exact-integer range within an
+    // hour of waiting, so the low bits of two clients' scores would be rounding noise.
+    double score = (waitTime != 0) ? static_cast<double>(curTick - waitTime) : 0.0;
+
+    if (onlyBaseValue) {
+        // A fixed base, so the caller gets the credit ratio on its own instead of a second
+        // copy of the queue score. This is what feeds the "Rating" figure in Client Details.
+        score = SEC2MS(100);
+    } else if (isDownloading && m_uploadTime != 0) {
+        // isDownloading is MFC's sense: this peer is downloading *from us*, i.e. it holds a
+        // live slot. We don't want one client to download forever, so the first 15 min of
+        // download time counts as 15 min of waiting and earns a 15 min bonus while still
+        // inside that window (which avoids 20-second uploads). After it the score stops
+        // rising, because m_uploadTime is frozen at the moment the slot went live.
+        // MFC srchybrid/UploadClient.cpp:216-223.
+        //
+        // m_uploadTime == 0 would mean the flag was passed for a client that never started
+        // uploading, and the subtraction would wrap to ~UINT32_MAX; leave the waiting base
+        // alone in that case. Unreachable through isUploadingToPeer(), which implies
+        // setUploadState(Uploading) ran and stamped the time.
+        score  = static_cast<double>(m_uploadTime - waitTime);
+        score += (curTick >= m_uploadTime + MIN2MS(15)) ? MIN2MS(15) : MIN2MS(30);
+    }
+
+    // Apply the credit ratio always, the file priority only for a full score — MFC
+    // srchybrid/UploadClient.cpp:224-227. Skipping the priority is what makes the
+    // onlyBaseValue figure a different number from the queue score rather than a duplicate.
+    if (onlyBaseValue) {
+        score *= static_cast<double>(m_credits->scoreRatio(m_connectAddress.toNetworkUint32()));
+    } else {
+        // getCombinedFilePrioAndCredit() is scoreRatio * filePrioAsNumber carrying MFC's 10x
+        // scale factor, which exists only so the soft queue-limit comparison in UploadQueue
+        // works on comfortable magnitudes. This score is in milliseconds where MFC's is in
+        // seconds (MFC uses GetFilePrioAsNumber()/10.0f), so undo the factor here and keep
+        // every score value exactly as it was before the helper was aligned with MFC.
+        score *= static_cast<double>(getCombinedFilePrioAndCredit()) * 0.1;
+    }
 
     if (!onlyBaseValue && !sysValue) {
         // Friend slot bonus
         if (m_friendSlot)
-            score *= 2000.0f;
+            score *= 2000.0;
 
-        // Boost if this client is also downloading from us
+        // A peer we are also downloading from gets a one-unit nudge — enough to break a tie
+        // in its favour and nothing more. Deliberately kept, and deliberately not MFC:
+        // neither eMule nor MorphXT has this term, and the test really is the *download*
+        // sense (we are downloading from this peer), not isUploadingToPeer(). The reciprocal
+        // case is what the isDownloading base value above covers.
         if (m_downloadState == DownloadState::Downloading)
-            score += 1.0f;
+            score += 1.0;
     }
 
-    if (score > static_cast<float>(UINT32_MAX))
-        return UINT32_MAX;
-
-    return static_cast<uint32>(score);
+    // No clamp. See the note on the declaration: capping at UINT32_MAX collapsed every
+    // long-waiting client into a tie, and a friend slot reached the cap in twelve seconds.
+    return static_cast<uint64>(score);
 }
 
 // ===========================================================================
@@ -76,11 +118,14 @@ uint32 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
 
 float UpDownClient::getCombinedFilePrioAndCredit() const
 {
-    const float prioNum = static_cast<float>(filePrioAsNumber());
+    // MFC srchybrid/UploadClient.cpp:139. No credits means a URL client, which never
+    // competes for a queue slot, so it contributes 0 rather than the bare file priority —
+    // otherwise it would drag UploadQueue's average towards a value it cannot itself reach.
     if (!m_credits)
-        return prioNum;
+        return 0.0f;
 
-    return prioNum * m_credits->scoreRatio(m_connectAddress.toNetworkUint32());
+    return 10.0f * m_credits->scoreRatio(m_connectAddress.toNetworkUint32())
+                 * static_cast<float>(filePrioAsNumber());
 }
 
 // ===========================================================================
@@ -175,6 +220,33 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
 {
     if (!reqBlock)
         return;
+
+    // A peer only learns it may request parts from the OP_ACCEPTUPLOADREQ sent as the slot
+    // is activated, so anything arriving before that is either a confused or a probing
+    // client. MFC srchybrid/UploadClient.cpp:327-332.
+    if (m_uploadState != UploadState::Uploading) {
+        if (thePrefs.logUlDlEvents()) {
+            logDebug(QStringLiteral("addReqBlock: %1 requested a block without holding an "
+                                    "upload slot — dropped").arg(userName()));
+        }
+        delete reqBlock;
+        return;
+    }
+
+    // A collection slot bypassed the whole queue for one small file; it must not become a
+    // free pass for anything else. MFC srchybrid/UploadClient.cpp:335-345.
+    if (m_collectionUploadSlot && theApp.sharedFileList) {
+        const KnownFile* srcFile = theApp.sharedFileList->getFileByID(reqBlock->fileID.data());
+        if (srcFile
+            && (!Collection::hasCollectionExtension(srcFile->fileName())
+                || srcFile->fileSize() > MAXPRIORITYCOLL_SIZE))
+        {
+            logDebug(QStringLiteral("addReqBlock: %1 tried to use its collection slot for "
+                                    "%2 — dropped").arg(userName(), srcFile->fileName()));
+            delete reqBlock;
+            return;
+        }
+    }
 
     // Validate block range
     if (reqBlock->startOffset >= reqBlock->endOffset) {
@@ -506,14 +578,28 @@ uint32 UpDownClient::waitStartTime() const
 {
     if (!m_credits)
         return 0;
-    return m_credits->secureWaitStartTime(m_connectAddress.toNetworkUint32());
+
+    uint32 result = m_credits->secureWaitStartTime(m_connectAddress.toNetworkUint32());
+
+    // Only reachable when two clients with an invalid secure hash are queued at once — if at
+    // all — but score()'s uploading branch computes m_uploadTime - waitStartTime(), which
+    // would wrap to a base of nearly UINT32_MAX and hand the collision winner every slot.
+    // MFC srchybrid/UploadClient.cpp:665-672.
+    if (result > m_uploadTime && isUploadingToPeer()) {
+        result = m_uploadTime - 1;
+        if (thePrefs.verbose()) {
+            logDebug(QStringLiteral("Warning: UpDownClient::waitStartTime() waittime collision (%1)")
+                         .arg(userName()));
+        }
+    }
+    return result;
 }
 
 uint32 UpDownClient::getWaitTimeDelay() const
 {
     if (!m_credits)
         return 0;
-    uint32 wst = m_credits->secureWaitStartTime(m_connectAddress.toNetworkUint32());
+    uint32 wst = waitStartTime();
     if (wst == 0)
         return 0;
     // MFC: freeze waited time once upload starts (GetWaitTime = m_dwUploadTime - GetWaitStartTime)
@@ -527,6 +613,12 @@ void UpDownClient::setWaitStartTime()
 {
     if (m_credits)
         m_credits->setSecWaitStartTime(m_connectAddress.toNetworkUint32());
+}
+
+void UpDownClient::restoreWaitStartTime(uint32 elapsedMs)
+{
+    if (m_credits)
+        m_credits->restoreWaitStartTime(m_connectAddress.toNetworkUint32(), elapsedMs);
 }
 
 void UpDownClient::clearWaitStartTime()
@@ -565,11 +657,13 @@ int UpDownClient::filePrioAsNumber() const
         return 0;
 
     switch (m_uploadFile->upPriority()) {
-    case kPrVeryLow:  return 2;   // 0.2 * 10
-    case kPrLow:      return 6;   // 0.6 * 10
-    case kPrNormal:   return 7;   // 0.7 * 10
-    case kPrHigh:     return 9;   // 0.9 * 10
-    case kPrVeryHigh: return 10;  // 1.0 * 10
+    // Values are MFC's verbatim (srchybrid/UploadClient.cpp:158-175). Release priority is
+    // deliberately double High rather than a hair above it — 18, not 10.
+    case kPrVeryLow:  return 2;
+    case kPrLow:      return 6;
+    case kPrNormal:   return 7;
+    case kPrHigh:     return 9;
+    case kPrVeryHigh: return 18;
     default:          return 7;   // Normal default
     }
 }

@@ -610,6 +610,12 @@ void Statistics::rebaseCumulative(const Preferences& prefs)
 
     b.upFromFile = prefs.cumUpFromFile();
     b.upFromPartfile = prefs.cumUpFromPartfile();
+
+    b.httpCacheBytesPublished = prefs.cumHttpCacheBytesPublished();
+    b.httpCacheBytesFetched = prefs.cumHttpCacheBytesFetched();
+    b.httpCacheBytesSaved = prefs.cumHttpCacheBytesSaved();
+    b.httpCacheChunksPublished = prefs.cumHttpCacheChunksPublished();
+    b.httpCacheChunksFetched = prefs.cumHttpCacheChunksFetched();
 }
 
 Statistics::CumulativeTotals
@@ -631,6 +637,12 @@ Statistics::cumulativeTotals(const ExternalSessionCounters& ext) const
     t.connPeak = std::max(t.connPeak, ext.connPeak);
     t.connMaxLimitReached += ext.connMaxLimitReached;
     t.connReconnects += m_reconnects;
+
+    t.httpCacheBytesPublished += ext.httpCacheBytesPublished;
+    t.httpCacheBytesFetched += ext.httpCacheBytesFetched;
+    t.httpCacheBytesSaved += ext.httpCacheBytesSaved;
+    t.httpCacheChunksPublished += ext.httpCacheChunksPublished;
+    t.httpCacheChunksFetched += ext.httpCacheChunksFetched;
 
     t.runTime += uptimeSecs();
     t.transferTime += transferTime();
@@ -716,6 +728,12 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
     prefs.setCumDownSuccessfulSessions(t.downSuccessfulSessions);
     prefs.setCumDownFailedSessions(t.downFailedSessions);
     prefs.setCumDownCompletedFiles(t.downCompletedFiles);
+
+    prefs.setCumHttpCacheBytesPublished(t.httpCacheBytesPublished);
+    prefs.setCumHttpCacheBytesFetched(t.httpCacheBytesFetched);
+    prefs.setCumHttpCacheBytesSaved(t.httpCacheBytesSaved);
+    prefs.setCumHttpCacheChunksPublished(t.httpCacheChunksPublished);
+    prefs.setCumHttpCacheChunksFetched(t.httpCacheChunksFetched);
 
     prefs.setCumConnPeak(t.connPeak);
     prefs.setCumConnMaxLimitReached(t.connMaxLimitReached);

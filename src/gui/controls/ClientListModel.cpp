@@ -4,6 +4,9 @@
 
 #include "controls/ClientListModel.h"
 
+#include "client/ClientStateDefs.h"
+
+#include <QColor>
 #include <QIcon>
 #include <QPainter>
 #include <QPixmap>
@@ -102,6 +105,7 @@ QString sourceFromStr(int sf)
     case 3:  return QObject::tr("Passive");       // SourceFrom::Passive
     case 4:  return QObject::tr("Link");          // SourceFrom::Link
     case 7:  return QObject::tr("SLS");           // SourceFrom::SLS (saved source list)
+    case 8:  return QObject::tr("HTTP Cache");    // SourceFrom::HttpCache
     default: return QStringLiteral("?");
     }
 }
@@ -231,6 +235,13 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::DecorationRole && index.column() == 0)
         return clientSoftwareIcon(c.softwareId, c.hasCredit, c.isFriend);
+
+    // Same teal the downloads list uses for an HTTP Cache source, so the two
+    // halves of the feature read the same way. MFC gave PeerCache its own bar
+    // for exactly this reason.
+    if (role == Qt::ForegroundRole
+        && c.sourceFrom == static_cast<int>(SourceFrom::HttpCache))
+        return QColor(0x00, 0x99, 0x99);
 
     return {};
 }

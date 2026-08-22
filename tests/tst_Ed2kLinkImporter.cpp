@@ -10,6 +10,8 @@
 #include <QtTest>
 
 using eMule::Ed2kLinkImporter;
+
+using eMule::Ed2kLinkImporter;
 using KnownType = eMule::SearchFile::KnownType;
 
 class TestEd2kLinkImporter : public QObject {
@@ -28,6 +30,9 @@ private slots:
 
     void splitLinks_data();
     void splitLinks();
+
+    void configLinkIsRoutedNotInvalid();
+    void malformedConfigLinkIsRedacted();
 };
 
 void TestEd2kLinkImporter::shouldSkip_data()
@@ -161,6 +166,52 @@ void TestEd2kLinkImporter::splitLinks()
     QFETCH(QStringList, expected);
 
     QCOMPARE(Ed2kLinkImporter::splitLinks(text), expected);
+}
+
+// ---------------------------------------------------------------------------
+// HTTP Cache configuration links
+//
+// The importer is the single funnel every paste, click and clipboard hit goes
+// through, so this is where an ed2k://|httpcache| link has to stop being treated
+// as an unparseable file link. With no IPC client there is nothing to send to,
+// which is exactly what makes the routing decision observable on its own.
+// ---------------------------------------------------------------------------
+
+void TestEd2kLinkImporter::configLinkIsRoutedNotInvalid()
+{
+    const QString link = QStringLiteral(
+        "ed2k://|httpcache|Cache|https://cache.example.com|1f4b9c02d7e35a68|k=default|/");
+
+    Ed2kLinkImporter::Result result;
+    Ed2kLinkImporter::importLinks(link, /*ipc=*/nullptr, /*parent=*/nullptr,
+                                  Ed2kLinkImporter::Source::Manual,
+                                  Ed2kLinkImporter::Prompt::Silent,
+                                  [&result](const Ed2kLinkImporter::Result& r) { result = r; });
+
+    QCOMPARE(result.httpCacheConfigs, 1);
+    QCOMPARE(result.added, 0);          // it starts no download, so no tab switch
+    QVERIFY(result.invalid.isEmpty());  // and it is not "a link that could not be parsed"
+}
+
+void TestEd2kLinkImporter::malformedConfigLinkIsRedacted()
+{
+    // %ZZ is not an escape, so this link is refused whole — and the refusal is
+    // reported in a dialog and a log line, which is the one place a secret could
+    // still leak out of a link that was never applied.
+    const QString secret = QStringLiteral("1f4b9c02d7e35a68");
+    const QString link =
+        QStringLiteral("ed2k://|httpcache|Cache|https://cache.example.com|%1|k=a%ZZ|/").arg(secret);
+
+    Ed2kLinkImporter::Result result;
+    Ed2kLinkImporter::importLinks(link, nullptr, nullptr,
+                                  Ed2kLinkImporter::Source::Manual,
+                                  Ed2kLinkImporter::Prompt::Silent,
+                                  [&result](const Ed2kLinkImporter::Result& r) { result = r; });
+
+    QCOMPARE(result.httpCacheConfigs, 0);
+    QCOMPARE(result.invalid.size(), 1);
+    QVERIFY2(!result.invalid.first().contains(secret), qPrintable(result.invalid.first()));
+    QVERIFY(result.invalid.first().contains(QStringLiteral("cache.example.com")));
 }
 
 QTEST_MAIN(TestEd2kLinkImporter)

@@ -285,6 +285,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_maxHalfOpenSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_serverKeepAliveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_useCreditSystemCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_rememberUploadQueueCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_filterLANIPsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showExtControlsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_a4afSaveCpuCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -2641,6 +2642,14 @@ QWidget* OptionsDialog::createExtendedPage()
     m_useCreditSystemCheck = new QCheckBox(tr("Use credit system (reward uploaders)"), scrollWidget);
     scrollLayout->addWidget(m_useCreditSystemCheck);
 
+    m_rememberUploadQueueCheck = new QCheckBox(
+        tr("Remember the upload queue between restarts"), scrollWidget);
+    m_rememberUploadQueueCheck->setToolTip(
+        tr("Stores the longest-waiting clients in your upload queue and puts them back, with "
+           "the places they had earned, when eMule starts again. They are not contacted on "
+           "startup — they simply wait their turn as usual."));
+    scrollLayout->addWidget(m_rememberUploadQueueCheck);
+
 #ifdef Q_OS_WIN
     m_winFirewallCheck = new QCheckBox(
         tr("Open/close ports on WinXP firewall when starting/exiting eMule"), scrollWidget);
@@ -3960,6 +3969,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_fileBufferSlider->value()) * 16384); // slider to bytes
         req.append(QStringLiteral("useCreditSystem"));
         req.append(m_useCreditSystemCheck->isChecked());
+        req.append(QStringLiteral("rememberUploadQueue"));
+        req.append(m_rememberUploadQueueCheck->isChecked());
         req.append(QStringLiteral("a4afSaveCpu"));
         req.append(m_a4afSaveCpuCheck->isChecked());
         req.append(QStringLiteral("autoArchivePreviewStart"));
@@ -4279,6 +4290,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setPortMapLeaseSecs(static_cast<uint32>(m_portMapLeaseSpin->value()));
         thePrefs.setFileBufferSize(static_cast<uint32>(m_fileBufferSlider->value()) * 16384);
         thePrefs.setUseCreditSystem(m_useCreditSystemCheck->isChecked());
+        thePrefs.setRememberUploadQueue(m_rememberUploadQueueCheck->isChecked());
         thePrefs.setA4afSaveCpu(m_a4afSaveCpuCheck->isChecked());
         thePrefs.setAutoArchivePreviewStart(!m_disableArchPreviewCheck->isChecked());
         thePrefs.setEd2kHostname(m_ed2kHostnameEdit->text());
@@ -4532,6 +4544,10 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_maxHalfOpenSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxHalfConnections")).toInteger(9)));
     m_serverKeepAliveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("serverKeepAliveTimeout")).toInteger(0)) / 60000);
     m_useCreditSystemCheck->setChecked(prefs.value(QStringLiteral("useCreditSystem")).toBool(true));
+    // toBool(true), not bare toBool(): the default is on, and an older daemon that does not
+    // send the key at all must not read back as "user turned it off".
+    m_rememberUploadQueueCheck->setChecked(
+        prefs.value(QStringLiteral("rememberUploadQueue")).toBool(true));
     m_filterLANIPsCheck->setChecked(prefs.value(QStringLiteral("filterLANIPs")).toBool(true));
     m_showExtControlsCheck->setChecked(prefs.value(QStringLiteral("showExtControls")).toBool());
     m_a4afSaveCpuCheck->setChecked(prefs.value(QStringLiteral("a4afSaveCpu")).toBool());

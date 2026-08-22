@@ -4,8 +4,11 @@
 
 #include "controls/DownloadListModel.h"
 
+#include "client/ClientStateDefs.h"
+
 #include "utils/OtherFunctions.h"
 
+#include <QColor>
 #include <QDateTime>
 
 namespace eMule {
@@ -89,6 +92,7 @@ QString sourceFromDisplay(int sourceFrom)
     case 3:  return QObject::tr("Passive");         // SourceFrom::Passive
     case 4:  return QObject::tr("Link");            // SourceFrom::Link
     case 7:  return QObject::tr("SLS");             // SourceFrom::SLS (saved source list)
+    case 8:  return QObject::tr("HTTP Cache");      // SourceFrom::HttpCache
     default: return QObject::tr("Unknown");
     }
 }
@@ -264,6 +268,14 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             default:               return {};
             }
         }
+
+        // A source fetching over HTTP Cache is not costing the uploader anything,
+        // which is worth seeing at a glance — MFC gave PeerCache its own bar for
+        // the same reason. Teal, distinct from the blue used for the connected
+        // server and from the plain text of ordinary ed2k sources.
+        if (role == Qt::ForegroundRole
+            && s.sourceFrom == static_cast<int>(SourceFrom::HttpCache))
+            return QColor(0x00, 0x99, 0x99);
 
         if (role == PartMapRole && index.column() == ColProgress)
             return s.partMap;

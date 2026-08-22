@@ -30,6 +30,14 @@ void CliIpcClient::sendCommand(const QString& host, uint16_t port,
 
         connect(m_connection, &Ipc::IpcConnection::messageReceived,
                 this, [this](const Ipc::IpcMessage& msg) {
+            // A push event carries seqId 0 and answers nothing. The daemon starts
+            // broadcasting the moment the handshake lands, so without this one
+            // arriving first is read as the command's reply — and since an
+            // unrecognised message counts as success below, a refused command
+            // would print "OK" and exit 0.
+            if (m_handshaked && msg.seqId() == 0)
+                return;
+
             if (!m_handshaked)
                 onHandshakeResponse(msg);
             else

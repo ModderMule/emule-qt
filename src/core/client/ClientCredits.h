@@ -89,6 +89,11 @@ public:
 
     uint32 secureWaitStartTime(uint32 forIP);
     void setSecWaitStartTime(uint32 forIP);
+    /// Restore a wait that began @p elapsedMs ago, for the upload queue store's load path.
+    /// Everything else must use setSecWaitStartTime(), which always starts the clock now —
+    /// this one exists because the wait clock is a process-relative tick that means nothing
+    /// after a restart, so a persisted queue position has to be rebased onto the live clock.
+    void restoreWaitStartTime(uint32 forIP, uint32 elapsedMs);
     void clearWaitStartTime();
 
     uint32 cryptRndChallengeFor  = 0;

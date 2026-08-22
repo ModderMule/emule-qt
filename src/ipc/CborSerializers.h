@@ -198,7 +198,7 @@ namespace eMule::Ipc {
 
     // Determine actively downloading part
     uint32 activePart = UINT32_MAX;
-    if (c.isDownloading() && c.sessionDown() > 0 && c.lastBlockOffset() != UINT64_MAX)
+    if (c.isDownloadingFromPeer() && c.sessionDown() > 0 && c.lastBlockOffset() != UINT64_MAX)
         activePart = static_cast<uint32>(c.lastBlockOffset() / PARTSIZE);
 
     // For complete sources, partStatus is empty but they have all parts
@@ -355,9 +355,18 @@ namespace eMule::Ipc {
         m.insert(QStringLiteral("scoreRatio"),      1.0);
     }
 
-    // Queue score
-    m.insert(QStringLiteral("score"),  static_cast<qint64>(c.score(false, c.isDownloading(), false)));
-    m.insert(QStringLiteral("rating"), static_cast<qint64>(c.score(false, c.isDownloading(), true)));
+    // Queue score — MFC ClientDetailDialog.cpp:159,166 (IDC_DRATING / IDC_DSCORE).
+    //
+    // isUploadingToPeer() is MFC's IsDownloading(): "this peer is downloading from us". NOT
+    // isDownloadingFromPeer(), which means the opposite and is what this used to pass.
+    //
+    // score() works in milliseconds where MFC's GetScore works in seconds (it divides by
+    // SEC2MS(1.0f) at srchybrid/UploadClient.cpp:225). Both of these are display-only fields
+    // shown verbatim in Client Details, so convert at the boundary rather than distorting the
+    // queue's internal scale.
+    const bool holdsSlot = c.isUploadingToPeer();
+    m.insert(QStringLiteral("score"),  static_cast<qint64>(c.score(false, holdsSlot, false) / 1000));
+    m.insert(QStringLiteral("rating"), static_cast<qint64>(c.score(false, holdsSlot, true) / 1000));
 
     // Friend slot
     m.insert(QStringLiteral("friendSlot"), c.friendSlot());

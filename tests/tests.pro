@@ -160,5 +160,12 @@ SOURCES += \
     tst_UploadDiskIOThread.cpp \
     tst_UploadQueue.cpp \
     tst_UPnPManager.cpp \
+    tst_AesCbc.cpp \
+    tst_HttpCacheOffer.cpp \
+    tst_HttpCacheCorruptBan.cpp \
+    tst_HttpCacheResume.cpp \
+    tst_HttpCachePublish.cpp \
+    tst_HttpCacheMultiPeer.cpp \
+    tst_HttpCacheConfigLink.cpp \
     tst_URLClient.cpp \
     tst_WebServer.cpp

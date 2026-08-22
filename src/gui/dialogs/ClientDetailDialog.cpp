@@ -177,8 +177,10 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         const double scoreRatio = dbl(d, QLatin1StringView("scoreRatio"));
         addRow(form, tr("DL/UP Modifier"), QString::number(scoreRatio, 'f', 1));
 
+        // MFC formats IDC_DRATING as %.1f from an integer score (ClientDetailDialog.cpp:159),
+        // so it always renders one trailing zero. Match it.
         const auto rating = num(d, QLatin1StringView("rating"));
-        addRow(form, tr("Rating (Total)"), QString::number(rating));
+        addRow(form, tr("Rating (Total)"), QString::number(static_cast<double>(rating), 'f', 1));
 
         const auto score = num(d, QLatin1StringView("score"));
         addRow(form, tr("Upload Queue Score"), QString::number(score));

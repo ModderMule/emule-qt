@@ -7,3 +7,8 @@ out/
 *.dmg
 *.zip
 *.app
+
+# Rig artefacts: generated test files, per-node crash dirs and captured logs.
+docker/*/seed/
+docker/*/crashes/
+docker/*/nodes.log

@@ -5,6 +5,7 @@
 #include "stats/StatsSnapshot.h"
 
 #include "app/AppContext.h"
+#include "httpcache/HttpCacheManager.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/PartFile.h"
@@ -215,6 +216,13 @@ Statistics::ExternalSessionCounters collectExternalSessionCounters()
         ext.connPeak = ls->peakConnections();
         ext.connMaxLimitReached = ls->maxConnectionReached();
     }
+    if (const auto* hc = theApp.httpCache) {
+        ext.httpCacheBytesPublished = hc->sessionBytesPublished();
+        ext.httpCacheBytesFetched = hc->sessionBytesFetched();
+        ext.httpCacheBytesSaved = hc->sessionBytesSaved();
+        ext.httpCacheChunksPublished = hc->sessionChunksPublished();
+        ext.httpCacheChunksFetched = hc->sessionChunksFetched();
+    }
 
     return ext;
 }
@@ -330,6 +338,17 @@ StatsSnapshot collectStatsSnapshot()
         out.sesUpFromFile = static_cast<qint64>(s->sesUpFromFile());
         out.sesUpFromPartfile = static_cast<qint64>(s->sesUpFromPartfile());
 
+        // HTTP Cache session counters live in the manager, not in Statistics —
+        // same reason as the other external counters: Statistics never reaches
+        // into theApp, the collector brings the numbers to it.
+        if (const auto* hc = theApp.httpCache) {
+            out.sesHttpCachePublished = static_cast<qint64>(hc->sessionBytesPublished());
+            out.sesHttpCacheFetched = static_cast<qint64>(hc->sessionBytesFetched());
+            out.sesHttpCacheSaved = static_cast<qint64>(hc->sessionBytesSaved());
+            out.sesHttpCacheChunksUp = static_cast<qint64>(hc->sessionChunksPublished());
+            out.sesHttpCacheChunksDown = static_cast<qint64>(hc->sessionChunksFetched());
+        }
+
         out.sesCompressionGain = static_cast<qint64>(s->sesCompressionGain());
         out.sesCorruptionLoss = static_cast<qint64>(s->sesCorruptionLoss());
         out.sesIchPartsSaved = static_cast<qint64>(s->sesIchPartsSaved());
@@ -357,6 +376,12 @@ StatsSnapshot collectStatsSnapshot()
         out.cumDownPortOther = static_cast<qint64>(cum.downPortOther);
         out.cumUpFromFile = static_cast<qint64>(cum.upFromFile);
         out.cumUpFromPartfile = static_cast<qint64>(cum.upFromPartfile);
+
+        out.cumHttpCachePublished = static_cast<qint64>(cum.httpCacheBytesPublished);
+        out.cumHttpCacheFetched = static_cast<qint64>(cum.httpCacheBytesFetched);
+        out.cumHttpCacheSaved = static_cast<qint64>(cum.httpCacheBytesSaved);
+        out.cumHttpCacheChunksUp = static_cast<qint64>(cum.httpCacheChunksPublished);
+        out.cumHttpCacheChunksDown = static_cast<qint64>(cum.httpCacheChunksFetched);
 
         out.cumUpSuccessful = static_cast<qint64>(cum.upSuccessfulSessions);
         out.cumUpFailed = static_cast<qint64>(cum.upFailedSessions);
@@ -678,6 +703,17 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("sesUpFromPartfile"), s.sesUpFromPartfile);
     put(QStringLiteral("cumUpFromFile"), s.cumUpFromFile);
     put(QStringLiteral("cumUpFromPartfile"), s.cumUpFromPartfile);
+
+    put(QStringLiteral("sesHttpCachePublished"), s.sesHttpCachePublished);
+    put(QStringLiteral("sesHttpCacheFetched"), s.sesHttpCacheFetched);
+    put(QStringLiteral("sesHttpCacheSaved"), s.sesHttpCacheSaved);
+    put(QStringLiteral("sesHttpCacheChunksUp"), s.sesHttpCacheChunksUp);
+    put(QStringLiteral("sesHttpCacheChunksDown"), s.sesHttpCacheChunksDown);
+    put(QStringLiteral("cumHttpCachePublished"), s.cumHttpCachePublished);
+    put(QStringLiteral("cumHttpCacheFetched"), s.cumHttpCacheFetched);
+    put(QStringLiteral("cumHttpCacheSaved"), s.cumHttpCacheSaved);
+    put(QStringLiteral("cumHttpCacheChunksUp"), s.cumHttpCacheChunksUp);
+    put(QStringLiteral("cumHttpCacheChunksDown"), s.cumHttpCacheChunksDown);
 
     // Cumulative sessions
     put(QStringLiteral("cumUpSuccessful"), s.cumUpSuccessful);

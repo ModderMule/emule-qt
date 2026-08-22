@@ -23,6 +23,11 @@ public:
     void sendCommand(const QString& host, uint16_t port,
                      Ipc::IpcMessage command);
 
+    /// How long to wait for the daemon's reply. The default suits a command the
+    /// daemon answers out of memory; one that makes it talk to a third party
+    /// needs longer.
+    void setTimeoutMs(int ms) { m_timeout.setInterval(ms); }
+
 private:
     void onHandshakeResponse(const Ipc::IpcMessage& msg);
     void onCommandResponse(const Ipc::IpcMessage& msg);

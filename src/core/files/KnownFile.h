@@ -95,6 +95,25 @@ public:
     [[nodiscard]] uint16 partCount() const { return m_partCount; }
     [[nodiscard]] uint16 ed2kPartCount() const { return m_ed2kPartCount; }
 
+    /// Path of the file that actually holds the bytes.
+    ///
+    /// For a completed share that is the file itself; a PartFile overrides it
+    /// with its `.part` temp file. Anything reading file data by offset —
+    /// UploadDiskIOThread, HttpCachePublisher — goes through this rather than
+    /// re-deriving the `.part.met` → `.part` rule.
+    [[nodiscard]] virtual QString dataFilePath() const { return filePath(); }
+
+    /// Do we hold every byte of part @p part?
+    ///
+    /// Always true for a completed shared file — a KnownFile has no gaps by
+    /// definition. PartFile overrides it with its gap list. Callers that need
+    /// "can I read this part off disk right now" (HttpCacheManager does) ask
+    /// this instead of branching on the concrete type.
+    [[nodiscard]] virtual bool isPartComplete(uint32 part) const
+    {
+        return part < m_partCount;
+    }
+
     // Upload priority
     [[nodiscard]] uint8 upPriority() const { return m_upPriority; }
     void setUpPriority(uint8 priority, bool save = true);

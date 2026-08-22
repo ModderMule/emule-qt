@@ -109,7 +109,8 @@ enum class SourceFrom : uint8 {
     Link             = 4,
     // 5 and 6 are MorphXT's source-cache tags (SF_CACHE_SERVER / SF_CACHE_SOURCE_EXCHANGE,
     // ClientStateDefs.h:114-116). Left unused so SLS keeps the value MorphXT gives it.
-    SLS              = 7   ///< restored from the on-disk source list (MorphXT SF_SLS)
+    SLS              = 7,  ///< restored from the on-disk source list (MorphXT SF_SLS)
+    HttpCache        = 8   ///< transient HTTP Cache chunk fetch, not a real ed2k source
 };
 
 enum class ChatCaptchaState : uint8 {

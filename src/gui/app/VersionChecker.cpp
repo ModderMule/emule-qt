@@ -3,7 +3,7 @@
 /// @brief HTTP-based version checker implementation.
 
 #include "app/VersionChecker.h"
-#include "app/AppConfig.h"   // src/core/app — src/gui/app has no AppConfig.h
+#include "net/HttpDefaults.h"   // src/core/net
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
@@ -195,8 +195,7 @@ void VersionChecker::start(bool manual)
     if (m_inFlight)
         return;   // an hourly tick must not stack requests behind a slow reply
 
-    QNetworkRequest req{QUrl(manifestUrl())};
-    req.setHeader(QNetworkRequest::UserAgentHeader, eMule::kUserAgent);
+    QNetworkRequest req = eMule::Http::makeRequest(QUrl(manifestUrl()));
 
     QNetworkReply* reply = m_nam->get(req);
     // Per-reply, not a member: a menu check firing while an hourly one is in flight

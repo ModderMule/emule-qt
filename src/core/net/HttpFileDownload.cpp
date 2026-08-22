@@ -3,7 +3,7 @@
 /// @brief Shared config-file downloader with transparent archive unwrapping.
 
 #include "net/HttpFileDownload.h"
-#include "app/AppConfig.h"
+#include "net/HttpDefaults.h"
 #include "utils/Log.h"
 
 #include <QEventLoop>
@@ -21,14 +21,10 @@ namespace {
 [[nodiscard]] QNetworkRequest makeRequest(const QUrl& url,
                                           const HttpFileDownload::Options& opts)
 {
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, kUserAgent);
+    // List mirrors redirect constantly (http→https, apex→www); the shared defaults
+    // carry the redirect rule that keeps such a hop from downgrading to plain http.
+    QNetworkRequest request = Http::makeRequest(url);
     request.setTransferTimeout(opts.timeoutMs);
-    // List mirrors redirect constantly (http→https, apex→www). Qt 6 follows redirects by
-    // default; state it so the behaviour does not depend on the Qt version, and keep the
-    // "no less safe" rule so an https URL is never silently downgraded to http.
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                         QVariant::fromValue(QNetworkRequest::NoLessSafeRedirectPolicy));
     return request;
 }
 

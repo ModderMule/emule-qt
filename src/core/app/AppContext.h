@@ -28,6 +28,7 @@ class IPFilter;
 class KnownFileList;
 class ListenSocket;
 class GlobalSearchScheduler;
+class HttpCacheManager;
 class SearchList;
 class ServerConnect;
 class ServerList;
@@ -46,6 +47,7 @@ struct AppContext {
     ClientUDPSocket* clientUDP      = nullptr;
     DownloadQueue*   downloadQueue  = nullptr;
     UploadQueue*     uploadQueue    = nullptr;
+    HttpCacheManager* httpCache     = nullptr;
     SharedFileList*  sharedFileList = nullptr;
     KnownFileList*   knownFileList  = nullptr;
     IPFilter*        ipFilter       = nullptr;

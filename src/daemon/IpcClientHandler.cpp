@@ -36,6 +36,7 @@
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadMiscUtils.h"
+#include "httpcache/HttpCacheServerProbe.h"
 #include "portmap/PortMapper.h"
 #include "kademlia/KadPrefs.h"
 #include "net/ListenSocket.h"
@@ -62,6 +63,7 @@
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QHostAddress>
+#include <QPointer>
 #include <QProcess>
 #include <QSet>
 #include <QStorageInfo>
@@ -281,6 +283,8 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::MarkSearchSpam:       handleMarkSearchSpam(msg); break;
     case IpcMsgType::ResetStats:           handleResetStats(msg); break;
     case IpcMsgType::RestoreStats:         handleRestoreStats(msg); break;
+    case IpcMsgType::ProbeHttpCacheServer: handleProbeHttpCacheServer(msg); break;
+    case IpcMsgType::ApplyHttpCacheConfig: handleApplyHttpCacheConfig(msg); break;
     case IpcMsgType::RenameSharedFile:     handleRenameSharedFile(msg); break;
     case IpcMsgType::DeleteSharedFile:     handleDeleteSharedFile(msg); break;
     case IpcMsgType::UnshareFile:          handleUnshareFile(msg); break;
@@ -1772,6 +1776,7 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("logWebServer"), thePrefs.logWebServer());
     prefs.insert(QStringLiteral("startCoreWithConsole"), thePrefs.startCoreWithConsole());
     prefs.insert(QStringLiteral("queueSize"), static_cast<qint64>(thePrefs.queueSize()));
+    prefs.insert(QStringLiteral("rememberUploadQueue"), thePrefs.rememberUploadQueue());
     // USS
     prefs.insert(QStringLiteral("dynUpEnabled"), thePrefs.dynUpEnabled());
     prefs.insert(QStringLiteral("dynUpPingTolerance"), static_cast<qint64>(thePrefs.dynUpPingTolerance()));
@@ -2680,6 +2685,106 @@ void IpcClientHandler::handleRestoreStats(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// HTTP Cache configuration links
+//
+// Both handlers below answer only once GET /v1/info has come back, which makes
+// them the only asynchronous ones in this file. Everything they touch afterwards
+// is reached through a QPointer to `this`: the handler is destroyed with its
+// connection, and a user who closes the GUI mid-probe must not take the daemon
+// with them.
+//
+// The secret never appears in a log line, an error string or a reply. See
+// docs/protocol/http-cache-spec.md §8.1.
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleProbeHttpCacheServer(const IpcMessage& msg)
+{
+    const QString baseUrl = msg.fieldString(0);
+    const QString secret  = msg.fieldString(1);
+
+    // Answered from the stored configuration, not from the server: whether this
+    // link would change anything is a local question, and asking it here is what
+    // lets the clipboard watcher stay quiet about a link that is already applied.
+    QString clean = baseUrl.trimmed();
+    while (clean.endsWith(QLatin1Char('/')))
+        clean.chop(1);
+    const bool unchanged = !clean.isEmpty()
+        && clean == thePrefs.httpCacheBaseUrl()
+        && secret == thePrefs.httpCacheApiKey()
+        && thePrefs.httpCacheEnabled()
+        && thePrefs.httpCacheAllowUpload();
+
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    const QString currentBaseUrl = thePrefs.httpCacheBaseUrl();
+
+    HttpCacheServerProbe::probe(baseUrl, this,
+        [self, seqId, unchanged, currentBaseUrl](const HttpCacheServerInfo& info) {
+            if (!self)
+                return;
+
+            QCborMap out;
+            out[QStringLiteral("ok")]                 = info.ok;
+            out[QStringLiteral("error")]              = info.error;
+            out[QStringLiteral("service")]            = info.service;
+            out[QStringLiteral("version")]            = info.version;
+            out[QStringLiteral("implementation")]     = info.implementation;
+            out[QStringLiteral("uploadRequiresAuth")] = info.uploadRequiresAuth;
+            out[QStringLiteral("maxChunkSize")]       = static_cast<qint64>(info.maxChunkSize);
+            out[QStringLiteral("currentBaseUrl")]     = currentBaseUrl;
+            out[QStringLiteral("unchanged")]          = unchanged;
+
+            self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(out)));
+        });
+}
+
+void IpcClientHandler::handleApplyHttpCacheConfig(const IpcMessage& msg)
+{
+    const QString baseUrl = msg.fieldString(0);
+    const QString secret  = msg.fieldString(1);
+
+    if (baseUrl.isEmpty() || secret.isEmpty()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(QStringLiteral("Incomplete HTTP Cache configuration"))));
+        return;
+    }
+
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+
+    // Probed again here even when the caller just probed. This is the handler
+    // that writes, so this is where "handshake before you store anything" has to
+    // hold — and --add-link reaches it without probing at all.
+    HttpCacheServerProbe::probe(baseUrl, this,
+        [self, seqId, baseUrl, secret](const HttpCacheServerInfo& info) {
+            if (!self)
+                return;
+
+            if (!info.ok) {
+                self->sendMessage(IpcMessage::makeResult(seqId, false, QCborValue(info.error)));
+                return;
+            }
+
+            thePrefs.setHttpCacheBaseUrl(baseUrl);
+            thePrefs.setHttpCacheApiKey(secret);
+            thePrefs.setHttpCacheEnabled(true);
+            thePrefs.setHttpCacheAllowUpload(true);
+            thePrefs.save();
+
+            // No restart needed: HttpCacheManager is always constructed and reads
+            // these every tick (CoreSession.cpp), and a changed baseUrl/apiKey
+            // clears any publish backoff on its own.
+            logInfo(QStringLiteral("HTTP Cache: configured for %1 (%2), uploads enabled")
+                        .arg(QUrl(baseUrl).host(),
+                             info.implementation.isEmpty() ? QStringLiteral("v%1").arg(info.version)
+                                                           : info.implementation));
+
+            self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(QString())));
+        });
+}
+
+// ---------------------------------------------------------------------------
 // handleRenameSharedFile — rename a shared file on disk
 // ---------------------------------------------------------------------------
 
@@ -3415,6 +3520,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setStartCoreWithConsole(val.toBool());
     else if (key == QStringLiteral("queueSize"))
         thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("rememberUploadQueue"))
+        thePrefs.setRememberUploadQueue(val.toBool());
     // USS
     else if (key == QStringLiteral("dynUpEnabled"))
         thePrefs.setDynUpEnabled(val.toBool());

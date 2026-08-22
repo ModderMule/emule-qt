@@ -424,6 +424,29 @@ void StatisticsPanel::buildTree()
     buildOverheadItems(downCum, m_itemDownCumOverheadTotal, m_itemDownCumOverheadFileReq,
                        m_itemDownCumOverheadSrcExch, m_itemDownCumOverheadServer, m_itemDownCumOverheadKad);
 
+    // --- HTTP Cache ---
+    // Its own branch rather than rows inside Uploads and Downloads: a cached
+    // chunk is one transfer that shows up on both sides, and "Saved" belongs to
+    // neither — it is upstream that never happened.
+    auto* httpCache = new QTreeWidgetItem(transfer, {tr("HTTP Cache")});
+    httpCache->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
+
+    auto* hcSession = new QTreeWidgetItem(httpCache, {tr("Session")});
+    hcSession->setIcon(0, detailIcon);
+    m_itemHcSesPublished = new QTreeWidgetItem(hcSession, {tr("Published: 0 Bytes")});
+    m_itemHcSesFetched = new QTreeWidgetItem(hcSession, {tr("Fetched: 0 Bytes")});
+    m_itemHcSesSaved = new QTreeWidgetItem(hcSession, {tr("Upload Saved: 0 Bytes")});
+    m_itemHcSesChunksUp = new QTreeWidgetItem(hcSession, {tr("Chunks Published: 0")});
+    m_itemHcSesChunksDown = new QTreeWidgetItem(hcSession, {tr("Chunks Fetched: 0")});
+
+    auto* hcCum = new QTreeWidgetItem(httpCache, {tr("Cumulative")});
+    hcCum->setIcon(0, detailIcon);
+    m_itemHcCumPublished = new QTreeWidgetItem(hcCum, {tr("Published: 0 Bytes")});
+    m_itemHcCumFetched = new QTreeWidgetItem(hcCum, {tr("Fetched: 0 Bytes")});
+    m_itemHcCumSaved = new QTreeWidgetItem(hcCum, {tr("Upload Saved: 0 Bytes")});
+    m_itemHcCumChunksUp = new QTreeWidgetItem(hcCum, {tr("Chunks Published: 0")});
+    m_itemHcCumChunksDown = new QTreeWidgetItem(hcCum, {tr("Chunks Fetched: 0")});
+
     // ===== Connection =====
     auto* connection = new QTreeWidgetItem(m_tree, {tr("Connection")});
     connection->setIcon(0, QIcon(QStringLiteral(":/icons/Connection.ico")));
@@ -747,6 +770,30 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
             tr("Average Upload Per Session: %1").arg(formatBytes(cumTotalUp / cumUpSucc)));
     m_itemUpCumAvgTime->setText(0,
         tr("Average Upload Time: %1").arg(formatDuration(cborInt(stats, QLatin1StringView("cumUpAvgTime")))));
+
+    // === HTTP Cache ===
+    // "Upload Saved" is the number that justifies the feature: bytes peers got
+    // that we never had to send, because one published chunk served several.
+    const auto hcBytes = [&](QTreeWidgetItem* item, const QString& label, const char* key) {
+        item->setText(0, QStringLiteral("%1: %2").arg(label,
+            formatBytes(cborInt(stats, QLatin1StringView(key)))));
+    };
+    const auto hcCount = [&](QTreeWidgetItem* item, const QString& label, const char* key) {
+        item->setText(0, QStringLiteral("%1: %2").arg(label)
+            .arg(cborInt(stats, QLatin1StringView(key))));
+    };
+
+    hcBytes(m_itemHcSesPublished, tr("Published"), "sesHttpCachePublished");
+    hcBytes(m_itemHcSesFetched, tr("Fetched"), "sesHttpCacheFetched");
+    hcBytes(m_itemHcSesSaved, tr("Upload Saved"), "sesHttpCacheSaved");
+    hcCount(m_itemHcSesChunksUp, tr("Chunks Published"), "sesHttpCacheChunksUp");
+    hcCount(m_itemHcSesChunksDown, tr("Chunks Fetched"), "sesHttpCacheChunksDown");
+
+    hcBytes(m_itemHcCumPublished, tr("Published"), "cumHttpCachePublished");
+    hcBytes(m_itemHcCumFetched, tr("Fetched"), "cumHttpCacheFetched");
+    hcBytes(m_itemHcCumSaved, tr("Upload Saved"), "cumHttpCacheSaved");
+    hcCount(m_itemHcCumChunksUp, tr("Chunks Published"), "cumHttpCacheChunksUp");
+    hcCount(m_itemHcCumChunksDown, tr("Chunks Fetched"), "cumHttpCacheChunksDown");
 
     setOH(m_itemUpCumOverheadTotal, tr("Total Overhead (Packets)"), "cumUpOhTotal", "cumUpOhTotalPkt");
     setOH(m_itemUpCumOverheadFileReq, tr("File Request Overhead (Packets)"), "cumUpOhFileReq", "cumUpOhFileReqPkt");

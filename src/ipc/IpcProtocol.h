@@ -134,6 +134,19 @@ enum class IpcMsgType : int {
     /// restore (MFC: srchybrid/StatisticsTree.cpp:175).
     RestoreStats            = 263,
 
+    /// [baseUrl: string, secret: string] -> {ok, error, service, version,
+    ///   implementation, uploadRequiresAuth, maxChunkSize, currentBaseUrl, unchanged}
+    /// GET <baseUrl>/v1/info, so a config link can be shown to the user only once
+    /// the endpoint has identified itself as a cache. The secret never leaves the
+    /// daemon: it is compared against the stored key to answer `unchanged`, and
+    /// the probe request itself carries no credential at all.
+    ProbeHttpCacheServer    = 264,
+    /// [baseUrl: string, secret: string] -> [ok: bool, error: string]
+    /// Store an HTTP Cache configuration from an ed2k://|httpcache| link. Probes
+    /// again before writing — the caller having probed is not a reason to skip it,
+    /// and the CLI path never probes at all.
+    ApplyHttpCacheConfig    = 265,
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd]

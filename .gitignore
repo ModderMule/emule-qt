@@ -121,6 +121,11 @@ windows-3rd.yml
 docker/kad/docker-compose.kadnet.yml
 docker/kad/seed/
 docker/kad/crashes/
+docker/kad/nodes.log
+docker/httpcache/docker-compose.cachenet.yml
+docker/httpcache/seed/
+docker/httpcache/crashes/
+docker/httpcache/nodes.log
 
 # Environment secrets
 .env

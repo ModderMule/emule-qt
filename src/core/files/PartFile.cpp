@@ -13,6 +13,7 @@
 #include "crypto/AICHHashTree.h"
 #include "crypto/FileIdentifier.h"
 #include "crypto/MD4Hash.h"
+#include "httpcache/HttpCacheManager.h"
 #include "ipfilter/IPFilter.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
@@ -126,6 +127,7 @@ void PartFile::initPartFile()
     m_lastPausePurge = 0;
     m_md4HashsetNeeded = true;
     m_aichPartHashsetNeeded = true;
+    m_corruptionBlackBox.free();
     m_anStates.fill(0);
 }
 
@@ -154,6 +156,12 @@ void PartFile::setFileSize(EMFileSize size)
 
     // Initialize source part frequency array
     m_srcPartFrequency.resize(partCount(), 0);
+
+    // The blackbox is sized in parts. Loading a .part.met calls this several times
+    // as the size tags come in, so only re-init when the shape actually changed —
+    // init() resizes and would otherwise drop records mid-download.
+    if (m_corruptionBlackBox.partCount() != partCount())
+        m_corruptionBlackBox.init(static_cast<uint64>(size));
 
     updateCompletedInfos();
 }
@@ -349,10 +357,18 @@ void PartFile::updateCompletedInfos()
 
 void PartFile::writeToBuffer(uint64 transize, const uint8* data,
                               uint64 start, uint64 end,
-                              Requested_Block_Struct* block)
+                              Requested_Block_Struct* block,
+                              const Address& sender)
 {
     if (!data || start > end)
         return;
+
+    // Who to blame if this part later fails its hash (MFC: srchybrid/PartFile.cpp:3988).
+    // A null sender is the "importing parts" case MFC guards the same way, plus every
+    // transfer that has no peer behind it at all — see the URLClient and HttpCacheClient
+    // call sites.
+    if (!sender.isNull())
+        m_corruptionBlackBox.transferredData(start, end, sender);
 
     // A compressed block covers more of the file than it took on the wire; the
     // difference is what compression saved (MFC: srchybrid/PartFile.cpp:3959-3963).
@@ -430,6 +446,7 @@ void PartFile::flushBuffer(bool forceICH)
             bool aichAgreed = false;
             if (hashSinglePart(p, &aichAgreed)) {
                 // The part verified, so it is no longer a candidate for recovery.
+                m_corruptionBlackBox.verifiedData(partStart, partEnd);
                 dropCorruptedPart(p);
                 continue;
             }
@@ -452,6 +469,27 @@ void PartFile::flushBuffer(bool forceICH)
             if (theApp.statistics)
                 theApp.statistics->addCorruptionLoss(lost);
 
+            // MFC only ever assigns blame from AICH recovery, which needs a second
+            // source to supply the reference hash and so may never arrive. When one
+            // sender supplied the whole part that detour is unnecessary: nobody else
+            // could have contributed the bad bytes. This is the ordinary case for an
+            // HTTP Cache chunk, which is always one whole part from one peer.
+            if (!m_corruptionBlackBox
+                     .soleSenderOfWholePart(static_cast<uint16>(p), lost)
+                     .isNull()) {
+                markPartCorrupted(p);
+                punishCorruptionSenders(static_cast<uint16>(p));
+            }
+
+            // Tell the peer that offered this part over the HTTP Cache, so its own
+            // three-strike counter retires the chunk instead of handing it to the next
+            // downloader. A no-op for a part we did not fetch that way.
+            if (theApp.httpCache) {
+                std::array<uint8, 16> hash{};
+                std::memcpy(hash.data(), fileHash(), 16);
+                theApp.httpCache->reportPartCorrupt(hash, p);
+            }
+
         } else if (isCorruptedPart(p) && (thePrefs.useICH() || forceICH)) {
             // Intelligent Corruption Handling: the part still has gaps, but the
             // bytes behind them were never erased — only distrusted. If MD4 over
@@ -459,6 +497,8 @@ void PartFile::flushBuffer(bool forceICH)
             // them would be wasted traffic.
             if (!hashSinglePart(p))
                 continue;
+
+            m_corruptionBlackBox.verifiedData(partStart, partEnd);
 
             const uint64 recovered = totalGapSizeInPart(p);
             fillGap(partStart, partEnd);
@@ -770,6 +810,56 @@ void PartFile::removeAllRequestedBlocks()
     // Only clear the list — blocks are owned by the clients'
     // Pending_Block_Struct and freed by clearPendingBlockRequest.
     m_requestedBlocks.clear();
+}
+
+uint64 PartFile::reservePartForExternalTransfer(uint32 partNumber,
+                                                std::vector<Requested_Block_Struct*>& out)
+{
+    out.clear();
+
+    if (partNumber >= partCount() || isComplete(partNumber))
+        return 0;
+
+    uint64 covered = 0;
+    uint64 searchFrom = 0;
+
+    while (true) {
+        auto* reqBlock = new Requested_Block_Struct;
+        if (!getNextEmptyBlockInPart(partNumber, reqBlock, searchFrom)) {
+            delete reqBlock;
+            break;
+        }
+        searchFrom = reqBlock->endOffset + 1;
+
+        // Somebody is already pulling this range over ed2k. Leave it to them —
+        // we still fetch the whole part over HTTP, and writeToBuffer discards
+        // whatever arrives second, so the overlap is wasteful but harmless.
+        if (isAlreadyRequested(reqBlock->startOffset, reqBlock->endOffset)) {
+            delete reqBlock;
+            continue;
+        }
+
+        covered += reqBlock->endOffset - reqBlock->startOffset + 1;
+        m_requestedBlocks.push_back(reqBlock);
+        out.push_back(reqBlock);
+    }
+
+    return covered;
+}
+
+void PartFile::releaseReservedBlocks(std::vector<Requested_Block_Struct*>& blocks)
+{
+    for (auto* block : blocks) {
+        if (!block)
+            continue;
+
+        // Unlike the client-owned blocks the rest of this list holds, these have
+        // no Pending_Block_Struct behind them: unregister *and* free.
+        removeBlockFromList(block->startOffset, block->endOffset);
+        delete block;
+    }
+
+    blocks.clear();
 }
 
 // MorphXT ICS: count how many downloading sources are working on each part
@@ -2261,8 +2351,16 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
             fillGap(partStart + pos, partStart + pos + blockSize - 1);
             removeBlockFromList(partStart + pos, partStart + pos + blockSize - 1);
             recovered += blockSize;
+            m_corruptionBlackBox.verifiedData(partStart + pos, partStart + pos + blockSize - 1);
+        } else {
+            m_corruptionBlackBox.corruptedData(partStart + pos, partStart + pos + blockSize - 1);
         }
     }
+
+    // AICH has just narrowed the damage to individual blocks, which is the whole
+    // point of it and the only place MFC ever bans for corruption
+    // (srchybrid/PartFile.cpp:5303).
+    punishCorruptionSenders(static_cast<uint16>(partNumber));
 
     // Adjust corruption loss accounting (MFC: srchybrid/PartFile.cpp:5305-5308).
     // No ICH credit here — MFC counts parts saved by ICH only on the re-hash path.
@@ -2612,6 +2710,64 @@ void PartFile::logKadSourceSearchSkipped(uint32 curTick, const QString& reason)
                     .arg(reason)
                     .arg(sourceCount())
                     .arg(kadFileSearchID()));
+}
+
+// ===========================================================================
+// markPartCorrupted (private)
+// ===========================================================================
+
+void PartFile::markPartCorrupted(uint32 partNumber)
+{
+    const uint64 partStart = static_cast<uint64>(partNumber) * PARTSIZE;
+    const uint64 partEnd = std::min(partStart + PARTSIZE - 1,
+                                    static_cast<uint64>(fileSize()) - 1);
+
+    // corruptedData() takes one 180 KB block at a time, the granularity AICH works
+    // at, so a whole part has to be walked rather than handed over in one call.
+    for (uint64 pos = partStart; pos <= partEnd; pos += EMBLOCKSIZE) {
+        const uint64 blockEnd = std::min(pos + EMBLOCKSIZE - 1, partEnd);
+        m_corruptionBlackBox.corruptedData(pos, blockEnd);
+    }
+}
+
+// ===========================================================================
+// punishCorruptionSenders (private)
+// ===========================================================================
+
+void PartFile::punishCorruptionSenders(uint16 part)
+{
+    if (!theApp.clientList)
+        return;
+
+    for (const auto& guilty : m_corruptionBlackBox.evaluateData(part)) {
+        if (!guilty.shouldBan || guilty.addr.isNull())
+            continue;
+
+        // Already banned: the ban list is the state, and re-banning would only
+        // restart the two-hour clock on an old offence (MFC skips these too,
+        // srchybrid/CorruptionBlackBox.cpp:276-279).
+        if (theApp.clientList->isBannedClient(guilty.addr))
+            continue;
+
+        const QString reason =
+            QStringLiteral("Identified as a sender of corrupt data (%1% of %2 bytes attributed)")
+                .arg(guilty.corruptPercent)
+                .arg(guilty.corruptBytes + guilty.verifiedBytes);
+
+        logWarning(QStringLiteral("PartFile: banning %1 — part %2 of '%3': %4")
+                       .arg(guilty.addr.toString())
+                       .arg(part)
+                       .arg(fileName(), reason));
+
+        // Prefer the client object: ban() also takes the peer off the upload queue
+        // and marks its state, which banning a bare address cannot do. Falling back
+        // to the address covers a peer that has already disconnected, exactly as MFC
+        // does (srchybrid/CorruptionBlackBox.cpp:316-322).
+        if (UpDownClient* client = theApp.clientList->findByConnAddress(guilty.addr))
+            client->ban(reason);
+        else
+            theApp.clientList->addBannedClient(guilty.addr);
+    }
 }
 
 } // namespace eMule

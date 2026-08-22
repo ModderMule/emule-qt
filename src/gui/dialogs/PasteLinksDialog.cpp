@@ -79,7 +79,10 @@ void PasteLinksDialog::onDownload()
             // Skipped links report themselves — the importer logs each one and, for a single
             // pasted link, shows the "you already have it" box. A summary here on top of that
             // would make this dialog behave differently from the Transfers context menu.
-            if (result.added > 0)
+            // A configuration link closes this too: it starts no download, but the
+            // dialog has done its job and leaving it open behind the confirmation
+            // box reads as though the paste failed.
+            if (result.added > 0 || result.httpCacheConfigs > 0)
                 self->accept();
         });
 }

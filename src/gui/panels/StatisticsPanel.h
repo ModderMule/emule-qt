@@ -115,6 +115,18 @@ private:
     QTreeWidgetItem* m_itemUpCumClient[7]{};
     QTreeWidgetItem* m_itemUpCumPort[2]{};
     QTreeWidgetItem* m_itemUpCumSource[2]{};
+
+    // HTTP Cache
+    QTreeWidgetItem* m_itemHcSesPublished = nullptr;
+    QTreeWidgetItem* m_itemHcSesFetched = nullptr;
+    QTreeWidgetItem* m_itemHcSesSaved = nullptr;
+    QTreeWidgetItem* m_itemHcSesChunksUp = nullptr;
+    QTreeWidgetItem* m_itemHcSesChunksDown = nullptr;
+    QTreeWidgetItem* m_itemHcCumPublished = nullptr;
+    QTreeWidgetItem* m_itemHcCumFetched = nullptr;
+    QTreeWidgetItem* m_itemHcCumSaved = nullptr;
+    QTreeWidgetItem* m_itemHcCumChunksUp = nullptr;
+    QTreeWidgetItem* m_itemHcCumChunksDown = nullptr;
     QTreeWidgetItem* m_itemUpCumSuccessful = nullptr;
     QTreeWidgetItem* m_itemUpCumFailed = nullptr;
     QTreeWidgetItem* m_itemUpCumAvgPerSession = nullptr;

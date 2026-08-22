@@ -10,6 +10,7 @@
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
+#include "net/HttpDefaults.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "stats/StatsSnapshot.h"
@@ -77,7 +78,7 @@ bool DaemonApp::start()
     if (thePrefs.logPublicIP()) {
         auto* nam = new QNetworkAccessManager(this);
         // curl -6 ifconfig.me <- for v6 detection later
-        QNetworkRequest req(QUrl(QStringLiteral("https://api.ipify.org")));
+        QNetworkRequest req = Http::makeRequest(QUrl(QStringLiteral("https://api.ipify.org")));
         req.setTransferTimeout(5000);
         auto* reply = nam->get(req);
         connect(reply, &QNetworkReply::finished, this, [reply, nam]() {

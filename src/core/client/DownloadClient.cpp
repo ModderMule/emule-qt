@@ -847,7 +847,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         m_reqFile->writeToBuffer(uTransferredFileDataSize,
                                   data + nHeaderSize,
                                   nStartPos, nEndPos,
-                                  curBlock->block);
+                                  curBlock->block, connectAddress());
         lenWritten = uTransferredFileDataSize;
     } else {
         // --- Compressed data ---
@@ -876,7 +876,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
                     m_reqFile->writeToBuffer(uTransferredFileDataSize,
                                               unzipped,
                                               writeStart, writeEnd,
-                                              curBlock->block);
+                                              curBlock->block, connectAddress());
                     lenWritten = lenUnzipped;
                 }
             }

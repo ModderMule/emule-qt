@@ -59,6 +59,11 @@ private slots:
 private:
     QTcpSocket* m_socket;  // Owned by this object (parented)
     QByteArray m_readBuffer;
+
+    /// True while onReadyRead() is walking m_readBuffer. A slot connected to
+    /// messageReceived may open a modal dialog, whose nested event loop delivers
+    /// the socket's next readyRead straight back into that walk.
+    bool m_dispatching = false;
     QByteArray m_encryptionKey;  // Empty = no encryption
     bool m_disconnectEmitted = false;
 };

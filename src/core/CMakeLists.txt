@@ -20,6 +20,9 @@ file(GLOB_RECURSE CRYPTO_SOURCES  CONFIGURE_DEPENDS "crypto/*.cpp"  "crypto/*.h"
 # Module 5: Networking & sockets
 file(GLOB_RECURSE NET_SOURCES     CONFIGURE_DEPENDS "net/*.cpp"     "net/*.h")
 
+# Module 5b: HTTP Cache — encrypted chunk offload (PeerCache successor)
+file(GLOB_RECURSE HTTPCACHE_SOURCES CONFIGURE_DEPENDS "httpcache/*.cpp" "httpcache/*.h")
+
 # Module 7: ED2K protocol & packets
 file(GLOB_RECURSE PROTO_SOURCES   CONFIGURE_DEPENDS "protocol/*.cpp" "protocol/*.h")
 
@@ -77,6 +80,7 @@ add_library(emulecore STATIC
     ${UTILS_SOURCES}
     ${CRYPTO_SOURCES}
     ${NET_SOURCES}
+    ${HTTPCACHE_SOURCES}
     ${PORTMAP_SOURCES}
     ${PROTO_SOURCES}
     ${SERVER_SOURCES}

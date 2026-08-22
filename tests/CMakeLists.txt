@@ -98,6 +98,7 @@ emule_add_test(tst_Log             FOLDER "Utils")
 emule_add_test(tst_CorroborationTally FOLDER "Utils")
 
 # Module 29c: Cryptography
+emule_add_test(tst_AesCbc           FOLDER "Crypto")
 emule_add_test(tst_MD4              FOLDER "Crypto")
 emule_add_test(tst_MD5              FOLDER "Crypto")
 emule_add_test(tst_SHA              FOLDER "Crypto")
@@ -134,6 +135,19 @@ emule_add_test(tst_UPnPBackend   FOLDER "PortMap")
 
 # Module 29f: Protocol
 emule_add_test(tst_Tags            FOLDER "Protocol")
+emule_add_test(tst_HttpCacheOffer  FOLDER "Protocol")
+emule_add_test(tst_HttpCacheResume FOLDER "Protocol")
+set_tests_properties(tst_HttpCacheResume PROPERTIES TIMEOUT 120)
+emule_add_test(tst_HttpCachePublish FOLDER "Protocol")
+set_tests_properties(tst_HttpCachePublish PROPERTIES TIMEOUT 120)
+emule_add_test(tst_HttpCacheMultiPeer FOLDER "Protocol")
+target_compile_definitions(tst_HttpCacheMultiPeer PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
+set_tests_properties(tst_HttpCacheMultiPeer PROPERTIES TIMEOUT 180)
+emule_add_test(tst_HttpCacheCorruptBan FOLDER "Protocol")
+target_compile_definitions(tst_HttpCacheCorruptBan PRIVATE QTEST_FUNCTION_TIMEOUT=180000)
+set_tests_properties(tst_HttpCacheCorruptBan PROPERTIES TIMEOUT 240)
+emule_add_test(tst_HttpCacheConfigLink FOLDER "Protocol")
+set_tests_properties(tst_HttpCacheConfigLink PROPERTIES TIMEOUT 120)
 emule_add_test(tst_ED2KLink        FOLDER "Protocol")
 
 # Module 29g: Server management
@@ -216,6 +230,7 @@ emule_add_test(tst_ArchiveUnpack       FOLDER "Archive")
 emule_add_test(tst_UploadBandwidthThrottler FOLDER "Transfer")
 emule_add_test(tst_UploadDiskIOThread       FOLDER "Transfer")
 emule_add_test(tst_UploadQueue              FOLDER "Transfer")
+emule_add_test(tst_UploadQueueStore         FOLDER "Transfer")
 emule_add_test(tst_MockPeerUpload           FOLDER "Net")
 target_compile_definitions(tst_MockPeerUpload PRIVATE QTEST_FUNCTION_TIMEOUT=150000)
 set_tests_properties(tst_MockPeerUpload PROPERTIES TIMEOUT 150)
@@ -279,10 +294,12 @@ target_include_directories(tst_WebServicesData PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_WebServicesData PRIVATE Qt6::Widgets)
 
-# eD2K link import skip policy — pulls in IpcClient, which Ed2kLinkImporter.cpp calls into.
+# eD2K link import skip policy — pulls in IpcClient, which Ed2kLinkImporter.cpp calls into,
+# and HttpCacheLinkImporter, which it hands ed2k://|httpcache| links to.
 emule_add_test(tst_Ed2kLinkImporter FOLDER "Ipc"
     SOURCES tst_Ed2kLinkImporter.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Ed2kLinkImporter.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HttpCacheLinkImporter.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
 target_include_directories(tst_Ed2kLinkImporter PRIVATE
@@ -340,6 +357,12 @@ target_link_libraries(tst_VersionChecker PRIVATE Qt6::Network Qt6::Widgets)
 if(EMULE_LIVE_TESTS)
     emule_add_test(tst_KadLiveNetwork FOLDER "LiveNetwork")
     set_tests_properties(tst_KadLiveNetwork PROPERTIES LABELS "live" TIMEOUT 180)
+
+    # Needs a running cache server; skips itself when
+    # EMULE_HTTPCACHE_URL / EMULE_HTTPCACHE_KEY are unset.
+    emule_add_test(tst_HttpCacheLive FOLDER "LiveNetwork")
+    target_compile_definitions(tst_HttpCacheLive PRIVATE QTEST_FUNCTION_TIMEOUT=180000)
+    set_tests_properties(tst_HttpCacheLive PROPERTIES LABELS "live" TIMEOUT 180)
 
     emule_add_test(tst_FileDownloadLive FOLDER "LiveNetwork")
     target_compile_definitions(tst_FileDownloadLive PRIVATE QTEST_FUNCTION_TIMEOUT=960000)

@@ -12,11 +12,14 @@
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
+#include "friends/Friend.h"
 #include "prefs/Preferences.h"
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
+#include "net/EMSocket.h"
 #include "net/LastCommonRouteFinder.h"
 #include "utils/Opcodes.h"
+#include "utils/TimeUtils.h"
 
 #include <QSignalSpy>
 #include <QTcpServer>
@@ -68,6 +71,53 @@ private slots:
     void acceptNewClient_ussSuppliesTheLimit();
     void acceptNewClient_ussWithNoMeasurementBlocks();
     void acceptNewClient_ussWithoutFinderFallsBackToPrefs();
+
+    // Scoring helpers behind the soft limit — MFC srchybrid/UploadClient.cpp:139-176
+    void combinedPrioAndCredit_matchesMfcFormula();
+    void filePrioAsNumber_veryHighMatchesMfc();
+    void score_magnitudeUnchangedByCombinedRescale();
+
+    // The queue average — MFC srchybrid/UploadQueue.cpp:678
+    void average_isMeanOfWaitingList();
+    void average_emptyQueueReturnsZero();
+    void average_cachedForFiveSeconds();
+
+    // Soft/hard queue limit — MFC srchybrid/UploadQueue.cpp:638-655
+    void queueLimit_belowSoftLimitAdmitsEveryone();
+    void queueLimit_softLimitRejectsBelowAverageClient();
+    void queueLimit_softLimitAdmitsAboveAverageClient();
+    void queueLimit_friendWithSlotBypassesSoftLimit();
+    void queueLimit_hardLimitRejectsEvenFriends();
+    void queueLimit_alreadyQueuedClientStillGetsRankingInfo();
+    void queueLimit_appliesToRestoredClients();
+
+    // Per-file request counter — MFC srchybrid/UploadQueue.cpp:625, :569
+    void requestStatistic_countsEachQueueRequest();
+    void requestStatistic_notCountedForRestoredClients();
+    void requestStatistic_countedOnLowIdReconnectPromotion();
+
+    // Collection priority slot — MFC srchybrid/UploadQueue.cpp:627-637, :798-808
+    void collectionSlot_smallCollectionBypassesQueue();
+    void collectionSlot_largeCollectionUsesNormalQueue();
+    void collectionSlot_bypassNeedsConnectedSocket();
+    void collectionSlot_notGrantedToAClientAlreadyUploading();
+    void collectionSlot_nonCollectionClearsFlag();
+    void checkForTimeOver_keepsSlotWhileOnCollection();
+    void checkForTimeOver_endsSessionOnOtherFile();
+    void checkForTimeOver_endsSessionWhenFileUnshared();
+    void addUpNextClient_clearsStrayCollectionFlag();
+
+    // score() no longer clamps at UINT32_MAX
+    void score_noLongerSaturates();
+
+    // score()'s three base values — MFC srchybrid/UploadClient.cpp:208-227
+    void score_uploadingClientUsesFrozenBase();
+    void score_onlyBaseValueIgnoresFilePriority();
+    void waitStartTime_clampsCollisionWhileUploading();
+    void waitStartTime_notClampedWhenNotUploading();
+
+    // MFC's IsDownloading() is the upload state, not the uploading list
+    void alreadyUploading_connectingClientIsQueuedNotAccepted();
 
     // Slot gating — the forceNewClient ladder
     void slotLadder_flatFloorsBelowTheComputedTiers();
@@ -147,6 +197,165 @@ private:
         QTest::qWait(10);
     return finder.getUpload() == want;
 }
+
+/// Scaffolding for the soft/hard queue limit and the queue average.
+///
+/// getCombinedFilePrioAndCredit() is 10 * scoreRatio * filePrioAsNumber(), and scoreRatio is
+/// a flat 1.0 until a client has downloaded 1 MiB from us (ClientCredits.cpp:123). So with
+/// fresh credits the combined value is purely a function of the requested file's upload
+/// priority — 20 for Very Low, 180 for Very High — which is what makes the averages below
+/// exact integers rather than something that has to be recomputed in the assertion.
+class QueueRankEnv {
+public:
+    QueueRankEnv()
+        : m_sharedFiles(&m_knownFiles)
+        , m_prevShared(theApp.sharedFileList)
+        , m_prevClients(theApp.clientList)
+        , m_prevQueueSize(thePrefs.queueSize())
+    {
+        theApp.sharedFileList = &m_sharedFiles;
+        theApp.clientList = nullptr;
+        m_veryHigh = addFile(0xA1, kPrVeryHigh);
+        m_veryLow  = addFile(0xB2, kPrVeryLow);
+    }
+
+    ~QueueRankEnv()
+    {
+        thePrefs.setQueueSize(m_prevQueueSize);
+        theApp.clientList = m_prevClients;
+        theApp.sharedFileList = m_prevShared;
+    }
+
+    QueueRankEnv(const QueueRankEnv&) = delete;
+    QueueRankEnv& operator=(const QueueRankEnv&) = delete;
+
+    [[nodiscard]] KnownFile* veryHigh() const { return m_veryHigh; }
+    [[nodiscard]] KnownFile* veryLow() const { return m_veryLow; }
+
+    /// Point the queue at this env's shared list. CoreSession does this once at startup
+    /// (CoreSession.cpp:221); anything that reads UploadQueue::m_sharedFiles — the request
+    /// counter, the collection bypass, checkForTimeOver() — is inert without it.
+    void wire(UploadQueue& queue) { queue.setSharedFileList(&m_sharedFiles); }
+
+    /// A shared file with an explicit name and size, which is what the collection rules
+    /// key off. Priority is Normal, so it plays no part in these assertions.
+    KnownFile* addNamedFile(uint8 hashByte, const QString& name, uint64 size)
+    {
+        return addFile(hashByte, kPrNormal, name, size);
+    }
+
+    /// Attach a genuinely connected socket — the collection bypass asks isConnected(), and
+    /// EMSocket only reaches that state from its own connected handler, so a loopback pair
+    /// is the honest way to get one (same recipe as tst_ClientList.cpp:501). Also marks the
+    /// ed2k handshake done, so addUpNextClient() activates the slot in place rather than
+    /// routing through tryToConnect(). Socket is env-owned.
+    EMSocket* connectSocket(UpDownClient* client)
+    {
+        if (!m_sink.isListening() && !m_sink.listen(QHostAddress::LocalHost, 0))
+            return nullptr;
+
+        auto sock = std::make_unique<ClientReqSocket>();
+        sock->connectToHost(QHostAddress::LocalHost, m_sink.serverPort());
+        if (!sock->waitForConnected(5000) || !sock->isConnected())
+            return nullptr;
+
+        auto* raw = sock.get();
+        m_sockets.push_back(std::move(sock));
+        client->setSocket(raw);
+        client->setInfoPacketsReceived(InfoPacketState::Both);
+        return raw;
+    }
+
+    /// A queued peer with its own credits and a requested file, owned by the env so the
+    /// caller can hand out raw pointers freely. @p index drives both the user hash and the
+    /// address, so every client is distinct for compare() and for the 3-per-IP gate.
+    UpDownClient* makeClient(int index, KnownFile* file)
+    {
+        auto credits = std::make_unique<ClientCredits>(hashFor(static_cast<uint8>(0xC0 + (index & 0x1F))));
+        auto client = std::make_unique<UpDownClient>();
+
+        // 10.<hi>.<lo>.1 — a fresh address per client, so the per-IP gates never fire.
+        client->setUserAddress(Address::fromString(
+            QStringLiteral("10.%1.%2.1").arg((index >> 8) & 0xFF).arg(index & 0xFF)));
+        client->setUserPort(static_cast<uint16>(4662 + index));
+
+        uint8 hash[16]{};
+        hash[0] = static_cast<uint8>(index & 0xFF);
+        hash[1] = static_cast<uint8>((index >> 8) & 0xFF);
+        hash[2] = 0x5A;
+        client->setUserHash(hash);
+
+        client->setCredits(credits.get());
+        client->setUploadFileID(file);
+        client->setReqUpFileId(file->fileHash());
+
+        auto* raw = client.get();
+        m_credits.push_back(std::move(credits));
+        m_clients.push_back(std::move(client));
+        return raw;
+    }
+
+    /// Occupy the free upload slots. addClientToQueue() promotes straight to a slot while
+    /// the waiting list is empty (UploadQueue.cpp), so without this the clients under test
+    /// would never reach the waiting list the limits are measured against.
+    void fillSlots(UploadQueue& queue)
+    {
+        for (int i = 0; i < MIN_UP_CLIENTS_ALLOWED; ++i)
+            queue.addClientToQueue(makeClient(9000 + i, m_veryLow));
+    }
+
+    /// @returns the clients now waiting, in insertion order.
+    std::vector<UpDownClient*> fillWaitingList(UploadQueue& queue, int count, KnownFile* file)
+    {
+        std::vector<UpDownClient*> added;
+        for (int i = 0; i < count; ++i) {
+            auto* c = makeClient(i, file);
+            if (queue.addClientToQueue(c))
+                added.push_back(c);
+        }
+        return added;
+    }
+
+private:
+    static const uint8* hashFor(uint8 byte)
+    {
+        static thread_local uint8 hash[16];
+        std::memset(hash, byte, sizeof(hash));
+        return hash;
+    }
+
+    KnownFile* addFile(uint8 hashByte, uint8 priority,
+                       const QString& name = QString(), uint64 size = 0)
+    {
+        auto* file = new KnownFile();
+        uint8 hash[16]{};
+        std::memset(hash, hashByte, sizeof(hash));
+        file->setFileHash(hash);
+        file->setFileName(name.isEmpty() ? QStringLiteral("prio-%1.bin").arg(priority) : name);
+        file->setFileSize(size);
+        // Auto priority is on by default and setUploadFileID() -> addUploadingClient()
+        // recomputes it from the uploader count (KnownFile.cpp:569), which would silently
+        // overwrite the priority these tests are built on.
+        file->setAutoUpPriority(false);
+        file->setUpPriority(priority, /*save=*/false);
+        // safeAddKFile takes ownership via the shared list.
+        return m_sharedFiles.safeAddKFile(file) ? file : nullptr;
+    }
+
+    KnownFileList m_knownFiles;
+    SharedFileList m_sharedFiles;
+    SharedFileList* m_prevShared;
+    ClientList* m_prevClients;
+    uint32 m_prevQueueSize;
+    KnownFile* m_veryHigh = nullptr;
+    KnownFile* m_veryLow = nullptr;
+    std::vector<std::unique_ptr<ClientCredits>> m_credits;
+    QTcpServer m_sink;
+    // Declared before m_clients so it outlives them: ~UpDownClient does not own its socket
+    // but does touch client state on the way down.
+    std::vector<std::unique_ptr<ClientReqSocket>> m_sockets;
+    std::vector<std::unique_ptr<UpDownClient>> m_clients;
+};
 
 } // namespace
 
@@ -730,9 +939,9 @@ void tst_UploadQueue::connectingSlot_activatedByHandshake()
 
 void tst_UploadQueue::connectingSlot_notGrantedASlot_staysConnecting()
 {
-    // The isDownloading() guard is load-bearing: without it any client that happened to
-    // be in Connecting would promote itself to Uploading on handshake, bypassing the
-    // queue entirely. MFC guards the same way (BaseClient.cpp:1558).
+    // The UploadQueue::isDownloading() guard is load-bearing: without it any client that
+    // happened to be in Connecting would promote itself to Uploading on handshake,
+    // bypassing the queue entirely. MFC guards the same way (BaseClient.cpp:1558).
     UploadQueue queue;
     theApp.uploadQueue = &queue;
 
@@ -1143,6 +1352,735 @@ void tst_UploadQueue::slotLadder_ussSuppliesTheLimit()
              "the ladder must read the finder's limit, not the (much smaller) prefs limit");
     QVERIFY(queue.slotLadderAllows(99, 0));
     QVERIFY(!queue.slotLadderAllows(100, 0));
+}
+
+// ===========================================================================
+// Scoring helpers behind the soft limit
+// ===========================================================================
+
+void tst_UploadQueue::combinedPrioAndCredit_matchesMfcFormula()
+{
+    QueueRankEnv env;
+
+    UpDownClient noCredits;
+    noCredits.setUploadFileID(env.veryHigh());
+    QVERIFY2(qFuzzyIsNull(noCredits.getCombinedFilePrioAndCredit()),
+             "MFC returns 0.0f for a client with no credits (a URL client), not the bare "
+             "file priority — anything else drags the queue average towards a value the "
+             "client itself can never reach");
+
+    uint8 credHash[16];
+    std::memset(credHash, 0x42, sizeof(credHash));
+    ClientCredits credits(credHash);
+
+    UpDownClient noFile;
+    noFile.setCredits(&credits);
+    QVERIFY2(qFuzzyIsNull(noFile.getCombinedFilePrioAndCredit()),
+             "filePrioAsNumber() is 0 without a requested file, so the product is 0");
+
+    // 10 (MFC's scale factor) * 1.0 (fresh credits) * 7 (Normal priority).
+    UpDownClient normal;
+    normal.setCredits(&credits);
+    KnownFile normalFile;
+    normalFile.setAutoUpPriority(false);
+    normalFile.setUpPriority(kPrNormal, /*save=*/false);
+    normal.setUploadFileID(&normalFile);
+    QCOMPARE(normal.getCombinedFilePrioAndCredit(), 70.0f);
+}
+
+void tst_UploadQueue::filePrioAsNumber_veryHighMatchesMfc()
+{
+    uint8 credHash[16];
+    std::memset(credHash, 0x43, sizeof(credHash));
+    ClientCredits credits(credHash);
+
+    UpDownClient client;
+    client.setCredits(&credits);
+    KnownFile file;
+    file.setAutoUpPriority(false);
+    client.setUploadFileID(&file);
+
+    // srchybrid/UploadClient.cpp:158-175 verbatim.
+    const struct { uint8 prio; float combined; } cases[] = {
+        { kPrVeryLow,   20.0f },
+        { kPrLow,       60.0f },
+        { kPrNormal,    70.0f },
+        { kPrHigh,      90.0f },
+        { kPrVeryHigh, 180.0f },   // MFC weighs Release at 18, i.e. double High — not 10
+    };
+    for (const auto& c : cases) {
+        file.setUpPriority(c.prio, /*save=*/false);
+        QVERIFY2(qFuzzyCompare(client.getCombinedFilePrioAndCredit(), c.combined),
+                 qPrintable(QStringLiteral("priority %1 gave %2, expected %3")
+                                .arg(c.prio)
+                                .arg(static_cast<double>(client.getCombinedFilePrioAndCredit()))
+                                .arg(static_cast<double>(c.combined))));
+    }
+}
+
+void tst_UploadQueue::score_magnitudeUnchangedByCombinedRescale()
+{
+    // getCombinedFilePrioAndCredit() carries MFC's 10x scale factor; score() divides it back
+    // out. This pins that the two stay in step — if either side is ever changed alone, every
+    // score in the queue silently moves by an order of magnitude and the UINT32_MAX clamp in
+    // score() starts truncating long-waiting clients into ties.
+    QueueRankEnv env;
+    auto* client = env.makeClient(1, env.veryHigh());
+
+    // restoreWaitStartTime() is the only way to put a known elapsed time on the clock —
+    // setWaitStartTime() always means "now", which would make this assertion a race.
+    client->restoreWaitStartTime(60'000);
+
+    // 60 s in ms * scoreRatio 1.0 * filePrioAsNumber 18.
+    const uint64 expected = 60'000ull * 18ull;
+    const uint64 actual = client->score(false);
+    QVERIFY2(actual > expected - 5'000 && actual < expected + 5'000,
+             qPrintable(QStringLiteral("score %1 is not within a few ms of %2")
+                            .arg(actual).arg(expected)));
+}
+
+// ===========================================================================
+// getAverageCombinedFilePrioAndCredit
+// ===========================================================================
+
+void tst_UploadQueue::average_isMeanOfWaitingList()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);        // well clear of the limits under test elsewhere
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+
+    for (int i = 0; i < 3; ++i)
+        QVERIFY(queue.addClientToQueue(env.makeClient(i, env.veryHigh())));
+    QVERIFY(queue.addClientToQueue(env.makeClient(3, env.veryLow())));
+    QCOMPARE(queue.waitingUserCount(), 4);
+
+    // (180 + 180 + 180 + 20) / 4
+    QCOMPARE(queue.getAverageCombinedFilePrioAndCredit(), 140.0f);
+}
+
+void tst_UploadQueue::average_emptyQueueReturnsZero()
+{
+    UploadQueue queue;
+    // MFC divides by waitinglist.GetCount() unguarded here; the port must not.
+    QCOMPARE(queue.getAverageCombinedFilePrioAndCredit(), 0.0f);
+}
+
+void tst_UploadQueue::average_cachedForFiveSeconds()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+
+    std::vector<UpDownClient*> waiting;
+    for (int i = 0; i < 3; ++i) {
+        auto* c = env.makeClient(i, env.veryHigh());
+        QVERIFY(queue.addClientToQueue(c));
+        waiting.push_back(c);
+    }
+    auto* low = env.makeClient(3, env.veryLow());
+    QVERIFY(queue.addClientToQueue(low));
+
+    QCOMPARE(queue.getAverageCombinedFilePrioAndCredit(), 140.0f);
+
+    // Drop every Very High client. The true mean is now 20, but MFC recomputes at most once
+    // every 5 s and we deliberately kept that — a queue-wide walk per admission would be
+    // O(n) on a 5000-deep list.
+    for (auto* c : waiting)
+        QVERIFY(queue.removeFromWaitingQueue(c));
+    QCOMPARE(queue.waitingUserCount(), 1);
+
+    QVERIFY2(qFuzzyCompare(queue.getAverageCombinedFilePrioAndCredit(), 140.0f),
+             "the 5 s cache must still be serving the old average");
+}
+
+// ===========================================================================
+// Soft / hard queue limit
+// ===========================================================================
+
+void tst_UploadQueue::queueLimit_belowSoftLimitAdmitsEveryone()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(10);
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+
+    // Nine waiting is under the soft limit, so even the lowest-ranking client gets in.
+    QCOMPARE(static_cast<int>(env.fillWaitingList(queue, 9, env.veryLow()).size()), 9);
+    QCOMPARE(queue.waitingUserCount(), 9);
+}
+
+void tst_UploadQueue::queueLimit_softLimitRejectsBelowAverageClient()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(4);          // soft 4, hard 4 + 800/4 = 204
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+
+    for (int i = 0; i < 3; ++i)
+        QVERIFY(queue.addClientToQueue(env.makeClient(i, env.veryHigh())));
+    QVERIFY(queue.addClientToQueue(env.makeClient(3, env.veryLow())));
+    QCOMPARE(queue.waitingUserCount(), 4);   // average is now 140
+
+    auto* applicant = env.makeClient(100, env.veryLow());   // combined 20
+    QVERIFY2(!queue.addClientToQueue(applicant),
+             "at the soft limit a client below the queue average must be turned away");
+    QCOMPARE(queue.waitingUserCount(), 4);
+    QVERIFY(!queue.isOnUploadQueue(applicant));
+}
+
+void tst_UploadQueue::queueLimit_softLimitAdmitsAboveAverageClient()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(4);
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+
+    for (int i = 0; i < 3; ++i)
+        QVERIFY(queue.addClientToQueue(env.makeClient(i, env.veryHigh())));
+    QVERIFY(queue.addClientToQueue(env.makeClient(3, env.veryLow())));
+    QCOMPARE(queue.waitingUserCount(), 4);
+
+    // 180 >= the 140 average: this is the powershare/high-credit case the soft limit exists
+    // to keep letting through.
+    auto* applicant = env.makeClient(100, env.veryHigh());
+    QVERIFY(queue.addClientToQueue(applicant));
+    QCOMPARE(queue.waitingUserCount(), 5);
+    QVERIFY(queue.isOnUploadQueue(applicant));
+}
+
+void tst_UploadQueue::queueLimit_friendWithSlotBypassesSoftLimit()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(4);
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+
+    for (int i = 0; i < 3; ++i)
+        QVERIFY(queue.addClientToQueue(env.makeClient(i, env.veryHigh())));
+    QVERIFY(queue.addClientToQueue(env.makeClient(3, env.veryLow())));
+    QCOMPARE(queue.waitingUserCount(), 4);
+
+    Friend buddy;
+
+    // A friend without a reserved slot is just another client — MFC needs both.
+    auto* plainFriend = env.makeClient(100, env.veryLow());
+    plainFriend->setFriendPtr(&buddy);
+    QVERIFY2(!queue.addClientToQueue(plainFriend),
+             "IsFriend() alone must not bypass the soft limit");
+
+    auto* slotFriend = env.makeClient(101, env.veryLow());
+    slotFriend->setFriendPtr(&buddy);
+    slotFriend->setFriendSlot(true);
+    QVERIFY(queue.addClientToQueue(slotFriend));
+    QVERIFY(queue.isOnUploadQueue(slotFriend));
+}
+
+void tst_UploadQueue::queueLimit_hardLimitRejectsEvenFriends()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(4);          // hard limit = 4 + max(4, 800)/4 = 204
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+
+    // Every one of these is Very High, so none is ever below the average and the soft limit
+    // never fires — the list can only be stopped by the hard limit.
+    QCOMPARE(static_cast<int>(env.fillWaitingList(queue, 204, env.veryHigh()).size()), 204);
+    QCOMPARE(queue.waitingUserCount(), 204);
+
+    Friend buddy;
+    auto* applicant = env.makeClient(300, env.veryHigh());
+    applicant->setFriendPtr(&buddy);
+    applicant->setFriendSlot(true);
+    QVERIFY2(!queue.addClientToQueue(applicant),
+             "the hard limit admits nobody — not a friend with a slot, not a top-ranking "
+             "client");
+    QCOMPARE(queue.waitingUserCount(), 204);
+}
+
+void tst_UploadQueue::queueLimit_alreadyQueuedClientStillGetsRankingInfo()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(4);
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+
+    const auto waiting = env.fillWaitingList(queue, 4, env.veryLow());
+    QCOMPARE(static_cast<int>(waiting.size()), 4);
+
+    // MFC runs the cap *after* the already-queued early-return, so a client re-asking from
+    // a queue that is at its limit is answered rather than dropped.
+    QVERIFY2(queue.addClientToQueue(waiting.front()),
+             "a re-ask from an already-queued client must not hit the cap");
+    QCOMPARE(queue.waitingUserCount(), 4);
+    QVERIFY(queue.isOnUploadQueue(waiting.front()));
+}
+
+void tst_UploadQueue::queueLimit_appliesToRestoredClients()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(4);
+
+    UploadQueue queue;
+    env.fillSlots(queue);
+    QCOMPARE(static_cast<int>(env.fillWaitingList(queue, 204, env.veryHigh()).size()), 204);
+
+    // uploadqueue.met is untrusted input like any other packet; a restore must not push the
+    // queue past the hard limit.
+    auto* restored = env.makeClient(300, env.veryHigh());
+    QVERIFY(!queue.addRestoredClient(restored));
+    QCOMPARE(queue.waitingUserCount(), 204);
+}
+
+// ===========================================================================
+// Per-file request counter — MFC srchybrid/UploadQueue.cpp:625, :569
+// ===========================================================================
+
+void tst_UploadQueue::requestStatistic_countsEachQueueRequest()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);          // occupies the slots using the Very Low file
+
+    KnownFile* file = env.veryHigh();
+    QCOMPARE(file->statistic.requests(), 0u);
+    QCOMPARE(file->statistic.allTimeRequests(), 0u);
+
+    QVERIFY(queue.addClientToQueue(env.makeClient(1, file)));
+    QCOMPARE(file->statistic.requests(), 1u);
+    QCOMPARE(file->statistic.allTimeRequests(), 1u);
+
+    QVERIFY(queue.addClientToQueue(env.makeClient(2, file)));
+    QCOMPARE(file->statistic.requests(), 2u);
+    QCOMPARE(file->statistic.allTimeRequests(), 2u);
+
+    // The slot fillers asked for the other file, and are counted against it — the counter
+    // is per requested file, not per queue.
+    QCOMPARE(env.veryLow()->statistic.requests(), uint32(MIN_UP_CLIENTS_ALLOWED));
+}
+
+void tst_UploadQueue::requestStatistic_notCountedForRestoredClients()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+
+    KnownFile* file = env.veryHigh();
+    QVERIFY(queue.addRestoredClient(env.makeClient(1, file)));
+    QCOMPARE(queue.waitingUserCount(), 1);
+
+    // A restore replays a queue we already had; counting it would inflate the figure by the
+    // whole waiting list on every start.
+    QCOMPARE(file->statistic.requests(), 0u);
+    QCOMPARE(file->statistic.allTimeRequests(), 0u);
+}
+
+void tst_UploadQueue::requestStatistic_countedOnLowIdReconnectPromotion()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+
+    KnownFile* file = env.veryHigh();
+    auto* client = env.makeClient(1, file);
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(file->statistic.requests(), 1u);
+
+    // Re-asking from the queue is not a new request — MFC only counts the branch that
+    // actually hands over the missed slot.
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(file->statistic.requests(), 1u);
+
+    // ...which is the one a low-ID client reaches when it reconnects with a slot free.
+    client->setAddNextConnect(true);
+    QVERIFY(queue.acceptNewClient(true));
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(file->statistic.requests(), 2u);
+}
+
+// ===========================================================================
+// Collection priority slot — MFC srchybrid/UploadQueue.cpp:627-637, :798-808
+// ===========================================================================
+
+void tst_UploadQueue::collectionSlot_smallCollectionBypassesQueue()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+    // A waiting list the collection request has to jump over, so the assertion below is not
+    // just the ordinary empty-queue fast path.
+    env.fillWaitingList(queue, 3, env.veryHigh());
+    QCOMPARE(queue.waitingUserCount(), 3);
+
+    KnownFile* coll = env.addNamedFile(0xC3, QStringLiteral("albums.emulecollection"), 1024);
+    QVERIFY(coll);
+
+    auto* client = env.makeClient(50, coll);
+    env.connectSocket(client);
+
+    QVERIFY(queue.addClientToQueue(client));
+    QVERIFY(client->collectionUploadSlot());
+    QVERIFY(queue.isDownloading(client));       // i.e. it is on the uploading list
+    QCOMPARE(queue.waitingUserCount(), 3);      // and it never joined the waiting list
+}
+
+void tst_UploadQueue::collectionSlot_largeCollectionUsesNormalQueue()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+
+    // One byte over MAXPRIORITYCOLL_SIZE. The bypass exists for an index small enough that
+    // serving it costs nothing; a big one is an ordinary upload.
+    KnownFile* coll = env.addNamedFile(0xC4, QStringLiteral("huge.emulecollection"),
+                                       MAXPRIORITYCOLL_SIZE);
+    QVERIFY(coll);
+
+    auto* client = env.makeClient(51, coll);
+    env.connectSocket(client);
+
+    QVERIFY(queue.addClientToQueue(client));
+    QVERIFY(!client->collectionUploadSlot());
+    QVERIFY(!queue.isDownloading(client));
+    QCOMPARE(queue.waitingUserCount(), 1);
+}
+
+void tst_UploadQueue::collectionSlot_bypassNeedsConnectedSocket()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+
+    KnownFile* coll = env.addNamedFile(0xC5, QStringLiteral("albums.emulecollection"), 1024);
+    QVERIFY(coll);
+
+    // No socket: the slot would be granted to a peer we cannot send to, and the client
+    // would sit in Connecting holding it.
+    auto* client = env.makeClient(52, coll);
+    QVERIFY(queue.addClientToQueue(client));
+    QVERIFY(!client->collectionUploadSlot());
+    QCOMPARE(queue.waitingUserCount(), 1);
+}
+
+void tst_UploadQueue::collectionSlot_notGrantedToAClientAlreadyUploading()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+
+    // A peer that already holds an upload slot and then asks for a collection as a second
+    // file. MFC's guard here is IsDownloading() — its own name for "is uploading from us" —
+    // so it must be the queue's uploading-list test or UpDownClient::isUploadingToPeer(),
+    // never isDownloadingFromPeer(), which in this port means the opposite.
+    KnownFile* coll = env.addNamedFile(0xC9, QStringLiteral("albums.emulecollection"), 1024);
+    QVERIFY(coll);
+
+    auto* client = env.makeClient(58, env.veryHigh());
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));    // empty waiting list -> straight to a slot
+    QVERIFY(queue.isDownloading(client));
+
+    client->setUploadFileID(coll);
+    client->setReqUpFileId(coll->fileHash());
+    QVERIFY(queue.addClientToQueue(client));
+
+    // It keeps the ordinary slot it already had; granting a collection slot on top would
+    // relabel a live session and let checkForTimeOver() judge it by the wrong rules.
+    QVERIFY(!client->collectionUploadSlot());
+    QCOMPARE(queue.uploadQueueLength(), 1);
+}
+
+void tst_UploadQueue::collectionSlot_nonCollectionClearsFlag()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+
+    auto* client = env.makeClient(53, env.veryHigh());
+    env.connectSocket(client);
+    client->setCollectionUploadSlot(true);      // as if a previous request had granted one
+
+    QVERIFY(queue.addClientToQueue(client));
+    QVERIFY(!client->collectionUploadSlot());
+}
+
+void tst_UploadQueue::checkForTimeOver_keepsSlotWhileOnCollection()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+    env.fillWaitingList(queue, 1, env.veryHigh());   // non-empty, or the check exits early
+
+    KnownFile* coll = env.addNamedFile(0xC6, QStringLiteral("albums.emulecollection"), 1024);
+    auto* client = env.makeClient(54, coll);
+    env.connectSocket(client);
+    QVERIFY(queue.addClientToQueue(client));
+    QVERIFY(client->collectionUploadSlot());
+
+    QVERIFY(!queue.checkForTimeOver(client));
+}
+
+void tst_UploadQueue::checkForTimeOver_endsSessionOnOtherFile()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+    env.fillWaitingList(queue, 1, env.veryHigh());
+
+    KnownFile* coll = env.addNamedFile(0xC7, QStringLiteral("albums.emulecollection"), 1024);
+    auto* client = env.makeClient(55, coll);
+    env.connectSocket(client);
+    QVERIFY(queue.addClientToQueue(client));
+    QVERIFY(client->collectionUploadSlot());
+
+    // The peer swings its request onto a normal file while still holding the priority slot.
+    client->setReqUpFileId(env.veryHigh()->fileHash());
+    QVERIFY(queue.checkForTimeOver(client));
+}
+
+void tst_UploadQueue::checkForTimeOver_endsSessionWhenFileUnshared()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+    env.fillWaitingList(queue, 1, env.veryHigh());
+
+    KnownFile* coll = env.addNamedFile(0xC8, QStringLiteral("albums.emulecollection"), 1024);
+    auto* client = env.makeClient(56, coll);
+    env.connectSocket(client);
+    QVERIFY(queue.addClientToQueue(client));
+
+    uint8 gone[16]{};
+    std::memset(gone, 0xEE, sizeof(gone));
+    client->setReqUpFileId(gone);
+    QVERIFY(queue.checkForTimeOver(client));
+}
+
+void tst_UploadQueue::addUpNextClient_clearsStrayCollectionFlag()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+
+    // Waiting, flagged, and reached by ordinary slot selection rather than by the bypass —
+    // the state MFC asserts can never happen. addRestoredClient() is the one entry point
+    // that puts a client on the waiting list without promoting it, which is what lets
+    // process() do the picking.
+    auto* client = env.makeClient(57, env.veryHigh());
+    QVERIFY(queue.addRestoredClient(client));
+    client->restoreWaitStartTime(60'000);   // findBestClientInQueue() ignores a zero score
+    // ...and purges anything whose last request is older than MAX_PURGEQUEUETIME, which a
+    // default-constructed lastUpRequest of 0 always is against a boot-relative tick clock.
+    client->setLastUpRequest(static_cast<uint32>(getTickCount()));
+    // A low-ID client with no socket is not "connectable", so it would be held back for the
+    // next-connect shortcut instead of being picked.
+    QVERIFY(env.connectSocket(client));
+    client->setCollectionUploadSlot(true);
+
+    QSignalSpy startedSpy(&queue, &UploadQueue::uploadStarted);
+    queue.process();
+    QCOMPARE(startedSpy.count(), 1);
+    QVERIFY(!client->collectionUploadSlot());
+}
+
+// ===========================================================================
+// score() range
+// ===========================================================================
+
+void tst_UploadQueue::score_noLongerSaturates()
+{
+    QueueRankEnv env;
+    auto* a = env.makeClient(1, env.veryHigh());
+    auto* b = env.makeClient(2, env.veryHigh());
+
+    // A friend slot multiplies by 2000, so this pair used to pin at UINT32_MAX after twelve
+    // seconds of waiting — and then compare equal forever, which silently handed slot
+    // selection back to insertion order.
+    a->setFriendSlot(true);
+    b->setFriendSlot(true);
+    a->restoreWaitStartTime(8u * 60u * 60u * 1000u);          // 8 h
+    b->restoreWaitStartTime(8u * 60u * 60u * 1000u + 60'000u);  // 8 h 1 min
+
+    QVERIFY(a->score(false) > UINT32_MAX);
+    QVERIFY2(b->score(false) > a->score(false),
+             "the peer that waited a minute longer must still outrank the other");
+}
+
+// ===========================================================================
+// score()'s three base values — MFC srchybrid/UploadClient.cpp:208-227
+// ===========================================================================
+
+void tst_UploadQueue::score_uploadingClientUsesFrozenBase()
+{
+    QueueRankEnv env;
+    auto* client = env.makeClient(80, env.veryHigh());
+    client->restoreWaitStartTime(60'000);
+
+    // The isDownloading argument is MFC's sense: this peer is downloading *from us*. The
+    // slot going live is what freezes the base, so the state has to be set for real.
+    client->setUploadState(UploadState::Uploading);
+    QVERIFY(client->isUploadingToPeer());
+
+    // 60 s of waiting plus the 30 min bonus that applies inside the first 15 min of the
+    // upload, times filePrioAsNumber() 18 for a Very High file with a 1.0 credit ratio.
+    const uint64 expected = (60'000ull + MIN2MS(30)) * 18ull;
+    const uint64 uploading = client->score(false, true, false);
+    QVERIFY2(uploading > expected - 100'000 && uploading < expected + 100'000,
+             qPrintable(QStringLiteral("score %1 is not near %2").arg(uploading).arg(expected)));
+
+    // And it is a different figure from the waiting base, which is the whole point of the
+    // flag — passing isDownloadingFromPeer() here would have selected the wrong one.
+    QVERIFY(uploading > client->score(false, false, false));
+
+    // Frozen: m_uploadTime does not move, so this base cannot grow with the clock the way
+    // the waiting base does. That is what stops a client downloading forever.
+    const uint64 waitingBefore = client->score(false, false, false);
+    QTest::qWait(80);
+    QCOMPARE(client->score(false, true, false), uploading);
+    QVERIFY2(client->score(false, false, false) > waitingBefore,
+             "the waiting base must still be climbing, or this test proves nothing");
+}
+
+void tst_UploadQueue::score_onlyBaseValueIgnoresFilePriority()
+{
+    QueueRankEnv env;
+    auto* high = env.makeClient(81, env.veryHigh());
+    auto* low  = env.makeClient(82, env.veryLow());
+    high->restoreWaitStartTime(60'000);
+    low->restoreWaitStartTime(60'000);
+
+    // MFC's "Rating" (ClientDetailDialog.cpp:159) is a fixed base times the credit ratio,
+    // with no file priority — SEC2MS(100) * 1.0 for fresh credits. Before this it reused the
+    // full queue score, so Client Details showed Rating and Score as the same number.
+    QCOMPARE(high->score(false, false, true), uint64{SEC2MS(100)});
+    QCOMPARE(low->score(false, false, true), high->score(false, false, true));
+
+    // The full score does depend on priority: 18 for Very High against 2 for Very Low.
+    QVERIFY(high->score(false) > low->score(false));
+    QVERIFY(high->score(false) != high->score(false, false, true));
+}
+
+void tst_UploadQueue::waitStartTime_clampsCollisionWhileUploading()
+{
+    QueueRankEnv env;
+    auto* client = env.makeClient(83, env.veryHigh());
+    client->restoreWaitStartTime(60'000);
+
+    client->setUploadState(UploadState::Uploading);   // stamps m_uploadTime = now
+    QTest::qWait(40);
+
+    // Push the secure wait start past the upload start, which is what a hash collision
+    // between two clients with an invalid secure ident does. Unclamped, score()'s uploading
+    // branch computes m_uploadTime - waitStartTime() in uint32 and wraps to ~4.29e9, which
+    // times the file priority would out-rank every honest client by four orders of
+    // magnitude. MFC srchybrid/UploadClient.cpp:665-672.
+    client->restoreWaitStartTime(0);
+
+    // Clamped to m_uploadTime - 1, so the base is 1 ms plus the 30 min bonus.
+    const uint64 expected = (1ull + MIN2MS(30)) * 18ull;
+    const uint64 score = client->score(false, true, false);
+    QVERIFY2(score > expected - 100'000 && score < expected + 100'000,
+             qPrintable(QStringLiteral("score %1 is not near %2 — the collision wrapped")
+                            .arg(score).arg(expected)));
+}
+
+void tst_UploadQueue::waitStartTime_notClampedWhenNotUploading()
+{
+    QueueRankEnv env;
+    auto* client = env.makeClient(84, env.veryHigh());
+    client->restoreWaitStartTime(60'000);
+
+    // m_uploadTime is 0 for a client that never held a slot, so a guard that forgot to test
+    // the upload state would clamp every one of them to 0 - 1 == UINT32_MAX.
+    QVERIFY(!client->isUploadingToPeer());
+    QVERIFY(client->waitStartTime() != 0);
+    QVERIFY(client->waitStartTime() != UINT32_MAX);
+
+    const uint32 waited = client->getWaitTimeDelay();
+    QVERIFY2(waited > 59'000 && waited < 65'000,
+             qPrintable(QStringLiteral("waited %1 ms, expected about 60000").arg(waited)));
+}
+
+// ===========================================================================
+// The already-uploading early accept — MFC srchybrid/UploadQueue.cpp:656
+// ===========================================================================
+
+void tst_UploadQueue::alreadyUploading_connectingClientIsQueuedNotAccepted()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+
+    auto* slotHolder = env.makeClient(85, env.veryHigh());
+    QVERIFY(env.connectSocket(slotHolder));
+    QVERIFY(queue.addClientToQueue(slotHolder));
+    QVERIFY2(queue.isDownloading(slotHolder), "the empty-queue fast path should grant a slot");
+
+    // Get somebody onto the waiting list, so the empty-queue fast path is out of the way and
+    // the branch under test is the only thing deciding where slotHolder lands.
+    env.fillWaitingList(queue, 4, env.veryLow());
+    QVERIFY(queue.waitingUserCount() > 0);
+
+    // Its slot is allocated but the connection has not come up: on the uploading list, so
+    // UploadQueue::isDownloading() says yes, while the state MFC actually tests says no.
+    slotHolder->setUploadState(UploadState::Connecting);
+    QVERIFY(queue.isDownloading(slotHolder));
+    QVERIFY(!slotHolder->isUploadingToPeer());
+
+    // Re-asking for a second file must not be short-circuited into an OP_ACCEPTUPLOADREQ:
+    // addReqBlock() drops every part request from a client that is not Uploading, so the
+    // accept would be a promise we go on to break. Queue it instead, as MFC does.
+    const int before = queue.waitingUserCount();
+    QSignalSpy queued(&queue, &UploadQueue::clientAddedToQueue);
+    QVERIFY(queue.addClientToQueue(slotHolder));
+
+    QCOMPARE(queue.waitingUserCount(), before + 1);
+    QCOMPARE(slotHolder->uploadState(), UploadState::OnUploadQueue);
+    QCOMPARE(queued.count(), 1);
 }
 
 QTEST_GUILESS_MAIN(tst_UploadQueue)

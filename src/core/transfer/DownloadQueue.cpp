@@ -18,6 +18,7 @@
 #include "files/SharedFileList.h"
 #include "ipfilter/IPFilter.h"
 #include "net/Packet.h"
+#include "net/PeerVetting.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 #include "server/ServerConnect.h"
@@ -932,15 +933,10 @@ void DownloadQueue::addLinkPeerSource(PartFile* file, const Address& v4, const A
 
 Address DownloadQueue::vetPeerAddress(const Address& addr) const
 {
-    if (addr.isNull())
-        return {};
-    if (!isGoodIP(addr))
-        return {};
-    if (m_ipFilter && m_ipFilter->isFiltered(addr))
-        return {};
-    if (m_clientList && m_clientList->isBannedClient(addr))
-        return {};
-    return addr;
+    // Body lives in net/PeerVetting.h so the upload queue store runs the same rules
+    // against its own untrusted on-disk records. Our injected members are passed in
+    // rather than the theApp globals so the unit tests keep their isolation.
+    return eMule::vetPeerAddress(addr, m_ipFilter, m_clientList);
 }
 
 bool DownloadQueue::addVettedSource(PartFile* file, uint32 ed2kUserId, const Address& v6,

@@ -643,6 +643,19 @@ public:
     [[nodiscard]] uint64 cumUpFromPartfile() const;
     void setCumUpFromPartfile(uint64 val);
 
+    // HTTP Cache — cumulative totals. Written absolutely by
+    // Statistics::flushCumulativeToPrefs, never incremented in place.
+    [[nodiscard]] uint64 cumHttpCacheBytesPublished() const;
+    void setCumHttpCacheBytesPublished(uint64 val);
+    [[nodiscard]] uint64 cumHttpCacheBytesFetched() const;
+    void setCumHttpCacheBytesFetched(uint64 val);
+    [[nodiscard]] uint64 cumHttpCacheBytesSaved() const;
+    void setCumHttpCacheBytesSaved(uint64 val);
+    [[nodiscard]] uint32 cumHttpCacheChunksPublished() const;
+    void setCumHttpCacheChunksPublished(uint32 val);
+    [[nodiscard]] uint32 cumHttpCacheChunksFetched() const;
+    void setCumHttpCacheChunksFetched(uint32 val);
+
     // Records
     [[nodiscard]] uint32 recMaxWorkingServers() const;
     void setRecMaxWorkingServers(uint32 val);
@@ -683,6 +696,59 @@ public:
     /// this twice undoes the restore — MFC's statbkuptmp.ini rename
     /// (srchybrid/Preferences.cpp:1330-1334).
     bool restoreCumulativeStats();
+
+    // -- HTTP Cache -----------------------------------------------------------
+    //
+    // Encrypted chunk offload (docs/protocol/http-cache-spec.md). Deliberately
+    // YAML-only for now — no Options page — while the design is still moving.
+    // Edit $HOME/eMuleQt/Config/preferences.yml under the `httpCache:` key.
+
+    /// Master switch. Off means we neither publish nor accept offers, and the
+    /// capability bit we advertise becomes a promise we simply never act on.
+    [[nodiscard]] bool httpCacheEnabled() const;
+    void setHttpCacheEnabled(bool val);
+
+    /// Accept OP_HTTPCACHE offers from peers and fetch over HTTP.
+    [[nodiscard]] bool httpCacheAllowDownload() const;
+    void setHttpCacheAllowDownload(bool val);
+
+    /// Publish chunks. Also needs a base URL and an API key to do anything.
+    [[nodiscard]] bool httpCacheAllowUpload() const;
+    void setHttpCacheAllowUpload(bool val);
+
+    /// Cache server root, e.g. "http://localhost/emule-http-cache-php".
+    [[nodiscard]] QString httpCacheBaseUrl() const;
+    void setHttpCacheBaseUrl(const QString& val);
+
+    /// Upload credential. Stored AES-encrypted in the YAML.
+    [[nodiscard]] QString httpCacheApiKey() const;
+    void setHttpCacheApiKey(const QString& val);
+
+    /// How many peers must want the same part before it is worth publishing.
+    /// The feature's whole premise is one upload serving many, so the default is
+    /// 2; set it to 1 only to exercise the path with a single peer.
+    [[nodiscard]] uint32 httpCacheMinClients() const;
+    void setHttpCacheMinClients(uint32 val);
+
+    /// TTL requested from the cache server, in seconds.
+    [[nodiscard]] uint32 httpCacheChunkTtlSeconds() const;
+    void setHttpCacheChunkTtlSeconds(uint32 val);
+
+    /// Ceiling on bytes published per day, so a misconfigured node cannot burn
+    /// an operator's quota overnight.
+    [[nodiscard]] uint64 httpCacheMaxPublishBytesPerDay() const;
+    void setHttpCacheMaxPublishBytesPerDay(uint64 val);
+
+    /// Publish rate cap in KB/s. 0 derives one from the upload limit, so the
+    /// offload never starves the ed2k uploads it is meant to relieve.
+    [[nodiscard]] uint32 httpCachePublishRateKBs() const;
+    void setHttpCachePublishRateKBs(uint32 val);
+
+    [[nodiscard]] uint32 httpCacheMaxConcurrentPublishes() const;
+    void setHttpCacheMaxConcurrentPublishes(uint32 val);
+
+    [[nodiscard]] uint32 httpCacheMaxConcurrentFetches() const;
+    void setHttpCacheMaxConcurrentFetches(uint32 val);
 
     // -- Security -------------------------------------------------------------
 
@@ -929,6 +995,11 @@ public:
     /// `<TempDir>/Source Lists/*.txtsrc` and restore them on the next run.
     [[nodiscard]] bool useSaveLoadSources() const;
     void setUseSaveLoadSources(bool val);
+
+    /// Upload Queue Storage — write the top waiting uploaders to
+    /// `<ConfigDir>/uploadqueue.met` and restore their queue positions on the next run.
+    [[nodiscard]] bool rememberUploadQueue() const;
+    void setRememberUploadQueue(bool val);
 
     // -- Disk space -----------------------------------------------------------
 

@@ -355,6 +355,7 @@ private:
     QSpinBox*     m_minFreeDiskSpaceSpin = nullptr;
     QSpinBox*     m_logLevelSpin = nullptr;
     QCheckBox*    m_useCreditSystemCheck = nullptr;
+    QCheckBox*    m_rememberUploadQueueCheck = nullptr;
     QCheckBox*    m_filterLANIPsCheck = nullptr;
     QCheckBox*    m_a4afSaveCpuCheck = nullptr;
     QCheckBox*    m_disableArchPreviewCheck = nullptr;

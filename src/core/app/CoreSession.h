@@ -10,6 +10,7 @@
 #include "utils/Types.h"
 
 #include <QObject>
+#include <QString>
 #include <QTimer>
 
 #include <memory>
@@ -42,6 +43,7 @@ class PortMapper;
 struct PortMapRequest;
 class UploadBandwidthThrottler;
 class UploadDiskIOThread;
+class HttpCacheManager;
 class UploadQueue;
 
 namespace kad { class Kademlia; }
@@ -86,6 +88,12 @@ private slots:
     void onTimer();
 
 private:
+    /// `<ConfigDir>/uploadqueue.met` — the Upload Queue Storage file.
+    [[nodiscard]] static QString uploadQueuePath();
+    /// Force-write the upload queue. Must run before any shutdownXxx(): shutdownClientInfra()
+    /// destroys the ClientCredits objects the waiting clients read their wait times from.
+    static void saveUploadQueueStore();
+
     void initUploadPipeline();
     void shutdownUploadPipeline();
 
@@ -133,6 +141,7 @@ private:
     std::unique_ptr<KnownFileList> m_knownFileList;
     std::unique_ptr<SharedFileList> m_sharedFileList;
     std::unique_ptr<UploadQueue> m_uploadQueue;
+    std::unique_ptr<HttpCacheManager> m_httpCache;
     std::unique_ptr<UploadBandwidthThrottler> m_uploadThrottler;
     std::unique_ptr<UploadDiskIOThread> m_uploadDiskIO;
     std::unique_ptr<kad::Kademlia> m_kademlia;

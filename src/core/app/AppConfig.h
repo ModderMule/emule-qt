@@ -18,7 +18,9 @@ namespace eMule {
 /// Derived from the CMake PROJECT_VERSION via config.h so it cannot drift.
 inline constexpr QLatin1StringView kAppVersion{EMULE_VERSION_STRING};
 
-/// User-Agent header value for all outgoing HTTP requests.
+/// User-Agent header value for all outgoing HTTP requests. Applied by
+/// eMule::Http::applyDefaults() (net/HttpDefaults.h) rather than by hand: a caller
+/// that forgets does not go out anonymous, it goes out as Qt's "Mozilla/5.0".
 inline const QString kUserAgent = QStringLiteral("eMuleQt/") + kAppVersion;
 
 /// Project website — base for the port test, bug report and version check endpoints.

@@ -44,14 +44,18 @@ public:
     void checkDownloadTimeout() override;
     void onSocketConnected(int errorCode) override;
 
+    // The three HTTP hooks are virtual so HttpCacheClient can slot a decrypt
+    // stage in without duplicating the socket, throttling and block-writing
+    // machinery below.
+
     /// Build and send HTTP GET request with Range header.
-    bool sendHttpBlockRequests();
+    virtual bool sendHttpBlockRequests();
 
     /// Process HTTP response headers. Returns true if valid response.
-    bool processHttpDownResponse(const QList<QByteArray>& headers);
+    virtual bool processHttpDownResponse(const QList<QByteArray>& headers);
 
     /// Process HTTP response body data.
-    bool processHttpDownResponseBody(const uint8* data, uint32 size);
+    virtual bool processHttpDownResponseBody(const uint8* data, uint32 size);
 
     /// Process received HTTP data as file block.
     void processHttpBlockPacket(const uint8* data, uint32 size);
@@ -61,6 +65,26 @@ public:
     [[nodiscard]] const QString& urlHost() const { return m_urlHost; }
     [[nodiscard]] uint16 urlPort() const { return m_urlPort; }
     [[nodiscard]] const QByteArray& urlPath() const { return m_urlPathLocal; }
+
+protected:
+    /// Build the request line and the common headers, up to but not including
+    /// Range and the terminating blank line. Subclasses append their own.
+    [[nodiscard]] QByteArray buildGetHeader() const;
+
+    /// Send a pre-built raw request over the socket.
+    bool sendRawRequest(const QByteArray& request);
+
+    /// Status code of an HTTP response, or -1 when the line is not one.
+    [[nodiscard]] static int parseStatusCode(const QByteArray& statusLine);
+
+    /// Case-insensitive header lookup over the accumulated header lines.
+    [[nodiscard]] static QByteArray headerValue(const QList<QByteArray>& headers,
+                                                const char* name);
+
+    /// Where the next body byte belongs in the file. Set from Content-Range and
+    /// advanced by processHttpBlockPacket.
+    [[nodiscard]] uint64 rangeStart() const { return m_rangeStart; }
+    void setRangeStart(uint64 pos) { m_rangeStart = pos; }
 
 private:
     void sendHelloPacket() override {} // no-op for HTTP

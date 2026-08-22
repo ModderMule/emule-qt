@@ -108,17 +108,25 @@ bool ClientReqSocket::checkTimeOut()
         // Give connecting sockets 4x timeout
         timeout *= 4;
     } else if (m_client) {
-        // MFC: extend timeout for downloading clients during slow-start phase
-        if (m_client->isDownloading() &&
-            now < m_client->downStartTime() + 4 * CONNECTION_TIMEOUT)
-        {
+        // MFC ListenSocket.cpp:139-147. An else-if chain, so exactly one extension applies.
+        //
+        // Note isUploadingToPeer(), not isDownloadingFromPeer(): MFC's IsDownloading() is the
+        // upload state, and this branch is about *our* send side stalling.
+        //
+        // The download direction is deliberately absent, because MFC covers it elsewhere:
+        // entering DS_DOWNLOADING raises the socket's base timeout to CONNECTION_TIMEOUT * 4
+        // (srchybrid/DownloadClient.cpp:653), which this port already does in
+        // UpDownClient::setDownloadState(). A branch here as well would stack a second
+        // extension on top of that one.
+        if (m_client->kadState() == KadState::ConnectedBuddy) {
+            timeout += MIN2MS(15);
+        } else if (m_client->isUploadingToPeer()
+                   && m_client->getUpStartTimeDelay() < 4 * CONNECTION_TIMEOUT) {
+            // TCP flow control might need more time to begin throttling for slow peers.
             timeout += 4 * CONNECTION_TIMEOUT;
-        }
-        // Extend timeout for uploading clients during slow-start phase
-        if (m_client->uploadState() == UploadState::Uploading) {
-            uint32 uploadTime = m_client->getUpStartTimeDelay();
-            if (uploadTime < 4 * CONNECTION_TIMEOUT)
-                timeout += 4 * CONNECTION_TIMEOUT;
+        } else if (m_client->chatState() != ChatState::None) {
+            // Don't drop somebody in the middle of a conversation.
+            timeout += CONNECTION_TIMEOUT;
         }
     }
 
@@ -375,6 +383,7 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_CHATCAPTCHARES:
     case OP_FWCHECKUDPREQ:
     case OP_KAD_FWTCPCHECK_ACK:
+    case OP_HTTPCACHE:
         if (stats) stats->addDownDataOverheadOther(rawSize);
         emit extPacketReceived(packet, size, opcode);
         break;

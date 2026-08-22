@@ -225,6 +225,15 @@ public:
         uint32 downCompletedFiles = 0;
         uint32 connPeak = 0;
         uint32 connMaxLimitReached = 0;
+
+        // HTTP Cache. These live in HttpCacheManager for the same reason the
+        // session counters above live in their own subsystems: Statistics does
+        // not reach into theApp, the caller brings the numbers.
+        uint64 httpCacheBytesPublished = 0;
+        uint64 httpCacheBytesFetched = 0;
+        uint64 httpCacheBytesSaved = 0;
+        uint32 httpCacheChunksPublished = 0;
+        uint32 httpCacheChunksFetched = 0;
     };
 
     /// Every cumulative counter the Statistics tree shows.  Each field is the
@@ -294,6 +303,13 @@ public:
         uint64 downPortOther = 0;
         uint64 upFromFile = 0;
         uint64 upFromPartfile = 0;
+
+        // HTTP Cache
+        uint64 httpCacheBytesPublished = 0;   ///< ciphertext pushed to the cache
+        uint64 httpCacheBytesFetched = 0;     ///< plaintext pulled back out of it
+        uint64 httpCacheBytesSaved = 0;       ///< upstream not spent thanks to it
+        uint32 httpCacheChunksPublished = 0;
+        uint32 httpCacheChunksFetched = 0;
     };
 
     /// Cumulative totals as of right now — what both the Statistics tree and the
