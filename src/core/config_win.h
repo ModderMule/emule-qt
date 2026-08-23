@@ -9,9 +9,9 @@
 // Project version
 // ---------------------------------------------------------------------------
 #define EMULE_VERSION_MAJOR  0
-#define EMULE_VERSION_MINOR  3
+#define EMULE_VERSION_MINOR  4
 #define EMULE_VERSION_PATCH  0
-#define EMULE_VERSION_STRING "0.3.0"
+#define EMULE_VERSION_STRING "0.4.0"
 
 // ---------------------------------------------------------------------------
 // Platform detection
