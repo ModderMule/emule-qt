@@ -3,6 +3,7 @@
 /// @brief "Add..." dialog implementation — matches MFC eMule layout.
 
 #include "dialogs/AddFriendDialog.h"
+#include "utils/DialogSizing.h"
 
 #include <QDialogButtonBox>
 #include <QGroupBox>
@@ -20,7 +21,6 @@ AddFriendDialog::AddFriendDialog(QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("Add..."));
-    setFixedSize(340, 260);
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -74,6 +74,10 @@ AddFriendDialog::AddFriendDialog(QWidget* parent)
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     m_ipEdit->setFocus();
+
+    // Not resizable, like the MFC original — but sized from the content, so a longer
+    // translation or a larger system font grows the dialog instead of being cut off.
+    DialogSizing::applyFixedSize(this, QSize(340, 260));
 }
 
 QString AddFriendDialog::ipAddress() const

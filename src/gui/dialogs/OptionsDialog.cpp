@@ -11,6 +11,7 @@
 #include "panels/StatisticsPanel.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
+#include "utils/DialogSizing.h"
 
 #include "IpcMessage.h"
 
@@ -72,7 +73,6 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     , m_statsPanel(statsPanel)
 {
     setWindowTitle(tr("Options"));
-    resize(800, 640);
 
     auto* mainLayout = new QHBoxLayout;
 
@@ -384,6 +384,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
         m_proxyUserEdit->setEnabled(proxyOn && on);
         m_proxyPasswordEdit->setEnabled(proxyOn && on);
     });
+
+    DialogSizing::applySize(this, {}, QSize(800, 640), DialogSizing::Fit::Layout);
 }
 
 OptionsDialog::~OptionsDialog() = default;
@@ -1423,7 +1425,6 @@ QWidget* OptionsDialog::createFilesPage()
         auto* dlg = new QDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->setWindowTitle(tr("Filename Cleanup Rules"));
-        dlg->setMinimumSize(500, 350);
         auto* layout = new QVBoxLayout(dlg);
         layout->addWidget(new QLabel(
             tr("Define patterns to automatically clean up filenames of new downloads.\n"
@@ -1467,6 +1468,8 @@ QWidget* OptionsDialog::createFilesPage()
         auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
         connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
         layout->addWidget(btnBox);
+
+        DialogSizing::applySize(dlg, QSize(500, 350), {}, DialogSizing::Fit::Layout);
         dlg->show();
     });
     cleanupRow->addWidget(editCleanupBtn);

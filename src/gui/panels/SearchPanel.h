@@ -142,6 +142,9 @@ private:
     void refreshKnownTypes();
 
     /// Open the MFC-style search-result detail sheet for @p hash in tab @p searchID.
+    /// Open the result sheet for @p index (proxy coordinates) — the Alt+Enter action.
+    void showResultDetails(const QModelIndex& index);
+
     void fetchAndShowSearchDetails(uint32_t searchID, const QString& hash,
                                    SearchDetailDialog::Page page);
 

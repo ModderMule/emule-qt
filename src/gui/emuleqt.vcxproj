@@ -211,6 +211,7 @@
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
     <ClCompile Include="controls\ContactsGraph.cpp" />
+    <ClCompile Include="controls\ContentScrollArea.cpp" />
     <ClCompile Include="dialogs\CoreConnectDialog.cpp" />
     <ClCompile Include="controls\DownloadListModel.cpp" />
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
@@ -260,9 +261,12 @@
     <ClCompile Include="app\VersionChecker.cpp" />
     <ClCompile Include="app\SkinEngine.cpp" />
     <ClCompile Include="app\main.cpp" />
+    <ClCompile Include="utils\DialogSizing.cpp" />
     <ClCompile Include="utils\Ed2kLinkImporter.cpp" />
     <ClCompile Include="utils\HttpCacheLinkImporter.cpp" />
     <ClCompile Include="utils\IpcFeedback.cpp" />
+    <ClCompile Include="utils\ListActivation.cpp" />
+    <ClCompile Include="utils\MenuUtils.cpp" />
     <ClCompile Include="utils\ViewNavigation.cpp" />
     <ClCompile Include="utils\PanelPoller.cpp" />
     <ClCompile Include="utils\PreviewLauncher.cpp" />
@@ -274,11 +278,14 @@
     <ClInclude Include="controls\AbstractListView.h" />
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
+    <ClInclude Include="utils\DialogSizing.h" />
     <ClInclude Include="utils\Ed2kLinkImporter.h" />
     <ClInclude Include="utils\HttpCacheLinkImporter.h" />
     <ClInclude Include="dialogs\FindInListDialog.h" />
     <ClInclude Include="dialogs\MetadataPage.h" />
     <ClInclude Include="utils\IpcFeedback.h" />
+    <ClInclude Include="utils\ListActivation.h" />
+    <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\ViewNavigation.h" />
     <QtMoc Include="utils\PanelPoller.h" />
     <ClInclude Include="utils\PreviewLauncher.h" />
@@ -296,6 +303,7 @@
     <QtMoc Include="controls\ClientListModel.h" />
     <ClInclude Include="app\CommandLineExec.h" />
     <QtMoc Include="controls\ContactsGraph.h" />
+    <QtMoc Include="controls\ContentScrollArea.h" />
     <QtMoc Include="dialogs\CoreConnectDialog.h" />
     <QtMoc Include="controls\DownloadListModel.h" />
     <QtMoc Include="controls\DownloadProgressDelegate.h" />

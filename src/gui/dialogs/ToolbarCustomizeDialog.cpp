@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "dialogs/ToolbarCustomizeDialog.h"
+#include "utils/DialogSizing.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -69,7 +70,6 @@ ToolbarCustomizeDialog::ToolbarCustomizeDialog(
     , m_initialOrder(currentOrder)
 {
     setWindowTitle(tr("Customize Toolbar"));
-    setMinimumSize(600, 400);
 
     auto* mainLayout = new QHBoxLayout(this);
 
@@ -124,6 +124,9 @@ ToolbarCustomizeDialog::ToolbarCustomizeDialog(
             emit orderChanged(m_order);
         accept();
     });
+
+    DialogSizing::applySize(this, QSize(600, 400), QSize(600, 400),
+                            DialogSizing::Fit::Layout);
 }
 
 void ToolbarCustomizeDialog::populateLists()

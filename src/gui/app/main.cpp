@@ -637,6 +637,7 @@ int main(int argc, char* argv[])
                 if (auto st = stats.value(QStringLiteral("streamToken")); st.isString()) {
                     mainWindow.transferPanel()->setStreamToken(st.toString());
                     mainWindow.searchPanel()->setStreamToken(st.toString());
+                    mainWindow.sharedFilesPanel()->setStreamToken(st.toString());
                 }
 
                 // Update MiniMule popup stats

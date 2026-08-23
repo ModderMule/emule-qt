@@ -8,6 +8,7 @@
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "utils/DialogSizing.h"
 
 #include <QCheckBox>
 #include <QGroupBox>
@@ -70,7 +71,6 @@ void CollectionCreateDialog::loadExistingCollection(const QString& collectionHas
 void CollectionCreateDialog::setupUi()
 {
     setWindowTitle(tr("Create Collection..."));
-    resize(640, 420);
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -173,6 +173,8 @@ void CollectionCreateDialog::setupUi()
     btnLayout->addWidget(cancelBtn);
 
     mainLayout->addLayout(btnLayout);
+
+    DialogSizing::applySize(this, {}, QSize(640, 420), DialogSizing::Fit::Layout);
 }
 
 // ---------------------------------------------------------------------------

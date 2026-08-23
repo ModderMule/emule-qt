@@ -4,6 +4,7 @@
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
+#include "utils/DialogSizing.h"
 
 #include <QCheckBox>
 #include <QDesktopServices>
@@ -27,7 +28,6 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent)
 {
     setWindowTitle(tr("eMule First Runtime Wizard"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/Wizard.ico")));
-    setFixedSize(530, 460);
 
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 8);
@@ -40,6 +40,9 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent)
     mainLayout->addStretch();
 
     setupButtons();
+
+    // Fixed like the MFC wizard, but never smaller than its own explanatory text.
+    DialogSizing::applyFixedSize(this, QSize(530, 460));
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +104,8 @@ void FirstStartWizard::setupPortSection()
     auto* container = new QWidget(this);
     auto* vbox = new QVBoxLayout(container);
     vbox->setContentsMargins(16, 12, 16, 4);
+    // Relays the wrapped height of the two paragraphs below up to the fixed dialog size.
+    DialogSizing::enableHeightForWidth(container);
 
     auto* descLabel = new QLabel(
         tr("eMule uses two ports for communication with servers and clients. "
@@ -110,6 +115,7 @@ void FirstStartWizard::setupPortSection()
            "network usage (Overhead)."),
         container);
     descLabel->setWordWrap(true);
+    DialogSizing::enableHeightForWidth(descLabel);
     vbox->addWidget(descLabel);
 
     vbox->addSpacing(4);
@@ -118,6 +124,7 @@ void FirstStartWizard::setupPortSection()
         tr("You can change the ports here while no network activities have started."),
         container);
     changeLabel->setWordWrap(true);
+    DialogSizing::enableHeightForWidth(changeLabel);
     vbox->addWidget(changeLabel);
 
     vbox->addSpacing(8);

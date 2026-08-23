@@ -4,12 +4,18 @@
 
 #include "DetailDialog.h"
 
+#include "ClientDetailDialog.h"
+
 #include "app/IpcClient.h"
+#include "controls/ContentScrollArea.h"
 #include "prefs/Preferences.h"
+#include "utils/DialogSizing.h"
 #include "utils/IpcFeedback.h"
 
 #include <QDialogButtonBox>
 #include <QEvent>
+#include <QFormLayout>
+#include <QLabel>
 #include <QKeySequence>
 #include <QPointer>
 #include <QShortcut>
@@ -21,9 +27,34 @@
 
 namespace eMule {
 
+// ── shared form rows ───────────────────────────────────────────────────
+
+QLabel* detailValueLabel(const QString& text)
+{
+    auto* label = new QLabel(text);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    label->setWordWrap(true);
+    label->setMinimumWidth(240);
+
+    // Expanding, so the value uses the width the dialog has instead of wrapping early in
+    // a narrow column; Minimum vertically, so the row keeps the height it asks for.
+    label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+
+    // And the wrapped height only enters the layout's arithmetic once the policy says the
+    // height follows the width — QWidgetItem reads that flag, not the heightForWidth()
+    // implementation. Without it the extra lines are painted outside the row.
+    DialogSizing::enableHeightForWidth(label);
+    return label;
+}
+
+void addDetailRow(QFormLayout* form, const QString& label, const QString& value)
+{
+    form->addRow(QStringLiteral("<b>%1:</b>").arg(label), detailValueLabel(value));
+}
+
 // ── construction ───────────────────────────────────────────────────────
 
-DetailDialog::DetailDialog(QWidget* parent)
+DetailDialog::DetailDialog(QWidget* parent, ContentScroll scroll)
     : QDialog(parent)
 {
     auto* mainLayout = new QVBoxLayout(this);
@@ -32,9 +63,49 @@ DetailDialog::DetailDialog(QWidget* parent)
     // row — before their constructor body runs.
     m_contentLayout = new QVBoxLayout;
     m_contentLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->addLayout(m_contentLayout, 1);
+
+    if (scroll == ContentScroll::On) {
+        auto* host = new QWidget;
+        host->setLayout(m_contentLayout);
+        DialogSizing::enableHeightForWidth(host);
+
+        auto* area = new ContentScrollArea(this);
+        area->setWidget(host);
+        mainLayout->addWidget(area, 1);
+    } else {
+        mainLayout->addLayout(m_contentLayout, 1);
+    }
 
     buildButtonRow();   // appends its row to mainLayout
+}
+
+void DetailDialog::setDesignedSize(QSize minimum, QSize preferred)
+{
+    m_designedMin     = minimum;
+    m_designedDefault = preferred;
+}
+
+void DetailDialog::fitToContent()
+{
+    // A widget added to a layout while the dialog is already on screen stays hidden
+    // until the event loop gets around to showing it, and QWidgetItem::isEmpty() is
+    // true for a hidden widget — so measuring right now would size the dialog to the
+    // *previous* item's content and squeeze the new one. Show it here instead of
+    // deferring the fit, which would flash the squeezed layout for a frame.
+    for (int i = 0; i < m_contentLayout->count(); ++i) {
+        if (QWidget* content = m_contentLayout->itemAt(i)->widget(); content && content->isHidden())
+            content->show();
+    }
+
+    DialogSizing::applySize(this, m_designedMin, m_designedDefault);
+
+    // And once more when the resize has come back from the window manager. Only then has
+    // the content been laid out at its final width, which is the first moment a wrapping
+    // label reports the height it truly needs — the measurement above can be a line short
+    // of it. applySize() only ever grows a window that is already up, so this settles.
+    QTimer::singleShot(0, this, [this] {
+        DialogSizing::applySize(this, m_designedMin, m_designedDefault);
+    });
 }
 
 void DetailDialog::setWalker(DetailWalker walker)
@@ -157,6 +228,30 @@ void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
         req.append(key);
         return req;
     });
+}
+
+// ── shared client-detail dialog ────────────────────────────────────────
+
+void showClientDetails(QWidget* parent, IpcClient* ipc, const QString& clientHash,
+                       DetailWalker walker)
+{
+    if (!ipc || !ipc->isConnected() || clientHash.isEmpty())
+        return;
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::GetClientDetails);
+    msg.append(clientHash);
+    ipc->sendRequest(std::move(msg),
+        [parent, ipc, walker = std::move(walker)](const Ipc::IpcMessage& resp) {
+            if (!resp.fieldBool(0))
+                return;
+
+            auto* dlg = new ClientDetailDialog(resp.field(1).toMap(), parent);
+            if (walker.step) {
+                dlg->setWalker(walker);
+                connectDetailNavigation(dlg, ipc, Ipc::IpcMsgType::GetClientDetails);
+            }
+            dlg->show();
+        });
 }
 
 // ── shared comment spam-filter wiring ──────────────────────────────────

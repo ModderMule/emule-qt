@@ -8,6 +8,7 @@
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
 #include "prefs/Preferences.h"
+#include "utils/DialogSizing.h"
 #include "utils/IpcFeedback.h"
 
 #include <QCborArray>
@@ -66,8 +67,10 @@ FileDetailDialog::FileDetailDialog(const QCborMap& details, Tab initialTab,
     : DetailDialog(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
-    setMinimumSize(680, 420);
-    resize(720, 480);
+
+    // Floors only — the General tab grows a row for an AICH hash and its file-name
+    // value wraps, so the height the tabs need is not a constant.
+    setDesignedSize(QSize(680, 420), QSize(720, 480));
 
     // Explicitly qualified: a constructor must not dispatch virtually.
     m_pendingTab = initialTab;
@@ -134,6 +137,8 @@ void FileDetailDialog::buildTabs(const QCborMap& details, int tabToSelect)
     // (6 tabs) must not leave the tab widget on an out-of-range index.
     m_tabs->setCurrentIndex(std::clamp(tabToSelect, 0, m_tabs->count() - 1));
     contentLayout()->addWidget(m_tabs);
+
+    fitToContent();
 }
 
 // ── General tab ────────────────────────────────────────────────────────
@@ -143,12 +148,10 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     auto* page = new QWidget;
     auto* form = new QFormLayout(page);
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    DialogSizing::enableHeightForWidth(page);
 
     auto addRow = [form](const QString& label, const QString& value) {
-        auto* lbl = new QLabel(value);
-        lbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        lbl->setWordWrap(true);
-        form->addRow(QStringLiteral("<b>%1:</b>").arg(label), lbl);
+        addDetailRow(form, label, value);
     };
 
     addRow(tr("File Name"), str(d, QLatin1StringView("fileName")));

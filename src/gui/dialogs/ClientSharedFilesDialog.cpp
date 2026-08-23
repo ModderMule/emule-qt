@@ -8,6 +8,7 @@
 #include "controls/AbstractListView.h"
 
 #include "IpcMessage.h"
+#include "utils/DialogSizing.h"
 
 #include <QHeaderView>
 #include <QPushButton>
@@ -46,7 +47,6 @@ ClientSharedFilesDialog::ClientSharedFilesDialog(const QString& clientName,
 {
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowTitle(tr("Shared Files \u2014 %1").arg(clientName));
-    resize(640, 400);
 
     auto* layout = new QVBoxLayout(this);
 
@@ -97,6 +97,8 @@ ClientSharedFilesDialog::ClientSharedFilesDialog(const QString& clientName,
     connect(closeBtn, &QPushButton::clicked, this, &QDialog::close);
     btnLayout->addWidget(closeBtn);
     layout->addLayout(btnLayout);
+
+    DialogSizing::applySize(this, {}, QSize(640, 400), DialogSizing::Fit::Layout);
 }
 
 void ClientSharedFilesDialog::downloadSelected()

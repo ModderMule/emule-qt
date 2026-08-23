@@ -7,6 +7,7 @@
 #include "app/IpcClient.h"
 
 #include "IpcMessage.h"
+#include "utils/DialogSizing.h"
 
 #include <QCborMap>
 #include <QDialogButtonBox>
@@ -49,7 +50,6 @@ NetworkInfoDialog::NetworkInfoDialog(IpcClient* ipc, QWidget* parent)
     , m_ipc(ipc)
 {
     setWindowTitle(tr("Network Information"));
-    resize(520, 650);
 
     auto* layout = new QVBoxLayout(this);
 
@@ -64,6 +64,8 @@ NetworkInfoDialog::NetworkInfoDialog(IpcClient* ipc, QWidget* parent)
 
     m_browser->setHtml(tr("<i>Loading...</i>"));
     requestNetworkInfo();
+
+    DialogSizing::applySize(this, {}, QSize(520, 650), DialogSizing::Fit::Layout);
 }
 
 NetworkInfoDialog::~NetworkInfoDialog() = default;

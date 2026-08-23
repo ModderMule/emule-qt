@@ -6,6 +6,7 @@
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
 #include "IpcMessage.h"
+#include "utils/DialogSizing.h"
 
 #include <QCborArray>
 #include <QPointer>
@@ -36,7 +37,6 @@ ImportDownloadsDialog::ImportDownloadsDialog(IpcClient* ipc, QWidget* parent)
 {
     setWindowTitle(tr("Convert Part Files"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/Convert.ico")));
-    resize(620, 400);
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -116,6 +116,8 @@ ImportDownloadsDialog::ImportDownloadsDialog(IpcClient* ipc, QWidget* parent)
 
     // Initial fetch
     requestJobs();
+
+    DialogSizing::applySize(this, {}, QSize(620, 400), DialogSizing::Fit::Layout);
 }
 
 ImportDownloadsDialog::~ImportDownloadsDialog() = default;

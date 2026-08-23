@@ -3,6 +3,7 @@
 /// @brief Last-resort dialog for connecting to a remote eMule daemon.
 
 #include "dialogs/CoreConnectDialog.h"
+#include "utils/DialogSizing.h"
 
 #include <QCheckBox>
 #include <QFormLayout>
@@ -21,8 +22,6 @@ CoreConnectDialog::CoreConnectDialog(QWidget* parent)
 {
     setWindowTitle(tr("Connect to Core"));
     setWindowFlags(Qt::Dialog | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
-    setMinimumSize(380, 280);
-    resize(380, 280);
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -32,6 +31,7 @@ CoreConnectDialog::CoreConnectDialog(QWidget* parent)
            "Enter the address and authentication token of a remote core."),
         this);
     headerLabel->setWordWrap(true);
+    DialogSizing::enableHeightForWidth(headerLabel);
     mainLayout->addWidget(headerLabel);
 
     // Connection group
@@ -82,6 +82,8 @@ CoreConnectDialog::CoreConnectDialog(QWidget* parent)
     connect(m_exitBtn, &QPushButton::clicked, this, &QDialog::reject);
 
     m_addressEdit->setFocus();
+
+    DialogSizing::applySize(this, QSize(380, 280), QSize(380, 280));
 }
 
 // ---------------------------------------------------------------------------

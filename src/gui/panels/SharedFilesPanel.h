@@ -55,6 +55,10 @@ public:
     /// Access the shared files model (e.g. for checking known hashes).
     [[nodiscard]] SharedFilesModel* sharedFilesModel() const { return m_model; }
 
+    /// The daemon's web-server token, needed to open a file that lives on a remote
+    /// core. Handed out with the daemon's stats, like the other panels' copies.
+    void setStreamToken(const QString& token) { m_streamToken = token; }
+
 signals:
     /// Ask MainWindow to run this search in the Search panel and switch to it.
     /// Emitted by "Search Author's Collections…", which needs an explicit method and
@@ -111,6 +115,16 @@ private:
     void restoreSelection(const SelectionState& state);
     void fetchAndShowSharedFileDetails(const QString& hash, int tab);
 
+    /// The list's primary action, MFC's CSharedFilesCtrl::OpenFile()
+    /// (srchybrid/SharedFilesCtrl.cpp:1259): show a collection in the collection
+    /// viewer, hand anything else to the machine the file actually lives on. Does
+    /// nothing for a part file, as the original does not open those either.
+    void openSharedFile(const QString& hash);
+
+    /// Show @p hash's collection in the collection viewer. Shared by "View
+    /// Collection..." and by opening a collection from the list.
+    void showCollection(const QString& hash);
+
     /// Locate @p hash in the view (proxy coordinates); invalid when the folder
     /// filter hides it or the file has left the share.
     [[nodiscard]] QModelIndex fileIndexFor(const QString& hash) const;
@@ -125,6 +139,9 @@ private:
     // Models
     SharedFilesModel* m_model = nullptr;
     SharedFilesSortProxy* m_proxy = nullptr;
+
+    /// Web-server token for remote-core file opening; empty until the daemon sends it.
+    QString m_streamToken;
 
     // Views
     QTreeView* m_fileView = nullptr;

@@ -4,6 +4,7 @@
 
 #include "utils/PreviewLauncher.h"
 
+#include "app/IpcClient.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
@@ -47,6 +48,18 @@ void launchPreview(const QString& url)
     } else {
         QProcess::startDetached(playerCmd, argList);
     }
+}
+
+QString daemonStreamUrl(const IpcClient* ipc, const QString& fileHash,
+                        const QString& streamToken)
+{
+    if (!ipc || !ipc->isConnected() || fileHash.isEmpty() || streamToken.isEmpty())
+        return {};
+
+    return QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
+        .arg(ipc->daemonHost())
+        .arg(thePrefs.webServerPort())
+        .arg(fileHash, streamToken);
 }
 
 } // namespace eMule

@@ -10,6 +10,7 @@
 #include "net/HttpDefaults.h"
 
 #include "utils/CrashHandler.h"
+#include "utils/DialogSizing.h"
 
 #include <QApplication>
 #include <QBuffer>
@@ -51,8 +52,6 @@ BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
     , m_logWidget(logWidget)
 {
     setWindowTitle(tr("Submit Bug Report"));
-    setMinimumSize(500, 560);
-    resize(540, 620);
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -157,6 +156,9 @@ BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
     prefillCrashDump();
 
     m_titleEdit->setFocus();
+
+    DialogSizing::applySize(this, QSize(500, 560), QSize(540, 620),
+                            DialogSizing::Fit::Layout);
 }
 
 // ---------------------------------------------------------------------------

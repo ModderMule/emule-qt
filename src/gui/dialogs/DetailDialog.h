@@ -21,11 +21,14 @@
 
 #include <QCborMap>
 #include <QDialog>
+#include <QSize>
 #include <QString>
 
 #include <functional>
 
 class QDialogButtonBox;
+class QFormLayout;
+class QLabel;
 class QToolButton;
 class QVBoxLayout;
 
@@ -77,10 +80,33 @@ void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
 void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
                            Ipc::IpcMsgType detailsRequest);
 
+/// Fetch GetClientDetails for @p clientHash and show a ClientDetailDialog for it,
+/// parented to @p parent. Shared because more than one panel opens that dialog from
+/// nothing but a user hash, and the exchange is the same every time.
+///
+/// @param walker  omitted where the dialog was not opened from a list, which drops
+///                the Prev/Next arrows — MFC likewise omits them for ChatSelector
+///                and FriendListCtrl.
+///
+/// Nothing happens when the daemon does not know the client: an offline friend has
+/// no entry in the client list, and the original answers that case with its
+/// CAddFriend sheet rather than a detail dialog.
+void showClientDetails(QWidget* parent, IpcClient* ipc, const QString& clientHash,
+                       DetailWalker walker = {});
+
 /// Wire the Comments page's "Edit spam filter..." to a single-key SetPreferences
 /// push, keeping the GUI's own Preferences mirror in step. The daemon applies the
 /// filter to incoming Kad notes, so nothing else has to be refreshed here.
 void connectCommentFilter(DetailDialog* dialog, IpcClient* ipc);
+
+/// A value label for a detail form row: selectable, and wrapping across the full width
+/// of the row rather than at whatever width QLabel's own heuristic picks — a value that
+/// wrapped inside a 90 pixel column while the dialog was 700 wide is how the File Details
+/// size and source counts used to lose their second and third lines.
+[[nodiscard]] QLabel* detailValueLabel(const QString& text);
+
+/// Add a bold "@p label:" / @p value row to @p form, the way every detail sheet does.
+void addDetailRow(QFormLayout* form, const QString& label, const QString& value);
 
 /// Base for the detail dialogs: subclass content on top, and a bottom row with
 /// the Prev/Next walker buttons immediately left of Close.
@@ -88,7 +114,14 @@ class DetailDialog : public QDialog {
     Q_OBJECT
 
 public:
-    explicit DetailDialog(QWidget* parent = nullptr);
+    /// Whether the content sits in a scroll area. Only the plain form dialogs need it:
+    /// they are sized to show everything, so it scrolls solely on a screen too short for
+    /// the form. A tabbed dialog shrinks its pages instead and must not scroll its tab
+    /// bar away.
+    enum class ContentScroll { Off, On };
+
+    explicit DetailDialog(QWidget* parent = nullptr,
+                          ContentScroll scroll = ContentScroll::Off);
 
     /// Rebuild the dialog from a fresh details map — content, window title and
     /// subject key. This is MFC's CListViewPropertySheet::ChangedData(): *every*
@@ -128,6 +161,14 @@ protected:
 
     void setSubjectKey(const QString& key) { m_subjectKey = key; }
 
+    /// The hand-picked size floors, in place of setMinimumSize()/resize(): the content
+    /// raises them whenever it needs more room. Pass 0 for a dimension the content owns.
+    void setDesignedSize(QSize minimum, QSize preferred);
+
+    /// Re-measure the content and grow the dialog to fit it. The walker rebuilds every
+    /// page on each step, so each setDetails() override ends with this.
+    void fitToContent();
+
     bool event(QEvent* event) override;
 
 private:
@@ -141,6 +182,8 @@ private:
     QToolButton*      m_nextButton    = nullptr;
     DetailWalker      m_walker;
     QString           m_subjectKey;
+    QSize             m_designedMin;
+    QSize             m_designedDefault;
 };
 
 } // namespace eMule

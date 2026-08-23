@@ -9,6 +9,7 @@
 #include "dialogs/FindInListDialog.h"
 
 #include "app/UiState.h"
+#include "utils/ListActivation.h"
 #include "utils/PanelPoller.h"
 #include "IpcMessage.h"
 #include "net/HttpFileDownload.h"
@@ -638,6 +639,12 @@ QWidget* ServerPanel::createServerListPanel()
     m_serverListView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_serverListView, &QTreeView::doubleClicked,
             this, &ServerPanel::onServerDoubleClicked);
+
+    // MFC CServerListCtrl (srchybrid/ServerListCtrl.cpp:392): Enter connects, the same
+    // as a double click. There is no server detail sheet in the original, so Alt+Enter
+    // is deliberately left unbound here.
+    bindListActivation(m_serverListView,
+        [this](const QModelIndex& index) { onServerDoubleClicked(index); });
     connect(m_serverListView, &QTreeView::customContextMenuRequested,
             this, &ServerPanel::onServerContextMenu);
     applyServerSortMode();   // #24: initial manual-order display mode

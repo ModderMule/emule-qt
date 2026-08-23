@@ -18,8 +18,7 @@ SearchDetailDialog::SearchDetailDialog(const QCborMap& details, Page initialPage
     : DetailDialog(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
-    setMinimumSize(520, 320);
-    resize(640, 380);
+    setDesignedSize(QSize(520, 320), QSize(640, 380));
 
     m_pendingPage = initialPage;
     SearchDetailDialog::setDetails(details);   // no virtual dispatch from a ctor
@@ -80,6 +79,8 @@ void SearchDetailDialog::buildPages(const QCborMap& details, Page pageToSelect)
                                                                  : m_commentsPanel;
     m_tabs->setCurrentWidget(target);
     contentLayout()->addWidget(m_tabs);
+
+    fitToContent();
 }
 
 } // namespace eMule

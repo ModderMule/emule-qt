@@ -14,6 +14,8 @@
 #include "dialogs/ClientDetailDialog.h"
 #include "dialogs/FindInListDialog.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/ListActivation.h"
+#include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/ViewNavigation.h"
@@ -432,8 +434,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         const bool isComplete = singleSel && dl && dl->isComplete();
         act->setEnabled(isComplete);
         // Completed download: Open File becomes the default action (rendered bold).
-        if (isComplete)
-            m_downloadMenu->setDefaultAction(act);
+        setMenuDefaultAction(m_downloadMenu, isComplete ? act : nullptr);
     }
     {
         auto* act = m_downloadMenu->addAction(ico("Preview.ico"), tr("Preview"), this, [this, singleHash]() {
@@ -709,6 +710,32 @@ QWidget* TransferPanel::createDownloadsSection()
         }
     });
 
+    // MFC CDownloadListCtrl (srchybrid/DownloadListCtrl.cpp:1443 IDA_ENTER, :1420 and
+    // :1545 MPG_ALTENTER): Enter opens a finished download and does nothing on a source
+    // row — expanding is the double click's job, not Enter's — while Alt+Enter opens the
+    // file sheet for a download row and the client sheet for a source row.
+    bindListActivation(m_downloadView,
+        [this](const QModelIndex& index) {
+            if (index.parent().isValid())
+                return;
+            const QModelIndex srcIdx = ViewNav::toSource(index);
+            const auto* dl = m_downloadModel->downloadAt(srcIdx.row());
+            if (dl && dl->isComplete())
+                openDownload(m_downloadModel->hashAt(srcIdx.row()));
+        },
+        [this](const QModelIndex& index) {
+            const QModelIndex srcIdx = ViewNav::toSource(index);
+            if (!index.parent().isValid()) {
+                showDownloadDetails(m_downloadModel->hashAt(srcIdx.row()));
+                return;
+            }
+            if (const auto* src = m_downloadModel->sourceAt(srcIdx)) {
+                const QString parentHash = m_downloadModel->hashAt(srcIdx.parent().row());
+                fetchAndShowClientDetails(src->userHash,
+                                          makeSourceWalker(parentHash, src->userHash));
+            }
+        });
+
     // Track collapse via user interaction (clicking the arrow)
     connect(m_downloadView, &QTreeView::collapsed, this, [this](const QModelIndex& proxyIdx) {
         const QModelIndex catSrcIdx = m_categoryProxy->mapToSource(proxyIdx);
@@ -798,8 +825,7 @@ QWidget* TransferPanel::createBottomPane()
         connect(view, &QTreeView::customContextMenuRequested, this,
                 [this, view, model](const QPoint& p) { onClientContextMenu(view, model, p); });
 
-        connect(view, &QTreeView::doubleClicked, this,
-                [this, view, model](const QModelIndex& proxyIdx) {
+        const auto showDetails = [this, view, model](const QModelIndex& proxyIdx) {
             auto* proxy = qobject_cast<QSortFilterProxyModel*>(view->model());
             if (!proxy) return;
             const QModelIndex srcIdx = proxy->mapToSource(proxyIdx);
@@ -807,7 +833,13 @@ QWidget* TransferPanel::createBottomPane()
             if (client)
                 fetchAndShowClientDetails(client->userHash,
                                           makeClientWalker(view, model, client->userHash));
-        });
+        };
+        connect(view, &QTreeView::doubleClicked, this, showDetails);
+
+        // MFC maps Enter and Alt+Enter to the same command on every client list
+        // (srchybrid/ClientListCtrl.cpp:387, UploadListCtrl.cpp:420,
+        // QueueListCtrl.cpp:451, DownloadClientsCtrl.cpp:397).
+        bindListActivation(view, showDetails, showDetails);
     }
 
     // The view itself is mounted by applyViews().
@@ -1412,10 +1444,7 @@ QString TransferPanel::streamUrl(const QString& hash) const
         return {};
 
     // Streaming URL via the daemon's web server (backs preview and remote open).
-    const QString host = m_ipc->daemonHost();
-    const uint16_t wsPort = thePrefs.webServerPort();
-    return QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
-        .arg(host).arg(wsPort).arg(hash, m_streamToken);
+    return daemonStreamUrl(m_ipc, hash, m_streamToken);
 }
 
 void TransferPanel::openDownload(const QString& hash)
@@ -1515,24 +1544,7 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
 
 void TransferPanel::fetchAndShowClientDetails(const QString& clientHash, DetailWalker walker)
 {
-    if (!m_ipc || !m_ipc->isConnected() || clientHash.isEmpty())
-        return;
-    IpcMessage msg(IpcMsgType::GetClientDetails);
-    msg.append(clientHash);
-    m_ipc->sendRequest(std::move(msg),
-        [this, walker = std::move(walker)](const IpcMessage& resp) {
-            if (!resp.fieldBool(0))
-                return;
-            const QCborMap details = resp.field(1).toMap();
-            auto* dlg = new ClientDetailDialog(details, this);
-            // No walker when the dialog was not opened from a list — MFC likewise
-            // omits the arrows for ChatSelector / FriendListCtrl.
-            if (walker.step) {
-                dlg->setWalker(walker);
-                connectDetailNavigation(dlg, m_ipc, IpcMsgType::GetClientDetails);
-            }
-            dlg->show();
-        });
+    showClientDetails(this, m_ipc, clientHash, std::move(walker));
 }
 
 void TransferPanel::searchRelated(const QString& fileName)
@@ -1963,9 +1975,8 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
                 fetchAndShowClientDetails(clientHash, makeClientWalker(view, model, clientHash));
             });
         detailsAct->setEnabled(true);
-        QFont f = detailsAct->font();
-        f.setBold(true);
-        detailsAct->setFont(f);
+        // MFC ClientMenu.SetDefaultItem(MP_DETAIL) (srchybrid/ClientListCtrl.cpp:346).
+        setMenuDefaultAction(&menu, detailsAct);
     }
 
     // 2. Add To Friends
@@ -2050,9 +2061,8 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& p
             [this, srcHash, parentHash]() {
                 fetchAndShowClientDetails(srcHash, makeSourceWalker(parentHash, srcHash));
             });
-        QFont f = detailsAct->font();
-        f.setBold(true);
-        detailsAct->setFont(f);
+        // MFC ClientMenu.SetDefaultItem(MP_DETAIL) (srchybrid/DownloadListCtrl.cpp:1064).
+        setMenuDefaultAction(&menu, detailsAct);
     }
 
     // 2. Add To Friends

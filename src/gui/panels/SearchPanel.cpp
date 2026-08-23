@@ -11,6 +11,8 @@
 #include "controls/SearchResultsModel.h"
 #include "dialogs/FindInListDialog.h"
 #include "utils/IpcFeedback.h"
+#include "utils/ListActivation.h"
+#include "utils/MenuUtils.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/ViewNavigation.h"
@@ -178,6 +180,12 @@ void SearchPanel::setupUi()
     m_resultView->setAllColumnsShowFocus(true);
     connect(m_resultView, &QTreeView::customContextMenuRequested, this, &SearchPanel::onResultContextMenu);
     connect(m_resultView, &QTreeView::doubleClicked, this, &SearchPanel::onResultDoubleClicked);
+
+    // MFC CSearchListCtrl (srchybrid/SearchListCtrl.cpp:800, :817): Enter downloads the
+    // selection, exactly as a double click does, and Alt+Enter opens the result sheet.
+    bindListActivation(m_resultView,
+        [this](const QModelIndex& index) { downloadResult(index.row()); },
+        [this](const QModelIndex& index) { showResultDetails(index); });
     mainLayout->addWidget(m_resultView, 1);
 
     // Bottom bar — Download on the left (matches MFC)
@@ -606,8 +614,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         for (const auto& i : sel)
             downloadResult(i.row());
     });
-    if (downloadAction->isEnabled())
-        m_contextMenu->setDefaultAction(downloadAction);
+    setMenuDefaultAction(m_contextMenu, downloadAction->isEnabled() ? downloadAction : nullptr);
 
     // Details... — extended controls only, exactly as MFC gates it, because the
     // sheet's Metadata page is itself an extended-controls feature.
@@ -764,6 +771,24 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
 // ---------------------------------------------------------------------------
 // Slot: Double-click to download
 // ---------------------------------------------------------------------------
+
+void SearchPanel::showResultDetails(const QModelIndex& index)
+{
+    auto* tab = currentTab();
+    if (!tab || !index.isValid())
+        return;
+
+    // Same extended-controls gate as the "Details..." entry: the sheet opens on its
+    // Metadata page, which is itself an extended-controls feature.
+    if (!thePrefs.showExtControls())
+        return;
+
+    const auto* result = tab->model->resultAt(tab->proxy->mapToSource(index).row());
+    if (!result)
+        return;
+
+    fetchAndShowSearchDetails(tab->searchID, result->hash, SearchDetailDialog::Metadata);
+}
 
 void SearchPanel::onResultDoubleClicked(const QModelIndex& index)
 {
@@ -1219,12 +1244,7 @@ void SearchPanel::sendPreview(const QString& hash)
         return;
     }
 
-    const QString host = m_ipc->daemonHost();
-    const uint16_t wsPort = thePrefs.webServerPort();
-    const QString url = QStringLiteral("http://%1:%2/api/v1/downloads/%3/preview?token=%4")
-                            .arg(host).arg(wsPort).arg(hash, m_streamToken);
-
-    launchPreview(url);
+    launchPreview(daemonStreamUrl(m_ipc, hash, m_streamToken));
 }
 
 // ---------------------------------------------------------------------------

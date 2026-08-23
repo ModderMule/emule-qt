@@ -8,6 +8,8 @@
 #include "app/UiState.h"
 #include "controls/FriendListModel.h"
 #include "dialogs/AddFriendDialog.h"
+#include "dialogs/DetailDialog.h"
+#include "utils/ListActivation.h"
 #include "utils/PanelPoller.h"
 #include "utils/TextLinks.h"
 
@@ -206,6 +208,16 @@ void MessagesPanel::setupUi()
             this, &MessagesPanel::onFriendClicked);
     connect(m_friendListView, &QWidget::customContextMenuRequested,
             this, &MessagesPanel::onFriendContextMenu);
+
+    // MFC CFriendListCtrl (srchybrid/FriendListCtrl.cpp:200): Enter and Alt+Enter both
+    // open the friend's client details. Only while the friend is online — an offline
+    // friend has no client record, and the original answers that case with its
+    // CAddFriend sheet, which this panel reaches through "Details..." instead.
+    const auto showFriendDetails = [this](const QModelIndex& index) {
+        if (const FriendRow* row = m_friendModel->rowAt(index.row()))
+            showClientDetails(this, m_ipc, row->hash);
+    };
+    bindListActivation(m_friendListView, showFriendDetails, showFriendDetails);
 
     // Info section
     auto* infoGroup = new QGroupBox(tr("Info"), leftWidget);

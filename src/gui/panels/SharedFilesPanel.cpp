@@ -15,8 +15,11 @@
 #include "dialogs/MediaInfoPanel.h"
 #include "prefs/Preferences.h"
 #include "utils/IpcFeedback.h"
+#include "utils/ListActivation.h"
 #include "utils/Log.h"
+#include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
+#include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
@@ -33,6 +36,7 @@
 
 #include <QApplication>
 #include <QCborArray>
+#include <QGuiApplication>
 #include <QCheckBox>
 #include <QCborMap>
 #include <QClipboard>
@@ -247,17 +251,19 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
                            : QIcon();
     };
 
-    // Open File — single, complete file only, and only when the daemon runs on this machine
+    // Open File — one complete file at a time. Against a remote core the file lives on
+    // the daemon's host and travels over the web server, so this stays available there
+    // as long as the stream token has arrived.
     {
         auto* act = m_contextMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this,
-                                             [this, hashes]() {
-            if (const SharedFileRow* f = m_model->findByHash(hashes.value(0)))
-                QDesktopServices::openUrl(QUrl::fromLocalFile(f->filePath));
-        });
-        const bool canOpen = singleSel && single && !single->isPartFile && localConn;
+                                             [this, hashes]() { openSharedFile(hashes.value(0)); });
+        const bool canOpen = singleSel && single && !single->isPartFile
+                             && (localConn || !m_streamToken.isEmpty());
         act->setEnabled(canOpen);
-        if (canOpen)
-            m_contextMenu->setDefaultAction(act);   // MFC SetDefaultItem(MP_OPEN)
+
+        // MFC SetDefaultItem(bSingleCompleteFileSelected ? MP_OPEN : -1)
+        // (srchybrid/SharedFilesCtrl.cpp:770) — bold only while it applies.
+        setMenuDefaultAction(m_contextMenu, canOpen ? act : nullptr);
     }
 
     // Open Folder
@@ -402,39 +408,8 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         modifyAct->setEnabled(isColl);
 
         // View Collection...
-        auto* viewAct = collMenu->addAction(tr("View Collection..."), this, [this, hash]() {
-            Ipc::IpcMessage msg(Ipc::IpcMsgType::GetCollectionInfo);
-            msg.append(hash);
-            m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
-                if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
-                    return;
-                const QCborMap data = resp.fieldMap(1);
-
-                // Build a temporary Collection from IPC data
-                auto* coll = new Collection;
-                coll->m_name = data.value(QStringLiteral("name")).toString();
-                coll->m_authorName = data.value(QStringLiteral("authorName")).toString();
-
-                const QCborArray filesArr = data.value(QStringLiteral("files")).toArray();
-                for (const auto& v : filesArr) {
-                    const QCborMap fm = v.toMap();
-                    auto cf = std::make_unique<CollectionFile>();
-                    const QString cfHash = fm.value(QStringLiteral("hash")).toString();
-                    const QByteArray hashBytes = QByteArray::fromHex(cfHash.toLatin1());
-                    if (hashBytes.size() == 16)
-                        cf->setFileHash(reinterpret_cast<const uint8*>(hashBytes.constData()));
-                    cf->setFileSize(fm.value(QStringLiteral("fileSize")).toInteger());
-                    cf->setFileName(fm.value(QStringLiteral("fileName")).toString(), true);
-                    coll->addFile(cf.get(), true);
-                }
-
-                auto* dlg = new CollectionViewDialog(*coll, m_ipc, this);
-                dlg->setAttribute(Qt::WA_DeleteOnClose);
-                // Transfer ownership of collection to dialog
-                connect(dlg, &QDialog::destroyed, dlg, [coll]() { delete coll; });
-                dlg->show();
-            });
-        });
+        auto* viewAct = collMenu->addAction(tr("View Collection..."), this,
+                                            [this, hash]() { showCollection(hash); });
         viewAct->setEnabled(isColl);
 
         // Search Author's Collections...
@@ -663,6 +638,28 @@ QWidget* SharedFilesPanel::createTopSection()
 
     connect(m_fileView, &QTreeView::customContextMenuRequested,
             this, &SharedFilesPanel::onFileContextMenu);
+
+    // MFC CSharedFilesCtrl (srchybrid/SharedFilesCtrl.cpp:1269 OnNmDblClk, :871 IDA_ENTER,
+    // :989 MPG_ALTENTER): a plain double click or Enter opens the file, and ALT with
+    // either one opens the details sheet. openSharedFile() ignores a part file, which is
+    // the original's `!file->IsPartFile()` guard.
+    const auto openRow = [this](const QModelIndex& index) {
+        openSharedFile(m_model->hashAt(ViewNav::toSource(index).row()));
+    };
+    const auto detailsForRow = [this](const QModelIndex& index) {
+        fetchAndShowSharedFileDetails(m_model->hashAt(ViewNav::toSource(index).row()),
+                                      FileDetailDialog::General);
+    };
+    connect(m_fileView, &QTreeView::doubleClicked, this,
+            [openRow, detailsForRow](const QModelIndex& index) {
+        if (!index.isValid())
+            return;
+        if (QGuiApplication::keyboardModifiers().testFlag(Qt::AltModifier))
+            detailsForRow(index);
+        else
+            openRow(index);
+    });
+    bindListActivation(m_fileView, openRow, detailsForRow);
     // Both signals are needed: ctrl+arrow moves the current row without changing the
     // selection, and ctrl-clicking a non-current row changes the selection without moving
     // the current row. The bottom tabs have to follow either one.
@@ -1653,6 +1650,86 @@ void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int ta
         connectCommentFilter(dlg, m_ipc);
         dlg->setWalker(makeSharedFileWalker(hash));
         connectDetailNavigation(dlg, m_ipc, IpcMsgType::GetSharedFileDetails);
+        dlg->show();
+    });
+}
+
+void SharedFilesPanel::openSharedFile(const QString& hash)
+{
+    const SharedFileRow* file = m_model->findByHash(hash);
+    if (!file)
+        return;
+
+    // A collection opens in the collection viewer rather than in whatever the system
+    // has registered for .emulecollection — MFC branches the same way inside OpenFile()
+    // (srchybrid/SharedFilesCtrl.cpp:1260-1265).
+    if (file->isCollection) {
+        showCollection(hash);
+        return;
+    }
+
+    // A part file has no playable data at a path the shell could take, so the original
+    // simply ignores it here (:1281). Preview is the feature for those.
+    if (file->isPartFile)
+        return;
+
+    // Local core: the daemon's host is this host, so the recorded path is ours to open.
+    if (m_ipc && m_ipc->isLocalConnection()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(file->filePath));
+        return;
+    }
+
+    // Remote core: the bytes are on the daemon's machine and only reachable over its web
+    // server, the same channel Preview uses.
+    const QString url = daemonStreamUrl(m_ipc, hash, m_streamToken);
+    if (url.isEmpty()) {
+        logWarning(tr("Open File not available — web server is not running or stream token not received."));
+        return;
+    }
+
+    // Media streams into the configured player; anything else goes to the system
+    // default handler, which for an http URL means the browser downloads it.
+    const ED2KFileType fileType = getED2KFileTypeID(file->fileName);
+    if (fileType == ED2KFileType::Video || fileType == ED2KFileType::Audio)
+        launchPreview(url);
+    else
+        QDesktopServices::openUrl(QUrl(url));
+}
+
+void SharedFilesPanel::showCollection(const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::GetCollectionInfo);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+        if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+        const QCborMap data = resp.fieldMap(1);
+
+        // Build a temporary Collection from IPC data
+        auto* coll = new Collection;
+        coll->m_name = data.value(QStringLiteral("name")).toString();
+        coll->m_authorName = data.value(QStringLiteral("authorName")).toString();
+
+        const QCborArray filesArr = data.value(QStringLiteral("files")).toArray();
+        for (const auto& v : filesArr) {
+            const QCborMap fm = v.toMap();
+            auto cf = std::make_unique<CollectionFile>();
+            const QString cfHash = fm.value(QStringLiteral("hash")).toString();
+            const QByteArray hashBytes = QByteArray::fromHex(cfHash.toLatin1());
+            if (hashBytes.size() == 16)
+                cf->setFileHash(reinterpret_cast<const uint8*>(hashBytes.constData()));
+            cf->setFileSize(fm.value(QStringLiteral("fileSize")).toInteger());
+            cf->setFileName(fm.value(QStringLiteral("fileName")).toString(), true);
+            coll->addFile(cf.get(), true);
+        }
+
+        auto* dlg = new CollectionViewDialog(*coll, m_ipc, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        // Transfer ownership of collection to dialog
+        connect(dlg, &QDialog::destroyed, dlg, [coll]() { delete coll; });
         dlg->show();
     });
 }

@@ -9,6 +9,7 @@
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
 #include "utils/StringUtils.h"
+#include "utils/DialogSizing.h"
 
 #include <QLocale>
 
@@ -39,7 +40,6 @@ CollectionViewDialog::CollectionViewDialog(const Collection& collection,
     , m_ipc(ipc)
 {
     setWindowTitle(tr("Collection: %1").arg(collection.m_name));
-    resize(600, 450);
 
     auto* layout = new QVBoxLayout(this);
 
@@ -123,6 +123,8 @@ CollectionViewDialog::CollectionViewDialog(const Collection& collection,
     // Double-click to download
     connect(m_tree, &QTreeWidget::itemDoubleClicked,
             this, &CollectionViewDialog::downloadSelected);
+
+    DialogSizing::applySize(this, {}, QSize(600, 450), DialogSizing::Fit::Layout);
 }
 
 // ---------------------------------------------------------------------------

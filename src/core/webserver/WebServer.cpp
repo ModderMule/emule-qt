@@ -603,26 +603,39 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
         return jsonError(400, QStringLiteral("Invalid hash format"));
     }
 
-    auto* file = m_downloadQueue->fileByID(hashBytes.data());
-    if (!file) {
-        logWarning(QStringLiteral("Preview: 404 — download not found for hash %1").arg(hash));
-        return jsonError(404, QStringLiteral("Download not found"));
+    // The hash may name an active download or any other shared file. A finished
+    // download leaves the queue — KnownFileList owns it from then on — and a file that
+    // came from a shared directory was never in it, so asking the queue alone would
+    // answer 404 for nearly everything the Shared Files window can offer to open.
+    QString path;
+    QString fileName;
+    if (const auto* download = m_downloadQueue->fileByID(hashBytes.data())) {
+        fileName = download->fileName();
+
+        // For an in-progress download fullName() is the .part.met metadata path — strip
+        // .met to get the .part data file. A completed download has been moved to the
+        // incoming dir and fullName() still points at the now-deleted .part, so use the
+        // final path recorded in filePath() instead. This lets the endpoint back both
+        // live preview and completed-file open (remote core).
+        if (download->status() == PartFileStatus::Complete && !download->filePath().isEmpty()) {
+            path = download->filePath();
+        } else {
+            path = download->fullName();
+            if (path.endsWith(QStringLiteral(".met")))
+                path.chop(4);
+        }
+    } else if (m_sharedFiles) {
+        if (const auto* shared = m_sharedFiles->getFileByID(hashBytes.data())) {
+            fileName = shared->fileName();
+            path = shared->filePath();
+        }
     }
 
-    // Determine the data file path. For in-progress downloads, fullName() is the
-    // .part.met metadata path — strip .met to get the .part data file. Completed
-    // downloads have been moved to the incoming dir; fullName() still points at the
-    // now-deleted .part, so use the final path recorded in filePath() instead. This
-    // lets the endpoint back both live preview and completed-file open (remote core).
-    QString path;
-    if (file->status() == PartFileStatus::Complete && !file->filePath().isEmpty()) {
-        path = file->filePath();
-    } else {
-        path = file->fullName();
-        if (path.endsWith(QStringLiteral(".met")))
-            path.chop(4);
+    if (path.isEmpty()) {
+        logWarning(QStringLiteral("Preview: 404 — no download or shared file for hash %1").arg(hash));
+        return jsonError(404, QStringLiteral("File not found"));
     }
-    if (path.isEmpty() || !QFileInfo::exists(path)) {
+    if (!QFileInfo::exists(path)) {
         logWarning(QStringLiteral("Preview: 404 — file not available: %1").arg(path));
         return jsonError(404, QStringLiteral("File not available"));
     }
@@ -637,12 +650,12 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
 
     // Derive MIME type from the original filename
     QMimeDatabase mimeDb;
-    const QMimeType mime = mimeDb.mimeTypeForFile(file->fileName(), QMimeDatabase::MatchExtension);
+    const QMimeType mime = mimeDb.mimeTypeForFile(fileName, QMimeDatabase::MatchExtension);
     const QByteArray mimeType = mime.name().toUtf8();
 
     if (dbg)
         logDebug(QStringLiteral("Preview: file=%1  partPath=%2  size=%3  mime=%4")
-            .arg(file->fileName(), path).arg(fileSize).arg(QString::fromUtf8(mimeType)));
+            .arg(fileName, path).arg(fileSize).arg(QString::fromUtf8(mimeType)));
 
     // --- Parse Range header for seeking support (required by VLC et al.) ---
     const auto rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
@@ -714,7 +727,7 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
                        QStringLiteral("bytes %1-%2/%3").arg(rangeStart).arg(rangeEnd).arg(fileSize));
     }
     headers.append(QHttpHeaders::WellKnownHeader::ContentDisposition,
-                   QStringLiteral("inline; filename=\"%1\"").arg(file->fileName()));
+                   QStringLiteral("inline; filename=\"%1\"").arg(fileName));
     resp.setHeaders(std::move(headers));
 
     if (dbg) {

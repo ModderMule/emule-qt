@@ -3,6 +3,7 @@
 
 #include "app/IpcClient.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/DialogSizing.h"
 
 #include <QLabel>
 #include <QMessageBox>
@@ -19,7 +20,6 @@ PasteLinksDialog::PasteLinksDialog(IpcClient* ipc, QWidget* parent)
 {
     setWindowTitle(tr("Paste eD2K Links"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/eD2kLinkPaste.ico")));
-    resize(450, 250);
 
     auto* layout = new QVBoxLayout(this);
 
@@ -48,6 +48,8 @@ PasteLinksDialog::PasteLinksDialog(IpcClient* ipc, QWidget* parent)
     });
     connect(m_downloadBtn, &QPushButton::clicked, this, &PasteLinksDialog::onDownload);
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
+
+    DialogSizing::applySize(this, {}, QSize(450, 250), DialogSizing::Fit::Layout);
 }
 
 void PasteLinksDialog::onDownload()
