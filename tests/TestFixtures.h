@@ -154,6 +154,32 @@ private:
     Address m_savedOverride;
 };
 
+/// The two environment preconditions MFC requires before a UDP file re-ask goes out
+/// (srchybrid/DownloadClient.cpp:1350-1351): our own UDP port has to be configured, and we
+/// must not be firewalled — a firewalled client could never receive the answer. Neither
+/// holds by default in a test: thePrefs starts with udpPort()==0, and with no server and
+/// no Kad theApp.isFirewalled() is true. Only one may be alive at a time, since it owns a
+/// KadFixture.
+class UdpReaskReadyGuard {
+public:
+    explicit UdpReaskReadyGuard(uint16 udpPort = 5672)
+        : m_savedUdpPort(thePrefs.udpPort())
+    {
+        thePrefs.setUdpPort(udpPort);
+        // theApp.isFirewalled() reads Kademlia::isConnected(), which is running +
+        // hasHadContact() — an open-but-never-contacted node still counts as firewalled.
+        m_kad.kadPrefs().setLastContact();
+    }
+    ~UdpReaskReadyGuard() { thePrefs.setUdpPort(m_savedUdpPort); }
+
+    UdpReaskReadyGuard(const UdpReaskReadyGuard&) = delete;
+    UdpReaskReadyGuard& operator=(const UdpReaskReadyGuard&) = delete;
+
+private:
+    uint16 m_savedUdpPort;
+    KadFixture m_kad{KadMode::Open};
+};
+
 /// Both halves of "this is a private test network": Address::labNetworkMode() for IPv6 and
 /// thePrefs.filterLANIPs() for IPv4. CoreSession::initLocalIPv6() derives the former from the
 /// latter, so a test that needs a loopback or ULA peer accepted has to set both by hand.

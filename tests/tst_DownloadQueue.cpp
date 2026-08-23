@@ -11,7 +11,10 @@
 #include "client/UpDownClient.h"
 #include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
 #include "net/Address.h"
+#include "net/ClientUDPSocket.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 #include "server/Server.h"
@@ -21,11 +24,13 @@
 #include "utils/OtherFunctions.h"
 
 #include <QDir>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
 #include <cstring>
+#include <memory>
 
 using namespace eMule;
 using namespace eMule::testing;
@@ -86,11 +91,15 @@ private slots:
     void startNextFile_resumesPaused();
     void init_scansDirectory();
     void checkAndAddSource_basic();
+    void checkAndAddSource_rejectsUnusableHighIdOnly();
     void addServerSources_dropsLowIdWhenFirewalled();
     void addServerSources_dropsIpFilteredHighId();
     void addServerSources_dropsBannedHighId();
     void addServerSources_parsesIPv6Sentinel();
     void addServerSources_vetsIPv6LikeIPv4();
+    void addKadSources_type6KeepsDirectCallback();
+    void addKadSources_type6DroppedWithoutTheBit();
+    void addKadSources_buddyIpIsNetworkOrder();
 
     // eD2K link sources
     void linkSources_ipv6LiteralAdded();
@@ -113,7 +122,7 @@ private slots:
 
     // Per-source walk in process(): the OP_CHANGE_CLIENT_IP flush and the re-ask clock.
     void process_flushesPendingIPChangeForSources();
-    void process_udpReaskHonoursPerPeerReaskTime();
+    void process_udpReaskWindowIsDisjointFromTheTcpReask();
 
 private:
     QTemporaryDir m_tempDir;
@@ -498,6 +507,76 @@ void tst_DownloadQueue::checkAndAddSource_basic()
     dq.deleteAll();
 }
 
+// The High-ID-only address check. MFC applies IsGoodIP to a source only when it has a
+// High ID (srchybrid/DownloadQueue.cpp:568-575), because a Low ID's user ID is an ID and
+// not an address — testing it would reject every firewalled source, and the IPv6-only
+// marker kNoIPv4SourceId is deliberately a Low ID. Without the guard the Kad and
+// source-exchange ingresses accepted multicast, broadcast, loopback and LAN peers as
+// download sources.
+void tst_DownloadQueue::checkAndAddSource_rejectsUnusableHighIdOnly()
+{
+    DownloadQueue dq;
+
+    uint8 hash[16] = {31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("goodip_guard.bin"));
+    dq.addDownload(pf);
+
+    // Each source gets its own address and port so the file's own dup checks stay out of
+    // the way and only the new guard decides.
+    auto makeHighId = [](const char* ip, uint16 port) {
+        auto c = std::make_unique<UpDownClient>();
+        const Address addr = Address::fromString(QString::fromLatin1(ip));
+        c->setUserAddress(addr);
+        c->setUserIDHybrid(addr.toUint32());   // High ID: the hybrid ID *is* the IPv4
+        c->setUserPort(port);
+        return c;
+    };
+
+    auto multicast = makeHighId("224.0.0.1", 4662);
+    QVERIFY(!multicast->hasLowID());
+    QVERIFY2(!dq.checkAndAddSource(pf, multicast.get()), "multicast is not a peer address");
+
+    auto broadcast = makeHighId("255.255.255.255", 4663);
+    QVERIFY(!broadcast->hasLowID());
+    QVERIFY2(!dq.checkAndAddSource(pf, broadcast.get()), "broadcast is not a peer address");
+
+    auto loopback = makeHighId("127.0.0.1", 4664);
+    QVERIFY(!loopback->hasLowID());
+    QVERIFY2(!dq.checkAndAddSource(pf, loopback.get()), "loopback is not a peer address");
+
+    // A Low ID carries an ID in that field, not an address — the guard must not look at
+    // it. 0x00010203 is what a peer behind a server hands us; it is also what the raw
+    // bytes of 0.1.2.3 would read as, which is precisely why MFC gates on HasLowID().
+    auto lowId = std::make_unique<UpDownClient>();
+    lowId->setUserIDHybrid(0x00010203u);
+    lowId->setUserAddress(Address::fromString(QStringLiteral("85.1.2.3")));
+    lowId->setUserPort(4665);
+    QVERIFY(lowId->hasLowID());
+    QVERIFY2(dq.checkAndAddSource(pf, lowId.get()), "a Low ID must not be address-checked");
+
+    // A LAN peer is rejected only because filterLANIPs is on; the lab-rig switch that
+    // makes an interop network usable must keep working through this guard too.
+    {
+        auto lan = makeHighId("192.168.7.9", 4666);
+        QVERIFY(!lan->hasLowID());
+        QVERIFY(!dq.checkAndAddSource(pf, lan.get()));
+    }
+    {
+        LabModeGuard lab(true);
+        auto lan = makeHighId("192.168.7.9", 4667);
+        QVERIFY2(dq.checkAndAddSource(pf, lan.get()),
+                 "lab mode (filterLANIPs=false) must still admit LAN sources");
+        pf->srcList().clear();
+    }
+
+    // And an ordinary public High ID is untouched.
+    auto publicPeer = makeHighId("81.2.3.4", 4668);
+    QVERIFY(dq.checkAndAddSource(pf, publicPeer.get()));
+
+    pf->srcList().clear();
+    dq.deleteAll();
+}
+
 // A server OP_FOUNDSOURCES answer may include low-ID sources. While we are
 // firewalled, two firewalled peers can never accept each other's connection, so
 // those must be dropped — matching CPartFile::AddSources / CanAddSource. This
@@ -710,6 +789,137 @@ void tst_DownloadQueue::addServerSources_dropsBannedHighId()
 // 2a01:4f8::1 is genuine global unicast (2001:db8::/32 fails isGoodIP as documentation
 // space, and 88.77.66.55 is a routable IPv4).
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Kad source results — addKadSourceResult's per-type switch
+//
+// Type 6 is "firewalled, but reachable by a direct UDP callback". Unlike types 3
+// and 5 it names no buddy, so bit 3 of the crypt byte is the *entire* difference
+// between a usable record and an unreachable one — which is why it is checked on
+// the way in, and why it must survive being checked.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A Kad open enough that theApp.isFirewalled() is false — types 3, 5 and 6 are all
+/// refused outright while we are the firewalled party, since two firewalled peers can
+/// never reach each other.
+void makeReachable(eMule::testing::KadFixture& fx)
+{
+    fx.kadPrefs().setLastContact();   // isConnected() also wants a contact on record
+}
+
+kad::Kademlia::KadSourceResult makeKadResult(const uint8* fileHash, uint8 type,
+                                             const uint8* clientHash, uint32 ip,
+                                             uint16 tcpPort, uint16 udpPort, uint8 crypt)
+{
+    kad::Kademlia::KadSourceResult r;
+    r.fileHash   = fileHash;
+    r.sourceType = type;
+    r.clientHash = clientHash;
+    r.ip         = ip;
+    r.tcpPort    = tcpPort;
+    r.udpPort    = udpPort;
+    r.buddyCrypt = crypt;
+    return r;
+}
+
+} // namespace
+
+void tst_DownloadQueue::addKadSources_type6KeepsDirectCallback()
+{
+    // Regression, and it took two bugs to break: the publisher never set bit 3, and the
+    // consumer passed callback=false to setConnectOptions — which ANDs that very bit
+    // away, on the source it had just admitted *because* the bit was set. The result
+    // reported no callback route at all and was dropped on the first tryToConnect().
+    //
+    // supportsDirectUDPCallback() wants the flag, a valid user hash and a non-zero Kad
+    // port together, so asserting it pins all three assignments at once.
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Open};
+    makeReachable(fx);
+    QVERIFY(!theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hash[16] = {60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_type6.bin"));
+    dq.addDownload(pf);
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x5A, sizeof(clientHash));
+
+    const uint32 sourceIP = Address::fromString(QStringLiteral("77.66.55.44")).toUint32();
+    // 0x09 = crypt-layer supported | direct UDP callback.
+    dq.addKadSourceResult(makeKadResult(hash, 6, clientHash, sourceIP, 4662, 4672, 0x09));
+
+    QCOMPARE(pf->sourceCount(), 1);
+    auto* src = pf->srcList().front();
+    QVERIFY(src->supportsDirectUDPCallback());
+    QCOMPARE(src->kadPort(), uint16{4672});
+    // The IP is for UDP, not TCP: a type-6 source is LowID and cannot be dialled.
+    QCOMPARE(src->connectAddress(), Address::fromString(QStringLiteral("77.66.55.44")));
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_type6DroppedWithoutTheBit()
+{
+    // The other half of the contract: type 6 without the callback bit is a source
+    // nobody can reach, so it is refused rather than added and retried forever.
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Open};
+    makeReachable(fx);
+    QVERIFY(!theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hash[16] = {61, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_type6_nobit.bin"));
+    dq.addDownload(pf);
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x5B, sizeof(clientHash));
+
+    const uint32 sourceIP = Address::fromString(QStringLiteral("77.66.55.43")).toUint32();
+    dq.addKadSourceResult(makeKadResult(hash, 6, clientHash, sourceIP, 4662, 4672, 0x01));
+
+    QCOMPARE(pf->sourceCount(), 0);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_buddyIpIsNetworkOrder()
+{
+    // FT_SERVERIP arrives in network order — the one IP tag in a Kad source record that
+    // is not host order. Reading it the other way sent every buddy callback to a
+    // byte-reversed address, which is invisible unless the test address is asymmetric.
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Open};
+    makeReachable(fx);
+    QVERIFY(!theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hash[16] = {62, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_type3_buddy.bin"));
+    dq.addDownload(pf);
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x5C, sizeof(clientHash));
+    uint8 buddyHash[16];
+    std::memset(buddyHash, 0x6C, sizeof(buddyHash));
+
+    const Address buddy = Address::fromString(QStringLiteral("11.22.33.44"));
+    QVERIFY(buddy.toNetworkUint32() != buddy.toUint32());
+
+    auto result = makeKadResult(hash, 3, clientHash,
+                                Address::fromString(QStringLiteral("77.66.55.42")).toUint32(),
+                                4662, 4672, 0x01);
+    result.buddyIP   = buddy.toNetworkUint32();
+    result.buddyPort = 5555;
+    result.buddyHash = buddyHash;
+    dq.addKadSourceResult(result);
+
+    QCOMPARE(pf->sourceCount(), 1);
+    QCOMPARE(pf->srcList().front()->buddyAddress(), buddy);
+
+    dq.deleteAll();
+}
 
 void tst_DownloadQueue::linkSources_ipv6LiteralAdded()
 {
@@ -1153,8 +1363,18 @@ void tst_DownloadQueue::process_flushesPendingIPChangeForSources()
     dq.deleteAll();
 }
 
-void tst_DownloadQueue::process_udpReaskHonoursPerPeerReaskTime()
+void tst_DownloadQueue::process_udpReaskWindowIsDisjointFromTheTcpReask()
 {
+    // MFC will not UDP re-ask while our own UDP is off or we are firewalled.
+    UdpReaskReadyGuard udpReady;
+
+    // ...nor with nowhere to send the datagram. The flag under test is only raised once
+    // the packet is actually handed to the socket, so the socket has to exist.
+    ClientUDPSocket clientUDP;
+    QVERIFY(clientUDP.rebind(0));
+    theApp.clientUDP = &clientUDP;
+    const auto restoreUDP = qScopeGuard([] { theApp.clientUDP = nullptr; });
+
     DownloadQueue dq;
     uint8 hash[16];
     std::memset(hash, 0x52, sizeof(hash));
@@ -1171,22 +1391,33 @@ void tst_DownloadQueue::process_udpReaskHonoursPerPeerReaskTime()
     feedMuleInfoUDP(source, 4672);
     QVERIFY(source.supportsUDP());
     source.setReqFile(pf);
+    source.setDownloadState(DownloadState::OnQueue);   // MFC's DS_ONQUEUE gate
     pf->addSource(&source);
 
-    // Never asked before, so its clock reads zero and the first pass re-asks it. That is
-    // MFC's GetTimeUntilReask() contract for an unknown (client, file) pair.
+    // Never asked, so the clock reads zero — MFC's GetTimeUntilReask() contract for an
+    // unknown (client, file) pair. That instant belongs to the *TCP* re-ask in
+    // PartFile::process(); the UDP window is the two minutes before it
+    // (MFC PartFile.cpp:2338-2339). The two used to share this instant, so the same pass
+    // sent a datagram and then charged it as failed at the head of askForDownload() —
+    // driving m_failedUDPPackets past the 30% abort and killing UDP re-asks for good.
     QCOMPARE(source.timeUntilReask(pf), 0u);
     runOneSecondOfTicks(dq);
-    QVERIFY2(source.reaskPending(), "a source that has never been asked must be re-asked");
+    QVERIFY2(!source.udpPacketPending(),
+             "a fully expired clock is the TCP branch's turn, not the UDP one's");
 
-    // The answer stamps the clock — MFC UDPReaskACK(), DownloadClient.cpp:1310 — and the
-    // source then goes quiet for FILEREASKTIME instead of being re-asked every pass.
+    // The source itself is perfectly eligible — only the schedule withheld it.
+    source.udpReaskForDownload();
+    QVERIFY(source.udpPacketPending());
+
+    // The answer stamps the clock — MFC UDPReaskACK(), DownloadClient.cpp:1310 — so the
+    // source goes quiet for FILEREASKTIME instead of being re-asked every pass. That puts
+    // it far outside the two-minute window as well.
     source.udpReaskACK(0);
-    QVERIFY(!source.reaskPending());
-    QVERIFY(source.timeUntilReask(pf) > 0);
+    QVERIFY(!source.udpPacketPending());
+    QVERIFY(source.timeUntilReask(pf) > MIN2MS(2));
 
     runOneSecondOfTicks(dq);
-    QVERIFY2(!source.reaskPending(),
+    QVERIFY2(!source.udpPacketPending(),
              "an answered source must not be re-asked again inside FILEREASKTIME");
 
     pf->srcList().clear();

@@ -3,6 +3,9 @@
 /// @brief Friend data class implementation.
 
 #include "friends/Friend.h"
+#include "app/AppContext.h"
+#include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "protocol/Tag.h"
 #include "utils/OtherFunctions.h"
 
@@ -26,6 +29,81 @@ Friend::Friend(const uint8* userHash, std::time_t lastSeen, uint32 lastUsedIP,
 {
     if (hasHash && userHash)
         md4cpy(m_userHash.data(), userHash);
+}
+
+Friend::~Friend()
+{
+    // Validated, because a friend entry can outlive the client it was linked to — a client
+    // destroyed without going through UpDownClient's destructor unlink would otherwise be
+    // dereferenced here. MFC srchybrid/Friend.cpp:85-89 does the same.
+    if (UpDownClient* client = linkedClient(true)) {
+        client->setFriendSlot(false);
+        client->setFriendPtr(nullptr);
+    }
+    m_linkedClient = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Linked client
+// ---------------------------------------------------------------------------
+
+UpDownClient* Friend::linkedClient(bool validate) const
+{
+    if (validate && m_linkedClient && theApp.clientList
+        && !theApp.clientList->isValidClient(m_linkedClient))
+    {
+        return nullptr;
+    }
+    return m_linkedClient;
+}
+
+void Friend::setLinkedClient(UpDownClient* client)
+{
+    // MFC srchybrid/Friend.cpp:171-198.
+    if (client == m_linkedClient)
+        return;
+
+    if (client) {
+        // Carry the slot across: from our own flag when nothing was linked, otherwise from
+        // the client that held it, since that one was authoritative.
+        client->setFriendSlot(m_linkedClient ? m_linkedClient->friendSlot() : m_friendSlot);
+
+        m_lastSeen = std::time(nullptr);
+        m_lastUsedAddress = client->connectAddress();
+        m_lastUsedPort = client->userPort();
+        m_name = client->userName();
+        md4cpy(m_userHash.data(), client->userHash());
+
+        client->setFriendPtr(this);
+    } else if (m_linkedClient) {
+        // Going offline — take the flag back so it survives until the friend reconnects.
+        m_friendSlot = m_linkedClient->friendSlot();
+    }
+
+    if (m_linkedClient) {
+        // The old client is no longer this friend, so it must not keep the slot.
+        m_linkedClient->setFriendSlot(false);
+        m_linkedClient->setFriendPtr(nullptr);
+    }
+
+    m_linkedClient = client;
+}
+
+// ---------------------------------------------------------------------------
+// Friend slot
+// ---------------------------------------------------------------------------
+
+bool Friend::friendSlot() const
+{
+    return m_linkedClient ? m_linkedClient->friendSlot() : m_friendSlot;
+}
+
+void Friend::setFriendSlot(bool val)
+{
+    if (m_linkedClient)
+        m_linkedClient->setFriendSlot(val);
+
+    m_friendSlot = val;
 }
 
 // ---------------------------------------------------------------------------

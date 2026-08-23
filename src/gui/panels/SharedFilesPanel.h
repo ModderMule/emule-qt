@@ -82,6 +82,11 @@ private:
     QWidget* createTopSection();
     QWidget* createBottomTabs();
     void requestSharedFiles();
+    /// Populate the list from one directory on disk rather than from the share, so
+    /// unshared files show up too and can be ticked. MFC's "All Directories" mode.
+    void requestBrowseDirectory(const QString& dirPath);
+    /// Ask the daemon to share or unshare one file, then refetch.
+    void sendSetFileShared(const QString& filePath, bool shared);
     void sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto);
     void sendDeleteFilesBatch(const QStringList& hashes);   ///< confirms once, then deletes
     void sendUnshareBatch(const QStringList& hashes);       ///< confirms once, then unshares
@@ -201,6 +206,10 @@ private:
 
     // Cached incoming directory for filtering
     QString m_incomingDir;
+    /// Non-empty while a filesystem directory is selected in the tree: the list then
+    /// shows that directory's contents instead of the share, and the poller refetches
+    /// through requestBrowseDirectory() instead of GetSharedFiles.
+    QString m_browseDir;
 
     /// True while restoreSelection() drives the selection model, so the resulting
     /// currentChanged/selectionChanged storm does not re-run the bottom tabs.

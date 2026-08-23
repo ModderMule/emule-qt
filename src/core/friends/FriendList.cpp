@@ -3,6 +3,8 @@
 /// @brief Friend list manager implementation.
 
 #include "friends/FriendList.h"
+#include "app/AppContext.h"
+#include "client/ClientList.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
@@ -155,6 +157,15 @@ Friend* FriendList::addFriend(const uint8* userHash, const Address& lastUsedAddr
 
     Friend* ptr = f.get();
     m_friends.push_back(std::move(f));
+
+    // Link straight away if the peer happens to be connected, so a slot granted right after
+    // adding reaches the client the upload queue scores rather than waiting for the next
+    // hello. MFC srchybrid/FriendList.cpp:192 does the same from its client-taking overload.
+    if (hasHash && userHash && theApp.clientList) {
+        if (auto* client = theApp.clientList->findByUserHash(userHash, 0, 0))
+            ptr->setLinkedClient(client);
+    }
+
     emit friendAdded(ptr);
     return ptr;
 }
@@ -167,6 +178,11 @@ bool FriendList::removeFriend(Friend* f)
     if (it == m_friends.end())
         return false;
 
+    // Unlink before erasing, as MFC does (srchybrid/FriendList.cpp:212). The destructor
+    // would do it too, but doing it here keeps the client's friendPtr() from being observed
+    // pointing at an entry that is already on its way out.
+    f->setLinkedClient(nullptr);
+
     const QString name = f->name();
     m_friends.erase(it);
     emit friendRemoved(name);
@@ -175,6 +191,8 @@ bool FriendList::removeFriend(Friend* f)
 
 void FriendList::removeAll()
 {
+    for (const auto& f : m_friends)
+        f->setLinkedClient(nullptr);
     m_friends.clear();
 }
 

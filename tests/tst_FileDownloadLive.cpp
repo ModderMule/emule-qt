@@ -314,19 +314,9 @@ void tst_FileDownloadLive::initTestCase()
 
     // 7. Wire Kad source results → DownloadQueue
     Kademlia::setKadSourceResultCallback(
-        [this](uint32 searchID, const uint8* fileHash,
-               uint32 ip, uint16 tcpPort,
-               uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
-               uint8 sourceType, const uint8* buddyHash,
-               const uint8* clientHash, uint16 udpPort,
-               const uint8* sourceIPv6, const uint8* buddyIPv6) {
+        [this](const Kademlia::KadSourceResult& result) {
             m_kadSourcesFound.fetch_add(1, std::memory_order_relaxed);
-            m_downloadQueue->addKadSourceResult(searchID, fileHash,
-                                                 ip, tcpPort,
-                                                 buddyIP, buddyPort, buddyCrypt,
-                                                 sourceType, buddyHash,
-                                                 clientHash, udpPort,
-                                                 sourceIPv6, buddyIPv6);
+            m_downloadQueue->addKadSourceResult(result);
         });
 
     // 8. Start Kademlia

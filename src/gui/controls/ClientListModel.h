@@ -34,6 +34,7 @@ struct ClientRow {
     int64_t transferredUp = 0;
     int64_t transferredDown = 0;
     int64_t sessionUp = 0;
+    int64_t queueSessionPayloadUp = 0;  ///< file payload only; sessionUp is wire bytes
     int64_t sessionDown = 0;
     int64_t askedCount = 0;
     int64_t waitStartTime = 0;  // elapsed wait time in ms (computed daemon-side)

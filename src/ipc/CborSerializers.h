@@ -34,6 +34,7 @@ namespace eMule::Ipc {
     switch (s) {
     case PartFileStatus::Ready:        return QStringLiteral("ready");
     case PartFileStatus::Empty:        return QStringLiteral("empty");
+    case PartFileStatus::WaitingForHash: return QStringLiteral("waitingforhash");
     case PartFileStatus::Hashing:      return QStringLiteral("hashing");
     case PartFileStatus::Error:        return QStringLiteral("error");
     case PartFileStatus::Insufficient: return QStringLiteral("insufficient");
@@ -107,6 +108,10 @@ namespace eMule::Ipc {
         {QStringLiteral("isAutoDownPriority"),   f.isAutoDownPriority()},
         {QStringLiteral("isPaused"),             f.isPaused()},
         {QStringLiteral("isStopped"),            f.isStopped()},
+        // Both feed the GUI's status column, which reproduces MFC's getPartfileStatus():
+        // a file op relabels "Completing", and a completion error relabels "Error".
+        {QStringLiteral("fileOp"),               static_cast<int>(f.fileOp())},
+        {QStringLiteral("completionError"),      f.completionError()},
         {QStringLiteral("category"),             static_cast<qint64>(f.category())},
         {QStringLiteral("lastSeenComplete"),    static_cast<qint64>(f.completeSourcesTime())},
         {QStringLiteral("lastReception"),       static_cast<qint64>(f.lastReceptionDate())},
@@ -252,6 +257,8 @@ namespace eMule::Ipc {
     // Upload fields
     m.insert(QStringLiteral("transferredUp"),   static_cast<qint64>(c.transferredUp()));
     m.insert(QStringLiteral("sessionUp"),       static_cast<qint64>(c.sessionUp()));
+    m.insert(QStringLiteral("queueSessionPayloadUp"),
+             static_cast<qint64>(c.queueSessionPayloadUp()));
     m.insert(QStringLiteral("upDatarate"),     static_cast<qint64>(c.upDatarate()));
     m.insert(QStringLiteral("askedCount"),      static_cast<qint64>(c.askedCount()));
     m.insert(QStringLiteral("waitStartTime"),   static_cast<qint64>(c.getWaitTimeDelay()));
@@ -267,7 +274,12 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("availPartCount"),  c.availablePartCount());
     // Client software identification
     m.insert(QStringLiteral("softwareId"), static_cast<int>(c.clientSoft()));
-    m.insert(QStringLiteral("hasCredit"),  c.credits() ? (c.credits()->scoreRatio(c.connectAddress().toNetworkUint32()) > 1.0f) : false);
+    // userAddress(), not connectAddress(): scoreRatio()'s ident gate keys off MFC's GetIP(),
+    // and a connectAddress can hold an IPv6 we merely intend to dial, for which
+    // toNetworkUint32() is 0 — a key that never matches m_identIP, so a securely identified
+    // peer reads back as IdBadGuy here while scoring correctly in the queue. Same key
+    // score() uses, for the reason spelled out at core UploadClient.cpp:50-54.
+    m.insert(QStringLiteral("hasCredit"),  c.credits() ? (c.credits()->scoreRatio(c.userAddress().toNetworkUint32()) > 1.0f) : false);
     m.insert(QStringLiteral("isFriend"),   c.friendPtr() != nullptr);
     // Network address. "ip" stays for compatibility but is 0 for an IPv6 peer — "addr"
     // carries both families, so anything that must survive IPv6 reads that instead.
@@ -347,7 +359,7 @@ namespace eMule::Ipc {
         // Credit totals
         m.insert(QStringLiteral("downloadedTotal"), static_cast<qint64>(c.credits()->downloadedTotal()));
         m.insert(QStringLiteral("uploadedTotal"),   static_cast<qint64>(c.credits()->uploadedTotal()));
-        m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.connectAddress().toNetworkUint32())));
+        m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.userAddress().toNetworkUint32())));
     } else {
         m.insert(QStringLiteral("identification"), QStringLiteral("Not available"));
         m.insert(QStringLiteral("downloadedTotal"), 0);

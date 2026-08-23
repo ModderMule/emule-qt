@@ -314,33 +314,62 @@ void tst_PartFile::statusTransitions()
     pf.setFileSize(1000);
     pf.setTmpPath(m_tempDir.path() + QStringLiteral("/temp"));
 
+    // Nothing verified complete yet, so there is nothing to offer: Empty, and it stays
+    // Empty until a part actually verifies. Ready is the shareability latch, not
+    // "currently running" (srchybrid/PartFile.cpp:1093-1105).
     QCOMPARE(pf.status(), PartFileStatus::Empty);
 
-    // Pause
+    // Pause is an overlay: status() reports it, the stored state is untouched, and
+    // ignorePause sees straight through to what the file really is.
     pf.pauseFile();
     QVERIFY(pf.isPaused());
     QCOMPARE(pf.status(), PartFileStatus::Paused);
+    QCOMPARE(pf.status(/*ignorePause=*/true), PartFileStatus::Empty);
 
-    // Resume
+    // Resume just drops the flag — there is nothing to re-derive.
     pf.resumeFile();
     QVERIFY(!pf.isPaused());
-    QCOMPARE(pf.status(), PartFileStatus::Ready);
+    QCOMPARE(pf.status(), PartFileStatus::Empty);
 
     // Stop
     pf.stopFile();
     QVERIFY(pf.isStopped());
     QVERIFY(pf.isPaused());
+    QCOMPARE(pf.status(), PartFileStatus::Paused);
+    QCOMPARE(pf.status(/*ignorePause=*/true), PartFileStatus::Empty);
 
     // Resume from stopped
     pf.resumeFile();
     QVERIFY(!pf.isStopped());
     QVERIFY(!pf.isPaused());
 
-    // Pause with insufficient
+    // Out of disk space is its own condition, not a user pause: m_paused stays false
+    // so status() can report Insufficient rather than Paused, which wins the overlay.
+    // MFC srchybrid/PartFile.cpp:3351-3355.
     pf.pauseFile(true);
-    QVERIFY(pf.isPaused());
+    QVERIFY(!pf.isPaused());
     QVERIFY(pf.isInsufficient());
     QCOMPARE(pf.status(), PartFileStatus::Insufficient);
+    QCOMPARE(pf.status(/*ignorePause=*/true), PartFileStatus::Empty);
+
+    // And it must still be resumable, even though m_paused was never set.
+    pf.resumeFile();
+    QVERIFY(!pf.isInsufficient());
+    QCOMPARE(pf.status(), PartFileStatus::Empty);
+
+    // The overlay states can never be stored: setStatus() drops them on the floor
+    // rather than overwriting the latch (MFC asserts the same in _SetStatus).
+    pf.setStatus(PartFileStatus::Ready);
+    pf.setStatus(PartFileStatus::Paused);
+    QCOMPARE(pf.status(), PartFileStatus::Ready);
+    pf.setStatus(PartFileStatus::Insufficient);
+    QCOMPARE(pf.status(), PartFileStatus::Ready);
+
+    // And with the latch set, pausing still leaves the file shareable — which is the
+    // whole reason the sharing paths pass ignorePause.
+    pf.pauseFile();
+    QCOMPARE(pf.status(), PartFileStatus::Paused);
+    QCOMPARE(pf.status(/*ignorePause=*/true), PartFileStatus::Ready);
 }
 
 void tst_PartFile::priority_setAndGet()

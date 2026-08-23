@@ -3,6 +3,7 @@
 /// @file KadSearch.h
 /// @brief Kademlia search state machine (ported from kademlia/kademlia/Search.h).
 
+#include "httpcache/HttpCacheOffer.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadTypes.h"
@@ -65,6 +66,12 @@ public:
         bool    firewalled        = false;
         bool    directUDPCallback = false;  ///< firewalled but reachable by direct UDP callback
         bool    hasBuddy          = false;
+        /// Buddy address in **network** byte order — deliberately unlike FT_SOURCEIP,
+        /// which the storing node synthesises in host order (KadUDPListener.cpp, the
+        /// FT_SOURCETYPE arm). The asymmetry is the reference implementation's
+        /// (srchybrid/kademlia/kademlia/Search.cpp:667 publishes a network-order IP,
+        /// srchybrid/DownloadQueue.cpp:1560 consumes it without a swap) and it is load
+        /// bearing for interop, so do not "unify" the two tags.
         uint32  buddyIP           = 0;
         uint16  buddyUDPPort      = 0;      ///< MFC Search.cpp:668 GetUDPPort() — NOT the ED2K TCP port
         UInt128 buddyHash;
@@ -77,6 +84,16 @@ public:
         uint8   cryptOptions      = 0;
         QString ipv6Hex;                    ///< our public IPv6 as 32-char hex, empty if none
         QString buddyIPv6Hex;               ///< serving buddy's IPv6 as 32-char hex, empty if none
+
+        /// HTTP Cache chunks to advertise alongside this source record, at most
+        /// KADHC_MAX_CHUNKS. Empty unless httpCache.publishToKad is on.
+        ///
+        /// They ride the ordinary source record rather than a record of their own
+        /// because a storing node keys one bucket per publisher IP+port
+        /// (srchybrid/kademlia/kademlia/Indexed.cpp:491-496) — a second record from us
+        /// would simply overwrite the first — and because a new Kad opcode would be
+        /// dropped unread by the stock clients that do the storing.
+        std::vector<eMule::HttpCacheOffer> httpCacheChunks;
     };
 
     /// Build the source-publish tag list. Sets @p outCanPublish to false when we
@@ -95,7 +112,21 @@ public:
     [[nodiscard]] std::size_t deleteListSize() const { return m_deleteList.size(); }
     [[nodiscard]] std::size_t inUseCount() const { return m_inUse.size(); }
 
+    /// Read the indexed HTTP-Cache chunk tag families back out of a source result.
+    /// Returns empty for the overwhelming majority of results, which carry none.
+    ///
+    /// Public alongside buildSourcePublishTags() so a test can put a record through
+    /// both halves and the real Kad tag codec, which is what actually pins the format
+    /// other clients have to read.
+    [[nodiscard]] static std::vector<eMule::HttpCacheOffer>
+    parseHttpCacheChunkTags(const TagList& info, const uint8* fileHash);
+
 private:
+    /// Append the indexed HTTP-Cache chunk tag families to a source-publish tag list.
+    /// Skips any chunk that would breach the size caps or is not a whole part.
+    static void appendHttpCacheChunkTags(std::vector<Tag>& tags,
+                                         const std::vector<eMule::HttpCacheOffer>& chunks);
+
     void go(uint32 maxToSend = kAlphaQuery);
     void processResponse(uint32 fromIP, uint16 fromPort, const ContactArray& results);
     void processResult(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort);

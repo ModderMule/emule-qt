@@ -15,6 +15,7 @@
 #include "net/HttpDefaults.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
+#include "net/PeerVetting.h"
 
 #include "utils/Log.h"
 
@@ -93,9 +94,11 @@ void URLClient::setRequestFile(PartFile* reqFile)
 // tryToConnect
 // ===========================================================================
 
-bool URLClient::tryToConnect(bool ignoreMaxCon)
+bool URLClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 {
     Q_UNUSED(ignoreMaxCon);
+    // A URL source is always dialled directly over HTTP; there is no callback to suppress.
+    Q_UNUSED(noCallbacks);
 
     if (m_urlHost.isEmpty()) {
         logDebug(QStringLiteral("URLClient::tryToConnect: no host set"));
@@ -116,6 +119,8 @@ bool URLClient::tryToConnect(bool ignoreMaxCon)
 
     // If we have an IP already, create socket and connect directly
     if (!connectAddress().isNull()) {
+        if (!acceptResolvedAddress(connectAddress()))
+            return false;
         connectToHost();
         return true;
     }
@@ -135,6 +140,8 @@ bool URLClient::tryToConnect(bool ignoreMaxCon)
                 disconnected(QStringLiteral("DNS resolution failed"));
                 return;
             }
+            if (!acceptResolvedAddress(result.first()))
+                return;
             setUserAddress(result.first());
             connectToHost();
         });
@@ -465,6 +472,27 @@ void URLClient::connectToHost()
     reqSocket->waitForOnConnect();
 
     logDebug(QStringLiteral("URLClient::connectToHost: connecting to %1:%2").arg(addr.toString()).arg(m_urlPort));
+}
+
+// ===========================================================================
+// acceptResolvedAddress
+// ===========================================================================
+
+bool URLClient::acceptResolvedAddress(const Address& addr)
+{
+    // Same three rules DownloadQueue::addLinkUrlSource applies to a literal a link
+    // carried (DownloadQueue.cpp:1036) — routable, not IP-filtered, not banned. Doing
+    // it here as well is what finally makes the promise the callers have always
+    // printed: HttpCacheManager::urlIsAcceptable screens a literal host and leaves a
+    // name "to be vetted after resolution", and until now nothing vetted it. A name is
+    // the easier half to abuse, since the resolver answer is the attacker's to choose.
+    if (!vetPeerAddress(addr, theApp.ipFilter, theApp.clientList).isNull())
+        return true;
+
+    logDebug(QStringLiteral("URLClient: refusing %1 for host %2 — not a usable address")
+                 .arg(addr.toString(), m_urlHost));
+    disconnected(QStringLiteral("URL host resolved to an unusable address"));
+    return false;
 }
 
 } // namespace eMule

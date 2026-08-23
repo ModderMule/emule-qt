@@ -213,6 +213,46 @@ Replies (`HCOP_RESULT` / `HCOP_NONE`) are sent only over an existing connection.
 deliver a decline is not worth a callback round trip, and by the time one completed the offer would
 be stale anyway.
 
+### 3.4 Relaying a chunk you fetched
+
+A downloader that has fetched a chunk holds everything needed to serve it again: the URL,
+the key, the IV and the digest. Relaying is handing that same `HCOP_OFFER` on to peers on its
+*own* upload queue that are missing the same part.
+
+**There is no wire change and no relay marker.** A relayed offer is byte-for-byte the same shape
+as a first-hand one. `HttpCacheOffer` carries no publisher identity, and the chunk id inside the
+URL is a random capability the server minted, so a receiver cannot tell who originally published
+the chunk — and cannot tell a relay from an original either. That indistinguishability is a
+feature to protect: **a hop count, an origin field or any "this was relayed" flag MUST NOT be
+added**, because it would be the only thing in the message capable of narrowing down the origin.
+
+A chunk MUST NOT be relayed until the receiving client's own MD4 part check has passed. §6.1
+blames the peer that made the offer, and under relay that peer is the relayer; relaying is
+therefore vouching for the bytes, and only a completed MD4 check justifies it. Concretely, all
+of the following must hold before an entry is promoted:
+
+1. `httpCache.enabled` and `httpCache.allowRelay`. **No base URL and no API key are required** —
+   the relayer never talks to the cache server at all. A node with no cache account can relay.
+2. The part passed MD4, and a real per-part hash existed to compare against.
+3. `HCTAG_EXPIRES` is non-zero and still has margin. A zero expiry means "never lapses", which is
+   right for a chunk you published and wrong for one you are borrowing: the owner can `DELETE` it
+   at any moment, and the entry would otherwise be offered forever.
+4. The peer that supplied the chunk is pre-excluded from the offer list.
+
+A relayer does not own the blob, so it never sends `DELETE`, and its entry lapses at the
+*original* publisher's TTL. If the part later fails a hash check — a disk fault, an AICH
+recovery that rewrote it — the relay entry is withdrawn.
+
+Once a relayed entry lapses, the ordinary publish scan (§3.1) may pick the same part up and
+publish it under a fresh key of its own, since by then the relayer holds the part and has the
+demand. That needs no special handling and is simply what the existing rules produce.
+
+Relaying is deliberately scoped to the relayer's own upload queue. Distributing offers over
+source exchange was considered and rejected: `OP_ANSWERSOURCES` is a fixed record list with no
+room for a URL, a key and a digest, so it would mean pushing `HCOP_OFFER` at peers learned
+through XS — which forfeits §6 rule 4, the requirement that an offering peer already be a source
+for the file, and spends a connect or callback per peer at peers that may already hold the part.
+
 ---
 
 ## 4. Server contract
@@ -336,8 +376,13 @@ requested. An offer is accepted only when all of the following hold:
 6. `plainLength ∈ (0, PARTSIZE]` and `cipherLength == cipherLengthFor(plainLength)` exactly — the
    padding rule is fixed, so a mismatch is either a bug or an attempt at over-allocation.
 7. Key is 32 bytes, IV is 16, digest is 32.
-8. The URL is ≤ 1024 chars, syntactically valid, `http`/`https`, with a host. A literal IPv4 host is
-   checked against `isGoodIP()` and the IP filter immediately; a hostname is vetted after resolution.
+8. The URL is ≤ 1024 chars, syntactically valid, `http`/`https`, with a host, and the host is not
+   somewhere we should not be sent. A literal host of **either** family is checked against
+   `isGoodIP()` and the IP filter before a connection is spent on it — `::ffff:a.b.c.d` is folded
+   back to IPv4 first, since it is otherwise reported as IPv6 and slips an IPv4-only test — and the
+   unspecified address (`0.0.0.0`, `::`) is refused outright. A hostname is vetted the same way plus
+   the ban list once resolved, in `URLClient`, because the resolver's answer is the sender's to
+   choose: a name pointing at `127.0.0.1` asks for exactly what a literal one is screened for.
 9. `expiresAt`, if non-zero, leaves at least 120 seconds.
 
 During the fetch the downloader additionally:
@@ -448,15 +493,41 @@ distinction the MD4 part hash alone cannot make.
 
 ### 7.3 Threat model
 
-**What this protects against:** a cache operator, anyone with access to its disks or backups, and
-anyone who obtains a chunk URL. All of them see uniform ~9.7 MB blobs with no file hash, no part
-number and no filename attached.
+**What this protects against:** a *passive* cache operator, anyone with access to its disks or
+backups, and anyone who obtains a chunk URL but not the key. All of them see uniform ~9.7 MB
+blobs with no file hash, no part number and no filename attached.
+
+It has never protected against an operator willing to run client nodes. Becoming a source for a
+popular file and declaring parts missing is enough to be sent offers, and every offer carries the
+URL, the key and the IV. Key harvesting at scale is therefore already available to a determined
+operator; §11 changes what it costs, not whether it is possible.
 
 **What it does not protect against:** anyone who can read the eD2K link between the two peers, since
 the key travels there. eD2K obfuscation is RC4 with a key derived from the user hash and is not
 authenticated encryption. The stated goal is that *the server* never holds decryptable data, and the
 design meets that; it is not end-to-end secrecy against a network attacker who is already positioned
 to read the eD2K stream — and such an attacker could read the file data off that stream anyway.
+
+**Relaying (§3.4)** widens the set of peers holding the key for a given blob. This is the same
+class of exposure the multi-peer offer already creates — `minClients` is 2 by default, so a chunk
+is normally handed to several peers the moment it is published — and it is bounded by the same
+per-entry "already told" set. It is a real widening all the same, and it is why relay is a
+separate switch.
+
+**Publishing to Kad (§11)** is on by default, as an accepted trade-off. It puts the URL, the key
+and the IV into a public DHT record, so the cost of harvesting drops from "solicit one offer per
+chunk" to "one lookup per file". What that buys an attacker is bounded, and bounded in three
+directions at once: the key unlocks exactly one part of one file that is *already* sitting at a
+public URL anyone may GET; the chunk lapses at `chunkTtlSeconds` (6 h by default) and the record
+with it, since a publisher republishes on the `KADEMLIAREPUBLISHTIMES` clock and a storing node
+expires on the same one; and only chunks we chose to publish are ever described, never a relayed
+one (§11.3). Set against that, a peer who wanted the same bytes could simply ask us for the offer
+over eD2K and get the identical key — the DHT changes the *effort*, not the *reach*.
+
+The honest claim is therefore *the server is never **given** the key* — not *the key is secret*.
+That is the whole of what §7's design buys, and it holds with `publishToKad` on or off. A
+deployment that needs the stronger reading — the key stays between us and the peers we hand it to
+— turns `publishToKad` off and keeps everything else.
 
 **Bandwidth trust:** a malicious uploader can waste a downloader's bandwidth by publishing garbage.
 The cost is bounded at one part, the digest catches a mangled blob before the MD4 check, and a blob
@@ -476,6 +547,9 @@ httpCache:
   enabled: false                        # master switch, both directions
   allowDownload: true
   allowUpload: true                     # also needs baseUrl and apiKey
+  allowRelay: true                      # pass verified chunks on (§3.4); needs no account
+  publishToKad: true                    # put chunk descriptors in the Kad source record (§11)
+  fetchFromKad: true                    # fetch chunks found in Kad, vouched for by nobody
   baseUrl: "http://localhost/emule-http-cache-php"
   apiKeyEnc: "<AES-encrypted>"          # plaintext `apiKey:` is accepted once, then rewritten
   minClients: 2                         # 1 to exercise the path with a single peer
@@ -579,5 +653,151 @@ These exist as identifiers or design allowances and MUST NOT be relied upon:
 | `tests/tst_HttpCachePublish.cpp` | a real `HttpCachePublisher` against an origin that refuses the upload — `500` with the server's own message, `401`, `Retry-After`, an unusable `2xx`, an unreadable part, an aborted exchange — plus the whole §4.1 retry-policy table |
 | `tests/tst_HttpCacheMultiPeer.cpp` | the uploader's decisions, with three mock ed2k peers on a real `ListenSocket`/`UploadQueue`: one publish serving three peers, the `minClients` threshold, the `MODMISC_HTTPCACHE` and part-availability filters, the whole-part guard, two parts serialised by `maxConcurrentPublishes`, the re-offer dedup, slot release, entry retirement after three bad reports, and §4.1's "publishing pauses, offers continue". A peer also fetches the offered URL and decrypts it back to the part on disk |
 | `tests/tst_HttpCacheCorruptBan.cpp` | who gets blocked when a part fails MD4: a sole whole-part sender banned without AICH, a connected client banned through its own `ban()` path rather than by bare address, and four cases where nobody is blamed — a good part, two contributors, an unattributed write, and a part only half attributed (the resumed-download trap). Plus a full fetch of an internally consistent chunk that decrypts to the wrong bytes: the offering peer is banned, the cache server is not |
-| `tests/tst_HttpCacheLive.cpp` | publisher → real server → GET → decrypt → byte-exact compare; ranged resume against the live server; a full `HttpCacheClient` fetch of a 9.28 MB part into a real `PartFile`. Needs `EMULE_HTTPCACHE_URL` / `EMULE_HTTPCACHE_KEY`, skips otherwise |
+| `tests/tst_HttpCacheRelay.cpp` | §3.4 end to end against a real `HttpCacheClient` and `PartFile`: a verified chunk is promoted and the origin excluded from its offer list; ten flushes still produce one entry; a part that fails MD4, and a chunk with no stated expiry, are never relayed; relaying works with no base url, no API key and `allowUpload` off; and `allowRelay: false` stops it |
+| `tests/tst_PartFileSharing.cpp` | part files are shared files — the MD4-hashset and complete-part gate, sharing on a verified part and on ICH recovery, idempotence across flushes, survival of a `SharedFileList::reload()`, and that leaving the download queue unshares without marking the hash unshared forever |
+| `tests/tst_KadSearch.cpp` | §11: chunk tags absent with nothing to advertise, a full round trip through the real Kad tag codec (BSOB included), the chunk cap and the whole-part / URL-length / expiry screens, the record staying under a stock node's 2 KB serve buffer, and that the source record a legacy client reads is untouched |
+| `tests/tst_HttpCacheLive.cpp` | the real `/v1/info` handshake; publisher → real server → GET → decrypt → byte-exact compare; ranged resume against the live server; a full `HttpCacheClient` fetch of a 9.28 MB part into a real `PartFile`. Every case runs once per backend that is reachable — see §10.1 |
 | `emule-http-cache-php/tests/smoke.php` | the server contract standalone — valid against any backend, PHP or not |
+
+### 10.1 Running the live test against a backend
+
+There is more than one implementation of §4, and two implementations drift. `tst_HttpCacheLive`
+therefore runs every case once per cache server it can reach, and skips the ones it cannot, so the
+same binary is honest on a machine with two backends, one, or none.
+
+| Variable | Backend | Absent means |
+|---|---|---|
+| `EMULE_HTTPCACHE_URL` + `EMULE_HTTPCACHE_KEY` | a server somebody else runs — the PHP reference server under Apache, in practice | unset, or nothing answers `/v1/info` there: that row is skipped |
+| `HTTPCACHE_GO_CMD` | a binary the test starts itself, over a throwaway config and storage directory on a free loopback port | unset, or the executable is missing: that row is skipped |
+
+Both can live in `.env`, which is where `SERVER_TEST_CMD` points `tst_ServerLocalTest` at eNode. A
+binary that is *present* and will not serve is a failure rather than a skip — the prerequisite was
+met, so something is broken and saying so is more use than staying quiet.
+
+Each row asserts that `implementation` from `/v1/info` matches the backend it names. Without that,
+an environment pointing both rows at one server would run everything twice against the same code and
+report it as coverage of two.
+
+Both backends together run in about a second against localhost. A row that instead takes tens of
+seconds, in a round number close to the server's keep-alive timeout, is the client failing to drain
+its own socket rather than the server being slow — `EMSocket::onReadyRead()` reads at most 2 MB per
+pass and Qt only re-emits `readyRead` on *new* data, so a pass that leaves bytes behind has to
+re-arm itself. That is fixed and covered by `tst_EMSocket::drainsBufferWhenPeerGoesQuiet()`, but the
+shape of the symptom is worth recognising: it points at us, not at the backend.
+
+---
+
+## 11. Kad chunk records
+
+On by default, and separately switchable (`httpCache.publishToKad` to publish,
+`httpCache.fetchFromKad` to act on what is found). §7.3 sets out the trade-off being accepted:
+this publishes the decryption key to a public DHT.
+
+With it on, a lookup on the file hash yields everything needed to fetch a part over HTTP without
+contacting any peer at all — which is the point, since otherwise a chunk can only be found by
+first finding, connecting to and queueing at the peer holding it.
+
+### 11.1 Why the descriptors ride the source record
+
+Two constraints leave no alternative.
+
+**A new Kad opcode cannot work.** Publishing means storing on the nodes closest to the target, and
+those are ordinary eMule clients. An unrecognised opcode is dropped at their dispatch table and
+nothing is ever stored. The record must travel in `KADEMLIA2_PUBLISH_SOURCE_REQ`, which stock
+nodes accept, keep verbatim — unknown tags included — and serve back on
+`KADEMLIA2_SEARCH_SOURCE_REQ`.
+
+**A publisher gets one stored record per file hash.** The store dedups on publisher IP plus ports,
+not on the source ID, so a second record from the same node overwrites the first. Minting a
+distinct source ID per chunk achieves nothing; only fabricating distinct TCP *and* UDP ports would,
+which is abusive and burns the per-IP publish token bucket.
+
+So the descriptors are **extra tags on the publisher's real source record**, not a record of their
+own. `FT_SOURCETYPE` keeps its true value, so a client that knows nothing about these tags still
+reads the source it came for and ignores the rest.
+
+### 11.2 Tags
+
+Indexed families; the name is the prefix with the chunk number appended (`hcp0`, `hcu0`, `hcp1`,
+…), for at most `KADHC_MAX_CHUNKS` = 3 chunks. A missing index ends the run.
+
+| Tag | Type | Meaning |
+|---|---|---|
+| `hcp<i>` | uint32 | part index within the file |
+| `hcu<i>` | string | absolute chunk URL, ≤ 256 chars |
+| `hck<i>` | bsob(48) | 32-byte AES-256 key ‖ 16-byte IV |
+| `hcs<i>` | bsob(32) | SHA-256 of the ciphertext |
+| `hce<i>` | uint32 | unix expiry; MUST be non-zero |
+
+Plaintext and ciphertext lengths are **not** published. Only whole `PARTSIZE` parts are ever
+published (§3.1), so a reader derives `PARTSIZE` and `PARTSIZE + 16` and MUST refuse a record
+whose part index would imply a file's short tail part. That removes two tags per chunk and one
+thing a publisher could lie about.
+
+String names rather than numeric `FT_` ids: the numeric space is nearly full, and two ids in it
+are silently stripped by a storing node, so a string name is both cheaper and safer.
+
+### 11.3 Limits a publisher MUST respect
+
+- **At most 3 chunks, and a URL of at most 256 characters.** A storing node serialises one record
+  into a 2 KB buffer and throws on overflow, which aborts the serve for *every* result in that
+  packet, not only ours. A chunk that would breach either limit is skipped, and is still offered
+  over eD2K as normal.
+- **Only chunks the publisher published itself.** A relayed chunk (§3.4) is a borrowed URL on
+  somebody else's TTL, and a DHT record outlives the chunk, so relayed entries are never
+  advertised.
+- A node that cannot publish a source record at all — firewalled with neither a direct UDP
+  callback nor a buddy — publishes no chunks either, even though its chunks would be perfectly
+  fetchable. Two gates enforce this: `KnownFile::publishSrc()`
+  (`src/core/files/KnownFile.cpp:724`) refuses to start the search, and the tag builder returns
+  early at `src/core/kademlia/KadSearch.cpp:232`, ahead of where the chunk tags are appended.
+  Both are reachable, because they disagree — `publishSrc()` tests only `isFirewalledUDP(true)`
+  while the builder additionally demands `UDPFirewallTester::isVerified()`, so an
+  unverified-but-open UDP node starts a search and is stopped at the second gate.
+
+  Fixing it would mean publishing something that is not a real source, and there is no benign
+  way to do that. Three separate walls, checked against the reference implementation:
+
+  1. **The source IP cannot be chosen.** A storing node discards whatever address the publisher
+     names and synthesises `FT_SOURCEIP` from the observed UDP sender
+     (`src/core/kademlia/KadUDPListener.cpp:1436`; reference
+     `srchybrid/kademlia/net/KademliaUDPListener.cpp:1317`). There is no dummy IP to publish —
+     the record always carries the publisher's real NAT-side address.
+  2. **A portless record cannot be stored.** The clean substitute would be `FT_SOURCETYPE = 1`
+     with `FT_SOURCEPORT = 0`: a record that carries chunks but names no reachable source, which
+     both this port and stock eMule already discard on the reading side. No storing node will
+     hold it — `src/core/kademlia/KadIndexed.cpp:159` and reference
+     `srchybrid/kademlia/kademlia/Indexed.cpp:456` both require a non-zero TCP port.
+  3. **The remaining opening is not filtered out downstream.** That leaves claiming
+     `FT_SOURCETYPE = 1` with the real TCP port while firewalled. The chunks would arrive —
+     `Search::processResultFile` applies no port check for types 1/4 and parses the `hc*` tags
+     unconditionally, and `addKadChunks` runs on a path independent of the source
+     (`src/core/app/CoreSession.cpp:1127`). But nothing rejects the bogus source:
+     `DownloadQueue::addKadSourceResult` passes it on a non-zero port, and `checkAndAddSource`
+     only rejects a High ID whose address fails `isGoodIP` (`DownloadQueue.cpp:340`) — a real
+     NAT-side public IP passes cleanly. Stock eMule behaves the same
+     (`srchybrid/DownloadQueue.cpp:1535` drops only a missing port). Every peer that looked the
+     file up would pay a dead TCP connect and a dead-source entry in exchange for the chunks.
+
+The file size is published, as it always was for a source. That is safe *because* these are
+annotations on a genuine source record: the size is the file's own, so a searcher looking for that
+file asks with the same number and the storing node's size filter matches.
+
+### 11.4 Acting on a record
+
+A record is a URL chosen by a stranger. §6 rule 4 — the offering peer must already be a source for
+the file — cannot apply, because there is no sender. What replaces it is that *we* chose the file
+hash that was looked up, plus the whole of §6's structural validation: the URL check and IP
+filter, the expiry margin, the derived lengths, and the key, IV and digest sizes.
+
+**Nobody is blamed.** Bytes from a Kad-discovered chunk are written with no sender attached, so the
+corruption black box records them as unattributed and §6.1's sole-sender rule cannot fire. This is
+not optional: attributing them to anything would mean attributing them to the cache server, which
+did not choose them, and getting it banned. A part filled this way that later fails MD4 therefore
+condemns nobody, and AICH decides as it would for any unattributed part.
+
+There is likewise no peer to send `HCOP_RESULT` to and no three-strike counter to run, so a client
+SHOULD remember the URLs it failed on and cap how often it will chase Kad-discovered chunks for
+one file. The cost of a malicious record stays bounded at one part: a mangled blob fails the
+published SHA-256 before any plaintext is trusted, and a self-consistent blob that decrypts to the
+wrong bytes fails the MD4 part hash.

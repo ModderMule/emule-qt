@@ -95,6 +95,15 @@ void DownloadQueue::init(const QStringList& tempDirs)
             if (result == PartFileLoadResult::LoadSuccess) {
                 connectPartFileSignals(partFile);
                 m_items.push_back(partFile);
+                // "part files are always shared files" — srchybrid/DownloadQueue.cpp:109,127.
+                // loadPartFile() has already latched Ready if a part verified, so this
+                // is MFC's own test: GetStatus(true) == PS_READY, ignoring pause, because
+                // a paused download with a complete part stays shared.
+                // Not onlyAdd: a part file that comes back shareable is news the server
+                // should hear, and MFC arms the republish here too (:109,127). Only the
+                // bulk re-add in addPartFilesToShare() suppresses it (:73).
+                if (m_sharedFileList && partFile->status(/*ignorePause=*/true) == PartFileStatus::Ready)
+                    m_sharedFileList->safeAddKFile(partFile);
                 // Record the state the file came back in — a download that silently
                 // loads paused, or with an empty gap list (status Completing), is
                 // skipped by process() and will never ask for sources.
@@ -115,6 +124,24 @@ void DownloadQueue::init(const QStringList& tempDirs)
     }
 
     sortByPriority();
+}
+
+// ===========================================================================
+// addPartFilesToShare — MFC CDownloadQueue::AddPartFilesToShare
+// ===========================================================================
+
+void DownloadQueue::addPartFilesToShare()
+{
+    // srchybrid/DownloadQueue.cpp:68-75. Not addToSharedFiles(): that only promotes an
+    // Empty file, and after a reload these are already latched Ready — they just need
+    // putting back into the map the reload emptied.
+    if (!m_sharedFileList)
+        return;
+
+    for (auto* file : m_items) {
+        if (file && file->status(/*ignorePause=*/true) == PartFileStatus::Ready)
+            m_sharedFileList->safeAddKFile(file, /*onlyAdd=*/true);
+    }
 }
 
 // ===========================================================================
@@ -191,6 +218,10 @@ void DownloadQueue::deleteAll()
     for (auto* file : m_items) {
         if (m_knownFileList && m_knownFileList->isFilePtrInList(file))
             continue; // owned by KnownFileList now — it saves and deletes it
+        // Same reason as onEntityRemoved(): this path frees the object without going
+        // through removeEntity(), so it has to unhook the shared map itself.
+        if (m_sharedFileList && file->isPartFile())
+            m_sharedFileList->removeFile(file);
         delete file;
     }
     m_items.clear();
@@ -300,6 +331,18 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
         return false;
     }
 
+    // A High ID *is* the peer's IPv4, so it has to be a usable one — 0.x, loopback,
+    // multicast, reserved and (unless the lab-mode pref says otherwise) LAN are all
+    // unreachable or bogus. A Low ID is an ID and not an address, so testing it would
+    // reject every firewalled source; the IPv6-only marker kNoIPv4SourceId is
+    // deliberately a Low ID for the same reason. MFC DownloadQueue.cpp:568-575.
+    // m_userIDHybrid is host order for a High ID, isGoodIP() takes network order.
+    if (!source->hasLowID() && !isGoodIP(htonl(source->userIDHybrid()))) {
+        logDebug(QStringLiteral("Source rejected — unusable high ID: %1")
+                     .arg(ipstr(htonl(source->userIDHybrid()))));
+        return false;
+    }
+
     // IPFilter check — reject filtered IPs. The Address overload covers both families
     // and keeps IPv6 sources out of the uint32 path, where they would collapse to 0.
     if (m_ipFilter && !source->userAddress().isNull()) {
@@ -390,14 +433,24 @@ void DownloadQueue::removeSource(UpDownClient* source)
         file->removeSource(source);
 }
 
-void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
-                                        uint32 ip, uint16 tcpPort,
-                                        uint32 buddyIP, uint16 buddyPort,
-                                        uint8 buddyCrypt, uint8 sourceType,
-                                        const uint8* buddyHash,
-                                        const uint8* clientHash, uint16 udpPort,
-                                        const uint8* sourceIPv6, const uint8* buddyIPv6)
+void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& result)
 {
+    // Unpacked into the names the body already used, so the struct conversion stayed a
+    // signature change rather than a rewrite of a hundred lines of source handling.
+    const uint32  searchID   = result.searchID;
+    const uint8*  fileHash   = result.fileHash;
+    const uint32  ip         = result.ip;
+    const uint16  tcpPort    = result.tcpPort;
+    const uint32  buddyIP    = result.buddyIP;
+    const uint16  buddyPort  = result.buddyPort;
+    const uint8   buddyCrypt = result.buddyCrypt;
+    const uint8   sourceType = result.sourceType;
+    const uint8*  buddyHash  = result.buddyHash;
+    const uint8*  clientHash = result.clientHash;
+    const uint16  udpPort    = result.udpPort;
+    const uint8*  sourceIPv6 = result.sourceIPv6;
+    const uint8*  buddyIPv6  = result.buddyIPv6;
+
     Q_UNUSED(searchID);
 
     // Safety: file must be in download queue (MFC DownloadQueue.cpp:1512-1513)
@@ -456,6 +509,9 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
         if (clientHash)
             client->setUserHash(clientHash);
         client->setUserAddress(Address::fromHostOrder(ip));
+        // callback=false unlike MFC, which uses one shared call with the default true:
+        // a source that is reachable on TCP has no callback to offer, and a publisher
+        // that is not firewalled never sets bit 3 in the first place.
         client->setConnectOptions(buddyCrypt, true, false);
         logDebug(QStringLiteral("Kad HighID source for %1: type=%2 IP=%3:%4 crypt=0x%5")
                      .arg(file->fileName()).arg(sourceType).arg(ip).arg(tcpPort)
@@ -472,12 +528,16 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
                          .arg(sourceType));
             return;
         }
-        if (m_ipFilter && m_ipFilter->isFiltered(htonl(buddyIP))) {
-            logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 filtered").arg(buddyIP));
+        // buddyIP is FT_SERVERIP, which travels in network order — unlike the source
+        // IP above, which needs the htonl. Same split as MFC (srchybrid/DownloadQueue
+        // .cpp:1519 swaps the source IP, :1560 passes the buddy IP straight through),
+        // and isFiltered(uint32) wants network order (IPFilter.h).
+        if (m_ipFilter && m_ipFilter->isFiltered(buddyIP)) {
+            logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 filtered").arg(ipstr(buddyIP)));
             return;
         }
-        if (m_clientList && m_clientList->isBannedClient(Address::fromHostOrder(buddyIP))) {
-            logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 banned").arg(buddyIP));
+        if (m_clientList && m_clientList->isBannedClient(Address::fromNetworkOrder(buddyIP))) {
+            logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 banned").arg(ipstr(buddyIP)));
             return;
         }
         // clientID=1: "We set the clientID to 1 as a Kad user only has 1 buddy" (MFC:1570)
@@ -488,7 +548,7 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
             client->setUserHash(clientHash);
         if (buddyHash)
             client->setBuddyID(buddyHash);
-        client->setBuddyAddress(Address::fromHostOrder(buddyIP));
+        client->setBuddyAddress(Address::fromNetworkOrder(buddyIP));
         client->setBuddyPort(buddyPort);
         client->setConnectOptions(buddyCrypt, true, true);
         logDebug(QStringLiteral("Kad FW source for %1: type=%2 buddy=%3:%4")
@@ -514,7 +574,12 @@ void DownloadQueue::addKadSourceResult(uint32 searchID, const uint8* fileHash,
         client->setConnectAddress(Address::fromHostOrder(ip));  // IP for UDP, not TCP (MFC:1596)
         if (clientHash)
             client->setUserHash(clientHash);
-        client->setConnectOptions(buddyCrypt, true, false);
+        // callback=true, or setConnectOptions ANDs bit 3 away again and this source is
+        // left with no route at all — the check six lines up admitted it precisely
+        // because that bit was set. MFC reaches the same place through the default
+        // argument (srchybrid/DownloadQueue.cpp:1605). supportsDirectUDPCallback()
+        // still needs the user hash and the Kad port set above, so all three are here.
+        client->setConnectOptions(buddyCrypt, true, true);
         logDebug(QStringLiteral("Kad UDP callback source for %1: type=6 IP=%2:%3")
                      .arg(file->fileName()).arg(ip).arg(tcpPort));
         finalizeSource(client);
@@ -1108,13 +1173,35 @@ void DownloadQueue::process()
             for (auto* src : file->srcList()) {
                 // The download-side natural send point for a queued OP_CHANGE_CLIENT_IP.
                 src->flushPendingIPChange();
+
                 // No isSourceRequestAllowed() gate here: udpReaskForDownload() owns that
                 // decision and *returns* when a source request is allowed, because then a
                 // TCP connection is preferable — MFC DownloadClient.cpp:1352. Requiring it
                 // to be true before calling inverted the test, so direct-reachable sources
                 // hit that early return every time and never got an OP_REASKFILEPING.
-                if (src->supportsUDP() && src->timeUntilReask(file) == 0)
+                if (!src->supportsUDP())
+                    continue;
+
+                // MFC PartFile.cpp:2337-2339. A UDP re-ask only for a source sitting on the
+                // peer's queue, only inside the last two minutes before its TCP re-ask falls
+                // due (and not in the final second), and only when we have not just tried to
+                // dial it. "Allow up to 1 min for UDP to respond. If we are within one min
+                // of TCP re-ask, do not try."
+                //
+                // The window is deliberately disjoint from the TCP branch in
+                // PartFile::process(), which fires at timeUntilReask() == 0. Sharing that
+                // one instant — which this used to do — means the same second sends a
+                // re-ask datagram and then charges it as failed at the head of
+                // askForDownload(). That drives m_failedUDPPackets past the 30 % abort and
+                // silently disables UDP re-asks for the peer for good.
+                if (src->downloadState() != DownloadState::OnQueue)
+                    continue;
+                const uint32 untilReask = src->timeUntilReask(file);
+                if (untilReask < MIN2MS(2) && untilReask > SEC2MS(1)
+                    && curTick >= src->lastTriedToConnect() + MIN2MS(20))
+                {
                     src->udpReaskForDownload();
+                }
             }
         }
     }
@@ -1387,6 +1474,16 @@ void DownloadQueue::onEntityRemoved(PartFile* file)
     // (getSuccServer() already tolerates a removed server cursor.)
     if (file == m_lastUdpFile)
         m_lastUdpFile = nullptr;
+
+    // Part files are shared files now, so a file leaving the queue has to leave the
+    // shared map with it — the caller deletes the object next, and a stale pointer in
+    // SharedFileList::m_map would be read by the next server offer or Kad publish.
+    // Only while it is still a part file: a finished download is a legitimate shared
+    // file owned by KnownFileList, and "Clear Completed" routes through here too.
+    // MFC removes at srchybrid/PartFile.cpp:3083. Marking the hash unshared is
+    // harmless — it is not a re-add gate, and safeAddKFile() clears it.
+    if (m_sharedFileList && file->isPartFile())
+        m_sharedFileList->removeFile(file);
 
     if (file->status() != PartFileStatus::Complete)
         ++m_failedDownCount;

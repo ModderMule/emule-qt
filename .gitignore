@@ -115,6 +115,7 @@ __pycache__/
 *.local.sh
 *.local.log
 *.local.md
+*.local.json
 translations_*.json
 blog-*.md
 windows-3rd.yml

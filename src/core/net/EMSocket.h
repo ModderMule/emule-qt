@@ -156,6 +156,7 @@ private:
     // --- Internal send implementation ---
     SocketSentBytes send(uint32 maxNumberOfBytesToSend, uint32 minFragSize, bool onlyControlPackets);
     void scheduleRetryIfNeeded();
+    void scheduleReadRearm();
 
     static uint32 getNextFragSize(uint32 current, uint32 minFragSize);
 
@@ -163,6 +164,12 @@ private:
 
     // --- Slots ---
     void onReadyRead();
+
+    /// One read/parse pass. @p peerShutdown mirrors MFC's `nErrorCode != WSAESHUTDOWN`
+    /// checks in CEMSocket::OnReceive: once the peer has closed there is nothing left
+    /// to pace, so the download rate limit stops applying and the buffer is drained
+    /// rather than stranded behind a throttle that will never be lifted.
+    void readIncoming(bool peerShutdown);
     void onBytesWritten(qint64 bytes);
     void onSocketError(QAbstractSocket::SocketError error);
     void onConnected();
@@ -205,6 +212,12 @@ private:
     bool m_busy = false;
     bool m_useBigSendBuffers = false;
     bool m_retryScheduled = false;
+
+    /// One deferred onReadyRead() at a time. onReadyRead() consumes at most
+    /// kMaxReadBuffer per pass and Qt only re-emits readyRead when *new* data
+    /// arrives, so a pass that leaves bytes behind must re-arm itself or they
+    /// are stranded until the peer sends again — see scheduleReadRearm().
+    bool m_readRearmScheduled = false;
 
     /// Backoff for the send-retry chain. send() drains nothing while the encryption
     /// layer is not ready, so a fixed 10 ms re-arm polls at 100 Hz forever on a socket

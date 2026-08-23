@@ -225,6 +225,12 @@ public:
     [[nodiscard]] QStringList sharedDirs() const;
     void setSharedDirs(const QStringList& val);
 
+    /// May this directory be shared at all? Port of MFC CPreferences::IsShareableDirectory
+    /// (srchybrid/Preferences.cpp:2578): the config directory and the temp directories
+    /// are eMule's own working storage, and the incoming directory is shared
+    /// unconditionally elsewhere, so none of them may be picked as a shared dir.
+    [[nodiscard]] bool isShareableDirectory(const QString& dir) const;
+
     // -- UPnP -----------------------------------------------------------------
 
     [[nodiscard]] bool enableUPnP() const;
@@ -715,6 +721,23 @@ public:
     /// Publish chunks. Also needs a base URL and an API key to do anything.
     [[nodiscard]] bool httpCacheAllowUpload() const;
     void setHttpCacheAllowUpload(bool val);
+
+    /// Pass a chunk we fetched and verified on to peers on our own upload queue.
+    /// Needs no base URL and no API key — we hand out a URL, we never upload.
+    [[nodiscard]] bool httpCacheAllowRelay() const;
+    void setHttpCacheAllowRelay(bool val);
+
+    /// Put chunk descriptors — URL, key, IV, digest — into our Kad source record.
+    /// A DHT record is public and outlives the chunk, which is why this is its own
+    /// switch rather than part of the upload one.
+    [[nodiscard]] bool httpCachePublishToKad() const;
+    void setHttpCachePublishToKad(bool val);
+
+    /// Fetch chunks discovered through Kad, with no peer vouching for them.
+    /// Separate from publishing: the URL comes from a stranger, so the two
+    /// directions carry different risk and are switched independently.
+    [[nodiscard]] bool httpCacheFetchFromKad() const;
+    void setHttpCacheFetchFromKad(bool val);
 
     /// Cache server root, e.g. "http://localhost/emule-http-cache-php".
     [[nodiscard]] QString httpCacheBaseUrl() const;

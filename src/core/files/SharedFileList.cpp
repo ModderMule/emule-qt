@@ -3,6 +3,7 @@
 /// @brief Shared file management — port of MFC CSharedFileList.
 
 #include "files/SharedFileList.h"
+#include "app/AppContext.h"
 #include "files/Collection.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
@@ -14,14 +15,26 @@
 #include "protocol/Tag.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
+#include "files/PartFile.h"
+#include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
 
 #include <QDir>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
+#include <QTextStream>
 
 
 namespace eMule {
+
+/// Minimum spacing between two OP_OFFERFILES sends. MFC ED2KREPUBLISHTIME,
+/// srchybrid/Opcodes.h:88 — one minute.
+constexpr time_t kEd2kRepublishSecs = 60;
+
+/// Client-side ceiling on files per OP_OFFERFILES packet. A server's advertised
+/// GetSoftFiles() may lower this, never raise it (srchybrid/SharedFileList.cpp:832-834).
+constexpr uint32 kMaxOfferedFiles = 200;
 
 // ===========================================================================
 // HashingThread
@@ -42,7 +55,7 @@ void HashingThread::enqueue(Job job)
 void HashingThread::clearQueue()
 {
     QMutexLocker locker(&m_mutex);
-    m_queue.clear();
+    std::erase_if(m_queue, [](const Job& j) { return !j.isRehash(); });
 }
 
 void HashingThread::requestStop()
@@ -50,6 +63,46 @@ void HashingThread::requestStop()
     QMutexLocker locker(&m_mutex);
     m_stopRequested = true;
     m_condition.wakeAll();
+}
+
+void HashingThread::runRehash(const Job& job)
+{
+    logInfo(QStringLiteral("Rehashing part file: %1").arg(job.rehashPartPath));
+
+    const auto partCount = static_cast<uint32>(job.rehashPartHashes.size());
+    QByteArray partOk(static_cast<qsizetype>(partCount), '\0');
+
+    QFile file(job.rehashPartPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        logError(QStringLiteral("Rehash failed to open %1").arg(job.rehashPartPath));
+        // Every part reads as bad, which is the safe answer: the data gets re-fetched.
+        emit partFileRehashed(job.rehashFileHash, partOk);
+        return;
+    }
+
+    for (uint32 part = 0; part < partCount; ++part) {
+        const uint64 start = static_cast<uint64>(part) * PARTSIZE;
+        if (start >= job.rehashFileSize)
+            break;
+        const uint64 len = std::min<uint64>(PARTSIZE, job.rehashFileSize - start);
+
+        if (!file.seek(static_cast<qint64>(start)))
+            break;
+        const QByteArray data = file.read(static_cast<qint64>(len));
+        if (static_cast<uint64>(data.size()) != len)
+            break;   // truncated .part — the rest stays marked missing
+
+        std::array<uint8, 16> actual{};
+        KnownFile::createHashFromMemory(reinterpret_cast<const uint8*>(data.constData()),
+                                        static_cast<uint32>(len), actual.data(), nullptr);
+
+        if (actual == job.rehashPartHashes[part])
+            partOk[static_cast<qsizetype>(part)] = 1;
+
+        emit hashingProgress(static_cast<int>((part + 1) * 100 / std::max(1u, partCount)));
+    }
+
+    emit partFileRehashed(job.rehashFileHash, partOk);
 }
 
 void HashingThread::run()
@@ -67,6 +120,11 @@ void HashingThread::run()
 
             job = std::move(m_queue.front());
             m_queue.pop_front();
+        }
+
+        if (job.isRehash()) {
+            runRehash(job);
+            continue;
         }
 
         logDebug(QStringLiteral("Hashing: %1/%2").arg(job.directory, job.filename));
@@ -99,11 +157,15 @@ SharedFileList::SharedFileList(KnownFileList* knownFiles, QObject* parent)
     : EntityMap<MD4Key, KnownFile>(parent)
     , m_knownFiles(knownFiles)
 {
+    loadSharedFilesConfig();
+
     m_hashingThread = new HashingThread(this);
     connect(m_hashingThread, &HashingThread::hashingFinished,
             this, &SharedFileList::onHashingFinished, Qt::QueuedConnection);
     connect(m_hashingThread, &HashingThread::hashingFailed,
             this, &SharedFileList::onHashingFailed, Qt::QueuedConnection);
+    connect(m_hashingThread, &HashingThread::partFileRehashed,
+            this, &SharedFileList::onPartFileRehashed, Qt::QueuedConnection);
     m_hashingThread->start();
 }
 
@@ -122,14 +184,30 @@ SharedFileList::~SharedFileList()
 
 void SharedFileList::reload()
 {
-    QMutexLocker locker(&m_mutex);
-    ++m_generation;
-    m_hashingThread->clearQueue();
-    m_map.clear();
-    m_waitingForHash.clear();
-    m_hashingInProgress = false;
+    {
+        QMutexLocker hashLocker(&m_hashMutex);
+        ++m_generation;
+        m_hashingThread->clearQueue();
+        m_waitingForHash.clear();
+        m_hashingInProgress = false;
+    }
+
+    clearEntities();
+
+    // Deliberately unlocked: the scan feeds every file back in through safeAddKFile()
+    // -> addEntity(), which takes the map lock per file, and it walks the whole share
+    // from disk — not something to hold any lock across.
     findSharedFiles();
-    hashNextFile();
+
+    {
+        QMutexLocker hashLocker(&m_hashMutex);
+        hashNextFile();
+    }
+
+    // Part files are shared files too, and the clear above just dropped them all.
+    // MFC re-adds from inside FindSharedFiles (srchybrid/SharedFileList.cpp:551).
+    if (theApp.downloadQueue)
+        theApp.downloadQueue->addPartFilesToShare();
 }
 
 // ---------------------------------------------------------------------------
@@ -138,11 +216,24 @@ void SharedFileList::reload()
 
 bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
 {
-    // Stash the call-specific flag for onEntityAdded(); see header comment for
-    // why a plain member is safe here. EntityMap::addEntity takes the lock and
-    // runs keyFor -> isDuplicate -> insert -> onEntityAdded under it.
-    m_pendingOnlyAdd = onlyAdd;
-    return addEntity(file);
+    // EntityMap::addEntity takes the lock and runs keyFor -> isDuplicate -> insert
+    // -> onEntityAdded under it, then releases. Everything below runs unlocked,
+    // matching MFC, which drops its own lock at srchybrid/SharedFileList.cpp:699
+    // before exactly this work: collection parsing (disk I/O), keywords, last-seen.
+    if (!addEntity(file))
+        return false;
+
+    detectCollection(file);
+    addKeywords(file);
+    file->setLastSeen(std::time(nullptr));
+
+    // MFC SafeAddKFile:662-668 — bOnlyAdd suppresses the republish, not the last-seen
+    // stamp, which AddFile:723 sets unconditionally.
+    if (!onlyAdd)
+        m_republishED2K = true;
+
+    emit fileAdded(file);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +243,12 @@ bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
 bool SharedFileList::removeFile(KnownFile* file)
 {
     // EntityMap::removeEntity: erase by keyFor -> onEntityRemoved (under lock).
-    return removeEntity(file);
+    if (!removeEntity(file))
+        return false;
+
+    removeKeywords(file);
+    emit fileRemoved(file);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,9 +262,11 @@ MD4Key SharedFileList::keyFor(KnownFile* file) const
 
 bool SharedFileList::isDuplicate(const MD4Key& key, KnownFile* file) const
 {
-    // Files explicitly unshared stay excluded.
-    if (m_unsharedFiles.contains(key))
-        return true;
+    // Deliberately does NOT consult m_unsharedFiles. That set records what we used
+    // to share so isUnsharedFile() can answer a peer; it is not a re-add gate, and
+    // MFC's AddFile clears it on every successful add (srchybrid/SharedFileList.cpp:695).
+    // What actually keeps an unshared file out is shouldBeShared(), applied by the
+    // directory scan.
     if (m_map.contains(key)) {
         logDebug(QStringLiteral("Duplicate hash: \"%1\" has same MD4 as existing \"%2\" — skipped")
                      .arg(file->fileName(), m_map.at(key)->fileName()));
@@ -177,33 +275,22 @@ bool SharedFileList::isDuplicate(const MD4Key& key, KnownFile* file) const
     return false;
 }
 
+// Both hooks run with the base's m_mutex held (EntityMap.h), so they carry only the
+// m_unsharedFiles bookkeeping — which is guarded by that same lock. Collection
+// parsing, keywords, last-seen and the signals live in safeAddKFile()/removeFile(),
+// where the lock is no longer held.
+
 void SharedFileList::onEntityAdded(KnownFile* file)
 {
-    // Auto-detect .emulecollection files and attach parsed collection.
-    // This must happen before addKeywords(): setCollection() rebuilds the Kad keyword
-    // list to include the collection's author key, and publishing that key is what makes
-    // "Search Author's Collections" work (srchybrid/SharedFileList.cpp:703-721).
-    if (!file->isPartFile() && !file->collection()
-        && Collection::hasCollectionExtension(file->fileName()))
-    {
-        auto coll = std::make_unique<Collection>();
-        if (coll->initFromFile(file->filePath(), file->fileName()))
-            file->setCollection(std::move(coll));
-    }
-
-    addKeywords(file);
-
-    if (!m_pendingOnlyAdd)
-        file->setLastSeen(std::time(nullptr));
-
-    emit fileAdded(file);
+    // We share it again, so we no longer "used to" — MFC AddFile:695.
+    m_unsharedFiles.erase(keyFor(file));
 }
 
 void SharedFileList::onEntityRemoved(KnownFile* file)
 {
-    removeKeywords(file);
+    // Remember the hash so isUnsharedFile() can tell a requesting peer we know this
+    // file but are not offering it (MFC RemoveFile:776 -> BaseClient.cpp:2540).
     m_unsharedFiles.insert(keyFor(file));
-    emit fileRemoved(file);
 }
 
 // ---------------------------------------------------------------------------
@@ -214,9 +301,13 @@ void SharedFileList::process()
 {
     publish();
 
-    // ED2K server publishing — send unpublished files to connected server
-    if (m_serverConnect && m_serverConnect->isConnected())
+    // ED2K server publishing — MFC gates on a dirty flag plus a one-minute spacing
+    // (ED2KREPUBLISHTIME, srchybrid/SharedFileList.cpp:1229-1236) rather than walking
+    // the whole share on every tick.
+    if (m_republishED2K && std::time(nullptr) >= m_lastPublishED2K + kEd2kRepublishSecs) {
         sendListToServer();
+        m_lastPublishED2K = std::time(nullptr);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +345,193 @@ uint64 SharedFileList::getDataSize(uint64& largestOut) const
 }
 
 // ---------------------------------------------------------------------------
+// Share membership — MFC CSharedFileList::ShouldBeShared and friends
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// MFC compares these paths with CompareNoCase. Normalise separators and trailing
+/// slashes too, so "/a/b" and "/a/b/" are the same directory.
+[[nodiscard]] bool samePath(const QString& a, const QString& b)
+{
+    if (a.isEmpty() || b.isEmpty())
+        return false;
+    return QDir::cleanPath(a).compare(QDir::cleanPath(b), Qt::CaseInsensitive) == 0;
+}
+
+[[nodiscard]] bool containsPath(const QSet<QString>& set, const QString& path)
+{
+    for (const QString& p : set)
+        if (samePath(p, path))
+            return true;
+    return false;
+}
+
+} // namespace
+
+bool SharedFileList::shouldBeShared(const QString& dirPath, const QString& filePath,
+                                    bool mustBeShared) const
+{
+    // The incoming directory is always shared and can never be unshared. MFC also
+    // checks each category's incoming path here; this port has no categories.
+    if (samePath(dirPath, thePrefs.incomingDir()))
+        return true;
+
+    if (mustBeShared)
+        return false;
+
+    if (!filePath.isEmpty()) {
+        if (containsPath(m_singleExcludedFiles, filePath))
+            return false;
+        if (containsPath(m_singleSharedFiles, filePath))
+            return true;
+    }
+
+    for (const QString& dir : thePrefs.sharedDirs())
+        if (samePath(dirPath, dir))
+            return true;
+
+    return false;
+}
+
+bool SharedFileList::excludeFile(const QString& filePath)
+{
+    if (filePath.isEmpty())
+        return false;
+
+    const QString dirPath = QFileInfo(filePath).absolutePath();
+
+    // First drop it from the explicitly-shared list, if that is why it was shared.
+    bool wasSingleShared = false;
+    for (const QString& p : m_singleSharedFiles) {
+        if (samePath(p, filePath)) {
+            m_singleSharedFiles.remove(p);
+            wasSingleShared = true;
+            break;
+        }
+    }
+
+    if (!wasSingleShared && !shouldBeShared(dirPath, filePath, false))
+        return false;   // we do not actually share it — nothing to exclude
+
+    if (shouldBeShared(dirPath, filePath, /*mustBeShared=*/true)) {
+        logWarning(QStringLiteral("Cannot unshare \"%1\": it is in the incoming directory")
+                       .arg(filePath));
+        return false;
+    }
+
+    m_singleExcludedFiles.insert(filePath);
+
+    // It need not be in the map — it may still be hashing, or not loaded yet.
+    KnownFile* shared = nullptr;
+    forEach([&](KnownFile* f) {
+        if (!shared && samePath(f->filePath(), filePath))
+            shared = f;
+    });
+    if (shared)
+        removeFile(shared);
+
+    saveSharedFilesConfig();
+    return true;
+}
+
+bool SharedFileList::addSingleSharedFile(const QString& filePath)
+{
+    if (filePath.isEmpty())
+        return false;
+
+    const QString dirPath = QFileInfo(filePath).absolutePath();
+    if (!thePrefs.isShareableDirectory(dirPath)) {
+        logWarning(QStringLiteral("Cannot share \"%1\": its directory is not shareable")
+                       .arg(filePath));
+        return false;
+    }
+
+    // Un-excluding is enough when the directory already covers it.
+    bool wasExcluded = false;
+    for (const QString& p : m_singleExcludedFiles) {
+        if (samePath(p, filePath)) {
+            m_singleExcludedFiles.remove(p);
+            wasExcluded = true;
+            break;
+        }
+    }
+
+    if (!wasExcluded && !shouldBeShared(dirPath, filePath, false))
+        m_singleSharedFiles.insert(filePath);   // the directory is not shared, so it needs its own entry
+
+    checkAndAddSingleFile(filePath);
+    saveSharedFilesConfig();
+    return true;
+}
+
+bool SharedFileList::containsSingleSharedFiles(const QString& dirPath) const
+{
+    for (const QString& p : m_singleSharedFiles)
+        if (samePath(QFileInfo(p).absolutePath(), dirPath))
+            return true;
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// sharedfiles.dat — MFC's own format, so a config directory round-trips with eMule:
+// UTF-16LE with a BOM, CRLF lines, a '-' prefix marking an excluded path.
+// srchybrid/SharedFileList.cpp:1578-1600.
+// ---------------------------------------------------------------------------
+
+QString SharedFileList::sharedFilesConfigPath() const
+{
+    return QDir(thePrefs.configDir()).filePath(QStringLiteral("sharedfiles.dat"));
+}
+
+void SharedFileList::loadSharedFilesConfig()
+{
+    m_singleSharedFiles.clear();
+    m_singleExcludedFiles.clear();
+
+    QFile file(sharedFilesConfigPath());
+    if (!file.open(QIODevice::ReadOnly))
+        return;   // absent on a fresh install; not an error
+
+    QTextStream in(&file);
+    in.setEncoding(QStringConverter::Utf16LE);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        // A BOM read as text arrives as U+FEFF on the first line.
+        if (line.startsWith(QChar(0xFEFF)))
+            line.remove(0, 1);
+        if (line.isEmpty())
+            continue;
+        if (line.startsWith(QLatin1Char('-')))
+            m_singleExcludedFiles.insert(line.mid(1));
+        else
+            m_singleSharedFiles.insert(line);
+    }
+
+    logDebug(QStringLiteral("sharedfiles.dat: %1 shared, %2 excluded")
+                 .arg(m_singleSharedFiles.size())
+                 .arg(m_singleExcludedFiles.size()));
+}
+
+void SharedFileList::saveSharedFilesConfig() const
+{
+    const QString path = sharedFilesConfigPath();
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        logError(QStringLiteral("Failed to save %1").arg(path));
+        return;
+    }
+
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf16LE);
+    out.setGenerateByteOrderMark(true);
+    for (const QString& p : m_singleSharedFiles)
+        out << p << QStringLiteral("\r\n");
+    for (const QString& p : m_singleExcludedFiles)
+        out << QLatin1Char('-') << p << QStringLiteral("\r\n");
+}
+
+// ---------------------------------------------------------------------------
 // Keywords
 // ---------------------------------------------------------------------------
 
@@ -284,21 +562,26 @@ static int realPriority(uint8 prio)
     }
 }
 
-void SharedFileList::sendListToServer()
+std::vector<KnownFile*> SharedFileList::takeFilesToOffer(const Server* srv)
 {
-    if (!m_serverConnect || !m_serverConnect->isConnected())
-        return;
+    // A server that cannot index files over ~4 GB must not be offered them, or the
+    // whole entry is wasted (srchybrid/SharedFileList.cpp:817).
+    const bool serverTakesLargeFiles = srv && srv->supportsLargeFilesTCP();
 
-    Server* srv = m_serverConnect->currentServer();
-
-    // Collect unpublished files, sorted by priority (highest first)
     std::vector<KnownFile*> sortedFiles;
-    {
-        QMutexLocker locker(&m_mutex);
-        for (auto& [key, file] : m_map) {
-            if (!file->publishedED2K())
-                sortedFiles.push_back(file);
-        }
+
+    // Selecting and marking happen under one lock, so a concurrent reload() cannot
+    // free a file between reading the map and marking it published.
+    QMutexLocker locker(&m_mutex);
+    if (m_map.empty())
+        return sortedFiles;
+
+    for (auto& [key, file] : m_map) {
+        if (file->publishedED2K())
+            continue;
+        if (file->isLargeFile() && !serverTakesLargeFiles)
+            continue;
+        sortedFiles.push_back(file);
     }
 
     std::sort(sortedFiles.begin(), sortedFiles.end(),
@@ -306,12 +589,33 @@ void SharedFileList::sendListToServer()
                   return realPriority(a->upPriority()) > realPriority(b->upPriority());
               });
 
-    constexpr uint32 kMaxFiles = 200;
-    if (sortedFiles.size() > kMaxFiles)
-        sortedFiles.resize(kMaxFiles);
+    // The server's own soft limit, clamped: 0 means "unknown", and anything above our
+    // own ceiling is ignored (srchybrid/SharedFileList.cpp:832-834).
+    uint32 limit = srv ? srv->softFiles() : 0;
+    if (limit == 0 || limit > kMaxOfferedFiles)
+        limit = kMaxOfferedFiles;
+    if (sortedFiles.size() > limit)
+        sortedFiles.resize(limit);
 
-    if (sortedFiles.empty())
+    for (KnownFile* file : sortedFiles)
+        file->setPublishedED2K(true);
+
+    return sortedFiles;
+}
+
+void SharedFileList::sendListToServer()
+{
+    if (!m_serverConnect || !m_serverConnect->isConnected())
         return;
+
+    Server* srv = m_serverConnect->currentServer();
+    std::vector<KnownFile*> sortedFiles = takeFilesToOffer(srv);
+
+    if (sortedFiles.empty()) {
+        // Nothing left to offer — stop re-entering until something changes.
+        m_republishED2K = false;
+        return;
+    }
 
     const bool newServer = srv && srv->supportsZlib(); // compression flag as "newer server" indicator
     const bool useNewTags = srv && srv->supportsNewTags();
@@ -370,10 +674,6 @@ void SharedFileList::sendListToServer()
 
     m_serverConnect->sendPacket(std::move(packet));
 
-    // Mark files as published
-    for (KnownFile* file : sortedFiles)
-        file->setPublishedED2K(true);
-
     logDebug(QStringLiteral("Sent %1 shared files to server").arg(sortedFiles.size()));
 }
 
@@ -400,9 +700,15 @@ void SharedFileList::setServerConnect(ServerConnect* sc)
 
 void SharedFileList::clearED2KPublishFlags()
 {
-    QMutexLocker locker(&m_mutex);
-    for (auto& [key, file] : m_map)
-        file->setPublishedED2K(false);
+    {
+        QMutexLocker locker(&m_mutex);
+        for (auto& [key, file] : m_map)
+            file->setPublishedED2K(false);
+    }
+    // MFC ClearED2KPublishInfo (srchybrid/SharedFileList.cpp:872-877) arms the flag
+    // too — otherwise the whole share is marked unpublished and never re-offered.
+    m_republishED2K = true;
+    m_lastPublishED2K = 0;
 }
 
 void SharedFileList::publish()
@@ -423,7 +729,7 @@ void SharedFileList::publish()
         if (fileCount > 0) {
             for (uint32 i = 0; i < fileCount; ++i) {
                 uint32 idx = (m_currFileSrc + i) % fileCount;
-                KnownFile* file = getFileByIndex(idx);
+                KnownFile* file = fileAtIndexLocked(idx);
                 if (file && file->publishSrc()) {
                     kad::UInt128 target;
                     target.setValueBE(file->fileHash());
@@ -447,7 +753,7 @@ void SharedFileList::publish()
         if (fileCount > 0) {
             for (uint32 i = 0; i < fileCount; ++i) {
                 uint32 idx = (m_currFileNotes + i) % fileCount;
-                KnownFile* file = getFileByIndex(idx);
+                KnownFile* file = fileAtIndexLocked(idx);
                 if (file && file->publishNotes()) {
                     kad::UInt128 target;
                     target.setValueBE(file->fileHash());
@@ -537,6 +843,39 @@ void SharedFileList::findSharedFiles()
         if (!dir.isEmpty() && dir != incomingDir)
             addFilesFromDirectory(dir);
     }
+
+    // Files shared individually, outside any shared directory — otherwise a reload
+    // would silently drop them (srchybrid/SharedFileList.cpp:586-587).
+    for (const QString& filePath : m_singleSharedFiles)
+        checkAndAddSingleFile(filePath);
+}
+
+// ---------------------------------------------------------------------------
+// checkAndAddSingleFile — one explicitly-shared file
+// ---------------------------------------------------------------------------
+
+void SharedFileList::checkAndAddSingleFile(const QString& filePath)
+{
+    const QFileInfo fi(filePath);
+    if (!fi.isFile() || fi.size() == 0)
+        return;
+
+    if (m_knownFiles) {
+        KnownFile* existing = m_knownFiles->findKnownFile(
+            fi.fileName(),
+            static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()),
+            static_cast<uint64>(fi.size()));
+
+        if (existing) {
+            existing->setPath(fi.absolutePath());
+            existing->setFilePath(fi.absoluteFilePath());
+            safeAddKFile(existing, /*onlyAdd=*/true);
+            return;
+        }
+    }
+
+    QMutexLocker hashLocker(&m_hashMutex);
+    m_waitingForHash.push_back({fi.absolutePath(), fi.fileName(), {}});
 }
 
 // ---------------------------------------------------------------------------
@@ -564,6 +903,11 @@ void SharedFileList::addFilesFromDirectory(const QString& dir, const QString& sh
             || filename.endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive))
             continue;
 
+        // The user unshared this one individually. This — not the m_unsharedFiles
+        // hash set — is what makes an unshare survive a reload and a restart.
+        if (containsPath(m_singleExcludedFiles, fi.absoluteFilePath()))
+            continue;
+
         // Check if already known
         if (m_knownFiles) {
             KnownFile* existing = m_knownFiles->findKnownFile(
@@ -576,15 +920,39 @@ void SharedFileList::addFilesFromDirectory(const QString& dir, const QString& sh
                 existing->setFilePath(fi.absoluteFilePath());
                 if (!sharedDir.isEmpty())
                     existing->setSharedDirectory(sharedDir);
-                m_map[MD4Key(existing->fileHash())] = existing;
-                emit fileAdded(existing);
+                // Through the front door: writing m_map here would skip the duplicate
+                // check, the collection detection and addKeywords() — which is why a
+                // re-scanned known file used to be invisible to Kad keyword publishing.
+                // onlyAdd, because a bulk scan must not schedule one republish per file.
+                safeAddKFile(existing, /*onlyAdd=*/true);
                 continue;
             }
         }
 
         // Queue for hashing
-        m_waitingForHash.push_back({fileDir, filename, sharedDir});
+        {
+            QMutexLocker hashLocker(&m_hashMutex);
+            m_waitingForHash.push_back({fileDir, filename, sharedDir});
+        }
     }
+}
+
+// ---------------------------------------------------------------------------
+// detectCollection — attach a parsed .emulecollection, if this is one
+// ---------------------------------------------------------------------------
+
+void SharedFileList::detectCollection(KnownFile* file)
+{
+    // Must happen before addKeywords(): setCollection() rebuilds the Kad keyword list
+    // to include the collection's author key, and publishing that key is what makes
+    // "Search Author's Collections" work (srchybrid/SharedFileList.cpp:703-721).
+    if (file->isPartFile() || file->collection()
+        || !Collection::hasCollectionExtension(file->fileName()))
+        return;
+
+    auto coll = std::make_unique<Collection>();
+    if (coll->initFromFile(file->filePath(), file->fileName()))
+        file->setCollection(std::move(coll));
 }
 
 // ---------------------------------------------------------------------------
@@ -614,31 +982,73 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
     if (!file)
         return;
 
-    QMutexLocker locker(&m_mutex);
-
-    // Reject stale completions from a previous generation
-    if (generation != m_generation) {
-        delete file;
-        return;
+    {
+        QMutexLocker hashLocker(&m_hashMutex);
+        // Reject stale completions from a previous generation
+        if (generation != m_generation) {
+            delete file;
+            return;
+        }
     }
-
-    locker.unlock();
 
     // Add to known files
     if (m_knownFiles)
         m_knownFiles->safeAddKFile(file);
 
-    // Add to shared list
-    safeAddKFile(file, true);
+    // The user may have unshared it while it hashed — MFC re-checks at the same point
+    // (FileHashingFinished, srchybrid/SharedFileList.cpp:743).
+    if (!file->filePath().isEmpty()
+        && !shouldBeShared(QFileInfo(file->filePath()).absolutePath(), file->filePath(), false))
+    {
+        QMutexLocker hashLocker(&m_hashMutex);
+        hashNextFile();
+        return;
+    }
+
+    // Add to shared list. Not onlyAdd — a file that has just finished hashing is new
+    // to the share and has to be offered, which is what arming the republish does
+    // (MFC FileHashingFinished, srchybrid/SharedFileList.cpp:751).
+    safeAddKFile(file);
 
     // Hash next file in queue
-    QMutexLocker locker2(&m_mutex);
+    QMutexLocker hashLocker(&m_hashMutex);
     hashNextFile();
+}
+
+void SharedFileList::enqueuePartFileRehash(PartFile* file)
+{
+    if (!file || !m_hashingThread)
+        return;
+
+    HashingThread::Job job;
+    job.rehashFileHash = QByteArray(reinterpret_cast<const char*>(file->fileHash()), 16);
+    job.rehashPartPath = file->partDataPath();
+    job.rehashFileSize = static_cast<uint64>(file->fileSize());
+    job.rehashPartHashes = file->fileIdentifier().getRawMD4HashSet();
+
+    // Everything the worker needs is copied above, on this thread — it must not reach
+    // back into the PartFile, which the download queue may delete meanwhile.
+    m_hashingThread->enqueue(std::move(job));
+}
+
+void SharedFileList::onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk)
+{
+    if (fileHash.size() != 16 || !theApp.downloadQueue)
+        return;
+
+    // Look the file up rather than trusting a pointer: it may have been cancelled
+    // while the rehash ran, and the queue is the authority on what still exists.
+    PartFile* file = theApp.downloadQueue->fileByID(
+        reinterpret_cast<const uint8*>(fileHash.constData()));
+    if (!file)
+        return;
+
+    file->applyRehashResult(partOk);
 }
 
 void SharedFileList::onHashingFailed(const QString& directory, const QString& filename, uint64 generation)
 {
-    QMutexLocker locker(&m_mutex);
+    QMutexLocker hashLocker(&m_hashMutex);
 
     // Reject stale completions from a previous generation
     if (generation != m_generation)
@@ -657,7 +1067,7 @@ void SharedFileList::forEachFile(const std::function<void(KnownFile*)>& callback
 
 int SharedFileList::getHashingCount() const
 {
-    QMutexLocker locker(&m_mutex);
+    QMutexLocker hashLocker(&m_hashMutex);
     int count = static_cast<int>(m_waitingForHash.size());
     if (m_hashingInProgress)
         ++count;
@@ -665,10 +1075,11 @@ int SharedFileList::getHashingCount() const
 }
 
 // ---------------------------------------------------------------------------
-// getFileByIndex — index-based access for round-robin publishing
+// fileAtIndexLocked — index-based access for round-robin publishing.
+// Caller must already hold m_mutex; this deliberately does not lock.
 // ---------------------------------------------------------------------------
 
-KnownFile* SharedFileList::getFileByIndex(uint32 index) const
+KnownFile* SharedFileList::fileAtIndexLocked(uint32 index) const
 {
     if (index >= m_map.size())
         return nullptr;

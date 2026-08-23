@@ -6,6 +6,7 @@
 /// Non-static QObject-based class owned by the application. Uses QTimer for
 /// periodic processing instead of being called from an external timer.
 
+#include "httpcache/HttpCacheOffer.h"
 #include "kademlia/KadFastKad.h"
 #include "kademlia/KadSafeKad.h"
 #include "kademlia/KadTypes.h"
@@ -22,6 +23,7 @@
 #include <functional>
 #include <list>
 #include <set>
+#include <vector>
 
 namespace eMule {
 class ClientList;
@@ -114,16 +116,36 @@ public:
         const uint8* fileHash, const QString& name, uint64 size,
         const QString& type, uint32 sources, uint32 completeSources,
         const TagList& metaTags)>;
+    /// One source found through a Kad file lookup.
+    ///
+    /// A struct rather than the positional parameter list this used to be: at thirteen
+    /// arguments of near-identical type the call site was unreadable and a
+    /// transposition would have compiled silently. The 16-byte arrays are owned by the
+    /// caller and valid only for the duration of the callback.
+    struct KadSourceResult {
+        uint32 searchID = 0;
+        const uint8* fileHash = nullptr;      ///< 16 bytes — the search target
+        uint32 ip = 0;
+        uint16 tcpPort = 0;
+        uint16 udpPort = 0;
+        uint32 buddyIP = 0;                   ///< FT_SERVERIP — **network** order,
+                                              ///< unlike ip above (see KadSearch.h)
+        uint16 buddyPort = 0;
+        uint8 buddyCrypt = 0;
+        uint8 sourceType = 0;                 ///< 1, 3, 4, 5 or 6
+        const uint8* buddyHash = nullptr;     ///< 16 bytes
+        const uint8* clientHash = nullptr;    ///< 16 bytes — the ED2K user hash
+        const uint8* sourceIPv6 = nullptr;    ///< 16 bytes, or nullptr
+        const uint8* buddyIPv6 = nullptr;     ///< 16 bytes, or nullptr
+
+        /// HTTP Cache chunks this source advertised for the file, empty for every
+        /// client that does not publish them. Carried here because one result is both
+        /// a source and a chunk carrier — the descriptors ride the source record.
+        std::vector<eMule::HttpCacheOffer> httpCacheChunks;
+    };
+
     /// Callback type for Kad source results (file sources found via DHT).
-    /// Parameters: searchID, fileHash (16 bytes), sourceIP, sourcePort,
-    ///   buddyIP, buddyPort, cryptOptions, sourceType (1/3/4/5/6),
-    ///   buddyHash (16 bytes), clientHash (16 bytes — ED2K user hash), udpPort
-    using KadSourceResultCallback = std::function<void(uint32 searchID,
-        const uint8* fileHash, uint32 ip, uint16 tcpPort,
-        uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
-        uint8 sourceType, const uint8* buddyHash,
-        const uint8* clientHash, uint16 udpPort,
-        const uint8* sourceIPv6, const uint8* buddyIPv6)>;  // 16 bytes each, or nullptr
+    using KadSourceResultCallback = std::function<void(const KadSourceResult& result)>;
     /// Callback type for Kad notes results.
     using KadNotesResultCallback = std::function<void(uint32 searchID,
         const uint8* fileHash, const uint8* publisherId, const QString& name,

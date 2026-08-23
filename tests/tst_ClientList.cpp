@@ -1,6 +1,7 @@
 /// @file tst_ClientList.cpp
 /// @brief Tests for client/ClientList — client management, find operations, banning.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
 #include "client/ClientCredits.h"
@@ -64,6 +65,12 @@ private slots:
     void attach_rehomesSocketToKnownClient();
     void attach_refusesAndBansIdentifiedImpostor();
     void attach_refusesUnidentifiedCollisionWithoutBanning();
+
+    // Kad state machine — MFC srchybrid/ClientList.cpp:470-620
+    void processKadList_clearsEveryStateWhenKadIsNotRunning();
+    void processKadList_adoptsConnectedBuddyAndDropsOthers();
+    void processKadList_dropsAnOpenBuddy();
+    void processKadList_detectsBuddyLoss();
 };
 
 // ---------------------------------------------------------------------------
@@ -594,6 +601,106 @@ void tst_ClientList::attach_refusesUnidentifiedCollisionWithoutBanning()
     knownSocket->deleteLater();
     sender->deleteLater();
     QCoreApplication::processEvents();
+}
+
+
+// ===========================================================================
+// Kad state machine — MFC srchybrid/ClientList.cpp:470-620
+//
+// The port kept every KadState and set them from the Kad handlers, but nothing ever drove
+// the transitions: ClientList::process() only kept such clients alive. The buddy leg was
+// therefore inert, and an established buddy link had no keep-alive.
+// ===========================================================================
+
+void tst_ClientList::processKadList_clearsEveryStateWhenKadIsNotRunning()
+{
+    ClientList list;
+
+    auto* fwCheck = new UpDownClient();
+    fwCheck->setKadState(KadState::QueuedFwCheck);
+    list.addClient(fwCheck);
+
+    auto* buddy = new UpDownClient();
+    buddy->setKadState(KadState::ConnectedBuddy);
+    list.addClient(buddy);
+
+    // No Kad instance in this fixture, so nothing Kad-related can be pending.
+    list.processKadList();
+
+    QCOMPARE(fwCheck->kadState(), KadState::None);
+    QCOMPARE(buddy->kadState(), KadState::None);
+}
+
+void tst_ClientList::processKadList_adoptsConnectedBuddyAndDropsOthers()
+{
+    // Kad has to be running, or the very first thing processKadList() does is clear every
+    // pending Kad interaction — see the test above.
+    eMule::testing::KadFixture kadFixture;
+
+    ClientList list;
+
+    auto* buddy = new UpDownClient();
+    buddy->setUserAddress(Address::fromString(QStringLiteral("10.7.0.1")));
+    buddy->setKadState(KadState::ConnectedBuddy);
+    list.addClient(buddy);
+
+    // A second candidate that arrived while the first was completing. One buddy at a time,
+    // so this one is dropped rather than left queued behind a link we already have.
+    auto* alsoWants = new UpDownClient();
+    alsoWants->setUserAddress(Address::fromString(QStringLiteral("10.7.0.2")));
+    alsoWants->setKadState(KadState::IncomingBuddy);
+    list.addClient(alsoWants);
+
+    list.setBuddy(buddy, BuddyStatus::Connected);
+    list.processKadList();
+
+    QCOMPARE(list.getBuddy(), buddy);
+    QCOMPARE(list.buddyStatus(), BuddyStatus::Connected);
+    QCOMPARE(alsoWants->kadState(), KadState::None);
+}
+
+void tst_ClientList::processKadList_dropsAnOpenBuddy()
+{
+    eMule::testing::KadFixture kadFixture;
+
+    ClientList list;
+
+    // A buddy relays callbacks for firewalled peers, which only makes sense while it is
+    // itself firewalled. One that opened its port is no longer a relay.
+    // MFC srchybrid/ClientList.cpp:614-617.
+    auto* buddy = new UpDownClient();
+    buddy->setUserAddress(Address::fromString(QStringLiteral("10.7.0.3")));
+    buddy->setUserIDHybrid(0x0A070003u);              // High ID
+    buddy->setKadState(KadState::ConnectedBuddy);
+    list.addClient(buddy);
+    list.setBuddy(buddy, BuddyStatus::Connected);
+
+    QVERIFY(!buddy->hasLowID());
+    list.processKadList();
+
+    QCOMPARE(buddy->kadState(), KadState::None);
+}
+
+void tst_ClientList::processKadList_detectsBuddyLoss()
+{
+    eMule::testing::KadFixture kadFixture;
+
+    ClientList list;
+
+    auto* buddy = new UpDownClient();
+    buddy->setUserAddress(Address::fromString(QStringLiteral("10.7.0.4")));
+    buddy->setKadState(KadState::ConnectedBuddy);
+    list.addClient(buddy);
+    list.setBuddy(buddy, BuddyStatus::Connected);
+    QCOMPARE(list.buddyStatus(), BuddyStatus::Connected);
+
+    // The buddy went away. Loss is detected from the list itself, so it cannot depend on
+    // whichever call site happened to clear m_buddy last.
+    buddy->setKadState(KadState::None);
+    list.processKadList();
+
+    QCOMPARE(list.buddyStatus(), BuddyStatus::None);
+    QVERIFY(list.getBuddy() == nullptr);
 }
 
 QTEST_MAIN(tst_ClientList)

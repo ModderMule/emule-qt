@@ -39,6 +39,7 @@ class Scheduler;
 class LastCommonRouteFinder;
 class PortMapper;
 class UploadBandwidthThrottler;
+class UpDownClient;
 class UploadQueue;
 
 struct AppContext {
@@ -76,6 +77,15 @@ struct AppContext {
 
     /// Returns true when we are firewalled on all connected networks (ed2k + Kad).
     [[nodiscard]] bool isFirewalled() const;
+
+    /// Whether we can get a callback through to this peer at all.
+    /// MFC CemuleApp::CanDoCallback (srchybrid/Emule.cpp:1187-1203).
+    ///
+    /// The Low-ID-to-Low-ID rule: with Kad unavailable a callback has to go through our
+    /// server, which only works if we ourselves have a High ID; and when we are Low-ID on a
+    /// server, asking that same server to call back one of its own clients breaks the
+    /// protocol and gets us banned.
+    [[nodiscard]] bool canDoCallback(const UpDownClient* client) const;
 
     /// Our public IP in ED2K byte order (first octet in the LSB), 0 if unknown.
     ///

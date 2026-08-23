@@ -7,6 +7,7 @@
 
 #include "client/UpDownClient.h"
 #include "client/ClientList.h"
+#include "client/ClientCredits.h"
 #include "client/DeadSourceList.h"
 #include "app/AppContext.h"
 #include "crypto/AICHHashSet.h"
@@ -14,6 +15,7 @@
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
+#include "net/EMSocket.h"
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
@@ -34,6 +36,19 @@ namespace eMule {
 
 bool UpDownClient::askForDownload()
 {
+    // MFC srchybrid/DownloadClient.cpp:177-214.
+
+    // We are about to re-ask over TCP while a UDP re-ask is still outstanding, so that
+    // datagram is never going to be answered — charge it. This is what feeds
+    // udpReaskForDownload()'s own 30%-failure abort and the statistics reading.
+    // MFC srchybrid/DownloadClient.cpp:179-183.
+    if (m_udpPending) {
+        ++m_failedUDPPackets;
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->addFailedUDPFileReasks();
+        m_udpPending = false;
+    }
+
     if (!m_reqFile) {
         logDebug(QStringLiteral("askForDownload: no reqFile for %1").arg(userName()));
         return false;
@@ -44,14 +59,58 @@ bool UpDownClient::askForDownload()
         return false;
     }
 
-    // Check socket limit
-    if (theApp.listenSocket && theApp.listenSocket->tooManySockets())
-        return false;
-
     // Check if already waiting on queue
     if (m_downloadState == DownloadState::OnQueue)
         return false;
 
+    if (m_socket && m_socket->isConnected()) {
+        // Already connected — none of the special cases below can apply, so just stamp the
+        // clock and go. MFC srchybrid/DownloadClient.cpp:185-186.
+        m_lastTriedToConnect = static_cast<uint32>(getTickCount());
+    } else {
+        if (theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
+            // A real state rather than a bare false, so the source shows why it is idle and
+            // is retried when connections free up. MFC srchybrid/DownloadClient.cpp:188-192.
+            if (m_downloadState != DownloadState::TooManyConns)
+                setDownloadState(DownloadState::TooManyConns);
+            return false;
+        }
+
+        // The re-ask throttle. This is where MFC keeps it (SetLastTriedToConnectTime,
+        // srchybrid/DownloadClient.cpp:193) — it used to sit inside tryToConnect(), where it
+        // silently refused the upload queue, chat and every Kad path as well.
+        const uint32 curTick = static_cast<uint32>(getTickCount());
+        if (curTick - m_lastTriedToConnect < MIN2MS(1))
+            return false;
+        m_lastTriedToConnect = curTick;
+
+        if (hasLowID() && lastAskedTime() > 0) {
+            // It is already on *our* upload queue, so it will re-ask us of its own accord
+            // when its rank comes up. Waiting up to 20 minutes for that costs nothing and
+            // saves a callback — MFC srchybrid/DownloadClient.cpp:195-201.
+            if (m_uploadState == UploadState::OnUploadQueue && !m_reaskPending) {
+                setDownloadState(DownloadState::OnQueue);
+                m_reaskPending = true;
+                return false;
+            }
+
+            // Low-ID to Low-ID: keep the source rather than dropping it, in the hope that
+            // one of the two IDs changes. PartFile::process() revives it from this state.
+            // MFC srchybrid/DownloadClient.cpp:202-208.
+            if (!theApp.canDoCallback(this)) {
+                if (m_downloadState != DownloadState::LowToLowIP)
+                    setDownloadState(DownloadState::LowToLowIP);
+                m_reaskPending = true;
+                return false;
+            }
+        }
+    }
+
+    // MFC srchybrid/DownloadClient.cpp:211-213: give a better file a chance before we spend
+    // the connection, then commit to the state the connection will complete into.
+    swapToAnotherFile(QStringLiteral("A4AF check before TCP file re-ask. askForDownload()"),
+                      true, false, false, nullptr, true, true);
+    setDownloadState(DownloadState::Connecting);
     return tryToConnect();
 }
 
@@ -791,10 +850,6 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         return;
     }
 
-    // Update transfer statistics
-    m_transferredDown += uTransferredFileDataSize;
-    m_curSessionDown += uTransferredFileDataSize;
-
     // Per-client/port breakdown tracking
     if (uTransferredFileDataSize > 0 && theApp.statistics)
         theApp.statistics->addTransferData(clientSoft(), userPort(),
@@ -802,6 +857,13 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
 
     // Accumulate for rate averaging (drained in calculateDownloadRate)
     m_downDataRateMS += uTransferredFileDataSize;
+
+    // Reward the peer for what it just sent us — MFC srchybrid/DownloadClient.cpp:1000-1002.
+    // Keyed on m_userAddress, which is MFC's GetIP(): the address we have actually seen this
+    // peer at, and the same key the ident gate in score() uses. Without this call the whole
+    // credit system is inert — scoreRatio() stays at 1.0 and clients.met never fills.
+    if (m_credits)
+        m_credits->addDownloaded(uTransferredFileDataSize, m_userAddress.toNetworkUint32());
 
     // Move end back by one (MFC uses inclusive end offset)
     --nEndPos;
@@ -898,6 +960,12 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
 
     // If data was written, check for block completion and request more
     if (lenWritten > 0 && !m_pendingBlocks.empty() && curBlock->block) {
+        // Counted here rather than on arrival: MFC books only the data that actually reached
+        // the part file (srchybrid/DownloadClient.cpp:1116-1117), so a block discarded on a
+        // decompression error or a boundary violation does not inflate the totals.
+        // uTransferredFileDataSize is the wire payload, lenWritten the decompressed bytes.
+        m_transferredDown += uTransferredFileDataSize;
+        m_curSessionPayloadDown += lenWritten;
         curBlock->block->transferredByClient += lenWritten;
 
         // Check if block is complete (end of decompressed/uncompressed data matches block end)
@@ -926,6 +994,22 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             sendBlockRequests();
         }
     }
+}
+
+// ===========================================================================
+// addPayloadDown (protected)
+// ===========================================================================
+
+void UpDownClient::addPayloadDown(uint64 bytes)
+{
+    // The HTTP paths write into the part file themselves, so processBlockPacket's own
+    // accounting never runs for them. MFC's equivalent is srchybrid/URLClient.cpp:374,389-390,
+    // which books the same three things: the running total, the session payload, and credit.
+    m_transferredDown += bytes;
+    m_curSessionPayloadDown += bytes;
+
+    if (m_credits)
+        m_credits->addDownloaded(static_cast<uint32>(bytes), m_userAddress.toNetworkUint32());
 }
 
 // ===========================================================================
@@ -1123,7 +1207,7 @@ void UpDownClient::setRemoteQueueRank(uint32 rank, bool updateDisplay)
 
 void UpDownClient::udpReaskACK(uint16 newQR)
 {
-    m_reaskPending = false;
+    m_udpPending = false;
     setRemoteQueueRank(newQR);
     // An answered UDP re-ask advances this peer's re-ask clock, exactly like a TCP one —
     // MFC DownloadClient.cpp:1310. Without it timeUntilReask() never leaves 0 on the UDP
@@ -1133,7 +1217,7 @@ void UpDownClient::udpReaskACK(uint16 newQR)
 
 void UpDownClient::udpReaskFNF()
 {
-    m_reaskPending = false;
+    m_udpPending = false;
 
     // File not found — remove source
     if (theApp.downloadQueue)
@@ -1146,7 +1230,7 @@ void UpDownClient::udpReaskForDownload()
     if (!m_reqFile || !supportsUDP())
         return;
 
-    if (m_reaskPending)
+    if (m_udpPending)
         return;
 
     // Check UDP packet success rate — abort if failure rate > 30%
@@ -1154,6 +1238,19 @@ void UpDownClient::udpReaskForDownload()
         if ((m_failedUDPPackets * 100 / m_totalUDPPackets) > 30)
             return;
     }
+
+    // The rest of MFC's precondition set (srchybrid/DownloadClient.cpp:1350-1351).
+    // supportsUDP() above is only its first half — the peer's UDP port and version.
+    //
+    // The socket test is the load-bearing one: a UDP re-ask exists to keep a queue
+    // position warm on a peer we are NOT connected to. Asking one we already hold a TCP
+    // link to is pure overhead, and it drags the A4AF swap below along with it — that
+    // swap fires on every pass (nothing stamps the re-ask clock on the swap path), so an
+    // actively downloading source was bounced between two files once a second.
+    if (thePrefs.udpPort() == 0 || theApp.isFirewalled()
+        || (m_socket && m_socket->isConnected())
+        || thePrefs.proxySettings().useProxy)
+        return;
 
     // A source reachable over IPv6 takes the direct branch even though its ed2k ID reads as
     // a LowID: an IPv6-only source is constructed with the kNoIPv4SourceId placeholder, so
@@ -1174,7 +1271,16 @@ void UpDownClient::udpReaskForDownload()
                               true, false, false, nullptr, true, true))
             return; // swapped → need TCP
 
-        m_reaskPending = true;
+        // Resolve the destination before committing to the send. m_connectAddress is only
+        // filled in by tryToConnect(), so a source we have not dialled yet still needs its
+        // advertised IPv6 — and if neither is usable there is nothing to send, so the
+        // in-flight flag must not be raised: it would latch until the next TCP re-ask and
+        // be charged there as a failure that never happened.
+        const Address& target = m_connectAddress.isNull() ? m_userIPv6 : m_connectAddress;
+        if (!theApp.clientUDP || target.isNull())
+            return;
+
+        m_udpPending = true;
         m_totalUDPPackets++;
 
         SafeMemFile data;
@@ -1196,24 +1302,21 @@ void UpDownClient::udpReaskForDownload()
             data.writeUInt16(static_cast<uint16>(m_reqFile->sourceCount()));
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);
-        if (theApp.clientUDP) {
-            const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
-            // m_connectAddress is only filled in by tryToConnect(), so a source we have not
-            // dialled yet still needs its advertised IPv6 as the destination.
-            const Address& target =
-                m_connectAddress.isNull() ? m_userIPv6 : m_connectAddress;
-            // Endpoint form — toUint32() is 0 for an IPv6 peer, which sent every reask
-            // to 0.0.0.0 and silently starved v6 sources of queue-rank refreshes.
-            if (!target.isNull()) {
-                theApp.clientUDP->sendPacket(std::move(packet),
-                                             Endpoint(target, m_udpPort),
-                                             encrypt, m_userHash.data(), false, 0);
-            }
-        }
+        const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->addUDPFileReasks();  // MFC DownloadClient.cpp:1375
+        // Endpoint form — toUint32() is 0 for an IPv6 peer, which sent every reask
+        // to 0.0.0.0 and silently starved v6 sources of queue-rank refreshes.
+        theApp.clientUDP->sendPacket(std::move(packet),
+                                     Endpoint(target, m_udpPort),
+                                     encrypt, m_userHash.data(), false, 0);
     } else if (hasLowID() && !m_buddyAddress.isNull() && m_buddyPort != 0 && hasValidBuddyID()) {
         // Low-ID with buddy: send OP_REASKCALLBACKUDP to buddy for relay.
         // MFC DownloadClient.cpp:1378-1401
-        m_reaskPending = true;
+        if (!theApp.clientUDP)
+            return;   // nothing to send through — see the direct branch above
+
+        m_udpPending = true;
         m_totalUDPPackets++;
 
         SafeMemFile data;
@@ -1235,11 +1338,12 @@ void UpDownClient::udpReaskForDownload()
             data.writeUInt16(static_cast<uint16>(m_reqFile->sourceCount()));
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKCALLBACKUDP);
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->addUDPFileReasks();  // MFC DownloadClient.cpp:1397
         // MFC FIXME: We don't know which kad version the buddy has, so send unencrypted
-        if (theApp.clientUDP)
-            theApp.clientUDP->sendPacket(std::move(packet),
-                                          Endpoint(m_buddyAddress, m_buddyPort),
-                                          false, nullptr, true, 0);
+        theApp.clientUDP->sendPacket(std::move(packet),
+                                      Endpoint(m_buddyAddress, m_buddyPort),
+                                      false, nullptr, true, 0);
     }
 }
 

@@ -44,6 +44,7 @@
 #include "utils/Log.h"
 
 #include <QBuffer>
+#include <QCoreApplication>
 #include <QCborArray>
 #include <QCborMap>
 #include <QImage>
@@ -93,6 +94,13 @@ UpDownClient::UpDownClient(uint16 port, uint32 userId, uint32 serverIP,
 
 UpDownClient::~UpDownClient()
 {
+    // Break the friend link from this side, so the friend entry is not left pointing at a
+    // destroyed client — and, since setLinkedClient() takes the slot flag back with it, so
+    // the friend keeps its slot for when it reconnects. MFC srchybrid/BaseClient.cpp:269-273.
+    if (Friend* f = friendPtr())
+        f->setLinkedClient(nullptr);
+    m_friend = nullptr;
+
     // Clear rate data
     m_averageUDR.clear();
     m_averageDDR.clear();
@@ -334,6 +342,23 @@ bool UpDownClient::hasLowID() const
     return isLowID(m_userIDHybrid);
 }
 
+Friend* UpDownClient::friendPtr() const
+{
+    // MFC srchybrid/BaseClient.cpp:2814-2819.
+    if (m_friend && theApp.friendList && !theApp.friendList->isValid(m_friend))
+        return nullptr;
+    return m_friend;
+}
+
+bool UpDownClient::isReachableForSlot() const
+{
+    // MFC srchybrid/UploadQueue.cpp:131 / UploadClient.cpp:205, plus the IPv6 disjunct this
+    // port needs — see the note on the declaration.
+    return !hasLowID()
+        || m_connectAddress.isIPv6()
+        || (m_socket && m_socket->isConnected());
+}
+
 bool UpDownClient::isIPv6Connection() const
 {
     // The live socket is authoritative: it is the link the data actually rides.
@@ -416,6 +441,11 @@ void UpDownClient::setDownloadState(DownloadState state)
         // packets (e.g. multipacket answers) without being blocked by a stale
         // download limit from the previous file's transfer.
         if (m_downloadState == DownloadState::Downloading) {
+            // The session figures are per download session, not per client lifetime — this is
+            // the mark MFC takes when the session ends (srchybrid/DownloadClient.cpp:674) and
+            // it is what makes sessionDown() / sessionPayloadDown() mean anything.
+            resetSessionDown();
+
             m_downDatarate = 0;
             m_downDataRateMS = 0;
             m_sumForAvgDownDataRate = 0;
@@ -1038,9 +1068,39 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     if (theApp.clientCredits)
         setCredits(theApp.clientCredits->getCredit(m_userHash.data()));
 
-    // Friend linking
-    if (theApp.friendList)
-        m_friend = theApp.friendList->searchFriend(m_userHash.data(), m_userAddress.toNetworkUint32(), m_userPort);
+    // Friend linking — MFC srchybrid/BaseClient.cpp:625-648.
+    if (theApp.friendList) {
+        Friend* cur = friendPtr();
+
+        // The peer is answering with a different user hash than the friend we had linked, so
+        // it is not that friend any more. Unlink first, which hands the slot back to the
+        // friend entry instead of leaving it on a client that no longer earns it.
+        if (cur && cur->hasUserhash() && !md4equ(cur->userHash().data(), m_userHash.data())) {
+            cur->setLinkedClient(nullptr);
+            cur = nullptr;
+        }
+
+        // Don't replace a friend matched only by address with one matched by hash: both
+        // would fit this client, and swapping between them on every hello is worse than
+        // keeping whichever we already had.
+        if (!cur || cur->hasUserhash()
+            || cur->lastUsedAddress() != m_connectAddress
+            || cur->lastUsedPort() != m_userPort)
+        {
+            Friend* found = theApp.friendList->searchFriend(
+                m_userHash.data(), m_userAddress.toNetworkUint32(), m_userPort);
+            if (found) {
+                found->setLinkedClient(this);
+            } else {
+                // Nothing matches, so whatever slot this instance is carrying is stale —
+                // otherwise an unwanted client instance keeps a friend slot forever.
+                if (cur)
+                    cur->setLinkedClient(nullptr);
+                m_friend = nullptr;
+                setFriendSlot(false);
+            }
+        }
+    }
 
     // High-ID conversion: if not low-ID, convert userIDHybrid to match userAddress.
     // IPv4 only — for an IPv6 peer toUint32() is 0, which would clobber the LowID the
@@ -1499,10 +1559,8 @@ bool UpDownClient::checkHandshakeFinished() const
 // tryToConnect — MFC BaseClient.cpp:1238-1478
 // ===========================================================================
 
-bool UpDownClient::tryToConnect(bool ignoreMaxCon)
+bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 {
-    Q_UNUSED(ignoreMaxCon);
-
     if (m_connectingState != ConnectingState::None) {
         logDebug(QStringLiteral("tryToConnect: already connecting (state=%1) for %2")
                      .arg(static_cast<int>(m_connectingState)).arg(userName()));
@@ -1518,30 +1576,42 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
             logDebug(QStringLiteral("tryToConnect: already connected, reqFile=%1 dlState=%2")
                          .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null"))
                          .arg(static_cast<int>(m_downloadState)));
-        if (m_reqFile && m_downloadState == DownloadState::None) {
+        // MFC BaseClient.cpp:1274-1282 runs the whole of ConnectionEstablished() here,
+        // and its download-state switch (BaseClient.cpp:1541-1548) is what turns
+        // DS_CONNECTING into a file request on the link we already hold. That switch is
+        // in connectionEstablished(), which this branch must not call — the socket is
+        // already up and a second hello would be spurious — so its three states are
+        // handled inline. askForDownload() sets Connecting before calling here, so
+        // without them a re-ask over an existing connection sends nothing at all.
+        // DownloadState::None has no MFC counterpart and stays: it covers doSwap().
+        if (m_reqFile && (m_downloadState == DownloadState::None
+                          || m_downloadState == DownloadState::Connecting
+                          || m_downloadState == DownloadState::WaitCallback
+                          || m_downloadState == DownloadState::WaitCallbackKad)) {
+            m_reaskPending = false;
             setDownloadState(DownloadState::Connected);
             sendFileRequest();
         }
-        // MFC BaseClient.cpp:1274-1282 runs ConnectionEstablished() here when the socket
-        // is up and the handshake is done, which is what services a request that arrived
-        // while we were already connected (an armed m_fileListRequested, say). The
-        // DS_NONE block above has no MFC counterpart and stays as-is; it covers doSwap().
         if (checkHandshakeFinished())
             onHandshakeCompleted();
         return true;
     }
 
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-    if ((curTick - m_lastTriedToConnect) < MIN2MS(1)) {
-        return false;
-    }
-    m_lastTriedToConnect = curTick;
-
-    // Socket limit check
-    if (theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
+    // Socket limit — MFC srchybrid/BaseClient.cpp:1290, including the override this used to
+    // accept and ignore. Every caller that passes true has already committed to the
+    // connection (an upload slot just allocated, a Kad probe, an answered callback), so
+    // refusing them here loses the slot or the probe outright.
+    if (!ignoreMaxCon && theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
         logDebug(QStringLiteral("tryToConnect: too many sockets"));
         return false;
     }
+
+    // The re-ask throttle that used to sit here has moved to askForDownload(), which is
+    // where MFC keeps it (SetLastTriedToConnectTime, srchybrid/DownloadClient.cpp:186/193).
+    // Here it applied to every caller, so an upload slot handed to a peer we had spoken to
+    // in the last minute was silently never dialled — and addUpNextClient() then opened the
+    // slot anyway.
+    m_lastTriedToConnect = static_cast<uint32>(getTickCount());
 
     // Choose the address to dial when none is set yet. Prefer IPv6 for a peer that
     // advertised a reachable IPv6 and for which we have a public IPv6 — this bypasses
@@ -1576,6 +1646,72 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
         return false;
     }
 
+    // Whether this peer takes the direct-TCP branch below. Computed once so the prechecks
+    // and the branch itself cannot disagree — the branch mutates m_kadState on the way in.
+    const bool dialDirectly = !hasLowID() || m_connectAddress.isIPv6()
+                           || m_kadState == KadState::QueuedFwCheck
+                           || m_kadState == KadState::QueuedFwCheckUDP;
+
+    // ---- Immediate-fail prechecks for a peer we can only reach by callback ----
+    // MFC BaseClient.cpp:1339-1372, previously not ported at all. Without them a peer with
+    // no viable route was retried forever: every attempt walked all three callback branches,
+    // fell out of the bottom and returned false, leaving the download state untouched so
+    // nothing upstream ever learned the source was unreachable.
+    //
+    // Return value: MFC's TryToConnect returns true from these paths, but its bool means
+    // "the client was not deleted" — it deletes on Disconnected() and this port never does,
+    // leaving that to the ClientList reaper. The contract that survives the difference, and
+    // the one every existing caller already assumes, is "did we start something": these
+    // paths return false, which is also what lets addUpNextClient() decline to open a slot
+    // it cannot use.
+    if (!dialDirectly) {
+        // The three routes, in the order the branches below try them.
+        const bool directUdp = supportsDirectUDPCallback() && thePrefs.udpPort() != 0
+                            && !m_connectAddress.isNull();
+        const bool kadCallback = hasValidBuddyID() && kad::Kademlia::instance()
+                              && kad::Kademlia::instance()->isConnected()
+                              && ((!m_buddyAddress.isNull() && m_buddyPort != 0) || m_reqFile);
+        const bool serverCallback = theApp.serverConnect
+                                 && theApp.serverConnect->isLocalServer(
+                                        m_serverAddress.toNetworkUint32(), m_serverPort);
+
+        // The caller asked for a direct dial only — a Kad firewall check or a buddy request,
+        // where a callback would answer a question we never asked.
+        if (noCallbacks) {
+            logWarning(QStringLiteral("tryToConnect: callback wanted for a no-callback client %1")
+                           .arg(userName()));
+            disconnected(QStringLiteral("LowID: no callback allowed"));
+            return false;
+        }
+
+        // No route at all — fail once instead of walking all three branches on every retry.
+        if (!directUdp && !kadCallback && !serverCallback) {
+            logDebug(QStringLiteral("tryToConnect: no callback route available for %1")
+                         .arg(userName()));
+            disconnected(QStringLiteral("LowID: no callback option available"));
+            return false;
+        }
+
+        // Low-ID to Low-ID. MFC applies canDoCallback() to every Low-ID client
+        // (srchybrid/BaseClient.cpp:1341); here it gates only the case the rule is actually
+        // about — a relay through our server. Its two arms are "the callback must go via the
+        // server, so we need a High ID there" and "the peer is on the same server we are, and
+        // asking that server to call one of its own clients gets us banned". Neither premise
+        // holds when we have our own direct-UDP or Kad-buddy route to the peer, and applying
+        // it there would disable direct UDP callbacks outright whenever Kad happens to be
+        // down — which is exactly the situation they exist for.
+        //
+        // Kept as a source rather than dropped, in the hope our own ID changes;
+        // PartFile::process() revives it from this state.
+        if (!directUdp && !kadCallback && !theApp.canDoCallback(this)) {
+            if (m_downloadState != DownloadState::LowToLowIP)
+                setDownloadState(DownloadState::LowToLowIP);
+            logDebug(QStringLiteral("tryToConnect: LowID->LowID, no callback route to %1")
+                         .arg(userName()));
+            return false;
+        }
+    }
+
     // MFC BaseClient.cpp:1379 — track connecting client for 45s timeout
     if (theApp.clientList)
         theApp.clientList->addConnectingClient(this);
@@ -1583,10 +1719,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon)
     // ---- Path 3: Normal outgoing TCP connection (high-ID clients) ----
     // MFC BaseClient.cpp:1383-1396. Also taken for an IPv6 target: a peer reachable
     // over IPv6 accepts a direct inbound connection regardless of its IPv4 Low-ID.
-    if (!hasLowID() || m_connectAddress.isIPv6()
-        || m_kadState == KadState::QueuedFwCheck
-        || m_kadState == KadState::QueuedFwCheckUDP)
-    {
+    if (dialDirectly) {
         // Transition Kad FW check states before connecting
         if (m_kadState == KadState::QueuedFwCheck)
             setKadState(KadState::ConnectingFwCheck);
@@ -1990,10 +2123,12 @@ void UpDownClient::connectionEstablished()
 
 void UpDownClient::onHandshakeCompleted()
 {
-    // (a) A UDP re-ask went unanswered and we ended up connected over TCP instead.
-    //     MFC BaseClient.cpp:1550-1556. The flag is cleared unconditionally, even
-    //     when the inner guard rejects — otherwise it would latch and block every
-    //     later udpReaskForDownload() at its m_reaskPending early-return.
+    // (a) We owed this peer a file re-ask that askForDownload() delayed on one of its
+    //     LowID paths, and it is now connected — send the request we held back.
+    //     MFC BaseClient.cpp:1550-1556. The flag is cleared unconditionally, even when
+    //     the inner guard rejects, so it cannot latch across the peer's next re-ask.
+    //     (The in-flight *UDP* re-ask is a separate flag, m_udpPending, charged as a
+    //     failure at the head of askForDownload().)
     if (m_reaskPending) {
         m_reaskPending = false;
         if (m_downloadState != DownloadState::None
@@ -2520,7 +2655,36 @@ QString UpDownClient::downloadStateDisplayString() const
 
 QString UpDownClient::uploadStateDisplayString() const
 {
-    return dbgGetUploadState(m_uploadState);
+    // MFC CUpDownClient::GetUploadStateDisplayString (srchybrid/BaseClient.cpp:2480-2510).
+    // The literals are MFC's own English resource strings, so the Uploads list reads the way
+    // the reference screenshots do: IDS_ONQUEUE (emule.rc:2037), IDS_TRANSFERRING (:2038),
+    // IDS_TRICKLING (:2700 — spelled "Standby", not "Trickling") and IDS_US_STALLEDW4BR
+    // (:3623). Distinct from dbgGetUploadState(), which stays the debug spelling.
+    switch (m_uploadState) {
+    case UploadState::OnUploadQueue:
+        return QCoreApplication::translate("UpDownClient", "On Queue");
+    case UploadState::Banned:
+        return QCoreApplication::translate("UpDownClient", "Banned");
+    case UploadState::Connecting:
+        return QCoreApplication::translate("UpDownClient", "Connecting");
+    case UploadState::Uploading:
+        // Nothing left in the send buffers means the peer has stopped asking for blocks, not
+        // that we stopped sending. MFC shows this only in advanced mode, because on a healthy
+        // link it flickers between states between two block requests.
+        if (thePrefs.showExtControls() && payloadInBuffer() == 0)
+            return QCoreApplication::translate("UpDownClient",
+                                               "Stalled! Waiting for block request.");
+        if (theApp.uploadQueue
+            && m_slotNumber <= static_cast<uint32>(theApp.uploadQueue->maxActiveClientsShortTime()))
+        {
+            return QCoreApplication::translate("UpDownClient", "Transferring");
+        }
+        return QCoreApplication::translate("UpDownClient", "Standby");
+    default:
+        // MFC returns an empty string for US_NONE, and the known-clients list relies on it —
+        // an idle peer shows a blank Upload Status cell rather than the word "None".
+        return {};
+    }
 }
 
 // ===========================================================================
@@ -3534,33 +3698,36 @@ void UpDownClient::processBuddyPong()
 }
 
 // ===========================================================================
-// allowIncomingBuddyPingPong — MFC BaseClient.cpp AllowIncomeingBuddyPingPong
+// Buddy ping/pong scheduling — MFC srchybrid/UpdownClient.h:180-182
 //
-// Rate-limit buddy ping/pong to once every 10 minutes.
+// m_lastBuddyPingPongTime holds the *next allowed* time, not the last one, which is what
+// lets the two sides of the exchange use different windows off a single field: we may ping
+// every 10 minutes, and accept an incoming ping only after 13. Both used to test
+// "now - last > 10 min" against a stamp of when it happened, which made them the same
+// check — so a buddy pinging on the same 10-minute schedule as us would race our own
+// timer instead of being comfortably inside its allowance.
 // ===========================================================================
 
 bool UpDownClient::allowIncomingBuddyPingPong() const
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-    return (curTick - m_lastBuddyPingPongTime) > MIN2MS(10);
+    return static_cast<uint32>(getTickCount()) >= m_lastBuddyPingPongTime + MIN2MS(3);
 }
 
 // ===========================================================================
 // sendBuddyPingPong — MFC BaseClient.cpp SendBuddyPingPong
 //
-// Returns true if enough time has passed to send a buddy ping (10 min).
-// The caller (ClientList::processKadList) sends the actual OP_BUDDYPING.
+// Whether the 10-minute keep-alive is due. ClientList::processKadList() sends the actual
+// OP_BUDDYPING.
 // ===========================================================================
 
 bool UpDownClient::sendBuddyPingPong() const
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-    return (curTick - m_lastBuddyPingPongTime) > MIN2MS(10);
+    return static_cast<uint32>(getTickCount()) >= m_lastBuddyPingPongTime;
 }
 
 void UpDownClient::setLastBuddyPingPongTime()
 {
-    m_lastBuddyPingPongTime = static_cast<uint32>(getTickCount());
+    m_lastBuddyPingPongTime = static_cast<uint32>(getTickCount()) + MIN2MS(10);
 }
 
 // ===========================================================================

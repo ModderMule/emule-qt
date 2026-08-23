@@ -9,9 +9,13 @@
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
+#include "files/SharedFileList.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadSearchManager.h"
 #include "httpcache/HttpCacheClient.h"
 #include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
+#include "net/Address.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
@@ -196,16 +200,27 @@ void HttpCacheManager::process()
     rollDailyBudget();
     expireEntries();
 
-    if (!uploadEnabled())
+    // Independent of offersEnabled(): looking for chunks is a download-side activity
+    // and does not need us to be able to offer anything.
+    lookupKadChunks();
+
+    if (!offersEnabled())
         return;
 
     // Re-offer anything already published and still good before spending a new
     // upload: the whole point is that one chunk serves many peers over time.
     // Only peers that have not already been told are targeted (see Entry::offeredTo).
+    //
+    // Gated on offersEnabled(), not uploadEnabled(): handing out a chunk needs no base
+    // url and no API key, so a node that only relays reaches this loop while skipping
+    // everything below it.
     for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
         if (it->offerable)
             offerToQueue(*it);
     }
+
+    if (!uploadEnabled())
+        return;
 
     // Deliberately after the re-offer loop: a POST endpoint that is refusing says
     // nothing about the chunks already sitting on that server, and peers should
@@ -233,6 +248,55 @@ bool HttpCacheManager::uploadEnabled() const
         && thePrefs.httpCacheAllowUpload()
         && !thePrefs.httpCacheBaseUrl().isEmpty()
         && !thePrefs.httpCacheApiKey().isEmpty();
+}
+
+std::vector<HttpCacheOffer>
+HttpCacheManager::kadChunksForFile(const std::array<uint8, 16>& fileHash) const
+{
+    std::vector<HttpCacheOffer> result;
+
+    if (!thePrefs.httpCachePublishToKad() || !uploadEnabled())
+        return result;
+
+    const auto now = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
+
+    for (const auto& entry : m_entries) {
+        if (entry.relayed || !entry.offerable)
+            continue;
+        if (entry.offer.fileHash != fileHash)
+            continue;
+        // A record sits on a storing node for KADEMLIAREPUBLISHTIMES, so a chunk that
+        // is nearly out of time would be advertised long past its own death.
+        if (entry.offer.expiresAt == 0 || entry.offer.expiresAt < now + kExpiryMarginSeconds)
+            continue;
+        if (entry.offer.url.size() > KADHC_MAX_URL_LEN)
+            continue;
+
+        result.push_back(entry.offer);
+    }
+
+    // Longest-lived last, then keep the longest-lived: with room for only a few, the
+    // ones that will still be there when somebody looks are worth more.
+    std::ranges::sort(result, [](const HttpCacheOffer& a, const HttpCacheOffer& b) {
+        return a.expiresAt > b.expiresAt;
+    });
+    if (result.size() > KADHC_MAX_CHUNKS)
+        result.resize(KADHC_MAX_CHUNKS);
+
+    return result;
+}
+
+bool HttpCacheManager::relayEnabled() const
+{
+    // Deliberately no base url and no API key: passing on somebody else's chunk needs
+    // no cache account, because we never talk to the server at all — we hand the peer
+    // a URL and it fetches for itself.
+    return thePrefs.httpCacheEnabled() && thePrefs.httpCacheAllowRelay();
+}
+
+bool HttpCacheManager::offersEnabled() const
+{
+    return uploadEnabled() || relayEnabled();
 }
 
 std::vector<HttpCacheManager::Candidate> HttpCacheManager::findCandidates() const
@@ -389,6 +453,9 @@ void HttpCacheManager::onPublishFinished(const QString& key,
 
     m_entries.insert(key, entry);
 
+    // The Kad source record for this file now advertises one more chunk than it did.
+    nudgeKadRepublish(offer.fileHash);
+
     m_publishedToday += offer.cipherLength;
     m_sessionBytesPublished += offer.cipherLength;
     ++m_sessionChunksPublished;
@@ -518,11 +585,12 @@ void HttpCacheManager::offerToQueue(Entry& entry)
         if (!sendOffer(peer, entry))
             continue;
 
-        // The first peer offered a given chunk is the one whose demand paid for
-        // the upload; every peer after that gets a part we never had to send
-        // again. That difference is the entire economic argument for the feature,
-        // so it is what "Upload Saved" counts.
-        if (entry.offersSent > 1)
+        // The first peer offered a chunk we published is the one whose demand paid for
+        // the upload; every peer after that gets a part we never had to send again.
+        // That difference is the entire economic argument for the feature, so it is
+        // what "Upload Saved" counts. A relayed chunk cost us no upload at all, so
+        // every one of its offers is a saving, the first included.
+        if (entry.relayed || entry.offersSent > 1)
             m_sessionBytesSaved += entry.offer.plainLength;
 
         // The offer replaces the slot. A peer holding one is sent back to the
@@ -591,6 +659,65 @@ void HttpCacheManager::handleReport(UpDownClient* sender, const HttpCacheReport&
     }
 }
 
+void HttpCacheManager::nudgeKadRepublish(const std::array<uint8, 16>& fileHash) const
+{
+    if (!thePrefs.httpCachePublishToKad() || !theApp.sharedFileList)
+        return;
+
+    KnownFile* file = theApp.sharedFileList->getFileByID(fileHash.data());
+    if (!file)
+        return;
+
+    // Source publishing is on a five-hour cycle (KADEMLIAREPUBLISHTIMES) and a storing
+    // node expires the record on the same clock, but chunks come and go on a TTL of
+    // hours. Without this a chunk published just after a republish would go unadvertised
+    // for most of its life. Zeroing the timestamp is the existing "publish this one
+    // next" signal — SharedFileList::publish() uses it as its retry path — and the
+    // one-file-per-tick round robin plus KADEMLIATOTALSTORESRC keep the cost bounded.
+    file->setLastPublishTimeKadSrc(0, 0);
+}
+
+void HttpCacheManager::lookupKadChunks()
+{
+    if (!downloadEnabled() || !thePrefs.httpCacheFetchFromKad())
+        return;
+
+    auto* kadInst = kad::Kademlia::instance();
+    if (!kadInst || !kadInst->isConnected())
+        return;
+
+    DownloadQueue* queue = theApp.downloadQueue;
+    if (!queue)
+        return;
+
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+
+    for (PartFile* file : queue->files()) {
+        if (!file || file->isStopped() || file->isPaused())
+            continue;
+        if (file->status() != PartFileStatus::Ready && file->status() != PartFileStatus::Empty)
+            continue;
+        if (file->gapList().empty())
+            continue;
+
+        const QString hashKey = QString::fromLatin1(
+            QByteArray(reinterpret_cast<const char*>(file->fileHash()), 16).toHex());
+        const auto last = m_kadLookupAt.constFind(hashKey);
+        if (last != m_kadLookupAt.constEnd() && now - last.value() < kKadLookupIntervalSeconds)
+            continue;
+
+        // PartFile::process() runs this same lookup type, but only while the file is
+        // short of sources — so a popular file, which is exactly where a cache chunk is
+        // worth most, never fires one. prepareLookup() dedups by target, so when the
+        // download queue already has one running for this file ours is simply refused
+        // and the results reach the same parser anyway.
+        kad::UInt128 target;
+        target.setValueBE(file->fileHash());
+        if (kad::SearchManager::prepareLookup(kad::SearchType::File, true, target))
+            m_kadLookupAt.insert(hashKey, now);
+    }
+}
+
 uint64 HttpCacheManager::publishRateBytesPerSecond() const
 {
     if (const uint32 explicitKBs = thePrefs.httpCachePublishRateKBs(); explicitKBs != 0)
@@ -611,6 +738,84 @@ uint64 HttpCacheManager::publishRateBytesPerSecond() const
 // ---------------------------------------------------------------------------
 // Downloader
 // ---------------------------------------------------------------------------
+
+void HttpCacheManager::addKadChunks(const std::vector<HttpCacheOffer>& chunks)
+{
+    if (!downloadEnabled() || !thePrefs.httpCacheFetchFromKad())
+        return;
+
+    DownloadQueue* queue = theApp.downloadQueue;
+    if (!queue)
+        return;
+
+    for (const auto& offer : chunks) {
+        if (activeFetchCount() >= static_cast<int>(thePrefs.httpCacheMaxConcurrentFetches()))
+            return;
+
+        if (!offer.isWellFormed())
+            continue;
+
+        // An ed2k offer is validated against "the peer sending it is already a source
+        // for this file" (spec §6, rule 4), which is what stops an arbitrary client
+        // pointing us at an arbitrary URL. There is no sender here, so the replacement
+        // is that *we* chose the file hash: the record only reaches us because we
+        // looked that hash up ourselves. Everything else is the same structural
+        // validation an offer gets.
+        PartFile* file = queue->fileByID(offer.fileHash.data());
+        if (!file)
+            continue;
+
+        if (offer.partIndex >= file->partCount() || file->isComplete(offer.partIndex))
+            continue;
+
+        // Whole parts only, which is what let the lengths be derived rather than sent.
+        // A record naming the short tail part is either a bug or a lie; either way the
+        // derived plainLength would be wrong for it.
+        const uint64 partEnd = static_cast<uint64>(offer.partIndex + 1) * PARTSIZE;
+        if (partEnd > static_cast<uint64>(file->fileSize()))
+            continue;
+
+        if (offer.expiresAt == 0
+            || offer.expiresAt < QDateTime::currentSecsSinceEpoch() + kExpiryMarginSeconds) {
+            continue;
+        }
+
+        if (m_kadBadUrls.contains(offer.url))
+            continue;
+
+        if (!urlIsAcceptable(offer.url)) {
+            logWarning(QStringLiteral("HTTP Cache: refusing a Kad chunk record pointing at %1")
+                           .arg(offer.url));
+            continue;
+        }
+
+        const QString key = entryKey(offer.fileHash, offer.partIndex);
+        if (m_fetches.contains(key))
+            continue;
+
+        auto* client = new HttpCacheClient();
+        connect(client, &HttpCacheClient::fetchFinished, this, &HttpCacheManager::onFetchFinished);
+
+        // A null peer hash and — the part that matters — a null Address. PartFile::
+        // writeToBuffer() skips the corruption black box entirely for a null sender,
+        // which is exactly right: nobody vouched for these bytes, so nobody may be
+        // blamed for them. Passing anything else would hand soleSenderOfWholePart() an
+        // address that did not send the data — the cache server's — and ban it.
+        const std::array<uint8, 16> noPeer{};
+        if (!client->beginFetch(offer, file, noPeer, Address())) {
+            client->deleteLater();
+            continue;
+        }
+
+        m_fetches.insert(key, client);
+        m_kadFetches.insert(key);
+
+        logInfo(QStringLiteral("HTTP Cache: fetching part %1 of '%2' from a chunk found in Kad")
+                    .arg(offer.partIndex).arg(file->fileName()));
+    }
+
+    emit statsChanged();
+}
 
 bool HttpCacheManager::downloadEnabled() const
 {
@@ -724,6 +929,8 @@ void HttpCacheManager::onFetchFinished(HttpCacheClient* client, HttpCacheResult 
     const QString key = entryKey(client->offer().fileHash, client->partIndex());
     m_fetches.remove(key);
 
+    const bool fromKad = m_kadFetches.remove(key);
+
     if (result == HttpCacheResult::Ok) {
         m_sessionBytesFetched += bytesFetched;
         ++m_sessionChunksFetched;
@@ -734,16 +941,28 @@ void HttpCacheManager::onFetchFinished(HttpCacheClient* client, HttpCacheResult 
         if (m_fetchedFrom.size() >= kFetchLedgerMax)
             m_fetchedFrom.clear();
         m_fetchedFrom.insert(key, FetchedFrom{client->offeringPeerHash(),
-                                              QDateTime::currentSecsSinceEpoch()});
+                                              QDateTime::currentSecsSinceEpoch(),
+                                              fromKad,
+                                              client->offer()});
     } else {
         logDebug(QStringLiteral("HTTP Cache: fetch of part %1 ended with code %2")
                      .arg(client->partIndex())
                      .arg(static_cast<int>(result)));
     }
 
+    if (result != HttpCacheResult::Ok && fromKad) {
+        // No peer to tell and no three-strike counter to run, so the only thing that
+        // stops the next lookup walking back into a bad record is remembering the URL.
+        if (m_kadBadUrls.size() >= kKadBadUrlMax)
+            m_kadBadUrls.clear();
+        m_kadBadUrls.insert(client->offer().url);
+    }
+
     // Tell the uploader how it went, so a genuinely bad chunk stops being handed
-    // around. Located by userhash: the peer may have reconnected since.
-    if (theApp.clientList) {
+    // around. Located by userhash: the peer may have reconnected since. Skipped for a
+    // Kad-discovered chunk, whose peer hash is all zeroes — there is nobody to address,
+    // and looking one up by that hash would find a peer at random.
+    if (theApp.clientList && !fromKad) {
         const auto& hash = client->offeringPeerHash();
         if (UpDownClient* peer = theApp.clientList->findByUserHash(hash.data(), 0, 0)) {
             HttpCacheReport report;
@@ -764,6 +983,24 @@ void HttpCacheManager::onFetchFinished(HttpCacheClient* client, HttpCacheResult 
     emit statsChanged();
 }
 
+bool HttpCacheManager::hasRelayEntryForTest(const std::array<uint8, 16>& fileHash,
+                                            uint32 partIndex) const
+{
+    const auto it = m_entries.constFind(entryKey(fileHash, partIndex));
+    return it != m_entries.constEnd() && it->relayed;
+}
+
+bool HttpCacheManager::wasOfferedToForTest(const std::array<uint8, 16>& fileHash,
+                                           uint32 partIndex,
+                                           const std::array<uint8, 16>& peerHash) const
+{
+    const auto it = m_entries.constFind(entryKey(fileHash, partIndex));
+    if (it == m_entries.constEnd())
+        return false;
+    return it->offeredTo.contains(
+        QByteArray(reinterpret_cast<const char*>(peerHash.data()), 16));
+}
+
 bool HttpCacheManager::hasFetchAttributionForTest(const std::array<uint8, 16>& fileHash,
                                                   uint32 partIndex) const
 {
@@ -779,6 +1016,31 @@ void HttpCacheManager::reportPartCorrupt(const std::array<uint8, 16>& fileHash, 
 
     const FetchedFrom record = it.value();
     m_fetchedFrom.remove(key);
+
+    // If an earlier flush already promoted this chunk for relay, stop handing it out.
+    // Reachable when a part verifies and later fails — a disk fault, or an AICH
+    // recovery that rewrote it — and the alternative is passing bad bytes around under
+    // our own name.
+    if (const auto entry = m_entries.constFind(key);
+        entry != m_entries.constEnd() && entry->relayed) {
+        m_entries.remove(key);
+        logWarning(QStringLiteral("HTTP Cache: withdrawing relayed chunk for part %1 — "
+                                  "the part failed its hash here")
+                       .arg(partIndex));
+    }
+
+    if (record.fromKad) {
+        // Nobody offered this part — it came out of a Kad record. Blame is already
+        // withheld at the source (writeToBuffer got a null sender), so all that is
+        // left is to stop trusting the URL.
+        logWarning(QStringLiteral("HTTP Cache: part %1 failed its hash after a Kad chunk "
+                                  "fetch — no peer to blame, dropping the URL")
+                       .arg(partIndex));
+        if (m_kadBadUrls.size() >= kKadBadUrlMax)
+            m_kadBadUrls.clear();
+        m_kadBadUrls.insert(record.offer.url);
+        return;
+    }
 
     logWarning(QStringLiteral("HTTP Cache: part %1 failed its hash after a cache fetch — "
                               "telling the peer that offered it")
@@ -801,6 +1063,60 @@ void HttpCacheManager::reportPartCorrupt(const std::array<uint8, 16>& fileHash, 
     reply(peer, report, false);
 }
 
+void HttpCacheManager::reportPartVerified(const std::array<uint8, 16>& fileHash,
+                                          uint32 partIndex)
+{
+    if (!relayEnabled())
+        return;
+
+    const QString key = entryKey(fileHash, partIndex);
+
+    // Already offering this chunk — either our own publish or a promotion from an
+    // earlier flush. flushBuffer() re-verifies every complete part on every flush, so
+    // this is the ordinary case once a part is done, not an edge case.
+    if (m_entries.contains(key))
+        return;
+
+    // Not a part we fetched over the cache. Also the ordinary case: every part of every
+    // download reaches here, and only the handful we pulled from a chunk are in the
+    // ledger.
+    const auto it = m_fetchedFrom.constFind(key);
+    if (it == m_fetchedFrom.constEnd())
+        return;
+
+    const HttpCacheOffer& offer = it->offer;
+    if (!offer.isWellFormed())
+        return;
+
+    // A chunk with no stated expiry is one we would hold forever: expireEntries()
+    // reads 0 as "never lapses", which is correct for a blob we own and wrong for one
+    // we are only borrowing, since the owner can DELETE it at any moment.
+    if (offer.expiresAt == 0)
+        return;
+
+    if (offer.expiresAt < QDateTime::currentSecsSinceEpoch() + kExpiryMarginSeconds)
+        return;
+
+    Entry entry;
+    entry.offer = offer;
+    entry.relayed = true;          // chunkId stays empty — the blob is not ours to delete
+    entry.offerable = true;
+
+    // Never offer a chunk back to the peer that gave it to us. Nothing to exclude for a
+    // Kad-discovered chunk — no peer handed it over — and seeding the all-zero hash
+    // would silently exclude any peer whose userhash happened to be zero.
+    if (!it->fromKad)
+        entry.offeredTo.insert(QByteArray(reinterpret_cast<const char*>(it->peerHash.data()), 16));
+
+    m_entries.insert(key, std::move(entry));
+
+    logInfo(QStringLiteral("HTTP Cache: part %1 verified — relaying its chunk to peers "
+                           "that still need it")
+                .arg(partIndex));
+
+    emit statsChanged();
+}
+
 void HttpCacheManager::reply(UpDownClient* peer, const HttpCacheReport& report, bool declined)
 {
     if (!peer)
@@ -816,7 +1132,7 @@ void HttpCacheManager::reply(UpDownClient* peer, const HttpCacheReport& report, 
         peer->sendPacket(std::move(packet));
 }
 
-bool HttpCacheManager::urlIsAcceptable(const QString& url) const
+bool HttpCacheManager::urlIsAcceptable(const QString& url)
 {
     const QUrl parsed(url, QUrl::StrictMode);
     if (!parsed.isValid() || parsed.host().isEmpty())
@@ -826,21 +1142,30 @@ bool HttpCacheManager::urlIsAcceptable(const QString& url) const
     if (scheme != QLatin1String("http") && scheme != QLatin1String("https"))
         return false;
 
-    // A hostname is resolved later by URLClient and vetted then; a literal address
-    // can be checked right now, before we spend a connection on it.
-    const QHostAddress addr(parsed.host());
-    if (addr.isNull())
-        return true;
+    // A hostname is vetted after resolution, in URLClient; a literal can be checked
+    // right now, before we spend a connection on it.
+    //
+    // QUrl::host() hands back an IPv6 literal with its brackets already stripped,
+    // which is exactly the form setAddress() wants — nothing to unwrap.
+    QHostAddress parsedHost;
+    if (!parsedHost.setAddress(parsed.host()))
+        return true;   // a name, not a literal
 
-    if (addr.protocol() == QAbstractSocket::IPv4Protocol) {
-        const uint32 ip = qToBigEndian(addr.toIPv4Address());
-        if (!isGoodIP(ip))
-            return false;
-        if (theApp.ipFilter && theApp.ipFilter->isFiltered(ip))
-            return false;
-    }
+    // Anything that will not convert is the wildcard (0.0.0.0 or ::), which Address
+    // has no family for and which is never a cache host. It has to be rejected here
+    // rather than fall through, or it reads as "not a literal" and gets waved past.
+    const Address literal = Address::fromQHostAddress(parsedHost);
+    if (literal.isNull())
+        return false;
 
-    return true;
+    // isGoodIP screens both families, and fromQHostAddress() has already folded
+    // ::ffff:a.b.c.d back to plain IPv4 — QHostAddress::protocol() still calls that
+    // IPv6, so a v4-mapped literal used to walk straight past the IPv4-only test
+    // that lived here, loopback and all.
+    if (!isGoodIP(literal))
+        return false;
+
+    return !(theApp.ipFilter && theApp.ipFilter->isFiltered(literal));
 }
 
 // ---------------------------------------------------------------------------
@@ -858,10 +1183,16 @@ void HttpCacheManager::expireEntries()
 
     for (auto it = m_entries.begin(); it != m_entries.end();) {
         const uint32 expires = it->offer.expiresAt;
-        if (expires != 0 && expires < now + kExpiryMarginSeconds)
+        if (expires != 0 && expires < now + kExpiryMarginSeconds) {
+            const bool wasOurs = !it->relayed;
+            const auto fileHash = it->offer.fileHash;
             it = m_entries.erase(it);
-        else
+            // Only our own chunks are ever in the record, so only their loss changes it.
+            if (wasOurs)
+                nudgeKadRepublish(fileHash);
+        } else {
             ++it;
+        }
     }
 
     // A lapsed cooldown is just a key nobody will ever look up again; dropping it

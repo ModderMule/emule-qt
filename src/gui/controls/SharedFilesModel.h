@@ -44,6 +44,15 @@ struct SharedFileRow {
     QString partHashesStr;              ///< "p=HASH1:HASH2:...|" or empty (for ed2k link building)
     QString aichHashStr;                ///< "h=AICHHASH|" or empty (for ed2k link building)
     int64_t uploadDataRate = 0;         ///< bytes/sec upload rate for this file
+
+    // -- Share membership, only meaningful in browse mode (see setBrowseMode) -----
+    /// Is this file currently shared? Always true for rows that came from the shared
+    /// list; a browsed directory also yields unshared rows, where it is false.
+    bool shareChecked = true;
+    /// May the user change that? False where the state is forced — the incoming
+    /// directory is always shared, eMule's own directories never are. Renders as
+    /// MFC's CBS_CHECKEDDISABLED / CBS_UNCHECKEDDISABLED.
+    bool shareToggleable = false;
 };
 
 /// Table model backing the shared files tree view.
@@ -71,8 +80,16 @@ public:
     explicit SharedFilesModel(QObject* parent = nullptr);
 
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    bool setData(const QModelIndex& index, const QVariant& value, int role) override;
+    [[nodiscard]] Qt::ItemFlags flags(const QModelIndex& index) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
+
+    /// Show a share checkbox on the file-name column. On while a directory is being
+    /// browsed, where the list holds unshared files too and ticking one is how the
+    /// user shares it — MFC's CSharedFilesCtrl checkbox mode.
+    void setBrowseMode(bool on);
+    [[nodiscard]] bool browseMode() const { return m_browseMode; }
 
     /// Replace all files with a new snapshot.
     void setFiles(std::vector<SharedFileRow> files) { setRows(std::move(files)); }
@@ -92,8 +109,17 @@ public:
     /// setFiles() replaces the whole vector, so any kept pointer dangles after a refresh.
     [[nodiscard]] const SharedFileRow* findByHash(const QString& hexHash) const;
 
+signals:
+    /// The user ticked or unticked a file's share checkbox. The panel turns this into
+    /// a SetFileShared request; the model does not change the row itself, so the list
+    /// only moves once the daemon has agreed.
+    void shareToggleRequested(const QString& filePath, bool shared);
+
 protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
+
+private:
+    bool m_browseMode = false;
 };
 
 // ---------------------------------------------------------------------------

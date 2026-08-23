@@ -7,6 +7,7 @@
 
 #include "files/PartFile.h"
 #include "app/AppContext.h"
+#include "files/SharedFileList.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHHashSet.h"
@@ -138,6 +139,54 @@ void PartFile::initPartFile()
 bool PartFile::isPartFile() const
 {
     return m_status != PartFileStatus::Complete;
+}
+
+// ===========================================================================
+// canBeShared / addToSharedFiles — MFC CPartFile::AddToSharedFiles
+// ===========================================================================
+
+bool PartFile::canBeShared() const
+{
+    // A part file we cannot hash-verify has nothing safe to offer: without the MD4
+    // hashset a peer asking for part 3 gets bytes we cannot check, and the whole
+    // ed2k trust chain for that transfer rests on us. MFC srchybrid/PartFile.cpp:4509.
+    //
+    // MFC also tests m_bMD4HashsetNeeded here; this asks only the question that flag is
+    // an answer to. In this port the flag means "still to be requested from a peer" —
+    // it is *derived* from this same predicate when a .part.met is loaded (:1507) and
+    // cleared when a hashset arrives over the wire (DownloadClient.cpp:1075,1093) — so
+    // testing both would ask the same thing twice, except for a hashset installed
+    // programmatically, where nobody re-derives the flag and it is stale-true.
+    if (!fileIdentifier().hasExpectedMD4HashCount())
+        return false;
+
+    // And at least one whole part, or there is simply nothing to serve. MFC reaches
+    // the same condition from the other side: LoadPartFile only promotes PS_EMPTY to
+    // PS_READY once IsCompleteBD() answers true for some part
+    // (srchybrid/PartFile.cpp:1093-1105).
+    for (uint32 p = 0; p < partCount(); ++p) {
+        if (isComplete(p))
+            return true;
+    }
+    return false;
+}
+
+void PartFile::addToSharedFiles()
+{
+    // "part files are always shared files" — srchybrid/DownloadQueue.cpp:109,127.
+    // Without this the file is served only to peers that already know about us
+    // (findUploadFile() falls back to the download queue), because both advertising
+    // paths — OP_OFFERFILES and Kad source publishing — walk SharedFileList's map and
+    // nothing else. We were invisible as a partial source.
+    // MFC's shape exactly (srchybrid/PartFile.cpp:4507-4516): only Empty is promoted,
+    // so this is the one-way latch. A file already Ready is in the share; the re-add
+    // after a reload goes through DownloadQueue::addPartFilesToShare() instead.
+    // Reads the raw member, not status(): a paused file still gets promoted and shared.
+    if (!theApp.sharedFileList || m_status != PartFileStatus::Empty || !canBeShared())
+        return;
+
+    setStatus(PartFileStatus::Ready);
+    theApp.sharedFileList->safeAddKFile(this);
 }
 
 // ===========================================================================
@@ -398,8 +447,11 @@ void PartFile::writeToBuffer(uint64 transize, const uint8* data,
     // Fill the gap for this range
     fillGap(start, end);
 
-    // If file is complete (no gaps), flush immediately
-    if (m_gapList.empty())
+    // Flush immediately when the file is complete, or when it is in any state other
+    // than plain downloading — an import writes whole parts through here and there is
+    // nothing to gain from holding them (MFC srchybrid/PartFile.cpp:4031-4034).
+    if (m_gapList.empty()
+        || (status() != PartFileStatus::Ready && status() != PartFileStatus::Empty))
         flushBuffer();
 }
 
@@ -448,6 +500,25 @@ void PartFile::flushBuffer(bool forceICH)
                 // The part verified, so it is no longer a candidate for recovery.
                 m_corruptionBlackBox.verifiedData(partStart, partEnd);
                 dropCorruptedPart(p);
+
+                // We now hold a whole verified part, which is MFC's condition for a
+                // part file becoming a shared file (srchybrid/PartFile.cpp:4194).
+                // Idempotent, which matters here: this loop re-checks every already
+                // complete part on every flush, not just the ones this buffer touched.
+                addToSharedFiles();
+
+                // A chunk we fetched over the HTTP Cache may now be handed on to other
+                // peers — but only because MD4 actually matched, which is a stronger
+                // claim than hashSinglePart() returning true. That function answers
+                // true for a part it could not check at all (index out of range, file
+                // it could not open, short read) and its md4OK starts life true, only
+                // falsified when a per-part hash exists to compare against. Relaying
+                // means vouching for the bytes, so demand the hash really existed.
+                if (theApp.httpCache && fileIdentifier().getMD4PartHash(p) != nullptr) {
+                    std::array<uint8, 16> hash{};
+                    std::memcpy(hash.data(), fileHash(), 16);
+                    theApp.httpCache->reportPartVerified(hash, p);
+                }
                 continue;
             }
 
@@ -504,6 +575,10 @@ void PartFile::flushBuffer(bool forceICH)
             fillGap(partStart, partEnd);
             removeBlockFromList(partStart, partEnd);
             dropCorruptedPart(p);
+
+            // Recovery just produced a whole good part — MFC shares here too
+            // (srchybrid/PartFile.cpp:4227).
+            addToSharedFiles();
 
             m_corruptionLoss = (m_corruptionLoss >= recovered) ? m_corruptionLoss - recovered : 0;
             if (theApp.statistics) {
@@ -877,28 +952,99 @@ std::vector<uint16> PartFile::calcDownloadingParts(const UpDownClient* exclude) 
 }
 
 // ===========================================================================
+// Rehash — recover a .part whose contents no longer match the .part.met
+// ===========================================================================
+
+QString PartFile::partDataPath() const
+{
+    QString path = m_fullName;
+    if (path.endsWith(QStringLiteral(".met")))
+        path.chop(4);
+    return path;
+}
+
+void PartFile::applyRehashResult(const QByteArray& partOk)
+{
+    // Rebuild the gap list from what the disk actually holds: a verified part is
+    // present, anything else has to be fetched again.
+    m_gapList.clear();
+    const uint32 parts = partCount();
+    const auto total = static_cast<uint64>(fileSize());
+    uint32 good = 0;
+
+    for (uint32 part = 0; part < parts; ++part) {
+        const uint64 start = static_cast<uint64>(part) * PARTSIZE;
+        if (start >= total)
+            break;
+        const uint64 end = std::min(start + PARTSIZE, total) - 1;
+
+        const bool ok = part < static_cast<uint32>(partOk.size())
+                        && partOk[static_cast<qsizetype>(part)] != 0;
+        if (ok)
+            ++good;
+        else
+            addGap(start, end);
+    }
+
+    updateCompletedInfos();
+
+    // Re-latch: Ready the moment one part survived, matching loadPartFile().
+    setStatus(m_gapList.empty()   ? PartFileStatus::Completing
+              : good > 0          ? PartFileStatus::Ready
+                                  : PartFileStatus::Empty);
+    m_fileOp = PartFileOp::None;
+
+    logInfo(QStringLiteral("Rehash finished: %1 — %2/%3 parts intact")
+                .arg(fileName()).arg(good).arg(parts));
+
+    // Stamps m_tLastModified from the .part we just read, so the next load agrees
+    // with it and does not rehash again.
+    savePartFile();
+
+    // Not addToSharedFiles(): that only promotes an Empty file, and we have just
+    // latched Ready ourselves. MFC does the same at srchybrid/PartFile.cpp:1570.
+    if (m_status == PartFileStatus::Ready && theApp.sharedFileList && canBeShared())
+        theApp.sharedFileList->safeAddKFile(this);
+}
+
+// ===========================================================================
 // Status Machine
 // ===========================================================================
 
 void PartFile::setStatus(PartFileStatus s)
 {
+    // Paused/Insufficient are what status() synthesises from m_paused/m_insufficient;
+    // storing them would overwrite the real state and lose the shareability latch.
+    // MFC asserts exactly this in _SetStatus (srchybrid/PartFile.cpp:4546-4550); here
+    // it is a plain refusal rather than an assert, so the invariant holds the same way
+    // in a release build as in a debug one, and can be tested.
+    if (s == PartFileStatus::Paused || s == PartFileStatus::Insufficient) {
+        logWarning(QStringLiteral("PartFile::setStatus: refusing overlay state %1 for %2")
+                       .arg(static_cast<int>(s)).arg(fileName()));
+        return;
+    }
+
     if (m_status == s)
         return;
     m_status = s;
-    emit m_partNotifier.statusChanged(s);
+    emit m_partNotifier.statusChanged(status());
 }
 
 void PartFile::pauseFile(bool insufficient)
 {
     const bool wasPaused = m_paused;
 
-    m_paused = true;
+    // Only a real pause sets m_paused. Running out of disk space is a different
+    // condition — the user did not pause anything — and conflating the two makes
+    // status() report Paused for it, since m_paused wins the overlay.
+    // MFC srchybrid/PartFile.cpp:3351-3355.
+    if (!insufficient)
+        m_paused = true;
     m_insufficient = insufficient;
 
-    if (insufficient)
-        setStatus(PartFileStatus::Insufficient);
-    else
-        setStatus(PartFileStatus::Paused);
+    // The stored status is left alone — status() now reports Paused/Insufficient on
+    // top of it, and the file keeps whatever shareability it had latched.
+    emit m_partNotifier.statusChanged(status());
 
     if (kadFileSearchID()) {
         kad::SearchManager::stopSearch(kadFileSearchID(), true);
@@ -922,14 +1068,18 @@ void PartFile::pauseFile(bool insufficient)
 
 void PartFile::resumeFile()
 {
-    if (!m_paused && !m_stopped)
+    // m_insufficient too: an out-of-space file has m_paused false (see pauseFile), and
+    // would otherwise be unresumable.
+    if (!m_paused && !m_stopped && !m_insufficient)
         return;
 
     m_paused = false;
     m_stopped = false;
     m_insufficient = false;
 
-    setStatus(m_gapList.empty() ? PartFileStatus::Completing : PartFileStatus::Ready);
+    // Nothing to re-derive: dropping the flags is what un-pauses it, and the stored
+    // status has been carrying the real state all along.
+    emit m_partNotifier.statusChanged(status());
 
     logInfo(QStringLiteral("Download resumed: %1 — status=%2 gaps=%3")
                 .arg(fileName())
@@ -991,7 +1141,8 @@ void PartFile::stopFile(bool cancel)
         m_partMetFilename.clear();
         setStatus(PartFileStatus::Error);
     } else {
-        setStatus(PartFileStatus::Paused);
+        // m_stopped/m_paused are already set by the pauseFile() this routes through;
+        // the status itself stays as it was.
         savePartFile();
     }
 }
@@ -1446,13 +1597,45 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     // MFC LoadPartFile: final hashset-needed check based on actual hash counts
     m_md4HashsetNeeded = !fileIdentifier().hasExpectedMD4HashCount();
 
-    // Set status
-    if (m_paused)
-        m_status = PartFileStatus::Paused;
-    else if (m_gapList.empty())
+    // Set status. MFC's latch (srchybrid/PartFile.cpp:1093-1105): start Empty, and
+    // promote to Ready as soon as one part verifies complete — that, not "is it
+    // running", is what Ready means. Pause is not stored; status() overlays it.
+    if (m_gapList.empty()) {
         m_status = PartFileStatus::Completing;
-    else
-        m_status = PartFileStatus::Ready;
+    } else {
+        m_status = PartFileStatus::Empty;
+        if (!m_md4HashsetNeeded) {
+            for (uint32 p = 0; p < partCount(); ++p) {
+                if (isComplete(p)) {
+                    m_status = PartFileStatus::Ready;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Did the .part change behind our back — an unclean shutdown, or something else
+    // writing to it? Then the gap list we just loaded describes bytes that may no
+    // longer be there, and the only honest answer is to re-verify every part.
+    // MFC srchybrid/PartFile.cpp:1129-1145.
+    if (m_status != PartFileStatus::Completing && !m_md4HashsetNeeded) {
+        const QFileInfo partInfo(partPath);
+        const qint64 onDisk = partInfo.lastModified().toSecsSinceEpoch();
+        if (onDisk > 0 && static_cast<time_t>(onDisk) != m_tLastModified) {
+            logWarning(QStringLiteral("Part file changed since last run, rehashing: %1")
+                           .arg(fileName()));
+            m_status = PartFileStatus::WaitingForHash;
+            if (theApp.sharedFileList) {
+                m_fileOp = PartFileOp::Hashing;
+                theApp.sharedFileList->enqueuePartFileRehash(this);
+                m_status = PartFileStatus::Hashing;
+            } else {
+                // Nothing can move it on from WaitingForHash, so say so rather than
+                // leaving a download wedged in a state nobody will clear.
+                m_status = PartFileStatus::Error;
+            }
+        }
+    }
 
     return PartFileLoadResult::LoadSuccess;
 }
@@ -1465,6 +1648,22 @@ bool PartFile::savePartFile()
 {
     if (m_fullName.isEmpty())
         return false;
+
+    // Writing the .met mid-rehash would persist a gap list the worker is about to
+    // replace (MFC srchybrid/PartFile.cpp:1162).
+    if (m_status == PartFileStatus::WaitingForHash || m_status == PartFileStatus::Hashing)
+        return false;
+
+    // Stamp the date of the .part we are describing. This is what loadPartFile()
+    // compares against to notice the data was changed behind our back; without it the
+    // field written below is meaningless (MFC srchybrid/PartFile.cpp:1174-1180).
+    {
+        const QFileInfo partInfo(partDataPath());
+        if (partInfo.exists()) {
+            const qint64 mtime = partInfo.lastModified().toSecsSinceEpoch();
+            m_tLastModified = mtime > 0 ? static_cast<time_t>(mtime) : static_cast<time_t>(-1);
+        }
+    }
 
     // Write to temp file first, then atomic rename
     const QString tempPath = m_fullName + QStringLiteral(".backup");
@@ -1786,7 +1985,8 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
             const bool disconnectedOnQueue =
                 (ds == DownloadState::OnQueue) && !client->socket();
 
-            if ((ds == DownloadState::None || disconnectedOnQueue)
+            if ((ds == DownloadState::None || ds == DownloadState::TooManyConns
+                 || disconnectedOnQueue)
                 && client->connectingState() == ConnectingState::None)
             {
                 // MFC: Disconnected OnQueue sources should NOT be retried
@@ -1799,13 +1999,49 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                     continue;
                 }
 
-                // Reset OnQueue → None so tryToConnect sets Connecting and
-                // connectionEstablished defers the file request properly.
+                // Reset OnQueue → None: askForDownload() returns early on OnQueue (the
+                // peer is expected to re-ask us), which is not what a source that has
+                // lost its socket needs.
                 if (disconnectedOnQueue)
                     client->setDownloadState(DownloadState::None);
 
-                if (client->tryToConnect())
+                // askForDownload(), not tryToConnect(): MFC calls it from exactly here
+                // (srchybrid/PartFile.cpp:2354) and it owns the whole re-ask preamble —
+                // charging an unanswered UDP re-ask, the TooManyConns backoff, the LowID
+                // delays that keep a source instead of burning a callback on it, the
+                // one-minute throttle, and the A4AF swap. It sets Connecting and calls
+                // tryToConnect() itself. Calling tryToConnect() directly left all of that
+                // unreachable — askForDownload() had no production caller at all.
+                if (client->askForDownload())
                     ++connectAttempts;
+
+                // askForDownload() → swapToAnotherFile() → doSwap() calls
+                // m_reqFile->removeSource(this), so this source may have just left
+                // m_srcList and another one slid into slot i. Re-examine that slot
+                // instead of stepping over it.
+                if (i < m_srcList.size() && m_srcList[i] != client)
+                    continue;
+            }
+        }
+
+        // LowID<->LowID source handling — MFC srchybrid/PartFile.cpp:2294-2306.
+        //
+        // Deliberately not removed on sight: these sources pop in and out and cost more
+        // churn than they save. Kept until either side's ID changes, and only thinned out
+        // when we are near the source cap.
+        if (ds == DownloadState::LowToLowIP) {
+            if (client->hasLowID() && !theApp.canDoCallback(client)) {
+                if (curTick >= m_lastPurgeTime + SEC2MS(30)
+                    && sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()) * 4 / 5)
+                {
+                    m_lastPurgeTime = curTick;
+                    if (theApp.downloadQueue)
+                        theApp.downloadQueue->removeSource(client);
+                    continue; // client removed, don't increment i
+                }
+            } else {
+                // Our ID or theirs changed — the source is reachable again.
+                client->setDownloadState(DownloadState::OnQueue);
             }
         }
 
@@ -1826,6 +2062,10 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                     QStringLiteral("A4AF for NNP file. PartFile::process()"),
                     true, false, false, nullptr, true, true);
                 client->setDownloadState(DownloadState::OnQueue);
+                // A successful swap removed the client from m_srcList — same slot-shift
+                // hazard as the connect branch above.
+                if (i < m_srcList.size() && m_srcList[i] != client)
+                    continue;
             }
         }
 
@@ -2432,6 +2672,12 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
     const UpDownClient* forClient, uint8 version, uint16 /*options*/) const
 {
     if (m_srcList.empty() || !forClient)
+        return nullptr;
+
+    // Sources are only worth exchanging for a file we are actually downloading. A
+    // paused, erroring, completing or rehashing file has no business handing its
+    // source list around (MFC srchybrid/PartFile.cpp:3662).
+    if (status() != PartFileStatus::Ready && status() != PartFileStatus::Empty)
         return nullptr;
 
     // Download side: candidates are this file's sources, judged on their *download*

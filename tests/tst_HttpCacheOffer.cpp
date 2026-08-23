@@ -6,12 +6,16 @@
 
 #include "TestHelpers.h"
 #include "crypto/AesCbc.h"
+#include "httpcache/HttpCacheManager.h"
 #include "httpcache/HttpCacheOffer.h"
+#include "net/Address.h"
+#include "prefs/Preferences.h"
 #include "net/Packet.h"
 #include "protocol/Tag.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
+#include <QScopeGuard>
 #include <QTest>
 
 using namespace eMule;
@@ -75,6 +79,10 @@ private slots:
     void parse_skipsUnknownTags();
     void parse_rejectsOversizedUrl();
     void parse_rejectsWrongKeyIvLength();
+
+    void urlIsAcceptable_screensBothFamilies_data();
+    void urlIsAcceptable_screensBothFamilies();
+    void urlIsAcceptable_labModeOpensUpIPv6Only();
 };
 
 // ---------------------------------------------------------------------------
@@ -391,4 +399,80 @@ void tst_HttpCacheOffer::parse_rejectsWrongKeyIvLength()
 }
 
 QTEST_MAIN(tst_HttpCacheOffer)
+// ---------------------------------------------------------------------------
+// URL screening
+//
+// urlIsAcceptable() decides whether we will dial a host somebody else picked — a
+// peer's offer or a Kad chunk record — so it is the gate that keeps the feature
+// from being an open redirector into the local network. It used to look at IPv4
+// literals only, which let every IPv6 literal and every ::ffff:a.b.c.d through.
+// ---------------------------------------------------------------------------
+
+void tst_HttpCacheOffer::urlIsAcceptable_screensBothFamilies_data()
+{
+    QTest::addColumn<QString>("url");
+    QTest::addColumn<bool>("acceptable");
+
+    QTest::newRow("hostname")            << QStringLiteral("http://example.com/x")        << true;
+    QTest::newRow("https hostname")      << QStringLiteral("https://example.com/x")       << true;
+    QTest::newRow("public v4")           << QStringLiteral("http://93.184.216.34/x")      << true;
+    QTest::newRow("public v6")           << QStringLiteral("http://[2606:4700::1]/x")     << true;
+
+    QTest::newRow("v4 loopback")         << QStringLiteral("http://127.0.0.1/x")          << false;
+    QTest::newRow("v4 private")          << QStringLiteral("http://192.168.1.1/x")        << false;
+    QTest::newRow("v6 loopback")         << QStringLiteral("http://[::1]/x")              << false;
+    QTest::newRow("v6 ULA")              << QStringLiteral("http://[fd00::1]/x")          << false;
+    QTest::newRow("v6 link-local")       << QStringLiteral("http://[fe80::1]/x")          << false;
+    QTest::newRow("v6 documentation")    << QStringLiteral("http://[2001:db8::1]/x")      << false;
+    QTest::newRow("v6 multicast")        << QStringLiteral("http://[ff02::1]/x")          << false;
+    QTest::newRow("v6 6to4")             << QStringLiteral("http://[2002::1]/x")          << false;
+    // The one Qt itself hides: protocol() calls a v4-mapped literal IPv6, so it walked
+    // straight past a check written as "if this is IPv4".
+    QTest::newRow("v4-mapped loopback")  << QStringLiteral("http://[::ffff:127.0.0.1]/x") << false;
+    QTest::newRow("v4 wildcard")         << QStringLiteral("http://0.0.0.0/x")            << false;
+    QTest::newRow("v6 unspecified")      << QStringLiteral("http://[::]/x")               << false;
+
+    QTest::newRow("wrong scheme")        << QStringLiteral("ftp://example.com/x")         << false;
+    QTest::newRow("file scheme")         << QStringLiteral("file:///etc/passwd")          << false;
+    QTest::newRow("no host")             << QStringLiteral("http:///nohost")              << false;
+    QTest::newRow("not a url")           << QStringLiteral("not a url")                   << false;
+    QTest::newRow("empty")               << QString()                                     << false;
+}
+
+void tst_HttpCacheOffer::urlIsAcceptable_screensBothFamilies()
+{
+    QFETCH(QString, url);
+    QFETCH(bool, acceptable);
+
+    // Both switches are process-wide and decide half these rows, so pin them: lab mode
+    // widens the IPv6 rules and filterLANIPs the IPv4 ones. This case asserts the
+    // production settings.
+    const ScopedLabNetworkMode labOff{false};
+    const bool savedFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(true);
+    const auto restore = qScopeGuard([savedFilter] { thePrefs.setFilterLANIPs(savedFilter); });
+
+    QCOMPARE(HttpCacheManager::urlIsAcceptable(url), acceptable);
+}
+
+void tst_HttpCacheOffer::urlIsAcceptable_labModeOpensUpIPv6Only()
+{
+    // An operator who clears filterLANIPs has declared this a private network, and a
+    // cache server on ::1 or a ULA is then the normal case — the interop rigs run that
+    // way. The relaxation is deliberately IPv6-only, so the IPv4 side takes its own
+    // switch; asserting both here keeps the two from being quietly merged.
+    const ScopedLabNetworkMode labOn{true};
+    const bool savedFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restore = qScopeGuard([savedFilter] { thePrefs.setFilterLANIPs(savedFilter); });
+
+    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[::1]:8080/x")));
+    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[fd00::1]/x")));
+    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://127.0.0.1:8080/x")));
+
+    // Still not peer addresses under any configuration.
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[ff02::1]/x")));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[::]/x")));
+}
+
 #include "tst_HttpCacheOffer.moc"

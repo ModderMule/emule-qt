@@ -620,6 +620,12 @@ void tst_TcpConnect::download_askedForAnotherFile()
                                 &PartFileNotifier::fileMoveFinished);
     QSignalSpy moveFinishedSpyB(partFileB->partNotifier(),
                                 &PartFileNotifier::fileMoveFinished);
+    // Armed up front, not after B finishes: askForDownload() runs MFC's A4AF swap before
+    // every TCP re-ask (srchybrid/DownloadClient.cpp:212), and that swap picks the best
+    // file by priority and rarity — not the order the requests were registered in. B and
+    // C both complete, but either may go first, and a spy connected afterwards misses it.
+    QSignalSpy moveFinishedSpyC(partFileC->partNotifier(),
+                                &PartFileNotifier::fileMoveFinished);
 
     QVERIFY(client->tryToConnect());
 
@@ -634,9 +640,12 @@ void tst_TcpConnect::download_askedForAnotherFile()
     QCOMPARE(partFileA->status(), PartFileStatus::Complete);
 
     // ========================================================================
-    // File B (eMule0.50a.zip, ~2.9 MB) — auto-swapped from file A
+    // File B (eMule0.50a.zip, ~2.9 MB) — auto-swapped off file A
+    //
+    // The timeout covers C going first: the 20 MB file can be the one the A4AF swap
+    // picks, and B then waits behind it.
     // ========================================================================
-    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyB.count() >= 1, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyB.count() >= 1, 40000);
     QVERIFY2(moveFinishedSpyB.first().first().toBool(), "File B move failed");
     QCOMPARE(partFileB->status(), PartFileStatus::Complete);
 
@@ -674,12 +683,9 @@ void tst_TcpConnect::download_askedForAnotherFile()
     }
 
     // ========================================================================
-    // File C (eMuleQt-testfile-20MB.bin, ~20 MB) — auto-swapped from file B
+    // File C (eMuleQt-testfile-20MB.bin, ~20 MB) — the other A4AF file
     // ========================================================================
-    QSignalSpy moveFinishedSpyC(partFileC->partNotifier(),
-                                &PartFileNotifier::fileMoveFinished);
-
-    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyC.count() >= 1, 25000);
+    QTRY_VERIFY_WITH_TIMEOUT(moveFinishedSpyC.count() >= 1, 40000);
     QVERIFY2(moveFinishedSpyC.first().first().toBool(), "File C move failed");
     QCOMPARE(partFileC->status(), PartFileStatus::Complete);
 

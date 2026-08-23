@@ -320,10 +320,17 @@ void tst_CoreSessionHandlers::directCallbackReq_unknownSender_createsClient()
     QVERIFY(client->requestsCryptLayer());
     QVERIFY(!client->requiresCryptLayer());
 
-    // No dial is attempted: the client is built with userId 0, so it reads as LowID with
-    // an IPv4 connect address, direct-UDP-callback is off (see the next test) and there is
-    // no serverConnect and no buddy — tryToConnect() falls through every path.
-    QCOMPARE(client->connectingState(), ConnectingState::None);
+    // The whole point of answering a direct callback request is dialling the sender back,
+    // so the client must be built High-ID from the sender's IP — MFC passes it in the ctor's
+    // userId slot (srchybrid/ClientUDPSocket.cpp:384). It used to be built with userId 0,
+    // which read as Low-ID: tryToConnect() skipped the direct-TCP branch, found no callback
+    // route either, and an inbound direct callback over IPv4 was silently never answered.
+    QVERIFY2(!client->hasLowID(), "the sender's IP must reach m_userIDHybrid, or we cannot dial back");
+    QCOMPARE(client->connectingState(), ConnectingState::DirectTCP);
+
+    // MFC clears this after setConnectOptions (srchybrid/ClientUDPSocket.cpp:391): a peer
+    // that had to reach us by direct callback is not itself direct-callbackable.
+    QVERIFY(!client->supportsDirectUDPCallback());
 }
 
 void tst_CoreSessionHandlers::directCallbackReq_knownSenderByUdpEndpoint_updatesInPlace()

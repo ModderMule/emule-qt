@@ -288,6 +288,8 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::RenameSharedFile:     handleRenameSharedFile(msg); break;
     case IpcMsgType::DeleteSharedFile:     handleDeleteSharedFile(msg); break;
     case IpcMsgType::UnshareFile:          handleUnshareFile(msg); break;
+    case IpcMsgType::SetFileShared:        handleSetFileShared(msg); break;
+    case IpcMsgType::BrowseDirectory:      handleBrowseDirectory(msg); break;
     case IpcMsgType::SetDownloadCategory:  handleSetDownloadCategory(msg); break;
     case IpcMsgType::GetDownloadDetails:   handleGetDownloadDetails(msg); break;
     case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
@@ -1193,6 +1195,13 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
         m.insert(QStringLiteral("publishedED2K"), kf->publishedED2K());
         m.insert(QStringLiteral("kadPublished"), kf->kadFileSearchID() != 0);
         m.insert(QStringLiteral("filePath"), kf->filePath());
+        // Whether the user is allowed to unshare it — the incoming directory is not
+        // unshareable by accident, it is unshareable by design (MFC ShouldBeShared with
+        // bMustBeShared, srchybrid/SharedFilesCtrl.cpp:1598). The GUI greys the menu
+        // entry with this rather than guessing at the incoming path from the rows.
+        m.insert(QStringLiteral("canUnshare"),
+                 theApp.sharedFileList
+                     && !theApp.sharedFileList->shouldBeShared(kf->path(), kf->filePath(), true));
         m.insert(QStringLiteral("path"), QFileInfo(kf->filePath()).absolutePath());
         m.insert(QStringLiteral("ed2kLink"), kf->getED2kLink());
         m.insert(QStringLiteral("isPartFile"), isPartFile);
@@ -1539,17 +1548,20 @@ void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)
         return;
     }
 
-    // MFC behaviour: only one friend slot at a time — clear all first
-    for (const auto& f : theApp.friendList->friends())
-        f->setFriendSlot(false);
+    // Only one friend slot at a time — MFC srchybrid/FriendListCtrl.cpp:218-224.
+    //
+    // removeAllFriendSlots() propagates through Friend::setFriendSlot() to each entry's
+    // linked client, which is what actually enforces the rule: the flag the upload queue
+    // scores lives on UpDownClient, and clearing it only on the Friend objects (as this used
+    // to) left every previously-slotted client holding a slot forever.
+    theApp.friendList->removeAllFriendSlots();
 
-    // Find and set the target friend's slot
+    // Find and set the target friend's slot. Propagates to its linked client if the peer is
+    // connected; if it is not, the flag is carried across by Friend::setLinkedClient() when
+    // it next says hello.
     for (const auto& f : theApp.friendList->friends()) {
         if (f->hasUserhash() && std::memcmp(f->userHash().data(), hashBuf, 16) == 0) {
             f->setFriendSlot(enabled);
-            // If the client is connected, update their friend slot too
-            if (auto* client = theApp.clientList->findByUserHash(hashBuf, 0, 0))
-                client->setFriendSlot(enabled);
             break;
         }
     }
@@ -2876,8 +2888,105 @@ void IpcClientHandler::handleUnshareFile(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Shared file not found")));
         return;
     }
-    theApp.sharedFileList->removeFile(file);
+
+    // Through excludeFile(), not removeFile(): dropping it from the map alone lasts
+    // only until the next directory scan puts it straight back.
+    if (!theApp.sharedFileList->excludeFile(file->filePath())) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 403,
+            QStringLiteral("This file cannot be unshared")));
+        return;
+    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleSetFileShared — share/unshare one file by path
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleSetFileShared(const IpcMessage& msg)
+{
+    const QString path = msg.fieldString(0);
+    const bool shared = msg.fieldBool(1);
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared files unavailable")));
+        return;
+    }
+    if (path.isEmpty() || !QFileInfo(path).isFile()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid file path")));
+        return;
+    }
+
+    const bool ok = shared ? theApp.sharedFileList->addSingleSharedFile(path)
+                           : theApp.sharedFileList->excludeFile(path);
+    if (!ok) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 403,
+            shared ? QStringLiteral("This file cannot be shared")
+                   : QStringLiteral("This file cannot be unshared")));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleBrowseDirectory — one directory's files with their share state
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
+{
+    const QString dirPath = msg.fieldString(0);
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared files unavailable")));
+        return;
+    }
+    QDir dir(dirPath);
+    if (dirPath.isEmpty() || !dir.exists()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Directory not found")));
+        return;
+    }
+
+    // A directory eMule uses for its own storage can hold no shared file at all, so
+    // every row in it is unshared and locked (MFC's CBS_UNCHECKEDDISABLED).
+    const bool dirShareable = thePrefs.isShareableDirectory(dirPath);
+
+    // One pass over the share, not one per file: the browsed directory can hold
+    // thousands of entries and forEachFile() holds the map lock for its duration.
+    QHash<QString, QString> hashByPath;
+    theApp.sharedFileList->forEachFile([&](KnownFile* f) {
+        if (!f->filePath().isEmpty())
+            hashByPath.insert(f->filePath().toLower(), md4str(f->fileHash()));
+    });
+
+    QCborArray files;
+    for (const QFileInfo& fi : dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot)) {
+        const QString filePath = fi.absoluteFilePath();
+        const QString name = fi.fileName();
+        if (fi.size() == 0
+            || name.endsWith(QStringLiteral(".part"), Qt::CaseInsensitive)
+            || name.endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive))
+            continue;
+
+        const bool isShared = theApp.sharedFileList->shouldBeShared(dirPath, filePath, false);
+        // Forced on for the incoming directory, forced off where sharing is impossible.
+        const bool forcedOn = theApp.sharedFileList->shouldBeShared(dirPath, filePath, true);
+        const bool canToggle = !forcedOn && dirShareable;
+
+        // Only known once the file has been hashed and shared; the GUI uses it to line
+        // a browsed row up with the shared-files list.
+        const QString hash = hashByPath.value(filePath.toLower());
+
+        files.append(QCborMap{
+            {QStringLiteral("name"),      name},
+            {QStringLiteral("path"),      filePath},
+            {QStringLiteral("size"),      static_cast<qint64>(fi.size())},
+            {QStringLiteral("shared"),    isShared},
+            {QStringLiteral("canToggle"), canToggle},
+            {QStringLiteral("hash"),      hash},
+        });
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(files)));
 }
 
 // ---------------------------------------------------------------------------

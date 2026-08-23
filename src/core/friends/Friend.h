@@ -18,6 +18,7 @@
 namespace eMule {
 
 class FileDataIO;
+class UpDownClient;
 
 // Friend-specific tag IDs (matching MFC FF_NAME / FF_KADID)
 inline constexpr uint8 kFriendTagName  = 0x01;
@@ -30,6 +31,13 @@ public:
     Friend(const uint8* userHash, std::time_t lastSeen, uint32 lastUsedIP,
            uint16 lastUsedPort, std::time_t lastChatted,
            const QString& name, bool hasHash);
+
+    /// Unlinks the client, so a client outliving its friend entry is left with neither a
+    /// dangling friendPtr() nor a friend slot. MFC CFriend::~CFriend (srchybrid/Friend.cpp:83).
+    ~Friend();
+
+    Friend(const Friend&) = delete;
+    Friend& operator=(const Friend&) = delete;
 
     // -- Serialization --------------------------------------------------------
 
@@ -67,10 +75,38 @@ public:
     [[nodiscard]] std::time_t lastChatted() const { return m_lastChatted; }
     void setLastChatted(std::time_t t) { m_lastChatted = t; }
 
-    [[nodiscard]] bool friendSlot() const { return m_friendSlot; }
-    void setFriendSlot(bool val) { m_friendSlot = val; }
+    // -- Linked client --------------------------------------------------------
+
+    /// The connected client this friend currently is, or nullptr while offline.
+    /// MFC CFriend::GetLinkedClient (srchybrid/Friend.h:70).
+    ///
+    /// @param validate  check the pointer against the client list before returning it, for
+    ///                  callers that may be running after the client was destroyed.
+    [[nodiscard]] UpDownClient* linkedClient(bool validate = false) const;
+
+    /// Bind this friend to a connected client, or unbind with nullptr.
+    /// MFC CFriend::SetLinkedClient (srchybrid/Friend.cpp:171-198).
+    ///
+    /// This is the whole reason the friend slot behaves: the flag lives on the client while
+    /// one is linked, so granting, moving or revoking a slot on the Friend reaches the
+    /// client that the upload queue actually scores. It also unlinks the previous client and
+    /// clears its slot, which is what stops a stale flag surviving a hash change, a friend
+    /// removal, or the slot being moved to somebody else.
+    void setLinkedClient(UpDownClient* client);
+
+    // -- Friend slot ----------------------------------------------------------
+
+    /// MFC CFriend::GetFriendSlot (srchybrid/Friend.cpp:166-169) — the linked client is
+    /// authoritative while there is one, so this never disagrees with what the queue sees.
+    [[nodiscard]] bool friendSlot() const;
+
+    /// MFC CFriend::SetFriendSlot (srchybrid/Friend.cpp:158-163) — propagates to the linked
+    /// client. FriendList::removeAllFriendSlots() relies on that propagation to enforce the
+    /// one-slot-at-a-time rule at the client level.
+    void setFriendSlot(bool val);
 
 private:
+    UpDownClient* m_linkedClient = nullptr;   ///< not owned
     std::array<uint8, 16> m_userHash{};
     std::array<uint8, 16> m_kadID{};
     QString m_name;

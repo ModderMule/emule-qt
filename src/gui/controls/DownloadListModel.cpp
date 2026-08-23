@@ -306,7 +306,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                 return tr("Auto [%1]").arg(d.priority);
             return d.priority;
         }
-        case ColStatus:     return d.status;
+        case ColStatus:     return statusText(d);
         case ColRemaining:
             return formatRemaining(d.fileSize - d.completedSize, d.datarate);
         case ColSeenComplete:
@@ -355,7 +355,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColProgress:   return d.percentCompleted;
         case ColSources:    return d.sourceCount;
         case ColPriority:   return d.priority;
-        case ColStatus:     return d.status;
+        case ColStatus:     return statusRank(d);
         case ColRemaining: {
             if (d.datarate > 0)
                 return QVariant::fromValue((d.fileSize - d.completedSize) / d.datarate);
@@ -577,6 +577,69 @@ const DownloadRow* DownloadListModel::findByHash(const QString& hexHash) const
     auto it = std::find_if(m_downloads.begin(), m_downloads.end(),
         [&](const DownloadRow& r) { return sameHash(r.hash, hexHash); });
     return (it != m_downloads.end()) ? &(*it) : nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Status column — MFC CPartFile::getPartfileStatus / getPartfileStatusRank
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// PartFileOp ordinals, mirroring src/core/files/PartFile.h.
+enum : int { OpNone = 0, OpHashing = 1, OpCopying = 2, OpUncompressing = 3, OpImportParts = 4 };
+
+} // namespace
+
+QString DownloadListModel::statusText(const DownloadRow& d) const
+{
+    if (d.fileOp == OpImportParts)
+        return tr("Importing part");
+
+    if (d.status == QLatin1String("hashing") || d.status == QLatin1String("waitingforhash"))
+        return tr("Hashing");
+
+    if (d.status == QLatin1String("completing")) {
+        // MFC appends the operation, so "Completing" alone never hides a long copy.
+        switch (d.fileOp) {
+        case OpHashing:       return tr("Completing (%1)").arg(tr("Hashing"));
+        case OpCopying:       return tr("Completing (%1)").arg(tr("Copying"));
+        case OpUncompressing: return tr("Completing (%1)").arg(tr("Uncompressing"));
+        default:              return tr("Completing");
+        }
+    }
+
+    if (d.status == QLatin1String("complete"))
+        return tr("Complete");
+
+    if (d.status == QLatin1String("paused"))
+        return d.isStopped ? tr("Stopped") : tr("Paused");
+
+    if (d.status == QLatin1String("insufficient"))
+        return tr("Insufficient disk space");
+
+    if (d.status == QLatin1String("error"))
+        return d.completionError ? tr("Insufficient disk space") : tr("Error");
+
+    // Ready and Empty both land here: what the user cares about is not which of the
+    // two the core latched, but whether anything is actually arriving.
+    return d.transferringSrcCount > 0 ? tr("Downloading") : tr("Waiting");
+}
+
+int DownloadListModel::statusRank(const DownloadRow& d)
+{
+    if (d.status == QLatin1String("hashing") || d.status == QLatin1String("waitingforhash"))
+        return 7;
+    if (d.status == QLatin1String("completing"))
+        return 1;
+    if (d.status == QLatin1String("complete"))
+        return 0;
+    if (d.status == QLatin1String("paused"))
+        return d.isStopped ? 6 : 5;
+    if (d.status == QLatin1String("insufficient"))
+        return 4;
+    if (d.status == QLatin1String("error"))
+        return 8;
+    return d.transferringSrcCount > 0 ? 2 : 3;
 }
 
 } // namespace eMule

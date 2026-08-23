@@ -311,8 +311,10 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     if (findByConnIP(ip, tcpPort))
         return false;
 
-    // Create a new client for the incoming buddy
-    auto* client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+    // Create a new client for the incoming buddy. Same reason as requestBuddy() for putting
+    // the IP in the userId slot: an IncomingBuddy that we have to dial back must not look
+    // Low-ID to tryToConnect().
+    auto* client = new UpDownClient(tcpPort, ip, 0, 0, nullptr);
     client->setConnectAddress(Address::fromHostOrder(ip));
     client->setKadPort(udpPort);
     client->setUserHash(clientID);
@@ -321,7 +323,10 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
 
     addClient(client);
 
-    m_buddyStatus = BuddyStatus::Connecting;
+    // No status change: MFC leaves m_nBuddyStatus alone here (srchybrid/ClientList.cpp:735-746)
+    // and lets the client become ConnectedBuddy when its connection completes. Claiming
+    // Connecting for an inbound request would block a genuine outgoing attempt behind a peer
+    // that may never connect.
     return true;
 }
 
@@ -333,21 +338,38 @@ void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     if (m_buddyStatus == BuddyStatus::Connected)
         return;
 
-    // Find existing client by IP+port, or create a new one
+    // Find existing client by IP+port, or create a new one.
+    //
+    // The contact's IP goes in the ctor's userId slot (host order, so ed2kID stays false),
+    // exactly as MFC does — `new CUpDownClient(NULL, contact->GetTCPPort(),
+    // contact->GetIPAddress(), 0, 0, false)` (srchybrid/ClientList.cpp:706). Passing 0 left
+    // m_userIDHybrid at 0, i.e. hasLowID() true; QueuedBuddy is not one of tryToConnect()'s
+    // Low-ID bypasses, so the dial fell through to the callback branches, found no route and
+    // returned false — an outgoing buddy could never be established at all, and
+    // m_buddyStatus stuck at Connecting forever. A Kad contact always has a routable IP.
     auto* client = findByConnIP(ip, tcpPort);
     if (!client) {
-        client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+        client = new UpDownClient(tcpPort, ip, 0, 0, nullptr);
         client->setConnectAddress(Address::fromHostOrder(ip));
         addClient(client);
     }
+
+    // Already busy with this client in some other Kad exchange — don't disturb it.
+    // MFC srchybrid/ClientList.cpp:709-710.
+    if (client->kadState() != KadState::None && client->kadState() != KadState::QueuedBuddy)
+        return;
 
     client->setKadPort(udpPort);
     client->setUserHash(clientID);
     client->setKadState(KadState::QueuedBuddy);
     client->setConnectOptions(connectOptions, true, false);
-    client->tryToConnect();
 
-    m_buddyStatus = BuddyStatus::Connecting;
+    // Deliberately no dial and no status change here. processKadList() owns the
+    // QueuedBuddy -> ConnectingBuddy transition, exactly as MFC's ProcessKadList does
+    // (srchybrid/ClientList.cpp:530-538) — which is what enforces "one buddy attempt at a
+    // time" and what lets a second candidate be tried when the first fails. Dialling
+    // inline, as this used to, both bypassed that gate and marked us Connecting even when
+    // the dial had failed, so m_buddyStatus could stick at Connecting forever.
 }
 
 // ===========================================================================
@@ -360,8 +382,12 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
     if (findByIP(contact.address().toNetworkUint32()))
         return false;
 
-    // Create a temporary client for the TCP connection
-    auto* client = new UpDownClient(contact.getTCPPort(), 0, 0, 0, nullptr);
+    // Create a temporary client for the TCP connection. The contact's IP goes in the userId
+    // slot so hasLowID() reports the truth; QueuedFwCheckUDP is separately allowed past
+    // tryToConnect()'s Low-ID gate, but relying on that bypass to reach a plainly routable
+    // peer is what hid the identical bug in requestBuddy().
+    auto* client = new UpDownClient(contact.getTCPPort(),
+                                    contact.address().toUint32(), 0, 0, nullptr);
     client->setConnectAddress(contact.address());
     client->setKadVersion(contact.getVersion());
     client->setKadPort(contact.getUDPPort());
@@ -382,8 +408,9 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
     if (!isnulmd4(hashBytes))
         client->setUserHash(hashBytes);
 
+    // processKadList() drives the QueuedFwCheckUDP dial from here, matching MFC
+    // (srchybrid/ClientList.cpp:780-781, which only adds to the Kad list).
     addClient(client);
-    client->tryToConnect();
     return true;
 }
 
@@ -429,6 +456,7 @@ void ClientList::process()
     cleanUpBannedList();
     cleanUpTrackedList();
     processConnectingClients();
+    processKadList();
 
     // Remove clients that serve no purpose — matches MFC CClientList::Process()
     for (auto it = m_items.begin(); it != m_items.end(); ) {
@@ -459,6 +487,116 @@ void ClientList::process()
         emit clientRemoved(client);
         client->deleteLater();
     }
+}
+
+// ===========================================================================
+// processKadList — MFC CClientList::Process, Kad half (srchybrid/ClientList.cpp:470-620)
+// ===========================================================================
+
+void ClientList::processKadList()
+{
+    auto* kadInst = kad::Kademlia::instance();
+    const bool kadRunning = kadInst && kadInst->isRunning();
+
+    // What this pass observed, so buddy loss is detected from the list itself rather than
+    // from whichever call site happened to clear m_buddy last.
+    BuddyStatus seen = BuddyStatus::None;
+
+    // A copy: the transitions below dial, disconnect and re-enter the queue, any of which
+    // can add or remove clients. MFC iterates a dedicated m_KadList; here the Kad clients
+    // are simply the ones carrying a state, which keeps a second list from drifting out of
+    // sync with m_items.
+    const std::vector<UpDownClient*> snapshot(m_items.begin(), m_items.end());
+
+    for (auto* client : snapshot) {
+        if (!isValidClient(client))
+            continue;
+        if (client->kadState() == KadState::None)
+            continue;
+
+        // Kad stopped — drop every pending Kad interaction. MFC ClientList.cpp:481-485.
+        if (!kadRunning) {
+            client->setKadState(KadState::None);
+            continue;
+        }
+
+        switch (client->kadState()) {
+        case KadState::QueuedFwCheck:
+        case KadState::QueuedFwCheckUDP:
+            // Somebody asked us to verify their TCP port. Direct dial only — a callback
+            // would prove nothing about the port under test.
+            client->tryToConnect(true, /*noCallbacks*/ true);
+            break;
+
+        case KadState::ConnectingFwCheck:
+        case KadState::ConnectedFwCheck:
+        case KadState::FwCheckUDP:
+        case KadState::ConnectingFwCheckUDP:
+            // Waiting on a result. The ConnectedFwCheck acknowledgement is sent from
+            // connectionEstablished() the moment the socket comes up, so unlike MFC there
+            // is nothing to do for it here.
+            break;
+
+        case KadState::IncomingBuddy:
+            // A firewalled peer wants us as its buddy. If we already have one, drop it;
+            // otherwise it becomes ConnectedBuddy when its connection completes.
+            if (m_buddyStatus == BuddyStatus::Connected)
+                client->setKadState(KadState::None);
+            break;
+
+        case KadState::QueuedBuddy:
+            // We are firewalled and want this peer as our buddy — but only one attempt at a
+            // time, so a second candidate waits until the first fails.
+            if (m_buddyStatus == BuddyStatus::None) {
+                seen = BuddyStatus::Connecting;
+                m_buddyStatus = BuddyStatus::Connecting;
+                client->setKadState(KadState::ConnectingBuddy);
+                client->tryToConnect(true, /*noCallbacks*/ true);
+            } else if (m_buddyStatus == BuddyStatus::Connected) {
+                client->setKadState(KadState::None);
+            }
+            break;
+
+        case KadState::ConnectingBuddy:
+            if (m_buddyStatus == BuddyStatus::Connected)
+                client->setKadState(KadState::None);
+            else
+                seen = BuddyStatus::Connecting;
+            break;
+
+        case KadState::ConnectedBuddy:
+            seen = BuddyStatus::Connected;
+            if (m_buddyStatus != BuddyStatus::Connected) {
+                m_buddy = client;
+                m_buddyStatus = BuddyStatus::Connected;
+            }
+            // The keep-alive. sendBuddyPingPong() is the schedule check its own comment says
+            // "the caller ClientList::processKadList sends the actual OP_BUDDYPING" — this
+            // is that caller, which until now did not exist, leaving an established buddy
+            // link with nothing holding it open. MFC ClientList.cpp:564-569.
+            if (m_buddy == client && theApp.isFirewalled() && client->sendBuddyPingPong()) {
+                auto packet = std::make_unique<Packet>(OP_BUDDYPING, 0);
+                packet->prot = OP_EMULEPROT;
+                client->sendPacket(std::move(packet));
+                client->setLastBuddyPingPongTime();
+            }
+            break;
+
+        default:
+            client->setKadState(KadState::None);
+            break;
+        }
+    }
+
+    // Never had a buddy, or just lost one. setBuddy() re-arms the Kad buddy search.
+    if (seen == BuddyStatus::None && (m_buddyStatus != BuddyStatus::None || m_buddy))
+        setBuddy(nullptr, BuddyStatus::None);
+
+    // A buddy relays callbacks for firewalled peers, which only makes sense while it is
+    // itself firewalled — a peer that opened its port no longer needs, or is, a relay.
+    // MFC srchybrid/ClientList.cpp:614-617.
+    if (m_buddy && !m_buddy->hasLowID())
+        m_buddy->setKadState(KadState::None);
 }
 
 // ===========================================================================
@@ -618,6 +756,28 @@ int ClientList::trackedCount() const
 void ClientList::removeAllTrackedClients()
 {
     m_trackedClients.clear();
+}
+
+// ===========================================================================
+// Direct UDP callback rate limit — MFC ClientList.cpp:904-921
+// ===========================================================================
+
+void ClientList::addTrackCallbackRequests(const Address& addr)
+{
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    m_directCallbackRequests[addr] = curTick;
+
+    std::erase_if(m_directCallbackRequests, [curTick](const auto& entry) {
+        return curTick >= entry.second + SEC2MS(180);
+    });
+}
+
+bool ClientList::allowCallbackRequest(const Address& addr) const
+{
+    const auto it = m_directCallbackRequests.find(addr);
+    if (it == m_directCallbackRequests.end())
+        return true;
+    return static_cast<uint32>(getTickCount()) >= it->second + SEC2MS(180);
 }
 
 // ===========================================================================

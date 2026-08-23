@@ -5,6 +5,7 @@
 #include "controls/ClientListModel.h"
 
 #include "client/ClientStateDefs.h"
+#include "prefs/Preferences.h"
 
 #include <QColor>
 #include <QIcon>
@@ -266,7 +267,13 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         case 0: return c.userName;
         case 1: return c.fileName;
         case 2: return formatSpeed(c.upDatarate);
-        case 3: return formatSize(c.transferredUp);
+        // Session, not lifetime: MFC's UploadListCtrl.cpp:200-203 shows GetSessionUp(), and
+        // in advanced mode appends the file payload alone — the gap between the two is the
+        // ed2k + in-packet framing this slot has paid for.
+        case 3: return thePrefs.showExtControls()
+                     ? QStringLiteral("%1 (%2)").arg(formatSize(c.sessionUp),
+                                                     formatSize(c.queueSessionPayloadUp))
+                     : formatSize(c.sessionUp);
         case 4: return formatWaitTime(c.waitStartTime);
         case 5: return c.uploadStartDelay > 0 ? formatDuration(c.uploadStartDelay) : QString{};
         case 6: return c.uploadState;
@@ -330,7 +337,7 @@ QVariant ClientListModel::sortData(const ClientRow& c, int column) const
         case 0: return c.userName;
         case 1: return c.fileName;
         case 2: return QVariant::fromValue(c.upDatarate);
-        case 3: return QVariant::fromValue(c.transferredUp);
+        case 3: return QVariant::fromValue(c.sessionUp);
         case 4: return QVariant::fromValue(c.waitStartTime);
         case 5: return QVariant::fromValue(c.uploadStartDelay);
         case 6: return c.uploadState;

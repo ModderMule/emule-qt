@@ -47,7 +47,38 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
     if (theApp.sharedFileList && !theApp.sharedFileList->getFileByID(m_reqUpFileId.data()))
         return 0;
 
-    if (m_uploadState == UploadState::Banned)
+    // The identity checks below key off MFC's GetIP(), which is m_dwUserIP — the address we
+    // actually saw this peer at, 0 until we have had a connection (srchybrid/UpdownClient.h:457).
+    // That is m_userAddress here, not m_connectAddress: the latter can hold an IPv6 we merely
+    // intend to dial, and toNetworkUint32() on it is meaningless.
+    const uint32 identIP = m_userAddress.toNetworkUint32();
+
+    // A peer whose secure identity does not match the address it is talking from. MFC
+    // srchybrid/UploadClient.cpp:196-197 — "bad clients", scored out of the queue entirely.
+    if (m_credits->currentIdentState(identIP) == IdentState::IdBadGuy)
+        return 0;
+
+    // The friend slot: flat, and ahead of the ban check exactly as MFC has it
+    // (srchybrid/UploadClient.cpp:199-200), so a friend we granted the slot to keeps it even
+    // while banned — the grant is a deliberate manual act and outranks the automatic gates.
+    //
+    // All three conjuncts are MFC's, and all three are load-bearing here. friendPtr()
+    // validates against the friend list, so a slot left over from a removed friend or from a
+    // client whose user hash changed does not count; friendSlot() carries MFC's ident gate;
+    // and !hasLowID() keeps the priority slot away from a peer we cannot dial anyway.
+    if (friendPtr() && friendSlot() && !hasLowID())
+        return kFriendSlotScore;
+
+    // MFC srchybrid/UploadClient.cpp:202. isBanned() rather than the bare upload state: it
+    // also covers an IP ban held by ClientList, which is the test checkWaitingListAdmission()
+    // already applies when the peer asks. gplEvildoer() gets its only reader here, as in MFC.
+    if (isBanned() || m_gplEvildoer)
+        return 0;
+
+    // MFC srchybrid/UploadClient.cpp:205-206. Only for a system-value query — a caller
+    // ranking the waiting list must not zero a Low-ID peer, or it could never climb back to
+    // the top when it reconnects. See the note on the declaration.
+    if (sysValue && !isReachableForSlot())
         return 0;
 
     // Base value — MFC srchybrid/UploadClient.cpp:208-227, kept in milliseconds where MFC
@@ -79,25 +110,36 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
         score += (curTick >= m_uploadTime + MIN2MS(15)) ? MIN2MS(15) : MIN2MS(30);
     }
 
-    // Apply the credit ratio always, the file priority only for a full score — MFC
-    // srchybrid/UploadClient.cpp:224-227. Skipping the priority is what makes the
-    // onlyBaseValue figure a different number from the queue score rather than a duplicate.
-    if (onlyBaseValue) {
-        score *= static_cast<double>(m_credits->scoreRatio(m_connectAddress.toNetworkUint32()));
-    } else {
-        // getCombinedFilePrioAndCredit() is scoreRatio * filePrioAsNumber carrying MFC's 10x
-        // scale factor, which exists only so the soft queue-limit comparison in UploadQueue
-        // works on comfortable magnitudes. This score is in milliseconds where MFC's is in
-        // seconds (MFC uses GetFilePrioAsNumber()/10.0f), so undo the factor here and keep
-        // every score value exactly as it was before the helper was aligned with MFC.
-        score *= static_cast<double>(getCombinedFilePrioAndCredit()) * 0.1;
-    }
+    // The credit ratio, gated on the preference — MFC srchybrid/UploadClient.cpp:224-225.
+    // This is the preference's only consumer in MFC too, so without the gate the Options
+    // checkbox "Use credit system (reward uploaders)" changes nothing at all.
+    if (thePrefs.useCreditSystem())
+        score *= static_cast<double>(m_credits->scoreRatio(identIP));
+
+    // The file priority, for a full score only — MFC srchybrid/UploadClient.cpp:226-227.
+    // Skipping it is what makes the onlyBaseValue figure a different number from the queue
+    // score rather than a duplicate of it.
+    //
+    // Not routed through getCombinedFilePrioAndCredit(): that helper carries MFC's extra 10x
+    // for the soft queue-limit comparison, and it bundles the ratio, which now has to be
+    // gated separately. Both factors are therefore applied here in MFC's own shape and
+    // magnitude, so a score printed by this port matches GetScore once the millisecond base
+    // is divided out.
+    if (!onlyBaseValue)
+        score *= static_cast<double>(filePrioAsNumber()) * 0.1;
+
+    // Ancient eMules are worth half. MFC srchybrid/UploadClient.cpp:230-231.
+    //
+    // Transcribed from m_emuleVersion rather than through isEmuleClient(): MFC's
+    // IsEmuleClient() is literally `m_byEmuleVersion != 0` (srchybrid/UpdownClient.h:133),
+    // whereas this port redefined it as `m_emuleProtocol || hashType() == eMule`, so reusing
+    // our spelling would change which clients are penalised. ClientSoftware's values are
+    // EClientSoftware's verbatim, so `< 10` still means "eMule or an eMule-compatible" and
+    // excludes the default Unknown.
+    if ((m_emuleVersion != 0 || static_cast<uint8>(m_clientSoft) < 10) && m_emuleVersion <= 0x19)
+        score *= 0.5;
 
     if (!onlyBaseValue && !sysValue) {
-        // Friend slot bonus
-        if (m_friendSlot)
-            score *= 2000.0;
-
         // A peer we are also downloading from gets a one-unit nudge — enough to break a tie
         // in its favour and nothing more. Deliberately kept, and deliberately not MFC:
         // neither eMule nor MorphXT has this term, and the test really is the *download*
@@ -108,7 +150,8 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
     }
 
     // No clamp. See the note on the declaration: capping at UINT32_MAX collapsed every
-    // long-waiting client into a tie, and a friend slot reached the cap in twelve seconds.
+    // client past a few hours of waiting into a tie, and slot selection silently degraded
+    // to insertion order.
     return static_cast<uint64>(score);
 }
 
@@ -124,7 +167,7 @@ float UpDownClient::getCombinedFilePrioAndCredit() const
     if (!m_credits)
         return 0.0f;
 
-    return 10.0f * m_credits->scoreRatio(m_connectAddress.toNetworkUint32())
+    return 10.0f * m_credits->scoreRatio(m_userAddress.toNetworkUint32())
                  * static_cast<float>(filePrioAsNumber());
 }
 
@@ -290,19 +333,53 @@ void UpDownClient::updateUploadingStatisticsData()
     if (m_socket) {
         sentBytesCompleteFile = static_cast<uint32>(m_socket->getSentBytesCompleteFileSinceLastCallAndReset());
         sentBytesPartFile = static_cast<uint32>(m_socket->getSentBytesPartFileSinceLastCallAndReset());
-        const auto sentPayload = sentBytesCompleteFile + sentBytesPartFile;
 
-        m_transferredUp += sentPayload;
+        // Two different quantities, and MFC keeps them apart (srchybrid/UploadClient.cpp:441-451).
+        // sentWire is what actually went out on the wire — file payload plus the 6-byte ed2k
+        // header and the 24/28/32-byte in-packet header of every data packet — and it feeds
+        // the transfer totals and the credit system. sentPayload is the file data alone, and
+        // it feeds the per-slot session counter that gates slot rotation, so that a peer is
+        // not rotated out early on framing overhead it never asked for.
+        const uint32 sentWire = sentBytesCompleteFile + sentBytesPartFile;
+        const uint32 sentPayload = m_socket->getSentPayloadSinceLastCall(true);
+
+        m_transferredUp += sentWire;
         m_curQueueSessionPayloadUp += sentPayload;
 
+        // Reward this peer for what we just gave it — MFC srchybrid/UploadClient.cpp:442.
+        // Keyed on m_userAddress (MFC's GetIP()), matching the ident gate in score().
+        if (m_credits && sentWire > 0)
+            m_credits->addUploaded(sentWire, m_userAddress.toNetworkUint32());
+
+        // Per-file "Transferred" — MFC srchybrid/UploadClient.cpp:447-450. Looked up by the
+        // requested file ID rather than through the cached m_uploadFile, because a file switch
+        // can leave data for the previous file still in the send queue; MFC accepts the same
+        // rare misattribution rather than paying for exact tracking.
+        if (sentPayload > 0 && theApp.sharedFileList) {
+            if (KnownFile* upFile = theApp.sharedFileList->getFileByID(m_reqUpFileId.data()))
+                upFile->statistic.addTransferred(sentPayload);
+        }
+
         // Per-client/port/source breakdown tracking
-        if (sentPayload > 0 && theApp.statistics) {
+        if (sentWire > 0 && theApp.statistics) {
             if (sentBytesCompleteFile > 0)
                 theApp.statistics->addTransferData(clientSoft(), userPort(),
                                                    false, true, sentBytesCompleteFile);
             if (sentBytesPartFile > 0)
                 theApp.statistics->addTransferData(clientSoft(), userPort(),
                                                    true, true, sentBytesPartFile);
+
+            // MFC passes `IsFriend() && GetFriendSlot()` as the last argument to both
+            // Add2SessionTransferData calls above (srchybrid/UploadClient.cpp:438-439);
+            // here it is a separate counter. This is its only writer — without it
+            // sessionSentBytesToFriend, the Statistics panel figure and the
+            // cumTotalUploadedToFriend it feeds are all permanently zero, and
+            // UploadQueue's friend datarate has nothing monotonic to subtract.
+            //
+            // Takes the wire figure, because that is what the two calls above carry the
+            // friend flag alongside in MFC.
+            if (friendPtr() && friendSlot())
+                theApp.statistics->addSessionSentBytesToFriend(sentWire);
         }
     }
 
@@ -579,7 +656,9 @@ uint32 UpDownClient::waitStartTime() const
     if (!m_credits)
         return 0;
 
-    uint32 result = m_credits->secureWaitStartTime(m_connectAddress.toNetworkUint32());
+    // MFC's GetIP() — the address we have actually seen this peer at. Same choice as
+    // score()'s ident and credit-ratio lookups; see the note there.
+    uint32 result = m_credits->secureWaitStartTime(m_userAddress.toNetworkUint32());
 
     // Only reachable when two clients with an invalid secure hash are queued at once — if at
     // all — but score()'s uploading branch computes m_uploadTime - waitStartTime(), which
@@ -611,14 +690,18 @@ uint32 UpDownClient::getWaitTimeDelay() const
 
 void UpDownClient::setWaitStartTime()
 {
+    // MFC's GetIP() (srchybrid/UploadClient.cpp:679), the same key waitStartTime() reads
+    // back with. They must agree: ClientCredits treats a different IP as "the peer moved"
+    // and restarts the wait, so writing under one address and reading under another resets
+    // the queue position on every single read.
     if (m_credits)
-        m_credits->setSecWaitStartTime(m_connectAddress.toNetworkUint32());
+        m_credits->setSecWaitStartTime(m_userAddress.toNetworkUint32());
 }
 
 void UpDownClient::restoreWaitStartTime(uint32 elapsedMs)
 {
     if (m_credits)
-        m_credits->restoreWaitStartTime(m_connectAddress.toNetworkUint32(), elapsedMs);
+        m_credits->restoreWaitStartTime(m_userAddress.toNetworkUint32(), elapsedMs);
 }
 
 void UpDownClient::clearWaitStartTime()
@@ -650,6 +733,24 @@ bool UpDownClient::isUpPartAvailable(uint32 part) const
 // ===========================================================================
 // filePrioAsNumber (private)
 // ===========================================================================
+
+bool UpDownClient::friendSlot() const
+{
+    // MFC srchybrid/UploadClient.cpp:688-699. Only meaningful once crypto is up: without it
+    // there is no secure identity to fail, and every peer would look unidentified.
+    if (m_credits && theApp.clientCredits && theApp.clientCredits->cryptoAvailable()) {
+        switch (m_credits->currentIdentState(m_userAddress.toNetworkUint32())) {
+        case IdentState::IdFailed:
+        case IdentState::IdNeeded:
+        case IdentState::IdBadGuy:
+            return false;
+        default:
+            break;
+        }
+    }
+
+    return m_friendSlot;
+}
 
 int UpDownClient::filePrioAsNumber() const
 {

@@ -33,16 +33,27 @@ class FileMoveThread;
 // Enums
 // ---------------------------------------------------------------------------
 
+/// Values match MFC's EPartFileStatus exactly (srchybrid/PartFile.h:21-33).
+///
+/// Two of these are never *stored*: Paused and Insufficient are synthesised at read
+/// time by status(), because pause is an overlay on the real state rather than a
+/// state of its own — see the comment on status(). The stored set is
+/// {Ready, Empty, WaitingForHash, Hashing, Error, Completing, Complete}.
+///
+/// Ready and Empty are not "active" and "idle": Empty means nothing has been verified
+/// complete yet, so there is nothing to offer, and Ready means at least one part has
+/// verified, so the file is shareable. That is the shareability latch.
 enum class PartFileStatus : uint8 {
-    Ready      = 0,
-    Empty      = 1,
-    Hashing    = 3,
-    Error      = 4,
-    Insufficient = 5,
-    Unknown    = 6,
-    Paused     = 7,
-    Completing = 8,
-    Complete   = 9
+    Ready           = 0,
+    Empty           = 1,
+    WaitingForHash  = 2,
+    Hashing         = 3,
+    Error           = 4,
+    Insufficient    = 5,
+    Unknown         = 6,
+    Paused          = 7,
+    Completing      = 8,
+    Complete        = 9
 };
 
 enum class PartFileFormat : uint8 {
@@ -143,6 +154,24 @@ public:
     // -- Identity -------------------------------------------------------------
 
     [[nodiscard]] bool isPartFile() const override;
+
+    /// May this part file be offered to servers and published to Kad yet?
+    ///
+    /// MFC's gate, spelled out: the full MD4 hashset must be known and at least one
+    /// part must be verifiably complete (srchybrid/PartFile.cpp:4507-4516,
+    /// CPartFile::AddToSharedFiles). Without the hashset we cannot prove any part we
+    /// hand out is the file we claim it is; without a complete part there is nothing
+    /// to hand out.
+    ///
+    /// This is the predicate; PartFileStatus carries the resulting latch. Once it
+    /// holds, addToSharedFiles() promotes Empty -> Ready, and Ready is thereafter the
+    /// answer to "is this shared" — exactly as in MFC.
+    [[nodiscard]] bool canBeShared() const;
+
+    /// Register with SharedFileList once canBeShared() holds. Idempotent — safeAddKFile()
+    /// dedups, and every caller sits in a loop that re-runs.
+    void addToSharedFiles();
+
     [[nodiscard]] const QString& partMetFileName() const { return m_partMetFilename; }
     [[nodiscard]] const QString& fullName() const { return m_fullName; }
     void setFullName(const QString& name) { m_fullName = name; }
@@ -230,8 +259,35 @@ public:
 
     // -- Status machine -------------------------------------------------------
 
-    [[nodiscard]] PartFileStatus status() const { return m_status; }
+    /// The file's status, with pause applied as an overlay — MFC
+    /// CPartFile::GetStatus (srchybrid/PartFile.cpp:2152-2157).
+    ///
+    /// A paused or space-starved file reads back as Paused/Insufficient even though
+    /// the stored status still records what it really is. Pass @p ignorePause to see
+    /// through that, which is what the sharing paths do: a paused part file with
+    /// verified parts is still shared and still offered to the server.
+    [[nodiscard]] PartFileStatus status(bool ignorePause = false) const
+    {
+        if ((!m_paused && !m_insufficient)
+            || m_status == PartFileStatus::Error
+            || m_status == PartFileStatus::Completing
+            || m_status == PartFileStatus::Complete
+            || ignorePause)
+            return m_status;
+        return m_paused ? PartFileStatus::Paused : PartFileStatus::Insufficient;
+    }
+
+    /// Set the stored status. Paused/Insufficient are rejected — they are overlays,
+    /// not stored states (MFC asserts the same in _SetStatus).
     void setStatus(PartFileStatus s);
+
+    /// Full path of the .part data file (the .part.met path minus its ".met").
+    [[nodiscard]] QString partDataPath() const;
+
+    /// Apply a completed rehash: one byte per part, 1 for verified. Rebuilds the gap
+    /// list from what is actually on disk and re-latches the status.
+    /// MFC CPartFile::PartFileHashFinished (srchybrid/PartFile.cpp:1479-1573).
+    void applyRehashResult(const QByteArray& partOk);
     [[nodiscard]] bool isStopped() const { return m_stopped; }
     [[nodiscard]] bool isPaused() const { return m_paused; }
     [[nodiscard]] bool isInsufficient() const { return m_insufficient; }
@@ -239,6 +295,9 @@ public:
     void resumeFile();
     void stopFile(bool cancel = false);
     [[nodiscard]] bool completionError() const { return m_completionError; }
+    /// The long-running operation in progress, if any. Relabels the displayed status —
+    /// "Completing (Hashing)" and so on, as MFC's getPartfileStatus does.
+    [[nodiscard]] PartFileOp fileOp() const { return m_fileOp; }
     [[nodiscard]] uint32 dlActiveTime() const { return m_dlActiveTime; }
 
     // -- Priority -------------------------------------------------------------

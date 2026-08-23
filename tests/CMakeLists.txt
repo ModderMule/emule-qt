@@ -144,6 +144,9 @@ emule_add_test(tst_HttpCacheMultiPeer FOLDER "Protocol")
 target_compile_definitions(tst_HttpCacheMultiPeer PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
 set_tests_properties(tst_HttpCacheMultiPeer PROPERTIES TIMEOUT 180)
 emule_add_test(tst_HttpCacheCorruptBan FOLDER "Protocol")
+emule_add_test(tst_HttpCacheRelay FOLDER "Protocol")
+target_compile_definitions(tst_HttpCacheRelay PRIVATE QTEST_FUNCTION_TIMEOUT=180000)
+set_tests_properties(tst_HttpCacheRelay PROPERTIES TIMEOUT 240)
 target_compile_definitions(tst_HttpCacheCorruptBan PRIVATE QTEST_FUNCTION_TIMEOUT=180000)
 set_tests_properties(tst_HttpCacheCorruptBan PROPERTIES TIMEOUT 240)
 emule_add_test(tst_HttpCacheConfigLink FOLDER "Protocol")
@@ -220,6 +223,7 @@ emule_add_test(tst_SharedFileList      FOLDER "Files")
 emule_add_test(tst_SharedFileLargeSet  FOLDER "Files")
 target_compile_definitions(tst_SharedFileLargeSet PRIVATE QTEST_FUNCTION_TIMEOUT=300000)
 set_tests_properties(tst_SharedFileLargeSet PROPERTIES TIMEOUT 300)
+emule_add_test(tst_PartFileSharing  FOLDER "Files")
 emule_add_test(tst_PartFileWriteThread FOLDER "Files")
 emule_add_test(tst_PartFileConvert     FOLDER "Files")
 emule_add_test(tst_ArchiveReader       FOLDER "Archive")
@@ -326,6 +330,18 @@ target_include_directories(tst_PanelPoller PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_PanelPoller PRIVATE Qt6::Widgets)
 
+# Downloads Status column — the daemon sends the raw enum token ("ready", "empty") and
+# the model turns it into MFC's wording. Pure string/int mapping, so the real source
+# compiles standalone against the stub pch.
+emule_add_test(tst_DownloadStatusText FOLDER "Gui"
+    SOURCES tst_DownloadStatusText.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp")
+target_include_directories(tst_DownloadStatusText PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_DownloadStatusText PRIVATE Qt6::Widgets)
+
 # Tray icon download meter — pure painting, so the real source compiles standalone.
 emule_add_test(tst_TrayMeterIcon FOLDER "Gui"
     SOURCES tst_TrayMeterIcon.cpp
@@ -358,11 +374,16 @@ if(EMULE_LIVE_TESTS)
     emule_add_test(tst_KadLiveNetwork FOLDER "LiveNetwork")
     set_tests_properties(tst_KadLiveNetwork PROPERTIES LABELS "live" TIMEOUT 180)
 
-    # Needs a running cache server; skips itself when
-    # EMULE_HTTPCACHE_URL / EMULE_HTTPCACHE_KEY are unset.
+    # Runs every case once per cache server it can reach, and skips the rest:
+    # EMULE_HTTPCACHE_URL / EMULE_HTTPCACHE_KEY name one that is already running,
+    # HTTPCACHE_GO_CMD a binary the test starts itself. Unset, it skips entirely.
+    #
+    # Both backends together take ~1.2s against localhost. The budget is sized for
+    # an EMULE_HTTPCACHE_URL pointing somewhere real instead: 60s per case still
+    # moves the 9.28 MB part over a link an order of magnitude slower than a LAN.
     emule_add_test(tst_HttpCacheLive FOLDER "LiveNetwork")
-    target_compile_definitions(tst_HttpCacheLive PRIVATE QTEST_FUNCTION_TIMEOUT=180000)
-    set_tests_properties(tst_HttpCacheLive PROPERTIES LABELS "live" TIMEOUT 180)
+    target_compile_definitions(tst_HttpCacheLive PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
+    set_tests_properties(tst_HttpCacheLive PROPERTIES LABELS "live" TIMEOUT 120)
 
     emule_add_test(tst_FileDownloadLive FOLDER "LiveNetwork")
     target_compile_definitions(tst_FileDownloadLive PRIVATE QTEST_FUNCTION_TIMEOUT=960000)

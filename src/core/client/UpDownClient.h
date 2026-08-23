@@ -137,6 +137,24 @@ public:
     void setUserIDHybrid(uint32 id) { m_userIDHybrid = id; }
     [[nodiscard]] bool hasLowID() const;
 
+    /// True when we can hand this peer an upload slot right now: it is High-ID (so we can
+    /// dial it), it is reachable over IPv6 regardless of its IPv4 Low-ID, or it already
+    /// holds a live connection.
+    ///
+    /// A Low-ID peer with no socket is reachable only through a server callback, a Kad
+    /// callback or a buddy relay — none of which the slot allocator can drive
+    /// synchronously, which is why MFC scores such a peer 0 rather than skipping it.
+    /// MFC srchybrid/UploadQueue.cpp:131 and UploadClient.cpp:205.
+    ///
+    /// The IPv6 disjunct is ours: tryToConnect() dials a v6-reachable peer whose IPv4 side
+    /// is Low-ID (see the address choice at the top of that function), so treating it as
+    /// unreachable here would under-rate exactly the peers we *can* reach.
+    ///
+    /// Deliberately not the same test as QueuedClientRecord::isRestorable(), which asks
+    /// whether a *persisted* peer has a server or Kad route worth reloading, nor as
+    /// tryToConnect()'s Kad firewall-check bypass, which is about probes we initiate.
+    [[nodiscard]] bool isReachableForSlot() const;
+
     [[nodiscard]] uint16 userPort() const { return m_userPort; }
     void setUserPort(uint16 port) { m_userPort = port; }
 
@@ -162,7 +180,17 @@ public:
     [[nodiscard]] ClientCredits* credits() const { return m_credits; }
     void setCredits(ClientCredits* c) { m_credits = c; }
 
-    [[nodiscard]] Friend* friendPtr() const { return m_friend; }
+    /// The friend entry this client is, or nullptr — the port's "is this peer a friend?"
+    /// test, since there is no isFriend() (MFC's is `m_Friend != NULL`,
+    /// srchybrid/UpdownClient.h:172).
+    ///
+    /// Validated against the friend list before being handed out, as MFC's GetFriend() does
+    /// (srchybrid/BaseClient.cpp:2814-2819). Friend::setLinkedClient() keeps the pointer
+    /// honest, so this is the second line of defence rather than the first.
+    [[nodiscard]] Friend* friendPtr() const;
+
+    /// Raw, unvalidated. Only Friend::setLinkedClient() and the destructor should call this;
+    /// everything else goes through friendPtr().
     void setFriendPtr(Friend* f) { m_friend = f; }
 
     // -- State machine getters / setters ------------------------------------
@@ -243,6 +271,11 @@ public:
     {
         return m_directUDPCallback && hasValidHash() && m_kadPort != 0;
     }
+    /// MFC CUpDownClient::SetDirectUDPCallbackSupport (used at
+    /// srchybrid/ClientUDPSocket.cpp:391): a peer that just reached us *by* a direct
+    /// callback cannot itself be direct-callbackable, so clear the flag rather than let a
+    /// later dial attempt bounce off a route we know does not exist.
+    void setDirectUDPCallbackSupport(bool v) { m_directUDPCallback = v; }
     [[nodiscard]] bool unicodeSupport() const { return m_unicodeSupport; }
 
     [[nodiscard]] uint8 dataCompVer() const { return m_dataCompVer; }
@@ -289,17 +322,52 @@ public:
 
     // -- Session tracking ---------------------------------------------------
 
-    [[nodiscard]] uint64 sessionUp() const { return m_curSessionUp; }
-    void resetSessionUp() { m_curSessionUp = 0; }
+    // m_curSessionUp / m_curSessionDown are BASELINE MARKERS, not counters: each holds the
+    // running total as it stood when the session began, and the session figure is the
+    // difference. MFC srchybrid/UpdownClient.h:254-263.
+    //
+    // Reading the marker back directly is the trap this port fell into — it compiles, it
+    // looks like a counter, and it leaves sessionUp() at zero forever because nothing ever
+    // writes m_curSessionUp. Anything that needs a running total wants transferredUp() /
+    // transferredDown().
 
-    [[nodiscard]] uint64 sessionDown() const { return m_curSessionDown; }
-    void resetSessionDown() { m_curSessionDown = 0; }
+    [[nodiscard]] uint64 sessionUp() const { return m_transferredUp - m_curSessionUp; }
+    void resetSessionUp()
+    {
+        m_curSessionUp = m_transferredUp;
+        m_addedPayloadQueueSession = 0;
+        m_curQueueSessionPayloadUp = 0;
+    }
+
+    [[nodiscard]] uint64 sessionDown() const { return m_transferredDown - m_curSessionDown; }
+    void resetSessionDown()
+    {
+        m_curSessionDown = m_transferredDown;
+        m_curSessionPayloadDown = 0;
+    }
 
     [[nodiscard]] uint64 sessionPayloadDown() const { return m_curSessionPayloadDown; }
 
     [[nodiscard]] uint64 queueSessionPayloadUp() const { return m_curQueueSessionPayloadUp; }
     void addQueueSessionPayloadUp(uint64 bytes) { m_curQueueSessionPayloadUp += bytes; }
     void resetQueueSessionPayloadUp() { m_curQueueSessionPayloadUp = 0; }
+
+    /// Payload handed to the send buffers this slot session — MFC's
+    /// GetQueueSessionUploadAdded() (srchybrid/UpdownClient.h:265).
+    [[nodiscard]] uint64 queueSessionUploadAdded() const { return m_addedPayloadQueueSession; }
+    void addQueueSessionUploadAdded(uint64 bytes) { m_addedPayloadQueueSession += bytes; }
+
+    /// Payload sitting in the send buffers: queued minus actually sent. MFC subtracts the two
+    /// unguarded (srchybrid/UpdownClient.h:266); the floor is kept here because the two
+    /// counters advance on different ticks — the socket can report a flush before the queueing
+    /// side has been credited — and an underflowed uint64 would read as multiple exabytes
+    /// buffered, inverting every caller's test.
+    [[nodiscard]] uint64 payloadInBuffer() const
+    {
+        return m_addedPayloadQueueSession > m_curQueueSessionPayloadUp
+             ? m_addedPayloadQueueSession - m_curQueueSessionPayloadUp
+             : 0;
+    }
 
     [[nodiscard]] uint64 transferredUp() const { return m_transferredUp; }
     [[nodiscard]] uint64 transferredDown() const { return m_transferredDown; }
@@ -372,7 +440,11 @@ public:
 
     // -- Misc accessors -----------------------------------------------------
 
-    [[nodiscard]] bool friendSlot() const { return m_friendSlot; }
+    /// MFC CUpDownClient::GetFriendSlot() (srchybrid/UploadClient.cpp:688-699) — not a plain
+    /// getter: it reports false while crypto is available and the peer's identity is failed,
+    /// needed or spoofed, so an impostor cannot keep a slot granted to the real friend.
+    /// Every consumer of the flag reads it through here.
+    [[nodiscard]] bool friendSlot() const;
     void setFriendSlot(bool v) { m_friendSlot = v; }
 
     [[nodiscard]] bool gplEvildoer() const { return m_gplEvildoer; }
@@ -479,7 +551,22 @@ public:
 
     // -- Phase 3 — connection management ------------------------------------
 
-    virtual bool tryToConnect(bool ignoreMaxCon = false);
+    /// Reach this peer: a direct TCP dial when it is reachable, otherwise a callback.
+    /// MFC CUpDownClient::TryToConnect (srchybrid/BaseClient.cpp:1238).
+    ///
+    /// @param ignoreMaxCon  push past the open-socket ceiling. MFC honours this
+    ///                      (srchybrid/BaseClient.cpp:1290) and passes it from every caller
+    ///                      that has already committed to the connection — an upload slot
+    ///                      just allocated, a Kad probe, an answered callback.
+    /// @param noCallbacks   direct TCP only; fail rather than degrade into a server or Kad
+    ///                      callback. MFC's bNoCallbacks, passed true from the Kad
+    ///                      firewall-check and buddy dials (srchybrid/ClientList.cpp:490,
+    ///                      :535), where a callback would answer a question we did not ask.
+    ///
+    /// Note there is deliberately no re-ask throttle here, unlike the download path's
+    /// askForDownload(): MFC's lives in AskForDownload and every other caller is urgent by
+    /// construction. Having it here silently refused upload-slot dials, chat, and Kad.
+    virtual bool tryToConnect(bool ignoreMaxCon = false, bool noCallbacks = false);
     virtual void connectionEstablished();
 
     /// The three post-hello actions from MFC's ConnectionEstablished
@@ -586,15 +673,31 @@ public:
 
     // -- Phase 3 — upload (UploadClient.cpp) --------------------------------
 
+    /// The score a friend holding the friend slot gets, flat — MFC returns 0x0FFFFFFF
+    /// (srchybrid/UploadClient.cpp:200) so every such client ties and outranks the queue.
+    ///
+    /// Scaled into this class's millisecond base rather than transcribed literally. MFC's
+    /// constant is unreachable *in seconds*; here an ordinary Very-High-priority client at a
+    /// 10x credit ratio passes 0x0FFFFFFF after a few hours of waiting, so the raw value
+    /// would quietly stop being the guarantee it is in MFC. The IPC layer's /1000 renders
+    /// this back as MFC's exact number in Client Details. (Spelled out rather than via
+    /// SEC2MS, which would drag utils/Opcodes.h into this very widely included header.)
+    static constexpr uint64 kFriendSlotScore = 0x0FFFFFFFull * 1000ull;
+
     /// Queue score — higher wins the next upload slot.
     ///
     /// 64-bit where MFC's is 32-bit, and deliberately so: MFC's base value is in *seconds*
     /// (srchybrid/UploadClient.cpp:225 divides by SEC2MS(1.0f)) while this one is in
     /// milliseconds, so the products run ~1000x hotter. Clamping them back into uint32 tied
-    /// every client past ~6.6 h of waiting — 12 s for a friend slot, which multiplies by
-    /// 2000 — at UINT32_MAX, and slot selection silently degraded to insertion order.
+    /// every client past ~6.6 h of waiting at UINT32_MAX, and slot selection silently
+    /// degraded to insertion order.
     ///
-    /// @param sysValue       drop a low-ID client with no connected socket to 0.
+    /// @param sysValue       drop a peer we cannot reach right now to 0 — see
+    ///                       isReachableForSlot(). Pass it when comparing against a client
+    ///                       that already holds a slot, never for plain queue ranking:
+    ///                       MFC's findBestClientInQueue() equivalent uses score(false) and
+    ///                       handles reachability itself, because a Low-ID peer must keep
+    ///                       its rank while it waits for its own reconnect.
     /// @param isDownloading  MFC's sense — this peer is downloading *from us*, so pass
     ///                       isUploadingToPeer(), never isDownloadingFromPeer(). It selects a
     ///                       base value frozen at the moment the slot went live, so a client
@@ -664,8 +767,17 @@ public:
     [[nodiscard]] uint16 availablePartCount() const;
     [[nodiscard]] bool isPartAvailable(uint32 part) const;
     void setRemoteQueueRank(uint32 rank, bool updateDisplay = false);
+    /// A TCP file re-ask we owe this peer but deliberately delayed — MFC's
+    /// m_bReaskPending. Set only by askForDownload()'s two LowID paths (it is already on
+    /// our upload queue, or neither side can call the other); consumed by
+    /// connectionEstablished() / onHandshakeCompleted(), which then send the request.
     [[nodiscard]] bool reaskPending() const { return m_reaskPending; }
     void setReaskPending(bool v) { m_reaskPending = v; }
+    /// A UDP file re-ask datagram is in flight — MFC's m_bUDPPending / UDPPacketPending().
+    /// A distinct flag from reaskPending(): sharing one made udpReaskForDownload()
+    /// early-return forever on a source that askForDownload() had merely delayed.
+    [[nodiscard]] bool udpPacketPending() const { return m_udpPending; }
+    void setUdpPacketPending(bool v) { m_udpPending = v; }
     void udpReaskACK(uint16 newQR);
     void udpReaskFNF();
     void udpReaskForDownload();
@@ -684,6 +796,9 @@ public:
                                        bool fileIsNNP = false) const;
     [[nodiscard]] uint32 timeUntilReask() const;
     [[nodiscard]] uint32 timeUntilReask(const PartFile* file) const;
+    /// Tick of the last connect attempt — MFC's GetLastTriedToConnectTime(). Seeded to
+    /// 20 minutes in the past by the constructor, so a brand-new source is dialable.
+    [[nodiscard]] uint32 lastTriedToConnect() const { return m_lastTriedToConnect; }
     [[nodiscard]] uint32 lastAskedTime(const PartFile* file = nullptr) const;
     void setLastAskedTime();
     void updateDisplayedInfo(bool force = false);
@@ -735,11 +850,7 @@ protected:
     /// Credit payload bytes that did not arrive as ed2k block packets — the HTTP
     /// paths write into the part file themselves, so processBlockPacket's own
     /// accounting never runs for them.
-    void addPayloadDown(uint64 bytes)
-    {
-        m_transferredDown += bytes;
-        m_curSessionDown += bytes;
-    }
+    void addPayloadDown(uint64 bytes);
 
 private:
     void init();

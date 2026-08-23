@@ -22,6 +22,7 @@
 #include "net/EMSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
+#include "stats/Statistics.h"
 #include "server/ServerConnect.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
@@ -52,6 +53,9 @@ uint32 uploadCapKB()
 
 UploadQueue::UploadQueue(QObject* parent)
     : QObject(parent)
+    // MFC seeds this with GetTickCount() (srchybrid/UploadQueue.cpp:72) so the very first
+    // score kick is allowed rather than deferred by 6 s.
+    , m_removedClientByScore(static_cast<uint32>(getTickCount()))
 {
 }
 
@@ -94,6 +98,14 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client,
     auto* sock = client->socket();
     for (const auto& pkt : packets) {
         if (pkt) {
+            // "Data put into upload buffers" — MFC srchybrid/UploadDiskIOThread.cpp:260-261.
+            // Paired with m_curQueueSessionPayloadUp ("data actually transmitted"), the
+            // difference is payloadInBuffer(), which is how the upload status tells a stalled
+            // slot from a transferring one. MFC's buffer-limit early return around the same
+            // counter is deliberately not ported: this disk thread is request-driven, so the
+            // peer's own block requests already bound how much is in flight.
+            client->addQueueSessionUploadAdded(pkt->statsPayload);
+
             // EMSocket takes ownership via unique_ptr; copy from shared_ptr
             sock->sendPacket(std::make_unique<Packet>(*pkt), false, pkt->statsPayload);
         }
@@ -267,9 +279,13 @@ UpDownClient* UploadQueue::findBestClientInQueue()
         // anyway, so telling it our new IPv6 costs no extra wakeup.
         cur->flushPendingIPChange();
 
+        // MFC srchybrid/UploadQueue.cpp:131, now behind the shared predicate so this site and
+        // score()'s sysValue guard cannot drift apart. The predicate adds the IPv6 case:
+        // tryToConnect() will dial a v6-reachable peer whose IPv4 side is Low-ID, so the
+        // bare hasLowID() test used to hold exactly those peers back from a slot they could
+        // have taken.
         const uint64 curScore = cur->score(false);
-        const bool connectable =
-            !cur->hasLowID() || (cur->socket() && cur->socket()->isConnected());
+        const bool connectable = cur->isReachableForSlot();
 
         if (connectable) {
             if (cur->isIPv6Connection()) {
@@ -442,19 +458,25 @@ bool UploadQueue::slotLadderAllows(int curUploadSlots, uint32 datarate) const
 // addUpNextClient — MFC CUploadQueue::AddUpNextClient
 // ===========================================================================
 
-void UploadQueue::addUpNextClient(UpDownClient* directadd)
+bool UploadQueue::addUpNextClient(UpDownClient* directadd)
 {
     UpDownClient* newClient = directadd;
     if (!newClient) {
         newClient = findBestClientInQueue();
         if (!newClient)
-            return;
+            return false;
     }
 
     removeFromWaitingQueue(newClient);
 
+    // The client that just left is very likely the one that set the cached maximum, so
+    // recompute before any checkForTimeOver() compares a slot holder against it — otherwise
+    // the first tick after every promotion judges against a score nobody on the list has.
+    // MFC srchybrid/UploadQueue.cpp:193-194.
+    updateMaxClientScore(true);
+
     if (isDownloading(newClient))
-        return;
+        return false;
 
     // Only the collection bypass in addClientToQueue() hands us a client with this flag set,
     // and it always passes it as directadd. Reaching normal slot selection with the flag on
@@ -471,15 +493,25 @@ void UploadQueue::addUpNextClient(UpDownClient* directadd)
     EMSocket* sock = newClient->getFileUploadSocket();
     if (!sock || !sock->isConnected() || !newClient->checkHandshakeFinished()) {
         newClient->setUploadState(UploadState::Connecting);
-        newClient->tryToConnect(true);
+        // MFC srchybrid/UploadQueue.cpp:210-211 bails here without inserting. Ignoring the
+        // result — which this used to — opened a slot for a client nothing had dialled: it
+        // sat in m_uploadingList with no socket until process() reaped it a tick later,
+        // counted as a failed upload, and the slot was burnt in the meantime. Now the
+        // client simply stays where removeFromWaitingQueue() left it and the slot stays
+        // free for somebody reachable.
+        if (!newClient->tryToConnect(true)) {
+            newClient->setUploadState(UploadState::None);
+            return false;
+        }
     } else {
         auto packet = std::make_unique<Packet>(OP_ACCEPTUPLOADREQ, 0);
         newClient->sendPacket(std::move(packet));
         newClient->setUploadState(UploadState::Uploading);
     }
 
+    // resetSessionUp() also zeroes the two queue-session payload counters, exactly as MFC's
+    // ResetSessionUp() does (srchybrid/UpdownClient.h:255-259).
     newClient->resetSessionUp();
-    newClient->resetQueueSessionPayloadUp();
 
     // Add to throttler
     if (m_throttler && sock)
@@ -503,6 +535,7 @@ void UploadQueue::addUpNextClient(UpDownClient* directadd)
     }
 
     emit uploadStarted(newClient);
+    return true;
 }
 
 // ===========================================================================
@@ -737,11 +770,20 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
         return true;
     }
 
-    // If queue is empty and we can accept, add directly
+    // If queue is empty and we can accept, add directly. A failed promotion falls back to
+    // the waiting list rather than dropping the client: unreachability is only a reason not
+    // to hand out a *slot*, and findBestClientInQueue() re-tests it on every pass — so the
+    // peer keeps its place and gets promoted whenever it reconnects or its route appears.
+    //
+    // setWaitStartTime() stays inside the fast path. Hoisting it would restamp the wait
+    // clock of every client that reaches this line, including one re-asking from the queue,
+    // which silently resets its queue position on every request.
+    bool promoted = false;
     if (m_waitingList.empty() && forceNewClient(true)) {
         client->setWaitStartTime();
-        addUpNextClient(client);
-    } else {
+        promoted = addUpNextClient(client);
+    }
+    if (!promoted) {
         m_waitingList.push_back(client);
         client->setUploadState(UploadState::OnUploadQueue);
         client->sendRankingInfo();
@@ -890,11 +932,79 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
         return true;
     }
 
-    // Session max transfer check
-    if (client->queueSessionPayloadUp() > SESSIONMAXTRANS && !forceNewClient())
+    // MFC srchybrid/UploadQueue.cpp:809-836. The two limits are alternatives, not additions:
+    // with transferFullChunks() on a session is bounded by how much it has *sent*, and with
+    // it off by how long it has *held* the slot plus how well it still scores. Only the
+    // first half was ported before, and ungated, so the time and score limits never applied.
+    if (thePrefs.transferFullChunks()) {
+        // Let the client have a fixed amount per session — but keep going if nobody else
+        // needs the slot.
+        if (client->queueSessionPayloadUp() > SESSIONMAXTRANS && !forceNewClient()) {
+            if (thePrefs.logUlDlEvents()) {
+                logDebug(QStringLiteral("%1: upload session ended — max transferred amount")
+                             .arg(client->userName()));
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // Try to keep clients from downloading forever — again, only if the slot is wanted.
+    if (client->getUpStartTimeDelay() > SESSIONMAXTIME && !forceNewClient()) {
+        if (thePrefs.logUlDlEvents()) {
+            logDebug(QStringLiteral("%1: upload session ended — max time %2 min")
+                         .arg(client->userName())
+                         .arg(SESSIONMAXTIME / MIN2MS(1)));
+        }
         return true;
+    }
+
+    // Somebody waiting outscores the client holding this slot. score(true, true) is MFC's
+    // GetScore(sysvalue, isdownloading): the system value zeroes a peer we cannot reach, and
+    // the downloading flag freezes this client's base at the moment its slot went live, so a
+    // long-running upload cannot outgrow the queue behind it.
+    if (client->score(true, true) < m_maxScore) {
+        const uint32 curTick = static_cast<uint32>(getTickCount());
+        if (curTick >= m_removedClientByScore) {
+            if (thePrefs.logUlDlEvents()) {
+                logDebug(QStringLiteral("%1: upload session ended — score")
+                             .arg(client->userName()));
+            }
+            // Slots open at least 1 s apart and the max score is only recomputed every 5 s,
+            // so 6 s guarantees the next kick judges against a fresh figure instead of
+            // dropping the whole uploading list against one stale one.
+            // MFC srchybrid/UploadQueue.cpp:829-834.
+            m_removedClientByScore = curTick + SEC2MS(6);
+            return true;
+        }
+    }
 
     return false;
+}
+
+// ===========================================================================
+// updateMaxClientScore — MFC CUploadQueue::UpdateMaxClientScore (UploadQueue.cpp:781)
+// ===========================================================================
+
+void UploadQueue::updateMaxClientScore(bool force)
+{
+    // Only the score kick consumes this, and that branch is unreachable while full-chunk
+    // transfers are on — so don't sweep the waiting list every 5 s for nothing. MFC gates
+    // both of its call sites the same way (srchybrid/UploadQueue.cpp:193, Emule.cpp:992).
+    if (thePrefs.transferFullChunks())
+        return;
+
+    const uint32 curTick = static_cast<uint32>(getTickCount());
+    if (!force && m_lastCalculatedMaxScore != 0 && curTick < m_lastCalculatedMaxScore + SEC2MS(5))
+        return;
+    m_lastCalculatedMaxScore = curTick;
+
+    m_maxScore = 0;
+    for (const auto* cur : m_waitingList) {
+        const uint64 score = cur->score(true, false);
+        if (score > m_maxScore)
+            m_maxScore = score;
+    }
 }
 
 // ===========================================================================
@@ -968,49 +1078,51 @@ void UploadQueue::process()
         }
     }
 
+    // MFC refreshes this from its 5 s application timer (srchybrid/Emule.cpp:992); this call
+    // is self-throttled to the same cadence, so driving it from the ~100 ms tick is
+    // equivalent without adding a timer of our own.
+    updateMaxClientScore();
+
     // Check if we should accept a new client
     if (forceNewClient())
         addUpNextClient();
 
-    // Process each uploading client
-    for (auto it = m_uploadingList.begin(); it != m_uploadingList.end(); ) {
-        UpDownClient* cur = *it;
+    // Process each uploading client.
+    //
+    // Iterated over a snapshot because both removal paths below go through
+    // removeFromUploadQueue(), which erases from m_uploadingList and so would invalidate an
+    // iterator into the vector. MFC gets this for free — its CList walk has already advanced
+    // past the node RemoveFromUploadQueue() unlinks (srchybrid/UploadQueue.cpp:308-361).
+    const std::vector<UpDownClient*> uploadingSnapshot = m_uploadingList;
+    for (UpDownClient* cur : uploadingSnapshot) {
+        // Skip anything an earlier iteration's removal already took out.
+        if (std::find(m_uploadingList.begin(), m_uploadingList.end(), cur) == m_uploadingList.end())
+            continue;
 
         if (!cur->socket()) {
-            // Client without socket
-            it = m_uploadingList.erase(it);
-            if (m_throttler)
-                m_throttler->removeFromStandardList(cur->getFileUploadSocket());
-            cur->setUploadState(UploadState::None);
-            ++m_failedUpCount;
-            emit uploadEnded(cur);
+            // Uploading to a client without a socket — MFC srchybrid/UploadQueue.cpp:315-318.
+            removeFromUploadQueue(cur);
             continue;
         }
 
         cur->updateUploadingStatisticsData();
 
         if (checkForTimeOver(cur)) {
-            UpDownClient* client = cur;
-            it = m_uploadingList.erase(it);
-            if (m_throttler && client->getFileUploadSocket())
-                m_throttler->removeFromStandardList(client->getFileUploadSocket());
-            if (client->sessionUp() > 0)
-                ++m_successfulUpCount;
-            client->setUploadState(UploadState::None);
-            client->sendOutOfPartReqsAndAddToWaitingQueue();
-            m_highestNumberOfFullyActivatedSlotsSinceLastCall = 0;
-            emit uploadEnded(client);
+            // "Completed transfer" — MFC srchybrid/UploadQueue.cpp:325-328.
+            //
+            // Both paths route through removeFromUploadQueue() rather than hand-rolling a
+            // partial copy of it, which is what they used to do. The copies dropped
+            // addTrackClient(), the m_totalUploadTime that averageUpTime() divides, the
+            // collection-slot and add-next-connect flags and the slot renumbering, and the
+            // no-socket one booked a failure even for a slot that had transferred fine.
+            if (removeFromUploadQueue(cur))
+                cur->sendOutOfPartReqsAndAddToWaitingQueue();
             continue;
         }
 
         // Use big send buffer for fast uploads
-        if (cur->socket()) {
-            EMSocket* sock = cur->getFileUploadSocket();
-            if (sock)
-                sock->useBigSendBuffer();
-        }
-
-        ++it;
+        if (EMSocket* sock = cur->getFileUploadSocket())
+            sock->useBigSendBuffer();
     }
 
     // Save bandwidth data for rate calculation
@@ -1022,12 +1134,17 @@ void UploadQueue::process()
         // Discard overhead stat
         m_throttler->getSentBytesOverheadSinceLastCallAndReset();
 
-        // Track friend-specific bytes by summing session bytes from friend-slot clients
-        uint64 friendBytes = 0;
-        for (const auto* client : m_uploadingList) {
-            if (client->friendSlot())
-                friendBytes += client->sessionUp();
-        }
+        // The cumulative bytes sent to friends holding the friend slot, which
+        // updateUploadingStatisticsData() feeds — MFC's theStats.sessionSentBytesToFriend
+        // (srchybrid/UploadQueue.cpp:371).
+        //
+        // It has to be a monotonic running total, because updateDatarates() derives the rate
+        // as back() - front() over this window. Summing sessionUp() across the current
+        // uploading list instead — which is what this did — is not monotonic: the sum drops
+        // the moment a friend-slot client leaves the list, the subtraction underflows uint64
+        // and the reported friend datarate becomes a garbage multi-GB/s figure.
+        const uint64 friendBytes = theApp.statistics
+                                 ? theApp.statistics->sessionSentBytesToFriend() : 0;
         m_averageFriendDRList.push_back(friendBytes);
         m_averageTickList.push_back(curTick);
 

@@ -116,6 +116,8 @@ private:
     void handleRenameSharedFile(const Ipc::IpcMessage& msg);
     void handleDeleteSharedFile(const Ipc::IpcMessage& msg);
     void handleUnshareFile(const Ipc::IpcMessage& msg);
+    void handleSetFileShared(const Ipc::IpcMessage& msg);
+    void handleBrowseDirectory(const Ipc::IpcMessage& msg);
     void handleSetDownloadCategory(const Ipc::IpcMessage& msg);
     void handleGetDownloadDetails(const Ipc::IpcMessage& msg);
     void handlePreviewDownload(const Ipc::IpcMessage& msg);

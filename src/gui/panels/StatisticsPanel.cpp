@@ -371,6 +371,10 @@ void StatisticsPanel::buildTree()
 
     m_itemDownActiveDownloads = new QTreeWidgetItem(downSession, {tr("Active Downloads: 0")});
     m_itemDownFoundSources = new QTreeWidgetItem(downSession, {tr("Found Sources: 0")});
+    // MFC hangs the per-source breakdown off "Found Sources" (down_sources[] under
+    // down_S[3], StatisticsDlg.cpp:2643); this is the UDP re-ask line of that group.
+    m_itemDownUdpReasks = new QTreeWidgetItem(m_itemDownFoundSources,
+                                              {tr("UDP File Re-asks: 0, Failed: 0 (0.0%)")});
     m_itemDownCompletedSes = new QTreeWidgetItem(downSession, {tr("Completed Downloads: 0")});
 
     auto* downSesSessions = new QTreeWidgetItem(downSession, {tr("Download Sessions")});
@@ -520,6 +524,9 @@ void StatisticsPanel::buildTree()
     clients->setIcon(0, QIcon(QStringLiteral(":/icons/User.ico")));
     m_itemKnownClients = new QTreeWidgetItem(clients, {tr("Known Clients: 0")});
     m_itemClientSoftware = new QTreeWidgetItem(clients, {tr("Client Software")});
+    // MFC's cligen[4] slot — after the Software/Network/Port/Firewalled groups and
+    // before Banned/Filtered (StatisticsDlg.cpp:2748).
+    m_itemLowIDClients = new QTreeWidgetItem(clients, {tr("Low ID: 0 (0.0%)")});
     m_itemBannedClients = new QTreeWidgetItem(clients, {tr("Banned Clients: 0")});
     m_itemFilteredClients = new QTreeWidgetItem(clients, {tr("Filtered Clients: 0")});
 
@@ -823,6 +830,13 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         tr("Active Downloads: %1").arg(cborInt(stats, QLatin1StringView("downFileCount"))));
     m_itemDownFoundSources->setText(0,
         tr("Found Sources: %1").arg(cborInt(stats, QLatin1StringView("downFoundSources"))));
+    {
+        const qint64 reasks = cborInt(stats, QLatin1StringView("downUdpReasks"));
+        const qint64 failed = cborInt(stats, QLatin1StringView("downUdpReasksFailed"));
+        m_itemDownUdpReasks->setText(0,
+            tr("UDP File Re-asks: %1, Failed: %2 %3")
+                .arg(reasks).arg(failed).arg(formatPercent(failed, reasks)));
+    }
     m_itemDownCompletedSes->setText(0,
         tr("Completed Downloads: %1").arg(cborInt(stats, QLatin1StringView("completedDownloads"))));
 
@@ -971,6 +985,11 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     const qint64 knownClients = cborInt(stats, QLatin1StringView("knownClients"));
     m_itemKnownClients->setText(0,
         tr("Known Clients: %1").arg(knownClients));
+    {
+        const qint64 lowID = cborInt(stats, QLatin1StringView("lowIDClients"));
+        m_itemLowIDClients->setText(0,
+            tr("Low ID: %1 %2").arg(lowID).arg(formatPercent(lowID, knownClients)));
+    }
     m_itemBannedClients->setText(0,
         tr("Banned Clients: %1").arg(cborInt(stats, QLatin1StringView("bannedClients"))));
     m_itemFilteredClients->setText(0,

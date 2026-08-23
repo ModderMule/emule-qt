@@ -147,6 +147,18 @@ enum class IpcMsgType : int {
     /// and the CLI path never probes at all.
     ApplyHttpCacheConfig    = 265,
 
+    /// [path: string, shared: bool] -> [ok: bool, error: string]
+    /// Share or unshare one file by path. Unsharing records the path durably, so a
+    /// reload or a restart does not put the file back — the in-memory hash set never
+    /// did that (MFC CSharedFileList::ExcludeFile / AddSingleSharedFile).
+    SetFileShared           = 266,
+    /// [dirPath: string] -> [{name, path, size, shared, canToggle, hash}]
+    /// List one directory's files with their share state, so the "All Directories"
+    /// tree can show unshared files alongside shared ones and offer a checkbox.
+    /// `canToggle` is false where the state is forced — the incoming directory is
+    /// always shared, a non-shareable directory never is.
+    BrowseDirectory         = 267,
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd]

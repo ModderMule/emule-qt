@@ -123,6 +123,31 @@ public:
     /// collection-slot rules it enforces are only directly assertable from outside.
     [[nodiscard]] bool checkForTimeOver(const UpDownClient* client);
 
+    /// Refresh the cached best score on the waiting list, which checkForTimeOver() compares
+    /// a slot holder against. MFC CUploadQueue::UpdateMaxClientScore
+    /// (srchybrid/UploadQueue.cpp:781-789).
+    ///
+    /// Uses score(true, false) — the system value — so a Low-ID peer we cannot reach right
+    /// now contributes 0 and cannot evict a client we *are* uploading to on the strength of
+    /// a slot it could not accept.
+    ///
+    /// Self-throttled to MFC's 5 s cadence, since process() runs every ~100 ms. Pass
+    /// @p force from the one site MFC refreshes out of band, addUpNextClient(), where the
+    /// highest scorer has just left the list.
+    void updateMaxClientScore(bool force = false);
+
+    [[nodiscard]] uint64 maxClientScore() const { return m_maxScore; }
+
+    /// Promote a client into an upload slot. @return false when the slot was NOT opened —
+    /// either there was nobody to promote, or the dial failed. MFC CUploadQueue::AddUpNextClient
+    /// (srchybrid/UploadQueue.cpp:181), which likewise refuses to insert into the uploading
+    /// list when TryToConnect() fails.
+    ///
+    /// Public where MFC has it private, for the same reason as acceptNewClient() and
+    /// checkForTimeOver(): "a slot is not opened for a peer we could not dial" is only
+    /// directly assertable from outside.
+    bool addUpNextClient(UpDownClient* directadd = nullptr);
+
     /// Whether the slot ladder justifies opening one more slot at this cap and datarate.
     /// Tail of MFC CUploadQueue::ForceNewClient (srchybrid/UploadQueue.cpp:432-455). The
     /// upPerClient divisors and slot floors are the deliberate "eMule 2026 bandwidth"
@@ -198,7 +223,7 @@ private:
     // Slot management
     UpDownClient* findBestClientInQueue();
     bool forceNewClient(bool allowEmptyWaitingQueue = false);
-    void addUpNextClient(UpDownClient* directadd = nullptr);
+
 
     // Lists
     std::vector<UpDownClient*> m_waitingList;
@@ -231,7 +256,17 @@ private:
     uint32 m_failedUpCount = 0;
     uint32 m_totalUploadTime = 0;
     uint32 m_lastStartUpload = 0;
+
+    /// Best score on the waiting list, refreshed by updateMaxClientScore() and read only by
+    /// checkForTimeOver()'s score kick. Both are inert while thePrefs.transferFullChunks()
+    /// is on, which is the default — MFC gates them the same way.
     uint64 m_maxScore = 0;
+    uint32 m_lastCalculatedMaxScore = 0;
+
+    /// Earliest tick at which the score kick may fire again. MFC seeds it with the current
+    /// tick and pushes it 6 s ahead on every kick (srchybrid/UploadQueue.cpp:833), so a
+    /// batch of slots cannot all be dropped against one stale max score.
+    uint32 m_removedClientByScore = 0;
 
     // 5 s cache behind getAverageCombinedFilePrioAndCredit(). A tick of 0 means "never
     // computed" — see the note there.

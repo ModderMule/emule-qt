@@ -13,6 +13,7 @@
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
 #include "friends/Friend.h"
+#include "friends/FriendList.h"
 #include "prefs/Preferences.h"
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
@@ -21,6 +22,7 @@
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -109,6 +111,23 @@ private slots:
 
     // score() no longer clamps at UINT32_MAX
     void score_noLongerSaturates();
+    void score_friendSlotIsFlatAndNeedsAllThreeConjuncts();
+
+    // The guards score() was missing against MFC srchybrid/UploadClient.cpp:182-233
+    void score_creditSystemOffDropsTheRatio();
+    void score_badIdentScoresZero();
+    void score_bannedOrEvildoerScoresZero();
+    void score_oldEmuleHalved();
+    void score_unreachableLowIdZeroOnlyForSysValue();
+
+    // Score-based slot reclaim — MFC srchybrid/UploadQueue.cpp:781-836
+    void updateMaxClientScore_ignoresUnreachablePeers();
+    void checkForTimeOver_scoreKickThrottledToSixSeconds();
+    void checkForTimeOver_sessionLimitsFollowTransferFullChunks();
+
+    // A slot is never opened for a peer we could not dial
+    void addUpNextClient_declinesWhenTheDialFails();
+    void findBestClient_considersIpv6ReachableLowIdPeer();
 
     // score()'s three base values — MFC srchybrid/UploadClient.cpp:208-227
     void score_uploadingClientUsesFrozenBase();
@@ -130,14 +149,60 @@ private slots:
 namespace {
 
 /// A queued peer: distinct user hash (so compare() doesn't fire) plus an address.
+/// A peer identified by an address, and dialable.
+///
+/// The High ID matters: addUpNextClient() has to dial a client with no live socket, and
+/// tryToConnect() now refuses a Low-ID peer that has no server, no buddy and no direct-UDP
+/// route rather than silently failing — so a socketless Low-ID client can no longer be
+/// handed a slot at all. Deriving the ID from the address is also what a real peer looks
+/// like: an address we can dial *is* a High ID.
 void setupClient(UpDownClient& c, const QString& ip, uint8 hashByte, uint16 port = 4662)
 {
-    c.setUserAddress(Address::fromString(ip));
+    const Address addr = Address::fromString(ip);
+    c.setUserAddress(addr);
     c.setUserPort(port);
+    // toUint32() is 0 for IPv6, which reads as Low-ID; a v6 peer carries its own IPv4 High
+    // ID in practice, so give it one rather than leaving it undialable.
+    c.setUserIDHybrid(addr.isIPv4() ? addr.toUint32() : 0x0A0A0A0Au);
     uint8 hash[16]{};
     std::memset(hash, hashByte, sizeof(hash));
     c.setUserHash(hash);
 }
+
+/// Point theApp.uploadQueue at a local queue for the duration of a scope.
+///
+/// UpDownClient::disconnected() resolves the queue through theApp, so tests that exercise
+/// the Connecting lifecycle have to publish theirs. Doing it by hand leaves the global
+/// dangling whenever a QVERIFY fails and returns early — and a later test then dereferences
+/// a destroyed stack object, turning one test failure into a crash in an unrelated test.
+class GlobalUploadQueue {
+public:
+    explicit GlobalUploadQueue(UploadQueue* queue) : m_prev(theApp.uploadQueue)
+    {
+        theApp.uploadQueue = queue;
+    }
+    ~GlobalUploadQueue() { theApp.uploadQueue = m_prev; }
+    GlobalUploadQueue(const GlobalUploadQueue&) = delete;
+    GlobalUploadQueue& operator=(const GlobalUploadQueue&) = delete;
+
+private:
+    UploadQueue* m_prev;
+};
+
+/// The same for theApp.clientList, for the same reason.
+class GlobalClientList {
+public:
+    explicit GlobalClientList(ClientList* list) : m_prev(theApp.clientList)
+    {
+        theApp.clientList = list;
+    }
+    ~GlobalClientList() { theApp.clientList = m_prev; }
+    GlobalClientList(const GlobalClientList&) = delete;
+    GlobalClientList& operator=(const GlobalClientList&) = delete;
+
+private:
+    ClientList* m_prev;
+};
 
 /// Saves and restores every global the two slot gates read: the three preferences and the
 /// USS finder. Without this a slot that leaves dynUpEnabled on would silently change the
@@ -298,10 +363,20 @@ public:
     /// Occupy the free upload slots. addClientToQueue() promotes straight to a slot while
     /// the waiting list is empty (UploadQueue.cpp), so without this the clients under test
     /// would never reach the waiting list the limits are measured against.
+    ///
+    /// Each filler gets a real connected socket. addUpNextClient() only activates a slot in
+    /// place for a client that is already connected; anything else it has to dial, and a
+    /// socketless client with no server, no buddy and no direct-UDP support has no route —
+    /// tryToConnect() now says so instead of silently failing, and the promotion is declined.
+    /// A filler that lands on the waiting list rather than in a slot would quietly invalidate
+    /// every count measured against it.
     void fillSlots(UploadQueue& queue)
     {
-        for (int i = 0; i < MIN_UP_CLIENTS_ALLOWED; ++i)
-            queue.addClientToQueue(makeClient(9000 + i, m_veryLow));
+        for (int i = 0; i < MIN_UP_CLIENTS_ALLOWED; ++i) {
+            auto* client = makeClient(9000 + i, m_veryLow);
+            connectSocket(client);
+            queue.addClientToQueue(client);
+        }
     }
 
     /// @returns the clients now waiting, in insertion order.
@@ -726,14 +801,19 @@ void tst_UploadQueue::slotAssignment_alternatesBetweenFamilies()
         UploadQueue queue;
         qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
 
-        // Occupy the free slots first. addClientToQueue promotes directly while the
-        // waiting list is empty, so without these the real clients would never queue up
-        // and selection would have nothing to choose between.
-        UpDownClient filler1, filler2;
-        setupClient(filler1, QStringLiteral("172.31.0.1"), 0xF1, 4000);
-        setupClient(filler2, QStringLiteral("172.31.0.2"), 0xF2, 4001);
-        queue.addClientToQueue(&filler1);
-        queue.addClientToQueue(&filler2);
+        // Close addClientToQueue()'s empty-queue fast path, or the first real client would
+        // be promoted on the spot and selection would have nothing to choose between.
+        //
+        // One unpromotable peer does it, and unlike a filler that takes a real slot it
+        // leaves every slot free for the clients under test: Low-ID with no socket and no
+        // callback route, so addUpNextClient() declines to promote it and
+        // findBestClientInQueue() skips it, and it simply sits on the waiting list.
+        UpDownClient blocker;
+        setupClient(blocker, QStringLiteral("172.31.0.1"), 0xF1, 4000);
+        blocker.setUserIDHybrid(0);
+        queue.addClientToQueue(&blocker);
+        if (queue.waitingUserCount() != 1)
+            return std::vector<bool>{};
 
         std::vector<std::unique_ptr<UpDownClient>> clients;
         std::vector<std::unique_ptr<ClientCredits>> credits;
@@ -760,7 +840,12 @@ void tst_UploadQueue::slotAssignment_alternatesBetweenFamilies()
             c->setCredits(cr.get());
             c->setUploadFileID(file);
             c->setReqUpFileId(fileHash);
-            c->setWaitStartTime();
+            // Backdated rather than setWaitStartTime(), which means "now": score() applies
+            // MFC's filePrioAsNumber()/10 to a base measured in milliseconds, so a client
+            // that started waiting this instant scores a fraction and truncates to 0 — and
+            // findBestClientInQueue() never selects a zero. Descending, so the IPv4 pair
+            // still carries the longer wait and the higher score.
+            c->restoreWaitStartTime(SEC2MS(60) - static_cast<uint32>(i) * 1000u);
 
             credits.push_back(std::move(cr));
             clients.push_back(std::move(c));
@@ -775,7 +860,7 @@ void tst_UploadQueue::slotAssignment_alternatesBetweenFamilies()
 
         for (const auto& c : clients)
             queue.addClientToQueue(c.get());
-        if (queue.waitingUserCount() != static_cast<int>(clients.size()))
+        if (queue.waitingUserCount() != static_cast<int>(clients.size()) + 1)
             return promotedV6;
 
         // forceNewClient() throttles promotions to one per second while the slots stay
@@ -913,10 +998,10 @@ void tst_UploadQueue::connectingSlot_activatedByHandshake()
     // downloading, and the slot stayed occupied for the life of the client.
     qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
     ClientList clientList;
-    theApp.clientList = &clientList;
+    GlobalClientList clientListGuard(&clientList);
 
     UploadQueue queue;
-    theApp.uploadQueue = &queue;   // block (b) resolves the queue through theApp
+    GlobalUploadQueue queueGuard(&queue);   // block (b) resolves the queue through theApp
 
     UpDownClient client;
     setupClient(client, QStringLiteral("10.0.0.1"), 0x11);
@@ -933,8 +1018,6 @@ void tst_UploadQueue::connectingSlot_activatedByHandshake()
     QCOMPARE(client.uploadState(), UploadState::Uploading);
 
     queue.removeFromUploadQueue(&client);
-    theApp.uploadQueue = nullptr;
-    theApp.clientList = nullptr;
 }
 
 void tst_UploadQueue::connectingSlot_notGrantedASlot_staysConnecting()
@@ -943,7 +1026,7 @@ void tst_UploadQueue::connectingSlot_notGrantedASlot_staysConnecting()
     // happened to be in Connecting would promote itself to Uploading on handshake,
     // bypassing the queue entirely. MFC guards the same way (BaseClient.cpp:1558).
     UploadQueue queue;
-    theApp.uploadQueue = &queue;
+    GlobalUploadQueue queueGuard(&queue);
 
     UpDownClient client;
     setupClient(client, QStringLiteral("10.0.0.2"), 0x22);
@@ -953,7 +1036,6 @@ void tst_UploadQueue::connectingSlot_notGrantedASlot_staysConnecting()
     client.onHandshakeCompleted();
 
     QCOMPARE(client.uploadState(), UploadState::Connecting);
-    theApp.uploadQueue = nullptr;
 }
 
 void tst_UploadQueue::connectingSlot_releasedOnDisconnect()
@@ -963,10 +1045,10 @@ void tst_UploadQueue::connectingSlot_releasedOnDisconnect()
     // removes for Connecting as well as Uploading.
     qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
     ClientList clientList;
-    theApp.clientList = &clientList;
+    GlobalClientList clientListGuard(&clientList);
 
     UploadQueue queue;
-    theApp.uploadQueue = &queue;
+    GlobalUploadQueue queueGuard(&queue);
 
     UpDownClient client;
     setupClient(client, QStringLiteral("10.0.0.3"), 0x33);
@@ -1030,10 +1112,10 @@ void tst_UploadQueue::acceptNewClient_lowIdGetsOneExtraSlot()
     thePrefs.setMaxGraphUploadRate(0);
 
     ClientList clientList;
-    theApp.clientList = &clientList;
+    GlobalClientList clientListGuard(&clientList);
 
     UploadQueue queue;
-    theApp.uploadQueue = &queue;
+    GlobalUploadQueue queueGuard(&queue);
 
     // Fill the uploading list to exactly the floor. Each client is socketless, so it lands
     // in UploadState::Connecting and stays on the list as long as process() is not called.
@@ -1056,8 +1138,6 @@ void tst_UploadQueue::acceptNewClient_lowIdGetsOneExtraSlot()
 
     for (auto& c : clients)
         queue.removeFromUploadQueue(&c);
-    theApp.uploadQueue = nullptr;
-    theApp.clientList = nullptr;
 }
 
 void tst_UploadQueue::acceptNewClient_datarateGate()
@@ -1431,8 +1511,10 @@ void tst_UploadQueue::score_magnitudeUnchangedByCombinedRescale()
     // setWaitStartTime() always means "now", which would make this assertion a race.
     client->restoreWaitStartTime(60'000);
 
-    // 60 s in ms * scoreRatio 1.0 * filePrioAsNumber 18.
-    const uint64 expected = 60'000ull * 18ull;
+    // 60 s in ms * scoreRatio 1.0 * filePrioAsNumber 18/10, which is MFC's
+    // `fBaseValue *= GetFilePrioAsNumber() / 10.0f` (srchybrid/UploadClient.cpp:227) with
+    // this port's millisecond base substituted for MFC's seconds.
+    const uint64 expected = 60'000ull * 18ull / 10ull;
     const uint64 actual = client->score(false);
     QVERIFY2(actual > expected - 5'000 && actual < expected + 5'000,
              qPrintable(QStringLiteral("score %1 is not within a few ms of %2")
@@ -1935,17 +2017,98 @@ void tst_UploadQueue::score_noLongerSaturates()
     auto* a = env.makeClient(1, env.veryHigh());
     auto* b = env.makeClient(2, env.veryHigh());
 
-    // A friend slot multiplies by 2000, so this pair used to pin at UINT32_MAX after twelve
-    // seconds of waiting — and then compare equal forever, which silently handed slot
-    // selection back to insertion order.
-    a->setFriendSlot(true);
-    b->setFriendSlot(true);
-    a->restoreWaitStartTime(8u * 60u * 60u * 1000u);          // 8 h
-    b->restoreWaitStartTime(8u * 60u * 60u * 1000u + 60'000u);  // 8 h 1 min
+    // score() used to clamp into uint32, which pinned every long-waiting client at
+    // UINT32_MAX and then compared them equal forever — silently handing slot selection
+    // back to insertion order. Ordinary waiting clients, no friend slot: the point is the
+    // 64-bit return type, not any bonus.
+    //
+    // The waits are deliberately extreme. With MFC's filePrioAsNumber()/10 the crossover
+    // sits near 27 days for a Very High file at a 1.0 credit ratio, so anything shorter
+    // would pass under a uint32 return too and prove nothing.
+    constexpr uint32 kLongWait = 700u * 60u * 60u * 1000u;   // ~29 days, still inside uint32
+    a->restoreWaitStartTime(kLongWait);
+    b->restoreWaitStartTime(kLongWait + 60'000u);            // one minute longer
 
     QVERIFY(a->score(false) > UINT32_MAX);
     QVERIFY2(b->score(false) > a->score(false),
              "the peer that waited a minute longer must still outrank the other");
+}
+
+void tst_UploadQueue::score_friendSlotIsFlatAndNeedsAllThreeConjuncts()
+{
+    QueueRankEnv env;
+    FriendList friends;
+    auto* prevFriends = theApp.friendList;
+    theApp.friendList = &friends;
+    const auto restore = qScopeGuard([&] { theApp.friendList = prevFriends; });
+
+    // A friend slot is only worth MFC's flat maximum for a client that satisfies all three
+    // of IsFriend() && GetFriendSlot() && !HasLowID() (srchybrid/UploadClient.cpp:199-200).
+    // Every case below drops exactly one conjunct.
+    auto* full = env.makeClient(90, env.veryHigh());
+    full->setUserIDHybrid(0x0A141E28u);                  // HighID
+    full->restoreWaitStartTime(60'000);
+    auto* f = friends.addFriend(full->userHash(), full->userAddress(), full->userPort(),
+                                QStringLiteral("buddy"), true);
+    QVERIFY(f);
+    f->setFriendSlot(true);
+    // addFriend() links a connected client itself; this env has no ClientList, so link here.
+    f->setLinkedClient(full);
+    QVERIFY(full->friendSlot());
+    QCOMPARE(full->friendPtr(), f);
+
+    QCOMPARE(full->score(false), UpDownClient::kFriendSlotScore);
+
+    // Flat: it does not move with the wait, and two such clients tie. That is MFC's shape —
+    // the multiplier this replaced kept them ordered.
+    auto* second = env.makeClient(91, env.veryHigh());
+    second->setUserIDHybrid(0x0A141E29u);
+    second->restoreWaitStartTime(8u * 60u * 60u * 1000u);
+    auto* f2 = friends.addFriend(second->userHash(), second->userAddress(), second->userPort(),
+                                 QStringLiteral("buddy2"), true);
+    QVERIFY(f2);
+    f2->setLinkedClient(second);
+    f2->setFriendSlot(true);
+    QCOMPARE(second->score(false), full->score(false));
+
+    // ...and it applies on every path, including the system value the score kick uses.
+    // The old multiplier sat inside `!sysValue`, so a friend contributed nothing there.
+    QCOMPARE(full->score(true, false, false), UpDownClient::kFriendSlotScore);
+    QCOMPARE(full->score(false, false, true), UpDownClient::kFriendSlotScore);
+
+    // Drop the slot flag.
+    auto* noSlot = env.makeClient(92, env.veryHigh());
+    noSlot->setUserIDHybrid(0x0A141E2Au);
+    noSlot->restoreWaitStartTime(60'000);
+    auto* f3 = friends.addFriend(noSlot->userHash(), noSlot->userAddress(), noSlot->userPort(),
+                                 QStringLiteral("buddy3"), true);
+    QVERIFY(f3);
+    f3->setLinkedClient(noSlot);
+    QVERIFY(!noSlot->friendSlot());
+    QVERIFY(noSlot->score(false) < UpDownClient::kFriendSlotScore);
+
+    // Drop the friend link but keep the flag — the case the port could actually reach
+    // before Friend::setLinkedClient() existed, and the reason IsFriend() is load-bearing.
+    auto* orphan = env.makeClient(93, env.veryHigh());
+    orphan->setUserIDHybrid(0x0A141E2Bu);
+    orphan->restoreWaitStartTime(60'000);
+    orphan->setFriendSlot(true);
+    QVERIFY(!orphan->friendPtr());
+    QVERIFY2(orphan->score(false) < UpDownClient::kFriendSlotScore,
+             "a friend slot on a client that is not a friend must not win the queue");
+
+    // Drop HighID: a peer we cannot dial gets no priority slot.
+    auto* lowId = env.makeClient(94, env.veryHigh());
+    lowId->restoreWaitStartTime(60'000);
+    QVERIFY(lowId->hasLowID());
+    auto* f4 = friends.addFriend(lowId->userHash(), lowId->userAddress(), lowId->userPort(),
+                                 QStringLiteral("buddy4"), true);
+    QVERIFY(f4);
+    f4->setLinkedClient(lowId);
+    f4->setFriendSlot(true);
+    QVERIFY(lowId->friendSlot());
+    QVERIFY2(lowId->score(false) < UpDownClient::kFriendSlotScore,
+             "a Low-ID friend must not hold the priority slot");
 }
 
 // ===========================================================================
@@ -1964,8 +2127,8 @@ void tst_UploadQueue::score_uploadingClientUsesFrozenBase()
     QVERIFY(client->isUploadingToPeer());
 
     // 60 s of waiting plus the 30 min bonus that applies inside the first 15 min of the
-    // upload, times filePrioAsNumber() 18 for a Very High file with a 1.0 credit ratio.
-    const uint64 expected = (60'000ull + MIN2MS(30)) * 18ull;
+    // upload, times filePrioAsNumber()/10 — 1.8 for a Very High file at a 1.0 credit ratio.
+    const uint64 expected = (60'000ull + MIN2MS(30)) * 18ull / 10ull;
     const uint64 uploading = client->score(false, true, false);
     QVERIFY2(uploading > expected - 100'000 && uploading < expected + 100'000,
              qPrintable(QStringLiteral("score %1 is not near %2").arg(uploading).arg(expected)));
@@ -1997,7 +2160,7 @@ void tst_UploadQueue::score_onlyBaseValueIgnoresFilePriority()
     QCOMPARE(high->score(false, false, true), uint64{SEC2MS(100)});
     QCOMPARE(low->score(false, false, true), high->score(false, false, true));
 
-    // The full score does depend on priority: 18 for Very High against 2 for Very Low.
+    // The full score does depend on priority: 1.8 for Very High against 0.2 for Very Low.
     QVERIFY(high->score(false) > low->score(false));
     QVERIFY(high->score(false) != high->score(false, false, true));
 }
@@ -2019,7 +2182,7 @@ void tst_UploadQueue::waitStartTime_clampsCollisionWhileUploading()
     client->restoreWaitStartTime(0);
 
     // Clamped to m_uploadTime - 1, so the base is 1 ms plus the 30 min bonus.
-    const uint64 expected = (1ull + MIN2MS(30)) * 18ull;
+    const uint64 expected = (1ull + MIN2MS(30)) * 18ull / 10ull;
     const uint64 score = client->score(false, true, false);
     QVERIFY2(score > expected - 100'000 && score < expected + 100'000,
              qPrintable(QStringLiteral("score %1 is not near %2 — the collision wrapped")
@@ -2081,6 +2244,301 @@ void tst_UploadQueue::alreadyUploading_connectingClientIsQueuedNotAccepted()
     QCOMPARE(queue.waitingUserCount(), before + 1);
     QCOMPARE(slotHolder->uploadState(), UploadState::OnUploadQueue);
     QCOMPARE(queued.count(), 1);
+}
+
+
+// ===========================================================================
+// The guards score() was missing — MFC srchybrid/UploadClient.cpp:182-233
+// ===========================================================================
+
+void tst_UploadQueue::score_creditSystemOffDropsTheRatio()
+{
+    QueueRankEnv env;
+    const bool savedCredit = thePrefs.useCreditSystem();
+    const auto restore = qScopeGuard([&] { thePrefs.setUseCreditSystem(savedCredit); });
+
+    auto* client = env.makeClient(120, env.veryHigh());
+    client->restoreWaitStartTime(60'000);
+
+    // Earn a ratio worth more than 1.0: scoreRatio is min(2*down/up, sqrt(down/1MB + 2), ...)
+    // and needs at least 1 MiB downloaded from us before it moves at all (ClientCredits.cpp:123).
+    client->credits()->addDownloaded(20u * 1024u * 1024u, client->userAddress().toNetworkUint32());
+    client->credits()->addUploaded(1024u * 1024u, client->userAddress().toNetworkUint32());
+    const float ratio = client->credits()->scoreRatio(client->userAddress().toNetworkUint32());
+    QVERIFY2(ratio > 1.5f, "the fixture must actually earn a ratio, or this proves nothing");
+
+    thePrefs.setUseCreditSystem(true);
+    const uint64 withCredit = client->score(false);
+
+    thePrefs.setUseCreditSystem(false);
+    const uint64 withoutCredit = client->score(false);
+
+    // GetScore is the preference's only consumer in MFC too, so without the gate the
+    // Options checkbox would change nothing anywhere in the program.
+    QVERIFY2(withCredit > withoutCredit,
+             "\"use credit system\" must actually change the queue score");
+    QCOMPARE(withoutCredit, static_cast<uint64>(60'000ull * 18ull / 10ull));
+}
+
+void tst_UploadQueue::score_badIdentScoresZero()
+{
+    QueueRankEnv env;
+    auto* client = env.makeClient(121, env.veryHigh());
+    client->restoreWaitStartTime(60'000);
+    QVERIFY(client->score(false) > 0);
+
+    // Identified against a different address than the one it is talking from: the signature
+    // belongs to somebody else. MFC srchybrid/UploadClient.cpp:196-197.
+    client->credits()->verified(client->userAddress().toNetworkUint32() + 1);
+    QCOMPARE(client->credits()->currentIdentState(client->userAddress().toNetworkUint32()),
+             IdentState::IdBadGuy);
+
+    QCOMPARE(client->score(false), uint64{0});
+}
+
+void tst_UploadQueue::score_bannedOrEvildoerScoresZero()
+{
+    QueueRankEnv env;
+
+    auto* banned = env.makeClient(122, env.veryHigh());
+    banned->restoreWaitStartTime(60'000);
+    QVERIFY(banned->score(false) > 0);
+    banned->setUploadState(UploadState::Banned);
+    QCOMPARE(banned->score(false), uint64{0});
+
+    // The IP-ban half of isBanned(), which the bare upload-state test used to miss — this is
+    // the same test checkWaitingListAdmission() already applies when the peer asks.
+    ClientList clientList;
+    GlobalClientList clientListGuard(&clientList);
+    auto* ipBanned = env.makeClient(123, env.veryHigh());
+    ipBanned->restoreWaitStartTime(60'000);
+    QVERIFY(ipBanned->score(false) > 0);
+    clientList.addBannedClient(ipBanned->userAddress());
+    QVERIFY(ipBanned->isBanned());
+    QCOMPARE(ipBanned->score(false), uint64{0});
+
+    // gplEvildoer()'s only reader. It was set by checkForGPLEvildoer() and consulted nowhere.
+    auto* evildoer = env.makeClient(124, env.veryHigh());
+    evildoer->restoreWaitStartTime(60'000);
+    QVERIFY(evildoer->score(false) > 0);
+    evildoer->setGPLEvildoer(true);
+    QCOMPARE(evildoer->score(false), uint64{0});
+}
+
+void tst_UploadQueue::score_oldEmuleHalved()
+{
+    QueueRankEnv env;
+    auto* old = env.makeClient(125, env.veryHigh());
+    auto* current = env.makeClient(126, env.veryHigh());
+    old->restoreWaitStartTime(60'000);
+    current->restoreWaitStartTime(60'000);
+
+    // MFC srchybrid/UploadClient.cpp:230-231. 0x19 is eMule 0.25 and older.
+    current->setEmuleVersion(0x1A);
+    QCOMPARE(current->score(false), static_cast<uint64>(60'000ull * 18ull / 10ull));
+
+    old->setEmuleVersion(0x19);
+    QCOMPARE(old->score(false), current->score(false) / 2);
+
+    // A client that never identified itself at all is not penalised: m_emuleVersion 0 with
+    // the default Unknown software fails both halves of MFC's disjunction.
+    auto* unknown = env.makeClient(127, env.veryHigh());
+    unknown->restoreWaitStartTime(60'000);
+    QCOMPARE(unknown->emuleVersion(), uint8{0});
+    QCOMPARE(unknown->score(false), current->score(false));
+}
+
+void tst_UploadQueue::score_unreachableLowIdZeroOnlyForSysValue()
+{
+    QueueRankEnv env;
+    auto* client = env.makeClient(128, env.veryHigh());
+    client->restoreWaitStartTime(60'000);
+    QVERIFY(client->hasLowID());
+    QVERIFY(!client->isReachableForSlot());
+
+    // The plain queue score must keep its value — a Low-ID peer holds its place in the
+    // queue while it waits for its own reconnect. Only the system value zeroes it, which is
+    // what stops it evicting a client we are actually uploading to.
+    QVERIFY(client->score(false) > 0);
+    QCOMPARE(client->score(true), uint64{0});
+
+    // ...and it recovers the moment it is reachable.
+    QVERIFY(env.connectSocket(client) != nullptr);
+    QVERIFY(client->isReachableForSlot());
+    QVERIFY(client->score(true) > 0);
+}
+
+// ===========================================================================
+// Score-based slot reclaim — MFC srchybrid/UploadQueue.cpp:781-836
+// ===========================================================================
+
+void tst_UploadQueue::updateMaxClientScore_ignoresUnreachablePeers()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+    const bool savedChunks = thePrefs.transferFullChunks();
+    const auto restore = qScopeGuard([&] { thePrefs.setTransferFullChunks(savedChunks); });
+    thePrefs.setTransferFullChunks(false);      // the branch that consumes the max score
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+
+    // The best scorer on the list is unreachable, so it must not set the bar that a client
+    // holding a slot is judged against — it could not accept the slot it would win.
+    auto* unreachable = env.makeClient(130, env.veryHigh());
+    auto* reachable   = env.makeClient(131, env.veryHigh());
+    QVERIFY(queue.addClientToQueue(unreachable));
+    QVERIFY(queue.addClientToQueue(reachable));
+    unreachable->restoreWaitStartTime(10u * 60u * 1000u);   // by far the longest wait
+    reachable->restoreWaitStartTime(60'000);
+    QVERIFY(env.connectSocket(reachable) != nullptr);
+
+    QVERIFY(unreachable->score(false) > reachable->score(false));
+
+    queue.updateMaxClientScore(true);
+    QCOMPARE(queue.maxClientScore(), reachable->score(true, false));
+    QVERIFY(queue.maxClientScore() < unreachable->score(false));
+}
+
+void tst_UploadQueue::checkForTimeOver_scoreKickThrottledToSixSeconds()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+    const bool savedChunks = thePrefs.transferFullChunks();
+    const auto restore = qScopeGuard([&] { thePrefs.setTransferFullChunks(savedChunks); });
+    thePrefs.setTransferFullChunks(false);
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+
+    // Somebody waiting outscores the two clients holding slots by a wide margin.
+    auto* waiting = env.makeClient(132, env.veryHigh());
+    QVERIFY(queue.addClientToQueue(waiting));
+    QVERIFY(env.connectSocket(waiting) != nullptr);
+    waiting->restoreWaitStartTime(10u * 60u * 1000u);
+    queue.updateMaxClientScore(true);
+    QVERIFY(queue.maxClientScore() > 0);
+
+    std::vector<UpDownClient*> holders;
+    queue.forEachUploading([&](UpDownClient* c) { holders.push_back(c); });
+    QCOMPARE(holders.size(), size_t{2});
+    for (auto* h : holders)
+        QVERIFY2(h->score(true, true) < queue.maxClientScore(), "the fixture must be outscored");
+
+    // The first is kicked...
+    QVERIFY(queue.checkForTimeOver(holders[0]));
+    // ...but the second is not, or one stale max score would empty the whole uploading list.
+    // MFC pushes the next kick 6 s out (srchybrid/UploadQueue.cpp:829-834).
+    QVERIFY2(!queue.checkForTimeOver(holders[1]),
+             "a second slot must not be dropped against the same max score");
+}
+
+void tst_UploadQueue::checkForTimeOver_sessionLimitsFollowTransferFullChunks()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+    const bool savedChunks = thePrefs.transferFullChunks();
+    const auto restore = qScopeGuard([&] { thePrefs.setTransferFullChunks(savedChunks); });
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+    // Something waiting, or checkForTimeOver() returns false before reaching either limit.
+    env.fillWaitingList(queue, 3, env.veryLow());
+
+    std::vector<UpDownClient*> holders;
+    queue.forEachUploading([&](UpDownClient* c) { holders.push_back(c); });
+    QVERIFY(!holders.empty());
+    auto* holder = holders.front();
+
+    // MFC gates the two session limits on the preference, as alternatives (UploadQueue.cpp:809).
+    // Only the transferred-amount half was ported, and it ran regardless of the setting.
+    thePrefs.setTransferFullChunks(true);
+    QVERIFY2(!queue.checkForTimeOver(holder), "nothing transferred yet, so no limit applies");
+
+    thePrefs.setTransferFullChunks(false);
+    // With full chunks off the time limit applies instead — SESSIONMAXTIME is an hour, and
+    // this slot is seconds old, so it stays. The point is that the branch is reachable.
+    QVERIFY(holder->getUpStartTimeDelay() < SESSIONMAXTIME);
+    queue.updateMaxClientScore(true);
+    QVERIFY2(holder->score(true, true) >= queue.maxClientScore(),
+             "the Very Low waiting list must not outscore the holder, or this tests the kick");
+    QVERIFY(!queue.checkForTimeOver(holder));
+}
+
+// ===========================================================================
+// A slot is never opened for a peer we could not dial
+// ===========================================================================
+
+void tst_UploadQueue::addUpNextClient_declinesWhenTheDialFails()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+
+    // Low-ID, no socket, no server, no buddy, no direct-UDP support: there is no route to
+    // this peer at all, so tryToConnect() fails and the slot must stay free. It used to be
+    // pushed onto the uploading list regardless, where process() reaped it a tick later —
+    // counting a failed upload and burning the slot in between.
+    auto* unreachable = env.makeClient(140, env.veryHigh());
+    QVERIFY(unreachable->hasLowID());
+    QVERIFY(!queue.addUpNextClient(unreachable));
+    QCOMPARE(queue.uploadQueueLength(), 0);
+    QCOMPARE(unreachable->uploadState(), UploadState::None);
+
+    // addClientToQueue() therefore falls back to the waiting list rather than losing it:
+    // unreachability is a reason not to hand out a *slot*, not to forget the peer.
+    QVERIFY(queue.addClientToQueue(unreachable));
+    QCOMPARE(queue.uploadQueueLength(), 0);
+    QCOMPARE(queue.waitingUserCount(), 1);
+    QCOMPARE(unreachable->uploadState(), UploadState::OnUploadQueue);
+
+    // A connected peer still gets its slot in place, with no dial involved.
+    auto* connected = env.makeClient(141, env.veryHigh());
+    QVERIFY(env.connectSocket(connected) != nullptr);
+    QVERIFY(queue.addUpNextClient(connected));
+    QCOMPARE(queue.uploadQueueLength(), 1);
+    QCOMPARE(connected->uploadState(), UploadState::Uploading);
+}
+
+void tst_UploadQueue::findBestClient_considersIpv6ReachableLowIdPeer()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    // An IPv6-only source carries the kNoIPv4SourceId placeholder, so hasLowID() is true
+    // even though tryToConnect() will happily dial it over v6. Slot selection used to test
+    // hasLowID() alone and hold exactly those peers back from a slot they could have taken.
+    auto* v6 = env.makeClient(150, env.veryHigh());
+    v6->setUserAddress(Address::fromString(QStringLiteral("2606:4700::7")));
+    v6->restoreWaitStartTime(60'000);
+    QVERIFY(v6->hasLowID());
+    QVERIFY(v6->connectAddress().isIPv6());
+    QVERIFY2(v6->isReachableForSlot(), "a v6-reachable peer is dialable whatever its IPv4 ID");
+
+    auto* v4LowId = env.makeClient(151, env.veryHigh());
+    v4LowId->restoreWaitStartTime(120'000);          // waits longer, so it would win on score
+    QVERIFY(v4LowId->hasLowID());
+    QVERIFY(!v4LowId->isReachableForSlot());
+
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+    QVERIFY(queue.addClientToQueue(v4LowId));
+    QVERIFY(queue.addClientToQueue(v6));
+    v6->restoreWaitStartTime(60'000);
+    v4LowId->restoreWaitStartTime(120'000);
+
+    QSignalSpy started(&queue, &UploadQueue::uploadStarted);
+    QTest::qWait(1100);                              // forceNewClient()'s 1 s throttle
+    queue.process();
+
+    QCOMPARE(started.count(), 1);
+    QCOMPARE(started.at(0).at(0).value<eMule::UpDownClient*>(), v6);
 }
 
 QTEST_GUILESS_MAIN(tst_UploadQueue)

@@ -114,6 +114,28 @@ public:
     /// downloader.
     void reportPartCorrupt(const std::array<uint8, 16>& fileHash, uint32 partIndex);
 
+    /// A part we filled from a cache chunk has passed its MD4 check.
+    ///
+    /// Promotes the chunk to a relay entry, so the peers on our own upload queue that
+    /// still need that part can be handed the same URL and key for free. Only called
+    /// once MD4 genuinely matched — relaying means vouching for the bytes.
+    ///
+    /// Idempotent, and it has to be: PartFile::flushBuffer() re-verifies every already
+    /// complete part on every flush, so this arrives repeatedly for the same part.
+    void reportPartVerified(const std::array<uint8, 16>& fileHash, uint32 partIndex);
+
+    /// Is this chunk now being passed on to other peers, and was it a borrowed one?
+    /// The entry map is otherwise invisible, and "not promoted" and "promoted but not
+    /// as a relay" are different bugs.
+    [[nodiscard]] bool hasRelayEntryForTest(const std::array<uint8, 16>& fileHash,
+                                            uint32 partIndex) const;
+
+    /// Has this peer already been told about that chunk? Used to prove a relayed chunk
+    /// is never offered back to whoever handed it over.
+    [[nodiscard]] bool wasOfferedToForTest(const std::array<uint8, 16>& fileHash,
+                                           uint32 partIndex,
+                                           const std::array<uint8, 16>& peerHash) const;
+
     /// Is this part still attributable to the peer that offered it? The ledger is
     /// otherwise invisible, and "the late report went nowhere" and "the ledger was
     /// never filled" look identical from outside.
@@ -133,10 +155,36 @@ public:
     /// Offers accepted and successfully fetched.
     [[nodiscard]] uint32 sessionChunksFetched() const { return m_sessionChunksFetched; }
 
+    /// Take chunk descriptors that arrived on a Kad source result and fetch any we
+    /// still need.
+    ///
+    /// Gated on httpCache.fetchFromKad, which is on by default. Unlike an ed2k offer
+    /// there is no peer
+    /// behind these: the URL was chosen by a stranger, and nothing can be blamed if the
+    /// bytes turn out wrong. See the note in the implementation.
+    void addKadChunks(const std::vector<HttpCacheOffer>& chunks);
+
+    /// Chunks to advertise on this file's Kad source record, newest expiry last,
+    /// at most KADHC_MAX_CHUNKS.
+    ///
+    /// Only chunks we published ourselves: a relayed entry is a borrowed URL on
+    /// somebody else's TTL, and a Kad record outlives the chunk, so advertising one
+    /// would seed the DHT with dead ends.
+    [[nodiscard]] std::vector<HttpCacheOffer>
+    kadChunksForFile(const std::array<uint8, 16>& fileHash) const;
+
     /// Live counts, for the log and the statistics tree.
     [[nodiscard]] int activePublishCount() const { return m_activePublishes; }
     [[nodiscard]] int activeFetchCount() const;
     [[nodiscard]] int liveEntryCount() const { return static_cast<int>(m_entries.size()); }
+
+    /// Would fetching this URL send us somewhere we should not go?
+    ///
+    /// The gate on every peer- and Kad-supplied URL, so it is public and static to be
+    /// testable on its own: a literal host of either family is screened against
+    /// isGoodIP() and the IP filter before a connection is spent on it, and a name is
+    /// left to URLClient, which vets it once resolved.
+    [[nodiscard]] static bool urlIsAcceptable(const QString& url);
 
 signals:
     void statsChanged();
@@ -147,13 +195,18 @@ private slots:
 private:
     // Private helpers after the public interface, per the house style.
 
-    /// A chunk we published and may still hand out.
+    /// A chunk we may hand out — either one we published ourselves, or one we fetched
+    /// from another peer and verified (relayed == true).
     struct Entry {
         HttpCacheOffer offer;
         QString chunkId;
         uint32 failures = 0;
         uint32 offersSent = 0;
         bool offerable = true;
+        /// We fetched this chunk rather than publishing it, so we do not own the blob:
+        /// chunkId is empty, DELETE is never ours to send, and it lapses on somebody
+        /// else's TTL. Also what keeps borrowed chunks out of the Kad record.
+        bool relayed = false;
         /// Userhashes already told about this chunk. offerToQueue() runs every
         /// tick for the entry's whole lifetime, so without this a long-lived
         /// chunk would re-offer itself to the same peers forever.
@@ -170,6 +223,14 @@ private:
     // -- Uploader ------------------------------------------------------------
 
     [[nodiscard]] bool uploadEnabled() const;
+
+    /// May we relay a chunk somebody else published? Needs no base url and no API key —
+    /// a relayed offer costs one packet and no cache account at all.
+    [[nodiscard]] bool relayEnabled() const;
+
+    /// May we offer *anything* — ours or borrowed? Gates the re-offer loop, which is
+    /// otherwise stranded behind uploadEnabled()'s credential check.
+    [[nodiscard]] bool offersEnabled() const;
     [[nodiscard]] std::vector<Candidate> findCandidates() const;
     void publish(const Candidate& candidate);
     void onPublishFinished(const QString& key, const HttpCachePublishResult& result,
@@ -186,6 +247,14 @@ private:
     [[nodiscard]] bool sendOffer(UpDownClient* peer, Entry& entry);
     void handleReport(UpDownClient* sender, const HttpCacheReport& report);
 
+    /// Ask for this file's Kad source record to be republished at the next
+    /// opportunity, because the chunks it advertises have changed.
+    void nudgeKadRepublish(const std::array<uint8, 16>& fileHash) const;
+
+    /// Fire a Kad file lookup for downloads with missing parts, so chunk records are
+    /// found for a file that already has plenty of ed2k sources.
+    void lookupKadChunks();
+
     /// Bytes per second the publisher may use, from prefs or the upload limit.
     [[nodiscard]] uint64 publishRateBytesPerSecond() const;
 
@@ -196,9 +265,6 @@ private:
     void handleCancel(UpDownClient* sender, const HttpCacheReport& report);
     void onFetchFinished(HttpCacheClient* client, HttpCacheResult result, uint64 bytesFetched);
     void reply(UpDownClient* peer, const HttpCacheReport& report, bool declined);
-
-    /// Would fetching this URL send us somewhere we should not go?
-    [[nodiscard]] bool urlIsAcceptable(const QString& url) const;
 
     // -- Shared --------------------------------------------------------------
 
@@ -225,8 +291,29 @@ private:
     struct FetchedFrom {
         std::array<uint8, 16> peerHash{};
         qint64 at = 0;
+        /// Discovered through Kad, so peerHash is meaningless: there is no peer to
+        /// report an outcome to and none to hold responsible.
+        bool fromKad = false;
+        /// Kept so the chunk can be re-offered once MD4 confirms the part. The fetch
+        /// is long over by then and its HttpCacheClient — which owned the only other
+        /// copy of the url, key and digest — has been deleted.
+        HttpCacheOffer offer;
     };
     QHash<QString, FetchedFrom> m_fetchedFrom;
+
+    /// Fetch keys that came from a Kad record rather than from a peer's offer. Needed
+    /// before the ledger entry exists, because a *failed* fetch never creates one.
+    QSet<QString> m_kadFetches;
+
+    /// Last Kad chunk lookup per file, keyed by file-hash hex. Lookups are real DHT
+    /// traffic, so they are spaced far wider than the tick.
+    QHash<QString, qint64> m_kadLookupAt;
+    static constexpr qint64 kKadLookupIntervalSeconds = 900;
+
+    /// Chunk URLs a Kad-discovered fetch failed on, so the next lookup does not walk
+    /// straight back into them. Bounded — this is a hint, not an audit trail.
+    QSet<QString> m_kadBadUrls;
+    static constexpr int kKadBadUrlMax = 256;
 
     int m_activePublishes = 0;
 

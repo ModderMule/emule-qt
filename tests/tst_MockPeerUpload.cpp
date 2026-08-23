@@ -20,11 +20,15 @@
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
+#include "friends/Friend.h"
+#include "friends/FriendList.h"
+#include "net/Address.h"
 #include "net/EMSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "stats/Statistics.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
@@ -54,6 +58,47 @@
 using namespace eMule;
 using namespace eMule::testing;
 
+namespace {
+
+/// A mock peer needs a run-unique user hash *and* TCP port, or ClientList reads it as the
+/// previous peer reconnecting and displaces that one instead of adding a second identity.
+constexpr uint16 kFriendPeerPort  = 4772;
+constexpr uint16 kFriendPeerPort2 = 4782;
+constexpr uint16 kSessionPeerPort = 4792;
+
+/// UploadPipelineFixture publishes neither of these globals, and it is shared with
+/// tst_HttpCacheMultiPeer, so the friend tests install them for their own duration only —
+/// the other tests in this file keep running against theApp.statistics == nullptr.
+///
+/// RAII rather than plain assignment: a QVERIFY failing mid-test returns early, and a global
+/// left pointing at a destroyed stack object is dereferenced by the next test that uploads.
+struct ScopedStatistics {
+    Statistics stats;
+    ScopedStatistics()  { theApp.statistics = &stats; }
+    ~ScopedStatistics() { theApp.statistics = nullptr; }
+};
+
+struct ScopedFriendList {
+    FriendList list;
+    ScopedFriendList()  { theApp.friendList = &list; }
+    ~ScopedFriendList() { theApp.friendList = nullptr; }
+};
+
+/// CoreSession publishes the throttler on theApp in lockstep with handing it to the upload
+/// queue (CoreSession.cpp:207-220), and ~EMSocket relies on that: it is the only place a
+/// socket deregisters itself from m_standardOrder, and it looks the throttler up through this
+/// global. UploadPipelineFixture leaves it null by design, so a test that drives the real
+/// throttler *and* lets a peer disconnect has to restore the pairing, or the throttler thread
+/// keeps sending to a freed socket. UploadQueue::removeFromUploadQueue() cannot cover it:
+/// disconnected() nulls m_socket before calling it, so getFileUploadSocket() is already gone.
+struct ScopedThrottlerGlobal {
+    explicit ScopedThrottlerGlobal(UploadBandwidthThrottler* t)
+        { theApp.uploadBandwidthThrottler = t; }
+    ~ScopedThrottlerGlobal() { theApp.uploadBandwidthThrottler = nullptr; }
+};
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
@@ -67,11 +112,18 @@ private slots:
     void uploadFlow_longDurationRateLimited();
     void uploadFlow_throttlerEnforcesSpeedLimit();
     void uploadFlow_unlimitedIsNotTrickled();
+    void uploadFlow_friendSlotBytesAreCounted();
+    void uploadFlow_friendDatarateSurvivesPeerLeaving();
+    void uploadFlow_sessionUpAndCreditsAreCounted();
     void cleanupTestCase();
 
 private:
     // Packet builders
-    std::unique_ptr<Packet> buildHelloPacket();
+    /// @p userHash nullptr keeps m_fakeUserHash, so the tests that predate the friend work
+    /// are unaffected. The friend tests pass their own identity, because a friend is matched
+    /// by user hash (FriendList::searchFriend).
+    std::unique_ptr<Packet> buildHelloPacket(const uint8* userHash = nullptr,
+                                             uint16 tcpPort = 4662);
     std::unique_ptr<Packet> buildEmuleInfo();
     std::unique_ptr<Packet> buildSetReqFileId(const uint8* hash);
     std::unique_ptr<Packet> buildRequestFileName(const uint8* hash);
@@ -80,6 +132,13 @@ private:
                                                uint64 s0, uint64 e0,
                                                uint64 s1, uint64 e1,
                                                uint64 s2, uint64 e2);
+
+    /// Connect, encrypt, HELLO/EMULEINFO, ask for @p fileHash and wait for the upload slot.
+    /// @p outClient receives the server-side client, or stays null. An out-parameter rather
+    /// than a return value because the QVERIFY family expands to a bare `return`, which a
+    /// function with a return type cannot use.
+    void handshakeMockPeer(MockPeerSocket& mock, const uint8* userHash, uint16 tcpPort,
+                           const uint8* fileHash, UpDownClient*& outClient);
 
     // Infrastructure — listen socket, upload queue, disk IO, shared files
     UploadPipelineFixture m_pipe;
@@ -95,6 +154,11 @@ private:
     uint64 m_randomFileSize = 0;
 
     std::array<uint8, 16> m_fakeUserHash{};
+
+    // Separate identities for the two friend-slot tests — see kFriendPeerPort above.
+    std::array<uint8, 16> m_friendUserHash{};
+    std::array<uint8, 16> m_friendUserHash2{};
+    std::array<uint8, 16> m_sessionUserHash{};
 };
 
 // ---------------------------------------------------------------------------
@@ -116,7 +180,12 @@ void tst_MockPeerUpload::initTestCase()
     std::uniform_int_distribution<int> dist(0, 255);
     for (auto& b : m_fakeUserHash)
         b = static_cast<uint8>(dist(rng));
-
+    for (auto& b : m_friendUserHash)
+        b = static_cast<uint8>(dist(rng));
+    for (auto& b : m_friendUserHash2)
+        b = static_cast<uint8>(dist(rng));
+    for (auto& b : m_sessionUserHash)
+        b = static_cast<uint8>(dist(rng));
 }
 
 // ---------------------------------------------------------------------------
@@ -668,10 +737,351 @@ void tst_MockPeerUpload::uploadFlow_unlimitedIsNotTrickled()
 }
 
 // ---------------------------------------------------------------------------
+// Bytes sent to a friend are counted only while that friend holds the friend slot.
+//
+// Statistics::addSessionSentBytesToFriend() had no production caller at all, so
+// sessionSentBytesToFriend — the Statistics panel figure, and the cumTotalUploadedToFriend it
+// is rolled into — were permanently zero. Its one writer is updateUploadingStatisticsData(),
+// gated on friendPtr() && friendSlot(); MFC spells the same thing as the last argument of
+// Add2SessionTransferData (srchybrid/UploadClient.cpp:438-439).
+//
+// Both phases run over a single connection, so the assertion pins the *gate* rather than just
+// "the counter moved": the same peer uploads first without the slot and then with it.
+// ---------------------------------------------------------------------------
+
+void tst_MockPeerUpload::uploadFlow_friendSlotBytesAreCounted()
+{
+    ScopedStatistics stats;
+    ScopedFriendList friends;
+
+    // Unlimited, flushed from this thread by the fixture's own timer — no throttler thread is
+    // involved, so what the counter sees is exactly what this test asked for.
+    thePrefs.setMaxUpload(0);
+    m_pipe.uploadQueue->setThrottler(nullptr);
+    m_pipe.processTimer.start(100);
+
+    // The friend exists before the peer connects, as it would after a restart. Linking is left
+    // to the production hello path (UpDownClient::processHelloTags → Friend::setLinkedClient),
+    // not done here — that path is half of what the counter depends on.
+    Friend* f = friends.list.addFriend(m_friendUserHash.data(),
+                                       Address::fromString(QStringLiteral("127.0.0.1")),
+                                       kFriendPeerPort, QStringLiteral("MockFriend"));
+    QVERIFY(f);
+    QVERIFY(!f->friendSlot());
+
+    MockPeerSocket mock;
+    UpDownClient* client = nullptr;
+    handshakeMockPeer(mock, m_friendUserHash.data(), kFriendPeerPort,
+                      m_randomFileHash.data(), client);
+    QVERIFY2(client, "No server-side client carries the mock peer's user hash");
+
+    // Both directions of the link the byte counter rides on.
+    QCOMPARE(f->linkedClient(), client);
+    QCOMPARE(client->friendPtr(), f);
+    QVERIFY(!client->friendSlot());
+
+    // The incompressible file: MockPeerSocket::totalDataBytes() only counts OP_SENDINGPART,
+    // so a compressible one would report no payload at all.
+    constexpr uint64 blockSize = 10240;
+    uint64 nextOffset = 0;
+
+    // -- Phase 1: a friend, but with no slot. Nothing may be attributed. --------------------
+    mock.sendPacket(buildRequestParts(m_randomFileHash.data(),
+        nextOffset, nextOffset + blockSize,
+        nextOffset + blockSize, nextOffset + blockSize * 2,
+        nextOffset + blockSize * 2, nextOffset + blockSize * 3));
+    nextOffset += blockSize * 3;
+
+    QTRY_VERIFY_WITH_TIMEOUT(mock.totalDataBytes() >= blockSize * 3, 20000);
+    QTest::qWait(400);   // two process ticks, so the socket counters have been drained
+
+    QCOMPARE(theApp.statistics->sessionSentBytesToFriend(), static_cast<uint64>(0));
+
+    // -- Phase 2: the GUI's "Friend slot" toggle, mid-connection. ---------------------------
+    f->setFriendSlot(true);
+    QVERIFY2(client->friendSlot(),
+             "Friend::setFriendSlot did not reach the linked client");
+
+    const uint64 receivedBefore = mock.totalDataBytes();
+
+    mock.sendPacket(buildRequestParts(m_randomFileHash.data(),
+        nextOffset, nextOffset + blockSize,
+        nextOffset + blockSize, nextOffset + blockSize * 2,
+        nextOffset + blockSize * 2, nextOffset + blockSize * 3));
+    nextOffset += blockSize * 3;
+
+    QTRY_VERIFY_WITH_TIMEOUT(mock.totalDataBytes() >= receivedBefore + blockSize * 3, 20000);
+    QTest::qWait(400);
+
+    const uint64 payload = mock.totalDataBytes() - receivedBefore;
+    const uint64 counted = theApp.statistics->sessionSentBytesToFriend();
+
+    // The counter is wire bytes — payload plus each data packet's 6-byte ed2k header and
+    // 24-byte hash+offsets header — so it can never come in under the payload.
+    QVERIFY2(counted >= payload,
+             qPrintable(QStringLiteral("Only %1 bytes attributed to the friend slot for a "
+                                       "%2 byte transfer").arg(counted).arg(payload)));
+
+    // ...and phase 1's bytes must not have been swept in retroactively. Header overhead is
+    // well under 1% at this block size, so half again is loose while still excluding ~2x.
+    QVERIFY2(counted <= payload * 3 / 2,
+             qPrintable(QStringLiteral("%1 bytes attributed for a %2 byte slotted transfer — "
+                                       "bytes sent before the slot was granted were counted too")
+                            .arg(counted).arg(payload)));
+}
+
+// ---------------------------------------------------------------------------
+// The friend datarate stays sane when the friend-slot peer leaves the uploading list.
+//
+// UploadQueue::process() feeds m_averageFriendDRList and updateDatarates() derives the rate as
+// back() - front(). That subtraction is only valid on a monotonic series. Pushing a snapshot
+// sum over the current uploading list — which is what this did — is not monotonic: the sum
+// drops to zero the moment the friend-slot client leaves, the uint64 subtraction underflows,
+// and the reported friend datarate becomes a garbage multi-GB/s figure. It now pushes the
+// running total from the test above, which is what makes MFC's identical subtraction valid.
+//
+// The series is only fed when a throttler is set, so unlike the test above this one wires the
+// real UploadBandwidthThrottler, exactly as uploadFlow_throttlerEnforcesSpeedLimit does.
+// ---------------------------------------------------------------------------
+
+void tst_MockPeerUpload::uploadFlow_friendDatarateSurvivesPeerLeaving()
+{
+    ScopedStatistics stats;
+    ScopedFriendList friends;
+
+    m_pipe.processTimer.stop();
+
+    // A steady rate, so the 30-second averaging window fills with real samples instead of the
+    // whole file draining in a couple of ticks.
+    thePrefs.setMaxUpload(500);
+
+    Friend* f = friends.list.addFriend(m_friendUserHash2.data(),
+                                       Address::fromString(QStringLiteral("127.0.0.1")),
+                                       kFriendPeerPort2, QStringLiteral("MockFriend2"));
+    QVERIFY(f);
+    f->setFriendSlot(true);   // before the peer connects; setLinkedClient carries it across
+
+    ScopedThrottlerGlobal throttlerGlobal(m_pipe.throttler);
+    m_pipe.uploadQueue->setThrottler(m_pipe.throttler);
+    m_pipe.throttler->setUploadQueue(m_pipe.uploadQueue);
+    m_pipe.throttler->setDiskIOThread(m_pipe.diskIO);
+    m_pipe.throttler->start();
+
+    MockPeerSocket mock;
+    UpDownClient* client = nullptr;
+    handshakeMockPeer(mock, m_friendUserHash2.data(), kFriendPeerPort2,
+                      m_randomFileHash.data(), client);
+    QVERIFY(client);
+    QVERIFY2(client->friendSlot(), "The friend slot did not reach the client at hello time");
+
+    constexpr uint64 blockSize = EMBLOCKSIZE;
+    const uint64 fileSize = m_randomFileSize;
+    uint64 nextOffset = 0;
+    uint64 prevMockBytes = 0;
+    bool peerGone = false;
+
+    QTimer processTimer;
+    connect(&processTimer, &QTimer::timeout, this,
+            [this, &mock, &nextOffset, &prevMockBytes, &peerGone, fileSize] {
+        m_pipe.uploadQueue->process();
+        m_pipe.listenSocket->process();
+
+        // process() has to keep running after the peer leaves — that is when the friend series
+        // is under test — but nothing may touch the socket once it is going away.
+        if (peerGone)
+            return;
+
+        const uint64 curBytes = mock.totalDataBytes();
+        if (curBytes > prevMockBytes || nextOffset == 0) {
+            prevMockBytes = curBytes;
+            for (int r = 0; r < 2 && nextOffset + blockSize * 3 <= fileSize; ++r) {
+                mock.sendPacket(buildRequestParts(m_randomFileHash.data(),
+                    nextOffset, nextOffset + blockSize,
+                    nextOffset + blockSize, nextOffset + blockSize * 2,
+                    nextOffset + blockSize * 2, nextOffset + blockSize * 3));
+                nextOffset += blockSize * 3;
+            }
+        }
+    });
+
+    mock.sendPacket(buildRequestParts(m_randomFileHash.data(),
+        0, blockSize, blockSize, blockSize * 2, blockSize * 2, blockSize * 3));
+    nextOffset = blockSize * 3;
+    QTest::qWait(100);
+
+    processTimer.start(100);
+
+    // Long enough for the friend series to hold several seconds of its own samples.
+    QTest::qWait(8000);
+
+    const uint32 rateWhileUploading = m_pipe.uploadQueue->friendDatarate();
+    const uint64 totalToFriend = theApp.statistics->sessionSentBytesToFriend();
+
+    QVERIFY2(totalToFriend > 0, "No bytes were attributed to the friend slot");
+    QVERIFY2(rateWhileUploading > 0,
+             "friendDatarate() stayed at zero throughout a friend-slot upload");
+
+    // The peer leaves. disconnected() calls removeFromUploadQueue() straight away, which is
+    // precisely where a snapshot-sum series drops and the subtraction underflows.
+    peerGone = true;
+    mock.disconnectFromHost();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_pipe.uploadQueue->hasActiveUploads(), 10000);
+
+    // Over an averaging window of seconds a rate can never exceed everything ever sent to
+    // friends; the 1 MiB floor covers a short transfer. An underflowed uint64 truncated to
+    // uint32 is effectively uniform over [0, 2^32), so it clears this bound on a fraction of
+    // a percent of samples — not on ten of them. Six seconds of polling also keeps the whole
+    // loop inside the 30-second window, so it still straddles the departure.
+    const uint64 cap = std::max<uint64>(totalToFriend, 1u << 20);
+    for (int i = 0; i < 10; ++i) {
+        QTest::qWait(600);   // updateDatarates() recomputes at most every 500 ms
+        const uint64 sample = m_pipe.uploadQueue->friendDatarate();
+        QVERIFY2(sample <= cap,
+                 qPrintable(QStringLiteral("friendDatarate() = %1 B/s after the friend-slot "
+                                           "peer left, over the %2 B/s ceiling — the friend "
+                                           "byte series is not monotonic").arg(sample).arg(cap)));
+    }
+
+    processTimer.stop();
+
+    // Cleanup: stop the throttler and hand the fixture back the way the other throttler tests
+    // leave it, so cleanupTestCase and any later test start from a known state.
+    m_pipe.throttler->endThread();
+    m_pipe.uploadQueue->setThrottler(nullptr);
+    m_pipe.throttler = new UploadBandwidthThrottler(this);
+
+    m_pipe.processTimer.start(100);
+}
+
+// ---------------------------------------------------------------------------
+// The per-slot session counters, the credit system, and the queue's success tally.
+//
+// All four of these were dead in ways that only real bytes on a real socket can expose:
+//
+//  - m_curSessionUp had no writer at all, because the port read MFC's baseline marker back
+//    as if it were a counter (MFC: GetSessionUp() = m_nTransferredUp - m_nCurSessionUp,
+//    srchybrid/UpdownClient.h:254). sessionUp() was therefore permanently zero.
+//  - ClientCredits::addUploaded() / addDownloaded() were fully implemented and never called,
+//    so scoreRatio() always returned 1.0 and the upload queue ignored credits entirely.
+//  - m_curQueueSessionPayloadUp was fed wire bytes rather than the socket's payload figure,
+//    so the SESSIONMAXTRANS slot rotation counted framing overhead against the peer.
+//  - UploadQueue::removeFromUploadQueue() gates its successful/failed tally on
+//    sessionUp() > 0, so every completed upload was booked as a failure and averageUpTime()
+//    could never leave zero.
+//
+// Deliberately the deterministic shape of uploadFlow_friendSlotBytesAreCounted: no throttler,
+// flushed from this thread by the fixture's own timer.
+// ---------------------------------------------------------------------------
+
+void tst_MockPeerUpload::uploadFlow_sessionUpAndCreditsAreCounted()
+{
+    ScopedStatistics stats;
+
+    thePrefs.setMaxUpload(0);
+    m_pipe.uploadQueue->setThrottler(nullptr);
+    m_pipe.processTimer.start(100);
+
+    // Every earlier test in this binary leaves its peer in the tracked-client map on the way
+    // out (removeFromUploadQueue → addTrackClient), and addClientToQueue refuses a fourth
+    // distinct TCP port from one address. Three ports are already spoken for by the time this
+    // test runs, so clear the map rather than have the handshake rejected.
+    QVERIFY(theApp.clientList);
+    theApp.clientList->removeAllTrackedClients();
+
+    // The queue's tallies are cumulative across this binary's tests, so compare deltas.
+    const uint32 successBefore = m_pipe.uploadQueue->successfulUploadCount();
+    const uint32 failedBefore  = m_pipe.uploadQueue->failedUploadCount();
+
+    MockPeerSocket mock;
+    UpDownClient* client = nullptr;
+    handshakeMockPeer(mock, m_sessionUserHash.data(), kSessionPeerPort,
+                      m_randomFileHash.data(), client);
+    QVERIFY2(client, "No server-side client carries the mock peer's user hash");
+
+    // The hello path assigns credits from theApp.clientCredits, which the fixture publishes.
+    QVERIFY2(client->credits(), "The handshake did not attach a credit record");
+    QCOMPARE(client->credits()->uploadedTotal(), static_cast<uint64>(0));
+    QCOMPARE(client->sessionUp(), static_cast<uint64>(0));
+
+    // The incompressible file: MockPeerSocket::totalDataBytes() only counts OP_SENDINGPART,
+    // so a compressible one would report no payload at all.
+    constexpr uint64 blockSize = 10240;
+    uint64 nextOffset = 0;
+    for (int round = 0; round < 3; ++round) {
+        const uint64 before = mock.totalDataBytes();
+        mock.sendPacket(buildRequestParts(m_randomFileHash.data(),
+            nextOffset, nextOffset + blockSize,
+            nextOffset + blockSize, nextOffset + blockSize * 2,
+            nextOffset + blockSize * 2, nextOffset + blockSize * 3));
+        nextOffset += blockSize * 3;
+        QTRY_VERIFY_WITH_TIMEOUT(mock.totalDataBytes() >= before + blockSize * 3, 20000);
+    }
+    QTest::qWait(400);   // two process ticks, so the socket counters have been drained
+
+    const uint64 payload     = mock.totalDataBytes();
+    const uint64 sessionUp   = client->sessionUp();
+    const uint64 payloadUp   = client->queueSessionPayloadUp();
+    const uint64 credited    = client->credits()->uploadedTotal();
+
+    QCOMPARE(payload, nextOffset);
+
+    // sessionUp() is transferredUp() minus the mark taken when the slot opened, so it is a
+    // suffix of the lifetime total, never more. Not equality: this binary's earlier tests can
+    // leave a client object behind that ClientList re-identifies for a later peer, carrying
+    // its accumulated transferredUp across.
+    QVERIFY2(sessionUp > 0,
+             qPrintable(QStringLiteral("sessionUp() stayed at zero after %1 payload bytes")
+                            .arg(payload)));
+    QVERIFY2(sessionUp <= client->transferredUp(),
+             qPrintable(QStringLiteral("sessionUp() %1 exceeds the %2 lifetime total it is "
+                                       "supposed to be a suffix of")
+                            .arg(sessionUp).arg(client->transferredUp())));
+
+    // Wire bytes: payload plus each data packet's 6-byte ed2k header and 24-byte
+    // hash+offsets header. Never under the payload, and the overhead is well under 1%.
+    QVERIFY2(sessionUp >= payload,
+             qPrintable(QStringLiteral("sessionUp() %1 is under the %2 payload bytes the peer "
+                                       "actually received").arg(sessionUp).arg(payload)));
+    QVERIFY(sessionUp <= payload * 3 / 2);
+
+    // ...whereas the per-slot payload counter is the file data alone, so it must be strictly
+    // smaller. Equality would mean it is still being fed the wire figure.
+    QVERIFY2(payloadUp > 0, "queueSessionPayloadUp() stayed at zero");
+    QVERIFY2(payloadUp < sessionUp,
+             qPrintable(QStringLiteral("queueSessionPayloadUp() %1 is not below the %2 wire "
+                                       "bytes — it is still being fed wire bytes, which makes "
+                                       "the SESSIONMAXTRANS slot rotation count framing "
+                                       "overhead against the peer")
+                            .arg(payloadUp).arg(sessionUp)));
+    QCOMPARE(payloadUp, payload);
+
+    // Credit for what we gave this peer. Without it scoreRatio() is stuck at 1.0 for everyone.
+    QVERIFY2(credited > 0,
+             "ClientCredits::addUploaded() was never called — the credit system is inert");
+    QCOMPARE(credited, sessionUp);
+
+    // -- The peer leaves: the slot must be booked as a success, not a failure. --------------
+    //
+    // m_totalUploadTime accumulates getUpStartTimeDelay() in whole seconds, so hold the slot
+    // open past the first one — otherwise averageUpTime() would read zero from the integer
+    // division alone and the assertion below would prove nothing.
+    QTRY_VERIFY_WITH_TIMEOUT(client->getUpStartTimeDelay() >= 1500, 5000);
+
+    mock.disconnectFromHost();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_pipe.uploadQueue->hasActiveUploads(), 10000);
+
+    QCOMPARE(m_pipe.uploadQueue->successfulUploadCount(), successBefore + 1);
+    QCOMPARE(m_pipe.uploadQueue->failedUploadCount(), failedBefore);
+    QVERIFY2(m_pipe.uploadQueue->averageUpTime() > 0,
+             "averageUpTime() stayed at zero — m_totalUploadTime never accumulated");
+}
+
+// ---------------------------------------------------------------------------
 // Packet builders
 // ---------------------------------------------------------------------------
 
-std::unique_ptr<Packet> tst_MockPeerUpload::buildHelloPacket()
+std::unique_ptr<Packet> tst_MockPeerUpload::buildHelloPacket(const uint8* userHash,
+                                                            uint16 tcpPort)
 {
     SafeMemFile data;
 
@@ -679,13 +1089,13 @@ std::unique_ptr<Packet> tst_MockPeerUpload::buildHelloPacket()
     data.writeUInt8(0x10);
 
     // 16-byte user hash
-    data.writeHash16(m_fakeUserHash.data());
+    data.writeHash16(userHash ? userHash : m_fakeUserHash.data());
 
     // Client ID (high ID: 127.0.0.1 in network byte order)
     data.writeUInt32(0x7F000001);
 
     // Port
-    data.writeUInt16(4662);
+    data.writeUInt16(tcpPort);
 
     // Tag count
     data.writeUInt32(6);
@@ -811,6 +1221,43 @@ std::unique_ptr<Packet> tst_MockPeerUpload::buildRequestParts(
     data.writeUInt32(static_cast<uint32>(e2));
 
     return std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_REQUESTPARTS);
+}
+
+// ---------------------------------------------------------------------------
+// Handshake helper
+//
+// Only the friend tests use it. The four tests above each vary the handshake — a different
+// file, an SO_RCVBUF bump, a different driving timer — so folding them in would be a rewrite
+// of passing tests for no coverage gain.
+// ---------------------------------------------------------------------------
+
+void tst_MockPeerUpload::handshakeMockPeer(MockPeerSocket& mock, const uint8* userHash,
+                                           uint16 tcpPort, const uint8* fileHash,
+                                           UpDownClient*& outClient)
+{
+    outClient = nullptr;
+
+    mock.setObfuscationConfig(thePrefs.obfuscationConfig());
+    mock.setConnectionEncryption(true, thePrefs.userHash().data(), false);
+    mock.connectToHost(QHostAddress::LocalHost, m_pipe.listenSocket->serverPort());
+    QVERIFY(mock.waitForConnected(5000));
+    QTRY_VERIFY_WITH_TIMEOUT(mock.isEncryptionLayerReady(), 5000);
+
+    mock.sendPacket(buildHelloPacket(userHash, tcpPort));
+    QTRY_VERIFY_WITH_TIMEOUT(mock.hasOpcode(OP_HELLOANSWER), 5000);
+
+    mock.sendPacket(buildEmuleInfo());
+    QTRY_VERIFY_WITH_TIMEOUT(mock.hasOpcode(OP_EMULEINFOANSWER, OP_EMULEPROT), 5000);
+
+    mock.sendPacket(buildSetReqFileId(fileHash));
+    mock.sendPacket(buildRequestFileName(fileHash));
+    QTRY_VERIFY_WITH_TIMEOUT(mock.hasOpcode(OP_FILESTATUS), 5000);
+
+    mock.sendPacket(buildStartUploadReq(fileHash));
+    QTRY_VERIFY_WITH_TIMEOUT(mock.hasOpcode(OP_ACCEPTUPLOADREQ), 15000);
+
+    QVERIFY(theApp.clientList);
+    outClient = theApp.clientList->findByUserHash(userHash);
 }
 
 // ---------------------------------------------------------------------------

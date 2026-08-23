@@ -885,7 +885,7 @@ void CoreSession::initClientUDP()
                 return;
             auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
                                                                  senderEP.port());
-            if (!sender || !sender->reaskPending())
+            if (!sender || !sender->udpPacketPending())
                 return;
             SafeMemFile io(data, size);
             // If UDPv4+, response contains part status first
@@ -904,7 +904,7 @@ void CoreSession::initClientUDP()
                 return;
             auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
                                                                  senderEP.port());
-            if (sender && sender->reaskPending())
+            if (sender && sender->udpPacketPending())
                 sender->udpReaskFNF(); // may delete sender
         });
 
@@ -915,7 +915,7 @@ void CoreSession::initClientUDP()
                 return;
             auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
                                                                  senderEP.port());
-            if (sender && sender->reaskPending()) {
+            if (sender && sender->udpPacketPending()) {
                 sender->setRemoteQueueFull(true);
                 sender->udpReaskACK(0);
             }
@@ -1021,12 +1021,30 @@ void CoreSession::handleDirectCallbackRequest(const Endpoint& senderEP,
     if (theApp.ipFilter && theApp.ipFilter->isFiltered(senderAddr))
         return;
 
+    // One direct callback per address per 3 minutes — MFC srchybrid/ClientUDPSocket.cpp:370.
+    // Answering one costs us an outgoing TCP connection on a stranger's say-so, so without
+    // the limit a single peer can drive our connect slots.
+    if (!theApp.clientList->allowCallbackRequest(senderAddr))
+        return;
+    theApp.clientList->addTrackCallbackRequests(senderAddr);
+
     auto* client = theApp.clientList->findByEndpoint_UDP(senderAddr, senderEP.port());
     if (!client)
         client = theApp.clientList->findByAddress(senderAddr, tcpPort);
 
     if (!client) {
-        client = new UpDownClient(tcpPort, 0, 0, 0, nullptr);
+        // The sender's IP goes in the ctor's userId slot, as MFC does
+        // (srchybrid/ClientUDPSocket.cpp:384, `new CUpDownClient(NULL, nRemoteTCPPort, ip,
+        // 0, 0, true)`). Passing 0 there — which this used to — leaves m_userIDHybrid at 0,
+        // so hasLowID() is true for a peer that is plainly reachable, and tryToConnect()
+        // refuses the direct TCP branch and then falls through every callback branch too.
+        // The net effect was that an incoming direct callback request over IPv4 was never
+        // answered at all. An IPv6 sender happened to work, via the isIPv6() bypass.
+        //
+        // ed2kID = true because senderAddr is network order, matching MFC's `ip`. It is 0
+        // for an IPv6 sender, which leaves the Low-ID form and the IPv6 bypass that already
+        // handles that case.
+        client = new UpDownClient(tcpPort, senderAddr.toNetworkUint32(), 0, 0, nullptr, true);
         client->setUserHash(userHash);
         // setUserAddress fills m_userAddress *and* m_connectAddress; the former is
         // what findByEndpoint_UDP matches, so the next datagram finds this client.
@@ -1045,6 +1063,9 @@ void CoreSession::handleDirectCallbackRequest(const Endpoint& senderEP,
         }
     }
     client->setConnectOptions(connectOptions, true, false);
+    // MFC srchybrid/ClientUDPSocket.cpp:391 — after setConnectOptions, which is what would
+    // otherwise have just set the flag from the peer's own options byte.
+    client->setDirectUDPCallbackSupport(false);
     client->tryToConnect();
 }
 
@@ -1093,16 +1114,17 @@ void CoreSession::initKademlia()
 
     // Wire Kad source result callback → DownloadQueue
     kad::Kademlia::setKadSourceResultCallback(
-        [](uint32 searchID, const uint8* fileHash, uint32 ip, uint16 tcpPort,
-           uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
-           uint8 sourceType, const uint8* buddyHash, const uint8* clientHash,
-           uint16 udpPort, const uint8* sourceIPv6, const uint8* buddyIPv6) {
+        [](const kad::Kademlia::KadSourceResult& result) {
             if (theApp.downloadQueue)
-                theApp.downloadQueue->addKadSourceResult(
-                    searchID, fileHash, ip, tcpPort,
-                    buddyIP, buddyPort, buddyCrypt,
-                    sourceType, buddyHash, clientHash, udpPort,
-                    sourceIPv6, buddyIPv6);
+                theApp.downloadQueue->addKadSourceResult(result);
+
+            // One result is both a source and a chunk carrier: the HTTP Cache
+            // descriptors ride the peer's ordinary Kad source record, so they arrive
+            // through the same lookup. Fed separately because the two are independent —
+            // a chunk is fetched from the cache server and needs no connection to the
+            // peer that published it, and may be usable when the source is not.
+            if (theApp.httpCache && !result.httpCacheChunks.empty())
+                theApp.httpCache->addKadChunks(result.httpCacheChunks);
         });
 
     // Wire Kad notes result callback. A notes search is the only Kad lookup that

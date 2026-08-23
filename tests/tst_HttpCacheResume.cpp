@@ -245,6 +245,7 @@ private slots:
     void givesUpAfterMaxAttempts();
     void wholePartFetchIssuesOneRequest();
     void fetchIdentifiesItself();
+    void downloadedBytesAreAccountedOnce();
 
 private:
     /// Build an offer describing @p cipher, served from @p server.
@@ -280,6 +281,13 @@ void tst_HttpCacheResume::initTestCase()
     thePrefs.setConfigDir(m_dir.path());
     thePrefs.setHttpCacheEnabled(true);
     thePrefs.setHttpCacheAllowDownload(true);
+
+    // The fake server is on loopback, and a LAN address is refused unless the user has
+    // declared this a private network — by urlIsAcceptable() on the way in, and now by
+    // URLClient on the way out too. This fixture drives HttpCacheClient directly and so
+    // used to reach the connect path unscreened; the two sibling fixtures already set
+    // this for the same reason.
+    thePrefs.setFilterLANIPs(false);
 
     m_tempDir = m_dir.filePath(QStringLiteral("temp"));
     QDir().mkpath(m_tempDir);
@@ -589,6 +597,46 @@ void tst_HttpCacheResume::fetchIdentifiesItself()
         QVERIFY(request.contains(agentLine));
         QVERIFY(request.contains("Range: bytes="));
     }
+}
+
+void tst_HttpCacheResume::downloadedBytesAreAccountedOnce()
+{
+    // addPayloadDown() is the only place the HTTP paths book what they downloaded — the ed2k
+    // block accounting in processBlockPacket() never runs for them. All three figures it
+    // feeds were broken: m_curSessionPayloadDown had no writer at all, sessionDown() read a
+    // baseline marker as if it were a counter, and the credit call MFC makes alongside them
+    // (srchybrid/URLClient.cpp:374,389-390) was missing.
+    //
+    // Asserted across a *resumed* transfer on purpose: a double-booked resume would show up
+    // here as roughly one and a half parts downloaded.
+    FakeCacheServer server(m_cipher);
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    server.setScript({Behaviour{.dropAfter = 400'000}, Behaviour{}});
+
+    PartFile file;
+    file.setFileSize(kFileSize);
+    file.setFileHash(m_fileHash.data());
+    file.setTmpPath(m_tempDir);
+    QVERIFY(file.createPartFile(m_tempDir));
+
+    HttpCacheClient* client = nullptr;
+    QCOMPARE(runFetch(server, file, client, m_cipher), HttpCacheResult::Ok);
+    QVERIFY(client);
+
+    // Plaintext bytes that reached the part file, counted once despite the mid-transfer drop.
+    QCOMPARE(client->transferredDown(), static_cast<uint64>(kPlainLength));
+    QCOMPARE(client->sessionPayloadDown(), static_cast<uint64>(kPlainLength));
+
+    // sessionDown() is the lifetime total minus the mark taken when the download session
+    // began. Nothing has reset this client, so the mark is still zero and the two agree.
+    QCOMPARE(client->sessionDown(), client->transferredDown());
+
+    // ...and the mark actually moves. Reading m_curSessionDown back directly, which is what
+    // this used to do, leaves sessionDown() unchanged here.
+    client->resetSessionDown();
+    QCOMPARE(client->sessionDown(), static_cast<uint64>(0));
+    QCOMPARE(client->sessionPayloadDown(), static_cast<uint64>(0));
+    QCOMPARE(client->transferredDown(), static_cast<uint64>(kPlainLength));
 }
 
 QTEST_MAIN(tst_HttpCacheResume)

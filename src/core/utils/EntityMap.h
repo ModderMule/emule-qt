@@ -12,6 +12,19 @@
 /// for why). Subclasses keep their own Q_OBJECT and signals, and override the
 /// protected hooks. m_map / m_mutex are protected so subclasses' bespoke methods
 /// (e.g. data-size walks, secondary-set checks) can access them directly.
+///
+/// @warning A subclass must NOT re-declare m_mutex. Shadowing it silently splits
+/// m_map across two locks — half the class guarding one, half the other — which is
+/// exactly the bug this comment exists to prevent recurring.
+///
+/// Lock contract for the hooks (keyFor / isDuplicate / onEntityAdded /
+/// onEntityRemoved): they run with m_mutex already held, on a *non-recursive*
+/// QMutex. They may touch m_map and other state guarded by the same lock, and
+/// nothing else. No disk I/O, no signal emission, and no call back into count() /
+/// findByKey() / forEach() / addEntity() / removeEntity() — each of those would
+/// self-deadlock. Side effects that need any of that belong in the caller, after
+/// the template method returns (MFC drops its own lock at the same point,
+/// srchybrid/SharedFileList.cpp:699).
 
 #include <QMutex>
 #include <QObject>
@@ -76,6 +89,15 @@ protected:
         m_map.erase(it);
         onEntityRemoved(entity); // under lock
         return true;
+    }
+
+    /// Drop every entity (takes the lock). The map does not own them, so this
+    /// only forgets them — no deletion. Exists so subclasses never have to poke
+    /// m_map directly just to empty it.
+    void clearEntities()
+    {
+        QMutexLocker locker(&m_mutex);
+        m_map.clear();
     }
 
     /// Derive the storage key from an entity (e.g. its file hash).

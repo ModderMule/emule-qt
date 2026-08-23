@@ -15,6 +15,7 @@
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadUDPListener.h"
 #include "app/AppContext.h"
+#include "httpcache/HttpCacheManager.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
@@ -191,6 +192,7 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     // Mirrors MFC Search.cpp StorePacket() STOREFILE case (:640-690).
     std::vector<Tag> tags;
     outCanPublish = true;
+    uint8 cryptOptions = p.cryptOptions;
 
     auto addCommonPortAndSize = [&] {
         tags.emplace_back(FT_SOURCEPORT, static_cast<uint32>(p.tcpPort));
@@ -203,6 +205,14 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     if (p.firewalled && p.directUDPCallback) {
         // Source type 6: firewalled but reachable by direct UDP callback.
         tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(6));
+        // Bit 3 of FT_ENCRYPTION *is* the type-6 claim, and it is the only thing on the
+        // wire that separates a usable type-6 record from a dead one: a receiver drops
+        // the source outright without it (DownloadQueue.cpp case 6; MFC
+        // srchybrid/DownloadQueue.cpp:1590). Setting it here rather than trusting the
+        // caller's byte means the tag can never contradict the type — which matters,
+        // because the caller derives the byte from theApp.isFirewalled() while this
+        // branch is chosen on the Kad-only firewall state, and the two can disagree.
+        cryptOptions = static_cast<uint8>(cryptOptions | 0x08);
         addCommonPortAndSize();
     } else if (p.firewalled && p.hasBuddy) {
         // Source type 3 (firewalled <=4GB) or 5 (firewalled >4GB): the buddy
@@ -214,7 +224,11 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         addCommonPortAndSize();
     } else if (p.firewalled) {
         // Firewalled with neither a direct callback nor a buddy — a published
-        // source nobody can reach is worse than none.
+        // source nobody can reach is worse than none. It also drops the HTTP Cache
+        // chunks we hold, which *are* reachable: they sit on the cache server, not here.
+        // ToDo: no dummy source can carry them out — a storing node stamps FT_SOURCEIP
+        // from the UDP sender and refuses tcpPort 0, so the only opening is claiming a
+        // type we cannot honour, and no searcher filters that back out. Spec §11.3.
         outCanPublish = false;
         return tags;
     } else {
@@ -223,7 +237,7 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         addCommonPortAndSize();
     }
 
-    tags.emplace_back(FT_ENCRYPTION, static_cast<uint32>(p.cryptOptions));
+    tags.emplace_back(FT_ENCRYPTION, static_cast<uint32>(cryptOptions));
 
     // IPv6 (string-named hex tags, matching the reference CKadTagStr encoding) — lets a
     // v6-capable peer reach this source over IPv6. Additive: legacy peers skip them.
@@ -232,7 +246,57 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     if (!p.buddyIPv6Hex.isEmpty())
         tags.emplace_back(QByteArrayLiteral(TAG_SERVINGBUDDYIPV6), p.buddyIPv6Hex);
 
+    appendHttpCacheChunkTags(tags, p.httpCacheChunks);
+
     return tags;
+}
+
+void Search::appendHttpCacheChunkTags(std::vector<Tag>& tags,
+                                      const std::vector<eMule::HttpCacheOffer>& chunks)
+{
+    // Chunk descriptors travel as extra tags on our real source record. A stock storing
+    // node keeps tags it does not recognise verbatim and serves them back
+    // (srchybrid/kademlia/net/KademliaUDPListener.cpp:1370-1374,
+    // srchybrid/kademlia/kademlia/Entry.cpp:162-186), and a stock *searcher* ignores
+    // them — so this is additive in both directions.
+    //
+    // A word on FT_FILESIZE, which the caller does add. A stock storing node records it
+    // and then serves the entry only when the searcher asked for that exact size
+    // (srchybrid/kademlia/kademlia/Indexed.cpp:728). That is harmless *here* precisely
+    // because these tags ride our real source record: the size published is the file's
+    // own, and a searcher looking for that file asks with the same number. It would
+    // only bite a record fabricated with a size that did not match the file — which is
+    // one more reason this is an annotation on a genuine source rather than a synthetic
+    // entry of its own. (This port's storer has no FT_FILESIZE case at all, so it keeps
+    // m_size at 0 and serves regardless.)
+    uint32 index = 0;
+    for (const auto& chunk : chunks) {
+        if (index >= KADHC_MAX_CHUNKS)
+            break;
+
+        // Only whole parts are ever published (docs/protocol/http-cache-spec.md §3.1),
+        // which is what lets the lengths be derived on the far side instead of sent.
+        // Anything else here is a bug on this side; skip it rather than publish a
+        // record a conforming reader will reject.
+        if (chunk.plainLength != eMule::kHttpCachePublishPartSize)
+            continue;
+        if (chunk.url.isEmpty() || chunk.url.size() > KADHC_MAX_URL_LEN)
+            continue;
+        if (chunk.key.size() + chunk.iv.size() != 48 || chunk.cipherSha256.size() != 32)
+            continue;
+        if (chunk.expiresAt == 0)
+            continue;
+
+        const QByteArray suffix = QByteArray::number(index);
+        tags.emplace_back(QByteArrayLiteral(TAG_HC_PART) + suffix, chunk.partIndex);
+        tags.emplace_back(QByteArrayLiteral(TAG_HC_URL) + suffix, chunk.url);
+        tags.push_back(Tag::makeBsob(QByteArrayLiteral(TAG_HC_KEYIV) + suffix,
+                                     chunk.key + chunk.iv));
+        tags.push_back(Tag::makeBsob(QByteArrayLiteral(TAG_HC_SHA) + suffix,
+                                     chunk.cipherSha256));
+        tags.emplace_back(QByteArrayLiteral(TAG_HC_EXPIRES) + suffix, chunk.expiresAt);
+        ++index;
+    }
 }
 
 void Search::updateNodeLoad(uint8 load)
@@ -634,16 +698,103 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
         m_target.toByteArray(fileHash);
         uint8 sourceClientHash[16];
         answer.toByteArray(sourceClientHash);
-        cb(m_searchID, fileHash, sourceIP, sourcePort, buddyIP, buddyPort, cryptOptions,
-           sourceType, buddyHash, sourceClientHash, udpPort,
-           hasSourceIPv6 ? sourceIPv6 : nullptr,
-           hasBuddyIPv6 ? buddyIPv6Bytes : nullptr);
+
+        Kademlia::KadSourceResult result;
+        result.searchID   = m_searchID;
+        result.fileHash   = fileHash;
+        result.ip         = sourceIP;
+        result.tcpPort    = sourcePort;
+        result.udpPort    = udpPort;
+        result.buddyIP    = buddyIP;
+        result.buddyPort  = buddyPort;
+        result.buddyCrypt = cryptOptions;
+        result.sourceType = sourceType;
+        result.buddyHash  = buddyHash;
+        result.clientHash = sourceClientHash;
+        result.sourceIPv6 = hasSourceIPv6 ? sourceIPv6 : nullptr;
+        result.buddyIPv6  = hasBuddyIPv6 ? buddyIPv6Bytes : nullptr;
+        result.httpCacheChunks = parseHttpCacheChunkTags(info, fileHash);
+
+        cb(result);
     }
 
     logKad(QStringLiteral("Kad search %1: got file source %2, type=%3 IP=%4:%5 buddy=%6:%7")
                .arg(m_searchID).arg(answer.toHexString()).arg(sourceType)
                .arg(ipToString(sourceIP)).arg(sourcePort)
                .arg(ipToString(buddyIP)).arg(buddyPort));
+}
+
+std::vector<eMule::HttpCacheOffer>
+Search::parseHttpCacheChunkTags(const TagList& info, const uint8* fileHash)
+{
+    std::vector<eMule::HttpCacheOffer> chunks;
+
+    // The chunk tags are string-named, so they are invisible to the integer switch
+    // above: Tag::nameId() is 0 for every one of them, and the IPv6 loop only looks at
+    // tags where isStr() holds, which the blob and integer members here do not.
+    // They need their own pass keyed on the name.
+    for (uint32 index = 0; index < KADHC_MAX_CHUNKS; ++index) {
+        const QByteArray suffix = QByteArray::number(index);
+        const QByteArray namePart    = QByteArrayLiteral(TAG_HC_PART) + suffix;
+        const QByteArray nameUrl     = QByteArrayLiteral(TAG_HC_URL) + suffix;
+        const QByteArray nameKeyIv   = QByteArrayLiteral(TAG_HC_KEYIV) + suffix;
+        const QByteArray nameSha     = QByteArrayLiteral(TAG_HC_SHA) + suffix;
+        const QByteArray nameExpires = QByteArrayLiteral(TAG_HC_EXPIRES) + suffix;
+
+        eMule::HttpCacheOffer offer;
+        QByteArray keyIv;
+        bool sawPart = false;
+        bool sawExpires = false;
+
+        for (const auto& tag : info) {
+            if (tag.nameId() != 0)
+                continue;
+            const QByteArray& name = tag.name();
+
+            if (name == namePart && tag.isInt()) {
+                offer.partIndex = static_cast<uint32>(tag.intValue());
+                sawPart = true;
+            } else if (name == nameUrl && tag.isStr()) {
+                offer.url = tag.strValue();
+            } else if (name == nameKeyIv && (tag.isBsob() || tag.isBlob())) {
+                keyIv = tag.blobValue();
+            } else if (name == nameSha && (tag.isBsob() || tag.isBlob())) {
+                offer.cipherSha256 = tag.blobValue();
+            } else if (name == nameExpires && tag.isInt()) {
+                offer.expiresAt = static_cast<uint32>(tag.intValue());
+                sawExpires = true;
+            }
+        }
+
+        // A gap ends the run: the publisher writes indices 0..n-1 with no holes, so an
+        // absent index means there are no more, not that one is missing.
+        if (!sawPart)
+            break;
+
+        if (!sawExpires || offer.url.isEmpty() || offer.url.size() > KADHC_MAX_URL_LEN)
+            continue;
+        if (keyIv.size() != 48 || offer.cipherSha256.size() != 32)
+            continue;
+
+        offer.key = keyIv.left(32);
+        offer.iv  = keyIv.mid(32);
+
+        // Only whole parts are ever published, which is why the lengths are derived
+        // here rather than trusted from the record — there is nothing for a publisher
+        // to lie about. docs/protocol/http-cache-spec.md §3.1.
+        offer.plainLength  = eMule::kHttpCachePublishPartSize;
+        offer.cipherLength = eMule::kHttpCacheCipherMax;
+
+        if (fileHash)
+            std::memcpy(offer.fileHash.data(), fileHash, offer.fileHash.size());
+
+        if (!offer.isWellFormed())
+            continue;
+
+        chunks.push_back(std::move(offer));
+    }
+
+    return chunks;
 }
 
 void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort)
@@ -1250,7 +1401,14 @@ void Search::storePacket(bool flushRemaining)
                     auto* clientList = Kademlia::getClientList();
                     if (auto* buddy = clientList ? clientList->getBuddy() : nullptr) {
                         sp.hasBuddy = true;
-                        sp.buddyIP = buddy->userAddress().toUint32();
+                        // Network order: FT_SERVERIP is the one IP tag in this packet
+                        // that is not host order. MFC publishes GetBuddy()->GetIP()
+                        // (network) at srchybrid/kademlia/kademlia/Search.cpp:667 and
+                        // reads it back without the htonl it applies to the source IP
+                        // (srchybrid/DownloadQueue.cpp:1519 vs :1560). Our own storing
+                        // node already read it that way, so this side was the odd one
+                        // out and buddy callbacks landed on a byte-reversed address.
+                        sp.buddyIP = buddy->userAddress().toNetworkUint32();
                         // MFC Search.cpp:668 publishes the buddy's *UDP* port —
                         // the Kad buddy-callback packet is sent there, not to the
                         // ED2K TCP port.
@@ -1265,10 +1423,27 @@ void Search::storePacket(bool flushRemaining)
                 }
             }
 
-            // FT_ENCRYPTION: connect options (MFC: CKadTagUInt8)
-            if (thePrefs.cryptLayerSupported())  sp.cryptOptions |= 0x01;
-            if (thePrefs.cryptLayerRequested())  sp.cryptOptions |= 0x02;
-            if (thePrefs.cryptLayerRequired())   sp.cryptOptions |= 0x04;
+            // HTTP Cache chunks we currently hold for this file, so a downloader can
+            // fetch a whole part over HTTP straight from the lookup, without finding,
+            // dialling and queueing at us first. Gated on httpCache.publishToKad, which
+            // is on by default — see docs/protocol/http-cache-spec.md.
+            if (theApp.httpCache) {
+                std::array<uint8, 16> hcHash{};
+                std::memcpy(hcHash.data(), targetHash, hcHash.size());
+                sp.httpCacheChunks = theApp.httpCache->kadChunksForFile(hcHash);
+            }
+
+            // FT_ENCRYPTION: connect options (MFC: CKadTagUInt8). Source publishing is
+            // the one place in eMule that asks for the byte with callback=true — MFC
+            // Search.cpp:691 — so it is the only path on which bit 3 can be set at all.
+            // The three crypt bits were open-coded here and the callback bit simply
+            // omitted, which left every type-6 record we published unusable.
+            //
+            // myConnectOptions() gates bit 3 on theApp.isFirewalled(), which is false
+            // for an ED2K High ID even while Kad believes it is firewalled; the type-6
+            // branch keys off the Kad state alone. buildSourcePublishTags() forces the
+            // bit for that type, so the disagreement cannot produce a broken record.
+            sp.cryptOptions = prefs ? prefs->myConnectOptions(true, true) : uint8{0};
 
             bool canPublish = false;
             std::vector<Tag> tags = buildSourcePublishTags(sp, canPublish);

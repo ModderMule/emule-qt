@@ -511,6 +511,33 @@
 #define TAG_IPV6                    "ip6"   // source's public IPv6
 #define TAG_SERVINGBUDDYIPV6        "bi6"   // serving buddy's public IPv6
 
+// HTTP Cache chunk descriptors carried on a Kad *source* record — see
+// docs/protocol/http-cache-spec.md. Indexed tag families: the name is the prefix
+// below with the chunk number appended ("hcp0", "hcu0", "hcp1", ...).
+//
+// String names rather than numeric FT_ ids, following TAG_IPV6 above: the numeric
+// space is nearly full, and two ids in it (0x33 TAG_PUBLISHINFO and 0x37
+// TAG_KADAICHHASHRESULT) are silently stripped by a storing node's CEntry::AddTag
+// (srchybrid/kademlia/kademlia/Entry.cpp:188-199). Everything else is stored
+// verbatim and served straight back, which is what makes this work at all.
+#define TAG_HC_PART                 "hcp"   // uint32: part index within the file
+#define TAG_HC_URL                  "hcu"   // string: absolute chunk URL
+#define TAG_HC_KEYIV                "hck"   // bsob48: 32-byte AES-256 key || 16-byte IV
+#define TAG_HC_SHA                  "hcs"   // bsob32: SHA-256 of the ciphertext
+#define TAG_HC_EXPIRES              "hce"   // uint32: unix time the URL stops working
+
+// How many chunks one source record may advertise. A storing node serialises each
+// record into a 2048-byte buffer and throws on overflow
+// (srchybrid/kademlia/kademlia/Indexed.cpp:703-704), which would abort the serve for
+// every result in that packet, not just ours. At ~356 bytes per chunk, three plus the
+// ordinary source tags leaves comfortable headroom.
+#define KADHC_MAX_CHUNKS            3u
+
+// Longest URL accepted in TAG_HC_URL. Much shorter than HCTAG_URL's 1024 on the ed2k
+// link, for the same size reason. A chunk whose URL is longer is simply not published
+// to Kad; it is still offered over ed2k.
+#define KADHC_MAX_URL_LEN           256
+
 // CT_MOD_MISCOPTIONS (0xAA) bitfield.
 // Bits 1, 3 and 4 are taken by the compatibility target (uTP NAT traversal, serving-buddy
 // pull, QUIC NAT traversal) — do not reuse them even though we implement none of the three.

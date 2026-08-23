@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{121F86F7-2A6C-5829-AA0D-5A1006CFEE96}</ProjectGuid>
+    <ProjectGuid>{6ADC4EAC-C8A5-5604-A9CE-871BE14AF489}</ProjectGuid>
     <RootNamespace>tst_UploadQueueStore</RootNamespace>
     <Keyword>QtVS_v304</Keyword>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>

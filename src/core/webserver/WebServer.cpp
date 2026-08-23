@@ -1462,6 +1462,11 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
                     lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_error");
                     statusKey = QStringLiteral("error");
                     break;
+                case PartFileStatus::WaitingForHash:
+                case PartFileStatus::Hashing:
+                    lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_waitinghash");
+                    statusKey = QStringLiteral("hashing");
+                    break;
                 default:
                     lineVars[QStringLiteral("DownloadStatus")] = QStringLiteral("t_waiting");
                     statusKey = QStringLiteral("waiting");

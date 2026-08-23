@@ -27,6 +27,7 @@ namespace eMule {
     switch (s) {
     case PartFileStatus::Ready:        return QStringLiteral("ready");
     case PartFileStatus::Empty:        return QStringLiteral("empty");
+    case PartFileStatus::WaitingForHash: return QStringLiteral("waitingforhash");
     case PartFileStatus::Hashing:      return QStringLiteral("hashing");
     case PartFileStatus::Error:        return QStringLiteral("error");
     case PartFileStatus::Insufficient: return QStringLiteral("insufficient");

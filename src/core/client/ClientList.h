@@ -106,6 +106,13 @@ public:
 
     // -- Buddy management (Kademlia) ----------------------------------------
 
+    /// Drive every client with a non-None KadState: buddy and firewall-check transitions,
+    /// the buddy keep-alive, and buddy loss. MFC CClientList::ProcessKadList's half of
+    /// CClientList::Process (srchybrid/ClientList.cpp:470-620).
+    ///
+    /// Called from process(); public so the transitions are directly assertable.
+    void processKadList();
+
     [[nodiscard]] UpDownClient* getBuddy() const { return m_buddy; }
     [[nodiscard]] BuddyStatus buddyStatus() const { return m_buddyStatus; }
     void setBuddy(UpDownClient* buddy, BuddyStatus status);
@@ -188,6 +195,18 @@ public:
     [[nodiscard]] int trackedCount() const;
     void removeAllTrackedClients();
 
+    // -- Direct UDP callback rate limit -------------------------------------
+    // MFC CClientList::listDirectCallbackRequests (srchybrid/ClientList.cpp:904-921). A
+    // direct callback makes us open an outgoing TCP connection on a peer's say-so, so one
+    // address gets at most one every 3 minutes.
+
+    /// Record that we accepted a direct callback request from this address, and drop
+    /// entries older than the window.
+    void addTrackCallbackRequests(const Address& addr);
+
+    /// Whether a direct callback request from this address may be answered right now.
+    [[nodiscard]] bool allowCallbackRequest(const Address& addr) const;
+
     // -- Public member (matches MFC pattern) --------------------------------
 
     DeadSourceList globalDeadSourceList;
@@ -223,6 +242,11 @@ private:
     };
 
     std::vector<ConnectingClient> m_connectingClients;
+    /// Address -> tick of the most recent accepted direct callback request.
+    /// A map rather than MFC's list: it only ever asks about the newest entry per address,
+    /// and the pruning walk stays proportional to the number of distinct addresses.
+    std::unordered_map<Address, uint32> m_directCallbackRequests;
+
     std::unordered_map<Address, uint32> m_bannedList;  // Address -> ban tick
     std::unordered_map<Address, TrackedClient> m_trackedClients;
     uint32 m_lastBanCleanUp = 0;

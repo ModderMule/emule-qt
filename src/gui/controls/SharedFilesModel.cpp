@@ -173,7 +173,53 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
     if (role == SharePartMapRole && index.column() == ColSharedParts)
         return QVariant::fromValue(f.sharePartMap);
 
+    if (role == Qt::CheckStateRole && index.column() == ColFileName && m_browseMode)
+        return f.shareChecked ? Qt::Checked : Qt::Unchecked;
+
     return {};
+}
+
+bool SharedFilesModel::setData(const QModelIndex& index, const QVariant& value, int role)
+{
+    if (role != Qt::CheckStateRole || index.column() != ColFileName || !m_browseMode)
+        return AbstractTableModel<SharedFileRow>::setData(index, value, role);
+
+    const SharedFileRow* f = rowAt(index.row());
+    if (!f || !f->shareToggleable || f->filePath.isEmpty())
+        return false;
+
+    // Only ask. The row keeps its old state until the daemon has actually shared or
+    // excluded the file and the list is refetched — a checkbox that ticks itself and
+    // then silently reverts is worse than one that waits.
+    emit shareToggleRequested(f->filePath, value.toInt() == Qt::Checked);
+    return true;
+}
+
+Qt::ItemFlags SharedFilesModel::flags(const QModelIndex& index) const
+{
+    Qt::ItemFlags f = AbstractTableModel<SharedFileRow>::flags(index);
+    if (!m_browseMode || index.column() != ColFileName)
+        return f;
+
+    // The checkbox is drawn for every row, but only a toggleable one accepts a click.
+    // Qt has no "checked but disabled" item state, so withholding ItemIsUserCheckable
+    // is how MFC's CBS_CHECKEDDISABLED / CBS_UNCHECKEDDISABLED are expressed here.
+    const SharedFileRow* row = rowAt(index.row());
+    if (row && row->shareToggleable)
+        f |= Qt::ItemIsUserCheckable;
+    return f;
+}
+
+void SharedFilesModel::setBrowseMode(bool on)
+{
+    if (m_browseMode == on)
+        return;
+    m_browseMode = on;
+    // The checkbox lives in a column that is already populated, so the view needs to
+    // repaint it — but the rows themselves are about to be replaced anyway.
+    if (count() > 0)
+        emit dataChanged(index(0, ColFileName), index(count() - 1, ColFileName),
+                         {Qt::CheckStateRole});
 }
 
 QVariant SharedFilesModel::headerData(int section, Qt::Orientation orientation, int role) const

@@ -63,9 +63,13 @@ QString clientSoftName(int sw)
 }
 
 /// Walk the known-client list into the software -> version -> mod breakdown,
-/// each level sorted by count descending.
-std::vector<ClientSoftStat> collectClientSoftwareStats(const ClientList& clients)
+/// each level sorted by count descending. @p lowIDOut receives the LowID tally from the
+/// same pass — MFC counts it in the one GetStatistics loop too (ClientList.cpp:78,
+/// stats[14]) rather than walking the list a second time.
+std::vector<ClientSoftStat> collectClientSoftwareStats(const ClientList& clients,
+                                                       qint64& lowIDOut)
 {
+    lowIDOut = 0;
     struct ModInfo {
         QMap<QString, int> mods;          // mod string -> count
         int count = 0;
@@ -77,6 +81,9 @@ std::vector<ClientSoftStat> collectClientSoftwareStats(const ClientList& clients
 
     QMap<int, SoftInfo> softMap;          // ClientSoftware enum -> info
     clients.forEachClient([&](UpDownClient* c) {
+        if (c->hasLowID())
+            ++lowIDOut;
+
         const int sw = static_cast<int>(c->clientSoft());
         auto& si = softMap[sw];
         ++si.count;
@@ -446,6 +453,8 @@ StatsSnapshot collectStatsSnapshot()
     if (const auto* dq = theApp.downloadQueue) {
         out.downDatarate = static_cast<qint64>(dq->datarate());
         out.downFileCount = static_cast<qint64>(dq->fileCount());
+        out.downUdpReasks = static_cast<qint64>(dq->udpFileReasks());
+        out.downUdpReasksFailed = static_cast<qint64>(dq->failedUDPFileReasks());
 
         qint64 completedCount = 0;
         qint64 totalSources = 0;
@@ -499,7 +508,7 @@ StatsSnapshot collectStatsSnapshot()
     if (const auto* cl = theApp.clientList) {
         out.knownClients = static_cast<qint64>(cl->clientCount());
         out.bannedClients = static_cast<qint64>(cl->bannedCount());
-        out.clientSoftwareStats = collectClientSoftwareStats(*cl);
+        out.clientSoftwareStats = collectClientSoftwareStats(*cl, out.lowIDClients);
     }
 
     // Shared files
@@ -615,6 +624,8 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("downFileCount"), s.downFileCount);
     put(QStringLiteral("completedDownloads"), s.completedDownloads);
     put(QStringLiteral("downFoundSources"), s.downFoundSources);
+    put(QStringLiteral("downUdpReasks"), s.downUdpReasks);
+    put(QStringLiteral("downUdpReasksFailed"), s.downUdpReasksFailed);
     if (s.freeTempSpace)
         put(QStringLiteral("freeTempSpace"), *s.freeTempSpace);
 
@@ -636,6 +647,7 @@ QCborMap toCborMap(const StatsSnapshot& s)
     // Clients
     put(QStringLiteral("knownClients"), s.knownClients);
     put(QStringLiteral("bannedClients"), s.bannedClients);
+    put(QStringLiteral("lowIDClients"), s.lowIDClients);
 
     QCborArray softArr;
     for (const auto& soft : s.clientSoftwareStats) {

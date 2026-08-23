@@ -49,6 +49,9 @@ struct DownloadRow {
     int transferringSrcCount = 0;
     bool isPaused = false;
     bool isStopped = false;
+    /// PartFileOp ordinal: 0 none, 1 hashing, 2 copying, 3 uncompressing, 4 importing.
+    int fileOp = 0;
+    bool completionError = false;
     bool isAutoDownPriority = false;
     int64_t category = 0;
     int64_t lastSeenComplete = 0;
@@ -138,6 +141,17 @@ public:
     [[nodiscard]] const DownloadRow* findByHash(const QString& hexHash) const;
 
 private:
+    /// The Status column's text, reproducing MFC CPartFile::getPartfileStatus
+    /// (srchybrid/PartFile.cpp:3412-3453). The daemon sends the raw enum token —
+    /// "ready", "empty" — which is the right wire format and the wrong thing to show
+    /// a user; MFC shows "Downloading" or "Waiting" depending on whether any source is
+    /// actually sending.
+    [[nodiscard]] QString statusText(const DownloadRow& d) const;
+
+    /// Sort order for the same column, so it groups the way MFC's does rather than
+    /// alphabetically by token. srchybrid/PartFile.cpp:3456-3476.
+    [[nodiscard]] static int statusRank(const DownloadRow& d);
+
     std::vector<DownloadRow> m_downloads;
 };
 

@@ -143,6 +143,7 @@ private:
     QTreeWidgetItem* m_itemDownSesPort[2]{};
     QTreeWidgetItem* m_itemDownActiveDownloads = nullptr;
     QTreeWidgetItem* m_itemDownFoundSources = nullptr;
+    QTreeWidgetItem* m_itemDownUdpReasks = nullptr;
     QTreeWidgetItem* m_itemDownCompletedSes = nullptr;
     QTreeWidgetItem* m_itemDownSesSuccessful = nullptr;
     QTreeWidgetItem* m_itemDownSesFailed = nullptr;
@@ -219,6 +220,7 @@ private:
     // Clients
     QTreeWidgetItem* m_itemKnownClients = nullptr;
     QTreeWidgetItem* m_itemClientSoftware = nullptr;  // dynamic subtree root
+    QTreeWidgetItem* m_itemLowIDClients = nullptr;
     QTreeWidgetItem* m_itemBannedClients = nullptr;
     QTreeWidgetItem* m_itemFilteredClients = nullptr;
 

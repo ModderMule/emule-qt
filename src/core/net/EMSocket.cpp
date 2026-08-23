@@ -108,12 +108,23 @@ void EMSocket::onSocketError(QAbstractSocket::SocketError /*error*/)
     // MFC's OnClose reads remaining buffered data before closing.
     // When the remote closes (RemoteHostClosedError), there may still be
     // data in Qt's read buffer that we need to process first.
+    //
+    // Drained here and now, in a loop, rather than through scheduleReadRearm():
+    // onError() below can destroy the socket, and a deferred pass would then
+    // never run. One onReadyRead() consumes at most kMaxReadBuffer, so a single
+    // call silently discards anything past 2 MB.
     if (error() == QAbstractSocket::RemoteHostClosedError) {
-        qint64 avail = bytesAvailable();
-        if (avail > 0) {
+        if (qint64 avail = bytesAvailable(); avail > 0)
             logDebug(QStringLiteral("EMSocket::onSocketError — RemoteHostClosedError with %1 bytes still available, processing")
                          .arg(avail));
-            onReadyRead();
+        while (bytesAvailable() > 0
+               && m_conState.load(std::memory_order_acquire) != EMSState::Disconnected) {
+            const qint64 before = bytesAvailable();
+            readIncoming(true);
+            // A pass that consumed nothing — a rejected header, a decrypt that
+            // yielded nothing — will not consume anything next time round either.
+            if (bytesAvailable() >= before)
+                break;
         }
     }
     onError(static_cast<int>(error()));
@@ -136,20 +147,25 @@ void EMSocket::onBytesWritten(qint64 /*bytes*/)
 
 void EMSocket::onReadyRead()
 {
+    readIncoming(false);
+}
+
+void EMSocket::readIncoming(bool peerShutdown)
+{
     if (m_conState.load(std::memory_order_acquire) == EMSState::Disconnected)
         return;
 
     m_conState.store(EMSState::Connected, std::memory_order_release);
 
     // Check download rate limit
-    if (m_downloadLimitEnable && m_downloadLimit == 0) {
+    if (m_downloadLimitEnable && m_downloadLimit == 0 && !peerShutdown) {
         m_pendingOnReceive = true;
         return;
     }
 
     // Calculate max bytes to read
     std::size_t readMax = m_readBuffer.size() - m_pendingHeaderSize;
-    if (m_downloadLimitEnable && readMax > m_downloadLimit)
+    if (m_downloadLimitEnable && readMax > m_downloadLimit && !peerShutdown)
         readMax = m_downloadLimit;
 
     // Read from the encrypted stream
@@ -211,8 +227,12 @@ void EMSocket::onReadyRead()
 
     m_pendingOnReceive = m_fullReceive;
 
-    if (decryptedLen == 0)
+    if (decryptedLen == 0) {
+        // Obfuscation negotiation eats a read and yields no payload, but the
+        // first real packet is often already buffered right behind it.
+        scheduleReadRearm();
         return;
+    }
 
     ret = decryptedLen;
 
@@ -228,6 +248,7 @@ void EMSocket::onReadyRead()
 
     if (isRawDataMode()) {
         dataReceived(reinterpret_cast<const uint8*>(m_readBuffer.data()), static_cast<uint32>(ret));
+        scheduleReadRearm();
         return;
     }
 
@@ -305,6 +326,8 @@ void EMSocket::onReadyRead()
         m_pendingHeaderSize = static_cast<std::size_t>(rend - rptr);
         std::memcpy(m_pendingHeader, rptr, m_pendingHeaderSize);
     }
+
+    scheduleReadRearm();
 }
 
 // ---------------------------------------------------------------------------
@@ -639,6 +662,39 @@ void EMSocket::scheduleRetryIfNeeded()
             m_retryDelayMs = std::min(m_retryDelayMs * 2, kRetryMaxMs);
         }
         scheduleRetryIfNeeded();
+    });
+}
+
+// ---------------------------------------------------------------------------
+// scheduleReadRearm — finish reading what is already buffered
+//
+// onReadyRead() reads at most kMaxReadBuffer per pass, mirroring MFC's single
+// Receive() per OnReceive.  That is correct under Winsock, which re-posts
+// FD_READ on every recv() that does not empty the buffer; Qt has no equivalent
+// and emits readyRead only when *new* data arrives.  So a pass that leaves
+// bytes behind must re-arm itself, or they sit there until the peer sends
+// again — and when the peer has finished sending, that is never.  The symptom
+// is a transfer that stalls for exactly the peer's keep-alive timeout and then
+// completes off the RemoteHostClosedError drain in onSocketError().
+//
+// A deferred pass rather than a loop: draining megabytes inline would starve
+// every other socket on the event loop, and packetReceived() can tear this
+// socket down mid-parse (see the re-entrancy comments in UpDownClient.cpp).
+// singleShot with `this` as context dies with the object.
+// ---------------------------------------------------------------------------
+
+void EMSocket::scheduleReadRearm()
+{
+    if (m_readRearmScheduled
+        || m_conState.load(std::memory_order_acquire) == EMSState::Disconnected
+        || bytesAvailable() <= 0)
+        return;
+
+    m_readRearmScheduled = true;
+    QTimer::singleShot(0, this, [this] {
+        m_readRearmScheduled = false;
+        if (m_conState.load(std::memory_order_acquire) != EMSState::Disconnected)
+            onReadyRead();
     });
 }
 

@@ -8,6 +8,7 @@
 /// with IPFilter/dead-source/dedup checks, and server UDP source queries.
 
 #include "client/ClientStateDefs.h"
+#include "kademlia/Kademlia.h"
 #include "net/Address.h"
 #include "utils/EntityList.h"
 #include "utils/Types.h"
@@ -70,6 +71,15 @@ public:
 
     void init(const QStringList& tempDirs);
 
+    /// Re-register every eligible part file with SharedFileList.
+    ///
+    /// SharedFileList::reload() clears its map, so a re-scan of the shared directories
+    /// would otherwise silently drop every part file and leave us unadvertised as a
+    /// partial source until the next part completed. MFC re-adds them for the same
+    /// reason, from CSharedFileList::FindSharedFiles
+    /// (srchybrid/DownloadQueue.cpp:68-75, srchybrid/SharedFileList.cpp:551).
+    void addPartFilesToShare();
+
     // -- File management ------------------------------------------------------
 
     void addDownload(PartFile* file, bool paused = false);
@@ -121,13 +131,7 @@ public:
     /// Add a Kad-discovered file source. Finds the matching PartFile by hash
     /// and stores the source info for later connection.
     /// sourceType: 1/4=non-firewalled, 3/5=firewalled+buddy, 6=direct UDP callback.
-    void addKadSourceResult(uint32 searchID, const uint8* fileHash,
-                            uint32 ip, uint16 tcpPort,
-                            uint32 buddyIP, uint16 buddyPort, uint8 buddyCrypt,
-                            uint8 sourceType, const uint8* buddyHash,
-                            const uint8* clientHash, uint16 udpPort,
-                            const uint8* sourceIPv6 = nullptr,
-                            const uint8* buddyIPv6 = nullptr);
+    void addKadSourceResult(const kad::Kademlia::KadSourceResult& result);
 
     /// Store a Kad "notes" search result (filename + rating + comment) on the
     /// matching file — an in-progress download or an already-completed known file.
@@ -174,6 +178,17 @@ public:
     [[nodiscard]] uint32 successfulDownloadCount() const { return m_successfulDownCount; }
     [[nodiscard]] uint32 failedDownloadCount() const { return m_failedDownCount; }
     [[nodiscard]] uint32 averageDownTime() const;
+
+    /// UDP file re-asks sent this session, and how many of them went unanswered.
+    /// MFC CDownloadQueue::AddUDPFileReasks / AddFailedUDPFileReasks
+    /// (srchybrid/DownloadQueue.h:114-117). A re-ask is charged as failed at the head of
+    /// UpDownClient::askForDownload(), i.e. when we fall back to TCP while the datagram
+    /// is still outstanding. Session counters, like their neighbours above — the
+    /// statistics reset deliberately leaves them running.
+    void addUDPFileReasks() { ++m_udpFileReasks; }
+    [[nodiscard]] uint32 udpFileReasks() const { return m_udpFileReasks; }
+    void addFailedUDPFileReasks() { ++m_failedUDPFileReasks; }
+    [[nodiscard]] uint32 failedUDPFileReasks() const { return m_failedUDPFileReasks; }
 
 signals:
     void fileAdded(eMule::PartFile* file);
@@ -243,6 +258,8 @@ private:
     uint32 m_datarate = 0;
     uint32 m_successfulDownCount = 0;
     uint32 m_failedDownCount = 0;
+    uint32 m_udpFileReasks = 0;         // m_nUDPFileReasks
+    uint32 m_failedUDPFileReasks = 0;   // m_nFailedUDPFileReasks
     uint64 m_totalDownTime = 0;  // seconds
     std::deque<TransferredData> m_averageDRList;  // 10-second averaging window
     uint32 m_udCounter = 0;

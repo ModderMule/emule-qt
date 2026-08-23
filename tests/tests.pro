@@ -125,6 +125,7 @@ SOURCES += \
     tst_PartFile.cpp \
     tst_PartFileConvert.cpp \
     tst_PartFileData.cpp \
+    tst_PartFileSharing.cpp \
     tst_PartFileWriteThread.cpp \
     tst_PathUtils.cpp \
     tst_Pinger.cpp \
@@ -163,6 +164,7 @@ SOURCES += \
     tst_AesCbc.cpp \
     tst_HttpCacheOffer.cpp \
     tst_HttpCacheCorruptBan.cpp \
+    tst_HttpCacheRelay.cpp \
     tst_HttpCacheResume.cpp \
     tst_HttpCachePublish.cpp \
     tst_HttpCacheMultiPeer.cpp \

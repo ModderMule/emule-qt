@@ -184,7 +184,20 @@ void SharedFilesPanel::onFolderSelectionChanged()
     const int filterType = item->data(0, Qt::UserRole).toInt();
     const QString path = item->data(0, Qt::UserRole + 1).toString();
 
+    // A real directory under "All Directories" browses the filesystem: the list then
+    // holds unshared files too, each with a checkbox. Everything else — including the
+    // "All Directories" root itself, which carries no path — just filters the share.
+    const bool browse = item->data(0, kRoleFsItem).toBool() && !path.isEmpty();
+    m_browseDir = browse ? path : QString();
+    m_model->setBrowseMode(browse);
+
+    if (browse) {
+        requestBrowseDirectory(path);
+        return;
+    }
+
     m_proxy->setFolderFilter(static_cast<SharedFilterType>(filterType), path);
+    requestSharedFiles();
 }
 
 void SharedFilesPanel::onFileSelectionChanged()
@@ -292,13 +305,21 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         act->setEnabled(hasSel && allComplete);
     }
 
-    // Unshare — acts on the complete files in the selection; part files stay put
+    // Unshare — acts on the complete files in the selection; part files stay put.
+    // A file in the incoming directory cannot be unshared at all (the daemon refuses
+    // it, MFC greys it: srchybrid/SharedFilesCtrl.cpp:1598), and neither can a browsed
+    // row the daemon already told us is locked.
     {
+        // shareToggleable carries the daemon's own shouldBeShared(..., mustBeShared)
+        // answer in both modes, so this needs no guess about where incoming lives.
+        const bool anyUnshareable = std::ranges::any_of(sel, [](const SharedFileRow* f) {
+            return !f->isPartFile && f->shareToggleable;
+        });
         auto* act = m_contextMenu->addAction(ico("ListRemove.ico"), tr("Unshare"), this,
                                              [this, completeHashes]() {
             sendUnshareBatch(completeHashes);
         });
-        act->setEnabled(!completeHashes.isEmpty());
+        act->setEnabled(!completeHashes.isEmpty() && anyUnshareable);
     }
 
     m_contextMenu->addSeparator();
@@ -508,6 +529,8 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 void SharedFilesPanel::setupUi()
 {
     m_model = new SharedFilesModel(this);
+    connect(m_model, &SharedFilesModel::shareToggleRequested,
+            this, &SharedFilesPanel::sendSetFileShared);
     m_proxy = new SharedFilesSortProxy(this);
     m_proxy->setSourceModel(m_model);
     m_proxy->setSortRole(Qt::UserRole);
@@ -880,6 +903,13 @@ void SharedFilesPanel::requestSharedFiles()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
+    // The poller and every "refresh after an action" path lands here, so browse mode
+    // has to be honoured from inside rather than at each call site.
+    if (!m_browseDir.isEmpty()) {
+        requestBrowseDirectory(m_browseDir);
+        return;
+    }
+
     IpcMessage req(IpcMsgType::GetSharedFiles);
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
@@ -924,6 +954,7 @@ void SharedFilesPanel::requestSharedFiles()
             row.kadPublished      = m.value(QStringLiteral("kadPublished")).toBool();
             row.path              = m.value(QStringLiteral("path")).toString();
             row.filePath          = m.value(QStringLiteral("filePath")).toString();
+            row.shareToggleable   = m.value(QStringLiteral("canUnshare")).toBool();
             row.ed2kLink          = m.value(QStringLiteral("ed2kLink")).toString();
             row.isPartFile        = m.value(QStringLiteral("isPartFile")).toBool();
             row.uploadingClients  = static_cast<int>(m.value(QStringLiteral("uploadingClients")).toInteger());
@@ -964,6 +995,82 @@ void SharedFilesPanel::requestSharedFiles()
         updateStatsTab();
         updateContentTab();
         updateEd2kTab();
+    });
+}
+
+void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
+{
+    if (!m_ipc || !m_ipc->isConnected() || dirPath.isEmpty())
+        return;
+
+    IpcMessage req(IpcMsgType::BrowseDirectory);
+    req.append(dirPath);
+    m_ipc->sendRequest(std::move(req), [this, dirPath](const IpcMessage& resp) {
+        // The user may have clicked another folder while this was in flight.
+        if (m_browseDir != dirPath)
+            return;
+
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_model->clear();
+            m_headerLabel->setText(tr("Shared Files (0)"));
+            return;
+        }
+
+        const SelectionState selection = saveSelection();
+        const QCborArray arr = resp.fieldArray(1);
+
+        std::vector<SharedFileRow> rows;
+        rows.reserve(static_cast<size_t>(arr.size()));
+        int sharedCount = 0;
+
+        for (const auto& val : arr) {
+            const QCborMap m = val.toMap();
+            SharedFileRow row;
+            row.fileName        = m.value(QStringLiteral("name")).toString();
+            row.filePath        = m.value(QStringLiteral("path")).toString();
+            row.fileSize        = m.value(QStringLiteral("size")).toInteger();
+            row.hash            = m.value(QStringLiteral("hash")).toString();
+            row.shareChecked    = m.value(QStringLiteral("shared")).toBool();
+            row.shareToggleable = m.value(QStringLiteral("canToggle")).toBool();
+            row.path            = dirPath;
+            if (row.shareChecked)
+                ++sharedCount;
+
+            // A browsed row carries only what the directory listing knows. Anything the
+            // share tracks — priority, request counts, part map — stays at its default
+            // until the file is actually shared and GetSharedFiles fills it in.
+            rows.push_back(std::move(row));
+        }
+
+        m_model->setFiles(std::move(rows));
+        m_headerLabel->setText(tr("%1 (%2 of %3 shared)")
+                                   .arg(QDir(dirPath).dirName().isEmpty() ? dirPath
+                                                                          : QDir(dirPath).dirName())
+                                   .arg(sharedCount)
+                                   .arg(m_model->fileCount()));
+        restoreSelection(selection);
+        updateStatsTab();
+        updateContentTab();
+        updateEd2kTab();
+    });
+}
+
+void SharedFilesPanel::sendSetFileShared(const QString& filePath, bool shared)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    IpcMessage req(IpcMsgType::SetFileShared);
+    req.append(filePath);
+    req.append(shared);
+    m_ipc->sendRequest(std::move(req), [this, shared](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            StatusBarNotifier::post(shared ? tr("Could not share that file")
+                                           : tr("Could not unshare that file"));
+        }
+        // Refetch either way: on success to pick the new state up, on failure to put
+        // the checkbox back where it was.
+        requestSharedFiles();
     });
 }
 

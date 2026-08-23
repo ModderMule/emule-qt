@@ -489,6 +489,9 @@ struct Preferences::Data {
     bool httpCacheEnabled = false;
     bool httpCacheAllowDownload = true;
     bool httpCacheAllowUpload = true;
+    bool httpCacheAllowRelay = true;
+    bool httpCachePublishToKad = true;
+    bool httpCacheFetchFromKad = true;
     QString httpCacheBaseUrl;
     QString httpCacheApiKey;         // plaintext in memory, AES-encrypted in YAML
     uint32 httpCacheMinClients = 2;
@@ -752,6 +755,29 @@ QString Preferences::incomingDir() const { return get(&Data::incomingDir); }
 void Preferences::setIncomingDir(const QString& val) { set(&Data::incomingDir, val); }
 
 QStringList Preferences::tempDirs() const { return get(&Data::tempDirs); }
+
+bool Preferences::isShareableDirectory(const QString& dir) const
+{
+    if (dir.isEmpty())
+        return false;
+
+    const auto same = [](const QString& a, const QString& b) {
+        if (b.isEmpty())
+            return false;
+        return QDir::cleanPath(QDir(a).absolutePath())
+                   .compare(QDir::cleanPath(QDir(b).absolutePath()), Qt::CaseInsensitive) == 0;
+    };
+
+    if (same(dir, configDir()))
+        return false;
+    if (same(dir, incomingDir()))
+        return false;
+    for (const QString& tmp : tempDirs())
+        if (same(dir, tmp))
+            return false;
+
+    return true;
+}
 
 void Preferences::setTempDirs(const QStringList& val) { set(&Data::tempDirs, val); }
 
@@ -1382,6 +1408,18 @@ void Preferences::setHttpCacheAllowDownload(bool val) { set(&Data::httpCacheAllo
 bool Preferences::httpCacheAllowUpload() const { return get(&Data::httpCacheAllowUpload); }
 
 void Preferences::setHttpCacheAllowUpload(bool val) { set(&Data::httpCacheAllowUpload, val); }
+
+bool Preferences::httpCacheAllowRelay() const { return get(&Data::httpCacheAllowRelay); }
+
+void Preferences::setHttpCacheAllowRelay(bool val) { set(&Data::httpCacheAllowRelay, val); }
+
+bool Preferences::httpCachePublishToKad() const { return get(&Data::httpCachePublishToKad); }
+
+void Preferences::setHttpCachePublishToKad(bool val) { set(&Data::httpCachePublishToKad, val); }
+
+bool Preferences::httpCacheFetchFromKad() const { return get(&Data::httpCacheFetchFromKad); }
+
+void Preferences::setHttpCacheFetchFromKad(bool val) { set(&Data::httpCacheFetchFromKad, val); }
 
 QString Preferences::httpCacheBaseUrl() const { return get(&Data::httpCacheBaseUrl); }
 
@@ -2973,6 +3011,12 @@ bool Preferences::load(const QString& filePath)
                 hc["allowDownload"].as<bool>(m_data->httpCacheAllowDownload);
             m_data->httpCacheAllowUpload =
                 hc["allowUpload"].as<bool>(m_data->httpCacheAllowUpload);
+            m_data->httpCacheAllowRelay =
+                hc["allowRelay"].as<bool>(m_data->httpCacheAllowRelay);
+            m_data->httpCachePublishToKad =
+                hc["publishToKad"].as<bool>(m_data->httpCachePublishToKad);
+            m_data->httpCacheFetchFromKad =
+                hc["fetchFromKad"].as<bool>(m_data->httpCacheFetchFromKad);
 
             if (hc["baseUrl"]) {
                 QString url = QString::fromStdString(hc["baseUrl"].as<std::string>("")).trimmed();
@@ -3640,6 +3684,9 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "enabled" << YAML::Value << m_data->httpCacheEnabled;
     out << YAML::Key << "allowDownload" << YAML::Value << m_data->httpCacheAllowDownload;
     out << YAML::Key << "allowUpload" << YAML::Value << m_data->httpCacheAllowUpload;
+    out << YAML::Key << "allowRelay" << YAML::Value << m_data->httpCacheAllowRelay;
+    out << YAML::Key << "publishToKad" << YAML::Value << m_data->httpCachePublishToKad;
+    out << YAML::Key << "fetchFromKad" << YAML::Value << m_data->httpCacheFetchFromKad;
     out << YAML::Key << "baseUrl" << YAML::Value << m_data->httpCacheBaseUrl.toStdString();
     if (!m_data->httpCacheApiKey.isEmpty() && !encKey.isEmpty()) {
         out << YAML::Key << "apiKeyEnc" << YAML::Value

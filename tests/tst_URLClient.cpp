@@ -4,7 +4,10 @@
 #include "TestHelpers.h"
 #include "app/AppConfig.h"
 #include "client/URLClient.h"
+#include "net/Address.h"
+#include "prefs/Preferences.h"
 
+#include <QScopeGuard>
 #include <QTest>
 
 using namespace eMule;
@@ -32,6 +35,7 @@ private slots:
     void sendHelloPacket_noop();
     void httpBlockRequest_format();
     void buildGetHeader_carriesUserAgent();
+    void tryToConnect_rejectsAnUnusableAddress();
 };
 
 // ---------------------------------------------------------------------------
@@ -118,4 +122,30 @@ void tst_URLClient::buildGetHeader_carriesUserAgent()
 }
 
 QTEST_MAIN(tst_URLClient)
+void tst_URLClient::tryToConnect_rejectsAnUnusableAddress()
+{
+    // A URL host is chosen by somebody else — a peer's HTTP Cache offer, a Kad chunk
+    // record, an ed2k link — so the address behind it gets the same screening a peer
+    // address does. HttpCacheManager::urlIsAcceptable() has always said a name is
+    // "vetted after resolution"; until this check existed, nothing did the vetting,
+    // and a name resolving to 127.0.0.1 was dialled without a word.
+    const bool savedFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(true);
+    const auto restore = qScopeGuard([savedFilter] { thePrefs.setFilterLANIPs(savedFilter); });
+
+    URLClient client;
+    QVERIFY(client.setUrl(QStringLiteral("http://127.0.0.1:8080/chunk.bin"),
+                          Address::fromString(QStringLiteral("127.0.0.1"))));
+    QVERIFY(!client.tryToConnect());
+    QVERIFY(client.socket() == nullptr);
+
+    // The same address is fine once the operator has said this is a private network —
+    // which is exactly how the loopback cache-server fixtures run.
+    thePrefs.setFilterLANIPs(false);
+    URLClient allowed;
+    QVERIFY(allowed.setUrl(QStringLiteral("http://127.0.0.1:8080/chunk.bin"),
+                           Address::fromString(QStringLiteral("127.0.0.1"))));
+    QVERIFY(allowed.tryToConnect());
+}
+
 #include "tst_URLClient.moc"

@@ -73,6 +73,7 @@ ClientRow parseClient(const QCborMap& m)
     row.transferredUp   = m.value(QStringLiteral("transferredUp")).toInteger();
     row.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
     row.sessionUp       = m.value(QStringLiteral("sessionUp")).toInteger();
+    row.queueSessionPayloadUp = m.value(QStringLiteral("queueSessionPayloadUp")).toInteger();
     row.upDatarate      = m.value(QStringLiteral("upDatarate")).toInteger();
     row.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
     row.askedCount      = m.value(QStringLiteral("askedCount")).toInteger();
@@ -1061,6 +1062,8 @@ void TransferPanel::requestDownloads()
             row.isAutoDownPriority = m.value(QStringLiteral("isAutoDownPriority")).toBool();
             row.isPaused          = m.value(QStringLiteral("isPaused")).toBool();
             row.isStopped         = m.value(QStringLiteral("isStopped")).toBool();
+            row.fileOp            = static_cast<int>(m.value(QStringLiteral("fileOp")).toInteger());
+            row.completionError   = m.value(QStringLiteral("completionError")).toBool();
             row.category          = m.value(QStringLiteral("category")).toInteger();
             row.lastSeenComplete  = m.value(QStringLiteral("lastSeenComplete")).toInteger();
             row.lastReception     = m.value(QStringLiteral("lastReception")).toInteger();

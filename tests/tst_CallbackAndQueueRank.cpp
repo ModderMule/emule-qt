@@ -6,6 +6,7 @@
 /// Uses real TCP (with and without encryption) and real UDP packets on
 /// localhost.  Simulates 3+ nodes per test where appropriate.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 
 #include "app/AppContext.h"
@@ -421,6 +422,9 @@ private slots:
     void reaskCallbackTcp_parsesIPv6SentinelForm();
     // OP_QUEUEFULL threshold — MFC srchybrid/ClientUDPSocket.cpp:299
     void reaskFilePing_queueFullThresholdFollowsQueueSizePref();
+    // UDP re-ask accounting — MFC DownloadQueue.h:114-117, DownloadClient.cpp:179-183
+    void udpReask_countsSentAndUnansweredReasks();
+    void udpReask_notBlockedByADelayedTcpReask();
 
 private:
     // Shared helper for TCP QR tests
@@ -508,7 +512,7 @@ void tst_CallbackAndQueueRank::initTestCase()
                 return;
             auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
                                                                  senderEP.port());
-            if (!sender || !sender->reaskPending())
+            if (!sender || !sender->udpPacketPending())
                 return;
             SafeMemFile io(data, size);
             if (sender->udpVer() > 3 && sender->reqFile())
@@ -651,12 +655,14 @@ void tst_CallbackAndQueueRank::doUdpReaskTest(bool encrypted)
     client->setUserIDHybrid(loopback.toUint32()); // high ID (> 16M)
     client->setUserPort(4662);
     client->setDownloadState(DownloadState::OnQueue);
+    // MFC will not UDP re-ask while our own UDP is off or we are firewalled.
+    UdpReaskReadyGuard udpReady;
 
     // Set the receiver's user hash on the client (for encryption key derivation)
     auto ourHash = thePrefs.userHash();
     client->setUserHash(ourHash.data());
 
-    // processMuleInfoPacket to set m_udpVer (needed for reaskPending checks)
+    // processMuleInfoPacket to set m_udpVer (needed for udpPacketPending checks)
     auto miBuf = buildMinimalMuleInfo();
     client->processMuleInfoPacket(reinterpret_cast<const uint8*>(miBuf.constData()),
                                   static_cast<uint32>(miBuf.size()));
@@ -679,10 +685,17 @@ void tst_CallbackAndQueueRank::doUdpReaskTest(bool encrypted)
     m_downloadQueue->addDownload(partFile);
     client->setReqFile(partFile);
     partFile->addSource(client);
+    // Stamp the per-(client, file) re-ask clock. This fixture's 100 ms timer drives
+    // DownloadQueue::process(), and a source whose clock reads zero is due for a *TCP*
+    // re-ask — PartFile::process() would call askForDownload(), whose head consumes the
+    // in-flight UDP flag as a failed re-ask and leaves the ACK below with nothing to
+    // apply. MFC's schedule keeps the two apart; here we hand-drive the UDP path out of
+    // schedule, so the clock has to be set for the test to mean what it says.
+    client->setLastAskedTime();
 
-    // udpReaskForDownload sends OP_REASKFILEPING (real UDP) and sets m_reaskPending
+    // udpReaskForDownload sends OP_REASKFILEPING (real UDP) and sets m_udpPending
     client->udpReaskForDownload();
-    QVERIFY(client->reaskPending());
+    QVERIFY(client->udpPacketPending());
 
     // Now build the OP_REASKACK response from the "remote source" and send it
     // back to our receiver via real UDP.
@@ -709,7 +722,7 @@ void tst_CallbackAndQueueRank::doUdpReaskTest(bool encrypted)
 
     // Verify the queue rank arrived via the real UDP path
     QTRY_COMPARE_WITH_TIMEOUT(client->remoteQueueRank(), static_cast<uint32>(expectedRank), 3000);
-    QVERIFY(!client->reaskPending());
+    QVERIFY(!client->udpPacketPending());
 
     // Cleanup
     m_downloadQueue->removeSource(client);
@@ -992,6 +1005,9 @@ void tst_CallbackAndQueueRank::directCallback_sendsRequestPayload()
 
 void tst_CallbackAndQueueRank::udpReaskViaCallback_sendsRealPacket()
 {
+    // MFC will not UDP re-ask while our own UDP is off or we are firewalled.
+    UdpReaskReadyGuard udpReady;
+
     // --- Node 3: buddy's UDP receiver ---
     QUdpSocket buddyReceiver;
     QVERIFY(buddyReceiver.bind(QHostAddress::LocalHost, 0));
@@ -1033,7 +1049,7 @@ void tst_CallbackAndQueueRank::udpReaskViaCallback_sendsRealPacket()
 
     // Call udpReaskForDownload — should queue OP_REASKCALLBACKUDP to buddy
     client->udpReaskForDownload();
-    QVERIFY(client->reaskPending());
+    QVERIFY(client->udpPacketPending());
 
     // Flush the sender (theApp.clientUDP = m_receiverUDP in this test)
     flushUDPSocket(m_receiverUDP);
@@ -1410,8 +1426,14 @@ void tst_CallbackAndQueueRank::reaskCallbackTcp_parsesIPv6SentinelForm()
         QSKIP("IPv6 loopback is not available on this host");
     const uint16 requesterPort = requester.localPort();
 
+    // Deliberately NOT added to m_clientList. processReaskCallbackTCP only checks
+    // getBuddy() == this, which setBuddy() satisfies on its own, and a socketless client
+    // sitting in the list is reaped by ClientList::process(): processKadList() finds nobody
+    // carrying a buddy kad state, clears m_buddy, and the reaper's `client == m_buddy` guard
+    // stops covering it. The deleteLater() then lands during the QTRY_VERIFY below and the
+    // `delete buddy` at the end of this test double-frees — but only when the machine is
+    // loaded enough for the wait to span a process tick, which is why it survived light runs.
     auto* buddy = new UpDownClient();
-    m_clientList->addClient(buddy);
     m_clientList->setBuddy(buddy, BuddyStatus::Connected);
 
     const Address requesterV6 = Address::fromString(QStringLiteral("::1"));
@@ -1439,7 +1461,6 @@ void tst_CallbackAndQueueRank::reaskCallbackTcp_parsesIPv6SentinelForm()
     QCOMPARE(raw[1], static_cast<uint8>(OP_FILENOTFOUND));
 
     m_clientList->setBuddy(nullptr, BuddyStatus::None);
-    m_clientList->removeClient(buddy);
     delete buddy;
 }
 
@@ -1474,8 +1495,12 @@ void tst_CallbackAndQueueRank::reaskFilePing_queueFullThresholdFollowsQueueSizeP
     // 60 waiting peers. Keep the queue limit far away while filling, or the soft limit
     // would start refusing them and the count under test would be wrong.
     thePrefs.setQueueSize(5000);
+    // Every one of these is Low-ID with no socket and no callback route, so none can be
+    // promoted into a slot — addUpNextClient() declines the dial and addClientToQueue()
+    // falls back to the waiting list. All 60 therefore wait, where this used to lose the
+    // first MIN_UP_CLIENTS_ALLOWED of them to the empty-queue fast path.
     std::vector<std::unique_ptr<UpDownClient>> waiting;
-    for (int i = 0; i < 62; ++i) {
+    for (int i = 0; i < 60; ++i) {
         auto c = std::make_unique<UpDownClient>();
         c->setUserAddress(Address::fromString(QStringLiteral("10.80.%1.1").arg(i)));
         c->setUserPort(static_cast<uint16>(5000 + i));
@@ -1486,7 +1511,6 @@ void tst_CallbackAndQueueRank::reaskFilePing_queueFullThresholdFollowsQueueSizeP
         queue.addClientToQueue(c.get());
         waiting.push_back(std::move(c));
     }
-    // The first MIN_UP_CLIENTS_ALLOWED go straight to an upload slot rather than the list.
     QCOMPARE(queue.waitingUserCount(), 60);
 
     // theApp.clientUDP is m_receiverUDP here, so the reply lands on m_senderUDP.
@@ -1513,6 +1537,120 @@ void tst_CallbackAndQueueRank::reaskFilePing_queueFullThresholdFollowsQueueSizeP
     // Leave the queue empty so the clients can be destroyed safely.
     for (auto& c : waiting)
         queue.removeFromWaitingQueue(c.get());
+}
+
+// ===========================================================================
+// UDP re-ask accounting
+//
+// MFC keeps two counters on the download queue (srchybrid/DownloadQueue.h:114-117) and
+// charges a re-ask as failed at the head of AskForDownload (DownloadClient.cpp:179-183):
+// if we are falling back to TCP while a datagram is still outstanding, that datagram is
+// never going to be answered. Neither the counters nor the charge existed here, and the
+// in-flight flag they hang off (m_udpPending) was declared and never written.
+// ===========================================================================
+
+/// A UDP-capable High-ID source on loopback, already attached to @p file.
+static UpDownClient* makeUdpSource(ClientList* clientList, PartFile* file,
+                                   uint16 udpPort, uint8 hashByte)
+{
+    const Address loopback = Address::fromString(QStringLiteral("127.0.0.1"));
+    auto* client = new UpDownClient();
+    client->setUserAddress(loopback);
+    client->setConnectAddress(loopback);
+    client->setUserIDHybrid(loopback.toUint32());   // high ID
+    client->setUserPort(4662);
+    uint8 hash[16];
+    std::memset(hash, hashByte, sizeof(hash));
+    client->setUserHash(hash);
+
+    auto miBuf = buildMinimalMuleInfo();
+    client->processMuleInfoPacket(reinterpret_cast<const uint8*>(miBuf.constData()),
+                                  static_cast<uint32>(miBuf.size()));
+    // Set AFTER processMuleInfoPacket, which overwrites m_udpPort from the ET_UDPPORT tag.
+    client->setUDPPort(udpPort);
+
+    client->setReqFile(file);
+    file->addSource(client);
+    // See doUdpReaskTest: an unstamped clock makes PartFile::process() TCP-re-ask this
+    // source, and askForDownload()'s head would consume the flag under test.
+    client->setLastAskedTime();
+    clientList->addClient(client);
+    return client;
+}
+
+void tst_CallbackAndQueueRank::udpReask_countsSentAndUnansweredReasks()
+{
+    UdpReaskReadyGuard udpReady;
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("reask_count.bin"));
+    partFile->setFileSize(EMFileSize(1024 * 1024));
+    uint8 fileHash[16];
+    std::memset(fileHash, 0x7A, sizeof(fileHash));
+    partFile->setFileHash(fileHash);
+    QVERIFY(partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
+    m_downloadQueue->addDownload(partFile);
+
+    auto* client = makeUdpSource(m_clientList, partFile, m_senderUDP->connectedPort(), 0x7B);
+    QVERIFY(client->supportsUDP());
+
+    const uint32 sentBefore = m_downloadQueue->udpFileReasks();
+    const uint32 failedBefore = m_downloadQueue->failedUDPFileReasks();
+
+    client->udpReaskForDownload();
+    QVERIFY2(client->udpPacketPending(), "the datagram is in flight");
+    QCOMPARE(m_downloadQueue->udpFileReasks(), sentBefore + 1);
+    QCOMPARE(m_downloadQueue->failedUDPFileReasks(), failedBefore);
+
+    // Nothing answered it, and now we re-ask over TCP instead. OnQueue makes
+    // askForDownload() bail straight after the accounting, so no dial is attempted —
+    // the charge happens ahead of every other check, exactly as in MFC.
+    client->setDownloadState(DownloadState::OnQueue);
+    client->askForDownload();
+
+    QVERIFY2(!client->udpPacketPending(), "the stale in-flight flag must be released");
+    QCOMPARE(m_downloadQueue->failedUDPFileReasks(), failedBefore + 1);
+    QCOMPARE(m_downloadQueue->udpFileReasks(), sentBefore + 1);
+
+    m_downloadQueue->removeSource(client);
+    m_clientList->removeClient(client);
+    m_downloadQueue->removeFile(partFile);
+}
+
+void tst_CallbackAndQueueRank::udpReask_notBlockedByADelayedTcpReask()
+{
+    // The regression the m_udpPending / m_reaskPending split fixes. Both flags used to be
+    // the same bool, so once askForDownload() delayed a TCP re-ask on one of its LowID
+    // paths — "it is already on our upload queue" or "neither of us can call the other" —
+    // udpReaskForDownload() hit that flag on its early return and the source stopped
+    // getting UDP re-asks entirely until it happened to connect.
+    UdpReaskReadyGuard udpReady;
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("reask_split.bin"));
+    partFile->setFileSize(EMFileSize(1024 * 1024));
+    uint8 fileHash[16];
+    std::memset(fileHash, 0x7C, sizeof(fileHash));
+    partFile->setFileHash(fileHash);
+    QVERIFY(partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
+    m_downloadQueue->addDownload(partFile);
+
+    auto* client = makeUdpSource(m_clientList, partFile, m_senderUDP->connectedPort(), 0x7D);
+    QVERIFY(client->supportsUDP());
+
+    client->setReaskPending(true);          // a TCP re-ask we owe but held back
+    QVERIFY(!client->udpPacketPending());
+
+    const uint32 sentBefore = m_downloadQueue->udpFileReasks();
+    client->udpReaskForDownload();
+
+    QVERIFY2(client->udpPacketPending(), "the UDP re-ask must still go out");
+    QCOMPARE(m_downloadQueue->udpFileReasks(), sentBefore + 1);
+    QVERIFY2(client->reaskPending(), "the owed TCP re-ask is untouched by the UDP path");
+
+    m_downloadQueue->removeSource(client);
+    m_clientList->removeClient(client);
+    m_downloadQueue->removeFile(partFile);
 }
 
 QTEST_MAIN(tst_CallbackAndQueueRank)

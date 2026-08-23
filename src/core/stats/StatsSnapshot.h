@@ -126,6 +126,8 @@ struct StatsSnapshot {
     qint64 downFileCount = 0;
     qint64 completedDownloads = 0;
     qint64 downFoundSources = 0;
+    qint64 downUdpReasks = 0;         ///< MFC CDownloadQueue::GetUDPFileReasks()
+    qint64 downUdpReasksFailed = 0;   ///< MFC CDownloadQueue::GetFailedUDPFileReasks()
 
     /// Free space on the incoming directory; absent when the path is unreadable.
     std::optional<qint64> freeTempSpace;
@@ -148,6 +150,7 @@ struct StatsSnapshot {
     // --- Clients ---
     qint64 knownClients = 0;
     qint64 bannedClients = 0;
+    qint64 lowIDClients = 0;    ///< MFC CClientList::GetStatistics stats[14]
     std::vector<ClientSoftStat> clientSoftwareStats;   ///< sorted by count, descending
 
     // --- Shared files ---

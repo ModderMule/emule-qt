@@ -3,6 +3,7 @@
 /// @brief Global application context definition.
 
 #include "app/AppContext.h"
+#include "client/UpDownClient.h"
 #include "kademlia/Kademlia.h"
 #include "prefs/Preferences.h"
 #include "server/ServerConnect.h"
@@ -54,6 +55,28 @@ bool AppContext::isFirewalled() const
     if (kadInst && kadInst->isConnected() && !kadInst->isFirewalled())
         return false;
 
+    return true;
+}
+
+bool AppContext::canDoCallback(const UpDownClient* client) const
+{
+    // MFC srchybrid/Emule.cpp:1187-1203.
+    const bool ed2k = serverConnect && serverConnect->isConnected();
+    const bool eLow = serverConnect && serverConnect->isLowID();
+
+    auto* kadInst = kad::Kademlia::instance();
+    if (!kadInst || !kadInst->isConnected() || kadInst->isFirewalled()) {
+        // No Kad route, so the callback must go via our server — which requires a High ID.
+        return ed2k && !eLow;
+    }
+
+    // Kad is connected and open. The one remaining trap is a Low-ID server connection:
+    // if the peer sits on the same server we do, a callback request would break the
+    // protocol and get us banned, so refuse that pairing specifically.
+    if (ed2k && eLow && client) {
+        return !serverConnect->isLocalServer(client->serverAddress().toNetworkUint32(),
+                                             client->serverPort());
+    }
     return true;
 }
 

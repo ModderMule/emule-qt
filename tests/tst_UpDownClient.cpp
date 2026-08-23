@@ -59,6 +59,7 @@ private slots:
     void setDownloadState_emitsSignal();
     void setDownloadState_clearsRateOnLeaveDownloading();
     void uploadAndDownloadSenses_areIndependent();
+    void isReachableForSlot_coversEveryRoute();
     void chatState_roundTrip();
     void kadState_roundTrip();
     void compare_byHash();
@@ -596,11 +597,30 @@ void tst_UpDownClient::sessionUp_resetCycle()
 {
     UpDownClient client;
     QCOMPARE(client.sessionUp(), uint64{0});
-    client.addQueueSessionPayloadUp(1000);
-    QCOMPARE(client.queueSessionPayloadUp(), uint64{1000});
+    QCOMPARE(client.payloadInBuffer(), uint64{0});
 
+    // The two halves of the slot's payload accounting: what the disk thread handed to the
+    // send buffers, and what the socket reported as actually gone out. Their difference is
+    // what the upload status reads to tell a stalled slot from a transferring one.
+    client.addQueueSessionUploadAdded(4000);
+    client.addQueueSessionPayloadUp(1000);
+    QCOMPARE(client.queueSessionUploadAdded(), uint64{4000});
+    QCOMPARE(client.queueSessionPayloadUp(), uint64{1000});
+    QCOMPARE(client.payloadInBuffer(), uint64{3000});
+
+    // Sent may momentarily overtake queued — the two advance on different ticks — and the
+    // floor has to hold, because an underflowed uint64 would read as exabytes buffered and
+    // invert every caller's test.
+    client.addQueueSessionPayloadUp(5000);
+    QCOMPARE(client.payloadInBuffer(), uint64{0});
+
+    // MFC's ResetSessionUp() zeroes both payload counters as well, so a peer that takes a
+    // second slot does not inherit the first one's buffer figures.
     client.resetSessionUp();
     QCOMPARE(client.sessionUp(), uint64{0});
+    QCOMPARE(client.queueSessionUploadAdded(), uint64{0});
+    QCOMPARE(client.queueSessionPayloadUp(), uint64{0});
+    QCOMPARE(client.payloadInBuffer(), uint64{0});
 }
 
 void tst_UpDownClient::messagesReceived_increment()
@@ -2104,11 +2124,11 @@ uint8 readOpcode(QTcpSocket* peer)
 
 void tst_UpDownClient::onHandshakeCompleted_reaskOnQueue_reconnectsAndClears()
 {
-    // The bug this pins: a source goes UDP-reask-pending, the reask is never answered,
-    // and it ends up connected over TCP in some state other than Connecting/WaitCallback.
-    // connectionEstablished() only clears m_reaskPending for those three states, so
-    // without this block the flag latches and every later udpReaskForDownload() dies at
-    // its m_reaskPending early-return.
+    // The bug this pins: askForDownload() delayed a TCP re-ask on one of its LowID paths
+    // and set m_reaskPending, and the source then ends up connected in some state other
+    // than Connecting/WaitCallback/WaitCallbackKad. connectionEstablished() only clears
+    // the flag for those three, so without this block the delayed re-ask is never sent
+    // and the flag latches, suppressing the next one too.
     UpDownClient client;
     client.setDownloadState(DownloadState::OnQueue);
     client.setReaskPending(true);
@@ -2480,6 +2500,48 @@ void tst_UpDownClient::flushPendingIPChange_isOneShot()
     client.setSocket(nullptr);
     peer->close();
     QCoreApplication::processEvents();
+}
+
+
+// ===========================================================================
+// isReachableForSlot — MFC srchybrid/UploadQueue.cpp:131 / UploadClient.cpp:205
+// ===========================================================================
+
+void tst_UpDownClient::isReachableForSlot_coversEveryRoute()
+{
+    // High ID: we can dial it, socket or not.
+    UpDownClient highId;
+    highId.setUserAddress(Address::fromString(QStringLiteral("10.1.2.3")));
+    highId.setUserIDHybrid(0x0A010203u);
+    QVERIFY(!highId.hasLowID());
+    QVERIFY(highId.isReachableForSlot());
+
+    // Low ID with nothing attached: only a server callback, a Kad callback or a buddy relay
+    // can reach it, and none of those can be driven from the slot allocator.
+    UpDownClient lowId;
+    lowId.setUserAddress(Address::fromString(QStringLiteral("10.1.2.4")));
+    QVERIFY(lowId.hasLowID());
+    QVERIFY(!lowId.isReachableForSlot());
+
+    // Low ID with a live connection: it is right there, so the slot can be handed over.
+    QTcpServer sink;
+    QVERIFY(sink.listen(QHostAddress::LocalHost, 0));
+    ClientReqSocket sock;
+    sock.connectToHost(QHostAddress::LocalHost, sink.serverPort());
+    QVERIFY(sock.waitForConnected(5000));
+    QVERIFY(sock.isConnected());
+    lowId.setSocket(&sock);
+    QVERIFY(lowId.isReachableForSlot());
+    lowId.setSocket(nullptr);
+    QVERIFY(!lowId.isReachableForSlot());
+
+    // Low ID over IPv6: an IPv6-only source carries a placeholder ID that reads as Low, but
+    // tryToConnect() dials it over v6 regardless — so the slot allocator must not skip it.
+    UpDownClient v6;
+    v6.setUserAddress(Address::fromString(QStringLiteral("2606:4700::9")));
+    QVERIFY(v6.hasLowID());
+    QVERIFY(v6.connectAddress().isIPv6());
+    QVERIFY(v6.isReachableForSlot());
 }
 
 QTEST_MAIN(tst_UpDownClient)
