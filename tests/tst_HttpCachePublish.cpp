@@ -70,6 +70,12 @@ private slots:
     void refusalsDoNotEscalate();
     void retryAfterOnlyEverExtends();
 
+    // -- which server the next chunk goes to ------------------------------
+    void rotationVisitsEveryHealthyServer();
+    void unusableServersAreSkipped();
+    void backoffTakesAServerOutAndGivesItBack();
+    void aRekeyedServerNeedNotWaitOutItsPause();
+
 private:
     /// Run one publish to completion and hand back what finished() carried.
     [[nodiscard]] HttpCachePublishResult publish(FakeCacheServer& server,
@@ -355,6 +361,106 @@ void tst_HttpCachePublish::retryAfterOnlyEverExtends()
     // which is precisely the situation the backoff exists for.
     QCOMPARE(HttpCacheManager::backoffFor(failure(HttpCachePublishStage::Server, 503, 1), 0).seconds,
              firstStep);
+}
+
+// ---------------------------------------------------------------------------
+// Which server the next chunk goes to
+//
+// chooseServer() is where round-robin and failover are the same mechanism: the
+// walk spreads the chunks, and skipping a server that is sick is what makes one
+// dying cost nothing but its turn. Pure, so none of this needs a queue, a socket
+// or a peer.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+HttpCacheServerConfig server(const QString& host, bool enabled = true,
+                             const QString& key = QStringLiteral("k"))
+{
+    return {{}, QStringLiteral("https://%1.example").arg(host), key, {}, enabled};
+}
+
+constexpr qint64 kNow = 1'700'000'000;
+
+} // namespace
+
+void tst_HttpCachePublish::rotationVisitsEveryHealthyServer()
+{
+    const QList<HttpCacheServerConfig> servers = {server(QStringLiteral("a")),
+                                                  server(QStringLiteral("b")),
+                                                  server(QStringLiteral("c"))};
+    const QHash<QString, HttpCacheManager::ServerHealth> health;
+
+    // Three consecutive chunks, three different servers, then round again — and
+    // the cursor is free to run past the end without the walk falling over.
+    for (quint64 cursor = 0; cursor < 9; ++cursor) {
+        QCOMPARE(HttpCacheManager::chooseServer(servers, health, cursor, kNow),
+                 static_cast<int>(cursor % 3));
+    }
+
+    // No servers at all is a question with an answer, not a crash.
+    QCOMPARE(HttpCacheManager::chooseServer({}, health, 0, kNow), -1);
+}
+
+void tst_HttpCachePublish::unusableServersAreSkipped()
+{
+    QList<HttpCacheServerConfig> servers = {
+        server(QStringLiteral("disabled"), false),
+        {{}, QStringLiteral("https://keyless.example"), {}, {}, true},
+        server(QStringLiteral("good")),
+    };
+    const QHash<QString, HttpCacheManager::ServerHealth> health;
+
+    // Whatever the cursor lands on first, only the third can be published to: a
+    // switched-off entry and one with no credential are both unusable.
+    for (quint64 cursor = 0; cursor < 3; ++cursor)
+        QCOMPARE(HttpCacheManager::chooseServer(servers, health, cursor, kNow), 2);
+
+    servers.removeLast();
+    QCOMPARE(HttpCacheManager::chooseServer(servers, health, 0, kNow), -1);
+}
+
+void tst_HttpCachePublish::backoffTakesAServerOutAndGivesItBack()
+{
+    const QList<HttpCacheServerConfig> servers = {server(QStringLiteral("a")),
+                                                  server(QStringLiteral("b"))};
+
+    QHash<QString, HttpCacheManager::ServerHealth> health;
+    health.insert(servers.at(0).baseUrl,
+                  {kNow + 300, 1, HttpCacheManager::serverFingerprint(servers.at(0))});
+
+    // A's turn goes to B, and B's stays B's.
+    QCOMPARE(HttpCacheManager::chooseServer(servers, health, 0, kNow), 1);
+    QCOMPARE(HttpCacheManager::chooseServer(servers, health, 1, kNow), 1);
+
+    // Both sick: nothing to publish to, and no chunk is uploaded rather than one
+    // being forced onto a server that just refused it.
+    health.insert(servers.at(1).baseUrl,
+                  {kNow + 300, 1, HttpCacheManager::serverFingerprint(servers.at(1))});
+    QCOMPARE(HttpCacheManager::chooseServer(servers, health, 0, kNow), -1);
+
+    // The pause is a pause, not a removal: once it lapses the rotation is whole
+    // again, with no probe and nothing to reset by hand.
+    QCOMPARE(HttpCacheManager::chooseServer(servers, health, 0, kNow + 301), 0);
+    QCOMPARE(HttpCacheManager::chooseServer(servers, health, 1, kNow + 301), 1);
+}
+
+void tst_HttpCachePublish::aRekeyedServerNeedNotWaitOutItsPause()
+{
+    const QList<HttpCacheServerConfig> before = {server(QStringLiteral("a"), true,
+                                                        QStringLiteral("rejected"))};
+
+    QHash<QString, HttpCacheManager::ServerHealth> health;
+    health.insert(before.at(0).baseUrl,
+                  {kNow + 1800, 1, HttpCacheManager::serverFingerprint(before.at(0))});
+    QCOMPARE(HttpCacheManager::chooseServer(before, health, 0, kNow), -1);
+
+    // Re-applying the link with a working key is the operator answering the
+    // "check your configuration" warning. Half an hour of silence after that
+    // would look exactly like the fix not having worked.
+    const QList<HttpCacheServerConfig> after = {server(QStringLiteral("a"), true,
+                                                       QStringLiteral("rotated"))};
+    QCOMPARE(HttpCacheManager::chooseServer(after, health, 0, kNow), 0);
 }
 
 QTEST_MAIN(tst_HttpCachePublish)

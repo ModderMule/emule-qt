@@ -484,9 +484,13 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     {
         auto* pasteAct = m_downloadMenu->addAction(ico("eD2kLinkPaste.ico"), tr("Paste eD2K Links"));
         const QString clipText = QApplication::clipboard()->text().trimmed();
-        const bool hasFileLink = clipText.contains(
-            QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive);
-        pasteAct->setEnabled(hasFileLink && m_ipc && m_ipc->isConnected());
+        // Everything importLinks() below can act on, which includes HTTP Cache
+        // configuration links — those start no download, but pasting one here is a
+        // legitimate way to apply it, and greying the entry hid that entirely.
+        const bool hasImportableLink =
+            Ed2kLinkImporter::linkKindsIn(clipText)
+            & (Ed2kLinkImporter::LinkKind::File | Ed2kLinkImporter::LinkKind::HttpCache);
+        pasteAct->setEnabled(hasImportableLink && m_ipc && m_ipc->isConnected());
         connect(pasteAct, &QAction::triggered, this, [this, clipText]() {
             // Manual: picking the menu entry is the confirmation, and a completed or
             // cancelled file is left alone so it can be re-downloaded on purpose.

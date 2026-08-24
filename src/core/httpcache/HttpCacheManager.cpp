@@ -88,13 +88,6 @@ bool statusNeedsOperatorAction(int status)
     return status == 401 || status == 403 || status == 411 || status == 413 || status == 429;
 }
 
-/// Identifies the server a backoff was taken against. A newline separator so the
-/// two halves cannot be confused for one another.
-QString cacheServerFingerprint()
-{
-    return thePrefs.httpCacheBaseUrl() + QLatin1Char('\n') + thePrefs.httpCacheApiKey();
-}
-
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -123,6 +116,16 @@ void HttpCacheManager::start()
     m_timer->start();
 
     logInfo(QStringLiteral("HTTP Cache: manager started"));
+
+    // Naming the rotation once at startup is what makes a later "publishing to X"
+    // line legible. Hosts and key ids only — a key is never logged.
+    for (const auto& server : thePrefs.httpCacheServers()) {
+        logInfo(QStringLiteral("HTTP Cache: server %1%2%3")
+                    .arg(QUrl(server.baseUrl).host(),
+                         server.keyId.isEmpty() ? QString()
+                                                : QStringLiteral(" (key %1)").arg(server.keyId),
+                         server.enabled ? QString() : QStringLiteral(" [disabled]")));
+    }
 }
 
 void HttpCacheManager::stop()
@@ -148,9 +151,8 @@ void HttpCacheManager::stop()
     m_entries.clear();
     m_publishing.clear();
     m_publishCooldown.clear();
-    m_serverBackoffUntil = 0;
-    m_serverFailures = 0;
-    m_backoffConfig.clear();
+    m_serverHealth.clear();
+    m_publishCursor = 0;
 }
 
 int HttpCacheManager::activeFetchCount() const
@@ -222,19 +224,27 @@ void HttpCacheManager::process()
     if (!uploadEnabled())
         return;
 
+    if (m_activePublishes >= static_cast<int>(thePrefs.httpCacheMaxConcurrentPublishes()))
+        return;
+
+    // The rotation is recomputed per candidate rather than once for the tick, so
+    // two chunks published in the same pass go to different servers.
+    //
     // Deliberately after the re-offer loop: a POST endpoint that is refusing says
     // nothing about the chunks already sitting on that server, and peers should
     // keep being pointed at them.
-    if (serverIsCoolingDown())
-        return;
-
-    if (m_activePublishes >= static_cast<int>(thePrefs.httpCacheMaxConcurrentPublishes()))
-        return;
+    const QList<HttpCacheServerConfig> servers = thePrefs.httpCacheServers();
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
 
     for (const auto& candidate : findCandidates()) {
         if (m_activePublishes >= static_cast<int>(thePrefs.httpCacheMaxConcurrentPublishes()))
             break;
-        publish(candidate);
+
+        const int index = chooseServer(servers, m_serverHealth, m_publishCursor, now);
+        if (index < 0)
+            break;   // every configured server is sick, disabled or unconfigured
+
+        publish(candidate, servers.at(index));
     }
 }
 
@@ -244,10 +254,58 @@ void HttpCacheManager::process()
 
 bool HttpCacheManager::uploadEnabled() const
 {
-    return thePrefs.httpCacheEnabled()
-        && thePrefs.httpCacheAllowUpload()
-        && !thePrefs.httpCacheBaseUrl().isEmpty()
-        && !thePrefs.httpCacheApiKey().isEmpty();
+    if (!thePrefs.httpCacheEnabled() || !thePrefs.httpCacheAllowUpload())
+        return false;
+
+    // One usable account is enough. Whether any of them is *healthy* is a
+    // different question, asked per publish by chooseServer(): a node whose only
+    // server is in backoff still re-offers the chunks already up there.
+    const auto servers = thePrefs.httpCacheServers();
+    return std::ranges::any_of(servers, [](const HttpCacheServerConfig& server) {
+        return server.enabled && !server.baseUrl.isEmpty() && !server.apiKey.isEmpty();
+    });
+}
+
+QString HttpCacheManager::serverFingerprint(const HttpCacheServerConfig& server)
+{
+    // A newline separator so the two halves cannot be confused for one another.
+    return server.baseUrl + QLatin1Char('\n') + server.apiKey;
+}
+
+bool HttpCacheManager::serverIsUsable(const HttpCacheServerConfig& server,
+                                      const QHash<QString, ServerHealth>& health, qint64 now)
+{
+    if (!server.enabled || server.baseUrl.isEmpty() || server.apiKey.isEmpty())
+        return false;
+
+    const auto it = health.constFind(server.baseUrl);
+    if (it == health.constEnd() || it->backoffUntil == 0)
+        return true;
+
+    // A pause taken against a different credential is an answer to a question
+    // nobody is asking any more: re-applying the link is the operator saying they
+    // have fixed it, so it must not have to be waited out.
+    if (it->fingerprint != serverFingerprint(server))
+        return true;
+
+    return now >= it->backoffUntil;
+}
+
+int HttpCacheManager::chooseServer(const QList<HttpCacheServerConfig>& servers,
+                                   const QHash<QString, ServerHealth>& health, quint64 cursor,
+                                   qint64 now)
+{
+    const auto count = static_cast<quint64>(servers.size());
+    if (count == 0)
+        return -1;
+
+    for (quint64 step = 0; step < count; ++step) {
+        const int index = static_cast<int>((cursor + step) % count);
+        if (serverIsUsable(servers.at(index), health, now))
+            return index;
+    }
+
+    return -1;
 }
 
 std::vector<HttpCacheOffer>
@@ -374,9 +432,9 @@ std::vector<HttpCacheManager::Candidate> HttpCacheManager::findCandidates() cons
     return result;
 }
 
-void HttpCacheManager::publish(const Candidate& candidate)
+void HttpCacheManager::publish(const Candidate& candidate, const HttpCacheServerConfig& server)
 {
-    if (!candidate.file)
+    if (!candidate.file || server.baseUrl.isEmpty())
         return;
 
     std::array<uint8, 16> fileHash{};
@@ -403,8 +461,8 @@ void HttpCacheManager::publish(const Candidate& candidate)
     }
 
     HttpCachePublisher::Request request;
-    request.baseUrl = thePrefs.httpCacheBaseUrl();
-    request.apiKey = thePrefs.httpCacheApiKey();
+    request.baseUrl = server.baseUrl;
+    request.apiKey = server.apiKey;
     request.ttlSeconds = thePrefs.httpCacheChunkTtlSeconds();
     request.rateBytesPerSecond = publishRateBytesPerSecond();
     request.fileHash = fileHash;
@@ -413,43 +471,50 @@ void HttpCacheManager::publish(const Candidate& candidate)
     request.partOffset = static_cast<uint64>(candidate.partIndex) * PARTSIZE;
     request.partLength = PARTSIZE;
 
-    logInfo(QStringLiteral("HTTP Cache: publishing part %1 of %2 for %3 peers")
+    logInfo(QStringLiteral("HTTP Cache: publishing part %1 of %2 to %3 for %4 peers")
                 .arg(candidate.partIndex)
-                .arg(candidate.file->fileName())
+                .arg(candidate.file->fileName(), QUrl(server.baseUrl).host())
                 .arg(candidate.peers.size()));
 
     m_publishing.insert(key, true);
     ++m_activePublishes;
 
+    // Advanced here rather than on success: a server that fails still spends its
+    // turn, so the next chunk moves on instead of retrying the same one.
+    ++m_publishCursor;
+
+    const QString serverBaseUrl = server.baseUrl;
+
     auto* publisher = new HttpCachePublisher(this);
     connect(publisher, &HttpCachePublisher::finished, this,
-            [this, key](const HttpCachePublishResult& result, const HttpCacheOffer& offer) {
+            [this, key, serverBaseUrl](const HttpCachePublishResult& result,
+                                       const HttpCacheOffer& offer) {
                 m_publishing.remove(key);
                 --m_activePublishes;
-                onPublishFinished(key, result, offer);
+                onPublishFinished(key, serverBaseUrl, result, offer);
             });
 
     publisher->start(request);
 }
 
-void HttpCacheManager::onPublishFinished(const QString& key,
+void HttpCacheManager::onPublishFinished(const QString& key, const QString& serverBaseUrl,
                                          const HttpCachePublishResult& result,
                                          const HttpCacheOffer& offer)
 {
     if (!result.ok) {
-        notePublishFailure(key, result);
+        notePublishFailure(key, serverBaseUrl, result);
         return;
     }
 
-    // A chunk got through, so whatever the server was doing, it has stopped.
+    // A chunk got through, so whatever *this* server was doing, it has stopped.
+    // The others keep their own verdicts.
     m_publishCooldown.remove(key);
-    m_serverFailures = 0;
-    m_serverBackoffUntil = 0;
-    m_backoffConfig.clear();
+    m_serverHealth.remove(serverBaseUrl);
 
     Entry entry;
     entry.offer = offer;
     entry.chunkId = result.chunkId;
+    entry.serverBaseUrl = serverBaseUrl;
 
     m_entries.insert(key, entry);
 
@@ -506,42 +571,64 @@ HttpCacheManager::PublishBackoff HttpCacheManager::backoffFor(
     return backoff;
 }
 
-void HttpCacheManager::notePublishFailure(const QString& key,
+void HttpCacheManager::notePublishFailure(const QString& key, const QString& serverBaseUrl,
                                           const HttpCachePublishResult& result)
 {
     const qint64 now = QDateTime::currentSecsSinceEpoch();
-    const PublishBackoff backoff = backoffFor(result, m_serverFailures);
+    const QString host = QUrl(serverBaseUrl).host();
+
+    // Escalation is per server: a run of failures on one says nothing about the
+    // next one's, so each keeps its own place in the table.
+    ServerHealth& health = m_serverHealth[serverBaseUrl];
+    const PublishBackoff backoff = backoffFor(result, health.failures);
 
     if (!backoff.serverWide) {
+        // The part stands down, not the server — and deliberately for every
+        // server, because an unreadable part file is not going to read any better
+        // for the next one in the rotation.
         m_publishCooldown.insert(key, now + backoff.seconds);
+        if (health.backoffUntil == 0)
+            m_serverHealth.remove(serverBaseUrl);
         logWarning(QStringLiteral("HTTP Cache: publish failed: %1 — retrying that part in %2 min")
                        .arg(result.error)
                        .arg(backoff.seconds / 60));
         return;
     }
 
-    ++m_serverFailures;
-    m_serverBackoffUntil = now + backoff.seconds;
-    m_backoffConfig = cacheServerFingerprint();
+    const auto servers = thePrefs.httpCacheServers();
+    const auto configured = std::ranges::find_if(servers, [&serverBaseUrl](const auto& server) {
+        return server.baseUrl == serverBaseUrl;
+    });
 
-    logWarning(QStringLiteral("HTTP Cache: publish failed: %1 — pausing all uploads to the "
-                              "cache server for %2 min (failure %3)")
-                   .arg(result.error)
+    ++health.failures;
+    health.backoffUntil = now + backoff.seconds;
+    // Empty when the server was removed from the configuration mid-publish, which
+    // makes the pause moot: chooseServer() never looks at a server that is gone.
+    health.fingerprint =
+        configured == servers.end() ? QString() : serverFingerprint(*configured);
+
+    // How many servers are left is the difference between a hiccup and the
+    // offload going quiet, so the line says which one this is.
+    const auto left = std::ranges::count_if(servers, [this, now](const auto& server) {
+        return serverIsUsable(server, m_serverHealth, now);
+    });
+
+    logWarning(QStringLiteral("HTTP Cache: publish to %1 failed: %2 — pausing that server for "
+                              "%3 min (failure %4); %5")
+                   .arg(host, result.error)
                    .arg(static_cast<double>(backoff.seconds) / 60.0, 0, 'g', 2)
-                   .arg(m_serverFailures));
+                   .arg(health.failures)
+                   .arg(left == 0 ? QStringLiteral("no cache server is usable right now")
+                                  : QStringLiteral("%1 still in the rotation").arg(left)));
 }
 
-bool HttpCacheManager::serverIsCoolingDown() const
+bool HttpCacheManager::serverIsCoolingDown(const QString& baseUrl) const
 {
-    if (m_serverBackoffUntil == 0)
+    const auto it = m_serverHealth.constFind(baseUrl);
+    if (it == m_serverHealth.constEnd() || it->backoffUntil == 0)
         return false;
 
-    // Pointed at a different server, or carrying a new key: that is a different
-    // question, so the old answer does not apply.
-    if (m_backoffConfig != cacheServerFingerprint())
-        return false;
-
-    return QDateTime::currentSecsSinceEpoch() < m_serverBackoffUntil;
+    return QDateTime::currentSecsSinceEpoch() < it->backoffUntil;
 }
 
 void HttpCacheManager::offerToQueue(Entry& entry)
@@ -1183,7 +1270,19 @@ void HttpCacheManager::expireEntries()
 
     for (auto it = m_entries.begin(); it != m_entries.end();) {
         const uint32 expires = it->offer.expiresAt;
-        if (expires != 0 && expires < now + kExpiryMarginSeconds) {
+
+        // A chunk of ours that downloaders gave up on, sitting on a server that is
+        // itself in backoff: the server is the thing implicated, so let the part go
+        // and let the candidate scan publish it again — the rotation will pick a
+        // different server, because this one is being skipped.
+        //
+        // Deliberately narrow. An entry retired while its server is healthy points
+        // at a blob nobody could use, and re-uploading it elsewhere would only move
+        // the problem.
+        const bool retiredOnASickServer =
+            !it->offerable && !it->relayed && serverIsCoolingDown(it->serverBaseUrl);
+
+        if ((expires != 0 && expires < now + kExpiryMarginSeconds) || retiredOnASickServer) {
             const bool wasOurs = !it->relayed;
             const auto fileHash = it->offer.fileHash;
             it = m_entries.erase(it);
@@ -1192,6 +1291,19 @@ void HttpCacheManager::expireEntries()
                 nudgeKadRepublish(fileHash);
         } else {
             ++it;
+        }
+    }
+
+    // Health for servers that are no longer configured is an answer to a question
+    // nobody can ask any more.
+    if (!m_serverHealth.isEmpty()) {
+        const auto servers = thePrefs.httpCacheServers();
+        for (auto it = m_serverHealth.begin(); it != m_serverHealth.end();) {
+            const bool stillConfigured =
+                std::ranges::any_of(servers, [&it](const HttpCacheServerConfig& server) {
+                    return server.baseUrl == it.key();
+                });
+            it = stillConfigured ? std::next(it) : m_serverHealth.erase(it);
         }
     }
 

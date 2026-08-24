@@ -73,9 +73,12 @@ int CommandLineExec::execCommand(QCoreApplication& app)
             // for. The daemon still handshakes with the server before storing
             // anything, so a link pointing somewhere that is not a cache is
             // refused there rather than trusted here.
-            msg = Ipc::IpcMessage(Ipc::IpcMsgType::ApplyHttpCacheConfig, 2);
+            msg = Ipc::IpcMessage(Ipc::IpcMsgType::ApplyHttpCacheConfig, 4);
             msg.append(cfg->baseUrl);
             msg.append(cfg->secret);
+            // Display only, and the reason a list of several servers is readable.
+            msg.append(cfg->name);
+            msg.append(cfg->keyId);
             // The daemon has to reach a third machine before it can answer.
             timeoutMs = 20'000;
 

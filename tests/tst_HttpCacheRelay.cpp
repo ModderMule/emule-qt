@@ -186,8 +186,7 @@ void tst_HttpCacheRelay::init()
 {
     thePrefs.setHttpCacheAllowRelay(true);
     thePrefs.setHttpCacheAllowUpload(false);
-    thePrefs.setHttpCacheBaseUrl(QString());
-    thePrefs.setHttpCacheApiKey(QString());
+    thePrefs.setHttpCacheServers({});
 
     m_clientList = std::make_unique<ClientList>();
     theApp.clientList = m_clientList.get();
@@ -299,11 +298,10 @@ void tst_HttpCacheRelay::chunkWithoutAnExpiryIsNeverRelayed()
 
 void tst_HttpCacheRelay::relayNeedsNoCacheAccount()
 {
-    // init() already leaves allowUpload off with no base url and no API key. That is
+    // init() already leaves allowUpload off with no cache server configured. That is
     // the whole point of the feature: passing a chunk on costs one packet and never
     // touches the cache server, so a node that could not publish anything still can.
-    QVERIFY(thePrefs.httpCacheBaseUrl().isEmpty());
-    QVERIFY(thePrefs.httpCacheApiKey().isEmpty());
+    QVERIFY(thePrefs.httpCacheServers().isEmpty());
     QVERIFY(!thePrefs.httpCacheAllowUpload());
 
     runOffer(m_goodPart);

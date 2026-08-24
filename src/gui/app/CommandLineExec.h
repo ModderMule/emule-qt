@@ -13,7 +13,7 @@ class QApplication;
 
 namespace eMule {
 
-class IpcClient;
+class ExternalLinkHandler;
 
 class CommandLineExec {
 public:
@@ -41,8 +41,13 @@ public:
     /// Schedule screenshot capture (if --screenshot is set).
     void setupScreenshotTimer(QApplication& app, MainWindow& mainWindow) const;
 
-    /// Handle ed2k:// positional arguments (delayed to allow IPC connection).
-    void handleEd2kLinks(MainWindow& mainWindow, IpcClient& ipcClient) const;
+    /// Import the ed2k:// positional arguments.
+    ///
+    /// Handing them to @p linkHandler rather than importing here is what makes the wait
+    /// for the daemon correct: a link given on the command line always arrives before the
+    /// IPC connection is up, and the handler holds it until there is a daemon to import
+    /// it into instead of guessing at a delay.
+    void handleEd2kLinks(ExternalLinkHandler& linkHandler) const;
 
 private:
     QCommandLineParser m_parser;

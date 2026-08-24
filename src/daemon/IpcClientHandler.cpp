@@ -2714,24 +2714,17 @@ void IpcClientHandler::handleProbeHttpCacheServer(const IpcMessage& msg)
     const QString baseUrl = msg.fieldString(0);
     const QString secret  = msg.fieldString(1);
 
-    // Answered from the stored configuration, not from the server: whether this
-    // link would change anything is a local question, and asking it here is what
-    // lets the clipboard watcher stay quiet about a link that is already applied.
-    QString clean = baseUrl.trimmed();
-    while (clean.endsWith(QLatin1Char('/')))
-        clean.chop(1);
-    const bool unchanged = !clean.isEmpty()
-        && clean == thePrefs.httpCacheBaseUrl()
-        && secret == thePrefs.httpCacheApiKey()
-        && thePrefs.httpCacheEnabled()
-        && thePrefs.httpCacheAllowUpload();
+    // Answered from the stored configuration, not from the server: what this link
+    // would do to the list is a local question, and asking it here is what lets the
+    // clipboard watcher stay quiet about a link that is already applied.
+    const HttpCacheServerAction action = thePrefs.httpCacheServerAction(baseUrl, secret);
 
     const QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
-    const QString currentBaseUrl = thePrefs.httpCacheBaseUrl();
+    const auto servers = thePrefs.httpCacheServers();
 
     HttpCacheServerProbe::probe(baseUrl, this,
-        [self, seqId, unchanged, currentBaseUrl](const HttpCacheServerInfo& info) {
+        [self, seqId, action, count = servers.size()](const HttpCacheServerInfo& info) {
             if (!self)
                 return;
 
@@ -2743,8 +2736,8 @@ void IpcClientHandler::handleProbeHttpCacheServer(const IpcMessage& msg)
             out[QStringLiteral("implementation")]     = info.implementation;
             out[QStringLiteral("uploadRequiresAuth")] = info.uploadRequiresAuth;
             out[QStringLiteral("maxChunkSize")]       = static_cast<qint64>(info.maxChunkSize);
-            out[QStringLiteral("currentBaseUrl")]     = currentBaseUrl;
-            out[QStringLiteral("unchanged")]          = unchanged;
+            out[QStringLiteral("action")]             = static_cast<int>(action);
+            out[QStringLiteral("serverCount")]        = count;
 
             self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(out)));
         });
@@ -2754,6 +2747,10 @@ void IpcClientHandler::handleApplyHttpCacheConfig(const IpcMessage& msg)
 {
     const QString baseUrl = msg.fieldString(0);
     const QString secret  = msg.fieldString(1);
+    // Display-only labels, so the YAML entry is identifiable by whoever has to
+    // read it. Absent from an older caller's message, which costs nothing.
+    const QString name    = msg.fieldString(2);
+    const QString keyId   = msg.fieldString(3);
 
     if (baseUrl.isEmpty() || secret.isEmpty()) {
         sendMessage(IpcMessage::makeResult(
@@ -2769,7 +2766,7 @@ void IpcClientHandler::handleApplyHttpCacheConfig(const IpcMessage& msg)
     // that writes, so this is where "handshake before you store anything" has to
     // hold — and --add-link reaches it without probing at all.
     HttpCacheServerProbe::probe(baseUrl, this,
-        [self, seqId, baseUrl, secret](const HttpCacheServerInfo& info) {
+        [self, seqId, baseUrl, secret, name, keyId](const HttpCacheServerInfo& info) {
             if (!self)
                 return;
 
@@ -2778,19 +2775,37 @@ void IpcClientHandler::handleApplyHttpCacheConfig(const IpcMessage& msg)
                 return;
             }
 
-            thePrefs.setHttpCacheBaseUrl(baseUrl);
-            thePrefs.setHttpCacheApiKey(secret);
+            HttpCacheServerConfig server;
+            server.name = name;
+            server.baseUrl = baseUrl;
+            server.apiKey = secret;
+            server.keyId = keyId;
+
+            // Appends, or re-stores the entry that already has this base URL. The
+            // only refusal is a full list, and it has to be said out loud: silently
+            // dropping the ninth link would look exactly like it having worked.
+            if (!thePrefs.addOrUpdateHttpCacheServer(server)) {
+                self->sendMessage(IpcMessage::makeResult(
+                    seqId, false,
+                    QCborValue(tr("You already have %1 HTTP Cache servers configured. Remove one "
+                                  "from preferences.yml before adding another.")
+                                   .arg(Preferences::kMaxHttpCacheServers))));
+                return;
+            }
+
             thePrefs.setHttpCacheEnabled(true);
             thePrefs.setHttpCacheAllowUpload(true);
             thePrefs.save();
 
             // No restart needed: HttpCacheManager is always constructed and reads
-            // these every tick (CoreSession.cpp), and a changed baseUrl/apiKey
-            // clears any publish backoff on its own.
-            logInfo(QStringLiteral("HTTP Cache: configured for %1 (%2), uploads enabled")
+            // the list every tick (CoreSession.cpp), and a changed credential
+            // clears that server's publish backoff on its own.
+            logInfo(QStringLiteral("HTTP Cache: server %1 (%2) configured, uploads enabled "
+                                   "(%3 in the rotation)")
                         .arg(QUrl(baseUrl).host(),
                              info.implementation.isEmpty() ? QStringLiteral("v%1").arg(info.version)
-                                                           : info.implementation));
+                                                           : info.implementation)
+                        .arg(thePrefs.httpCacheServers().size()));
 
             self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(QString())));
         });

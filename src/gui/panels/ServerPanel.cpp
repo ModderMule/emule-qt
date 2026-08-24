@@ -9,6 +9,7 @@
 #include "dialogs/FindInListDialog.h"
 
 #include "app/UiState.h"
+#include "utils/Ed2kLinkImporter.h"
 #include "utils/ListActivation.h"
 #include "utils/PanelPoller.h"
 #include "IpcMessage.h"
@@ -491,9 +492,12 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     auto* pasteLinkAction = m_serverMenu->addAction(tr("Paste eD2K Links"));
     pasteLinkAction->setIcon(ico("eD2kLinkPaste.ico", QStyle::SP_FileDialogContentsView));
     const QString clipText = QApplication::clipboard()->text().trimmed();
-    const bool hasEd2kLink = clipText.startsWith(QStringLiteral("ed2k://|server|"),
-                                                  Qt::CaseInsensitive);
-    pasteLinkAction->setEnabled(hasEd2kLink);
+    // Anywhere in the text, not just at the front: the handler below already walks every
+    // line, so the old startsWith() greyed out clipboards it would have imported fine —
+    // a server link with a word in front of it, or on the second line of a pasted list.
+    const bool hasEd2kLink =
+        Ed2kLinkImporter::linkKindsIn(clipText).testFlag(Ed2kLinkImporter::LinkKind::Server);
+    pasteLinkAction->setEnabled(hasEd2kLink && m_ipc && m_ipc->isConnected());
     connect(pasteLinkAction, &QAction::triggered, this, [this, clipText]() {
         // Parse each line in the clipboard
         const QStringList lines = clipText.split(QLatin1Char('\n'), Qt::SkipEmptyParts);

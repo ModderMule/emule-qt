@@ -1487,7 +1487,7 @@ QWidget* OptionsDialog::createFilesPage()
     m_previewPrioCheck = new QCheckBox(tr("Try to download preview chunks first"), miscGroup);
     miscLayout->addWidget(m_previewPrioCheck);
 
-    m_watchClipboardCheck = new QCheckBox(tr("Watch clipboard for eD2K file links"), miscGroup);
+    m_watchClipboardCheck = new QCheckBox(tr("Watch clipboard for eD2K links"), miscGroup);
     miscLayout->addWidget(m_watchClipboardCheck);
 
     m_advancedCalcRemainingCheck = new QCheckBox(tr("Use advanced calculation method for remaining time"), miscGroup);

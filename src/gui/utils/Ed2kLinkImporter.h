@@ -21,6 +21,7 @@
 
 #include <functional>
 
+class QFileOpenEvent;
 class QWidget;
 
 namespace eMule {
@@ -88,6 +89,51 @@ public:
     /// but several links can share one line, so cut at every "ed2k://" as well. File names
     /// may contain spaces, so splitting on whitespace is not an option.
     [[nodiscard]] static QStringList splitLinks(const QString& text);
+
+    /// The kinds of eD2K link @p text carries.
+    ///
+    /// Only the kinds somebody acts on: a link type nothing in the GUI can import — search,
+    /// nodeslist — sets no flag, so an action gated on this stays grey rather than opening
+    /// a dialog that reports "invalid link".
+    enum class LinkKind : quint8 {
+        File      = 0x1,  ///< ed2k://|file|
+        HttpCache = 0x2,  ///< ed2k://|httpcache| — a configuration link, not a download
+        Server    = 0x4,  ///< ed2k://|server| (not serverlist)
+    };
+    Q_DECLARE_FLAGS(LinkKinds, LinkKind)
+
+    /// Which link kinds @p text carries — for greying a "Paste eD2K Links" action and for
+    /// the clipboard watcher's first-pass filter.
+    ///
+    /// Deliberately a prefix scan and not a parse. MFC decides the same question the same
+    /// way (CemuleApp::IsEd2kLinkInClipboard, srchybrid/Emule.cpp:1509), and a malformed
+    /// link should reach importLinks() and produce a real error rather than silently
+    /// disable the menu entry that would have explained it. Magnet links are left out: the
+    /// importer handles them, but flagging every "magnet:" would make the clipboard watcher
+    /// fire on BitTorrent magnets that yield nothing.
+    [[nodiscard]] static LinkKinds linkKindsIn(const QString& text);
+
+    /// The raw link text carried by a macOS QFileOpenEvent, or empty when it carries none.
+    ///
+    /// Reads file() before url(), which looks backwards and is the whole point. macOS
+    /// delivers a link click as a kAEGetURL Apple Event carrying a plain string, and the
+    /// Cocoa plugin only wraps it in a QUrl if it parses — an eD2K link never does, because
+    /// everything between "ed2k://" and the first '/' is read as the authority and '|' is
+    /// not a legal host character (qcocoaapplicationdelegate.mm, getUrl:withReplyEvent:).
+    /// Qt's fallback for that case hands the string to the QFileOpenEvent(QString) path,
+    /// where it survives verbatim in file(); url() meanwhile holds a "file:" URL with the
+    /// whole link buried in its path, which is what the old handler read and why the macOS
+    /// route silently did nothing for every link type. url() is still consulted second, for
+    /// the schemes that do parse — magnet: has no authority, so it arrives as a real QUrl.
+    ///
+    /// Requires Qt 6.6 or newer: before that the plugin passed an unparseable URL through as
+    /// an invalid QUrl, which stringifies to nothing, and the link was lost inside Qt.
+    ///
+    /// A dropped file — a .emulecollection, a server.met — yields an empty string rather
+    /// than its path, so the caller can let the event fall through to whatever handles it.
+    [[nodiscard]] static QString linkFromFileOpenEvent(const QFileOpenEvent& event);
 };
+
+Q_DECLARE_OPERATORS_FOR_FLAGS(Ed2kLinkImporter::LinkKinds)
 
 } // namespace eMule

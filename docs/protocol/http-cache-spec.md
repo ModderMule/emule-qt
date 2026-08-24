@@ -546,24 +546,32 @@ key, or the YAML below by hand. There is deliberately no Options-dialog page yet
 httpCache:
   enabled: false                        # master switch, both directions
   allowDownload: true
-  allowUpload: true                     # also needs baseUrl and apiKey
+  allowUpload: true                     # also needs at least one server below
   allowRelay: true                      # pass verified chunks on (§3.4); needs no account
   publishToKad: true                    # put chunk descriptors in the Kad source record (§11)
   fetchFromKad: true                    # fetch chunks found in Kad, vouched for by nobody
-  baseUrl: "http://localhost/emule-http-cache-php"
-  apiKeyEnc: "<AES-encrypted>"          # plaintext `apiKey:` is accepted once, then rewritten
+  servers:                              # up to 8; chunks are spread over them (§8.2)
+    - name: "HTTP Cache upload config"  # display only, from the link
+      baseUrl: "http://localhost/emule-http-cache-php"
+      apiKeyEnc: "<AES-encrypted>"      # plaintext `apiKey:` is accepted once, then rewritten
+      keyId: "default"                  # display only, the link's `k=`
+      enabled: true
   minClients: 2                         # 1 to exercise the path with a single peer
   chunkTtlSeconds: 21600
-  maxPublishBytesPerDay: 2147483648
+  maxPublishBytesPerDay: 2147483648     # across all servers: it is our upstream that is scarce
   publishRateKBs: 0                     # 0 = a quarter of the upload limit
-  maxConcurrentPublishes: 1
+  maxConcurrentPublishes: 1             # across all servers, for the same reason
   maxConcurrentFetches: 2
 ```
 
-The API key is stored AES-256-CBC encrypted under the same at-rest key as the SMTP password, so
+Every API key is stored AES-256-CBC encrypted under the same at-rest key as the SMTP password, so
 `preferences.yml` never contains a usable upload credential in the clear. A plaintext `apiKey:` may
 be hand-written for first setup; it is rewritten as `apiKeyEnc` on the next save and never written
 back in the clear.
+
+An entry with no `baseUrl` is dropped, two entries naming one server collapse to the first, and
+anything past the eighth is discarded — a hand-edited file gets the same treatment as a stream of
+links, because the rest of the client is written as though neither can happen.
 
 Publishing is rate limited to `publishRateKBs`, or a quarter of the upload limit when that is 0.
 Note eMuleQt's sentinel: an upload limit of `0` means *unlimited* (MFC used `UNLIMITED`), so a node
@@ -593,6 +601,32 @@ carries `user:pass@` / a query / a fragment, an empty or whitespace-bearing secr
 without `=`, a malformed `k=`, or a link over 4096 octets — each refuses the whole link. An unknown
 `key=value` is skipped, which is the format's extension point.
 
+**Where a link gets in.** Every route goes through `Ed2kLinkImporter`, which recognises the
+`httpcache` variant and hands it to `HttpCacheLinkImporter`: the `ed2k://` URL handler (a click in
+the Server Info, chat or IRC panes, or from a browser), the GUI command line, `Tools → Paste eD2K
+Links…`, the `Paste eD2K Links` entries in the Transfers and Servers context menus, and the
+clipboard watcher. `emulecored --add-link` is the one route that bypasses the GUI entirely.
+
+Every one of those routes carries the link as plain text, never as a `QUrl`. That is not a style
+choice: `ed2k://|httpcache|` inherits the file link's grammar and with it its fate under the URL
+Standard, where `|` is a forbidden host code point — so a browser refuses to dispatch the link at
+all and Qt hands a macOS Apple Event to `QFileOpenEvent::file()` rather than `url()`. See
+`docs/protocol/ed2k-link-browser-compat.md`; it is also why the clipboard route matters more here
+than it looks.
+
+The context-menu entries grey themselves out from `Ed2kLinkImporter::linkKindsIn()` — a prefix scan,
+not a parse, so a malformed link still reaches the importer and produces an error a user can read
+instead of a menu entry that is silently dead.
+
+The clipboard watcher is gated on the `watchClipboard4ED2KLinks` preference, which covers config
+links as well as file links; with it off, a link on the clipboard does nothing at all and says
+nothing about why. It is triggered by `QClipboard::dataChanged`, by the application becoming active,
+and by the IPC connection coming up — that last one because the GUI's main window exists well before
+`main()` attaches an `IpcClient` to it, and a link already on the clipboard at startup lands in that
+gap. Clipboard text that names a link but arrives with no daemon to import it into is deliberately
+*not* recorded as seen, so the reconnect re-check picks it up rather than the link being consumed by
+a trigger that could not act on it.
+
 Applying one is three steps, in this order:
 
 1. **Handshake.** `GET <baseUrl>/v1/info` must answer `"service": "emule-http-cache"` with a version
@@ -601,7 +635,14 @@ Applying one is three steps, in this order:
    credential**, because at that moment the host is only what the link claimed it was.
 2. **Ask.** A dialog naming the server, the key id, and — over plain `http` — that the key and every
    chunk URL will cross the network in the clear. A chunk URL is a bearer token.
-3. **Store** `baseUrl`, `apiKey`, `enabled: true`, `allowUpload: true`, and save.
+3. **Store** the server, switch `enabled` and `allowUpload` on, and save.
+
+A link **appends**: a second server joins the rotation rather than replacing the first. A link whose
+base URL is already configured re-stores that entry in place — a re-keying — without moving it, and
+one that changes nothing at all is reported on the status bar instead of raising a dialog, because
+the clipboard watcher would otherwise ask again every time the link passed through the clipboard.
+With eight servers already configured a further link is refused, and said so: silently dropping it
+would look exactly like it having worked.
 
 The daemon does both the handshake and the storing (`ProbeHttpCacheServer` / `ApplyHttpCacheConfig`
 over IPC): preferences live there, it may be on another machine, and the only reachability that
@@ -621,6 +662,38 @@ event loop, and a quit arriving during it — a signal, Cmd-Q, a logout — unwi
 `main()` then destroys the `IpcClient` and its socket while the socket-read notification is still
 below on the stack. Both link importers hand the dialog to the next turn of the event loop
 (`QTimer::singleShot(0, …)`) for exactly this reason.
+
+### 8.2 Several servers
+
+`httpCache.servers` is a list, and each chunk goes to exactly one of them. Chunks are **never
+mirrored**: publishing one part twice would spend twice the upstream the feature exists to save.
+
+**Round-robin.** `HttpCacheManager::chooseServer()` walks the list from a cursor that advances on
+every publish begun, and takes the first entry that is enabled, has a base URL and a credential, and
+is not inside a backoff. Consecutive chunks therefore land on different servers: quota and risk are
+shared, every configured account stays warm, and one server going away strands only the chunks it
+happens to hold rather than all of them.
+
+**Failover is the same mechanism.** A server-wide publish failure (§4.1) pauses *that* server, and
+the walk simply skips it — nothing else changes, and no separate standby path exists. Escalation is
+per server, so a run of failures on one says nothing about the next one's place in the table. When
+every server is paused, nothing is published; chunks already up there keep being offered, because a
+POST endpoint that is refusing says nothing about the blobs it is already serving.
+
+**Health is runtime state and is never persisted.** An outage is a passing thing, so a restart tries
+every server again rather than inheriting yesterday's verdict. A pause is also released early when
+the credential it was taken against changes: re-applying the link is an operator saying they have
+fixed it, and half an hour of silence after that would look exactly like the fix not having worked.
+
+**Retiring a chunk.** An entry that downloaders have failed on `kMaxEntryFailures` times stops being
+offered. If the server holding it is *also* paused, the entry is dropped so the part can be
+published again — and the rotation puts it somewhere else, because the sick server is being skipped.
+An entry retired while its server is healthy is left alone: that one points at a blob nobody could
+use, and re-uploading it elsewhere would only move the problem.
+
+One consequence for §11: a file's Kad source record may now advertise chunks living on several
+different servers. Nothing in the record format cares — each descriptor already carries its own
+absolute URL — and neither does a downloader, which is handed a URL either way.
 
 ---
 
@@ -650,10 +723,10 @@ These exist as identifiers or design allowances and MUST NOT be relied upon:
 | `tests/tst_HttpCacheConfigLink.cpp` | the `/v1/info` handshake: a real cache accepted, and refused for another service, an HTML page, a 404, a version from the future, a body far larger than an info document, and a host that hangs up. Plus the two that are only visible from the server side — that the probe sends **no** `Authorization` header, and that a caller dying mid-probe neither leaks nor calls back |
 | `tests/tst_HttpCacheOffer.cpp` | packet round trips, every malformed-field case, truncation at every length, unknown-tag skipping, unknown sub-opcode rejection |
 | `tests/tst_HttpCacheResume.cpp` | a real `HttpCacheClient` against a deliberately unreliable origin: mid-transfer drop, block-boundary restart, digest continuity across the seam, a backend that ignores `Range`, a lying `Content-Range`, the give-up bound, and — with the body delivered a slice at a time — that asking the client for more blocks mid-response never puts a second GET on the socket. Also that the request reaching the socket carries `User-Agent: eMuleQt/<version>`, on the retry as well as the first attempt |
-| `tests/tst_HttpCachePublish.cpp` | a real `HttpCachePublisher` against an origin that refuses the upload — `500` with the server's own message, `401`, `Retry-After`, an unusable `2xx`, an unreadable part, an aborted exchange — plus the whole §4.1 retry-policy table |
-| `tests/tst_HttpCacheMultiPeer.cpp` | the uploader's decisions, with three mock ed2k peers on a real `ListenSocket`/`UploadQueue`: one publish serving three peers, the `minClients` threshold, the `MODMISC_HTTPCACHE` and part-availability filters, the whole-part guard, two parts serialised by `maxConcurrentPublishes`, the re-offer dedup, slot release, entry retirement after three bad reports, and §4.1's "publishing pauses, offers continue". A peer also fetches the offered URL and decrypts it back to the part on disk |
+| `tests/tst_HttpCachePublish.cpp` | a real `HttpCachePublisher` against an origin that refuses the upload — `500` with the server's own message, `401`, `Retry-After`, an unusable `2xx`, an unreadable part, an aborted exchange — plus the whole §4.1 retry-policy table, and §8.2's rotation: every healthy server visited in turn, disabled and credential-less entries skipped, a paused server taken out and handed back when its pause lapses, and a re-keyed one not made to wait out the old pause |
+| `tests/tst_HttpCacheMultiPeer.cpp` | the uploader's decisions, with three mock ed2k peers on a real `ListenSocket`/`UploadQueue`: one publish serving three peers, the `minClients` threshold, the `MODMISC_HTTPCACHE` and part-availability filters, the whole-part guard, two parts serialised by `maxConcurrentPublishes`, the re-offer dedup, slot release, entry retirement after three bad reports, and §4.1's "publishing pauses, offers continue". With two cache servers configured: two parts split one apiece, and a server refusing every POST losing its turn to the other. A peer also fetches the offered URL and decrypts it back to the part on disk |
 | `tests/tst_HttpCacheCorruptBan.cpp` | who gets blocked when a part fails MD4: a sole whole-part sender banned without AICH, a connected client banned through its own `ban()` path rather than by bare address, and four cases where nobody is blamed — a good part, two contributors, an unattributed write, and a part only half attributed (the resumed-download trap). Plus a full fetch of an internally consistent chunk that decrypts to the wrong bytes: the offering peer is banned, the cache server is not |
-| `tests/tst_HttpCacheRelay.cpp` | §3.4 end to end against a real `HttpCacheClient` and `PartFile`: a verified chunk is promoted and the origin excluded from its offer list; ten flushes still produce one entry; a part that fails MD4, and a chunk with no stated expiry, are never relayed; relaying works with no base url, no API key and `allowUpload` off; and `allowRelay: false` stops it |
+| `tests/tst_HttpCacheRelay.cpp` | §3.4 end to end against a real `HttpCacheClient` and `PartFile`: a verified chunk is promoted and the origin excluded from its offer list; ten flushes still produce one entry; a part that fails MD4, and a chunk with no stated expiry, are never relayed; relaying works with no cache server configured at all and `allowUpload` off; and `allowRelay: false` stops it |
 | `tests/tst_PartFileSharing.cpp` | part files are shared files — the MD4-hashset and complete-part gate, sharing on a verified part and on ICH recovery, idempotence across flushes, survival of a `SharedFileList::reload()`, and that leaving the download queue unshares without marking the hash unshared forever |
 | `tests/tst_KadSearch.cpp` | §11: chunk tags absent with nothing to advertise, a full round trip through the real Kad tag codec (BSOB included), the chunk cap and the whole-part / URL-length / expiry screens, the record staying under a stock node's 2 KB serve buffer, and that the source record a legacy client reads is untouched |
 | `tests/tst_HttpCacheLive.cpp` | the real `/v1/info` handshake; publisher → real server → GET → decrypt → byte-exact compare; ranged resume against the live server; a full `HttpCacheClient` fetch of a 9.28 MB part into a real `PartFile`. Every case runs once per backend that is reachable — see §10.1 |

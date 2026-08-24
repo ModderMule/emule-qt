@@ -27,6 +27,28 @@ namespace eMule {
 struct ObfuscationConfig;
 struct ProxySettings;
 
+/// One HTTP Cache upload account (docs/protocol/http-cache-spec.md §8).
+///
+/// Defined here rather than under httpcache/ because it is a stored preference
+/// first and a protocol object second: the manager reads the list, but the file
+/// format, the encryption of the credential and the identity rules are all this
+/// class's business.
+struct HttpCacheServerConfig {
+    QString name;      ///< display only, from the configuration link's name field
+    QString baseUrl;   ///< normalised: trimmed, no trailing '/'
+    QString apiKey;    ///< plaintext in memory, AES-encrypted in the YAML
+    QString keyId;     ///< display only, the link's `k=`
+    bool enabled = true;
+};
+
+/// What applying a configuration link would do to the server list.
+enum class HttpCacheServerAction : uint8 {
+    Add,         ///< a server we do not have
+    UpdateKey,   ///< same base URL, different credential
+    Unchanged,   ///< already configured, enabled, with this exact credential
+    Full,        ///< the list is at kMaxHttpCacheServers and this is not in it
+};
+
 class Preferences {
 public:
     Preferences();
@@ -739,13 +761,30 @@ public:
     [[nodiscard]] bool httpCacheFetchFromKad() const;
     void setHttpCacheFetchFromKad(bool val);
 
-    /// Cache server root, e.g. "http://localhost/emule-http-cache-php".
-    [[nodiscard]] QString httpCacheBaseUrl() const;
-    void setHttpCacheBaseUrl(const QString& val);
+    /// Cache servers we may publish to, in configuration order.
+    ///
+    /// Chunks are spread round-robin over the healthy ones, so this is a set of
+    /// equals rather than a primary and its standbys — the order only decides
+    /// where the rotation starts.
+    [[nodiscard]] QList<HttpCacheServerConfig> httpCacheServers() const;
+    void setHttpCacheServers(const QList<HttpCacheServerConfig>& val);
 
-    /// Upload credential. Stored AES-encrypted in the YAML.
-    [[nodiscard]] QString httpCacheApiKey() const;
-    void setHttpCacheApiKey(const QString& val);
+    /// Append @p server, or replace the credential of the entry that already has
+    /// its base URL. False when the list is full — that is the only refusal.
+    bool addOrUpdateHttpCacheServer(const HttpCacheServerConfig& server);
+
+    /// What applying a configuration link would do, without doing it.
+    [[nodiscard]] HttpCacheServerAction httpCacheServerAction(const QString& baseUrl,
+                                                              const QString& apiKey) const;
+
+    /// Trim and drop trailing slashes. A trailing slash would turn every request
+    /// path into a double slash, which some servers 404, and two spellings of one
+    /// server would each get their own list entry and their own backoff.
+    [[nodiscard]] static QString normalizeHttpCacheBaseUrl(const QString& val);
+
+    /// Ceiling on the list. A configuration link is a single paste, so without a
+    /// cap a stream of them grows the file without bound.
+    static constexpr int kMaxHttpCacheServers = 8;
 
     /// How many peers must want the same part before it is worth publishing.
     /// The feature's whole premise is one upload serving many, so the default is

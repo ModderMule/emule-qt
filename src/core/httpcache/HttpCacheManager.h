@@ -15,7 +15,9 @@
 ///   2. seed the grouping from a part somebody is actively requesting, so nothing
 ///      speculative is ever published;
 ///   3. if the group is at least minClients and we hold a full part, encrypt it
-///      under a fresh random key and POST it to the cache server;
+///      under a fresh random key and POST it to the next cache server in the
+///      rotation — chunks are spread over every configured server that is
+///      currently healthy, and a sick one simply loses its turn;
 ///   4. only once that succeeds, hand every capable peer the URL and the key —
 ///      and release the ed2k slot of any peer that held one, so the freed
 ///      upstream goes to somebody the cache cannot help.
@@ -26,6 +28,7 @@
 
 #include "httpcache/HttpCacheOffer.h"
 #include "httpcache/HttpCachePublisher.h"
+#include "prefs/Preferences.h"
 #include "utils/Types.h"
 
 #include <QHash>
@@ -70,9 +73,10 @@ public:
     /// and re-POSTed every tick.
     static constexpr qint64 kChunkCooldownSeconds = 600;
 
-    /// Escalating pause after a server-side publish failure, indexed by the run
-    /// of consecutive failures. Without this a server answering 500 collects a
-    /// fresh 9.28 MB POST every kTickIntervalMs, for as long as it stays broken.
+    /// Escalating pause after a server-side publish failure, indexed by that
+    /// server's own run of consecutive failures. Without this a server answering
+    /// 500 collects a fresh 9.28 MB POST every kTickIntervalMs, for as long as it
+    /// stays broken.
     static constexpr qint64 kServerBackoffSeconds[] = {60, 300, 900, 1800};
 
     /// Pause after a refusal that a retry cannot fix on its own: a rejected API
@@ -95,6 +99,42 @@ public:
     /// standing up an upload queue, a listen socket and a set of peers.
     [[nodiscard]] static PublishBackoff backoffFor(const HttpCachePublishResult& result,
                                                    int priorServerFailures);
+
+    /// How one configured cache server is currently behaving.
+    ///
+    /// Runtime state, never persisted: an outage is a passing thing, and a
+    /// restart should try every server again rather than inherit yesterday's
+    /// verdict.
+    struct ServerHealth {
+        qint64 backoffUntil = 0;
+        int failures = 0;       ///< run of server-wide failures, indexes kServerBackoffSeconds
+        QString fingerprint;    ///< baseUrl + '\n' + apiKey the backoff was taken against
+    };
+
+    /// Index into @p servers of the one to publish the next chunk to, or -1 when
+    /// none can be used.
+    ///
+    /// Walks the list from `cursor % size`, skipping entries that are disabled,
+    /// missing a base URL or a credential, or inside their own backoff. The walk
+    /// is the round-robin and the skip is the failover — deliberately the same
+    /// mechanism, so a server dropping out costs nothing but its turn.
+    ///
+    /// Public and static for the same reason backoffFor() is: the policy can then
+    /// be pinned by a test with no upload queue, no sockets and no peers.
+    [[nodiscard]] static int chooseServer(const QList<HttpCacheServerConfig>& servers,
+                                          const QHash<QString, ServerHealth>& health,
+                                          quint64 cursor, qint64 now);
+
+    /// Could a chunk go to this server right now? Configured, switched on, and
+    /// either never failed or past the pause its last failure earned.
+    [[nodiscard]] static bool serverIsUsable(const HttpCacheServerConfig& server,
+                                             const QHash<QString, ServerHealth>& health,
+                                             qint64 now);
+
+    /// Identifies the server a backoff was taken against. Changing a server's key
+    /// is the operator answering the "check your configuration" warning, so it
+    /// must not have to be waited out.
+    [[nodiscard]] static QString serverFingerprint(const HttpCacheServerConfig& server);
 
     explicit HttpCacheManager(QObject* parent = nullptr);
     ~HttpCacheManager() override;
@@ -200,6 +240,10 @@ private:
     struct Entry {
         HttpCacheOffer offer;
         QString chunkId;
+        /// Which configured server holds the blob. A DELETE is owner-only, so it
+        /// needs that server's key — and when the entry is retired, this is what
+        /// separates "the server went sick" from "the blob is bad".
+        QString serverBaseUrl;
         uint32 failures = 0;
         uint32 offersSent = 0;
         bool offerable = true;
@@ -232,17 +276,19 @@ private:
     /// otherwise stranded behind uploadEnabled()'s credential check.
     [[nodiscard]] bool offersEnabled() const;
     [[nodiscard]] std::vector<Candidate> findCandidates() const;
-    void publish(const Candidate& candidate);
-    void onPublishFinished(const QString& key, const HttpCachePublishResult& result,
-                           const HttpCacheOffer& offer);
+    void publish(const Candidate& candidate, const HttpCacheServerConfig& server);
+    void onPublishFinished(const QString& key, const QString& serverBaseUrl,
+                           const HttpCachePublishResult& result, const HttpCacheOffer& offer);
 
     /// Turn a failed publish into a cooldown, so the next tick does not simply
-    /// repeat it. Scoped to the chunk or to the whole server depending on what
-    /// the failure actually says.
-    void notePublishFailure(const QString& key, const HttpCachePublishResult& result);
+    /// repeat it. Scoped to the chunk or to the one server depending on what the
+    /// failure actually says — a server-wide pause never stops the others.
+    void notePublishFailure(const QString& key, const QString& serverBaseUrl,
+                            const HttpCachePublishResult& result);
 
-    /// Would publishing anything at all right now just repeat a known failure?
-    [[nodiscard]] bool serverIsCoolingDown() const;
+    /// Is @p baseUrl inside its own backoff right now? Also used to tell a retired
+    /// entry whose server went sick from one whose blob is suspect.
+    [[nodiscard]] bool serverIsCoolingDown(const QString& baseUrl) const;
     void offerToQueue(Entry& entry);
     [[nodiscard]] bool sendOffer(UpDownClient* peer, Entry& entry);
     void handleReport(UpDownClient* sender, const HttpCacheReport& report);
@@ -324,17 +370,16 @@ private:
     /// Entry key -> unix time before which that part must not be published again.
     QHash<QString, qint64> m_publishCooldown;
 
-    /// Unix time before which nothing is published at all, and the run of
-    /// server-side failures that set it. Offering chunks that are already up
-    /// there continues regardless — a broken POST endpoint says nothing about
-    /// the blobs the server is already serving.
-    qint64 m_serverBackoffUntil = 0;
-    int m_serverFailures = 0;
+    /// Per-server behaviour, keyed by normalised base URL. A server inside its
+    /// backoff is skipped by chooseServer() and the rotation carries on without
+    /// it; offering chunks already sitting on it continues regardless, because a
+    /// broken POST endpoint says nothing about the blobs it is already serving.
+    QHash<QString, ServerHealth> m_serverHealth;
 
-    /// The base url and api key the backoff was set against. Changing either in
-    /// the options is the user answering the "check your configuration" warning,
-    /// so it clears the pause instead of leaving them to wait it out.
-    QString m_backoffConfig;
+    /// Where the next rotation starts. Advanced on every publish we begin, so
+    /// consecutive chunks land on different servers rather than piling onto
+    /// whichever one happens to be first in the list.
+    quint64 m_publishCursor = 0;
 
     uint64 m_publishedToday = 0;
     qint64 m_budgetDay = 0;    ///< days since epoch the counter belongs to

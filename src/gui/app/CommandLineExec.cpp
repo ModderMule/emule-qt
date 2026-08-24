@@ -3,11 +3,10 @@
 /// @brief Command-line parsing and execution for the GUI application.
 
 #include "CommandLineExec.h"
-#include "IpcClient.h"
+#include "ExternalLinkHandler.h"
 #include "dialogs/OptionsDialog.h"
 #include "panels/KadPanel.h"
 #include "panels/TransferPanel.h"
-#include "utils/Ed2kLinkImporter.h"
 #include "utils/Log.h"
 
 #include <QApplication>
@@ -166,22 +165,11 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
     }
 }
 
-void CommandLineExec::handleEd2kLinks(MainWindow& mainWindow, IpcClient& ipcClient) const
+void CommandLineExec::handleEd2kLinks(ExternalLinkHandler& linkHandler) const
 {
     for (const QString& arg : m_positionalArgs) {
-        if (arg.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)) {
-            QTimer::singleShot(3000, &mainWindow, [arg, &mainWindow, &ipcClient]() {
-                // Manual: the link came from the command line, so a completed or cancelled
-                // file is a deliberate re-download and is not filtered out.
-                Ed2kLinkImporter::importLinks(
-                    arg, &ipcClient, &mainWindow,
-                    Ed2kLinkImporter::Source::Manual,
-                    Ed2kLinkImporter::Prompt::Ask,
-                    [&mainWindow](const Ed2kLinkImporter::Result& result) {
-                        if (result.added > 0)
-                            mainWindow.switchToTab(MainWindow::TabTransfers);
-                    });
-            });
+        if (arg.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)) {
+            linkHandler.open(arg);
             break;
         }
     }

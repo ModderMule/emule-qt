@@ -4,6 +4,7 @@
 #include "app/IpcClient.h"
 
 #include "IpcMessage.h"
+#include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 #include "utils/Log.h"
 #include "utils/StatusBarNotifier.h"
@@ -24,15 +25,16 @@ using Ipc::IpcMsgType;
 
 namespace {
 
-/// What the server said about itself, as far as the dialog cares.
+/// What the server said about itself, as far as the dialog cares, plus what the
+/// core says the link would do to its list of cache servers.
 struct ProbeAnswer {
     bool ok = false;
     QString error;
     int version = 0;
     QString implementation;
     bool uploadRequiresAuth = true;
-    QString currentBaseUrl;   ///< what is configured now, "" if nothing
-    bool unchanged = false;   ///< this link would change nothing
+    HttpCacheServerAction action = HttpCacheServerAction::Add;
+    int serverCount = 0;      ///< how many are configured now
 };
 
 ProbeAnswer readProbe(const IpcMessage& resp)
@@ -49,8 +51,13 @@ ProbeAnswer readProbe(const IpcMessage& resp)
     answer.version            = static_cast<int>(map.value(QStringLiteral("version")).toInteger());
     answer.implementation     = map.value(QStringLiteral("implementation")).toString();
     answer.uploadRequiresAuth = map.value(QStringLiteral("uploadRequiresAuth")).toBool(true);
-    answer.currentBaseUrl     = map.value(QStringLiteral("currentBaseUrl")).toString();
-    answer.unchanged          = map.value(QStringLiteral("unchanged")).toBool();
+    answer.serverCount = static_cast<int>(map.value(QStringLiteral("serverCount")).toInteger());
+
+    const auto action = map.value(QStringLiteral("action")).toInteger(-1);
+    if (action >= static_cast<qint64>(HttpCacheServerAction::Add)
+        && action <= static_cast<qint64>(HttpCacheServerAction::Full)) {
+        answer.action = static_cast<HttpCacheServerAction>(action);
+    }
     return answer;
 }
 
@@ -73,11 +80,16 @@ bool confirm(const ED2KHttpCacheLink& link, const ProbeAnswer& answer, QWidget* 
     if (!answer.uploadRequiresAuth)
         details << HttpCacheLinkImporter::tr("This server also accepts uploads without a key.");
 
-    // Replacing an existing configuration is the one outcome somebody may not
-    // have meant, so it is named rather than merely implied.
-    if (!answer.currentBaseUrl.isEmpty() && answer.currentBaseUrl != link.baseUrl)
-        details << HttpCacheLinkImporter::tr("This replaces the current server, %1.")
-                       .arg(QUrl(answer.currentBaseUrl).host());
+    // What this does to the servers already configured is the one outcome
+    // somebody may not have meant, so it is named rather than merely implied.
+    if (answer.action == HttpCacheServerAction::UpdateKey) {
+        details << HttpCacheLinkImporter::tr("This replaces the entry already stored for %1.")
+                       .arg(url.host());
+    } else if (answer.serverCount > 0) {
+        details << HttpCacheLinkImporter::tr(
+                       "Uploads are shared across your cache servers; this makes %n of them.", "",
+                       answer.serverCount + 1);
+    }
 
     QString warning;
     if (plain) {
@@ -89,10 +101,29 @@ bool confirm(const ED2KHttpCacheLink& link, const ProbeAnswer& answer, QWidget* 
             "cross the network unencrypted.");
     }
 
+    // Three different questions, because three different things happen: the first
+    // server is a setup, another one joins a rotation, and a familiar base URL is
+    // a re-keying. Offering "use this as your HTTP Cache server" for all three
+    // would misdescribe two of them.
+    QString question;
+    switch (answer.action) {
+    case HttpCacheServerAction::UpdateKey:
+        question = HttpCacheLinkImporter::tr("Update your HTTP Cache settings for \"%1\"?")
+                       .arg(label);
+        break;
+    case HttpCacheServerAction::Add:
+    case HttpCacheServerAction::Unchanged:
+    case HttpCacheServerAction::Full:
+        question = answer.serverCount > 0
+            ? HttpCacheLinkImporter::tr("Add \"%1\" as an HTTP Cache server?").arg(label)
+            : HttpCacheLinkImporter::tr("Use \"%1\" as your HTTP Cache server?").arg(label);
+        break;
+    }
+
     QMessageBox box(parent);
     box.setIcon(plain ? QMessageBox::Warning : QMessageBox::Question);
     box.setWindowTitle(HttpCacheLinkImporter::tr("HTTP Cache"));
-    box.setText(HttpCacheLinkImporter::tr("Use \"%1\" as your HTTP Cache server?").arg(label));
+    box.setText(question);
     box.setInformativeText(details.join(QLatin1Char('\n'))
                            + HttpCacheLinkImporter::tr(
                                  "\n\nHTTP Cache will be enabled and this key stored "
@@ -146,10 +177,27 @@ void finishProbe(const ED2KHttpCacheLink& link, const ProbeAnswer& answer, IpcCl
     // Already exactly what is configured. Saying so beats a dialog that changes
     // nothing — the clipboard watcher would otherwise raise one every time this
     // link passes through the clipboard.
-    if (answer.unchanged) {
+    if (answer.action == HttpCacheServerAction::Unchanged) {
         logInfo(HttpCacheLinkImporter::tr("HTTP Cache is already configured for %1.").arg(host));
         StatusBarNotifier::post(
             HttpCacheLinkImporter::tr("HTTP Cache is already configured for %1.").arg(host));
+        if (done)
+            done(false);
+        return;
+    }
+
+    // No room. Asking first and refusing after would be worse: the dialog would
+    // promise something the core is going to decline.
+    if (answer.action == HttpCacheServerAction::Full) {
+        const QString error =
+            HttpCacheLinkImporter::tr("You already have %n HTTP Cache server(s) configured. "
+                                      "Remove one from preferences.yml before adding another.",
+                                      "", answer.serverCount);
+        logError(error);
+        StatusBarNotifier::post(HttpCacheLinkImporter::tr("HTTP Cache link refused"));
+        if (beforePrompt)
+            beforePrompt();
+        warnLater(parent, error);
         if (done)
             done(false);
         return;
@@ -169,6 +217,9 @@ void finishProbe(const ED2KHttpCacheLink& link, const ProbeAnswer& answer, IpcCl
     IpcMessage apply(IpcMsgType::ApplyHttpCacheConfig);
     apply.append(link.baseUrl);
     apply.append(link.secret);
+    // Display only, and what makes a list of several servers readable in the YAML.
+    apply.append(link.name);
+    apply.append(link.keyId);
 
     ipc->sendRequest(std::move(apply), [host, parent, done](const IpcMessage& resp) {
         const bool ok = resp.fieldBool(0);

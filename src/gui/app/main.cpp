@@ -1,8 +1,6 @@
 #include "pch.h"
 #include <QApplication>
-#include <QDesktopServices>
 #include <QFile>
-#include <QFileOpenEvent>
 #include <QFileInfo>
 #include <QFont>
 #include <QLibraryInfo>
@@ -32,6 +30,7 @@ static void unixSignalHandler(int)
 
 #include "app/AppConfig.h"
 #include "app/CommandLineExec.h"
+#include "app/ExternalLinkHandler.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
 #include "app/PowerManager.h"
@@ -50,7 +49,6 @@ static void unixSignalHandler(int)
 #include "app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "utils/CrashHandler.h"
-#include "utils/Ed2kLinkImporter.h"
 #include "utils/Log.h"
 
 #include "IpcMessage.h"
@@ -108,51 +106,6 @@ bool launchDaemon(const QString& daemonPath)
     return QProcess::startDetached(daemonPath, {});
 }
 
-
-/// Process an ed2k:// link string — prompts user and downloads via IPC.
-void handleEd2kUrl(const QString& urlStr, eMule::MainWindow& mainWindow, eMule::IpcClient& ipcClient)
-{
-    if (!urlStr.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive))
-        return;
-
-    // Manual: the user clicked this link, so a completed or cancelled file is a genuine
-    // re-download request and is left alone.
-    eMule::Ed2kLinkImporter::importLinks(
-        urlStr, &ipcClient, &mainWindow,
-        eMule::Ed2kLinkImporter::Source::Manual,
-        eMule::Ed2kLinkImporter::Prompt::Ask,
-        [&mainWindow](const eMule::Ed2kLinkImporter::Result& result) {
-            if (result.added > 0)
-                mainWindow.switchToTab(eMule::MainWindow::TabTransfers);
-        },
-        [&mainWindow] {
-            if (eMule::thePrefs.bringToFrontOnLinkClick()) {
-                mainWindow.raise();
-                mainWindow.activateWindow();
-            }
-        });
-}
-
-/// Act on a link clicked in the Server Info, chat or IRC panes.
-///
-/// @p link is plain text, never a QUrl — an eD2K link has no QUrl spelling and one
-/// built from it stringifies back to an empty string (see TextLinks.h). Routing it
-/// here is also what lets IrcPanel start downloads without owning an IpcClient.
-void routeLink(const QString& link, eMule::MainWindow& mainWindow, eMule::IpcClient& ipcClient)
-{
-    if (link == QStringLiteral("emuleqt:versioncheck")) {
-        // The reference opens the version-check page in a browser rather than
-        // checking in-place (CServerWnd::OnEnLinkServerBox —
-        // srchybrid/ServerWnd.cpp:682-695). Tools -> Links -> Version Check is
-        // where the in-app manifest check lives.
-        QDesktopServices::openUrl(QUrl(QString(eMule::kWebsiteUrl)));
-    } else if (link.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)) {
-        handleEd2kUrl(link, mainWindow, ipcClient);
-    } else if (!link.isEmpty()) {
-        QDesktopServices::openUrl(QUrl::fromUserInput(link));
-    }
-}
-
 } // anonymous namespace
 
 int main(int argc, char* argv[])
@@ -175,6 +128,14 @@ int main(int argc, char* argv[])
     QApplication::setApplicationVersion(eMule::kAppVersion);
     QApplication::setOrganizationName(QStringLiteral("eMule"));
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/Mule.ico")));
+
+    // Before anything spins the event loop. On macOS a browser click on an ed2k:// link
+    // launches us and the Apple Event follows within moments, so it can land during the
+    // splash screen's processEvents() below — long before there is a MainWindow, an
+    // IpcClient or a daemon. The handler queues what it cannot act on yet; installing it
+    // any later means a cold start from a link click silently does nothing.
+    eMule::ExternalLinkHandler linkHandler;
+    app.installEventFilter(&linkHandler);
 
 #ifndef Q_OS_WIN
     // Self-pipe trick: convert SIGTERM/SIGINT/SIGHUP into Qt events for graceful shutdown
@@ -251,6 +212,7 @@ int main(int argc, char* argv[])
 
     // Create and show main window
     eMule::MainWindow mainWindow;
+    linkHandler.setMainWindow(&mainWindow);
     if (eMule::theUiState.isWindowMaximized())
         mainWindow.showMaximized();
     else
@@ -282,6 +244,9 @@ int main(int argc, char* argv[])
     // IPC client — always used to connect to the daemon
     eMule::IpcClient ipcClient;
     bool isRemote = false;  // true when connected to a non-localhost daemon
+
+    // Releases anything the link handler queued while the daemon was still starting.
+    linkHandler.setIpcClient(&ipcClient);
 
     if (eMule::thePrefs.ipcEnabled()) {
         ipcClient.setRemotePollingMs(eMule::thePrefs.ipcRemotePollingMs());
@@ -368,10 +333,9 @@ int main(int argc, char* argv[])
 
         // Every pane that shows text somebody else sent us routes its links in-app
         // rather than handing them to the OS. They arrive as plain text — see
-        // TextLinks.h for why they cannot be QUrls.
-        const auto onLink = [&mainWindow, &ipcClient](const QString& link) {
-            routeLink(link, mainWindow, ipcClient);
-        };
+        // TextLinks.h for why they cannot be QUrls — and join the same queue as a link
+        // handed to us by the OS or the command line.
+        const auto onLink = [&linkHandler](const QString& link) { linkHandler.open(link); };
         QObject::connect(logWidget, &eMule::LogWidget::linkActivated, &mainWindow, onLink);
         QObject::connect(mainWindow.messagesPanel(), &eMule::MessagesPanel::linkActivated,
                          &mainWindow, onLink);
@@ -686,37 +650,9 @@ int main(int argc, char* argv[])
         eMule::logInfo(QStringLiteral("IPC disabled in settings."));
     }
 
-    // macOS: handle ed2k:// URLs sent via Apple Events (QFileOpenEvent)
-    // Install event filter on QApplication to catch FileOpen events.
-    struct Ed2kEventFilter : public QObject {
-        eMule::MainWindow& mw;
-        eMule::IpcClient& ipc;
-        Ed2kEventFilter(eMule::MainWindow& w, eMule::IpcClient& i, QObject* p)
-            : QObject(p), mw(w), ipc(i) {}
-        bool eventFilter(QObject* obj, QEvent* event) override {
-            if (event->type() == QEvent::FileOpen) {
-                auto* foe = static_cast<QFileOpenEvent*>(event);
-                const QString url = foe->url().toString();
-                if (url.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)) {
-                    QTimer::singleShot(0, &mw, [this, url]() {
-                        handleEd2kUrl(url, mw, ipc);
-                    });
-                    return true;
-                }
-            }
-            // macOS: clicking the dock icon when the window is hidden should restore it
-            if (event->type() == QEvent::ApplicationActivate && !mw.isVisible()) {
-                mw.showNormal();
-                mw.raise();
-                mw.activateWindow();
-            }
-            return QObject::eventFilter(obj, event);
-        }
-    };
-    app.installEventFilter(new Ed2kEventFilter(mainWindow, ipcClient, &app));
-
-    // Handle ed2k:// positional args and --screenshot/--options
-    cli.handleEd2kLinks(mainWindow, ipcClient);
+    // Handle ed2k:// positional args and --screenshot/--options. The macOS Apple Event
+    // route is already live — linkHandler went up before the splash screen.
+    cli.handleEd2kLinks(linkHandler);
     cli.setupScreenshotTimer(app, mainWindow);
 
     const int result = QApplication::exec();

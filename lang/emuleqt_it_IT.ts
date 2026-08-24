@@ -4,7 +4,7 @@
 <context>
     <name>Ed2kLinkImporter</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+116"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+129"/>
         <source>already shared</source>
         <translation>già condiviso</translation>
     </message>
@@ -39,7 +39,15 @@
         <translation>Hai annullato in precedenza il download di &quot;%1&quot;.</translation>
     </message>
     <message numerus="yes">
-        <location line="+121"/>
+        <location line="+71"/>
+        <source>%n further HTTP Cache link(s) ignored — apply one at a time.</source>
+        <translation>
+            <numerusform>%n ulteriore link Cache HTTP ignorato — applicali uno alla volta.</numerusform>
+            <numerusform>%n ulteriori link Cache HTTP ignorati — applicali uno alla volta.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+96"/>
         <source>%n eD2K link(s) not added — already known</source>
         <translation>
             <numerusform>%n link eD2K non aggiunto — già noto</numerusform>
@@ -53,6 +61,127 @@
     </message>
 </context>
 <context>
+    <name>HttpCacheLinkImporter</name>
+    <message>
+        <location filename="../src/gui/utils/HttpCacheLinkImporter.cpp" line="+44"/>
+        <source>The core did not answer.</source>
+        <translation>Il core non ha risposto.</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Server: %1</source>
+        <translation>Server: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Key: %1</source>
+        <translation>Chiave: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Version %1%2</source>
+        <translation>Versione %1%2</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>This server also accepts uploads without a key.</source>
+        <translation>Questo server accetta upload anche senza chiave.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>This replaces the entry already stored for %1.</source>
+        <translation>Questo sostituisce la voce già salvata per %1.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+3"/>
+        <source>Uploads are shared across your cache servers; this makes %n of them.</source>
+        <translation>
+            <numerusform>Gli upload vengono distribuiti tra i tuoi server cache; così diventa %n.</numerusform>
+            <numerusform>Gli upload vengono distribuiti tra i tuoi server cache; così diventano %n.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>
+
+This link uses plain HTTP. The key and every chunk address will cross the network unencrypted.</source>
+        <translation>
+
+Questo link usa HTTP in chiaro. La chiave e l&apos;indirizzo di ogni blocco viaggeranno sulla rete senza cifratura.</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Update your HTTP Cache settings for &quot;%1&quot;?</source>
+        <translation>Aggiornare le impostazioni Cache HTTP per &quot;%1&quot;?</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Add &quot;%1&quot; as an HTTP Cache server?</source>
+        <translation>Aggiungere &quot;%1&quot; come server Cache HTTP?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Use &quot;%1&quot; as your HTTP Cache server?</source>
+        <translation>Usare &quot;%1&quot; come server Cache HTTP?</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <location line="+26"/>
+        <source>HTTP Cache</source>
+        <translation>Cache HTTP</translation>
+    </message>
+    <message>
+        <location line="-23"/>
+        <source>
+
+HTTP Cache will be enabled and this key stored for uploads.</source>
+        <translation>
+
+La Cache HTTP verrà attivata e questa chiave salvata per gli upload.</translation>
+    </message>
+    <message>
+        <location line="+39"/>
+        <source>HTTP Cache link refused: %1</source>
+        <translation>Link Cache HTTP rifiutato: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+29"/>
+        <source>HTTP Cache link refused</source>
+        <translation>Link Cache HTTP rifiutato</translation>
+    </message>
+    <message>
+        <location line="-16"/>
+        <location line="+2"/>
+        <source>HTTP Cache is already configured for %1.</source>
+        <translation>La Cache HTTP è già configurata per %1.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+10"/>
+        <source>You already have %n HTTP Cache server(s) configured. Remove one from preferences.yml before adding another.</source>
+        <translation>
+            <numerusform>Hai già %n server Cache HTTP configurato. Rimuovine uno da preferences.yml prima di aggiungerne un altro.</numerusform>
+            <numerusform>Hai già %n server Cache HTTP configurati. Rimuovine uno da preferences.yml prima di aggiungerne un altro.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>HTTP Cache configuration for %1 was not applied.</source>
+        <translation>La configurazione Cache HTTP per %1 non è stata applicata.</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <location line="+2"/>
+        <source>HTTP Cache configured for %1.</source>
+        <translation>Cache HTTP configurata per %1.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>HTTP Cache configuration failed: %1</source>
+        <translation>Configurazione Cache HTTP non riuscita: %1</translation>
+    </message>
+</context>
+<context>
     <name>IpcFeedback</name>
     <message>
         <location filename="../src/gui/utils/IpcFeedback.cpp" line="+22"/>
@@ -63,7 +192,7 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-180"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-226"/>
         <source>eD2K Link</source>
         <translation>Link eD2K</translation>
     </message>
@@ -107,7 +236,7 @@
         <translation>La connessione al server è stata persa.</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+65"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+69"/>
         <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+47"/>
         <source>Very Low</source>
         <translation>Molto bassa</translation>
@@ -186,7 +315,7 @@
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+89"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+92"/>
         <source>Passive</source>
         <translation>Passivo</translation>
     </message>
@@ -197,13 +326,19 @@
         <translation>Link</translation>
     </message>
     <message>
-        <location line="+188"/>
+        <location line="+2"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+2"/>
+        <source>HTTP Cache</source>
+        <translation>Cache HTTP</translation>
+    </message>
+    <message>
+        <location line="+200"/>
         <location line="+14"/>
         <source>Yes</source>
         <translation>Sì</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="-32"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="-34"/>
         <source>Never</source>
         <translation>Mai</translation>
     </message>
@@ -271,13 +406,13 @@
         <translation>Scambio fonti</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="-201"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="-215"/>
         <location filename="../src/gui/controls/DownloadListModel.cpp" line="+3"/>
         <source>SLS</source>
         <translation>SLS</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+1"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+2"/>
         <source>Unknown</source>
         <translation>Sconosciuto</translation>
     </message>
@@ -327,7 +462,7 @@
         <translation>Overhead Kad (pacchetti): 0 Bytes (0)</translation>
     </message>
     <message>
-        <location line="+933"/>
+        <location line="+999"/>
         <source>%1 Bytes</source>
         <translation>%1 Bytes</translation>
     </message>
@@ -335,12 +470,12 @@
 <context>
     <name>eMule::AddFriendDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddFriendDialog.cpp" line="+22"/>
+        <location filename="../src/gui/dialogs/AddFriendDialog.cpp" line="+23"/>
         <source>Add...</source>
         <translation>Aggiungi...</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+5"/>
         <source>Required Information</source>
         <translation>Informazioni richieste</translation>
     </message>
@@ -390,7 +525,7 @@
         <translation>Aggiungi</translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="+41"/>
         <location line="+6"/>
         <source>Add Friend</source>
         <translation>Aggiungi amico</translation>
@@ -486,14 +621,14 @@
 <context>
     <name>eMule::BugReportDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+52"/>
-        <location line="+132"/>
+        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+54"/>
+        <location line="+133"/>
         <location line="+127"/>
         <source>Submit Bug Report</source>
         <translation>Invia segnalazione di bug</translation>
     </message>
     <message>
-        <location line="-252"/>
+        <location line="-255"/>
         <source>Report Details</source>
         <translation>Dettagli segnalazione</translation>
     </message>
@@ -590,7 +725,7 @@
         <translation>Invia</translation>
     </message>
     <message>
-        <location line="+40"/>
+        <location line="+43"/>
         <source>Please fill in both the title and description fields.</source>
         <translation>Compila sia il titolo che la descrizione.</translation>
     </message>
@@ -640,17 +775,17 @@
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+77"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+62"/>
         <source>Client Details: %1</source>
         <translation>Dettagli client: %1</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+17"/>
         <source>General</source>
         <translation>Generale</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>User Name</source>
         <translation>Nome utente</translation>
     </message>
@@ -716,7 +851,7 @@
         <translation>Trasferimento</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+7"/>
         <source>Currently Downloading</source>
         <translation>Download in corso</translation>
     </message>
@@ -757,12 +892,12 @@
         <translation>Punteggi</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+6"/>
         <source>DL/UP Modifier</source>
         <translation>Modificatore DL/UP</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+5"/>
         <source>Rating (Total)</source>
         <translation>Valutazione (totale)</translation>
     </message>
@@ -785,7 +920,7 @@
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+276"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+290"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -914,12 +1049,12 @@
 <context>
     <name>eMule::ClientSharedFilesDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientSharedFilesDialog.cpp" line="+48"/>
+        <location filename="../src/gui/dialogs/ClientSharedFilesDialog.cpp" line="+49"/>
         <source>Shared Files — %1</source>
         <translation>File condivisi — %1</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+5"/>
         <source>File Name</source>
         <translation>Nome file</translation>
     </message>
@@ -947,7 +1082,7 @@
 <context>
     <name>eMule::CollectionCreateDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+51"/>
+        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+52"/>
         <source>Modify Collection...</source>
         <translation>Modifica collezione...</translation>
     </message>
@@ -957,7 +1092,7 @@
         <translation>Crea collezione...</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+9"/>
         <source>Shared (0)</source>
         <translation>Condivisi (0)</translation>
     </message>
@@ -1018,7 +1153,7 @@
         <translation>Annulla</translation>
     </message>
     <message>
-        <location line="+84"/>
+        <location line="+86"/>
         <source>Shared (%1)</source>
         <translation>Condivisi (%1)</translation>
     </message>
@@ -1053,12 +1188,12 @@
 <context>
     <name>eMule::CollectionViewDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CollectionViewDialog.cpp" line="+41"/>
+        <location filename="../src/gui/dialogs/CollectionViewDialog.cpp" line="+42"/>
         <source>Collection: %1</source>
         <translation>Collezione: %1</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+5"/>
         <source>Collection List (%1)</source>
         <translation>Elenco collezione (%1)</translation>
     </message>
@@ -1198,19 +1333,19 @@
 <context>
     <name>eMule::CoreConnectDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+22"/>
+        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+23"/>
         <source>Connect to Core</source>
         <translation>Connetti al core</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+7"/>
         <source>Could not find a local eMule core.
 Enter the address and authentication token of a remote core.</source>
         <translation>Impossibile trovare un core eMule locale.
 Inserisci l&apos;indirizzo e il token di autenticazione di un core remoto.</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+8"/>
         <source>Remote Core</source>
         <translation>Core remoto</translation>
     </message>
@@ -1253,12 +1388,12 @@ Inserisci l&apos;indirizzo e il token di autenticazione di un core remoto.</tran
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+130"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+201"/>
         <source>Search Kad</source>
         <translation>Cerca in Kad</translation>
     </message>
     <message>
-        <location line="+78"/>
+        <location line="+102"/>
         <source>Previous</source>
         <translation>Precedente</translation>
     </message>
@@ -1272,11 +1407,12 @@ Inserisci l&apos;indirizzo e il token di autenticazione di un core remoto.</tran
     <name>eMule::DownloadListModel</name>
     <message>
         <location filename="../src/gui/controls/DownloadListModel.cpp" line="+139"/>
+        <location line="+390"/>
         <source>Downloading</source>
         <translation>Download in corso</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="-319"/>
         <source>Auto [%1]</source>
         <translation>Auto [%1]</translation>
     </message>
@@ -1370,11 +1506,75 @@ Dati trasferiti:	%12</translation>
         <source>Added On</source>
         <translation>Aggiunto il</translation>
     </message>
+    <message>
+        <location line="+197"/>
+        <source>Importing part</source>
+        <translation>Importazione parte</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <location line="+5"/>
+        <source>Hashing</source>
+        <translation>Calcolo hash</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+1"/>
+        <location line="+1"/>
+        <source>Completing (%1)</source>
+        <translation>Completamento (%1)</translation>
+    </message>
+    <message>
+        <location line="-1"/>
+        <source>Copying</source>
+        <translation>Copia</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Uncompressing</source>
+        <translation>Decompressione</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Completing</source>
+        <translation>Completamento</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Complete</source>
+        <translation>Completo</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Stopped</source>
+        <translation>Fermato</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Paused</source>
+        <translation>In pausa</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <location line="+3"/>
+        <source>Insufficient disk space</source>
+        <translation>Spazio su disco insufficiente</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Error</source>
+        <translation>Errore</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Waiting</source>
+        <translation>In attesa</translation>
+    </message>
 </context>
 <context>
     <name>eMule::FileDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+96"/>
+        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+99"/>
         <source>File Details: %1</source>
         <translation>Dettagli file: %1</translation>
     </message>
@@ -1579,12 +1779,12 @@ Dati trasferiti:	%12</translation>
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+28"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+29"/>
         <source>eMule First Runtime Wizard</source>
         <translation>Procedura guidata di primo avvio eMule</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+36"/>
         <source>Ports and Connection</source>
         <translation>Porte e connessione</translation>
     </message>
@@ -1594,17 +1794,17 @@ Dati trasferiti:	%12</translation>
         <translation>Connessione</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+40"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule utilizza due porte per la comunicazione con server e client. Queste porte devono essere libere e disponibili per i client remoti. La porta TCP deve essere disponibile per garantire la funzionalità principale di eMule. La porta UDP è usata per Kad (rete senza server) e per ridurre l&apos;utilizzo della rete (overhead).</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+13"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Puoi modificare le porte qui finché non sono state avviate attività di rete.</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+11"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
@@ -1677,23 +1877,23 @@ Dati trasferiti:	%12</translation>
 <context>
     <name>eMule::ImportDownloadsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ImportDownloadsDialog.cpp" line="+37"/>
+        <location filename="../src/gui/dialogs/ImportDownloadsDialog.cpp" line="+38"/>
         <source>Convert Part Files</source>
         <translation>Converti file Part</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+6"/>
         <source>Current Job</source>
         <translation>Lavoro corrente</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+215"/>
+        <location line="+217"/>
         <source>Idle</source>
         <translation>Inattivo</translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-206"/>
         <source>Job Queue</source>
         <translation>Coda lavori</translation>
     </message>
@@ -1738,7 +1938,7 @@ Dati trasferiti:	%12</translation>
         <translation>Chiudi</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+57"/>
         <source>Import Downloads</source>
         <translation>Importa download</translation>
     </message>
@@ -2184,13 +2384,13 @@ Scegli un altro:</translation>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+94"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>Nuova versione disponibile</translation>
     </message>
     <message>
-        <location line="+161"/>
+        <location line="+169"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: Connesso (LowID)</translation>
     </message>
@@ -2206,12 +2406,12 @@ Scegli un altro:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+935"/>
+        <location line="+952"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Disconnesso</translation>
     </message>
     <message>
-        <location line="-921"/>
+        <location line="-938"/>
         <source>Kad: Connected</source>
         <translation>Kad: Connesso</translation>
     </message>
@@ -2227,17 +2427,17 @@ Scegli un altro:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+913"/>
+        <location line="+930"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Disconnesso</translation>
     </message>
     <message>
-        <location line="-904"/>
+        <location line="-921"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Utenti: %1 | File: %2</translation>
     </message>
     <message>
-        <location line="+195"/>
+        <location line="+212"/>
         <source>Open Incoming Folder...</source>
         <translation>Apri cartella in arrivo...</translation>
     </message>
@@ -2277,19 +2477,19 @@ Scegli un altro:</translation>
         <translation>FAQ</translation>
     </message>
     <message>
-        <location line="-431"/>
+        <location line="-456"/>
         <location line="+7"/>
-        <location line="+427"/>
+        <location line="+452"/>
         <source>Version Check</source>
         <translation>Controllo versione</translation>
     </message>
     <message>
-        <location line="-472"/>
+        <location line="-514"/>
         <source>Quit eMule Qt</source>
         <translation>Esci da eMule Qt</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+35"/>
         <source>eMule Qt %1 has been released.</source>
         <translation>eMule Qt %1 è stato rilasciato.</translation>
     </message>
@@ -2341,7 +2541,7 @@ Enable at least one under Options → Connection to connect.</source>
 Abilitane almeno una in Opzioni → Connessione per connetterti.</translation>
     </message>
     <message>
-        <location line="+170"/>
+        <location line="+178"/>
         <source>Connected</source>
         <translation>Connesso</translation>
     </message>
@@ -2368,7 +2568,7 @@ Upload: %3 | Download: %4</translation>
         <translation>Vuoi davvero uscire da eMule?</translation>
     </message>
     <message>
-        <location line="+133"/>
+        <location line="+150"/>
         <source>Submit Bug Report...</source>
         <translation>Invia segnalazione di bug...</translation>
     </message>
@@ -2593,7 +2793,7 @@ Upload: %3 | Download: %4</translation>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+118"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+120"/>
         <source>Me</source>
         <translation>Io</translation>
     </message>
@@ -2603,7 +2803,7 @@ Upload: %3 | Download: %4</translation>
         <translation>Amici (0)</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+32"/>
         <source>Info</source>
         <translation>Info</translation>
     </message>
@@ -2788,17 +2988,17 @@ Upload: %3 | Download: %4</translation>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+51"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+52"/>
         <source>Network Information</source>
         <translation>Informazioni di rete</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+13"/>
         <source>&lt;i&gt;Loading...&lt;/i&gt;</source>
         <translation>&lt;i&gt;Caricamento...&lt;/i&gt;</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+15"/>
         <source>&lt;b&gt;Not connected to daemon.&lt;/b&gt;</source>
         <translation>&lt;b&gt;Non connesso al demone.&lt;/b&gt;</translation>
     </message>
@@ -2870,36 +3070,36 @@ Upload: %3 | Download: %4</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+74"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+75"/>
         <source>Options</source>
         <translation>Opzioni</translation>
     </message>
     <message>
-        <location line="+40"/>
-        <location line="+1645"/>
+        <location line="+39"/>
+        <location line="+1649"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1644"/>
-        <location line="+1645"/>
+        <location line="-1648"/>
+        <location line="+1649"/>
         <source>Cancel</source>
         <translation>Annulla</translation>
     </message>
     <message>
-        <location line="-1644"/>
-        <location line="+2985"/>
+        <location line="-1648"/>
+        <location line="+2997"/>
         <source>Apply</source>
         <translation>Applica</translation>
     </message>
     <message>
-        <location line="-2984"/>
+        <location line="-2996"/>
         <source>Help</source>
         <translation>Aiuto</translation>
     </message>
     <message>
-        <location line="+233"/>
-        <location line="+1637"/>
+        <location line="+234"/>
+        <location line="+1640"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -2908,37 +3108,37 @@ Upload: %3 | Download: %4</translation>
         <translation>Filtro IP</translation>
     </message>
     <message>
-        <location line="-1724"/>
+        <location line="-1727"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtro IP ricaricato: %1 voci.</translation>
     </message>
     <message>
-        <location line="+203"/>
+        <location line="+205"/>
         <source>User Name</source>
         <translation>Nome utente</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+3011"/>
+        <location line="+3020"/>
         <source>Language</source>
         <translation>Lingua</translation>
     </message>
     <message>
-        <location line="-3008"/>
+        <location line="-3017"/>
         <source>System Default</source>
         <translation>Predefinito di sistema</translation>
     </message>
     <message>
         <location line="+41"/>
         <location line="+580"/>
-        <location line="+291"/>
+        <location line="+292"/>
         <location line="+372"/>
         <location line="+275"/>
         <source>Miscellaneous</source>
         <translation>Varie</translation>
     </message>
     <message>
-        <location line="-1515"/>
+        <location line="-1516"/>
         <source>Bring to front on link click</source>
         <translation>Porta in primo piano al clic su link</translation>
     </message>
@@ -3014,24 +3214,24 @@ Upload: %3 | Download: %4</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2919"/>
+        <location line="+2928"/>
         <source>Core</source>
         <translation>Core</translation>
     </message>
     <message>
-        <location line="-2914"/>
+        <location line="-2923"/>
         <source>Address:</source>
         <translation>Indirizzo:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1047"/>
+        <location line="+1048"/>
         <location line="+631"/>
         <source>Port:</source>
         <translation>Porta:</translation>
     </message>
     <message>
-        <location line="-1675"/>
+        <location line="-1676"/>
         <source>authentication token</source>
         <translation>token di autenticazione</translation>
     </message>
@@ -3172,17 +3372,17 @@ Vuoi davvero continuare?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+587"/>
-        <location line="+924"/>
+        <location line="+586"/>
+        <location line="+926"/>
         <location line="+108"/>
-        <location line="+287"/>
+        <location line="+295"/>
         <location line="+269"/>
         <location line="+28"/>
         <source>Enabled</source>
         <translation>Abilitato</translation>
     </message>
     <message>
-        <location line="-2201"/>
+        <location line="-2210"/>
         <source>Reset</source>
         <translation>Ripristina</translation>
     </message>
@@ -3324,12 +3524,12 @@ Vuoi davvero continuare?</translation>
     </message>
     <message>
         <location line="+54"/>
-        <location line="+1299"/>
+        <location line="+1300"/>
         <source>General</source>
         <translation>Generale</translation>
     </message>
     <message>
-        <location line="-1296"/>
+        <location line="-1297"/>
         <source>Enable proxy</source>
         <translation>Abilita proxy</translation>
     </message>
@@ -3395,14 +3595,14 @@ Vuoi davvero continuare?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+652"/>
+        <location line="+653"/>
         <location line="+693"/>
         <location line="+19"/>
         <source>Password:</source>
         <translation>Password:</translation>
     </message>
     <message>
-        <location line="-1331"/>
+        <location line="-1332"/>
         <source>Update</source>
         <translation>Aggiorna</translation>
     </message>
@@ -3568,17 +3768,17 @@ Vuoi davvero continuare?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+585"/>
+        <location line="+586"/>
         <source>Edit...</source>
         <translation>Modifica...</translation>
     </message>
     <message>
-        <location line="-581"/>
+        <location line="-582"/>
         <source>Filename Cleanup Rules</source>
         <translation>Regole di pulizia nomi file</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+3"/>
         <source>Define patterns to automatically clean up filenames of new downloads.
 Each rule replaces a regex pattern with a replacement string.</source>
         <translation>Definisci modelli per pulire automaticamente i nomi dei file dei nuovi download.
@@ -3595,7 +3795,7 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
         <translation>Sostituzione</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+50"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation>Prova a trasferire blocchi completi a tutti gli upload</translation>
     </message>
@@ -3606,7 +3806,7 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
     </message>
     <message>
         <location line="+3"/>
-        <source>Watch clipboard for eD2K file links</source>
+        <source>Watch clipboard for eD2K links</source>
         <translation>Monitora appunti per link eD2K</translation>
     </message>
     <message>
@@ -4351,7 +4551,17 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
         <translation>Usa sistema crediti (premia chi condivide)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+4"/>
+        <source>Remember the upload queue between restarts</source>
+        <translation>Ricorda la coda di upload tra i riavvii</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Stores the longest-waiting clients in your upload queue and puts them back, with the places they had earned, when eMule starts again. They are not contacted on startup — they simply wait their turn as usual.</source>
+        <translation>Salva i client che attendono da più tempo nella coda di upload e li ripristina, con le posizioni che avevano guadagnato, al riavvio di eMule. All&apos;avvio non vengono contattati — aspettano semplicemente il loro turno come sempre.</translation>
+    </message>
+    <message>
+        <location line="+7"/>
         <source>Open/close ports on WinXP firewall when starting/exiting eMule</source>
         <translation>Apri/chiudi porte nel firewall WinXP all&apos;avvio/chiusura di eMule</translation>
     </message>
@@ -4602,14 +4812,14 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
         <translation>Dimensione coda: %1</translation>
     </message>
     <message>
-        <location line="-1526"/>
-        <location line="+1569"/>
+        <location line="-1536"/>
+        <location line="+1579"/>
         <location line="+279"/>
         <source>Remove</source>
         <translation>Rimuovi</translation>
     </message>
     <message>
-        <location line="-1639"/>
+        <location line="-1647"/>
         <source>New eMule Qt version detected</source>
         <translation>Rilevata una nuova versione di eMule Qt</translation>
     </message>
@@ -4619,7 +4829,7 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
         <translation>Aggiorna da URL: (formato filter.dat o PeerGuardian, .gz/.zip accettati)</translation>
     </message>
     <message>
-        <location line="+718"/>
+        <location line="+726"/>
         <source>Write eMule core logs to disk</source>
         <translation>Scrivi i registri del core di eMule su disco</translation>
     </message>
@@ -4792,8 +5002,8 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
         <translation>Nuova pianificazione</translation>
     </message>
     <message>
-        <location line="-1663"/>
-        <location line="+1824"/>
+        <location line="-1673"/>
+        <location line="+1834"/>
         <source>Add</source>
         <translation>Aggiungi</translation>
     </message>
@@ -4855,12 +5065,12 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
 <context>
     <name>eMule::PasteLinksDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+20"/>
+        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+21"/>
         <source>Paste eD2K Links</source>
         <translation>Incolla link eD2K</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+5"/>
         <source>eD2K Links:</source>
         <translation>Link eD2K:</translation>
     </message>
@@ -4880,7 +5090,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Annulla</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+17"/>
         <source>Not Connected</source>
         <translation>Non connesso</translation>
     </message>
@@ -4907,7 +5117,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
 <context>
     <name>eMule::SearchDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/SearchDetailDialog.cpp" line="+43"/>
+        <location filename="../src/gui/dialogs/SearchDetailDialog.cpp" line="+42"/>
         <source>Details: %1</source>
         <translation>Dettagli: %1</translation>
     </message>
@@ -4927,7 +5137,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+186"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+194"/>
         <location line="+416"/>
         <source>Download</source>
         <translation>Download</translation>
@@ -5109,7 +5319,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Kad: &quot;%1&quot; è già in ricerca — verrà usato &quot;%2&quot; come obiettivo della ricerca.</translation>
     </message>
     <message>
-        <location line="+148"/>
+        <location line="+147"/>
         <source>Details...</source>
         <translation>Dettagli...</translation>
     </message>
@@ -5135,17 +5345,17 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
     </message>
     <message>
         <location line="+61"/>
-        <location line="+484"/>
+        <location line="+502"/>
         <source>Preview</source>
         <translation>Anteprima</translation>
     </message>
     <message>
-        <location line="+191"/>
+        <location line="+186"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Interrogazione server: %1 / %2</translation>
     </message>
     <message>
-        <location line="-736"/>
+        <location line="-749"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Segna come spam</translation>
@@ -5181,7 +5391,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Servizi web</translation>
     </message>
     <message>
-        <location line="+463"/>
+        <location line="+481"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Anteprima non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.</translation>
     </message>
@@ -5327,7 +5537,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+133"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+135"/>
         <location line="+94"/>
         <location line="+2"/>
         <source>Disconnect</source>
@@ -5344,12 +5554,12 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
     <message>
         <location line="-165"/>
         <location line="+95"/>
-        <location line="+429"/>
+        <location line="+438"/>
         <source>Connect</source>
         <translation>Connetti</translation>
     </message>
     <message>
-        <location line="-479"/>
+        <location line="-488"/>
         <source>Invalid URL: %1</source>
         <translation>URL non valido: %1</translation>
     </message>
@@ -5379,7 +5589,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>server.met scaricato, &quot;%1&quot; estratto (%2 byte). Analisi in corso...</translation>
     </message>
     <message>
-        <location line="+575"/>
+        <location line="+584"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -5477,7 +5687,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>▸ Server (%1)</translation>
     </message>
     <message>
-        <location line="-613"/>
+        <location line="-622"/>
         <source>Connect To</source>
         <translation>Connetti a</translation>
     </message>
@@ -5493,12 +5703,12 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
     </message>
     <message>
         <location line="+1"/>
-        <location line="+502"/>
+        <location line="+511"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-501"/>
+        <location line="-510"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
@@ -5533,7 +5743,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Incolla link eD2K</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+35"/>
         <source>Remove</source>
         <translation>Rimuovi</translation>
     </message>
@@ -5553,7 +5763,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>▸ Server (0)</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+64"/>
         <source>New Server</source>
         <translation>Nuovo server</translation>
     </message>
@@ -5692,7 +5902,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
 <context>
     <name>eMule::SharedFilesModel</name>
     <message>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+148"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+194"/>
         <source>File Name</source>
         <translation>Nome file</translation>
     </message>
@@ -5745,26 +5955,27 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+150"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+154"/>
         <location line="+12"/>
-        <location line="+392"/>
-        <location line="+333"/>
+        <location line="+386"/>
+        <location line="+362"/>
+        <location line="+98"/>
         <source>Shared Files (0)</source>
         <translation>File condivisi (0)</translation>
     </message>
     <message>
-        <location line="-648"/>
+        <location line="-754"/>
         <source>Open File</source>
         <translation>Apri file</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1217"/>
+        <location line="+1302"/>
         <source>Open Folder</source>
         <translation>Apri cartella</translation>
     </message>
     <message>
-        <location line="-1205"/>
+        <location line="-1290"/>
         <source>Rename...</source>
         <translation>Rinomina...</translation>
     </message>
@@ -5784,7 +5995,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Elimina dal disco</translation>
     </message>
     <message>
-        <location line="+707"/>
+        <location line="+792"/>
         <source>Delete File</source>
         <translation>Elimina file</translation>
     </message>
@@ -5794,12 +6005,12 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Sei sicuro di voler eliminare permanentemente &quot;%1&quot; dal disco?</translation>
     </message>
     <message>
-        <location line="-694"/>
+        <location line="-771"/>
         <source>Unshare</source>
         <translation>Non condividere</translation>
     </message>
     <message>
-        <location line="+727"/>
+        <location line="+804"/>
         <source>Unshare File</source>
         <translation>Annulla condivisione file</translation>
     </message>
@@ -5813,7 +6024,7 @@ The file will remain on disk.</source>
 Il file rimarrà sul disco.</translation>
     </message>
     <message>
-        <location line="-710"/>
+        <location line="-787"/>
         <source>Priority (Upload)</source>
         <translation>Priorità (Upload)</translation>
     </message>
@@ -5868,7 +6079,7 @@ Il file rimarrà sul disco.</translation>
         <translation>Visualizza collezione...</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+8"/>
         <source>Search Author&apos;s Collections...</source>
         <translation>Cerca le collezioni dell&apos;autore...</translation>
     </message>
@@ -5909,7 +6120,7 @@ Il file rimarrà sul disco.</translation>
         <translation>Servizi web</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+72"/>
         <source>Reload</source>
         <translation>Ricarica</translation>
     </message>
@@ -5944,7 +6155,7 @@ Il file rimarrà sul disco.</translation>
         <translation>Tutte le directory</translation>
     </message>
     <message>
-        <location line="+108"/>
+        <location line="+130"/>
         <source>Current Session</source>
         <translation>Sessione corrente</translation>
     </message>
@@ -5993,7 +6204,22 @@ Il file rimarrà sul disco.</translation>
         <translation>Statistiche</translation>
     </message>
     <message>
-        <location line="+684"/>
+        <location line="+227"/>
+        <source>%1 (%2 of %3 shared)</source>
+        <translation>%1 (%2 di %3 condivisi)</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>Could not share that file</source>
+        <translation>Impossibile condividere quel file</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Could not unshare that file</source>
+        <translation>Impossibile annullare la condivisione di quel file</translation>
+    </message>
+    <message>
+        <location line="+518"/>
         <source>Share Directory</source>
         <translation>Condividi directory</translation>
     </message>
@@ -6013,7 +6239,12 @@ Il file rimarrà sul disco.</translation>
         <translation>Rimuovi condivisione con le sottodirectory</translation>
     </message>
     <message>
-        <location line="-708"/>
+        <location line="+69"/>
+        <source>Open File not available — web server is not running or stream token not received.</source>
+        <translation>Apri file non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.</translation>
+    </message>
+    <message>
+        <location line="-861"/>
         <source>Content</source>
         <translation>Contenuto</translation>
     </message>
@@ -6064,17 +6295,17 @@ Il file rimarrà sul disco.</translation>
     </message>
     <message>
         <location line="+24"/>
-        <location line="+321"/>
+        <location line="+405"/>
         <source>Requires a hostname configured in Preferences, or a public IPv6</source>
         <translation>Richiede un hostname configurato nelle Preferenze o un IPv6 pubblico</translation>
     </message>
     <message>
-        <location line="-218"/>
+        <location line="-294"/>
         <source>Shared Files (%1)</source>
         <translation>File condivisi (%1)</translation>
     </message>
     <message numerus="yes">
-        <location line="+31"/>
+        <location line="+107"/>
         <source>Are you sure you want to permanently delete %n selected file(s) from disk?</source>
         <translation>
             <numerusform>Vuoi davvero eliminare definitivamente dal disco %n file selezionato?</numerusform>
@@ -6127,7 +6358,7 @@ I file resteranno sul disco.</numerusform>
 <context>
     <name>eMule::StatisticsPanel</name>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="-981"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="-1047"/>
         <location line="+7"/>
         <source>Session average</source>
         <translation>Media sessione</translation>
@@ -6202,21 +6433,22 @@ I file resteranno sul disco.</numerusform>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+149"/>
+        <location line="+176"/>
         <location line="+19"/>
         <source>Uploads</source>
         <translation>Upload</translation>
     </message>
     <message>
-        <location line="-164"/>
+        <location line="-191"/>
         <location line="+63"/>
-        <location line="+72"/>
+        <location line="+78"/>
+        <location line="+21"/>
         <location line="+47"/>
         <source>Session</source>
         <translation>Sessione</translation>
     </message>
     <message>
-        <location line="-179"/>
+        <location line="-206"/>
         <location line="+32"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Dati caricati: 0 Bytes</translation>
@@ -6245,21 +6477,21 @@ I file resteranno sul disco.</numerusform>
     <message>
         <location line="-26"/>
         <location line="+27"/>
-        <location line="+32"/>
+        <location line="+36"/>
         <location line="+33"/>
         <source>Successful: 0</source>
         <translation>Riusciti: 0</translation>
     </message>
     <message>
-        <location line="-91"/>
+        <location line="-95"/>
         <location line="+27"/>
-        <location line="+32"/>
+        <location line="+36"/>
         <location line="+33"/>
         <source>Failed: 0</source>
         <translation>Falliti: 0</translation>
     </message>
     <message>
-        <location line="-90"/>
+        <location line="-94"/>
         <location line="+27"/>
         <source>Average Upload Per Session: 0 Bytes</source>
         <translation>Upload medio per sessione: 0 Bytes</translation>
@@ -6272,19 +6504,19 @@ I file resteranno sul disco.</numerusform>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+91"/>
+        <location line="+118"/>
         <location line="+19"/>
         <source>Downloads</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-103"/>
-        <location line="+35"/>
+        <location line="-130"/>
+        <location line="+39"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Dati scaricati: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-26"/>
+        <location line="-30"/>
         <source>Active Downloads: 0</source>
         <translation>Download attivi: 0</translation>
     </message>
@@ -6294,7 +6526,7 @@ I file resteranno sul disco.</numerusform>
         <translation>Fonti trovate: 0</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+82"/>
         <source>Connection</source>
         <translation>Connessione</translation>
     </message>
@@ -6358,48 +6590,48 @@ I file resteranno sul disco.</numerusform>
         <translation>Durata server: 0:00:00</translation>
     </message>
     <message>
-        <location line="-184"/>
+        <location line="-211"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+35"/>
-        <location line="+97"/>
+        <location line="+39"/>
+        <location line="+120"/>
         <source>Clients</source>
         <translation>Client</translation>
     </message>
     <message>
-        <location line="-192"/>
+        <location line="-219"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+35"/>
+        <location line="+39"/>
         <source>%1: 0 Bytes</source>
         <translation>%1: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-97"/>
+        <location line="-101"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+35"/>
+        <location line="+39"/>
         <source>Port</source>
         <translation>Porta</translation>
     </message>
     <message>
-        <location line="-97"/>
+        <location line="-101"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+35"/>
+        <location line="+39"/>
         <source>Default Port 4662: 0 Bytes</source>
         <translation>Porta predefinita 4662: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-97"/>
+        <location line="-101"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+35"/>
+        <location line="+39"/>
         <source>Other Ports: 0 Bytes</source>
         <translation>Altre porte: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-97"/>
+        <location line="-101"/>
         <location line="+32"/>
         <source>Data Source</source>
         <translation>Origine dati</translation>
@@ -6418,14 +6650,15 @@ I file resteranno sul disco.</numerusform>
     </message>
     <message>
         <location line="-13"/>
-        <location line="+66"/>
-        <location line="+58"/>
+        <location line="+70"/>
+        <location line="+47"/>
+        <location line="+34"/>
         <location line="+34"/>
         <source>Cumulative</source>
         <translation>Cumulativo</translation>
     </message>
     <message>
-        <location line="-113"/>
+        <location line="-136"/>
         <location line="+33"/>
         <source>Completed Downloads: 0</source>
         <translation>Download completati: 0</translation>
@@ -6467,7 +6700,7 @@ I file resteranno sul disco.</numerusform>
         <translation>Parti salvate grazie a ICH: 0</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+36"/>
         <location line="+21"/>
         <source>General</source>
         <translation>Generale</translation>
@@ -6533,32 +6766,72 @@ I file resteranno sul disco.</numerusform>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+401"/>
+        <location line="+435"/>
         <location line="+4"/>
         <source>Statistics Last Reset: %1</source>
         <translation>Ultimo azzeramento statistiche: %1</translation>
     </message>
     <message>
-        <location line="-681"/>
-        <location line="+276"/>
-        <location line="+399"/>
+        <location line="-742"/>
+        <location line="+303"/>
+        <location line="+433"/>
         <location line="+7"/>
         <source>Unknown</source>
         <translation>Sconosciuto</translation>
     </message>
     <message>
-        <location line="-689"/>
+        <location line="-750"/>
         <source>Statistics Tree</source>
         <translation>Albero statistiche</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+685"/>
+        <location line="+746"/>
         <source>Statistics last reset: %1</source>
         <translation>Ultimo azzeramento statistiche: %1</translation>
     </message>
     <message>
-        <location line="-395"/>
+        <location line="-568"/>
+        <source>UDP File Re-asks: 0, Failed: 0 (0.0%)</source>
+        <translation>Richieste file UDP ripetute: 0, fallite: 0 (0.0%)</translation>
+    </message>
+    <message>
+        <location line="+58"/>
+        <source>HTTP Cache</source>
+        <translation>Cache HTTP</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <location line="+8"/>
+        <source>Published: 0 Bytes</source>
+        <translation>Pubblicato: 0 Bytes</translation>
+    </message>
+    <message>
+        <location line="-7"/>
+        <location line="+8"/>
+        <source>Fetched: 0 Bytes</source>
+        <translation>Recuperato: 0 Bytes</translation>
+    </message>
+    <message>
+        <location line="-7"/>
+        <location line="+8"/>
+        <source>Upload Saved: 0 Bytes</source>
+        <translation>Upload risparmiato: 0 Bytes</translation>
+    </message>
+    <message>
+        <location line="-7"/>
+        <location line="+8"/>
+        <source>Chunks Published: 0</source>
+        <translation>Blocchi pubblicati: 0</translation>
+    </message>
+    <message>
+        <location line="-7"/>
+        <location line="+8"/>
+        <source>Chunks Fetched: 0</source>
+        <translation>Blocchi recuperati: 0</translation>
+    </message>
+    <message>
+        <location line="+64"/>
         <source>Run Time: 0:00:00</source>
         <translation>Tempo di esecuzione: 0:00:00</translation>
     </message>
@@ -6576,6 +6849,11 @@ I file resteranno sul disco.</numerusform>
         <location line="+1"/>
         <source>Client Software</source>
         <translation>Software client</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Low ID: 0 (0.0%)</source>
+        <translation>Low ID: 0 (0.0%)</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -6742,21 +7020,21 @@ I file resteranno sul disco.</numerusform>
     <message>
         <location line="-45"/>
         <location line="+55"/>
-        <location line="+42"/>
-        <location line="+41"/>
+        <location line="+66"/>
+        <location line="+48"/>
         <source>Default Port 4662: %1 %2</source>
         <translation>Porta predefinita 4662: %1 %2</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-166"/>
         <location line="+55"/>
-        <location line="+42"/>
-        <location line="+41"/>
+        <location line="+66"/>
+        <location line="+48"/>
         <source>Other Ports: %1 %2</source>
         <translation>Altre porte: %1 %2</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-166"/>
         <location line="+55"/>
         <source>Complete File: %1 %2</source>
         <translation>File completo: %1 %2</translation>
@@ -6813,52 +7091,82 @@ I file resteranno sul disco.</numerusform>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+42"/>
-        <location line="+41"/>
+        <location line="+66"/>
+        <location line="+48"/>
         <location line="+36"/>
         <source>Total Overhead (Packets)</source>
         <translation>Overhead totale (pacchetti)</translation>
     </message>
     <message>
-        <location line="-118"/>
-        <location line="+42"/>
-        <location line="+41"/>
+        <location line="-149"/>
+        <location line="+66"/>
+        <location line="+48"/>
         <location line="+36"/>
         <source>File Request Overhead (Packets)</source>
         <translation>Overhead richieste file (pacchetti)</translation>
     </message>
     <message>
-        <location line="-118"/>
-        <location line="+42"/>
-        <location line="+41"/>
+        <location line="-149"/>
+        <location line="+66"/>
+        <location line="+48"/>
         <location line="+36"/>
         <source>Source Exchange Overhead (Packets)</source>
         <translation>Overhead scambio fonti (pacchetti)</translation>
     </message>
     <message>
-        <location line="-118"/>
-        <location line="+42"/>
-        <location line="+41"/>
+        <location line="-149"/>
+        <location line="+66"/>
+        <location line="+48"/>
         <location line="+36"/>
         <source>Server Overhead (Packets)</source>
         <translation>Overhead server (pacchetti)</translation>
     </message>
     <message>
-        <location line="-118"/>
-        <location line="+42"/>
-        <location line="+41"/>
+        <location line="-149"/>
+        <location line="+66"/>
+        <location line="+48"/>
         <location line="+36"/>
         <source>Kad Overhead (Packets)</source>
         <translation>Overhead Kad (pacchetti)</translation>
     </message>
     <message>
-        <location line="-74"/>
-        <location line="+41"/>
+        <location line="-100"/>
+        <location line="+6"/>
+        <source>Published</source>
+        <translation>Pubblicato</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+6"/>
+        <source>Fetched</source>
+        <translation>Recuperato</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+6"/>
+        <source>Upload Saved</source>
+        <translation>Upload risparmiato</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+6"/>
+        <source>Chunks Published</source>
+        <translation>Blocchi pubblicati</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+6"/>
+        <source>Chunks Fetched</source>
+        <translation>Blocchi recuperati</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <location line="+48"/>
         <source>Downloaded Data: %1</source>
         <translation>Dati scaricati: %1</translation>
     </message>
     <message>
-        <location line="-23"/>
+        <location line="-30"/>
         <source>Active Downloads: %1</source>
         <translation>Download attivi: %1</translation>
     </message>
@@ -6868,7 +7176,12 @@ I file resteranno sul disco.</numerusform>
         <translation>Fonti trovate: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+5"/>
+        <source>UDP File Re-asks: %1, Failed: %2 %3</source>
+        <translation>Richieste file UDP ripetute: %1, fallite: %2 %3</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <location line="+37"/>
         <source>Completed Downloads: %1</source>
         <translation>Download completati: %1</translation>
@@ -7021,7 +7334,12 @@ I file resteranno sul disco.</numerusform>
         <translation>Client conosciuti: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
+        <source>Low ID: %1 %2</source>
+        <translation>Low ID: %1 %2</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Banned Clients: %1</source>
         <translation>Client bannati: %1</translation>
     </message>
@@ -7204,12 +7522,12 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
 <context>
     <name>eMule::ToolbarCustomizeDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ToolbarCustomizeDialog.cpp" line="+71"/>
+        <location filename="../src/gui/dialogs/ToolbarCustomizeDialog.cpp" line="+72"/>
         <source>Customize Toolbar</source>
         <translation>Personalizza barra degli strumenti</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+6"/>
         <source>Available toolbar buttons:</source>
         <translation>Pulsanti disponibili:</translation>
     </message>
@@ -7252,131 +7570,131 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+611"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+617"/>
         <source>Downloads</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-283"/>
+        <location line="-286"/>
         <source>Priority (Download)</source>
         <translation>Priorità (Download)</translation>
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1552"/>
+        <location line="+1568"/>
         <source>Low</source>
         <translation>Bassa</translation>
     </message>
     <message>
-        <location line="-1551"/>
-        <location line="+1552"/>
+        <location line="-1567"/>
+        <location line="+1568"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-1551"/>
-        <location line="+1552"/>
+        <location line="-1567"/>
+        <location line="+1568"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
     <message>
-        <location line="-1550"/>
-        <location line="+1552"/>
+        <location line="-1566"/>
+        <location line="+1568"/>
         <source>Very Low</source>
         <translation>Molto bassa</translation>
     </message>
     <message>
-        <location line="-1551"/>
-        <location line="+1552"/>
+        <location line="-1567"/>
+        <location line="+1568"/>
         <source>Very High</source>
         <translation>Molto alta</translation>
     </message>
     <message>
-        <location line="-1550"/>
-        <location line="+1553"/>
+        <location line="-1566"/>
+        <location line="+1569"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-1542"/>
-        <location line="+471"/>
+        <location line="-1558"/>
+        <location line="+505"/>
         <source>Pause</source>
         <translation>Pausa</translation>
     </message>
     <message>
-        <location line="-462"/>
-        <location line="+468"/>
+        <location line="-496"/>
+        <location line="+502"/>
         <source>Stop</source>
         <translation>Ferma</translation>
     </message>
     <message>
-        <location line="-459"/>
-        <location line="+465"/>
+        <location line="-493"/>
+        <location line="+499"/>
         <source>Resume</source>
         <translation>Riprendi</translation>
     </message>
     <message>
-        <location line="-452"/>
-        <location line="+458"/>
+        <location line="-486"/>
+        <location line="+492"/>
         <source>Cancel</source>
         <translation>Annulla</translation>
     </message>
     <message>
-        <location line="-455"/>
-        <location line="+469"/>
+        <location line="-489"/>
+        <location line="+503"/>
         <source>Cancel Download</source>
         <translation>Annulla download</translation>
     </message>
     <message>
-        <location line="-468"/>
-        <location line="+469"/>
+        <location line="-502"/>
+        <location line="+503"/>
         <source>Cancel download &quot;%1&quot;?</source>
         <translation>Annullare il download &quot;%1&quot;?</translation>
     </message>
     <message>
-        <location line="-465"/>
-        <location line="+469"/>
+        <location line="-499"/>
+        <location line="+503"/>
         <source>Cancel Downloads</source>
         <translation>Annulla i download</translation>
     </message>
     <message>
-        <location line="-468"/>
-        <location line="+469"/>
+        <location line="-502"/>
+        <location line="+503"/>
         <source>Cancel %1 selected downloads?</source>
         <translation>Annullare %1 download selezionati?</translation>
     </message>
     <message>
-        <location line="-456"/>
-        <location line="+467"/>
+        <location line="-490"/>
+        <location line="+501"/>
         <source>Open File</source>
         <translation>Apri file</translation>
     </message>
     <message>
-        <location line="-457"/>
-        <location line="+471"/>
+        <location line="-492"/>
+        <location line="+506"/>
         <source>Preview</source>
         <translation>Anteprima</translation>
     </message>
     <message>
-        <location line="-465"/>
-        <location line="+1514"/>
-        <location line="+88"/>
+        <location line="-500"/>
+        <location line="+1531"/>
+        <location line="+87"/>
         <source>Details...</source>
         <translation>Dettagli...</translation>
     </message>
     <message>
-        <location line="-1596"/>
+        <location line="-1612"/>
         <source>Comments...</source>
         <translation>Commenti...</translation>
     </message>
     <message>
         <location line="+17"/>
-        <location line="+490"/>
+        <location line="+525"/>
         <source>Clear Completed</source>
         <translation>Pulisci completati</translation>
     </message>
     <message>
-        <location line="-480"/>
+        <location line="-515"/>
         <source>eD2K Links...</source>
         <translation>Link eD2K...</translation>
     </message>
@@ -7386,14 +7704,14 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Incolla link eD2K</translation>
     </message>
     <message>
-        <location line="+17"/>
-        <location line="+1525"/>
-        <location line="+83"/>
+        <location line="+21"/>
+        <location line="+1537"/>
+        <location line="+82"/>
         <source>Find...</source>
         <translation>Cerca...</translation>
     </message>
     <message>
-        <location line="-1604"/>
+        <location line="-1615"/>
         <source>Search Related Files</source>
         <translation>Cerca file correlati</translation>
     </message>
@@ -7404,23 +7722,23 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
     </message>
     <message>
         <location line="+11"/>
-        <location line="+416"/>
+        <location line="+447"/>
         <source>Assign To Category</source>
         <translation>Assegna a categoria</translation>
     </message>
     <message>
-        <location line="-414"/>
-        <location line="+421"/>
+        <location line="-445"/>
+        <location line="+452"/>
         <source>(All)</source>
         <translation>(Tutti)</translation>
     </message>
     <message>
-        <location line="-320"/>
+        <location line="-351"/>
         <source>All</source>
         <translation>Tutti</translation>
     </message>
     <message>
-        <location line="+1153"/>
+        <location line="+1166"/>
         <source>Uploading</source>
         <translation>In upload</translation>
     </message>
@@ -7440,7 +7758,7 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Client conosciuti</translation>
     </message>
     <message>
-        <location line="-963"/>
+        <location line="-945"/>
         <source>Clients on queue:   0</source>
         <translation>Client in coda:   0</translation>
     </message>
@@ -7480,17 +7798,17 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Trova</translation>
     </message>
     <message>
-        <location line="+421"/>
+        <location line="+423"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Anteprima non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+31"/>
         <source>Open File not available — web server is not running or stream token not received.</source>
         <translation>Apri file non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.</translation>
     </message>
     <message>
-        <location line="+367"/>
+        <location line="+350"/>
         <source>Downloads (%1)</source>
         <translation>Download (%1)</translation>
     </message>
@@ -7525,28 +7843,28 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Cat. %1</translation>
     </message>
     <message>
-        <location line="+125"/>
-        <location line="+87"/>
+        <location line="+124"/>
+        <location line="+86"/>
         <source>Add To Friends</source>
         <translation>Aggiungi agli amici</translation>
     </message>
     <message>
-        <location line="-65"/>
+        <location line="-64"/>
         <location line="+7"/>
-        <location line="+82"/>
+        <location line="+81"/>
         <location line="+3"/>
         <source>Send Message</source>
         <translation>Invia messaggio</translation>
     </message>
     <message>
-        <location line="-85"/>
-        <location line="+85"/>
+        <location line="-84"/>
+        <location line="+84"/>
         <source>Message:</source>
         <translation>Messaggio:</translation>
     </message>
     <message>
-        <location line="-74"/>
-        <location line="+87"/>
+        <location line="-73"/>
+        <location line="+86"/>
         <source>View Shared Files</source>
         <translation>Visualizza file condivisi</translation>
     </message>

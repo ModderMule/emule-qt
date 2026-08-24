@@ -210,6 +210,7 @@
     <ClCompile Include="dialogs\ClientSharedFilesDialog.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
+    <ClCompile Include="app\ExternalLinkHandler.cpp" />
     <ClCompile Include="controls\ContactsGraph.cpp" />
     <ClCompile Include="controls\ContentScrollArea.cpp" />
     <ClCompile Include="dialogs\CoreConnectDialog.cpp" />
@@ -317,6 +318,7 @@
     <QtMoc Include="dialogs\FirstStartWizard.h" />
     <QtMoc Include="controls\FriendListModel.h" />
     <QtMoc Include="dialogs\ImportDownloadsDialog.h" />
+    <QtMoc Include="app\ExternalLinkHandler.h" />
     <QtMoc Include="app\IpcClient.h" />
     <QtMoc Include="panels\IrcPanel.h" />
     <QtMoc Include="controls\KadContactHistogram.h" />

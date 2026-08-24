@@ -223,8 +223,7 @@ private slots:
         QCOMPARE(prefs.httpCacheEnabled(), false);
         QCOMPARE(prefs.httpCacheAllowDownload(), true);
         QCOMPARE(prefs.httpCacheAllowUpload(), true);
-        QVERIFY(prefs.httpCacheBaseUrl().isEmpty());
-        QVERIFY(prefs.httpCacheApiKey().isEmpty());
+        QVERIFY(prefs.httpCacheServers().isEmpty());
         QCOMPARE(prefs.httpCacheMinClients(), 2u);
         QCOMPARE(prefs.httpCacheMaxConcurrentFetches(), 2u);
     }
@@ -243,9 +242,113 @@ private slots:
         prefs.setHttpCacheMaxConcurrentFetches(0);
         QCOMPARE(prefs.httpCacheMaxConcurrentFetches(), 1u);
 
-        // A trailing slash would make every request path a double slash.
-        prefs.setHttpCacheBaseUrl(QStringLiteral("  http://localhost/cache//  "));
-        QCOMPARE(prefs.httpCacheBaseUrl(), QStringLiteral("http://localhost/cache"));
+        // A trailing slash would make every request path a double slash — and two
+        // spellings of one server would each get their own list entry and their
+        // own backoff.
+        prefs.setHttpCacheServers({{{}, QStringLiteral("  http://localhost/cache//  "),
+                                    QStringLiteral(" k "), {}, true}});
+        QCOMPARE(prefs.httpCacheServers().size(), 1);
+        QCOMPARE(prefs.httpCacheServers().at(0).baseUrl,
+                 QStringLiteral("http://localhost/cache"));
+        QCOMPARE(prefs.httpCacheServers().at(0).apiKey, QStringLiteral("k"));
+    }
+
+    /// The list is written to by hand and by a stream of configuration links, and
+    /// neither is trusted to respect the invariants the rest of the code assumes.
+    void httpCache_serverListIsSanitised()
+    {
+        Preferences prefs;
+
+        QList<HttpCacheServerConfig> servers;
+        servers.append({{}, QStringLiteral("http://a.example"), QStringLiteral("ka"), {}, true});
+        servers.append({{}, QStringLiteral("   "), QStringLiteral("kb"), {}, true});
+        servers.append({{}, QStringLiteral("http://a.example/"), QStringLiteral("kc"), {}, true});
+        for (int i = 0; i < Preferences::kMaxHttpCacheServers + 3; ++i) {
+            servers.append({{}, QStringLiteral("http://s%1.example").arg(i),
+                            QStringLiteral("k%1").arg(i), {}, true});
+        }
+        prefs.setHttpCacheServers(servers);
+
+        const auto stored = prefs.httpCacheServers();
+        QCOMPARE(stored.size(), Preferences::kMaxHttpCacheServers);
+        // The server with no URL is not a server, and the duplicate keeps the
+        // first spelling's credential rather than the later one's.
+        QCOMPARE(stored.at(0).baseUrl, QStringLiteral("http://a.example"));
+        QCOMPARE(stored.at(0).apiKey, QStringLiteral("ka"));
+        QCOMPARE(stored.at(1).baseUrl, QStringLiteral("http://s0.example"));
+    }
+
+    void httpCache_addOrUpdateAppendsThenRekeys()
+    {
+        Preferences prefs;
+        prefs.setHttpCacheEnabled(true);
+        prefs.setHttpCacheAllowUpload(true);
+
+        const QString first = QStringLiteral("https://one.example");
+        const QString second = QStringLiteral("https://two.example");
+
+        QCOMPARE(prefs.httpCacheServerAction(first, QStringLiteral("k1")),
+                 HttpCacheServerAction::Add);
+        QVERIFY(prefs.addOrUpdateHttpCacheServer(
+            {QStringLiteral("One"), first, QStringLiteral("k1"), QStringLiteral("default"), true}));
+
+        // Applying the same link twice must be a no-op the caller can report
+        // quietly, or the clipboard watcher raises a dialog on every copy.
+        QCOMPARE(prefs.httpCacheServerAction(first, QStringLiteral("k1")),
+                 HttpCacheServerAction::Unchanged);
+
+        // A second server joins the rotation rather than replacing the first.
+        QCOMPARE(prefs.httpCacheServerAction(second, QStringLiteral("k2")),
+                 HttpCacheServerAction::Add);
+        QVERIFY(prefs.addOrUpdateHttpCacheServer({{}, second, QStringLiteral("k2"), {}, true}));
+        QCOMPARE(prefs.httpCacheServers().size(), 2);
+        QCOMPARE(prefs.httpCacheServers().at(0).baseUrl, first);
+        QCOMPARE(prefs.httpCacheServers().at(1).baseUrl, second);
+
+        // Same base URL, new credential: a re-keying, in place. Moving it would
+        // reshuffle the rotation for no reason.
+        QCOMPARE(prefs.httpCacheServerAction(first, QStringLiteral("rotated")),
+                 HttpCacheServerAction::UpdateKey);
+        QVERIFY(prefs.addOrUpdateHttpCacheServer(
+            {QStringLiteral("One"), first + QStringLiteral("/"), QStringLiteral("rotated"), {},
+             true}));
+        QCOMPARE(prefs.httpCacheServers().size(), 2);
+        QCOMPARE(prefs.httpCacheServers().at(0).baseUrl, first);
+        QCOMPARE(prefs.httpCacheServers().at(0).apiKey, QStringLiteral("rotated"));
+
+        // A matching credential on a disabled entry is still worth acting on: the
+        // link is how an operator switches that server back on.
+        auto servers = prefs.httpCacheServers();
+        servers[1].enabled = false;
+        prefs.setHttpCacheServers(servers);
+        QCOMPARE(prefs.httpCacheServerAction(second, QStringLiteral("k2")),
+                 HttpCacheServerAction::UpdateKey);
+    }
+
+    void httpCache_serverListIsCapped()
+    {
+        Preferences prefs;
+        prefs.setHttpCacheEnabled(true);
+        prefs.setHttpCacheAllowUpload(true);
+
+        for (int i = 0; i < Preferences::kMaxHttpCacheServers; ++i) {
+            QVERIFY(prefs.addOrUpdateHttpCacheServer({{}, QStringLiteral("http://s%1.example").arg(i),
+                                                      QStringLiteral("k%1").arg(i), {}, true}));
+        }
+
+        const QString extra = QStringLiteral("http://one-too-many.example");
+        QCOMPARE(prefs.httpCacheServerAction(extra, QStringLiteral("k")),
+                 HttpCacheServerAction::Full);
+        QVERIFY(!prefs.addOrUpdateHttpCacheServer({{}, extra, QStringLiteral("k"), {}, true}));
+        QCOMPARE(prefs.httpCacheServers().size(), Preferences::kMaxHttpCacheServers);
+
+        // Full is about *new* servers. Re-keying one already in the list has to
+        // keep working, or a full list would be unmaintainable.
+        QCOMPARE(prefs.httpCacheServerAction(QStringLiteral("http://s0.example"),
+                                             QStringLiteral("new")),
+                 HttpCacheServerAction::UpdateKey);
+        QVERIFY(prefs.addOrUpdateHttpCacheServer(
+            {{}, QStringLiteral("http://s0.example"), QStringLiteral("new"), {}, true}));
     }
 
     void httpCache_roundTripsAndEncryptsTheApiKey()
@@ -253,6 +356,7 @@ private slots:
         TempDir tmp;
         const auto file = tmp.filePath(QStringLiteral("hc.yaml"));
         const QString secret = QStringLiteral("s3cr3t-api-key-0123456789");
+        const QString secret2 = QStringLiteral("second-server-key-9876543210");
 
         {
             Preferences p1;
@@ -261,8 +365,12 @@ private slots:
             p1.setHttpCacheEnabled(true);
             p1.setHttpCacheAllowDownload(false);
             p1.setHttpCacheAllowUpload(true);
-            p1.setHttpCacheBaseUrl(QStringLiteral("http://localhost/emule-http-cache-php"));
-            p1.setHttpCacheApiKey(secret);
+            p1.setHttpCacheServers(
+                {{QStringLiteral("Primary"),
+                  QStringLiteral("http://localhost/emule-http-cache-php"), secret,
+                  QStringLiteral("default"), true},
+                 {QStringLiteral("Backup"), QStringLiteral("https://cache.example.com"), secret2,
+                  QStringLiteral("backup"), false}});
             p1.setHttpCacheMinClients(3);
             p1.setHttpCacheChunkTtlSeconds(900);
             p1.setHttpCacheMaxPublishBytesPerDay(UINT64_C(104857600));
@@ -279,9 +387,18 @@ private slots:
         QCOMPARE(p2.httpCacheEnabled(), true);
         QCOMPARE(p2.httpCacheAllowDownload(), false);
         QCOMPARE(p2.httpCacheAllowUpload(), true);
-        QCOMPARE(p2.httpCacheBaseUrl(),
+        // Order is the rotation, so it has to survive the file.
+        const auto servers = p2.httpCacheServers();
+        QCOMPARE(servers.size(), 2);
+        QCOMPARE(servers.at(0).name, QStringLiteral("Primary"));
+        QCOMPARE(servers.at(0).baseUrl,
                  QStringLiteral("http://localhost/emule-http-cache-php"));
-        QCOMPARE(p2.httpCacheApiKey(), secret);
+        QCOMPARE(servers.at(0).apiKey, secret);
+        QCOMPARE(servers.at(0).keyId, QStringLiteral("default"));
+        QCOMPARE(servers.at(0).enabled, true);
+        QCOMPARE(servers.at(1).baseUrl, QStringLiteral("https://cache.example.com"));
+        QCOMPARE(servers.at(1).apiKey, secret2);
+        QCOMPARE(servers.at(1).enabled, false);
         QCOMPARE(p2.httpCacheMinClients(), 3u);
         QCOMPARE(p2.httpCacheChunkTtlSeconds(), 900u);
         QCOMPARE(p2.httpCacheMaxPublishBytesPerDay(), UINT64_C(104857600));
@@ -294,6 +411,7 @@ private slots:
         QVERIFY(f.open(QIODevice::ReadOnly));
         const QByteArray raw = f.readAll();
         QVERIFY2(!raw.contains(secret.toUtf8()), "API key was written in the clear");
+        QVERIFY2(!raw.contains(secret2.toUtf8()), "second API key was written in the clear");
         QVERIFY(raw.contains("apiKeyEnc"));
     }
 
@@ -309,18 +427,22 @@ private slots:
         f.write(
             "httpCache:\n"
             "  enabled: true\n"
-            "  baseUrl: \"http://localhost/emule-http-cache-php/\"\n"
-            "  apiKey: \"typed-by-hand\"\n"
+            "  servers:\n"
+            "    - baseUrl: \"http://localhost/emule-http-cache-php/\"\n"
+            "      apiKey: \"typed-by-hand\"\n"
             "  minClients: 1\n");
         f.close();
 
         Preferences p;
         QVERIFY(p.load(file));
         QCOMPARE(p.httpCacheEnabled(), true);
-        QCOMPARE(p.httpCacheApiKey(), QStringLiteral("typed-by-hand"));
+        QCOMPARE(p.httpCacheServers().size(), 1);
+        QCOMPARE(p.httpCacheServers().at(0).apiKey, QStringLiteral("typed-by-hand"));
         // Trailing slash normalised on the way in, not just via the setter.
-        QCOMPARE(p.httpCacheBaseUrl(),
+        QCOMPARE(p.httpCacheServers().at(0).baseUrl,
                  QStringLiteral("http://localhost/emule-http-cache-php"));
+        // Absent `enabled:` means yes: a hand-written entry nobody switched off.
+        QCOMPARE(p.httpCacheServers().at(0).enabled, true);
         QCOMPARE(p.httpCacheMinClients(), 1u);
 
         const auto file2 = tmp.filePath(QStringLiteral("hand2.yaml"));

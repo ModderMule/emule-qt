@@ -87,11 +87,19 @@ private slots:
     void shortTailPartIsNeverPublished();
     void repeatedCorruptReportsStopTheOffer();
     void serverErrorPausesFurtherPublishesButNotOffers();
+    void twoServersShareTheChunks();
+    void aSickServerLosesItsTurn();
 
     void cleanupTestCase();
 
 private:
     // Private helpers after the test slots, per the house style.
+
+    /// Put the second cache server into the rotation behind the first.
+    void useTwoServers();
+
+    /// Which of the two fake servers a chunk URL points at, or -1.
+    [[nodiscard]] int serverOf(const QString& url) const;
 
     /// Bring one mock peer all the way to "granted an upload slot" and keep it.
     /// Uses QVERIFY, so a handshake that stalls fails the calling test.
@@ -141,6 +149,9 @@ private:
     UploadPipelineFixture m_pipe;
 
     FakeCacheServer* m_server = nullptr;
+    /// The second cache server. Listening in every case, but only in the rotation
+    /// for the ones that call useTwoServers().
+    FakeCacheServer* m_serverB = nullptr;
     HttpCacheManager* m_cache = nullptr;
 
     std::vector<std::unique_ptr<MockPeerSocket>> m_peers;
@@ -177,7 +188,6 @@ void tst_HttpCacheMultiPeer::initTestCase()
 
     thePrefs.setHttpCacheEnabled(true);
     thePrefs.setHttpCacheAllowUpload(true);
-    thePrefs.setHttpCacheApiKey(QStringLiteral("multi-peer-test-key"));
     thePrefs.setHttpCacheChunkTtlSeconds(21600);
 
     // The publish is deliberately rate limited in production — the point of the
@@ -190,7 +200,13 @@ void tst_HttpCacheMultiPeer::init()
 {
     m_server = new FakeCacheServer(this);
     QVERIFY(m_server->listen(QHostAddress::LocalHost));
-    thePrefs.setHttpCacheBaseUrl(m_server->baseUrl());
+    m_serverB = new FakeCacheServer(this);
+    QVERIFY(m_serverB->listen(QHostAddress::LocalHost));
+
+    // One server in the rotation by default; the two cases about several of them
+    // add the second, so every other case sees exactly what it always saw.
+    thePrefs.setHttpCacheServers({{{}, m_server->baseUrl(),
+                                   QStringLiteral("multi-peer-test-key"), {}, true}});
 
     thePrefs.setHttpCacheMinClients(2);
     thePrefs.setHttpCacheMaxConcurrentPublishes(1);
@@ -231,6 +247,10 @@ void tst_HttpCacheMultiPeer::cleanup()
     m_server->close();
     delete m_server;
     m_server = nullptr;
+
+    m_serverB->close();
+    delete m_serverB;
+    m_serverB = nullptr;
 }
 
 void tst_HttpCacheMultiPeer::cleanupTestCase()
@@ -580,9 +600,95 @@ void tst_HttpCacheMultiPeer::serverErrorPausesFurtherPublishesButNotOffers()
     QCOMPARE(m_cache->sessionChunksPublished(), 1u);
 }
 
+/// Two healthy servers, two parts: one chunk each. The rotation is the point —
+/// with several accounts configured, no single one carries the whole offload.
+void tst_HttpCacheMultiPeer::twoServersShareTheChunks()
+{
+    useTwoServers();
+
+    joinPeer();
+    joinPeer();
+    joinPeer();
+    QVERIFY(!QTest::currentTestFailed());
+
+    // One packet puts both whole parts of the file in play.
+    seedParts(0, 0, 1);
+    seedParts(1, 0, 1);
+
+    QVERIFY(tickUntil([this] { return m_cache->sessionChunksPublished() >= 2; }));
+
+    QCOMPARE(m_server->uploadCount(), 1);
+    QCOMPARE(m_serverB->uploadCount(), 1);
+
+    // And the peers were pointed at both, which is what makes the split real
+    // rather than an accounting artefact of the fake servers.
+    QTRY_VERIFY_WITH_TIMEOUT(offersOf(0).size() == 2, 5000);
+    const auto offers = offersOf(0);
+    QVERIFY(serverOf(offers.at(0).url) >= 0);
+    QVERIFY(serverOf(offers.at(1).url) >= 0);
+    QVERIFY2(serverOf(offers.at(0).url) != serverOf(offers.at(1).url),
+             "both chunks went to the same cache server");
+}
+
+/// A server that refuses drops out of the rotation and the next chunk goes to
+/// the other one — the failover is the rotation skipping a turn, not a separate
+/// mechanism.
+void tst_HttpCacheMultiPeer::aSickServerLosesItsTurn()
+{
+    useTwoServers();
+
+    // The first server refuses everything, from the very first POST. 500 is
+    // server-wide (statusCondemnsTheServer), so it earns a pause rather than a
+    // per-part cooldown — which is exactly what leaves the part free to go
+    // somewhere else.
+    m_server->setReply({.status = 500, .body = R"({"error":"cannot commit chunk"})"});
+
+    joinPeer();
+    joinPeer();
+    joinPeer(true, {1});   // holds part 1, so it is not offered it
+    QVERIFY(!QTest::currentTestFailed());
+
+    seedPart(0, 1);
+    seedPart(1, 1);
+
+    QVERIFY(tickUntil([this] { return m_cache->sessionChunksPublished() >= 1; }));
+
+    // The part was published exactly once, by the healthy server, after the sick
+    // one had its turn and failed.
+    QCOMPARE(m_serverB->uploadCount(), 1);
+    QVERIFY(m_server->uploadCount() >= 1);
+
+    QTRY_VERIFY_WITH_TIMEOUT(offersOf(0).size() == 1, 5000);
+    QCOMPARE(serverOf(offersOf(0).front().url), 1);
+
+    // And it stays out: further ticks must not walk back into the server that is
+    // still inside its backoff.
+    const int refused = m_server->uploadCount();
+    tickQuietly(4);
+    QCOMPARE(m_server->uploadCount(), refused);
+}
+
 // ---------------------------------------------------------------------------
 // Peers
 // ---------------------------------------------------------------------------
+
+void tst_HttpCacheMultiPeer::useTwoServers()
+{
+    thePrefs.setHttpCacheServers({
+        {{}, m_server->baseUrl(), QStringLiteral("multi-peer-test-key"), {}, true},
+        {{}, m_serverB->baseUrl(), QStringLiteral("multi-peer-test-key-b"), {}, true},
+    });
+}
+
+int tst_HttpCacheMultiPeer::serverOf(const QString& url) const
+{
+    // Both listen on 127.0.0.1, so the port is the only thing telling them apart.
+    if (url.startsWith(m_server->baseUrl()))
+        return 0;
+    if (url.startsWith(m_serverB->baseUrl()))
+        return 1;
+    return -1;
+}
 
 void tst_HttpCacheMultiPeer::joinPeer(bool httpCacheCapable, const std::vector<uint32>& partsHeld)
 {

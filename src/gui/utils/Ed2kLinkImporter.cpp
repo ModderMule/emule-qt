@@ -12,6 +12,7 @@
 
 #include <QApplication>
 #include <QCborArray>
+#include <QFileOpenEvent>
 #include <QMessageBox>
 #include <QPointer>
 #include <QTimer>
@@ -182,6 +183,34 @@ QStringList Ed2kLinkImporter::splitLinks(const QString& text)
         }
     }
     return candidates;
+}
+
+Ed2kLinkImporter::LinkKinds Ed2kLinkImporter::linkKindsIn(const QString& text)
+{
+    LinkKinds kinds;
+    if (text.contains(QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive))
+        kinds |= LinkKind::File;
+    if (text.contains(QStringLiteral("ed2k://|httpcache|"), Qt::CaseInsensitive))
+        kinds |= LinkKind::HttpCache;
+    // The trailing '|' is what keeps "ed2k://|serverlist|" out: it is a different link
+    // type with a different handler, and offering to add it as a server adds nothing.
+    if (text.contains(QStringLiteral("ed2k://|server|"), Qt::CaseInsensitive))
+        kinds |= LinkKind::Server;
+    return kinds;
+}
+
+QString Ed2kLinkImporter::linkFromFileOpenEvent(const QFileOpenEvent& event)
+{
+    // Both accessors, file() first — see the header for which one actually carries an
+    // eD2K link and why. Whichever answers, the string is returned untouched: it has
+    // been nowhere near a URL parser, and parseED2KLink() splits on '|' before decoding.
+    for (const QString& candidate : {event.file(), event.url().toString()}) {
+        if (candidate.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
+            || candidate.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive)) {
+            return candidate;
+        }
+    }
+    return {};
 }
 
 void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget* parent,

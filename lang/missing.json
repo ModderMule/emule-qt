@@ -1,387 +1,648 @@
 {
-  "Kad": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Kad",
-    "es_ES": "Kad",
-    "fr_FR": "Kad",
-    "it_IT": "Kad",
-    "ja_JP": "Kad",
-    "ko_KR": "Kad",
-    "pt_BR": "Kad",
-    "zh_CN": "Kad"
+  "%n further HTTP Cache link(s) ignored — apply one at a time.": {
+    "_context": "Ed2kLinkImporter",
+    "de_DE": [
+      "%n weiterer HTTP-Cache-Link ignoriert — bitte einzeln anwenden.",
+      "%n weitere HTTP-Cache-Links ignoriert — bitte einzeln anwenden."
+    ],
+    "es_ES": [
+      "%n enlace de Caché HTTP más ignorado — aplíquelos de uno en uno.",
+      "%n enlaces de Caché HTTP más ignorados — aplíquelos de uno en uno."
+    ],
+    "fr_FR": [
+      "%n lien Cache HTTP supplémentaire ignoré — appliquez-les un par un.",
+      "%n liens Cache HTTP supplémentaires ignorés — appliquez-les un par un."
+    ],
+    "it_IT": [
+      "%n ulteriore link Cache HTTP ignorato — applicali uno alla volta.",
+      "%n ulteriori link Cache HTTP ignorati — applicali uno alla volta."
+    ],
+    "ja_JP": [
+      "さらに %n 件の HTTP キャッシュリンクを無視しました — 一度に 1 件ずつ適用してください。"
+    ],
+    "ko_KR": [
+      "추가 HTTP 캐시 링크 %n개를 무시했습니다 — 한 번에 하나씩 적용하세요."
+    ],
+    "pt_BR": [
+      "%n link de Cache HTTP adicional ignorado — aplique um de cada vez.",
+      "%n links de Cache HTTP adicionais ignorados — aplique um de cada vez."
+    ],
+    "zh_CN": [
+      "已忽略另外 %n 个 HTTP 缓存链接 — 请一次应用一个。"
+    ]
   },
-  "(Kad search in progress...)": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "(Kad-Suche läuft...)",
-    "es_ES": "(Búsqueda en Kad en curso...)",
-    "fr_FR": "(Recherche Kad en cours...)",
-    "it_IT": "(Ricerca Kad in corso...)",
-    "ja_JP": "（Kad を検索中...）",
-    "ko_KR": "(Kad 검색 중...)",
-    "pt_BR": "(Busca no Kad em andamento...)",
-    "zh_CN": "（Kad 搜索中...）"
+  "The core did not answer.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "Der Kern hat nicht geantwortet.",
+    "es_ES": "El núcleo no respondió.",
+    "fr_FR": "Le noyau n'a pas répondu.",
+    "it_IT": "Il core non ha risposto.",
+    "ja_JP": "コアが応答しませんでした。",
+    "ko_KR": "코어가 응답하지 않았습니다.",
+    "pt_BR": "O núcleo não respondeu.",
+    "zh_CN": "核心没有响应。"
   },
-  "Search Kad": {
-    "_context": "eMule::DetailDialog",
-    "de_DE": "Kad durchsuchen",
-    "es_ES": "Buscar en Kad",
-    "fr_FR": "Rechercher dans Kad",
-    "it_IT": "Cerca in Kad",
-    "ja_JP": "Kad を検索",
-    "ko_KR": "Kad 검색",
-    "pt_BR": "Pesquisar no Kad",
-    "zh_CN": "搜索 Kad"
+  "Server: %1": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "Server: %1",
+    "es_ES": "Servidor: %1",
+    "fr_FR": "Serveur : %1",
+    "it_IT": "Server: %1",
+    "ja_JP": "サーバー：%1",
+    "ko_KR": "서버: %1",
+    "pt_BR": "Servidor: %1",
+    "zh_CN": "服务器：%1"
   },
-  "Rating": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Bewertung",
-    "es_ES": "Valoración",
-    "fr_FR": "Évaluation",
-    "it_IT": "Valutazione",
-    "ja_JP": "評価",
-    "ko_KR": "평가",
-    "pt_BR": "Avaliação",
-    "zh_CN": "评分"
+  "Key: %1": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "Schlüssel: %1",
+    "es_ES": "Clave: %1",
+    "fr_FR": "Clé : %1",
+    "it_IT": "Chiave: %1",
+    "ja_JP": "鍵：%1",
+    "ko_KR": "키: %1",
+    "pt_BR": "Chave: %1",
+    "zh_CN": "密钥：%1"
   },
-  "Comment": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Kommentar",
-    "es_ES": "Comentario",
-    "fr_FR": "Commentaire",
-    "it_IT": "Commento",
-    "ja_JP": "コメント",
-    "ko_KR": "댓글",
-    "pt_BR": "Comentário",
-    "zh_CN": "评论"
+  "Version %1%2": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "Version %1%2",
+    "es_ES": "Versión %1%2",
+    "fr_FR": "Version %1%2",
+    "it_IT": "Versione %1%2",
+    "ja_JP": "バージョン %1%2",
+    "ko_KR": "버전 %1%2",
+    "pt_BR": "Versão %1%2",
+    "zh_CN": "版本 %1%2"
   },
-  "File Name": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Dateiname",
-    "es_ES": "Nombre del archivo",
-    "fr_FR": "Nom du fichier",
-    "it_IT": "Nome file",
-    "ja_JP": "ファイル名",
-    "ko_KR": "파일 이름",
-    "pt_BR": "Nome do arquivo",
-    "zh_CN": "文件名"
+  "This server also accepts uploads without a key.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "Dieser Server nimmt Uploads auch ohne Schlüssel an.",
+    "es_ES": "Este servidor también acepta subidas sin clave.",
+    "fr_FR": "Ce serveur accepte aussi les envois sans clé.",
+    "it_IT": "Questo server accetta upload anche senza chiave.",
+    "ja_JP": "このサーバーは鍵なしのアップロードも受け付けます。",
+    "ko_KR": "이 서버는 키 없이도 업로드를 받습니다.",
+    "pt_BR": "Este servidor também aceita uploads sem chave.",
+    "zh_CN": "此服务器也接受不带密钥的上传。"
   },
-  "User Name": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Benutzername",
-    "es_ES": "Nombre de usuario",
-    "fr_FR": "Nom d'utilisateur",
-    "it_IT": "Nome utente",
-    "ja_JP": "ユーザー名",
-    "ko_KR": "사용자 이름",
-    "pt_BR": "Nome de usuário",
-    "zh_CN": "用户名"
+  "This replaces the entry already stored for %1.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "Dies ersetzt den bereits für %1 gespeicherten Eintrag.",
+    "es_ES": "Esto sustituye la entrada ya guardada para %1.",
+    "fr_FR": "Cela remplace l'entrée déjà enregistrée pour %1.",
+    "it_IT": "Questo sostituisce la voce già salvata per %1.",
+    "ja_JP": "%1 に既に保存されているエントリを置き換えます。",
+    "ko_KR": "%1에 대해 이미 저장된 항목을 대체합니다.",
+    "pt_BR": "Isso substitui a entrada já salva para %1.",
+    "zh_CN": "这将替换已为 %1 保存的条目。"
   },
-  "Network": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Netzwerk",
-    "es_ES": "Red",
-    "fr_FR": "Réseau",
-    "it_IT": "Rete",
-    "ja_JP": "ネットワーク",
-    "ko_KR": "네트워크",
-    "pt_BR": "Rede",
-    "zh_CN": "网络"
+  "Uploads are shared across your cache servers; this makes %n of them.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": [
+      "Uploads werden auf Ihre Cache-Server verteilt; damit haben Sie %n Server.",
+      "Uploads werden auf Ihre Cache-Server verteilt; damit haben Sie %n Server."
+    ],
+    "es_ES": [
+      "Las subidas se reparten entre sus servidores de caché; con este ya es %n.",
+      "Las subidas se reparten entre sus servidores de caché; con este ya son %n."
+    ],
+    "fr_FR": [
+      "Les envois sont répartis entre vos serveurs de cache ; cela en fait %n.",
+      "Les envois sont répartis entre vos serveurs de cache ; cela en fait %n."
+    ],
+    "it_IT": [
+      "Gli upload vengono distribuiti tra i tuoi server cache; così diventa %n.",
+      "Gli upload vengono distribuiti tra i tuoi server cache; così diventano %n."
+    ],
+    "ja_JP": [
+      "アップロードはキャッシュサーバー間で分散されます。これで %n 台になります。"
+    ],
+    "ko_KR": [
+      "업로드는 캐시 서버들에 분산됩니다. 이렇게 하면 %n개가 됩니다."
+    ],
+    "pt_BR": [
+      "Os uploads são distribuídos entre seus servidores de cache; com este, fica %n.",
+      "Os uploads são distribuídos entre seus servidores de cache; com este, ficam %n."
+    ],
+    "zh_CN": [
+      "上传会分散到各个缓存服务器；这样将共有 %n 个。"
+    ]
   },
-  "No comments or ratings available for this file.": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Für diese Datei sind keine Kommentare oder Bewertungen verfügbar.",
-    "es_ES": "No hay comentarios ni valoraciones disponibles para este archivo.",
-    "fr_FR": "Aucun commentaire ni évaluation disponible pour ce fichier.",
-    "it_IT": "Nessun commento o valutazione disponibile per questo file.",
-    "ja_JP": "このファイルにはコメントや評価がありません。",
-    "ko_KR": "이 파일에 대한 댓글이나 평가가 없습니다.",
-    "pt_BR": "Nenhum comentário ou avaliação disponível para este arquivo.",
-    "zh_CN": "此文件没有可用的评论或评分。"
+  "\n\nThis link uses plain HTTP. The key and every chunk address will cross the network unencrypted.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "\n\nDieser Link verwendet unverschlüsseltes HTTP. Der Schlüssel und die Adresse jedes Stücks werden unverschlüsselt über das Netz übertragen.",
+    "es_ES": "\n\nEste enlace usa HTTP sin cifrar. La clave y la dirección de cada trozo viajarán por la red sin cifrar.",
+    "fr_FR": "\n\nCe lien utilise du HTTP non chiffré. La clé et l'adresse de chaque morceau transiteront en clair sur le réseau.",
+    "it_IT": "\n\nQuesto link usa HTTP in chiaro. La chiave e l'indirizzo di ogni blocco viaggeranno sulla rete senza cifratura.",
+    "ja_JP": "\n\nこのリンクは平文の HTTP を使用します。鍵とすべてのチャンクのアドレスが暗号化されずにネットワークを流れます。",
+    "ko_KR": "\n\n이 링크는 평문 HTTP를 사용합니다. 키와 모든 청크 주소가 암호화되지 않은 채 네트워크를 지나갑니다.",
+    "pt_BR": "\n\nEste link usa HTTP sem criptografia. A chave e o endereço de cada bloco trafegarão pela rede sem criptografia.",
+    "zh_CN": "\n\n此链接使用明文 HTTP。密钥和每个块的地址都将以未加密的方式在网络上传输。"
   },
-  "Copy": {
-    "_context": "eMule::CommentsPanel",
+  "Update your HTTP Cache settings for \"%1\"?": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "HTTP-Cache-Einstellungen für \"%1\" aktualisieren?",
+    "es_ES": "¿Actualizar la configuración de Caché HTTP para \"%1\"?",
+    "fr_FR": "Mettre à jour vos paramètres Cache HTTP pour \"%1\" ?",
+    "it_IT": "Aggiornare le impostazioni Cache HTTP per \"%1\"?",
+    "ja_JP": "「%1」の HTTP キャッシュ設定を更新しますか？",
+    "ko_KR": "\"%1\"의 HTTP 캐시 설정을 업데이트할까요?",
+    "pt_BR": "Atualizar suas configurações de Cache HTTP para \"%1\"?",
+    "zh_CN": "要更新 \"%1\" 的 HTTP 缓存设置吗？"
+  },
+  "Add \"%1\" as an HTTP Cache server?": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "\"%1\" als HTTP-Cache-Server hinzufügen?",
+    "es_ES": "¿Añadir \"%1\" como servidor de Caché HTTP?",
+    "fr_FR": "Ajouter \"%1\" comme serveur Cache HTTP ?",
+    "it_IT": "Aggiungere \"%1\" come server Cache HTTP?",
+    "ja_JP": "「%1」を HTTP キャッシュサーバーとして追加しますか？",
+    "ko_KR": "\"%1\"을(를) HTTP 캐시 서버로 추가할까요?",
+    "pt_BR": "Adicionar \"%1\" como servidor de Cache HTTP?",
+    "zh_CN": "要将 \"%1\" 添加为 HTTP 缓存服务器吗？"
+  },
+  "Use \"%1\" as your HTTP Cache server?": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "\"%1\" als Ihren HTTP-Cache-Server verwenden?",
+    "es_ES": "¿Usar \"%1\" como su servidor de Caché HTTP?",
+    "fr_FR": "Utiliser \"%1\" comme serveur Cache HTTP ?",
+    "it_IT": "Usare \"%1\" come server Cache HTTP?",
+    "ja_JP": "「%1」を HTTP キャッシュサーバーとして使用しますか？",
+    "ko_KR": "\"%1\"을(를) HTTP 캐시 서버로 사용할까요?",
+    "pt_BR": "Usar \"%1\" como seu servidor de Cache HTTP?",
+    "zh_CN": "要将 \"%1\" 用作您的 HTTP 缓存服务器吗？"
+  },
+  "HTTP Cache": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "HTTP-Cache",
+    "es_ES": "Caché HTTP",
+    "fr_FR": "Cache HTTP",
+    "it_IT": "Cache HTTP",
+    "ja_JP": "HTTP キャッシュ",
+    "ko_KR": "HTTP 캐시",
+    "pt_BR": "Cache HTTP",
+    "zh_CN": "HTTP 缓存"
+  },
+  "\n\nHTTP Cache will be enabled and this key stored for uploads.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "\n\nHTTP-Cache wird aktiviert und dieser Schlüssel für Uploads gespeichert.",
+    "es_ES": "\n\nSe activará la Caché HTTP y se guardará esta clave para las subidas.",
+    "fr_FR": "\n\nLe Cache HTTP sera activé et cette clé enregistrée pour les envois.",
+    "it_IT": "\n\nLa Cache HTTP verrà attivata e questa chiave salvata per gli upload.",
+    "ja_JP": "\n\nHTTP キャッシュが有効になり、この鍵がアップロード用に保存されます。",
+    "ko_KR": "\n\nHTTP 캐시가 활성화되고 이 키가 업로드용으로 저장됩니다.",
+    "pt_BR": "\n\nO Cache HTTP será ativado e esta chave será salva para uploads.",
+    "zh_CN": "\n\n将启用 HTTP 缓存，并保存此密钥用于上传。"
+  },
+  "HTTP Cache link refused: %1": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "HTTP-Cache-Link abgelehnt: %1",
+    "es_ES": "Enlace de Caché HTTP rechazado: %1",
+    "fr_FR": "Lien Cache HTTP refusé : %1",
+    "it_IT": "Link Cache HTTP rifiutato: %1",
+    "ja_JP": "HTTP キャッシュリンクを拒否しました：%1",
+    "ko_KR": "HTTP 캐시 링크가 거부되었습니다: %1",
+    "pt_BR": "Link de Cache HTTP recusado: %1",
+    "zh_CN": "已拒绝 HTTP 缓存链接：%1"
+  },
+  "HTTP Cache link refused": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "HTTP-Cache-Link abgelehnt",
+    "es_ES": "Enlace de Caché HTTP rechazado",
+    "fr_FR": "Lien Cache HTTP refusé",
+    "it_IT": "Link Cache HTTP rifiutato",
+    "ja_JP": "HTTP キャッシュリンクを拒否しました",
+    "ko_KR": "HTTP 캐시 링크가 거부되었습니다",
+    "pt_BR": "Link de Cache HTTP recusado",
+    "zh_CN": "已拒绝 HTTP 缓存链接"
+  },
+  "HTTP Cache is already configured for %1.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "HTTP-Cache ist für %1 bereits eingerichtet.",
+    "es_ES": "La Caché HTTP ya está configurada para %1.",
+    "fr_FR": "Le Cache HTTP est déjà configuré pour %1.",
+    "it_IT": "La Cache HTTP è già configurata per %1.",
+    "ja_JP": "HTTP キャッシュは %1 用に既に設定されています。",
+    "ko_KR": "HTTP 캐시가 이미 %1에 대해 설정되어 있습니다.",
+    "pt_BR": "O Cache HTTP já está configurado para %1.",
+    "zh_CN": "%1 的 HTTP 缓存已配置。"
+  },
+  "You already have %n HTTP Cache server(s) configured. Remove one from preferences.yml before adding another.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": [
+      "Sie haben bereits %n HTTP-Cache-Server eingerichtet. Entfernen Sie einen aus preferences.yml, bevor Sie einen weiteren hinzufügen.",
+      "Sie haben bereits %n HTTP-Cache-Server eingerichtet. Entfernen Sie einen aus preferences.yml, bevor Sie einen weiteren hinzufügen."
+    ],
+    "es_ES": [
+      "Ya tiene %n servidor de Caché HTTP configurado. Elimine uno de preferences.yml antes de añadir otro.",
+      "Ya tiene %n servidores de Caché HTTP configurados. Elimine uno de preferences.yml antes de añadir otro."
+    ],
+    "fr_FR": [
+      "Vous avez déjà %n serveur Cache HTTP configuré. Supprimez-en un de preferences.yml avant d'en ajouter un autre.",
+      "Vous avez déjà %n serveurs Cache HTTP configurés. Supprimez-en un de preferences.yml avant d'en ajouter un autre."
+    ],
+    "it_IT": [
+      "Hai già %n server Cache HTTP configurato. Rimuovine uno da preferences.yml prima di aggiungerne un altro.",
+      "Hai già %n server Cache HTTP configurati. Rimuovine uno da preferences.yml prima di aggiungerne un altro."
+    ],
+    "ja_JP": [
+      "HTTP キャッシュサーバーは既に %n 台設定されています。別のサーバーを追加する前に preferences.yml から 1 台削除してください。"
+    ],
+    "ko_KR": [
+      "이미 HTTP 캐시 서버 %n개가 설정되어 있습니다. 다른 서버를 추가하기 전에 preferences.yml에서 하나를 제거하세요."
+    ],
+    "pt_BR": [
+      "Você já tem %n servidor de Cache HTTP configurado. Remova um de preferences.yml antes de adicionar outro.",
+      "Você já tem %n servidores de Cache HTTP configurados. Remova um de preferences.yml antes de adicionar outro."
+    ],
+    "zh_CN": [
+      "您已配置 %n 个 HTTP 缓存服务器。请先从 preferences.yml 中移除一个，再添加新的服务器。"
+    ]
+  },
+  "HTTP Cache configuration for %1 was not applied.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "HTTP-Cache-Konfiguration für %1 wurde nicht übernommen.",
+    "es_ES": "No se aplicó la configuración de Caché HTTP para %1.",
+    "fr_FR": "La configuration Cache HTTP pour %1 n'a pas été appliquée.",
+    "it_IT": "La configurazione Cache HTTP per %1 non è stata applicata.",
+    "ja_JP": "%1 の HTTP キャッシュ設定は適用されませんでした。",
+    "ko_KR": "%1의 HTTP 캐시 설정이 적용되지 않았습니다.",
+    "pt_BR": "A configuração de Cache HTTP para %1 não foi aplicada.",
+    "zh_CN": "未应用 %1 的 HTTP 缓存配置。"
+  },
+  "HTTP Cache configured for %1.": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "HTTP-Cache für %1 eingerichtet.",
+    "es_ES": "Caché HTTP configurada para %1.",
+    "fr_FR": "Cache HTTP configuré pour %1.",
+    "it_IT": "Cache HTTP configurata per %1.",
+    "ja_JP": "%1 の HTTP キャッシュを設定しました。",
+    "ko_KR": "%1에 대해 HTTP 캐시를 설정했습니다.",
+    "pt_BR": "Cache HTTP configurado para %1.",
+    "zh_CN": "已为 %1 配置 HTTP 缓存。"
+  },
+  "HTTP Cache configuration failed: %1": {
+    "_context": "HttpCacheLinkImporter",
+    "de_DE": "HTTP-Cache-Konfiguration fehlgeschlagen: %1",
+    "es_ES": "Error al configurar la Caché HTTP: %1",
+    "fr_FR": "Échec de la configuration du Cache HTTP : %1",
+    "it_IT": "Configurazione Cache HTTP non riuscita: %1",
+    "ja_JP": "HTTP キャッシュの設定に失敗しました：%1",
+    "ko_KR": "HTTP 캐시 설정에 실패했습니다: %1",
+    "pt_BR": "Falha na configuração do Cache HTTP: %1",
+    "zh_CN": "HTTP 缓存配置失败：%1"
+  },
+  "Importing part": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Teil wird importiert",
+    "es_ES": "Importando parte",
+    "fr_FR": "Importation de la partie",
+    "it_IT": "Importazione parte",
+    "ja_JP": "パートをインポート中",
+    "ko_KR": "파트 가져오는 중",
+    "pt_BR": "Importando parte",
+    "zh_CN": "正在导入分块"
+  },
+  "Hashing": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Hashen",
+    "es_ES": "Calculando hash",
+    "fr_FR": "Calcul du hash",
+    "it_IT": "Calcolo hash",
+    "ja_JP": "ハッシュ計算中",
+    "ko_KR": "해시 계산 중",
+    "pt_BR": "Calculando hash",
+    "zh_CN": "正在计算哈希"
+  },
+  "Completing (%1)": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Fertigstellen (%1)",
+    "es_ES": "Finalizando (%1)",
+    "fr_FR": "Finalisation (%1)",
+    "it_IT": "Completamento (%1)",
+    "ja_JP": "完了処理中（%1）",
+    "ko_KR": "완료 중 (%1)",
+    "pt_BR": "Finalizando (%1)",
+    "zh_CN": "正在完成（%1）"
+  },
+  "Copying": {
+    "_context": "eMule::DownloadListModel",
     "de_DE": "Kopieren",
-    "es_ES": "Copiar",
-    "fr_FR": "Copier",
+    "es_ES": "Copiando",
+    "fr_FR": "Copie",
     "it_IT": "Copia",
-    "ja_JP": "コピー",
-    "ko_KR": "복사",
-    "pt_BR": "Copiar",
-    "zh_CN": "复制"
+    "ja_JP": "コピー中",
+    "ko_KR": "복사 중",
+    "pt_BR": "Copiando",
+    "zh_CN": "正在复制"
   },
-  "Edit spam filter...": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Spamfilter bearbeiten...",
-    "es_ES": "Editar filtro de spam...",
-    "fr_FR": "Modifier le filtre anti-spam...",
-    "it_IT": "Modifica filtro spam...",
-    "ja_JP": "スパムフィルターを編集...",
-    "ko_KR": "스팸 필터 편집...",
-    "pt_BR": "Editar filtro de spam...",
-    "zh_CN": "编辑垃圾信息过滤器..."
+  "Uncompressing": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Entpacken",
+    "es_ES": "Descomprimiendo",
+    "fr_FR": "Décompression",
+    "it_IT": "Decompressione",
+    "ja_JP": "展開中",
+    "ko_KR": "압축 해제 중",
+    "pt_BR": "Descompactando",
+    "zh_CN": "正在解压"
   },
-  "Edit spam filter for comments": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Spamfilter für Kommentare bearbeiten",
-    "es_ES": "Editar filtro de spam para comentarios",
-    "fr_FR": "Modifier le filtre anti-spam pour les commentaires",
-    "it_IT": "Modifica filtro spam per i commenti",
-    "ja_JP": "コメントのスパムフィルターを編集",
-    "ko_KR": "댓글 스팸 필터 편집",
-    "pt_BR": "Editar filtro de spam para comentários",
-    "zh_CN": "编辑评论垃圾信息过滤器"
+  "Completing": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Fertigstellen",
+    "es_ES": "Finalizando",
+    "fr_FR": "Finalisation",
+    "it_IT": "Completamento",
+    "ja_JP": "完了処理中",
+    "ko_KR": "완료 중",
+    "pt_BR": "Finalizando",
+    "zh_CN": "正在完成"
   },
-  "Ignore comments containing: (Separator | )": {
-    "_context": "eMule::CommentsPanel",
-    "de_DE": "Kommentare ignorieren die enthalten: (Trennzeichen | )",
-    "es_ES": "Ignorar comentarios que contengan: (Separador | )",
-    "fr_FR": "Ignorer les commentaires contenant : (Séparateur | )",
-    "it_IT": "Ignora commenti contenenti: (Separatore | )",
-    "ja_JP": "含むコメントを無視：（区切り | ）",
-    "ko_KR": "포함된 댓글 무시: (구분자 | )",
-    "pt_BR": "Ignorar comentários contendo: (Separador | )",
-    "zh_CN": "忽略包含以下内容的评论：（分隔符 | ）"
+  "Complete": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Vollständig",
+    "es_ES": "Completo",
+    "fr_FR": "Terminé",
+    "it_IT": "Completo",
+    "ja_JP": "完了",
+    "ko_KR": "완료",
+    "pt_BR": "Concluído",
+    "zh_CN": "已完成"
   },
-  "Previous": {
-    "_context": "eMule::DetailDialog",
-    "de_DE": "Vorherige",
-    "es_ES": "Anterior",
-    "fr_FR": "Précédent",
-    "it_IT": "Precedente",
-    "ja_JP": "前へ",
-    "ko_KR": "이전",
-    "pt_BR": "Anterior",
-    "zh_CN": "上一个"
+  "Stopped": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Gestoppt",
+    "es_ES": "Detenido",
+    "fr_FR": "Arrêté",
+    "it_IT": "Fermato",
+    "ja_JP": "停止",
+    "ko_KR": "중지됨",
+    "pt_BR": "Parado",
+    "zh_CN": "已停止"
   },
-  "Next": {
-    "_context": "eMule::DetailDialog",
-    "de_DE": "Nächste",
-    "es_ES": "Siguiente",
-    "fr_FR": "Suivant",
-    "it_IT": "Successivo",
-    "ja_JP": "次へ",
-    "ko_KR": "다음",
-    "pt_BR": "Próximo",
-    "zh_CN": "下一个"
+  "Paused": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Pausiert",
+    "es_ES": "En pausa",
+    "fr_FR": "En pause",
+    "it_IT": "In pausa",
+    "ja_JP": "一時停止",
+    "ko_KR": "일시정지됨",
+    "pt_BR": "Pausado",
+    "zh_CN": "已暂停"
   },
-  "Search": {
-    "_context": "eMule::FindInListDialog",
-    "de_DE": "Suche",
-    "es_ES": "Búsqueda",
-    "fr_FR": "Recherche",
-    "it_IT": "Ricerca",
-    "ja_JP": "検索",
-    "ko_KR": "검색",
-    "pt_BR": "Busca",
-    "zh_CN": "搜索"
+  "Insufficient disk space": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Zu wenig Speicherplatz",
+    "es_ES": "Espacio en disco insuficiente",
+    "fr_FR": "Espace disque insuffisant",
+    "it_IT": "Spazio su disco insufficiente",
+    "ja_JP": "ディスク容量不足",
+    "ko_KR": "디스크 공간 부족",
+    "pt_BR": "Espaço em disco insuficiente",
+    "zh_CN": "磁盘空间不足"
   },
-  "Search for:": {
-    "_context": "eMule::FindInListDialog",
-    "de_DE": "Suchen nach:",
-    "es_ES": "Buscar:",
-    "fr_FR": "Rechercher :",
-    "it_IT": "Cerca:",
-    "ja_JP": "検索：",
-    "ko_KR": "검색어:",
-    "pt_BR": "Buscar por:",
-    "zh_CN": "搜索："
+  "Error": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Fehler",
+    "es_ES": "Error",
+    "fr_FR": "Erreur",
+    "it_IT": "Errore",
+    "ja_JP": "エラー",
+    "ko_KR": "오류",
+    "pt_BR": "Erro",
+    "zh_CN": "错误"
   },
-  "Search in column:": {
-    "_context": "eMule::FindInListDialog",
-    "de_DE": "Suche in Spalte:",
-    "es_ES": "Buscar en columna:",
-    "fr_FR": "Rechercher dans la colonne :",
-    "it_IT": "Cerca nella colonna:",
-    "ja_JP": "列で検索：",
-    "ko_KR": "열에서 검색:",
-    "pt_BR": "Buscar na coluna:",
-    "zh_CN": "在列中搜索："
+  "Waiting": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "Wartend",
+    "es_ES": "Esperando",
+    "fr_FR": "En attente",
+    "it_IT": "In attesa",
+    "ja_JP": "待機中",
+    "ko_KR": "대기 중",
+    "pt_BR": "Aguardando",
+    "zh_CN": "等待中"
   },
-  "No metadata tags available.": {
-    "_context": "eMule::MetadataPage",
-    "de_DE": "Keine Metadaten-Tags verfügbar.",
-    "es_ES": "No hay etiquetas de metadatos disponibles.",
-    "fr_FR": "Aucune balise de métadonnées disponible.",
-    "it_IT": "Nessun tag di metadati disponibile.",
-    "ja_JP": "利用可能なメタデータタグがありません。",
-    "ko_KR": "사용 가능한 메타데이터 태그가 없습니다.",
-    "pt_BR": "Nenhuma tag de metadados disponível.",
-    "zh_CN": "没有可用的元数据标签。"
-  },
-  "Tag Name": {
-    "_context": "eMule::MetadataPage",
-    "de_DE": "Tag-Name",
-    "es_ES": "Nombre de etiqueta",
-    "fr_FR": "Nom du tag",
-    "it_IT": "Nome tag",
-    "ja_JP": "タグ名",
-    "ko_KR": "태그 이름",
-    "pt_BR": "Nome da tag",
-    "zh_CN": "标签名称"
-  },
-  "Type": {
-    "_context": "eMule::MetadataPage",
-    "de_DE": "Typ",
-    "es_ES": "Tipo",
-    "fr_FR": "Type",
-    "it_IT": "Tipo",
-    "ja_JP": "種類",
-    "ko_KR": "유형",
-    "pt_BR": "Tipo",
-    "zh_CN": "类型"
-  },
-  "Value": {
-    "_context": "eMule::MetadataPage",
-    "de_DE": "Wert",
-    "es_ES": "Valor",
-    "fr_FR": "Valeur",
-    "it_IT": "Valore",
-    "ja_JP": "値",
-    "ko_KR": "값",
-    "pt_BR": "Valor",
-    "zh_CN": "值"
-  },
-  "Unknown": {
-    "_context": "eMule::MetadataPage",
-    "de_DE": "Unbekannt",
-    "es_ES": "Desconocido",
-    "fr_FR": "Inconnu",
-    "it_IT": "Sconosciuto",
-    "ja_JP": "不明",
-    "ko_KR": "알 수 없음",
-    "pt_BR": "Desconhecido",
-    "zh_CN": "未知"
-  },
-  "Remember download sources between restarts": {
+  "Remember the upload queue between restarts": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Download-Quellen zwischen Neustarts merken",
-    "es_ES": "Recordar fuentes de descarga entre reinicios",
-    "fr_FR": "Mémoriser les sources de téléchargement entre les redémarrages",
-    "it_IT": "Ricorda le fonti di download tra i riavvii",
-    "ja_JP": "再起動間でダウンロードソースを記憶",
-    "ko_KR": "재시작 간 다운로드 소스 기억",
-    "pt_BR": "Lembrar fontes de download entre reinicializações",
-    "zh_CN": "在重启之间记住下载来源"
+    "de_DE": "Upload-Warteschlange über Neustarts hinweg merken",
+    "es_ES": "Recordar la cola de subida entre reinicios",
+    "fr_FR": "Mémoriser la file d'attente d'envoi entre les redémarrages",
+    "it_IT": "Ricorda la coda di upload tra i riavvii",
+    "ja_JP": "再起動後もアップロードキューを保持する",
+    "ko_KR": "재시작 후에도 업로드 대기열 기억",
+    "pt_BR": "Lembrar a fila de upload entre reinicializações",
+    "zh_CN": "在重启之间记住上传队列"
   },
-  "Stores each download's best sources in the temp folder and reconnects to them on the next start, so a rare file does not have to find its peers again.": {
+  "Stores the longest-waiting clients in your upload queue and puts them back, with the places they had earned, when eMule starts again. They are not contacted on startup — they simply wait their turn as usual.": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Speichert die besten Quellen jedes Downloads im temporären Ordner und verbindet sich beim nächsten Start erneut mit ihnen, damit eine seltene Datei ihre Quellen nicht erneut suchen muss.",
-    "es_ES": "Guarda las mejores fuentes de cada descarga en la carpeta temporal y se reconecta a ellas en el siguiente inicio, para que un archivo raro no tenga que buscar sus fuentes de nuevo.",
-    "fr_FR": "Enregistre les meilleures sources de chaque téléchargement dans le dossier temporaire et s'y reconnecte au prochain démarrage, afin qu'un fichier rare n'ait pas à rechercher ses sources à nouveau.",
-    "it_IT": "Salva le migliori fonti di ogni download nella cartella temporanea e si riconnette ad esse al successivo avvio, così un file raro non deve cercare di nuovo le sue fonti.",
-    "ja_JP": "各ダウンロードの最良のソースを一時フォルダーに保存し、次回の起動時に再接続します。これにより、希少なファイルが再びソースを探す必要がなくなります。",
-    "ko_KR": "각 다운로드의 최적 소스를 임시 폴더에 저장하고 다음 시작 시 다시 연결하므로, 희귀한 파일이 소스를 다시 찾을 필요가 없습니다.",
-    "pt_BR": "Salva as melhores fontes de cada download na pasta temporária e reconecta a elas na próxima inicialização, para que um arquivo raro não precise procurar suas fontes novamente.",
-    "zh_CN": "将每个下载的最佳来源保存在临时文件夹中，并在下次启动时重新连接，这样稀有文件就不必重新寻找来源。"
+    "de_DE": "Speichert die am längsten wartenden Clients Ihrer Upload-Warteschlange und stellt sie beim nächsten Start von eMule mit den erreichten Plätzen wieder her. Sie werden beim Start nicht kontaktiert — sie warten einfach wie gewohnt, bis sie an der Reihe sind.",
+    "es_ES": "Guarda los clientes que llevan más tiempo esperando en su cola de subida y los restaura, con los puestos que habían ganado, cuando eMule vuelve a iniciarse. No se les contacta al arrancar — simplemente esperan su turno como siempre.",
+    "fr_FR": "Enregistre les clients qui attendent depuis le plus longtemps dans votre file d'attente d'envoi et les rétablit, avec les places qu'ils avaient acquises, au prochain démarrage d'eMule. Ils ne sont pas contactés au démarrage — ils attendent simplement leur tour, comme d'habitude.",
+    "it_IT": "Salva i client che attendono da più tempo nella coda di upload e li ripristina, con le posizioni che avevano guadagnato, al riavvio di eMule. All'avvio non vengono contattati — aspettano semplicemente il loro turno come sempre.",
+    "ja_JP": "アップロードキューで最も長く待っているクライアントを保存し、次に eMule を起動したときに獲得済みの順位のまま戻します。起動時に接続することはなく、通常どおり順番を待つだけです。",
+    "ko_KR": "업로드 대기열에서 가장 오래 기다린 클라이언트를 저장했다가 eMule을 다시 시작할 때 얻었던 순번 그대로 되돌려 놓습니다. 시작할 때 해당 클라이언트에 접속하지는 않습니다 — 평소처럼 자기 차례를 기다릴 뿐입니다.",
+    "pt_BR": "Salva os clientes que estão esperando há mais tempo na sua fila de upload e os coloca de volta, com as posições que haviam conquistado, quando o eMule é iniciado novamente. Eles não são contatados na inicialização — apenas aguardam sua vez normalmente.",
+    "zh_CN": "保存上传队列中等待时间最长的客户端，并在 eMule 再次启动时按它们已获得的排位放回队列。启动时不会主动联系它们 — 它们只是像往常一样排队等待。"
   },
-  "Details: %1": {
-    "_context": "eMule::SearchDetailDialog",
-    "de_DE": "Details: %1",
-    "es_ES": "Detalles: %1",
-    "fr_FR": "Détails : %1",
-    "it_IT": "Dettagli: %1",
-    "ja_JP": "詳細: %1",
-    "ko_KR": "상세: %1",
-    "pt_BR": "Detalhes: %1",
-    "zh_CN": "详情：%1"
+  "%1 (%2 of %3 shared)": {
+    "_context": "eMule::SharedFilesPanel",
+    "de_DE": "%1 (%2 von %3 freigegeben)",
+    "es_ES": "%1 (%2 de %3 compartidos)",
+    "fr_FR": "%1 (%2 sur %3 partagés)",
+    "it_IT": "%1 (%2 di %3 condivisi)",
+    "ja_JP": "%1（%3 件中 %2 件を共有）",
+    "ko_KR": "%1 (%3개 중 %2개 공유됨)",
+    "pt_BR": "%1 (%2 de %3 compartilhados)",
+    "zh_CN": "%1（%3 个中已共享 %2 个）"
   },
-  "Metadata": {
-    "_context": "eMule::SearchDetailDialog",
-    "de_DE": "Metadaten",
-    "es_ES": "Metadatos",
-    "fr_FR": "Métadonnées",
-    "it_IT": "Metadati",
-    "ja_JP": "メタデータ",
-    "ko_KR": "메타데이터",
-    "pt_BR": "Metadados",
-    "zh_CN": "元数据"
+  "Could not share that file": {
+    "_context": "eMule::SharedFilesPanel",
+    "de_DE": "Die Datei konnte nicht freigegeben werden",
+    "es_ES": "No se pudo compartir ese archivo",
+    "fr_FR": "Impossible de partager ce fichier",
+    "it_IT": "Impossibile condividere quel file",
+    "ja_JP": "そのファイルを共有できませんでした",
+    "ko_KR": "해당 파일을 공유할 수 없습니다",
+    "pt_BR": "Não foi possível compartilhar esse arquivo",
+    "zh_CN": "无法共享该文件"
   },
-  "Comments": {
-    "_context": "eMule::SearchDetailDialog",
-    "de_DE": "Kommentare",
-    "es_ES": "Comentarios",
-    "fr_FR": "Commentaires",
-    "it_IT": "Commenti",
-    "ja_JP": "コメント",
-    "ko_KR": "댓글",
-    "pt_BR": "Comentários",
-    "zh_CN": "评论"
+  "Could not unshare that file": {
+    "_context": "eMule::SharedFilesPanel",
+    "de_DE": "Die Freigabe der Datei konnte nicht aufgehoben werden",
+    "es_ES": "No se pudo dejar de compartir ese archivo",
+    "fr_FR": "Impossible d'arrêter le partage de ce fichier",
+    "it_IT": "Impossibile annullare la condivisione di quel file",
+    "ja_JP": "そのファイルの共有を解除できませんでした",
+    "ko_KR": "해당 파일의 공유를 해제할 수 없습니다",
+    "pt_BR": "Não foi possível descompartilhar esse arquivo",
+    "zh_CN": "无法取消共享该文件"
   },
-  "Details...": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "Details...",
-    "es_ES": "Detalles...",
-    "fr_FR": "Détails...",
-    "it_IT": "Dettagli...",
-    "ja_JP": "詳細...",
-    "ko_KR": "상세...",
-    "pt_BR": "Detalhes...",
-    "zh_CN": "详情..."
+  "Open File not available — web server is not running or stream token not received.": {
+    "_context": "eMule::SharedFilesPanel",
+    "de_DE": "Datei öffnen nicht verfügbar — der Webserver läuft nicht oder es wurde kein Stream-Token empfangen.",
+    "es_ES": "Abrir archivo no disponible — el servidor web no está en ejecución o no se recibió el token de transmisión.",
+    "fr_FR": "Ouvrir le fichier indisponible — le serveur web n'est pas en cours d'exécution ou aucun jeton de flux n'a été reçu.",
+    "it_IT": "Apri file non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.",
+    "ja_JP": "ファイルを開く操作は利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。",
+    "ko_KR": "파일 열기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.",
+    "pt_BR": "Abrir arquivo indisponível — o servidor web não está em execução ou o token de stream não foi recebido.",
+    "zh_CN": "打开文件不可用 — Web 服务器未运行或未收到流令牌。"
   },
-  "Comments...": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "Kommentare...",
-    "es_ES": "Comentarios...",
-    "fr_FR": "Commentaires...",
-    "it_IT": "Commenti...",
-    "ja_JP": "コメント...",
-    "ko_KR": "댓글...",
-    "pt_BR": "Comentários...",
-    "zh_CN": "评论..."
+  "UDP File Re-asks: 0, Failed: 0 (0.0%)": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "UDP-Datei-Neuanfragen: 0, fehlgeschlagen: 0 (0.0%)",
+    "es_ES": "Reconsultas de archivo UDP: 0, fallidas: 0 (0.0%)",
+    "fr_FR": "Redemandes de fichier UDP : 0, échouées : 0 (0.0%)",
+    "it_IT": "Richieste file UDP ripetute: 0, fallite: 0 (0.0%)",
+    "ja_JP": "UDP ファイル再問い合わせ：0、失敗：0 (0.0%)",
+    "ko_KR": "UDP 파일 재요청: 0, 실패: 0 (0.0%)",
+    "pt_BR": "Reconsultas de arquivo UDP: 0, falhas: 0 (0.0%)",
+    "zh_CN": "UDP 文件重新请求：0，失败：0 (0.0%)"
   },
-  "Mark as not Spam": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "Nicht als Spam markieren",
-    "es_ES": "Marcar como no spam",
-    "fr_FR": "Marquer comme non-spam",
-    "it_IT": "Segna come non spam",
-    "ja_JP": "スパムではないとマーク",
-    "ko_KR": "스팸 아님으로 표시",
-    "pt_BR": "Marcar como não spam",
-    "zh_CN": "标记为非垃圾"
+  "Published: 0 Bytes": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Veröffentlicht: 0 Bytes",
+    "es_ES": "Publicado: 0 Bytes",
+    "fr_FR": "Publié: 0 octets",
+    "it_IT": "Pubblicato: 0 Bytes",
+    "ja_JP": "公開済み: 0 Bytes",
+    "ko_KR": "게시됨: 0 Bytes",
+    "pt_BR": "Publicado: 0 Bytes",
+    "zh_CN": "已发布: 0 Bytes"
   },
-  "Asking servers: %1 / %2": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "Server werden abgefragt: %1 / %2",
-    "es_ES": "Consultando servidores: %1 / %2",
-    "fr_FR": "Interrogation des serveurs : %1 / %2",
-    "it_IT": "Interrogazione server: %1 / %2",
-    "ja_JP": "サーバーに問い合わせ中：%1 / %2",
-    "ko_KR": "서버 조회 중: %1 / %2",
-    "pt_BR": "Consultando servidores: %1 / %2",
-    "zh_CN": "正在询问服务器：%1 / %2"
+  "Fetched: 0 Bytes": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Abgerufen: 0 Bytes",
+    "es_ES": "Obtenido: 0 Bytes",
+    "fr_FR": "Récupéré: 0 octets",
+    "it_IT": "Recuperato: 0 Bytes",
+    "ja_JP": "取得済み: 0 Bytes",
+    "ko_KR": "가져옴: 0 Bytes",
+    "pt_BR": "Obtido: 0 Bytes",
+    "zh_CN": "已获取: 0 Bytes"
   },
-  "Find...": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "Suchen...",
-    "es_ES": "Buscar...",
-    "fr_FR": "Rechercher...",
-    "it_IT": "Cerca...",
-    "ja_JP": "検索...",
-    "ko_KR": "찾기...",
-    "pt_BR": "Buscar...",
-    "zh_CN": "查找..."
+  "Upload Saved: 0 Bytes": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Upload gespart: 0 Bytes",
+    "es_ES": "Subida ahorrada: 0 Bytes",
+    "fr_FR": "Envoi économisé: 0 octets",
+    "it_IT": "Upload risparmiato: 0 Bytes",
+    "ja_JP": "アップロード節約: 0 Bytes",
+    "ko_KR": "절약한 업로드: 0 Bytes",
+    "pt_BR": "Upload economizado: 0 Bytes",
+    "zh_CN": "节省的上传: 0 Bytes"
   },
-  "Search Related Files": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "Verwandte Dateien suchen",
-    "es_ES": "Buscar archivos relacionados",
-    "fr_FR": "Rechercher les fichiers associés",
-    "it_IT": "Cerca file correlati",
-    "ja_JP": "関連ファイルを検索",
-    "ko_KR": "관련 파일 검색",
-    "pt_BR": "Buscar arquivos relacionados",
-    "zh_CN": "搜索相关文件"
+  "Chunks Published: 0": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Veröffentlichte Stücke: 0",
+    "es_ES": "Trozos publicados: 0",
+    "fr_FR": "Morceaux publiés: 0",
+    "it_IT": "Blocchi pubblicati: 0",
+    "ja_JP": "公開チャンク数: 0",
+    "ko_KR": "게시한 청크: 0",
+    "pt_BR": "Blocos publicados: 0",
+    "zh_CN": "已发布块: 0"
   },
-  "Web Services": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "Webdienste",
-    "es_ES": "Servicios web",
-    "fr_FR": "Services web",
-    "it_IT": "Servizi web",
-    "ja_JP": "Web サービス",
-    "ko_KR": "웹 서비스",
-    "pt_BR": "Serviços web",
-    "zh_CN": "Web 服务"
+  "Chunks Fetched: 0": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Abgerufene Stücke: 0",
+    "es_ES": "Trozos obtenidos: 0",
+    "fr_FR": "Morceaux récupérés: 0",
+    "it_IT": "Blocchi recuperati: 0",
+    "ja_JP": "取得チャンク数: 0",
+    "ko_KR": "가져온 청크: 0",
+    "pt_BR": "Blocos obtidos: 0",
+    "zh_CN": "已获取块: 0"
+  },
+  "Low ID: 0 (0.0%)": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Low ID: 0 (0.0%)",
+    "es_ES": "Low ID: 0 (0.0%)",
+    "fr_FR": "Low ID : 0 (0.0%)",
+    "it_IT": "Low ID: 0 (0.0%)",
+    "ja_JP": "Low ID：0 (0.0%)",
+    "ko_KR": "Low ID: 0 (0.0%)",
+    "pt_BR": "Low ID: 0 (0.0%)",
+    "zh_CN": "Low ID：0 (0.0%)"
+  },
+  "Published": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Veröffentlicht",
+    "es_ES": "Publicado",
+    "fr_FR": "Publié",
+    "it_IT": "Pubblicato",
+    "ja_JP": "公開済み",
+    "ko_KR": "게시됨",
+    "pt_BR": "Publicado",
+    "zh_CN": "已发布"
+  },
+  "Fetched": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Abgerufen",
+    "es_ES": "Obtenido",
+    "fr_FR": "Récupéré",
+    "it_IT": "Recuperato",
+    "ja_JP": "取得済み",
+    "ko_KR": "가져옴",
+    "pt_BR": "Obtido",
+    "zh_CN": "已获取"
+  },
+  "Upload Saved": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Upload gespart",
+    "es_ES": "Subida ahorrada",
+    "fr_FR": "Envoi économisé",
+    "it_IT": "Upload risparmiato",
+    "ja_JP": "アップロード節約",
+    "ko_KR": "절약한 업로드",
+    "pt_BR": "Upload economizado",
+    "zh_CN": "节省的上传"
+  },
+  "Chunks Published": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Veröffentlichte Stücke",
+    "es_ES": "Trozos publicados",
+    "fr_FR": "Morceaux publiés",
+    "it_IT": "Blocchi pubblicati",
+    "ja_JP": "公開チャンク数",
+    "ko_KR": "게시한 청크",
+    "pt_BR": "Blocos publicados",
+    "zh_CN": "已发布块"
+  },
+  "Chunks Fetched": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Abgerufene Stücke",
+    "es_ES": "Trozos obtenidos",
+    "fr_FR": "Morceaux récupérés",
+    "it_IT": "Blocchi recuperati",
+    "ja_JP": "取得チャンク数",
+    "ko_KR": "가져온 청크",
+    "pt_BR": "Blocos obtidos",
+    "zh_CN": "已获取块"
+  },
+  "UDP File Re-asks: %1, Failed: %2 %3": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "UDP-Datei-Neuanfragen: %1, fehlgeschlagen: %2 %3",
+    "es_ES": "Reconsultas de archivo UDP: %1, fallidas: %2 %3",
+    "fr_FR": "Redemandes de fichier UDP : %1, échouées : %2 %3",
+    "it_IT": "Richieste file UDP ripetute: %1, fallite: %2 %3",
+    "ja_JP": "UDP ファイル再問い合わせ：%1、失敗：%2 %3",
+    "ko_KR": "UDP 파일 재요청: %1, 실패: %2 %3",
+    "pt_BR": "Reconsultas de arquivo UDP: %1, falhas: %2 %3",
+    "zh_CN": "UDP 文件重新请求：%1，失败：%2 %3"
+  },
+  "Low ID: %1 %2": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Low ID: %1 %2",
+    "es_ES": "Low ID: %1 %2",
+    "fr_FR": "Low ID : %1 %2",
+    "it_IT": "Low ID: %1 %2",
+    "ja_JP": "Low ID：%1 %2",
+    "ko_KR": "Low ID: %1 %2",
+    "pt_BR": "Low ID: %1 %2",
+    "zh_CN": "Low ID：%1 %2"
   }
 }

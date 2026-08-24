@@ -33,6 +33,38 @@ namespace {
 ///   2 — ipFilterLevel raised off the legacy 100, which filtered nothing
 constexpr uint32 kCurrentPrefsVersion = 2;
 
+/// Normalise, drop the unusable, collapse duplicates, and enforce the cap.
+///
+/// Shared by the setter and the YAML loader: a hand-edited file is exactly as
+/// capable of naming one server twice, or nine of them, as a stream of
+/// configuration links is, and the rest of the code is written as though neither
+/// can happen.
+[[nodiscard]] QList<HttpCacheServerConfig>
+sanitizeHttpCacheServers(const QList<HttpCacheServerConfig>& servers)
+{
+    QList<HttpCacheServerConfig> clean;
+
+    for (const auto& server : servers) {
+        HttpCacheServerConfig entry = server;
+        entry.baseUrl = Preferences::normalizeHttpCacheBaseUrl(entry.baseUrl);
+        entry.apiKey = entry.apiKey.trimmed();
+        if (entry.baseUrl.isEmpty())
+            continue;
+
+        const auto duplicate = std::ranges::find_if(clean, [&entry](const auto& seen) {
+            return seen.baseUrl == entry.baseUrl;
+        });
+        if (duplicate != clean.end())
+            continue;
+
+        clean.append(entry);
+        if (clean.size() >= Preferences::kMaxHttpCacheServers)
+            break;
+    }
+
+    return clean;
+}
+
 } // namespace
 
 // The SMTP password is stored AES-256-CBC encrypted in the YAML; the cipher now
@@ -492,8 +524,7 @@ struct Preferences::Data {
     bool httpCacheAllowRelay = true;
     bool httpCachePublishToKad = true;
     bool httpCacheFetchFromKad = true;
-    QString httpCacheBaseUrl;
-    QString httpCacheApiKey;         // plaintext in memory, AES-encrypted in YAML
+    QList<HttpCacheServerConfig> httpCacheServers;   // credentials AES-encrypted in YAML
     uint32 httpCacheMinClients = 2;
     uint32 httpCacheChunkTtlSeconds = 21600;
     uint64 httpCacheMaxPublishBytesPerDay = UINT64_C(2147483648);
@@ -1421,24 +1452,79 @@ bool Preferences::httpCacheFetchFromKad() const { return get(&Data::httpCacheFet
 
 void Preferences::setHttpCacheFetchFromKad(bool val) { set(&Data::httpCacheFetchFromKad, val); }
 
-QString Preferences::httpCacheBaseUrl() const { return get(&Data::httpCacheBaseUrl); }
-
-void Preferences::setHttpCacheBaseUrl(const QString& val)
+QString Preferences::normalizeHttpCacheBaseUrl(const QString& val)
 {
-    // A trailing slash would turn every request path into a double slash, which
-    // some servers 404 — normalise once here rather than at each call site.
     QString clean = val.trimmed();
     while (clean.endsWith(QLatin1Char('/')))
         clean.chop(1);
-
-    set(&Data::httpCacheBaseUrl, clean);
+    return clean;
 }
 
-QString Preferences::httpCacheApiKey() const { return get(&Data::httpCacheApiKey); }
-
-void Preferences::setHttpCacheApiKey(const QString& val)
+QList<HttpCacheServerConfig> Preferences::httpCacheServers() const
 {
-    set(&Data::httpCacheApiKey, val.trimmed());
+    return get(&Data::httpCacheServers);
+}
+
+void Preferences::setHttpCacheServers(const QList<HttpCacheServerConfig>& val)
+{
+    // Normalised and de-duplicated on the way in, so every later comparison — the
+    // search in addOrUpdateHttpCacheServer(), the manager's per-server health map —
+    // can be a plain string equality.
+    set(&Data::httpCacheServers, sanitizeHttpCacheServers(val));
+}
+
+bool Preferences::addOrUpdateHttpCacheServer(const HttpCacheServerConfig& server)
+{
+    HttpCacheServerConfig entry = server;
+    entry.baseUrl = normalizeHttpCacheBaseUrl(entry.baseUrl);
+    entry.apiKey = entry.apiKey.trimmed();
+    if (entry.baseUrl.isEmpty())
+        return false;
+
+    QWriteLocker lock(&m_lock);
+
+    for (auto& existing : m_data->httpCacheServers) {
+        if (existing.baseUrl != entry.baseUrl)
+            continue;
+
+        // Re-applying a link for a server we already have is how an operator
+        // rotates its credential, so the key, the labels and the enabled flag are
+        // all taken from the newer link. The position in the list is not: it is
+        // the same server, and moving it would reshuffle the rotation.
+        existing = entry;
+        return true;
+    }
+
+    if (m_data->httpCacheServers.size() >= kMaxHttpCacheServers)
+        return false;
+
+    m_data->httpCacheServers.append(entry);
+    return true;
+}
+
+HttpCacheServerAction Preferences::httpCacheServerAction(const QString& baseUrl,
+                                                         const QString& apiKey) const
+{
+    const QString clean = normalizeHttpCacheBaseUrl(baseUrl);
+    const QString key = apiKey.trimmed();
+
+    QReadLocker lock(&m_lock);
+
+    for (const auto& existing : m_data->httpCacheServers) {
+        if (existing.baseUrl != clean)
+            continue;
+
+        // "Unchanged" has to mean the link would genuinely do nothing, which
+        // includes the switches: a disabled entry, or uploads turned off
+        // globally, is a link worth acting on even though the credential matches.
+        const bool live = existing.enabled && m_data->httpCacheEnabled
+            && m_data->httpCacheAllowUpload;
+        return (existing.apiKey == key && live) ? HttpCacheServerAction::Unchanged
+                                                : HttpCacheServerAction::UpdateKey;
+    }
+
+    return m_data->httpCacheServers.size() >= kMaxHttpCacheServers ? HttpCacheServerAction::Full
+                                                                   : HttpCacheServerAction::Add;
 }
 
 uint32 Preferences::httpCacheMinClients() const
@@ -3018,24 +3104,43 @@ bool Preferences::load(const QString& filePath)
             m_data->httpCacheFetchFromKad =
                 hc["fetchFromKad"].as<bool>(m_data->httpCacheFetchFromKad);
 
-            if (hc["baseUrl"]) {
-                QString url = QString::fromStdString(hc["baseUrl"].as<std::string>("")).trimmed();
-                while (url.endsWith(QLatin1Char('/')))
-                    url.chop(1);
-                m_data->httpCacheBaseUrl = url;
-            }
+            // The servers we may publish to, in rotation order. Each credential is
+            // stored like the SMTP password: AES-encrypted under the notification
+            // key, so preferences.yml never holds a usable upload credential in the
+            // clear.
+            if (const auto servers = hc["servers"]; servers && servers.IsSequence()) {
+                QList<HttpCacheServerConfig> list;
 
-            // The API key is stored like the SMTP password: AES-encrypted under the
-            // notification key, so preferences.yml never holds a usable upload
-            // credential in the clear.
-            if (hc["apiKeyEnc"] && !m_data->notifyEmailEncKey.isEmpty()) {
-                const auto enc = QString::fromStdString(hc["apiKeyEnc"].as<std::string>(""));
-                m_data->httpCacheApiKey = aesDecryptFromBase64(enc, m_data->notifyEmailEncKey);
-            } else if (hc["apiKey"]) {
-                // Plaintext escape hatch for first setup and hand-editing; rewritten
-                // as apiKeyEnc on the next save.
-                m_data->httpCacheApiKey =
-                    QString::fromStdString(hc["apiKey"].as<std::string>("")).trimmed();
+                for (const auto& node : servers) {
+                    if (!node.IsMap())
+                        continue;
+
+                    HttpCacheServerConfig entry;
+                    entry.baseUrl = normalizeHttpCacheBaseUrl(
+                        QString::fromStdString(node["baseUrl"].as<std::string>("")));
+                    if (entry.baseUrl.isEmpty())
+                        continue;
+
+                    entry.name = QString::fromStdString(node["name"].as<std::string>("")).trimmed();
+                    entry.keyId =
+                        QString::fromStdString(node["keyId"].as<std::string>("")).trimmed();
+                    entry.enabled = node["enabled"].as<bool>(true);
+
+                    if (node["apiKeyEnc"] && !m_data->notifyEmailEncKey.isEmpty()) {
+                        const auto enc =
+                            QString::fromStdString(node["apiKeyEnc"].as<std::string>(""));
+                        entry.apiKey = aesDecryptFromBase64(enc, m_data->notifyEmailEncKey);
+                    } else if (node["apiKey"]) {
+                        // Plaintext escape hatch for first setup and hand-editing;
+                        // rewritten as apiKeyEnc on the next save.
+                        entry.apiKey =
+                            QString::fromStdString(node["apiKey"].as<std::string>("")).trimmed();
+                    }
+
+                    list.append(entry);
+                }
+
+                m_data->httpCacheServers = sanitizeHttpCacheServers(list);
             }
 
             m_data->httpCacheMinClients =
@@ -3665,8 +3770,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     // in this file, not just the SMTP password — the HTTP Cache API key rides on
     // it too — so any of them being set is reason enough to mint one.
     QByteArray encKey = m_data->notifyEmailEncKey;
-    if (encKey.isEmpty()
-        && (!m_data->notifyEmailSmtpPassword.isEmpty() || !m_data->httpCacheApiKey.isEmpty())) {
+    const bool haveCacheKey = std::ranges::any_of(m_data->httpCacheServers,
+                                                  [](const HttpCacheServerConfig& server) {
+                                                      return !server.apiKey.isEmpty();
+                                                  });
+    if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey)) {
         encKey = aesRandomKey();
         m_data->notifyEmailEncKey = encKey;
     }
@@ -3678,7 +3786,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::EndMap;
 
     // HTTP Cache. Written after `notifications` so encKey above is already
-    // settled; the API key is stored encrypted under it and the plaintext
+    // settled; each API key is stored encrypted under it and the plaintext
     // `apiKey` form the loader accepts is never written back.
     out << YAML::Key << "httpCache" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->httpCacheEnabled;
@@ -3687,11 +3795,22 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "allowRelay" << YAML::Value << m_data->httpCacheAllowRelay;
     out << YAML::Key << "publishToKad" << YAML::Value << m_data->httpCachePublishToKad;
     out << YAML::Key << "fetchFromKad" << YAML::Value << m_data->httpCacheFetchFromKad;
-    out << YAML::Key << "baseUrl" << YAML::Value << m_data->httpCacheBaseUrl.toStdString();
-    if (!m_data->httpCacheApiKey.isEmpty() && !encKey.isEmpty()) {
-        out << YAML::Key << "apiKeyEnc" << YAML::Value
-            << aesEncryptToBase64(m_data->httpCacheApiKey, encKey).toStdString();
+    out << YAML::Key << "servers" << YAML::Value << YAML::BeginSeq;
+    for (const auto& server : m_data->httpCacheServers) {
+        out << YAML::BeginMap;
+        if (!server.name.isEmpty())
+            out << YAML::Key << "name" << YAML::Value << server.name.toStdString();
+        out << YAML::Key << "baseUrl" << YAML::Value << server.baseUrl.toStdString();
+        if (!server.apiKey.isEmpty() && !encKey.isEmpty()) {
+            out << YAML::Key << "apiKeyEnc" << YAML::Value
+                << aesEncryptToBase64(server.apiKey, encKey).toStdString();
+        }
+        if (!server.keyId.isEmpty())
+            out << YAML::Key << "keyId" << YAML::Value << server.keyId.toStdString();
+        out << YAML::Key << "enabled" << YAML::Value << server.enabled;
+        out << YAML::EndMap;
     }
+    out << YAML::EndSeq;
     out << YAML::Key << "minClients" << YAML::Value << m_data->httpCacheMinClients;
     out << YAML::Key << "chunkTtlSeconds" << YAML::Value << m_data->httpCacheChunkTtlSeconds;
     out << YAML::Key << "maxPublishBytesPerDay" << YAML::Value

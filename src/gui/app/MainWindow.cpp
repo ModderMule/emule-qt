@@ -140,6 +140,23 @@ MainWindow::MainWindow(QWidget* parent)
     connect(QApplication::clipboard(), &QClipboard::dataChanged,
             this, &MainWindow::onClipboardChanged);
 
+    // dataChanged alone is not enough. The Cocoa plugin emits it only when the application
+    // *becomes* active and the pasteboard's change count has moved since its last sync, so a
+    // link that was already on the pasteboard when eMule Qt started announces itself once at
+    // best and often not at all. MFC has the same problem and solves it by polling once a
+    // second (CUploadQueue::Process, srchybrid/UploadQueue.cpp:925); re-checking on activation
+    // covers the same ground without reading the pasteboard while nothing is happening.
+    //
+    // Queued through the event loop deliberately: QCocoaClipboard connects to this very
+    // signal when QApplication::clipboard() is first touched — the line just above — and it
+    // is that handler which re-syncs the pasteboard. Reading it synchronously here could
+    // hand us the stale cache instead.
+    connect(qApp, &QGuiApplication::applicationStateChanged, this,
+            [this](Qt::ApplicationState state) {
+        if (state == Qt::ApplicationActive)
+            QTimer::singleShot(0, this, &MainWindow::onClipboardChanged);
+    });
+
     // Version checker
     m_versionChecker = new VersionChecker(this);
     connect(m_versionChecker, &VersionChecker::newVersionAvailable,
@@ -261,6 +278,14 @@ void MainWindow::setIpcClient(IpcClient* ipc)
     m_ipc = ipc;
     if (m_trayMenu)
         m_trayMenu->setIpcClient(ipc);
+
+    // A link sitting in the clipboard at startup reaches onClipboardChanged() before there
+    // is a daemon to import it into, and that check leaves such text unrecorded on purpose.
+    // This is what comes back for it. Fires again on every reconnect, which costs nothing:
+    // unchanged clipboard text short-circuits on m_lastClipboardContents.
+    if (ipc)
+        connect(ipc, &IpcClient::connected, this, &MainWindow::onClipboardChanged,
+                Qt::UniqueConnection);
 
     if (!m_speedHistoryTimer) {
         m_speedHistoryTimer = new QTimer(this);
@@ -530,14 +555,28 @@ void MainWindow::onClipboardChanged()
     const QString text = QApplication::clipboard()->text().trimmed();
     if (text.isEmpty() || text == m_lastClipboardContents)
         return;
-    m_lastClipboardContents = text;
 
     // Check if any line contains a link we act on. HTTP Cache configuration links
     // count: copying one off a server's install page is how it is meant to be
     // used, and Ed2kLinkImporter always confirms before storing anything.
-    if (!text.contains(QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive)
-        && !text.contains(QStringLiteral("ed2k://|httpcache|"), Qt::CaseInsensitive))
+    const auto kinds = Ed2kLinkImporter::linkKindsIn(text);
+    if (!(kinds & (Ed2kLinkImporter::LinkKind::File | Ed2kLinkImporter::LinkKind::HttpCache))) {
+        m_lastClipboardContents = text;  // nothing here for us; never look at it again
         return;
+    }
+
+    // Both halves of the import are the daemon's work — the known-file lookup and the
+    // HTTP Cache handshake both go over IPC — so before the connection is up there is
+    // nothing to import. Leave the text unrecorded and let the re-check wired to
+    // IpcClient::connected in setIpcClient() pick it up: this window is real, the
+    // MainWindow exists long before main() attaches an IpcClient to it, and recording
+    // the text here would consume the only chance this link ever gets.
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    // Set before the import, not after: it is what stops the next trigger — an
+    // activation, a reconnect — from re-entering while the confirmation box is open.
+    m_lastClipboardContents = text;
 
     // Automatic: files we already have — including ones only the daemon knows about, such as
     // completed-but-unshared and cancelled downloads — are skipped without a prompt. Copying

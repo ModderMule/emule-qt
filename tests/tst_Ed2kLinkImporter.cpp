@@ -7,6 +7,8 @@
 
 #include "utils/Ed2kLinkImporter.h"
 
+#include <QFileOpenEvent>
+#include <QUrl>
 #include <QtTest>
 
 using eMule::Ed2kLinkImporter;
@@ -33,6 +35,12 @@ private slots:
 
     void configLinkIsRoutedNotInvalid();
     void malformedConfigLinkIsRedacted();
+
+    void linkKindsIn_data();
+    void linkKindsIn();
+
+    void linkFromFileOpenEvent_data();
+    void linkFromFileOpenEvent();
 };
 
 void TestEd2kLinkImporter::shouldSkip_data()
@@ -212,6 +220,144 @@ void TestEd2kLinkImporter::malformedConfigLinkIsRedacted()
     QCOMPARE(result.invalid.size(), 1);
     QVERIFY2(!result.invalid.first().contains(secret), qPrintable(result.invalid.first()));
     QVERIFY(result.invalid.first().contains(QStringLiteral("cache.example.com")));
+}
+
+// ---------------------------------------------------------------------------
+// linkKindsIn — what a "Paste eD2K Links" action and the clipboard watcher see
+//
+// Both used to hardcode their own substring test, and both got it wrong: the
+// Transfers action looked only for a file link, so an HTTP Cache configuration
+// link left it greyed out, and the Servers action used startsWith(), so any text
+// in front of a server link greyed that one out too.
+// ---------------------------------------------------------------------------
+
+void TestEd2kLinkImporter::linkKindsIn_data()
+{
+    QTest::addColumn<QString>("text");
+    QTest::addColumn<int>("expected");
+
+    const int none  = 0;
+    const int file  = static_cast<int>(Ed2kLinkImporter::LinkKind::File);
+    const int cache = static_cast<int>(Ed2kLinkImporter::LinkKind::HttpCache);
+    const int srv   = static_cast<int>(Ed2kLinkImporter::LinkKind::Server);
+
+    const QString fileLink = QStringLiteral(
+        "ed2k://|file|Name.rar|4960062|95818F7E4E4E0C1D1E2A3B4C5D6E7F80|/");
+    const QString cacheLink = QStringLiteral(
+        "ed2k://|httpcache|HTTP%20Cache%20upload%20config|http://danielmac.local:8080"
+        "|9932a62be8ffb62e3d6da8e923e6163dc3a05391a943168c|k=default|/");
+    const QString serverLink = QStringLiteral("ed2k://|server|1.2.3.4|4661|/");
+
+    QTest::newRow("empty")       << QString()                       << none;
+    QTest::newRow("prose")       << QStringLiteral("no links here") << none;
+
+    QTest::newRow("file")        << fileLink   << file;
+    QTest::newRow("httpcache")   << cacheLink  << cache;
+    QTest::newRow("server")      << serverLink << srv;
+
+    // Case is not part of the type token.
+    QTest::newRow("uppercase")   << cacheLink.toUpper() << cache;
+
+    // The clipboard is rarely just a link.
+    QTest::newRow("server after prose")
+        << QStringLiteral("Add this: %1").arg(serverLink) << srv;
+    QTest::newRow("file on second line")
+        << QStringLiteral("here you go\n%1").arg(fileLink) << file;
+
+    QTest::newRow("file and config")
+        << QStringLiteral("%1\n%2").arg(fileLink, cacheLink) << (file | cache);
+
+    // serverlist is a different link with a different handler — the trailing '|'
+    // in the needle is what keeps it out.
+    QTest::newRow("serverlist is not a server")
+        << QStringLiteral("ed2k://|serverlist|http://example.com/server.met|/") << none;
+
+    // Nothing in the GUI imports these, so nothing should light up for them.
+    QTest::newRow("nodeslist")
+        << QStringLiteral("ed2k://|nodeslist|http://example.com/nodes.dat|/") << none;
+    QTest::newRow("search")
+        << QStringLiteral("ed2k://|search|foo|/") << none;
+}
+
+void TestEd2kLinkImporter::linkKindsIn()
+{
+    QFETCH(QString, text);
+    QFETCH(int, expected);
+
+    QCOMPARE(static_cast<int>(Ed2kLinkImporter::linkKindsIn(text).toInt()), expected);
+}
+
+// ---------------------------------------------------------------------------
+// linkFromFileOpenEvent - the macOS Apple Event route
+//
+// A browser or Finder click on an ed2k:// link reaches the application as a
+// QEvent::FileOpen. The Cocoa plugin only wraps the string in a QUrl if it parses,
+// and an eD2K link never does - '|' is not a legal host character - so Qt takes its
+// fallback and the link ends up in file(), not url(). Reading url().toString() was
+// what made the whole macOS route silently do nothing for every link type.
+//
+// Every case here builds the event exactly the way Qt does on that fallback path:
+// handleFileOpenEvent(QString) -> FileOpenEvent(QUrl::fromLocalFile(s)) ->
+// QFileOpenEvent(url). If that round trip ever stops preserving the link these fail
+// here, rather than the feature failing in the field.
+// ---------------------------------------------------------------------------
+
+void TestEd2kLinkImporter::linkFromFileOpenEvent_data()
+{
+    QTest::addColumn<QString>("delivered");   // what macOS handed to Qt
+    QTest::addColumn<QString>("expected");
+
+    const QString fileLink = QStringLiteral(
+        "ed2k://|file|Name.rar|4960062|95818F7E4E4E0C1D1E2A3B4C5D6E7F80|/");
+    QTest::newRow("file") << fileLink << fileLink;
+
+    // A name carrying both a percent escape and an escaped pipe: the link must come
+    // back byte for byte, because parseED2KLink() splits on '|' before decoding and
+    // a single stray decode would re-split it into the wrong number of fields.
+    const QString escapedName = QStringLiteral(
+        "ed2k://|file|Some%20Name%7Cwith%20bar.rar|4960062"
+        "|95818F7E4E4E0C1D1E2A3B4C5D6E7F80|h=4XEIHTHRC2SIQD5IEFXHRC2SIQD5I|/");
+    QTest::newRow("escaped name") << escapedName << escapedName;
+
+    // The credential in a configuration link has to survive intact, or the server
+    // rejects the upload key with no clue as to why.
+    const QString cacheLink = QStringLiteral(
+        "ed2k://|httpcache|HTTP%20Cache%20upload%20config|https://cache.example.com"
+        "|9932a62be8ffb62e3d6da8e923e6163dc3a05391a943168c|k=default|/");
+    QTest::newRow("httpcache") << cacheLink << cacheLink;
+
+    const QString serverLink = QStringLiteral("ed2k://|server|1.2.3.4|4661|/");
+    QTest::newRow("server") << serverLink << serverLink;
+
+    // Case is not part of the scheme test.
+    QTest::newRow("uppercase scheme")
+        << QStringLiteral("ED2K://|file|A|1|95818F7E4E4E0C1D1E2A3B4C5D6E7F80|/")
+        << QStringLiteral("ED2K://|file|A|1|95818F7E4E4E0C1D1E2A3B4C5D6E7F80|/");
+
+    // A dropped file must not be mistaken for a link: the importer would report it as
+    // invalid, and the event has to stay available to whatever else may want it.
+    QTest::newRow("plain path")  << QStringLiteral("/Users/x/movie.emulecollection") << QString();
+    QTest::newRow("http url")    << QStringLiteral("https://example.com/x")          << QString();
+    QTest::newRow("empty")       << QString()                                        << QString();
+}
+
+void TestEd2kLinkImporter::linkFromFileOpenEvent()
+{
+    QFETCH(QString, delivered);
+    QFETCH(QString, expected);
+
+    // What Qt's cocoa plugin produces for a string that does not parse as a URL.
+    if (!delivered.isEmpty()) {
+        const QFileOpenEvent fallback(QUrl::fromLocalFile(delivered));
+        QCOMPARE(Ed2kLinkImporter::linkFromFileOpenEvent(fallback), expected);
+    }
+
+    // And for one that does - magnet: has no authority, so it survives as a real QUrl
+    // and has to be read out of url() instead. Same function, other accessor.
+    const QUrl magnet(QStringLiteral("magnet:?xt=urn:ed2k:95818F7E4E4E0C1D1E2A3B4C5D6E7F80"));
+    QVERIFY(magnet.isValid());
+    const QFileOpenEvent parsed(magnet);
+    QCOMPARE(Ed2kLinkImporter::linkFromFileOpenEvent(parsed), magnet.toString());
 }
 
 QTEST_MAIN(TestEd2kLinkImporter)
