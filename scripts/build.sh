@@ -80,7 +80,8 @@ if [ "$BUNDLE" = true ]; then
             ;;
         MINGW*|MSYS*|CYGWIN*)
             echo "Running Windows bundle script..."
-            cmd //c "$SCRIPT_DIR/bundle-win.bat" "$BUILD_DIR"
+            powershell -NoProfile -ExecutionPolicy Bypass \
+                -File "$SCRIPT_DIR/bundle-win.ps1" -BuildDir "$BUILD_DIR"
             ;;
     esac
 fi

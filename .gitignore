@@ -133,4 +133,4 @@ docker/httpcache/nodes.log
 
 # Dev automation workspace
 dev/
-
+.mcp.json
