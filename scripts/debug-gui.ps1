@@ -47,26 +47,114 @@ $ErrorActionPreference = 'Stop'
 
 <#
 .SYNOPSIS
+    Scalar value from a nested "block: / key:" pair in a YAML file.
+
+.DESCRIPTION
+    A small state machine rather than a YAML library, so the script keeps its
+    zero dependencies.  Only handles the one nesting level the preferences use:
+    a top-level block header followed by indented keys.  Returns $Default when
+    the file, the block or the key is missing.
+#>
+function Get-YamlScalar {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Block,
+        [Parameter(Mandatory)][string]$Key,
+        $Default = $null
+    )
+
+    if (-not (Test-Path $Path)) { return $Default }
+
+    $inBlock = $false
+    foreach ($line in Get-Content $Path) {
+        if ($line -match '^\s*#') { continue }
+        if ($line -match "^$([regex]::Escape($Block)):\s*$") { $inBlock = $true; continue }
+        if ($line -match '^\S') { $inBlock = $false; continue }
+        if ($inBlock -and $line -match "^\s+$([regex]::Escape($Key)):\s*(\S+)") { return $matches[1] }
+    }
+    return $Default
+}
+
+<#
+.SYNOPSIS
+    The config directory a given binary will use, mirroring AppConfig::configDir().
+
+.DESCRIPTION
+    Windows has no single fixed location: AppConfig.cpp peeks
+    <exe-dir>\config\preferences.yml for transfer.multiUserSharing and picks
+    0 = per-user %APPDATA%, 1 = all-users %ProgramData%, 2 = program-dir
+    (portable, and the default when the file or the key is absent).
+
+    In per-user mode the path ends in the *application* name, which differs
+    between the two binaries -- "eMule Qt Core" for the daemon, "eMule Qt" for
+    the GUI -- hence the -AppName parameter.
+
+    -Override short-circuits everything: it is the --config value, which both
+    binaries honour ahead of any of this.
+#>
+function Get-EMuleConfigDir {
+    param(
+        [Parameter(Mandatory)][string]$ExePath,
+        [Parameter(Mandatory)][string]$AppName,
+        [string]$Override
+    )
+
+    if ($Override) { return $Override }
+
+    $exeDir = Split-Path -Parent $ExePath
+    $portableDir = Join-Path $exeDir 'config'
+    $mode = [int](Get-YamlScalar -Path (Join-Path $portableDir 'preferences.yml') `
+                                 -Block 'transfer' -Key 'multiUserSharing' -Default 2)
+
+    switch ($mode) {
+        0 { return (Join-Path $env:APPDATA "eMule\$AppName") }
+        1 { return (Join-Path $env:ProgramData 'eMule\eMule Qt') }
+        default { return $portableDir }
+    }
+}
+
+<#
+.SYNOPSIS
+    Copy data\config into a config directory that does not exist yet.
+
+.DESCRIPTION
+    AppConfig::seedBundledData() bails out in program-dir mode -- there the
+    config\ next to the exe IS the config directory, so nothing is ever seeded
+    into a fresh build tree and the GUI starts with no server.met and no Kad
+    bootstrap nodes.  Seeding here fills that gap for debug runs.
+
+    Deliberately all-or-nothing on the directory: an existing config dir is left
+    completely alone, so preferences.yml and uistate.yml are never overwritten.
+#>
+function Initialize-EMuleConfigDir {
+    param([Parameter(Mandatory)][string]$ConfigDir)
+
+    if (Test-Path $ConfigDir) { return }
+
+    $bundleDir = Join-Path (Get-ProjectDir) 'data\config'
+    if (-not (Test-Path $bundleDir)) {
+        Write-Warning "No bundled config at $bundleDir -- starting with an empty config dir."
+        return
+    }
+
+    New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null
+    Copy-Item -Path (Join-Path $bundleDir '*') -Destination $ConfigDir -Recurse -Force
+    Write-Host "Seeded config from data\config -> $ConfigDir"
+}
+
+<#
+.SYNOPSIS
     IPC port from preferences.yml, falling back to the built-in default.
 
 .DESCRIPTION
     Mirrors Preferences.cpp: the port lives under the "ipc:" block and defaults
-    to 4712.  Parsed with a small state machine rather than a YAML library so
-    the script has no dependencies.
+    to 4712.
 #>
 function Get-IpcPort {
-    $default = 4712
-    $prefs = Join-Path $HOME 'eMuleQt\Config\preferences.yml'
-    if (-not (Test-Path $prefs)) { return $default }
+    param([Parameter(Mandatory)][string]$ConfigDir)
 
-    $inIpcBlock = $false
-    foreach ($line in Get-Content $prefs) {
-        if ($line -match '^\s*#') { continue }
-        if ($line -match '^ipc:\s*$') { $inIpcBlock = $true; continue }
-        if ($line -match '^\S') { $inIpcBlock = $false; continue }
-        if ($inIpcBlock -and $line -match '^\s+port:\s*(\d+)') { return [int]$matches[1] }
-    }
-    return $default
+    return [int](Get-YamlScalar -Path (Join-Path $ConfigDir 'preferences.yml') `
+                                -Block 'ipc' -Key 'port' -Default 4712)
 }
 
 <#
@@ -179,6 +267,36 @@ Write-Host "GUI binary:    $guiExe"
 Write-Host "Daemon binary: $daemonExe"
 
 # ---------------------------------------------------------------------------
+# Config directories
+# ---------------------------------------------------------------------------
+
+# A --config among the GUI arguments has to reach the daemon too, or the two
+# processes would read different preferences.yml files -- including different
+# ipc ports, which is exactly what Wait-DaemonReady polls for.
+# Both spellings QCommandLineParser accepts: "--config dir" and "--config=dir".
+$configOverride = ''
+for ($i = 0; $i -lt $GuiArgs.Count; $i++) {
+    if ($GuiArgs[$i] -eq '--config' -and $i -lt $GuiArgs.Count - 1) {
+        $configOverride = $GuiArgs[$i + 1]
+        break
+    }
+    if ($GuiArgs[$i] -match '^--config=(.+)$') {
+        $configOverride = $matches[1]
+        break
+    }
+}
+
+$daemonConfigDir = Get-EMuleConfigDir -ExePath $daemonExe -AppName 'eMule Qt Core' -Override $configOverride
+$guiConfigDir = Get-EMuleConfigDir -ExePath $guiExe -AppName 'eMule Qt' -Override $configOverride
+
+Write-Host "Config dir:    $daemonConfigDir"
+Initialize-EMuleConfigDir -ConfigDir $daemonConfigDir
+if ($guiConfigDir -ne $daemonConfigDir) {
+    Write-Host "GUI config dir: $guiConfigDir"
+    Initialize-EMuleConfigDir -ConfigDir $guiConfigDir
+}
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 
@@ -209,10 +327,16 @@ if ($leftovers) {
 # log output in this console, interleaved with the GUI's -- see Log.h.
 Write-Host ''
 Write-Host 'Starting daemon...'
-$daemon = Start-Process -FilePath $daemonExe -PassThru -NoNewWindow
+$daemonArgs = if ($configOverride) { @('--config', $configOverride) } else { @() }
+$daemon = if ($daemonArgs) {
+    Start-Process -FilePath $daemonExe -ArgumentList $daemonArgs -PassThru -NoNewWindow
+}
+else {
+    Start-Process -FilePath $daemonExe -PassThru -NoNewWindow
+}
 
 try {
-    Wait-DaemonReady -Process $daemon -Port (Get-IpcPort)
+    Wait-DaemonReady -Process $daemon -Port (Get-IpcPort -ConfigDir $daemonConfigDir)
 
     # The GUI discovers this already-running daemon via resolveDaemonPath() and
     # only spawns its own on connection failure, so it leaves ours alone on quit.
