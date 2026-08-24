@@ -356,10 +356,22 @@ void PortMapper::tryNextCandidate()
                  .arg(backend->name())
                  .arg(m_trialExpected));
 
+    // requestMapping() is allowed to answer synchronously, and UdpMappingBackend does for
+    // "no gateway for this family", "could not encode request" and "could not open a
+    // socket". Without this flag the resulting mappingResult would re-enter
+    // evaluateTrial() -> tryNextCandidate() and reset m_trial* underneath the loop still
+    // issuing requests against the previous candidate. Today the count can only complete
+    // on the final iteration, so it survives by arithmetic accident; the flag makes it
+    // structural, and moves the trial on once every request is out.
+    m_issuingTrialRequests = true;
     for (const PortMapRequest& request : m_desired) {
         if (backend->supports(request.family))
             backend->requestMapping(request, m_leaseSeconds);
     }
+    m_issuingTrialRequests = false;
+
+    if (m_state == State::Trialling && m_trialReceived >= m_trialExpected)
+        evaluateTrial();
 }
 
 void PortMapper::evaluateTrial()
@@ -479,7 +491,9 @@ void PortMapper::onMappingResult(PortMapBackend* backend, const PortMapping& map
                          .arg(mapping.request.internalPort)
                          .arg(error));
 
-        if (m_trialReceived >= m_trialExpected)
+        // Deferred while tryNextCandidate() is still issuing this candidate's requests —
+        // it calls evaluateTrial() itself once the loop is done. See the note there.
+        if (m_trialReceived >= m_trialExpected && !m_issuingTrialRequests)
             evaluateTrial();
         return;
     }

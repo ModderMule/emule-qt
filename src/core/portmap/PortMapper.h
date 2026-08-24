@@ -178,6 +178,9 @@ private:
     int           m_renewalOverrideMs = -1;
     double        m_renewalRandom = 0.5;
     bool          m_testBackends = false;
+    /// Set while tryNextCandidate() is issuing a candidate's requests, so a backend that
+    /// answers synchronously cannot advance the race from under that loop.
+    bool          m_issuingTrialRequests = false;
 };
 
 } // namespace eMule
