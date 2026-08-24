@@ -13,6 +13,12 @@
 /// still be woken by a late reply. Destroying it inline crashed tst_PortMapLive in
 /// QAbstractSocketPrivate::canReadNotification() about two seconds in, i.e. on the first
 /// retransmit.
+///
+/// The last three cases cover reentrancy — a call inside the read loop destroying the very
+/// transaction that loop is walking (issue #5). Read the platform note on
+/// `gatewayRefusesEveryProbe()` before trusting a green run of those two: on macOS an ICMP
+/// port-unreachable is never reported as a socket error at all, so only a Windows run
+/// actually executes `onTransactionError()`.
 
 #include "TestHelpers.h"
 #include "net/Address.h"
@@ -20,6 +26,7 @@
 #include "portmap/PortMapTypes.h"
 #include "portmap/UdpMappingBackend.h"
 
+#include <QElapsedTimer>
 #include <QNetworkDatagram>
 #include <QSignalSpy>
 #include <QTest>
@@ -64,6 +71,11 @@ public:
     {
         return m_socket.bind(QHostAddress::LocalHost, kServerPort);
     }
+
+    /// Leave UDP/5351 unbound, so the host answers a request with an ICMP
+    /// port-unreachable instead of a reply. Must be paired with listen() again — the port
+    /// is bound once for the whole run, and the other cases need it.
+    void stopListening() { m_socket.close(); }
 
     /// Answer request #index from port 5351 — the backend discards anything from another
     /// source port, so replying from a scratch socket would silently prove nothing.
@@ -133,6 +145,11 @@ public:
         channel->open = true;
     }
 
+    /// Make decodeReply() retire the transaction it was handed, the way the real hooks can:
+    /// PcpBackend::decodeReply emits externalAddressLearned and mappingsInvalidated from
+    /// inside itself, and those reach PortMapper, which may answer with stop() or reprobe().
+    void retireFromDecodeReply() { m_retireFromDecode = true; }
+
     [[nodiscard]] static QByteArray answerFor(const QByteArray& request, uint16 externalPort)
     {
         QByteArray out(4, '\0');
@@ -167,6 +184,12 @@ protected:
                                    const Transaction& transaction, PortMapping& mapping,
                                    bool& ok, QString& error) override
     {
+        if (m_retireFromDecode) {
+            // Returning false sends the caller back around the read loop, which is where
+            // the transaction it is walking has just been freed underneath it.
+            shutdown();
+            return false;
+        }
         if (datagram.size() < 4 || datagram[0] != 'A'
             || datagram[1] != static_cast<uint8>(transaction.id)) {
             return false;   // not this transaction's reply
@@ -182,6 +205,9 @@ protected:
     {
         return !datagram.empty() && datagram[0] == 'V';
     }
+
+private:
+    bool m_retireFromDecode = false;
 };
 
 PortMapRequest makeRequest(uint16 port = 51999)
@@ -209,6 +235,10 @@ private slots:
     void shutdownWhileInFlightIsClean();
     void exhaustedLadderFailsTheTransaction();
     void releaseSendsTheDatagram();
+
+    void decodeReplyMayRetireItsOwnTransaction();
+    void gatewayRefusesEveryProbe();
+    void gatewayRefusesAMappingRequest();
 
 private:
     FakeGateway m_gateway;
@@ -352,6 +382,113 @@ void tst_UdpMappingBackend::releaseSendsTheDatagram()
     backend.releaseMapping(mapping);
 
     QTRY_COMPARE_WITH_TIMEOUT(m_gateway.deletes, 1, 3000);
+}
+
+// ---------------------------------------------------------------------------
+// Reentrancy — issue #5
+//
+// The read loop calls out to things that emit, and those emissions can come back and
+// destroy the transaction the loop is walking. This is the platform-independent half of
+// that bug: it needs no ICMP and no Windows, only a hook that retires the transaction.
+// ---------------------------------------------------------------------------
+
+void tst_UdpMappingBackend::decodeReplyMayRetireItsOwnTransaction()
+{
+    TestUdpBackend backend;
+    QSignalSpy spy(&backend, &PortMapBackend::mappingResult);
+
+    backend.useLoopbackGateway();
+    backend.retireFromDecodeReply();
+    backend.requestMapping(makeRequest(), 120);
+
+    QTRY_COMPARE_WITH_TIMEOUT(m_gateway.requests.size(), std::size_t(1), 5000);
+
+    // The reply reaches decodeReply(), which shuts the backend down and returns false. The
+    // loop used to carry on from there through a freed Transaction whose socket unique_ptr
+    // had already been release()d — a null dereference here, a use-after-free under ASan,
+    // and on Windows the crash that took the daemon down at every startup.
+    m_gateway.replyTo(0, TestUdpBackend::answerFor(m_gateway.requests[0].payload, 51999));
+    QTest::qWait(400);
+
+    // shutdown() promises silence afterwards (PortMapBackend.h), so the retired
+    // transaction must not report anything either.
+    QCOMPARE(spy.count(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Nothing listening on UDP/5351 — the reporter's router in issue #5
+//
+// Platform note, and it decides what a green run is worth: Qt only surfaces an ICMP
+// port-unreachable on a connected QUdpSocket on Windows, where WSAECONNRESET becomes
+// ConnectionRefusedError. On macOS the same condition produces hundreds of thousands of
+// readyRead notifications and zero errorOccurred, so these two cases fall through to
+// ladder exhaustion and never enter onTransactionError() at all. The Windows-only
+// assertion below is the part that proves the refusal path ran: a refusal answers in
+// milliseconds, while exhausting the ladder takes ~1.75 s (probe) or ~6 s (mapping).
+// ---------------------------------------------------------------------------
+
+void tst_UdpMappingBackend::gatewayRefusesEveryProbe()
+{
+    m_gateway.stopListening();
+
+    TestUdpBackend backend;
+    QSignalSpy spy(&backend, &PortMapBackend::probeFinished);
+    backend.useLoopbackGateway();
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    backend.probe(3000);
+
+    // Exactly one terminal signal, whichever path got here: silence deadlocks
+    // PortMapper's state machine (PortMapBackend.h).
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QVERIFY(!spy.at(0).at(0).toBool());
+    QVERIFY(!spy.at(0).at(1).toString().isEmpty());
+    qInfo() << "probe gave up after" << elapsed.elapsed() << "ms:"
+            << spy.at(0).at(1).toString();
+
+#ifdef Q_OS_WIN
+    QVERIFY2(elapsed.elapsed() < 1000,
+             "the probe ladder ran to exhaustion, so onTransactionError() never fired — "
+             "this case proves nothing about issue #5 on this host");
+#endif
+
+    backend.shutdown();
+    QTest::qWait(200);
+    QCOMPARE(spy.count(), 1);
+
+    QVERIFY(m_gateway.listen());
+}
+
+void tst_UdpMappingBackend::gatewayRefusesAMappingRequest()
+{
+    m_gateway.stopListening();
+
+    TestUdpBackend backend;
+    QSignalSpy spy(&backend, &PortMapBackend::mappingResult);
+    backend.useLoopbackGateway();
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    backend.requestMapping(makeRequest(), 120);
+
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QVERIFY(!spy.at(0).at(1).toBool());
+    QVERIFY(!spy.at(0).at(2).toString().isEmpty());
+    qInfo() << "mapping failed after" << elapsed.elapsed() << "ms:"
+            << spy.at(0).at(2).toString();
+
+#ifdef Q_OS_WIN
+    QVERIFY2(elapsed.elapsed() < 2000,
+             "the request ladder ran to exhaustion, so onTransactionError() never fired — "
+             "this case proves nothing about issue #5 on this host");
+#endif
+
+    backend.shutdown();
+    QTest::qWait(200);
+    QCOMPARE(spy.count(), 1);
+
+    QVERIFY(m_gateway.listen());
 }
 
 QTEST_MAIN(tst_UdpMappingBackend)

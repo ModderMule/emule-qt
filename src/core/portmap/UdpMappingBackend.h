@@ -28,6 +28,16 @@
 ///  * Discovery uses a short bounded ladder, not the RFC schedules. RFC 6886
 ///    takes ~128 s to give up and RFC 6887 with MRC=0 retries forever; neither
 ///    is usable while a client is waiting to come online.
+///
+/// One invariant runs through the whole file: **no Transaction* or Transaction& may be
+/// held across a call that can emit.** Several of them can — QUdpSocket::write() and
+/// receiveDatagram() report a queued ICMP port-unreachable by emitting errorOccurred from
+/// inside the call, and the decodeReply()/inspectProbeReply() hooks emit on their own
+/// behalf — and onTransactionError() answers by erasing the transaction. Transactions are
+/// therefore always re-resolved through findTransaction(id), never carried over such a
+/// call. Getting this wrong is not a theoretical risk: it took the daemon down on Windows
+/// at every startup behind a router with nothing on UDP/5351 (issue #5), while staying
+/// completely invisible on macOS, which never raises the error in the first place.
 
 #include "net/DefaultGateway.h"
 #include "portmap/PortMapBackend.h"

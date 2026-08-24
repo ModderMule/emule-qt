@@ -18,8 +18,11 @@ using namespace eMule;
 
 namespace {
 
-/// A scriptable PortMapBackend. Replies asynchronously (via a zero-timer) so the
-/// real queued-signal ordering is exercised rather than a synchronous shortcut.
+/// A scriptable PortMapBackend. Replies asynchronously (via a zero-timer) by default, so
+/// the real queued-signal ordering is exercised rather than a synchronous shortcut.
+/// setRepliesSynchronously() switches to answering inline — not a shortcut either, but the
+/// other thing real backends do; see the note on
+/// race_synchronousFailureDoesNotCorruptTheRace().
 class FakeBackend : public PortMapBackend {
     Q_OBJECT
 
@@ -44,7 +47,7 @@ public:
     void requestMapping(const PortMapRequest& request, uint32 lifetimeSecs) override
     {
         ++mapCalls;
-        QTimer::singleShot(0, this, [this, request, lifetimeSecs] {
+        auto reply = [this, request, lifetimeSecs] {
             PortMapping mapping;
             mapping.request = request;
             mapping.method = m_method;
@@ -60,7 +63,15 @@ public:
             if (!m_externalAddress.isNull())
                 emit externalAddressLearned(m_externalAddress);
             emit mappingResult(mapping, true, QString());
-        });
+        };
+        // Synchronous is not a shortcut, it is the other real case: UdpMappingBackend
+        // answers inline for "no gateway for this family", "could not encode request" and
+        // "could not open a socket", which lands mappingResult back in PortMapper while
+        // tryNextCandidate() is still issuing this candidate's requests.
+        if (m_repliesSynchronously)
+            reply();
+        else
+            QTimer::singleShot(0, this, reply);
     }
 
     void releaseMapping(const PortMapping& mapping) override
@@ -77,6 +88,7 @@ public:
     void setExternalAddress(const Address& address) { m_externalAddress = address; }
     void setGrantedLifetime(uint32 secs) { m_grantedLifetime = secs; }
     void setSupportsIPv6(bool value) { m_supportsIPv6 = value; }
+    void setRepliesSynchronously(bool value) { m_repliesSynchronously = value; }
 
     int mapCalls = 0;
     int shutdownCalls = 0;
@@ -87,6 +99,7 @@ private:
     bool    m_available = true;
     bool    m_failMappings = false;
     bool    m_supportsIPv6 = false;
+    bool    m_repliesSynchronously = false;
     int     m_portOffset = 0;
     uint32  m_grantedLifetime = 0;
     Address m_externalAddress;
@@ -128,6 +141,8 @@ private slots:
     void race_noBackendAvailableReportsNotMapped();
     void race_allMappingsFailReportsFailed();
     void race_losingBackendMappingsAreReleased();
+    void race_synchronousGrantWinsCleanly();
+    void race_synchronousFailureDoesNotCorruptTheRace();
 
     void status_portMismatchIsDegradedNotMapped();
     void status_cgnatExternalAddressIsDegraded();
@@ -313,6 +328,64 @@ void tst_PortMapper::race_losingBackendMappingsAreReleased()
     QCOMPARE(mapper.activeMethod(), PortMapMethod::UPnP);
     // The loser's mappings must not be left behind on the router.
     QCOMPARE(pcpRaw->released.size(), std::size_t(2));
+}
+
+// ---------------------------------------------------------------------------
+// A backend that answers inline, from within tryNextCandidate()'s request loop
+//
+// UdpMappingBackend does exactly this for "no gateway for this family", "could not encode
+// request" and "could not open a socket", so mappingResult can arrive while the loop is
+// still issuing requests for the same candidate. Advancing the race from in there resets
+// m_trial* underneath that loop; both cases below drive it and assert the bookkeeping
+// survives. No settle() before the assertions in the all-synchronous case on purpose —
+// the race must already be over by the time start() returns.
+// ---------------------------------------------------------------------------
+
+void tst_PortMapper::race_synchronousGrantWinsCleanly()
+{
+    PortMapper mapper;
+    auto pcp = std::make_unique<FakeBackend>(PortMapMethod::Pcp);
+    auto* pcpRaw = pcp.get();
+    pcp->setRepliesSynchronously(true);
+    pcp->setExternalAddress(Address::fromString(QString::fromLatin1(kPublicIp)));
+    mapper.addBackendForTest(std::move(pcp));
+    mapper.setDesiredMappings(defaultDesired());
+    mapper.start();
+    settle(mapper);   // probe() is still asynchronous, so the race needs one turn
+
+    QCOMPARE(mapper.status(), PortMapStatus::Mapped);
+    QCOMPARE(mapper.activeMethod(), PortMapMethod::Pcp);
+    QCOMPARE(mapper.mappings().size(), std::size_t(2));
+    // One request per desired mapping, not a second round from a reset mid-loop.
+    QCOMPARE(pcpRaw->mapCalls, 2);
+    QCOMPARE(mapper.externalPort(PortMapPurpose::Ed2kTcp, PortMapProtocol::Tcp), uint16(4662));
+}
+
+void tst_PortMapper::race_synchronousFailureDoesNotCorruptTheRace()
+{
+    PortMapper mapper;
+    auto pcp = std::make_unique<FakeBackend>(PortMapMethod::Pcp);
+    auto upnp = std::make_unique<FakeBackend>(PortMapMethod::UPnP);
+    auto* pcpRaw = pcp.get();
+    auto* upnpRaw = upnp.get();
+    // PCP is tried first (lower ordinal) and refuses every request inline; UPnP then has
+    // to win from a trial state that the nested evaluateTrial() must not have mangled.
+    pcp->setRepliesSynchronously(true);
+    pcp->setFailMappings(true);
+    upnp->setExternalAddress(Address::fromString(QString::fromLatin1(kPublicIp)));
+    mapper.addBackendForTest(std::move(pcp));
+    mapper.addBackendForTest(std::move(upnp));
+    mapper.setDesiredMappings(defaultDesired());
+    mapper.start();
+    settle(mapper);
+
+    QCOMPARE(mapper.status(), PortMapStatus::Mapped);
+    QCOMPARE(mapper.activeMethod(), PortMapMethod::UPnP);
+    QCOMPARE(mapper.mappings().size(), std::size_t(2));
+    QCOMPARE(pcpRaw->mapCalls, 2);
+    QCOMPARE(upnpRaw->mapCalls, 2);
+    // Nothing was granted by PCP, so there is nothing of its to release.
+    QCOMPARE(pcpRaw->released.size(), std::size_t(0));
 }
 
 // ---------------------------------------------------------------------------
