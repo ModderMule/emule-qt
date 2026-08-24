@@ -93,7 +93,7 @@ jobs:
 
       - name: Bundle
         shell: pwsh
-        run: scripts\bundle-win.bat "$env:QT_ROOT_DIR" Release --no-build
+        run: scripts\bundle-win.ps1 -QtDir "$env:QT_ROOT_DIR" -Config Release -NoBuild
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

@@ -16,6 +16,21 @@ fi
 # arguments and the first one becomes its build directory ("cmake -B --tab").
 scripts/build.sh
 
+# Seed the config directory on its first run.  AppConfig::seedBundledData()
+# only reaches data/config through its EMULE_DEV_BUILD candidate, and that is
+# Debug-only (cmake/CompilerSettings.cmake) while build.sh always builds
+# Release -- so without this a fresh checkout starts with no server.met and no
+# Kad bootstrap nodes.  All-or-nothing on the directory: an existing config dir
+# is left alone, preferences.yml and uistate.yml included.
+if [ "$(uname -s)" = "Darwin" ]; then
+    CONFIG_DIR="$HOME/eMuleQt/Config"
+    if [ ! -d "$CONFIG_DIR" ]; then
+        mkdir -p "$CONFIG_DIR"
+        cp -R data/config/. "$CONFIG_DIR/"
+        echo "Seeded config from data/config -> $CONFIG_DIR"
+    fi
+fi
+
 # Kill any leftover daemon from a previous run
 pkill -f emulecored 2>/dev/null || true
 sleep 0.5

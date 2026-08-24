@@ -3,10 +3,12 @@
 # ---------------------------------------------------------------------------
 build/
 build2/
+build-vs/
 build_test_check/
 bin/
 cmake-build-*/
 out/
+stage/
 *.o
 *.obj
 *.a
@@ -133,4 +135,4 @@ docker/httpcache/nodes.log
 
 # Dev automation workspace
 dev/
-
+.mcp.json

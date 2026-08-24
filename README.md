@@ -71,7 +71,7 @@ Optionally run the daemon standalone for headless/server use — the GUI can con
 build/emulecored
 ```
 
-To create a distributable app bundle, use the platform-specific scripts: `scripts/bundle-macos.sh`, `scripts/bundle-linux.sh`, or `scripts/bundle-win.bat`.
+To create a distributable app bundle, use the platform-specific scripts: `scripts/bundle-macos.sh`, `scripts/bundle-linux.sh`, or `scripts/bundle-win.ps1`.
 
 ## Architecture
 
