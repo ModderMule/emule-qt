@@ -171,7 +171,7 @@ jobs:
 
       # -RequireVcpkg: without it a triplet the bundler cannot resolve only
       # produced a note, and the job stayed green while shipping a zip with no
-      # zlib1.dll.
+      # zlib (z.dll) and no OpenSSL.
       - name: Bundle
         shell: pwsh
         run: scripts\bundle-win.ps1 -QtDir "$env:QT_ROOT_DIR" -Config Release -NoBuild -RequireVcpkg
@@ -194,32 +194,66 @@ jobs:
           Get-ChildItem $app -Recurse -Filter *.dll |
             ForEach-Object { $present[$_.Name.ToLower()] = $true }
 
-          # Named floor: these come from vcpkg, and nothing else in the pipeline
-          # notices if they silently vanish.
-          foreach ($n in @('zlib1.dll', 'libcrypto-3-x64.dll', 'libssl-3-x64.dll')) {
-            if (-not $present.ContainsKey($n)) { throw "Bundle is missing $n" }
+          # 1. Every DLL vcpkg installed must have reached the zip.  This is the
+          # check that catches the failure this whole guard exists for -- a
+          # triplet or layout change that makes bundle-win.ps1 copy nothing.
+          #
+          # Derived from the install tree rather than a hardcoded name list:
+          # dependency DLL names drift (zlib 1.3.2 renamed zlib1.dll to z.dll),
+          # and a stale hardcoded name fails a perfectly good bundle while a
+          # genuinely missing DLL goes unnoticed.
+          $vcpkgBin = Join-Path $PWD "build\vcpkg_installed\$env:VCPKG_TARGET_TRIPLET\bin"
+          if (-not (Test-Path $vcpkgBin)) { throw "vcpkg install tree not found at $vcpkgBin" }
+          $vcpkgDlls = @(Get-ChildItem $vcpkgBin -Filter *.dll | ForEach-Object { $_.Name })
+          if ($vcpkgDlls.Count -eq 0) {
+            throw "No DLLs under $vcpkgBin -- the dependency install did not produce a shared build."
           }
+          $absent = @($vcpkgDlls | Where-Object { -not $present.ContainsKey($_.ToLower()) })
+          if ($absent) { throw "Bundle is missing vcpkg DLL(s): $($absent -join ', ')" }
+          Write-Host "OK: all $($vcpkgDlls.Count) vcpkg DLL(s) present in the bundle."
 
-          # Import closure: every DLL imported by anything in the bundle must be in
-          # the bundle or in System32.  Catches second-level misses such as
-          # archive.dll needing liblzma.dll.
-          $sys = Join-Path $env:SystemRoot 'System32'
-          $missing = @()
-          foreach ($img in Get-ChildItem $app -Recurse -Include *.exe, *.dll) {
-            $deps = & dumpbin /nologo /dependents $img.FullName |
-              Select-String -Pattern '^\s{4}(\S+\.dll)\s*$' |
-              ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
+          # 2. Import closure.  Fail only on imports that were *supposed* to be
+          # bundled -- anything vcpkg built, or a Qt module.  Missing OS DLLs are
+          # reported but not fatal on purpose: this runner is Windows Server and
+          # users are on desktop Windows, so System32 here says nothing about
+          # System32 there (Media Foundation, uiautomationcore and d3d12 all
+          # differ between the two).  Failing on those would red-flag a good
+          # bundle over a runner-image detail.
+          $mustBundle = @{}
+          $vcpkgDlls | ForEach-Object { $mustBundle[$_.ToLower()] = $true }
+
+          $broken = @()
+          $external = @{}
+          $images = Get-ChildItem $app -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.dll' }
+          foreach ($img in $images) {
+            $deps = @()
+            $inSection = $false
+            foreach ($line in (& dumpbin /nologo /dependents $img.FullName)) {
+              if ($line -match 'Image has the following dependencies:') { $inSection = $true; continue }
+              if (-not $inSection) { continue }
+              # Stop before the delay-load section: a delay-load import is
+              # optional at load time and windeployqt drops some deliberately
+              # (--no-opengl-sw, --no-system-d3d-compiler).
+              if ($line -match 'delay load dependencies:' -or $line -match '^\s*Summary') { break }
+              if ($line -match '^\s{4}(\S+\.dll)\s*$') { $deps += $Matches[1].ToLower() }
+            }
             foreach ($d in $deps) {
               if ($present.ContainsKey($d)) { continue }
               if ($d -like 'api-ms-win-*' -or $d -like 'ext-ms-*') { continue }
-              if (Test-Path (Join-Path $sys $d)) { continue }
-              $missing += "$($img.Name) -> $d"
+              if ($mustBundle.ContainsKey($d) -or $d -like 'qt6*') {
+                $broken += "$($img.Name) -> $d"
+                continue
+              }
+              $external[$d] = $true
             }
           }
-          if ($missing) {
-            throw "Unresolved imports in bundle:`n  $($missing -join "`n  ")"
+          if ($broken) {
+            throw "Bundled images import DLLs missing from the bundle:`n  $($broken -join "`n  ")"
           }
-          Write-Host "OK: $($present.Count) DLL(s), all imports resolved."
+
+          Write-Host "OK: $($present.Count) DLL(s) in bundle, $($images.Count) images checked."
+          Write-Host "Resolved from the OS at runtime ($($external.Count)): $((($external.Keys | Sort-Object) -join ', '))"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

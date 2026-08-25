@@ -28,7 +28,7 @@ param(
     [switch]$NoBuild,
     [string]$BuildDir,
     # Treat missing vcpkg DLLs as an error rather than a note.  CI passes this: a
-    # bundle without zlib1.dll / libcrypto-3-x64.dll is a broken release, and the
+    # bundle without z.dll / libcrypto-3-x64.dll is a broken release, and the
     # artifact check downstream only verifies that a zip exists.
     [switch]$RequireVcpkg
 )
@@ -208,7 +208,7 @@ else {
 
 # $vcpkgBin was resolved above, for the OpenSSL search.
 if (-not $vcpkgBin) {
-    $msg = 'No vcpkg install root found -- zlib1.dll, libcrypto-3-x64.dll, ' +
+    $msg = 'No vcpkg install root found -- z.dll, libcrypto-3-x64.dll, ' +
            'archive.dll and friends will be MISSING from the zip.'
     if ($RequireVcpkg) { throw $msg }
     Write-Warning $msg

@@ -439,7 +439,7 @@ function Resolve-SevenZip {
 .DESCRIPTION
     The triplet used to be hardcoded here.  That made a triplet change a silent
     failure: this returned $null, bundle-win.ps1 printed a note and carried on, and
-    the zip shipped without zlib1.dll while the job stayed green.  Pass -RequireVcpkg
+    the zip shipped without zlib (z.dll) while the job stayed green.  Pass -RequireVcpkg
     to bundle-win.ps1 to turn that into an error.
 #>
 function Resolve-VcpkgBinDir {
