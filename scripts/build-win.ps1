@@ -502,6 +502,58 @@ function Resolve-VcpkgBinDir {
 
 <#
 .SYNOPSIS
+    Drop CMakeCache.txt entries that point at vcpkg files which no longer exist.
+
+.DESCRIPTION
+    vcpkg upgrades a port in place whenever the baseline moves, and a port is
+    free to rename its libraries when it does: zlib 1.3.1 shipped zlib.lib and
+    zlibd.lib, zlib 1.3.2 ships z.lib and zd.lib.  find_library() caches its
+    result, so the reconfigure that follows the upgrade keeps handing the old
+    name to the generator and ninja stops with
+
+        error: 'vcpkg_installed/.../lib/zlib.lib', needed by 'emulecored.exe',
+        missing and no known rule to make it
+
+    Deleting just the dead FILEPATH/PATH entries un-caches those lookups while
+    leaving the rest of the cache -- the pinned compiler above all -- intact, so
+    the next configure re-finds them under their new names without paying for a
+    from-scratch dependency build.
+
+    Returns $true when it rewrote the cache, so the caller can force a full
+    configure instead of leaving the re-lookup to ninja's own regeneration rule.
+#>
+function Clear-StaleVcpkgCacheEntries {
+    param([Parameter(Mandatory)][string]$CachePath)
+
+    if (-not (Test-Path $CachePath)) { return $false }
+
+    $stale = @()
+    $kept = foreach ($line in Get-Content -LiteralPath $CachePath) {
+        # <NAME>:<FILEPATH|PATH>=<value>.  Internal entries (FIND_PACKAGE_MESSAGE_
+        # DETAILS_*) are left alone: CMake rewrites them from the found values.
+        # Both captures are copied out before the next -match runs: an operator
+        # that matches overwrites $Matches, so reading it afterwards yields the
+        # groups of the wrong pattern.
+        if ($line -notmatch '^([A-Za-z0-9_\-]+):(FILEPATH|PATH)=(.+)$') { $line; continue }
+        $name = $Matches[1]
+        $path = $Matches[3]
+
+        if ($path -like '*vcpkg_installed*' -and -not (Test-Path -LiteralPath $path)) {
+            $stale += $name
+            continue
+        }
+        $line
+    }
+
+    if (-not $stale) { return $false }
+
+    Write-Host "Dropping stale vcpkg cache entries: $($stale -join ', ')"
+    Set-Content -LiteralPath $CachePath -Value $kept
+    return $true
+}
+
+<#
+.SYNOPSIS
     Configure (only when needed) and build.
 
 .DESCRIPTION
@@ -574,6 +626,15 @@ function Invoke-EMuleBuild {
         Write-Host "Discarding incomplete CMake cache in: $BuildDir"
         Remove-Item -Force $cache
         Remove-Item -Recurse -Force (Join-Path $BuildDir 'CMakeFiles') -ErrorAction SilentlyContinue
+    }
+    else {
+        # A cache that survives is not automatically a cache that still points at
+        # files on disk: ninja re-runs cmake by itself whenever a glob or a
+        # CMakeLists changes, and that reconfigure re-runs vcpkg install, which
+        # can rename a dependency's libraries under a cache that still holds the
+        # old names.  Un-cache the dead lookups before configure gets a chance to
+        # reuse them.
+        if (Clear-StaleVcpkgCacheEntries -CachePath $cache) { $configured = $false }
     }
 
     if (-not $configured) {
