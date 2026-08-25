@@ -12,8 +12,8 @@ actually speaks.
 
 ## How the winner is chosen
 
-All enabled backends probe concurrently, bounded by a 3 s deadline. Candidates
-are then tried in order and graded on what they actually achieved:
+All enabled backends probe concurrently. The round closes after a 3 s grace, and
+candidates are then tried in order and graded on what they actually achieved:
 
 1. **Exact port match wins, ahead of protocol preference.** eD2K advertises
    `thePrefs.port()` and has no external-port tag, so a grant on a *different*
@@ -23,6 +23,27 @@ are then tried in order and graded on what they actually achieved:
 
 The winner is remembered in `portMapMethod` and tried first next run. Losing
 backends' mappings are released so no duplicates are left on the router.
+
+### Why the round can stay open longer than 3 s
+
+The 3 s grace fits PCP and NAT-PMP, whose retransmit ladder gives up at ~1.75 s.
+UPnP does not fit it at all: miniupnpc waits out a **fixed 2 s SSDP collection
+window**, then fetches a description document **per SSDP responder** — printers,
+TVs and media servers answer the same M-SEARCH, and one that stalls costs its
+whole connect timeout — and only then issues the SOAP calls. Measured on an
+ordinary consumer LAN: 7.2 s, on a router that maps ports perfectly well.
+
+So the grace is not the budget. If it expires with **nothing available yet** and a
+backend still working, the round is extended once, to 15 s total; if something is
+already available the round closes on schedule and is not held up. A probe answer
+that arrives even later is still adopted, provided the round it missed ended with
+no mapping at all — the answer would be identical every round, so discarding it
+does not cost one mapping, it costs all of them.
+
+That last part is not hypothetical. Cutting the round off at 3 s was issue #5: a
+Windows 11 reporter whose router v0.2.0 had mapped got `no port-mapping protocol
+available on this network` from every re-probe of v0.3.0–v0.4.1, and a permanent
+LowID with it.
 
 ## Status values
 

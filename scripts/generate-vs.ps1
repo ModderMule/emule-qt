@@ -99,7 +99,7 @@ Write-Host "=== Generating $vsGenerator solution ==="
     "-DCMAKE_TOOLCHAIN_FILE=$toolchain" `
     '-DVCPKG_MANIFEST_MODE=ON' `
     "-DVCPKG_MANIFEST_DIR=$(Join-Path $projectDir 'src')" `
-    '-DVCPKG_TARGET_TRIPLET=x64-windows' `
+    "-DVCPKG_TARGET_TRIPLET=$(Resolve-VcpkgTriplet)" `
     @qtArgs
 if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed (exit $LASTEXITCODE)."

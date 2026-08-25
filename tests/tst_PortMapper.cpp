@@ -39,9 +39,19 @@ public:
         return family == PortMapFamily::IPv4 || m_supportsIPv6;
     }
 
-    void probe(int) override
+    void probe(int budgetMs) override
     {
+        probeBudgetMs = budgetMs;
+        ++probeCalls;
+        if (m_probeDeferred)
+            return;   // the test answers by hand via answerProbe()
         QTimer::singleShot(0, this, [this] { emit probeFinished(m_available, QString()); });
+    }
+
+    /// Answer a deferred probe. Models UPnP, whose discovery can outlast the round.
+    void answerProbe(bool available)
+    {
+        emit probeFinished(available, QStringLiteral("scripted"));
     }
 
     void requestMapping(const PortMapRequest& request, uint32 lifetimeSecs) override
@@ -89,8 +99,11 @@ public:
     void setGrantedLifetime(uint32 secs) { m_grantedLifetime = secs; }
     void setSupportsIPv6(bool value) { m_supportsIPv6 = value; }
     void setRepliesSynchronously(bool value) { m_repliesSynchronously = value; }
+    void setProbeDeferred(bool value) { m_probeDeferred = value; }
 
     int mapCalls = 0;
+    int probeCalls = 0;
+    int probeBudgetMs = 0;
     int shutdownCalls = 0;
     std::vector<PortMapPurpose> released;
 
@@ -100,6 +113,7 @@ private:
     bool    m_failMappings = false;
     bool    m_supportsIPv6 = false;
     bool    m_repliesSynchronously = false;
+    bool    m_probeDeferred = false;
     int     m_portOffset = 0;
     uint32  m_grantedLifetime = 0;
     Address m_externalAddress;
@@ -143,6 +157,9 @@ private slots:
     void race_losingBackendMappingsAreReleased();
     void race_synchronousGrantWinsCleanly();
     void race_synchronousFailureDoesNotCorruptTheRace();
+    void race_slowBackendKeepsTheRoundOpen();
+    void race_probeAnswerAfterTheRoundClosesIsStillUsed();
+    void race_lateProbeIsIgnoredOnceSomethingIsMapped();
 
     void status_portMismatchIsDegradedNotMapped();
     void status_cgnatExternalAddressIsDegraded();
@@ -386,6 +403,100 @@ void tst_PortMapper::race_synchronousFailureDoesNotCorruptTheRace()
     QCOMPARE(upnpRaw->mapCalls, 2);
     // Nothing was granted by PCP, so there is nothing of its to release.
     QCOMPARE(pcpRaw->released.size(), std::size_t(0));
+}
+
+// ---------------------------------------------------------------------------
+// Slow probes (issue #5)
+// ---------------------------------------------------------------------------
+
+void tst_PortMapper::race_slowBackendKeepsTheRoundOpen()
+{
+    // UPnP discovery is SSDP's fixed collection window plus one HTTP description
+    // fetch per SSDP responder plus the SOAP calls — 7.2 s measured on an ordinary
+    // consumer LAN. Closing the round on the fast backends' schedule declared such a
+    // router unmappable, and every re-probe repeated the verdict.
+    PortMapper mapper;
+    auto pcp = std::make_unique<FakeBackend>(PortMapMethod::Pcp, /*available=*/false);
+    auto upnp = std::make_unique<FakeBackend>(PortMapMethod::UPnP);
+    auto* upnpRaw = upnp.get();
+    upnp->setProbeDeferred(true);
+    upnp->setExternalAddress(Address::fromString(QString::fromLatin1(kPublicIp)));
+    mapper.addBackendForTest(std::move(pcp));
+    mapper.addBackendForTest(std::move(upnp));
+    mapper.setProbeTimeoutsForTest(/*graceMs=*/40, /*totalMs=*/4000);
+    mapper.setDesiredMappings(defaultDesired());
+    mapper.start();
+
+    // The whole budget is what a slow backend gets to work with, not the grace.
+    QCOMPARE(upnpRaw->probeBudgetMs, 4000);
+
+    // Past the grace with nothing available and UPnP still working: the round waits.
+    QTest::qWait(200);
+    QCOMPARE(mapper.status(), PortMapStatus::Probing);
+
+    upnpRaw->answerProbe(true);
+    settle(mapper);
+
+    QCOMPARE(mapper.status(), PortMapStatus::Mapped);
+    QCOMPARE(mapper.activeMethod(), PortMapMethod::UPnP);
+    QCOMPARE(mapper.mappings().size(), std::size_t(2));
+}
+
+void tst_PortMapper::race_probeAnswerAfterTheRoundClosesIsStillUsed()
+{
+    // Even the extended budget can be overrun. The answer is the same every round,
+    // so dropping it does not cost one mapping — it costs all of them.
+    PortMapper mapper;
+    auto upnp = std::make_unique<FakeBackend>(PortMapMethod::UPnP);
+    auto* upnpRaw = upnp.get();
+    upnp->setProbeDeferred(true);
+    upnp->setExternalAddress(Address::fromString(QString::fromLatin1(kPublicIp)));
+    mapper.addBackendForTest(std::move(upnp));
+    mapper.setProbeTimeoutsForTest(/*graceMs=*/20, /*totalMs=*/40);
+    mapper.setDesiredMappings(defaultDesired());
+    mapper.start();
+
+    QTRY_COMPARE(mapper.status(), PortMapStatus::NotMapped);
+
+    upnpRaw->answerProbe(true);
+    settle(mapper);
+
+    QCOMPARE(mapper.status(), PortMapStatus::Mapped);
+    QCOMPARE(mapper.activeMethod(), PortMapMethod::UPnP);
+    QCOMPARE(mapper.mappings().size(), std::size_t(2));
+
+    // The failed round armed the re-probe backoff; adopting the late answer has to
+    // disarm it, or it would re-race and tear the fresh mapping down.
+    const int probesAfterAdoption = upnpRaw->probeCalls;
+    QTest::qWait(150);
+    QCOMPARE(upnpRaw->probeCalls, probesAfterAdoption);
+    QCOMPARE(mapper.status(), PortMapStatus::Mapped);
+}
+
+void tst_PortMapper::race_lateProbeIsIgnoredOnceSomethingIsMapped()
+{
+    PortMapper mapper;
+    auto pcp = std::make_unique<FakeBackend>(PortMapMethod::Pcp);
+    auto upnp = std::make_unique<FakeBackend>(PortMapMethod::UPnP);
+    auto* upnpRaw = upnp.get();
+    pcp->setExternalAddress(Address::fromString(QString::fromLatin1(kPublicIp)));
+    upnp->setProbeDeferred(true);
+    mapper.addBackendForTest(std::move(pcp));
+    mapper.addBackendForTest(std::move(upnp));
+    mapper.setProbeTimeoutsForTest(/*graceMs=*/40, /*totalMs=*/4000);
+    mapper.setDesiredMappings(defaultDesired());
+    mapper.start();
+
+    // PCP answered available, so the round is not held open for UPnP.
+    settle(mapper);
+    QCOMPARE(mapper.status(), PortMapStatus::Mapped);
+    QCOMPARE(mapper.activeMethod(), PortMapMethod::Pcp);
+
+    upnpRaw->answerProbe(true);
+    QTest::qWait(50);
+
+    QCOMPARE(mapper.activeMethod(), PortMapMethod::Pcp);
+    QCOMPARE(upnpRaw->mapCalls, 0);
 }
 
 // ---------------------------------------------------------------------------

@@ -37,7 +37,12 @@ bool UPnPBackend::supports(PortMapFamily family) const
 
 void UPnPBackend::probe(int timeoutMs)
 {
-    Q_UNUSED(timeoutMs)   // miniupnpc's SSDP timeout is fixed inside the worker
+    // The SSDP collection window is fixed inside the worker — M-SEARCH carries MX,
+    // so shortening it below the advertised 2 s just loses devices. @p timeoutMs is
+    // the caller's whole budget, which the description fetches and SOAP calls after
+    // SSDP have to fit into; it is logged so a report that ends in "no port-mapping
+    // protocol available" shows whether discovery was still running.
+    logDebug(QStringLiteral("UPnP: starting device discovery (budget %1 ms)").arg(timeoutMs));
 
     ensureThread();
     m_probing = true;

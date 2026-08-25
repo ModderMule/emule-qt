@@ -26,7 +26,11 @@ param(
     [string]$QtDir,
     [ValidateSet('Release', 'Debug')][string]$Config = 'Release',
     [switch]$NoBuild,
-    [string]$BuildDir
+    [string]$BuildDir,
+    # Treat missing vcpkg DLLs as an error rather than a note.  CI passes this: a
+    # bundle without zlib1.dll / libcrypto-3-x64.dll is a broken release, and the
+    # artifact check downstream only verifies that a zip exists.
+    [switch]$RequireVcpkg
 )
 
 $ErrorActionPreference = 'Stop'
@@ -155,14 +159,20 @@ if ($LASTEXITCODE -ne 0) {
 
 # Qt's network module needs OpenSSL at runtime.  windeployqt does not always
 # copy them, so we look in the Qt bin directory and in the system-wide install.
-$opensslSources = @(
+#
+# vcpkg goes first: that is the OpenSSL the build actually linked against, and the
+# loop below stops at the first hit.  With a system OpenSSL first we would stage
+# one build's DLLs against another build's import libraries and rely on the later
+# blanket vcpkg copy to overwrite them.
+$vcpkgBin = Resolve-VcpkgBinDir -Config $Config -BuildDir $BuildDir -ProjectDir $projectDir
+
+$opensslSources = @()
+if ($vcpkgBin) { $opensslSources += $vcpkgBin }
+$opensslSources += @(
     (Join-Path $qt 'bin')
     'C:\Program Files\OpenSSL-Win64\bin'
     'C:\OpenSSL-Win64\bin'
 )
-if ($env:VCPKG_INSTALLATION_ROOT) {
-    $opensslSources += (Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed\x64-windows\bin')
-}
 foreach ($opensslDir in $opensslSources) {
     if (Test-Path (Join-Path $stageDir 'libssl-3-x64.dll')) { break }
     if (-not (Test-Path (Join-Path $opensslDir 'libssl-3-x64.dll'))) { continue }
@@ -194,18 +204,26 @@ else {
     Write-Warning '  Checked: VCToolsRedistDir, VSINSTALLDIR, installed Visual Studio paths.'
 }
 
-# -- Copy vcpkg runtime DLLs if present --------------------------------------
+# -- Copy vcpkg runtime DLLs -------------------------------------------------
 
-$vcpkgBin = Resolve-VcpkgBinDir -Config $Config -BuildDir $BuildDir -ProjectDir $projectDir
-if ($vcpkgBin) {
-    Write-Host ''
-    Write-Host "=== Copying vcpkg DLLs from $vcpkgBin ==="
-    Get-ChildItem -Path $vcpkgBin -Filter '*.dll' -ErrorAction SilentlyContinue |
-        Copy-Item -Destination $stageDir -Force -ErrorAction SilentlyContinue
-    Write-Host '  vcpkg DLLs copied'
+# $vcpkgBin was resolved above, for the OpenSSL search.
+if (-not $vcpkgBin) {
+    $msg = 'No vcpkg install root found -- zlib1.dll, libcrypto-3-x64.dll, ' +
+           'archive.dll and friends will be MISSING from the zip.'
+    if ($RequireVcpkg) { throw $msg }
+    Write-Warning $msg
 }
 else {
-    Write-Host 'Note: No vcpkg_installed directory found -- skipping vcpkg DLLs.'
+    Write-Host ''
+    Write-Host "=== Copying vcpkg DLLs from $vcpkgBin ==="
+    $vcpkgDlls = @(Get-ChildItem -Path $vcpkgBin -Filter '*.dll' -ErrorAction SilentlyContinue)
+    if ($RequireVcpkg -and $vcpkgDlls.Count -eq 0) {
+        throw "vcpkg bin directory '$vcpkgBin' contains no DLLs."
+    }
+    # No -ErrorAction SilentlyContinue on the copy: $ErrorActionPreference is Stop,
+    # and a copy that fails must not be reported as a success.
+    $vcpkgDlls | Copy-Item -Destination $stageDir -Force
+    Write-Host "  $($vcpkgDlls.Count) vcpkg DLL(s) copied"
 }
 
 # -- Create zip --------------------------------------------------------------

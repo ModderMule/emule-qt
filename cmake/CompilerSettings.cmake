@@ -56,7 +56,14 @@ option(EMULE_RELEASE_DEBUG_INFO "Include debug symbols in Release builds (for cr
 
 if(EMULE_RELEASE_DEBUG_INFO)
     if(MSVC)
-        add_compile_options("$<$<CONFIG:Release>:/Zi>")
+        # /Z7 (debug info embedded in each .obj) rather than /Zi (a separate
+        # compiler-side PDB): ccache cannot cache /Zi output, which made every CI
+        # compile uncacheable — "Cacheable calls: 0 / 522 (0.00%)".  The final
+        # program database is produced by the linker from /DEBUG below either way,
+        # so crash-dump quality is unchanged; /Z7 only costs larger .obj files, and
+        # it drops the mspdbsrv.exe serialisation that /Zi needs for parallel
+        # compiles.
+        add_compile_options("$<$<CONFIG:Release>:/Z7>")
         add_link_options("$<$<CONFIG:Release>:/DEBUG>" "$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         add_compile_options("$<$<CONFIG:Release>:-g>")

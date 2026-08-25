@@ -11,6 +11,13 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Release-only triplet: identical to x64-windows (dynamic CRT, dynamic library
+  # linkage, same DLL names) except that it skips the debug variant of every
+  # dependency.  That variant alone cost 3:21 of an 8:56 dependency step and this
+  # job never links it.  Also read by scripts\build-win.ps1's Resolve-VcpkgTriplet,
+  # so bundling looks under vcpkg_installed\x64-windows-release\ instead.
+  VCPKG_TARGET_TRIPLET: x64-windows-release
+  VCPKG_DISABLE_METRICS: '1'
 
 jobs:
   build:
@@ -52,11 +59,77 @@ jobs:
             Get-ChildItem "$root\lib\cmake" -Directory | Select-Object Name
           }
 
+      # vcpkg's own binary cache lives on the runner's system drive and dies with
+      # the VM, so without this every run rebuilt OpenSSL from source (8.6 min).
+      # Restore/save are split rather than using actions/cache: the single-step
+      # form does not save when a later step fails (save-always is deprecated in
+      # v4.2), and losing a 5-8 minute dependency build to an unrelated compile
+      # error is exactly the case worth protecting.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          # Unique per run on purpose.  GitHub caches are immutable: a key that
+          # already exists is never overwritten, so a fixed key would freeze
+          # whatever the first run happened to populate -- including a partial
+          # population from a run that died half way through.
+          key: vcpkg-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('src/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # vcpkg's store is content-addressed by package ABI hash, so restoring a
+          # stale entry is harmless -- it simply misses and rebuilds.  Restore as
+          # broadly as possible.  The runner's vcpkg commit and the image version
+          # are deliberately NOT in the key: src\vcpkg.json pins builtin-baseline,
+          # so a vcpkg HEAD bump does not change any package's ABI hash, and
+          # keying on it would force a full rebuild for nothing.  A genuine MSVC
+          # bump changes the ABI hash and vcpkg rebuilds on its own.
+          restore-keys: |
+            vcpkg-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('src/vcpkg.json') }}-
+            vcpkg-${{ env.VCPKG_TARGET_TRIPLET }}-
+
       - name: Install dependencies (vcpkg)
         shell: pwsh
-        run: vcpkg install zlib openssl --triplet x64-windows
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "vcpkg registry HEAD: $(git -C $env:VCPKG_INSTALLATION_ROOT rev-parse --short HEAD)"
 
-      # let Ninja use the MSVC compiler
+          # src\vcpkg.json pins builtin-baseline; the runner's clone must contain
+          # that commit or version resolution fails with a confusing message.
+          $baseline = (Get-Content src\vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+          git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e "$baseline^{commit}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Baseline $baseline not in the runner's vcpkg clone -- fetching."
+            git -C $env:VCPKG_INSTALLATION_ROOT fetch --depth=1 origin $baseline
+            if ($LASTEXITCODE -ne 0) { throw "Could not fetch vcpkg baseline $baseline" }
+          }
+
+          # Manifest mode, so libarchive/yaml-cpp/miniupnpc come from vcpkg rather
+          # than being cloned and rebuilt by FetchContent at configure time.  The
+          # manifest lives in src\, not the CMake source root, hence
+          # --x-manifest-root.  --x-install-root must match the VCPKG_INSTALLED_DIR
+          # passed to cmake below and the path Resolve-VcpkgBinDir searches.
+          #
+          # Kept as its own step rather than letting the toolchain auto-install
+          # during project(): that would fold the whole dependency build into the
+          # Configure step's wall clock and surface port failures as CMake errors.
+          vcpkg install `
+            --x-manifest-root=src `
+            --x-install-root="$PWD\build\vcpkg_installed" `
+            --triplet $env:VCPKG_TARGET_TRIPLET `
+            --clean-after-build
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed ($LASTEXITCODE)" }
+
+          Get-ChildItem "$PWD\build\vcpkg_installed\$env:VCPKG_TARGET_TRIPLET\bin" -Filter *.dll |
+            ForEach-Object { Write-Host "  installed: $($_.Name)" }
+
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: vcpkg-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('src/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # let Ninja use the MSVC compiler (also puts dumpbin on PATH for the
+      # bundle verification step below)
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
@@ -71,6 +144,11 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_MANIFEST_MODE=ON `
+            -DVCPKG_MANIFEST_DIR="$PWD\src" `
+            -DVCPKG_MANIFEST_INSTALL=OFF `
+            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TARGET_TRIPLET" `
+            -DVCPKG_INSTALLED_DIR="$PWD\build\vcpkg_installed" `
             -DCMAKE_C_COMPILER_LAUNCHER=ccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
             -DEMULE_BUILD_TESTS=OFF
@@ -91,9 +169,57 @@ jobs:
           $v = (Select-String -Path CMakeLists.txt -Pattern '^\s+VERSION\s+(\d+\.\d+\.\d+)').Matches[0].Groups[1].Value
           echo "APP_VERSION=$v" >> $env:GITHUB_ENV
 
+      # -RequireVcpkg: without it a triplet the bundler cannot resolve only
+      # produced a note, and the job stayed green while shipping a zip with no
+      # zlib1.dll.
       - name: Bundle
         shell: pwsh
-        run: scripts\bundle-win.ps1 -QtDir "$env:QT_ROOT_DIR" -Config Release -NoBuild
+        run: scripts\bundle-win.ps1 -QtDir "$env:QT_ROOT_DIR" -Config Release -NoBuild -RequireVcpkg
+
+      # Validates the artifact rather than the process: the upload guard below
+      # only checks that a zip exists, not that it is loadable.
+      - name: Verify bundle is self-contained
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem build\eMuleQt-v*-win64.zip | Select-Object -First 1
+          if (-not $zip) { throw 'No zip produced.' }
+
+          $out = Join-Path $env:RUNNER_TEMP 'verify'
+          Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
+          Expand-Archive $zip.FullName $out
+          $app = Join-Path $out 'eMule'
+
+          $present = @{}
+          Get-ChildItem $app -Recurse -Filter *.dll |
+            ForEach-Object { $present[$_.Name.ToLower()] = $true }
+
+          # Named floor: these come from vcpkg, and nothing else in the pipeline
+          # notices if they silently vanish.
+          foreach ($n in @('zlib1.dll', 'libcrypto-3-x64.dll', 'libssl-3-x64.dll')) {
+            if (-not $present.ContainsKey($n)) { throw "Bundle is missing $n" }
+          }
+
+          # Import closure: every DLL imported by anything in the bundle must be in
+          # the bundle or in System32.  Catches second-level misses such as
+          # archive.dll needing liblzma.dll.
+          $sys = Join-Path $env:SystemRoot 'System32'
+          $missing = @()
+          foreach ($img in Get-ChildItem $app -Recurse -Include *.exe, *.dll) {
+            $deps = & dumpbin /nologo /dependents $img.FullName |
+              Select-String -Pattern '^\s{4}(\S+\.dll)\s*$' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
+            foreach ($d in $deps) {
+              if ($present.ContainsKey($d)) { continue }
+              if ($d -like 'api-ms-win-*' -or $d -like 'ext-ms-*') { continue }
+              if (Test-Path (Join-Path $sys $d)) { continue }
+              $missing += "$($img.Name) -> $d"
+            }
+          }
+          if ($missing) {
+            throw "Unresolved imports in bundle:`n  $($missing -join "`n  ")"
+          }
+          Write-Host "OK: $($present.Count) DLL(s), all imports resolved."
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -102,4 +228,19 @@ jobs:
           path: build/eMuleQt-v*-win64.zip
           # Default is 'warn', which would leave the job green with no artifact
           # if the bundle script produced nothing.
+          if-no-files-found: error
+
+      # A minidump binds to a PDB by GUID+age and every rebuild mints a new GUID,
+      # so a crash dump can only ever be symbolised against the PDB from that exact
+      # build.  These were previously discarded with the runner, which made
+      # EMULE_RELEASE_DEBUG_INFO pointless for released builds.
+      #
+      # Deliberately NOT named eMuleQt-v*: release.yml downloads that pattern and
+      # publishes everything it finds, and the symbols do not belong in the public
+      # release assets.
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v6
+        with:
+          name: debug-symbols-win64-v${{ env.APP_VERSION }}
+          path: build/**/*.pdb
           if-no-files-found: error

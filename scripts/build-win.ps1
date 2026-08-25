@@ -132,6 +132,31 @@ function Resolve-VcpkgToolchain {
 
 <#
 .SYNOPSIS
+    vcpkg triplet to build and to look for installed DLLs under.
+
+.DESCRIPTION
+    Local builds use x64-windows, which builds every dependency twice (debug and
+    release).  CI sets VCPKG_TARGET_TRIPLET=x64-windows-release, which skips the
+    debug half -- same dynamic CRT, same library linkage and same DLL names, but
+    there is no debug\ subtree under the install root.
+
+    Read from the environment rather than added as a script parameter: dot-sourcing
+    re-runs this file's param block in the caller's scope (see .NOTES at the top),
+    so a new parameter would have to be threaded through bundle-win.ps1 and
+    debug-gui.ps1, and a caller that left it unset would override the default with
+    an empty string.  VCPKG_TARGET_TRIPLET is also vcpkg's own variable name and is
+    what CI must export for `vcpkg install` and `cmake` anyway.
+#>
+function Resolve-VcpkgTriplet {
+    param([string]$Triplet)
+
+    if ($Triplet) { return $Triplet }
+    if ($env:VCPKG_TARGET_TRIPLET) { return $env:VCPKG_TARGET_TRIPLET }
+    return 'x64-windows'
+}
+
+<#
+.SYNOPSIS
     Clone and bootstrap vcpkg into <build>\vcpkg; returns its toolchain file.
 
 .DESCRIPTION
@@ -410,26 +435,63 @@ function Resolve-SevenZip {
 <#
 .SYNOPSIS
     Directory holding vcpkg's runtime DLLs for $Config, or $null.
+
+.DESCRIPTION
+    The triplet used to be hardcoded here.  That made a triplet change a silent
+    failure: this returned $null, bundle-win.ps1 printed a note and carried on, and
+    the zip shipped without zlib1.dll while the job stayed green.  Pass -RequireVcpkg
+    to bundle-win.ps1 to turn that into an error.
 #>
 function Resolve-VcpkgBinDir {
     param(
         [ValidateSet('Release', 'Debug')][string]$Config = 'Release',
         [string]$BuildDir = (Get-DefaultBuildDir),
-        [string]$ProjectDir = (Get-ProjectDir)
+        [string]$ProjectDir = (Get-ProjectDir),
+        [string]$Triplet
     )
 
-    $suffix = if ($Config -eq 'Debug') { 'debug\bin' } else { 'bin' }
-    $candidates = @(
-        (Join-Path $ProjectDir "src\vcpkg_installed\x64-windows\$suffix")
-        (Join-Path $ProjectDir "vcpkg_installed\x64-windows\$suffix")
-        (Join-Path $BuildDir "vcpkg_installed\x64-windows\$suffix")
+    $Triplet = Resolve-VcpkgTriplet -Triplet $Triplet
+
+    # A release-only triplet has no debug\ subtree, so fall back to bin\ -- a Debug
+    # build against one is refused up front in Invoke-EMuleBuild anyway.
+    $suffixes = if ($Config -eq 'Debug') { @('debug\bin', 'bin') } else { @('bin') }
+
+    $roots = @(
+        (Join-Path $ProjectDir 'src\vcpkg_installed')   # MSBuild / `vcpkg install` run in src\
+        (Join-Path $ProjectDir 'vcpkg_installed')
+        (Join-Path $BuildDir 'vcpkg_installed')         # CMake manifest mode
     )
     if ($env:VCPKG_INSTALLATION_ROOT) {
-        $candidates += (Join-Path $env:VCPKG_INSTALLATION_ROOT "installed\x64-windows\$suffix")
+        $roots += (Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed')   # classic mode
     }
 
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) { return $candidate }
+    foreach ($root in $roots) {
+        foreach ($suffix in $suffixes) {
+            $candidate = Join-Path $root "$Triplet\$suffix"
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+
+    # Last resort: an install root exists, but under a triplet we did not expect.
+    # Accept only an unambiguous single match -- picking one of several would
+    # silently ship the DLLs of some other build, which is the failure this
+    # function exists to prevent.
+    foreach ($root in $roots) {
+        if (-not (Test-Path $root)) { continue }
+        $globbed = @(
+            Get-ChildItem $root -Directory -ErrorAction SilentlyContinue |
+                ForEach-Object { Join-Path $_.FullName 'bin' } |
+                Where-Object { Test-Path $_ }
+        )
+        if ($globbed.Count -eq 1) {
+            Write-Warning "vcpkg triplet '$Triplet' not installed; using $($globbed[0])"
+            return $globbed[0]
+        }
+        if ($globbed.Count -gt 1) {
+            throw ("Ambiguous vcpkg install roots under ${root}:`n  " +
+                   ($globbed -join "`n  ") +
+                   "`nSet VCPKG_TARGET_TRIPLET or pass -Triplet.")
+        }
     }
     return $null
 }
@@ -525,6 +587,16 @@ function Invoke-EMuleBuild {
             if (-not $toolchain) { $toolchain = Install-Vcpkg -BuildDir $BuildDir }
         }
 
+        # Refuse Debug against a release-only triplet up front: the dependencies
+        # would be release-CRT while the app is debug-CRT, which corrupts the heap
+        # on the first allocation that crosses the boundary.
+        $triplet = Resolve-VcpkgTriplet
+        if ($Config -eq 'Debug' -and $triplet -like '*-release') {
+            throw ("Triplet '$triplet' builds release-only dependencies; a Debug " +
+                   'build would mix debug and release CRTs. Unset ' +
+                   'VCPKG_TARGET_TRIPLET or use -Config Release.')
+        }
+
         Write-Host ''
         Write-Host '=== Configuring ==='
         $cmakeArgs = @(
@@ -552,7 +624,7 @@ function Invoke-EMuleBuild {
                 "-DCMAKE_TOOLCHAIN_FILE=$toolchain"
                 '-DVCPKG_MANIFEST_MODE=ON'
                 "-DVCPKG_MANIFEST_DIR=$(Join-Path $projectDir 'src')"
-                '-DVCPKG_TARGET_TRIPLET=x64-windows'
+                "-DVCPKG_TARGET_TRIPLET=$triplet"
             )
         }
         else {

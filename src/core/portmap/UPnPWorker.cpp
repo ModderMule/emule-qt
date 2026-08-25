@@ -6,6 +6,8 @@
 #include "net/LocalIPv6.h"
 #include "utils/Log.h"
 
+#include <QElapsedTimer>
+
 #include <miniupnpc.h>
 #include <upnpcommands.h>
 #include <upnperrors.h>
@@ -78,6 +80,16 @@ void UPnPWorker::discover(const QString& bindAddress)
     releaseIGD();
     m_pinholesAvailable = false;
 
+    // Every outcome below reports how long it took. Discovery is the one backend
+    // that can overrun PortMapper's probe round — SSDP's fixed wait plus one HTTP
+    // description fetch per SSDP responder, whether or not it is a router — so the
+    // number is what tells a bug report whether the budget or the router was at fault.
+    QElapsedTimer elapsed;
+    elapsed.start();
+    const auto took = [&elapsed](const QString& text) {
+        return QStringLiteral("%1 after %2 ms").arg(text).arg(elapsed.elapsed());
+    };
+
     const QByteArray bindLatin = bindAddress.toLatin1();
     const char* bindPtr = bindLatin.isEmpty() ? nullptr : bindLatin.constData();
 
@@ -90,7 +102,7 @@ void UPnPWorker::discover(const QString& bindAddress)
         return;
     }
     if (devices == nullptr) {
-        emit discovered(false, QStringLiteral("no IGD answered SSDP (error %1)").arg(error),
+        emit discovered(false, took(QStringLiteral("no IGD answered SSDP (error %1)").arg(error)),
                         Address{}, false);
         return;
     }
@@ -108,7 +120,7 @@ void UPnPWorker::discover(const QString& bindAddress)
         || result == UPNP_DISCONNECTED_IGD) {
         if (result != UPNP_NO_IGD)
             FreeUPNPUrls(&igd->urls);
-        emit discovered(false, QStringLiteral("no usable IGD (code %1)").arg(result),
+        emit discovered(false, took(QStringLiteral("no usable IGD (code %1)").arg(result)),
                         Address{}, false);
         return;
     }
@@ -147,8 +159,8 @@ void UPnPWorker::discover(const QString& bindAddress)
 
     m_igd = std::move(igd);
     emit discovered(true,
-                    privateWan ? QStringLiteral("IGD behind a second NAT")
-                               : QStringLiteral("IGD found"),
+                    took(privateWan ? QStringLiteral("IGD behind a second NAT")
+                                    : QStringLiteral("IGD found")),
                     privateWan ? Address{} : externalAddress,
                     m_pinholesAvailable);
 }

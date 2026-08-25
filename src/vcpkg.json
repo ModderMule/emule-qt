@@ -1,12 +1,17 @@
 {
   "name": "emuleqt",
   "version-string": "0.4.1",
-  "builtin-baseline": "d5ec528843d29e3a52d745a64b469f810b2cedbf",
+  "builtin-baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d",
   "dependencies": [
     "zlib",
     "openssl",
     "yaml-cpp",
     "libarchive",
     "miniupnpc"
+  ],
+  "overrides": [
+    { "name": "yaml-cpp", "version": "0.8.0" },
+    { "name": "libarchive", "version": "3.7.7" },
+    { "name": "miniupnpc", "version": "2.3.0" }
   ]
 }

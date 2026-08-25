@@ -38,7 +38,24 @@ This installs: `zlib`, `openssl`, `yaml-cpp`, `libarchive`, `miniupnpc`.
 2. Select **Release|x64** or **Debug|x64**
 3. Build Solution (Ctrl+Shift+B)
 
-The .vcxproj files reference vcpkg via `$(VCPKG_ROOT)\installed\x64-windows\include` and `\lib`. If you installed vcpkg elsewhere, ensure the `VCPKG_ROOT` environment variable is set correctly.
+The .vcxproj files reference vcpkg through paths relative to the solution —
+`..\vcpkg_installed\x64-windows\include` and `..\vcpkg_installed\x64-windows\lib` — so
+`VCPKG_ROOT` does **not** affect how MSBuild resolves them. What matters is that
+`vcpkg install` was run from `src/` (as shown above), which is what creates
+`src\vcpkg_installed\`. `VCPKG_ROOT` is still used by the PowerShell scripts to locate
+`vcpkg.cmake`.
+
+### Choosing a triplet
+
+The scripts default to `x64-windows`, which builds every dependency twice (debug and
+release). Set `VCPKG_TARGET_TRIPLET` to override it — CI uses `x64-windows-release`,
+which skips the debug half and roughly halves the dependency build. It has the same
+dynamic CRT, the same library linkage and the same DLL names, but no `debug\` subtree,
+so `build-win.ps1 -Config Debug` refuses to run against it rather than mixing CRTs.
+
+`scripts\build-win.ps1`, `scripts\generate-vs.ps1`, `scripts\bundle-win.ps1` and
+`scripts\debug-gui.ps1` all honour it. The `.vcxproj` files do not — they are hardcoded
+to `x64-windows`.
 
 ## Fallback: Manual library installation
 

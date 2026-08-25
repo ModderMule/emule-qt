@@ -9,15 +9,30 @@
 #include "portmap/UPnPBackend.h"
 #include "utils/Log.h"
 
+#include <QStringList>
+
 #include <algorithm>
 
 namespace eMule {
 
 namespace {
 
-/// How long the concurrent probe round is allowed to take. All backends probe
-/// at once, so this is the whole discovery cost, not a per-protocol budget.
+/// How long the concurrent probe round waits once *something* usable has
+/// answered. All backends probe at once, so this is the whole discovery cost,
+/// not a per-protocol budget. PCP and NAT-PMP finish their retransmit ladder in
+/// ~1.75 s, well inside this.
 constexpr int kProbeTimeoutMs = 3000;
+
+/// Total budget when nothing has answered "available" yet and a backend is still
+/// working. UPnP needs it: miniupnpc waits out a fixed 2 s SSDP collection window,
+/// then fetches a description document *per SSDP responder* — printers, TVs and
+/// media servers answer the same M-SEARCH, and one that stalls costs its whole
+/// connect timeout — and only then issues the SOAP calls. Measured on a plain
+/// consumer LAN: 7.2 s, on a router that maps ports perfectly well. Concluding the
+/// round at kProbeTimeoutMs wrote UPnP off on exactly those networks and, because
+/// every re-probe re-ran the identical race, left a UPnP-only router unmapped
+/// forever — the LowID in issue #5, on a router that v0.2.0 had mapped.
+constexpr int kSlowProbeTimeoutMs = 15000;
 
 /// Renewal failures tolerated on one mapping before the whole race is re-run.
 constexpr int kMaxRenewFailures = 3;
@@ -35,13 +50,11 @@ constexpr int kReprobeMaxMs = 30 * 60'000;
 PortMapper::PortMapper(QObject* parent)
     : QObject(parent)
 {
+    m_probeGraceMs = kProbeTimeoutMs;
+    m_probeTotalMs = kSlowProbeTimeoutMs;
+
     m_probeDeadline.setSingleShot(true);
-    connect(&m_probeDeadline, &QTimer::timeout, this, [this] {
-        if (m_state == State::Probing) {
-            logDebug(QStringLiteral("PortMap: probe deadline reached"));
-            finishProbe();
-        }
-    });
+    connect(&m_probeDeadline, &QTimer::timeout, this, [this] { onProbeDeadline(); });
 
     m_reprobeBackoff.setSingleShot(true);
     connect(&m_reprobeBackoff, &QTimer::timeout, this, [this] {
@@ -264,17 +277,53 @@ void PortMapper::beginProbe()
         slot.available = false;
     }
 
-    m_probeDeadline.start(kProbeTimeoutMs);
+    m_probeExtended = false;
+    m_probeDeadline.start(m_probeGraceMs);
     // All backends probe at once, so discovery costs one timeout rather than one
     // per protocol. A preferred method only reorders the trial phase below.
     for (BackendSlot& slot : m_backends)
-        slot.backend->probe(kProbeTimeoutMs);
+        slot.backend->probe(m_probeTotalMs);
+}
+
+void PortMapper::onProbeDeadline()
+{
+    if (m_state != State::Probing)
+        return;
+
+    const bool anyAvailable = std::any_of(m_backends.begin(), m_backends.end(),
+                                          [](const BackendSlot& s) { return s.available; });
+
+    QStringList pending;
+    for (const BackendSlot& slot : m_backends) {
+        if (!slot.probed)
+            pending.append(slot.backend->name());
+    }
+
+    // Nothing usable yet and someone is still working: waiting costs only a later
+    // status line, while cutting them off costs the mapping entirely. Extend once.
+    if (!pending.isEmpty() && !anyAvailable && !m_probeExtended) {
+        m_probeExtended = true;
+        logDebug(QStringLiteral("PortMap: nothing has answered yet — giving %1 another %2 ms")
+                     .arg(pending.join(QStringLiteral(", ")))
+                     .arg(m_probeTotalMs - m_probeGraceMs));
+        m_probeDeadline.start(m_probeTotalMs - m_probeGraceMs);
+        return;
+    }
+
+    logDebug(QStringLiteral("PortMap: probe deadline reached%1")
+                 .arg(pending.isEmpty()
+                          ? QString()
+                          : QStringLiteral(" — no answer from %1")
+                                .arg(pending.join(QStringLiteral(", ")))));
+    finishProbe();
 }
 
 void PortMapper::onProbeFinished(PortMapBackend* backend, bool supported, const QString& detail)
 {
-    if (m_state != State::Probing)
+    if (m_state != State::Probing) {
+        adoptLateProbe(backend, supported, detail);
         return;
+    }
 
     for (BackendSlot& slot : m_backends) {
         if (slot.backend.get() != backend)
@@ -322,14 +371,55 @@ void PortMapper::finishProbe()
         logWarning(QStringLiteral("PortMap: no port-mapping protocol available on this network"));
         m_state = State::Idle;
         setStatus(PortMapStatus::NotMapped);
-        const int delay = std::min(kReprobeBaseMs << std::min(m_reprobeAttempt, 6), kReprobeMaxMs);
-        ++m_reprobeAttempt;
-        m_reprobeBackoff.start(delay);
+        scheduleReprobe();
         return;
     }
 
     m_reprobeAttempt = 0;
     m_candidateIndex = 0;
+    tryNextCandidate();
+}
+
+void PortMapper::scheduleReprobe()
+{
+    const int delay = std::min(kReprobeBaseMs << std::min(m_reprobeAttempt, 6), kReprobeMaxMs);
+    ++m_reprobeAttempt;
+    m_reprobeBackoff.start(delay);
+}
+
+void PortMapper::adoptLateProbe(PortMapBackend* backend, bool supported, const QString& detail)
+{
+    // A backend that answers after the round closed is not wrong, only slow, and
+    // the answer is identical every round — so discarding it does not cost one
+    // mapping, it costs all of them. Take it whenever the round it missed left us
+    // with nothing: idle, and not a single mapping to show for it.
+    if (!supported || m_state != State::Idle || !m_active.empty())
+        return;
+
+    const auto slot = std::find_if(m_backends.begin(), m_backends.end(),
+                                   [backend](const BackendSlot& s) {
+                                       return s.backend.get() == backend;
+                                   });
+    if (slot == m_backends.end())
+        return;
+
+    slot->probed = true;
+    slot->available = true;
+
+    logInfo(QStringLiteral("PortMap: %1 answered after the probe round closed%2 — trying it anyway")
+                .arg(backend->name(),
+                     detail.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(detail)));
+
+    // The round that gave up armed the re-probe backoff; left running it would
+    // re-race — and tear down — the mapping this trial is about to create. The
+    // attempt counter is deliberately not reset: if this trial fails,
+    // commitBestTrial() re-arms the backoff and the ladder keeps growing.
+    m_reprobeBackoff.stop();
+
+    m_candidates.assign(1, static_cast<usize>(std::distance(m_backends.begin(), slot)));
+    m_candidateIndex = 0;
+    m_trialResults.clear();
+    setStatus(PortMapStatus::Probing);
     tryNextCandidate();
 }
 
@@ -405,6 +495,11 @@ void PortMapper::commitBestTrial()
         logWarning(QStringLiteral("PortMap: no backend could create a mapping"));
         m_state = State::Idle;
         setStatus(PortMapStatus::Failed);
+        // Same standing as a probe round that found nothing: we hold no mapping and
+        // the router may yet come back (a reboot, a UPnP service that starts late).
+        // Reaching this from adoptLateProbe() makes it load-bearing — that path stops
+        // the backoff the failed round had armed.
+        scheduleReprobe();
         return;
     }
 

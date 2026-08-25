@@ -86,6 +86,15 @@ public:
     /// a renewal is wired up at all without waiting out the 4 s RFC floor.
     void setRenewalOverrideMsForTest(int milliseconds) { m_renewalOverrideMs = milliseconds; }
 
+    /// Shorten the probe round: @p graceMs is what the fast backends get, @p totalMs
+    /// the budget a still-working one is extended to. Lets a test drive the deadline
+    /// paths without waiting out the real UPnP-sized budget.
+    void setProbeTimeoutsForTest(int graceMs, int totalMs)
+    {
+        m_probeGraceMs = graceMs;
+        m_probeTotalMs = totalMs;
+    }
+
 signals:
     void statusChanged(PortMapStatus status);
     void methodChanged(PortMapMethod method);
@@ -143,7 +152,10 @@ private:
     void recomputeStatus();
     void noteExternalAddress(const Address& address);
 
+    void onProbeDeadline();
+    void scheduleReprobe();
     void onProbeFinished(PortMapBackend* backend, bool supported, const QString& detail);
+    void adoptLateProbe(PortMapBackend* backend, bool supported, const QString& detail);
     void onMappingResult(PortMapBackend* backend, const PortMapping& mapping,
                          bool ok, const QString& error);
     void onMappingsInvalidated(PortMapBackend* backend, const QString& reason);
@@ -178,6 +190,12 @@ private:
     int           m_renewalOverrideMs = -1;
     double        m_renewalRandom = 0.5;
     bool          m_testBackends = false;
+    /// Set once a probe round has already been given the slow-backend extension,
+    /// so a round can wait longer but never indefinitely.
+    bool          m_probeExtended = false;
+    /// Probe budgets, seeded from the file-scope constants in the constructor.
+    int           m_probeGraceMs = 0;
+    int           m_probeTotalMs = 0;
     /// Set while tryNextCandidate() is issuing a candidate's requests, so a backend that
     /// answers synchronously cannot advance the race from under that loop.
     bool          m_issuingTrialRequests = false;
