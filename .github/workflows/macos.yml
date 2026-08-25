@@ -71,3 +71,51 @@ jobs:
           # Default is 'warn', which would leave the job green with no artifact
           # if the bundle script produced nothing.
           if-no-files-found: error
+
+      # A dSYM binds to its binary by LC_UUID, and on Mach-O the -g debug info
+      # lives in the .o files, not the linked binary -- the binary only carries a
+      # debug map of N_OSO stubs pointing at object files that die with the
+      # runner.  Without this step a crash report from a released .dmg
+      # symbolicates to function names only, with no line numbers, which made
+      # EMULE_RELEASE_DEBUG_INFO pointless for released macOS builds.
+      #
+      # Runs AFTER Bundle on purpose: bundle-macos.sh copies emulecored into the
+      # .app and then rewrites both in-bundle binaries with install_name_tool and
+      # re-signs them.  Only those copies ship, so they -- not the build outputs
+      # -- are what the dSYMs must be generated from.
+      - name: Generate dSYMs
+        run: |
+          set -euo pipefail
+
+          APP="build/src/gui/emuleqt.app/Contents/MacOS"
+          mkdir -p build/symbols
+
+          for name in emuleqt emulecored; do
+            dsymutil "$APP/$name" -o "build/symbols/$name.dSYM"
+          done
+
+          # dsymutil exits 0 even when it silently fails to find its object
+          # files, so assert the result instead of assuming it: a dSYM whose UUID
+          # does not match the shipped binary can never symbolicate a crash from
+          # it.  Format is "UUID: <uuid> (<arch>) <path>".
+          for name in emuleqt emulecored; do
+            bin_uuid=$(dwarfdump --uuid "$APP/$name" | awk '{print $2}')
+            sym_uuid=$(dwarfdump --uuid "build/symbols/$name.dSYM" | awk '{print $2}')
+            if [ "$bin_uuid" != "$sym_uuid" ]; then
+              echo "::error::dSYM UUID mismatch for $name: binary $bin_uuid, dSYM $sym_uuid"
+              exit 1
+            fi
+            # Logged so a future crash report can be matched to this build
+            # without downloading the artifact.
+            echo "OK: $name $bin_uuid"
+          done
+
+      # Deliberately NOT named eMuleQt-v*: release.yml downloads that pattern and
+      # publishes everything it finds, and the symbols do not belong in the public
+      # release assets.
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v6
+        with:
+          name: debug-symbols-macos-v${{ env.APP_VERSION }}
+          path: build/symbols/**
+          if-no-files-found: error
