@@ -1,0 +1,27 @@
+# emuleusenet — Usenet (NNTP) static library
+
+TEMPLATE = lib
+CONFIG  += staticlib c++2b
+TARGET   = emuleusenet
+
+QT += core network
+QT -= gui
+
+INCLUDEPATH += $$PWD $$PWD/.. $$PWD/../core
+
+# OpenSSL
+unix:  LIBS += -lssl -lcrypto
+win32 {
+    DEFINES += NOMINMAX WIN32_LEAN_AND_MEAN
+
+    OPENSSL_DIR = $$(OPENSSL_DIR)
+    isEmpty(OPENSSL_DIR): OPENSSL_DIR = "C:/Program Files/OpenSSL-Win64"
+    INCLUDEPATH += "$$OPENSSL_DIR/include"
+    LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto
+}
+
+SOURCES += \
+    UsenetSession.cpp
+
+HEADERS += \
+    UsenetSession.h
