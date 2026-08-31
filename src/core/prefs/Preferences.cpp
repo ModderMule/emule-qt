@@ -538,6 +538,17 @@ struct Preferences::Data {
     bool usenetEnabled = false;
     QList<NewsServer> usenetServers;
     int usenetRetryIntervalSeconds = 60;
+    int usenetDownloadSharePercent = 50;
+    bool usenetPar2Repair = true;
+    bool usenetPar2RenameFiles = true;
+    bool usenetUnpack = true;
+    bool usenetCleanupAfterUnpack = true;
+
+    /// Runtime only — never loaded, never saved. -1 means "no split active", so
+    /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
+    /// let a crash mid-download leave the user throttled to a stale share with
+    /// nothing in the UI to explain it.
+    qint64 ed2kDownloadBudget = -1;
 
 };
 
@@ -1500,6 +1511,95 @@ int Preferences::usenetRetryIntervalSeconds() const
 void Preferences::setUsenetRetryIntervalSeconds(int val)
 {
     set(&Data::usenetRetryIntervalSeconds, std::max(0, val));
+}
+
+int Preferences::usenetDownloadSharePercent() const
+{
+    return get(&Data::usenetDownloadSharePercent);
+}
+
+void Preferences::setUsenetDownloadSharePercent(int val)
+{
+    set(&Data::usenetDownloadSharePercent, std::clamp(val, 1, 99));
+}
+
+bool Preferences::usenetPar2Repair() const
+{
+    return get(&Data::usenetPar2Repair);
+}
+
+void Preferences::setUsenetPar2Repair(bool val)
+{
+    set(&Data::usenetPar2Repair, val);
+}
+
+bool Preferences::usenetPar2RenameFiles() const
+{
+    return get(&Data::usenetPar2RenameFiles);
+}
+
+void Preferences::setUsenetPar2RenameFiles(bool val)
+{
+    set(&Data::usenetPar2RenameFiles, val);
+}
+
+bool Preferences::usenetUnpack() const
+{
+    return get(&Data::usenetUnpack);
+}
+
+void Preferences::setUsenetUnpack(bool val)
+{
+    set(&Data::usenetUnpack, val);
+}
+
+bool Preferences::usenetCleanupAfterUnpack() const
+{
+    return get(&Data::usenetCleanupAfterUnpack);
+}
+
+void Preferences::setUsenetCleanupAfterUnpack(bool val)
+{
+    set(&Data::usenetCleanupAfterUnpack, val);
+}
+
+uint32 Preferences::maxDownloadForEd2k() const
+{
+    const qint64 budget = get(&Data::ed2kDownloadBudget);
+    return budget < 0 ? maxDownload() : static_cast<uint32>(budget);
+}
+
+void Preferences::setEd2kDownloadBudget(qint64 kbPerSecOrNegative)
+{
+    set(&Data::ed2kDownloadBudget, kbPerSecOrNegative < 0 ? qint64(-1) : kbPerSecOrNegative);
+}
+
+QString Preferences::usenetTempDir() const
+{
+    const QStringList dirs = tempDirs();
+    if (dirs.isEmpty() || dirs.first().isEmpty())
+        return {};
+    return QDir(dirs.first()).filePath(QStringLiteral("Usenet"));
+}
+
+bool Preferences::isUsenetTempPath(const QString& path) const
+{
+    const QString root = usenetTempDir();
+    if (root.isEmpty() || path.isEmpty())
+        return false;
+
+    // Compare cleaned absolute paths so "temp/./Usenet" and a trailing slash both
+    // land on the same string, and require a separator after the root so a
+    // sibling directory named "Usenet Archive" does not match.
+    const QString cleanRoot = QDir::cleanPath(QDir(root).absolutePath());
+    const QString cleanPath = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+
+    // Case-insensitive, matching SharedFileList::samePath and MFC's CompareNoCase.
+    // For a guard whose job is to keep files *off* the network, the insensitive
+    // comparison is also the conservative one: it can only ever exclude more.
+    if (cleanPath.compare(cleanRoot, Qt::CaseInsensitive) == 0)
+        return true;
+    return cleanPath.startsWith(cleanRoot + QLatin1Char('/'), Qt::CaseInsensitive);
 }
 
 QList<HttpCacheServerConfig> Preferences::httpCacheServers() const
@@ -3210,6 +3310,17 @@ bool Preferences::load(const QString& filePath)
             m_data->usenetEnabled = un["enabled"].as<bool>(m_data->usenetEnabled);
             m_data->usenetRetryIntervalSeconds =
                 un["retryIntervalSeconds"].as<int>(m_data->usenetRetryIntervalSeconds);
+            m_data->usenetPar2Repair =
+                un["par2Repair"].as<bool>(m_data->usenetPar2Repair);
+            m_data->usenetPar2RenameFiles =
+                un["par2RenameFiles"].as<bool>(m_data->usenetPar2RenameFiles);
+            m_data->usenetUnpack =
+                un["unpack"].as<bool>(m_data->usenetUnpack);
+            m_data->usenetCleanupAfterUnpack =
+                un["cleanupAfterUnpack"].as<bool>(m_data->usenetCleanupAfterUnpack);
+            m_data->usenetDownloadSharePercent = std::clamp(
+                un["downloadSharePercent"].as<int>(m_data->usenetDownloadSharePercent),
+                1, 99);
 
             if (const auto servers = un["servers"]; servers && servers.IsSequence()) {
                 QList<NewsServer> list;
@@ -3957,6 +4068,13 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "enabled" << YAML::Value << m_data->usenetEnabled;
     out << YAML::Key << "retryIntervalSeconds" << YAML::Value
         << m_data->usenetRetryIntervalSeconds;
+    out << YAML::Key << "downloadSharePercent" << YAML::Value
+        << m_data->usenetDownloadSharePercent;
+    out << YAML::Key << "par2Repair" << YAML::Value << m_data->usenetPar2Repair;
+    out << YAML::Key << "par2RenameFiles" << YAML::Value << m_data->usenetPar2RenameFiles;
+    out << YAML::Key << "unpack" << YAML::Value << m_data->usenetUnpack;
+    out << YAML::Key << "cleanupAfterUnpack" << YAML::Value
+        << m_data->usenetCleanupAfterUnpack;
     out << YAML::Key << "servers" << YAML::Value << YAML::BeginSeq;
     for (const auto& server : m_data->usenetServers) {
         out << YAML::BeginMap;

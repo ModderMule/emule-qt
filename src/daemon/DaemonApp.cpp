@@ -15,6 +15,9 @@
 #include "stats/Statistics.h"
 #include "stats/StatsSnapshot.h"
 #include "UsenetSession.h"
+#include "queue/UsenetQueue.h"
+#include "queue/UsenetQueueItem.h"
+#include "ipc/PushCoalescer.h"
 #include "webserver/WebServer.h"
 #include "utils/Log.h"
 
@@ -126,6 +129,8 @@ bool DaemonApp::start()
     // Usenet. Always constructed; usenetEnabled() gates only the auto-start, so
     // the switch takes effect without a daemon restart.
     m_usenetSession = std::make_unique<usenet::UsenetSession>();
+    usenet::theUsenetSession = m_usenetSession.get();
+    connectUsenetPushes();
     if (thePrefs.usenetEnabled())
         m_usenetSession->start();
 
@@ -152,7 +157,10 @@ void DaemonApp::stop()
 
     // Before the IPC server goes away: a Test-button reply in flight holds a
     // QPointer to its handler, and the engine's own sockets must be torn down
-    // while the event loop is still turning.
+    // while the event loop is still turning. UsenetSession::stop() is also where
+    // the worker threads are joined, so by the time it returns nothing is left
+    // running that could reach a half-destroyed daemon.
+    usenet::theUsenetSession = nullptr;
     if (m_usenetSession)
         m_usenetSession->stop();
     m_usenetSession.reset();
@@ -249,6 +257,69 @@ void DaemonApp::startWebServer()
     // enableWebServerPort() but nothing ever called it.
     if (m_coreSession)
         m_coreSession->updatePortMappings();
+}
+
+namespace {
+
+/// Matches CoreNotifierBridge's kPushWindowMs: below the GUI's 500 ms poll, so a
+/// push still beats the poll to the data, while per-segment progress on a large
+/// release collapses into a handful of sends.
+constexpr int kUsenetPushWindowMs = 250;
+
+} // namespace
+
+/// Defined in IpcClientHandler.cpp, beside the GetUsenetQueue row it must match.
+QCborMap usenetQueueItemToCbor(const usenet::UsenetQueueItem& item);
+
+void DaemonApp::connectUsenetPushes()
+{
+    if (!m_usenetSession || !m_ipcServer)
+        return;
+
+    auto* coalescer = new Ipc::PushCoalescer(this);
+    connect(coalescer, &Ipc::PushCoalescer::ready, this, [this](const IpcMessage& msg) {
+        m_ipcServer->broadcast(msg);
+    });
+
+    auto pushItem = [this, coalescer](const QString& id) {
+        // Keyed on the item, so a 10 000-article release cannot suppress pushes
+        // for a second NZB queued beside it. PushCoalescer's subKey is 32 bits and
+        // the id is a UUID string, so hash it down.
+        const quint32 subKey = qHash(id);
+        coalescer->post(IpcMsgType::PushUsenetQueueItem, [this, id] {
+            IpcMessage msg(IpcMsgType::PushUsenetQueueItem, 0);
+            if (auto* session = m_usenetSession.get(); session && session->queue()) {
+                if (const auto* item = session->queue()->findItem(id))
+                    msg.append(usenetQueueItemToCbor(*item));
+            }
+            return msg;
+        }, kUsenetPushWindowMs, subKey);
+    };
+
+    connect(m_usenetSession.get(), &usenet::UsenetSession::itemChanged, this, pushItem);
+    connect(m_usenetSession.get(), &usenet::UsenetSession::itemAdded, this, pushItem);
+
+    connect(m_usenetSession.get(), &usenet::UsenetSession::itemRemoved, this,
+            [this](const QString& id) {
+        // Not coalesced: a removal that arrives after a later change for the same
+        // key would be dropped, and the GUI would keep showing a row for an item
+        // that no longer exists.
+        IpcMessage msg(IpcMsgType::PushUsenetItemRemoved, 0);
+        msg.append(id);
+        m_ipcServer->broadcast(msg);
+    });
+
+    connect(m_usenetSession.get(), &usenet::UsenetSession::itemFinished, this,
+            [this](const QString& id, bool success, const QString& message) {
+        // Also uncoalesced, and for the reason onServerStateChanged is: this is a
+        // transition rather than a latest value. A completion collapsed inside a
+        // window is a notification the user asked for and never got.
+        IpcMessage msg(IpcMsgType::PushUsenetItemFinished, 0);
+        msg.append(id);
+        msg.append(success);
+        msg.append(message);
+        m_ipcServer->broadcast(msg);
+    });
 }
 
 void DaemonApp::applyUsenetServers()

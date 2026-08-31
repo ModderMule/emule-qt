@@ -1,0 +1,10 @@
+{
+  "$comment": "Overlay ports for the two dependencies that have no vcpkg port of their own: rapidyenc (SIMD yEnc) and par2-turbo (PAR2 verify/repair). The CMake build can FetchContent both, but the hand-maintained src/eMuleQt.sln resolves everything from src/vcpkg_installed/, so without these the MSBuild build silently loses SIMD yEnc decoding and all PAR2 support. Having them here also stops the Windows CI job rebuilding them from source on every run.",
+  "default-registry": {
+    "kind": "builtin",
+    "baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  },
+  "overlay-ports": [
+    "./vcpkg-ports"
+  ]
+}

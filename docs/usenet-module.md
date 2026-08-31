@@ -8,10 +8,13 @@ dependency runs one way only: `usenet → core` is fine, `core → usenet` never
 Design research and the phase plan are in `docs/UsenetModule-Research.local.md`,
 amended by `docs/BitTorrentModule-Research.local.md` §7.
 
-**Status: phases 0–2 are implemented.** The module connects, authenticates,
-parses an NZB, and downloads articles into a file byte-identically. The queue,
-the connection pool's scheduler, PAR2 repair, unpacking and keyword search are
-phases 3–5 and not built yet.
+**Status: phases 0–4 are implemented.** The module connects, authenticates,
+parses an NZB, downloads it across a pool of worker threads, assembles it
+byte-identically, verifies it against its PAR2 set, repairs it, restores
+obfuscated filenames, unpacks the archives, and offers the payload — and only the
+payload — to the ED2K network. It has a queue with persistence, a Usenet tab in
+the GUI, and a share of the global download budget. Keyword search is phase 5 and
+not built yet.
 
 ## Layout
 
@@ -29,8 +32,21 @@ src/usenet/
         NzbInfo.{h,cpp}         the queue-item model
         SubjectParser.{h,cpp}   filename and (n/m) recovery from a subject
     decode/YencDecoder.{h,cpp}  streaming yEnc + per-part CRC32
-    queue/ArticleWriter.{h,cpp} sparse writes at absolute offsets
+    post/
+        Par2Verifier.{h,cpp}        libpar2-turbo: verify, repair, rename
+        UsenetUnpacker.{h,cpp}      volume-set detection, then libarchive
+        UsenetPostProcessor.{h,cpp} one thread, one job at a time
+    queue/
+        ArticleWriter.{h,cpp}   sparse writes at absolute offsets
+        UsenetQueueItem.{h,cpp} one NZB, plus its per-segment completion bitmap
+        UsenetQueue.{h,cpp}     scheduling, failover routing, completion
+        UsenetQueueStore.{h,cpp} one YAML sidecar per item, under Config/Usenet/
+        UsenetWorker.{h,cpp}    one thread: its own pool, its own sockets
 ```
+
+GUI side (linking `eMule::Core` + `eMule::Ipc` only, never `eMule::Usenet`):
+`src/gui/panels/UsenetPanel.{h,cpp}` and
+`src/gui/controls/UsenetQueueModel.{h,cpp}`.
 
 ## Sockets
 
@@ -51,8 +67,8 @@ Two things it fixes relative to `SmtpClient`, which has neither:
   providers also offer 443, and STARTTLS runs on the cleartext port 119.
 
 Inbound rate limiting is `NntpSocket::setReadRateLimit()`, a token bucket with a
-refill timer. `0` means unlimited, as everywhere else in eMuleQt. Nothing drives
-it yet; phase 3 feeds it a share of the one global `maxDownload` budget.
+refill timer. `0` means unlimited, as everywhere else in eMuleQt. It is driven by
+the budget split described below.
 
 ## Transport and commands are separate, on purpose
 
@@ -107,6 +123,16 @@ usenet:
       maxConnections: 20
       certVerification: 2   # 0 none, 1 minimal, 2 strict
       enabled: true
+```
+
+### Preferences
+
+```yaml
+usenet:
+  par2Repair: true          # verify and repair; off means damaged releases fail
+  par2RenameFiles: true     # restore real filenames from PAR2 metadata
+  unpack: true              # extract RAR/7z/ZIP volume sets
+  cleanupAfterUnpack: true  # publish the payload only
 ```
 
 Passwords are AES-encrypted under the one file-wide key that
@@ -221,6 +247,9 @@ not compiled in — obfuscation schemes change faster than releases ship.
 | `tst_UsenetYenc` | CRC vector, every byte value, the four traps above |
 | `tst_UsenetNzbParse` | schema, namespaces, HTML error pages, subject heuristics |
 | `tst_UsenetArticleFetch` | a multi-part file assembled **out of order**, byte-identical |
+| `tst_UsenetPar2` | verify, repair, rename and the blocks-needed figure, against sets built in-process by `Par2::par2creator` |
+| `tst_UsenetUnpack` | volume-set detection across all three naming schemes; path-traversal and reserved-name refusals |
+| `tst_UsenetPostPipeline` | phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing |
 | `tst_UsenetLiveConnect` | real TLS + auth (`live`) |
 | `tst_UsenetLiveFetch` | a real `.nzb` downloaded and hashed (`live`) |
 
@@ -253,3 +282,254 @@ rebuilding fixes it. Check
 `build/src/usenet/emuleusenet_autogen/mocs_compilation.cpp` for the expected
 `moc_*.cpp`, and if it is absent delete
 `build/src/usenet/emuleusenet_autogen` and rebuild.
+
+
+## Threading
+
+One `QThread` per worker, each owning its **own** `NntpServerPool` and its own
+sockets. The pool has no locking and its sockets have thread affinity, so sharing
+one is not an option — a pool per worker is what makes the design lock-free.
+Nothing but queued signals crosses a thread boundary, and there is not a mutex in
+the module.
+
+**The connection budget is divided, not replicated.** N workers each honouring
+`NewsServer::maxConnections` would open N times what the user configured, and
+exceeding a provider's limit gets an account throttled or suspended — a worse
+failure than downloading slowly. `UsenetQueue` hands each worker a *copy* of the
+server list with `maxConnections` already divided, remainder distributed to the
+first workers, so the sum equals the configured limit.
+`tst_UsenetQueue::connectionBudgetIsDividedNotReplicated` asserts it.
+
+Worker count is `clamp(min(idealThreadCount, totalConfiguredConnections), 1, 8)`,
+so two configured connections get one worker rather than four idle ones.
+
+Teardown is `finished → deleteLater`, then `quit()` + `wait()` inside
+`UsenetSession::stop()`, which `DaemonApp` calls before the IPC server goes away.
+A socket destroyed off its own thread is a crash, not a leak.
+
+## Failover
+
+The one rule, and it must not be re-derived anywhere else:
+
+- `escalatesToNextLevel(error)` — the server does not have the article (430) —
+  retry at `level + 1`, adding that account to `ignoreServers` so the escalation
+  never asks it twice.
+- Anything else is a *connection* fault. Retry the **same** level; the worker has
+  already backed the server off, so a sibling account picks the article up.
+
+Getting it backwards either hammers a fill server every time the main provider is
+briefly busy, or leaves a paid block account never used.
+
+An article missing on every level is recorded in `missingSegments` and its bit is
+set in `done` — the bit means **resolved**, not "arrived". The file is then short
+by design; PAR2 repair in phase 4 is what fills the hole.
+
+## Post-processing
+
+A finished download is not a finished item. Since phase 4, "every planned segment
+resolved" ends the *download phase* and hands the item to
+`UsenetPostProcessor` — one `QThread`, one job at a time, because a repair and an
+unpack are both disk- and CPU-bound and interleaving two of them is slower than
+running them in sequence.
+
+The pipeline is **rename → verify → repair → unpack → stage**, and it stops at
+staging: it copies the payload to `<incoming>/<name>.usenetpart`, which no share
+scan will look at, and hands the queue a list of renames. All the slow IO
+therefore happens off the daemon thread, and what is left on it is an atomic
+in-place rename and the call that offers the file to ED2K.
+
+Rename runs **first**. An obfuscated release verifies as entirely missing until
+its real filenames are back, and the unpacker cannot pick volume one out of a set
+of hex strings either.
+
+### On-demand recovery volumes
+
+PAR2 recovery volumes are typically a tenth of a release and are discarded unread
+on a healthy one, so `rebuildPlan()` leaves them out of the download plan
+entirely. Only the index `.par2` — the file list, no recovery data — is fetched,
+and it is fetched last.
+
+Verification then decides what happens next:
+
+- clean → rename, unpack, publish;
+- damaged, enough blocks already present → repair;
+- damaged and short → `requestPar2Volumes()` adds the **smallest** set of volumes
+  covering the shortfall, the item returns to `Downloading`, and post-processing
+  resumes at repair when they land.
+
+That makes completion a **cycle**, which is the one genuinely new hazard in this
+phase: every path out of it has to terminate. `requestPar2Volumes()` returning
+false — nothing left to ask for — is the real terminator, and `kMaxPar2Rounds` is
+the backstop. `requestedPar2` is persisted for the same reason: a queue that
+forgot which volumes it had asked for would drop them from the rebuilt plan and
+re-request them once per restart, forever.
+
+`NzbFileInfo::par2RecoveryBlocks()` is what makes any of this possible — it reads
+the block count out of a `.vol{start}+{count}.par2` name. Both spellings occur
+(par2cmdline writes `rel.vol0+1.par2`, QuickPar and MultiPar pad to
+`rel.vol000+01.par2`), so the digits are parsed and never matched.
+
+### Four things about libpar2-turbo that are not in its headers
+
+The library is the **nzbgetcom fork** of par2cmdline-turbo, not animetosho's
+original: only the fork carries `BUILD_LIB`/`BUILD_TOOL` and an `include/par2`
+tree. Each of these cost a debugging session:
+
+1. **`PreProcess()` is not optional.** It loads the packets and builds
+   `mainpacket`; `Process()` walks straight into
+   `mainpacket->RecoverableFileCount()` and segfaults on a null pointer without
+   it. The library's own `par2repair()` convenience function omits it and is
+   just as broken — do not "simplify" to it.
+2. **`Process()`'s `basepath` parameter is dead.** `basepath` is assigned in
+   exactly one place, `PreProcess()`, from the `CommandLine`. The base directory
+   has to travel as `-B`, or every source file resolves against the wrong
+   directory and the whole release reads as missing — indistinguishable from a
+   genuinely dead download.
+3. **Extra files must be passed twice.** `PreProcess()` reads them off the
+   `CommandLine`; `Process()` ignores that and uses its own parameter. And par2
+   never walks a directory by itself, so a rename pass with an empty list runs to
+   completion, reports success, and renames nothing.
+4. **`renameonly` still needs `dorepair=true`.** `RenameTargetFiles()` lives
+   inside `if (dorepair)`.
+
+Two more, on the build rather than the API. `HAVE_CONFIG_H` and the three
+`PARPAR_*` definitions are set with directory-scoped `add_compile_definitions()`
+and therefore do **not** reach a consumer; without them `md5.h` declares nothing
+and `libpar2.h` picks different integer typedefs, which on LP64 is `uint64_t`
+versus `unsigned long long` — same width, different mangled name, undefined
+reference to `Process()`. And the library is built `-fno-rtti`, so its classes
+ship a vtable and no typeinfo: anything subclassing `Par2Repairer` must be
+compiled the same way, which `src/usenet/CMakeLists.txt` does for
+`Par2Verifier.cpp` alone.
+
+`EMULE_USENET_PAR2=OFF` drops all of it. The queue still downloads, assembles and
+publishes; it simply cannot verify, and a release with missing articles then
+fails rather than being published — see below.
+
+### Unpacking
+
+`UsenetUnpacker` picks the **first** volume and hands it to `ArchiveReader`.
+libarchive's RAR4 and RAR5 readers both follow the remaining volumes themselves,
+but only when opened on volume one; handed any other member they report a
+split-file error that reads exactly like a corrupt download. The old `.rNN`
+scheme makes that worse by putting its first volume under a different extension
+(`name.rar`, then `name.r00`), so a set sorted by filename starts in the middle.
+
+Passwords come from `NzbInfo::password`. libarchive decrypts ZIP and 7z; **RAR
+encryption it can only detect**, so that case is reported as unsupported rather
+than left as an unexplained read error.
+
+Two defects in `ArchiveReader` became serious once it started reading archives
+written by strangers, and are fixed here rather than worked around: `extractAll()`
+joined member names onto the destination unsanitised, so a `../` member escaped
+it, and `extractEntry()` reopened and re-scanned the whole archive per member,
+which on a solid multi-volume set re-read every volume once per file.
+
+### What gets published
+
+Only the payload. Archive volumes and recovery data are of no use to an ED2K
+peer, and keeping them roughly doubles the disk cost of every release; the
+`usenetCleanupAfterUnpack` preference turns that off for anyone who wants the
+originals.
+
+And **a release that failed verification is not published at all**. Phase 3
+shared short files, holes and all, and nothing in the system complained — the
+client quietly advertised corrupt data. `missingSegments > 0` with no usable
+recovery set is now a failure, and the files stay in the work folder.
+
+## Storage, and why Usenet scratch is never shared
+
+In progress: `tempDirs().first()/Usenet/<id>/<file>.usenetpart`.
+Complete: renamed **directly into `incomingDir()`**, not a subfolder.
+
+Both halves matter. `SharedFileList::addFilesFromDirectory` iterates with
+`QDir::Files | QDir::NoDotAndDotDot` and **no `Subdirectories` flag**, so it does
+not recurse: a `Usenet/` folder under a shared directory is never walked, and
+equally a completed file in a *subfolder* of incoming would never be offered.
+
+Four independent guards keep in-progress articles off the network, because the
+failure is silent — nothing errors if one leaks, the client just quietly
+advertises garbage:
+
+1. The scan does not recurse (above).
+2. `Preferences::kUsenetPartSuffix` is skipped by name, alongside `.part` and
+   `.part.met`. This covers a user who shares the Usenet temp directory itself,
+   and the cross-volume completion below.
+3. `SharedFileList::shouldBeShared()` refuses anything under
+   `Preferences::usenetTempDir()` **before** the incoming-directory rule, which
+   returns true unconditionally. Without that ordering, a user whose temp
+   directory sits inside incoming would advertise every half-written article.
+4. Completion stages through `<dest>.usenetpart` and then renames in place. Moving
+   across volumes degrades `QFile::rename` to a copy, and a growing file inside
+   the always-shared incoming directory would otherwise be visible to a scan
+   mid-copy. The in-place rename is atomic.
+
+Once it lands, the queue calls `SharedFileList::addFileInSharedLocation()` —
+**not** `addSingleSharedFile()`, which is for a file no shared directory covers
+and refuses the incoming directory outright, because `isShareableDirectory()`
+excludes it. Using the wrong one logs a warning and shares nothing until the next
+full rescan. `tst_UsenetSharing` covers all of it.
+
+## Bandwidth
+
+There is no download-side throttler in the repo: `UploadBandwidthThrottler` and
+`ThrottledSocket` are upload-only, and ED2K limits download through a 10 Hz
+proportional feedback loop in `DownloadQueue::process()`.
+
+So the one global ceiling is split. `UsenetSession` recomputes once a second:
+
+- `maxDownload() == 0` (unlimited) or Usenet idle → the split is cleared and both
+  engines run against the raw ceiling.
+- Both busy → Usenet takes `usenetDownloadSharePercent` (default 50), with
+  give-back: whatever Usenet measurably is not using is lent to ED2K.
+
+ED2K's slice is published as `Preferences::setEd2kDownloadBudget()` and read by
+`DownloadQueue::process()` through **`maxDownloadForEd2k()`, not
+`maxDownload()`** — aiming both engines at the full ceiling lands the combined
+rate at roughly double the cap. The budget is runtime-only and never persisted,
+so a crash cannot leave a user throttled to a stale share. `UsenetSession::stop()`
+clears it.
+
+## IPC
+
+Requests `720–799`, pushes `910–949`.
+
+| Opcode | |
+|---|---|
+| `GetNewsServers = 720` / `SetNewsServers = 721` / `TestNewsServer = 722` | provider accounts; the password never travels to the GUI |
+| `GetUsenetQueue = 723` | the whole queue |
+| `AddNzb = 724` | the file's **contents**, not a path — the daemon may be on another machine |
+| `RemoveUsenetItem = 725` … `SetUsenetItemPriority = 728` | per-item actions |
+| `PushUsenetQueueItem = 910` | one item, coalesced on its id |
+| `PushUsenetItemRemoved = 911` | uncoalesced — a removal behind a later change would be dropped |
+| `PushUsenetItemFinished = 912` | uncoalesced — a transition, not a latest value |
+
+`DaemonApp::connectUsenetPushes()` owns the seam. It is not in
+`CoreNotifierBridge` because that class is built on core signals, and routing a
+non-core object through it would mean linking `eMule::Usenet` into a class whose
+whole job is core.
+
+## Persistence
+
+One YAML sidecar per item at `Config/Usenet/<id>.nzbstate`, globbed on start —
+the same shape as `DownloadQueue::init()` scanning for `*.part.met`, and for the
+same reason: one item's corruption costs one item. The write is
+`PartFile::savePartFile()`'s dance (write `.backup`, rotate live to `.bak`,
+rename into place, restore from `.bak` on failure).
+
+Segment completion is a `QBitArray`, base64 inside the YAML — 1.25 KB for a
+10 000-article release, which is what makes per-segment resume affordable.
+`Downloading` is demoted to `Queued` on load: nothing is in flight after a
+restart.
+
+## Build note
+
+`src/usenet/` and `src/gui/panels/` are globbed by CMake, so new files need no
+CMake edit — but MSBuild and qmake do. Run `scripts/sync_usenet_vcxproj.py` and
+update `src/usenet/usenet.pro`; a new test also needs
+`python3 scripts/generate_test_vcxprojs.py`.
+
+After adding any `Q_OBJECT` header, check that
+`build/src/<module>/<target>_autogen/mocs_compilation.cpp` lists a `moc_` line for
+it. AUTOMOC's parse cache goes stale and re-running cmake does not fix it; delete
+the `*_autogen` tree and rebuild. This has bitten this module more than once.

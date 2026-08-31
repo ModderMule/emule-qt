@@ -185,6 +185,26 @@ enum class IpcMsgType : int {
     /// far more than a green tick.
     TestNewsServer          = 722,
 
+    /// [] -> [{id, name, status, statusText, priority, percent, totalBytes,
+    ///         decodedBytes, segmentCount, doneSegments, missingSegments, error,
+    ///         files: [{name, size, percent, finalPath, missingSegments}]}]
+    /// The whole queue. The GUI polls this; individual changes arrive as
+    /// PushUsenetQueueItem, which carries one item in the same shape.
+    GetUsenetQueue          = 723,
+    /// [nzbBytes: bytes, name: string] -> [ok, idOrError]
+    /// The GUI sends the file's contents rather than a path: the daemon may be on
+    /// another machine, and a path that resolves on one would silently open the
+    /// wrong file — or nothing — on the other.
+    AddNzb                  = 724,
+    /// [id: string, deleteFiles: bool] -> [ok]
+    RemoveUsenetItem        = 725,
+    /// [id: string] -> [ok]
+    PauseUsenetItem         = 726,
+    /// [id: string] -> [ok]
+    ResumeUsenetItem        = 727,
+    /// [id: string, priority: int] -> [ok]
+    SetUsenetItemPriority   = 728,
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd]
@@ -211,6 +231,23 @@ enum class IpcMsgType : int {
     PushFriendListChanged = 510,  ///< [] — friend list changed
     PushClientSharedFiles = 520,  ///< [clientHash, CborArray of files] — response to browse
     PushPortMapStatus     = 530,  ///< [{status, statusText, method, methodText, externalAddress}]
+
+    // -- Usenet pushes (910-949) ---------------------------------------------
+    //
+    // Same reasoning as the 720 request block: a second network must not eat the
+    // handful of push slots the ED2K core has left. 900-909 is reserved for the
+    // shared indexer client.
+
+    /// [{...one item, same shape as a GetUsenetQueue row...}]
+    /// Per-item and coalesced on the item id, so a 10 000-article release cannot
+    /// suppress pushes for a second NZB queued beside it.
+    PushUsenetQueueItem   = 910,
+    /// [id: string] — the item is gone; drop the row.
+    PushUsenetItemRemoved = 911,
+    /// [id: string, success: bool, message: string]
+    /// Terminal outcome, broadcast **uncoalesced**: this is a transition, not a
+    /// latest value, and a coalescing window would swallow it whole.
+    PushUsenetItemFinished = 912,
 };
 
 // ---------------------------------------------------------------------------

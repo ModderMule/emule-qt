@@ -127,6 +127,12 @@ private:
     void handleGetNewsServers(const Ipc::IpcMessage& msg);
     void handleSetNewsServers(const Ipc::IpcMessage& msg);
     void handleTestNewsServer(const Ipc::IpcMessage& msg);
+    void handleGetUsenetQueue(const Ipc::IpcMessage& msg);
+    void handleAddNzb(const Ipc::IpcMessage& msg);
+    void handleRemoveUsenetItem(const Ipc::IpcMessage& msg);
+    void handlePauseUsenetItem(const Ipc::IpcMessage& msg);
+    void handleResumeUsenetItem(const Ipc::IpcMessage& msg);
+    void handleSetUsenetItemPriority(const Ipc::IpcMessage& msg);
     void handleSetDownloadCategory(const Ipc::IpcMessage& msg);
     void handleGetDownloadDetails(const Ipc::IpcMessage& msg);
     void handlePreviewDownload(const Ipc::IpcMessage& msg);

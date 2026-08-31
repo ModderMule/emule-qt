@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "dialogs/ToolbarCustomizeDialog.h"
+#include "app/ToolbarButtons.h"
 #include "utils/DialogSizing.h"
 
 #include <QHBoxLayout>
@@ -10,42 +11,11 @@
 
 namespace eMule {
 
-// Must match kAllButtons in MainWindow.cpp — provides labels/icons for the dialog.
-struct ButtonMeta {
-    ToolbarButtonId id;
-    const char* label;
-    const char* iconResource;
-};
-
-static constexpr ButtonMeta kButtonMeta[] = {
-    {ToolbarButtonId::Connect,     "Connect",      "ConnectDrop.ico"},
-    {ToolbarButtonId::Kad,         "Kad",           "Kad.ico"},
-    {ToolbarButtonId::Servers,     "Servers",       "Server.ico"},
-    {ToolbarButtonId::Transfers,   "Transfers",     "Transfer.ico"},
-    {ToolbarButtonId::Search,      "Search",        "Search.ico"},
-    {ToolbarButtonId::SharedFiles, "Shared Files",  "SharedFiles.ico"},
-    {ToolbarButtonId::Messages,    "Messages",      "Messages.ico"},
-    {ToolbarButtonId::IRC,         "IRC",           "IRC.ico"},
-    {ToolbarButtonId::Statistics,  "Statistics",     "Statistics.ico"},
-    {ToolbarButtonId::Options,     "Options",       "Preferences.ico"},
-    {ToolbarButtonId::Tools,       "Tools",         "Tools.ico"},
-    {ToolbarButtonId::Help,        "Help",          "Help.ico"},
-};
-
-static const ButtonMeta* findMeta(ToolbarButtonId id)
-{
-    for (const auto& m : kButtonMeta) {
-        if (m.id == id)
-            return &m;
-    }
-    return nullptr;
-}
-
 static QIcon iconForButton(ToolbarButtonId id)
 {
     if (id == ToolbarButtonId::Separator)
         return {};
-    if (const auto* m = findMeta(id))
+    if (const auto* m = findButtonDef(id))
         return QIcon(QStringLiteral(":/icons/") + QLatin1String(m->iconResource));
     return {};
 }
@@ -54,14 +24,10 @@ static QString labelForButton(ToolbarButtonId id)
 {
     if (id == ToolbarButtonId::Separator)
         return QStringLiteral("── Separator ──");
-    if (const auto* m = findMeta(id))
+    if (const auto* m = findButtonDef(id))
         return QString::fromLatin1(m->label);
     return QStringLiteral("Unknown");
 }
-
-static const QList<int> kDefaultToolbarOrder = {
-    0, 1, 10, 11, 12, 13, 14, 15, 16, 17, 1, 20, 21, 22
-};
 
 ToolbarCustomizeDialog::ToolbarCustomizeDialog(
     const QList<ToolbarButtonId>& currentOrder, QWidget* parent)
@@ -146,7 +112,7 @@ void ToolbarCustomizeDialog::populateLists()
     sepItem->setData(Qt::UserRole, static_cast<int>(ToolbarButtonId::Separator));
     m_availableList->addItem(sepItem);
 
-    for (const auto& meta : kButtonMeta) {
+    for (const auto& meta : kAllButtons) {
         bool inOrder = false;
         for (auto id : m_order) {
             if (id == meta.id) {

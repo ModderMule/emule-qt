@@ -25,6 +25,7 @@
 #include "panels/SharedFilesPanel.h"
 #include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
+#include "panels/UsenetPanel.h"
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
@@ -804,43 +805,10 @@ void MainWindow::updateMiniMule(int completedCount, qint64 freeBytes)
 
 // ---------------------------------------------------------------------------
 // Toolbar button metadata
+//
+// kAllButtons, kDefaultToolbarOrder and findButtonDef live in app/ToolbarButtons.h,
+// shared with ToolbarCustomizeDialog so the two cannot drift.
 // ---------------------------------------------------------------------------
-
-struct ToolbarButtonDef {
-    ToolbarButtonId id;
-    const char* label;
-    const char* iconResource;
-    QStyle::StandardPixmap fallback;
-    int tabIndex; // -1 if not a tab button
-};
-
-static constexpr ToolbarButtonDef kAllButtons[] = {
-    {ToolbarButtonId::Connect,     "Connect",      "ConnectDrop.ico", QStyle::SP_MediaStop,               -1},
-    {ToolbarButtonId::Kad,         "Kad",           "Kad.ico",        QStyle::SP_DriveNetIcon,             0},
-    {ToolbarButtonId::Servers,     "Servers",       "Server.ico",     QStyle::SP_ComputerIcon,             1},
-    {ToolbarButtonId::Transfers,   "Transfers",     "Transfer.ico",   QStyle::SP_ArrowDown,                2},
-    {ToolbarButtonId::Search,      "Search",        "Search.ico",     QStyle::SP_FileDialogContentsView,   3},
-    {ToolbarButtonId::SharedFiles, "Shared Files",  "SharedFiles.ico",QStyle::SP_DirOpenIcon,              4},
-    {ToolbarButtonId::Messages,    "Messages",      "Messages.ico",   QStyle::SP_MessageBoxInformation,    5},
-    {ToolbarButtonId::IRC,         "IRC",           "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
-    {ToolbarButtonId::Statistics,  "Statistics",     "Statistics.ico", QStyle::SP_DialogHelpButton,         7},
-    {ToolbarButtonId::Options,     "Options",       "Preferences.ico",QStyle::SP_FileDialogDetailedView,  -1},
-    {ToolbarButtonId::Tools,       "Tools",         "Tools.ico",      QStyle::SP_DialogResetButton,       -1},
-    {ToolbarButtonId::Help,        "Help",          "Help.ico",       QStyle::SP_TitleBarContextHelpButton,-1},
-};
-
-static const QList<int> kDefaultToolbarOrder = {
-    0, 1, 10, 11, 12, 13, 14, 15, 16, 17, 1, 20, 21, 22
-};
-
-static const ToolbarButtonDef* findButtonDef(ToolbarButtonId id)
-{
-    for (const auto& def : kAllButtons) {
-        if (def.id == id)
-            return &def;
-    }
-    return nullptr;
-}
 
 void MainWindow::rebuildToolbar()
 {
@@ -968,7 +936,14 @@ void MainWindow::loadToolbarSkin(const QString& path)
 
     m_skinIcons.clear();
 
-    // Skin strip: 32px-wide tiles in fixed order
+    // Skin strip: 32px-wide tiles in fixed order.
+    //
+    // Deliberately NOT kAllButtons: this is the tile layout of legacy eMule
+    // toolbar bitmaps, which have exactly these twelve tiles in this MFC order.
+    // A button added to kAllButtons must be *appended* here or not listed at all
+    // — inserting one shifts every icon in every existing skin. The loop stops at
+    // the strip's width, so a trailing entry a skin does not cover simply falls
+    // back to the resource icon.
     static constexpr ToolbarButtonId kSkinOrder[] = {
         ToolbarButtonId::Connect, ToolbarButtonId::Kad, ToolbarButtonId::Servers,
         ToolbarButtonId::Transfers, ToolbarButtonId::Search, ToolbarButtonId::SharedFiles,
@@ -1368,6 +1343,10 @@ void MainWindow::setupPages()
     // Tab 7: Statistics
     m_statsPanel = new StatisticsPanel(this);
     m_pages->addWidget(m_statsPanel);
+
+    // Tab 8: Usenet
+    m_usenetPanel = new UsenetPanel(this);
+    m_pages->addWidget(m_usenetPanel);
 }
 
 

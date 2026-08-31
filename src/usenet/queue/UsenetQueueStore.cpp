@@ -1,0 +1,292 @@
+#include "queue/UsenetQueueStore.h"
+
+#include "queue/UsenetQueueItem.h"
+#include "prefs/Preferences.h"
+#include "utils/Log.h"
+
+#include <QByteArray>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+
+#include <yaml-cpp/yaml.h>
+
+#include <fstream>
+
+namespace eMule::usenet {
+
+namespace {
+
+// 2 added requestedPar2 (phase 4, on-demand recovery volumes). A version-1
+// sidecar still loads: the field is simply absent and the item re-requests what
+// it needs on its next verify.
+constexpr int kStateVersion = 2;
+
+/// Bits out as base64. A 10 000-segment release is 1.25 KB packed, which is what
+/// makes storing per-segment completion affordable at all.
+[[nodiscard]] QString bitsToBase64(const QBitArray& bits)
+{
+    if (bits.isEmpty())
+        return {};
+    QByteArray packed((bits.size() + 7) / 8, '\0');
+    for (qsizetype i = 0; i < bits.size(); ++i) {
+        if (bits.testBit(i))
+            packed[int(i / 8)] = char(packed[int(i / 8)] | (1 << (i % 8)));
+    }
+    return QString::fromLatin1(packed.toBase64());
+}
+
+[[nodiscard]] QBitArray bitsFromBase64(const QString& text, int expectedSize)
+{
+    QBitArray bits(expectedSize);
+    if (text.isEmpty() || expectedSize <= 0)
+        return bits;
+
+    const QByteArray packed = QByteArray::fromBase64(text.toLatin1());
+    for (int i = 0; i < expectedSize; ++i) {
+        const int byte = i / 8;
+        if (byte >= packed.size())
+            break;
+        if (packed.at(byte) & (1 << (i % 8)))
+            bits.setBit(i);
+    }
+    return bits;
+}
+
+[[nodiscard]] std::string toStd(const QString& s) { return s.toStdString(); }
+
+[[nodiscard]] QString fromStd(const YAML::Node& node, const char* key)
+{
+    if (!node[key])
+        return {};
+    return QString::fromStdString(node[key].as<std::string>(std::string{}));
+}
+
+} // namespace
+
+QString UsenetQueueStore::stateDir()
+{
+    const QString dir = QDir(thePrefs.configDir()).filePath(QStringLiteral("Usenet"));
+    QDir().mkpath(dir);
+    return dir;
+}
+
+QString UsenetQueueStore::statePath(const QString& itemId)
+{
+    return QDir(stateDir()).filePath(itemId + QStringLiteral(".nzbstate"));
+}
+
+bool UsenetQueueStore::save(const UsenetQueueItem& item)
+{
+    if (item.id.isEmpty())
+        return false;
+
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+    out << YAML::Key << "version" << YAML::Value << kStateVersion;
+    out << YAML::Key << "id" << YAML::Value << toStd(item.id);
+    out << YAML::Key << "name" << YAML::Value << toStd(item.name);
+    out << YAML::Key << "status" << YAML::Value << int(item.status);
+    out << YAML::Key << "priority" << YAML::Value << item.priority;
+    if (!item.requestedPar2.isEmpty()) {
+        QList<int> requested(item.requestedPar2.cbegin(), item.requestedPar2.cend());
+        std::sort(requested.begin(), requested.end());   // stable file, readable diffs
+        out << YAML::Key << "requestedPar2" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+        for (int index : requested)
+            out << index;
+        out << YAML::EndSeq;
+    }
+    if (!item.error.isEmpty())
+        out << YAML::Key << "error" << YAML::Value << toStd(item.error);
+    if (!item.nzb.password.isEmpty())
+        out << YAML::Key << "password" << YAML::Value << toStd(item.nzb.password);
+
+    out << YAML::Key << "files" << YAML::Value << YAML::BeginSeq;
+    for (int i = 0; i < item.nzb.files.size(); ++i) {
+        const NzbFileInfo& info = item.nzb.files.at(i);
+        const UsenetFileState& st = i < item.files.size() ? item.files.at(i)
+                                                         : UsenetFileState{};
+
+        out << YAML::BeginMap;
+        out << YAML::Key << "subject" << YAML::Value << toStd(info.subject);
+        out << YAML::Key << "poster" << YAML::Value << toStd(info.poster);
+        out << YAML::Key << "date" << YAML::Value << static_cast<long long>(info.date);
+        out << YAML::Key << "fileName" << YAML::Value << toStd(info.fileName);
+        out << YAML::Key << "partsTotal" << YAML::Value << info.partsTotal;
+
+        out << YAML::Key << "groups" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+        for (const QString& g : info.groups)
+            out << toStd(g);
+        out << YAML::EndSeq;
+
+        out << YAML::Key << "segments" << YAML::Value << YAML::BeginSeq;
+        for (const NzbSegment& seg : info.segments) {
+            out << YAML::Flow << YAML::BeginMap;
+            out << YAML::Key << "id" << YAML::Value << toStd(seg.messageId);
+            out << YAML::Key << "bytes" << YAML::Value << static_cast<long long>(seg.bytes);
+            out << YAML::Key << "number" << YAML::Value << seg.number;
+            out << YAML::EndMap;
+        }
+        out << YAML::EndSeq;
+
+        out << YAML::Key << "tempPath" << YAML::Value << toStd(st.tempPath);
+        out << YAML::Key << "finalPath" << YAML::Value << toStd(st.finalPath);
+        out << YAML::Key << "articleFileName" << YAML::Value << toStd(st.articleFileName);
+        out << YAML::Key << "declaredSize" << YAML::Value << static_cast<long long>(st.declaredSize);
+        out << YAML::Key << "decodedBytes" << YAML::Value << static_cast<long long>(st.decodedBytes);
+        out << YAML::Key << "finalized" << YAML::Value << st.finalized;
+        out << YAML::Key << "missingSegments" << YAML::Value << st.missingSegments;
+        out << YAML::Key << "done" << YAML::Value << toStd(bitsToBase64(st.done));
+        out << YAML::EndMap;
+    }
+    out << YAML::EndSeq;
+    out << YAML::EndMap;
+
+    const QString finalPath = statePath(item.id);
+    const QString tempPath = finalPath + QStringLiteral(".backup");
+    const QString bakPath = finalPath + QStringLiteral(".bak");
+
+    {
+        std::ofstream file(tempPath.toStdString(), std::ios::out | std::ios::trunc);
+        if (!file.is_open()) {
+            logError(QStringLiteral("Usenet: cannot write %1").arg(tempPath));
+            return false;
+        }
+        file << out.c_str();
+        if (!file.good()) {
+            logError(QStringLiteral("Usenet: write failed for %1").arg(tempPath));
+            return false;
+        }
+    }
+
+    QFile::remove(bakPath);
+    if (QFile::exists(finalPath)) {
+        if (!QFile::rename(finalPath, bakPath))
+            QFile::remove(finalPath);
+    }
+    if (!QFile::rename(tempPath, finalPath)) {
+        logError(QStringLiteral("Usenet: rename failed %1 -> %2").arg(tempPath, finalPath));
+        if (QFile::exists(bakPath))
+            QFile::rename(bakPath, finalPath);
+        return false;
+    }
+
+    return true;
+}
+
+bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& error)
+{
+    try {
+        YAML::Node root = YAML::LoadFile(path.toStdString());
+        if (!root || !root.IsMap()) {
+            error = QStringLiteral("not a YAML map");
+            return false;
+        }
+
+        const int version = root["version"] ? root["version"].as<int>(0) : 0;
+        if (version > kStateVersion) {
+            // Refuse rather than misparse: a newer daemon may have added fields
+            // whose absence here would silently reset progress.
+            error = QStringLiteral("state version %1 is newer than %2")
+                        .arg(version)
+                        .arg(kStateVersion);
+            return false;
+        }
+
+        out.id = fromStd(root, "id");
+        if (out.id.isEmpty()) {
+            error = QStringLiteral("missing id");
+            return false;
+        }
+        out.name = fromStd(root, "name");
+        out.status = static_cast<UsenetItemStatus>(root["status"] ? root["status"].as<int>(0) : 0);
+        out.priority = root["priority"] ? root["priority"].as<int>(0) : 0;
+        out.error = fromStd(root, "error");
+        out.nzb.name = out.name;
+        out.nzb.password = fromStd(root, "password");
+
+        out.nzb.files.clear();
+        out.files.clear();
+
+        if (root["files"] && root["files"].IsSequence()) {
+            for (const auto& fnode : root["files"]) {
+                NzbFileInfo info;
+                info.subject = fromStd(fnode, "subject");
+                info.poster = fromStd(fnode, "poster");
+                info.date = fnode["date"] ? fnode["date"].as<long long>(0) : 0;
+                info.fileName = fromStd(fnode, "fileName");
+                info.partsTotal = fnode["partsTotal"] ? fnode["partsTotal"].as<int>(0) : 0;
+
+                if (fnode["groups"] && fnode["groups"].IsSequence()) {
+                    for (const auto& g : fnode["groups"])
+                        info.groups << QString::fromStdString(g.as<std::string>(std::string{}));
+                }
+                if (fnode["segments"] && fnode["segments"].IsSequence()) {
+                    for (const auto& s : fnode["segments"]) {
+                        NzbSegment seg;
+                        seg.messageId = fromStd(s, "id");
+                        seg.bytes = s["bytes"] ? s["bytes"].as<long long>(0) : 0;
+                        seg.number = s["number"] ? s["number"].as<int>(0) : 0;
+                        info.segments.append(seg);
+                    }
+                }
+
+                UsenetFileState st;
+                st.tempPath = fromStd(fnode, "tempPath");
+                st.finalPath = fromStd(fnode, "finalPath");
+                st.articleFileName = fromStd(fnode, "articleFileName");
+                st.declaredSize = fnode["declaredSize"] ? fnode["declaredSize"].as<long long>(0) : 0;
+                st.decodedBytes = fnode["decodedBytes"] ? fnode["decodedBytes"].as<long long>(0) : 0;
+                st.finalized = fnode["finalized"] ? fnode["finalized"].as<bool>(false) : false;
+                st.missingSegments = fnode["missingSegments"]
+                                         ? fnode["missingSegments"].as<int>(0) : 0;
+                st.done = bitsFromBase64(fromStd(fnode, "done"), int(info.segments.size()));
+
+                out.nzb.files.append(info);
+                out.files.append(st);
+            }
+        }
+
+        if (const auto requested = root["requestedPar2"]; requested && requested.IsSequence()) {
+            for (const auto& entry : requested)
+                out.requestedPar2.insert(entry.as<int>(-1));
+            out.requestedPar2.remove(-1);
+        }
+
+        // Neither Downloading nor any post-processing state can be resumed
+        // *into* — nothing is in flight and no pipeline job survives a restart.
+        // Demote them all to Queued: the scheduler finds nothing left to fetch,
+        // the tick notices, and post-processing starts again from the top. Every
+        // stage is idempotent, and re-verifying costs far less than reasoning
+        // about a repair that was halfway through.
+        if (out.status == UsenetItemStatus::Downloading || out.isPostProcessing())
+            out.status = UsenetItemStatus::Queued;
+
+        return true;
+    } catch (const YAML::Exception& e) {
+        error = QString::fromStdString(e.what());
+        return false;
+    }
+}
+
+void UsenetQueueStore::remove(const QString& itemId)
+{
+    const QString path = statePath(itemId);
+    QFile::remove(path);
+    QFile::remove(path + QStringLiteral(".bak"));
+    QFile::remove(path + QStringLiteral(".backup"));
+}
+
+QStringList UsenetQueueStore::listStateFiles()
+{
+    QDir dir(stateDir());
+    QStringList out;
+    const auto entries = dir.entryInfoList({QStringLiteral("*.nzbstate")},
+                                           QDir::Files, QDir::Name);
+    out.reserve(entries.size());
+    for (const QFileInfo& fi : entries)
+        out << fi.absoluteFilePath();
+    return out;
+}
+
+} // namespace eMule::usenet

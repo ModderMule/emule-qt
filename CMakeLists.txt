@@ -211,29 +211,127 @@ endif()
 option(EMULE_USENET_RAPIDYENC "Use rapidyenc for SIMD yEnc decoding" ON)
 
 if(EMULE_USENET_RAPIDYENC)
-    FetchContent_Declare(rapidyenc
-        GIT_REPOSITORY https://github.com/animetosho/rapidyenc.git
-        GIT_TAG        v1.1.1
-    )
-    # We decode; we never post. Dropping the encoder and the CLI is most of the
-    # build.
-    set(DISABLE_ENCODE ON  CACHE BOOL "" FORCE)
-    set(DISABLE_DECODE OFF CACHE BOOL "" FORCE)
-    set(DISABLE_CRC    OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(rapidyenc)
+    # A prebuilt copy wins. The vcpkg overlay port in src/vcpkg-ports/ installs
+    # one, which is what lets the hand-maintained MSBuild solution link rapidyenc
+    # at all and stops the Windows CI job rebuilding it from source every run.
+    # Under the vcpkg toolchain these two searches hit vcpkg_installed on their
+    # own; everywhere else they miss and we build it ourselves below.
+    find_path(RAPIDYENC_INCLUDE_DIR rapidyenc.h)
+    find_library(RAPIDYENC_LIBRARY NAMES rapidyenc rapidyenc_static)
 
-    if(TARGET rapidyenc_static)
-        # Its own tool targets are of no use to us and would only be built.
-        foreach(_ry_tool rapidyenc_cli rapidyenc_bench)
-            if(TARGET ${_ry_tool})
-                set_target_properties(${_ry_tool} PROPERTIES EXCLUDE_FROM_ALL TRUE)
-            endif()
-        endforeach()
-        target_include_directories(rapidyenc_static
-            INTERFACE "${rapidyenc_SOURCE_DIR}")
+    if(RAPIDYENC_INCLUDE_DIR AND RAPIDYENC_LIBRARY)
+        if(NOT TARGET rapidyenc_static)
+            add_library(rapidyenc_static STATIC IMPORTED GLOBAL)
+            set_target_properties(rapidyenc_static PROPERTIES
+                IMPORTED_LOCATION "${RAPIDYENC_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${RAPIDYENC_INCLUDE_DIR}")
+        endif()
+        message(STATUS "rapidyenc: prebuilt ${RAPIDYENC_LIBRARY}")
     else()
-        message(WARNING "rapidyenc target not found — falling back to the scalar decoder")
-        set(EMULE_USENET_RAPIDYENC OFF)
+        FetchContent_Declare(rapidyenc
+            GIT_REPOSITORY https://github.com/animetosho/rapidyenc.git
+            GIT_TAG        v1.1.1
+        )
+        # We decode; we never post. Dropping the encoder and the CLI is most of the
+        # build.
+        set(DISABLE_ENCODE ON  CACHE BOOL "" FORCE)
+        set(DISABLE_DECODE OFF CACHE BOOL "" FORCE)
+        set(DISABLE_CRC    OFF CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(rapidyenc)
+
+        if(TARGET rapidyenc_static)
+            # Its own tool targets are of no use to us and would only be built.
+            foreach(_ry_tool rapidyenc_cli rapidyenc_bench)
+                if(TARGET ${_ry_tool})
+                    set_target_properties(${_ry_tool} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+                endif()
+            endforeach()
+            target_include_directories(rapidyenc_static
+                INTERFACE "${rapidyenc_SOURCE_DIR}")
+        else()
+            message(WARNING "rapidyenc target not found - falling back to the scalar decoder")
+            set(EMULE_USENET_RAPIDYENC OFF)
+        endif()
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# libpar2-turbo - PAR2 verify and repair for the Usenet module (phase 4)
+#
+# GPL-2.0, the same licence as eMuleQt, so nothing to reconcile.
+#
+# This is the *nzbgetcom fork*, not animetosho's original. The fork is what
+# carries BUILD_LIB / BUILD_TOOL and an include/par2 tree; upstream builds only
+# a CLI and cannot be consumed as a library. NZBGet ships exactly this.
+#
+# Optional for the same reason rapidyenc is: without it the queue still
+# downloads, assembles and shares. It simply cannot verify or repair, and says
+# so rather than pretending a damaged release is fine.
+# ---------------------------------------------------------------------------
+option(EMULE_USENET_PAR2 "Use libpar2-turbo for PAR2 verify and repair" ON)
+
+# par2cmdline-turbo sets these with add_compile_definitions(), which is directory
+# scope and therefore does NOT reach a consumer. They are not optional:
+#
+#   HAVE_CONFIG_H              libpar2.h picks its u32/u64 typedefs from config.h
+#                              when this is set and from plain built-ins when it
+#                              is not. On LP64 that is uint64_t vs unsigned long
+#                              long -- same size, *different mangled name*, so a
+#                              mismatch is an undefined reference to Process().
+#   PARPAR_ENABLE_HASHER_MD5CRC   without it md5.h and crc.h declare nothing and
+#                              filechecksummer.h fails on unknown type MD5Single
+#   PARPAR_INVERT_SUPPORT / PARPAR_SLIM_GF16   gf16 header layout
+#
+# The include path must therefore also carry the config.h the library was built
+# against -- the FetchContent branch adds its build dir, the vcpkg port installs
+# a copy beside the headers.
+set(EMULE_PAR2_DEFINES
+    HAVE_CONFIG_H
+    PARPAR_ENABLE_HASHER_MD5CRC
+    PARPAR_INVERT_SUPPORT
+    PARPAR_SLIM_GF16)
+
+if(EMULE_USENET_PAR2)
+    find_path(PAR2_INCLUDE_DIR par2/par2repairer.h)
+    find_library(PAR2_TURBO_LIBRARY  par2-turbo)
+    find_library(PAR2_GF16_LIBRARY   gf16)
+    find_library(PAR2_HASHER_LIBRARY hasher)
+
+    if(PAR2_INCLUDE_DIR AND PAR2_TURBO_LIBRARY AND PAR2_GF16_LIBRARY AND PAR2_HASHER_LIBRARY)
+        add_library(emule_par2 INTERFACE)
+        # SYSTEM: par2cmdline-turbo is warning-noisy and none of it is ours to fix.
+        target_include_directories(emule_par2 SYSTEM INTERFACE "${PAR2_INCLUDE_DIR}")
+        target_link_libraries(emule_par2 INTERFACE
+            "${PAR2_TURBO_LIBRARY}" "${PAR2_GF16_LIBRARY}" "${PAR2_HASHER_LIBRARY}")
+        target_compile_definitions(emule_par2 INTERFACE ${EMULE_PAR2_DEFINES})
+        message(STATUS "par2: prebuilt ${PAR2_TURBO_LIBRARY}")
+    else()
+        FetchContent_Declare(par2turbo
+            GIT_REPOSITORY https://github.com/nzbgetcom/par2cmdline-turbo.git
+            GIT_TAG        v1.4.0-20260803
+        )
+        set(BUILD_LIB  ON  CACHE BOOL "" FORCE)   # its own default; stated anyway
+        set(BUILD_TOOL OFF CACHE BOOL "" FORCE)   # we never invoke the par2 CLI
+        FetchContent_MakeAvailable(par2turbo)
+
+        if(TARGET par2-turbo)
+            add_library(emule_par2 INTERFACE)
+            target_link_libraries(emule_par2 INTERFACE par2-turbo)
+            # gf16 and hasher come from include()d cmake files rather than
+            # add_subdirectory, so they land in this scope under their bare names.
+            foreach(_p2_lib gf16 hasher)
+                if(TARGET ${_p2_lib})
+                    target_link_libraries(emule_par2 INTERFACE ${_p2_lib})
+                endif()
+            endforeach()
+            target_include_directories(emule_par2 SYSTEM INTERFACE
+                "${par2turbo_SOURCE_DIR}/include"
+                "${par2turbo_BINARY_DIR}")          # its generated config.h
+            target_compile_definitions(emule_par2 INTERFACE ${EMULE_PAR2_DEFINES})
+        else()
+            message(WARNING "par2-turbo target not found - PAR2 verify/repair disabled")
+            set(EMULE_USENET_PAR2 OFF)
+        endif()
     endif()
 endif()
 

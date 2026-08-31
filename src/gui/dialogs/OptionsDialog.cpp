@@ -2727,12 +2727,71 @@ QWidget* OptionsDialog::createUsenetPage()
     retryRow->addStretch();
     mainLayout->addLayout(retryRow);
 
+    auto* shareRow = new QHBoxLayout;
+    shareRow->addWidget(new QLabel(tr("Share of the download limit:"), page));
+    m_usenetShareSpin = new QSpinBox(page);
+    m_usenetShareSpin->setRange(1, 99);
+    m_usenetShareSpin->setSuffix(tr(" %"));
+    m_usenetShareSpin->setToolTip(
+        tr("How much of the global download limit Usenet may take while eD2K is "
+           "also downloading. Whichever engine is idle lends its whole share to "
+           "the other, so this only applies when both are busy."));
+    shareRow->addWidget(m_usenetShareSpin);
+    shareRow->addStretch();
+    mainLayout->addLayout(shareRow);
+
+    auto* postGroup = new QGroupBox(tr("After downloading"), page);
+    auto* postLayout = new QVBoxLayout(postGroup);
+
+    m_usenetPar2Check = new QCheckBox(tr("Verify and repair with PAR2"), postGroup);
+    m_usenetPar2Check->setToolTip(
+        tr("Check the finished files against the release's PAR2 set and repair any "
+           "damage from its recovery volumes. The recovery volumes are only "
+           "downloaded when something actually needs repairing.\n\n"
+           "With this off, a release with missing articles fails instead of being "
+           "shared, because there is no way to tell whether it is intact."));
+    postLayout->addWidget(m_usenetPar2Check);
+
+    m_usenetRenameCheck = new QCheckBox(tr("Restore filenames from PAR2"), postGroup);
+    m_usenetRenameCheck->setToolTip(
+        tr("Obfuscated releases are posted under meaningless filenames. The PAR2 "
+           "metadata carries the real ones, and without them the archives cannot "
+           "be identified for unpacking either."));
+    postLayout->addWidget(m_usenetRenameCheck);
+
+    m_usenetUnpackCheck = new QCheckBox(tr("Unpack archives"), postGroup);
+    m_usenetUnpackCheck->setToolTip(
+        tr("Extract RAR, 7z and ZIP volume sets once they have been verified.\n\n"
+           "Password-protected RAR archives cannot be unpacked."));
+    postLayout->addWidget(m_usenetUnpackCheck);
+
+    m_usenetCleanupCheck =
+        new QCheckBox(tr("Delete archives and PAR2 files after unpacking"), postGroup);
+    m_usenetCleanupCheck->setToolTip(
+        tr("Keep only the unpacked content. Turning this off roughly doubles the "
+           "disk space a release uses and shares the archive volumes and recovery "
+           "files with eD2K peers, who have no use for them."));
+    postLayout->addWidget(m_usenetCleanupCheck);
+
+    mainLayout->addWidget(postGroup);
+
     mainLayout->addStretch();
 
     // -- Wiring -------------------------------------------------------------
     // Gates auto-start only, so it greys nothing -- see updateUsenetEnabledStates().
     connect(m_usenetEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_usenetRetrySpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_usenetShareSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+
+    for (QCheckBox* box : {m_usenetPar2Check, m_usenetRenameCheck,
+                           m_usenetUnpackCheck, m_usenetCleanupCheck}) {
+        connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    }
+
+    // Unpacking is what produces the payload; with it off there is nothing to
+    // clean up around, and cleanup would only delete the files just downloaded.
+    connect(m_usenetUnpackCheck, &QCheckBox::toggled, m_usenetCleanupCheck,
+            &QWidget::setEnabled);
 
     connect(m_usenetAddBtn, &QPushButton::clicked, this, &OptionsDialog::addNewsServer);
     connect(m_usenetRemoveBtn, &QPushButton::clicked, this, &OptionsDialog::removeNewsServer);
@@ -4388,6 +4447,16 @@ void OptionsDialog::saveSettings()
         req.append(m_usenetEnabledCheck->isChecked());
         req.append(QStringLiteral("usenetRetryIntervalSeconds"));
         req.append(static_cast<qint64>(m_usenetRetrySpin->value()));
+        req.append(QStringLiteral("usenetDownloadSharePercent"));
+        req.append(static_cast<qint64>(m_usenetShareSpin->value()));
+        req.append(QStringLiteral("usenetPar2Repair"));
+        req.append(m_usenetPar2Check->isChecked());
+        req.append(QStringLiteral("usenetPar2RenameFiles"));
+        req.append(m_usenetRenameCheck->isChecked());
+        req.append(QStringLiteral("usenetUnpack"));
+        req.append(m_usenetUnpackCheck->isChecked());
+        req.append(QStringLiteral("usenetCleanupAfterUnpack"));
+        req.append(m_usenetCleanupCheck->isChecked());
 
         // Web Interface page
         req.append(QStringLiteral("webServerEnabled"));
@@ -5020,6 +5089,17 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_usenetEnabledCheck->setChecked(prefs.value(QStringLiteral("usenetEnabled")).toBool(false));
     m_usenetRetrySpin->setValue(
         static_cast<int>(prefs.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60)));
+    m_usenetShareSpin->setValue(
+        static_cast<int>(prefs.value(QStringLiteral("usenetDownloadSharePercent")).toInteger(50)));
+    m_usenetPar2Check->setChecked(
+        prefs.value(QStringLiteral("usenetPar2Repair")).toBool(true));
+    m_usenetRenameCheck->setChecked(
+        prefs.value(QStringLiteral("usenetPar2RenameFiles")).toBool(true));
+    m_usenetUnpackCheck->setChecked(
+        prefs.value(QStringLiteral("usenetUnpack")).toBool(true));
+    m_usenetCleanupCheck->setChecked(
+        prefs.value(QStringLiteral("usenetCleanupAfterUnpack")).toBool(true));
+    m_usenetCleanupCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     updateUsenetEnabledStates();
 
     // Web Interface page

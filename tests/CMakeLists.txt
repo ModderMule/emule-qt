@@ -294,6 +294,24 @@ emule_add_test(tst_UsenetPrefs FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cpp:
 emule_add_test(tst_UsenetYenc FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetNzbParse FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetArticleFetch FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetSharing FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetQueue FOLDER "Usenet" LIBRARIES eMule::Usenet)
+
+# The par2 cases build their own recovery sets with Par2::par2create, so this one
+# needs the par2 headers that emuleusenet keeps PRIVATE. Linking the interface
+# target again is harmless and is what makes a checked-in binary fixture
+# unnecessary.
+emule_add_test(tst_UsenetUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
+
+# Phase 4 end to end: par2 fixtures are generated in-process, so this one needs
+# the par2 headers too. The repair pass is real work, hence the raised timeout.
+emule_add_test(tst_UsenetPostPipeline FOLDER "Usenet" LIBRARIES eMule::Usenet)
+target_compile_definitions(tst_UsenetPostPipeline PRIVATE QTEST_FUNCTION_TIMEOUT=180000)
+set_tests_properties(tst_UsenetPostPipeline PROPERTIES TIMEOUT 300)
+emule_add_test(tst_UsenetPar2 FOLDER "Usenet" LIBRARIES eMule::Usenet)
+if(EMULE_USENET_PAR2 AND TARGET emule_par2)
+    target_link_libraries(tst_UsenetPar2 PRIVATE emule_par2)
+endif()
 
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")

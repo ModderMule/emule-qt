@@ -89,6 +89,7 @@ private slots:
     void headersBeforeYbeginAreIgnored();
     void danglingEscapeDoesNotLeakIntoTheNextArticle();
     void decoderIsReusable();
+    void decodesALineBeginningWithAnEncodedDot();
 };
 
 void tst_UsenetYenc::crc32MatchesTheStandardVector()
@@ -97,6 +98,45 @@ void tst_UsenetYenc::crc32MatchesTheStandardVector()
     // article verifies as corrupt and the cause looks like the network.
     QCOMPARE(yencCrc32(0, QByteArrayLiteral("123456789")), 0xCBF43926u);
     QCOMPARE(yencCrc32(0, QByteArray{}), 0u);
+}
+
+void tst_UsenetYenc::decodesALineBeginningWithAnEncodedDot()
+{
+    // Source byte 0x04 encodes to 0x2E, '.', so a line starting with one is an
+    // ordinary occurrence in binary data — and it is the exact shape that broke
+    // the SIMD decoder.
+    //
+    // NNTP stuffs such a line with a second dot on the wire and
+    // NntpSocket::handleBodyLine strips it again, so what arrives here already
+    // begins with a single, real '.'. rapidyenc was being called with is_raw=1,
+    // which asks *it* to unstuff as well: the dot was eaten a second time and
+    // every affected article came out one byte short per line. =yend's size
+    // check turned that into a protocol error, so the article was retried
+    // forever and the provider was backed off — a decoder bug wearing a network
+    // failure's clothes.
+    //
+    // The scalar path never had the bug, so this only fails with
+    // EMULE_USENET_RAPIDYENC on. Both must pass.
+    QByteArray data;
+    data.append(char(0x04));                 // encodes to '.', first on the line
+    data.append(patternBytes(200));
+
+    YencDecoder decoder;
+    QByteArrayList lines{
+        QByteArrayLiteral("=ybegin line=128 size=201 name=dot.bin")};
+    const QByteArrayList encoded = encodeYenc(data);
+    QVERIFY(!encoded.isEmpty());
+    QVERIFY2(encoded.first().startsWith('.'),
+             "fixture no longer produces a leading-dot line; the case is vacuous");
+    lines += encoded;
+    lines.append(QStringLiteral("=yend size=201 crc32=%1")
+                     .arg(yencCrc32(0, data), 8, 16, QLatin1Char('0'))
+                     .toLatin1());
+
+    const QByteArray out = decodeAll(decoder, lines);
+    QCOMPARE(out.size(), data.size());
+    QCOMPARE(out, data);
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
 }
 
 void tst_UsenetYenc::roundTripsEveryByteValue()

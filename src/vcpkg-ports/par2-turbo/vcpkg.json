@@ -1,0 +1,11 @@
+{
+  "name": "par2-turbo",
+  "version": "1.4.0",
+  "port-version": 20260803,
+  "description": "PAR2 verification and repair (library build of par2cmdline-turbo)",
+  "homepage": "https://github.com/nzbgetcom/par2cmdline-turbo",
+  "license": "GPL-2.0-or-later",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true }
+  ]
+}

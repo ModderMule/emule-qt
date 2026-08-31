@@ -372,6 +372,13 @@ namespace {
 bool SharedFileList::shouldBeShared(const QString& dirPath, const QString& filePath,
                                     bool mustBeShared) const
 {
+    // Usenet scratch is never shared, and this test comes FIRST — ahead of the
+    // incoming-directory rule below, which returns true unconditionally. A user
+    // whose temp directory sits inside incoming would otherwise advertise every
+    // half-written article on ED2K and Kad.
+    if (thePrefs.isUsenetTempPath(filePath.isEmpty() ? dirPath : filePath))
+        return false;
+
     // The incoming directory is always shared and can never be unshared. MFC also
     // checks each category's incoming path here; this port has no categories.
     if (samePath(dirPath, thePrefs.incomingDir()))
@@ -435,6 +442,23 @@ bool SharedFileList::excludeFile(const QString& filePath)
     return true;
 }
 
+bool SharedFileList::addFileInSharedLocation(const QString& filePath)
+{
+    if (filePath.isEmpty())
+        return false;
+
+    const QString dirPath = QFileInfo(filePath).absolutePath();
+
+    // shouldBeShared() already refuses the Usenet scratch tree ahead of the
+    // incoming-directory rule, so this one test covers both questions: is this
+    // location shared, and is it a place we must never publish from.
+    if (!shouldBeShared(dirPath, filePath, false))
+        return false;
+
+    checkAndAddSingleFile(filePath);
+    return true;
+}
+
 bool SharedFileList::addSingleSharedFile(const QString& filePath)
 {
     if (filePath.isEmpty())
@@ -443,6 +467,16 @@ bool SharedFileList::addSingleSharedFile(const QString& filePath)
     const QString dirPath = QFileInfo(filePath).absolutePath();
     if (!thePrefs.isShareableDirectory(dirPath)) {
         logWarning(QStringLiteral("Cannot share \"%1\": its directory is not shareable")
+                       .arg(filePath));
+        return false;
+    }
+
+    // shouldBeShared() would refuse this anyway, but silently: the entry would go
+    // into m_singleSharedFiles, persist to sharedfiles.dat, and never share
+    // anything. Refuse here so the caller — and the log — get a straight answer.
+    if (thePrefs.isUsenetTempPath(filePath)) {
+        logWarning(QStringLiteral("Cannot share \"%1\": Usenet downloads are shared "
+                                  "when they complete, not while in progress")
                        .arg(filePath));
         return false;
     }
@@ -901,6 +935,17 @@ void SharedFileList::addFilesFromDirectory(const QString& dir, const QString& sh
         // Skip .part and .part.met files
         if (filename.endsWith(QStringLiteral(".part"), Qt::CaseInsensitive)
             || filename.endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive))
+            continue;
+
+        // Usenet scratch. This directory walk does not recurse, so a Usenet temp
+        // folder nested under a shared directory is already invisible; the suffix
+        // covers the two cases that are not. One: a user who adds the Usenet temp
+        // directory itself to sharedDirs. Two, and the reason it matters more —
+        // a completion across volumes, where QFile::rename degrades to a copy and
+        // the growing file is briefly visible *inside the incoming directory*,
+        // which is always shared. The copy carries this suffix until the final
+        // in-place rename, so a scan racing it finds nothing to publish.
+        if (filename.endsWith(Preferences::kUsenetPartSuffix, Qt::CaseInsensitive))
             continue;
 
         // The user unshared this one individually. This — not the m_unsharedFiles

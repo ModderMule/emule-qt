@@ -8,6 +8,7 @@
 /// a stacked widget holding the page content, and a status bar at the bottom.
 
 #include "app/SkinEngine.h"
+#include "app/ToolbarButtons.h"
 
 #include <QCloseEvent>
 #include <QMainWindow>
@@ -45,15 +46,7 @@ class ServerPanel;
 class SharedFilesPanel;
 class StatisticsPanel;
 class TransferPanel;
-
-/// Identifies each toolbar button for customization persistence.
-enum class ToolbarButtonId : int {
-    Connect = 0,
-    Separator = 1,
-    Kad = 10, Servers = 11, Transfers = 12, Search = 13,
-    SharedFiles = 14, Messages = 15, IRC = 16, Statistics = 17,
-    Options = 20, Tools = 21, Help = 22,
-};
+class UsenetPanel;
 
 /// Small status bar widget showing a world globe with two arrows:
 /// left arrow = eD2K status, right arrow = Kad status.
@@ -104,6 +97,10 @@ public:
         TabMessages,
         TabIRC,
         TabStatistics,
+        // Appended, never inserted: kAllButtons stores tabIndex as a literal and
+        // setupPages() adds pages positionally, so a new page anywhere but the
+        // end silently renumbers both.
+        TabUsenet,
         TabCount
     };
 
@@ -126,6 +123,7 @@ public:
     [[nodiscard]] MessagesPanel* messagesPanel() const { return m_messagesPanel; }
     [[nodiscard]] IrcPanel* ircPanel() const { return m_ircPanel; }
     [[nodiscard]] StatisticsPanel* statisticsPanel() const { return m_statsPanel; }
+    [[nodiscard]] UsenetPanel* usenetPanel() const { return m_usenetPanel; }
 
     /// Update the eD2K status label in the footer. \p firewalled is the combined
     /// ed2k+kad state (tray icon), \p lowID the per-network eD2K LowID (label colour).
@@ -229,6 +227,7 @@ private:
     MessagesPanel* m_messagesPanel = nullptr;
     IrcPanel* m_ircPanel = nullptr;
     StatisticsPanel* m_statsPanel = nullptr;
+    UsenetPanel* m_usenetPanel = nullptr;
 
     // Status bar labels
     QLabel* m_statusMsg = nullptr;

@@ -58,6 +58,7 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("messages"),   MainWindow::TabMessages},
             {QStringLiteral("irc"),        MainWindow::TabIRC},
             {QStringLiteral("statistics"), MainWindow::TabStatistics},
+            {QStringLiteral("usenet"),     MainWindow::TabUsenet},
         };
         m_activeTab = static_cast<MainWindow::Tab>(tabArg.toInt());
         for (const auto& [name, value] : tabNames) {

@@ -814,6 +814,77 @@ public:
     /// one: nothing else bounds what a config file can accumulate.
     static constexpr int kMaxUsenetServers = 16;
 
+    /// Where in-progress Usenet articles are written: a "Usenet" subdirectory of
+    /// the first temp dir. Derived, not stored — it follows tempDirs() so there
+    /// is no second path for a user to set inconsistently.
+    ///
+    /// It lives in core rather than in the usenet module because SharedFileList
+    /// has to recognise it to keep partial articles off the ED2K network, and
+    /// core may not depend on eMule::Usenet. Same call already made for
+    /// NewsServer. Empty when no temp dir is configured.
+    [[nodiscard]] QString usenetTempDir() const;
+
+    /// Whether @p path is inside usenetTempDir(). The one question SharedFileList
+    /// asks, so the path comparison lives here rather than being re-spelled at
+    /// each call site.
+    [[nodiscard]] bool isUsenetTempPath(const QString& path) const;
+
+    /// Suffix carried by every in-progress Usenet file, including one being
+    /// copied into the incoming directory on completion. SharedFileList skips it
+    /// by name, which is what makes a cross-volume completion safe: the file is
+    /// invisible to a scan until the final rename.
+    static constexpr QLatin1StringView kUsenetPartSuffix{".usenetpart"};
+
+    /// Usenet's share of the one global download budget, as a percentage, when
+    /// both engines are downloading. ED2K gets the rest. Ignored entirely while
+    /// only one engine is active — the idle one lends its whole share.
+    [[nodiscard]] int usenetDownloadSharePercent() const;
+    void setUsenetDownloadSharePercent(int val);
+
+    // -- Usenet post-processing ----------------------------------------------
+    //
+    // All four default on. They gate the pipeline that runs once a release has
+    // finished downloading: verify against its PAR2 set, repair from the
+    // recovery volumes, restore obfuscated filenames, unpack the archives, and
+    // publish only the payload.
+
+    /// Verify and repair with PAR2. Off means a damaged release *fails* rather
+    /// than being published — a file with holes in it is not something to offer
+    /// to peers.
+    [[nodiscard]] bool usenetPar2Repair() const;
+    void setUsenetPar2Repair(bool val);
+
+    /// Restore real filenames from PAR2 metadata before verifying. Obfuscated
+    /// posts carry no readable name anywhere else, and without this the unpacker
+    /// cannot tell which file is volume one.
+    [[nodiscard]] bool usenetPar2RenameFiles() const;
+    void setUsenetPar2RenameFiles(bool val);
+
+    /// Unpack RAR/7z/ZIP volume sets after verification.
+    [[nodiscard]] bool usenetUnpack() const;
+    void setUsenetUnpack(bool val);
+
+    /// Publish only what came out of the archives. Off keeps the archive volumes
+    /// and the recovery set alongside the payload, which roughly doubles the
+    /// disk cost and advertises files no ED2K peer has any use for.
+    [[nodiscard]] bool usenetCleanupAfterUnpack() const;
+    void setUsenetCleanupAfterUnpack(bool val);
+
+    /// ED2K's current slice of maxDownload(), in KB/s. Runtime only: it is
+    /// recomputed every second from the live split and never written to
+    /// preferences.yml, so a crash cannot leave a user permanently throttled.
+    ///
+    /// **DownloadQueue::process() must read this, not maxDownload()** — reading
+    /// the raw ceiling makes both engines aim at the whole line and the combined
+    /// rate lands at roughly double the cap. 0 means unlimited, as it does for
+    /// maxDownload(); there is no UNLIMITED sentinel on the download side.
+    [[nodiscard]] uint32 maxDownloadForEd2k() const;
+
+    /// Publish ED2K's slice. Negative clears the split, so maxDownloadForEd2k()
+    /// falls back to the raw ceiling — which is what must happen when the Usenet
+    /// engine stops, or ED2K would stay throttled to its old share forever.
+    void setEd2kDownloadBudget(qint64 kbPerSecOrNegative);
+
     /// How many peers must want the same part before it is worth publishing.
     /// The feature's whole premise is one upload serving many, so the default is
     /// 2; set it to 1 only to exercise the path with a single peer.

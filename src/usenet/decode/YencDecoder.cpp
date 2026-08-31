@@ -206,12 +206,22 @@ void YencDecoder::decodeInto(QByteArrayView line)
         static std::once_flag init;
         std::call_once(init, [] { rapidyenc_decode_init(); });
 
-        // is_raw = 1: dot-unstuffing and line endings were handled by
-        // NntpSocket before we ever saw this line, so rapidyenc must not try to
-        // do them again. m_rapidState carries the escape across lines -- the
-        // same job m_escape does on the scalar path.
+        // is_raw = 0. Read the flag the right way round: rapidyenc.h says "if
+        // `is_raw` is non-zero, will also handle NNTP dot unstuffing" — so a 1
+        // asks it to unstuff, it does not promise the input is already clean.
+        //
+        // NntpSocket::handleBodyLine has already restored the leading dot by the
+        // time a line reaches here, so passing 1 unstuffs a second time and eats
+        // one byte from every line whose first *encoded* byte is '.' — that is a
+        // source byte of 0x04, which turns up constantly in binary data. The
+        // damage is invisible until =yend's size check rejects the article, at
+        // which point it is retried forever and the provider gets backed off.
+        //
+        // Only the SIMD path was affected; the scalar decoder below never
+        // unstuffed. tst_UsenetYenc::decodesALineBeginningWithAnEncodedDot
+        // pins it.
         auto* state = reinterpret_cast<RapidYencDecoderState*>(&m_rapidState);
-        produced = qsizetype(rapidyenc_decode_ex(1, line.data(), out,
+        produced = qsizetype(rapidyenc_decode_ex(0, line.data(), out,
                                                  size_t(line.size()), state));
         if (produced > 0) {
             const QByteArrayView decoded(m_out.constData(), produced);

@@ -115,6 +115,15 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::GetNewsServers:       return QStringLiteral("GetNewsServers");
     case T::SetNewsServers:       return QStringLiteral("SetNewsServers");
     case T::TestNewsServer:       return QStringLiteral("TestNewsServer");
+    case T::GetUsenetQueue:       return QStringLiteral("GetUsenetQueue");
+    case T::AddNzb:               return QStringLiteral("AddNzb");
+    case T::RemoveUsenetItem:     return QStringLiteral("RemoveUsenetItem");
+    case T::PauseUsenetItem:      return QStringLiteral("PauseUsenetItem");
+    case T::ResumeUsenetItem:     return QStringLiteral("ResumeUsenetItem");
+    case T::SetUsenetItemPriority: return QStringLiteral("SetUsenetItemPriority");
+    case T::PushUsenetQueueItem:  return QStringLiteral("PushUsenetQueueItem");
+    case T::PushUsenetItemRemoved: return QStringLiteral("PushUsenetItemRemoved");
+    case T::PushUsenetItemFinished: return QStringLiteral("PushUsenetItemFinished");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }
@@ -527,6 +536,9 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
         emit logMessageReceived(msg);
         break;
     }
+    case IpcMsgType::PushUsenetQueueItem:  emit usenetItemUpdated(msg); break;
+    case IpcMsgType::PushUsenetItemRemoved: emit usenetItemRemoved(msg); break;
+    case IpcMsgType::PushUsenetItemFinished: emit usenetItemFinished(msg); break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;
     case IpcMsgType::PushKadUpdate:        emit kadUpdated(msg); break;

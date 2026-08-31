@@ -81,7 +81,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>release\</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_HAVE_RAPIDYENC=1;EMULE_HAVE_PAR2=1;HAVE_CONFIG_H;PARPAR_ENABLE_HASHER_MD5CRC;PARPAR_INVERT_SUPPORT;PARPAR_SLIM_GF16;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <ProgramDataBaseFileName>
       </ProgramDataBaseFileName>
@@ -102,7 +102,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_HAVE_RAPIDYENC=1;EMULE_HAVE_PAR2=1;HAVE_CONFIG_H;PARPAR_ENABLE_HASHER_MD5CRC;PARPAR_INVERT_SUPPORT;PARPAR_SLIM_GF16;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -125,7 +125,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>debug\</ObjectFileName>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_HAVE_RAPIDYENC=1;EMULE_HAVE_PAR2=1;HAVE_CONFIG_H;PARPAR_ENABLE_HASHER_MD5CRC;PARPAR_INVERT_SUPPORT;PARPAR_SLIM_GF16;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -144,7 +144,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_HAVE_RAPIDYENC=1;EMULE_HAVE_PAR2=1;HAVE_CONFIG_H;PARPAR_ENABLE_HASHER_MD5CRC;PARPAR_INVERT_SUPPORT;PARPAR_SLIM_GF16;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -166,7 +166,14 @@
     <ClCompile Include="nzb\NzbFile.cpp" />
     <ClCompile Include="nzb\NzbInfo.cpp" />
     <ClCompile Include="nzb\SubjectParser.cpp" />
+    <ClCompile Include="post\Par2Verifier.cpp" />
+    <ClCompile Include="post\UsenetPostProcessor.cpp" />
+    <ClCompile Include="post\UsenetUnpacker.cpp" />
     <ClCompile Include="queue\ArticleWriter.cpp" />
+    <ClCompile Include="queue\UsenetQueue.cpp" />
+    <ClCompile Include="queue\UsenetQueueItem.cpp" />
+    <ClCompile Include="queue\UsenetQueueStore.cpp" />
+    <ClCompile Include="queue\UsenetWorker.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="decode\YencDecoder.h" />
@@ -176,11 +183,18 @@
     <ClInclude Include="nzb\NzbFile.h" />
     <ClInclude Include="nzb\NzbInfo.h" />
     <ClInclude Include="nzb\SubjectParser.h" />
+    <ClInclude Include="post\Par2Verifier.h" />
+    <ClInclude Include="post\UsenetUnpacker.h" />
     <ClInclude Include="queue\ArticleWriter.h" />
+    <ClInclude Include="queue\UsenetQueueItem.h" />
+    <ClInclude Include="queue\UsenetQueueStore.h" />
     <QtMoc Include="UsenetSession.h" />
     <QtMoc Include="nntp\ArticleFetcher.h" />
     <QtMoc Include="nntp\NntpServerPool.h" />
     <QtMoc Include="nntp\NntpSocket.h" />
+    <QtMoc Include="post\UsenetPostProcessor.h" />
+    <QtMoc Include="queue\UsenetQueue.h" />
+    <QtMoc Include="queue\UsenetWorker.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

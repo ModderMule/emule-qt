@@ -117,8 +117,20 @@ void NntpServerPool::release(NntpSocket* socket, bool reusable)
         return;
     }
 
-    socket->abort();
+    retire(*it);
     m_connections.erase(it);
+}
+
+void NntpServerPool::retire(Lease& lease)
+{
+    if (!lease.socket)
+        return;
+
+    lease.socket->abort();
+
+    // Ownership goes to the event loop. A pending deleteLater is flushed when the
+    // thread's event loop exits, so this does not leak at shutdown either.
+    lease.socket.release()->deleteLater();
 }
 
 void NntpServerPool::blockServer(const QString& serverKey)
@@ -149,7 +161,7 @@ void NntpServerPool::closeIdleConnections()
     std::erase_if(m_connections, [](Lease& lease) {
         if (lease.inUse)
             return false;
-        lease.socket->close();
+        retire(lease);
         return true;
     });
 }
@@ -209,7 +221,7 @@ void NntpServerPool::dropConnections(const QString& serverKey)
     std::erase_if(m_connections, [&serverKey](Lease& lease) {
         if (lease.serverKey != serverKey)
             return false;
-        lease.socket->abort();
+        retire(lease);
         return true;
     });
 }

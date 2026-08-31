@@ -1129,7 +1129,12 @@ void DownloadQueue::process()
     // MFC CDownloadQueue::Process() lines 348-357: compute proportional
     // download speed percentage (50-200) based on how close we are to the limit.
     uint32 downspeed = 0;
-    const uint32 maxDown = thePrefs.maxDownload(); // KB/s, 0 = unlimited
+    // maxDownloadForEd2k(), not maxDownload(): when the Usenet engine is also
+    // downloading it holds a share of the same line, and aiming both engines at
+    // the full ceiling lands the combined rate at roughly double the cap. With no
+    // split active this returns the raw ceiling, so nothing changes for a user
+    // who never enables Usenet.
+    const uint32 maxDown = thePrefs.maxDownloadForEd2k(); // KB/s, 0 = unlimited
     if (maxDown > 0 && m_datarate > 1500) {
         const uint64 maxDownBytes = static_cast<uint64>(maxDown) * 1024;
         downspeed = static_cast<uint32>(maxDownBytes * 100 / (m_datarate + 1));

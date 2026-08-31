@@ -100,6 +100,17 @@ private:
         bool inUse = false;
     };
 
+    /// Abort @p lease's socket and hand it to the event loop to destroy.
+    ///
+    /// Never `delete` a pooled socket directly. release() is routinely reached
+    /// from *inside* that socket's own readyRead handler — drain() ->
+    /// handleBodyLine() -> commandFinished -> ArticleFetcher::finished ->
+    /// UsenetWorker::finishJob -> release() — and destroying it there leaves
+    /// QAbstractSocketPrivate::canReadNotification() reading freed memory the
+    /// moment the stack unwinds. deleteLater() is the same answer UsenetWorker
+    /// already uses for the ArticleFetcher, for the same reason.
+    static void retire(Lease& lease);
+
     [[nodiscard]] int connectionsFor(const QString& serverKey) const;
     [[nodiscard]] qint64 nowSeconds() const;
     void normalizeLevels();

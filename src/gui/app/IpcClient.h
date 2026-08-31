@@ -120,6 +120,13 @@ signals:
     /// Port-mapping status changed (protocol chosen, mapping gained or lost).
     void portMapStatusChanged(const Ipc::IpcMessage& msg);
 
+    /// One Usenet queue item changed or arrived; the payload is the whole row.
+    void usenetItemUpdated(const Ipc::IpcMessage& msg);
+    /// [id] — the item is gone.
+    void usenetItemRemoved(const Ipc::IpcMessage& msg);
+    /// [id, success, message] — terminal outcome, never coalesced.
+    void usenetItemFinished(const Ipc::IpcMessage& msg);
+
     /// Emitted for every outgoing request and incoming message when enableIpcLog is on.
     void ipcLogMessage(const QString& text, bool outgoing);
 

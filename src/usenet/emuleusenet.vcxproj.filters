@@ -45,7 +45,28 @@
     <ClCompile Include="nzb\SubjectParser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="post\Par2Verifier.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="post\UsenetPostProcessor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="post\UsenetUnpacker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="queue\ArticleWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetQueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetQueueItem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetQueueStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -71,7 +92,19 @@
     <ClInclude Include="nzb\SubjectParser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="post\Par2Verifier.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="post\UsenetUnpacker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="queue\ArticleWriter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue\UsenetQueueItem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue\UsenetQueueStore.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="UsenetSession.h">
@@ -84,6 +117,15 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="nntp\NntpSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="post\UsenetPostProcessor.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="queue\UsenetQueue.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="queue\UsenetWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

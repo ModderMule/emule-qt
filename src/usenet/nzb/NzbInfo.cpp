@@ -1,5 +1,7 @@
 #include "nzb/NzbInfo.h"
 
+#include <QRegularExpression>
+
 #include <algorithm>
 
 namespace eMule::usenet {
@@ -40,6 +42,25 @@ bool NzbFileInfo::isPar2() const
     // filename itself has been scrambled.
     const QString haystack = fileName.isEmpty() ? subject : fileName;
     return haystack.contains(QLatin1String(".par2"), Qt::CaseInsensitive);
+}
+
+int NzbFileInfo::par2RecoveryBlocks() const
+{
+    // Same fall-back-to-subject rule isPar2() uses: an obfuscated post scrambles
+    // the filename but usually leaves the par2 token in the subject.
+    const QString haystack = fileName.isEmpty() ? subject : fileName;
+
+    static const QRegularExpression re(
+        QStringLiteral(R"(\.vol(\d+)\+(\d+)\.par2)"),
+        QRegularExpression::CaseInsensitiveOption);
+
+    const auto match = re.match(haystack);
+    if (!match.hasMatch())
+        return 0;
+
+    // The second number is the block count; the first is the starting exponent
+    // and says nothing about how much recovery data is here.
+    return match.captured(2).toInt();
 }
 
 qint64 NzbInfo::totalEncodedBytes() const

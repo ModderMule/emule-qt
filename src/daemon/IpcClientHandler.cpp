@@ -7,6 +7,9 @@
 
 #include "ipc/CborSerializers.h"
 #include "nntp/NntpSocket.h"
+#include "UsenetSession.h"
+#include "queue/UsenetQueue.h"
+#include "queue/UsenetQueueItem.h"
 #include "webserver/WebServer.h"
 
 #include <QDir>
@@ -295,6 +298,12 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetNewsServers:       handleGetNewsServers(msg); break;
     case IpcMsgType::SetNewsServers:       handleSetNewsServers(msg); break;
     case IpcMsgType::TestNewsServer:       handleTestNewsServer(msg); break;
+    case IpcMsgType::GetUsenetQueue:      handleGetUsenetQueue(msg); break;
+    case IpcMsgType::AddNzb:              handleAddNzb(msg); break;
+    case IpcMsgType::RemoveUsenetItem:    handleRemoveUsenetItem(msg); break;
+    case IpcMsgType::PauseUsenetItem:     handlePauseUsenetItem(msg); break;
+    case IpcMsgType::ResumeUsenetItem:    handleResumeUsenetItem(msg); break;
+    case IpcMsgType::SetUsenetItemPriority: handleSetUsenetItemPriority(msg); break;
     case IpcMsgType::SetDownloadCategory:  handleSetDownloadCategory(msg); break;
     case IpcMsgType::GetDownloadDetails:   handleGetDownloadDetails(msg); break;
     case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
@@ -1750,6 +1759,13 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("usenetEnabled"), thePrefs.usenetEnabled());
     prefs.insert(QStringLiteral("usenetRetryIntervalSeconds"),
                  static_cast<qint64>(thePrefs.usenetRetryIntervalSeconds()));
+    prefs.insert(QStringLiteral("usenetDownloadSharePercent"),
+                 static_cast<qint64>(thePrefs.usenetDownloadSharePercent()));
+    prefs.insert(QStringLiteral("usenetPar2Repair"), thePrefs.usenetPar2Repair());
+    prefs.insert(QStringLiteral("usenetPar2RenameFiles"), thePrefs.usenetPar2RenameFiles());
+    prefs.insert(QStringLiteral("usenetUnpack"), thePrefs.usenetUnpack());
+    prefs.insert(QStringLiteral("usenetCleanupAfterUnpack"),
+                 thePrefs.usenetCleanupAfterUnpack());
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(thePrefs.statsAverageMinutes()));
@@ -2973,8 +2989,11 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
     }
 
     // A directory eMule uses for its own storage can hold no shared file at all, so
-    // every row in it is unshared and locked (MFC's CBS_UNCHECKEDDISABLED).
-    const bool dirShareable = thePrefs.isShareableDirectory(dirPath);
+    // every row in it is unshared and locked (MFC's CBS_UNCHECKEDDISABLED). The
+    // Usenet scratch tree is the same case: SharedFileList refuses it outright, so
+    // offering a checkbox there would be a control that silently does nothing.
+    const bool dirShareable = thePrefs.isShareableDirectory(dirPath)
+                              && !thePrefs.isUsenetTempPath(dirPath);
 
     // One pass over the share, not one per file: the browsed directory can hold
     // thousands of entries and forEachFile() holds the map lock for its duration.
@@ -2990,7 +3009,8 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
         const QString name = fi.fileName();
         if (fi.size() == 0
             || name.endsWith(QStringLiteral(".part"), Qt::CaseInsensitive)
-            || name.endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive))
+            || name.endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive)
+            || name.endsWith(Preferences::kUsenetPartSuffix, Qt::CaseInsensitive))
             continue;
 
         const bool isShared = theApp.sharedFileList->shouldBeShared(dirPath, filePath, false);
@@ -3568,6 +3588,16 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUsenetEnabled(val.toBool());
     else if (key == QStringLiteral("usenetRetryIntervalSeconds"))
         thePrefs.setUsenetRetryIntervalSeconds(int(val.toInteger()));
+    else if (key == QStringLiteral("usenetDownloadSharePercent"))
+        thePrefs.setUsenetDownloadSharePercent(int(val.toInteger()));
+    else if (key == QStringLiteral("usenetPar2Repair"))
+        thePrefs.setUsenetPar2Repair(val.toBool());
+    else if (key == QStringLiteral("usenetPar2RenameFiles"))
+        thePrefs.setUsenetPar2RenameFiles(val.toBool());
+    else if (key == QStringLiteral("usenetUnpack"))
+        thePrefs.setUsenetUnpack(val.toBool());
+    else if (key == QStringLiteral("usenetCleanupAfterUnpack"))
+        thePrefs.setUsenetCleanupAfterUnpack(val.toBool());
     else
         return false;
     return true;
@@ -4116,6 +4146,199 @@ void IpcClientHandler::handleSetNewsServers(const IpcMessage& msg)
     // to the daemon, so a config change is a signal IpcServer forwards.
     emit usenetConfigChanged();
 
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// Usenet — the download queue (723-728)
+//
+// The queue lives on UsenetSession, which DaemonApp owns because core may not
+// depend on eMule::Usenet. usenet::theUsenetSession is how a handler reaches it;
+// every one of these checks it, because the engine does not exist until the
+// daemon has started.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// One queue row. Shared by GetUsenetQueue and the per-item push so the two
+/// cannot drift into disagreeing about field names — the same reason
+/// newsServerToCbor exists.
+QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
+{
+    QCborArray files;
+    for (int i = 0; i < item.files.size() && i < item.nzb.files.size(); ++i) {
+        const auto& st = item.files.at(i);
+        const auto& info = item.nzb.files.at(i);
+
+        // The article's own =ybegin name first: for an obfuscated post the
+        // subject carries nothing readable, and this is the only real name.
+        QString name = st.articleFileName;
+        if (name.isEmpty())
+            name = info.fileName;
+        if (name.isEmpty())
+            name = info.subject;
+
+        int done = 0;
+        for (qsizetype b = 0; b < st.done.size(); ++b) {
+            if (st.done.testBit(b))
+                ++done;
+        }
+        const int total = int(info.segments.size());
+
+        files.append(QCborMap{
+            {QStringLiteral("name"),      name},
+            {QStringLiteral("size"),      static_cast<qint64>(st.declaredSize > 0
+                                              ? st.declaredSize : info.encodedBytes())},
+            {QStringLiteral("percent"),   total > 0 ? done * 100 / total : 0},
+            {QStringLiteral("finalPath"), st.finalPath},
+            {QStringLiteral("isPar2"),    info.isPar2()},
+            {QStringLiteral("missingSegments"), st.missingSegments},
+        });
+    }
+
+    int missing = 0;
+    for (const auto& st : item.files)
+        missing += st.missingSegments;
+
+    return QCborMap{
+        {QStringLiteral("id"),              item.id},
+        {QStringLiteral("name"),            item.name},
+        {QStringLiteral("status"),          int(item.status)},
+        {QStringLiteral("statusText"),      usenet::describeUsenetItemStatus(item.status)},
+        {QStringLiteral("priority"),        item.priority},
+        {QStringLiteral("percent"),         item.percentComplete()},
+        {QStringLiteral("totalBytes"),      static_cast<qint64>(item.totalEncodedBytes())},
+        {QStringLiteral("decodedBytes"),    static_cast<qint64>(item.decodedBytes())},
+        {QStringLiteral("segmentCount"),    item.segmentCount()},
+        {QStringLiteral("doneSegments"),    item.doneSegmentCount()},
+        {QStringLiteral("missingSegments"), missing},
+        {QStringLiteral("error"),           item.error},
+        // Post-processing progress. Separate from `percent`, which is segment
+        // counts: a repair or an unpack moves no segments at all, so a single
+        // figure would sit frozen at 100% for the whole of it.
+        {QStringLiteral("postPercent"),     item.postPercent},
+        {QStringLiteral("postDetail"),      item.postDetail},
+        {QStringLiteral("files"),           files},
+    };
+}
+
+} // namespace
+
+QCborMap usenetQueueItemToCbor(const usenet::UsenetQueueItem& item)
+{
+    return usenetItemToCbor(item);
+}
+
+void IpcClientHandler::handleGetUsenetQueue(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    QCborArray out;
+    for (const auto* item : usenet::theUsenetSession->queue()->items())
+        out.append(usenetItemToCbor(*item));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+void IpcClientHandler::handleAddNzb(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const QByteArray data = msg.field(0).toByteArray();
+    const QString name = msg.fieldString(1);
+    if (data.isEmpty()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("The NZB file is empty."))));
+        return;
+    }
+
+    QString error;
+    const QString id = usenet::theUsenetSession->queue()->addNzb(data, name, error);
+    if (id.isEmpty()) {
+        // A user-facing refusal, not a protocol fault: the GUI shows this string
+        // in a dialog, so it has to read like a sentence.
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(error.isEmpty() ? tr("The NZB could not be read.") : error)));
+        return;
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(id)));
+}
+
+void IpcClientHandler::handleRemoveUsenetItem(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const QString id = msg.fieldString(0);
+    const bool deleteFiles = msg.fieldBool(1);
+    if (!usenet::theUsenetSession->queue()->removeItem(id, deleteFiles)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+                                          QStringLiteral("Queue item not found")));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handlePauseUsenetItem(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    if (!usenet::theUsenetSession->queue()->pauseItem(msg.fieldString(0))) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+                                          QStringLiteral("Queue item not found or not active")));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleResumeUsenetItem(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    if (!usenet::theUsenetSession->queue()->resumeItem(msg.fieldString(0))) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+                                          QStringLiteral("Queue item not found or not paused")));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSetUsenetItemPriority(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const QString id = msg.fieldString(0);
+    const int priority = int(msg.fieldInt(1));
+    if (!usenet::theUsenetSession->queue()->setItemPriority(id, priority)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+                                          QStringLiteral("Queue item not found")));
+        return;
+    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 

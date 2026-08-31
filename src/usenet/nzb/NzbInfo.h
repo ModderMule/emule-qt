@@ -49,9 +49,25 @@ struct NzbFileInfo {
     /// which is different from an article being missing on a server.
     [[nodiscard]] bool hasAllSegments() const;
 
-    /// PAR2 recovery volumes are scheduled last: they are only fetched when
-    /// something else came up short.
+    /// Any part of a PAR2 set — the index file or a recovery volume.
     [[nodiscard]] bool isPar2() const;
+
+    /// Recovery blocks this file carries, read out of a `.vol{start}+{count}.par2`
+    /// name. Zero for the index `.par2`, which holds the file list and no
+    /// recovery data at all, and zero for everything that is not par2.
+    ///
+    /// This is what makes on-demand fetching possible: the queue can total up
+    /// exactly enough volumes to cover the damage par2 reported, instead of
+    /// downloading a recovery set it will usually throw away.
+    ///
+    /// Both spellings occur — par2cmdline writes `rel.vol0+1.par2`, QuickPar and
+    /// MultiPar pad to `rel.vol000+01.par2` — so the digits are parsed, never
+    /// matched.
+    [[nodiscard]] int par2RecoveryBlocks() const;
+
+    /// A recovery volume as opposed to the index file. These are the files the
+    /// initial download plan leaves out.
+    [[nodiscard]] bool isPar2Volume() const { return par2RecoveryBlocks() > 0; }
 };
 
 /// One .nzb.

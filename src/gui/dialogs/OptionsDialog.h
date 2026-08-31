@@ -328,6 +328,11 @@ private:
     // -- Usenet page --------------------------------------------------------
     QCheckBox*    m_usenetEnabledCheck = nullptr;
     QSpinBox*     m_usenetRetrySpin = nullptr;
+    QSpinBox*     m_usenetShareSpin = nullptr;
+    QCheckBox*    m_usenetPar2Check = nullptr;
+    QCheckBox*    m_usenetRenameCheck = nullptr;
+    QCheckBox*    m_usenetUnpackCheck = nullptr;
+    QCheckBox*    m_usenetCleanupCheck = nullptr;
     QTreeWidget*  m_usenetServerTable = nullptr;
     QPushButton*  m_usenetAddBtn = nullptr;
     QPushButton*  m_usenetRemoveBtn = nullptr;

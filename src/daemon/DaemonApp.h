@@ -100,6 +100,14 @@ private:
     /// IPC client through IpcServer::usenetConfigChanged.
     void applyUsenetServers();
 
+    /// Turn the queue's signals into IPC push events.
+    ///
+    /// It lives here rather than in CoreNotifierBridge because the bridge is
+    /// built on core signals and the queue is not a core object — routing it
+    /// through the bridge would mean linking eMule::Usenet into a class whose
+    /// whole job is core.
+    void connectUsenetPushes();
+
     void installLogForwarder();
     void removeLogForwarder();
     static void logMessageHandler(QtMsgType type, const QMessageLogContext& context,

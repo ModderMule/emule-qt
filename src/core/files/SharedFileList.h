@@ -155,6 +155,19 @@ public:
     /// is not shareable at all. Port of srchybrid/SharedFileList.cpp:610-638.
     bool addSingleSharedFile(const QString& filePath);
 
+    /// Pick up a file that has just appeared in a location the share already
+    /// covers — a finished Usenet download landing in the incoming directory.
+    ///
+    /// Distinct from addSingleSharedFile(), which is for a file *no* shared
+    /// directory covers and therefore needs its own sharedfiles.dat entry. That
+    /// one refuses the incoming directory outright, because isShareableDirectory()
+    /// excludes it: incoming is shared implicitly and can never be listed. Using
+    /// it here would log a warning and share nothing until the next full rescan.
+    ///
+    /// Returns false when the location is not in fact shared, so a caller cannot
+    /// use this to smuggle a file onto the network.
+    bool addFileInSharedLocation(const QString& filePath);
+
     /// Does this directory hold any individually-shared file?
     /// Port of srchybrid/SharedFileList.cpp:1420-1427.
     [[nodiscard]] bool containsSingleSharedFiles(const QString& dirPath) const;
