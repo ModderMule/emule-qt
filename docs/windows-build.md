@@ -199,16 +199,60 @@ There are two independent blockers and only one is fixed:
    doing: it took the baseline from `0 / 522 (0.00%)` to non-zero.
 2. **`target_precompile_headers` — still open.** `emulecore`
    (`src/core/CMakeLists.txt`) and `emuleqt` (`src/gui/CMakeLists.txt`) both use PCH, which
-   MSVC implements as `/Yu` — also uncacheable. 206 of the 221 sources live in those two
-   targets, 15 outside, against exactly 209 uncacheable / 13 cacheable.
+   MSVC implements as `/Yu` — also uncacheable. 206 of the 222 sources live in those two
+   targets, 16 outside, against exactly 209 uncacheable / 13 cacheable.
+
+`/Z7` changes nothing about the shipped PDB — the linker's `/DEBUG` produces it either way.
+
+Linux is the control: the same two PCH targets, GCC instead of MSVC, and ccache there reports
+`303 / 469 (64.61%)` cacheable at a 40% hit rate. So this is an MSVC-specific ccache
+limitation, not an argument against PCH as such.
 
 **PCH and ccache are mutually exclusive on MSVC.** PCH makes cold builds fast; ccache makes
 warm ones fast. PCH is currently the better trade — this workflow runs on tags, so its ccache
-was logging `No cache found` on essentially every historical run anyway. Gating PCH off when a
-compiler launcher is set is the way to test the alternative. Don't file the 5.86% hit rate as
-a bug: it is a known trade-off, not a regression.
+was logging `No cache found` on essentially every historical run anyway. Don't file the 5.86%
+hit rate as a bug: it is a known trade-off, not a regression.
 
-`/Z7` changes nothing about the shipped PDB — the linker's `/DEBUG` produces it either way.
+The ccache step is kept anyway, because at this hit rate it is nearly free rather than useless:
+`Set up ccache` and its post-step cost **7s** of a 6m4s job, and the saved cache is 7 MB.
+Keeping the wiring in place is what leaves the alternative below one flag away.
+
+#### Alternative (not chosen): trade PCH away for ccache
+
+Kept on the table because the numbers that rule it out today are not fixed — more sources, a
+colder PCH, or moving this workflow off tag-only triggers would each change the arithmetic.
+To evaluate it:
+
+**1. Confirm the blocker before acting on it.** `ccache -s` prints no reasons; `ccache -sv`
+does. Add a step after `Build` (or set the ccache action's `verbose` input):
+
+```yaml
+- name: ccache stats
+  shell: pwsh
+  run: ccache -sv
+```
+
+Expect `Unsupported compiler option` to account for ~209 calls. If it names something else,
+the diagnosis above is wrong and the real blocker is still unidentified — stop there.
+
+**2. Gate PCH off only when a compiler launcher is set**, rather than deleting the
+`target_precompile_headers` calls. Local MSVC builds have no ccache and are where PCH earns
+most of its keep:
+
+```cmake
+if(NOT (MSVC AND CMAKE_CXX_COMPILER_LAUNCHER))
+    target_precompile_headers(emulecore PRIVATE ...)
+endif()
+```
+
+**3. Judge it on the second run, not the first.** A cold ccache build is slower than a PCH
+build by definition; the swap only wins if a *warm* one beats the current baseline:
+
+| | with PCH (today) |
+| --- | --- |
+| `Build` step | 3m13s |
+| whole job | 6m4s |
+| cacheable | 13 / 222 (5.86%) |
 
 ### Debug symbols
 

@@ -32,6 +32,8 @@ struct LogEntry {
     qint64 timestamp = 0;  ///< Unix seconds when the message was generated.
 };
 
+namespace usenet { class UsenetSession; }
+
 class DaemonApp : public QObject {
     Q_OBJECT
 
@@ -56,6 +58,13 @@ public:
 
     /// Access the core session (nullptr if not started).
     [[nodiscard]] CoreSession* coreSession() const { return m_coreSession.get(); }
+
+    /// Access the Usenet engine (nullptr before start()).
+    ///
+    /// Owned here rather than by AppContext or CoreSession: both live in
+    /// eMule::Core, and core must never depend on eMule::Usenet. The daemon is
+    /// the first place that legitimately knows about both.
+    [[nodiscard]] usenet::UsenetSession* usenetSession() const { return m_usenetSession.get(); }
 
     /// Return all buffered log entries with id > @p lastLogId.
     [[nodiscard]] static std::vector<LogEntry> logsSince(int64_t lastLogId);
@@ -87,6 +96,10 @@ private:
     void stopWebServer();
     void restartWebServer();
 
+    /// Re-apply the news-server list after an Options save. Reached from any
+    /// IPC client through IpcServer::usenetConfigChanged.
+    void applyUsenetServers();
+
     void installLogForwarder();
     void removeLogForwarder();
     static void logMessageHandler(QtMsgType type, const QMessageLogContext& context,
@@ -96,6 +109,7 @@ private:
     std::unique_ptr<IpcServer> m_ipcServer;
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
     std::unique_ptr<WebServer> m_webServer;
+    std::unique_ptr<usenet::UsenetSession> m_usenetSession;
     bool m_running = false;
 
     static DaemonApp* s_instance;

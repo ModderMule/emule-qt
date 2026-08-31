@@ -677,6 +677,9 @@
     <ClInclude Include="utils\PlatformUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="prefs\NewsServer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="prefs\Preferences.h">
       <Filter>Header Files</Filter>
     </ClInclude>

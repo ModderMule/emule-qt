@@ -532,6 +532,13 @@ struct Preferences::Data {
     uint32 httpCacheMaxConcurrentPublishes = 1;
     uint32 httpCacheMaxConcurrentFetches = 2;
 
+    // -- Usenet -------------------------------------------------------------
+    // Provider passwords are AES-encrypted in the YAML under the same file key
+    // as the SMTP password and the HTTP Cache API keys; see the save path.
+    bool usenetEnabled = false;
+    QList<NewsServer> usenetServers;
+    int usenetRetryIntervalSeconds = 60;
+
 };
 
 // ---------------------------------------------------------------------------
@@ -1460,6 +1467,41 @@ QString Preferences::normalizeHttpCacheBaseUrl(const QString& val)
     return clean;
 }
 
+bool Preferences::usenetEnabled() const { return get(&Data::usenetEnabled); }
+void Preferences::setUsenetEnabled(bool val) { set(&Data::usenetEnabled, val); }
+
+QList<NewsServer> Preferences::usenetServers() const
+{
+    return get(&Data::usenetServers);
+}
+
+void Preferences::setUsenetServers(const QList<NewsServer>& val)
+{
+    // Drop unusable entries and cap the list on the way in, so every reader —
+    // the pool, the Options page, the IPC handler — sees the same sanitised
+    // view and none of them has to re-check.
+    QList<NewsServer> clean;
+    clean.reserve(val.size());
+    for (const auto& server : val) {
+        if (!server.isValid())
+            continue;
+        if (clean.size() >= kMaxUsenetServers)
+            break;
+        clean.append(server);
+    }
+    set(&Data::usenetServers, clean);
+}
+
+int Preferences::usenetRetryIntervalSeconds() const
+{
+    return get(&Data::usenetRetryIntervalSeconds);
+}
+
+void Preferences::setUsenetRetryIntervalSeconds(int val)
+{
+    set(&Data::usenetRetryIntervalSeconds, std::max(0, val));
+}
+
 QList<HttpCacheServerConfig> Preferences::httpCacheServers() const
 {
     return get(&Data::httpCacheServers);
@@ -2332,6 +2374,9 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->useFastKad                = p.value(QStringLiteral("useFastKad")).toBool();
     m_data->ipFilterUpdateUrl         = p.value(QStringLiteral("ipFilterUpdateUrl")).toString();
     m_data->appToken                  = p.value(QStringLiteral("appToken")).toString();
+    m_data->usenetEnabled             = p.value(QStringLiteral("usenetEnabled")).toBool();
+    m_data->usenetRetryIntervalSeconds =
+        int(p.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60));
 
     // Statistics
     m_data->statsAverageMinutes   = static_cast<uint32>(p.value(QStringLiteral("statsAverageMinutes")).toInteger());
@@ -3157,6 +3202,80 @@ bool Preferences::load(const QString& filePath)
                 hc["maxConcurrentFetches"].as<uint32>(m_data->httpCacheMaxConcurrentFetches);
         }
 
+        // Usenet. Like `httpCache`, this must come *after* `notifications`:
+        // that is where notifyEmailEncKey is read, and it is the key every
+        // provider password is encrypted under. Load this block earlier and
+        // every password silently comes back empty.
+        if (auto un = root["usenet"]) {
+            m_data->usenetEnabled = un["enabled"].as<bool>(m_data->usenetEnabled);
+            m_data->usenetRetryIntervalSeconds =
+                un["retryIntervalSeconds"].as<int>(m_data->usenetRetryIntervalSeconds);
+
+            if (const auto servers = un["servers"]; servers && servers.IsSequence()) {
+                QList<NewsServer> list;
+
+                for (const auto& node : servers) {
+                    if (!node.IsMap())
+                        continue;
+
+                    NewsServer entry;
+                    entry.host = QString::fromStdString(node["host"].as<std::string>("")).trimmed();
+                    if (entry.host.isEmpty())
+                        continue;
+
+                    entry.name = QString::fromStdString(node["name"].as<std::string>("")).trimmed();
+                    entry.port = static_cast<quint16>(
+                        node["port"].as<int>(kDefaultNntpTlsPort));
+                    entry.tlsMode = static_cast<NntpTlsMode>(
+                        node["tls"].as<int>(static_cast<int>(NntpTlsMode::Implicit)));
+                    entry.user = QString::fromStdString(node["user"].as<std::string>(""));
+                    entry.level = node["level"].as<int>(0);
+                    entry.group = node["group"].as<int>(0);
+                    entry.optional = node["optional"].as<bool>(false);
+                    entry.retention = node["retention"].as<int>(0);
+                    entry.joinGroup = node["joinGroup"].as<bool>(false);
+                    entry.maxConnections = node["maxConnections"].as<int>(8);
+                    entry.certVerification = static_cast<NntpCertVerification>(
+                        node["certVerification"].as<int>(
+                            static_cast<int>(NntpCertVerification::Strict)));
+                    entry.enabled = node["enabled"].as<bool>(true);
+
+                    if (node["passEnc"]) {
+                        const auto enc =
+                            QString::fromStdString(node["passEnc"].as<std::string>(""));
+                        if (m_data->notifyEmailEncKey.isEmpty()) {
+                            // The blob is here but the key is not. Say so: the
+                            // user would otherwise only see their provider
+                            // answer "authentication failed" and have no reason
+                            // to suspect the config file.
+                            logWarning(QStringLiteral(
+                                "Usenet: %1 has a stored password but no encryption key "
+                                "in preferences.yml — re-enter the password")
+                                           .arg(entry.displayName()));
+                        } else {
+                            entry.pass = aesDecryptFromBase64(enc, m_data->notifyEmailEncKey);
+                            if (entry.pass.isEmpty() && !enc.isEmpty()) {
+                                logWarning(QStringLiteral(
+                                    "Usenet: could not decrypt the stored password for %1 "
+                                    "— re-enter it")
+                                               .arg(entry.displayName()));
+                            }
+                        }
+                    } else if (node["pass"]) {
+                        // Plaintext escape hatch for first setup and hand-editing;
+                        // rewritten as passEnc on the next save.
+                        entry.pass = QString::fromStdString(node["pass"].as<std::string>(""));
+                    }
+
+                    list.append(entry);
+                    if (list.size() >= kMaxUsenetServers)
+                        break;
+                }
+
+                m_data->usenetServers = list;
+            }
+        }
+
         // UI State is now in its own uistate.yml (managed by UiState class)
 
     } catch (const YAML::Exception& ex) {
@@ -3774,7 +3893,15 @@ bool Preferences::saveImpl(const QString& filePath) const
                                                   [](const HttpCacheServerConfig& server) {
                                                       return !server.apiKey.isEmpty();
                                                   });
-    if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey)) {
+    // A user who configures only Usenet has neither an SMTP password nor a
+    // cache key, so without this term no key is ever minted and every provider
+    // password is dropped on the first save.
+    const bool haveUsenetPassword = std::ranges::any_of(m_data->usenetServers,
+                                                        [](const NewsServer& server) {
+                                                            return !server.pass.isEmpty();
+                                                        });
+    if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey
+                             || haveUsenetPassword)) {
         encKey = aesRandomKey();
         m_data->notifyEmailEncKey = encKey;
     }
@@ -3820,6 +3947,46 @@ bool Preferences::saveImpl(const QString& filePath) const
         << m_data->httpCacheMaxConcurrentPublishes;
     out << YAML::Key << "maxConcurrentFetches" << YAML::Value
         << m_data->httpCacheMaxConcurrentFetches;
+    out << YAML::EndMap;
+
+    // Usenet. Written after `notifications` for the same reason it is loaded
+    // after it: encKey above is only settled by then. Each provider password is
+    // stored encrypted under it, and the plaintext `pass` form the loader
+    // accepts is never written back.
+    out << YAML::Key << "usenet" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled" << YAML::Value << m_data->usenetEnabled;
+    out << YAML::Key << "retryIntervalSeconds" << YAML::Value
+        << m_data->usenetRetryIntervalSeconds;
+    out << YAML::Key << "servers" << YAML::Value << YAML::BeginSeq;
+    for (const auto& server : m_data->usenetServers) {
+        out << YAML::BeginMap;
+        if (!server.name.isEmpty())
+            out << YAML::Key << "name" << YAML::Value << server.name.toStdString();
+        out << YAML::Key << "host" << YAML::Value << server.host.toStdString();
+        out << YAML::Key << "port" << YAML::Value << static_cast<int>(server.port);
+        out << YAML::Key << "tls" << YAML::Value << static_cast<int>(server.tlsMode);
+        if (!server.user.isEmpty())
+            out << YAML::Key << "user" << YAML::Value << server.user.toStdString();
+        if (!server.pass.isEmpty() && !encKey.isEmpty()) {
+            out << YAML::Key << "passEnc" << YAML::Value
+                << aesEncryptToBase64(server.pass, encKey).toStdString();
+        }
+        out << YAML::Key << "level" << YAML::Value << server.level;
+        if (server.group != 0)
+            out << YAML::Key << "group" << YAML::Value << server.group;
+        if (server.optional)
+            out << YAML::Key << "optional" << YAML::Value << server.optional;
+        if (server.retention != 0)
+            out << YAML::Key << "retention" << YAML::Value << server.retention;
+        if (server.joinGroup)
+            out << YAML::Key << "joinGroup" << YAML::Value << server.joinGroup;
+        out << YAML::Key << "maxConnections" << YAML::Value << server.maxConnections;
+        out << YAML::Key << "certVerification" << YAML::Value
+            << static_cast<int>(server.certVerification);
+        out << YAML::Key << "enabled" << YAML::Value << server.enabled;
+        out << YAML::EndMap;
+    }
+    out << YAML::EndSeq;
     out << YAML::EndMap;
 
     // UI State is now in its own uistate.yml (managed by UiState class)

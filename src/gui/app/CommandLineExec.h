@@ -10,6 +10,7 @@
 #include <QString>
 
 class QApplication;
+class QPixmap;
 
 namespace eMule {
 
@@ -23,7 +24,7 @@ public:
     /// Whether --screenshot was given.
     [[nodiscard]] bool screenshotMode() const { return m_screenshotMode; }
 
-    /// Screenshot output path (default: /tmp/emuleqt_screenshot.png).
+    /// Screenshot output path from --screenshot, or empty if not given.
     [[nodiscard]] const QString& screenshotPath() const { return m_screenshotPath; }
 
     /// Screenshot delay in milliseconds (default: 3000).
@@ -50,13 +51,16 @@ public:
     void handleEd2kLinks(ExternalLinkHandler& linkHandler) const;
 
 private:
+    /// mkpath the parent dir, write @p pixmap to @p path, log the outcome.
+    /// Returns false (and logs why) on any failure.
+    [[nodiscard]] static bool saveScreenshot(const QPixmap& pixmap, const QString& path);
+
     QCommandLineParser m_parser;
 
     QCommandLineOption m_screenshotOption{
         QStringLiteral("screenshot"),
-        QStringLiteral("Take a screenshot and exit (development aid)."),
-        QStringLiteral("path"),
-        QStringLiteral("/tmp/emuleqt_screenshot.png")};
+        QStringLiteral("Take a screenshot to <path> and exit (development aid)."),
+        QStringLiteral("path")};
 
     QCommandLineOption m_tabOption{
         QStringLiteral("tab"),

@@ -112,6 +112,9 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushFriendListChanged: return QStringLiteral("PushFriendListChanged");
     case T::PushClientSharedFiles: return QStringLiteral("PushClientSharedFiles");
     case T::PushPortMapStatus: return QStringLiteral("PushPortMapStatus");
+    case T::GetNewsServers:       return QStringLiteral("GetNewsServers");
+    case T::SetNewsServers:       return QStringLiteral("SetNewsServers");
+    case T::TestNewsServer:       return QStringLiteral("TestNewsServer");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }

@@ -10,6 +10,7 @@
 - Use the latest Qt version 6 installed at `/Users/daniel/Qt`
 - use the app Log class instead of `qDebug`
 - don't use `git commit` and `git add` unless explicitly instructed
+- keep code comments concise and short. Relax on grammar.
 - when adding new sources: add them to `CMakeLists.txt` and `.vcxproj` files
 
 

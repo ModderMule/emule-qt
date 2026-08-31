@@ -159,6 +159,32 @@ enum class IpcMsgType : int {
     /// always shared, a non-shareable directory never is.
     BrowseDirectory         = 267,
 
+    // -- Usenet (720-799) ----------------------------------------------------
+    //
+    // A block, not the next free integer. The core request space runs 100-299
+    // and the response block starts at 300, leaving roughly thirty slots; a
+    // second network taking them would leave ED2K none. IpcMsgType is a plain
+    // int over CBOR, so the space above 600 costs nothing. 700-719 is reserved
+    // for the shared newznab/torznab indexer client, which Usenet and a future
+    // BitTorrent module both use.
+
+    /// [] -> [{name, host, port, tls, user, hasPassword, level, group, optional,
+    ///         retention, joinGroup, maxConnections, certVerification, enabled}]
+    /// The password is never sent to the GUI — only whether one is stored. A
+    /// GUI that never holds the secret cannot leak it into a screenshot, a log,
+    /// or an unencrypted IPC session on a non-loopback socket.
+    GetNewsServers          = 720,
+    /// [[{...same shape, plus optional `password`...}]] -> [ok: bool, error: string]
+    /// Replaces the whole list. An entry that omits `password` keeps the one
+    /// already stored, which is what lets the GUI round-trip a list it was never
+    /// given the secrets for.
+    SetNewsServers          = 721,
+    /// [{host, port, tls, user, password, certVerification}] -> [ok, response, error]
+    /// Connect, authenticate and disconnect. `response` carries the provider's
+    /// literal status line, because "281 Authentication accepted" tells a user
+    /// far more than a green tick.
+    TestNewsServer          = 722,
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd]

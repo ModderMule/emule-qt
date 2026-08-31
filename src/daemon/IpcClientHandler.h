@@ -35,6 +35,10 @@ signals:
     /// Emitted when web server configuration has changed via SetPreferences.
     void webServerConfigChanged();
 
+    /// The news-server list changed; the daemon should re-apply it to the
+    /// connection pool. Same forwarding route as webServerConfigChanged.
+    void usenetConfigChanged();
+
 private slots:
     void onMessageReceived(const Ipc::IpcMessage& msg);
     void onConnectionLost();
@@ -118,6 +122,11 @@ private:
     void handleUnshareFile(const Ipc::IpcMessage& msg);
     void handleSetFileShared(const Ipc::IpcMessage& msg);
     void handleBrowseDirectory(const Ipc::IpcMessage& msg);
+
+    // Usenet (720-799)
+    void handleGetNewsServers(const Ipc::IpcMessage& msg);
+    void handleSetNewsServers(const Ipc::IpcMessage& msg);
+    void handleTestNewsServer(const Ipc::IpcMessage& msg);
     void handleSetDownloadCategory(const Ipc::IpcMessage& msg);
     void handleGetDownloadDetails(const Ipc::IpcMessage& msg);
     void handlePreviewDownload(const Ipc::IpcMessage& msg);

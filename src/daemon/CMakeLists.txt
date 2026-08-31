@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # emulecored — headless core daemon executable
 #
-# Links against libemulecore + libemuleipc.
+# Links against libemulecore + libemuleipc + libemuleusenet.
 # Runs as a QCoreApplication (no GUI).
 # ---------------------------------------------------------------------------
 
@@ -18,6 +18,7 @@ target_link_libraries(emulecored
     PRIVATE
         eMule::Core
         eMule::Ipc
+        eMule::Usenet
         eMule::CommonSettings
 )
 

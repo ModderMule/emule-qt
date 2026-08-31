@@ -286,6 +286,15 @@ emule_add_test(tst_PreferencesIpc FOLDER "Ipc" LIBRARIES eMule::Ipc yaml-cpp::ya
 # Push broadcast rate limiter — pure Qt Core, so it links the real library directly.
 emule_add_test(tst_PushCoalescer FOLDER "Ipc" LIBRARIES eMule::Ipc)
 
+# Usenet (NNTP) module
+emule_add_test(tst_UsenetSmoke FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_NntpSocket  FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_NntpServerPool FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetPrefs FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cpp::yaml-cpp)
+emule_add_test(tst_UsenetYenc FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetNzbParse FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetArticleFetch FOLDER "Usenet" LIBRARIES eMule::Usenet)
+
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
 emule_add_test(tst_KadNodesData   FOLDER "DataFiles")
@@ -408,6 +417,14 @@ if(EMULE_LIVE_TESTS)
     emule_add_test(tst_IrcLiveConnect FOLDER "LiveNetwork")
     target_compile_definitions(tst_IrcLiveConnect PRIVATE QTEST_FUNCTION_TIMEOUT=30000)
     set_tests_properties(tst_IrcLiveConnect PROPERTIES LABELS "live" TIMEOUT 30)
+
+    emule_add_test(tst_UsenetLiveConnect FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
+    target_compile_definitions(tst_UsenetLiveConnect PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
+    set_tests_properties(tst_UsenetLiveConnect PROPERTIES LABELS "live" TIMEOUT 120)
+
+    emule_add_test(tst_UsenetLiveFetch FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
+    target_compile_definitions(tst_UsenetLiveFetch PRIVATE QTEST_FUNCTION_TIMEOUT=900000)
+    set_tests_properties(tst_UsenetLiveFetch PROPERTIES LABELS "live" TIMEOUT 1200)
 
     emule_add_test(tst_SmtpSendEmail FOLDER "LiveNetwork")
     target_compile_definitions(tst_SmtpSendEmail PRIVATE QTEST_FUNCTION_TIMEOUT=60000)

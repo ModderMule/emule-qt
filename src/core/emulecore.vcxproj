@@ -405,6 +405,7 @@
     <ClInclude Include="net\Address.h" />
     <ClInclude Include="net\Pinger.h" />
     <ClInclude Include="utils\PlatformUtils.h" />
+    <ClInclude Include="prefs\NewsServer.h" />
     <ClInclude Include="prefs\Preferences.h" />
     <ClInclude Include="media\PreviewApps.h" />
     <QtMoc Include="media\PreviewThread.h" />

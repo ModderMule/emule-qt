@@ -197,6 +197,47 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# rapidyenc — SIMD yEnc decode + CRC32 for the Usenet module (Module: usenet)
+#
+# Public domain / CC0, so no licence obligations on a GPL-2.0 codebase. Runtime
+# SIMD dispatch (SSE2 through AVX512, NEON, RVV) means no per-file -m flags in
+# our build.
+#
+# Optional on purpose. src/usenet/decode/YencDecoder carries a scalar decoder
+# that is correct, tested, and fast enough for a single connection; rapidyenc
+# only earns its keep once the connection pool is saturating a link. Keeping the
+# switch means a fetch or toolchain problem here can never block the module.
+# ---------------------------------------------------------------------------
+option(EMULE_USENET_RAPIDYENC "Use rapidyenc for SIMD yEnc decoding" ON)
+
+if(EMULE_USENET_RAPIDYENC)
+    FetchContent_Declare(rapidyenc
+        GIT_REPOSITORY https://github.com/animetosho/rapidyenc.git
+        GIT_TAG        v1.1.1
+    )
+    # We decode; we never post. Dropping the encoder and the CLI is most of the
+    # build.
+    set(DISABLE_ENCODE ON  CACHE BOOL "" FORCE)
+    set(DISABLE_DECODE OFF CACHE BOOL "" FORCE)
+    set(DISABLE_CRC    OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(rapidyenc)
+
+    if(TARGET rapidyenc_static)
+        # Its own tool targets are of no use to us and would only be built.
+        foreach(_ry_tool rapidyenc_cli rapidyenc_bench)
+            if(TARGET ${_ry_tool})
+                set_target_properties(${_ry_tool} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+            endif()
+        endforeach()
+        target_include_directories(rapidyenc_static
+            INTERFACE "${rapidyenc_SOURCE_DIR}")
+    else()
+        message(WARNING "rapidyenc target not found — falling back to the scalar decoder")
+        set(EMULE_USENET_RAPIDYENC OFF)
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------
 add_subdirectory(src)

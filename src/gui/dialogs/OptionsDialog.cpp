@@ -467,6 +467,7 @@ void OptionsDialog::setupSidebar()
         {"Security",              QStyle::SP_CustomBase,             "Security.ico"},
         {"Scheduler",             QStyle::SP_DialogResetButton,      "Scheduler.ico"},
         {"Web Interface",         QStyle::SP_DriveNetIcon,           "Web.ico"},
+        {"Usenet",                QStyle::SP_DriveNetIcon,           "Server.ico"},
         {"Extended",              QStyle::SP_DialogCancelButton,     "Tweak.ico"},
     };
 
@@ -533,6 +534,9 @@ void OptionsDialog::setupPages()
 
     // Web Interface — fully implemented
     m_pages->addWidget(createWebInterfacePage());
+
+    // Usenet — news server accounts (NNTP)
+    m_pages->addWidget(createUsenetPage());
 
     // Extended — fully implemented
     m_pages->addWidget(createExtendedPage());
@@ -2576,6 +2580,501 @@ QWidget* OptionsDialog::createWebInterfacePage()
 // Extended page — matches MFC "Options Extended*.png" (PPgTweaks)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Usenet — news server accounts
+//
+// The list travels over GetNewsServers=720 / SetNewsServers=721 rather than the
+// generic preference map, because it carries credentials. Two rules follow from
+// that and shape this page:
+//
+//   - The daemon never sends a password to the GUI, only `hasPassword`. The
+//     password field therefore shows a placeholder, not a value, and a GUI
+//     screenshot or an IPC log cannot leak a provider credential.
+//   - An entry saved without a `password` field keeps the stored one. So the
+//     field is only attached to an entry the user actually retyped.
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createUsenetPage()
+{
+    auto* page = new QWidget(this);
+    auto* mainLayout = new QVBoxLayout(page);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+
+    m_usenetEnabledCheck = new QCheckBox(tr("Enable Usenet downloads"), page);
+    m_usenetEnabledCheck->setToolTip(
+        tr("Gates automatic activity only. Adding a download by hand always works."));
+    mainLayout->addWidget(m_usenetEnabledCheck);
+
+    // -- Account list -------------------------------------------------------
+    auto* serversGroup = new QGroupBox(tr("News servers"), page);
+    auto* serversLayout = new QVBoxLayout(serversGroup);
+
+    auto* table = new ListTreeWidget(serversGroup);
+    m_usenetServerTable = table;
+    m_usenetServerTable->setHeaderLabels(
+        {tr("Name"), tr("Host"), tr("Port"), tr("Priority"), tr("Connections")});
+    m_usenetServerTable->setRootIsDecorated(false);
+    m_usenetServerTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_usenetServerTable->setColumnCount(5);
+    m_usenetServerTable->header()->setStretchLastSection(true);
+    table->bindColumns(QStringLiteral("optionsUsenetServers"), {110, 170, 55, 65, 80});
+    serversLayout->addWidget(m_usenetServerTable);
+
+    auto* btnRow = new QHBoxLayout;
+    btnRow->addStretch();
+    m_usenetAddBtn = new QPushButton(tr("Add"), serversGroup);
+    m_usenetRemoveBtn = new QPushButton(tr("Remove"), serversGroup);
+    btnRow->addWidget(m_usenetAddBtn);
+    btnRow->addWidget(m_usenetRemoveBtn);
+    serversLayout->addLayout(btnRow);
+    mainLayout->addWidget(serversGroup);
+
+    // -- Details ------------------------------------------------------------
+    auto* details = new QGroupBox(tr("Account"), page);
+    auto* form = new QFormLayout(details);
+
+    m_usenetEntryEnabledCheck = new QCheckBox(tr("Enabled"), details);
+    form->addRow(m_usenetEntryEnabledCheck);
+
+    m_usenetNameEdit = new QLineEdit(details);
+    m_usenetNameEdit->setPlaceholderText(tr("Display name (optional)"));
+    form->addRow(tr("Name:"), m_usenetNameEdit);
+
+    m_usenetHostEdit = new QLineEdit(details);
+    m_usenetHostEdit->setPlaceholderText(QStringLiteral("news.example.com"));
+    form->addRow(tr("Host:"), m_usenetHostEdit);
+
+    auto* portRow = new QHBoxLayout;
+    m_usenetPortSpin = new QSpinBox(details);
+    m_usenetPortSpin->setRange(1, 65535);
+    m_usenetPortSpin->setValue(kDefaultNntpTlsPort);
+    portRow->addWidget(m_usenetPortSpin);
+    portRow->addSpacing(12);
+    portRow->addWidget(new QLabel(tr("Encryption:"), details));
+    m_usenetTlsCombo = new QComboBox(details);
+    // Order matches NntpTlsMode, so currentIndex() is the enum value.
+    m_usenetTlsCombo->addItem(tr("None (119)"));
+    m_usenetTlsCombo->addItem(tr("SSL/TLS (563)"));
+    m_usenetTlsCombo->addItem(tr("STARTTLS"));
+    m_usenetTlsCombo->setCurrentIndex(int(NntpTlsMode::Implicit));
+    portRow->addWidget(m_usenetTlsCombo);
+    portRow->addStretch();
+    form->addRow(tr("Port:"), portRow);
+
+    m_usenetUserEdit = new QLineEdit(details);
+    form->addRow(tr("User:"), m_usenetUserEdit);
+
+    m_usenetPassEdit = new QLineEdit(details);
+    m_usenetPassEdit->setEchoMode(QLineEdit::Password);
+    form->addRow(tr("Password:"), m_usenetPassEdit);
+
+    m_usenetConnSpin = new QSpinBox(details);
+    m_usenetConnSpin->setRange(1, 100);
+    m_usenetConnSpin->setValue(8);
+    m_usenetConnSpin->setToolTip(
+        tr("Never set this above what your provider allows — exceeding the limit "
+           "gets the account throttled, not queued."));
+    form->addRow(tr("Connections:"), m_usenetConnSpin);
+
+    m_usenetLevelSpin = new QSpinBox(details);
+    m_usenetLevelSpin->setRange(0, 99);
+    m_usenetLevelSpin->setToolTip(
+        tr("Lower is tried first. A higher level is only used for articles that "
+           "every server below reported as missing — that is what makes a block "
+           "or fill account worth having."));
+    form->addRow(tr("Priority level:"), m_usenetLevelSpin);
+
+    m_usenetRetentionSpin = new QSpinBox(details);
+    m_usenetRetentionSpin->setRange(0, 10000);
+    m_usenetRetentionSpin->setSpecialValueText(tr("Unknown"));
+    m_usenetRetentionSpin->setSuffix(tr(" days"));
+    form->addRow(tr("Retention:"), m_usenetRetentionSpin);
+
+    m_usenetCertCombo = new QComboBox(details);
+    // Order matches NntpCertVerification.
+    m_usenetCertCombo->addItem(tr("None — accept any certificate"));
+    m_usenetCertCombo->addItem(tr("Minimal — allow a host name mismatch"));
+    m_usenetCertCombo->addItem(tr("Strict"));
+    m_usenetCertCombo->setCurrentIndex(int(NntpCertVerification::Strict));
+    form->addRow(tr("Certificate check:"), m_usenetCertCombo);
+
+    m_usenetOptionalCheck = new QCheckBox(
+        tr("Optional — never fail a download on its own"), details);
+    form->addRow(m_usenetOptionalCheck);
+
+    m_usenetJoinGroupCheck = new QCheckBox(
+        tr("Send GROUP before fetching (only needed by a few old servers)"), details);
+    form->addRow(m_usenetJoinGroupCheck);
+
+    auto* testRow = new QHBoxLayout;
+    m_usenetTestBtn = new QPushButton(tr("Test"), details);
+    testRow->addWidget(m_usenetTestBtn);
+    m_usenetTestResult = new QLabel(details);
+    m_usenetTestResult->setWordWrap(true);
+    m_usenetTestResult->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    testRow->addWidget(m_usenetTestResult, 1);
+    form->addRow(QString{}, testRow);
+
+    mainLayout->addWidget(details);
+
+    auto* retryRow = new QHBoxLayout;
+    retryRow->addWidget(new QLabel(tr("Retry a failed server after:"), page));
+    m_usenetRetrySpin = new QSpinBox(page);
+    m_usenetRetrySpin->setRange(0, 3600);
+    m_usenetRetrySpin->setSuffix(tr(" s"));
+    m_usenetRetrySpin->setSpecialValueText(tr("Never back off"));
+    retryRow->addWidget(m_usenetRetrySpin);
+    retryRow->addStretch();
+    mainLayout->addLayout(retryRow);
+
+    mainLayout->addStretch();
+
+    // -- Wiring -------------------------------------------------------------
+    // Gates auto-start only, so it greys nothing -- see updateUsenetEnabledStates().
+    connect(m_usenetEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_usenetRetrySpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+
+    connect(m_usenetAddBtn, &QPushButton::clicked, this, &OptionsDialog::addNewsServer);
+    connect(m_usenetRemoveBtn, &QPushButton::clicked, this, &OptionsDialog::removeNewsServer);
+    connect(m_usenetTestBtn, &QPushButton::clicked, this, &OptionsDialog::testNewsServer);
+
+    connect(m_usenetServerTable, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem* current, QTreeWidgetItem*) {
+                // Commit the row being left before showing the next one, or
+                // every edit is lost the moment the selection moves.
+                applyNewsServerDetails();
+                populateNewsServerDetails(current ? m_usenetServerTable->indexOfTopLevelItem(current)
+                                                  : -1);
+            });
+
+    // Every detail widget writes straight back into the working copy, so there
+    // is no separate "Apply" step to forget. Only the edited row is repainted: a
+    // full rebuild would churn every item on each keystroke and re-enter the
+    // clear()+restore path that once swallowed addNewsServer()'s selection.
+    const auto commit = [this] {
+        applyNewsServerDetails();
+        updateNewsServerRow(m_currentNewsServer);
+        markDirty();
+    };
+    connect(m_usenetNameEdit, &QLineEdit::editingFinished, this, commit);
+    connect(m_usenetHostEdit, &QLineEdit::editingFinished, this, commit);
+    connect(m_usenetUserEdit, &QLineEdit::editingFinished, this, commit);
+    connect(m_usenetPassEdit, &QLineEdit::editingFinished, this, commit);
+    connect(m_usenetPortSpin, &QSpinBox::valueChanged, this, commit);
+    connect(m_usenetConnSpin, &QSpinBox::valueChanged, this, commit);
+    connect(m_usenetLevelSpin, &QSpinBox::valueChanged, this, commit);
+    connect(m_usenetRetentionSpin, &QSpinBox::valueChanged, this, commit);
+    connect(m_usenetTlsCombo, &QComboBox::currentIndexChanged, this, [this, commit](int index) {
+        // Move the port with the encryption mode, but only while it still holds
+        // the default for the previous mode — never stomp a port the user typed.
+        const int port = m_usenetPortSpin->value();
+        if (index == int(NntpTlsMode::Implicit) && port == kDefaultNntpPort)
+            m_usenetPortSpin->setValue(kDefaultNntpTlsPort);
+        else if (index != int(NntpTlsMode::Implicit) && port == kDefaultNntpTlsPort)
+            m_usenetPortSpin->setValue(kDefaultNntpPort);
+        commit();
+    });
+    connect(m_usenetCertCombo, &QComboBox::currentIndexChanged, this, commit);
+    connect(m_usenetEntryEnabledCheck, &QCheckBox::toggled, this, commit);
+    connect(m_usenetOptionalCheck, &QCheckBox::toggled, this, commit);
+    connect(m_usenetJoinGroupCheck, &QCheckBox::toggled, this, commit);
+
+    // Initial state: nothing selected yet, so the Account box starts greyed.
+    updateUsenetEnabledStates();
+
+    return page;
+}
+
+void OptionsDialog::updateUsenetEnabledStates()
+{
+    // Row selection is the only gate. The "Enable Usenet downloads" switch drives
+    // auto-start and deliberately greys nothing, so a provider can be set up before
+    // the engine is turned on.
+    const bool anySelected = m_currentNewsServer >= 0;
+    const std::initializer_list<QWidget*> detailWidgets{
+        m_usenetNameEdit, m_usenetHostEdit, m_usenetUserEdit, m_usenetPassEdit,
+        m_usenetPortSpin, m_usenetConnSpin, m_usenetLevelSpin,
+        m_usenetRetentionSpin, m_usenetTlsCombo, m_usenetCertCombo,
+        m_usenetEntryEnabledCheck, m_usenetOptionalCheck,
+        m_usenetJoinGroupCheck, m_usenetTestBtn, m_usenetRemoveBtn};
+    for (QWidget* w : detailWidgets) {
+        if (w)
+            w->setEnabled(anySelected);
+    }
+}
+
+void OptionsDialog::loadNewsServers()
+{
+    if (!m_ipc)
+        return;
+
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetNewsServers),
+                       [this](const Ipc::IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+
+        m_newsServers.clear();
+        const QCborArray rows = resp.fieldArray(1);
+        m_newsServers.reserve(int(rows.size()));
+        for (const auto& row : rows) {
+            if (row.isMap())
+                m_newsServers.append(row.toMap());
+        }
+
+        m_currentNewsServer = -1;
+        refreshNewsServerTable();
+        selectNewsServer(m_newsServers.isEmpty() ? -1 : 0);
+    });
+}
+
+void OptionsDialog::saveNewsServers()
+{
+    if (!m_ipc)
+        return;
+
+    applyNewsServerDetails();
+
+    QCborArray rows;
+    for (const QCborMap& server : std::as_const(m_newsServers))
+        rows.append(server);
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetNewsServers);
+    msg.append(rows);
+    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+        if (resp.fieldBool(0))
+            return;
+        QMessageBox::warning(this, tr("News servers"),
+                             resp.fieldString(1).isEmpty()
+                                 ? tr("The news server list could not be saved.")
+                                 : resp.fieldString(1));
+    });
+}
+
+void OptionsDialog::refreshNewsServerTable()
+{
+    if (!m_usenetServerTable)
+        return;
+
+    const QSignalBlocker block(m_usenetServerTable);
+    const int keep = m_currentNewsServer;
+    m_usenetServerTable->clear();
+
+    for (int i = 0; i < m_newsServers.size(); ++i) {
+        new QTreeWidgetItem(m_usenetServerTable);
+        updateNewsServerRow(i);
+    }
+
+    if (keep >= 0 && keep < m_usenetServerTable->topLevelItemCount())
+        m_usenetServerTable->setCurrentItem(m_usenetServerTable->topLevelItem(keep));
+}
+
+void OptionsDialog::updateNewsServerRow(int index)
+{
+    if (!m_usenetServerTable || index < 0 || index >= m_newsServers.size()
+        || index >= m_usenetServerTable->topLevelItemCount())
+        return;
+
+    // Row position is the list index: this table never enables sorting, so
+    // nothing can reorder rows out from under the working copy.
+    QTreeWidgetItem* item = m_usenetServerTable->topLevelItem(index);
+    const QCborMap& s = m_newsServers.at(index);
+    const QString host = s.value(QStringLiteral("host")).toString();
+    const QString name = s.value(QStringLiteral("name")).toString();
+
+    item->setText(0, name.isEmpty() ? host : name);
+    item->setText(1, host);
+    item->setText(2, QString::number(s.value(QStringLiteral("port")).toInteger(kDefaultNntpTlsPort)));
+    item->setText(3, QString::number(s.value(QStringLiteral("level")).toInteger(0)));
+    item->setText(4, QString::number(s.value(QStringLiteral("maxConnections")).toInteger(8)));
+
+    // Disabled accounts stay visible but read as inactive, the way a disabled
+    // schedule entry does. Re-enabling clears the role instead of painting a
+    // "normal" brush -- an explicit one would override the palette and survive a
+    // theme change, and rows are now reused rather than rebuilt.
+    const bool on = s.value(QStringLiteral("enabled")).toBool(true);
+    for (int c = 0; c < m_usenetServerTable->columnCount(); ++c) {
+        if (on)
+            item->setData(c, Qt::ForegroundRole, QVariant());
+        else
+            item->setForeground(c, palette().brush(QPalette::Disabled, QPalette::Text));
+    }
+}
+
+void OptionsDialog::selectNewsServer(int index)
+{
+    // Never relies on currentItemChanged firing: refreshNewsServerTable() blocks the
+    // table's signals, and setCurrentItem() is a no-op when the row is already
+    // current -- either one silently skips the detail pane's update.
+    if (index < 0 || index >= m_usenetServerTable->topLevelItemCount())
+        index = -1;
+    {
+        const QSignalBlocker block(m_usenetServerTable);
+        m_usenetServerTable->setCurrentItem(
+            index >= 0 ? m_usenetServerTable->topLevelItem(index) : nullptr);
+    }
+    populateNewsServerDetails(index);
+}
+
+void OptionsDialog::populateNewsServerDetails(int index)
+{
+    m_currentNewsServer = (index >= 0 && index < m_newsServers.size()) ? index : -1;
+    updateUsenetEnabledStates();
+    if (m_usenetTestResult)
+        m_usenetTestResult->clear();
+
+    if (m_currentNewsServer < 0) {
+        const QSignalBlocker b1(m_usenetNameEdit), b2(m_usenetHostEdit),
+            b3(m_usenetUserEdit), b4(m_usenetPassEdit);
+        m_usenetNameEdit->clear();
+        m_usenetHostEdit->clear();
+        m_usenetUserEdit->clear();
+        m_usenetPassEdit->clear();
+        m_usenetPassEdit->setPlaceholderText(QString{});
+        return;
+    }
+
+    const QCborMap& s = m_newsServers.at(m_currentNewsServer);
+
+    const QSignalBlocker b1(m_usenetNameEdit), b2(m_usenetHostEdit), b3(m_usenetPortSpin),
+        b4(m_usenetTlsCombo), b5(m_usenetUserEdit), b6(m_usenetPassEdit),
+        b7(m_usenetConnSpin), b8(m_usenetLevelSpin), b9(m_usenetRetentionSpin),
+        b10(m_usenetCertCombo), b11(m_usenetEntryEnabledCheck), b12(m_usenetOptionalCheck),
+        b13(m_usenetJoinGroupCheck);
+
+    m_usenetNameEdit->setText(s.value(QStringLiteral("name")).toString());
+    m_usenetHostEdit->setText(s.value(QStringLiteral("host")).toString());
+    m_usenetPortSpin->setValue(int(s.value(QStringLiteral("port")).toInteger(kDefaultNntpTlsPort)));
+    m_usenetTlsCombo->setCurrentIndex(
+        int(s.value(QStringLiteral("tls")).toInteger(int(NntpTlsMode::Implicit))));
+    m_usenetUserEdit->setText(s.value(QStringLiteral("user")).toString());
+    m_usenetConnSpin->setValue(int(s.value(QStringLiteral("maxConnections")).toInteger(8)));
+    m_usenetLevelSpin->setValue(int(s.value(QStringLiteral("level")).toInteger(0)));
+    m_usenetRetentionSpin->setValue(int(s.value(QStringLiteral("retention")).toInteger(0)));
+    m_usenetCertCombo->setCurrentIndex(
+        int(s.value(QStringLiteral("certVerification"))
+                .toInteger(int(NntpCertVerification::Strict))));
+    m_usenetEntryEnabledCheck->setChecked(s.value(QStringLiteral("enabled")).toBool(true));
+    m_usenetOptionalCheck->setChecked(s.value(QStringLiteral("optional")).toBool(false));
+    m_usenetJoinGroupCheck->setChecked(s.value(QStringLiteral("joinGroup")).toBool(false));
+
+    // The daemon sends `hasPassword`, never the password. Show that a secret is
+    // stored without pretending to display it: typing here replaces it, leaving
+    // it alone keeps it.
+    const bool stored = s.value(QStringLiteral("password")).isString()
+                        || s.value(QStringLiteral("hasPassword")).toBool(false);
+    m_usenetPassEdit->setText(s.value(QStringLiteral("password")).toString());
+    m_usenetPassEdit->setPlaceholderText(
+        stored ? tr("(unchanged)") : tr("(none set)"));
+}
+
+void OptionsDialog::applyNewsServerDetails()
+{
+    if (m_currentNewsServer < 0 || m_currentNewsServer >= m_newsServers.size())
+        return;
+
+    QCborMap s = m_newsServers.at(m_currentNewsServer);
+    s.insert(QStringLiteral("name"), m_usenetNameEdit->text().trimmed());
+    s.insert(QStringLiteral("host"), m_usenetHostEdit->text().trimmed());
+    s.insert(QStringLiteral("port"), m_usenetPortSpin->value());
+    s.insert(QStringLiteral("tls"), m_usenetTlsCombo->currentIndex());
+    s.insert(QStringLiteral("user"), m_usenetUserEdit->text());
+    s.insert(QStringLiteral("maxConnections"), m_usenetConnSpin->value());
+    s.insert(QStringLiteral("level"), m_usenetLevelSpin->value());
+    s.insert(QStringLiteral("retention"), m_usenetRetentionSpin->value());
+    s.insert(QStringLiteral("certVerification"), m_usenetCertCombo->currentIndex());
+    s.insert(QStringLiteral("enabled"), m_usenetEntryEnabledCheck->isChecked());
+    s.insert(QStringLiteral("optional"), m_usenetOptionalCheck->isChecked());
+    s.insert(QStringLiteral("joinGroup"), m_usenetJoinGroupCheck->isChecked());
+
+    // Only attach `password` when the user actually typed one. An absent field
+    // means "keep the stored secret" -- which is the only way a GUI that was
+    // never given the password can round-trip the list without erasing it.
+    const QString typed = m_usenetPassEdit->text();
+    if (!typed.isEmpty())
+        s.insert(QStringLiteral("password"), typed);
+    else
+        s.remove(QStringLiteral("password"));
+
+    m_newsServers[m_currentNewsServer] = s;
+}
+
+void OptionsDialog::addNewsServer()
+{
+    if (m_newsServers.size() >= Preferences::kMaxUsenetServers) {
+        QMessageBox::information(this, tr("News servers"),
+                                 tr("At most %1 news servers can be configured.")
+                                     .arg(Preferences::kMaxUsenetServers));
+        return;
+    }
+
+    applyNewsServerDetails();
+
+    QCborMap fresh;
+    fresh.insert(QStringLiteral("name"), tr("New server"));
+    fresh.insert(QStringLiteral("host"), QString{});
+    fresh.insert(QStringLiteral("port"), int(kDefaultNntpTlsPort));
+    fresh.insert(QStringLiteral("tls"), int(NntpTlsMode::Implicit));
+    fresh.insert(QStringLiteral("maxConnections"), 8);
+    fresh.insert(QStringLiteral("level"), 0);
+    fresh.insert(QStringLiteral("certVerification"), int(NntpCertVerification::Strict));
+    fresh.insert(QStringLiteral("enabled"), true);
+    m_newsServers.append(fresh);
+
+    // Leave m_currentNewsServer alone until the row exists: setting it first makes
+    // refreshNewsServerTable() restore the new row under its own signal blocker, and
+    // the select below then has nothing left to change.
+    refreshNewsServerTable();
+    selectNewsServer(int(m_newsServers.size()) - 1);
+    m_usenetHostEdit->setFocus();
+    markDirty();
+}
+
+void OptionsDialog::removeNewsServer()
+{
+    if (m_currentNewsServer < 0 || m_currentNewsServer >= m_newsServers.size())
+        return;
+
+    m_newsServers.removeAt(m_currentNewsServer);
+    m_currentNewsServer = -1;
+    refreshNewsServerTable();
+    selectNewsServer(m_usenetServerTable->topLevelItemCount() > 0 ? 0 : -1);
+    markDirty();
+}
+
+void OptionsDialog::testNewsServer()
+{
+    if (!m_ipc || m_currentNewsServer < 0)
+        return;
+
+    applyNewsServerDetails();
+    const QCborMap server = m_newsServers.at(m_currentNewsServer);
+    if (server.value(QStringLiteral("host")).toString().trimmed().isEmpty()) {
+        m_usenetTestResult->setText(tr("Enter a host name first."));
+        return;
+    }
+
+    m_usenetTestBtn->setEnabled(false);
+    m_usenetTestResult->setText(tr("Connecting…"));
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::TestNewsServer);
+    msg.append(server);
+    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+        m_usenetTestBtn->setEnabled(m_currentNewsServer >= 0);
+        if (!resp.fieldBool(0)) {
+            m_usenetTestResult->setText(resp.fieldString(1));
+            return;
+        }
+        const QCborArray result = resp.fieldArray(1);
+        const bool ok = result.at(0).toBool(false);
+        // The provider's own status line, verbatim: "481 Authentication failed"
+        // tells the user which half of the form to fix; "connection failed"
+        // does not.
+        m_usenetTestResult->setText(result.at(1).toString());
+        m_usenetTestResult->setStyleSheet(
+            ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
+    });
+}
+
 QWidget* OptionsDialog::createExtendedPage()
 {
     auto* page = new QWidget(this);
@@ -3543,6 +4042,7 @@ void OptionsDialog::loadSettings()
     m_daemonSettingsLoaded = true;
     m_applyBtn->setEnabled(false);
     loadSchedulerData();
+    loadNewsServers();
 }
 
 // ---------------------------------------------------------------------------
@@ -3881,6 +4381,13 @@ void OptionsDialog::saveSettings()
         req.append(m_warnUntrustedFilesCheck->isChecked());
         req.append(QStringLiteral("ipFilterUpdateUrl"));
         req.append(m_ipFilterUpdateUrlEdit->text().trimmed());
+
+        // Usenet page. The server list goes over SetNewsServers=721 instead --
+        // it carries credentials and has its own keep-the-stored-password rule.
+        req.append(QStringLiteral("usenetEnabled"));
+        req.append(m_usenetEnabledCheck->isChecked());
+        req.append(QStringLiteral("usenetRetryIntervalSeconds"));
+        req.append(static_cast<qint64>(m_usenetRetrySpin->value()));
 
         // Web Interface page
         req.append(QStringLiteral("webServerEnabled"));
@@ -4340,6 +4847,7 @@ void OptionsDialog::saveSettings()
     }
 
     saveSchedulerData();
+    saveNewsServers();
 
     // The graph palette is GUI-only state, so it goes to uistate.yml rather than over
     // SetPreferences. The tray meter picks its colour up on the next 1 s rate tick.
@@ -4507,6 +5015,12 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
     m_warnUntrustedFilesCheck->setChecked(prefs.value(QStringLiteral("warnUntrustedFiles")).toBool(true));
     m_ipFilterUpdateUrlEdit->setText(prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString());
+
+    // Usenet page
+    m_usenetEnabledCheck->setChecked(prefs.value(QStringLiteral("usenetEnabled")).toBool(false));
+    m_usenetRetrySpin->setValue(
+        static_cast<int>(prefs.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60)));
+    updateUsenetEnabledStates();
 
     // Web Interface page
     m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());

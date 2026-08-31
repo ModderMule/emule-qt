@@ -45,6 +45,9 @@ signals:
     /// Forwarded from any client's IpcClientHandler::webServerConfigChanged.
     void webServerConfigChanged();
 
+    /// Forwarded from any client's IpcClientHandler::usenetConfigChanged.
+    void usenetConfigChanged();
+
 private slots:
     void onNewConnection();
     void onClientDisconnected(IpcClientHandler* handler);

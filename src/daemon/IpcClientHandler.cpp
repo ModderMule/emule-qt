@@ -6,6 +6,7 @@
 #include "DaemonApp.h"
 
 #include "ipc/CborSerializers.h"
+#include "nntp/NntpSocket.h"
 #include "webserver/WebServer.h"
 
 #include <QDir>
@@ -290,6 +291,10 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::UnshareFile:          handleUnshareFile(msg); break;
     case IpcMsgType::SetFileShared:        handleSetFileShared(msg); break;
     case IpcMsgType::BrowseDirectory:      handleBrowseDirectory(msg); break;
+
+    case IpcMsgType::GetNewsServers:       handleGetNewsServers(msg); break;
+    case IpcMsgType::SetNewsServers:       handleSetNewsServers(msg); break;
+    case IpcMsgType::TestNewsServer:       handleTestNewsServer(msg); break;
     case IpcMsgType::SetDownloadCategory:  handleSetDownloadCategory(msg); break;
     case IpcMsgType::GetDownloadDetails:   handleGetDownloadDetails(msg); break;
     case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
@@ -1739,6 +1744,12 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("warnUntrustedFiles"), thePrefs.warnUntrustedFiles());
     prefs.insert(QStringLiteral("ipFilterUpdateUrl"), thePrefs.ipFilterUpdateUrl());
     prefs.insert(QStringLiteral("appToken"), thePrefs.appToken());
+
+    // Usenet. The server list travels over GetNewsServers=720 instead, because
+    // it carries credentials and needs the password-withholding rules.
+    prefs.insert(QStringLiteral("usenetEnabled"), thePrefs.usenetEnabled());
+    prefs.insert(QStringLiteral("usenetRetryIntervalSeconds"),
+                 static_cast<qint64>(thePrefs.usenetRetryIntervalSeconds()));
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(thePrefs.statsAverageMinutes()));
@@ -3553,6 +3564,10 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setIpFilterUpdateUrl(val.toString());
     else if (key == QStringLiteral("appToken"))
         thePrefs.setAppToken(val.toString());
+    else if (key == QStringLiteral("usenetEnabled"))
+        thePrefs.setUsenetEnabled(val.toBool());
+    else if (key == QStringLiteral("usenetRetryIntervalSeconds"))
+        thePrefs.setUsenetRetryIntervalSeconds(int(val.toInteger()));
     else
         return false;
     return true;
@@ -3982,6 +3997,192 @@ void IpcClientHandler::handleSaveCollection(const IpcMessage& msg)
     theApp.sharedFileList->reload();
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// Usenet — news server configuration (720-722)
+//
+// The password never travels to the GUI. GetNewsServers reports only
+// `hasPassword`, and SetNewsServers treats a missing `password` field as "keep
+// the stored one". That is what lets the Options page round-trip a list whose
+// secrets it was never given, and it means a GUI screenshot, an IPC log or a
+// session on a non-loopback socket cannot carry a provider credential.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Everything except the password. Shared by the get and the test paths so the
+/// two cannot drift into disagreeing about field names.
+QCborMap newsServerToCbor(const NewsServer& s)
+{
+    return QCborMap{
+        {QStringLiteral("name"),             s.name},
+        {QStringLiteral("host"),             s.host},
+        {QStringLiteral("port"),             int(s.port)},
+        {QStringLiteral("tls"),              int(s.tlsMode)},
+        {QStringLiteral("user"),             s.user},
+        {QStringLiteral("hasPassword"),      !s.pass.isEmpty()},
+        {QStringLiteral("level"),            s.level},
+        {QStringLiteral("group"),            s.group},
+        {QStringLiteral("optional"),         s.optional},
+        {QStringLiteral("retention"),        s.retention},
+        {QStringLiteral("joinGroup"),        s.joinGroup},
+        {QStringLiteral("maxConnections"),   s.maxConnections},
+        {QStringLiteral("certVerification"), int(s.certVerification)},
+        {QStringLiteral("enabled"),          s.enabled},
+    };
+}
+
+NewsServer newsServerFromCbor(const QCborMap& m)
+{
+    NewsServer s;
+    s.name = m.value(QStringLiteral("name")).toString().trimmed();
+    s.host = m.value(QStringLiteral("host")).toString().trimmed();
+    s.port = static_cast<quint16>(
+        m.value(QStringLiteral("port")).toInteger(kDefaultNntpTlsPort));
+    s.tlsMode = static_cast<NntpTlsMode>(
+        m.value(QStringLiteral("tls")).toInteger(int(NntpTlsMode::Implicit)));
+    s.user = m.value(QStringLiteral("user")).toString();
+    s.level = int(m.value(QStringLiteral("level")).toInteger(0));
+    s.group = int(m.value(QStringLiteral("group")).toInteger(0));
+    s.optional = m.value(QStringLiteral("optional")).toBool(false);
+    s.retention = int(m.value(QStringLiteral("retention")).toInteger(0));
+    s.joinGroup = m.value(QStringLiteral("joinGroup")).toBool(false);
+    s.maxConnections = int(m.value(QStringLiteral("maxConnections")).toInteger(8));
+    s.certVerification = static_cast<NntpCertVerification>(
+        m.value(QStringLiteral("certVerification"))
+            .toInteger(int(NntpCertVerification::Strict)));
+    s.enabled = m.value(QStringLiteral("enabled")).toBool(true);
+    return s;
+}
+
+} // namespace
+
+void IpcClientHandler::handleGetNewsServers(const IpcMessage& msg)
+{
+    QCborArray out;
+    for (const auto& server : thePrefs.usenetServers())
+        out.append(newsServerToCbor(server));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+void IpcClientHandler::handleSetNewsServers(const IpcMessage& msg)
+{
+    const QCborArray incoming = msg.fieldArray(0);
+    if (incoming.size() > Preferences::kMaxUsenetServers) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(tr("At most %1 news servers can be configured.")
+                           .arg(Preferences::kMaxUsenetServers))));
+        return;
+    }
+
+    // Index the stored list so an entry that arrives without a password can
+    // keep the one already on disk.
+    QHash<QString, QString> storedPasswords;
+    for (const auto& existing : thePrefs.usenetServers())
+        storedPasswords.insert(existing.key(), existing.pass);
+
+    QList<NewsServer> servers;
+    servers.reserve(int(incoming.size()));
+    for (const auto& value : incoming) {
+        if (!value.isMap())
+            continue;
+        const QCborMap map = value.toMap();
+        NewsServer server = newsServerFromCbor(map);
+        if (server.host.isEmpty()) {
+            sendMessage(IpcMessage::makeResult(
+                msg.seqId(), false, QCborValue(tr("A news server needs a host name."))));
+            return;
+        }
+
+        if (map.contains(QStringLiteral("password")))
+            server.pass = map.value(QStringLiteral("password")).toString();
+        else
+            server.pass = storedPasswords.value(server.key());
+
+        servers.append(server);
+    }
+
+    thePrefs.setUsenetServers(servers);
+    if (!thePrefs.save()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("Could not write preferences.yml."))));
+        return;
+    }
+
+    // Same route webServerConfigChanged takes: the handler owns no back-pointer
+    // to the daemon, so a config change is a signal IpcServer forwards.
+    emit usenetConfigChanged();
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleTestNewsServer(const IpcMessage& msg)
+{
+    NewsServer server = newsServerFromCbor(msg.fieldMap(0));
+    if (server.host.isEmpty()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("Enter a host name first."))));
+        return;
+    }
+
+    // A password field that is absent means "use the stored one", exactly as in
+    // handleSetNewsServers — otherwise Test would be unusable on an account the
+    // GUI was never given the secret for.
+    const QCborMap map = msg.fieldMap(0);
+    if (map.contains(QStringLiteral("password"))) {
+        server.pass = map.value(QStringLiteral("password")).toString();
+    } else {
+        for (const auto& existing : thePrefs.usenetServers()) {
+            if (existing.key() == server.key()) {
+                server.pass = existing.pass;
+                break;
+            }
+        }
+    }
+
+    auto* socket = new usenet::NntpSocket(this);
+    // Short by design: this is a user waiting on a button, not a download.
+    socket->setResponseTimeout(20'000);
+
+    const int seqId = msg.seqId();
+    auto* answered = new bool(false);
+
+    // QPointer, not `this`: the user can close the dialog and disconnect while
+    // the provider is still deciding, and replying into a dead connection is a
+    // crash rather than a wasted message.
+    QPointer<IpcClientHandler> self(this);
+
+    auto reply = [self, seqId, answered, socket](bool ok, const QString& text) {
+        if (*answered)
+            return;
+        *answered = true;
+
+        if (self) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, true, QCborValue(QCborArray{ok, text})));
+        }
+        socket->close();
+        socket->deleteLater();
+        delete answered;
+    };
+
+    connect(socket, &usenet::NntpSocket::ready, this, [reply, server] {
+        reply(true, server.user.isEmpty()
+                        ? tr("200 Connected (no authentication requested)")
+                        : tr("281 Authentication accepted"));
+    });
+    connect(socket, &usenet::NntpSocket::failed, this,
+            [reply](usenet::NntpError error, const QString& text) {
+                // The provider's own words, not ours: "481 Authentication
+                // failed" tells a user which half of the form to fix, where
+                // "connection failed" does not.
+                reply(false, text.isEmpty() ? usenet::describeNntpError(error) : text);
+            });
+
+    socket->connectToServer(server);
 }
 
 // ---------------------------------------------------------------------------

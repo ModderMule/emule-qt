@@ -17,6 +17,7 @@ NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")  # URL namespace
 # Known project GUIDs from the solution
 EMULECORE_GUID = "{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}"
 EMULEIPC_GUID = "{FBDFD081-D65F-39D9-8A1C-72045318CC5B}"
+EMULEUSENET_GUID = "{1BDD4987-DC42-5349-9E57-C6E045319FE7}"
 VS_CPP_PROJECT_TYPE = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}"
 VS_FOLDER_TYPE = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}"
 TESTS_FOLDER_GUID = "{E0A0B5F0-0001-0001-0001-000000000001}"
@@ -104,7 +105,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </PropertyGroup>
       <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
         <ClCompile>
-          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
           <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
           <AssemblerListingLocation>release\\</AssemblerListingLocation>
           <BrowseInformation>false</BrowseInformation>
@@ -126,7 +127,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <MultiProcessorCompilation>true</MultiProcessorCompilation>
         </ClCompile>
         <Link>
-          <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zlib.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
+          <AdditionalDependencies>emuleusenet.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
           <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
@@ -159,7 +160,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </ItemDefinitionGroup>
       <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
         <ClCompile>
-          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
           <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
           <AssemblerListingLocation>debug\\</AssemblerListingLocation>
           <BrowseInformation>false</BrowseInformation>
@@ -179,7 +180,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <MultiProcessorCompilation>true</MultiProcessorCompilation>
         </ClCompile>
         <Link>
-          <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zlib.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+          <AdditionalDependencies>emuleusenet.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
           <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\debug\\lib;..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
@@ -267,12 +268,15 @@ def generate_sln(test_names: list[str]) -> str:
     lines.append("Microsoft Visual Studio Solution File, Format Version 12.00")
     lines.append("# Visual Studio Version 17")
 
-    # Existing projects (emulecore, emuleipc, emulecored, emuleqt)
+    # Existing projects (emulecore, emuleipc, emuleusenet, emulecored, emuleqt).
+    # Anything absent from this list is dropped from the .sln on the next run,
+    # so a new library must be added here as well as to the solution.
     existing_projects = [
         ("emulecore", "core\\emulecore.vcxproj", EMULECORE_GUID, []),
         ("emuleipc", "ipc\\emuleipc.vcxproj", EMULEIPC_GUID, []),
+        ("emuleusenet", "usenet\\emuleusenet.vcxproj", EMULEUSENET_GUID, [EMULECORE_GUID]),
         ("emulecored", "daemon\\emulecored.vcxproj", "{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}",
-         [EMULECORE_GUID, EMULEIPC_GUID]),
+         [EMULECORE_GUID, EMULEIPC_GUID, EMULEUSENET_GUID]),
         ("emuleqt", "gui\\emuleqt.vcxproj", "{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}",
          [EMULECORE_GUID, EMULEIPC_GUID]),
     ]
@@ -300,6 +304,7 @@ def generate_sln(test_names: list[str]) -> str:
         lines.append("\tProjectSection(ProjectDependencies) = postProject")
         lines.append(f"\t\t{EMULECORE_GUID} = {EMULECORE_GUID}")
         lines.append(f"\t\t{EMULEIPC_GUID} = {EMULEIPC_GUID}")
+        lines.append(f"\t\t{EMULEUSENET_GUID} = {EMULEUSENET_GUID}")
         lines.append("\tEndProjectSection")
         lines.append("EndProject")
 

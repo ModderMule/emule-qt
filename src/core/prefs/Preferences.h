@@ -8,6 +8,7 @@
 /// Factory methods bridge to existing config structs (ObfuscationConfig,
 /// ProxySettings) used by already-ported modules.
 
+#include "prefs/NewsServer.h"
 #include "utils/Types.h"
 
 #include <QByteArray>
@@ -785,6 +786,33 @@ public:
     /// Ceiling on the list. A configuration link is a single paste, so without a
     /// cap a stream of them grows the file without bound.
     static constexpr int kMaxHttpCacheServers = 8;
+
+    // -- Usenet -------------------------------------------------------------
+
+    /// Whether the Usenet engine auto-starts. Following the connect-gating
+    /// convention, this gates *automatic* activity only: the engine object
+    /// always exists, and an explicit user action still works. Turning it on or
+    /// off never needs a daemon restart.
+    [[nodiscard]] bool usenetEnabled() const;
+    void setUsenetEnabled(bool val);
+
+    /// Configured provider accounts, in the order the user arranged them.
+    ///
+    /// Order is meaningful only within a priority level, where servers are
+    /// equals and rotate. Across levels the ladder is what matters: an article
+    /// missing on every level-0 server is retried at level 1.
+    [[nodiscard]] QList<NewsServer> usenetServers() const;
+    void setUsenetServers(const QList<NewsServer>& val);
+
+    /// Seconds a server that failed at the transport level stays out of
+    /// rotation. "Too many connections" is the commonest Usenet failure and it
+    /// cures itself, so the answer is backoff rather than removal.
+    [[nodiscard]] int usenetRetryIntervalSeconds() const;
+    void setUsenetRetryIntervalSeconds(int val);
+
+    /// Ceiling on the account list, for the same reason the HTTP Cache list has
+    /// one: nothing else bounds what a config file can accumulate.
+    static constexpr int kMaxUsenetServers = 16;
 
     /// How many peers must want the same part before it is worth publishing.
     /// The feature's whole premise is one upload serving many, so the default is

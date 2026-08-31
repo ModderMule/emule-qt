@@ -66,6 +66,7 @@ public:
         PageSecurity,
         PageScheduler,
         PageWebInterface,
+        PageUsenet,
         PageExtended,
         PageCount
     };
@@ -100,6 +101,7 @@ private:
     QWidget* createSecurityPage();
     QWidget* createSchedulerPage();
     QWidget* createWebInterfacePage();
+    QWidget* createUsenetPage();
     QWidget* createExtendedPage();
     QWidget* createPlaceholderPage(const QString& title);
 
@@ -114,6 +116,22 @@ private:
     void fillDaemonSettingsFromPrefs();
     void loadSchedulerData();
     void saveSchedulerData();
+
+    // -- Usenet -------------------------------------------------------------
+    // The server list travels over its own opcodes rather than the generic
+    // preference map, because it carries credentials: the daemon never sends a
+    // password to the GUI, and an entry saved without one keeps the stored one.
+    void loadNewsServers();
+    void saveNewsServers();
+    void refreshNewsServerTable();
+    void updateNewsServerRow(int index);
+    void selectNewsServer(int index);
+    void populateNewsServerDetails(int index);
+    void applyNewsServerDetails();
+    void addNewsServer();
+    void removeNewsServer();
+    void testNewsServer();
+    void updateUsenetEnabledStates();
     void refreshScheduleTable();
     void populateScheduleDetails(int index);
     void applyScheduleDetails();
@@ -307,6 +325,34 @@ private:
     QLineEdit*    m_ipFilterUpdateUrlEdit = nullptr;
 
     // Scheduler page controls
+    // -- Usenet page --------------------------------------------------------
+    QCheckBox*    m_usenetEnabledCheck = nullptr;
+    QSpinBox*     m_usenetRetrySpin = nullptr;
+    QTreeWidget*  m_usenetServerTable = nullptr;
+    QPushButton*  m_usenetAddBtn = nullptr;
+    QPushButton*  m_usenetRemoveBtn = nullptr;
+    QPushButton*  m_usenetTestBtn = nullptr;
+    QLineEdit*    m_usenetNameEdit = nullptr;
+    QLineEdit*    m_usenetHostEdit = nullptr;
+    QSpinBox*     m_usenetPortSpin = nullptr;
+    QComboBox*    m_usenetTlsCombo = nullptr;
+    QComboBox*    m_usenetCertCombo = nullptr;
+    QLineEdit*    m_usenetUserEdit = nullptr;
+    QLineEdit*    m_usenetPassEdit = nullptr;
+    QSpinBox*     m_usenetLevelSpin = nullptr;
+    QSpinBox*     m_usenetConnSpin = nullptr;
+    QSpinBox*     m_usenetRetentionSpin = nullptr;
+    QCheckBox*    m_usenetEntryEnabledCheck = nullptr;
+    QCheckBox*    m_usenetOptionalCheck = nullptr;
+    QCheckBox*    m_usenetJoinGroupCheck = nullptr;
+    QLabel*       m_usenetTestResult = nullptr;
+
+    /// Working copy of the server list. `password` is only set on an entry the
+    /// user actually retyped; every other entry is sent without the field so the
+    /// daemon keeps what it has.
+    QList<QCborMap> m_newsServers;
+    int m_currentNewsServer = -1;
+
     QCheckBox*    m_schedEnabledCheck = nullptr;
     QTreeWidget*  m_schedTable = nullptr;
     QPushButton*  m_schedRemoveBtn = nullptr;

@@ -10,6 +10,8 @@
 #include "utils/Log.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QPixmap>
 #include <QTimer>
 
@@ -96,6 +98,7 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("security"),     OptionsDialog::PageSecurity},
             {QStringLiteral("scheduler"),    OptionsDialog::PageScheduler},
             {QStringLiteral("webinterface"), OptionsDialog::PageWebInterface},
+            {QStringLiteral("usenet"),       OptionsDialog::PageUsenet},
             {QStringLiteral("extended"),     OptionsDialog::PageExtended},
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index
@@ -134,14 +137,14 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
         const QString path = m_screenshotPath;
         const int optPage = m_optionsPage;
         QTimer::singleShot(m_screenshotDelay, &app, [&mainWindow, path, &app, optPage]() {
+            QPixmap pixmap;
             if (optPage >= 0) {
                 OptionsDialog dlg(nullptr, mainWindow.statisticsPanel(), &mainWindow);
                 dlg.selectPage(optPage);
                 dlg.show();
                 dlg.repaint();
                 QApplication::processEvents();
-                QPixmap pixmap = dlg.grab();
-                pixmap.save(path);
+                pixmap = dlg.grab();
             } else {
                 // A dialog is its own top-level window, so grabbing the main window
                 // would miss it and the shot would look like nothing happened.
@@ -154,11 +157,10 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
                     target = &mainWindow;
                 target->repaint();
                 QApplication::processEvents();
-                QPixmap pixmap = target->grab();
-                pixmap.save(path);
+                pixmap = target->grab();
             }
-            logInfo(QStringLiteral("Screenshot saved to %1").arg(path));
-            app.quit();
+            // grab() returns by value, so the dialog above may already be gone.
+            app.exit(saveScreenshot(pixmap, path) ? 0 : 1);
         });
     } else if (m_optionsPage >= 0) {
         mainWindow.showOptionsDialog(m_optionsPage);
@@ -180,6 +182,30 @@ QString CommandLineExec::configOverride() const
     if (m_parser.isSet(m_configOption))
         return m_parser.value(m_configOption);
     return {};
+}
+
+bool CommandLineExec::saveScreenshot(const QPixmap& pixmap, const QString& path)
+{
+    if (pixmap.isNull()) {
+        logError(QStringLiteral("Screenshot: nothing captured, not writing %1").arg(path));
+        return false;
+    }
+
+    const QString dir = QFileInfo(path).absolutePath();
+    if (!dir.isEmpty() && !QDir().mkpath(dir)) {
+        logError(QStringLiteral("Screenshot: cannot create directory %1").arg(dir));
+        return false;
+    }
+
+    // save() gives no reason, so name the two likely ones.
+    if (!pixmap.save(path)) {
+        logError(QStringLiteral("Screenshot: failed to write %1 "
+                                "(unsupported extension or path not writable)").arg(path));
+        return false;
+    }
+
+    logInfo(QStringLiteral("Screenshot saved to %1").arg(path));
+    return true;
 }
 
 } // namespace eMule

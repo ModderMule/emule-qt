@@ -14,6 +14,7 @@
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "stats/StatsSnapshot.h"
+#include "UsenetSession.h"
 #include "webserver/WebServer.h"
 #include "utils/Log.h"
 
@@ -116,9 +117,17 @@ bool DaemonApp::start()
     // Connect web server config changes from any IPC client
     connect(m_ipcServer.get(), &IpcServer::webServerConfigChanged,
             this, &DaemonApp::restartWebServer);
+    connect(m_ipcServer.get(), &IpcServer::usenetConfigChanged,
+            this, &DaemonApp::applyUsenetServers);
 
     // Start web server if enabled
     startWebServer();
+
+    // Usenet. Always constructed; usenetEnabled() gates only the auto-start, so
+    // the switch takes effect without a daemon restart.
+    m_usenetSession = std::make_unique<usenet::UsenetSession>();
+    if (thePrefs.usenetEnabled())
+        m_usenetSession->start();
 
     m_running = true;
     logInfo(QStringLiteral("Daemon started — IPC server on %1:%2")
@@ -140,6 +149,13 @@ void DaemonApp::stop()
     }
 
     stopWebServer();
+
+    // Before the IPC server goes away: a Test-button reply in flight holds a
+    // QPointer to its handler, and the engine's own sockets must be torn down
+    // while the event loop is still turning.
+    if (m_usenetSession)
+        m_usenetSession->stop();
+    m_usenetSession.reset();
 
     removeLogForwarder();
     m_notifierBridge.reset();
@@ -233,6 +249,20 @@ void DaemonApp::startWebServer()
     // enableWebServerPort() but nothing ever called it.
     if (m_coreSession)
         m_coreSession->updatePortMappings();
+}
+
+void DaemonApp::applyUsenetServers()
+{
+    if (!m_usenetSession)
+        return;
+
+    m_usenetSession->applyPreferences();
+
+    // The enable switch can flip in the same save that changed the servers.
+    if (thePrefs.usenetEnabled() && !m_usenetSession->isRunning())
+        m_usenetSession->start();
+    else if (!thePrefs.usenetEnabled() && m_usenetSession->isRunning())
+        m_usenetSession->stop();
 }
 
 void DaemonApp::stopWebServer()
