@@ -2,6 +2,7 @@
 
 #include <QtEndian>
 
+#include <array>
 #include <cstring>
 
 namespace eMule::usenet {
@@ -13,8 +14,9 @@ namespace {
 constexpr char kRar4Marker[] = "\x52\x61\x72\x21\x1A\x07\x00";
 constexpr int  kRar4MarkerLen = 7;
 
-constexpr quint8 kRar4TypeMain = 0x73;
-constexpr quint8 kRar4TypeFile = 0x74;
+constexpr quint8 kRar4TypeMain   = 0x73;
+constexpr quint8 kRar4TypeFile   = 0x74;
+constexpr quint8 kRar4TypeEndArc = 0x7B;
 
 constexpr quint16 kMhdSolid       = 0x0008;
 constexpr quint16 kMhdPassword    = 0x0080;   // header encryption
@@ -145,6 +147,27 @@ private:
     bool m_bad = false;
 };
 
+/// Standard CRC-32 — the one both RAR formats use for their header checksums.
+/// Only ever asked for on a resumed block; see parseRarBlocks().
+quint32 crc32Of(const char* data, qint64 len)
+{
+    static const std::array<quint32, 256> table = [] {
+        std::array<quint32, 256> t{};
+        for (quint32 i = 0; i < 256; ++i) {
+            quint32 c = i;
+            for (int k = 0; k < 8; ++k)
+                c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+            t[i] = c;
+        }
+        return t;
+    }();
+
+    quint32 crc = 0xFFFFFFFFu;
+    for (qint64 i = 0; i < len; ++i)
+        crc = table[(crc ^ quint8(data[i])) & 0xFF] ^ (crc >> 8);
+    return crc ^ 0xFFFFFFFFu;
+}
+
 /// RAR4 stores the name as ASCII, and when LHD_UNICODE is set follows it with a
 /// NUL and a compressed Unicode form. The ASCII half is all we need — the name
 /// only picks a MIME type and identifies the inner file.
@@ -154,30 +177,54 @@ QString rar4Name(const QByteArray& raw)
     return QString::fromLatin1(nul >= 0 ? raw.left(nul) : raw);
 }
 
-RarVolume parseRar4(const QByteArray& buf)
+RarVolume parseRar4(const QByteArray& buf, qint64 startPos, qint64 base, bool verifyCrc)
 {
     RarVolume out;
-    Cursor c(buf, kRar4MarkerLen);
+    out.format = RarFormat::Rar4;
+    out.nextOffset = base + startPos;
+    Cursor c(buf, startPos);
 
     while (true) {
         const qint64 blockStart = c.pos();
         if (blockStart >= buf.size())
             break;
 
-        c.u16();                              // HEAD_CRC, deliberately unverified
+        c.u16();                              // HEAD_CRC, verified below when resuming
         const quint8  type  = c.u8();
         const quint16 flags = c.u16();
         const quint16 headSize = c.u16();
 
         if (c.bad()) {
-            // Ran off the end mid-header. If we already have the file header we
-            // came for, that is a complete answer, not a truncation.
+            // Ran off the end mid-header. If we already have a file header, that
+            // is a complete answer about it, not a truncation.
             if (!out.entries.isEmpty())
                 out.status = RarParse::Ok;
             return out;
         }
         if (headSize < 7)
             return out;   // nonsense; leaves status NeedMoreBytes
+
+        if (verifyCrc) {
+            if (blockStart + headSize > buf.size()) {
+                if (!out.entries.isEmpty())
+                    out.status = RarParse::Ok;
+                return out;                    // truncated, not wrong
+            }
+            const quint16 want = quint16(crc32Of(buf.constData() + blockStart + 2,
+                                                 headSize - 2) & 0xFFFF);
+            const quint16 got = qFromLittleEndian<quint16>(buf.constData() + blockStart);
+            if (want != got) {
+                out.status = RarParse::Unsupported;
+                out.reason = QStringLiteral("Archive header checksum mismatch");
+                return out;
+            }
+        }
+
+        if (type == kRar4TypeEndArc) {
+            out.endOfArchive = true;
+            out.status = RarParse::Ok;
+            return out;
+        }
 
         // LONG_BLOCK means an ADD_SIZE field follows the common header. On a
         // *file* header that field is PACK_SIZE itself — read it twice and every
@@ -215,8 +262,11 @@ RarVolume parseRar4(const QByteArray& buf)
             }
 
             const QByteArray rawName = c.bytes(nameSize);
-            if (c.bad())
+            if (c.bad()) {
+                if (!out.entries.isEmpty())
+                    out.status = RarParse::Ok;
                 return out;                    // NeedMoreBytes
+            }
 
             e.name = rar4Name(rawName);
             e.stored = (method == kRar4MethodStore);
@@ -225,7 +275,8 @@ RarVolume parseRar4(const QByteArray& buf)
             e.splitAfter = (flags & kLhdSplitAfter) != 0;
             e.packedSize = qint64((packHigh << 32) | packLow);
             e.unpackedSize = qint64((unpHigh << 32) | unpLow);
-            e.dataOffset = blockStart + headSize;
+            e.headerOffset = base + blockStart;
+            e.dataOffset = base + blockStart + headSize;
 
             if (flags & kLhdSolid)
                 out.solid = true;
@@ -235,15 +286,18 @@ RarVolume parseRar4(const QByteArray& buf)
             out.entries.append(e);
             out.status = RarParse::Ok;
 
-            // The next block sits past this entry's payload, which is far
-            // outside any probe buffer. One file header per volume is what a
-            // split set has, and it is what we came for.
-            return out;
+            // The next block sits past this entry's payload. Usually that is far
+            // outside the probe window and the walk ends here — but a release
+            // that packs a small .nfo ahead of the feature puts both headers in
+            // the same window, and stopping at the first is how such a set came
+            // to be mapped as a 500-byte "movie".
+            addSize = e.packedSize;
         }
 
         const qint64 next = blockStart + headSize + addSize;
         if (next <= blockStart)
             return out;
+        out.nextOffset = base + next;
         c.seek(next);
         if (c.pos() >= buf.size()) {
             if (!out.entries.isEmpty())
@@ -279,17 +333,19 @@ bool rar5ExtraSaysEncrypted(const QByteArray& buf, qint64 start, qint64 end)
     return false;
 }
 
-RarVolume parseRar5(const QByteArray& buf)
+RarVolume parseRar5(const QByteArray& buf, qint64 startPos, qint64 base, bool verifyCrc)
 {
     RarVolume out;
-    Cursor c(buf, kRar5MarkerLen);
+    out.format = RarFormat::Rar5;
+    out.nextOffset = base + startPos;
+    Cursor c(buf, startPos);
 
     while (true) {
         const qint64 blockStart = c.pos();
         if (blockStart >= buf.size())
             break;
 
-        c.u32();                               // header CRC32, deliberately unverified
+        c.u32();                               // header CRC32, verified below when resuming
         const qint64 sizeFieldAt = c.pos();
         const quint64 headerSize = c.vint();
         if (c.bad()) {
@@ -301,6 +357,22 @@ RarVolume parseRar5(const QByteArray& buf)
         const qint64 headerEnd = bodyStart + qint64(headerSize);
         if (headerSize == 0 || headerEnd <= sizeFieldAt)
             return out;
+
+        if (verifyCrc) {
+            if (headerEnd > buf.size()) {
+                if (!out.entries.isEmpty())
+                    out.status = RarParse::Ok;
+                return out;                    // truncated, not wrong
+            }
+            // The CRC covers the HeaderSize vint *and* the body.
+            const quint32 want = crc32Of(buf.constData() + sizeFieldAt, headerEnd - sizeFieldAt);
+            const quint32 got = qFromLittleEndian<quint32>(buf.constData() + blockStart);
+            if (want != got) {
+                out.status = RarParse::Unsupported;
+                out.reason = QStringLiteral("Archive header checksum mismatch");
+                return out;
+            }
+        }
 
         const quint64 type = c.vint();
         const quint64 flags = c.vint();
@@ -348,8 +420,11 @@ RarVolume parseRar5(const QByteArray& buf)
             c.vint();                          // host OS
             const quint64 nameLength = c.vint();
             const QByteArray rawName = c.bytes(qint64(nameLength));
-            if (c.bad())
+            if (c.bad()) {
+                if (!out.entries.isEmpty())
+                    out.status = RarParse::Ok;
                 return out;                    // NeedMoreBytes
+            }
 
             e.name = QString::fromUtf8(rawName);
             e.stored = ((compInfo >> 7) & 0x07) == 0;
@@ -357,7 +432,8 @@ RarVolume parseRar5(const QByteArray& buf)
             e.splitAfter = (flags & kHdrSplitAfter) != 0;
             e.packedSize = qint64(dataSize);
             e.unpackedSize = qint64(unpackedSize);
-            e.dataOffset = headerEnd;
+            e.headerOffset = base + blockStart;
+            e.dataOffset = base + headerEnd;
 
             if ((compInfo >> 6) & 0x01)
                 out.solid = true;
@@ -369,16 +445,18 @@ RarVolume parseRar5(const QByteArray& buf)
 
             out.entries.append(e);
             out.status = RarParse::Ok;
-            return out;
+            // Keep walking: a second header may share this window. See the RAR4
+            // branch for why stopping at the first one was wrong.
         } else if (type == kRar5TypeEndOfArc) {
-            if (!out.entries.isEmpty())
-                out.status = RarParse::Ok;
+            out.endOfArchive = true;
+            out.status = RarParse::Ok;
             return out;
         }
 
         const qint64 next = headerEnd + qint64(dataSize);
         if (next <= blockStart)
             return out;
+        out.nextOffset = base + next;
         c.seek(next);
         if (c.bad() || c.pos() >= buf.size()) {
             if (!out.entries.isEmpty())
@@ -398,10 +476,10 @@ RarVolume parseRarVolume(const QByteArray& head)
 
     if (head.size() >= kRar5MarkerLen
         && std::memcmp(head.constData(), kRar5Marker, kRar5MarkerLen) == 0) {
-        out = parseRar5(head);
+        out = parseRar5(head, kRar5MarkerLen, /*base*/ 0, /*verifyCrc*/ false);
     } else if (head.size() >= kRar4MarkerLen
                && std::memcmp(head.constData(), kRar4Marker, kRar4MarkerLen) == 0) {
-        out = parseRar4(head);
+        out = parseRar4(head, kRar4MarkerLen, /*base*/ 0, /*verifyCrc*/ false);
     } else if (head.size() < kRar5MarkerLen) {
         // Too short to tell a marker from a truncation. Asking for more bytes is
         // the only answer that cannot be wrong.
@@ -418,6 +496,26 @@ RarVolume parseRarVolume(const QByteArray& head)
         return out;
     }
 
+    return out;
+}
+
+RarVolume parseRarBlocks(RarFormat format, const QByteArray& window, qint64 windowStart)
+{
+    RarVolume out;
+    out.nextOffset = windowStart;
+
+    switch (format) {
+    case RarFormat::Rar4:
+        return parseRar4(window, 0, windowStart, /*verifyCrc*/ true);
+    case RarFormat::Rar5:
+        return parseRar5(window, 0, windowStart, /*verifyCrc*/ true);
+    case RarFormat::Unknown:
+        break;
+    }
+
+    // No marker to fall back on mid-volume, so this is a caller error rather
+    // than a property of the bytes.
+    out.status = RarParse::NotRar;
     return out;
 }
 

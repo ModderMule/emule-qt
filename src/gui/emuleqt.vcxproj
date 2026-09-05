@@ -208,6 +208,8 @@
     <ClCompile Include="app\AutoStart.cpp" />
     <ClCompile Include="dialogs\ClientDetailDialog.cpp" />
     <ClCompile Include="dialogs\ClientSharedFilesDialog.cpp" />
+    <ClCompile Include="dialogs\UsenetArchiveEntryDialog.cpp" />
+    <ClCompile Include="utils\FileTypeIcons.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
     <ClCompile Include="app\ExternalLinkHandler.cpp" />
@@ -281,6 +283,7 @@
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
     <ClInclude Include="utils\DialogSizing.h" />
+    <ClInclude Include="utils\FileTypeIcons.h" />
     <ClInclude Include="utils\Ed2kLinkImporter.h" />
     <ClInclude Include="utils\HttpCacheLinkImporter.h" />
     <ClInclude Include="dialogs\FindInListDialog.h" />
@@ -302,6 +305,7 @@
     <ClInclude Include="app\AutoStart.h" />
     <QtMoc Include="dialogs\ClientDetailDialog.h" />
     <QtMoc Include="dialogs\ClientSharedFilesDialog.h" />
+    <QtMoc Include="dialogs\UsenetArchiveEntryDialog.h" />
     <QtMoc Include="controls\ClientListModel.h" />
     <ClInclude Include="app\CommandLineExec.h" />
     <QtMoc Include="controls\ContactsGraph.h" />
@@ -570,6 +574,7 @@
     <None Include="..\..\resources\icons\Up1down0.ico" />
     <None Include="..\..\resources\icons\Up1down1.ico" />
     <None Include="..\..\resources\icons\Upload.ico" />
+    <None Include="..\..\resources\icons\Usenet.ico" />
     <None Include="..\..\resources\icons\User.ico" />
     <None Include="..\..\resources\icons\UserAdd.ico" />
     <None Include="..\..\resources\icons\UserDelete.ico" />

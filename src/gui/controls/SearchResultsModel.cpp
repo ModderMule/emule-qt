@@ -4,6 +4,8 @@
 
 #include "controls/SearchResultsModel.h"
 
+#include "utils/FileTypeIcons.h"
+
 #include <QColor>
 #include <QHash>
 #include <QIcon>
@@ -59,39 +61,6 @@ QString knownTypeString(int knownType)
     case 4:  return QObject::tr("Cancelled");
     default: return {};
     }
-}
-
-/// Map a file type string to its icon, with caching.
-QIcon fileTypeIcon(const QString& type)
-{
-    static QHash<QString, QIcon> cache;
-    auto it = cache.find(type);
-    if (it != cache.end())
-        return *it;
-
-    QString path;
-    if (type == u"Audio")
-        path = QStringLiteral(":/icons/FileTypeAudio.ico");
-    else if (type == u"Video")
-        path = QStringLiteral(":/icons/FileTypeVideo.ico");
-    else if (type == u"Image")
-        path = QStringLiteral(":/icons/FileTypePicture.ico");
-    else if (type == u"Doc")
-        path = QStringLiteral(":/icons/FileTypeDocument.ico");
-    else if (type == u"Pro")
-        path = QStringLiteral(":/icons/FileTypeProgram.ico");
-    else if (type == u"Arc")
-        path = QStringLiteral(":/icons/FileTypeArchive.ico");
-    else if (type == u"Iso")
-        path = QStringLiteral(":/icons/FileTypeCDImage.ico");
-    else if (type == u"EmuleCollection")
-        path = QStringLiteral(":/icons/emuleCollectionFileType.ico");
-    else
-        path = QStringLiteral(":/icons/FileTypeAny.ico");
-
-    QIcon icon(path);
-    cache.insert(type, icon);
-    return icon;
 }
 
 } // anonymous namespace

@@ -5,6 +5,7 @@
 #include "controls/AbstractListView.h"
 #include "controls/UsenetQueueModel.h"
 #include "utils/PanelPoller.h"
+#include "dialogs/UsenetArchiveEntryDialog.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
 
@@ -553,7 +554,25 @@ void UsenetPanel::onPreview()
         return;
     }
 
-    const QString url = daemonUsenetStreamUrl(m_ipc, itemId, fileIndex, m_streamToken);
+    // A release may hold several playable files. Asking which is a round trip,
+    // so the dialog is constructed hidden and shows itself only if the answer
+    // turns out to be "more than one" — an ordinary single-video release plays
+    // without a window ever appearing. See UsenetArchiveEntryDialog.
+    if (m_entryDialog) {
+        m_entryDialog->raise();
+        m_entryDialog->activateWindow();
+        return;
+    }
+
+    auto* dialog = new UsenetArchiveEntryDialog(m_ipc, itemId, fileIndex, this);
+    m_entryDialog = dialog;
+    connect(dialog, &UsenetArchiveEntryDialog::entryChosen, this,
+            [this, itemId, fileIndex](int entry) { launchEntry(itemId, fileIndex, entry); });
+}
+
+void UsenetPanel::launchEntry(const QString& itemId, int fileIndex, int entry)
+{
+    const QString url = daemonUsenetStreamUrl(m_ipc, itemId, fileIndex, m_streamToken, entry);
     if (url.isEmpty()) {
         StatusBarNotifier::post(
             tr("Preview is unavailable — the daemon's web server is not running."));

@@ -11,6 +11,7 @@
 /// The GUI links eMule::Core and eMule::Ipc only, never eMule::Usenet, so
 /// everything here comes off the wire as CBOR.
 
+#include <QPointer>
 #include <QWidget>
 
 #include "ipc/IpcMessage.h"
@@ -25,6 +26,7 @@ namespace eMule {
 
 class IpcClient;
 class PanelPoller;
+class UsenetArchiveEntryDialog;
 class UsenetQueueModel;
 
 class UsenetPanel : public QWidget {
@@ -80,6 +82,9 @@ private:
     /// the sample. Returns index -1 when nothing in the selection can be played.
     [[nodiscard]] QPair<QString, int> previewTarget() const;
 
+    /// Build the preview URL for one inner file and hand it to the player.
+    void launchEntry(const QString& itemId, int fileIndex, int entry);
+
     /// Why the current selection cannot be previewed, when the daemon said so.
     /// Empty when the answer is "not yet" rather than "not ever".
     [[nodiscard]] QString previewNote() const;
@@ -106,6 +111,10 @@ private:
     QAction* m_previewAction = nullptr;
 
     QString m_streamToken;
+
+    /// The chooser, while one is open. QPointer because the dialog is modeless
+    /// and deletes itself on close.
+    QPointer<UsenetArchiveEntryDialog> m_entryDialog;
 
     bool m_restoringSelection = false;
 };

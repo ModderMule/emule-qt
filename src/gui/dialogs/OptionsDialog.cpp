@@ -47,6 +47,7 @@
 #include <QPainter>
 #include <QProcess>
 #include <QPushButton>
+#include <QScreen>
 #include <QSettings>
 #include <QSlider>
 #include <QSpinBox>
@@ -467,7 +468,7 @@ void OptionsDialog::setupSidebar()
         {"Security",              QStyle::SP_CustomBase,             "Security.ico"},
         {"Scheduler",             QStyle::SP_DialogResetButton,      "Scheduler.ico"},
         {"Web Interface",         QStyle::SP_DriveNetIcon,           "Web.ico"},
-        {"Usenet",                QStyle::SP_DriveNetIcon,           "Server.ico"},
+        {"Usenet",                QStyle::SP_DriveNetIcon,           "Usenet.ico"},
         {"Indexers",              QStyle::SP_FileDialogContentsView, "Search.ico"},
         {"Extended",              QStyle::SP_DialogCancelButton,     "Tweak.ico"},
     };
@@ -2598,6 +2599,51 @@ QWidget* OptionsDialog::createWebInterfacePage()
 //     field is only attached to an entry the user actually retyped.
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/// The "Test" button and the label that reports what the server said, as one
+/// form row. Used by both the Usenet and the Indexers page -- same widget, same
+/// two traps:
+///
+///  - The label has to be told its height follows its width. A word-wrapping
+///    QLabel reports a *one-line* minimum height, and QWidgetItem asks the size
+///    policy rather than the widget, so without this a two-line error is laid
+///    out as one line and the second line is painted outside the row. Caller
+///    must opt the enclosing group box in too, or the chain breaks one level up.
+///  - The stretch below only pays off on a form whose fields grow; QMacStyle
+///    defaults QFormLayout to FieldsStayAtSizeHint, where it buys nothing.
+/// QLayout::invalidate() does not reach nested layouts, and a QWidget only ever
+/// invalidates its own. A row built as a layout inside a form therefore keeps a
+/// stale cached height after one of its widgets changes.
+void invalidateLayoutTree(QLayout* layout)
+{
+    if (!layout)
+        return;
+
+    for (int i = 0; i < layout->count(); ++i)
+        invalidateLayoutTree(layout->itemAt(i)->layout());
+
+    layout->invalidate();
+}
+
+void addTestRow(QFormLayout* form, QWidget* parent, QPushButton*& button,
+                QLabel*& result)
+{
+    auto* row = new QHBoxLayout;
+    button = new QPushButton(QObject::tr("Test"), parent);
+    row->addWidget(button);
+
+    result = new QLabel(parent);
+    result->setWordWrap(true);
+    result->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    DialogSizing::enableHeightForWidth(result);
+    row->addWidget(result, 1);
+
+    form->addRow(QString{}, row);
+}
+
+} // namespace
+
 QWidget* OptionsDialog::createUsenetPage()
 {
     auto* page = new QWidget(this);
@@ -2636,6 +2682,10 @@ QWidget* OptionsDialog::createUsenetPage()
     // -- Details ------------------------------------------------------------
     auto* details = new QGroupBox(tr("Account"), page);
     auto* form = new QFormLayout(details);
+    // Without this the fields keep their size hint on macOS and the test result
+    // label never reaches the right edge, however much room the group box has.
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    DialogSizing::enableHeightForWidth(details);
 
     m_usenetEntryEnabledCheck = new QCheckBox(tr("Enabled"), details);
     form->addRow(m_usenetEntryEnabledCheck);
@@ -2710,14 +2760,7 @@ QWidget* OptionsDialog::createUsenetPage()
         tr("Send GROUP before fetching (only needed by a few old servers)"), details);
     form->addRow(m_usenetJoinGroupCheck);
 
-    auto* testRow = new QHBoxLayout;
-    m_usenetTestBtn = new QPushButton(tr("Test"), details);
-    testRow->addWidget(m_usenetTestBtn);
-    m_usenetTestResult = new QLabel(details);
-    m_usenetTestResult->setWordWrap(true);
-    m_usenetTestResult->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    testRow->addWidget(m_usenetTestResult, 1);
-    form->addRow(QString{}, testRow);
+    addTestRow(form, details, m_usenetTestBtn, m_usenetTestResult);
 
     mainLayout->addWidget(details);
 
@@ -2996,8 +3039,10 @@ void OptionsDialog::populateNewsServerDetails(int index)
 {
     m_currentNewsServer = (index >= 0 && index < m_newsServers.size()) ? index : -1;
     updateUsenetEnabledStates();
-    if (m_usenetTestResult)
+    if (m_usenetTestResult) {
         m_usenetTestResult->clear();
+        m_usenetTestResult->setStyleSheet(QString{});
+    }
 
     if (m_currentNewsServer < 0) {
         const QSignalBlocker b1(m_usenetNameEdit), b2(m_usenetHostEdit),
@@ -3132,6 +3177,7 @@ void OptionsDialog::testNewsServer()
 
     m_usenetTestBtn->setEnabled(false);
     m_usenetTestResult->setText(tr("Connecting…"));
+    m_usenetTestResult->setStyleSheet(QString{});
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::TestNewsServer);
     msg.append(server);
@@ -3139,6 +3185,8 @@ void OptionsDialog::testNewsServer()
         m_usenetTestBtn->setEnabled(m_currentNewsServer >= 0);
         if (!resp.fieldBool(0)) {
             m_usenetTestResult->setText(resp.fieldString(1));
+            m_usenetTestResult->setStyleSheet(QStringLiteral("color: #c62828;"));
+            refitForTestResult(m_usenetTestResult);
             return;
         }
         const QCborArray result = resp.fieldArray(1);
@@ -3149,6 +3197,7 @@ void OptionsDialog::testNewsServer()
         m_usenetTestResult->setText(result.at(1).toString());
         m_usenetTestResult->setStyleSheet(
             ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
+        refitForTestResult(m_usenetTestResult);
     });
 }
 
@@ -3204,6 +3253,10 @@ QWidget* OptionsDialog::createIndexersPage()
     // -- Details ------------------------------------------------------------
     auto* details = new QGroupBox(tr("Indexer"), page);
     auto* form = new QFormLayout(details);
+    // See createUsenetPage(): the same two settings are what let the test result
+    // label use the group's full width and grow a line when it wraps.
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    DialogSizing::enableHeightForWidth(details);
 
     m_indexerEntryEnabledCheck = new QCheckBox(tr("Enabled"), details);
     form->addRow(m_indexerEntryEnabledCheck);
@@ -3234,14 +3287,7 @@ QWidget* OptionsDialog::createIndexersPage()
     m_indexerKindCombo->addItem(tr("Both — Prowlarr, NZBHydra2"));
     form->addRow(tr("Type:"), m_indexerKindCombo);
 
-    auto* testRow = new QHBoxLayout;
-    m_indexerTestBtn = new QPushButton(tr("Test"), details);
-    testRow->addWidget(m_indexerTestBtn);
-    m_indexerTestResult = new QLabel(details);
-    m_indexerTestResult->setWordWrap(true);
-    m_indexerTestResult->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    testRow->addWidget(m_indexerTestResult, 1);
-    form->addRow(QString{}, testRow);
+    addTestRow(form, details, m_indexerTestBtn, m_indexerTestResult);
 
     mainLayout->addWidget(details);
 
@@ -3557,6 +3603,8 @@ void OptionsDialog::testIndexer()
         m_indexerTestBtn->setEnabled(m_currentIndexer >= 0);
         if (!resp.fieldBool(0)) {
             m_indexerTestResult->setText(resp.fieldString(1));
+            m_indexerTestResult->setStyleSheet(QStringLiteral("color: #c62828;"));
+            refitForTestResult(m_indexerTestResult);
             return;
         }
         const QCborArray result = resp.fieldArray(1);
@@ -3567,7 +3615,45 @@ void OptionsDialog::testIndexer()
                                         : result.at(2).toString());
         m_indexerTestResult->setStyleSheet(
             ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
+        refitForTestResult(m_indexerTestResult);
     });
+}
+
+/// Grow the window when a test result needs more room than was budgeted for it.
+///
+/// A provider answers with its own status line, so the text is unbounded: "502
+/// Authentication Failed" fits on one line, a certificate mismatch does not.
+/// The label wraps, but its extra lines never reach QLayout::minimumSize() --
+/// only heightForWidth() knows about them -- so the dialog's floor, frozen by
+/// DialogSizing::applySize() in the constructor while the label was still empty,
+/// does not rise and the group box is simply painted short.
+///
+/// Nothing else on these pages can give the height back: the page's trailing
+/// stretch is already at zero when the dialog sits at that floor, which is
+/// exactly where it opens. So the window takes the difference.
+///
+/// Grow-only, like applySize(): a later, shorter message leaves the size alone
+/// rather than snapping back under a window the user may have resized.
+void OptionsDialog::refitForTestResult(QLabel* result)
+{
+    QWidget* group = result ? result->parentWidget() : nullptr;
+    if (!group || !group->layout())
+        return;
+
+    // The label's new text has not reached the cached heights yet: setText() only
+    // invalidates the *widget's* layout and posts a LayoutRequest, so the nested
+    // row layout still answers with the height the previous message needed.
+    // Invalidate the whole subtree, or the measurement below is one message stale.
+    QLayout* form = group->layout();
+    invalidateLayoutTree(form);
+
+    const int extra = form->totalHeightForWidth(group->width()) - group->height();
+    if (extra <= 0)
+        return;
+
+    const int budget = screen() ? screen()->availableGeometry().height() : height() + extra;
+    setMinimumHeight(qMin(minimumHeight() + extra, budget));
+    resize(width(), qMin(height() + extra, budget));
 }
 
 QWidget* OptionsDialog::createExtendedPage()

@@ -135,4 +135,5 @@ docker/httpcache/nodes.log
 
 # Dev automation workspace
 dev/
+data/nzb
 .mcp.json

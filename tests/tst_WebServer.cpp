@@ -87,6 +87,8 @@ private slots:
     // one route served whether or not either web surface is enabled.
     void previewRejectsAMissingOrWrongStreamToken();
     void previewRejectsABadFileIndex();
+    void previewCarriesTheArchiveEntryFromTheQuery();
+    void previewRejectsABadArchiveEntry();
     void previewCapsTheResponseBody();
     void previewStopsAtWhatHasDownloaded();
     void previewWaitsForBytesThatHaveNotArrivedYet();
@@ -603,7 +605,7 @@ QString writePattern(QTemporaryDir& dir, const QString& name, qint64 size)
 
 void tst_WebServer::previewRejectsAMissingOrWrongStreamToken()
 {
-    m_webServer->setUsenetStreamResolver([](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([](const UsenetStreamRequest&) {
         UsenetStreamSource src;
         src.found = true;
         src.pieces = {{QStringLiteral("/nonexistent"), 0, 0, 0}};
@@ -626,7 +628,7 @@ void tst_WebServer::previewRejectsAMissingOrWrongStreamToken()
 void tst_WebServer::previewRejectsABadFileIndex()
 {
     bool resolverCalled = false;
-    m_webServer->setUsenetStreamResolver([&resolverCalled](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([&resolverCalled](const UsenetStreamRequest&) {
         resolverCalled = true;
         return UsenetStreamSource{};
     });
@@ -642,6 +644,51 @@ void tst_WebServer::previewRejectsABadFileIndex()
     m_webServer->setUsenetStreamResolver({});
 }
 
+void tst_WebServer::previewCarriesTheArchiveEntryFromTheQuery()
+{
+    int seenEntry = -99;
+    m_webServer->setUsenetStreamResolver([&seenEntry](const UsenetStreamRequest& ask) {
+        seenEntry = ask.entryOrdinal;
+        return UsenetStreamSource{};
+    });
+
+    const QString token = m_webServer->streamToken();
+
+    (void)sendRanged(QStringLiteral("/api/v1/usenet/some-id/0/preview?token=%1&entry=2")
+                         .arg(token), {});
+    QCOMPARE(seenEntry, 2);
+
+    // No `entry=` means the first playable file, which is what every URL
+    // predating the chooser carries — the back-compat guarantee, asserted.
+    seenEntry = -99;
+    (void)sendRanged(QStringLiteral("/api/v1/usenet/some-id/0/preview?token=%1").arg(token), {});
+    QCOMPARE(seenEntry, -1);
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewRejectsABadArchiveEntry()
+{
+    bool resolverCalled = false;
+    m_webServer->setUsenetStreamResolver([&resolverCalled](const UsenetStreamRequest&) {
+        resolverCalled = true;
+        return UsenetStreamSource{};
+    });
+
+    const QString token = m_webServer->streamToken();
+
+    for (const QString& bad : {QStringLiteral("abc"), QStringLiteral("-3")}) {
+        const auto resp = sendRanged(
+            QStringLiteral("/api/v1/usenet/some-id/0/preview?token=%1&entry=%2")
+                .arg(token, bad), {});
+        QCOMPARE(resp.statusCode, 400);
+        // Same rule as a bad file index: a malformed URL is not a lookup.
+        QVERIFY2(!resolverCalled, qPrintable(bad));
+    }
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
 void tst_WebServer::previewCapsTheResponseBody()
 {
     QTemporaryDir dir;
@@ -652,7 +699,7 @@ void tst_WebServer::previewCapsTheResponseBody()
     const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
     QVERIFY(!path.isEmpty());
 
-    m_webServer->setUsenetStreamResolver([path](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([path](const UsenetStreamRequest&) {
         UsenetStreamSource src;
         src.found = true;
         src.pieces = {{path, 0, 0, kSize}};
@@ -701,7 +748,7 @@ void tst_WebServer::previewStopsAtWhatHasDownloaded()
     const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
     QVERIFY(!path.isEmpty());
 
-    m_webServer->setUsenetStreamResolver([path](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([path](const UsenetStreamRequest&) {
         UsenetStreamSource src;
         src.found = true;
         src.pieces = {{path, 0, 0, kSize}};
@@ -743,7 +790,7 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
     // or the very downloads being waited for would stop.
     QElapsedTimer since;
     since.start();
-    m_webServer->setUsenetStreamResolver([path, &since](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([path, &since](const UsenetStreamRequest&) {
         UsenetStreamSource src;
         src.found = true;
         src.pieces = {{path, 0, 0, kSize}};
@@ -772,7 +819,7 @@ void tst_WebServer::previewGivesUpWhenTheItemDisappears()
     // post-processing moved the file, while a player still held the stream open.
     // The wait has to end there rather than run out its full timeout.
     int calls = 0;
-    m_webServer->setUsenetStreamResolver([&calls](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([&calls](const UsenetStreamRequest&) {
         UsenetStreamSource src;
         if (calls++ == 0) {
             src.found = true;
@@ -826,7 +873,7 @@ void tst_WebServer::previewStitchesAReadAcrossTwoFiles()
         paths << path;
     }
 
-    m_webServer->setUsenetStreamResolver([paths](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([paths](const UsenetStreamRequest&) {
         UsenetStreamSource src;
         src.found = true;
         src.fileName = QStringLiteral("movie.mkv");
@@ -861,7 +908,7 @@ void tst_WebServer::previewRefusesAnUnstreamableReleaseAtOnce()
     // A compressed, solid or encrypted archive will never become readable.
     // Waiting out the poll would end in a 416, which reads as "not yet"; 406
     // with the reason says "not ever", and says it before a player opens.
-    m_webServer->setUsenetStreamResolver([](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([](const UsenetStreamRequest&) {
         UsenetStreamSource src;
         src.found = true;
         src.fileName = QStringLiteral("Some.Release.part01.rar");
@@ -897,7 +944,7 @@ void tst_WebServer::previewTakesAPieceWithNoLengthFromTheFileOnDisk()
     const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
     QVERIFY(!path.isEmpty());
 
-    m_webServer->setUsenetStreamResolver([path](const QString&, int, qint64, qint64) {
+    m_webServer->setUsenetStreamResolver([path](const UsenetStreamRequest&) {
         UsenetStreamSource src;
         src.found = true;
         src.fileName = QStringLiteral("movie.mkv");

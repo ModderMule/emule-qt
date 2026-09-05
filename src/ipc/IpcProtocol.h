@@ -240,8 +240,11 @@ enum class IpcMsgType : int {
     /// `index` is what the preview URL addresses. The GUI cannot decide it: the
     /// answer needs the real post-yEnc filename, the contiguous-prefix length,
     /// and — since phase 6b — whether the file is a volume of a *stored* archive
-    /// set whose inner file is playable. Every volume of such a set reports
-    /// true, because previewing any of them plays the same inner file.
+    /// set holding a playable file. Every volume of such a set reports true,
+    /// because they all describe the same set; *which* file inside it gets
+    /// played is chosen separately, by ListUsenetArchiveEntries and the preview
+    /// URL's `entry=`. With no choice made it is the first playable file, so a
+    /// release that packs an `.nfo` ahead of the feature plays the feature.
     /// `previewNote` is why not, when there is something to say: a compressed,
     /// solid or encrypted archive can never be streamed, and the GUI shows the
     /// sentence rather than leaving an unexplained greyed-out menu entry.
@@ -261,6 +264,24 @@ enum class IpcMsgType : int {
     ResumeUsenetItem        = 727,
     /// [id: string, priority: int] -> [ok]
     SetUsenetItemPriority   = 728,
+
+    /// [id: string, fileIndex: int] -> [{status, note, entries: [{entry, name,
+    ///                                   size, playable, note}]}]
+    /// The files *inside* an archive set, so the GUI can offer a choice when a
+    /// release holds more than one playable file — a season pack, or a feature
+    /// beside its `.nfo`. `entry` is the ordinal the preview URL's `entry=`
+    /// takes; it is sent explicitly and never inferred from array position,
+    /// because a partial and a finished scan must agree on it.
+    ///
+    /// **This one fetches.** The header of the second file inside a set sits
+    /// past the first file's payload, usually in a later volume, so listing
+    /// costs articles where `previewable` above costs nothing. `status` is
+    /// therefore a state machine the GUI polls: 0 Unknown (nothing on disk and
+    /// nothing being fetched — paused or gone), 1 Scanning (ask again; entries
+    /// grows), 2 Complete, 3 NotSeekable (solid or header-encrypted: there is
+    /// nothing to list), 4 NotAnArchive (a raw post or a `.001` split — one
+    /// file, and there was never a choice). Only 1 is non-terminal.
+    ListUsenetArchiveEntries = 729,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 

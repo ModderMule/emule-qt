@@ -114,37 +114,6 @@ QByteArray makeNzb(const QString& fileName, const QList<int>& documentOrder)
     return xml;
 }
 
-/// The phase 6a helpers above are hard-wired to one file and one part size,
-/// which is what those cases want. A RAR set is several files, each with its own
-/// length, so phase 6b needs the general form. Kept separate rather than
-/// generalising the originals: the two sets of cases each want to choose their
-/// own part size, and that is why this file exists at all.
-/// Read @p length bytes of the logical file at @p offset by walking the pieces,
-/// which is what WebServer::serveRange does for real.
-QByteArray readThroughPieces(const QList<UsenetQueue::StreamPiece>& pieces,
-                             qint64 offset, qint64 length)
-{
-    QByteArray out;
-    for (const auto& p : pieces) {
-        const qint64 pos = offset + out.size();
-        if (out.size() >= length)
-            break;
-        if (p.virtualOffset + p.length <= pos)
-            continue;
-        if (p.virtualOffset > pos)
-            break;
-
-        QFile f(p.path);
-        if (!f.open(QIODevice::ReadOnly))
-            break;
-        const qint64 into = pos - p.virtualOffset;
-        if (!f.seek(p.fileOffset + into))
-            break;
-        out += f.read(qMin(length - out.size(), p.length - into));
-    }
-    return out;
-}
-
 } // namespace
 
 class tst_UsenetStream : public QObject {
@@ -159,6 +128,10 @@ private slots:
     void streamingResolvesToAFileAndItsAvailablePrefix();
 
     // Phase 6b
+    void aMultiFileSetOffersEveryFileInsideIt();
+    void withNoEntryNamedTheFirstPlayableFileIsStreamed();
+    void eachFileOfAMultiFileSetMapsToItsOwnBytes();
+    void listingAPausedItemNeitherFetchesNorGuesses();
     void aStoredRarSetResolvesToTheFileInsideIt();
     void aSeekIntoAStoredRarSetSkipsTheVolumesBetween();
     void aCompressedRarSetSaysWhyItCannotBeStreamed();
@@ -499,7 +472,220 @@ QByteArray postStoredRarSet(FakeNntpServer& server, QByteArray& innerPayload,
     return postFiles(server, files, kRarPartSize);
 }
 
+constexpr qint64 kNfoSize = 500;
+constexpr qint64 kFeatureSize = 20000;
+
+/// A set holding a small `.nfo` ahead of the feature — the layout that used to
+/// be mapped as a 500-byte "movie". The `.nfo` does not end on a volume
+/// boundary, so the feature's own header sits mid-volume.
+QByteArray postMultiFileRarSet(FakeNntpServer& server, QByteArray& nfo, QByteArray& feature,
+                               QList<QByteArray>& volumes)
+{
+    nfo = QByteArray(int(kNfoSize), 'N');
+    feature = payload(int(kFeatureSize));
+    volumes = eMule::testing::rar::makeStoredRarSet(
+        {{"intro.nfo", nfo}, {"Some.Release.mkv", feature}}, kVolumePayload);
+
+    QList<PostedFile> files;
+    for (int i = 0; i < volumes.size(); ++i) {
+        files.append({QStringLiteral("Some.Release.part%1.rar")
+                          .arg(i + 1, 2, 10, QLatin1Char('0')),
+                      volumes.at(i)});
+    }
+    return postFiles(server, files, kRarPartSize);
+}
+
 } // namespace
+
+void tst_UsenetStream::aMultiFileSetOffersEveryFileInsideIt()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+
+    QByteArray nfo, feature;
+    QList<QByteArray> volumes;
+    const QByteArray nzb = postMultiFileRarSet(server, nfo, feature, volumes);
+    QCOMPARE(volumes.size(), 7);   // pins the fixture the offsets below assume
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = false,
+                                   .cleanup = false, .directUnpack = false});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("release"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(60000), "the download never reported a terminal outcome");
+
+    const auto listing = queue.listArchiveEntries(id, 0);
+    QCOMPARE(listing.status, UsenetQueue::ArchiveListing::Status::Complete);
+    QCOMPARE(listing.entries.size(), 2);
+
+    QCOMPARE(listing.entries.at(0).entry, 0);
+    QCOMPARE(listing.entries.at(0).name, QStringLiteral("intro.nfo"));
+    QCOMPARE(listing.entries.at(0).size, kNfoSize);
+    QVERIFY(!listing.entries.at(0).playable);
+    QVERIFY(!listing.entries.at(0).note.isEmpty());   // a greyed row must say why
+
+    QCOMPARE(listing.entries.at(1).entry, 1);
+    QCOMPARE(listing.entries.at(1).name, QStringLiteral("Some.Release.mkv"));
+    QCOMPARE(listing.entries.at(1).size, kFeatureSize);
+    QVERIFY(listing.entries.at(1).playable);
+
+    // Asking through any volume describes the same set, because the ordinal is
+    // a property of the set rather than of the volume clicked.
+    const auto viaLast = queue.listArchiveEntries(id, int(volumes.size()) - 1);
+    QCOMPARE(viaLast.entries.size(), 2);
+    QCOMPARE(viaLast.entries.at(1).name, QStringLiteral("Some.Release.mkv"));
+
+    queue.stop();
+}
+
+void tst_UsenetStream::withNoEntryNamedTheFirstPlayableFileIsStreamed()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+
+    QByteArray nfo, feature;
+    QList<QByteArray> volumes;
+    const QByteArray nzb = postMultiFileRarSet(server, nfo, feature, volumes);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = false,
+                                   .cleanup = false, .directUnpack = false});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("release"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(60000), "the download never reported a terminal outcome");
+
+    // The headline fix, and it needs no client change: a URL with no `entry=`
+    // used to serve 500 bytes of .nfo as the movie.
+    const auto info = queue.requestStream(id, 0, 0, 4096);
+    QVERIFY(info.found);
+    QVERIFY2(info.notSeekableReason.isEmpty(), qPrintable(info.notSeekableReason));
+    QCOMPARE(info.fileName, QStringLiteral("Some.Release.mkv"));
+    QCOMPARE(info.totalSize, kFeatureSize);
+    QCOMPARE(readThroughPieces(info.pieces, 0, int(kFeatureSize)), feature);
+
+    // And the daemon no longer claims the archive holds nothing playable.
+    const auto preview = queue.previewability(id, 0);
+    QVERIFY2(preview.previewable, qPrintable(preview.note));
+    QVERIFY(preview.note.isEmpty());
+
+    queue.stop();
+}
+
+void tst_UsenetStream::eachFileOfAMultiFileSetMapsToItsOwnBytes()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+
+    QByteArray nfo, feature;
+    QList<QByteArray> volumes;
+    const QByteArray nzb = postMultiFileRarSet(server, nfo, feature, volumes);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = false,
+                                   .cleanup = false, .directUnpack = false});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("release"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(60000), "the download never reported a terminal outcome");
+
+    // Entry 0 is the .nfo, wholly inside volume 1.
+    const auto first = queue.requestStream(id, 0, 0, 4096, /*entry*/ 0);
+    QCOMPARE(first.fileName, QStringLiteral("intro.nfo"));
+    QCOMPARE(first.totalSize, kNfoSize);
+    QCOMPARE(first.pieces.size(), 1);
+    QCOMPARE(readThroughPieces(first.pieces, 0, int(kNfoSize)), nfo);
+
+    // Entry 1 is the feature, starting mid-volume and running to the last one.
+    const auto second = queue.requestStream(id, 0, 0, 4096, /*entry*/ 1);
+    QCOMPARE(second.fileName, QStringLiteral("Some.Release.mkv"));
+    QCOMPARE(second.totalSize, kFeatureSize);
+    QCOMPARE(second.pieces.size(), volumes.size());
+    QCOMPARE(readThroughPieces(second.pieces, 0, int(kFeatureSize)), feature);
+
+    // Its first volume carries only what was left after the .nfo, so the very
+    // first extent is short — the case a set-wide uniformity model gets wrong.
+    QCOMPARE(second.pieces.at(0).length, kVolumePayload - kNfoSize);
+
+    // A window straddling that first boundary is where an off-by-one hides.
+    const qint64 boundary = kVolumePayload - kNfoSize - 50;
+    QCOMPARE(readThroughPieces(second.pieces, boundary, 100),
+             feature.mid(int(boundary), 100));
+
+    // An ordinal past the end is refused rather than silently clamped.
+    const auto missing = queue.requestStream(id, 0, 0, 4096, /*entry*/ 9);
+    QVERIFY(missing.found);
+    QVERIFY(missing.pieces.isEmpty());
+
+    queue.stop();
+}
+
+void tst_UsenetStream::listingAPausedItemNeitherFetchesNorGuesses()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+
+    QByteArray nfo, feature;
+    QList<QByteArray> volumes;
+    const QByteArray nzb = postMultiFileRarSet(server, nfo, feature, volumes);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = false,
+                                   .cleanup = false, .directUnpack = false});
+
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("release"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY(queue.pauseItem(id));
+
+    // Nothing on disk and nothing being fetched: the listing says so rather
+    // than inventing rows or blocking. This is what separates it from
+    // previewability(), which never promotes at all.
+    const auto paused = queue.listArchiveEntries(id, 0);
+    QCOMPARE(paused.status, UsenetQueue::ArchiveListing::Status::Unknown);
+    QVERIFY(paused.entries.isEmpty());
+
+    queue.start();
+    QVERIFY(queue.resumeItem(id));
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QVERIFY2(finished.wait(60000), "the download never reported a terminal outcome");
+
+    const auto resumed = queue.listArchiveEntries(id, 0);
+    QCOMPARE(resumed.status, UsenetQueue::ArchiveListing::Status::Complete);
+    QCOMPARE(resumed.entries.size(), 2);
+
+    queue.stop();
+}
 
 void tst_UsenetStream::aStoredRarSetResolvesToTheFileInsideIt()
 {

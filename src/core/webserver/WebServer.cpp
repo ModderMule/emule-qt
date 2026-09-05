@@ -752,6 +752,18 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     if (!indexOk || fileIndex < 0)
         return ready(jsonError(400, QStringLiteral("Invalid file index")));
 
+    // Which file inside the archive set. Absent means "the first playable one",
+    // which is what every URL predating the chooser carries. A malformed value
+    // is rejected here rather than passed on: a bad ordinal is a bad request,
+    // not a lookup that happens to miss.
+    int entryOrdinal = -1;
+    if (query.hasQueryItem(QStringLiteral("entry"))) {
+        bool entryOk = false;
+        entryOrdinal = query.queryItemValue(QStringLiteral("entry")).toInt(&entryOk);
+        if (!entryOk || entryOrdinal < 0)
+            return ready(jsonError(400, QStringLiteral("Invalid archive entry")));
+    }
+
     // The request object does not outlive this call, so everything the deferred
     // path needs is copied out now.
     const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
@@ -762,12 +774,18 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     // not going to read yet.
     constexpr qint64 kWantLength = kPreviewChunkBytes;
 
+    UsenetStreamRequest ask;
+    ask.itemId = itemId;
+    ask.fileIndex = fileIndex;
+    ask.wantOffset = wantStart;
+    ask.wantLength = kWantLength;
+    ask.entryOrdinal = entryOrdinal;
+
     // Resolving is not a pure lookup — it also tells the queue somebody is
     // watching this item, which is what puts its articles at the front of the
     // schedule. That is why the poll below calls it again rather than caching:
     // the boost has to be refreshed for as long as a player is really reading.
-    const UsenetStreamSource first = m_usenetStreamResolver(itemId, fileIndex, wantStart,
-                                                            kWantLength);
+    const UsenetStreamSource first = m_usenetStreamResolver(ask);
     if (!first.found) {
         logWarning(QStringLiteral("Usenet preview: 404 — no file %1 of item %2")
                        .arg(fileIndex).arg(itemId));
@@ -804,11 +822,9 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     QDeadlineTimer deadline(kStreamWaitMs);
 
     connect(timer, &QTimer::timeout, this,
-            [this, timer, promise, itemId, fileIndex, rangeHeader, wantStart, deadline] {
+            [this, timer, promise, ask, rangeHeader, wantStart, deadline] {
         const UsenetStreamSource now =
-            m_usenetStreamResolver ? m_usenetStreamResolver(itemId, fileIndex, wantStart,
-                                                            kPreviewChunkBytes)
-                                   : UsenetStreamSource{};
+            m_usenetStreamResolver ? m_usenetStreamResolver(ask) : UsenetStreamSource{};
 
         // Four ways out: the bytes turned up, the release turned out to be
         // unmappable, the item went away, or the wait ran out. Only the first is

@@ -153,6 +153,10 @@ void tst_IpcProtocol::msgTypeEnum_values()
     QCOMPARE(static_cast<int>(IpcMsgType::Error), 302);
     QCOMPARE(static_cast<int>(IpcMsgType::PushStatsUpdate), 400);
     QCOMPARE(static_cast<int>(IpcMsgType::PushLogMessage), 450);
+    // The Usenet block. A renumber here silently breaks a GUI talking to an
+    // older daemon, which is exactly the failure an enum makes invisible.
+    QCOMPARE(static_cast<int>(IpcMsgType::GetUsenetQueue), 723);
+    QCOMPARE(static_cast<int>(IpcMsgType::ListUsenetArchiveEntries), 729);
 }
 
 QTEST_GUILESS_MAIN(tst_IpcProtocol)

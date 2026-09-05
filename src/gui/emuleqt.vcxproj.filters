@@ -202,6 +202,12 @@
     <ClCompile Include="dialogs\ClientSharedFilesDialog.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\UsenetArchiveEntryDialog.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\FileTypeIcons.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -211,6 +217,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="dialogs\AddFriendDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\UsenetArchiveEntryDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\ArchivePreviewPanel.h">
@@ -235,6 +244,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\HttpCacheLinkImporter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\FileTypeIcons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\IpcFeedback.h">
@@ -994,6 +1006,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Upload.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Usenet.ico">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\User.ico">

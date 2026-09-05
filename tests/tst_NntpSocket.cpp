@@ -25,6 +25,7 @@
 #include "nntp/NntpCommand.h"
 #include "nntp/NntpSocket.h"
 
+#include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -64,6 +65,7 @@ private slots:
     void dotStuffedBodyLine_isUnstuffed();
     void dropMidCommand_failsTheCommand();
     void readRateLimit_stillDeliversEverything();
+    void readRateLimit_repaysTimeSpentWaiting();
     void invalidServer_failsWithoutConnecting();
 };
 
@@ -382,6 +384,54 @@ void tst_NntpSocket::readRateLimit_stillDeliversEverything()
     socket.setReadRateLimit(0);
     QCOMPARE(socket.readRateLimit(), 0);
     QVERIFY(socket.isReady());
+}
+
+void tst_NntpSocket::readRateLimit_repaysTimeSpentWaiting()
+{
+    // A limited socket spends most of a real link's time waiting for the
+    // server's first byte — a command round trip to a provider across an ocean
+    // is ~200 ms, two whole refill ticks with nothing to read. Credit that is
+    // discarded each tick can never be earned back, so the limiter delivers a
+    // fraction of the rate it was given. Here the wait is explicit and the
+    // payload is sized so the difference is not a matter of milliseconds.
+    QStringList many;
+    many.reserve(100);
+    for (int i = 0; i < 100; ++i)
+        many.append(QStringLiteral("CAP-%1 with some padding to make the line longer").arg(i));
+
+    FakeNntpServer server;
+    server.setCapabilities(many);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(localServer(port));
+    QVERIFY(ready.wait(5000));
+
+    // ~5 KB of capabilities at 5 KB/s: ten refill ticks, i.e. about a second,
+    // if every tick has to be earned as it is spent.
+    socket.setReadRateLimit(5000);
+
+    // Idle, with the refill timer running and nothing to read.
+    QTest::qWait(600);
+
+    CapabilitiesCommand caps;
+    QSignalSpy done(&socket, &NntpSocket::commandFinished);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    socket.sendCommand(&caps);
+    QVERIFY(done.wait(10000));
+    const qint64 ms = elapsed.elapsed();
+
+    QVERIFY(!caps.failed());
+    QCOMPARE(caps.capabilities().size(), many.size());
+
+    // Banked credit covers most of the body at once. Without accumulation this
+    // cannot finish before ~1 s; the bound is loose enough that a slow machine
+    // does not fail it, and tight enough that a reset budget cannot pass it.
+    QVERIFY2(ms < 700, qPrintable(QStringLiteral("took %1 ms — the read budget is "
+                                                 "not carrying credit across idle ticks").arg(ms)));
 }
 
 void tst_NntpSocket::invalidServer_failsWithoutConnecting()

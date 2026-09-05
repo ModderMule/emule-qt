@@ -316,6 +316,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::PauseUsenetItem:     handlePauseUsenetItem(msg); break;
     case IpcMsgType::ResumeUsenetItem:    handleResumeUsenetItem(msg); break;
     case IpcMsgType::SetUsenetItemPriority: handleSetUsenetItemPriority(msg); break;
+    case IpcMsgType::ListUsenetArchiveEntries: handleListUsenetArchiveEntries(msg); break;
     case IpcMsgType::SetDownloadCategory:  handleSetDownloadCategory(msg); break;
     case IpcMsgType::GetDownloadDetails:   handleGetDownloadDetails(msg); break;
     case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
@@ -4689,6 +4690,39 @@ void IpcClientHandler::handleGetUsenetQueue(const IpcMessage& msg)
     QCborArray out;
     for (const auto* item : usenet::theUsenetSession->queue()->items())
         out.append(usenetItemToCbor(*item));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+void IpcClientHandler::handleListUsenetArchiveEntries(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const QString itemId = msg.fieldString(0);
+    const int fileIndex = int(msg.fieldInt(1));
+
+    const auto listing = usenet::theUsenetSession->queue()->listArchiveEntries(itemId, fileIndex);
+
+    QCborArray entries;
+    for (const auto& e : listing.entries) {
+        entries.append(QCborMap{
+            {QStringLiteral("entry"),    e.entry},
+            {QStringLiteral("name"),     e.name},
+            {QStringLiteral("size"),     e.size},
+            {QStringLiteral("playable"), e.playable},
+            {QStringLiteral("note"),     e.note},
+        });
+    }
+
+    const QCborMap out{
+        {QStringLiteral("status"),  int(listing.status)},
+        {QStringLiteral("note"),    listing.note},
+        {QStringLiteral("entries"), entries},
+    };
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
 }

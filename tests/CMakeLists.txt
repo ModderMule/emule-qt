@@ -329,6 +329,11 @@ emule_add_test(tst_IndexerQuery FOLDER "Indexer" LIBRARIES eMule::Indexer)
 emule_add_test(tst_IndexerSearch FOLDER "Indexer" LIBRARIES eMule::Indexer)
 emule_add_test(tst_IndexerPrefs FOLDER "Indexer" LIBRARIES eMule::Indexer yaml-cpp::yaml-cpp)
 
+# Whole recorded indexer answers from EMULE_NZB_DIR -- the same directory the
+# live NZB download test takes releases from. Offline (it only reads files), so
+# it is not a live test; it simply skips where that variable is unset.
+emule_add_test(tst_IndexerFeed FOLDER "Indexer" LIBRARIES eMule::Indexer eMule::Usenet)
+
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
 emule_add_test(tst_KadNodesData   FOLDER "DataFiles")
@@ -363,6 +368,22 @@ target_include_directories(tst_ViewNavigation PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_ViewNavigation PRIVATE Qt6::Widgets)
+
+# The chooser behind Preview on a multi-file Usenet archive set. Driven through
+# applyListing() with hand-built CBOR, so it needs the real dialog but no daemon.
+emule_add_test(tst_UsenetArchiveEntryDialog FOLDER "Gui"
+    SOURCES tst_UsenetArchiveEntryDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetArchiveEntryDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+target_include_directories(tst_UsenetArchiveEntryDialog PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_UsenetArchiveEntryDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
 
 # Visibility-gated panel polling. Depends on nothing but Qt Widgets, same as above.
 emule_add_test(tst_PanelPoller FOLDER "Gui"
@@ -413,6 +434,13 @@ target_include_directories(tst_VersionChecker PRIVATE
 target_link_libraries(tst_VersionChecker PRIVATE Qt6::Network Qt6::Widgets)
 
 # Live network integration tests (requires real network connectivity)
+#
+# Per-function budgets are set through the test's ENVIRONMENT, not as a compile
+# definition: QtTest reads QTEST_FUNCTION_TIMEOUT from the environment at run
+# time, so `target_compile_definitions(... QTEST_FUNCTION_TIMEOUT=N)` compiles
+# cleanly and changes nothing — a long live case then dies at Qt's 300 s default
+# with "Received a fatal error". APPEND, so emule_add_test's QT_QPA_PLATFORM
+# survives.
 if(EMULE_LIVE_TESTS)
     emule_add_test(tst_KadLiveNetwork FOLDER "LiveNetwork")
     set_tests_properties(tst_KadLiveNetwork PROPERTIES LABELS "live" TIMEOUT 180)
@@ -425,32 +453,32 @@ if(EMULE_LIVE_TESTS)
     # an EMULE_HTTPCACHE_URL pointing somewhere real instead: 60s per case still
     # moves the 9.28 MB part over a link an order of magnitude slower than a LAN.
     emule_add_test(tst_HttpCacheLive FOLDER "LiveNetwork")
-    target_compile_definitions(tst_HttpCacheLive PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
     set_tests_properties(tst_HttpCacheLive PROPERTIES LABELS "live" TIMEOUT 120)
+    set_property(TEST tst_HttpCacheLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=60000")
 
     emule_add_test(tst_FileDownloadLive FOLDER "LiveNetwork")
-    target_compile_definitions(tst_FileDownloadLive PRIVATE QTEST_FUNCTION_TIMEOUT=960000)
     set_tests_properties(tst_FileDownloadLive PROPERTIES LABELS "live" TIMEOUT 960)
+    set_property(TEST tst_FileDownloadLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=960000")
 
     emule_add_test(tst_ServerDownloadLive FOLDER "LiveNetwork")
-    target_compile_definitions(tst_ServerDownloadLive PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
     set_tests_properties(tst_ServerDownloadLive PROPERTIES LABELS "live" TIMEOUT 120)
+    set_property(TEST tst_ServerDownloadLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=120000")
 
     emule_add_test(tst_ServerGlobalSearchLive FOLDER "LiveNetwork")
-    target_compile_definitions(tst_ServerGlobalSearchLive PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
     set_tests_properties(tst_ServerGlobalSearchLive PROPERTIES LABELS "live" TIMEOUT 120)
+    set_property(TEST tst_ServerGlobalSearchLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=120000")
 
     emule_add_test(tst_ServerConnectLive FOLDER "LiveNetwork")
-    target_compile_definitions(tst_ServerConnectLive PRIVATE QTEST_FUNCTION_TIMEOUT=240000)
     set_tests_properties(tst_ServerConnectLive PROPERTIES LABELS "live" TIMEOUT 320)
+    set_property(TEST tst_ServerConnectLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=240000")
 
     emule_add_test(tst_ServerLocalTest FOLDER "LiveNetwork")
-    target_compile_definitions(tst_ServerLocalTest PRIVATE QTEST_FUNCTION_TIMEOUT=120000)
     set_tests_properties(tst_ServerLocalTest PROPERTIES LABELS "live" TIMEOUT 180)
+    set_property(TEST tst_ServerLocalTest APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=120000")
 
     emule_add_test(tst_IrcLiveConnect FOLDER "LiveNetwork")
-    target_compile_definitions(tst_IrcLiveConnect PRIVATE QTEST_FUNCTION_TIMEOUT=30000)
     set_tests_properties(tst_IrcLiveConnect PROPERTIES LABELS "live" TIMEOUT 30)
+    set_property(TEST tst_IrcLiveConnect APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=30000")
 
     # Needs EMULE_INDEXER_APIKEY / _URL / _QUERY, from .env or the environment,
     # and skips without them. Nothing about the account is checked in — no key,
@@ -461,22 +489,36 @@ if(EMULE_LIVE_TESTS)
     set_tests_properties(tst_IndexerLiveSearch PROPERTIES LABELS "live" TIMEOUT 120)
 
     emule_add_test(tst_UsenetLiveConnect FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
-    target_compile_definitions(tst_UsenetLiveConnect PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
     set_tests_properties(tst_UsenetLiveConnect PROPERTIES LABELS "live" TIMEOUT 120)
+    set_property(TEST tst_UsenetLiveConnect APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=60000")
 
     emule_add_test(tst_UsenetLiveFetch FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
-    target_compile_definitions(tst_UsenetLiveFetch PRIVATE QTEST_FUNCTION_TIMEOUT=900000)
     set_tests_properties(tst_UsenetLiveFetch PROPERTIES LABELS "live" TIMEOUT 1200)
+    set_property(TEST tst_UsenetLiveFetch APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=900000")
+
+    # Every .nzb in EMULE_NZB_DIR, downloaded through the real queue and
+    # unpacked. Skips without EMULE_NNTP_HOST / EMULE_NZB_DIR; see the header
+    # comment. Sized for a multi-GB release on a slow line -- the test's own
+    # per-release budget (EMULE_NZB_TIMEOUT_MIN) is what normally stops it.
+    emule_add_test(tst_UsenetLiveDownload FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
+    set_tests_properties(tst_UsenetLiveDownload PROPERTIES LABELS "live" TIMEOUT 7200)
+    set_property(TEST tst_UsenetLiveDownload APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=3600000")
+
+    # The same releases, previewed while they download. Cheap by comparison: it
+    # fetches the head of one file, not the release.
+    emule_add_test(tst_UsenetLivePreview FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
+    set_tests_properties(tst_UsenetLivePreview PROPERTIES LABELS "live" TIMEOUT 1800)
+    set_property(TEST tst_UsenetLivePreview APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=900000")
 
     emule_add_test(tst_SmtpSendEmail FOLDER "LiveNetwork")
-    target_compile_definitions(tst_SmtpSendEmail PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
     set_tests_properties(tst_SmtpSendEmail PROPERTIES LABELS "live" TIMEOUT 60)
+    set_property(TEST tst_SmtpSendEmail APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=60000")
 
     emule_add_test(tst_PortTestLive FOLDER "LiveNetwork")
-    target_compile_definitions(tst_PortTestLive PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
     set_tests_properties(tst_PortTestLive PROPERTIES LABELS "live" TIMEOUT 60)
+    set_property(TEST tst_PortTestLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=60000")
 
     emule_add_test(tst_PortMapLive FOLDER "LiveNetwork")
-    target_compile_definitions(tst_PortMapLive PRIVATE QTEST_FUNCTION_TIMEOUT=60000)
     set_tests_properties(tst_PortMapLive PROPERTIES LABELS "live" TIMEOUT 90)
+    set_property(TEST tst_PortMapLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=60000")
 endif()

@@ -9,14 +9,15 @@
 /// `=ybegin size=` disagrees with the NZB's `bytes`, and articles that have
 /// simply aged out of retention.
 ///
-/// Environment (all four are required; the cases skip otherwise):
+/// Environment: the provider variables from UsenetLiveEnv.h, plus
 ///
-///   EMULE_NNTP_HOST / EMULE_NNTP_PORT / EMULE_NNTP_TLS / EMULE_NNTP_USER /
-///   EMULE_NNTP_PASS   as in tst_UsenetLiveConnect
 ///   EMULE_NZB_FILE    path to a .nzb to download
 ///   EMULE_NZB_SHA256  expected SHA-256 of the assembled first file (optional;
 ///                     without it the test only checks that every article
 ///                     arrived and verified)
+///
+/// The cases skip when any required one is unset. For a whole directory of
+/// releases driven through the real queue, see tst_UsenetLiveDownload.
 ///
 /// Labelled "live" and built only under EMULE_LIVE_TESTS.
 
@@ -25,48 +26,16 @@
 #include "nzb/NzbFile.h"
 #include "queue/ArticleWriter.h"
 
-#include <QCryptographicHash>
-#include "TestHelpers.h"
+#include "UsenetLiveEnv.h"
 
-#include <QProcessEnvironment>
+#include <QCryptographicHash>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
 using namespace eMule::usenet;
 using eMule::testing::loadProjectEnv;
-
-namespace {
-
-QString env(const char* name)
-{
-    return QProcessEnvironment::systemEnvironment().value(QString::fromLatin1(name));
-}
-
-NewsServer providerFromEnv()
-{
-    NewsServer s;
-    s.name = QStringLiteral("live");
-    s.host = env("EMULE_NNTP_HOST");
-    s.user = env("EMULE_NNTP_USER");
-    s.pass = env("EMULE_NNTP_PASS");
-
-    const QString mode = env("EMULE_NNTP_TLS").toLower();
-    if (mode == QLatin1String("none"))
-        s.tlsMode = TlsMode::None;
-    else if (mode == QLatin1String("starttls"))
-        s.tlsMode = TlsMode::StartTls;
-    else
-        s.tlsMode = TlsMode::Implicit;
-
-    const int port = env("EMULE_NNTP_PORT").toInt();
-    s.port = port > 0 ? static_cast<quint16>(port)
-                      : (s.tlsMode == TlsMode::Implicit ? kDefaultNntpTlsPort
-                                                        : kDefaultNntpPort);
-    return s;
-}
-
-} // namespace
+using namespace eMule::testing::usenet;
 
 class tst_UsenetLiveFetch : public QObject {
     Q_OBJECT
@@ -85,12 +54,12 @@ void tst_UsenetLiveFetch::initTestCase()
 
 void tst_UsenetLiveFetch::downloadsTheFirstFileOfAnNzb()
 {
-    if (env("EMULE_NNTP_HOST").isEmpty() || env("EMULE_NZB_FILE").isEmpty())
+    if (liveEnv("EMULE_NNTP_HOST").isEmpty() || liveEnv("EMULE_NZB_FILE").isEmpty())
         QSKIP("Set EMULE_NNTP_HOST and EMULE_NZB_FILE to run the live fetch test");
 
     NzbInfo nzb;
     QString error;
-    QVERIFY2(NzbFile::parseFile(env("EMULE_NZB_FILE"), nzb, error), qPrintable(error));
+    QVERIFY2(NzbFile::parseFile(liveEnv("EMULE_NZB_FILE"), nzb, error), qPrintable(error));
     QVERIFY(!nzb.files.isEmpty());
 
     // The first non-PAR2 file: recovery volumes are large, slow and beside the
@@ -168,7 +137,7 @@ void tst_UsenetLiveFetch::downloadsTheFirstFileOfAnNzb()
     const QByteArray data = out.readAll();
     QVERIFY(!data.isEmpty());
 
-    const QString expected = env("EMULE_NZB_SHA256").trimmed().toLower();
+    const QString expected = liveEnv("EMULE_NZB_SHA256").trimmed().toLower();
     if (expected.isEmpty())
         QSKIP("Downloaded and CRC-verified; set EMULE_NZB_SHA256 to check the bytes");
 

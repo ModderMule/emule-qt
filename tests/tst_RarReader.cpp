@@ -25,6 +25,10 @@ private slots:
     void rar4MiddleVolumeIsSplitOnBothSides();
     void rar5StoredVolumeMapsItsPayload();
     void rar5ReportsItsVolumeNumber();
+    void aVolumeCarryingTwoFileHeadersListsBoth();
+    void aTruncatedSecondHeaderStillReportsTheFirst();
+    void resumingMidVolumeFindsTheHeaderPastTheProbeWindow();
+    void aResumedBlockAtAWrongAddressIsRejectedByItsChecksum();
     void compressedIsReadButNotStored();
     void solidAndEncryptedAreRefusedWithAReason();
     void truncationAtEveryLengthAsksForMoreBytes();
@@ -132,6 +136,147 @@ void tst_RarReader::rar5ReportsItsVolumeNumber()
     four += rar4Main(0);
     four += rar4File("x.mkv", 10, 100, kSplitBefore | kSplitAfter);
     QCOMPARE(parseRarVolume(four).volumeNumber, -1);
+}
+
+void tst_RarReader::aVolumeCarryingTwoFileHeadersListsBoth()
+{
+    // A release that packs a small .nfo ahead of the feature puts both headers
+    // inside the first probe window. Stopping at the first one is how the whole
+    // set came to be mapped as a 500-byte "movie".
+    QByteArray four = rar4Marker();
+    four += rar4Main(kMainFirstVolume);
+    const qint64 nfoHeader4 = four.size();
+    four += rar4File("intro.nfo", /*packed*/ 500, /*unpacked*/ 500, 0);
+    const qint64 nfoData4 = four.size();
+    four += QByteArray(500, 'n');
+    const qint64 mkvHeader4 = four.size();
+    four += rar4File("Some.Release.mkv", /*packed*/ 2500, /*unpacked*/ 20500, kSplitAfter);
+    const qint64 mkvData4 = four.size();
+    four += QByteArray(2500, 'm');
+
+    const RarVolume v4 = parseRarVolume(four);
+    QCOMPARE(v4.status, RarParse::Ok);
+    QCOMPARE(v4.entries.size(), 2);
+    QCOMPARE(v4.entries.at(0).name, QStringLiteral("intro.nfo"));
+    QCOMPARE(v4.entries.at(0).headerOffset, nfoHeader4);
+    QCOMPARE(v4.entries.at(0).dataOffset, nfoData4);
+    QVERIFY(!v4.entries.at(0).splitAfter);
+    QCOMPARE(v4.entries.at(1).name, QStringLiteral("Some.Release.mkv"));
+    QCOMPARE(v4.entries.at(1).headerOffset, mkvHeader4);
+    QCOMPARE(v4.entries.at(1).dataOffset, mkvData4);
+    QCOMPARE(v4.entries.at(1).unpackedSize, 20500);
+    QVERIFY(v4.entries.at(1).splitAfter);
+
+    QByteArray five = rar5Marker();
+    five += rar5Main(0);
+    const qint64 nfoHeader5 = five.size();
+    five += rar5File("intro.nfo", 500, 500, false, false);
+    const qint64 nfoData5 = five.size();
+    five += QByteArray(500, 'n');
+    const qint64 mkvHeader5 = five.size();
+    five += rar5File("Some.Release.mkv", 2500, 20500, false, true);
+    const qint64 mkvData5 = five.size();
+    five += QByteArray(2500, 'm');
+
+    const RarVolume v5 = parseRarVolume(five);
+    QCOMPARE(v5.status, RarParse::Ok);
+    QCOMPARE(v5.entries.size(), 2);
+    QCOMPARE(v5.entries.at(0).headerOffset, nfoHeader5);
+    QCOMPARE(v5.entries.at(0).dataOffset, nfoData5);
+    QCOMPARE(v5.entries.at(1).name, QStringLiteral("Some.Release.mkv"));
+    QCOMPARE(v5.entries.at(1).headerOffset, mkvHeader5);
+    QCOMPARE(v5.entries.at(1).dataOffset, mkvData5);
+    QVERIFY(v5.entries.at(1).splitAfter);
+}
+
+void tst_RarReader::aTruncatedSecondHeaderStillReportsTheFirst()
+{
+    // The invariant is "nothing partial was appended", not "entries is empty":
+    // a window holding one whole header and half of the next is a complete
+    // answer about the first file.
+    QByteArray four = rar4Marker();
+    four += rar4Main(kMainFirstVolume);
+    four += rar4File("intro.nfo", 500, 500, 0);
+    four += QByteArray(500, 'n');
+    const qint64 mkvHeader = four.size();
+    four += rar4File("Some.Release.mkv", 2500, 20500, kSplitAfter);
+
+    for (qint64 cut = mkvHeader; cut < four.size(); ++cut) {
+        const RarVolume v = parseRarVolume(four.left(int(cut)));
+        QVERIFY2(v.status == RarParse::Ok,
+                 qPrintable(QStringLiteral("cut at %1 gave status %2")
+                                .arg(cut).arg(int(v.status))));
+        QCOMPARE(v.entries.size(), 1);
+        QCOMPARE(v.entries.at(0).name, QStringLiteral("intro.nfo"));
+    }
+}
+
+namespace {
+
+/// A RAR4 volume holding a big first file and a second header far past any
+/// probe window — the layout that forces a resumed parse.
+QByteArray twoFileVolume(qint64 firstPayload, qint64* secondHeaderAt)
+{
+    QByteArray vol = rar4Marker();
+    vol += rar4Main(kMainFirstVolume);
+    vol += rar4File("big.bin", firstPayload, firstPayload, 0);
+    vol += QByteArray(int(firstPayload), 'b');
+    *secondHeaderAt = vol.size();
+    vol += rar4File("Some.Release.mkv", 2500, 20500, kSplitAfter);
+    vol += QByteArray(2500, 'm');
+    return vol;
+}
+
+} // namespace
+
+void tst_RarReader::resumingMidVolumeFindsTheHeaderPastTheProbeWindow()
+{
+    qint64 secondHeaderAt = 0;
+    const QByteArray vol = twoFileVolume(20000, &secondHeaderAt);
+    QVERIFY(secondHeaderAt > kRarHeaderProbeBytes);   // else this proves nothing
+
+    // The probe window sees only the first file, and says where to look next.
+    const RarVolume head = parseRarVolume(vol.left(kRarHeaderProbeBytes));
+    QCOMPARE(head.status, RarParse::Ok);
+    QCOMPARE(head.format, RarFormat::Rar4);
+    QCOMPARE(head.entries.size(), 1);
+    QCOMPARE(head.nextOffset, secondHeaderAt);
+
+    // Resuming there finds the second file, at absolute offsets.
+    const QByteArray window = vol.mid(int(head.nextOffset));
+    const RarVolume more = parseRarBlocks(head.format, window, head.nextOffset);
+    QCOMPARE(more.status, RarParse::Ok);
+    QCOMPARE(more.entries.size(), 1);
+    QCOMPARE(more.entries.at(0).name, QStringLiteral("Some.Release.mkv"));
+    QCOMPARE(more.entries.at(0).headerOffset, secondHeaderAt);
+    QCOMPARE(more.entries.at(0).dataOffset, secondHeaderAt + 32 + 16);
+    QVERIFY(more.entries.at(0).splitAfter);
+}
+
+void tst_RarReader::aResumedBlockAtAWrongAddressIsRejectedByItsChecksum()
+{
+    // A resumed address is computed from a previously trusted packedSize, so an
+    // error there would propagate into every later entry. The head of a volume
+    // is anchored by its marker and needs no such check; a resumed block does.
+    qint64 secondHeaderAt = 0;
+    QByteArray vol = twoFileVolume(20000, &secondHeaderAt);
+
+    const QByteArray good = vol.mid(int(secondHeaderAt));
+    QCOMPARE(parseRarBlocks(RarFormat::Rar4, good, secondHeaderAt).status, RarParse::Ok);
+
+    // Flip a byte inside the header body — the CRC field itself is untouched.
+    vol[int(secondHeaderAt) + 9] = char(vol.at(int(secondHeaderAt) + 9) ^ 0x40);
+    const RarVolume bad = parseRarBlocks(RarFormat::Rar4, vol.mid(int(secondHeaderAt)),
+                                         secondHeaderAt);
+    QCOMPARE(bad.status, RarParse::Unsupported);
+    QVERIFY(!bad.reason.isEmpty());
+    QVERIFY(bad.entries.isEmpty());
+
+    // parseRarVolume() keeps its documented behaviour: no CRC check at a known
+    // address, because a wrong map there fails the =ypart cross-check anyway.
+    QByteArray headBad = twoFileVolume(20, &secondHeaderAt);
+    headBad[0 + 7 + 13 + 9] = char(headBad.at(7 + 13 + 9) ^ 0x40);
+    QCOMPARE(parseRarVolume(headBad).status, RarParse::Ok);
 }
 
 void tst_RarReader::compressedIsReadButNotStored()

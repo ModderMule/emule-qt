@@ -84,6 +84,21 @@ struct UsenetStreamPiece {
     qint64 length = 0;         ///< 0 on a lone piece means "to the end of the file"
 };
 
+/// What a preview request asks for. A struct rather than four positional
+/// primitives because the resolver is called twice per request, in two
+/// visually different groupings — a transposed pair there would be a silent
+/// wrong-bytes bug rather than a compile error.
+struct UsenetStreamRequest {
+    QString itemId;
+    int fileIndex = -1;
+    qint64 wantOffset = 0;
+    qint64 wantLength = 0;
+
+    /// Which file *inside* the archive set. -1 means the first playable one,
+    /// which is what a URL carrying no `entry=` gets.
+    int entryOrdinal = -1;
+};
+
 struct UsenetStreamSource {
     bool found = false;
     QString fileName;
@@ -143,8 +158,7 @@ public:
     /// The call is not a pure lookup — it also registers that somebody is
     /// watching, so the queue can put that item's articles first. See
     /// UsenetQueue::requestStream().
-    using UsenetStreamResolver =
-        std::function<UsenetStreamSource(const QString&, int, qint64, qint64)>;
+    using UsenetStreamResolver = std::function<UsenetStreamSource(const UsenetStreamRequest&)>;
     void setUsenetStreamResolver(UsenetStreamResolver resolver)
     {
         m_usenetStreamResolver = std::move(resolver);

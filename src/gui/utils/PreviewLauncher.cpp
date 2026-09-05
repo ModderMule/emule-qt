@@ -63,19 +63,26 @@ QString daemonStreamUrl(const IpcClient* ipc, const QString& fileHash,
 }
 
 QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId, int fileIndex,
-                              const QString& streamToken)
+                              const QString& streamToken, int entry)
 {
     if (!ipc || !ipc->isConnected() || itemId.isEmpty() || fileIndex < 0
         || streamToken.isEmpty()) {
         return {};
     }
 
-    return QStringLiteral("http://%1:%2/api/v1/usenet/%3/%4/preview?token=%5")
-        .arg(ipc->daemonHost())
-        .arg(thePrefs.webServerPort())
-        .arg(itemId)
-        .arg(fileIndex)
-        .arg(streamToken);
+    QString url = QStringLiteral("http://%1:%2/api/v1/usenet/%3/%4/preview?token=%5")
+                      .arg(ipc->daemonHost())
+                      .arg(thePrefs.webServerPort())
+                      .arg(itemId)
+                      .arg(fileIndex)
+                      .arg(streamToken);
+
+    // Appended only when a file was actually chosen, so the default URL stays
+    // exactly what it was.
+    if (entry >= 0)
+        url += QStringLiteral("&entry=%1").arg(entry);
+
+    return url;
 }
 
 } // namespace eMule

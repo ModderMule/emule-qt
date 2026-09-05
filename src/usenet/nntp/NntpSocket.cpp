@@ -20,6 +20,16 @@ namespace {
 /// process, and the upload throttler's 1 ms poll once spent 843 of them.
 constexpr int kRefillIntervalMs = 100;
 
+/// How much unused credit the budget may carry, in refill ticks.
+///
+/// A socket spends most of a high-latency link's time waiting: a command round
+/// trip to a provider across an ocean is ~200 ms, i.e. two whole ticks during
+/// which there is nothing to read. Assigning the budget each tick throws that
+/// credit away, so the connection can never average the rate it was given — the
+/// limiter silently delivers a fraction of its own setting. Accumulating repays
+/// the wait; the cap stops a long idle from turning into an unbounded burst.
+constexpr int kBurstTicks = 10;
+
 /// NNTP status codes this class acts on. Everything else is passed to the
 /// running command or reported as a protocol error.
 constexpr int kGreetingPostingOk    = 200;
@@ -285,7 +295,8 @@ void NntpSocket::onIdleTimeout()
 
 void NntpSocket::onReadBudgetRefill()
 {
-    m_readBudget = m_readRateLimit * kRefillIntervalMs / 1000;
+    const qint64 perTick = m_readRateLimit * kRefillIntervalMs / 1000;
+    m_readBudget = std::min(m_readBudget + perTick, perTick * kBurstTicks);
     drain();
 }
 

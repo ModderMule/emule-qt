@@ -224,14 +224,13 @@ void DaemonApp::startWebServer()
     // the one object that links both, which is exactly the seam setLogProvider
     // below already uses.
     m_webServer->setUsenetStreamResolver(
-        [](const QString& itemId, int fileIndex, qint64 wantOffset,
-           qint64 wantLength) -> UsenetStreamSource {
+        [](const UsenetStreamRequest& ask) -> UsenetStreamSource {
             UsenetStreamSource out;
             if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue())
                 return out;
 
             const auto info = usenet::theUsenetSession->queue()->requestStream(
-                itemId, fileIndex, wantOffset, wantLength);
+                ask.itemId, ask.fileIndex, ask.wantOffset, ask.wantLength, ask.entryOrdinal);
             out.found             = info.found;
             out.fileName          = info.fileName;
             out.totalSize         = info.totalSize;

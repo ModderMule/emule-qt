@@ -106,7 +106,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </PropertyGroup>
       <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
         <ClCompile>
-          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\indexer;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
           <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
           <AssemblerListingLocation>release\\</AssemblerListingLocation>
           <BrowseInformation>false</BrowseInformation>
@@ -128,7 +128,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <MultiProcessorCompilation>true</MultiProcessorCompilation>
         </ClCompile>
         <Link>
-          <AdditionalDependencies>emuleusenet.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
+          <AdditionalDependencies>emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
           <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
@@ -161,7 +161,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </ItemDefinitionGroup>
       <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
         <ClCompile>
-          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\indexer;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
           <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
           <AssemblerListingLocation>debug\\</AssemblerListingLocation>
           <BrowseInformation>false</BrowseInformation>
@@ -181,7 +181,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <MultiProcessorCompilation>true</MultiProcessorCompilation>
         </ClCompile>
         <Link>
-          <AdditionalDependencies>emuleusenet.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+          <AdditionalDependencies>emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
           <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\debug\\lib;..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>

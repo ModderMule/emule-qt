@@ -147,6 +147,12 @@ private:
     void addIndexer();
     void removeIndexer();
     void testIndexer();
+
+    /// Grow the window when a test result needs more room than was budgeted for
+    /// it. Shared by both pages; see the definition for why nothing else can
+    /// give the height back.
+    void refitForTestResult(QLabel* result);
+
     void updateUsenetEnabledStates();
     void refreshScheduleTable();
     void populateScheduleDetails(int index);

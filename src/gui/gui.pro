@@ -114,6 +114,7 @@ SOURCES += \
     dialogs/OptionsDialog.cpp \
     dialogs/PasteLinksDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
+    dialogs/UsenetArchiveEntryDialog.cpp \
     panels/IrcPanel.cpp \
     panels/KadPanel.cpp \
     panels/MessagesPanel.cpp \
@@ -165,6 +166,7 @@ HEADERS += \
     dialogs/OptionsDialog.h \
     dialogs/PasteLinksDialog.h \
     dialogs/SearchDetailDialog.h \
+    dialogs/UsenetArchiveEntryDialog.h \
     panels/IrcPanel.h \
     panels/KadPanel.h \
     panels/MessagesPanel.h \

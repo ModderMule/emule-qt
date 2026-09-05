@@ -146,6 +146,7 @@ private:
     void handlePauseUsenetItem(const Ipc::IpcMessage& msg);
     void handleResumeUsenetItem(const Ipc::IpcMessage& msg);
     void handleSetUsenetItemPriority(const Ipc::IpcMessage& msg);
+    void handleListUsenetArchiveEntries(const Ipc::IpcMessage& msg);
     void handleSetDownloadCategory(const Ipc::IpcMessage& msg);
     void handleGetDownloadDetails(const Ipc::IpcMessage& msg);
     void handlePreviewDownload(const Ipc::IpcMessage& msg);

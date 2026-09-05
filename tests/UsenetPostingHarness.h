@@ -14,8 +14,10 @@
 #include "decode/YencDecoder.h"
 #include "nntp/NewsServer.h"
 #include "prefs/Preferences.h"
+#include "queue/UsenetQueue.h"
 
 #include <QByteArray>
+#include <QFile>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -133,6 +135,37 @@ inline QByteArray postFiles(FakeNntpServer& server, const QList<PostedFile>& fil
 
     xml += "</nzb>\n";
     return xml;
+}
+
+/// Read @p length bytes of the logical file at @p offset by walking the pieces,
+/// which is what WebServer::serveRange does for real.
+///
+/// The general form: a set holds several inner files, each with its own length,
+/// so a case cannot just read one file at one part size. Shared by the offline
+/// stream cases and by the live preview test — one copy, so a change to the
+/// piece model cannot leave the two disagreeing.
+inline QByteArray readThroughPieces(const QList<eMule::usenet::UsenetQueue::StreamPiece>& pieces,
+                                    qint64 offset, qint64 length)
+{
+    QByteArray out;
+    for (const auto& p : pieces) {
+        const qint64 pos = offset + out.size();
+        if (out.size() >= length)
+            break;
+        if (p.virtualOffset + p.length <= pos)
+            continue;
+        if (p.virtualOffset > pos)
+            break;
+
+        QFile f(p.path);
+        if (!f.open(QIODevice::ReadOnly))
+            break;
+        const qint64 into = pos - p.virtualOffset;
+        if (!f.seek(p.fileOffset + into))
+            break;
+        out += f.read(qMin(length - out.size(), p.length - into));
+    }
+    return out;
 }
 
 inline void useTempPrefs(const eMule::testing::TempDir& tmp)

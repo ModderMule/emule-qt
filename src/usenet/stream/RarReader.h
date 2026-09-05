@@ -42,6 +42,7 @@ struct RarEntry {
     bool splitAfter = false;    ///< continues into the next volume
     qint64 packedSize = 0;      ///< payload length in THIS volume
     qint64 unpackedSize = 0;    ///< whole-file size; only the first volume states it
+    qint64 headerOffset = 0;    ///< where this entry's own header block starts
     qint64 dataOffset = 0;      ///< where the payload starts in this volume file
 };
 
@@ -52,8 +53,22 @@ enum class RarParse {
     Unsupported,    ///< RAR, but not mappable — see RarVolume::reason
 };
 
+/// Which dialect a volume speaks. Needed to resume mid-volume, where there is
+/// no marker to tell them apart.
+enum class RarFormat { Unknown, Rar4, Rar5 };
+
 struct RarVolume {
     RarParse status = RarParse::NeedMoreBytes;
+
+    RarFormat format = RarFormat::Unknown;
+
+    /// Absolute offset of the first block this parse did *not* consume. The
+    /// caller resumes there with parseRarBlocks() once those bytes land — which
+    /// is how a file whose header sits past the probe window is ever reached.
+    qint64 nextOffset = 0;
+
+    /// An end-of-archive block was seen: this volume holds nothing further.
+    bool endOfArchive = false;
 
     bool isFirstVolume = false;
 
@@ -73,8 +88,22 @@ struct RarVolume {
 
 /// Parse the head of one volume file. @p head need only be long enough to cover
 /// the marker, the main header and the first file header — see
-/// kRarHeaderProbeBytes.
+/// kRarHeaderProbeBytes. Every entry whose header fits is reported, not just the
+/// first: a release that packs a small `.nfo` ahead of the feature puts both in
+/// the same window.
 [[nodiscard]] RarVolume parseRarVolume(const QByteArray& head);
+
+/// Resume parsing at @p windowStart, which must be a block boundary — the
+/// `nextOffset` of an earlier parse of the same volume, or an entry's
+/// `dataOffset + packedSize`. There is no marker mid-volume, so @p format has to
+/// come from the volume's own head parse.
+///
+/// Unlike parseRarVolume() this **verifies header CRCs**. The head of a volume
+/// sits at a known address and a wrong map there fails the `=ypart` cross-check
+/// downstream; a resumed block's address was computed from a previously trusted
+/// packedSize, where an error would propagate silently into every later entry.
+[[nodiscard]] RarVolume parseRarBlocks(RarFormat format, const QByteArray& window,
+                                       qint64 windowStart);
 
 /// How much of a volume to hand parseRarVolume(). Ample for a marker, a main
 /// header and a file header carrying a long name; still far inside the first

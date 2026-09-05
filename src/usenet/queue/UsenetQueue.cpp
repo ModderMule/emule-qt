@@ -361,7 +361,11 @@ UsenetQueue::PreviewInfo UsenetQueue::previewability(const QString& itemId, int 
     // From here it is an archive volume, so the index decides. resolve() reads
     // headers but never fetches, and its refusals are cached — this is called
     // once per file on every queue push.
-    const StreamResolve resolved = rt->streamIndex.resolve(item, fileIndex, 0);
+    // -1 asks for the first *playable* file inside the set, so a release that
+    // packs an .nfo ahead of the feature is previewable rather than reported as
+    // holding nothing playable. The index answers that; whether any member
+    // qualifies is its judgement, not a second test here.
+    const StreamResolve resolved = rt->streamIndex.resolve(item, fileIndex, -1, 0);
     if (resolved.plan == StreamPlan::NotSeekable) {
         out.note = resolved.reason;
         return out;
@@ -369,18 +373,13 @@ UsenetQueue::PreviewInfo UsenetQueue::previewability(const QString& itemId, int 
     if (resolved.plan != StreamPlan::Ready)
         return out;   // still reading headers; ask again next push
 
-    const ED2KFileType type = getED2KFileTypeID(resolved.fileName);
-    if (type != ED2KFileType::Video && type != ED2KFileType::Audio) {
-        out.note = tr("The archive does not contain a playable file");
-        return out;
-    }
-
     out.previewable = availableFrom(item, resolved.extents, 0) > 0;
     return out;
 }
 
 UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fileIndex,
-                                                   qint64 wantOffset, qint64 wantLength)
+                                                   qint64 wantOffset, qint64 wantLength,
+                                                   int entryOrdinal)
 {
     StreamInfo info;
 
@@ -401,7 +400,8 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
     if (active)
         rt->streamingUntilMs = QDateTime::currentMSecsSinceEpoch() + kStreamingBoostMs;
 
-    const StreamResolve resolved = rt->streamIndex.resolve(item, fileIndex, wantOffset);
+    const StreamResolve resolved =
+        rt->streamIndex.resolve(item, fileIndex, entryOrdinal, wantOffset);
 
     switch (resolved.plan) {
     case StreamPlan::NotSeekable:
@@ -470,6 +470,60 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
     }
 
     return info;
+}
+
+UsenetQueue::ArchiveListing UsenetQueue::listArchiveEntries(const QString& itemId, int fileIndex)
+{
+    ArchiveListing listing;
+
+    ItemRuntime* rt = runtimeFor(itemId);
+    if (!rt)
+        return listing;
+
+    const UsenetQueueItem& item = *rt->item;
+    if (fileIndex < 0 || fileIndex >= item.files.size())
+        return listing;
+
+    const StreamListing found = rt->streamIndex.list(item, fileIndex);
+
+    for (const StreamMember& m : found.members) {
+        ArchiveEntryInfo row;
+        row.entry = m.index;
+        row.name = m.name;
+        row.size = m.size;
+        row.playable = m.playable && m.mappable;
+        row.note = row.playable ? QString() : m.note;
+        listing.entries.append(row);
+    }
+
+    switch (found.plan) {
+    case StreamPlan::NotSeekable:
+        listing.status = ArchiveListing::Status::NotSeekable;
+        listing.note = found.reason;
+        return listing;
+
+    case StreamPlan::NeedBytes:
+        // The scan is short of a header. Ask for exactly that range within this
+        // item's own plan — no cross-item boost, see the header comment.
+        if (item.isActive()) {
+            promoteRange(*rt, found.needFileIndex, found.needOffset, found.needLength);
+            dispatch();
+            listing.status = ArchiveListing::Status::Scanning;
+        }
+        return listing;
+
+    case StreamPlan::Unknown:
+        return listing;
+
+    case StreamPlan::Ready:
+        break;
+    }
+
+    listing.status = found.isArchive ? ArchiveListing::Status::Complete
+                                     : ArchiveListing::Status::NotAnArchive;
+    if (found.isArchive && !found.complete)
+        listing.status = ArchiveListing::Status::Scanning;
+    return listing;
 }
 
 QList<int> UsenetQueue::segmentsCovering(const UsenetQueueItem& item, int fileIndex,

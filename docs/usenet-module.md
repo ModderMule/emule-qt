@@ -254,11 +254,14 @@ not compiled in — obfuscation schemes change faster than releases ship.
 | `tst_UsenetPar2` | verify, repair, rename and the blocks-needed figure, against sets built in-process by `Par2::par2creator` |
 | `tst_UsenetUnpack` | volume-set detection across all three naming schemes; path-traversal and reserved-name refusals; a multi-volume RAR set extracted through the whole list, and a set skipped because it was unpacked during the download |
 | `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing |
-| `tst_UsenetStream` | phase 6a: part-number dispatch order over a shuffled NZB, a failed article retried *before* later ones, interval merge and the hole that stops it, `written` surviving a restart, the previewable predicate. Phase 6b: a stored RAR set resolving to the file inside it and reading back byte-identically across volume boundaries; **a seek to 80% that never issues a `BODY` for the volumes it skipped** — the exit criterion, asserted; a compressed set saying why; a `.001` split set |
-| `tst_RarReader` | phase 6b: RAR4 and RAR5 stored volumes — name, method, packed/unpacked sizes, data offset, split flags, `LHD_LARGE` sizes past 4 GB, RAR5 multi-byte vints; compressed read but not stored; solid and encrypted refused with a reason; every truncated prefix asking for more bytes rather than reading past the buffer |
+| `tst_UsenetStream` | phase 6a: part-number dispatch order over a shuffled NZB, a failed article retried *before* later ones, interval merge and the hole that stops it, `written` surviving a restart, the previewable predicate. Phase 6b: a stored RAR set resolving to the file inside it and reading back byte-identically across volume boundaries; **a seek to 80% that never issues a `BODY` for the volumes it skipped** — the exit criterion, asserted; a compressed set saying why; a `.001` split set. Multi-file sets: every inner file enumerated with its ordinal, each mapping to its own bytes across a volume boundary, **a set whose first file is an `.nfo` streaming the movie with no `entry=` named**, and a listing on a paused item that neither fetches nor guesses |
+| `tst_RarReader` | phase 6b: RAR4 and RAR5 stored volumes — name, method, packed/unpacked sizes, data offset, split flags, `LHD_LARGE` sizes past 4 GB, RAR5 multi-byte vints; compressed read but not stored; solid and encrypted refused with a reason; every truncated prefix asking for more bytes rather than reading past the buffer; a volume carrying two file headers listing both; resuming mid-volume at a computed offset, and a resumed block at a wrong address caught by its header CRC |
 | `tst_UsenetDirectUnpack` | extraction that keeps pace with the download: volumes offered one at a time, a run blocking on one that has not landed and resuming when it does, cancel unwinding without leaving half a file, a set that ends short failing rather than hanging, and end to end — the payload complete before post-processing starts, and the same release unchanged with the option off |
+| `tst_UsenetArchiveEntryDialog` | the chooser: unplayable rows listed but neither selectable nor enabled and carrying the disabled palette brush, a playable row with no explicit brush at all, the chosen ordinal surviving a re-sort, and a single playable file answered without ever showing a window |
 | `tst_UsenetLiveConnect` | real TLS + auth (`live`) |
 | `tst_UsenetLiveFetch` | a real `.nzb` downloaded and hashed (`live`) |
+| `tst_UsenetLiveDownload` | every `.nzb` in `EMULE_NZB_DIR` through the **real queue** against a real provider: download, PAR2, unpack, publish — then assertions that no `.par2`, no volume and no `.usenetpart` reached the incoming directory and that the scratch tree is gone (`live`) |
+| `tst_UsenetLivePreview` | the same releases previewed **while they download**: the archive listing walked to a terminal status, the bytes read back through the pieces, and the same bytes fetched again over the real `preview` route with a `Range` header. A set with nothing streamable in it must instead give a reason and a 406 (`live`) |
 
 Offline tests run against `tests/FakeNntpServer.h`, a scriptable in-process NNTP
 server modelled on NZBGet's `daemon/nserv/`. It exists because the interesting
@@ -271,9 +274,25 @@ never looks broken:
 
 ```sh
 export EMULE_NNTP_HOST=news.example.com EMULE_NNTP_USER=… EMULE_NNTP_PASS=…
-cmake -S . -B build -DEMULE_LIVE_TESTS=ON
+export EMULE_NZB_DIR=/path/to/some/nzbs      # one data row per .nzb in it
+cmake -S . -B build -DEMULE_LIVE_TESTS=ON    # cached, so later build.sh runs keep it
 ctest --test-dir build -L live -R tst_Usenet
 ```
+
+`.env` in the project root is read for all of these, so the variables need not be
+exported by hand — see `.env.example`. Two things are worth knowing before
+pointing `EMULE_NZB_DIR` at something large:
+
+- **`tst_UsenetLiveDownload` fetches the whole release**, every row, and that is
+  the point of it. `EMULE_NZB_MAX_MB` skips rows above a size;
+  `EMULE_NZB_TIMEOUT_MIN` (default 45) bounds each one. Everything it writes
+  goes into a temporary tree that is removed, and checked to have been removed,
+  when the row ends — the user's own incoming directory is never touched.
+- **Never set `EMULE_NNTP_MAXCONN` above what the account allows.** A provider
+  answers an over-subscribed login with `502 Too many connections`, and the
+  server pool then backs that server off for a minute. Consecutive rows are the
+  usual way to trip it: the previous row's sockets are not yet released
+  server-side when the next one opens its own.
 
 ## Adding a source file
 
@@ -539,6 +558,45 @@ rate at roughly double the cap. The budget is runtime-only and never persisted,
 so a crash cannot leave a user throttled to a stale share. `UsenetSession::stop()`
 clears it.
 
+### Why a download is slow
+
+Measured 2026-09-05 against a real provider at 216 ms command RTT. Three things
+cap a Usenet download, and only one of them is in this module's code:
+
+1. **The provider caps a single connection.** ~0.2 MB/s here, and no client-side
+   tuning moves it: a raw non-Qt TLS socket gets the same figure, and a 4 MB
+   `SO_RCVBUF` set before connect changes nothing (0.228 → 0.242 MB/s, inside
+   noise). It is not a window or bandwidth-delay problem, so there is nothing to
+   optimise in `NntpSocket` for it.
+
+2. **Throughput is therefore the connection count**, and `maxConnections` is
+   usually set far below what the account allows:
+
+   | connections | MB/s |
+   |---|---|
+   | 8 | 1.2 |
+   | 40 | 4.4-4.9 |
+   | 60 | 5.8-6.3 |
+
+   Sublinear but still climbing at 60, with no `502 Too many connections`
+   during the run. A client reporting several times our rate on the same post is
+   using more connections, not a better protocol implementation. Never set the
+   figure above what the plan sells: the answer is a 502 and a backed-off server,
+   and providers suspend repeat offenders.
+
+3. **The bandwidth split above, which the tests never see.** They construct a
+   `UsenetQueue` directly and never call `setRateLimit`, so their numbers are the
+   unthrottled ceiling. In the daemon, `maxDownload: 3500` KB/s with a 50% share
+   caps Usenet at 1.71 MB/s no matter how many connections are open — a rate
+   measured in a test does not transfer to the running application.
+
+The read budget itself is a token bucket with a one-second burst
+(`kBurstTicks`), and it has to be: a socket on a high-latency link spends two
+whole refill ticks per article waiting for the server's first byte, and a budget
+that is *assigned* each tick rather than accumulated forfeits that credit and can
+never average the rate it was given. `tst_NntpSocket::readRateLimit_repaysTimeSpentWaiting`
+pins it — the same transfer takes ~950 ms without the carry and ~250 ms with it.
+
 ## IPC
 
 Requests `720–799`, pushes `910–949`.
@@ -549,6 +607,7 @@ Requests `720–799`, pushes `910–949`.
 | `GetUsenetQueue = 723` | the whole queue |
 | `AddNzb = 724` | the file's **contents**, not a path — the daemon may be on another machine |
 | `RemoveUsenetItem = 725` … `SetUsenetItemPriority = 728` | per-item actions |
+| `ListUsenetArchiveEntries = 729` | the files inside an archive set; **this one fetches** |
 | `PushUsenetQueueItem = 910` | one item, coalesced on its id |
 | `PushUsenetItemRemoved = 911` | uncoalesced — a removal behind a later change would be dropped |
 | `PushUsenetItemFinished = 912` | uncoalesced — a transition, not a latest value |
@@ -612,7 +671,17 @@ Nothing here could do the mapping: `ArchiveReader` is path-based
 (`archive_read_open_filename`) and exposes neither the compression method, the
 packed size, nor an entry's data offset — those live only in libarchive's
 private RAR structs — and it could not be pointed at a half-downloaded volume
-anyway. So `stream/RarReader` parses RAR4 and RAR5 headers directly. It is pure
+anyway. So `stream/RarReader` parses RAR4 and RAR5 headers directly.
+
+Multi-volume is not what gates this; **compression is**, and the two are
+independent flags. Stored means `packedSize == unpackedSize` and a volume's
+payload is a contiguous byte-identical slice, so a read is arithmetic — no
+decoder, no state, and none of the bytes before the offset. A compressed member
+is LZSS with a sliding window and the container records no restart points, so
+byte *n* requires decoding everything before it; solid is worse still, the
+window carrying across file boundaries. That is why a compressed release is
+still *unpacked* while downloading — libarchive handles it fine — and still not
+*seekable*: extraction runs forward from volume 1, preview needs random access. It is pure
 (a `QByteArray` in, a struct out), truncation-safe at every field, and
 deliberately does **not** verify header CRCs: we are mapping, not extracting,
 and a wrong map fails the `=ypart` cross-check regardless.
@@ -693,8 +762,57 @@ The GUI reuses `PreviewLauncher::launchPreview()`; only the URL builder is new.
 `GetUsenetQueue` sends `index`, `previewable` and `previewNote` per file, all
 decided daemon-side — the GUI has neither the real post-yEnc filename, nor the
 prefix length, nor any way to know that a `.rXX` is a mappable stored volume.
-Every volume of a seekable set reports `previewable`, because previewing any of
-them plays the same inner file; that is why the tree needed no new kind of row.
+Every volume of a seekable set reports `previewable`, because they all describe
+the same *set*; that is why the tree needed no new kind of row. Which file
+*inside* the set gets played is a separate question — see below.
+
+### Choosing a file inside the set
+
+A set may hold several files: a feature beside its `.nfo`, or a season pack of
+ten episodes. The preview URL therefore carries an optional `&entry=N`, an
+ordinal into the set's own header order. **Absent means the first *playable*
+file**, which is the whole back-compat story — a URL with no `entry=` is
+byte-identical to what the GUI built before the chooser existed, and it now
+plays the movie in a release that packs an `.nfo` ahead of it instead of
+serving 500 bytes of text as the feature.
+
+`ListUsenetArchiveEntries` (729) enumerates the set. **It fetches, where
+`previewable` does not**: the header of the second file sits past the first
+file's payload, usually in a later volume, so listing costs articles where the
+per-push previewability check costs nothing. Its `status` is therefore a state
+machine the GUI polls — only `Scanning` is non-terminal. It deliberately does
+*not* take `requestStream()`'s 30 s cross-item boost: opening a list is not
+watching a video, and an item should not outrank every other download because
+someone opened a dialog. Nothing is wasted either way — the articles a scan
+pulls are written to their real place in the preallocated volume file, so a
+cancelled scan has merely brought work forward.
+
+The GUI shows `UsenetArchiveEntryDialog` only when more than one file is
+playable. It is built hidden and reveals itself after 200 ms, so an ordinary
+single-video release answers in one loopback round trip and no window ever
+appears. Unplayable entries are listed greyed out and unselectable — both
+`ItemIsSelectable` and `ItemIsEnabled` are withheld, or the row still takes
+arrow-key focus — with the reason in a Status column, because a greyed row with
+no explanation is the failure `previewNote` exists to prevent.
+
+**Only volume slots are ever predicted, never byte addresses.** Placing a
+member's run works from one interior part size, `ceil(R / p)` volumes long —
+`ceil`, because a member ending flush on a volume boundary would otherwise be
+placed one volume past its end. The prediction is then *verified* by parsing
+the predicted volume's head, and a miss falls back to a binary search on "does
+volume *s* still hold this member", which is monotone in *s*. A guessed
+mid-volume address would have no such check: a volume begins with a RAR marker,
+and RAR5 defeats address arithmetic anyway, since `DataSize` is a vint and a
+short tail volume's header is physically smaller than a full one's. Resumed
+(mid-volume) blocks are the one place header CRCs *are* verified — their
+address was computed from a previously trusted `packedSize`, so an error there
+would propagate silently into every later member.
+
+Compression is judged **per member**, not per set: `-m0 movie.mkv -m5 readme.nfo`
+is legal, and refusing the archive around one compressed text file would be the
+difference between "this release does not stream" and "this release streams
+fine, one useless entry aside". Solidity and header encryption stay set-level,
+because they are properties of the whole archive.
 
 ## Persistence
 

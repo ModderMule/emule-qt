@@ -229,7 +229,11 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
         // it out again is how one dead provider stalls the whole queue. A 430 is
         // not such a failure — the connection is fine, the article is elsewhere.
         const bool reusable = !isFatalToConnection(error);
-        if (!reusable && !result.serverKey.isEmpty()
+        // A socket we tore down ourselves is not the provider misbehaving. Without
+        // this, stopping the engine backs the server off once per article still in
+        // flight — dozens of warnings naming a fault that never happened, and a
+        // real 60 s stall for any caller whose pool outlives the shutdown.
+        if (!reusable && !m_shuttingDown && !result.serverKey.isEmpty()
             && error != NntpError::ArticleNotFound && error != NntpError::GroupNotFound) {
             // Name the error. A backoff is the most consequential thing this
             // module does on its own — it takes a provider out for a minute —

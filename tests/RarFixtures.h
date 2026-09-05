@@ -203,51 +203,88 @@ QByteArray rar5File(const QByteArray& name, qint64 packed, qint64 unpacked,
 }
 
 
-/// A stored multi-volume set holding one file, exactly as `rar -m0 -v` lays it
-/// out: volume 1 opens the file, the middle volumes are split on both sides,
-/// and the last closes it. @p perVolume is the payload each volume carries.
+/// One file inside a multi-member set.
+struct RarMember {
+    QByteArray name;
+    QByteArray payload;
+};
+
+/// A stored multi-volume set holding several files, as `rar -m0 -v` lays them
+/// out: members are written back to back and the stream is cut into volumes, so
+/// a member that does not end on a volume boundary is followed by the next
+/// member's header **mid-volume** — the layout that distinguishes one multi-file
+/// set from several single-file ones.
+///
+/// @p perVolume is the *payload* each volume carries; headers ride on top, so a
+/// volume file is a little longer than that. Real `rar` counts headers against
+/// the volume size, but keeping the budget payload-only is what lets a test
+/// derive a header length by subtraction.
 ///
 /// @p rar5 picks the format. RAR4 has no volume number, so an obfuscated RAR4
 /// set cannot be ordered from its headers — which is exactly the limitation the
 /// streaming index documents.
+inline QList<QByteArray> makeStoredRarSet(const QList<RarMember>& members,
+                                          qint64 perVolume,
+                                          bool rar5 = false)
+{
+    QList<QByteArray> volumes;
+    QByteArray vol;
+    int number = 0;
+    qint64 budget = 0;
+
+    const auto openVolume = [&] {
+        vol = rar5 ? rar5Marker() : rar4Marker();
+        vol += rar5 ? rar5Main(number)
+                    : rar4Main(number == 0 ? kMainFirstVolume : quint16(0));
+        budget = perVolume;
+    };
+    openVolume();
+
+    for (const RarMember& member : members) {
+        const qint64 total = member.payload.size();
+        const quint32 wholeCrc = rarCrc32(member.payload);
+        qint64 at = 0;
+
+        do {
+            if (budget <= 0) {
+                volumes.append(vol);
+                ++number;
+                openVolume();
+            }
+
+            const qint64 take = qMin(budget, total - at);
+            const bool splitBefore = at > 0;
+            const bool splitAfter = at + take < total;
+
+            if (rar5) {
+                vol += rar5File(member.name, take, total, splitBefore, splitAfter);
+            } else {
+                quint16 flags = 0;
+                if (splitBefore)
+                    flags |= kSplitBefore;
+                if (splitAfter)
+                    flags |= kSplitAfter;
+                vol += rar4File(member.name, take, total, flags, 0x30, wholeCrc);
+            }
+            vol += member.payload.mid(int(at), int(take));
+
+            at += take;
+            budget -= take;
+        } while (at < total);
+    }
+
+    volumes.append(vol);
+    return volumes;
+}
+
+/// The single-file set, which is the one-member case of the above. Kept as its
+/// own overload because seven call sites assert offsets computed from it.
 inline QList<QByteArray> makeStoredRarSet(const QByteArray& innerName,
                                           const QByteArray& payload,
                                           qint64 perVolume,
                                           bool rar5 = false)
 {
-    QList<QByteArray> volumes;
-    const qint64 total = payload.size();
-    const quint32 wholeCrc = rarCrc32(payload);
-    qint64 at = 0;
-    int number = 0;
-
-    while (at < total) {
-        const qint64 take = qMin<qint64>(perVolume, total - at);
-        const bool splitBefore = at > 0;
-        const bool splitAfter = at + take < total;
-
-        QByteArray vol;
-        if (rar5) {
-            vol = rar5Marker();
-            vol += rar5Main(number);
-            vol += rar5File(innerName, take, total, splitBefore, splitAfter);
-        } else {
-            vol = rar4Marker();
-            vol += rar4Main(number == 0 ? kMainFirstVolume : quint16(0));
-            quint16 flags = 0;
-            if (splitBefore)
-                flags |= kSplitBefore;
-            if (splitAfter)
-                flags |= kSplitAfter;
-            vol += rar4File(innerName, take, total, flags, 0x30, wholeCrc);
-        }
-        vol += payload.mid(int(at), int(take));
-
-        volumes.append(vol);
-        at += take;
-        ++number;
-    }
-    return volumes;
+    return makeStoredRarSet(QList<RarMember>{{innerName, payload}}, perVolume, rar5);
 }
 
 /// The same set with a compression method set, so nothing in it is mappable.

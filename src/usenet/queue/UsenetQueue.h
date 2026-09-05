@@ -163,11 +163,49 @@ public:
     /// between. The boost lapses on its own so nothing has to clear it.
     ///
     /// @p fileIndex may name any volume of an archive set; they all resolve to
-    /// the same inner file.
+    /// the same *set*. @p entryOrdinal then picks a file within it, `-1`
+    /// meaning the first playable one — which is what makes a release that
+    /// packs an `.nfo` ahead of the feature play the feature.
     ///
     /// Daemon-thread only, like everything else on this class.
     StreamInfo requestStream(const QString& itemId, int fileIndex,
-                             qint64 wantOffset = 0, qint64 wantLength = 0);
+                             qint64 wantOffset = 0, qint64 wantLength = 0,
+                             int entryOrdinal = -1);
+
+    /// One row of an archive set's contents, for the GUI's chooser.
+    struct ArchiveEntryInfo {
+        int entry = -1;         ///< the ordinal `requestStream`'s entryOrdinal takes
+        QString name;
+        qint64 size = 0;
+        bool playable = false;  ///< a Preview of this entry will work
+        QString note;           ///< why not, when it will not
+    };
+
+    struct ArchiveListing {
+        enum class Status {
+            Unknown,       ///< nothing on disk and nothing fetchable — paused, or gone
+            Scanning,      ///< bytes were promoted; ask again, and `entries` grows
+            Complete,      ///< every header parsed; `entries` is final
+            NotSeekable,   ///< solid or header-encrypted: there is nothing to list
+            NotAnArchive,  ///< a raw post or a `.001` split — one file, never a choice
+        };
+        Status status = Status::Unknown;
+        QString note;
+        QList<ArchiveEntryInfo> entries;
+    };
+
+    /// Enumerate the files inside @p fileIndex's archive set.
+    ///
+    /// Unlike previewability(), this **asks for the bytes it is missing** — the
+    /// header of the second file inside a set sits past the first file's
+    /// payload, so listing a set costs articles. It deliberately does *not*
+    /// take requestStream()'s cross-item priority boost: opening a list is not
+    /// watching a video, and an item should not outrank every other download
+    /// because someone opened a dialog. Reordering within the item's own plan
+    /// is all a scan needs.
+    ///
+    /// Daemon-thread only.
+    [[nodiscard]] ArchiveListing listArchiveEntries(const QString& itemId, int fileIndex);
 
     /// Bytes per second this engine may use in total. 0 is unlimited, as
     /// everywhere else in eMuleQt. Divided across workers, then across their

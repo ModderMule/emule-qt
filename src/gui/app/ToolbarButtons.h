@@ -53,7 +53,7 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
     {ToolbarButtonId::Messages,    "Messages",      "Messages.ico",   QStyle::SP_MessageBoxInformation,    5},
     {ToolbarButtonId::IRC,         "IRC",           "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
     {ToolbarButtonId::Statistics,  "Statistics",     "Statistics.ico", QStyle::SP_DialogHelpButton,         7},
-    {ToolbarButtonId::Usenet,      "Usenet",        "Global.ico",     QStyle::SP_DriveNetIcon,             8},
+    {ToolbarButtonId::Usenet,      "Usenet",        "Usenet.ico",     QStyle::SP_DriveNetIcon,             8},
     {ToolbarButtonId::Options,     "Options",       "Preferences.ico",QStyle::SP_FileDialogDetailedView,  -1},
     {ToolbarButtonId::Tools,       "Tools",         "Tools.ico",      QStyle::SP_DialogResetButton,       -1},
     {ToolbarButtonId::Help,        "Help",          "Help.ico",       QStyle::SP_TitleBarContextHelpButton,-1},
