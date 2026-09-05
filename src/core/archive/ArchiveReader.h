@@ -4,9 +4,12 @@
 /// @brief Unified archive reader using libarchive — replaces ZIPFile, RARFile, GZipFile.
 ///
 /// Supports ZIP, RAR (read), 7z, GZip, tar, ISO, CAB, and 30+ formats
-/// via automatic format detection. Multi-volume RAR works: libarchive's RAR4 and
-/// RAR5 readers both follow the remaining volumes themselves once opened on the
-/// first one, so callers pass volume 1 and nothing else.
+/// via automatic format detection.
+///
+/// **Multi-volume sets need every volume, in order.** libarchive reads a set as
+/// one continuous byte stream over the file list the *client* supplies; the RAR
+/// readers never open a sibling volume by name. Handed volume 1 alone, a set
+/// stops at the end of volume 1. So pass the whole list to open(QStringList).
 ///
 /// **Member names are untrusted.** Since the Usenet module started feeding this
 /// archives downloaded from strangers, every destination path goes through
@@ -22,7 +25,26 @@
 #include <memory>
 #include <vector>
 
+/// libarchive's opaque handle. Forward-declared at global scope on purpose: an
+/// elaborated `struct archive*` inside namespace eMule would declare a *new*
+/// eMule::archive and every libarchive call would stop matching.
+struct archive;
+
 namespace eMule {
+
+/// Supplies an archive's volumes to the reader, in order.
+///
+/// The only thing that differs between unpacking a finished download and
+/// unpacking one still in flight is where the next volume comes from, so that
+/// is the only thing abstracted.
+class ArchiveVolumeSource {
+public:
+    virtual ~ArchiveVolumeSource() = default;
+
+    /// Path of volume @p index, blocking until it exists. False ends the set —
+    /// either genuinely, or because the caller cancelled.
+    [[nodiscard]] virtual bool volumePath(int index, QString& out) = 0;
+};
 
 class ArchiveReader {
 public:
@@ -33,6 +55,11 @@ public:
     ArchiveReader& operator=(const ArchiveReader&) = delete;
 
     bool open(const QString& filePath);
+
+    /// Open a multi-volume set. Volumes must be in volume order — the stream is
+    /// their concatenation, so a wrong order is a corrupt archive.
+    bool open(const QStringList& volumes);
+
     void close();
 
     [[nodiscard]] bool isOpen() const;
@@ -73,6 +100,19 @@ public:
     /// in rejectedEntries() rather than aborting the extraction.
     bool extractAll(const QString& destDir);
 
+    /// Extract every member of a set whose volumes arrive over time, in one
+    /// pass, blocking inside libarchive whenever @p source has no next volume
+    /// yet. That is what unpacks a download while it is still running.
+    ///
+    /// There is deliberately no open()/entry-index form for a live set: a scan
+    /// would consume the stream, and a volume can only be read once as it lands.
+    /// Safety and refusals work exactly as in extractAll().
+    bool extractAllFrom(ArchiveVolumeSource& source, const QString& destDir);
+
+    /// Paths the last extractAll()/extractAllFrom() actually wrote. The only way
+    /// to know what a live set produced, since it has no entry index.
+    [[nodiscard]] QStringList extractedFiles() const;
+
     /// Members the last extractAll() refused as unsafe. Empty on a clean archive.
     [[nodiscard]] QStringList rejectedEntries() const;
 
@@ -87,6 +127,18 @@ public:
     [[nodiscard]] static QString safeEntryPath(const QString& destDir, const QString& entryName);
 
 private:
+    /// Create, configure and open a libarchive handle over the volumes recorded
+    /// by the last open(). Every read path needs one and they differ in nothing
+    /// but what they do with it. Returns nullptr on failure, already logged.
+    [[nodiscard]] ::archive* openArchive(const char* what) const;
+
+    /// Walk the archive once, recording entry metadata. The open() forms only.
+    [[nodiscard]] bool scanEntries();
+
+    /// The extraction loop itself, over an already-opened handle. Shared by the
+    /// on-disk and the live path, which differ only in how @p ar was opened.
+    [[nodiscard]] bool extractAllInto(::archive* ar, const QString& destDir);
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

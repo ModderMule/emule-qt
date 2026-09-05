@@ -26,12 +26,15 @@
 #include "queue/ArticleWriter.h"
 
 #include <QCryptographicHash>
+#include "TestHelpers.h"
+
 #include <QProcessEnvironment>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
 using namespace eMule::usenet;
+using eMule::testing::loadProjectEnv;
 
 namespace {
 
@@ -69,8 +72,16 @@ class tst_UsenetLiveFetch : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
+
     void downloadsTheFirstFileOfAnNzb();
 };
+
+void tst_UsenetLiveFetch::initTestCase()
+{
+    // .env fills in whatever the process environment did not already set.
+    loadProjectEnv();
+}
 
 void tst_UsenetLiveFetch::downloadsTheFirstFileOfAnNzb()
 {

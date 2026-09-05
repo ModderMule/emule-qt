@@ -62,4 +62,20 @@ QString daemonStreamUrl(const IpcClient* ipc, const QString& fileHash,
         .arg(fileHash, streamToken);
 }
 
+QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId, int fileIndex,
+                              const QString& streamToken)
+{
+    if (!ipc || !ipc->isConnected() || itemId.isEmpty() || fileIndex < 0
+        || streamToken.isEmpty()) {
+        return {};
+    }
+
+    return QStringLiteral("http://%1:%2/api/v1/usenet/%3/%4/preview?token=%5")
+        .arg(ipc->daemonHost())
+        .arg(thePrefs.webServerPort())
+        .arg(itemId)
+        .arg(fileIndex)
+        .arg(streamToken);
+}
+
 } // namespace eMule

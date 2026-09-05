@@ -127,6 +127,14 @@ signals:
     /// [id, success, message] — terminal outcome, never coalesced.
     void usenetItemFinished(const Ipc::IpcMessage& msg);
 
+    /// [searchId, rows] — a batch of indexer results, as each indexer answers.
+    void indexerResultsReceived(const Ipc::IpcMessage& msg);
+    /// [searchId, done, total] — how many indexers have answered.
+    void indexerSearchProgress(const Ipc::IpcMessage& msg);
+    /// [searchId, error] — the fan-out is over. `error` names the indexers that
+    /// failed and is often set alongside perfectly good rows.
+    void indexerSearchFinished(const Ipc::IpcMessage& msg);
+
     /// Emitted for every outgoing request and incoming message when enableIpcLog is on.
     void ipcLogMessage(const QString& text, bool outgoing);
 

@@ -20,6 +20,7 @@
 /// in-place rename and the call that offers the file to ED2K.
 
 #include "post/Par2Verifier.h"
+#include "post/UsenetDirectUnpack.h"
 
 #include <QMetaType>
 #include <QObject>
@@ -44,6 +45,11 @@ enum class PostStage : quint8 {
 /// A path in @p dir carrying @p name, suffixed " (n)" until it names nothing that
 /// already exists. Shared with UsenetQueue, which does the final rename.
 [[nodiscard]] QString uniqueDestination(const QString& dir, const QString& name);
+
+/// Subdirectory of an item's work folder that extracted members land in. Shared
+/// because direct unpack writes there too, and post-processing has to find the
+/// same files it would have produced itself.
+inline constexpr QLatin1StringView kUnpackDirName{"_unpacked"};
 
 /// Everything the pipeline needs. Passed by value across the thread boundary, so
 /// it holds no pointers into queue state.
@@ -73,6 +79,11 @@ struct UsenetPostJob {
     /// too rarely to matter, but a *truncated* one does not, and par2 is the
     /// only thing that would notice.
     bool hasMissingSegments = false;
+
+    /// Sets already extracted during the download. Their members are on disk in
+    /// the same place this would have put them, so the unpack stage skips those
+    /// sets — unless a repair ran, which invalidates them by definition.
+    QList<UsenetDirectUnpackResult> directUnpacked;
 };
 
 struct UsenetPostResult {

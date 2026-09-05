@@ -100,10 +100,13 @@ void UsenetSession::applyPreferences()
         // Read once here rather than inside the pipeline: a post-processing job
         // crosses a thread boundary and has to carry a consistent snapshot, not
         // reach back into preferences from the wrong thread mid-repair.
-        m_queue->setPostProcessingOptions(thePrefs.usenetPar2Repair(),
-                                          thePrefs.usenetPar2RenameFiles(),
-                                          thePrefs.usenetUnpack(),
-                                          thePrefs.usenetCleanupAfterUnpack());
+        m_queue->setPostProcessingOptions({
+            .par2 = thePrefs.usenetPar2Repair(),
+            .rename = thePrefs.usenetPar2RenameFiles(),
+            .unpack = thePrefs.usenetUnpack(),
+            .cleanup = thePrefs.usenetCleanupAfterUnpack(),
+            .directUnpack = thePrefs.usenetDirectUnpack(),
+        });
     }
 }
 

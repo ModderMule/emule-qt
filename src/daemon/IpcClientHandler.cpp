@@ -8,6 +8,9 @@
 #include "ipc/CborSerializers.h"
 #include "nntp/NntpSocket.h"
 #include "UsenetSession.h"
+#include "IndexerCapsStore.h"
+#include "IndexerSearch.h"
+#include "IndexerSearchList.h"
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 #include "webserver/WebServer.h"
@@ -294,6 +297,15 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::UnshareFile:          handleUnshareFile(msg); break;
     case IpcMsgType::SetFileShared:        handleSetFileShared(msg); break;
     case IpcMsgType::BrowseDirectory:      handleBrowseDirectory(msg); break;
+
+    case IpcMsgType::GetIndexers:          handleGetIndexers(msg); break;
+    case IpcMsgType::SetIndexers:          handleSetIndexers(msg); break;
+    case IpcMsgType::TestIndexer:          handleTestIndexer(msg); break;
+    case IpcMsgType::GetIndexerCaps:       handleGetIndexerCaps(msg); break;
+    case IpcMsgType::StartIndexerSearch:   handleStartIndexerSearch(msg); break;
+    case IpcMsgType::StopIndexerSearch:    handleStopIndexerSearch(msg); break;
+    case IpcMsgType::RemoveIndexerSearch:  handleRemoveIndexerSearch(msg); break;
+    case IpcMsgType::GrabIndexerResult:    handleGrabIndexerResult(msg); break;
 
     case IpcMsgType::GetNewsServers:       handleGetNewsServers(msg); break;
     case IpcMsgType::SetNewsServers:       handleSetNewsServers(msg); break;
@@ -942,6 +954,17 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
         params.type = *resolved;
         logInfo(tr("Automatic search method resolved to %1")
                     .arg(params.type == SearchType::Kademlia ? tr("Kad") : tr("eD2K server")));
+    }
+
+    // An indexer search does not run here: StartIndexerSearch=704 carries a
+    // different payload and is answered by eMule::Indexer. Without this it would
+    // fall through to the ED2K branch below and quietly run a server search
+    // instead — a wrong answer, which is worse than a refusal.
+    if (params.type == SearchType::UsenetIndexer) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(tr("Indexer searches use StartIndexerSearch, not StartSearch."))));
+        return;
     }
 
     bool started = false;
@@ -1766,6 +1789,19 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("usenetUnpack"), thePrefs.usenetUnpack());
     prefs.insert(QStringLiteral("usenetCleanupAfterUnpack"),
                  thePrefs.usenetCleanupAfterUnpack());
+    prefs.insert(QStringLiteral("usenetDirectUnpack"), thePrefs.usenetDirectUnpack());
+
+    // Indexers — the four search settings only. The account list travels over
+    // GetIndexers=700 instead, because it carries API keys and needs the
+    // key-withholding rules.
+    prefs.insert(QStringLiteral("indexerResultLimit"),
+                 static_cast<qint64>(thePrefs.indexerResultLimit()));
+    prefs.insert(QStringLiteral("indexerMaxPages"),
+                 static_cast<qint64>(thePrefs.indexerMaxPages()));
+    prefs.insert(QStringLiteral("indexerTimeoutSeconds"),
+                 static_cast<qint64>(thePrefs.indexerTimeoutSeconds()));
+    prefs.insert(QStringLiteral("indexerCapsRefreshDays"),
+                 static_cast<qint64>(thePrefs.indexerCapsRefreshDays()));
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(thePrefs.statsAverageMinutes()));
@@ -3598,6 +3634,16 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUsenetUnpack(val.toBool());
     else if (key == QStringLiteral("usenetCleanupAfterUnpack"))
         thePrefs.setUsenetCleanupAfterUnpack(val.toBool());
+    else if (key == QStringLiteral("usenetDirectUnpack"))
+        thePrefs.setUsenetDirectUnpack(val.toBool());
+    else if (key == QStringLiteral("indexerResultLimit"))
+        thePrefs.setIndexerResultLimit(int(val.toInteger()));
+    else if (key == QStringLiteral("indexerMaxPages"))
+        thePrefs.setIndexerMaxPages(int(val.toInteger()));
+    else if (key == QStringLiteral("indexerTimeoutSeconds"))
+        thePrefs.setIndexerTimeoutSeconds(int(val.toInteger()));
+    else if (key == QStringLiteral("indexerCapsRefreshDays"))
+        thePrefs.setIndexerCapsRefreshDays(int(val.toInteger()));
     else
         return false;
     return true;
@@ -4030,6 +4076,386 @@ void IpcClientHandler::handleSaveCollection(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// Indexers — the shared newznab/torznab client (700-707)
+//
+// The API key never travels to the GUI. GetIndexers reports only `hasApiKey`,
+// and SetIndexers treats a missing `apiKey` field as "keep the stored one" —
+// the same contract GetNewsServers/SetNewsServers established for provider
+// passwords.
+//
+// The key matters more here than a news-server password does, because it rides
+// in the *query string* of every request. A URL that reaches the GUI, a log or
+// an error message takes the key with it, which is why grabbing a result also
+// happens daemon-side: the GUI is never given a download URL to fetch.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+QCborMap indexerConfigToCbor(const IndexerConfig& config)
+{
+    QCborMap out{
+        {QStringLiteral("name"),       config.name},
+        {QStringLiteral("url"),        config.url},
+        {QStringLiteral("kind"),       int(config.kind)},
+        {QStringLiteral("enabled"),    config.enabled},
+        {QStringLiteral("hasApiKey"),  !config.apiKey.isEmpty()},
+        {QStringLiteral("timeoutMs"),  config.timeoutMs},
+    };
+
+    // Whether the capabilities have ever been read, so the Options page can show
+    // "not probed" rather than an empty category list that looks like a failure.
+    const auto* caps = indexer::theIndexerSearchList
+                           ? indexer::theIndexerSearchList->capsFor(config.name)
+                           : nullptr;
+    out.insert(QStringLiteral("capsOk"), caps != nullptr && !caps->isEmpty());
+    out.insert(QStringLiteral("capsProbedAt"),
+               caps && caps->probedAt.isValid() ? caps->probedAt.toSecsSinceEpoch()
+                                                : qint64(0));
+    return out;
+}
+
+IndexerConfig indexerConfigFromCbor(const QCborMap& m)
+{
+    IndexerConfig config;
+    config.name = m.value(QStringLiteral("name")).toString().trimmed();
+    config.url = m.value(QStringLiteral("url")).toString().trimmed();
+    config.kind = static_cast<IndexerKind>(
+        m.value(QStringLiteral("kind")).toInteger(int(IndexerKind::Newznab)));
+    config.enabled = m.value(QStringLiteral("enabled")).toBool(true);
+    config.timeoutMs = int(m.value(QStringLiteral("timeoutMs"))
+                               .toInteger(thePrefs.indexerTimeoutSeconds() * 1000));
+    return config;
+}
+
+QCborMap indexerCapsToCbor(const indexer::IndexerCaps& caps)
+{
+    QCborArray modes;
+    for (auto it = caps.modes.constBegin(); it != caps.modes.constEnd(); ++it) {
+        QCborArray params;
+        for (const auto& param : it->supportedParams)
+            params.append(param);
+        modes.append(QCborMap{
+            {QStringLiteral("name"),      it.key()},
+            {QStringLiteral("available"), it->available},
+            {QStringLiteral("params"),    params},
+        });
+    }
+
+    QCborArray categories;
+    for (const auto& cat : caps.categories) {
+        QCborArray subs;
+        for (const auto& sub : cat.subcategories) {
+            subs.append(QCborMap{{QStringLiteral("id"), sub.id},
+                                 {QStringLiteral("name"), sub.name}});
+        }
+        categories.append(QCborMap{
+            {QStringLiteral("id"),      cat.id},
+            {QStringLiteral("name"),    cat.name},
+            {QStringLiteral("subcats"), subs},
+        });
+    }
+
+    return QCborMap{
+        {QStringLiteral("serverTitle"),  caps.serverTitle},
+        {QStringLiteral("limitMax"),     caps.limitMax},
+        {QStringLiteral("limitDefault"), caps.limitDefault},
+        {QStringLiteral("probedAt"),
+         caps.probedAt.isValid() ? caps.probedAt.toSecsSinceEpoch() : qint64(0)},
+        {QStringLiteral("modes"),        modes},
+        {QStringLiteral("categories"),   categories},
+    };
+}
+
+} // namespace
+
+/// One result row. Defined outside the anonymous namespace because DaemonApp's
+/// push path must produce exactly the same shape — two spellings of a row is how
+/// a column ends up empty in one code path and populated in the other.
+QCborMap indexerResultToCbor(const indexer::IndexerResult& result)
+{
+    // Deliberately no downloadUrl and no magnet: the URL carries the API key.
+    // The GUI asks for a row by id and the daemon does the fetching.
+    return QCborMap{
+        {QStringLiteral("id"),        result.id},
+        {QStringLiteral("indexer"),   result.indexerName},
+        {QStringLiteral("title"),     result.title},
+        {QStringLiteral("size"),      result.size},
+        {QStringLiteral("published"),
+         result.published.isValid() ? result.published.toSecsSinceEpoch() : qint64(0)},
+        {QStringLiteral("ageDays"),   result.ageDays()},
+        {QStringLiteral("category"),  result.category},
+        {QStringLiteral("grabs"),     result.grabs},
+        {QStringLiteral("files"),     result.files},
+        {QStringLiteral("password"),  result.passwordProtected},
+        {QStringLiteral("seeders"),   result.seeders},
+        {QStringLiteral("peers"),     result.peers},
+        {QStringLiteral("isUsenet"),  result.isUsenet()},
+    };
+}
+
+void IpcClientHandler::handleGetIndexers(const IpcMessage& msg)
+{
+    QCborArray out;
+    for (const auto& config : thePrefs.indexers())
+        out.append(indexerConfigToCbor(config));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+void IpcClientHandler::handleSetIndexers(const IpcMessage& msg)
+{
+    const QCborArray incoming = msg.fieldArray(0);
+    if (incoming.size() > Preferences::kMaxIndexers) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(tr("At most %1 indexers can be configured.")
+                           .arg(Preferences::kMaxIndexers))));
+        return;
+    }
+
+    QHash<QString, QString> storedKeys;
+    for (const auto& existing : thePrefs.indexers())
+        storedKeys.insert(existing.key(), existing.apiKey);
+
+    QList<IndexerConfig> configs;
+    configs.reserve(int(incoming.size()));
+    for (const auto& value : incoming) {
+        if (!value.isMap())
+            continue;
+        const QCborMap map = value.toMap();
+        IndexerConfig config = indexerConfigFromCbor(map);
+
+        if (config.name.isEmpty()) {
+            sendMessage(IpcMessage::makeResult(
+                msg.seqId(), false, QCborValue(tr("An indexer needs a name."))));
+            return;
+        }
+        if (!config.apiUrl().isValid()) {
+            sendMessage(IpcMessage::makeResult(
+                msg.seqId(), false,
+                QCborValue(tr("\"%1\" is not a usable URL for %2.")
+                               .arg(config.url, config.name))));
+            return;
+        }
+
+        if (map.contains(QStringLiteral("apiKey")))
+            config.apiKey = map.value(QStringLiteral("apiKey")).toString();
+        else
+            config.apiKey = storedKeys.value(config.key());
+
+        configs.append(config);
+    }
+
+    // Drop the caps sidecar of an account the user removed, so a later account
+    // that happens to reuse the name does not inherit a stranger's categories.
+    for (const auto& existing : thePrefs.indexers()) {
+        const bool stillThere = std::ranges::any_of(configs,
+                                                    [&existing](const IndexerConfig& kept) {
+                                                        return kept.key() == existing.key();
+                                                    });
+        if (!stillThere)
+            indexer::IndexerCapsStore::remove(existing);
+    }
+
+    thePrefs.setIndexers(configs);
+    if (!thePrefs.save()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("Could not write preferences.yml."))));
+        return;
+    }
+
+    emit indexerConfigChanged();
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleTestIndexer(const IpcMessage& msg)
+{
+    if (!indexer::theIndexerSearchList) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                           QCborValue(tr("The daemon is still starting."))));
+        return;
+    }
+
+    const QCborMap map = msg.fieldMap(0);
+    IndexerConfig config = indexerConfigFromCbor(map);
+
+    // Same escape hatch TestNewsServer has: an entry with no key in the form is
+    // testing the stored one, or Test would be unusable on an account whose
+    // secret the GUI was never given.
+    if (map.contains(QStringLiteral("apiKey"))) {
+        config.apiKey = map.value(QStringLiteral("apiKey")).toString();
+    } else {
+        for (const auto& stored : thePrefs.indexers()) {
+            if (stored.key() == config.key()) {
+                config.apiKey = stored.apiKey;
+                break;
+            }
+        }
+    }
+
+    if (!config.apiUrl().isValid()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(tr("\"%1\" is not a usable URL.").arg(config.url))));
+        return;
+    }
+
+    // QPointer, not this: the probe is a network round trip and the client may
+    // disconnect during it. Same reasoning as handleTestNewsServer.
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+
+    indexer::theIndexerSearchList->probeCaps(
+        config, [self, seqId](bool ok, const indexer::IndexerCaps& caps,
+                              const QString& error) {
+        if (!self)
+            return;
+
+        QCborArray payload;
+        payload.append(ok);
+        if (ok) {
+            // What the indexer calls itself plus what it can do — enough for a
+            // user to see that the right account answered.
+            payload.append(caps.serverTitle.isEmpty()
+                               ? tr("Connected. %1 categories.").arg(caps.categories.size())
+                               : tr("%1 — %2 categories.")
+                                     .arg(caps.serverTitle)
+                                     .arg(caps.categories.size()));
+            payload.append(QString{});
+        } else {
+            payload.append(QString{});
+            payload.append(error);
+        }
+        self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(payload)));
+    });
+}
+
+void IpcClientHandler::handleGetIndexerCaps(const IpcMessage& msg)
+{
+    if (!indexer::theIndexerSearchList) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                           QCborValue(tr("The daemon is still starting."))));
+        return;
+    }
+
+    const QString name = msg.fieldString(0);
+    const auto* caps = indexer::theIndexerSearchList->capsFor(name);
+    if (!caps) {
+        // Not an error: nothing has been probed yet, and a search still works —
+        // it simply goes out ungated.
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(QCborMap{})));
+        return;
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true,
+                                       QCborValue(indexerCapsToCbor(*caps))));
+}
+
+void IpcClientHandler::handleStartIndexerSearch(const IpcMessage& msg)
+{
+    if (!indexer::theIndexerSearchList) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                           QCborValue(tr("The daemon is still starting."))));
+        return;
+    }
+
+    indexer::IndexerQuery query;
+    query.text = msg.fieldString(0).trimmed();
+    for (const auto& value : msg.fieldArray(1))
+        query.categories.append(int(value.toInteger()));
+    if (const QString mode = msg.fieldString(2); !mode.isEmpty())
+        query.mode = mode;
+
+    QStringList only;
+    for (const auto& value : msg.fieldArray(3))
+        only.append(value.toString());
+
+    if (query.text.isEmpty() && query.categories.isEmpty()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("Enter something to search for."))));
+        return;
+    }
+
+    // Usenet only for now. The BitTorrent half of the row is parsed and stored;
+    // there is simply nothing yet that could act on a torrent result.
+    QString error;
+    const quint32 searchId = indexer::theIndexerSearchList->startSearch(
+        query, IndexerKind::Newznab, only, error);
+
+    if (searchId == 0) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(error)));
+        return;
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true,
+                                       QCborValue(static_cast<qint64>(searchId))));
+}
+
+void IpcClientHandler::handleStopIndexerSearch(const IpcMessage& msg)
+{
+    const bool ok = indexer::theIndexerSearchList
+                    && indexer::theIndexerSearchList->stopSearch(
+                        static_cast<quint32>(msg.fieldInt(0)));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
+}
+
+void IpcClientHandler::handleRemoveIndexerSearch(const IpcMessage& msg)
+{
+    const bool ok = indexer::theIndexerSearchList
+                    && indexer::theIndexerSearchList->removeSearch(
+                        static_cast<quint32>(msg.fieldInt(0)));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
+}
+
+void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
+{
+    if (!indexer::theIndexerSearchList || !usenet::theUsenetSession
+        || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                           QCborValue(tr("The Usenet engine is not running."))));
+        return;
+    }
+
+    const auto searchId = static_cast<quint32>(msg.fieldInt(0));
+    const QString resultId = msg.fieldString(1);
+
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+
+    indexer::theIndexerSearchList->grab(
+        searchId, resultId,
+        [self, seqId](bool ok, const QByteArray& payload, const QString& name,
+                      const QString& error) {
+        if (!self)
+            return;
+
+        if (!ok || payload.isEmpty()) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false,
+                QCborValue(error.isEmpty() ? tr("The indexer returned no NZB.") : error)));
+            return;
+        }
+
+        if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false, QCborValue(tr("The Usenet engine is not running."))));
+            return;
+        }
+
+        QString addError;
+        const QString itemId =
+            usenet::theUsenetSession->queue()->addNzb(payload, name, addError);
+        if (itemId.isEmpty()) {
+            self->sendMessage(IpcMessage::makeResult(seqId, false, QCborValue(addError)));
+            return;
+        }
+
+        self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(itemId)));
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Usenet — news server configuration (720-722)
 //
 // The password never travels to the GUI. GetNewsServers reports only
@@ -4165,10 +4591,20 @@ namespace {
 /// newsServerToCbor exists.
 QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
 {
+    // Preview is container-aware since phase 6b, and only the queue's streaming
+    // index knows whether a `.rXX` is a mappable stored volume. Absent a queue
+    // (never, in the daemon) the answer degrades to the phase 6a predicate.
+    auto* queue = usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
+
     QCborArray files;
     for (int i = 0; i < item.files.size() && i < item.nzb.files.size(); ++i) {
         const auto& st = item.files.at(i);
         const auto& info = item.nzb.files.at(i);
+
+        const auto preview =
+            queue ? queue->previewability(item.id, i)
+                  : usenet::UsenetQueue::PreviewInfo{
+                        item.isFilePreviewable(i) && st.availableEnd() > 0, {}};
 
         // The article's own =ybegin name first: for an obfuscated post the
         // subject carries nothing readable, and this is the only real name.
@@ -4193,6 +4629,19 @@ QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
             {QStringLiteral("finalPath"), st.finalPath},
             {QStringLiteral("isPar2"),    info.isPar2()},
             {QStringLiteral("missingSegments"), st.missingSegments},
+            // The position in the NZB, which is what the preview URL addresses.
+            // Sent explicitly rather than left as the array index, so a future
+            // filtered list cannot silently shift it.
+            {QStringLiteral("index"),     i},
+            // Whether a Preview action should be offered at all. Decided here,
+            // not in the GUI: it needs the file's real (post-yEnc) name, the
+            // ED2K type table, and how far the *contiguous* prefix has got —
+            // none of which the GUI has.
+            {QStringLiteral("previewable"), preview.previewable},
+            // Why not, when not. A stored RAR set streams; a compressed or
+            // encrypted one never will, and the GUI shows this instead of
+            // leaving the user with an unexplained greyed-out entry.
+            {QStringLiteral("previewNote"), preview.note},
         });
     }
 

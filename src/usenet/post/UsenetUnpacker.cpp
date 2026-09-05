@@ -62,10 +62,30 @@ struct Volume {
 
 bool UsenetUnpacker::isArchiveVolume(const QString& fileName)
 {
-    return rePartRar().match(fileName).hasMatch()
-        || reOldRar().match(fileName).hasMatch()
-        || reNumbered().match(fileName).hasMatch()
-        || reSingle().match(fileName).hasMatch();
+    return volumePositionOf(fileName).index >= 0;
+}
+
+UsenetUnpacker::VolumePosition UsenetUnpacker::volumePositionOf(const QString& fileName)
+{
+    if (auto m = rePartRar().match(fileName); m.hasMatch())
+        return {m.captured(1).toLower(), m.captured(2).toInt()};
+
+    if (auto m = reOldRar().match(fileName); m.hasMatch()) {
+        // Offset by one so this can never tie with the bare .rar below, which is
+        // volume zero of the same set.
+        return {m.captured(1).toLower(), m.captured(2).toInt() + 1};
+    }
+
+    if (auto m = reNumbered().match(fileName); m.hasMatch())
+        return {m.captured(1).toLower(), m.captured(2).toInt()};
+
+    if (auto m = reSingle().match(fileName); m.hasMatch()) {
+        // Volume zero: for the .r00 scheme this is the real first volume, and
+        // for a lone .zip it is the only one.
+        return {m.captured(1).toLower(), 0};
+    }
+
+    return {};
 }
 
 QList<ArchiveSet> UsenetUnpacker::findArchiveSets(const QString& dir)
@@ -75,29 +95,9 @@ QList<ArchiveSet> UsenetUnpacker::findArchiveSets(const QString& dir)
     const QFileInfoList entries = QDir(dir).entryInfoList(QDir::Files | QDir::NoDotAndDotDot,
                                                           QDir::Name);
     for (const QFileInfo& fi : entries) {
-        const QString name = fi.fileName();
-
-        if (auto m = rePartRar().match(name); m.hasMatch()) {
-            sets[m.captured(1).toLower()].append({fi.absoluteFilePath(), m.captured(2).toInt()});
-            continue;
-        }
-        if (auto m = reOldRar().match(name); m.hasMatch()) {
-            // Offset by one so this can never tie with the .rar below, which is
-            // volume zero of the same set.
-            sets[m.captured(1).toLower()].append({fi.absoluteFilePath(),
-                                                  m.captured(2).toInt() + 1});
-            continue;
-        }
-        if (auto m = reNumbered().match(name); m.hasMatch()) {
-            sets[m.captured(1).toLower()].append({fi.absoluteFilePath(), m.captured(2).toInt()});
-            continue;
-        }
-        if (auto m = reSingle().match(name); m.hasMatch()) {
-            // Volume zero: for the .r00 scheme this is the real first volume,
-            // and for a lone .zip it is the only one.
-            sets[m.captured(1).toLower()].append({fi.absoluteFilePath(), 0});
-            continue;
-        }
+        const VolumePosition pos = volumePositionOf(fi.fileName());
+        if (pos.index >= 0)
+            sets[pos.baseName].append({fi.absoluteFilePath(), pos.index});
     }
 
     QList<ArchiveSet> result;
@@ -121,7 +121,8 @@ QList<ArchiveSet> UsenetUnpacker::findArchiveSets(const QString& dir)
 }
 
 UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QString& destDir,
-                                              const QString& password)
+                                              const QString& password,
+                                              const QSet<QString>& skipFirstVolumes)
 {
     Result result;
 
@@ -137,6 +138,10 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
     int setIndex = 0;
 
     for (const ArchiveSet& set : sets) {
+        if (skipFirstVolumes.contains(set.firstVolume)) {
+            ++setIndex;
+            continue;   // already extracted while the download ran
+        }
         if (m_progress) {
             m_progress(sets.size() > 1 ? setIndex * 100 / sets.size() : 0,
                        QFileInfo(set.firstVolume).fileName());
@@ -147,7 +152,10 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
         if (!password.isEmpty())
             reader.setPassphrase(password);
 
-        if (!reader.open(set.firstVolume)) {
+        // The whole list, not just volume one. libarchive reads a set as one
+        // stream over the files the caller hands it and never opens a sibling
+        // volume by name, so opening on volume one stops at its end.
+        if (!reader.open(set.volumes)) {
             result.error = QObject::tr("Cannot open %1")
                                .arg(QFileInfo(set.firstVolume).fileName());
             allOk = false;

@@ -14,6 +14,76 @@
 
 namespace eMule {
 
+namespace {
+
+constexpr size_t kBlockSize = 10240;
+
+// ---------------------------------------------------------------------------
+// Live volume set — one continuous stream over volumes that arrive over time
+//
+// libarchive's own multi-file support (archive_read_append_callback_data) needs
+// the volume count up front, which a download does not have. It does not need
+// to: a volume set *is* the concatenation of its volumes, so a single client
+// that rolls from one volume to the next at EOF presents exactly the same bytes
+// and libarchive never sees a boundary.
+//
+// No seek callback is offered, which keeps the readers in streaming mode. RAR4,
+// RAR5 and zip all read that way; 7z needs its footer and cannot be extracted
+// before it exists anyway.
+// ---------------------------------------------------------------------------
+
+struct LiveClient {
+    ArchiveVolumeSource* source = nullptr;
+    QFile file;
+    int index = -1;
+    QByteArray buffer;
+};
+
+[[nodiscard]] bool liveOpenNextVolume(LiveClient* c)
+{
+    QString path;
+    if (!c->source->volumePath(c->index + 1, path))
+        return false;   // end of set, or cancelled
+
+    c->file.close();
+    c->file.setFileName(path);
+    if (!c->file.open(QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("ArchiveReader: cannot read volume '%1'").arg(path));
+        return false;
+    }
+    ++c->index;
+    return true;
+}
+
+la_ssize_t liveRead(struct archive* a, void* clientData, const void** buffer)
+{
+    Q_UNUSED(a);
+    auto* c = static_cast<LiveClient*>(clientData);
+    *buffer = c->buffer.constData();
+
+    for (;;) {
+        if (c->file.isOpen()) {
+            const qint64 got = c->file.read(c->buffer.data(), c->buffer.size());
+            if (got < 0)
+                return -1;
+            if (got > 0)
+                return la_ssize_t(got);
+            c->file.close();   // this volume is spent; roll to the next
+        }
+        if (!liveOpenNextVolume(c))
+            return 0;          // real end of stream
+    }
+}
+
+int liveClose(struct archive* a, void* clientData)
+{
+    Q_UNUSED(a);
+    static_cast<LiveClient*>(clientData)->file.close();
+    return ARCHIVE_OK;
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Impl — pimpl for libarchive state
 // ---------------------------------------------------------------------------
@@ -28,6 +98,10 @@ struct ArchiveReader::Impl {
     };
 
     std::vector<Entry> entries;
+    QStringList extracted;        ///< what the last extractAll*() wrote
+    std::unique_ptr<LiveClient> live;
+    QStringList volumes;          ///< every volume, in order; [0] is what messages name
+    ArchiveVolumeSource* source = nullptr;   ///< set instead of `volumes` for a live set
     QString filePath;
     QString passphrase;
     QString formatName;
@@ -78,54 +152,18 @@ ArchiveReader::~ArchiveReader()
 
 bool ArchiveReader::open(const QString& filePath)
 {
+    return open(QStringList{filePath});
+}
+
+bool ArchiveReader::open(const QStringList& volumes)
+{
+    if (volumes.isEmpty())
+        return false;
+
     close();
-
-    auto* ar = archive_read_new();
-    if (!ar)
-        return false;
-
-    archive_read_support_format_all(ar);
-    archive_read_support_filter_all(ar);
-
-    // Before the open, or the format reader never sees it. Applies to ZIP and
-    // 7z; for RAR libarchive can only flag the entries, never decrypt them.
-    if (!m_impl->passphrase.isEmpty())
-        archive_read_add_passphrase(ar, m_impl->passphrase.toUtf8().constData());
-
-    const QByteArray pathUtf8 = filePath.toUtf8();
-    int result = archive_read_open_filename(ar, pathUtf8.constData(), 10240);
-    if (result != ARCHIVE_OK) {
-        logWarning(QStringLiteral("ArchiveReader: cannot open '%1': %2")
-                       .arg(filePath, QString::fromUtf8(archive_error_string(ar))));
-        archive_read_free(ar);
-        return false;
-    }
-
-    // Iterate all entries to build index
-    struct archive_entry* entry = nullptr;
-    while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
-        Impl::Entry e;
-        const char* pathname = archive_entry_pathname_utf8(entry);
-        if (!pathname)
-            pathname = archive_entry_pathname(entry);
-        e.name = QString::fromUtf8(pathname);
-        e.size = static_cast<uint64>(archive_entry_size(entry));
-        e.mtimeSecs = static_cast<qint64>(archive_entry_mtime(entry));
-        e.mode = static_cast<uint16>(archive_entry_perm(entry));
-        e.isDir = (archive_entry_filetype(entry) == AE_IFDIR);
-        if (archive_entry_is_encrypted(entry))
-            m_impl->encrypted = true;
-        m_impl->entries.push_back(std::move(e));
-        archive_read_data_skip(ar);
-    }
-
-    if (const char* fmt = archive_format_name(ar))
-        m_impl->formatName = QString::fromUtf8(fmt);
-
-    archive_read_free(ar);
-    m_impl->filePath = filePath;
-    m_impl->opened = true;
-    return true;
+    m_impl->volumes = volumes;
+    m_impl->filePath = volumes.first();
+    return scanEntries();
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +173,10 @@ bool ArchiveReader::open(const QString& filePath)
 void ArchiveReader::close()
 {
     m_impl->entries.clear();
+    m_impl->extracted.clear();
+    m_impl->live.reset();
+    m_impl->volumes.clear();
+    m_impl->source = nullptr;
     m_impl->filePath.clear();
     m_impl->formatName.clear();
     m_impl->rejected.clear();
@@ -211,18 +253,9 @@ bool ArchiveReader::extractEntry(int index, const QString& destPath)
     if (!m_impl->opened || index < 0 || index >= static_cast<int>(m_impl->entries.size()))
         return false;
 
-    auto* ar = archive_read_new();
+    auto* ar = openArchive("reopen for single-entry extraction");
     if (!ar)
         return false;
-
-    archive_read_support_format_all(ar);
-    archive_read_support_filter_all(ar);
-
-    const QByteArray pathUtf8 = m_impl->filePath.toUtf8();
-    if (archive_read_open_filename(ar, pathUtf8.constData(), 10240) != ARCHIVE_OK) {
-        archive_read_free(ar);
-        return false;
-    }
 
     struct archive_entry* entry = nullptr;
     int currentIndex = 0;
@@ -285,6 +318,11 @@ bool ArchiveReader::hasEncryptedEntries() const
 QString ArchiveReader::formatName() const
 {
     return m_impl->formatName;
+}
+
+QStringList ArchiveReader::extractedFiles() const
+{
+    return m_impl->extracted;
 }
 
 QStringList ArchiveReader::rejectedEntries() const
@@ -361,25 +399,131 @@ bool ArchiveReader::extractAll(const QString& destDir)
     if (!m_impl->opened)
         return false;
 
-    m_impl->rejected.clear();
-    QDir().mkpath(destDir);
-
-    auto* ar = archive_read_new();
+    auto* ar = openArchive("reopen for extraction");
     if (!ar)
         return false;
 
+    const bool ok = extractAllInto(ar, destDir);
+    archive_read_free(ar);
+    return ok;
+}
+
+bool ArchiveReader::extractAllFrom(ArchiveVolumeSource& source, const QString& destDir)
+{
+    close();
+    m_impl->source = &source;
+
+    auto* ar = openArchive("open live volume set");
+    if (!ar) {
+        m_impl->source = nullptr;
+        m_impl->live.reset();
+        return false;
+    }
+
+    // Bidding has read from volume one by now, so there is a real name to put
+    // in any warning the extraction logs.
+    m_impl->filePath = m_impl->live->file.fileName();
+
+    // The format name is only known once a header has been read, and a live set
+    // gets exactly one pass, so record it from the same handle we extract with.
+    const bool ok = extractAllInto(ar, destDir);
+    if (const char* fmt = archive_format_name(ar))
+        m_impl->formatName = QString::fromUtf8(fmt);
+
+    archive_read_free(ar);   // runs liveClose(), which closes the volume
+    m_impl->source = nullptr;
+    m_impl->live.reset();
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
+// Private
+// ---------------------------------------------------------------------------
+
+// The volume list is what makes a multi-volume set work at all. libarchive
+// reads such a set as one byte stream over the client's files and never opens a
+// sibling volume by name, so a single-file open stops at the first boundary.
+::archive* ArchiveReader::openArchive(const char* what) const
+{
+    auto* ar = archive_read_new();
+    if (!ar)
+        return nullptr;
+
     archive_read_support_format_all(ar);
     archive_read_support_filter_all(ar);
+
+    // Before the open, or the format reader never sees it. Applies to ZIP and
+    // 7z; for RAR libarchive can only flag the entries, never decrypt them.
     if (!m_impl->passphrase.isEmpty())
         archive_read_add_passphrase(ar, m_impl->passphrase.toUtf8().constData());
 
-    const QByteArray pathUtf8 = m_impl->filePath.toUtf8();
-    if (archive_read_open_filename(ar, pathUtf8.constData(), 10240) != ARCHIVE_OK) {
-        logWarning(QStringLiteral("ArchiveReader: cannot reopen '%1' for extraction: %2")
-                       .arg(m_impl->filePath, QString::fromUtf8(archive_error_string(ar))));
-        archive_read_free(ar);
-        return false;
+    int result = ARCHIVE_FATAL;
+    if (m_impl->source) {
+        m_impl->live = std::make_unique<LiveClient>();
+        m_impl->live->source = m_impl->source;
+        m_impl->live->buffer.resize(qsizetype(kBlockSize));
+        archive_read_set_read_callback(ar, liveRead);
+        archive_read_set_close_callback(ar, liveClose);
+        archive_read_set_callback_data(ar, m_impl->live.get());
+        result = archive_read_open1(ar);
+    } else {
+        std::vector<QByteArray> utf8;
+        std::vector<const char*> names;
+        utf8.reserve(size_t(m_impl->volumes.size()));
+        for (const QString& v : m_impl->volumes) {
+            utf8.push_back(v.toUtf8());
+            names.push_back(utf8.back().constData());
+        }
+        names.push_back(nullptr);
+        result = archive_read_open_filenames(ar, names.data(), kBlockSize);
     }
+
+    if (result != ARCHIVE_OK) {
+        logWarning(QStringLiteral("ArchiveReader: cannot %1 '%2': %3")
+                       .arg(QString::fromLatin1(what), m_impl->filePath,
+                            QString::fromUtf8(archive_error_string(ar))));
+        archive_read_free(ar);
+        return nullptr;
+    }
+    return ar;
+}
+
+bool ArchiveReader::scanEntries()
+{
+    auto* ar = openArchive("open");
+    if (!ar)
+        return false;
+
+    struct archive_entry* entry = nullptr;
+    while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
+        Impl::Entry e;
+        const char* pathname = archive_entry_pathname_utf8(entry);
+        if (!pathname)
+            pathname = archive_entry_pathname(entry);
+        e.name = QString::fromUtf8(pathname);
+        e.size = static_cast<uint64>(archive_entry_size(entry));
+        e.mtimeSecs = static_cast<qint64>(archive_entry_mtime(entry));
+        e.mode = static_cast<uint16>(archive_entry_perm(entry));
+        e.isDir = (archive_entry_filetype(entry) == AE_IFDIR);
+        if (archive_entry_is_encrypted(entry))
+            m_impl->encrypted = true;
+        m_impl->entries.push_back(std::move(e));
+        archive_read_data_skip(ar);
+    }
+
+    if (const char* fmt = archive_format_name(ar))
+        m_impl->formatName = QString::fromUtf8(fmt);
+
+    archive_read_free(ar);
+    m_impl->opened = true;
+    return true;
+}
+
+bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
+{
+    m_impl->rejected.clear();
+    m_impl->extracted.clear();
+    QDir().mkpath(destDir);
 
     bool allOk = true;
     struct archive_entry* entry = nullptr;
@@ -389,6 +533,9 @@ bool ArchiveReader::extractAll(const QString& destDir)
         if (!pathname)
             pathname = archive_entry_pathname(entry);
         const QString rawName = QString::fromUtf8(pathname ? pathname : "");
+
+        if (archive_entry_is_encrypted(entry))
+            m_impl->encrypted = true;
 
         const QString destPath = safeEntryPath(destDir, rawName);
         if (destPath.isEmpty()) {
@@ -434,9 +581,9 @@ bool ArchiveReader::extractAll(const QString& destDir)
             }
         }
         outFile.close();
+        m_impl->extracted.append(destPath);
     }
 
-    archive_read_free(ar);
     return allOk;
 }
 

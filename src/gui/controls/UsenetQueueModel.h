@@ -53,6 +53,22 @@ struct UsenetFileRow {
     QString finalPath;
     bool isPar2 = false;
     int missingSegments = 0;
+
+    /// Position in the NZB. What the preview URL addresses — deliberately not
+    /// the row's index in this list, which a filter or a sort could move.
+    int index = -1;
+
+    /// Whether the daemon says a preview is worth offering: media, not PAR2,
+    /// and enough downloaded from byte 0 to stream. The rule lives daemon-side
+    /// because it needs the real post-yEnc filename and the contiguous-prefix
+    /// length, neither of which reaches the GUI.
+    bool previewable = false;
+
+    /// Why not, when `previewable` is false and there is something to say — a
+    /// compressed or encrypted archive can never be streamed, and a greyed-out
+    /// menu entry with no explanation is the failure mode phase 6b set out to
+    /// avoid. Empty when the answer is simply "not yet".
+    QString previewNote;
 };
 
 struct UsenetItemRow {
@@ -125,6 +141,12 @@ public:
     void clear();
 
     [[nodiscard]] bool isFileRow(const QModelIndex& index) const;
+
+    /// The file a child row names, or null for a top-level row. @p itemId, when
+    /// given, receives the id of the NZB it belongs to — a file is only ever
+    /// addressable as (item, index), never on its own.
+    [[nodiscard]] const UsenetFileRow* fileAt(const QModelIndex& index,
+                                              QString* itemId = nullptr) const;
     [[nodiscard]] QString idAt(int row) const;
     [[nodiscard]] const UsenetItemRow* findById(const QString& id) const;
     [[nodiscard]] int itemCount() const { return int(m_items.size()); }

@@ -39,6 +39,11 @@ public:
     /// Queue an .nzb from disk. Also the drop and menu entry point.
     void addNzbFile(const QString& path);
 
+    /// The daemon's per-process preview-stream token, handed out with the stats
+    /// poll. Empty means the web server is not up, and Preview stays disabled —
+    /// the same contract TransferPanel, SearchPanel and SharedFilesPanel use.
+    void setStreamToken(const QString& token) { m_streamToken = token; }
+
 private:
     /// The queue view's state, all of which a model change can disturb.
     struct SelectionState {
@@ -66,6 +71,19 @@ private:
     void onRemove(bool deleteFiles);
     void onSetPriority(int priority);
     void onOpenFolder();
+    void onPreview();
+
+    /// The file a Preview should stream, as (item id, index in the NZB).
+    ///
+    /// A selected *file* row names itself. A selected item row resolves to its
+    /// largest previewable file, which for a release is the feature rather than
+    /// the sample. Returns index -1 when nothing in the selection can be played.
+    [[nodiscard]] QPair<QString, int> previewTarget() const;
+
+    /// Why the current selection cannot be previewed, when the daemon said so.
+    /// Empty when the answer is "not yet" rather than "not ever".
+    [[nodiscard]] QString previewNote() const;
+
     void updateActions();
     void updateSummary();
 
@@ -85,6 +103,9 @@ private:
     QAction* m_removeAction = nullptr;
     QAction* m_removeWithFilesAction = nullptr;
     QAction* m_openFolderAction = nullptr;
+    QAction* m_previewAction = nullptr;
+
+    QString m_streamToken;
 
     bool m_restoringSelection = false;
 };

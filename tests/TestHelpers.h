@@ -94,7 +94,13 @@ inline QMap<QString, QString> loadEnvFile(const QString& path)
         const auto eq = line.indexOf(u'=');
         if (eq < 1)
             continue;
-        env.insert(line.left(eq).trimmed(), line.mid(eq + 1).trimmed());
+        QString value = line.mid(eq + 1).trimmed();
+        // Shell .env convention: a quoted value keeps its spaces, not its quotes.
+        if (value.size() >= 2 && (value.startsWith(u'"') || value.startsWith(u'\''))
+            && value.endsWith(value.front())) {
+            value = value.mid(1, value.size() - 2);
+        }
+        env.insert(line.left(eq).trimmed(), value);
     }
     return env;
 }

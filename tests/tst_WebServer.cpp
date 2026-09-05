@@ -15,7 +15,9 @@
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
 
+#include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -23,6 +25,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 
@@ -80,6 +83,18 @@ private slots:
     void restApiWithoutWebUi();
     void webUiWithoutRestApi();
 
+    // Preview streaming — the channel behind the GUI's Preview action, and the
+    // one route served whether or not either web surface is enabled.
+    void previewRejectsAMissingOrWrongStreamToken();
+    void previewRejectsABadFileIndex();
+    void previewCapsTheResponseBody();
+    void previewStopsAtWhatHasDownloaded();
+    void previewWaitsForBytesThatHaveNotArrivedYet();
+    void previewGivesUpWhenTheItemDisappears();
+    void previewStitchesAReadAcrossTwoFiles();
+    void previewRefusesAnUnstreamableReleaseAtOnce();
+    void previewTakesAPieceWithNoLengthFromTheFileOnDisk();
+
     // Graphs page data
     void graphVars_carryTheSeriesOldestFirst();
     void graphVars_ratesAreBytesPerSecond();
@@ -98,6 +113,10 @@ private:
     Response sendRequest(const QByteArray& method, const QString& path,
                          const QByteArray& body = {},
                          bool includeAuth = true);
+
+    /// GET with an optional Range header and no X-Api-Key. Preview authenticates
+    /// with the stream token instead, so sending the API key would prove nothing.
+    Response sendRanged(const QString& path, const QByteArray& range);
 
     QString baseUrl() const;
 
@@ -221,6 +240,35 @@ tst_WebServer::Response tst_WebServer::sendRequest(
 
     for (const auto& header : reply->rawHeaderList())
         resp.headers[QString::fromUtf8(header)] = QString::fromUtf8(reply->rawHeader(header));
+
+    reply->deleteLater();
+    return resp;
+}
+
+tst_WebServer::Response tst_WebServer::sendRanged(const QString& path, const QByteArray& range)
+{
+    QNetworkRequest req(QUrl(baseUrl() + path));
+    if (!range.isEmpty())
+        req.setRawHeader(QByteArrayLiteral("Range"), range);
+
+    QNetworkReply* reply = m_nam.get(req);
+    if (!reply->isFinished()) {
+        QEventLoop loop;
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(30000, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+
+    Response resp;
+    resp.statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    resp.rawBody = reply->readAll();
+    // Lower-cased keys: HTTP header names are case-insensitive and Qt does not
+    // promise the casing it hands back, so matching on "Content-Range" silently
+    // finds nothing.
+    for (const auto& header : reply->rawHeaderList()) {
+        resp.headers[QString::fromUtf8(header).toLower()] =
+            QString::fromUtf8(reply->rawHeader(header));
+    }
 
     reply->deleteLater();
     return resp;
@@ -518,6 +566,361 @@ void tst_WebServer::webUiWithoutRestApi()
 
     server->stop();
 }
+
+// ---------------------------------------------------------------------------
+// Preview streaming
+//
+// The one route registered whether or not the web UI and the REST API are on,
+// because the GUI's Preview action rides on it. It has its own gate — a
+// per-process random token — so none of these send an API key.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A file of @p size bytes whose content encodes its own offset, so a wrong
+/// seek shows up as wrong *bytes* and not merely as a wrong length.
+QString writePattern(QTemporaryDir& dir, const QString& name, qint64 size)
+{
+    const QString path = dir.filePath(name);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        return {};
+
+    QByteArray block(64 * 1024, Qt::Uninitialized);
+    qint64 written = 0;
+    while (written < size) {
+        for (qsizetype i = 0; i < block.size(); ++i)
+            block[i] = char((written + i) & 0xFF);
+        const qint64 chunk = qMin<qint64>(block.size(), size - written);
+        f.write(block.constData(), chunk);
+        written += chunk;
+    }
+    f.close();
+    return path;
+}
+
+} // namespace
+
+void tst_WebServer::previewRejectsAMissingOrWrongStreamToken()
+{
+    m_webServer->setUsenetStreamResolver([](const QString&, int, qint64, qint64) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.pieces = {{QStringLiteral("/nonexistent"), 0, 0, 0}};
+        return src;
+    });
+
+    // No token at all.
+    QCOMPARE(sendRanged(QStringLiteral("/api/v1/usenet/some-id/0/preview"), {}).statusCode, 401);
+
+    // A wrong one — also what an old GUI sends after the daemon restarts and
+    // mints a new token, so it has to be a clean 401 that gives nothing away.
+    const auto wrong = sendRanged(
+        QStringLiteral("/api/v1/usenet/some-id/0/preview?token=not-the-token"), {});
+    QCOMPARE(wrong.statusCode, 401);
+    QVERIFY(!wrong.rawBody.contains(m_webServer->streamToken().toUtf8()));
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewRejectsABadFileIndex()
+{
+    bool resolverCalled = false;
+    m_webServer->setUsenetStreamResolver([&resolverCalled](const QString&, int, qint64, qint64) {
+        resolverCalled = true;
+        return UsenetStreamSource{};
+    });
+
+    const QString token = m_webServer->streamToken();
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/some-id/notanumber/preview?token=%1").arg(token), {});
+
+    QCOMPARE(resp.statusCode, 400);
+    // Rejected before the queue is touched: a malformed URL is not a lookup.
+    QVERIFY(!resolverCalled);
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewCapsTheResponseBody()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    constexpr qint64 kSize = 6 * 1024 * 1024;   // comfortably over the 4 MiB cap
+    constexpr qint64 kCap  = 4 * 1024 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    m_webServer->setUsenetStreamResolver([path](const QString&, int, qint64, qint64) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.availableEnd = kSize;
+        src.complete = true;
+        return src;
+    });
+
+    const QString token = m_webServer->streamToken();
+    const QString url = QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token);
+
+    // `bytes=0-` is what a player opens with: "send me the whole file". Before
+    // the cap that allocated the entire file in the daemon's address space,
+    // which on a real release is tens of gigabytes.
+    const auto resp = sendRanged(url, QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kCap);
+
+    // The total in Content-Range is the whole file, not the slice — a player
+    // takes its duration and its seek bar from that number.
+    QCOMPARE(resp.headers.value(QStringLiteral("content-range")),
+             QStringLiteral("bytes 0-%1/%2").arg(kCap - 1).arg(kSize));
+    QCOMPARE(resp.headers.value(QStringLiteral("accept-ranges")), QStringLiteral("bytes"));
+
+    // The next window starts exactly where the last stopped, with the right
+    // bytes in it. An off-by-one here desyncs the stream and nothing says so.
+    const auto next = sendRanged(url, QByteArrayLiteral("bytes=4194304-4194403"));
+    QCOMPARE(next.statusCode, 206);
+    QCOMPARE(next.rawBody.size(), qsizetype(100));
+    QCOMPARE(quint8(next.rawBody.at(0)), quint8(kCap & 0xFF));
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewStopsAtWhatHasDownloaded()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // The file is already its final length on disk — ArticleWriter::reserve()
+    // preallocates it — so its size says nothing about how much has arrived.
+    constexpr qint64 kSize = 1024 * 1024;
+    constexpr qint64 kHave = 300 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    m_webServer->setUsenetStreamResolver([path](const QString&, int, qint64, qint64) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.availableEnd = kHave;
+        return src;
+    });
+
+    const QString token = m_webServer->streamToken();
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token),
+        QByteArrayLiteral("bytes=0-"));
+
+    QCOMPARE(resp.statusCode, 206);
+    // Exactly the downloaded prefix. Going further hands the player the
+    // preallocated tail, which is zeros — and that does not look like an error,
+    // it looks like a corrupt file.
+    QCOMPARE(qint64(resp.rawBody.size()), kHave);
+    QCOMPARE(resp.headers.value(QStringLiteral("content-range")),
+             QStringLiteral("bytes 0-%1/%2").arg(kHave - 1).arg(kSize));
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    constexpr qint64 kSize = 200 * 1024;
+    constexpr qint64 kLate = 100 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    // Nothing has landed when the request arrives; the first 100 KiB shows up a
+    // moment later. This is playback catching up with the write head, which is
+    // normal rather than an error — and the wait must not block the event loop,
+    // or the very downloads being waited for would stop.
+    QElapsedTimer since;
+    since.start();
+    m_webServer->setUsenetStreamResolver([path, &since](const QString&, int, qint64, qint64) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.availableEnd = since.elapsed() > 400 ? kLate : 0;
+        return src;
+    });
+
+    const QString token = m_webServer->streamToken();
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token),
+        QByteArrayLiteral("bytes=0-"));
+
+    // Answered, not refused. A zero-byte 206 reads as end-of-stream and every
+    // player stops there.
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kLate);
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewGivesUpWhenTheItemDisappears()
+{
+    // Found on the first call, gone on the next: the user removed the item, or
+    // post-processing moved the file, while a player still held the stream open.
+    // The wait has to end there rather than run out its full timeout.
+    int calls = 0;
+    m_webServer->setUsenetStreamResolver([&calls](const QString&, int, qint64, qint64) {
+        UsenetStreamSource src;
+        if (calls++ == 0) {
+            src.found = true;
+            src.fileName = QStringLiteral("movie.mkv");
+            src.totalSize = 1024;
+            src.availableEnd = 0;      // nothing readable yet -> wait
+        }
+        return src;
+    });
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+
+    const QString token = m_webServer->streamToken();
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token), {});
+
+    QCOMPARE(resp.statusCode, 404);
+    QVERIFY2(elapsed.elapsed() < 5000, "the wait should end with the item, not time out");
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewStitchesAReadAcrossTwoFiles()
+{
+    // Phase 6b: the logical file is the `.mkv` inside a stored RAR set, so it
+    // lives in several volume files at an offset. A window landing on a volume
+    // boundary has to come back as one continuous run of the right bytes —
+    // this is the case an off-by-one in the extent walk survives everywhere else.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    constexpr qint64 kHeader = 96;      // stands in for the archive header
+    constexpr qint64 kPayload = 4096;
+
+    // Two volumes, each `kHeader` bytes of junk followed by its slice of the
+    // logical file. Content encodes its own logical offset, so a wrong seek
+    // shows up as wrong bytes rather than merely a wrong length.
+    QByteArray logical(2 * kPayload, Qt::Uninitialized);
+    for (qsizetype i = 0; i < logical.size(); ++i)
+        logical[i] = char((i * 7 + 3) & 0xFF);
+
+    QStringList paths;
+    for (int v = 0; v < 2; ++v) {
+        const QString path = dir.filePath(QStringLiteral("vol%1.rar").arg(v));
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(QByteArray(kHeader, '#'));
+        f.write(logical.mid(int(v * kPayload), int(kPayload)));
+        f.close();
+        paths << path;
+    }
+
+    m_webServer->setUsenetStreamResolver([paths](const QString&, int, qint64, qint64) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = 2 * kPayload;
+        src.availableEnd = 2 * kPayload;
+        src.pieces = {{paths.at(0), 0, kHeader, kPayload},
+                      {paths.at(1), kPayload, kHeader, kPayload}};
+        return src;
+    });
+
+    const QString token = m_webServer->streamToken();
+    const QString url = QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token);
+
+    // 200 bytes centred on the seam.
+    const auto straddle = sendRanged(url, QByteArrayLiteral("bytes=3996-4195"));
+    QCOMPARE(straddle.statusCode, 206);
+    QCOMPARE(straddle.rawBody, logical.mid(3996, 200));
+
+    // And the whole logical file in one go, which also proves the header bytes
+    // of each volume are skipped rather than served.
+    const auto all = sendRanged(url, QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(all.statusCode, 206);
+    QCOMPARE(all.rawBody, logical);
+    QCOMPARE(all.headers.value(QStringLiteral("content-range")),
+             QStringLiteral("bytes 0-%1/%2").arg(2 * kPayload - 1).arg(2 * kPayload));
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewRefusesAnUnstreamableReleaseAtOnce()
+{
+    // A compressed, solid or encrypted archive will never become readable.
+    // Waiting out the poll would end in a 416, which reads as "not yet"; 406
+    // with the reason says "not ever", and says it before a player opens.
+    m_webServer->setUsenetStreamResolver([](const QString&, int, qint64, qint64) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("Some.Release.part01.rar");
+        src.notSeekableReason = QStringLiteral("Solid archive — cannot seek without decompressing");
+        return src;
+    });
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+
+    const QString token = m_webServer->streamToken();
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token), {});
+
+    QCOMPARE(resp.statusCode, 406);
+    QVERIFY2(resp.rawBody.contains("Solid archive"),
+             "the reason has to reach the caller, not just the log");
+    QVERIFY2(elapsed.elapsed() < 5000, "an impossible request must not wait out the poll");
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewTakesAPieceWithNoLengthFromTheFileOnDisk()
+{
+    // The shape the ED2K route passes: one piece, no declared length, no total.
+    // Its .part file is already preallocated to its final size, so the size on
+    // disk is the answer — and this is the only place that branch is exercised,
+    // since every Usenet source states its lengths.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    constexpr qint64 kSize = 5000;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    m_webServer->setUsenetStreamResolver([path](const QString&, int, qint64, qint64) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.availableEnd = kSize;
+        src.pieces = {{path, 0, 0, 0}};       // length 0 — "whatever is on disk"
+        return src;
+    });
+
+    const QString token = m_webServer->streamToken();
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token),
+        QByteArrayLiteral("bytes=1000-1099"));
+
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(resp.rawBody.size(), qsizetype(100));
+    QCOMPARE(quint8(resp.rawBody.at(0)), quint8(1000 & 0xFF));
+    QCOMPARE(resp.headers.value(QStringLiteral("content-range")),
+             QStringLiteral("bytes 1000-1099/%1").arg(kSize));
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
+
 
 // ---------------------------------------------------------------------------
 // Graphs page — the variables the GRAPHS template section is substituted with.

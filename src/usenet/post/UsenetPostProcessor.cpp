@@ -19,7 +19,6 @@ namespace {
 /// so it cannot collide with a release that happens to contain a directory of
 /// its own, and inside workDir so a failed job leaves nothing behind after the
 /// queue removes the item directory.
-constexpr QLatin1StringView kUnpackDirName{"_unpacked"};
 
 [[nodiscard]] QStringList par2FilesIn(const QString& dir)
 {
@@ -31,6 +30,20 @@ constexpr QLatin1StringView kUnpackDirName{"_unpacked"};
             result.append(fi.absoluteFilePath());
     }
     return result;
+}
+
+/// Whether what a direct unpack produced is still on disk and the right size.
+/// Cheap insurance: a half-deleted or truncated result must fall back to a real
+/// unpack rather than be published as a finished release.
+[[nodiscard]] bool directUnpackStillValid(const UsenetDirectUnpackResult& done)
+{
+    if (!done.ok || done.extracted.isEmpty())
+        return false;
+    for (const QString& path : done.extracted) {
+        if (!QFileInfo::exists(path))
+            return false;
+    }
+    return true;
 }
 
 [[nodiscard]] QStringList payloadFilesIn(const QString& dir)
@@ -100,6 +113,11 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
     UsenetPostResult result;
     result.itemId = job.itemId;
 
+    // Whether PAR2 rewrote any of the volumes, at any stage. Anything unpacked
+    // from them while they were downloading came from bytes that no longer
+    // exist, so it cannot be trusted.
+    bool par2Repaired = false;
+
     const QStringList par2Files = par2FilesIn(job.workDir);
     const bool canVerify = job.par2Enabled && Par2Verifier::available() && !par2Files.isEmpty();
 
@@ -119,6 +137,12 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
                 emitStage(job.itemId, PostStage::Verifying, percent, file);
             });
             const Par2Result renamed = verifier.rename(index, job.workDir);
+            // par2's rename pass repairs as a side effect: RenameTargetFiles()
+            // lives inside `if (dorepair)`, so a renameonly run still rewrites
+            // damaged data. The verify that follows then reports Clean, which
+            // makes the *later* outcome useless as a "were the volumes touched"
+            // signal — so record it here.
+            par2Repaired = par2Repaired || renamed.outcome == Par2Outcome::Repaired;
             if (renamed.renamedFiles > 0) {
                 logInfo(QStringLiteral("Usenet: recovered %1 filename(s) from PAR2")
                             .arg(renamed.renamedFiles));
@@ -158,6 +182,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
 
             const Par2Result repaired = verifier.repair(index, job.workDir);
             result.par2Outcome = repaired.outcome;
+            par2Repaired = par2Repaired || repaired.outcome == Par2Outcome::Repaired;
 
             if (!repaired.ok()) {
                 result.message = repaired.outcome == Par2Outcome::Cancelled
@@ -199,12 +224,36 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
 
         const QString unpackDir = QDir(job.workDir).filePath(QString(kUnpackDirName));
 
+        // A repair rewrote the volumes, so anything extracted from them while
+        // they were downloading came from bytes that no longer exist. Throw it
+        // away and unpack the repaired set instead. A clean verify means the
+        // volumes were right all along, and so is what came out of them.
+        const bool volumesRewritten = par2Repaired;
+
+        QSet<QString> skip;
+        QStringList directPayload;
+        QStringList directConsumed;
+        for (const UsenetDirectUnpackResult& done : job.directUnpacked) {
+            if (volumesRewritten || !directUnpackStillValid(done)) {
+                for (const QString& path : done.extracted)
+                    QFile::remove(path);
+                continue;
+            }
+            skip.insert(done.firstVolume);
+            directPayload += done.extracted;
+            directConsumed += done.consumed;
+        }
+        if (volumesRewritten && !job.directUnpacked.isEmpty()) {
+            logInfo(QStringLiteral("Usenet: discarding what was unpacked during the "
+                                   "download; the release needed a repair"));
+        }
+
         UsenetUnpacker unpacker;
         unpacker.setProgressCallback([&](int percent, const QString& file) {
             emitStage(job.itemId, PostStage::Unpacking, percent, file);
         });
 
-        const auto unpacked = unpacker.unpack(job.workDir, unpackDir, job.password);
+        const auto unpacked = unpacker.unpack(job.workDir, unpackDir, job.password, skip);
 
         if (!unpacked.ok) {
             result.message = unpacked.error;
@@ -212,11 +261,22 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             return;
         }
 
-        if (unpacked.nothingToDo) {
+        if (unpacked.nothingToDo && directPayload.isEmpty()) {
             payload = payloadFilesIn(job.workDir);
         } else {
-            payload = unpacked.extractedFiles;
-            consumed = unpacked.consumedArchives;
+            // A par2 rename between the download and here would stale the skip
+            // key, so a set can be extracted twice over the same output. Both
+            // lists then name it; de-duplicate rather than publish it twice.
+            payload = directPayload;
+            for (const QString& path : unpacked.extractedFiles) {
+                if (!payload.contains(path))
+                    payload.append(path);
+            }
+            consumed = directConsumed;
+            for (const QString& path : unpacked.consumedArchives) {
+                if (!consumed.contains(path))
+                    consumed.append(path);
+            }
         }
     } else {
         payload = payloadFilesIn(job.workDir);

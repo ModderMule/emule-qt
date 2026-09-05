@@ -32,13 +32,16 @@ SOURCES += \
     nzb/NzbInfo.cpp \
     nzb/SubjectParser.cpp \
     post/Par2Verifier.cpp \
+    post/UsenetDirectUnpack.cpp \
     post/UsenetPostProcessor.cpp \
     post/UsenetUnpacker.cpp \
     queue/ArticleWriter.cpp \
     queue/UsenetQueue.cpp \
     queue/UsenetQueueItem.cpp \
     queue/UsenetQueueStore.cpp \
-    queue/UsenetWorker.cpp
+    queue/UsenetWorker.cpp \
+    stream/RarReader.cpp \
+    stream/UsenetStreamIndex.cpp
 
 HEADERS += \
     UsenetSession.h \
@@ -53,10 +56,13 @@ HEADERS += \
     nzb/NzbInfo.h \
     nzb/SubjectParser.h \
     post/Par2Verifier.h \
+    post/UsenetDirectUnpack.h \
     post/UsenetPostProcessor.h \
     post/UsenetUnpacker.h \
     queue/ArticleWriter.h \
     queue/UsenetQueue.h \
     queue/UsenetQueueItem.h \
     queue/UsenetQueueStore.h \
-    queue/UsenetWorker.h
+    queue/UsenetWorker.h \
+    stream/RarReader.h \
+    stream/UsenetStreamIndex.h

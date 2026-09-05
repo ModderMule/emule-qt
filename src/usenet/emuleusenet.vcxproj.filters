@@ -48,6 +48,9 @@
     <ClCompile Include="post\Par2Verifier.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="post\UsenetDirectUnpack.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="post\UsenetPostProcessor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -67,6 +70,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="queue\UsenetWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stream\RarReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stream\UsenetStreamIndex.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -107,6 +116,12 @@
     <ClInclude Include="queue\UsenetQueueStore.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="stream\RarReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stream\UsenetStreamIndex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="UsenetSession.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -117,6 +132,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="nntp\NntpSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="post\UsenetDirectUnpack.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="post\UsenetPostProcessor.h">

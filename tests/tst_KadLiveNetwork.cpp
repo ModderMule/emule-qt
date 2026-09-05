@@ -255,6 +255,10 @@ void tst_KadLiveNetwork::onReadyRead()
 
 void tst_KadLiveNetwork::initTestCase()
 {
+    // EMULE_TCP_PORT / EMULE_UDP_PORT may come from .env; a real
+    // environment variable still wins.
+    loadProjectEnv();
+
     // Enable Kad-specific logging for all Kad tests
     QLoggingCategory::setFilterRules(QStringLiteral("emule.kad.debug=true"));
     setKadLogging(true);

@@ -604,6 +604,8 @@ int main(int argc, char* argv[])
                     mainWindow.transferPanel()->setStreamToken(st.toString());
                     mainWindow.searchPanel()->setStreamToken(st.toString());
                     mainWindow.sharedFilesPanel()->setStreamToken(st.toString());
+                    if (auto* usenet = mainWindow.usenetPanel())
+                        usenet->setStreamToken(st.toString());
                 }
 
                 // Update MiniMule popup stats

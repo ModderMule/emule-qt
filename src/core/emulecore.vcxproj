@@ -255,6 +255,7 @@
     <ClCompile Include="utils\PathUtils.cpp" />
     <ClCompile Include="utils\PerfLog.cpp" />
     <ClCompile Include="net\Pinger.cpp" />
+    <ClCompile Include="prefs\IndexerConfig.cpp" />
     <ClCompile Include="prefs\Preferences.cpp" />
     <ClCompile Include="media\PreviewApps.cpp" />
     <ClCompile Include="media\PreviewThread.cpp" />
@@ -405,6 +406,7 @@
     <ClInclude Include="net\Address.h" />
     <ClInclude Include="net\Pinger.h" />
     <ClInclude Include="utils\PlatformUtils.h" />
+    <ClInclude Include="prefs\IndexerConfig.h" />
     <ClInclude Include="prefs\NewsServer.h" />
     <ClInclude Include="prefs\Preferences.h" />
     <ClInclude Include="media\PreviewApps.h" />

@@ -48,6 +48,9 @@ signals:
     /// Forwarded from any client's IpcClientHandler::usenetConfigChanged.
     void usenetConfigChanged();
 
+    /// Forwarded from any client's IpcClientHandler::indexerConfigChanged.
+    void indexerConfigChanged();
+
 private slots:
     void onNewConnection();
     void onClientDisconnected(IpcClientHandler* handler);

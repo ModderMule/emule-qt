@@ -328,6 +328,24 @@ bool UsenetQueueModel::isFileRow(const QModelIndex& index) const
     return index.isValid() && index.internalId() != 0;
 }
 
+const UsenetFileRow* UsenetQueueModel::fileAt(const QModelIndex& index, QString* itemId) const
+{
+    if (!isFileRow(index))
+        return nullptr;
+
+    const int parentRow = int(index.internalId() - 1);
+    if (parentRow < 0 || parentRow >= int(m_items.size()))
+        return nullptr;
+
+    const UsenetItemRow& item = m_items.at(size_t(parentRow));
+    if (index.row() < 0 || index.row() >= item.files.size())
+        return nullptr;
+
+    if (itemId)
+        *itemId = item.id;
+    return &item.files.at(index.row());
+}
+
 QString UsenetQueueModel::idAt(int row) const
 {
     if (row < 0 || row >= int(m_items.size()))

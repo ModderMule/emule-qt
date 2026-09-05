@@ -142,6 +142,7 @@ SOURCES += \
     net/ServerSocket.cpp \
     net/SmtpClient.cpp \
     net/UDPSocket.cpp \
+    prefs/IndexerConfig.cpp \
     prefs/Preferences.cpp \
     protocol/ED2KLink.cpp \
     protocol/Tag.cpp \
@@ -267,6 +268,7 @@ HEADERS += \
     net/SmtpClient.h \
     net/ThrottledSocket.h \
     net/UDPSocket.h \
+    prefs/IndexerConfig.h \
     prefs/Preferences.h \
     protocol/ED2KLink.h \
     protocol/Tag.h \

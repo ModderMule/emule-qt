@@ -23,6 +23,7 @@ void ArticleFetcher::fetch(NntpSocket* socket, const NzbSegment& segment,
     m_articleFileName.clear();
     m_declaredFileSize = 0;
     m_decodedBytes = 0;
+    m_decodedOffset = 0;
     m_writeError.clear();
     m_positioned = false;
 
@@ -63,7 +64,8 @@ void ArticleFetcher::startBody()
             if (!m_positioned) {
                 // YencDecoder::offset() has already applied the 1-based
                 // correction; a single-part post with no =ypart reports 0.
-                if (!m_writer->seekTo(m_bodyCommand->decoder().offset(), m_writeError))
+                m_decodedOffset = m_bodyCommand->decoder().offset();
+                if (!m_writer->seekTo(m_decodedOffset, m_writeError))
                     return;
                 m_positioned = true;
             }

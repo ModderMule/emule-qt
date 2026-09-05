@@ -26,7 +26,14 @@ enum class SearchType : uint8 {
     Ed2kServer  = 1,
     Ed2kGlobal  = 2,
     Kademlia    = 3,
-    ContentDB   = 4
+    ContentDB   = 4,
+
+    /// Keyword search against the configured newznab indexers, answered by
+    /// eMule::Indexer rather than by either ED2K network. A network-selection
+    /// enum already existed, so this extends it rather than bolting a second
+    /// search system alongside it — and a future TorrentIndexer slots in here
+    /// the same way.
+    UsenetIndexer = 5,
 };
 
 // ---------------------------------------------------------------------------
@@ -50,6 +57,12 @@ struct AutoSearchState {
 /// Returns std::nullopt when neither network is available — the caller reports
 /// that to the user and starts nothing (MFC shows IDS_NOTCONNECTEDANY).
 /// The result is never Automatic, Ed2kGlobal or ContentDB.
+///
+/// **It is never UsenetIndexer either, and that is deliberate.** This function
+/// picks between networks that cost nothing to ask; an indexer search spends a
+/// quota the user pays for and discloses the query to a third party. Both have
+/// to be an explicit choice, so Automatic stays ED2K/Kad-only. Do not "fix"
+/// this by adding indexers to the ladder.
 ///
 /// MFC: CSearchResultsWnd::StartNewSearch — srchybrid/SearchResultsWnd.cpp:1134-1165.
 [[nodiscard]] std::optional<SearchType> resolveAutomaticSearchType(const AutoSearchState& state);

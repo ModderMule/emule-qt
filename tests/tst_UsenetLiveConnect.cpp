@@ -21,11 +21,14 @@
 #include "nntp/NntpCommand.h"
 #include "nntp/NntpSocket.h"
 
+#include "TestHelpers.h"
+
 #include <QProcessEnvironment>
 #include <QSignalSpy>
 #include <QTest>
 
 using namespace eMule::usenet;
+using eMule::testing::loadProjectEnv;
 
 namespace {
 
@@ -68,11 +71,19 @@ class tst_UsenetLiveConnect : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
+
     void connectsAndAuthenticates();
     void capabilitiesAreReadable();
     void unknownArticleIsReported();
     void wrongPasswordIsRejected();
 };
+
+void tst_UsenetLiveConnect::initTestCase()
+{
+    // .env fills in whatever the process environment did not already set.
+    loadProjectEnv();
+}
 
 void tst_UsenetLiveConnect::connectsAndAuthenticates()
 {

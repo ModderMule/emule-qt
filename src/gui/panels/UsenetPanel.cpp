@@ -5,6 +5,7 @@
 #include "controls/AbstractListView.h"
 #include "controls/UsenetQueueModel.h"
 #include "utils/PanelPoller.h"
+#include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
 
 #include <QAction>
@@ -75,6 +76,9 @@ namespace {
         f.finalPath = fm.value(QStringLiteral("finalPath")).toString();
         f.isPar2 = fm.value(QStringLiteral("isPar2")).toBool();
         f.missingSegments = int(fm.value(QStringLiteral("missingSegments")).toInteger());
+        f.index = int(fm.value(QStringLiteral("index")).toInteger(-1));
+        f.previewable = fm.value(QStringLiteral("previewable")).toBool();
+        f.previewNote = fm.value(QStringLiteral("previewNote")).toString();
         r.files.append(f);
     }
     return r;
@@ -196,6 +200,11 @@ void UsenetPanel::setupUi()
     m_pauseAction = toolbar->addAction(tr("Pause"), this, &UsenetPanel::onPause);
     m_resumeAction = toolbar->addAction(tr("Resume"), this, &UsenetPanel::onResume);
     m_removeAction = toolbar->addAction(tr("Remove"), this, [this] { onRemove(false); });
+
+    // Context menu only — a toolbar entry would be enabled for most of a
+    // release's life and do nothing, because most posts are RAR sets.
+    m_previewAction = new QAction(tr("Preview"), this);
+    connect(m_previewAction, &QAction::triggered, this, &UsenetPanel::onPreview);
     layout->addWidget(toolbar);
 
     auto* view = new ListTreeView(this);
@@ -396,6 +405,7 @@ void UsenetPanel::onContextMenu(const QPoint& pos)
         priorityMenu->addAction(tr("Low"), this, [this] { onSetPriority(-1); });
 
         menu.addSeparator();
+        menu.addAction(m_previewAction);
         menu.addAction(tr("Open Folder"), this, &UsenetPanel::onOpenFolder);
         menu.addSeparator();
         menu.addAction(m_removeAction);
@@ -497,6 +507,62 @@ void UsenetPanel::onOpenFolder()
     StatusBarNotifier::post(tr("Nothing has completed yet for \"%1\".").arg(row->name));
 }
 
+QPair<QString, int> UsenetPanel::previewTarget() const
+{
+    // A file row names itself.
+    const QModelIndex current = m_view->currentIndex();
+    if (current.isValid()) {
+        const QModelIndex src = m_proxy->mapToSource(current);
+        QString ownerId;
+        if (const UsenetFileRow* f = m_model->fileAt(src, &ownerId))
+            return {f->previewable ? ownerId : QString(), f->previewable ? f->index : -1};
+    }
+
+    // An item row: the biggest thing in it that can be played. A release
+    // carries a sample and sometimes a trailer, and neither is what was asked
+    // for.
+    const QStringList ids = selectedItemIds();
+    if (ids.isEmpty())
+        return {QString(), -1};
+
+    const UsenetItemRow* row = m_model->findById(ids.first());
+    if (!row)
+        return {QString(), -1};
+
+    const UsenetFileRow* best = nullptr;
+    for (const auto& f : row->files) {
+        if (!f.previewable)
+            continue;
+        if (!best || f.size > best->size)
+            best = &f;
+    }
+    if (!best)
+        return {QString(), -1};
+    return {row->id, best->index};
+}
+
+void UsenetPanel::onPreview()
+{
+    const auto [itemId, fileIndex] = previewTarget();
+    if (itemId.isEmpty() || fileIndex < 0) {
+        // A refusal the daemon can explain — a compressed or solid archive —
+        // deserves the explanation rather than the generic line.
+        const QString note = previewNote();
+        StatusBarNotifier::post(note.isEmpty() ? tr("Nothing here can be previewed yet.")
+                                               : note);
+        return;
+    }
+
+    const QString url = daemonUsenetStreamUrl(m_ipc, itemId, fileIndex, m_streamToken);
+    if (url.isEmpty()) {
+        StatusBarNotifier::post(
+            tr("Preview is unavailable — the daemon's web server is not running."));
+        return;
+    }
+
+    launchPreview(url);
+}
+
 void UsenetPanel::updateActions()
 {
     const QStringList ids = selectedItemIds();
@@ -505,6 +571,42 @@ void UsenetPanel::updateActions()
     m_pauseAction->setEnabled(any);
     m_resumeAction->setEnabled(any);
     m_removeAction->setEnabled(any);
+
+    // Both halves matter: the daemon has to say the file is playable *and* the
+    // stream token has to have arrived, or the action offers a URL that cannot
+    // be built.
+    const auto [previewId, previewIndex] = previewTarget();
+    m_previewAction->setEnabled(!previewId.isEmpty() && previewIndex >= 0
+                                && !m_streamToken.isEmpty());
+
+    // On a disabled action the tooltip is the only place the reason can go.
+    const QString note = m_previewAction->isEnabled() ? QString() : previewNote();
+    m_previewAction->setToolTip(note);
+}
+
+QString UsenetPanel::previewNote() const
+{
+    const QModelIndex current = m_view->currentIndex();
+    if (current.isValid()) {
+        const QModelIndex src = m_proxy->mapToSource(current);
+        if (const UsenetFileRow* f = m_model->fileAt(src))
+            return f->previewNote;
+    }
+
+    const QStringList ids = selectedItemIds();
+    if (ids.isEmpty())
+        return {};
+    const UsenetItemRow* row = m_model->findById(ids.first());
+    if (!row)
+        return {};
+
+    // One note for the whole set: every volume of a refused archive carries the
+    // same one, so the first is as good as any.
+    for (const auto& f : row->files) {
+        if (!f.previewNote.isEmpty())
+            return f.previewNote;
+    }
+    return {};
 }
 
 void UsenetPanel::updateSummary()

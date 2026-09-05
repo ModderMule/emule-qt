@@ -159,6 +159,53 @@ enum class IpcMsgType : int {
     /// always shared, a non-shareable directory never is.
     BrowseDirectory         = 267,
 
+    // -- Indexers (700-719) --------------------------------------------------
+    //
+    // The shared newznab/torznab client, reserved here when the Usenet blocks
+    // were allocated. It belongs to neither network: newznab (Usenet) and
+    // torznab (BitTorrent) are the same API with a different XML attribute
+    // namespace, and Prowlarr and NZBHydra2 serve both from one endpoint.
+    //
+    // StartSearch = 150 is deliberately not reused. Its payload is ED2K-shaped
+    // (fileType, minSize, avail, completeSrc) and the daemon would have to guess
+    // which network a request meant.
+
+    /// [] -> [{name, url, kind, enabled, hasApiKey, capsProbedAt, capsOk}]
+    /// The API key is never sent to the GUI — only whether one is stored. Same
+    /// rule as GetNewsServers, and for the same reason: a key that never reaches
+    /// the GUI cannot leak through a screenshot, a log, or an IPC session on a
+    /// non-loopback socket. It also rides in every request URL, so it is the one
+    /// secret here that is easy to spill by accident.
+    GetIndexers             = 700,
+    /// [[{...same shape, plus optional `apiKey`...}]] -> [ok: bool, error: string]
+    /// Replaces the whole list. An entry that omits `apiKey` keeps the stored
+    /// one, which is what lets the Options page round-trip a list whose secrets
+    /// it was never given.
+    SetIndexers             = 701,
+    /// [{url, apiKey, kind}] -> [ok, response, error]
+    /// Runs t=caps and reports the indexer's **own** error text. "Incorrect user
+    /// credentials" tells a user which field to fix where "Unauthorized" does
+    /// not — the same judgement TestNewsServer makes with its status line.
+    TestIndexer             = 702,
+    /// [name: string] -> [{limitMax, modes: [{name, available, params}],
+    ///                     categories: [{id, name, subcats}]}]
+    /// The cached capabilities, so the search form can grey out what this
+    /// indexer does not advertise instead of sending a query it will reject.
+    GetIndexerCaps          = 703,
+    /// [query, cat: [int], mode, indexers: [string]] -> [ok, searchId | error]
+    /// searchId is 0 with an error when nothing is configured — which is worth
+    /// saying, because an empty result list reads as "nothing matched".
+    StartIndexerSearch      = 704,
+    /// [searchId: int] -> [ok]
+    StopIndexerSearch       = 705,
+    /// [searchId: int] -> [ok]
+    RemoveIndexerSearch     = 706,
+    /// [searchId: int, resultId: string] -> [ok, itemIdOrError]
+    /// The daemon fetches the .nzb itself and hands it to the Usenet queue. The
+    /// download URL carries the API key, so it never travels to the GUI and the
+    /// GUI never issues the request.
+    GrabIndexerResult       = 707,
+
     // -- Usenet (720-799) ----------------------------------------------------
     //
     // A block, not the next free integer. The core request space runs 100-299
@@ -187,7 +234,17 @@ enum class IpcMsgType : int {
 
     /// [] -> [{id, name, status, statusText, priority, percent, totalBytes,
     ///         decodedBytes, segmentCount, doneSegments, missingSegments, error,
-    ///         files: [{name, size, percent, finalPath, missingSegments}]}]
+    ///         files: [{name, size, percent, finalPath, isPar2, missingSegments,
+    ///                   index, previewable, previewNote}]}]
+    /// `previewable` says a Preview action is worth offering for that file, and
+    /// `index` is what the preview URL addresses. The GUI cannot decide it: the
+    /// answer needs the real post-yEnc filename, the contiguous-prefix length,
+    /// and — since phase 6b — whether the file is a volume of a *stored* archive
+    /// set whose inner file is playable. Every volume of such a set reports
+    /// true, because previewing any of them plays the same inner file.
+    /// `previewNote` is why not, when there is something to say: a compressed,
+    /// solid or encrypted archive can never be streamed, and the GUI shows the
+    /// sentence rather than leaving an unexplained greyed-out menu entry.
     /// The whole queue. The GUI polls this; individual changes arrive as
     /// PushUsenetQueueItem, which carries one item in the same shape.
     GetUsenetQueue          = 723,
@@ -231,6 +288,20 @@ enum class IpcMsgType : int {
     PushFriendListChanged = 510,  ///< [] — friend list changed
     PushClientSharedFiles = 520,  ///< [clientHash, CborArray of files] — response to browse
     PushPortMapStatus     = 530,  ///< [{status, statusText, method, methodText, externalAddress}]
+
+    // -- Indexer pushes (900-909) --------------------------------------------
+
+    /// [searchId: int, [{...one result row...}]]
+    /// Rows as each indexer answers, so a fast one is not held up by a slow one.
+    PushIndexerResults     = 900,
+    /// [searchId: int, done: int, total: int] — indexers answered, of how many.
+    PushIndexerProgress    = 901,
+    /// [searchId: int, error: string]
+    /// Terminal, and **uncoalesced**: it is a transition, not a latest value.
+    /// `error` summarises the indexers that failed and is often set alongside a
+    /// perfectly good set of rows — one indexer being down is not a failed
+    /// search.
+    PushIndexerSearchDone  = 902,
 
     // -- Usenet pushes (910-949) ---------------------------------------------
     //

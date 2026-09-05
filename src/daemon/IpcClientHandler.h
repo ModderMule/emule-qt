@@ -39,6 +39,9 @@ signals:
     /// connection pool. Same forwarding route as webServerConfigChanged.
     void usenetConfigChanged();
 
+    /// The indexer account list changed and the daemon should re-read it.
+    void indexerConfigChanged();
+
 private slots:
     void onMessageReceived(const Ipc::IpcMessage& msg);
     void onConnectionLost();
@@ -122,6 +125,16 @@ private:
     void handleUnshareFile(const Ipc::IpcMessage& msg);
     void handleSetFileShared(const Ipc::IpcMessage& msg);
     void handleBrowseDirectory(const Ipc::IpcMessage& msg);
+
+    // Indexers (700-719) — the shared newznab/torznab client
+    void handleGetIndexers(const Ipc::IpcMessage& msg);
+    void handleSetIndexers(const Ipc::IpcMessage& msg);
+    void handleTestIndexer(const Ipc::IpcMessage& msg);
+    void handleGetIndexerCaps(const Ipc::IpcMessage& msg);
+    void handleStartIndexerSearch(const Ipc::IpcMessage& msg);
+    void handleStopIndexerSearch(const Ipc::IpcMessage& msg);
+    void handleRemoveIndexerSearch(const Ipc::IpcMessage& msg);
+    void handleGrabIndexerResult(const Ipc::IpcMessage& msg);
 
     // Usenet (720-799)
     void handleGetNewsServers(const Ipc::IpcMessage& msg);

@@ -137,6 +137,29 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         out << YAML::Key << "finalized" << YAML::Value << st.finalized;
         out << YAML::Key << "missingSegments" << YAML::Value << st.missingSegments;
         out << YAML::Key << "done" << YAML::Value << toStd(bitsToBase64(st.done));
+
+        // Byte ranges on disk, "start-end" per entry, half-open. Separate from
+        // `done` because the two answer different questions: a done bit means
+        // *resolved*, and a segment missing everywhere sets it having written
+        // nothing. Without this a restart could not tell which bytes of a
+        // half-finished file are readable, so preview would be dead until the
+        // file completed.
+        //
+        // Same reasoning as `written`, and the same optional-key treatment: it
+        // re-derives from the first article after a restart, so an old sidecar
+        // costs at most one article's delay before a seek works.
+        if (st.partLength > 0)
+            out << YAML::Key << "partLength" << YAML::Value << (long long)st.partLength;
+
+        // Written in plan order, so this is one or two entries in practice.
+        if (!st.written.isEmpty()) {
+            out << YAML::Key << "written" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+            for (const auto& r : st.written) {
+                out << toStd(QStringLiteral("%1-%2").arg(r.first).arg(r.second));
+            }
+            out << YAML::EndSeq;
+        }
+
         out << YAML::EndMap;
     }
     out << YAML::EndSeq;
@@ -241,6 +264,30 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
                 st.missingSegments = fnode["missingSegments"]
                                          ? fnode["missingSegments"].as<int>(0) : 0;
                 st.done = bitsFromBase64(fromStd(fnode, "done"), int(info.segments.size()));
+
+                // Absent in a sidecar written before streaming existed, and
+                // absent is harmless: the file simply offers no preview until it
+                // finishes. That is why kStateVersion did not move for this —
+                // load() refuses anything newer than it knows, so a bump would
+                // make an older daemon drop the whole queue rather than lose one
+                // optional field.
+                st.partLength = fnode["partLength"] ? fnode["partLength"].as<long long>(0) : 0;
+
+                if (const auto written = fnode["written"]; written && written.IsSequence()) {
+                    for (const auto& entry : written) {
+                        const QString text =
+                            QString::fromStdString(entry.as<std::string>(std::string{}));
+                        const qsizetype dash = text.indexOf(QLatin1Char('-'));
+                        if (dash <= 0)
+                            continue;
+                        bool okStart = false;
+                        bool okEnd = false;
+                        const qint64 start = text.left(dash).toLongLong(&okStart);
+                        const qint64 end = text.mid(dash + 1).toLongLong(&okEnd);
+                        if (okStart && okEnd && end > start)
+                            st.addWritten(start, end - start);
+                    }
+                }
 
                 out.nzb.files.append(info);
                 out.files.append(st);

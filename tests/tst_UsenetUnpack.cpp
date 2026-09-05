@@ -12,6 +12,7 @@
 /// archives are written by strangers, and a `../` member that escapes the
 /// destination directory fails silently and destructively.
 
+#include "RarFixtures.h"
 #include "TestHelpers.h"
 
 #include "archive/ArchiveReader.h"
@@ -93,6 +94,8 @@ private slots:
     void reportsNothingToDoForAPlainDirectory();
     void refusesMembersThatEscapeTheDestination();
     void rewritesWindowsReservedNamesRatherThanDroppingThem();
+    void unpacksAMultiVolumeRarSet();
+    void skipsASetAlreadyUnpackedElsewhere();
 };
 
 // ---------------------------------------------------------------------------
@@ -270,6 +273,67 @@ void TestUsenetUnpack::rewritesWindowsReservedNamesRatherThanDroppingThem()
 
     QCOMPARE(QFileInfo(ArchiveReader::safeEntryPath(dest, QStringLiteral("normal.mkv"))).fileName(),
              QStringLiteral("normal.mkv"));
+}
+
+// The volume list, not just volume one. libarchive reads a set as one stream
+// over the files it is handed and never opens a sibling volume by name, so
+// getting this wrong truncates every multi-volume release at volume one — the
+// symptom being a "split file" error that looks exactly like a bad download.
+void TestUsenetUnpack::unpacksAMultiVolumeRarSet()
+{
+    eMule::testing::TempDir tmpDir;
+    QByteArray payload(30000, '\0');
+    for (qsizetype i = 0; i < payload.size(); ++i)
+        payload[i] = char('a' + (i % 26));
+
+    const QList<QByteArray> vols =
+        eMule::testing::rar::makeStoredRarSet("movie.mkv", payload, 7000);
+    QCOMPARE(vols.size(), 5);
+    for (int i = 0; i < vols.size(); ++i) {
+        const QString name = i == 0 ? QStringLiteral("Rel.rar")
+                                    : QStringLiteral("Rel.r%1").arg(i - 1, 2, 10, QLatin1Char('0'));
+        QVERIFY(touch(tmpDir.filePath(name), vols.at(i)));
+    }
+
+    const QString dest = tmpDir.filePath(QStringLiteral("out"));
+    UsenetUnpacker unpacker;
+    const auto result = unpacker.unpack(tmpDir.path(), dest);
+
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QVERIFY(!result.nothingToDo);
+    QCOMPARE(result.extractedFiles.size(), 1);
+    QCOMPARE(result.consumedArchives.size(), 5);
+
+    QFile out(QDir(dest).filePath(QStringLiteral("movie.mkv")));
+    QVERIFY(out.open(QIODevice::ReadOnly));
+    QCOMPARE(out.readAll(), payload);
+}
+
+void TestUsenetUnpack::skipsASetAlreadyUnpackedElsewhere()
+{
+    eMule::testing::TempDir tmpDir;
+    QByteArray payload(9000, 'z');
+    const QList<QByteArray> vols =
+        eMule::testing::rar::makeStoredRarSet("movie.mkv", payload, 4000);
+    for (int i = 0; i < vols.size(); ++i) {
+        const QString name = i == 0 ? QStringLiteral("Rel.rar")
+                                    : QStringLiteral("Rel.r%1").arg(i - 1, 2, 10, QLatin1Char('0'));
+        QVERIFY(touch(tmpDir.filePath(name), vols.at(i)));
+    }
+
+    const auto sets = UsenetUnpacker::findArchiveSets(tmpDir.path());
+    QCOMPARE(sets.size(), 1);
+
+    const QString dest = tmpDir.filePath(QStringLiteral("out"));
+    UsenetUnpacker unpacker;
+    const auto result = unpacker.unpack(tmpDir.path(), dest, {},
+                                        QSet<QString>{sets.first().firstVolume});
+
+    // Found, so not "nothing to do" — but deliberately not extracted again.
+    QVERIFY(result.ok);
+    QVERIFY(!result.nothingToDo);
+    QVERIFY(result.extractedFiles.isEmpty());
+    QVERIFY(!QFile::exists(QDir(dest).filePath(QStringLiteral("movie.mkv"))));
 }
 
 QTEST_MAIN(TestUsenetUnpack)

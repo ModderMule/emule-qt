@@ -112,6 +112,17 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushFriendListChanged: return QStringLiteral("PushFriendListChanged");
     case T::PushClientSharedFiles: return QStringLiteral("PushClientSharedFiles");
     case T::PushPortMapStatus: return QStringLiteral("PushPortMapStatus");
+    case T::GetIndexers:          return QStringLiteral("GetIndexers");
+    case T::SetIndexers:          return QStringLiteral("SetIndexers");
+    case T::TestIndexer:          return QStringLiteral("TestIndexer");
+    case T::GetIndexerCaps:       return QStringLiteral("GetIndexerCaps");
+    case T::StartIndexerSearch:   return QStringLiteral("StartIndexerSearch");
+    case T::StopIndexerSearch:    return QStringLiteral("StopIndexerSearch");
+    case T::RemoveIndexerSearch:  return QStringLiteral("RemoveIndexerSearch");
+    case T::GrabIndexerResult:    return QStringLiteral("GrabIndexerResult");
+    case T::PushIndexerResults:   return QStringLiteral("PushIndexerResults");
+    case T::PushIndexerProgress:  return QStringLiteral("PushIndexerProgress");
+    case T::PushIndexerSearchDone: return QStringLiteral("PushIndexerSearchDone");
     case T::GetNewsServers:       return QStringLiteral("GetNewsServers");
     case T::SetNewsServers:       return QStringLiteral("SetNewsServers");
     case T::TestNewsServer:       return QStringLiteral("TestNewsServer");
@@ -536,6 +547,9 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
         emit logMessageReceived(msg);
         break;
     }
+    case IpcMsgType::PushIndexerResults:   emit indexerResultsReceived(msg); break;
+    case IpcMsgType::PushIndexerProgress:  emit indexerSearchProgress(msg); break;
+    case IpcMsgType::PushIndexerSearchDone: emit indexerSearchFinished(msg); break;
     case IpcMsgType::PushUsenetQueueItem:  emit usenetItemUpdated(msg); break;
     case IpcMsgType::PushUsenetItemRemoved: emit usenetItemRemoved(msg); break;
     case IpcMsgType::PushUsenetItemFinished: emit usenetItemFinished(msg); break;

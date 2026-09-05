@@ -220,6 +220,10 @@ void tst_FileDownloadLive::onReadyRead()
 
 void tst_FileDownloadLive::initTestCase()
 {
+    // EMULE_TCP_PORT / EMULE_UDP_PORT may come from .env; a real
+    // environment variable still wins.
+    loadProjectEnv();
+
     setKadLogging(true);
     m_tmpDir = new TempDir();
 

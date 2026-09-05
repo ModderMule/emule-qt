@@ -81,6 +81,11 @@ struct UsenetFetchResult {
 
     qint64 decodedBytes = 0;
 
+    /// Where those bytes landed in the final file, from the article's own
+    /// `=ypart begin`. Together with decodedBytes this is the one byte range
+    /// the queue can prove is readable — see UsenetFileState::written.
+    qint64 decodedOffset = 0;
+
     /// From `=ybegin`. The only source of truth for an obfuscated post's name.
     QString articleFileName;
     qint64 declaredFileSize = 0;

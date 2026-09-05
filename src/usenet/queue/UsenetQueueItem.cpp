@@ -1,6 +1,7 @@
 #include "queue/UsenetQueueItem.h"
 
 #include "prefs/Preferences.h"
+#include "utils/OtherFunctions.h"
 
 #include <QDir>
 #include <QObject>
@@ -63,6 +64,49 @@ bool UsenetFileState::allSegmentsDone() const
     return done.size() > 0;
 }
 
+void UsenetFileState::addWritten(qint64 start, qint64 length)
+{
+    if (start < 0 || length <= 0)
+        return;
+
+    const qint64 end = start + length;
+
+    // Insert in order, then coalesce with whatever it now touches. Consecutive
+    // articles produce adjacent ranges, so the list collapses back to one entry
+    // almost every time.
+    int at = 0;
+    while (at < written.size() && written.at(at).first < start)
+        ++at;
+    written.insert(at, {start, end});
+
+    QList<QPair<qint64, qint64>> merged;
+    for (const auto& r : std::as_const(written)) {
+        if (!merged.isEmpty() && r.first <= merged.last().second)
+            merged.last().second = qMax(merged.last().second, r.second);
+        else
+            merged.append(r);
+    }
+    written = std::move(merged);
+}
+
+qint64 UsenetFileState::availableEnd() const
+{
+    return availableFrom(0);
+}
+
+qint64 UsenetFileState::availableFrom(qint64 offset) const
+{
+    if (offset < 0)
+        return 0;
+    for (const auto& r : written) {
+        if (r.first > offset)
+            break;                  // sorted: nothing further can contain it
+        if (r.second > offset)
+            return r.second;
+    }
+    return offset;
+}
+
 qint64 UsenetQueueItem::decodedBytes() const
 {
     qint64 total = 0;
@@ -81,6 +125,30 @@ int UsenetQueueItem::doneSegmentCount() const
         }
     }
     return n;
+}
+
+bool UsenetQueueItem::isFilePreviewable(int fileIndex) const
+{
+    if (fileIndex < 0 || fileIndex >= nzb.files.size() || fileIndex >= files.size())
+        return false;
+
+    const NzbFileInfo& info = nzb.files.at(fileIndex);
+    if (info.isPar2())
+        return false;
+
+    // The name yEnc declared wins: an obfuscated post's subject carries no
+    // usable extension, and the extension is the whole of this test.
+    const UsenetFileState& st = files.at(fileIndex);
+    QString candidate = st.articleFileName;
+    if (candidate.isEmpty())
+        candidate = info.fileName;
+    if (candidate.isEmpty())
+        return false;
+
+    // The same helper ED2K's PartFile::isPreviewPossible() uses, so the two
+    // networks cannot disagree about what "previewable" means.
+    const ED2KFileType type = getED2KFileTypeID(candidate);
+    return type == ED2KFileType::Video || type == ED2KFileType::Audio;
 }
 
 int UsenetQueueItem::percentComplete() const

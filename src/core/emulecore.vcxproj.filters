@@ -267,6 +267,9 @@
     <ClCompile Include="net\Pinger.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="prefs\IndexerConfig.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="prefs\Preferences.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -675,6 +678,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\PlatformUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="prefs\IndexerConfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="prefs\NewsServer.h">

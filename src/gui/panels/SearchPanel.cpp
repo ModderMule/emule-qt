@@ -8,6 +8,7 @@
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/DownloadListModel.h"
+#include "controls/IndexerResultsModel.h"
 #include "controls/SearchResultsModel.h"
 #include "dialogs/FindInListDialog.h"
 #include "utils/IpcFeedback.h"
@@ -62,6 +63,11 @@ namespace {
 /// UiState key for the shared search-results header layout (all tabs share it).
 const QString kSearchHeaderKey = QStringLiteral("searchResults");
 
+/// Its own key: an indexer tab's columns are Name/Size/Age/Category/Grabs/
+/// Indexer, nothing like the ED2K set, and sharing a key would apply one's saved
+/// widths to the other.
+const QString kIndexerHeaderKey = QStringLiteral("searchResultsIndexer");
+
 /// Longest a newly arrived result may wait before it shows up in the list.
 /// Small enough that the list still fills visibly in real time, large enough
 /// that a Kad flood collapses ~1500 full-list refetches into a few dozen.
@@ -101,6 +107,12 @@ void SearchPanel::setIpcClient(IpcClient* client)
     connect(m_resultRefreshTimer, &QTimer::timeout, this, [this] { drainDirtySearches(); });
 
     connect(m_ipc, &IpcClient::searchResultReceived, this, &SearchPanel::onSearchResultPush);
+    connect(m_ipc, &IpcClient::indexerResultsReceived, this,
+            &SearchPanel::onIndexerResultsPush);
+    connect(m_ipc, &IpcClient::indexerSearchProgress, this,
+            &SearchPanel::onIndexerProgressPush);
+    connect(m_ipc, &IpcClient::indexerSearchFinished, this,
+            &SearchPanel::onIndexerFinishedPush);
     connect(m_ipc, &IpcClient::downloadAdded, this, [this]{ refreshKnownTypes(); });
     connect(m_ipc, &IpcClient::downloadRemoved, this, [this]{ refreshKnownTypes(); });
     connect(m_ipc, &IpcClient::globalSearchProgress, this, [this](const IpcMessage& msg) {
@@ -254,6 +266,11 @@ QWidget* SearchPanel::createSearchBar()
     m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/SearchKad.ico")),  tr("Kad Network"),  3);  // SearchType::Kademlia
     m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Server.ico")),     tr("Ed2k Server"),  1);  // SearchType::Ed2kServer
     m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Global.ico")),     tr("Ed2k Global"),  2);  // SearchType::Ed2kGlobal
+    // Not in "Automatic": an indexer search spends a paid quota and hands the
+    // query to a third party, so it has to be chosen deliberately. See the note
+    // on resolveAutomaticSearchType().
+    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Search.ico")),
+                           tr("Usenet (Indexer)"), 5);  // SearchType::UsenetIndexer
     typeRow->addWidget(m_methodCombo);
     m_resetBtn = new QPushButton(tr("Reset"), container);
     connect(m_resetBtn, &QPushButton::clicked, this, &SearchPanel::onResetFilters);
@@ -386,6 +403,10 @@ void SearchPanel::onStartSearch()
     QSettings settings;
     settings.setValue(QStringLiteral("search/lastMethodType"), m_methodCombo->currentData().toInt());
 
+    if (req.method == static_cast<int>(SearchType::UsenetIndexer)) {
+        sendIndexerSearchRequest(req);
+        return;
+    }
     sendSearchRequest(req);
 }
 
@@ -480,6 +501,203 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
     });
 }
 
+int SearchTab::resultCount() const
+{
+    if (indexerModel)
+        return indexerModel->resultCount();
+    return model ? model->resultCount() : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Indexer search — the shared newznab client
+//
+// A separate request from StartSearch, because StartSearch's payload is
+// ED2K-shaped: fileType, availability and complete-source counts mean nothing to
+// an indexer, and the daemon would have to guess which network was meant.
+// ---------------------------------------------------------------------------
+
+void SearchPanel::sendIndexerSearchRequest(const SearchRequest& req)
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        StatusBarNotifier::post(tr("Not connected to daemon — search cannot be started."), 4000);
+        return;
+    }
+    if (req.expression.isEmpty())
+        return;
+
+    IpcMessage msg(IpcMsgType::StartIndexerSearch);
+    msg.append(req.expression);      // field 0 — the keywords
+    msg.append(QCborArray{});        // field 1 — categories; the form has none yet
+    msg.append(QString{});           // field 2 — mode; empty means plain "search"
+    msg.append(QCborArray{});        // field 3 — indexers; empty means all enabled
+
+    const QString tabTitle = req.tabTitle.isEmpty() ? req.expression : req.tabTitle;
+
+    m_ipc->sendRequest(std::move(msg), [this, tabTitle](const IpcMessage& resp) {
+        if (!resp.fieldBool(0)) {
+            // "No search indexer is configured" is the common case here, and it
+            // has to be said out loud — an empty result list reads as "nothing
+            // matched" when the truth is that nothing was asked.
+            const QString error = resp.fieldString(1);
+            if (!error.isEmpty())
+                QMessageBox::warning(this, tr("Usenet search"), error);
+            return;
+        }
+
+        const auto searchID = static_cast<uint32_t>(resp.fieldInt(1));
+
+        SearchTab tab;
+        tab.searchID = searchID;
+        tab.title = tabTitle;
+        tab.method = static_cast<int>(SearchType::UsenetIndexer);
+        tab.indexerModel = new IndexerResultsModel(this);
+        tab.proxy = new QSortFilterProxyModel(this);
+        tab.proxy->setSourceModel(tab.indexerModel);
+        tab.proxy->setSortRole(Qt::UserRole);
+        m_tabs.push_back(tab);
+
+        int idx;
+        if (thePrefs.useOriginalIcons()) {
+            idx = m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Search.ico")),
+                                   QStringLiteral("%1 (0)").arg(tabTitle));
+        } else {
+            idx = m_tabBar->addTab(QStringLiteral("%1 (0)").arg(tabTitle));
+        }
+        m_tabBar->setVisible(true);
+        m_tabBar->setCurrentIndex(idx);
+        m_cancelBtn->setEnabled(true);
+    });
+}
+
+SearchTab* SearchPanel::tabForIndexerSearch(uint32_t searchID)
+{
+    // Both kinds number their searches from their own counter, so an id alone is
+    // ambiguous — an ED2K search and an indexer search can both be #1. Matching
+    // the kind as well is what keeps an ED2K push from refreshing an indexer tab
+    // through a model it does not have.
+    for (auto& tab : m_tabs) {
+        if (tab.isIndexer() && tab.searchID == searchID)
+            return &tab;
+    }
+    return nullptr;
+}
+
+void SearchPanel::onIndexerResultsPush(const IpcMessage& msg)
+{
+    const auto searchID = static_cast<uint32_t>(msg.fieldInt(0));
+    SearchTab* tab = tabForIndexerSearch(searchID);
+    if (!tab)
+        return;
+
+    std::vector<IndexerResultRow> rows;
+    const auto arr = msg.fieldArray(1);
+    rows.reserve(static_cast<size_t>(arr.size()));
+
+    for (const auto& value : arr) {
+        if (!value.isMap())
+            continue;
+        const auto map = value.toMap();
+
+        IndexerResultRow row;
+        row.id          = map.value(QStringLiteral("id")).toString();
+        row.indexerName = map.value(QStringLiteral("indexer")).toString();
+        row.title       = map.value(QStringLiteral("title")).toString();
+        row.size        = map.value(QStringLiteral("size")).toInteger();
+        row.published   = map.value(QStringLiteral("published")).toInteger();
+        row.ageDays     = static_cast<int>(map.value(QStringLiteral("ageDays")).toInteger(-1));
+        row.category    = map.value(QStringLiteral("category")).toString();
+        row.grabs       = static_cast<int>(map.value(QStringLiteral("grabs")).toInteger(-1));
+        row.files       = static_cast<int>(map.value(QStringLiteral("files")).toInteger(-1));
+        row.passwordProtected = map.value(QStringLiteral("password")).toBool(false);
+        row.seeders     = static_cast<int>(map.value(QStringLiteral("seeders")).toInteger(-1));
+        row.peers       = static_cast<int>(map.value(QStringLiteral("peers")).toInteger(-1));
+        row.isUsenet    = map.value(QStringLiteral("isUsenet")).toBool(true);
+        rows.push_back(row);
+    }
+
+    // Append rather than reset: rows arrive per indexer, and a reset on every
+    // batch would throw away the user's selection each time another one replied.
+    tab->indexerModel->addResults(rows);
+
+    const int tabIndex = int(tab - m_tabs.data());
+    m_tabBar->setTabText(tabIndex, QStringLiteral("%1 (%2)")
+                                       .arg(tab->title)
+                                       .arg(tab->indexerModel->resultCount()));
+    if (tabIndex == m_tabBar->currentIndex()) {
+        m_statusLabel->setText(QStringLiteral("%1 results")
+                                   .arg(tab->indexerModel->resultCount()));
+    }
+}
+
+void SearchPanel::onIndexerProgressPush(const IpcMessage& msg)
+{
+    const auto searchID = static_cast<uint32_t>(msg.fieldInt(0));
+    const SearchTab* tab = tabForIndexerSearch(searchID);
+    if (!tab || m_tabBar->currentIndex() != int(tab - m_tabs.data()))
+        return;
+
+    const int done = static_cast<int>(msg.fieldInt(1));
+    const int total = static_cast<int>(msg.fieldInt(2));
+    if (done >= total)
+        return;
+
+    m_statusLabel->setText(tr("%1 results — %2 of %3 indexers")
+                               .arg(tab->resultCount()).arg(done).arg(total));
+}
+
+void SearchPanel::onIndexerFinishedPush(const IpcMessage& msg)
+{
+    const auto searchID = static_cast<uint32_t>(msg.fieldInt(0));
+    SearchTab* tab = tabForIndexerSearch(searchID);
+    if (!tab)
+        return;
+
+    tab->finished = true;
+    m_cancelBtn->setEnabled(false);
+
+    // An error here is per-indexer and rarely fatal — with three configured, one
+    // being down still leaves two thirds of the results — so it goes to the
+    // status bar rather than into a modal the user has to dismiss.
+    if (const QString error = msg.fieldString(1); !error.isEmpty())
+        StatusBarNotifier::post(tr("Usenet search: %1").arg(error), 8000);
+
+    if (m_tabBar->currentIndex() == int(tab - m_tabs.data())) {
+        m_statusLabel->setText(tab->resultCount() == 0
+                                   ? tr("No results")
+                                   : QStringLiteral("%1 results").arg(tab->resultCount()));
+    }
+}
+
+void SearchPanel::grabIndexerResult(int proxyRow)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    auto* tab = currentTab();
+    if (!tab || !tab->isIndexer())
+        return;
+
+    const auto srcIdx = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0));
+    const auto* result = tab->indexerModel->resultAt(srcIdx.row());
+    if (!result)
+        return;
+
+    IpcMessage msg(IpcMsgType::GrabIndexerResult);
+    msg.append(static_cast<qint64>(tab->searchID));
+    msg.append(result->id);
+
+    const QString title = result->title;
+    m_ipc->sendRequest(std::move(msg), [this, title](const IpcMessage& resp) {
+        if (!resp.fieldBool(0)) {
+            QMessageBox::warning(this, tr("Usenet search"),
+                                 tr("Could not queue \"%1\": %2")
+                                     .arg(title, resp.fieldString(1)));
+            return;
+        }
+        StatusBarNotifier::post(tr("Queued \"%1\" for download from Usenet.").arg(title), 5000);
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Slot: Cancel Search
 // ---------------------------------------------------------------------------
@@ -490,7 +708,8 @@ void SearchPanel::onCancelSearch()
     if (!tab || !m_ipc)
         return;
 
-    IpcMessage msg(IpcMsgType::StopSearch);
+    IpcMessage msg(tab->isIndexer() ? IpcMsgType::StopIndexerSearch
+                                    : IpcMsgType::StopSearch);
     msg.append(static_cast<qint64>(tab->searchID));
     m_ipc->sendRequest(std::move(msg));
     m_cancelBtn->setEnabled(false);
@@ -573,6 +792,32 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     const bool hasSelection = !selection.isEmpty();
     const bool singleSel    = (selection.size() == 1);
     m_contextMenu->clear();
+
+    // An indexer tab gets its own short menu. Almost nothing below applies: an
+    // indexer row has no ED2K hash, so there is no link to copy, no spam flag to
+    // set, no source count to ask about and no detail sheet to open.
+    if (auto* indexerTab = currentTab(); indexerTab && indexerTab->isIndexer()) {
+        QAction* grab = m_contextMenu->addAction(tr("&Download"));
+        grab->setEnabled(hasSelection);
+        connect(grab, &QAction::triggered, this, [this, selection] {
+            for (const auto& idx : selection)
+                grabIndexerResult(idx.row());
+        });
+
+        QAction* copyName = m_contextMenu->addAction(tr("Copy &Name"));
+        copyName->setEnabled(singleSel);
+        connect(copyName, &QAction::triggered, this, [this, selection] {
+            auto* tab = currentTab();
+            if (!tab || !tab->isIndexer() || selection.isEmpty())
+                return;
+            const auto src = tab->proxy->mapToSource(selection.first());
+            if (const auto* row = tab->indexerModel->resultAt(src.row()))
+                QApplication::clipboard()->setText(row->title);
+        });
+
+        m_contextMenu->popup(m_resultView->viewport()->mapToGlobal(pos));
+        return;
+    }
 
     const bool useOriginal = thePrefs.useOriginalIcons();
     auto ico = [&](const char* res) -> QIcon {
@@ -783,6 +1028,11 @@ void SearchPanel::showResultDetails(const QModelIndex& index)
     if (!thePrefs.showExtControls())
         return;
 
+    // The detail sheet is built on a SearchFile — hash, sources, ED2K media tags.
+    // An indexer row has none of them.
+    if (tab->isIndexer())
+        return;
+
     const auto* result = tab->model->resultAt(tab->proxy->mapToSource(index).row());
     if (!result)
         return;
@@ -870,6 +1120,13 @@ void SearchPanel::downloadResult(int row)
     if (!tab)
         return;
 
+    // An indexer row has no ED2K hash to download by. The daemon fetches its NZB
+    // and queues it instead.
+    if (tab->isIndexer()) {
+        grabIndexerResult(row);
+        return;
+    }
+
     // Map from proxy row to source row
     const auto proxyIdx = tab->proxy->index(row, 0);
     const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
@@ -931,14 +1188,16 @@ void SearchPanel::closeSearch(int tabIndex)
 
     // Send remove request to daemon (skip for stored/passive searches with ID 0)
     if (m_ipc && m_ipc->isConnected() && tab.searchID != 0) {
-        IpcMessage msg(IpcMsgType::RemoveSearch);
+        IpcMessage msg(tab.isIndexer() ? IpcMsgType::RemoveIndexerSearch
+                                       : IpcMsgType::RemoveSearch);
         msg.append(static_cast<qint64>(tab.searchID));
         m_ipc->sendRequest(std::move(msg));
     }
 
-    // Clean up model/proxy
+    // Clean up model/proxy. A tab holds one model or the other, never both.
     delete tab.proxy;
     delete tab.model;
+    delete tab.indexerModel;
     m_tabs.erase(m_tabs.begin() + tabIndex);
     m_tabBar->removeTab(tabIndex);
 
@@ -964,8 +1223,16 @@ void SearchPanel::closeAllSearches()
     }
 
     for (auto& tab : m_tabs) {
+        // ClearAllSearches above only reaches the ED2K side; the indexer searches
+        // are a separate registry and each needs its own removal.
+        if (tab.isIndexer() && m_ipc && m_ipc->isConnected() && tab.searchID != 0) {
+            IpcMessage msg(IpcMsgType::RemoveIndexerSearch);
+            msg.append(static_cast<qint64>(tab.searchID));
+            m_ipc->sendRequest(std::move(msg));
+        }
         delete tab.proxy;
         delete tab.model;
+        delete tab.indexerModel;
     }
     m_tabs.clear();
 
@@ -993,15 +1260,15 @@ void SearchPanel::switchToTab(int index)
     m_resultView->setModel(tab.proxy);
     // setModel() clears every section, so the layout has to be pushed back each
     // time. The first call also binds the header, now that the columns exist.
-    setupResultHeader();
-    theUiState.applyHeaderState(m_resultView->header(), kSearchHeaderKey);
+    setupResultHeader(tab.isIndexer());
+    theUiState.applyHeaderState(m_resultView->header(),
+                                tab.isIndexer() ? kIndexerHeaderKey : kSearchHeaderKey);
     // Every tab has its own proxy, so re-guard the selection on the new model.
     theUiState.guardSelectionOnReset(m_resultView);
     connect(m_resultView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &SearchPanel::updateDownloadButton);
     updateDownloadButton();
-    m_statusLabel->setText(QStringLiteral("%1 results")
-        .arg(tab.model->resultCount()));
+    m_statusLabel->setText(QStringLiteral("%1 results").arg(tab.resultCount()));
 }
 
 // ---------------------------------------------------------------------------
@@ -1037,6 +1304,8 @@ QString SearchPanel::saveSelection() const
         return {};
 
     const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
+    if (tab->isIndexer())
+        return tab->indexerModel->idAt(srcIdx.row());
     return tab->model->hashAt(srcIdx.row());
 }
 
@@ -1049,7 +1318,23 @@ void SearchPanel::restoreSelection(const QString& key)
     if (!tab)
         return;
 
-    // Find the row with matching hash in the source model, then map to proxy
+    // Find the row with the matching key in the source model, then map to proxy.
+    // An indexer row is keyed by its result id — it has no hash.
+    if (tab->isIndexer()) {
+        for (int r = 0; r < tab->indexerModel->resultCount(); ++r) {
+            if (tab->indexerModel->idAt(r) != key)
+                continue;
+            const auto proxyIdx =
+                tab->proxy->mapFromSource(tab->indexerModel->index(r, 0));
+            if (proxyIdx.isValid()) {
+                m_resultView->setCurrentIndex(proxyIdx);
+                m_resultView->scrollTo(proxyIdx);
+            }
+            return;
+        }
+        return;
+    }
+
     for (int r = 0; r < tab->model->resultCount(); ++r) {
         if (tab->model->hashAt(r) == key) {
             const auto srcIdx = tab->model->index(r, 0);
@@ -1125,6 +1410,13 @@ void SearchPanel::saveSearches()
 
     QJsonArray searchesArr;
     for (const auto& tab : m_tabs) {
+        // Indexer tabs are not restored. A stored ED2K result stays downloadable
+        // by its hash; an indexer row is only downloadable through a live search
+        // on the daemon, and that search is gone by the next start. Writing the
+        // rows out would restore a tab whose every double-click failed.
+        if (tab.isIndexer())
+            continue;
+
         QJsonObject searchObj;
         searchObj[QStringLiteral("title")] = tab.title;
 
@@ -1371,11 +1663,21 @@ void SearchPanel::refreshKnownTypes()
 // Results header — bound once, on the first tab that attaches a model
 // ---------------------------------------------------------------------------
 
-void SearchPanel::setupResultHeader()
+void SearchPanel::setupResultHeader(bool forIndexer)
 {
-    if (m_headerBound)
+    const QString& key = forIndexer ? kIndexerHeaderKey : kSearchHeaderKey;
+    if (m_boundHeaderKey == key)
         return;
-    m_headerBound = true;
+    m_boundHeaderKey = key;
+
+    if (forIndexer) {
+        // Name, Size, Age, Category, Grabs, Indexer, then the two torznab columns
+        // hidden below until a BitTorrent module can populate them.
+        m_resultView->bindColumns(kIndexerHeaderKey, {380, 80, 70, 120, 60, 110, 60, 60});
+        m_resultView->setColumnHidden(IndexerResultsModel::ColSeeders, true);
+        m_resultView->setColumnHidden(IndexerResultsModel::ColPeers, true);
+        return;
+    }
 
     // File Name, Size, Availability, Complete, Type, Artist, Album, Title,
     // Length, Bitrate, Codec, Known. A saved layout overrides these defaults.
@@ -1444,8 +1746,13 @@ void SearchPanel::drainDirtySearches()
     // pushes for the same search may arrive before those replies land.
     const auto dirty = std::exchange(m_dirtySearchIDs, {});
     for (const uint32_t searchID : dirty) {
+        // !isIndexer matters: the two kinds number their searches independently,
+        // so an ED2K push for #1 would otherwise refresh an indexer tab #1 —
+        // through a SearchResultsModel it does not have.
         const bool stillOpen = std::ranges::any_of(m_tabs,
-            [searchID](const SearchTab& tab) { return tab.searchID == searchID; });
+            [searchID](const SearchTab& tab) {
+                return !tab.isIndexer() && tab.searchID == searchID;
+            });
         if (stillOpen)
             requestSearchResults(searchID);
     }

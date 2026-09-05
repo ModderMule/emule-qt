@@ -33,9 +33,11 @@
 /// backstop.
 
 #include "nntp/NewsServer.h"
+#include "post/UsenetDirectUnpack.h"
 #include "post/UsenetPostProcessor.h"
 #include "queue/UsenetQueueItem.h"
 #include "queue/UsenetWorker.h"
+#include "stream/UsenetStreamIndex.h"
 
 #include <QHash>
 #include <QList>
@@ -50,6 +52,19 @@ class QThread;
 class QTimer;
 
 namespace eMule::usenet {
+
+/// What post-processing should do with a finished item. A struct rather than a
+/// row of positional bools, which no call site could be read back from.
+struct PostProcessingOptions {
+    bool par2 = true;
+    bool rename = true;
+    bool unpack = true;
+    bool cleanup = true;
+
+    /// Unpack an archive set as its volumes land, instead of at the end. Only
+    /// meaningful when `unpack` is on — it is the same extraction, moved.
+    bool directUnpack = true;
+};
 
 class UsenetQueue : public QObject {
     Q_OBJECT
@@ -84,6 +99,76 @@ public:
     [[nodiscard]] QList<const UsenetQueueItem*> items() const;
     [[nodiscard]] const UsenetQueueItem* findItem(const QString& id) const;
 
+    // -- Streaming ----------------------------------------------------------
+
+    /// One run of the logical file, and the file on disk that holds it.
+    ///
+    /// Paths are resolved on every call and must not be cached: sealFile()
+    /// renames the scratch file the moment the last article lands, and
+    /// publishStaged() moves it again.
+    struct StreamPiece {
+        QString path;
+        qint64 virtualOffset = 0;   ///< where it starts in the logical file
+        qint64 fileOffset = 0;      ///< where it starts inside `path`
+        qint64 length = 0;
+    };
+
+    /// Everything a Range request needs to answer, for one logical file.
+    ///
+    /// A raw-posted release is one piece. A stored RAR set is one piece per
+    /// volume, and the logical file is the `.mkv` inside — which is why this
+    /// stopped being a path in phase 6b.
+    struct StreamInfo {
+        bool found = false;
+        QString fileName;
+
+        /// Unpacked size of the logical file. Zero until enough has been read to
+        /// know it — the NZB cannot supply it, its `bytes` being the encoded size.
+        qint64 totalSize = 0;
+
+        /// End of the readable run *containing the requested offset*. For a
+        /// request at 0 this is the old meaning unchanged.
+        qint64 availableEnd = 0;
+
+        bool complete = false;
+
+        QList<StreamPiece> pieces;
+
+        /// Set when this release can never be streamed — a compressed, solid or
+        /// encrypted archive. The caller reports it instead of waiting out the
+        /// poll, so the user learns why before a player opens.
+        QString notSeekableReason;
+    };
+
+    /// Whether a Preview action should be offered for @p fileIndex, and if not,
+    /// why — a compressed or encrypted archive gets a sentence the GUI can show
+    /// instead of a silently greyed-out menu entry, which is §7.3's requirement
+    /// that seekability be surfaced rather than fail at play time.
+    ///
+    /// Container-aware, which is why it lives here and not on UsenetQueueItem:
+    /// deciding it needs the streaming index, and the item has no access to one.
+    struct PreviewInfo {
+        bool previewable = false;
+        QString note;
+    };
+    [[nodiscard]] PreviewInfo previewability(const QString& itemId, int fileIndex);
+
+    /// Look up a logical file for streaming, **and ask for the bytes**.
+    ///
+    /// The two are one call on purpose: asking about a byte is asking for it.
+    /// The item is boosted above the priority field for the next
+    /// kStreamingBoostMs, and the articles covering
+    /// `[wantOffset, wantOffset + wantLength)` are moved to the front of the
+    /// plan — which is what makes a seek land without fetching everything in
+    /// between. The boost lapses on its own so nothing has to clear it.
+    ///
+    /// @p fileIndex may name any volume of an archive set; they all resolve to
+    /// the same inner file.
+    ///
+    /// Daemon-thread only, like everything else on this class.
+    StreamInfo requestStream(const QString& itemId, int fileIndex,
+                             qint64 wantOffset = 0, qint64 wantLength = 0);
+
     /// Bytes per second this engine may use in total. 0 is unlimited, as
     /// everywhere else in eMuleQt. Divided across workers, then across their
     /// sockets.
@@ -92,7 +177,7 @@ public:
     /// Post-processing settings, refreshed from preferences at each job. Kept
     /// here rather than read inside the pipeline so a job carries a consistent
     /// snapshot across the thread boundary.
-    void setPostProcessingOptions(bool par2, bool rename, bool unpack, bool cleanup);
+    void setPostProcessingOptions(const PostProcessingOptions& options);
 
     /// Decoded bytes per second, measured over the last tick. Feeds the
     /// ED2K/Usenet budget split.
@@ -133,6 +218,15 @@ private:
         int transportRetries = 0;
     };
 
+    /// One archive set being extracted while the item still downloads.
+    struct DirectUnpackRun {
+        UsenetDirectUnpack* worker = nullptr;   ///< lives on `thread`, deleted with it
+        QThread* thread = nullptr;
+        int nextVolume = 0;        ///< volume index the next sealed member takes
+        bool running = false;
+        UsenetDirectUnpackResult result;
+    };
+
     struct ItemRuntime {
         std::unique_ptr<UsenetQueueItem> item;
         QHash<quint64, SegmentAttempt> attempts;
@@ -151,6 +245,22 @@ private:
         /// A job is with the post-processing thread. Nothing may dispatch for
         /// this item, and no second job may start, until it comes back.
         bool postRunning = false;
+
+        /// Somebody is streaming this item until at least this instant, so it
+        /// sorts ahead of the priority field in dispatch(). Runtime only, never
+        /// persisted: a crash must not leave an item boosted forever.
+        qint64 streamingUntilMs = 0;
+
+        /// Maps reads of the logical file onto the volumes holding it. Runtime
+        /// only: every input is on disk or one article away, so rebuilding it
+        /// after a restart is cheaper than keeping it honest across one.
+        UsenetStreamIndex streamIndex;
+
+        /// Archive sets being unpacked as their volumes land, keyed by set base
+        /// name. Runtime only — a compressed stream cannot resume mid-way, so
+        /// after a restart a set simply starts over from volume one, which costs
+        /// only disk since every sealed volume is already there.
+        QHash<QString, DirectUnpackRun> directUnpack;
     };
 
     void startWorkers();
@@ -163,6 +273,17 @@ private:
     void onCapacityChanged(int workerIndex, int capacity);
     void onTick();
 
+    /// Segment indices covering `[offset, offset + length)` of @p fileIndex's
+    /// file, plus one either side as §7.1's ±1 probe. Empty when the part length
+    /// is not known yet — no article of that file has landed.
+    [[nodiscard]] static QList<int> segmentsCovering(const UsenetQueueItem& item, int fileIndex,
+                                                     qint64 offset, qint64 length);
+
+    /// Move those segments to the front of the plan so they are dispatched next,
+    /// and drag the cursor back with them so the sequential read-ahead follows
+    /// the play head instead of carrying on where it was.
+    void promoteRange(ItemRuntime& rt, int fileIndex, qint64 offset, qint64 length);
+
     void markSegmentDone(ItemRuntime& rt, const UsenetFetchResult& result);
     void handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult& result);
     void checkFileCompletion(ItemRuntime& rt, int fileIndex);
@@ -174,6 +295,30 @@ private:
     void sealFile(ItemRuntime& rt, int fileIndex);
 
     void checkItemCompletion(ItemRuntime& rt);
+
+    /// Hand a just-sealed volume to the extraction that is following its set,
+    /// starting one if this is the set's first volume. Does nothing unless the
+    /// preference is on and the file is an archive volume.
+    void pumpDirectUnpack(ItemRuntime& rt, int fileIndex);
+
+    /// Tell every run for this item that no more volumes are coming, so a run
+    /// waiting past the last volume ends instead of blocking.
+    void endDirectUnpackSets(ItemRuntime& rt);
+
+    /// Abandon every run for this item and join its threads.
+    void cancelDirectUnpack(ItemRuntime& rt);
+
+    void onDirectUnpackFinished(const eMule::usenet::UsenetDirectUnpackResult& result);
+
+    /// 0-based position of @p fileIndex within its volume set, or -1. The
+    /// naming schemes number differently — `.partNN.rar` from 1, `.rNN` from 0
+    /// with a bare `.rar` ahead of it — so only the ranking is meaningful.
+    [[nodiscard]] static int volumeOrdinal(const ItemRuntime& rt, int fileIndex,
+                                           const QString& baseName);
+
+    /// Best known filename for @p fileIndex: the sealed name, else what the
+    /// article header said, else the NZB's.
+    [[nodiscard]] static QString volumeNameOf(const ItemRuntime& rt, int fileIndex);
 
     /// Whether @p fileIndex takes part in the current download round. False for
     /// a recovery volume nobody has asked for.
@@ -216,6 +361,13 @@ private:
     bool m_renameEnabled  = true;
     bool m_unpackEnabled  = true;
     bool m_cleanupEnabled = true;
+    bool m_directUnpackEnabled = true;
+
+    /// Runs in flight across the whole queue. Each holds a thread that is
+    /// blocked for as long as its download takes, so this is capped rather than
+    /// left to grow with the queue; a set over the cap just unpacks at the end.
+    int m_directUnpackRuns = 0;
+    static constexpr int kMaxDirectUnpacks = 2;
 
     QTimer* m_tickTimer = nullptr;
     qint64 m_rateLimit = 0;

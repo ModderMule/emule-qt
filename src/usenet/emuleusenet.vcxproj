@@ -167,6 +167,7 @@
     <ClCompile Include="nzb\NzbInfo.cpp" />
     <ClCompile Include="nzb\SubjectParser.cpp" />
     <ClCompile Include="post\Par2Verifier.cpp" />
+    <ClCompile Include="post\UsenetDirectUnpack.cpp" />
     <ClCompile Include="post\UsenetPostProcessor.cpp" />
     <ClCompile Include="post\UsenetUnpacker.cpp" />
     <ClCompile Include="queue\ArticleWriter.cpp" />
@@ -174,6 +175,8 @@
     <ClCompile Include="queue\UsenetQueueItem.cpp" />
     <ClCompile Include="queue\UsenetQueueStore.cpp" />
     <ClCompile Include="queue\UsenetWorker.cpp" />
+    <ClCompile Include="stream\RarReader.cpp" />
+    <ClCompile Include="stream\UsenetStreamIndex.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="decode\YencDecoder.h" />
@@ -188,10 +191,13 @@
     <ClInclude Include="queue\ArticleWriter.h" />
     <ClInclude Include="queue\UsenetQueueItem.h" />
     <ClInclude Include="queue\UsenetQueueStore.h" />
+    <ClInclude Include="stream\RarReader.h" />
+    <ClInclude Include="stream\UsenetStreamIndex.h" />
     <QtMoc Include="UsenetSession.h" />
     <QtMoc Include="nntp\ArticleFetcher.h" />
     <QtMoc Include="nntp\NntpServerPool.h" />
     <QtMoc Include="nntp\NntpSocket.h" />
+    <QtMoc Include="post\UsenetDirectUnpack.h" />
     <QtMoc Include="post\UsenetPostProcessor.h" />
     <QtMoc Include="queue\UsenetQueue.h" />
     <QtMoc Include="queue\UsenetWorker.h" />

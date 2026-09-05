@@ -15,6 +15,8 @@
 #include "stats/Statistics.h"
 #include "stats/StatsSnapshot.h"
 #include "UsenetSession.h"
+#include "IndexerSearchList.h"
+#include "IndexerResult.h"
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 #include "ipc/PushCoalescer.h"
@@ -122,6 +124,8 @@ bool DaemonApp::start()
             this, &DaemonApp::restartWebServer);
     connect(m_ipcServer.get(), &IpcServer::usenetConfigChanged,
             this, &DaemonApp::applyUsenetServers);
+    connect(m_ipcServer.get(), &IpcServer::indexerConfigChanged,
+            this, &DaemonApp::applyIndexerConfig);
 
     // Start web server if enabled
     startWebServer();
@@ -133,6 +137,13 @@ bool DaemonApp::start()
     connectUsenetPushes();
     if (thePrefs.usenetEnabled())
         m_usenetSession->start();
+
+    // Indexer search. No enable switch: an account list that is empty is the off
+    // state, and there is nothing running to gate — a search only ever happens
+    // because the user asked for one.
+    m_indexerSearches = std::make_unique<indexer::IndexerSearchList>();
+    indexer::theIndexerSearchList = m_indexerSearches.get();
+    connectIndexerPushes();
 
     m_running = true;
     logInfo(QStringLiteral("Daemon started — IPC server on %1:%2")
@@ -160,6 +171,9 @@ void DaemonApp::stop()
     // while the event loop is still turning. UsenetSession::stop() is also where
     // the worker threads are joined, so by the time it returns nothing is left
     // running that could reach a half-destroyed daemon.
+    indexer::theIndexerSearchList = nullptr;
+    m_indexerSearches.reset();
+
     usenet::theUsenetSession = nullptr;
     if (m_usenetSession)
         m_usenetSession->stop();
@@ -204,6 +218,35 @@ void DaemonApp::startWebServer()
     m_webServer->setStatistics(theApp.statistics);
     m_webServer->setStatsHistory(theApp.statsHistory);
     m_webServer->setPreferences(&thePrefs);
+
+    // Usenet preview. Injected as a callback rather than a pointer: WebServer
+    // lives in eMule::Core and `core -> usenet` must never happen. DaemonApp is
+    // the one object that links both, which is exactly the seam setLogProvider
+    // below already uses.
+    m_webServer->setUsenetStreamResolver(
+        [](const QString& itemId, int fileIndex, qint64 wantOffset,
+           qint64 wantLength) -> UsenetStreamSource {
+            UsenetStreamSource out;
+            if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue())
+                return out;
+
+            const auto info = usenet::theUsenetSession->queue()->requestStream(
+                itemId, fileIndex, wantOffset, wantLength);
+            out.found             = info.found;
+            out.fileName          = info.fileName;
+            out.totalSize         = info.totalSize;
+            out.availableEnd      = info.availableEnd;
+            out.complete          = info.complete;
+            out.notSeekableReason = info.notSeekableReason;
+
+            // A stored RAR set resolves to one piece per volume; a raw post to
+            // one. Either way the web server only ever sees paths and offsets.
+            for (const auto& piece : info.pieces) {
+                out.pieces.append({piece.path, piece.virtualOffset,
+                                   piece.fileOffset, piece.length});
+            }
+            return out;
+        });
 
     m_webServer->setLogProvider([] {
         auto entries = DaemonApp::logsSince(0);
@@ -271,6 +314,9 @@ constexpr int kUsenetPushWindowMs = 250;
 /// Defined in IpcClientHandler.cpp, beside the GetUsenetQueue row it must match.
 QCborMap usenetQueueItemToCbor(const usenet::UsenetQueueItem& item);
 
+/// Likewise: the push and the StartIndexerSearch reply must carry the same row.
+QCborMap indexerResultToCbor(const indexer::IndexerResult& result);
+
 void DaemonApp::connectUsenetPushes()
 {
     if (!m_usenetSession || !m_ipcServer)
@@ -334,6 +380,49 @@ void DaemonApp::applyUsenetServers()
         m_usenetSession->start();
     else if (!thePrefs.usenetEnabled() && m_usenetSession->isRunning())
         m_usenetSession->stop();
+}
+
+void DaemonApp::applyIndexerConfig()
+{
+    if (m_indexerSearches)
+        m_indexerSearches->applyPreferences();
+}
+
+void DaemonApp::connectIndexerPushes()
+{
+    if (!m_indexerSearches || !m_ipcServer)
+        return;
+
+    connect(m_indexerSearches.get(), &indexer::IndexerSearchList::resultsReady, this,
+            [this](quint32 searchId, const QList<indexer::IndexerResult>& rows) {
+        // Not coalesced. Every push carries a *different* batch of rows — this is
+        // an append, not a latest value — so a coalescing window would not merge
+        // them, it would throw all but the last away.
+        IpcMessage msg(IpcMsgType::PushIndexerResults, 0);
+        msg.append(static_cast<qint64>(searchId));
+        QCborArray out;
+        for (const auto& row : rows)
+            out.append(indexerResultToCbor(row));
+        msg.append(out);
+        m_ipcServer->broadcast(msg);
+    });
+
+    connect(m_indexerSearches.get(), &indexer::IndexerSearchList::searchProgress, this,
+            [this](quint32 searchId, int done, int total) {
+        IpcMessage msg(IpcMsgType::PushIndexerProgress, 0);
+        msg.append(static_cast<qint64>(searchId));
+        msg.append(static_cast<qint64>(done));
+        msg.append(static_cast<qint64>(total));
+        m_ipcServer->broadcast(msg);
+    });
+
+    connect(m_indexerSearches.get(), &indexer::IndexerSearchList::searchFinished, this,
+            [this](quint32 searchId, const QString& error) {
+        IpcMessage msg(IpcMsgType::PushIndexerSearchDone, 0);
+        msg.append(static_cast<qint64>(searchId));
+        msg.append(error);
+        m_ipcServer->broadcast(msg);
+    });
 }
 
 void DaemonApp::stopWebServer()

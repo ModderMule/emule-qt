@@ -297,10 +297,17 @@ emule_add_test(tst_UsenetArticleFetch FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetSharing FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetQueue FOLDER "Usenet" LIBRARIES eMule::Usenet)
 
+# Phase 6a. Separate from tst_UsenetQueue because it asserts on the *order* the
+# scheduler asks in, not on the file that comes out; the two would otherwise
+# share fixtures whose part sizes each wants to choose for itself.
+emule_add_test(tst_UsenetStream FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_RarReader FOLDER "Usenet" LIBRARIES eMule::Usenet)
+
 # The par2 cases build their own recovery sets with Par2::par2create, so this one
 # needs the par2 headers that emuleusenet keeps PRIVATE. Linking the interface
 # target again is harmless and is what makes a checked-in binary fixture
 # unnecessary.
+emule_add_test(tst_UsenetDirectUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
 
 # Phase 4 end to end: par2 fixtures are generated in-process, so this one needs
@@ -312,6 +319,15 @@ emule_add_test(tst_UsenetPar2 FOLDER "Usenet" LIBRARIES eMule::Usenet)
 if(EMULE_USENET_PAR2 AND TARGET emule_par2)
     target_link_libraries(tst_UsenetPar2 PRIVATE emule_par2)
 endif()
+
+# ---------------------------------------------------------------------------
+# Indexer — the shared newznab / torznab search client
+# ---------------------------------------------------------------------------
+
+emule_add_test(tst_IndexerParse FOLDER "Indexer" LIBRARIES eMule::Indexer)
+emule_add_test(tst_IndexerQuery FOLDER "Indexer" LIBRARIES eMule::Indexer)
+emule_add_test(tst_IndexerSearch FOLDER "Indexer" LIBRARIES eMule::Indexer)
+emule_add_test(tst_IndexerPrefs FOLDER "Indexer" LIBRARIES eMule::Indexer yaml-cpp::yaml-cpp)
 
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
@@ -435,6 +451,14 @@ if(EMULE_LIVE_TESTS)
     emule_add_test(tst_IrcLiveConnect FOLDER "LiveNetwork")
     target_compile_definitions(tst_IrcLiveConnect PRIVATE QTEST_FUNCTION_TIMEOUT=30000)
     set_tests_properties(tst_IrcLiveConnect PROPERTIES LABELS "live" TIMEOUT 30)
+
+    # Needs EMULE_INDEXER_APIKEY / _URL / _QUERY, from .env or the environment,
+    # and skips without them. Nothing about the account is checked in — no key,
+    # and no indexer URL either; see the header comment in the test.
+    # Gated like every other live test: a search spends the user's paid API
+    # quota, so a default `ctest` must not be able to reach it.
+    emule_add_test(tst_IndexerLiveSearch FOLDER "Indexer" LIBRARIES eMule::Indexer)
+    set_tests_properties(tst_IndexerLiveSearch PROPERTIES LABELS "live" TIMEOUT 120)
 
     emule_add_test(tst_UsenetLiveConnect FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
     target_compile_definitions(tst_UsenetLiveConnect PRIVATE QTEST_FUNCTION_TIMEOUT=60000)

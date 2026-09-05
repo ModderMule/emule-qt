@@ -16,6 +16,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QSet>
 #include <QStandardPaths>
 
 #include <algorithm>
@@ -543,6 +544,14 @@ struct Preferences::Data {
     bool usenetPar2RenameFiles = true;
     bool usenetUnpack = true;
     bool usenetCleanupAfterUnpack = true;
+    bool usenetDirectUnpack = true;
+
+    // -- Indexers (newznab / torznab), a shared module's settings -------------
+    QList<IndexerConfig> indexers;
+    int indexerResultLimit = 100;
+    int indexerMaxPages = 3;
+    int indexerTimeoutSeconds = 30;
+    int indexerCapsRefreshDays = 7;
 
     /// Runtime only — never loaded, never saved. -1 means "no split active", so
     /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
@@ -1561,6 +1570,70 @@ bool Preferences::usenetCleanupAfterUnpack() const
 void Preferences::setUsenetCleanupAfterUnpack(bool val)
 {
     set(&Data::usenetCleanupAfterUnpack, val);
+}
+
+bool Preferences::usenetDirectUnpack() const
+{
+    return get(&Data::usenetDirectUnpack);
+}
+
+void Preferences::setUsenetDirectUnpack(bool val)
+{
+    set(&Data::usenetDirectUnpack, val);
+}
+
+// ---------------------------------------------------------------------------
+// Indexers (newznab / torznab)
+// ---------------------------------------------------------------------------
+
+QList<IndexerConfig> Preferences::indexers() const
+{
+    return get(&Data::indexers);
+}
+
+void Preferences::setIndexers(const QList<IndexerConfig>& val)
+{
+    // Drop the unusable and de-duplicate by name, the same shape setUsenetServers
+    // uses. Name is the identity here: it keys the caps cache on disk and the
+    // GetIndexerCaps request, so two accounts sharing one would silently share a
+    // cache file.
+    QList<IndexerConfig> clean;
+    QSet<QString> seen;
+    for (const auto& entry : val) {
+        if (!entry.isValid())
+            continue;
+        if (seen.contains(entry.key()))
+            continue;
+        seen.insert(entry.key());
+        clean.append(entry);
+        if (clean.size() >= kMaxIndexers)
+            break;
+    }
+    set(&Data::indexers, clean);
+}
+
+int Preferences::indexerResultLimit() const { return get(&Data::indexerResultLimit); }
+void Preferences::setIndexerResultLimit(int val)
+{
+    set(&Data::indexerResultLimit, std::clamp(val, 10, 1000));
+}
+
+int Preferences::indexerMaxPages() const { return get(&Data::indexerMaxPages); }
+void Preferences::setIndexerMaxPages(int val)
+{
+    set(&Data::indexerMaxPages, std::clamp(val, 1, 20));
+}
+
+int Preferences::indexerTimeoutSeconds() const { return get(&Data::indexerTimeoutSeconds); }
+void Preferences::setIndexerTimeoutSeconds(int val)
+{
+    set(&Data::indexerTimeoutSeconds, std::clamp(val, 5, 300));
+}
+
+int Preferences::indexerCapsRefreshDays() const { return get(&Data::indexerCapsRefreshDays); }
+void Preferences::setIndexerCapsRefreshDays(int val)
+{
+    set(&Data::indexerCapsRefreshDays, std::clamp(val, 1, 365));
 }
 
 uint32 Preferences::maxDownloadForEd2k() const
@@ -3318,6 +3391,8 @@ bool Preferences::load(const QString& filePath)
                 un["unpack"].as<bool>(m_data->usenetUnpack);
             m_data->usenetCleanupAfterUnpack =
                 un["cleanupAfterUnpack"].as<bool>(m_data->usenetCleanupAfterUnpack);
+            m_data->usenetDirectUnpack =
+                un["directUnpack"].as<bool>(m_data->usenetDirectUnpack);
             m_data->usenetDownloadSharePercent = std::clamp(
                 un["downloadSharePercent"].as<int>(m_data->usenetDownloadSharePercent),
                 1, 99);
@@ -3384,6 +3459,76 @@ bool Preferences::load(const QString& filePath)
                 }
 
                 m_data->usenetServers = list;
+            }
+        }
+
+        // Indexers. After `notifications` for the same reason `usenet` is: the
+        // API keys are encrypted under notifyEmailEncKey, which is only read
+        // there. A top-level block rather than a key under `usenet`, because the
+        // client is shared with BitTorrent.
+        if (auto ix = root["indexers"]) {
+            m_data->indexerResultLimit = std::clamp(
+                ix["resultLimit"].as<int>(m_data->indexerResultLimit), 10, 1000);
+            m_data->indexerMaxPages = std::clamp(
+                ix["maxPages"].as<int>(m_data->indexerMaxPages), 1, 20);
+            m_data->indexerTimeoutSeconds = std::clamp(
+                ix["timeoutSeconds"].as<int>(m_data->indexerTimeoutSeconds), 5, 300);
+            m_data->indexerCapsRefreshDays = std::clamp(
+                ix["capsRefreshDays"].as<int>(m_data->indexerCapsRefreshDays), 1, 365);
+
+            if (const auto accounts = ix["accounts"]; accounts && accounts.IsSequence()) {
+                QList<IndexerConfig> list;
+
+                for (const auto& node : accounts) {
+                    if (!node.IsMap())
+                        continue;
+
+                    IndexerConfig entry;
+                    entry.name = QString::fromStdString(node["name"].as<std::string>("")).trimmed();
+                    entry.url = QString::fromStdString(node["url"].as<std::string>("")).trimmed();
+                    if (entry.name.isEmpty() || entry.url.isEmpty())
+                        continue;
+
+                    entry.kind = indexerKindFromString(
+                        QString::fromStdString(node["kind"].as<std::string>("newznab")));
+                    entry.enabled = node["enabled"].as<bool>(true);
+                    entry.timeoutMs = node["timeoutMs"].as<int>(
+                        m_data->indexerTimeoutSeconds * 1000);
+
+                    if (node["apiKeyEnc"]) {
+                        const auto enc =
+                            QString::fromStdString(node["apiKeyEnc"].as<std::string>(""));
+                        if (m_data->notifyEmailEncKey.isEmpty()) {
+                            // The blob is here and the key is not. Say so: the
+                            // indexer would otherwise just answer "Incorrect
+                            // user credentials" and nothing would point at the
+                            // config file.
+                            logWarning(QStringLiteral(
+                                "Indexers: %1 has a stored API key but no encryption key "
+                                "in preferences.yml — re-enter the key")
+                                           .arg(entry.displayName()));
+                        } else {
+                            entry.apiKey = aesDecryptFromBase64(enc, m_data->notifyEmailEncKey);
+                            if (entry.apiKey.isEmpty() && !enc.isEmpty()) {
+                                logWarning(QStringLiteral(
+                                    "Indexers: could not decrypt the stored API key for %1 "
+                                    "— re-enter it")
+                                               .arg(entry.displayName()));
+                            }
+                        }
+                    } else if (node["apiKey"]) {
+                        // Plaintext escape hatch for first setup and hand-editing;
+                        // rewritten as apiKeyEnc on the next save.
+                        entry.apiKey =
+                            QString::fromStdString(node["apiKey"].as<std::string>(""));
+                    }
+
+                    list.append(entry);
+                    if (list.size() >= kMaxIndexers)
+                        break;
+                }
+
+                m_data->indexers = list;
             }
         }
 
@@ -4011,8 +4156,14 @@ bool Preferences::saveImpl(const QString& filePath) const
                                                         [](const NewsServer& server) {
                                                             return !server.pass.isEmpty();
                                                         });
+    // Same again for indexer API keys: a user who configures only a search
+    // indexer has none of the three secrets above.
+    const bool haveIndexerKey = std::ranges::any_of(m_data->indexers,
+                                                    [](const IndexerConfig& indexer) {
+                                                        return !indexer.apiKey.isEmpty();
+                                                    });
     if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey
-                             || haveUsenetPassword)) {
+                             || haveUsenetPassword || haveIndexerKey)) {
         encKey = aesRandomKey();
         m_data->notifyEmailEncKey = encKey;
     }
@@ -4075,6 +4226,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "unpack" << YAML::Value << m_data->usenetUnpack;
     out << YAML::Key << "cleanupAfterUnpack" << YAML::Value
         << m_data->usenetCleanupAfterUnpack;
+    out << YAML::Key << "directUnpack" << YAML::Value << m_data->usenetDirectUnpack;
     out << YAML::Key << "servers" << YAML::Value << YAML::BeginSeq;
     for (const auto& server : m_data->usenetServers) {
         out << YAML::BeginMap;
@@ -4102,6 +4254,34 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "certVerification" << YAML::Value
             << static_cast<int>(server.certVerification);
         out << YAML::Key << "enabled" << YAML::Value << server.enabled;
+        out << YAML::EndMap;
+    }
+    out << YAML::EndSeq;
+    out << YAML::EndMap;
+
+    // Indexers. After `notifications` for the same reason as the two blocks
+    // above: encKey is only settled there. `url` is written back exactly as the
+    // user typed it — the /api completion is a request-time decision, and
+    // normalising on save would take away their ability to correct it.
+    out << YAML::Key << "indexers" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "resultLimit" << YAML::Value << m_data->indexerResultLimit;
+    out << YAML::Key << "maxPages" << YAML::Value << m_data->indexerMaxPages;
+    out << YAML::Key << "timeoutSeconds" << YAML::Value << m_data->indexerTimeoutSeconds;
+    out << YAML::Key << "capsRefreshDays" << YAML::Value << m_data->indexerCapsRefreshDays;
+    out << YAML::Key << "accounts" << YAML::Value << YAML::BeginSeq;
+    for (const auto& indexer : m_data->indexers) {
+        out << YAML::BeginMap;
+        out << YAML::Key << "name" << YAML::Value << indexer.name.toStdString();
+        out << YAML::Key << "url" << YAML::Value << indexer.url.toStdString();
+        out << YAML::Key << "kind" << YAML::Value
+            << indexerKindToString(indexer.kind).toStdString();
+        if (!indexer.apiKey.isEmpty() && !encKey.isEmpty()) {
+            out << YAML::Key << "apiKeyEnc" << YAML::Value
+                << aesEncryptToBase64(indexer.apiKey, encKey).toStdString();
+        }
+        if (indexer.timeoutMs != m_data->indexerTimeoutSeconds * 1000)
+            out << YAML::Key << "timeoutMs" << YAML::Value << indexer.timeoutMs;
+        out << YAML::Key << "enabled" << YAML::Value << indexer.enabled;
         out << YAML::EndMap;
     }
     out << YAML::EndSeq;

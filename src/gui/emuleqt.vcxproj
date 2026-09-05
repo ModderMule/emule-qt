@@ -245,6 +245,7 @@
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp" />
     <ClCompile Include="app\PowerManager.cpp" />
     <ClCompile Include="panels\SearchPanel.cpp" />
+    <ClCompile Include="controls\IndexerResultsModel.cpp" />
     <ClCompile Include="controls\SearchResultsModel.cpp" />
     <ClCompile Include="controls\ServerListModel.cpp" />
     <ClCompile Include="panels\ServerPanel.cpp" />
@@ -336,6 +337,7 @@
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />
     <ClInclude Include="app\PowerManager.h" />
     <QtMoc Include="panels\SearchPanel.h" />
+    <QtMoc Include="controls\IndexerResultsModel.h" />
     <QtMoc Include="controls\SearchResultsModel.h" />
     <QtMoc Include="controls\ServerListModel.h" />
     <QtMoc Include="panels\ServerPanel.h" />

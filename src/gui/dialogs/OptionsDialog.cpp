@@ -468,6 +468,7 @@ void OptionsDialog::setupSidebar()
         {"Scheduler",             QStyle::SP_DialogResetButton,      "Scheduler.ico"},
         {"Web Interface",         QStyle::SP_DriveNetIcon,           "Web.ico"},
         {"Usenet",                QStyle::SP_DriveNetIcon,           "Server.ico"},
+        {"Indexers",              QStyle::SP_FileDialogContentsView, "Search.ico"},
         {"Extended",              QStyle::SP_DialogCancelButton,     "Tweak.ico"},
     };
 
@@ -537,6 +538,9 @@ void OptionsDialog::setupPages()
 
     // Usenet — news server accounts (NNTP)
     m_pages->addWidget(createUsenetPage());
+
+    // Indexers — the shared newznab/torznab search accounts
+    m_pages->addWidget(createIndexersPage());
 
     // Extended — fully implemented
     m_pages->addWidget(createExtendedPage());
@@ -2765,6 +2769,17 @@ QWidget* OptionsDialog::createUsenetPage()
            "Password-protected RAR archives cannot be unpacked."));
     postLayout->addWidget(m_usenetUnpackCheck);
 
+    m_usenetDirectUnpackCheck =
+        new QCheckBox(tr("Unpack while downloading"), postGroup);
+    m_usenetDirectUnpackCheck->setToolTip(
+        tr("Extract each archive volume as soon as it finishes instead of waiting "
+           "for the whole release, so the content is ready the moment the download "
+           "is.\n\n"
+           "It is the same extraction, moved earlier, so it costs no extra disk "
+           "space. If the release turns out to need repairing, the result is "
+           "discarded and it is unpacked again afterwards."));
+    postLayout->addWidget(m_usenetDirectUnpackCheck);
+
     m_usenetCleanupCheck =
         new QCheckBox(tr("Delete archives and PAR2 files after unpacking"), postGroup);
     m_usenetCleanupCheck->setToolTip(
@@ -2783,14 +2798,17 @@ QWidget* OptionsDialog::createUsenetPage()
     connect(m_usenetRetrySpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_usenetShareSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
 
-    for (QCheckBox* box : {m_usenetPar2Check, m_usenetRenameCheck,
-                           m_usenetUnpackCheck, m_usenetCleanupCheck}) {
+    for (QCheckBox* box : {m_usenetPar2Check, m_usenetRenameCheck, m_usenetUnpackCheck,
+                           m_usenetDirectUnpackCheck, m_usenetCleanupCheck}) {
         connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     }
 
     // Unpacking is what produces the payload; with it off there is nothing to
     // clean up around, and cleanup would only delete the files just downloaded.
     connect(m_usenetUnpackCheck, &QCheckBox::toggled, m_usenetCleanupCheck,
+            &QWidget::setEnabled);
+    // Same reasoning: unpacking early is still unpacking.
+    connect(m_usenetUnpackCheck, &QCheckBox::toggled, m_usenetDirectUnpackCheck,
             &QWidget::setEnabled);
 
     connect(m_usenetAddBtn, &QPushButton::clicked, this, &OptionsDialog::addNewsServer);
@@ -3130,6 +3148,424 @@ void OptionsDialog::testNewsServer()
         // does not.
         m_usenetTestResult->setText(result.at(1).toString());
         m_usenetTestResult->setStyleSheet(
+            ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Indexers page — the shared newznab / torznab search accounts
+//
+// Its own page rather than a second list on the Usenet page, because the client
+// is shared: newznab and torznab are the same API, Prowlarr and NZBHydra2 serve
+// both from one endpoint, and a BitTorrent module would configure its indexers
+// right here.
+//
+// Deliberately the same eight-function shape as the news-server list above. Both
+// solve the problem of editing a list whose secrets the GUI is never given, and
+// two answers to that would be one too many.
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createIndexersPage()
+{
+    auto* page = new QWidget(this);
+    auto* mainLayout = new QVBoxLayout(page);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+
+    auto* intro = new QLabel(
+        tr("Search indexers answer keyword searches and hand back an NZB. They are "
+           "separate from your news servers: on Usenet the provider you download "
+           "from and the service you search are different businesses."), page);
+    intro->setWordWrap(true);
+    mainLayout->addWidget(intro);
+
+    // -- Account list -------------------------------------------------------
+    auto* listGroup = new QGroupBox(tr("Indexers"), page);
+    auto* listLayout = new QVBoxLayout(listGroup);
+
+    auto* table = new ListTreeWidget(listGroup);
+    m_indexerTable = table;
+    m_indexerTable->setHeaderLabels({tr("Name"), tr("URL"), tr("Type"), tr("API key")});
+    m_indexerTable->setRootIsDecorated(false);
+    m_indexerTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_indexerTable->setColumnCount(4);
+    m_indexerTable->header()->setStretchLastSection(true);
+    table->bindColumns(QStringLiteral("optionsIndexers"), {130, 240, 80, 70});
+    listLayout->addWidget(m_indexerTable);
+
+    auto* btnRow = new QHBoxLayout;
+    btnRow->addStretch();
+    m_indexerAddBtn = new QPushButton(tr("Add"), listGroup);
+    m_indexerRemoveBtn = new QPushButton(tr("Remove"), listGroup);
+    btnRow->addWidget(m_indexerAddBtn);
+    btnRow->addWidget(m_indexerRemoveBtn);
+    listLayout->addLayout(btnRow);
+    mainLayout->addWidget(listGroup);
+
+    // -- Details ------------------------------------------------------------
+    auto* details = new QGroupBox(tr("Indexer"), page);
+    auto* form = new QFormLayout(details);
+
+    m_indexerEntryEnabledCheck = new QCheckBox(tr("Enabled"), details);
+    form->addRow(m_indexerEntryEnabledCheck);
+
+    m_indexerNameEdit = new QLineEdit(details);
+    m_indexerNameEdit->setPlaceholderText(tr("Display name"));
+    m_indexerNameEdit->setToolTip(
+        tr("Also the identity of this account: it names the cached capabilities "
+           "and appears in the Indexer column of the results."));
+    form->addRow(tr("Name:"), m_indexerNameEdit);
+
+    m_indexerUrlEdit = new QLineEdit(details);
+    m_indexerUrlEdit->setPlaceholderText(QStringLiteral("https://api.example.org/"));
+    m_indexerUrlEdit->setToolTip(
+        tr("The API base URL. A bare host gets \"/api\" added; a URL that already "
+           "has a path is used exactly as typed, which is what Jackett and "
+           "NZBHydra2 endpoints need."));
+    form->addRow(tr("API URL:"), m_indexerUrlEdit);
+
+    m_indexerApiKeyEdit = new QLineEdit(details);
+    m_indexerApiKeyEdit->setEchoMode(QLineEdit::Password);
+    form->addRow(tr("API key:"), m_indexerApiKeyEdit);
+
+    m_indexerKindCombo = new QComboBox(details);
+    // Order matches IndexerKind, so currentIndex() is the enum value.
+    m_indexerKindCombo->addItem(tr("Newznab (Usenet)"));
+    m_indexerKindCombo->addItem(tr("Torznab (BitTorrent)"));
+    m_indexerKindCombo->addItem(tr("Both — Prowlarr, NZBHydra2"));
+    form->addRow(tr("Type:"), m_indexerKindCombo);
+
+    auto* testRow = new QHBoxLayout;
+    m_indexerTestBtn = new QPushButton(tr("Test"), details);
+    testRow->addWidget(m_indexerTestBtn);
+    m_indexerTestResult = new QLabel(details);
+    m_indexerTestResult->setWordWrap(true);
+    m_indexerTestResult->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    testRow->addWidget(m_indexerTestResult, 1);
+    form->addRow(QString{}, testRow);
+
+    mainLayout->addWidget(details);
+
+    // -- Search settings ----------------------------------------------------
+    auto* searchGroup = new QGroupBox(tr("Searching"), page);
+    auto* searchForm = new QFormLayout(searchGroup);
+
+    m_indexerLimitSpin = new QSpinBox(searchGroup);
+    m_indexerLimitSpin->setRange(10, 1000);
+    m_indexerLimitSpin->setToolTip(
+        tr("Rows to ask for per request. An indexer that allows fewer silently "
+           "returns fewer, so this is an upper bound rather than a promise."));
+    searchForm->addRow(tr("Results per request:"), m_indexerLimitSpin);
+
+    m_indexerPagesSpin = new QSpinBox(searchGroup);
+    m_indexerPagesSpin->setRange(1, 20);
+    m_indexerPagesSpin->setToolTip(
+        tr("How many pages one search may fetch from each indexer.\n\n"
+           "Every page is an API call against the allowance your account has, so "
+           "this is a spending limit, not a speed setting."));
+    searchForm->addRow(tr("Pages per search:"), m_indexerPagesSpin);
+
+    m_indexerTimeoutSpin = new QSpinBox(searchGroup);
+    m_indexerTimeoutSpin->setRange(5, 300);
+    m_indexerTimeoutSpin->setSuffix(tr(" s"));
+    searchForm->addRow(tr("Request timeout:"), m_indexerTimeoutSpin);
+
+    m_indexerCapsRefreshSpin = new QSpinBox(searchGroup);
+    m_indexerCapsRefreshSpin->setRange(1, 365);
+    m_indexerCapsRefreshSpin->setSuffix(tr(" days"));
+    m_indexerCapsRefreshSpin->setToolTip(
+        tr("How often to re-read what each indexer supports. A stale answer never "
+           "blocks a search — it only means a query field stays greyed out that "
+           "the indexer has since started accepting."));
+    searchForm->addRow(tr("Refresh capabilities every:"), m_indexerCapsRefreshSpin);
+
+    mainLayout->addWidget(searchGroup);
+    mainLayout->addStretch();
+
+    // -- Wiring -------------------------------------------------------------
+    connect(m_indexerAddBtn, &QPushButton::clicked, this, &OptionsDialog::addIndexer);
+    connect(m_indexerRemoveBtn, &QPushButton::clicked, this, &OptionsDialog::removeIndexer);
+    connect(m_indexerTestBtn, &QPushButton::clicked, this, &OptionsDialog::testIndexer);
+
+    for (QSpinBox* box : {m_indexerLimitSpin, m_indexerPagesSpin,
+                          m_indexerTimeoutSpin, m_indexerCapsRefreshSpin}) {
+        connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    }
+
+    connect(m_indexerTable, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem* current, QTreeWidgetItem*) {
+                // Commit the row being left before showing the next one, or every
+                // edit is lost the moment the selection moves.
+                applyIndexerDetails();
+                populateIndexerDetails(
+                    current ? m_indexerTable->indexOfTopLevelItem(current) : -1);
+            });
+
+    const auto commit = [this] {
+        applyIndexerDetails();
+        updateIndexerRow(m_currentIndexer);
+        markDirty();
+    };
+    connect(m_indexerNameEdit, &QLineEdit::editingFinished, this, commit);
+    connect(m_indexerUrlEdit, &QLineEdit::editingFinished, this, commit);
+    connect(m_indexerApiKeyEdit, &QLineEdit::editingFinished, this, commit);
+    connect(m_indexerKindCombo, &QComboBox::currentIndexChanged, this,
+            [commit](int) { commit(); });
+    connect(m_indexerEntryEnabledCheck, &QCheckBox::toggled, this,
+            [commit](bool) { commit(); });
+
+    return page;
+}
+
+void OptionsDialog::loadIndexers()
+{
+    if (!m_ipc)
+        return;
+
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetIndexers),
+                       [this](const Ipc::IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+
+        m_indexers.clear();
+        const QCborArray rows = resp.fieldArray(1);
+        m_indexers.reserve(int(rows.size()));
+        for (const auto& row : rows) {
+            if (row.isMap())
+                m_indexers.append(row.toMap());
+        }
+
+        m_currentIndexer = -1;
+        refreshIndexerTable();
+        selectIndexer(m_indexers.isEmpty() ? -1 : 0);
+    });
+}
+
+void OptionsDialog::saveIndexers()
+{
+    if (!m_ipc)
+        return;
+
+    applyIndexerDetails();
+
+    QCborArray rows;
+    for (const QCborMap& indexer : std::as_const(m_indexers))
+        rows.append(indexer);
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetIndexers);
+    msg.append(rows);
+    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+        if (resp.fieldBool(0))
+            return;
+        QMessageBox::warning(this, tr("Indexers"),
+                             resp.fieldString(1).isEmpty()
+                                 ? tr("The indexer list could not be saved.")
+                                 : resp.fieldString(1));
+    });
+}
+
+void OptionsDialog::refreshIndexerTable()
+{
+    if (!m_indexerTable)
+        return;
+
+    const QSignalBlocker block(m_indexerTable);
+    const int keep = m_currentIndexer;
+    m_indexerTable->clear();
+
+    for (int i = 0; i < m_indexers.size(); ++i) {
+        new QTreeWidgetItem(m_indexerTable);
+        updateIndexerRow(i);
+    }
+
+    if (keep >= 0 && keep < m_indexerTable->topLevelItemCount())
+        m_indexerTable->setCurrentItem(m_indexerTable->topLevelItem(keep));
+}
+
+void OptionsDialog::updateIndexerRow(int index)
+{
+    if (!m_indexerTable || index < 0 || index >= m_indexers.size()
+        || index >= m_indexerTable->topLevelItemCount())
+        return;
+
+    QTreeWidgetItem* item = m_indexerTable->topLevelItem(index);
+    const QCborMap& ix = m_indexers.at(index);
+
+    static const char* kindNames[] = {
+        QT_TR_NOOP("Newznab"), QT_TR_NOOP("Torznab"), QT_TR_NOOP("Both")
+    };
+    const auto kind = int(ix.value(QStringLiteral("kind")).toInteger(0));
+
+    item->setText(0, ix.value(QStringLiteral("name")).toString());
+    item->setText(1, ix.value(QStringLiteral("url")).toString());
+    item->setText(2, tr(kindNames[(kind >= 0 && kind <= 2) ? kind : 0]));
+    // Whether a key is stored, never the key. The daemon does not send it and the
+    // GUI has nowhere to get one.
+    item->setText(3, ix.value(QStringLiteral("hasApiKey")).toBool(false) ? tr("yes")
+                                                                        : tr("no"));
+
+    const bool on = ix.value(QStringLiteral("enabled")).toBool(true);
+    for (int c = 0; c < m_indexerTable->columnCount(); ++c) {
+        if (on)
+            item->setData(c, Qt::ForegroundRole, QVariant());
+        else
+            item->setForeground(c, palette().brush(QPalette::Disabled, QPalette::Text));
+    }
+}
+
+void OptionsDialog::selectIndexer(int index)
+{
+    if (index < 0 || index >= m_indexerTable->topLevelItemCount())
+        index = -1;
+    {
+        const QSignalBlocker block(m_indexerTable);
+        m_indexerTable->setCurrentItem(
+            index >= 0 ? m_indexerTable->topLevelItem(index) : nullptr);
+    }
+    populateIndexerDetails(index);
+}
+
+void OptionsDialog::populateIndexerDetails(int index)
+{
+    m_currentIndexer = (index >= 0 && index < m_indexers.size()) ? index : -1;
+
+    if (m_indexerTestResult) {
+        m_indexerTestResult->clear();
+        m_indexerTestResult->setStyleSheet(QString{});
+    }
+
+    const bool have = m_currentIndexer >= 0;
+    for (QWidget* w : {static_cast<QWidget*>(m_indexerNameEdit),
+                       static_cast<QWidget*>(m_indexerUrlEdit),
+                       static_cast<QWidget*>(m_indexerApiKeyEdit),
+                       static_cast<QWidget*>(m_indexerKindCombo),
+                       static_cast<QWidget*>(m_indexerEntryEnabledCheck),
+                       static_cast<QWidget*>(m_indexerTestBtn),
+                       static_cast<QWidget*>(m_indexerRemoveBtn)}) {
+        w->setEnabled(have);
+    }
+
+    const QSignalBlocker b1(m_indexerNameEdit), b2(m_indexerUrlEdit),
+        b3(m_indexerApiKeyEdit), b4(m_indexerKindCombo), b5(m_indexerEntryEnabledCheck);
+
+    if (!have) {
+        m_indexerNameEdit->clear();
+        m_indexerUrlEdit->clear();
+        m_indexerApiKeyEdit->clear();
+        m_indexerApiKeyEdit->setPlaceholderText(QString{});
+        m_indexerKindCombo->setCurrentIndex(0);
+        m_indexerEntryEnabledCheck->setChecked(false);
+        return;
+    }
+
+    const QCborMap& ix = m_indexers.at(m_currentIndexer);
+    m_indexerNameEdit->setText(ix.value(QStringLiteral("name")).toString());
+    m_indexerUrlEdit->setText(ix.value(QStringLiteral("url")).toString());
+    m_indexerKindCombo->setCurrentIndex(int(ix.value(QStringLiteral("kind")).toInteger(0)));
+    m_indexerEntryEnabledCheck->setChecked(ix.value(QStringLiteral("enabled")).toBool(true));
+
+    // The field starts empty even when a key is stored, because the daemon never
+    // sends it. The placeholder says so — otherwise an empty box reads as "no key
+    // configured" and the user retypes one they already have.
+    m_indexerApiKeyEdit->setText(ix.value(QStringLiteral("apiKey")).toString());
+    m_indexerApiKeyEdit->setPlaceholderText(
+        ix.value(QStringLiteral("hasApiKey")).toBool(false)
+            ? tr("(a key is stored — leave empty to keep it)")
+            : QString{});
+}
+
+void OptionsDialog::applyIndexerDetails()
+{
+    if (m_currentIndexer < 0 || m_currentIndexer >= m_indexers.size())
+        return;
+
+    QCborMap ix = m_indexers.at(m_currentIndexer);
+    ix.insert(QStringLiteral("name"), m_indexerNameEdit->text().trimmed());
+    ix.insert(QStringLiteral("url"), m_indexerUrlEdit->text().trimmed());
+    ix.insert(QStringLiteral("kind"), m_indexerKindCombo->currentIndex());
+    ix.insert(QStringLiteral("enabled"), m_indexerEntryEnabledCheck->isChecked());
+
+    // An empty field means "keep the stored key", so the field is only written
+    // when the user actually typed one. SetIndexers reads a *missing* apiKey the
+    // same way — sending an empty string would erase the key instead.
+    const QString typed = m_indexerApiKeyEdit->text();
+    if (!typed.isEmpty()) {
+        ix.insert(QStringLiteral("apiKey"), typed);
+        ix.insert(QStringLiteral("hasApiKey"), true);
+    } else {
+        ix.remove(QStringLiteral("apiKey"));
+    }
+
+    m_indexers[m_currentIndexer] = ix;
+}
+
+void OptionsDialog::addIndexer()
+{
+    if (m_indexers.size() >= Preferences::kMaxIndexers) {
+        QMessageBox::information(this, tr("Indexers"),
+                                 tr("At most %1 indexers can be configured.")
+                                     .arg(Preferences::kMaxIndexers));
+        return;
+    }
+
+    applyIndexerDetails();
+
+    QCborMap fresh;
+    fresh.insert(QStringLiteral("name"), tr("New indexer"));
+    fresh.insert(QStringLiteral("url"), QString{});
+    fresh.insert(QStringLiteral("kind"), int(IndexerKind::Newznab));
+    fresh.insert(QStringLiteral("enabled"), true);
+    fresh.insert(QStringLiteral("hasApiKey"), false);
+    m_indexers.append(fresh);
+
+    refreshIndexerTable();
+    selectIndexer(int(m_indexers.size()) - 1);
+    m_indexerUrlEdit->setFocus();
+    markDirty();
+}
+
+void OptionsDialog::removeIndexer()
+{
+    if (m_currentIndexer < 0 || m_currentIndexer >= m_indexers.size())
+        return;
+
+    m_indexers.removeAt(m_currentIndexer);
+    m_currentIndexer = -1;
+    refreshIndexerTable();
+    selectIndexer(m_indexerTable->topLevelItemCount() > 0 ? 0 : -1);
+    markDirty();
+}
+
+void OptionsDialog::testIndexer()
+{
+    if (!m_ipc || m_currentIndexer < 0)
+        return;
+
+    applyIndexerDetails();
+    const QCborMap ix = m_indexers.at(m_currentIndexer);
+    if (ix.value(QStringLiteral("url")).toString().trimmed().isEmpty()) {
+        m_indexerTestResult->setText(tr("Enter an API URL first."));
+        return;
+    }
+
+    m_indexerTestBtn->setEnabled(false);
+    m_indexerTestResult->setText(tr("Contacting the indexer…"));
+    m_indexerTestResult->setStyleSheet(QString{});
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::TestIndexer);
+    msg.append(ix);
+    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+        m_indexerTestBtn->setEnabled(m_currentIndexer >= 0);
+        if (!resp.fieldBool(0)) {
+            m_indexerTestResult->setText(resp.fieldString(1));
+            return;
+        }
+        const QCborArray result = resp.fieldArray(1);
+        const bool ok = result.at(0).toBool(false);
+        // The indexer's own words: "Incorrect user credentials" says which field
+        // to fix, where "Unauthorized" leaves the user guessing.
+        m_indexerTestResult->setText(ok ? result.at(1).toString()
+                                        : result.at(2).toString());
+        m_indexerTestResult->setStyleSheet(
             ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
     });
 }
@@ -4102,6 +4538,7 @@ void OptionsDialog::loadSettings()
     m_applyBtn->setEnabled(false);
     loadSchedulerData();
     loadNewsServers();
+    loadIndexers();
 }
 
 // ---------------------------------------------------------------------------
@@ -4455,8 +4892,21 @@ void OptionsDialog::saveSettings()
         req.append(m_usenetRenameCheck->isChecked());
         req.append(QStringLiteral("usenetUnpack"));
         req.append(m_usenetUnpackCheck->isChecked());
+        req.append(QStringLiteral("usenetDirectUnpack"));
+        req.append(m_usenetDirectUnpackCheck->isChecked());
         req.append(QStringLiteral("usenetCleanupAfterUnpack"));
         req.append(m_usenetCleanupCheck->isChecked());
+
+        // Indexers page. The account list goes over SetIndexers=701 instead --
+        // it carries API keys and has its own keep-the-stored-key rule.
+        req.append(QStringLiteral("indexerResultLimit"));
+        req.append(static_cast<qint64>(m_indexerLimitSpin->value()));
+        req.append(QStringLiteral("indexerMaxPages"));
+        req.append(static_cast<qint64>(m_indexerPagesSpin->value()));
+        req.append(QStringLiteral("indexerTimeoutSeconds"));
+        req.append(static_cast<qint64>(m_indexerTimeoutSpin->value()));
+        req.append(QStringLiteral("indexerCapsRefreshDays"));
+        req.append(static_cast<qint64>(m_indexerCapsRefreshSpin->value()));
 
         // Web Interface page
         req.append(QStringLiteral("webServerEnabled"));
@@ -4917,6 +5367,7 @@ void OptionsDialog::saveSettings()
 
     saveSchedulerData();
     saveNewsServers();
+    saveIndexers();
 
     // The graph palette is GUI-only state, so it goes to uistate.yml rather than over
     // SetPreferences. The tray meter picks its colour up on the next 1 s rate tick.
@@ -5099,8 +5550,21 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         prefs.value(QStringLiteral("usenetUnpack")).toBool(true));
     m_usenetCleanupCheck->setChecked(
         prefs.value(QStringLiteral("usenetCleanupAfterUnpack")).toBool(true));
+    m_usenetDirectUnpackCheck->setChecked(
+        prefs.value(QStringLiteral("usenetDirectUnpack")).toBool(true));
     m_usenetCleanupCheck->setEnabled(m_usenetUnpackCheck->isChecked());
+    m_usenetDirectUnpackCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     updateUsenetEnabledStates();
+
+    // Indexers page
+    m_indexerLimitSpin->setValue(
+        static_cast<int>(prefs.value(QStringLiteral("indexerResultLimit")).toInteger(100)));
+    m_indexerPagesSpin->setValue(
+        static_cast<int>(prefs.value(QStringLiteral("indexerMaxPages")).toInteger(3)));
+    m_indexerTimeoutSpin->setValue(
+        static_cast<int>(prefs.value(QStringLiteral("indexerTimeoutSeconds")).toInteger(30)));
+    m_indexerCapsRefreshSpin->setValue(
+        static_cast<int>(prefs.value(QStringLiteral("indexerCapsRefreshDays")).toInteger(7)));
 
     // Web Interface page
     m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());

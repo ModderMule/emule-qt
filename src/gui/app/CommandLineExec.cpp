@@ -12,6 +12,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QEventLoop>
 #include <QPixmap>
 #include <QTimer>
 
@@ -100,6 +101,7 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("scheduler"),    OptionsDialog::PageScheduler},
             {QStringLiteral("webinterface"), OptionsDialog::PageWebInterface},
             {QStringLiteral("usenet"),       OptionsDialog::PageUsenet},
+            {QStringLiteral("indexers"),     OptionsDialog::PageIndexers},
             {QStringLiteral("extended"),     OptionsDialog::PageExtended},
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index
@@ -140,9 +142,23 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
         QTimer::singleShot(m_screenshotDelay, &app, [&mainWindow, path, &app, optPage]() {
             QPixmap pixmap;
             if (optPage >= 0) {
-                OptionsDialog dlg(nullptr, mainWindow.statisticsPanel(), &mainWindow);
+                // The live client, not nullptr: the dialog's daemon-owned lists
+                // (news servers, indexers) load over IPC, and without one every
+                // screenshot of those pages shows an empty table.
+                OptionsDialog dlg(mainWindow.ipcClient(), mainWindow.statisticsPanel(),
+                                  &mainWindow);
                 dlg.selectPage(optPage);
                 dlg.show();
+
+                // Let the daemon answer before grabbing. The dialog's
+                // daemon-owned lists (news servers, indexers) load over IPC and
+                // fill in from a *callback*; a single processEvents() returns
+                // long before the round trip completes, and the page shoots
+                // empty however much is configured.
+                QEventLoop settle;
+                QTimer::singleShot(750, &settle, &QEventLoop::quit);
+                settle.exec();
+
                 dlg.repaint();
                 QApplication::processEvents();
                 pixmap = dlg.grab();

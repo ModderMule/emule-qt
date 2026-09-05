@@ -9,9 +9,11 @@
 
 #include "utils/Types.h"
 
+#include <QFuture>
 #include <QHttpHeaders>
 #include <QHttpServerResponse>
 #include <QJsonObject>
+#include <QList>
 #include <QObject>
 
 #include <functional>
@@ -62,6 +64,51 @@ struct WebServerConfig {
 };
 
 // ---------------------------------------------------------------------------
+// UsenetStreamSource — what a Usenet preview request resolves to
+// ---------------------------------------------------------------------------
+
+/// Declared here, not included from the Usenet module: `core -> usenet` must
+/// never happen, or the dependency direction that keeps eMule::Usenet optional
+/// is gone. `DaemonApp` — which links both — installs a resolver that fills this
+/// in from `UsenetQueue::requestStream()`. Same shape as the `setLogProvider`
+/// seam, and for the same reason.
+/// One contiguous run of the logical file, and the file on disk holding it.
+///
+/// A raw-posted release is one piece. A stored RAR set is one piece per volume,
+/// because the thing being played is the `.mkv` inside them — that is phase 6b,
+/// and it is why a preview source stopped being a single path.
+struct UsenetStreamPiece {
+    QString path;
+    qint64 virtualOffset = 0;  ///< where it starts in the logical file
+    qint64 fileOffset = 0;     ///< where it starts inside `path`
+    qint64 length = 0;         ///< 0 on a lone piece means "to the end of the file"
+};
+
+struct UsenetStreamSource {
+    bool found = false;
+    QString fileName;
+
+    /// Final length of the logical file. Zero while it is still unknown, which
+    /// is a normal state for Usenet: only the article's own `=ybegin size=` says
+    /// it, so nothing is known until the first article of that file lands.
+    qint64 totalSize = 0;
+
+    /// End of the readable run containing the requested offset. The rest of the
+    /// file exists — it is preallocated — but reading it would return zeros, so
+    /// it must not be served as content.
+    qint64 availableEnd = 0;
+
+    bool complete = false;
+
+    QList<UsenetStreamPiece> pieces;
+
+    /// Set when the release can never be streamed: a compressed, solid or
+    /// encrypted archive. Answered immediately rather than waited out, so the
+    /// user learns why instead of watching a player time out.
+    QString notSeekableReason;
+};
+
+// ---------------------------------------------------------------------------
 // WebServer — JSON REST API server
 // ---------------------------------------------------------------------------
 
@@ -88,6 +135,20 @@ public:
     void setStatsHistory(StatsHistory* history);
     void setPreferences(Preferences* prefs);
     void setLogProvider(std::function<QString()> provider) { m_logProvider = std::move(provider); }
+
+    /// Resolve one file of one Usenet queue item for streaming. Optional:
+    /// without it the Usenet preview route answers 503 and everything else is
+    /// unaffected, which is what a build with EMULE_USENET off gets.
+    ///
+    /// The call is not a pure lookup — it also registers that somebody is
+    /// watching, so the queue can put that item's articles first. See
+    /// UsenetQueue::requestStream().
+    using UsenetStreamResolver =
+        std::function<UsenetStreamSource(const QString&, int, qint64, qint64)>;
+    void setUsenetStreamResolver(UsenetStreamResolver resolver)
+    {
+        m_usenetStreamResolver = std::move(resolver);
+    }
 
     bool start(const WebServerConfig& config);
     void stop();
@@ -134,6 +195,35 @@ private:
     QHttpServerResponse handleResumeDownload(const QString& hash);
     QHttpServerResponse handleCancelDownload(const QString& hash);
     QHttpServerResponse handlePreviewStream(const QString& hash, const QHttpServerRequest& req);
+
+    // Endpoint handlers — Usenet preview
+    QFuture<QHttpServerResponse> handleUsenetPreviewStream(const QString& itemId,
+                                                           const QString& fileIndex,
+                                                           const QHttpServerRequest& req);
+
+    /// Answer a Range request for @p path, serving nothing past @p availableEnd.
+    ///
+    /// Shared by both preview routes. Two properties matter and neither is
+    /// obvious from the signature:
+    ///
+    ///  - the body is capped at kPreviewChunkBytes, so an open-ended
+    ///    `Range: bytes=0-` cannot materialise a whole release in the daemon's
+    ///    address space. A short 206 is ordinary HTTP and every player asks for
+    ///    the next window;
+    ///  - @p availableEnd is where the *content* stops, which for a file still
+    ///    downloading is short of its size. Serving past it would hand a player
+    ///    the preallocated zeros.
+    ///
+    /// Takes the raw `Range` header rather than the request, because the Usenet
+    /// route can answer long after the QHttpServerRequest is gone.
+    /// The one implementation of HTTP Range in the daemon, shared by the ED2K
+    /// and Usenet preview routes. @p pieces are in ascending virtualOffset order
+    /// and may span several files; the ED2K route passes exactly one.
+    [[nodiscard]] QHttpServerResponse serveRange(const QList<UsenetStreamPiece>& pieces,
+                                                 const QString& fileName,
+                                                 qint64 totalSize,
+                                                 qint64 availableEnd,
+                                                 const QByteArray& rangeHeader);
 
     // Endpoint handlers — Uploads
     QHttpServerResponse handleGetUploads();
@@ -213,6 +303,9 @@ private:
 
     // Log provider callback (injected by DaemonApp)
     std::function<QString()> m_logProvider;
+
+    // Usenet stream resolver (injected by DaemonApp; null in a core-only build)
+    UsenetStreamResolver m_usenetStreamResolver;
 
     // Random token for preview streaming authentication
     QString m_streamToken;

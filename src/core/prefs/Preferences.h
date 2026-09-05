@@ -8,6 +8,7 @@
 /// Factory methods bridge to existing config structs (ObfuscationConfig,
 /// ProxySettings) used by already-ported modules.
 
+#include "prefs/IndexerConfig.h"
 #include "prefs/NewsServer.h"
 #include "utils/Types.h"
 
@@ -869,6 +870,49 @@ public:
     /// disk cost and advertises files no ED2K peer has any use for.
     [[nodiscard]] bool usenetCleanupAfterUnpack() const;
     void setUsenetCleanupAfterUnpack(bool val);
+
+    /// Unpack an archive set as its volumes land rather than after the download.
+    /// Same extraction, moved earlier, so the payload is ready when the last
+    /// article is. Only meaningful with usenetUnpack() on.
+    [[nodiscard]] bool usenetDirectUnpack() const;
+    void setUsenetDirectUnpack(bool val);
+
+    // -- Indexers (newznab / torznab) ----------------------------------------
+    //
+    // Deliberately *not* under usenet:. The client is shared — newznab and
+    // torznab are the same API with a different attribute namespace — so a
+    // BitTorrent indexer configured inside a Usenet block would be nonsense,
+    // and moving it later would mean a migration.
+
+    /// Configured indexer accounts, in the order the user arranged them.
+    /// Entries are stored with their API key encrypted at rest, under the same
+    /// file-wide key as the news-server passwords; see the header comment on
+    /// save() for the four rules that go with it.
+    [[nodiscard]] QList<IndexerConfig> indexers() const;
+    void setIndexers(const QList<IndexerConfig>& val);
+
+    /// Ceiling on the list, same reasoning as kMaxUsenetServers.
+    static constexpr int kMaxIndexers = 16;
+
+    /// Rows to request per API call. Clamped at request time to whatever the
+    /// indexer advertises in `limits/@max`, which is often lower.
+    [[nodiscard]] int indexerResultLimit() const;
+    void setIndexerResultLimit(int val);
+
+    /// How many pages one search may fetch. This is a **quota** decision, not a
+    /// performance one: every page is an API call against an allowance the user
+    /// pays for, and an unbounded search would spend it silently.
+    [[nodiscard]] int indexerMaxPages() const;
+    void setIndexerMaxPages(int val);
+
+    /// Default per-request timeout. IndexerConfig::timeoutMs overrides it.
+    [[nodiscard]] int indexerTimeoutSeconds() const;
+    void setIndexerTimeoutSeconds(int val);
+
+    /// Age at which a cached `t=caps` document is re-probed. Never a reason to
+    /// fail a search — a stale cache is used until a fresh one arrives.
+    [[nodiscard]] int indexerCapsRefreshDays() const;
+    void setIndexerCapsRefreshDays(int val);
 
     /// ED2K's current slice of maxDownload(), in KB/s. Runtime only: it is
     /// recomputed every second from the live split and never written to

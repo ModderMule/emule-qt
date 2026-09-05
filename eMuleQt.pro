@@ -8,18 +8,21 @@ TEMPLATE = subdirs
 SUBDIRS = \
     core \
     ipc \
+    indexer \
     usenet \
     daemon \
     gui \
     tests
 
-core.subdir   = src/core
-ipc.subdir    = src/ipc
-usenet.subdir = src/usenet
-daemon.subdir = src/daemon
-gui.subdir    = src/gui
+core.subdir    = src/core
+ipc.subdir     = src/ipc
+indexer.subdir = src/indexer
+usenet.subdir  = src/usenet
+daemon.subdir  = src/daemon
+gui.subdir     = src/gui
 
-usenet.depends = core
-daemon.depends = core ipc usenet
-gui.depends    = core ipc
-tests.depends  = core ipc usenet
+indexer.depends = core
+usenet.depends  = core
+daemon.depends  = core ipc indexer usenet
+gui.depends     = core ipc
+tests.depends   = core ipc indexer usenet

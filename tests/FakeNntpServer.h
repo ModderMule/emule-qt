@@ -83,6 +83,19 @@ public:
     /// Close the connection abruptly the next time a command arrives.
     void setDropOnNextCommand(bool drop) { m_dropOnNextCommand = drop; }
 
+    /// Drop the connection the next @p times a BODY for @p messageId arrives,
+    /// then serve it normally.
+    ///
+    /// A *transport* fault aimed at one article, which is the one thing
+    /// setDropOnNextCommand cannot express: it fires on whatever command comes
+    /// next, so which article it hits depends on scheduling. The queue treats
+    /// this as "retry the same level", the branch that is not the missing-article
+    /// ladder.
+    void setDropOnArticle(const QString& messageId, int times = 1)
+    {
+        m_dropArticles.insert(normalizeId(messageId), times);
+    }
+
     // -- Observation --------------------------------------------------------
 
     /// Every command line received, in order, across all connections.
@@ -212,6 +225,14 @@ private:
     void handleBody(QTcpSocket* sock, const QString& id)
     {
         const QString key = normalizeId(id);
+
+        if (const auto drop = m_dropArticles.find(key);
+            drop != m_dropArticles.end() && drop.value() > 0) {
+            drop.value() -= 1;
+            sock->abort();
+            return;
+        }
+
         const auto it = m_articles.constFind(key);
         if (it == m_articles.cend()) {
             writeLine(sock, QByteArrayLiteral("430 No article with that message-id"));
@@ -272,6 +293,8 @@ private:
                                QStringLiteral("OVER MSGID"), QStringLiteral("POST")};
     QHash<QString, GroupInfo> m_groups;
     QHash<QString, QByteArray> m_articles;
+
+    QHash<QString, int> m_dropArticles;
 
     QStringList m_received;
     int m_connections = 0;

@@ -1,6 +1,7 @@
 #include "queue/UsenetQueue.h"
 
 #include "nzb/NzbFile.h"
+#include "post/UsenetUnpacker.h"
 #include "queue/ArticleWriter.h"
 #include "queue/UsenetQueueStore.h"
 
@@ -9,7 +10,9 @@
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
+#include "utils/OtherFunctions.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -37,6 +40,12 @@ constexpr int kMaxTransportRetries = 6;
 /// Upper bound on worker threads. Beyond this the TLS and decode work is no
 /// longer the constraint and the thread count is just context switching.
 constexpr int kMaxWorkers = 8;
+
+/// How long one stream request keeps an item ahead of the priority field. Long
+/// enough that a player's gaps between Range requests do not drop the boost,
+/// short enough that a closed player stops starving the rest of the queue
+/// without anything having to notice it closed.
+constexpr qint64 kStreamingBoostMs = 30000;
 
 /// Backstop on the download -> verify -> download cycle. requestPar2Volumes()
 /// returning false is the real terminator; this catches the case where it keeps
@@ -129,6 +138,9 @@ void UsenetQueue::stop()
 
     stopWorkers();
     stopPostProcessor();
+
+    for (auto& rt : m_items)
+        cancelDirectUnpack(*rt);
 
     for (auto& rt : m_items)
         persist(*rt);
@@ -230,6 +242,11 @@ bool UsenetQueue::removeItem(const QString& id, bool deleteFiles)
         if (m_items.at(size_t(i))->postRunning && m_postProcessor)
             m_postProcessor->requestStop();
 
+        // Same reasoning for an extraction still following this item's volumes,
+        // except it is ours to join: it blocks in a read of a directory that is
+        // about to be deleted.
+        cancelDirectUnpack(*m_items.at(size_t(i)));
+
         if (deleteFiles) {
             const QString itemDir =
                 QDir(thePrefs.usenetTempDir()).filePath(id);
@@ -252,6 +269,9 @@ bool UsenetQueue::pauseItem(const QString& id)
         return false;
 
     rt->item->status = UsenetItemStatus::Paused;
+    // No more volumes are coming, so a run would block until resume. Drop it;
+    // the set restarts from volume one when the download does, at disk speed.
+    cancelDirectUnpack(*rt);
     persist(*rt);
     emit itemChanged(id);
     return true;
@@ -310,6 +330,229 @@ const UsenetQueueItem* UsenetQueue::findItem(const QString& id) const
             return rt->item.get();
     }
     return nullptr;
+}
+
+UsenetQueue::PreviewInfo UsenetQueue::previewability(const QString& itemId, int fileIndex)
+{
+    PreviewInfo out;
+
+    ItemRuntime* rt = runtimeFor(itemId);
+    if (!rt)
+        return out;
+
+    const UsenetQueueItem& item = *rt->item;
+    if (fileIndex < 0 || fileIndex >= item.files.size() || fileIndex >= item.nzb.files.size())
+        return out;
+
+    const UsenetFileState& st = item.files.at(fileIndex);
+
+    // A media file posted raw needs no container work at all — that is phase 6a,
+    // and answering it here keeps the index out of the hot path entirely.
+    if (item.isFilePreviewable(fileIndex)) {
+        out.previewable = st.availableEnd() > 0;
+        return out;
+    }
+
+    const QString name = st.articleFileName.isEmpty() ? item.nzb.files.at(fileIndex).fileName
+                                                      : st.articleFileName;
+    if (name.isEmpty() || !UsenetUnpacker::isArchiveVolume(name))
+        return out;
+
+    // From here it is an archive volume, so the index decides. resolve() reads
+    // headers but never fetches, and its refusals are cached — this is called
+    // once per file on every queue push.
+    const StreamResolve resolved = rt->streamIndex.resolve(item, fileIndex, 0);
+    if (resolved.plan == StreamPlan::NotSeekable) {
+        out.note = resolved.reason;
+        return out;
+    }
+    if (resolved.plan != StreamPlan::Ready)
+        return out;   // still reading headers; ask again next push
+
+    const ED2KFileType type = getED2KFileTypeID(resolved.fileName);
+    if (type != ED2KFileType::Video && type != ED2KFileType::Audio) {
+        out.note = tr("The archive does not contain a playable file");
+        return out;
+    }
+
+    out.previewable = availableFrom(item, resolved.extents, 0) > 0;
+    return out;
+}
+
+UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fileIndex,
+                                                   qint64 wantOffset, qint64 wantLength)
+{
+    StreamInfo info;
+
+    ItemRuntime* rt = runtimeFor(itemId);
+    if (!rt)
+        return info;
+
+    const UsenetQueueItem& item = *rt->item;
+    if (fileIndex < 0 || fileIndex >= item.files.size())
+        return info;
+
+    info.found = true;
+
+    // Register the interest first, and unconditionally within an active item:
+    // every branch below either serves bytes or asks for some, and both want the
+    // item ahead of an unattended download for the next kStreamingBoostMs.
+    const bool active = item.isActive();
+    if (active)
+        rt->streamingUntilMs = QDateTime::currentMSecsSinceEpoch() + kStreamingBoostMs;
+
+    const StreamResolve resolved = rt->streamIndex.resolve(item, fileIndex, wantOffset);
+
+    switch (resolved.plan) {
+    case StreamPlan::NotSeekable:
+        // Nothing to fetch and nothing to wait for. Saying so beats holding the
+        // request open for the full poll window and then refusing anyway.
+        info.notSeekableReason = resolved.reason;
+        return info;
+
+    case StreamPlan::NeedBytes:
+        // The index is missing a header or a declared size. Ask for exactly that
+        // range; the caller's poll brings us back here a tick later.
+        if (active) {
+            promoteRange(*rt, resolved.needFileIndex, resolved.needOffset, resolved.needLength);
+            dispatch();
+        }
+        return info;
+
+    case StreamPlan::Unknown:
+        return info;
+
+    case StreamPlan::Ready:
+        break;
+    }
+
+    info.fileName = resolved.fileName;
+    info.totalSize = resolved.totalSize;
+    info.availableEnd = availableFrom(item, resolved.extents, wantOffset);
+
+    bool everyPieceFinal = !resolved.extents.isEmpty();
+    for (const StreamExtent& e : resolved.extents) {
+        if (e.fileIndex < 0 || e.fileIndex >= item.files.size())
+            continue;
+        const UsenetFileState& st = item.files.at(e.fileIndex);
+
+        // finalPath first: once the item is published the scratch file is gone,
+        // and a completed release is the case where preview is least interesting
+        // but most likely to be asked for by a stale URL.
+        const QString path = !st.finalPath.isEmpty() ? st.finalPath : st.tempPath;
+        if (path.isEmpty())
+            continue;
+        info.pieces.append({path, e.virtualOffset, e.fileOffset, e.length});
+        everyPieceFinal = everyPieceFinal && st.finalized;
+    }
+    info.complete = everyPieceFinal;
+
+    if (active) {
+        // Ask for what was requested, mapped back through the extents onto the
+        // volumes that hold it. A seek to 80% therefore promotes the articles of
+        // one volume and leaves everything before it alone.
+        const qint64 span = wantLength > 0 ? wantLength : 1;
+        qint64 cursor = wantOffset;
+        const qint64 limit = wantOffset + span;
+        for (const StreamExtent& e : resolved.extents) {
+            if (e.virtualOffset + e.length <= cursor)
+                continue;
+            if (e.virtualOffset >= limit)
+                break;
+            const qint64 from = qMax(cursor, e.virtualOffset);
+            const qint64 to = qMin(limit, e.virtualOffset + e.length);
+            if (to <= from)
+                continue;
+            promoteRange(*rt, e.fileIndex, e.fileOffset + (from - e.virtualOffset), to - from);
+            cursor = to;
+        }
+        dispatch();
+    }
+
+    return info;
+}
+
+QList<int> UsenetQueue::segmentsCovering(const UsenetQueueItem& item, int fileIndex,
+                                         qint64 offset, qint64 length)
+{
+    if (fileIndex < 0 || fileIndex >= item.files.size() || fileIndex >= item.nzb.files.size())
+        return {};
+
+    const UsenetFileState& st = item.files.at(fileIndex);
+    const NzbFileInfo& info = item.nzb.files.at(fileIndex);
+    if (info.segments.isEmpty() || length <= 0)
+        return {};
+
+    // A volume nobody has touched has no part length of its own — and a seek
+    // into one is exactly the case phase 6b exists for. Borrow a sibling's: the
+    // volumes of a release come out of one posting run with one part size, so
+    // this is not an approximation in practice, and the ±1 probe below absorbs
+    // it if some release ever proves otherwise.
+    qint64 partLength = st.partLength;
+    if (partLength <= 0) {
+        for (const UsenetFileState& other : item.files)
+            partLength = qMax(partLength, other.partLength);
+    }
+    if (partLength <= 0)
+        return {};
+
+    const qint64 from = qMax<qint64>(0, offset);
+    const qint64 to = from + length - 1;
+
+    // §7.1: parts are uniform with a short remainder, so the part number is
+    // arithmetic. One either side covers a poster who padded differently — the
+    // doc's "probe ±1", paid up front because an extra article costs far less
+    // than another round trip through the poll loop.
+    // Part numbers are 1-based, so the part holding byte B is B/partLength + 1.
+    const int firstPart = int(from / partLength) + 1 - 1;   // one early
+    const int lastPart = int(to / partLength) + 1 + 1;      // one late
+
+    QList<int> out;
+    for (int i = 0; i < info.segments.size(); ++i) {
+        const int number = info.segments.at(i).number;
+        if (number >= firstPart && number <= lastPart)
+            out.append(i);
+    }
+    return out;
+}
+
+void UsenetQueue::promoteRange(ItemRuntime& rt, int fileIndex, qint64 offset, qint64 length)
+{
+    const QList<int> wanted = segmentsCovering(*rt.item, fileIndex, offset, length);
+    if (wanted.isEmpty())
+        return;
+
+    const UsenetFileState& st = rt.item->files.at(fileIndex);
+
+    QList<quint64> keys;
+    for (const int segmentIndex : wanted) {
+        if (segmentIndex < st.done.size() && st.done.testBit(segmentIndex))
+            continue;
+        const quint64 key = SegmentKey{fileIndex, segmentIndex}.packed();
+        if (rt.inFlight.contains(key))
+            continue;
+        keys.append(key);
+    }
+    if (keys.isEmpty())
+        return;
+
+    for (const quint64 key : std::as_const(keys)) {
+        const qsizetype at = rt.plan.indexOf(key);
+        if (at < 0)
+            continue;
+        rt.plan.removeAt(at);
+        if (at < rt.planCursor)
+            --rt.planCursor;
+    }
+
+    // Behind the cursor, so the next dispatch() round hands these out first and
+    // then carries on reading ahead from the same point.
+    rt.planCursor = qBound(0, rt.planCursor, int(rt.plan.size()));
+    const int insertAt = rt.planCursor;
+    for (qsizetype k = keys.size() - 1; k >= 0; --k) {
+        if (!rt.plan.contains(keys.at(k)))
+            rt.plan.insert(insertAt, keys.at(k));
+    }
 }
 
 void UsenetQueue::setRateLimit(qint64 bytesPerSecond)
@@ -474,12 +717,13 @@ void UsenetQueue::stopPostProcessor()
     m_postProcessor = nullptr;   // deleted by the finished -> deleteLater above
 }
 
-void UsenetQueue::setPostProcessingOptions(bool par2, bool rename, bool unpack, bool cleanup)
+void UsenetQueue::setPostProcessingOptions(const PostProcessingOptions& options)
 {
-    m_par2Enabled = par2;
-    m_renameEnabled = rename;
-    m_unpackEnabled = unpack;
-    m_cleanupEnabled = cleanup;
+    m_par2Enabled = options.par2;
+    m_renameEnabled = options.rename;
+    m_unpackEnabled = options.unpack;
+    m_cleanupEnabled = options.cleanup;
+    m_directUnpackEnabled = options.directUnpack;
 }
 
 void UsenetQueue::onCapacityChanged(int workerIndex, int capacity)
@@ -520,11 +764,29 @@ void UsenetQueue::rebuildPlan(ItemRuntime& rt)
 
             const UsenetFileState& st = item.files.at(f);
             const auto& segments = item.nzb.files.at(f).segments;
+
+            // In part-number order, not document order. An NZB is free to list
+            // its <segment> elements in any order and plenty do; NzbInfo only
+            // sorts inside hasAllSegments(). Fetching in part order is what
+            // makes the written prefix grow from byte 0, which is the whole of
+            // what streaming needs.
+            //
+            // The *indices* are sorted, never the segment list itself: `done`
+            // is a bit per index into that list, so reordering it would
+            // silently reattribute every bit in the release.
+            QList<int> order;
+            order.reserve(segments.size());
             for (int s = 0; s < segments.size(); ++s) {
                 if (s < st.done.size() && st.done.testBit(s))
                     continue;
-                rt.plan.append(SegmentKey{f, s}.packed());
+                order.append(s);
             }
+            std::stable_sort(order.begin(), order.end(), [&segments](int a, int b) {
+                return segments.at(a).number < segments.at(b).number;
+            });
+
+            for (const int s : std::as_const(order))
+                rt.plan.append(SegmentKey{f, s}.packed());
         }
     }
 }
@@ -551,7 +813,15 @@ void UsenetQueue::dispatch()
         if (rt->item->isActive() && !rt->postRunning)
             order.append(rt.get());
     }
-    std::stable_sort(order.begin(), order.end(), [](ItemRuntime* a, ItemRuntime* b) {
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    std::stable_sort(order.begin(), order.end(), [nowMs](ItemRuntime* a, ItemRuntime* b) {
+        // An item somebody is watching outranks the priority field. Preview is
+        // a real-time deadline and the user is staring at the result; a normal
+        // download is not and they are not.
+        const bool as = a->streamingUntilMs > nowMs;
+        const bool bs = b->streamingUntilMs > nowMs;
+        if (as != bs)
+            return as;
         return a->item->priority > b->item->priority;
     });
 
@@ -696,7 +966,18 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result)
         // Nothing was leasable. Put the segment back untouched — no retry spent,
         // no level moved — and wait for the tick. Re-dispatching here instead
         // would spin: the next attempt would fail the same way, immediately.
-        rt->plan.append(SegmentKey{result.fileIndex, result.segmentIndex}.packed());
+        //
+        // Back at the cursor, not at the tail, for the same reason as the retry
+        // in handleSegmentFailure — and appending here silently undoes that one.
+        // A dropped connection backs its server off, so the retry comes straight
+        // back as "nothing leasable", and a tail append then moves it behind
+        // every segment it was supposed to jump ahead of.
+        //
+        // It cannot block the rest of the plan: dispatch() advances the cursor
+        // as it hands a segment out, so the same round goes on to the next one,
+        // and m_starved is what holds this to one attempt per tick.
+        rt->plan.insert(qBound(0, rt->planCursor, int(rt->plan.size())),
+                        SegmentKey{result.fileIndex, result.segmentIndex}.packed());
         m_starved = true;
         return;
     } else {
@@ -716,6 +997,17 @@ void UsenetQueue::markSegmentDone(ItemRuntime& rt, const UsenetFetchResult& resu
         st.done.setBit(result.segmentIndex);
 
     st.decodedBytes += result.decodedBytes;
+
+    // Where those bytes actually landed. This is the only record of it: `done`
+    // above means *resolved*, and a segment missing on every server sets that
+    // bit having written nothing at all.
+    st.addWritten(result.decodedOffset, result.decodedBytes);
+
+    // The largest article seen is the part length: a poster cuts a file into
+    // equal parts and one short remainder. Phase 6b maps an unfetched byte to
+    // its article with it, and there is no other source for the number.
+    st.partLength = qMax(st.partLength, result.decodedBytes);
+
     if (st.articleFileName.isEmpty() && !result.articleFileName.isEmpty())
         st.articleFileName = result.articleFileName;
     if (st.declaredSize == 0 && result.declaredFileSize > 0)
@@ -785,8 +1077,20 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
 
     rt.attempts.insert(key, attempt);
 
-    // The cursor has already passed this segment, so put it back in the plan.
-    rt.plan.append(key);
+    // The cursor has already passed this segment, so put it back in the plan —
+    // at the cursor, so it is the *next* thing dispatched rather than the last.
+    //
+    // Appending it to the tail is what the first cut did, and it pins the
+    // written prefix at this byte for the rest of the download: every later
+    // segment lands, and the one hole the player is waiting on is refetched
+    // only once everything else is finished. Streaming aside, retrying near the
+    // front also finishes files sooner.
+    //
+    // This does not weaken the retry bound. Termination is still whatever
+    // handleSegmentFailure decided above: the level ladder, kMaxTransportRetries,
+    // or the missing-everywhere path that sets the done bit and returns before
+    // reaching here. Only the position changed.
+    rt.plan.insert(qBound(0, rt.planCursor, int(rt.plan.size())), key);
 }
 
 void UsenetQueue::checkFileCompletion(ItemRuntime& rt, int fileIndex)
@@ -799,6 +1103,7 @@ void UsenetQueue::checkFileCompletion(ItemRuntime& rt, int fileIndex)
         return;
 
     sealFile(rt, fileIndex);
+    pumpDirectUnpack(rt, fileIndex);
     checkItemCompletion(rt);
 }
 
@@ -817,6 +1122,11 @@ bool UsenetQueue::isPlanned(const ItemRuntime& rt, int fileIndex)
 void UsenetQueue::sealFile(ItemRuntime& rt, int fileIndex)
 {
     UsenetFileState& st = rt.item->files[fileIndex];
+
+    // The streaming index caches volume paths and parsed headers, and this
+    // renames the file out from under both. A stale path is indistinguishable
+    // from a missing one, so drop the lot rather than try to patch it.
+    rt.streamIndex.invalidate();
 
     // Pad the file out to the length yEnc declared for it.
     //
@@ -877,6 +1187,19 @@ void UsenetQueue::sealFile(ItemRuntime& rt, int fileIndex)
     st.finalized = true;
     rt.dirty = true;
 
+    // The file is now its declared length on disk, so the whole of it is
+    // readable — holes included, as zeros. Collapsing the interval list says
+    // exactly that and keeps a completed file's state to one entry.
+    //
+    // A hole is not a lie here: the bytes exist and every later byte is at its
+    // right offset, which is what a player needs. PAR2 repair is what turns the
+    // zeros back into content. With declaredSize unknown nothing was padded, so
+    // the ranges stay as they are.
+    if (st.declaredSize > 0) {
+        st.written.clear();
+        st.written.append({qint64(0), st.declaredSize});
+    }
+
     if (st.missingSegments > 0) {
         logInfo(QStringLiteral("Usenet: assembled \"%1\" with %2 article(s) missing")
                     .arg(QFileInfo(st.tempPath).fileName())
@@ -898,7 +1221,176 @@ void UsenetQueue::checkItemCompletion(ItemRuntime& rt)
             return;
     }
 
+    // Every volume is in. Tell the extractions so, then wait for them: a run
+    // still reading is about to produce exactly what post-processing would
+    // otherwise redo, and its result has to be in the job.
+    endDirectUnpackSets(rt);
+    for (const DirectUnpackRun& run : std::as_const(rt.directUnpack)) {
+        if (run.running)
+            return;   // onDirectUnpackFinished() comes back here
+    }
+
     beginPostProcessing(rt);
+}
+
+// ---------------------------------------------------------------------------
+// Direct unpack — extraction that keeps pace with the download
+//
+// A volume is complete the moment its last article lands, and libarchive reads
+// a set front to back, so the extraction can simply follow the download instead
+// of starting after it. What arrives here is one sealed volume; the run that is
+// following that set takes it and carries on.
+// ---------------------------------------------------------------------------
+
+void UsenetQueue::pumpDirectUnpack(ItemRuntime& rt, int fileIndex)
+{
+    if (!m_directUnpackEnabled || !m_unpackEnabled)
+        return;
+    if (fileIndex < 0 || fileIndex >= rt.item->files.size())
+        return;
+
+    const UsenetFileState& st = rt.item->files.at(fileIndex);
+    const auto position = UsenetUnpacker::volumePositionOf(QFileInfo(st.tempPath).fileName());
+    if (position.index < 0)
+        return;   // not an archive volume; nothing to follow
+
+    // A hole is padded with zeros by sealFile(), which decompresses into
+    // garbage or a CRC failure. Stop the set here and let PAR2 do its job; the
+    // end-of-download unpack will run on the repaired volumes.
+    if (st.missingSegments > 0) {
+        auto it = rt.directUnpack.find(position.baseName);
+        if (it != rt.directUnpack.end() && it->running && it->worker)
+            it->worker->cancel();
+        return;
+    }
+
+    // The naming schemes do not agree on where a set starts: `.partNN.rar`
+    // counts from 1, while a bare `.rar` is volume 0 of the `.rNN` scheme. So
+    // the position number is not the ordinal — rank the whole set and use that.
+    const int ordinal = volumeOrdinal(rt, fileIndex, position.baseName);
+    if (ordinal < 0)
+        return;
+
+    DirectUnpackRun& run = rt.directUnpack[position.baseName];
+    if (!run.running && run.worker == nullptr) {
+        // Only ever start on volume one. Handed a later volume first, libarchive
+        // would read a headerless fragment and call the set corrupt.
+        if (ordinal != 0)
+            return;
+        if (m_directUnpackRuns >= kMaxDirectUnpacks)
+            return;   // over the cap: this set falls back to the end-of-download path
+
+        run.worker = new UsenetDirectUnpack;
+        run.thread = new QThread;
+        run.thread->setObjectName(QStringLiteral("UsenetDirectUnpack"));
+        run.worker->moveToThread(run.thread);
+        connect(run.worker, &UsenetDirectUnpack::finished,
+                this, &UsenetQueue::onDirectUnpackFinished, Qt::QueuedConnection);
+        run.thread->start();
+        run.running = true;
+        ++m_directUnpackRuns;
+
+        UsenetDirectUnpackJob job;
+        job.itemId = rt.item->id;
+        job.setKey = position.baseName;
+        job.destDir = QDir(QFileInfo(st.tempPath).absolutePath())
+                          .filePath(QString(kUnpackDirName));
+        job.password = rt.item->nzb.password;
+        QMetaObject::invokeMethod(run.worker, "run", Qt::QueuedConnection,
+                                  Q_ARG(eMule::usenet::UsenetDirectUnpackJob, job));
+    }
+
+    if (run.running && run.worker)
+        run.worker->offerVolume(ordinal, st.tempPath);
+}
+
+int UsenetQueue::volumeOrdinal(const ItemRuntime& rt, int fileIndex, const QString& baseName)
+{
+    QList<QPair<int, int>> members;   // (volume number, NZB file index)
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
+        if (pos.index >= 0 && pos.baseName == baseName)
+            members.append({pos.index, f});
+    }
+    std::sort(members.begin(), members.end());
+
+    for (int k = 0; k < members.size(); ++k) {
+        if (members.at(k).second == fileIndex)
+            return k;
+    }
+    return -1;
+}
+
+QString UsenetQueue::volumeNameOf(const ItemRuntime& rt, int fileIndex)
+{
+    if (fileIndex < 0 || fileIndex >= rt.item->files.size())
+        return {};
+    const UsenetFileState& st = rt.item->files.at(fileIndex);
+    // A sealed file already carries its real name; before that, the best guess
+    // is what the article header said, then what the NZB claimed.
+    if (st.finalized)
+        return QFileInfo(st.tempPath).fileName();
+    if (!st.articleFileName.isEmpty())
+        return st.articleFileName;
+    return fileIndex < rt.item->nzb.files.size() ? rt.item->nzb.files.at(fileIndex).fileName
+                                                 : QString();
+}
+
+void UsenetQueue::endDirectUnpackSets(ItemRuntime& rt)
+{
+    for (DirectUnpackRun& run : rt.directUnpack) {
+        if (run.running && run.worker)
+            run.worker->endOfSet();
+    }
+}
+
+void UsenetQueue::cancelDirectUnpack(ItemRuntime& rt)
+{
+    for (DirectUnpackRun& run : rt.directUnpack) {
+        if (!run.worker)
+            continue;
+        run.worker->cancel();
+        run.thread->quit();
+        run.thread->wait();
+        delete run.worker;
+        delete run.thread;
+        if (run.running)
+            --m_directUnpackRuns;
+        run.worker = nullptr;
+        run.thread = nullptr;
+        run.running = false;
+    }
+    rt.directUnpack.clear();
+}
+
+void UsenetQueue::onDirectUnpackFinished(const eMule::usenet::UsenetDirectUnpackResult& result)
+{
+    ItemRuntime* rt = runtimeFor(result.itemId);
+    if (!rt)
+        return;
+
+    auto it = rt->directUnpack.find(result.setKey);
+    if (it == rt->directUnpack.end())
+        return;
+
+    it->result = result;
+    if (it->running)
+        --m_directUnpackRuns;
+    it->running = false;
+
+    // The worker has returned from run(); its thread can go. Deleting it here
+    // rather than in cancelDirectUnpack() keeps a finished run from holding a
+    // thread for the rest of a long download.
+    if (it->thread) {
+        it->thread->quit();
+        it->thread->wait();
+        delete it->worker;
+        delete it->thread;
+        it->worker = nullptr;
+        it->thread = nullptr;
+    }
+
+    checkItemCompletion(*rt);
 }
 
 void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
@@ -950,6 +1442,11 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
     job.unpackEnabled = m_unpackEnabled;
     job.cleanupEnabled = m_cleanupEnabled;
 
+    for (const DirectUnpackRun& run : std::as_const(rt.directUnpack)) {
+        if (run.result.ok)
+            job.directUnpacked.append(run.result);
+    }
+
     for (const auto& st : rt.item->files) {
         if (st.missingSegments > 0) {
             job.hasMissingSegments = true;
@@ -990,6 +1487,10 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
     rt->postRunning = false;
     rt->item->postPercent = 0;
     rt->item->postDetail.clear();
+
+    // Repair rewrites volumes, rename moves them and unpack publishes elsewhere.
+    // Every cached path and parsed header in the streaming index is suspect.
+    rt->streamIndex.invalidate();
 
     // -- the cycle: verification came up short, go and fetch the blocks ----
     if (result.needsMoreBlocks) {
@@ -1118,6 +1619,8 @@ void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
 void UsenetQueue::failItem(ItemRuntime& rt, const QString& message)
 {
     rt.postRunning = false;
+    // No more volumes are coming, so a run would hold its thread until shutdown.
+    cancelDirectUnpack(rt);
     rt.item->status = UsenetItemStatus::Failed;
     rt.item->error = message;
     persist(rt);

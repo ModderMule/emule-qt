@@ -67,6 +67,7 @@ public:
         PageScheduler,
         PageWebInterface,
         PageUsenet,
+        PageIndexers,
         PageExtended,
         PageCount
     };
@@ -102,6 +103,7 @@ private:
     QWidget* createSchedulerPage();
     QWidget* createWebInterfacePage();
     QWidget* createUsenetPage();
+    QWidget* createIndexersPage();
     QWidget* createExtendedPage();
     QWidget* createPlaceholderPage(const QString& title);
 
@@ -131,6 +133,20 @@ private:
     void addNewsServer();
     void removeNewsServer();
     void testNewsServer();
+
+    // Indexers — the same eight-function shape as the news-server list above,
+    // deliberately: they solve the same problem (a list whose secrets the GUI is
+    // never given) and diverging would mean two answers to it.
+    void loadIndexers();
+    void saveIndexers();
+    void refreshIndexerTable();
+    void updateIndexerRow(int index);
+    void selectIndexer(int index);
+    void populateIndexerDetails(int index);
+    void applyIndexerDetails();
+    void addIndexer();
+    void removeIndexer();
+    void testIndexer();
     void updateUsenetEnabledStates();
     void refreshScheduleTable();
     void populateScheduleDetails(int index);
@@ -332,6 +348,7 @@ private:
     QCheckBox*    m_usenetPar2Check = nullptr;
     QCheckBox*    m_usenetRenameCheck = nullptr;
     QCheckBox*    m_usenetUnpackCheck = nullptr;
+    QCheckBox*    m_usenetDirectUnpackCheck = nullptr;
     QCheckBox*    m_usenetCleanupCheck = nullptr;
     QTreeWidget*  m_usenetServerTable = nullptr;
     QPushButton*  m_usenetAddBtn = nullptr;
@@ -357,6 +374,25 @@ private:
     /// daemon keeps what it has.
     QList<QCborMap> m_newsServers;
     int m_currentNewsServer = -1;
+
+    // Indexers page
+    QTreeWidget*  m_indexerTable = nullptr;
+    QPushButton* m_indexerAddBtn = nullptr;
+    QPushButton* m_indexerRemoveBtn = nullptr;
+    QPushButton* m_indexerTestBtn = nullptr;
+    QLabel* m_indexerTestResult = nullptr;
+    QCheckBox* m_indexerEntryEnabledCheck = nullptr;
+    QLineEdit* m_indexerNameEdit = nullptr;
+    QLineEdit* m_indexerUrlEdit = nullptr;
+    QLineEdit* m_indexerApiKeyEdit = nullptr;
+    QComboBox* m_indexerKindCombo = nullptr;
+    QSpinBox* m_indexerLimitSpin = nullptr;
+    QSpinBox* m_indexerPagesSpin = nullptr;
+    QSpinBox* m_indexerTimeoutSpin = nullptr;
+    QSpinBox* m_indexerCapsRefreshSpin = nullptr;
+
+    QList<QCborMap> m_indexers;
+    int m_currentIndexer = -1;
 
     QCheckBox*    m_schedEnabledCheck = nullptr;
     QTreeWidget*  m_schedTable = nullptr;

@@ -59,6 +59,15 @@ public:
     /// Decoded bytes this segment contributed.
     [[nodiscard]] qint64 decodedBytes() const { return m_decodedBytes; }
 
+    /// Zero-based offset into the *final file* where those bytes landed, taken
+    /// from the article's own `=ypart begin` (already `begin - 1`).
+    ///
+    /// It is the only authority on the question: an NZB's `<segment bytes>` is
+    /// the encoded size, so no offset can be derived from the NZB at all. The
+    /// queue needs it to know which byte ranges of a half-downloaded file are
+    /// actually readable — see UsenetFileState::written.
+    [[nodiscard]] qint64 decodedOffset() const { return m_decodedOffset; }
+
 signals:
     /// The segment is done. @p error is NntpError::None on success.
     ///
@@ -82,6 +91,7 @@ private:
     QString m_articleFileName;
     qint64 m_declaredFileSize = 0;
     qint64 m_decodedBytes = 0;
+    qint64 m_decodedOffset = 0;
 
     /// Set when a write fails mid-article. The decode still runs to completion
     /// so the connection stays in sync, but the outcome is the write error.

@@ -92,6 +92,7 @@ SOURCES += \
     controls/KadLookupGraph.cpp \
     controls/KadSearchesModel.cpp \
     controls/LogWidget.cpp \
+    controls/IndexerResultsModel.cpp \
     controls/SearchResultsModel.cpp \
     controls/ServerListModel.cpp \
     controls/SharedFilesModel.cpp \
@@ -142,6 +143,7 @@ HEADERS += \
     controls/KadLookupGraph.h \
     controls/KadSearchesModel.h \
     controls/LogWidget.h \
+    controls/IndexerResultsModel.h \
     controls/SearchResultsModel.h \
     controls/ServerListModel.h \
     controls/SharedFilesModel.h \

@@ -33,6 +33,7 @@ struct LogEntry {
 };
 
 namespace usenet { class UsenetSession; }
+namespace indexer { class IndexerSearchList; }
 
 class DaemonApp : public QObject {
     Q_OBJECT
@@ -65,6 +66,15 @@ public:
     /// eMule::Core, and core must never depend on eMule::Usenet. The daemon is
     /// the first place that legitimately knows about both.
     [[nodiscard]] usenet::UsenetSession* usenetSession() const { return m_usenetSession.get(); }
+
+    /// Access the shared indexer search session (nullptr before start()).
+    ///
+    /// Owned here for the same reason UsenetSession is: eMule::Indexer is a peer
+    /// of core, not a part of it, and AppContext may not reach across.
+    [[nodiscard]] indexer::IndexerSearchList* indexerSearches() const
+    {
+        return m_indexerSearches.get();
+    }
 
     /// Return all buffered log entries with id > @p lastLogId.
     [[nodiscard]] static std::vector<LogEntry> logsSince(int64_t lastLogId);
@@ -100,6 +110,10 @@ private:
     /// IPC client through IpcServer::usenetConfigChanged.
     void applyUsenetServers();
 
+    /// Re-read the indexer account list after an Options save. Reached from any
+    /// IPC client through IpcServer::indexerConfigChanged.
+    void applyIndexerConfig();
+
     /// Turn the queue's signals into IPC push events.
     ///
     /// It lives here rather than in CoreNotifierBridge because the bridge is
@@ -107,6 +121,11 @@ private:
     /// through the bridge would mean linking eMule::Usenet into a class whose
     /// whole job is core.
     void connectUsenetPushes();
+
+    /// Turn the search list's signals into IPC push events. Same reasoning as
+    /// connectUsenetPushes: the bridge is built on core signals and these are
+    /// not core objects.
+    void connectIndexerPushes();
 
     void installLogForwarder();
     void removeLogForwarder();
@@ -118,6 +137,7 @@ private:
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
     std::unique_ptr<WebServer> m_webServer;
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
+    std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;
     bool m_running = false;
 
     static DaemonApp* s_instance;

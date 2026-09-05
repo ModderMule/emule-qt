@@ -83,6 +83,8 @@ void IpcServer::onNewConnection()
                 this, &IpcServer::webServerConfigChanged);
         connect(handler.get(), &IpcClientHandler::usenetConfigChanged,
                 this, &IpcServer::usenetConfigChanged);
+        connect(handler.get(), &IpcClientHandler::indexerConfigChanged,
+                this, &IpcServer::indexerConfigChanged);
 
         m_clients.push_back(std::move(handler));
     }

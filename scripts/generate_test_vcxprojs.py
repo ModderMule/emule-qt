@@ -18,6 +18,7 @@ NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")  # URL namespace
 EMULECORE_GUID = "{AB94E5C4-E1F3-31B4-BA89-325740E6BE5B}"
 EMULEIPC_GUID = "{FBDFD081-D65F-39D9-8A1C-72045318CC5B}"
 EMULEUSENET_GUID = "{1BDD4987-DC42-5349-9E57-C6E045319FE7}"
+EMULEINDEXER_GUID = "{3F2A6C41-9D18-4B77-A5E4-6B0C1D2E8A73}"
 VS_CPP_PROJECT_TYPE = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}"
 VS_FOLDER_TYPE = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}"
 TESTS_FOLDER_GUID = "{E0A0B5F0-0001-0001-0001-000000000001}"
@@ -268,15 +269,18 @@ def generate_sln(test_names: list[str]) -> str:
     lines.append("Microsoft Visual Studio Solution File, Format Version 12.00")
     lines.append("# Visual Studio Version 17")
 
-    # Existing projects (emulecore, emuleipc, emuleusenet, emulecored, emuleqt).
+    # Existing projects (emulecore, emuleipc, emuleindexer, emuleusenet,
+    # emulecored, emuleqt).
     # Anything absent from this list is dropped from the .sln on the next run,
     # so a new library must be added here as well as to the solution.
     existing_projects = [
         ("emulecore", "core\\emulecore.vcxproj", EMULECORE_GUID, []),
         ("emuleipc", "ipc\\emuleipc.vcxproj", EMULEIPC_GUID, []),
+        ("emuleindexer", "indexer\\emuleindexer.vcxproj", EMULEINDEXER_GUID,
+         [EMULECORE_GUID]),
         ("emuleusenet", "usenet\\emuleusenet.vcxproj", EMULEUSENET_GUID, [EMULECORE_GUID]),
         ("emulecored", "daemon\\emulecored.vcxproj", "{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}",
-         [EMULECORE_GUID, EMULEIPC_GUID, EMULEUSENET_GUID]),
+         [EMULECORE_GUID, EMULEIPC_GUID, EMULEINDEXER_GUID, EMULEUSENET_GUID]),
         ("emuleqt", "gui\\emuleqt.vcxproj", "{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}",
          [EMULECORE_GUID, EMULEIPC_GUID]),
     ]
@@ -304,6 +308,7 @@ def generate_sln(test_names: list[str]) -> str:
         lines.append("\tProjectSection(ProjectDependencies) = postProject")
         lines.append(f"\t\t{EMULECORE_GUID} = {EMULECORE_GUID}")
         lines.append(f"\t\t{EMULEIPC_GUID} = {EMULEIPC_GUID}")
+        lines.append(f"\t\t{EMULEINDEXER_GUID} = {EMULEINDEXER_GUID}")
         lines.append(f"\t\t{EMULEUSENET_GUID} = {EMULEUSENET_GUID}")
         lines.append("\tEndProjectSection")
         lines.append("EndProject")

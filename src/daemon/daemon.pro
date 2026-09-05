@@ -11,11 +11,17 @@ QT -= gui
 INCLUDEPATH += \
     $$PWD/.. \
     $$PWD/../core \
-    $$PWD/../ipc
+    $$PWD/../ipc \
+    $$PWD/../indexer \
+    $$PWD/../usenet
 
+# Order matters for a single-pass linker: a static library must come before the
+# ones it depends on. usenet and indexer both use core.
 LIBS += \
-    -L$$OUT_PWD/../core -lemulecore \
-    -L$$OUT_PWD/../ipc  -lemuleipc
+    -L$$OUT_PWD/../usenet  -lemuleusenet \
+    -L$$OUT_PWD/../indexer -lemuleindexer \
+    -L$$OUT_PWD/../core    -lemulecore \
+    -L$$OUT_PWD/../ipc     -lemuleipc
 
 # Third-party libraries (system-installed or from CMake build)
 unix {

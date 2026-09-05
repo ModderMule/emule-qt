@@ -112,6 +112,11 @@ public:
     /// Set the IPC client (needed for Options dialog).
     void setIpcClient(IpcClient* ipc);
 
+    /// The connected client, or null when IPC is disabled. Exposed so
+    /// --screenshot can open the Options dialog against a live daemon; without
+    /// it every daemon-owned list — news servers, indexers — shoots empty.
+    [[nodiscard]] IpcClient* ipcClient() const { return m_ipc; }
+
     [[nodiscard]] bool isEd2kConnected() const { return m_ed2kConnected; }
     [[nodiscard]] bool isKadConnected() const { return m_kadConnected; }
 

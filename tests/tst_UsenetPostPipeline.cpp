@@ -21,6 +21,7 @@
 #include "TestHelpers.h"
 
 #include "decode/YencDecoder.h"
+#include "post/UsenetPostProcessor.h"
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 
@@ -162,8 +163,12 @@ struct PostedRelease {
 /// @param dropFrom  file whose articles are partly withheld, simulating a
 ///                  take-down or an expired article
 /// @param dropParts 1-based part numbers to withhold
+/// @p corruptParts are served with valid yEnc framing over *wrong bytes*, so the
+/// download succeeds and the damage only shows up at verification. Dropping a
+/// part instead makes the file short, which never reaches the interesting case.
 PostedRelease postRelease(const QString& dir, FakeNntpServer& server,
-                          const QString& dropFrom = {}, const QList<int>& dropParts = {})
+                          const QString& dropFrom = {}, const QList<int>& dropParts = {},
+                          const QList<int>& corruptParts = {})
 {
     PostedRelease out;
     QByteArray xml;
@@ -195,6 +200,14 @@ PostedRelease postRelease(const QString& dir, FakeNntpServer& server,
             if (name == dropFrom && dropParts.contains(p)) {
                 out.droppedIds.append(id);
                 continue;   // the server simply does not have it: 430
+            }
+            if (name == dropFrom && corruptParts.contains(p)) {
+                QByteArray damaged = content;
+                const int at = (p - 1) * kPartSize;
+                for (int k = at; k < qMin<int>(at + 64, damaged.size()); ++k)
+                    damaged[k] = char(~quint8(damaged.at(k)));
+                server.addArticle(id, makeArticle(damaged, p, parts, name));
+                continue;
             }
             server.addArticle(id, makeArticle(content, p, parts, name));
         }
@@ -274,6 +287,8 @@ private slots:
     void skipsRecoveryVolumesForAHealthyRelease();
     void repairsUnpacksAndPublishesOnlyThePayload();
     void refusesToShareAnUnrepairableRelease();
+    void corruptVolumesNeverReachThePublishedRelease();
+    void aRepairDiscardsWhatWasUnpackedWhileDownloading();
 };
 
 // ---------------------------------------------------------------------------
@@ -307,7 +322,7 @@ void tst_UsenetPostPipeline::skipsRecoveryVolumesForAHealthyRelease()
 
     UsenetQueue queue;
     queue.applyServers({serverConfig(port, 4)}, 60);
-    queue.setPostProcessingOptions(true, true, true, true);
+    queue.setPostProcessingOptions({});
     queue.start();
 
     QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
@@ -366,7 +381,7 @@ void tst_UsenetPostPipeline::repairsUnpacksAndPublishesOnlyThePayload()
 
     UsenetQueue queue;
     queue.applyServers({serverConfig(port, 4)}, 60);
-    queue.setPostProcessingOptions(true, true, true, true);
+    queue.setPostProcessingOptions({});
     queue.start();
 
     QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
@@ -399,6 +414,141 @@ void tst_UsenetPostPipeline::repairsUnpacksAndPublishesOnlyThePayload()
 #endif
 }
 
+// Unpacking during the download reads volumes that have not been verified yet.
+// When they turn out to be damaged, whatever came out of them must not survive
+// into the published release.
+//
+// In practice libarchive's own checksums catch it first and the direct unpack
+// simply fails, which is what this asserts. The discard path below is what
+// covers damage that slips past them.
+void tst_UsenetPostPipeline::corruptVolumesNeverReachThePublishedRelease()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    const QByteArray movie = payload(24000, 11);
+    QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("Movie.mkv")), movie));
+    QVERIFY(writeZip(QDir(stage).filePath(QStringLiteral("Rel.zip")),
+                     QStringLiteral("Movie.mkv"), movie));
+    QVERIFY(QFile::remove(QDir(stage).filePath(QStringLiteral("Movie.mkv"))));
+    QVERIFY(createPar2Set(stage, QStringLiteral("Rel"), {QStringLiteral("Rel.zip")},
+                          4000, 8));
+
+    FakeNntpServer server;
+    // Corrupt, not withheld: every article arrives, so the download completes
+    // and the direct unpack runs to the end — over wrong bytes.
+    const PostedRelease release =
+        postRelease(stage, server, QStringLiteral("Rel.zip"), {}, {3});
+    QVERIFY(release.droppedIds.isEmpty());
+
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});   // direct unpack on, as it ships
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QVERIFY2(finished.wait(120000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(),
+             qPrintable(QStringLiteral("repair failed: %1").arg(finished.at(0).at(2).toString())));
+
+    // The published payload must be the real one, not what came out of the
+    // corrupt volumes before the repair.
+    QCOMPARE(readFile(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("Movie.mkv"))),
+             movie);
+    QCOMPARE(namesIn(thePrefs.incomingDir()), QStringList{QStringLiteral("Movie.mkv")});
+
+    queue.stop();
+#endif
+}
+
+// The discard itself, driven directly: a repair ran, so anything extracted from
+// the pre-repair volumes is stale by definition and has to go, whatever it looks
+// like on disk. Reaching this through the network harness is not possible —
+// libarchive rejects damaged input before it can produce a plausible result —
+// so the branch is exercised where it lives.
+void tst_UsenetPostPipeline::aRepairDiscardsWhatWasUnpackedWhileDownloading()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work));
+    QVERIFY(QDir().mkpath(dest));
+
+    const QByteArray movie = payload(24000, 13);
+    QVERIFY(writeZip(QDir(work).filePath(QStringLiteral("Rel.zip")),
+                     QStringLiteral("Movie.mkv"), movie));
+    QVERIFY(createPar2Set(work, QStringLiteral("Rel"), {QStringLiteral("Rel.zip")}, 4000, 8));
+
+    // Damage the archive on disk so verification has to repair it. The offset is
+    // relative: a deflated payload of repeating bytes is far shorter than the
+    // payload, and a fixed offset lands past the end of it.
+    {
+        QFile f(QDir(work).filePath(QStringLiteral("Rel.zip")));
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        const qint64 at = f.size() / 2;
+        QVERIFY(f.seek(at));
+        const QByteArray damage(int(qMin<qint64>(64, f.size() - at)), '\x00');
+        QCOMPARE(f.write(damage), qint64(damage.size()));
+        f.close();
+    }
+
+    // Stand in for what a direct unpack would have left behind: a plausible
+    // file, in the right place, extracted from the volume before it was repaired.
+    const QString unpackDir = QDir(work).filePath(QString(kUnpackDirName));
+    QVERIFY(QDir().mkpath(unpackDir));
+    const QString stale = QDir(unpackDir).filePath(QStringLiteral("Movie.mkv"));
+    QVERIFY(writeFile(stale, QByteArray(movie.size(), 'X')));
+
+    UsenetDirectUnpackResult done;
+    done.setKey = QStringLiteral("rel");
+    done.firstVolume = QDir(work).filePath(QStringLiteral("Rel.zip"));
+    done.extracted = {stale};
+    done.consumed = {done.firstVolume};
+    done.ok = true;
+
+    UsenetPostJob job;
+    job.itemId = QStringLiteral("item");
+    job.workDir = work;
+    job.destDir = dest;
+    job.directUnpacked = {done};
+
+    UsenetPostProcessor processor;
+    QSignalSpy finished(&processor, &UsenetPostProcessor::finished);
+    processor.process(job);
+    QCOMPARE(finished.count(), 1);
+
+    const auto result = finished.first().at(0).value<UsenetPostResult>();
+    QVERIFY2(result.success, qPrintable(result.message));
+
+    // The stale file is gone, and what was staged came out of the repaired
+    // archive rather than being the file that was sitting there.
+    QVERIFY2(!QFile::exists(stale), "the pre-repair extraction was published anyway");
+
+    // The staged payload is what came out of the *repaired* archive.
+    QCOMPARE(result.staged.size(), 1);
+    QCOMPARE(readFile(result.staged.first().first), movie);
+#endif
+}
+
 void tst_UsenetPostPipeline::refusesToShareAnUnrepairableRelease()
 {
     eMule::testing::TempDir tmp;
@@ -424,7 +574,7 @@ void tst_UsenetPostPipeline::refusesToShareAnUnrepairableRelease()
 
     UsenetQueue queue;
     queue.applyServers({serverConfig(port, 4)}, 60);
-    queue.setPostProcessingOptions(true, true, true, true);
+    queue.setPostProcessingOptions({});
     queue.start();
 
     QSignalSpy finished(&queue, &UsenetQueue::itemFinished);

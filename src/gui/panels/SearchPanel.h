@@ -38,16 +38,32 @@ class QTreeView;
 namespace eMule {
 
 class DownloadListModel;
+class IndexerResultsModel;
 class IpcClient;
 class SearchResultsModel;
 
 /// Per-search tab state.
+///
+/// A tab holds **one** of the two models, never both. An indexer result has no
+/// hash, no sources and no ED2K media tags; an ED2K result has no age, category
+/// or indexer. Rather than a union model with half its columns always empty, the
+/// tab carries whichever shape its search produced and the view swaps models on
+/// every tab change — which it already did, one proxy per tab.
 struct SearchTab {
     uint32_t searchID = 0;
     QString title;
-    int method = 0;  ///< Search method: 0=auto, 1=server, 2=global, 3=kad
-    SearchResultsModel* model = nullptr;
+    int method = 0;  ///< SearchType value: 0=auto, 1=server, 2=global, 3=kad, 5=indexer
+
+    SearchResultsModel* model = nullptr;          ///< ED2K/Kad tabs only.
+    IndexerResultsModel* indexerModel = nullptr;  ///< Usenet indexer tabs only.
     QSortFilterProxyModel* proxy = nullptr;
+
+    /// Set once the daemon reports the fan-out finished, so a tab that produced
+    /// nothing can say "no results" instead of looking like it is still running.
+    bool finished = false;
+
+    [[nodiscard]] bool isIndexer() const { return indexerModel != nullptr; }
+    [[nodiscard]] int resultCount() const;
 };
 
 /// Full Search tab page matching the MFC eMule Search window.
@@ -93,6 +109,9 @@ private slots:
     void onResultContextMenu(const QPoint& pos);
     void onResultDoubleClicked(const QModelIndex& index);
     void onSearchResultPush(const Ipc::IpcMessage& msg);
+    void onIndexerResultsPush(const Ipc::IpcMessage& msg);
+    void onIndexerProgressPush(const Ipc::IpcMessage& msg);
+    void onIndexerFinishedPush(const Ipc::IpcMessage& msg);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -120,9 +139,23 @@ private:
     [[nodiscard]] SearchRequest requestFromUi() const;
     void sendSearchRequest(const SearchRequest& req);
 
+    /// StartIndexerSearch instead of StartSearch. A separate path because the two
+    /// requests carry different payloads: StartSearch's is ED2K-shaped
+    /// (fileType, avail, completeSources) and means nothing to an indexer.
+    void sendIndexerSearchRequest(const SearchRequest& req);
+
+    /// Queue the selected indexer result: the daemon fetches the NZB with its own
+    /// API key and hands it to the Usenet queue. The GUI never sees the URL.
+    void grabIndexerResult(int proxyRow);
+
+    /// The tab a searchID belongs to, or nullptr. Indexer searches and ED2K
+    /// searches number their ids independently, so this is only ever called from
+    /// a handler that already knows which kind it has.
+    [[nodiscard]] SearchTab* tabForIndexerSearch(uint32_t searchID);
+
     void setupUi();
     QWidget* createSearchBar();
-    void setupResultHeader();
+    void setupResultHeader(bool forIndexer);
     void requestSearchResults(uint32_t searchID);
     void downloadResult(int row);
     [[nodiscard]] QString buildEd2kLink(int proxyRow);
@@ -208,7 +241,11 @@ private:
 
     /// True once the results header has columns and is bound to UiState.
     /// All tabs share m_resultView, so the layout is bound only once.
-    bool m_headerBound = false;
+    /// Which UiState key the results header is currently bound to. Two kinds of
+    /// tab mean two column sets, and applying one's saved widths to the other
+    /// would scramble both — so the binding follows the tab rather than being
+    /// done once.
+    QString m_boundHeaderKey;
 
     // IPC
     IpcClient* m_ipc = nullptr;

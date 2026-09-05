@@ -21,6 +21,7 @@
 /// UsenetPostProcessor owns the thread.
 
 #include <QString>
+#include <QSet>
 #include <QStringList>
 
 #include <QList>
@@ -76,8 +77,12 @@ public:
     ///
     /// @p password comes from NzbInfo::password — the `<meta type="password">`
     /// tag or the release name. Empty is the normal case.
+    /// @p skipFirstVolumes names sets already extracted elsewhere, by the path
+    /// of their first volume. A skipped set is still *found* — it just is not
+    /// unpacked again — so nothingToDo keeps meaning "no archives here at all".
     Result unpack(const QString& sourceDir, const QString& destDir,
-                  const QString& password = {});
+                  const QString& password = {},
+                  const QSet<QString>& skipFirstVolumes = {});
 
     /// Group the archive files in @p dir into sets, one entry per set, each
     /// naming the volume that must be opened.
@@ -86,6 +91,18 @@ public:
     /// Whether @p fileName looks like any volume of any supported archive.
     /// Used by cleanup as much as by detection.
     [[nodiscard]] static bool isArchiveVolume(const QString& fileName);
+
+    /// Where @p fileName sits in its archive set. `index` is -1 when the name is
+    /// not an archive volume at all; otherwise the lowest index opens the set.
+    ///
+    /// Exposed because the streaming index has to order the volumes of a set
+    /// from *NZB filenames*, before anything is on disk, and re-deriving these
+    /// four naming schemes somewhere else is how the two drift apart.
+    struct VolumePosition {
+        QString baseName;   ///< lowercased, the key that groups a set
+        int index = -1;
+    };
+    [[nodiscard]] static VolumePosition volumePositionOf(const QString& fileName);
 
 private:
     ProgressFn m_progress;
