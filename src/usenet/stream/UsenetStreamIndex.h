@@ -236,6 +236,12 @@ private:
     QHash<int, VolumeCache> m_volumes;     ///< keyed by NZB file index
 };
 
+/// Whether a name is something a player can open — the same test ED2K's
+/// PartFile::isPreviewPossible() uses, so the two networks cannot disagree.
+/// Shared rather than copied: the queue asks it of names that never reach the
+/// index, and two copies of this test are exactly how the answers drift apart.
+[[nodiscard]] bool isPlayableName(const QString& name);
+
 /// End of the readable run of the logical file starting at @p virtualOffset,
 /// walking across extent boundaries for as long as each successive volume is
 /// readable from its own `fileOffset`.

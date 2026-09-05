@@ -296,6 +296,11 @@ bool UsenetQueue::resumeItem(const QString& id)
     rebuildPlan(*rt);
     persist(*rt);
 
+    // pauseItem() cancelled every run, and pumpDirectUnpack() only fires from a
+    // volume that seals *after* this point — so without this a paused set is
+    // never extracted while downloading again, and a preview of it dies with it.
+    restartDirectUnpack(*rt);
+
     emit itemChanged(id);
     dispatch();
     return true;
@@ -367,6 +372,18 @@ UsenetQueue::PreviewInfo UsenetQueue::previewability(const QString& itemId, int 
     // qualifies is its judgement, not a second test here.
     const StreamResolve resolved = rt->streamIndex.resolve(item, fileIndex, -1, 0);
     if (resolved.plan == StreamPlan::NotSeekable) {
+        // Unmappable, but perhaps being unpacked anyway. Read-only on purpose:
+        // this runs once per file on every queue push and must not move the
+        // high-water mark that requestStream() maintains.
+        const UsenetDirectUnpackEntry* entry = extractionEntryFor(*rt, fileIndex, -1);
+        if (entry && entry->entrySize > 0 && entry->bytesReadable > 0) {
+            out.previewable = true;
+            return out;
+        }
+        if (entry) {
+            out.note = tr("Extracting — the preview starts once there is something to play");
+            return out;
+        }
         out.note = resolved.reason;
         return out;
     }
@@ -405,6 +422,17 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
 
     switch (resolved.plan) {
     case StreamPlan::NotSeekable:
+        // The map cannot describe this set — compressed, solid, header-encrypted.
+        // libarchive can still unpack it, and when direct unpack is following it
+        // down its own output is a perfectly good byte source. The map goes
+        // first because only it can seek ahead of the write head.
+        if (streamFromExtraction(*rt, fileIndex, entryOrdinal, info)) {
+            if (active) {
+                promoteExtractionVolume(*rt, fileIndex);
+                dispatch();
+            }
+            return info;
+        }
         // Nothing to fetch and nothing to wait for. Saying so beats holding the
         // request open for the full poll window and then refusing anyway.
         info.notSeekableReason = resolved.reason;
@@ -493,11 +521,30 @@ UsenetQueue::ArchiveListing UsenetQueue::listArchiveEntries(const QString& itemI
         row.size = m.size;
         row.playable = m.playable && m.mappable;
         row.note = row.playable ? QString() : m.note;
+
+        // A member the map cannot place is still playable if the extraction has
+        // reached it — the compression note stops being the whole truth the
+        // moment libarchive starts writing the file out.
+        if (!row.playable && m.playable)
+            annotateFromExtraction(*rt, fileIndex, m.index, row);
+
         listing.entries.append(row);
     }
 
+    // A solid or header-encrypted set is refused a volume at a time, so the
+    // index never enumerates a member and there is nothing above to annotate.
+    // The extraction is then the only thing that knows what is inside.
+    if (found.members.isEmpty())
+        appendExtractionRows(*rt, fileIndex, listing);
+
     switch (found.plan) {
     case StreamPlan::NotSeekable:
+        if (!listing.entries.isEmpty()) {
+            // Listed after all, by the extraction. Saying NotSeekable here would
+            // have the chooser throw the rows away.
+            listing.status = ArchiveListing::Status::Scanning;
+            return listing;
+        }
         listing.status = ArchiveListing::Status::NotSeekable;
         listing.note = found.reason;
         return listing;
@@ -1325,37 +1372,317 @@ void UsenetQueue::pumpDirectUnpack(ItemRuntime& rt, int fileIndex)
     if (ordinal < 0)
         return;
 
-    DirectUnpackRun& run = rt.directUnpack[position.baseName];
-    if (!run.running && run.worker == nullptr) {
-        // Only ever start on volume one. Handed a later volume first, libarchive
-        // would read a headerless fragment and call the set corrupt.
-        if (ordinal != 0)
+    // Only ever *start* on volume one — handed a later volume first, libarchive
+    // reads a headerless fragment and calls the set corrupt. But the volume that
+    // happens to seal first is not the set's state: a release whose NZB lists
+    // part03 ahead of part01 sealed part03 long ago, and dropping it on the floor
+    // parks the run on an index nobody will ever offer.
+    const auto existing = rt.directUnpack.constFind(position.baseName);
+    const bool haveRun = existing != rt.directUnpack.constEnd() && existing->worker != nullptr;
+    if (!haveRun) {
+        if (!startDirectUnpack(rt, position.baseName))
             return;
-        if (m_directUnpackRuns >= kMaxDirectUnpacks)
-            return;   // over the cap: this set falls back to the end-of-download path
-
-        run.worker = new UsenetDirectUnpack;
-        run.thread = new QThread;
-        run.thread->setObjectName(QStringLiteral("UsenetDirectUnpack"));
-        run.worker->moveToThread(run.thread);
-        connect(run.worker, &UsenetDirectUnpack::finished,
-                this, &UsenetQueue::onDirectUnpackFinished, Qt::QueuedConnection);
-        run.thread->start();
-        run.running = true;
-        ++m_directUnpackRuns;
-
-        UsenetDirectUnpackJob job;
-        job.itemId = rt.item->id;
-        job.setKey = position.baseName;
-        job.destDir = QDir(QFileInfo(st.tempPath).absolutePath())
-                          .filePath(QString(kUnpackDirName));
-        job.password = rt.item->nzb.password;
-        QMetaObject::invokeMethod(run.worker, "run", Qt::QueuedConnection,
-                                  Q_ARG(eMule::usenet::UsenetDirectUnpackJob, job));
     }
 
+    DirectUnpackRun& run = rt.directUnpack[position.baseName];
     if (run.running && run.worker)
         run.worker->offerVolume(ordinal, st.tempPath);
+}
+
+bool UsenetQueue::startDirectUnpack(ItemRuntime& rt, const QString& baseName)
+{
+    // Volume one has to be on disk, whichever volume brought us here.
+    int firstIndex = -1;
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
+        if (pos.index < 0 || pos.baseName != baseName)
+            continue;
+        if (volumeOrdinal(rt, f, baseName) == 0) {
+            firstIndex = f;
+            break;
+        }
+    }
+    if (firstIndex < 0 || !rt.item->files.at(firstIndex).finalized)
+        return false;
+    if (m_directUnpackRuns >= kMaxDirectUnpacks)
+        return false;   // over the cap: this set falls back to the end-of-download path
+
+    DirectUnpackRun& run = rt.directUnpack[baseName];
+    run.worker = new UsenetDirectUnpack;
+    run.thread = new QThread;
+    run.thread->setObjectName(QStringLiteral("UsenetDirectUnpack"));
+    run.worker->moveToThread(run.thread);
+    connect(run.worker, &UsenetDirectUnpack::finished,
+            this, &UsenetQueue::onDirectUnpackFinished, Qt::QueuedConnection);
+    connect(run.worker, &UsenetDirectUnpack::progress,
+            this, &UsenetQueue::onDirectUnpackProgress, Qt::QueuedConnection);
+    run.thread->start();
+    run.running = true;
+    run.closing = false;
+    ++m_directUnpackRuns;
+
+    const UsenetFileState& first = rt.item->files.at(firstIndex);
+    UsenetDirectUnpackJob job;
+    job.itemId = rt.item->id;
+    job.setKey = baseName;
+    job.destDir = QDir(QFileInfo(first.tempPath).absolutePath()).filePath(QString(kUnpackDirName));
+    job.password = rt.item->nzb.password;
+    QMetaObject::invokeMethod(run.worker, "run", Qt::QueuedConnection,
+                              Q_ARG(eMule::usenet::UsenetDirectUnpackJob, job));
+
+    // Replay what already sealed. The run blocks on the first index it has not
+    // been given, so anything offered ahead of time simply waits in the map.
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const UsenetFileState& st = rt.item->files.at(f);
+        if (!st.finalized || st.missingSegments > 0)
+            continue;
+        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
+        if (pos.index < 0 || pos.baseName != baseName)
+            continue;
+        const int ordinal = volumeOrdinal(rt, f, baseName);
+        if (ordinal >= 0)
+            run.worker->offerVolume(ordinal, st.tempPath);
+    }
+    return true;
+}
+
+void UsenetQueue::restartDirectUnpack(ItemRuntime& rt)
+{
+    if (!m_directUnpackEnabled || !m_unpackEnabled)
+        return;
+
+    QSet<QString> seen;
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
+        if (pos.index < 0 || seen.contains(pos.baseName))
+            continue;
+        seen.insert(pos.baseName);
+
+        const auto it = rt.directUnpack.constFind(pos.baseName);
+        if (it != rt.directUnpack.constEnd() && it->worker != nullptr)
+            continue;
+        startDirectUnpack(rt, pos.baseName);
+    }
+}
+
+void UsenetQueue::onDirectUnpackProgress(const eMule::usenet::UsenetDirectUnpackProgress& state)
+{
+    ItemRuntime* rt = runtimeFor(state.itemId);
+    if (!rt)
+        return;
+
+    auto it = rt->directUnpack.find(state.setKey);
+    if (it != rt->directUnpack.end())
+        it->progress = state;
+}
+
+const UsenetDirectUnpackEntry* UsenetQueue::extractionEntryFor(ItemRuntime& rt, int fileIndex,
+                                                              int entryOrdinal)
+{
+    const auto position = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, fileIndex));
+    if (position.index < 0)
+        return nullptr;
+
+    const auto run = rt.directUnpack.constFind(position.baseName);
+    if (run == rt.directUnpack.constEnd() || run->progress.entries.isEmpty())
+        return nullptr;
+
+    // The index numbers the members it managed to place; libarchive numbers
+    // everything it walks past. Where both have an opinion the name is the only
+    // thing that means the same on either side, so the ordinal is translated
+    // through it rather than trusted across.
+    QString wanted;
+    const StreamListing listed = rt.streamIndex.list(*rt.item, fileIndex);
+    if (!listed.members.isEmpty()) {
+        for (const StreamMember& m : listed.members) {
+            if (entryOrdinal < 0 ? isPlayableName(m.name) : m.index == entryOrdinal) {
+                wanted = QFileInfo(m.name).fileName();
+                break;
+            }
+        }
+        if (wanted.isEmpty())
+            return nullptr;
+    }
+
+    for (const UsenetDirectUnpackEntry& e : run->progress.entries) {
+        if (e.index < 0 || e.path.isEmpty())
+            continue;
+        if (!wanted.isEmpty()) {
+            if (QFileInfo(e.path).fileName() == wanted)
+                return &e;
+            continue;
+        }
+        if (entryOrdinal < 0 ? isPlayableName(e.name) : e.index == entryOrdinal)
+            return &e;
+    }
+    return nullptr;
+}
+
+bool UsenetQueue::streamFromExtraction(ItemRuntime& rt, int fileIndex, int entryOrdinal,
+                                       StreamInfo& info)
+{
+    if (!m_directUnpackEnabled || !m_unpackEnabled)
+        return false;
+
+    const auto position = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, fileIndex));
+    if (position.index < 0)
+        return false;
+
+    const auto run = rt.directUnpack.constFind(position.baseName);
+    if (run != rt.directUnpack.constEnd() && !run->running && !run->result.ok
+        && !run->result.error.isEmpty()) {
+        return false;   // the extraction failed and is not coming back
+    }
+
+    const UsenetDirectUnpackEntry* entry = extractionEntryFor(rt, fileIndex, entryOrdinal);
+    if (!entry) {
+        // Nothing has been extracted yet, and the first request for a set always
+        // arrives before the first volume has. Answering "never" here ends a
+        // preview that is a minute from working — but only wait when there is
+        // something worth waiting for: a media member the map could not place.
+        // A release with nothing playable in it says so at once, as it should.
+        if (!rt.item->isActive())
+            return false;
+
+        const StreamListing listed = rt.streamIndex.list(*rt.item, fileIndex);
+        for (const StreamMember& m : listed.members) {
+            if (!m.playable || m.mappable)
+                continue;
+            if (entryOrdinal < 0 || m.index == entryOrdinal)
+                return true;   // "wait": it is coming
+        }
+        return false;
+    }
+
+    if (run == rt.directUnpack.constEnd())
+        return false;
+
+    // Everything from here answers "wait" rather than "never": the caller must
+    // not turn any of it into a refusal, because the route treats a reason as
+    // final and a player that gets one does not come back.
+    QString path = entry->path;
+    qint64 readable = entry->bytesReadable;
+    bool complete = entry->finished;
+
+    if (!QFileInfo::exists(path)) {
+        // Staging renamed it into the incoming directory, flattened to its base
+        // name. Following it there is what keeps playback alive across the
+        // moment the download finishes.
+        const QFileInfo published(
+            QDir(thePrefs.incomingDir()).filePath(QFileInfo(entry->path).fileName()));
+        if (!published.exists())
+            return true;
+        path = published.absoluteFilePath();
+        readable = published.size();
+        complete = true;
+    } else if (run->closing) {
+        return true;   // a repair is about to discard it, or staging to move it
+    }
+
+    // No declared size, no answer. serveRange() derives the total from the
+    // pieces when it is not told one, and for a growing file that total is
+    // whatever had been extracted — which makes the player's opening request,
+    // the one with no Range header, a 200 OK carrying "the whole movie".
+    if (entry->entrySize <= 0)
+        return true;
+
+    // A run that restarted truncated its output back to zero. Never advertise
+    // less than was advertised before: wait for the new run to catch up.
+    qint64& high = rt.streamHighWater[path];
+    if (readable < high)
+        return true;
+    high = readable;
+
+    if (readable <= 0)
+        return true;
+
+    info.fileName = entry->name;
+    info.totalSize = entry->entrySize;
+    info.availableEnd = qMin(readable, entry->entrySize);
+    info.complete = complete;
+    info.notSeekableReason.clear();
+    info.pieces.append({path, 0, 0, info.availableEnd});
+    return true;
+}
+
+void UsenetQueue::annotateFromExtraction(ItemRuntime& rt, int fileIndex, int entryOrdinal,
+                                         ArchiveEntryInfo& row)
+{
+    const UsenetDirectUnpackEntry* entry = extractionEntryFor(rt, fileIndex, entryOrdinal);
+    if (!entry)
+        return;
+
+    if (entry->entrySize > 0 && entry->bytesReadable > 0) {
+        row.playable = true;
+        row.note.clear();
+        return;
+    }
+    row.note = tr("Extracting — playable shortly");
+}
+
+void UsenetQueue::appendExtractionRows(ItemRuntime& rt, int fileIndex, ArchiveListing& listing)
+{
+    const auto position = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, fileIndex));
+    if (position.index < 0)
+        return;
+
+    const auto run = rt.directUnpack.constFind(position.baseName);
+    if (run == rt.directUnpack.constEnd())
+        return;
+
+    for (const UsenetDirectUnpackEntry& e : run->progress.entries) {
+        if (e.index < 0 || e.name.isEmpty())
+            continue;
+
+        ArchiveEntryInfo row;
+        row.entry = e.index;
+        row.name = e.name;
+        row.size = e.entrySize;
+        row.playable = isPlayableName(e.name) && e.entrySize > 0 && e.bytesReadable > 0;
+        if (!row.playable) {
+            row.note = isPlayableName(e.name) ? tr("Extracting — playable shortly")
+                                              : tr("Not playable");
+        }
+        listing.entries.append(row);
+    }
+}
+
+void UsenetQueue::promoteExtractionVolume(ItemRuntime& rt, int fileIndex)
+{
+    const auto position = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, fileIndex));
+    if (position.index < 0)
+        return;
+
+    auto run = rt.directUnpack.find(position.baseName);
+
+    // A compressed member has no byte map, so the articles covering the
+    // requested *offset* mean nothing. What unblocks playback is the volume the
+    // extraction is parked on — or, before there is an extraction at all, volume
+    // one, the only volume a run may start on. Without that a preview waits for
+    // the scheduler to reach volume one in whatever order the NZB listed it.
+    const bool live = run != rt.directUnpack.end() && run->running && run->worker;
+    const int waiting = live ? run->worker->waitingForVolume() : 0;
+    if (waiting < 0)
+        return;
+    if (run != rt.directUnpack.end()) {
+        if (waiting == run->promotedVolume)
+            return;   // promoting a whole volume is O(plan) per segment: once each
+        run->promotedVolume = waiting;
+    }
+
+    // That volume and the one after it, or the pipeline empties every time a
+    // volume completes.
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
+        if (pos.index < 0 || pos.baseName != position.baseName)
+            continue;
+        const int ordinal = volumeOrdinal(rt, f, position.baseName);
+        if (ordinal < waiting || ordinal > waiting + 1)
+            continue;
+        const UsenetFileState& st = rt.item->files.at(f);
+        if (!st.finalized && st.declaredSize > 0)
+            promoteRange(rt, f, 0, st.declaredSize);
+    }
 }
 
 int UsenetQueue::volumeOrdinal(const ItemRuntime& rt, int fileIndex, const QString& baseName)
@@ -1449,6 +1776,12 @@ void UsenetQueue::onDirectUnpackFinished(const eMule::usenet::UsenetDirectUnpack
 
 void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
 {
+    // From here the extracted files belong to post-processing: a repair discards
+    // them, staging renames them into the incoming directory. A preview must
+    // stop being served from them before either happens.
+    for (DirectUnpackRun& run : rt.directUnpack)
+        run.closing = true;
+
     if (!m_postProcessor) {
         // No pipeline at all: fall back to phase 3's behaviour, minus the part
         // of it that was wrong. A clean release is published; a short one is not.

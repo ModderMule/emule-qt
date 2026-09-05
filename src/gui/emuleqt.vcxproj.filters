@@ -612,6 +612,9 @@
     <None Include="..\..\resources\icons\DownloadFiles.ico">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="..\..\resources\icons\DownloadsFolder.ico">
+      <Filter>Resource Files</Filter>
+    </None>
     <None Include="..\..\resources\icons\Empty.ico">
       <Filter>Resource Files</Filter>
     </None>

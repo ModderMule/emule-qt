@@ -71,6 +71,25 @@ QByteArray postStoredSet(FakeNntpServer& server, QByteArray& innerOut)
     return postFiles(server, files, kArticleSize);
 }
 
+/// The same set, indexed by an NZB that lists its volumes in a scrambled order.
+/// Real posts do this — `vina.nzb` lists part03, part04, part01, part05 — and
+/// the queue downloads in the order the NZB gives, so volume one is not the
+/// first to seal.
+QByteArray postStoredSetOutOfOrder(FakeNntpServer& server, QByteArray& innerOut)
+{
+    innerOut = patterned(kVolumePayload * kVolumeCount);
+    const QList<QByteArray> volumes =
+        eMule::testing::rar::makeStoredRarSet("Some.Release.mkv", innerOut, kVolumePayload);
+
+    QList<PostedFile> files;
+    for (int i : {2, 3, 0, 4, 1}) {
+        files.append({QStringLiteral("Some.Release.part%1.rar")
+                          .arg(i + 1, 2, 10, QLatin1Char('0')),
+                      volumes.at(i)});
+    }
+    return postFiles(server, files, kArticleSize);
+}
+
 /// Run a release to completion and report whether the payload was already
 /// extracted at the instant post-processing began.
 struct RunOutcome {
@@ -140,9 +159,11 @@ class tst_UsenetDirectUnpack : public QObject {
 private slots:
     void volumesOfferedOneAtATimeExtractInFull();
     void aRunWaitsForAVolumeThatHasNotLanded();
+    void aBlockedRunReportsWhatIsReadableAndWhichVolumeItNeeds();
     void cancelMidSetLeavesNoPartialOutput();
     void aSetThatEndsShortFailsRatherThanHanging();
     void aDownloadedSetIsAlreadyUnpackedWhenPostProcessingStarts();
+    void aSetWhoseNzbScramblesItsVolumesIsStillUnpackedWhileDownloading();
     void withTheOptionOffTheSetIsUnpackedAtTheEndAsBefore();
 
 private:
@@ -227,6 +248,75 @@ void tst_UsenetDirectUnpack::aRunWaitsForAVolumeThatHasNotLanded()
     stop(worker, thread);
 }
 
+// A run parked on a missing volume is exactly when a preview is most useful:
+// the payload up to that point is on disk and playable. What it reports has to
+// be true down to the byte, and it has to name the volume that would let it
+// continue — that is what the scheduler fetches next.
+void tst_UsenetDirectUnpack::aBlockedRunReportsWhatIsReadableAndWhichVolumeItNeeds()
+{
+    eMule::testing::TempDir tmp;
+
+    // Volumes well above libarchive's 10 KiB read block, or the reader consumes
+    // every volume on offer filling its buffer and blocks before it has emitted
+    // a single byte — which is a fine way to extract and a useless one to
+    // preview.
+    const QByteArray payload = patterned(4 * 1024 * 1024);
+    const QList<QByteArray> vols =
+        eMule::testing::rar::makeStoredRarSet("movie.mkv", payload, 512 * 1024);
+    QCOMPARE(vols.size(), 8);
+
+    const QString dest = QDir(tmp.path()).filePath(QStringLiteral("_unpacked"));
+    UsenetDirectUnpack* worker = nullptr;
+    QThread* thread = nullptr;
+    start(worker, thread, {QStringLiteral("item"), QStringLiteral("rel"), dest, {}});
+
+    QSignalSpy progress(worker, &UsenetDirectUnpack::progress);
+    QSignalSpy done(worker, &UsenetDirectUnpack::finished);
+
+    // Four of eight volumes, so the run stalls a long way from the end.
+    for (int i = 0; i < 4; ++i)
+        worker->offerVolume(i, writeVolume(tmp.path(), i, vols.at(i)));
+
+    QVERIFY(progress.wait(5000));
+    QCOMPARE(done.count(), 0);
+
+    // Whichever report is the latest, its byte count must be honest.
+    const auto state =
+        progress.last().at(0).value<UsenetDirectUnpackProgress>();
+    QCOMPARE(state.itemId, QStringLiteral("item"));
+    QCOMPARE(state.setKey, QStringLiteral("rel"));
+    QCOMPARE(state.entries.size(), 1);
+
+    const auto& entry = state.entries.first();
+    QCOMPARE(entry.index, 0);
+    QCOMPARE(entry.name, QStringLiteral("movie.mkv"));
+    QCOMPARE(entry.entrySize, qint64(payload.size()));
+    QVERIFY(!entry.finished);
+    QVERIFY2(entry.bytesReadable > 0, "a stalled run reported nothing readable");
+    QVERIFY(entry.bytesReadable < payload.size());
+
+    QFile back(entry.path);
+    QVERIFY(back.open(QIODevice::ReadOnly));
+    QCOMPARE(back.read(entry.bytesReadable), payload.left(int(entry.bytesReadable)));
+    back.close();
+
+    // And it is parked on volume 4 — the next one nobody has offered.
+    QTRY_COMPARE(worker->waitingForVolume(), 4);
+
+    for (int i = 4; i < vols.size(); ++i)
+        worker->offerVolume(i, writeVolume(tmp.path(), i, vols.at(i)));
+    worker->endOfSet();
+
+    QVERIFY(done.wait(10000));
+    QVERIFY(done.first().at(0).value<UsenetDirectUnpackResult>().ok);
+
+    const auto finalState = progress.last().at(0).value<UsenetDirectUnpackProgress>();
+    QCOMPARE(finalState.entries.first().bytesReadable, qint64(payload.size()));
+    QVERIFY(finalState.entries.first().finished);
+
+    stop(worker, thread);
+}
+
 void tst_UsenetDirectUnpack::cancelMidSetLeavesNoPartialOutput()
 {
     eMule::testing::TempDir tmp;
@@ -300,6 +390,59 @@ void tst_UsenetDirectUnpack::aDownloadedSetIsAlreadyUnpackedWhenPostProcessingSt
 
 // And with it off, nothing changes about the result — only about when the work
 // happened. This is the fallback every refusal in the feature lands on.
+// Volume one is not always the first to seal, and a run may only *start* on it.
+// Everything that sealed before it therefore has to be replayed, or the run
+// parks on an index nobody will offer and the set quietly falls back to being
+// unpacked at the end — the feature switched off by the order of an NZB.
+void tst_UsenetDirectUnpack::aSetWhoseNzbScramblesItsVolumesIsStillUnpackedWhileDownloading()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+
+    QByteArray inner;
+    const QByteArray nzb = postStoredSetOutOfOrder(server, inner);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = true,
+                                    .cleanup = true, .directUnpack = true});
+    queue.start();
+
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("release"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    const QString expected = QDir(QDir(thePrefs.usenetTempDir()).filePath(id))
+                                 .filePath(QStringLiteral("_unpacked/Some.Release.mkv"));
+    bool sampled = false;
+    bool readyBeforePostProcessing = false;
+    QObject::connect(&queue, &UsenetQueue::itemChanged, &queue, [&](const QString& changed) {
+        if (sampled || changed != id)
+            return;
+        const auto* item = queue.findItem(id);
+        if (!item || !item->isPostProcessing())
+            return;
+        sampled = true;
+        readyBeforePostProcessing = QFileInfo(expected).size() == inner.size();
+    });
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QVERIFY2(finished.wait(60000), "the download never reported a terminal outcome");
+    QVERIFY(finished.first().at(1).toBool());
+    QVERIFY2(readyBeforePostProcessing,
+             "the scrambled order stopped the set being unpacked while it downloaded");
+
+    QFile out(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("Some.Release.mkv")));
+    QVERIFY(out.open(QIODevice::ReadOnly));
+    QCOMPARE(out.readAll(), inner);
+
+    queue.stop();
+}
+
 void tst_UsenetDirectUnpack::withTheOptionOffTheSetIsUnpackedAtTheEndAsBefore()
 {
     eMule::testing::TempDir tmp;

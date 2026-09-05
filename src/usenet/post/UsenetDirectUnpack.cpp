@@ -7,6 +7,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QScopeGuard>
 
 namespace eMule::usenet {
 
@@ -47,6 +48,11 @@ void UsenetDirectUnpack::cancel()
 bool UsenetDirectUnpack::volumePath(int index, QString& out)
 {
     QMutexLocker lock(&m_mutex);
+    // Published while we may be parked here, so a preview can ask the scheduler
+    // for the one volume that would let the extraction continue.
+    m_waitingFor.store(index);
+    const auto done = qScopeGuard([this] { m_waitingFor.store(-1); });
+
     for (;;) {
         if (m_cancelled.load())
             return false;
@@ -77,6 +83,25 @@ void UsenetDirectUnpack::run(const eMule::usenet::UsenetDirectUnpackJob& job)
     ArchiveReader reader;
     if (!job.password.isEmpty())
         reader.setPassphrase(job.password);
+
+    // Every member the extraction touches, reported out as it grows. This is
+    // what lets a compressed or solid set — which can never be byte-mapped out
+    // of its volumes — still be previewed while it downloads.
+    reader.setProgressSink([this, &job](int index, const QString& name, const QString& path,
+                                        qint64 bytes, qint64 size, bool entryDone) {
+        while (m_entries.size() <= index)
+            m_entries.append(UsenetDirectUnpackEntry{});
+
+        UsenetDirectUnpackEntry& e = m_entries[index];
+        e.index = index;
+        e.name = name;
+        e.path = path;
+        e.entrySize = size;
+        e.bytesReadable = bytes;
+        e.finished = entryDone;
+
+        emit progress({job.itemId, job.setKey, m_entries});
+    });
 
     const bool ok = reader.extractAllFrom(*this, job.destDir);
 

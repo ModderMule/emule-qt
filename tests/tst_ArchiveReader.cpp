@@ -33,6 +33,7 @@ private slots:
     void entrySize_valid();
     void multiVolume_openedOnPartOneAloneIsIncomplete();
     void multiVolume_openedOnTheWholeSetExtracts();
+    void progressSink_reportsBytesAReaderCanActuallyRead();
 };
 
 namespace {
@@ -247,6 +248,72 @@ void tst_ArchiveReader::multiVolume_openedOnTheWholeSetExtracts()
     QFile f(QDir(outDir).filePath(QStringLiteral("payload.bin")));
     QVERIFY(f.open(QIODevice::ReadOnly));
     QCOMPARE(f.readAll(), payload);
+}
+
+void tst_ArchiveReader::progressSink_reportsBytesAReaderCanActuallyRead()
+{
+    // The contract a preview of a still-extracting release rests on: whatever
+    // the sink says is readable *is* readable, from a separate handle, at the
+    // moment it says so. Get the flush the wrong side of the callback and this
+    // is the test that notices.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // Several report intervals' worth, so the sink fires mid-member rather than
+    // only at the end.
+    const QByteArray payload = patternedPayload(5 * 1024 * 1024);
+    const QStringList volumes = writeRarSet(dir.path(), payload, 512 * 1024);
+    QVERIFY(!volumes.isEmpty());
+
+    const QString dest = QDir(dir.path()).filePath(QStringLiteral("out"));
+
+    int calls = 0;
+    int finishedCalls = 0;
+    qint64 lastBytes = -1;
+    qint64 declaredSize = -1;
+    bool everyReportReadable = true;
+    QString reportedPath;
+
+    ArchiveReader reader;
+    reader.setProgressSink([&](int index, const QString& name, const QString& destPath,
+                               qint64 bytes, qint64 size, bool finished) {
+        ++calls;
+        if (finished)
+            ++finishedCalls;
+        QCOMPARE(index, 0);
+        QCOMPARE(name, QStringLiteral("payload.bin"));
+        reportedPath = destPath;
+        declaredSize = size;
+
+        // Monotone, or a player told to seek to a byte would be sent backwards.
+        if (bytes < lastBytes)
+            everyReportReadable = false;
+        lastBytes = bytes;
+
+        // The point of the whole exercise: read it back through a different
+        // handle, right now, and get those bytes.
+        QFile back(destPath);
+        if (!back.open(QIODevice::ReadOnly)) {
+            everyReportReadable = false;
+            return;
+        }
+        if (back.size() < bytes) {
+            everyReportReadable = false;
+            return;
+        }
+        if (back.read(bytes) != payload.left(int(bytes)))
+            everyReportReadable = false;
+    });
+
+    QVERIFY(reader.open(volumes));
+    QVERIFY(reader.extractAll(dest));
+
+    QVERIFY2(calls > 1, "the sink never fired mid-member");
+    QCOMPARE(finishedCalls, 1);
+    QCOMPARE(lastBytes, qint64(payload.size()));
+    QCOMPARE(declaredSize, qint64(payload.size()));
+    QVERIFY2(everyReportReadable, "the sink promised bytes a reader could not get back");
+    QCOMPARE(reportedPath, QDir(dest).filePath(QStringLiteral("payload.bin")));
 }
 
 QTEST_MAIN(tst_ArchiveReader)

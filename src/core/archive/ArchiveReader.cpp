@@ -39,6 +39,13 @@ struct LiveClient {
     QByteArray buffer;
 };
 
+/// How much a member may grow between progress reports.
+///
+/// Each report costs a flush, so tying it to the 64 KiB read block would mean
+/// 600k flushes on a 40 GB release for a number nobody reads that often. One
+/// MiB is finer than any player's read-ahead and cheap at any release size.
+constexpr qint64 kReportBytes = 1024 * 1024;
+
 [[nodiscard]] bool liveOpenNextVolume(LiveClient* c)
 {
     QString path;
@@ -99,6 +106,7 @@ struct ArchiveReader::Impl {
 
     std::vector<Entry> entries;
     QStringList extracted;        ///< what the last extractAll*() wrote
+    ProgressSink sink;            ///< optional; see setProgressSink()
     std::unique_ptr<LiveClient> live;
     QStringList volumes;          ///< every volume, in order; [0] is what messages name
     ArchiveVolumeSource* source = nullptr;   ///< set instead of `volumes` for a live set
@@ -330,6 +338,12 @@ QStringList ArchiveReader::rejectedEntries() const
     return m_impl->rejected;
 }
 
+void ArchiveReader::setProgressSink(ProgressSink sink)
+{
+    m_impl->sink = std::move(sink);
+}
+
+
 // ---------------------------------------------------------------------------
 // safeEntryPath — the only sanctioned way to turn a member name into a path
 // ---------------------------------------------------------------------------
@@ -528,7 +542,17 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
     bool allOk = true;
     struct archive_entry* entry = nullptr;
 
+    // Members in archive order, the only ordering a live set has — and the
+    // ordinal a preview of a still-extracting set is addressed by. Counted for
+    // every header, including the ones refused below, so it stays stable
+    // whatever the caller decides to skip.
+    int entryIndex = -1;
+
+    static constexpr int kBufSize = 65536;
+    char buf[kBufSize];
+
     while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
+        ++entryIndex;
         const char* pathname = archive_entry_pathname_utf8(entry);
         if (!pathname)
             pathname = archive_entry_pathname(entry);
@@ -563,8 +587,25 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
             continue;
         }
 
-        static constexpr int kBufSize = 65536;
-        char buf[kBufSize];
+        // Not every format states a size up front — a streamed zip puts it in a
+        // trailing data descriptor — and 0 is how the sink says so.
+        const qint64 entrySize =
+            archive_entry_size_is_set(entry) ? qint64(archive_entry_size(entry)) : 0;
+
+        qint64 written = 0;
+        qint64 reported = -1;
+
+        // Flush, then report. The other way round advertises bytes that are
+        // still in QFile's buffer, and a reader that trusts the number gets a
+        // short read it cannot recover from inside one request.
+        const auto report = [&] {
+            if (!m_impl->sink)
+                return;
+            outFile.flush();
+            reported = written;
+            m_impl->sink(entryIndex, rawName, destPath, written, entrySize, /*finished*/ false);
+        };
+
         for (;;) {
             const auto readSize = archive_read_data(ar, buf, kBufSize);
             if (readSize < 0) {
@@ -575,12 +616,24 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
             }
             if (readSize == 0)
                 break;
-            if (outFile.write(buf, readSize) != readSize) {
+            const auto put = outFile.write(buf, readSize);
+            if (put != readSize) {
                 allOk = false;
                 break;
             }
+            written += put;
+            // Bounded by bytes, not by blocks: a flush every 64 KiB is 600k
+            // flushes on a 40 GB release. The first chunk always reports, so a
+            // waiting reader starts as soon as there is anything to read.
+            if (reported < 0 || written - reported >= kReportBytes)
+                report();
         }
         outFile.close();
+        // After close(), so "finished" really means the file is complete — and
+        // extractedFiles() lists it from here on, which is what lets a cancelled
+        // run delete a half-written member.
+        if (m_impl->sink)
+            m_impl->sink(entryIndex, rawName, destPath, written, entrySize, /*finished*/ true);
         m_impl->extracted.append(destPath);
     }
 

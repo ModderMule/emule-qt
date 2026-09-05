@@ -22,6 +22,7 @@
 
 class QHttpServer;
 class QHttpServerRequest;
+class QHttpServerResponder;
 class QSslServer;
 class QTcpServer;
 class QUrlQuery;
@@ -238,6 +239,40 @@ private:
                                                  qint64 totalSize,
                                                  qint64 availableEnd,
                                                  const QByteArray& rangeHeader);
+
+    // Endpoint handlers — Incoming folder browsing
+    //
+    // A remote GUI cannot hand its own file manager a path that belongs to the
+    // core's filesystem, so these three render the folder instead: a listing, a
+    // Range-capable stream for players, and a plain attachment download. They
+    // sit on the stream token, not on the web-UI session or the API key, because
+    // like preview they must work with both of those surfaces switched off.
+    QHttpServerResponse handleIncomingListing(const QHttpServerRequest& req);
+    QHttpServerResponse handleIncomingStream(const QHttpServerRequest& req);
+    void handleIncomingDownload(const QHttpServerRequest& req, QHttpServerResponder& responder);
+
+    /// True when the request carries the stream token. The gate all three share.
+    [[nodiscard]] bool hasStreamToken(const QHttpServerRequest& req) const;
+
+    /// The canonical incoming directory, or empty when there is none.
+    [[nodiscard]] QString incomingRoot() const;
+
+    /// Turn a client-supplied path relative to the incoming folder into an
+    /// absolute one, or return empty if it may not be served.
+    ///
+    /// The whole security surface of these routes. Rejects an absolute path and
+    /// any ".." component before touching the filesystem, then *canonicalises*
+    /// and requires containment — which is also what stops a symlink inside the
+    /// folder from pointing out of it. Empty for anything that does not exist.
+    [[nodiscard]] QString resolveIncomingPath(const QString& relPath) const;
+
+    /// The listing page, and the one-element player page, as standalone HTML.
+    /// Self-contained by necessity: with the web UI off there is no stylesheet,
+    /// no sprite sheet and no template to lean on.
+    [[nodiscard]] QByteArray renderIncomingListing(const QString& absDir, const QString& relPath,
+                                                   const QString& token) const;
+    [[nodiscard]] QByteArray renderIncomingPlayer(const QString& relPath, const QString& fileName,
+                                                  const QString& token) const;
 
     // Endpoint handlers — Uploads
     QHttpServerResponse handleGetUploads();

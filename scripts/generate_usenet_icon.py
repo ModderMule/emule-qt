@@ -17,10 +17,10 @@ so drawing "faint" lines directly onto the globe punches holes in it.
 Usage: python3 scripts/generate_usenet_icon.py
 """
 
-import struct
 import sys
-from io import BytesIO
 from pathlib import Path
+
+from icon_tools import SIZES, SS, report, scaled, write_ico
 
 try:
     from PIL import Image, ImageDraw
@@ -29,9 +29,6 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "resources" / "icons" / "Usenet.ico"
-
-SIZES = (16, 32, 48, 64)
-SS = 4  # supersampling factor
 
 # Sampled from Global.ico so the new globe sits in the same palette.
 OCEAN_LIGHT = (128, 202, 240)
@@ -142,11 +139,8 @@ def render(size):
     s = size * SS
     detail = size >= 32
 
-    def w(final_px):
-        return max(1, round(final_px * SS))
-
-    rim_w = w(1.0 if size <= 16 else size / 26.0)
-    line_w = w(max(0.7, size / 48.0))
+    rim_w = scaled(1.0 if size <= 16 else size / 26.0)
+    line_w = scaled(max(0.7, size / 48.0))
 
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
 
@@ -160,39 +154,10 @@ def render(size):
     return img.resize((size, size), Image.LANCZOS)
 
 
-def write_ico(path, frames):
-    """Write the ICONDIR by hand.
-
-    Pillow's ICO writer resizes one image to every requested size; it has no way
-    to take per-size art, which is the whole point here. The container is six
-    bytes of header plus a sixteen-byte entry each, so this is simpler than
-    fighting it.
-    """
-    blobs = []
-    for frame in frames:
-        buf = BytesIO()
-        frame.save(buf, format="PNG")   # Qt and Windows Vista+ both read PNG frames
-        blobs.append(buf.getvalue())
-
-    out = bytearray(struct.pack("<HHH", 0, 1, len(frames)))
-    offset = 6 + 16 * len(frames)
-    for frame, blob in zip(frames, blobs):
-        out += struct.pack("<BBBBHHII",
-                           0 if frame.width >= 256 else frame.width,
-                           0 if frame.height >= 256 else frame.height,
-                           0, 0, 1, 32, len(blob), offset)
-        offset += len(blob)
-    for blob in blobs:
-        out += blob
-
-    path.write_bytes(bytes(out))
-
-
 def main():
     frames = [render(n) for n in SIZES]
     write_ico(OUT, frames)
-    print(f"wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size} bytes, "
-          f"frames: {', '.join(f'{n}x{n}' for n in SIZES)})")
+    report(ROOT, OUT)
 
 
 if __name__ == "__main__":

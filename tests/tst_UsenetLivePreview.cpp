@@ -7,31 +7,36 @@
 /// asks: does the map survive an archive somebody else's packer produced, split
 /// by somebody else's `-v` switch, indexed by somebody else's NZB?
 ///
-/// Two answers are conformant, and the case asserts whichever it gets:
+/// Three answers are conformant, and the case asserts whichever it gets:
 ///
-///   - a **stored** set streams — the listing reaches a terminal status, a read
-///     at offset 0 returns bytes, and the HTTP route answers 206 with the same
-///     bytes the queue handed back directly;
-///   - a set with nothing streamable in it must say so — compressed, solid or
-///     header-encrypted, or simply holding no media — with a
-///     `notSeekableReason` and a 406 carrying that reason, instead of a player
-///     left to time out. A Linux image in a `-m3` archive is the ordinary case:
-///     the listing completes and names every inner file, and not one of them is
-///     playable.
+///   - a **stored** set streams straight out of its volumes — the listing
+///     reaches a terminal status, a read at offset 0 returns bytes, and the HTTP
+///     route answers 206 with the same bytes the queue handed back directly;
+///   - a **compressed or solid** set cannot be mapped and never will be, but is
+///     being extracted as it downloads, so it streams out of *that* instead —
+///     206 again, from `_unpacked/`, with the archive's own declared size as the
+///     total;
+///   - a set with nothing playable in it at all must say so — with a
+///     `notSeekableReason` and a 406 carrying it, instead of a player left to
+///     time out. `Ubuntu.nzb` is that case twice over: one 999 MB volume, so
+///     nothing is extracted until the whole thing is down, and a `.vdi` inside,
+///     which is not something a player opens however it is unpacked.
 ///
 /// Asserting only the first would make the test a lottery on a stranger's `-m`
 /// switch.
 ///
-/// Post-processing is off throughout, for the reason tst_UsenetStream gives:
-/// unpack and cleanup would delete the very volumes the case streams from.
+/// PAR2, rename and cleanup are off — a repair would rewrite the volumes under
+/// the map, and cleanup would delete them. Unpack and direct unpack are **on**,
+/// and both are needed: pumpDirectUnpack() checks the pair, so `directUnpack`
+/// alone extracts nothing and the second outcome above would look like a bug.
 ///
 /// Environment: the provider variables from UsenetLiveEnv.h, plus
 ///
 ///   EMULE_NZB_DIR         directory of .nzb files (required)
 ///   EMULE_NZB_PREVIEW_MIN per-release budget, default 10 (optional)
 ///
-/// Cheap by design: it fetches the head of one file, not the release. Whatever
-/// it does fetch is removed with the TempDir on the way out.
+/// Cheap by design: it fetches one volume at most, not the release. Whatever it
+/// does fetch is removed with the TempDir on the way out.
 ///
 /// Labelled "live" and built only under EMULE_LIVE_TESTS.
 
@@ -41,6 +46,7 @@
 #include "nzb/NzbFile.h"
 #include "nzb/NzbInfo.h"
 #include "queue/UsenetQueue.h"
+#include "post/UsenetUnpacker.h"
 #include "queue/UsenetQueueItem.h"
 
 #include "prefs/Preferences.h"
@@ -60,6 +66,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 
 using namespace eMule;
 using namespace eMule::usenet;
@@ -77,21 +84,80 @@ constexpr qint64 kProbeBytes = 64 * 1024;
 
 constexpr int kPollMs = 250;
 
-/// A preview reads the head of one file. Taking the account's whole connection
-/// budget for that is not just wasteful: consecutive rows re-open before the
-/// provider has released the previous row's sockets, and the answer is
-/// "502 Too many connections" followed by a 60 s backoff on every worker.
-constexpr int kPreviewConnections = 2;
+/// Enough to pull one volume promptly, far short of the account's budget.
+/// Consecutive rows re-open before the provider has released the previous row's
+/// sockets, and taking the whole allowance is answered with "502 Too many
+/// connections" and a 60 s backoff on every worker. A set that has to be
+/// extracted before it can be played needs its first volume whole, so this is
+/// not as small as it was when only a header had to arrive.
+constexpr int kPreviewConnections = 8;
 
-/// First file of the NZB that is not a recovery volume. PAR2 members are never
-/// previewable and are usually first in the document.
-int firstPayloadFileIndex(const NzbInfo& nzb)
+/// What to preview, and how many volumes stand behind it.
+struct PreviewTarget {
+    int fileIndex = -1;
+    int volumeCount = 0;   ///< 0 when the target is not part of an archive set
+    QString setName;
+};
+
+/// Volume one of the largest archive set in the NZB, or failing that the largest
+/// file that is not a recovery volume.
+///
+/// "First file that is not PAR2" is not good enough. A release that posts its own
+/// `.nzb` alongside the volumes puts that first, and previewing a 500 KB text
+/// file proves nothing about the release — nor about the archive enumerator,
+/// which is the whole point of the case.
+PreviewTarget previewTarget(const NzbInfo& nzb)
 {
+    QHash<QString, qint64> setBytes;
+    QHash<QString, int> setVolumes;
+
     for (int i = 0; i < nzb.files.size(); ++i) {
-        if (!nzb.files.at(i).isPar2())
-            return i;
+        const NzbFileInfo& file = nzb.files.at(i);
+        if (file.isPar2())
+            continue;
+        const auto pos = UsenetUnpacker::volumePositionOf(file.fileName);
+        if (pos.index < 0)
+            continue;
+        setBytes[pos.baseName] += file.encodedBytes();
+        setVolumes[pos.baseName] += 1;
     }
-    return -1;
+
+    PreviewTarget out;
+    qint64 best = 0;
+    for (auto it = setBytes.cbegin(); it != setBytes.cend(); ++it) {
+        if (it.value() <= best)
+            continue;
+        best = it.value();
+        out.setName = it.key();
+    }
+
+    if (!out.setName.isEmpty()) {
+        out.volumeCount = setVolumes.value(out.setName);
+        int lowest = std::numeric_limits<int>::max();
+        for (int i = 0; i < nzb.files.size(); ++i) {
+            const auto pos = UsenetUnpacker::volumePositionOf(nzb.files.at(i).fileName);
+            if (pos.index < 0 || pos.baseName != out.setName)
+                continue;
+            if (pos.index < lowest) {
+                lowest = pos.index;
+                out.fileIndex = i;
+            }
+        }
+        return out;
+    }
+
+    // No archive at all: the biggest raw payload, which streams directly.
+    qint64 biggest = 0;
+    for (int i = 0; i < nzb.files.size(); ++i) {
+        const NzbFileInfo& file = nzb.files.at(i);
+        if (file.isPar2())
+            continue;
+        if (file.encodedBytes() > biggest) {
+            biggest = file.encodedBytes();
+            out.fileIndex = i;
+        }
+    }
+    return out;
 }
 
 int missingSegmentsIn(const UsenetQueueItem* item)
@@ -228,12 +294,14 @@ void tst_UsenetLivePreview::previewsAReleaseWhileItIsStillDownloading()
     QString error;
     QVERIFY2(NzbFile::parseFile(nzbPath, nzb, error), qPrintable(error));
 
-    const int fileIndex = firstPayloadFileIndex(nzb);
+    const PreviewTarget target = previewTarget(nzb);
+    const int fileIndex = target.fileIndex;
     QVERIFY2(fileIndex >= 0, "the NZB is nothing but recovery volumes");
 
-    qInfo().noquote() << QStringLiteral("previewing %1, file %2: %3")
+    qInfo().noquote() << QStringLiteral("previewing %1, file %2: %3 (%4 volume(s))")
                              .arg(nzb.name).arg(fileIndex)
-                             .arg(nzb.files.at(fileIndex).fileName);
+                             .arg(nzb.files.at(fileIndex).fileName)
+                             .arg(target.volumeCount);
 
     TempDir tmp;
     LivePrefsGuard prefs(tmp);
@@ -244,13 +312,14 @@ void tst_UsenetLivePreview::previewsAReleaseWhileItIsStillDownloading()
 
     UsenetQueue queue;
     queue.applyServers({provider}, 60);
-    // Everything off: unpack and cleanup would delete the volumes this case
-    // streams from, and a repair would rewrite them underneath the map.
+    // Cleanup and repair off — they would delete or rewrite the volumes this
+    // case streams from. Unpack and direct unpack on, as a pair: that is the
+    // second byte source, and the only one a compressed release has.
     queue.setPostProcessingOptions({.par2 = false,
                                     .rename = false,
-                                    .unpack = false,
+                                    .unpack = true,
                                     .cleanup = false,
-                                    .directUnpack = false});
+                                    .directUnpack = true});
     queue.start();
 
     QFile nzbFile(nzbPath);
@@ -337,21 +406,25 @@ void tst_UsenetLivePreview::previewsAReleaseWhileItIsStillDownloading()
 
     QNetworkAccessManager nam;
 
-    // -- 3a. A set that cannot be streamed must say why ----------------------
+    // -- 3. Which of the three outcomes is this release? ---------------------
     //
-    // Two shapes reach here, and both are refusals: a set with nothing to list
-    // (solid, header-encrypted), and a set listed in full whose every member is
-    // compressed or is not media — a Linux image in a `-m3` archive is the
-    // ordinary case of the second.
+    // A member the map can place streams out of the volumes. One it cannot may
+    // still be extracted as the volumes land, and then it streams out of that.
+    // Only a set with nothing playable in it at all is a refusal.
 
-    int playable = 0;
+    int mappable = 0;
     for (const auto& entry : listing.entries)
-        playable += entry.playable ? 1 : 0;
+        mappable += entry.playable ? 1 : 0;
 
-    if (listing.status == UsenetQueue::ArchiveListing::Status::NotSeekable || playable == 0) {
+    // A single-volume set cannot be extracted until the whole volume is down,
+    // which for a 1 GB release is not what this test is for. Nothing is waited
+    // for in that case.
+    const bool extractionPossible = target.volumeCount >= 2;
+
+    if (mappable == 0 && !extractionPossible) {
         const auto info = queue.requestStream(id, fileIndex, 0, kProbeBytes);
         QVERIFY2(!info.notSeekableReason.isEmpty(),
-                 "the listing refused the set but requestStream gave no reason");
+                 "nothing playable and nothing extracting, yet no reason was given");
         QVERIFY(info.pieces.isEmpty());
 
         const HttpResponse resp = rangedGet(nam, url, QByteArrayLiteral("bytes=0-"));
@@ -368,7 +441,13 @@ void tst_UsenetLivePreview::previewsAReleaseWhileItIsStillDownloading()
         return;
     }
 
-    // -- 3b. A stored set streams from byte 0 --------------------------------
+    // -- 4. Bytes, from whichever source has them ----------------------------
+    //
+    // The same poll serves both: the map answers within a couple of ticks, the
+    // extraction once its first volume has landed and libarchive has written
+    // past its own read-ahead. Neither may ever answer with a refusal — the
+    // route treats a reason as final, and a player that gets one does not come
+    // back.
 
     UsenetQueue::StreamInfo info;
     QDeadlineTimer readDeadline(qint64(budgetMin) * 60 * 1000);
@@ -385,6 +464,15 @@ void tst_UsenetLivePreview::previewsAReleaseWhileItIsStillDownloading()
              qPrintable(QStringLiteral("nothing readable from byte 0 within %1 min")
                             .arg(budgetMin)));
 
+    // Whichever source answered, the total is the finished file's size and not
+    // the growing one's — the number a player takes its seek bar from.
+    QVERIFY2(info.totalSize > 0, "served bytes without a declared total");
+    QVERIFY(info.availableEnd <= info.totalSize);
+
+    qInfo().noquote() << QStringLiteral("  source: %1")
+                             .arg(mappable > 0 ? QStringLiteral("the volume map")
+                                               : QStringLiteral("the extraction"));
+
     const qint64 want = qMin<qint64>(kProbeBytes, info.availableEnd);
     const QByteArray direct = readThroughPieces(info.pieces, 0, want);
     QVERIFY2(!direct.isEmpty(), "the pieces resolved but read back nothing");
@@ -393,7 +481,7 @@ void tst_UsenetLivePreview::previewsAReleaseWhileItIsStillDownloading()
                              .arg(info.fileName).arg(info.availableEnd)
                              .arg(info.totalSize).arg(info.pieces.size());
 
-    // -- 4. The same bytes, over the wire the GUI uses -----------------------
+    // -- 5. The same bytes, over the wire the GUI uses -----------------------
 
     const HttpResponse resp =
         rangedGet(nam, url, QByteArrayLiteral("bytes=0-") + QByteArray::number(want - 1));

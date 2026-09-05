@@ -48,6 +48,16 @@ enum class NntpCertVerification : quint8 {
 inline constexpr quint16 kDefaultNntpPort = 119;
 inline constexpr quint16 kDefaultNntpTlsPort = 563;
 
+/// Default simultaneous connections to one provider.
+///
+/// The connection count *is* the download rate: a provider caps a single
+/// connection at a fraction of the line, so 8 connections measured 1.2 MB/s
+/// where 40 measured 4.4-4.9 on the same post (docs/usenet-module.md, "Why a
+/// download is slow"). Every plan sold today allows far more than 8. Above what
+/// the plan allows the answer is 502 and a backed-off server, which is why the
+/// spin box still caps at 100 and still carries its warning.
+inline constexpr int kDefaultMaxConnections = 40;
+
 /// A provider account. Plain value type — copied freely, no identity.
 struct NewsServer {
     QString name;                  ///< Display only.
@@ -80,7 +90,7 @@ struct NewsServer {
     /// old servers refuse BODY <msgid> without it.
     bool joinGroup = false;
 
-    int maxConnections = 8;
+    int maxConnections = kDefaultMaxConnections;
     NntpCertVerification certVerification = NntpCertVerification::Strict;
     bool enabled = true;
 

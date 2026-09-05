@@ -2724,7 +2724,7 @@ QWidget* OptionsDialog::createUsenetPage()
 
     m_usenetConnSpin = new QSpinBox(details);
     m_usenetConnSpin->setRange(1, 100);
-    m_usenetConnSpin->setValue(8);
+    m_usenetConnSpin->setValue(kDefaultMaxConnections);
     m_usenetConnSpin->setToolTip(
         tr("Never set this above what your provider allows — exceeding the limit "
            "gets the account throttled, not queued."));
@@ -3005,7 +3005,8 @@ void OptionsDialog::updateNewsServerRow(int index)
     item->setText(1, host);
     item->setText(2, QString::number(s.value(QStringLiteral("port")).toInteger(kDefaultNntpTlsPort)));
     item->setText(3, QString::number(s.value(QStringLiteral("level")).toInteger(0)));
-    item->setText(4, QString::number(s.value(QStringLiteral("maxConnections")).toInteger(8)));
+    item->setText(4, QString::number(s.value(QStringLiteral("maxConnections"))
+                                     .toInteger(kDefaultMaxConnections)));
 
     // Disabled accounts stay visible but read as inactive, the way a disabled
     // schedule entry does. Re-enabling clears the role instead of painting a
@@ -3069,7 +3070,8 @@ void OptionsDialog::populateNewsServerDetails(int index)
     m_usenetTlsCombo->setCurrentIndex(
         int(s.value(QStringLiteral("tls")).toInteger(int(NntpTlsMode::Implicit))));
     m_usenetUserEdit->setText(s.value(QStringLiteral("user")).toString());
-    m_usenetConnSpin->setValue(int(s.value(QStringLiteral("maxConnections")).toInteger(8)));
+    m_usenetConnSpin->setValue(
+        int(s.value(QStringLiteral("maxConnections")).toInteger(kDefaultMaxConnections)));
     m_usenetLevelSpin->setValue(int(s.value(QStringLiteral("level")).toInteger(0)));
     m_usenetRetentionSpin->setValue(int(s.value(QStringLiteral("retention")).toInteger(0)));
     m_usenetCertCombo->setCurrentIndex(
@@ -3136,7 +3138,7 @@ void OptionsDialog::addNewsServer()
     fresh.insert(QStringLiteral("host"), QString{});
     fresh.insert(QStringLiteral("port"), int(kDefaultNntpTlsPort));
     fresh.insert(QStringLiteral("tls"), int(NntpTlsMode::Implicit));
-    fresh.insert(QStringLiteral("maxConnections"), 8);
+    fresh.insert(QStringLiteral("maxConnections"), kDefaultMaxConnections);
     fresh.insert(QStringLiteral("level"), 0);
     fresh.insert(QStringLiteral("certVerification"), int(NntpCertVerification::Strict));
     fresh.insert(QStringLiteral("enabled"), true);

@@ -225,7 +225,8 @@ struct RarMember {
 /// streaming index documents.
 inline QList<QByteArray> makeStoredRarSet(const QList<RarMember>& members,
                                           qint64 perVolume,
-                                          bool rar5 = false)
+                                          bool rar5 = false,
+                                          bool solid = false)
 {
     QList<QByteArray> volumes;
     QByteArray vol;
@@ -234,8 +235,9 @@ inline QList<QByteArray> makeStoredRarSet(const QList<RarMember>& members,
 
     const auto openVolume = [&] {
         vol = rar5 ? rar5Marker() : rar4Marker();
-        vol += rar5 ? rar5Main(number)
-                    : rar4Main(number == 0 ? kMainFirstVolume : quint16(0));
+        vol += rar5 ? rar5Main(number, solid)
+                    : rar4Main(quint16((number == 0 ? kMainFirstVolume : quint16(0))
+                                       | (solid ? kMainSolid : quint16(0))));
         budget = perVolume;
     };
     openVolume();
@@ -279,12 +281,19 @@ inline QList<QByteArray> makeStoredRarSet(const QList<RarMember>& members,
 
 /// The single-file set, which is the one-member case of the above. Kept as its
 /// own overload because seven call sites assert offsets computed from it.
+///
+/// @p solid marks the archive solid without touching the members, which stay
+/// stored. That combination is the one fixture the streaming index must refuse
+/// and libarchive can still extract — checked against libarchive, which reads a
+/// solid-flagged stored member byte for byte like any other. It is what proves
+/// a preview served from the extraction rather than from the map.
 inline QList<QByteArray> makeStoredRarSet(const QByteArray& innerName,
                                           const QByteArray& payload,
                                           qint64 perVolume,
-                                          bool rar5 = false)
+                                          bool rar5 = false,
+                                          bool solid = false)
 {
-    return makeStoredRarSet(QList<RarMember>{{innerName, payload}}, perVolume, rar5);
+    return makeStoredRarSet(QList<RarMember>{{innerName, payload}}, perVolume, rar5, solid);
 }
 
 /// The same set with a compression method set, so nothing in it is mappable.

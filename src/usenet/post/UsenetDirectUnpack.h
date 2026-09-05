@@ -21,6 +21,7 @@
 
 #include "archive/ArchiveReader.h"
 
+#include <QList>
 #include <QMap>
 #include <QMutex>
 #include <QObject>
@@ -37,6 +38,28 @@ struct UsenetDirectUnpackJob {
     QString setKey;      ///< the archive set's base name, as UsenetUnpacker groups it
     QString destDir;     ///< where members land; the same dir post-processing uses
     QString password;
+};
+
+/// One member of a set being extracted, as far as it has got.
+struct UsenetDirectUnpackEntry {
+    int index = -1;             ///< archive order — the ordinal a preview addresses
+    QString name;               ///< as the archive named it
+    QString path;               ///< inside the job's destDir
+    qint64 entrySize = 0;       ///< declared unpacked size, 0 when none was declared
+    qint64 bytesReadable = 0;   ///< flushed, so a reader really can get these back
+    bool finished = false;
+};
+
+/// How far a run has got, pushed out as it goes.
+///
+/// A signal rather than a getter the queue could call: the queue deletes the
+/// worker and its thread from its own event loop, and a snapshot it already
+/// holds cannot dangle behind that. It is also read on every queue push, once
+/// per file, where a lock would be the wrong shape entirely.
+struct UsenetDirectUnpackProgress {
+    QString itemId;
+    QString setKey;
+    QList<UsenetDirectUnpackEntry> entries;   ///< in archive order
 };
 
 struct UsenetDirectUnpackResult {
@@ -70,6 +93,14 @@ public:
 
     [[nodiscard]] bool cancelled() const { return m_cancelled.load(); }
 
+    /// The volume the run is parked on, or -1 when it is not waiting.
+    ///
+    /// Atomic rather than carried in the progress signal, because the interesting
+    /// moment is exactly the one where nothing is being written and so nothing is
+    /// being reported. Whoever wants the extraction to continue fetches this
+    /// volume next.
+    [[nodiscard]] int waitingForVolume() const { return m_waitingFor.load(); }
+
     // ArchiveVolumeSource
     [[nodiscard]] bool volumePath(int index, QString& out) override;
 
@@ -79,15 +110,25 @@ public slots:
 signals:
     void finished(const eMule::usenet::UsenetDirectUnpackResult& result);
 
+    /// Emitted as members are written, roughly once per MiB. Queued to the
+    /// queue's thread.
+    void progress(const eMule::usenet::UsenetDirectUnpackProgress& state);
+
 private:
     mutable QMutex m_mutex;
     QWaitCondition m_wake;
     QMap<int, QString> m_volumes;
     bool m_ended = false;
     std::atomic<bool> m_cancelled{false};
+    std::atomic<int> m_waitingFor{-1};
+
+    /// Built on the worker thread from ArchiveReader's sink and shipped out
+    /// whole, so a receiver never sees a half-updated member list.
+    QList<UsenetDirectUnpackEntry> m_entries;
 };
 
 } // namespace eMule::usenet
 
 Q_DECLARE_METATYPE(eMule::usenet::UsenetDirectUnpackJob)
 Q_DECLARE_METATYPE(eMule::usenet::UsenetDirectUnpackResult)
+Q_DECLARE_METATYPE(eMule::usenet::UsenetDirectUnpackProgress)

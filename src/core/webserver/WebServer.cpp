@@ -27,14 +27,18 @@
 #include "transfer/UploadQueue.h"
 #include "kademlia/Kademlia.h"
 #include "utils/Log.h"
+#include "utils/OtherFunctions.h"
 #include "utils/StringUtils.h"
 
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QDeadlineTimer>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHttpServer>
 #include <QHttpServerRequest>
+#include <QHttpServerResponder>
 #include <QHttpServerResponse>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -394,6 +398,28 @@ void WebServer::registerRoutes()
     m_server->route(QStringLiteral("/api/v1/downloads/<arg>/preview"), QHttpServerRequest::Method::Get,
         [this](const QString& hash, const QHttpServerRequest& req) {
             return handlePreviewStream(hash, req);
+        });
+
+    // --- Incoming folder browsing (always available, stream-token auth) ---
+    // What the GUI opens instead of the file manager when its core runs on
+    // another machine. Same gate and same unconditional registration as preview:
+    // a remote GUI is exactly the case where both web surfaces may be off.
+    m_server->route(QStringLiteral("/api/v1/incoming"), QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest& req) {
+            return handleIncomingListing(req);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/incoming/stream"), QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest& req) {
+            return handleIncomingStream(req);
+        });
+
+    // The only route in the daemon that answers through the responder rather than
+    // by returning a response: a download is the whole file, and every
+    // QHttpServerResponse holds its body in memory.
+    m_server->route(QStringLiteral("/api/v1/incoming/download"), QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest& req, QHttpServerResponder& responder) {
+            handleIncomingDownload(req, responder);
         });
 
     // Usenet preview. A separate route, not a widening of the one above: that
@@ -883,7 +909,8 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     // A lone piece with no length means "whatever is on disk" — the ED2K route,
     // whose .part file is already preallocated to its final length.
     QList<UsenetStreamPiece> pieces = piecesIn;
-    if (pieces.size() == 1 && pieces.first().length <= 0) {
+    const bool lengthFromDisk = pieces.size() == 1 && pieces.first().length <= 0;
+    if (lengthFromDisk) {
         const qint64 onDisk = QFileInfo(pieces.first().path).size();
         pieces[0].length = qMax<qint64>(0, onDisk - pieces.first().fileOffset);
     }
@@ -1013,10 +1040,20 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
             .arg(data.size()).arg(rangeStart).arg(rangeEnd).arg(fileSize)
             .arg(hasRange).arg(pieces.size()));
 
+    // Pieces of a stated length, and no total: whoever built them knows how far
+    // the file goes but not how far it will go — an extraction still writing it
+    // out. Its current length is not its length, so say `/*` rather than invent
+    // a number the player will latch onto as the duration.
+    //
+    // A lone piece with no length is the opposite case: that length *came* from
+    // the file on disk, which the ED2K route preallocates to its final size, so
+    // there the size on disk is the answer.
+    const bool totalUnknown = totalSize <= 0 && !lengthFromDisk;
+
     // A capped answer to an uncapped request is still a *partial* one, so it has
     // to be 206 with a Content-Range even when the client sent no Range header.
     // Replying 200 would claim the truncated body is the whole file.
-    const bool partial = hasRange || data.size() < fileSize;
+    const bool partial = hasRange || data.size() < fileSize || totalUnknown;
 
     const auto statusCode = partial
         ? static_cast<QHttpServerResponse::StatusCode>(206)
@@ -1027,7 +1064,9 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     headers.append(QByteArrayLiteral("Accept-Ranges"), QStringLiteral("bytes"));
     if (partial) {
         headers.append(QByteArrayLiteral("Content-Range"),
-                       QStringLiteral("bytes %1-%2/%3").arg(rangeStart).arg(rangeEnd).arg(fileSize));
+                       QStringLiteral("bytes %1-%2/%3")
+                           .arg(rangeStart).arg(rangeEnd)
+                           .arg(totalUnknown ? QStringLiteral("*") : QString::number(fileSize)));
     }
     headers.append(QHttpHeaders::WellKnownHeader::ContentDisposition,
                    QStringLiteral("inline; filename=\"%1\"").arg(fileName));
@@ -1045,6 +1084,332 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     }
 
     return resp;
+}
+
+// ---------------------------------------------------------------------------
+// Incoming folder browsing
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Containers a browser plays by itself. Everything else that is video or audio
+/// still gets a stream link -- VLC takes the URL and seeks in it -- just not an
+/// inline player, which would show a black box and no error.
+bool isBrowserPlayable(const QString& fileName)
+{
+    static const QStringList kExt = {
+        QStringLiteral("mp4"), QStringLiteral("m4v"), QStringLiteral("webm"),
+        QStringLiteral("ogv"), QStringLiteral("ogg"), QStringLiteral("mp3"),
+        QStringLiteral("m4a"), QStringLiteral("aac"), QStringLiteral("flac"),
+        QStringLiteral("wav"),
+    };
+    return kExt.contains(QFileInfo(fileName).suffix().toLower());
+}
+
+/// One link back into these routes, with every value percent-encoded.
+QString incomingHref(const QString& path, const QString& token,
+                     const QString& key, const QString& value)
+{
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("token"), token);
+    if (!value.isEmpty())
+        query.addQueryItem(key, value);
+
+    const QString href = path + QLatin1Char('?') + query.toString(QUrl::FullyEncoded);
+    return href.toHtmlEscaped();
+}
+
+QString humanSize(qint64 bytes)
+{
+    static const char* kUnit[] = {"B", "KB", "MB", "GB", "TB"};
+    double v = double(bytes);
+    int u = 0;
+    while (v >= 1024.0 && u < 4) {
+        v /= 1024.0;
+        ++u;
+    }
+    return QStringLiteral("%1 %2").arg(v, 0, 'f', u == 0 ? 0 : 1)
+                                 .arg(QLatin1String(kUnit[u]));
+}
+
+/// Shared head of both pages. Inline everything: with the web UI disabled there
+/// is no stylesheet route to link to.
+QString pageHead(const QString& title)
+{
+    return QStringLiteral(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        "<title>%1</title><style>"
+        "body{font:14px -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:24px;"
+        "background:#f6f7f9;color:#1c1e21}"
+        "h1{font-size:18px;margin:0 0 16px}"
+        "a{color:#1268c3;text-decoration:none}a:hover{text-decoration:underline}"
+        "table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #dcdfe3;"
+        "border-radius:6px;overflow:hidden}"
+        "th,td{text-align:left;padding:8px 12px;border-bottom:1px solid #eceef0}"
+        "th{background:#f0f2f5;font-weight:600;font-size:12px;text-transform:uppercase;"
+        "letter-spacing:.04em;color:#606770}"
+        "tr:last-child td{border-bottom:none}"
+        "td.n{white-space:nowrap;color:#606770}"
+        "td.a{white-space:nowrap}td.a a{margin-right:12px}"
+        "video,audio{width:100%;max-width:960px;background:#000;border-radius:6px}"
+        "p.empty{color:#606770}"
+        "</style></head><body>").arg(title.toHtmlEscaped());
+}
+
+} // namespace
+
+QHttpServerResponse WebServer::handleIncomingListing(const QHttpServerRequest& req)
+{
+    if (!hasStreamToken(req)) {
+        logWarning(QStringLiteral("Incoming: 401 — invalid or missing stream token"));
+        return jsonError(401, QStringLiteral("Invalid or missing stream token"));
+    }
+
+    const QUrlQuery query(req.query());
+    const QString token = query.queryItemValue(QStringLiteral("token"));
+
+    // ?play= is the same route on purpose: the player page is one <video> tag and
+    // a back link, not a surface of its own.
+    const QString play = query.queryItemValue(QStringLiteral("play"), QUrl::FullyDecoded);
+    if (!play.isEmpty()) {
+        const QString abs = resolveIncomingPath(play);
+        if (abs.isEmpty() || !QFileInfo(abs).isFile()) {
+            logWarning(QStringLiteral("Incoming: 404 — cannot play %1").arg(play));
+            return jsonError(404, QStringLiteral("File not found"));
+        }
+        return QHttpServerResponse(QByteArrayLiteral("text/html; charset=utf-8"),
+                                   renderIncomingPlayer(play, QFileInfo(abs).fileName(), token));
+    }
+
+    const QString rel = query.queryItemValue(QStringLiteral("path"), QUrl::FullyDecoded);
+    const QString abs = resolveIncomingPath(rel);
+    if (abs.isEmpty()) {
+        logWarning(QStringLiteral("Incoming: 404 — no such folder: %1")
+                       .arg(rel.isEmpty() ? QStringLiteral("<incoming>") : rel));
+        return jsonError(404, QStringLiteral("Folder not found"));
+    }
+    if (!QFileInfo(abs).isDir()) {
+        logWarning(QStringLiteral("Incoming: 400 — not a folder: %1").arg(rel));
+        return jsonError(400, QStringLiteral("Not a folder"));
+    }
+
+    return QHttpServerResponse(QByteArrayLiteral("text/html; charset=utf-8"),
+                               renderIncomingListing(abs, rel, token));
+}
+
+QHttpServerResponse WebServer::handleIncomingStream(const QHttpServerRequest& req)
+{
+    if (!hasStreamToken(req)) {
+        logWarning(QStringLiteral("Incoming: 401 — invalid or missing stream token"));
+        return jsonError(401, QStringLiteral("Invalid or missing stream token"));
+    }
+
+    const QUrlQuery query(req.query());
+    const QString rel = query.queryItemValue(QStringLiteral("file"), QUrl::FullyDecoded);
+    const QString abs = resolveIncomingPath(rel);
+    if (abs.isEmpty() || !QFileInfo(abs).isFile()) {
+        logWarning(QStringLiteral("Incoming: 404 — cannot stream %1").arg(rel));
+        return jsonError(404, QStringLiteral("File not found"));
+    }
+
+    // The same Range implementation the two preview routes use, so a player gets
+    // the seeking it expects and the daemon never assembles more than one window.
+    return serveRange({{abs, 0, 0, 0}}, QFileInfo(abs).fileName(), 0, 0,
+                      req.headers().combinedValue(QByteArrayLiteral("Range")));
+}
+
+void WebServer::handleIncomingDownload(const QHttpServerRequest& req,
+                                       QHttpServerResponder& responder)
+{
+    if (!hasStreamToken(req)) {
+        logWarning(QStringLiteral("Incoming: 401 — invalid or missing stream token"));
+        responder.sendResponse(jsonError(401, QStringLiteral("Invalid or missing stream token")));
+        return;
+    }
+
+    const QUrlQuery query(req.query());
+    const QString rel = query.queryItemValue(QStringLiteral("file"), QUrl::FullyDecoded);
+    const QString abs = resolveIncomingPath(rel);
+    if (abs.isEmpty() || !QFileInfo(abs).isFile()) {
+        logWarning(QStringLiteral("Incoming: 404 — cannot download %1").arg(rel));
+        responder.sendResponse(jsonError(404, QStringLiteral("File not found")));
+        return;
+    }
+
+    // Parented rather than owned outright: the responder documents that it takes
+    // the device, and a parent makes the other reading harmless instead of a leak
+    // per download.
+    auto* file = new QFile(abs, this);
+    if (!file->open(QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("Incoming: 500 — cannot open %1").arg(abs));
+        delete file;
+        responder.sendResponse(jsonError(500, QStringLiteral("Cannot open file")));
+        return;
+    }
+
+    const QString name = QFileInfo(abs).fileName();
+    QMimeDatabase mimeDb;
+
+    QHttpHeaders headers;
+    headers.append(QHttpHeaders::WellKnownHeader::ContentType,
+                   mimeDb.mimeTypeForFile(name, QMimeDatabase::MatchExtension).name());
+    // Deliberately no Accept-Ranges: this route always answers with the whole
+    // file, so advertising resumability would be a promise it does not keep. A
+    // client that wants ranges has /api/v1/incoming/stream.
+    headers.append(QHttpHeaders::WellKnownHeader::ContentDisposition,
+                   QStringLiteral("attachment; filename=\"%1\"; filename*=UTF-8''%2")
+                       .arg(QString(name).remove(QLatin1Char('"')).remove(QLatin1Char('\\')),
+                            QString::fromLatin1(QUrl::toPercentEncoding(name))));
+
+    responder.write(file, headers, QHttpServerResponse::StatusCode::Ok);
+}
+
+bool WebServer::hasStreamToken(const QHttpServerRequest& req) const
+{
+    const QUrlQuery query(req.query());
+    const QString token = query.queryItemValue(QStringLiteral("token"));
+    return !token.isEmpty() && token == m_streamToken;
+}
+
+QString WebServer::incomingRoot() const
+{
+    if (!m_preferences)
+        return {};
+
+    const QString dir = m_preferences->incomingDir();
+    return dir.isEmpty() ? QString{} : QFileInfo(dir).canonicalFilePath();
+}
+
+QString WebServer::resolveIncomingPath(const QString& relPath) const
+{
+    const QString root = incomingRoot();
+    if (root.isEmpty())
+        return {};
+    if (relPath.isEmpty())
+        return root;
+
+    // Windows clients send backslashes; normalise before anything is inspected,
+    // or "..\\.." walks straight past the component check below.
+    QString rel = relPath;
+    rel.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    if (QDir::isAbsolutePath(rel))
+        return {};
+
+    // Component-wise, not a substring search: a release directory may legitimately
+    // contain ".." inside a name.
+    const QStringList parts = rel.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    for (const QString& part : parts) {
+        if (part == QLatin1String(".."))
+            return {};
+    }
+
+    // canonicalFilePath resolves symlinks, so a link inside the folder that points
+    // outside it fails the containment test rather than passing it. It is also
+    // empty for anything that does not exist, which is the 404 the callers want.
+    const QString abs = QFileInfo(root + QLatin1Char('/') + parts.join(QLatin1Char('/')))
+                            .canonicalFilePath();
+    if (abs.isEmpty())
+        return {};
+    if (abs != root && !abs.startsWith(root + QLatin1Char('/')))
+        return {};
+
+    return abs;
+}
+
+QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString& relPath,
+                                            const QString& token) const
+{
+    const QString here = relPath.isEmpty() ? QStringLiteral("Incoming")
+                                           : QStringLiteral("Incoming/") + relPath;
+    QString html = pageHead(here);
+
+    html += QStringLiteral("<h1>%1</h1>").arg(here.toHtmlEscaped());
+
+    const QFileInfoList entries = QDir(absDir).entryInfoList(
+        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::DirsFirst | QDir::Name);
+
+    if (entries.isEmpty() && relPath.isEmpty()) {
+        html += QStringLiteral("<p class=\"empty\">Nothing has finished downloading yet.</p>");
+        html += QStringLiteral("</body></html>");
+        return html.toUtf8();
+    }
+
+    html += QStringLiteral("<table><tr><th>Name</th><th>Size</th><th>Modified</th>"
+                           "<th></th></tr>");
+
+    if (!relPath.isEmpty()) {
+        const qsizetype cut = relPath.lastIndexOf(QLatin1Char('/'));
+        const QString up = cut < 0 ? QString{} : relPath.left(cut);
+        html += QStringLiteral("<tr><td><a href=\"%1\">../</a></td><td></td><td></td>"
+                               "<td></td></tr>")
+                    .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                                      QStringLiteral("path"), up));
+    }
+
+    for (const QFileInfo& fi : entries) {
+        const QString name = fi.fileName();
+        const QString rel = relPath.isEmpty() ? name
+                                              : relPath + QLatin1Char('/') + name;
+        const QString modified = fi.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+
+        if (fi.isDir()) {
+            html += QStringLiteral("<tr><td><a href=\"%1\">%2/</a></td><td class=\"n\"></td>"
+                                   "<td class=\"n\">%3</td><td class=\"a\"></td></tr>")
+                        .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                                          QStringLiteral("path"), rel),
+                             name.toHtmlEscaped(), modified);
+            continue;
+        }
+
+        QString actions = QStringLiteral("<a href=\"%1\">Download</a>")
+                              .arg(incomingHref(QStringLiteral("/api/v1/incoming/download"),
+                                                token, QStringLiteral("file"), rel));
+
+        // Video and audio get a second link. Which one depends on whether the
+        // browser can play the container at all: anything else would be a black
+        // box with no error on it.
+        const ED2KFileType type = getED2KFileTypeID(name);
+        if (type == ED2KFileType::Video || type == ED2KFileType::Audio) {
+            actions += isBrowserPlayable(name)
+                ? QStringLiteral("<a href=\"%1\">Play</a>")
+                      .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                                        QStringLiteral("play"), rel))
+                : QStringLiteral("<a href=\"%1\">Stream</a>")
+                      .arg(incomingHref(QStringLiteral("/api/v1/incoming/stream"), token,
+                                        QStringLiteral("file"), rel));
+        }
+
+        html += QStringLiteral("<tr><td>%1</td><td class=\"n\">%2</td><td class=\"n\">%3</td>"
+                               "<td class=\"a\">%4</td></tr>")
+                    .arg(name.toHtmlEscaped(), humanSize(fi.size()), modified, actions);
+    }
+
+    html += QStringLiteral("</table></body></html>");
+    return html.toUtf8();
+}
+
+QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString& fileName,
+                                           const QString& token) const
+{
+    const qsizetype cut = relPath.lastIndexOf(QLatin1Char('/'));
+    const QString folder = cut < 0 ? QString{} : relPath.left(cut);
+    const QString src = incomingHref(QStringLiteral("/api/v1/incoming/stream"), token,
+                                     QStringLiteral("file"), relPath);
+    const bool audio = getED2KFileTypeID(fileName) == ED2KFileType::Audio;
+
+    QString html = pageHead(fileName);
+    html += QStringLiteral("<h1><a href=\"%1\">&larr;</a> %2</h1>")
+                .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                                  QStringLiteral("path"), folder),
+                     fileName.toHtmlEscaped());
+    html += QStringLiteral("<%1 controls autoplay src=\"%2\"></%1>")
+                .arg(audio ? QStringLiteral("audio") : QStringLiteral("video"), src);
+    html += QStringLiteral("<p><a href=\"%1\">Download this file</a></p>")
+                .arg(incomingHref(QStringLiteral("/api/v1/incoming/download"), token,
+                                  QStringLiteral("file"), relPath));
+    html += QStringLiteral("</body></html>");
+    return html.toUtf8();
 }
 
 // ---------------------------------------------------------------------------

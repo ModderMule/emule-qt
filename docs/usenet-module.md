@@ -123,7 +123,7 @@ usenet:
       user: someone
       passEnc: <base64>
       level: 0
-      maxConnections: 20
+      maxConnections: 40      # default; kDefaultMaxConnections
       certVerification: 2   # 0 none, 1 minimal, 2 strict
       enabled: true
 ```
@@ -254,14 +254,14 @@ not compiled in — obfuscation schemes change faster than releases ship.
 | `tst_UsenetPar2` | verify, repair, rename and the blocks-needed figure, against sets built in-process by `Par2::par2creator` |
 | `tst_UsenetUnpack` | volume-set detection across all three naming schemes; path-traversal and reserved-name refusals; a multi-volume RAR set extracted through the whole list, and a set skipped because it was unpacked during the download |
 | `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing |
-| `tst_UsenetStream` | phase 6a: part-number dispatch order over a shuffled NZB, a failed article retried *before* later ones, interval merge and the hole that stops it, `written` surviving a restart, the previewable predicate. Phase 6b: a stored RAR set resolving to the file inside it and reading back byte-identically across volume boundaries; **a seek to 80% that never issues a `BODY` for the volumes it skipped** — the exit criterion, asserted; a compressed set saying why; a `.001` split set. Multi-file sets: every inner file enumerated with its ordinal, each mapping to its own bytes across a volume boundary, **a set whose first file is an `.nfo` streaming the movie with no `entry=` named**, and a listing on a paused item that neither fetches nor guesses |
+| `tst_UsenetStream` | phase 6a: part-number dispatch order over a shuffled NZB, a failed article retried *before* later ones, interval merge and the hole that stops it, `written` surviving a restart, the previewable predicate. Phase 6b: a stored RAR set resolving to the file inside it and reading back byte-identically across volume boundaries; **a seek to 80% that never issues a `BODY` for the volumes it skipped** — the exit criterion, asserted; a compressed set saying why; a `.001` split set. Multi-file sets: every inner file enumerated with its ordinal, each mapping to its own bytes across a volume boundary, **a set whose first file is an `.nfo` streaming the movie with no `entry=` named**, and a listing on a paused item that neither fetches nor guesses. Preview from the extraction: a **solid stored** set — refused by the map, extractable by libarchive, which is the only fixture that separates the two sources — streamed out of `_unpacked/` with the archive's own declared size as the total, listed and marked playable, and a control case proving the same set is refused when nothing is extracting it |
 | `tst_RarReader` | phase 6b: RAR4 and RAR5 stored volumes — name, method, packed/unpacked sizes, data offset, split flags, `LHD_LARGE` sizes past 4 GB, RAR5 multi-byte vints; compressed read but not stored; solid and encrypted refused with a reason; every truncated prefix asking for more bytes rather than reading past the buffer; a volume carrying two file headers listing both; resuming mid-volume at a computed offset, and a resumed block at a wrong address caught by its header CRC |
-| `tst_UsenetDirectUnpack` | extraction that keeps pace with the download: volumes offered one at a time, a run blocking on one that has not landed and resuming when it does, cancel unwinding without leaving half a file, a set that ends short failing rather than hanging, and end to end — the payload complete before post-processing starts, and the same release unchanged with the option off |
+| `tst_UsenetDirectUnpack` | extraction that keeps pace with the download: volumes offered one at a time, a run blocking on one that has not landed and resuming when it does, cancel unwinding without leaving half a file, a set that ends short failing rather than hanging, and end to end — the payload complete before post-processing starts, and the same release unchanged with the option off. A blocked run reporting bytes that read back as the payload's prefix and naming the volume it needs; **a set whose NZB scrambles its volume order still unpacked while downloading**, which is what the sealed-volume replay exists for |
 | `tst_UsenetArchiveEntryDialog` | the chooser: unplayable rows listed but neither selectable nor enabled and carrying the disabled palette brush, a playable row with no explicit brush at all, the chosen ordinal surviving a re-sort, and a single playable file answered without ever showing a window |
 | `tst_UsenetLiveConnect` | real TLS + auth (`live`) |
 | `tst_UsenetLiveFetch` | a real `.nzb` downloaded and hashed (`live`) |
 | `tst_UsenetLiveDownload` | every `.nzb` in `EMULE_NZB_DIR` through the **real queue** against a real provider: download, PAR2, unpack, publish — then assertions that no `.par2`, no volume and no `.usenetpart` reached the incoming directory and that the scratch tree is gone (`live`) |
-| `tst_UsenetLivePreview` | the same releases previewed **while they download**: the archive listing walked to a terminal status, the bytes read back through the pieces, and the same bytes fetched again over the real `preview` route with a `Range` header. A set with nothing streamable in it must instead give a reason and a 406 (`live`) |
+| `tst_UsenetLivePreview` | the same releases previewed **while they download**, asserting whichever of three outcomes the release earns: a mappable member streamed out of its volumes; a member the map refuses streamed out of the extraction instead (`vina.nzb` — a compressed 53-volume RAR5 set — served 11.6 MB of its 1.38 GB mp4 over a real `Range` GET, 28 s after the row started); or a release with nothing playable in it refused with a reason and a 406 (`Ubuntu.nzb`, whose one volume holds a `.vdi`). The target is volume one of the largest set, not the first non-PAR2 file — a release that posts its own `.nzb` alongside would otherwise have that previewed instead (`live`) |
 
 Offline tests run against `tests/FakeNntpServer.h`, a scriptable in-process NNTP
 server modelled on NZBGet's `daemon/nserv/`. It exists because the interesting
@@ -584,6 +584,10 @@ cap a Usenet download, and only one of them is in this module's code:
    figure above what the plan sells: the answer is a 502 and a backed-off server,
    and providers suspend repeat offenders.
 
+   `kDefaultMaxConnections` (`src/core/prefs/NewsServer.h`) is therefore **40**,
+   not the 8 this module shipped with — 8 is below what any plan sold today
+   allows and cost a new install three quarters of its rate for nothing.
+
 3. **The bandwidth split above, which the tests never see.** They construct a
    `UsenetQueue` directly and never call `setRateLimit`, so their numbers are the
    unthrottled ceiling. In the daemon, `maxDownload: 3500` KB/s with a 50% share
@@ -719,12 +723,53 @@ it and needs an LRU of decoded articles; here the volume file is already open
 and preallocated to its full length, so a seek is permanent, counts as real
 progress, and needs no eviction policy at all.
 
-**What is still not streamable says so.** Compressed, solid and header-encrypted
-archives are refused with a sentence — 406 from the route, `previewNote` over
-IPC, a tooltip on the disabled menu entry. §7.3 asked for exactly that: the
-answer surfaced rather than discovered at play time. A fully obfuscated RAR4 set
-cannot be volume-ordered before download either, RAR4 having no volume-number
-field where RAR5 has one, and degrades to not-seekable rather than mis-mapping.
+**What the map cannot do, the extraction can.** A compressed, solid or
+header-encrypted archive has no byte mapping and never will — but direct unpack
+is already writing the payload out as the volumes land, and that growing file is
+what a player wants. So `UsenetQueue` has *two* byte sources and picks between
+them: the map first, because only it can seek ahead of the write head, and the
+extraction for everything the map refuses.
+
+The join is at the queue, not in the index. `UsenetStreamIndex` stays a pure
+function of bytes on disk — which is what makes `invalidate()` free — and
+`ItemRuntime` already owned both halves. `ArchiveReader` gained an opt-in
+progress sink, flushed *before* each report so the byte count is one a reader can
+actually get back, and `UsenetDirectUnpack` ships those out as a queued signal
+rather than a lock the HTTP thread would take on every poll.
+
+Three rules make it safe, and each of them is a bug that was found rather than
+foreseen:
+
+- **Always a real total, or no answer at all.** `serveRange` derives the total
+  from the pieces when it is not told one, and for a growing file that total is
+  whatever has been extracted — so the player's opening request, which carries no
+  Range header, was answered `200 OK` with "the whole movie, 4 MB long". The
+  route now says `bytes X-Y/*` when the length is genuinely unknown, and the
+  queue would rather wait than serve without a total.
+- **Never advertise less than before.** An extraction that restarts truncates its
+  output to zero; the high-water mark outlives the run, and a fresh run below it
+  reads as "wait".
+- **A refusal is final, a wait is not.** The route treats `notSeekableReason` as
+  terminal, so a set that is *going* to be extracted must never be refused while
+  it is still coming — but only a media member the map could not place earns that
+  wait. A release with nothing playable in it is refused at once, as before.
+
+**What is still refused** says why: a password-protected set, one whose
+extraction failed, an item with direct unpack switched off, and the third
+concurrent set (`kMaxDirectUnpacks`). 406 from the route, `previewNote` over IPC,
+a tooltip on the disabled menu entry. §7.3 asked for exactly that: the answer
+surfaced rather than discovered at play time. A fully obfuscated RAR4 set cannot
+be volume-ordered before download either, RAR4 having no volume-number field
+where RAR5 has one, and degrades to not-seekable rather than mis-mapping.
+
+**Keeping the extractor fed is part of the feature.** A run may only *start* on
+volume one, so every volume that sealed before it has to be replayed into it —
+without that, a release whose NZB lists `part03, part04, part01, …` (real posts
+do) parked the run on an index nobody would ever offer and the whole direct
+unpack silently degraded to unpacking at the end. And since a compressed member
+has no byte map, a seek promotes the volume the extraction is *parked on* rather
+than the articles covering the requested offset — or volume one, before there is
+a run at all.
 
 ### Serving
 

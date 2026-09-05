@@ -42,20 +42,18 @@ StreamResolve notSeekable(const QString& reason)
     return out;
 }
 
-/// The same test ED2K's PartFile::isPreviewPossible() uses, so the two networks
-/// cannot disagree about what "playable" means.
-bool isPlayableName(const QString& name)
-{
-    const ED2KFileType type = getED2KFileTypeID(name);
-    return type == ED2KFileType::Video || type == ED2KFileType::Audio;
-}
-
 QString tr(const char* text)
 {
     return QCoreApplication::translate("eMule::UsenetStreamIndex", text);
 }
 
 } // namespace
+
+bool isPlayableName(const QString& name)
+{
+    const ED2KFileType type = getED2KFileTypeID(name);
+    return type == ED2KFileType::Video || type == ED2KFileType::Audio;
+}
 
 StreamResolve UsenetStreamIndex::resolve(const UsenetQueueItem& item, int fileIndex,
                                          int memberIndex, qint64 wantOffset)

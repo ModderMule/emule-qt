@@ -1,6 +1,7 @@
 #include "pch.h"
 /// @file PreviewLauncher.cpp
-/// @brief Launch a media player for preview streaming.
+/// @brief Launch a media player, a browser or the file manager for what the
+///        daemon holds.
 
 #include "utils/PreviewLauncher.h"
 
@@ -8,8 +9,11 @@
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
+#include <QDesktopServices>
 #include <QFileInfo>
 #include <QProcess>
+#include <QUrl>
+#include <QUrlQuery>
 
 namespace eMule {
 
@@ -83,6 +87,59 @@ QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId, int f
         url += QStringLiteral("&entry=%1").arg(entry);
 
     return url;
+}
+
+QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
+                          const QString& relPath)
+{
+    if (!ipc || !ipc->isConnected() || streamToken.isEmpty())
+        return {};
+
+    // Assembled through QUrl rather than by hand: a release folder carries
+    // spaces, brackets and ampersands, and only the query encoder gets those
+    // back to the daemon intact.
+    QUrl url;
+    url.setScheme(QStringLiteral("http"));
+    url.setHost(ipc->daemonHost());
+    url.setPort(thePrefs.webServerPort());
+    url.setPath(QStringLiteral("/api/v1/incoming"));
+
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("token"), streamToken);
+    if (!relPath.isEmpty())
+        query.addQueryItem(QStringLiteral("path"), relPath);
+    url.setQuery(query);
+
+    return url.toString(QUrl::FullyEncoded);
+}
+
+bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken)
+{
+    // Local core: same filesystem, so the real file manager wins over anything
+    // we could render.
+    if (ipc && ipc->isLocalConnection())
+        return QDesktopServices::openUrl(QUrl::fromLocalFile(thePrefs.incomingDir()));
+
+    // Remote, and worth checking before building a URL: with both web surfaces
+    // off the daemon pins its HTTP listener to loopback (DaemonApp), so the page
+    // would be unreachable and the browser would open on a dead tab.
+    if (!thePrefs.webServerEnabled() && !thePrefs.webServerRestApiEnabled()) {
+        logWarning(QStringLiteral(
+            "Cannot show the core's Incoming folder: the core is remote and its web "
+            "server only listens on localhost. Enable Web Interface or REST API in "
+            "Options -> Web Interface."));
+        return false;
+    }
+
+    const QString url = daemonIncomingUrl(ipc, streamToken);
+    if (url.isEmpty()) {
+        logWarning(QStringLiteral(
+            "Cannot show the core's Incoming folder: no stream token yet. It arrives "
+            "with the core's next status update."));
+        return false;
+    }
+
+    return QDesktopServices::openUrl(QUrl(url));
 }
 
 } // namespace eMule

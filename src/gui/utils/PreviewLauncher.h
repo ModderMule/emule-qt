@@ -1,7 +1,8 @@
 #pragma once
 
 /// @file PreviewLauncher.h
-/// @brief Launch a media player for preview streaming.
+/// @brief Launch a media player, a browser or the file manager for what the
+///        daemon holds.
 
 #include <QString>
 
@@ -35,5 +36,24 @@ void launchPreview(const QString& url);
 [[nodiscard]] QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId,
                                             int fileIndex, const QString& streamToken,
                                             int entry = -1);
+
+/// The browse page for the core's Incoming folder, or a folder inside it.
+///
+/// Same lane as the two stream URLs above -- the daemon's web server, gated by
+/// the stream token -- because a remote core's Incoming folder is not on this
+/// machine and cannot be handed to the file manager. @p relPath is relative to
+/// the Incoming folder; empty means its root. Empty return on the same terms as
+/// daemonStreamUrl().
+[[nodiscard]] QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
+                                        const QString& relPath = {});
+
+/// Show the core's Incoming folder: the OS file manager when the core runs on
+/// this machine, the browse page in the default browser when it does not.
+///
+/// The single place that decision is made. Returns false, having logged why,
+/// when neither is possible -- most often because the daemon binds its web
+/// server to loopback while both web surfaces are switched off, which no URL can
+/// work around.
+bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken);
 
 } // namespace eMule

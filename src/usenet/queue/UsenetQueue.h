@@ -260,9 +260,24 @@ private:
     struct DirectUnpackRun {
         UsenetDirectUnpack* worker = nullptr;   ///< lives on `thread`, deleted with it
         QThread* thread = nullptr;
-        int nextVolume = 0;        ///< volume index the next sealed member takes
         bool running = false;
         UsenetDirectUnpackResult result;
+
+        /// How far the extraction has got, pushed over from the worker thread.
+        /// This is the second byte source a preview can be served from, and the
+        /// only one for a set no map can describe.
+        UsenetDirectUnpackProgress progress;
+
+        /// Post-processing owns the output from here: a repair is about to
+        /// discard it, or staging is about to rename it into the incoming
+        /// directory. Serving from it past this point hands a player a file that
+        /// is being moved out from under it.
+        bool closing = false;
+
+        /// Last volume ordinal a preview asked the scheduler for. Promoting a
+        /// whole volume walks the plan once per segment, so it is done once per
+        /// volume rather than once per 250 ms poll.
+        int promotedVolume = -1;
     };
 
     struct ItemRuntime {
@@ -299,6 +314,15 @@ private:
         /// after a restart a set simply starts over from volume one, which costs
         /// only disk since every sealed volume is already there.
         QHash<QString, DirectUnpackRun> directUnpack;
+
+        /// Most bytes ever advertised of an extracted member, by its path.
+        ///
+        /// An extraction that restarts truncates its output back to zero, and a
+        /// player that was at 300 MB must not be told the file is 4 MB long
+        /// again. Outlives the run it came from, which is the whole point: while
+        /// a fresh run is still below this mark the answer is "wait", not a
+        /// shorter file.
+        QHash<QString, qint64> streamHighWater;
     };
 
     void startWorkers();
@@ -339,6 +363,11 @@ private:
     /// preference is on and the file is an archive volume.
     void pumpDirectUnpack(ItemRuntime& rt, int fileIndex);
 
+    /// Start a run for @p baseName, if volume one of that set is already sealed
+    /// and the cap allows it, replaying every volume of the set that has landed.
+    /// False when the set is not ready to be extracted yet.
+    bool startDirectUnpack(ItemRuntime& rt, const QString& baseName);
+
     /// Tell every run for this item that no more volumes are coming, so a run
     /// waiting past the last volume ends instead of blocking.
     void endDirectUnpackSets(ItemRuntime& rt);
@@ -347,6 +376,49 @@ private:
     void cancelDirectUnpack(ItemRuntime& rt);
 
     void onDirectUnpackFinished(const eMule::usenet::UsenetDirectUnpackResult& result);
+
+    /// Record how far an extraction has got. Queued from the worker thread.
+    void onDirectUnpackProgress(const eMule::usenet::UsenetDirectUnpackProgress& state);
+
+    /// Start a run for every set of this item whose first volume is already
+    /// sealed. Called after a resume, where pauseItem() cancelled the runs and
+    /// nothing else would ever start them again: pumpDirectUnpack() only fires
+    /// from a *newly* sealed volume.
+    void restartDirectUnpack(ItemRuntime& rt);
+
+    /// The member of @p fileIndex's set that @p entryOrdinal names, as far as
+    /// the extraction has got — or nullptr when there is no run, or it has not
+    /// reached that member.
+    ///
+    /// Matched by name whenever the index enumerated members, because the two
+    /// sides number differently: the index numbers the members it could place,
+    /// libarchive numbers everything it walks past.
+    [[nodiscard]] const UsenetDirectUnpackEntry* extractionEntryFor(ItemRuntime& rt,
+                                                                   int fileIndex,
+                                                                   int entryOrdinal);
+
+    /// Serve @p info from the extraction instead of from the volumes.
+    ///
+    /// The answer for everything the map refuses but libarchive can unpack —
+    /// compressed and solid sets. False means "not this way"; true with no
+    /// pieces means "wait", which is not the same as a refusal and must not be
+    /// turned into one.
+    [[nodiscard]] bool streamFromExtraction(ItemRuntime& rt, int fileIndex, int entryOrdinal,
+                                            StreamInfo& info);
+
+    /// Ask the scheduler for the volume the extraction is waiting on, so a
+    /// preview of a set being unpacked pulls its own next bytes.
+    void promoteExtractionVolume(ItemRuntime& rt, int fileIndex);
+
+    /// Let the extraction overrule a member the map refused: playable once
+    /// there are bytes, and saying so in the meantime.
+    void annotateFromExtraction(ItemRuntime& rt, int fileIndex, int entryOrdinal,
+                                ArchiveEntryInfo& row);
+
+    /// Rows for a set the index refused outright, taken from what the extraction
+    /// has walked past. Its ordinals are libarchive's, which is the only
+    /// numbering that exists when the index enumerated nothing.
+    void appendExtractionRows(ItemRuntime& rt, int fileIndex, ArchiveListing& listing);
 
     /// 0-based position of @p fileIndex within its volume set, or -1. The
     /// naming schemes number differently — `.partNN.rar` from 1, `.rNN` from 0

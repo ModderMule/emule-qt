@@ -600,13 +600,8 @@ int main(int argc, char* argv[])
                     val(QLatin1StringView("downOverheadRate")));
 
                 // Update stream token for preview streaming
-                if (auto st = stats.value(QStringLiteral("streamToken")); st.isString()) {
-                    mainWindow.transferPanel()->setStreamToken(st.toString());
-                    mainWindow.searchPanel()->setStreamToken(st.toString());
-                    mainWindow.sharedFilesPanel()->setStreamToken(st.toString());
-                    if (auto* usenet = mainWindow.usenetPanel())
-                        usenet->setStreamToken(st.toString());
-                }
+                if (auto st = stats.value(QStringLiteral("streamToken")); st.isString())
+                    mainWindow.setStreamToken(st.toString());
 
                 // Update MiniMule popup stats
                 const int completedDl = static_cast<int>(

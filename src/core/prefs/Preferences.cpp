@@ -3420,7 +3420,7 @@ bool Preferences::load(const QString& filePath)
                     entry.optional = node["optional"].as<bool>(false);
                     entry.retention = node["retention"].as<int>(0);
                     entry.joinGroup = node["joinGroup"].as<bool>(false);
-                    entry.maxConnections = node["maxConnections"].as<int>(8);
+                    entry.maxConnections = node["maxConnections"].as<int>(kDefaultMaxConnections);
                     entry.certVerification = static_cast<NntpCertVerification>(
                         node["certVerification"].as<int>(
                             static_cast<int>(NntpCertVerification::Strict)));

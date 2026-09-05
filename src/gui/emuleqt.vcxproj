@@ -442,6 +442,7 @@
     <None Include="..\..\resources\icons\Display.ico" />
     <None Include="..\..\resources\icons\Download.ico" />
     <None Include="..\..\resources\icons\DownloadFiles.ico" />
+    <None Include="..\..\resources\icons\DownloadsFolder.ico" />
     <None Include="..\..\resources\icons\Empty.ico" />
     <None Include="..\..\resources\icons\Exit.ico" />
     <None Include="..\..\resources\icons\ExpandAll.ico" />

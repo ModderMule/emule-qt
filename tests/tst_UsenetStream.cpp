@@ -27,6 +27,7 @@
 
 #include "prefs/Preferences.h"
 
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
 #include <QSignalSpy>
@@ -136,6 +137,11 @@ private slots:
     void aSeekIntoAStoredRarSetSkipsTheVolumesBetween();
     void aCompressedRarSetSaysWhyItCannotBeStreamed();
     void aNumberedSplitSetResolvesToOneLogicalFile();
+
+    // Preview from the extraction, for sets no map can describe
+    void aSolidSetIsRefusedWhenNothingIsExtractingIt();
+    void aSetTheMapRefusesIsStreamedFromItsOwnExtraction();
+    void anExtractedMemberIsListedAndBecomesPlayable();
 };
 
 // ---------------------------------------------------------------------------
@@ -462,6 +468,25 @@ QByteArray postStoredRarSet(FakeNntpServer& server, QByteArray& innerPayload,
                                                               kVolumePayload)
                   : eMule::testing::rar::makeStoredRarSet("Some.Release.mkv", innerPayload,
                                                           kVolumePayload);
+
+    QList<PostedFile> files;
+    for (int i = 0; i < volumes.size(); ++i) {
+        files.append({QStringLiteral("Some.Release.part%1.rar")
+                          .arg(i + 1, 2, 10, QLatin1Char('0')),
+                      volumes.at(i)});
+    }
+    return postFiles(server, files, kRarPartSize);
+}
+
+/// A **solid** stored set. The members stay stored, so libarchive reads them
+/// byte for byte, but the archive flag makes RarReader refuse the whole set —
+/// the one shape that is simultaneously unmappable and extractable, and so the
+/// only way to prove a preview served from the extraction rather than the map.
+QByteArray postSolidRarSet(FakeNntpServer& server, QByteArray& innerPayload)
+{
+    innerPayload = payload(int(kVolumePayload * kVolumeCount));
+    const QList<QByteArray> volumes = eMule::testing::rar::makeStoredRarSet(
+        "Some.Release.mkv", innerPayload, kVolumePayload, /*rar5*/ false, /*solid*/ true);
 
     QList<PostedFile> files;
     for (int i = 0; i < volumes.size(); ++i) {
@@ -893,6 +918,164 @@ void tst_UsenetStream::aNumberedSplitSetResolvesToOneLogicalFile()
     QCOMPARE(info.totalSize, qint64(whole.size()));
     QCOMPARE(info.pieces.size(), 3);
     QCOMPARE(readThroughPieces(info.pieces, 0, whole.size()), whole);
+
+    queue.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Preview from the extraction
+//
+// A compressed or solid archive can never be byte-mapped out of its volumes, so
+// the map refuses it and always will. But direct unpack is already writing the
+// payload out as the volumes land, and that file is exactly what a player wants.
+// These cases pin the second byte source.
+// ---------------------------------------------------------------------------
+
+void tst_UsenetStream::aSolidSetIsRefusedWhenNothingIsExtractingIt()
+{
+    // The control for the two cases below. Same fixture, direct unpack off: the
+    // map refuses a solid set and no amount of waiting changes that. Without
+    // this, a green run of those cases would not distinguish "the extraction
+    // answered" from "the map could read it all along".
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+
+    QByteArray inner;
+    const QByteArray nzb = postSolidRarSet(server, inner);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = false,
+                                   .cleanup = false, .directUnpack = false});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("release"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(60000), "the download never reported a terminal outcome");
+
+    const auto info = queue.requestStream(id, 0, 0, 4096);
+    QVERIFY(info.found);
+    QVERIFY(info.pieces.isEmpty());
+    QVERIFY2(!info.notSeekableReason.isEmpty(), "a solid set must say why it cannot be mapped");
+
+    const auto listing = queue.listArchiveEntries(id, 0);
+    QCOMPARE(listing.status, UsenetQueue::ArchiveListing::Status::NotSeekable);
+    QVERIFY(listing.entries.isEmpty());
+
+    queue.stop();
+}
+
+void tst_UsenetStream::aSetTheMapRefusesIsStreamedFromItsOwnExtraction()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+
+    QByteArray inner;
+    const QByteArray nzb = postSolidRarSet(server, inner);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    // directUnpack needs unpack: pumpDirectUnpack() checks both. cleanup stays
+    // off so the volumes survive for the map to keep refusing them.
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = true,
+                                   .cleanup = false, .directUnpack = true});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("release"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(60000), "the download never reported a terminal outcome");
+
+    // The extraction runs on its own thread and reports back queued, so the
+    // snapshot lands a tick after the download does.
+    UsenetQueue::StreamInfo info;
+    QDeadlineTimer deadline(10000);
+    while (!deadline.hasExpired()) {
+        info = queue.requestStream(id, 0, 0, 4096);
+        if (!info.pieces.isEmpty())
+            break;
+        QTest::qWait(50);
+    }
+
+    QVERIFY(info.found);
+    QVERIFY2(info.notSeekableReason.isEmpty(),
+             qPrintable(QStringLiteral("refused a set it was extracting: %1")
+                            .arg(info.notSeekableReason)));
+    QCOMPARE(info.pieces.size(), 1);
+    QCOMPARE(info.fileName, QStringLiteral("Some.Release.mkv"));
+
+    // The total is the archive's declared size, never the growing file's — a
+    // total derived from what is on disk turns the player's opening request,
+    // which carries no Range header, into a 200 OK for a truncated movie.
+    QCOMPARE(info.totalSize, qint64(inner.size()));
+    QVERIFY(info.availableEnd > 0);
+    QVERIFY(info.availableEnd <= info.totalSize);
+
+    // And the bytes are the payload, not the volume they were packed in.
+    const QByteArray got = readThroughPieces(info.pieces, 0, info.availableEnd);
+    QCOMPARE(got, inner.left(int(info.availableEnd)));
+
+    // Reading it the way the map would is still refused, because it still
+    // cannot be done: the fallback does not pretend the archive became seekable.
+    const auto preview = queue.previewability(id, 0);
+    QVERIFY(preview.previewable);
+
+    queue.stop();
+}
+
+void tst_UsenetStream::anExtractedMemberIsListedAndBecomesPlayable()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+
+    QByteArray inner;
+    const QByteArray nzb = postSolidRarSet(server, inner);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = true,
+                                   .cleanup = false, .directUnpack = true});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("release"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(60000), "the download never reported a terminal outcome");
+
+    // A solid set is refused a volume at a time, so the index enumerates no
+    // member at all. Every row here therefore came from the extraction.
+    UsenetQueue::ArchiveListing listing;
+    QDeadlineTimer deadline(10000);
+    while (!deadline.hasExpired()) {
+        listing = queue.listArchiveEntries(id, 0);
+        if (!listing.entries.isEmpty())
+            break;
+        QTest::qWait(50);
+    }
+
+    QCOMPARE(listing.entries.size(), 1);
+    QCOMPARE(listing.entries.first().name, QStringLiteral("Some.Release.mkv"));
+    QCOMPARE(listing.entries.first().size, qint64(inner.size()));
+    QVERIFY2(listing.entries.first().playable, "an extracted media file is playable");
+    QVERIFY(listing.entries.first().note.isEmpty());
+    QVERIFY2(listing.status != UsenetQueue::ArchiveListing::Status::NotSeekable,
+             "a set with a listed, playable member must not report NotSeekable");
 
     queue.stop();
 }

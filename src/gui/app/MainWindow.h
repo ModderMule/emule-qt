@@ -130,6 +130,11 @@ public:
     [[nodiscard]] StatisticsPanel* statisticsPanel() const { return m_statsPanel; }
     [[nodiscard]] UsenetPanel* usenetPanel() const { return m_usenetPanel; }
 
+    /// Hand the daemon's stream token to everything that builds a URL from it.
+    /// One entry point rather than four: the token arrives with every stats
+    /// reply, and a panel added later must not need a second wiring site.
+    void setStreamToken(const QString& token);
+
     /// Update the eD2K status label in the footer. \p firewalled is the combined
     /// ed2k+kad state (tray icon), \p lowID the per-network eD2K LowID (label colour).
     void setEd2kStatus(bool connected, bool connecting, bool firewalled, bool lowID);
@@ -222,6 +227,7 @@ private:
     QMenu* m_toolsMenu = nullptr;
     QMap<ToolbarButtonId, QAction*> m_toolbarActions;
     QMap<ToolbarButtonId, QIcon> m_skinIcons;
+    QString m_streamToken;
 
     // Tab panels
     KadPanel* m_kadPanel = nullptr;

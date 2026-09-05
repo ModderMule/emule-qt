@@ -497,6 +497,14 @@ void UsenetPanel::onOpenFolder()
     if (!row)
         return;
 
+    // finalPath is a path on the *core's* filesystem. It only means anything to
+    // this machine's file manager when the core runs here; otherwise the browse
+    // page is the only way to reach what was published.
+    if (!m_ipc || !m_ipc->isLocalConnection()) {
+        openIncomingFolder(m_ipc, m_streamToken);
+        return;
+    }
+
     for (const auto& f : row->files) {
         if (f.finalPath.isEmpty())
             continue;

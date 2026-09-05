@@ -15,6 +15,7 @@
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
 
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
@@ -89,6 +90,7 @@ private slots:
     void previewRejectsABadFileIndex();
     void previewCarriesTheArchiveEntryFromTheQuery();
     void previewRejectsABadArchiveEntry();
+    void previewWithoutATotalMustNotAnswerTheOpeningRequestWith200();
     void previewCapsTheResponseBody();
     void previewStopsAtWhatHasDownloaded();
     void previewWaitsForBytesThatHaveNotArrivedYet();
@@ -98,6 +100,13 @@ private slots:
     void previewTakesAPieceWithNoLengthFromTheFileOnDisk();
 
     // Graphs page data
+    // Incoming folder browsing — the remote core's stand-in for the file manager
+    void incomingRejectsAMissingOrWrongStreamToken();
+    void incomingListingShowsFilesAndFolders();
+    void incomingRefusesToEscapeTheIncomingDir();
+    void incomingDownloadSendsTheWholeFileAsAnAttachment();
+    void incomingStreamHonoursARangeRequest();
+
     void graphVars_carryTheSeriesOldestFirst();
     void graphVars_ratesAreBytesPerSecond();
     void graphVars_pointsStayInsideTheViewBox();
@@ -142,9 +151,19 @@ private:
     std::unique_ptr<SearchList>    m_searchList;
     std::unique_ptr<Preferences>   m_preferences;
 
+    /// A throwaway Incoming folder for the browse routes, with one of everything
+    /// they distinguish: a subfolder, a browser-playable video, one that is not,
+    /// a plain file, and a file too large for the preview cap.
+    void buildIncomingTree();
+    QString incomingUrl(const QString& path, const QString& key = {},
+                        const QString& value = {}) const;
+
     QNetworkAccessManager m_nam;
     QString m_apiKey = QStringLiteral("test-secret-key-12345");
     uint16 m_port = 0;
+
+    std::unique_ptr<QTemporaryDir> m_incoming;
+    QByteArray m_bigFileBytes;
 };
 
 // ---------------------------------------------------------------------------
@@ -174,6 +193,8 @@ void tst_WebServer::initTestCase()
     m_webServer->setSharedFileList(m_sharedFiles.get());
     m_webServer->setSearchList(m_searchList.get());
     m_webServer->setPreferences(m_preferences.get());
+
+    buildIncomingTree();
 
     WebServerConfig config;
     config.enabled = true;
@@ -689,6 +710,50 @@ void tst_WebServer::previewRejectsABadArchiveEntry()
     m_webServer->setUsenetStreamResolver({});
 }
 
+void tst_WebServer::previewWithoutATotalMustNotAnswerTheOpeningRequestWith200()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // What a still-extracting release looks like early on: a small prefix of a
+    // large file, and a caller that did not say how large.
+    constexpr qint64 kSoFar = 64 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSoFar);
+    QVERIFY(!path.isEmpty());
+
+    m_webServer->setUsenetStreamResolver([path](const UsenetStreamRequest&) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.pieces = {{path, 0, 0, kSoFar}};
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = 0;            // "I do not know" — the trap
+        src.availableEnd = kSoFar;
+        return src;
+    });
+
+    const QString token = m_webServer->streamToken();
+    const QString url = QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token);
+
+    // A player opens with no Range header at all. With no total the route can
+    // only take the file's current length for the whole thing, and then
+    // `data.size() == fileSize` makes the answer a **200 OK** carrying "the
+    // complete movie, 64 KiB long". The client latches that and never asks for
+    // more. Whoever supplies these pieces must therefore always supply a real
+    // total — see UsenetQueue::streamFromExtraction, which waits rather than
+    // answer without one.
+    const auto resp = sendRanged(url, {});
+    QVERIFY2(resp.statusCode != 200,
+             "a growing file with no declared total was served as a complete one");
+    QCOMPARE(resp.statusCode, 206);
+
+    // RFC 9110 §14.4: `*` is how a complete length that is not yet known is
+    // written. Any number here would be the wrong one.
+    QCOMPARE(resp.headers.value(QStringLiteral("content-range")),
+             QStringLiteral("bytes 0-%1/*").arg(kSoFar - 1));
+
+    m_webServer->setUsenetStreamResolver({});
+}
+
 void tst_WebServer::previewCapsTheResponseBody()
 {
     QTemporaryDir dir;
@@ -1052,6 +1117,180 @@ void tst_WebServer::graphVars_withNoSamplesAreEmpty()
     QVERIFY(vars.value(QStringLiteral("GraphDownload")).isEmpty());
     QVERIFY(vars.value(QStringLiteral("GraphDownloadPts")).isEmpty());
     QCOMPARE(vars.value(QStringLiteral("MaxDownload")), QStringLiteral("100"));
+}
+
+// ---------------------------------------------------------------------------
+// Incoming folder browsing
+//
+// These three routes are what the GUI opens instead of the OS file manager when
+// its core runs on another machine. They authenticate with the stream token, not
+// with the API key or a web-UI session, so every case below deliberately sends
+// no X-Api-Key.
+// ---------------------------------------------------------------------------
+
+void tst_WebServer::buildIncomingTree()
+{
+    m_incoming = std::make_unique<QTemporaryDir>();
+    QVERIFY(m_incoming->isValid());
+
+    const QDir root(m_incoming->path());
+    QVERIFY(root.mkpath(QStringLiteral("Season 1")));
+
+    const auto write = [&root](const QString& rel, const QByteArray& data) {
+        QFile f(root.filePath(rel));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(data), qint64(data.size()));
+    };
+
+    write(QStringLiteral("Season 1/episode.txt"), QByteArrayLiteral("nested"));
+    write(QStringLiteral("clip.mp4"), QByteArrayLiteral("not really an mp4"));
+    write(QStringLiteral("movie.mkv"), QByteArrayLiteral("not really an mkv"));
+    write(QStringLiteral("notes.txt"), QByteArrayLiteral("plain"));
+
+    // Larger than kPreviewChunkBytes, so a download served through the preview
+    // path — which caps its body at 4 MiB — fails this fixture instead of
+    // quietly handing browsers a truncated file.
+    m_bigFileBytes.resize(5 * 1024 * 1024);
+    for (qsizetype i = 0; i < m_bigFileBytes.size(); ++i)
+        m_bigFileBytes[i] = char(i * 31 + (i >> 11));
+    write(QStringLiteral("big.bin"), m_bigFileBytes);
+
+    // A symlink out of the tree. Nothing but canonicalisation catches this one.
+    QFile::link(QStringLiteral("/etc/hosts"), root.filePath(QStringLiteral("escape.txt")));
+
+    m_preferences->setIncomingDir(m_incoming->path());
+}
+
+QString tst_WebServer::incomingUrl(const QString& path, const QString& key,
+                                   const QString& value) const
+{
+    QString url = path + QStringLiteral("?token=") + m_webServer->streamToken();
+    if (!key.isEmpty()) {
+        url += QLatin1Char('&') + key + QLatin1Char('=')
+             + QString::fromLatin1(QUrl::toPercentEncoding(value));
+    }
+    return url;
+}
+
+void tst_WebServer::incomingRejectsAMissingOrWrongStreamToken()
+{
+    for (const QString& path : {QStringLiteral("/api/v1/incoming"),
+                                QStringLiteral("/api/v1/incoming/stream?file=notes.txt"),
+                                QStringLiteral("/api/v1/incoming/download?file=notes.txt")}) {
+        QCOMPARE(sendRanged(path, {}).statusCode, 401);
+
+        const QString sep = path.contains(QLatin1Char('?')) ? QStringLiteral("&")
+                                                            : QStringLiteral("?");
+        const auto wrong = sendRanged(path + sep + QStringLiteral("token=not-the-token"), {});
+        QCOMPARE(wrong.statusCode, 401);
+        // A 401 must not hand back the value it just rejected a guess against.
+        QVERIFY(!wrong.rawBody.contains(m_webServer->streamToken().toUtf8()));
+    }
+}
+
+void tst_WebServer::incomingListingShowsFilesAndFolders()
+{
+    const auto root = sendRanged(incomingUrl(QStringLiteral("/api/v1/incoming")), {});
+    QCOMPARE(root.statusCode, 200);
+    QVERIFY(root.headers.value(QStringLiteral("content-type")).startsWith(QStringLiteral("text/html")));
+
+    const QString html = QString::fromUtf8(root.rawBody);
+    QVERIFY(html.contains(QStringLiteral("Season 1")));
+    QVERIFY(html.contains(QStringLiteral("notes.txt")));
+    QVERIFY(html.contains(QStringLiteral("5.0 MB")));       // big.bin, humanised
+
+    // A folder navigates; it is never offered as a download.
+    QVERIFY(html.contains(QStringLiteral("path=Season%201")));
+
+    // Video and audio get a second link, and which one depends on whether a
+    // browser can play the container at all.
+    QVERIFY(html.contains(QStringLiteral(">Play<")));
+    QVERIFY(html.contains(QStringLiteral("play=clip.mp4")));
+    QVERIFY(html.contains(QStringLiteral(">Stream<")));
+    // &amp;, not &: the href is HTML-escaped, which is what keeps a release name
+    // containing an ampersand from ending the attribute early.
+    QVERIFY(html.contains(QStringLiteral("/api/v1/incoming/stream?token=%1&amp;file=movie.mkv")
+                              .arg(m_webServer->streamToken())));
+
+    // A plain file has exactly one action.
+    QVERIFY(html.contains(QStringLiteral("file=notes.txt")));
+    QVERIFY(!html.contains(QStringLiteral("play=notes.txt")));
+
+    // Descending works, and the subfolder offers a way back up.
+    const auto sub = sendRanged(
+        incomingUrl(QStringLiteral("/api/v1/incoming"), QStringLiteral("path"),
+                    QStringLiteral("Season 1")), {});
+    QCOMPARE(sub.statusCode, 200);
+    const QString subHtml = QString::fromUtf8(sub.rawBody);
+    QVERIFY(subHtml.contains(QStringLiteral("episode.txt")));
+    QVERIFY(subHtml.contains(QStringLiteral("../")));
+}
+
+void tst_WebServer::incomingRefusesToEscapeTheIncomingDir()
+{
+    const QStringList escapes = {
+        QStringLiteral("../"),
+        QStringLiteral("../../etc/passwd"),
+        QStringLiteral("..\\..\\windows\\win.ini"),
+        QStringLiteral("Season 1/../../etc/passwd"),
+        QStringLiteral("/etc/passwd"),
+        QStringLiteral("escape.txt"),          // a symlink pointing out of the tree
+    };
+
+    for (const QString& rel : escapes) {
+        const auto listing = sendRanged(
+            incomingUrl(QStringLiteral("/api/v1/incoming"), QStringLiteral("path"), rel), {});
+        QVERIFY2(listing.statusCode == 404 || listing.statusCode == 400,
+                 qPrintable(QStringLiteral("listing served %1 for %2")
+                                .arg(listing.statusCode).arg(rel)));
+
+        for (const QString& route : {QStringLiteral("/api/v1/incoming/stream"),
+                                     QStringLiteral("/api/v1/incoming/download")}) {
+            const auto bytes = sendRanged(
+                incomingUrl(route, QStringLiteral("file"), rel), {});
+            QCOMPARE(bytes.statusCode, 404);
+            QVERIFY(!bytes.rawBody.contains(QByteArrayLiteral("root:")));
+        }
+    }
+}
+
+void tst_WebServer::incomingDownloadSendsTheWholeFileAsAnAttachment()
+{
+    const auto resp = sendRanged(
+        incomingUrl(QStringLiteral("/api/v1/incoming/download"), QStringLiteral("file"),
+                    QStringLiteral("big.bin")), {});
+
+    QCOMPARE(resp.statusCode, 200);
+    // The whole file, not one preview window: this is the assertion that a
+    // download routed through serveRange would fail.
+    QCOMPARE(resp.rawBody.size(), m_bigFileBytes.size());
+    QCOMPARE(resp.rawBody, m_bigFileBytes);
+
+    const QString disposition = resp.headers.value(QStringLiteral("content-disposition"));
+    QVERIFY2(disposition.startsWith(QStringLiteral("attachment")), qPrintable(disposition));
+    QVERIFY(disposition.contains(QStringLiteral("big.bin")));
+}
+
+void tst_WebServer::incomingStreamHonoursARangeRequest()
+{
+    const QString url = incomingUrl(QStringLiteral("/api/v1/incoming/stream"),
+                                    QStringLiteral("file"), QStringLiteral("big.bin"));
+
+    const auto ranged = sendRanged(url, QByteArrayLiteral("bytes=1000-1099"));
+    QCOMPARE(ranged.statusCode, 206);
+    QCOMPARE(ranged.rawBody, m_bigFileBytes.mid(1000, 100));
+    QCOMPARE(ranged.headers.value(QStringLiteral("content-range")),
+             QStringLiteral("bytes 1000-1099/%1").arg(m_bigFileBytes.size()));
+    QCOMPARE(ranged.headers.value(QStringLiteral("accept-ranges")), QStringLiteral("bytes"));
+    QVERIFY(ranged.headers.value(QStringLiteral("content-disposition"))
+                .startsWith(QStringLiteral("inline")));
+
+    // No Range at all still comes back partial, because the body is capped —
+    // which is exactly why the download route cannot share this path.
+    const auto whole = sendRanged(url, {});
+    QCOMPARE(whole.statusCode, 206);
+    QVERIFY(whole.rawBody.size() < m_bigFileBytes.size());
+    QCOMPARE(whole.rawBody, m_bigFileBytes.left(whole.rawBody.size()));
 }
 
 // ---------------------------------------------------------------------------

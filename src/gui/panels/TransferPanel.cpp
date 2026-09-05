@@ -1427,6 +1427,15 @@ void TransferPanel::sendOpenFolder(const QString& hash)
 {
     if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
         return;
+
+    // The daemon opens the folder on its own host. That is right only while its
+    // host is this one -- otherwise it would pop a window on someone else's
+    // desktop, and silently, since the reply is discarded.
+    if (!m_ipc->isLocalConnection()) {
+        openIncomingFolder(m_ipc, m_streamToken);
+        return;
+    }
+
     IpcMessage msg(IpcMsgType::OpenDownloadFolder);
     msg.append(hash);
     m_ipc->sendRequest(std::move(msg));

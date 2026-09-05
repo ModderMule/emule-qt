@@ -30,6 +30,7 @@
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
 
 #include "dialogs/PasteLinksDialog.h"
@@ -403,6 +404,18 @@ void MainWindow::setStatusMessage(const QString& text)
         m_statusMsg->setText(text);
 }
 
+void MainWindow::setStreamToken(const QString& token)
+{
+    m_streamToken = token;
+
+    // The panels each build their own URLs from it; the window needs its own copy
+    // for the Downloads Folder button, which belongs to no panel.
+    if (m_transferPanel)    m_transferPanel->setStreamToken(token);
+    if (m_searchPanel)      m_searchPanel->setStreamToken(token);
+    if (m_sharedFilesPanel) m_sharedFilesPanel->setStreamToken(token);
+    if (m_usenetPanel)      m_usenetPanel->setStreamToken(token);
+}
+
 void MainWindow::updateTransferRates(double upKBs, double downKBs,
                                      double upOH, double downOH)
 {
@@ -681,7 +694,10 @@ void MainWindow::buildToolsMenu()
 
 void MainWindow::onOpenIncomingFolder()
 {
-    QDesktopServices::openUrl(QUrl::fromLocalFile(thePrefs.incomingDir()));
+    // Shared by the toolbar button, the Tools menu and MiniMule. Against a remote
+    // core the incoming path names the *daemon's* filesystem, so the decision of
+    // what to open lives in one place for all three.
+    openIncomingFolder(m_ipc, m_streamToken);
 }
 
 void MainWindow::onImportDownloads()
@@ -900,6 +916,8 @@ void MainWindow::rebuildToolbar()
             connect(action, &QAction::triggered, this, [] {
                 QDesktopServices::openUrl(QUrl(QStringLiteral("https://emule-qt.org")));
             });
+        } else if (id == ToolbarButtonId::DownloadsFolder) {
+            connect(action, &QAction::triggered, this, &MainWindow::onOpenIncomingFolder);
         }
     }
 

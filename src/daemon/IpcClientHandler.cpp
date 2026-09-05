@@ -4505,7 +4505,7 @@ NewsServer newsServerFromCbor(const QCborMap& m)
     s.optional = m.value(QStringLiteral("optional")).toBool(false);
     s.retention = int(m.value(QStringLiteral("retention")).toInteger(0));
     s.joinGroup = m.value(QStringLiteral("joinGroup")).toBool(false);
-    s.maxConnections = int(m.value(QStringLiteral("maxConnections")).toInteger(8));
+    s.maxConnections = int(m.value(QStringLiteral("maxConnections")).toInteger(kDefaultMaxConnections));
     s.certVerification = static_cast<NntpCertVerification>(
         m.value(QStringLiteral("certVerification"))
             .toInteger(int(NntpCertVerification::Strict)));

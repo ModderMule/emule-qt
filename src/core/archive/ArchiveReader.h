@@ -22,6 +22,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -111,7 +112,29 @@ public:
 
     /// Paths the last extractAll()/extractAllFrom() actually wrote. The only way
     /// to know what a live set produced, since it has no entry index.
+    ///
+    /// A member is listed once it is closed, and one that was cut short by a
+    /// cancelled or failed run is listed too — a caller that must not keep a
+    /// half-written member deletes what this returns.
     [[nodiscard]] QStringList extractedFiles() const;
+
+    /// Told about each member as it is written, for a caller that wants to read
+    /// the output before the extraction ends. Optional; without one this class
+    /// behaves exactly as before.
+    ///
+    /// @p entryIndex counts members in archive order, which is the only order a
+    /// live set has. @p bytesWritten is what a *reader* can get back: the file is
+    /// flushed before the call, so it never promises bytes still sitting in
+    /// QFile's buffer. @p entrySize is what the archive declared, 0 when it
+    /// declared nothing — a streamed zip with a data descriptor does not.
+    /// @p finished marks the last call for that member, after its file is closed.
+    ///
+    /// Called on whichever thread drives the extraction, which for a live set is
+    /// not the caller's.
+    using ProgressSink = std::function<void(int entryIndex, const QString& entryName,
+                                            const QString& destPath, qint64 bytesWritten,
+                                            qint64 entrySize, bool finished)>;
+    void setProgressSink(ProgressSink sink);
 
     /// Members the last extractAll() refused as unsafe. Empty on a clean archive.
     [[nodiscard]] QStringList rejectedEntries() const;
