@@ -113,12 +113,15 @@ QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
     return url.toString(QUrl::FullyEncoded);
 }
 
-bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken)
+bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken,
+                        const QString& localPath, const QString& relPath)
 {
     // Local core: same filesystem, so the real file manager wins over anything
     // we could render.
-    if (ipc && ipc->isLocalConnection())
-        return QDesktopServices::openUrl(QUrl::fromLocalFile(thePrefs.incomingDir()));
+    if (ipc && ipc->isLocalConnection()) {
+        const QString dir = localPath.isEmpty() ? thePrefs.incomingDir() : localPath;
+        return QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    }
 
     // Remote, and worth checking before building a URL: with both web surfaces
     // off the daemon pins its HTTP listener to loopback (DaemonApp), so the page
@@ -131,7 +134,7 @@ bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken)
         return false;
     }
 
-    const QString url = daemonIncomingUrl(ipc, streamToken);
+    const QString url = daemonIncomingUrl(ipc, streamToken, relPath);
     if (url.isEmpty()) {
         logWarning(QStringLiteral(
             "Cannot show the core's Incoming folder: no stream token yet. It arrives "

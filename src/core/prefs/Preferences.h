@@ -8,6 +8,7 @@
 /// Factory methods bridge to existing config structs (ObfuscationConfig,
 /// ProxySettings) used by already-ported modules.
 
+#include "prefs/DownloadCategory.h"
 #include "prefs/IndexerConfig.h"
 #include "prefs/NewsServer.h"
 #include "utils/Types.h"
@@ -253,7 +254,53 @@ public:
     /// (srchybrid/Preferences.cpp:2578): the config directory and the temp directories
     /// are eMule's own working storage, and the incoming directory is shared
     /// unconditionally elsewhere, so none of them may be picked as a shared dir.
+    /// A category's incoming directory is shared unconditionally too, so it is
+    /// rejected here for the same reason the global one is.
     [[nodiscard]] bool isShareableDirectory(const QString& dir) const;
+
+    // -- Download categories --------------------------------------------------
+    //
+    // MFC's catArr (srchybrid/Preferences.h:1424), kept in preferences.yml
+    // instead of its own Category.ini. Index 0 is the implicit "All" category
+    // and always exists; downloads store their category as that index, so the
+    // list order is part of the on-disk format — see DownloadCategory.h.
+
+    [[nodiscard]] QList<DownloadCategory> categories() const;
+
+    /// Replaces the whole list. Sanitised first: index 0 is forced to exist
+    /// with an empty path, unusable paths fall back to the global incoming
+    /// dir, and the list is capped at kMaxCategories.
+    void setCategories(const QList<DownloadCategory>& val);
+
+    /// Never zero — index 0 always exists. MFC's GetCatCount().
+    [[nodiscard]] int categoryCount() const;
+
+    /// One category by index, or a default-constructed one when the index is
+    /// out of range. MFC's GetCategory() returns NULL there and most of its
+    /// call sites dereference it unchecked (srchybrid/PartFile.cpp:2840 among
+    /// them); returning a value makes that class of crash unrepresentable.
+    [[nodiscard]] DownloadCategory category(int index) const;
+
+    /// Where a download in this category belongs once it completes, and a
+    /// directory that is always shared while it is set.
+    ///
+    /// **The single resolution point for the whole core.** Port of MFC's
+    /// inline decision at srchybrid/PartFile.cpp:2840-2843: the category's own
+    /// path when it is set and exists, otherwise the global incoming dir. The
+    /// existence test is not redundant with the load-time validation — the
+    /// user can delete or unmount the folder while eMule runs, and a download
+    /// that completes then must still land somewhere.
+    [[nodiscard]] QString incomingDirForCategory(int index) const;
+
+    /// Every distinct directory a completed download can land in: the global
+    /// incoming dir plus every category that overrides it. The shared-file
+    /// scan roots, in other words (MFC: srchybrid/SharedFileList.cpp:577-580).
+    [[nodiscard]] QStringList allIncomingDirs() const;
+
+    /// The category's colour, or an invalid QColor-equivalent sentinel when it
+    /// is kCategoryColorAuto. MFC's GetCatColor(), minus the GetSysColor()
+    /// fallback — picking the default text colour is the GUI's job here.
+    [[nodiscard]] quint32 categoryColor(int index) const;
 
     // -- UPnP -----------------------------------------------------------------
 
@@ -1431,6 +1478,30 @@ private:
 
     /// Write the cumulative block of @p d to @p filePath. Caller holds the lock.
     static bool writeStatsBackup(const Data& d, const QString& filePath);
+
+    /// Apply the `--config` override to a stored config directory. Shared by
+    /// configDir() and by the lock-free paths below, so the override rule lives
+    /// in one place.
+    [[nodiscard]] static QString resolveConfigDir(const QString& stored);
+
+    /// The lock-free core of isShareableDirectory(). Takes the three
+    /// directories it judges against so code that already holds the lock — the
+    /// YAML loader — can ask the same question without deadlocking on the
+    /// non-recursive QReadWriteLock.
+    [[nodiscard]] static bool isShareableDirectory(const QString& dir,
+                                                  const QString& configDir,
+                                                  const QString& incomingDir,
+                                                  const QStringList& tempDirs);
+
+    /// Enforce the category-list invariants the rest of the code assumes:
+    /// index 0 exists and has no path of its own, an unusable path degrades to
+    /// the global incoming dir rather than losing the category, and the list is
+    /// capped. Shared by setCategories() and the YAML loader — a hand-edited
+    /// file is exactly as capable of writing nonsense as an IPC client is.
+    /// Lock-free for the same reason as above.
+    [[nodiscard]] static QList<DownloadCategory>
+    sanitizeCategories(const QList<DownloadCategory>& cats, const QString& configDir,
+                       const QString& incomingDir, const QStringList& tempDirs);
 
     void validate();
     void resolveDefaultDirectories();

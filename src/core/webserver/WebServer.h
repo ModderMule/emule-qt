@@ -254,8 +254,24 @@ private:
     /// True when the request carries the stream token. The gate all three share.
     [[nodiscard]] bool hasStreamToken(const QHttpServerRequest& req) const;
 
-    /// The canonical incoming directory, or empty when there is none.
+    /// The canonical global incoming directory, or empty when there is none.
     [[nodiscard]] QString incomingRoot() const;
+
+    /// The root a client-supplied path is relative to, and what is left of the
+    /// path once that root is taken off.
+    ///
+    /// Finished downloads no longer live in one folder: a category can have an
+    /// incoming directory of its own. Those are not *under* the global one, so
+    /// they cannot be reached by a relative path — a category root is addressed
+    /// by the leading component `!N`, N being its index. `categoryIndex` is -1
+    /// for the global root, and `root` is empty when the path names a category
+    /// that does not exist or has no folder.
+    struct IncomingRoot {
+        QString root;
+        QString remainder;
+        int categoryIndex = -1;
+    };
+    [[nodiscard]] IncomingRoot splitIncomingPath(const QString& relPath) const;
 
     /// Turn a client-supplied path relative to the incoming folder into an
     /// absolute one, or return empty if it may not be served.
@@ -264,6 +280,8 @@ private:
     /// any ".." component before touching the filesystem, then *canonicalises*
     /// and requires containment — which is also what stops a symlink inside the
     /// folder from pointing out of it. Empty for anything that does not exist.
+    /// Containment is against the one root the path selected, never against all
+    /// of them: a `!1/` path may not escape into the global folder either.
     [[nodiscard]] QString resolveIncomingPath(const QString& relPath) const;
 
     /// The listing page, and the one-element player page, as standalone HTML.

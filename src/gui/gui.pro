@@ -100,6 +100,7 @@ SOURCES += \
     controls/StatsGraph.cpp \
     controls/TransferToolbar.cpp \
     dialogs/AddFriendDialog.cpp \
+    dialogs/CategoryDialog.cpp \
     dialogs/ArchivePreviewPanel.cpp \
     dialogs/ClientDetailDialog.cpp \
     dialogs/CommentsPanel.cpp \
@@ -152,6 +153,7 @@ HEADERS += \
     controls/StatsGraph.h \
     controls/TransferToolbar.h \
     dialogs/AddFriendDialog.h \
+    dialogs/CategoryDialog.h \
     dialogs/ArchivePreviewPanel.h \
     dialogs/ClientDetailDialog.h \
     dialogs/CommentsPanel.h \

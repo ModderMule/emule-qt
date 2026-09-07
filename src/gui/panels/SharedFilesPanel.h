@@ -221,8 +221,6 @@ private:
     // Context menu
     QMenu* m_contextMenu = nullptr;
 
-    // Cached incoming directory for filtering
-    QString m_incomingDir;
     /// Non-empty while a filesystem directory is selected in the tree: the list then
     /// shows that directory's contents instead of the share, and the poller refetches
     /// through requestBrowseDirectory() instead of GetSharedFiles.

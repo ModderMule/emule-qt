@@ -268,6 +268,7 @@ HEADERS += \
     net/SmtpClient.h \
     net/ThrottledSocket.h \
     net/UDPSocket.h \
+    prefs/DownloadCategory.h \
     prefs/IndexerConfig.h \
     prefs/Preferences.h \
     protocol/ED2KLink.h \

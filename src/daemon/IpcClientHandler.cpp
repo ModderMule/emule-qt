@@ -297,6 +297,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::UnshareFile:          handleUnshareFile(msg); break;
     case IpcMsgType::SetFileShared:        handleSetFileShared(msg); break;
     case IpcMsgType::BrowseDirectory:      handleBrowseDirectory(msg); break;
+    case IpcMsgType::GetCategories:        handleGetCategories(msg); break;
+    case IpcMsgType::SetCategories:        handleSetCategories(msg); break;
+    case IpcMsgType::SetCategoryStatus:    handleSetCategoryStatus(msg); break;
 
     case IpcMsgType::GetIndexers:          handleGetIndexers(msg); break;
     case IpcMsgType::SetIndexers:          handleSetIndexers(msg); break;
@@ -470,19 +473,7 @@ void IpcClientHandler::handleCancelDownload(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
         return;
     }
-    if (thePrefs.rememberCancelledFiles() && theApp.knownFileList)
-        theApp.knownFileList->addCancelledFileID(pf->fileHash());
-    pf->stopFile(true);
-    theApp.downloadQueue->removeFile(pf);
-    // A *completed* download was handed to KnownFileList/SharedFileList, which
-    // then hold non-owning references to it. Cancelling removes the file entirely,
-    // so unlink it from both before freeing — otherwise the freed pointer would
-    // dangle in their maps and crash the next known.met save (KnownFile::writeToFile).
-    if (theApp.knownFileList)
-        theApp.knownFileList->remove(pf);
-    if (theApp.sharedFileList)
-        theApp.sharedFileList->removeFile(pf);
-    delete pf;
+    cancelDownloadFile(pf);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -1904,6 +1895,10 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
 
 void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
 {
+    // Captured before the apply loop: moving the incoming directory has to move
+    // the category folders that lived inside it (see below).
+    const QString oldIncomingDir = thePrefs.incomingDir();
+
     // Fields come in key-value pairs: [key1, val1, key2, val2, ...]
     for (int i = 0; i + 1 < msg.fieldCount(); i += 2) {
         const QString key = msg.fieldString(i);
@@ -1923,6 +1918,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
             break;
         }
     }
+
+    rebaseCategoryDirs(oldIncomingDir);
 
     thePrefs.save();
 
@@ -3094,6 +3091,13 @@ void IpcClientHandler::handleSetDownloadCategory(const IpcMessage& msg)
     auto* pf = theApp.downloadQueue->fileByID(hashBuf);
     if (!pf) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+    // The category is an index, and it decides where the file lands when it
+    // completes. An out-of-range one would silently resolve back to the global
+    // incoming dir, which looks like the assignment worked.
+    if (cat >= static_cast<uint32>(thePrefs.categoryCount())) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Unknown category")));
         return;
     }
     pf->setCategory(cat);
@@ -4577,6 +4581,188 @@ void IpcClientHandler::handleSetNewsServers(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// Download categories (268-270)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// One category row. Shared by the get and (minus the resolved path) the set,
+/// so the two cannot drift into disagreeing about field names — the same reason
+/// newsServerToCbor exists.
+QCborMap categoryToCbor(const DownloadCategory& cat, const QString& resolvedIncoming, int index)
+{
+    return QCborMap{
+        // The list is index-ordered, so this is redundant on the way out — it is
+        // here to be sent *back* as `oldIndex`, which is what lets a reorder or
+        // a removal move the downloads with their category.
+        {QStringLiteral("index"),            index},
+        {QStringLiteral("title"),            cat.title},
+        {QStringLiteral("incoming"),         cat.incomingPath},
+        // What a download in this category would actually land in, today. The
+        // GUI shows this, so a category whose folder was deleted under it reads
+        // as the global incoming dir rather than as a path that no longer works.
+        {QStringLiteral("resolvedIncoming"), resolvedIncoming},
+        {QStringLiteral("comment"),          cat.comment},
+        {QStringLiteral("autocat"),          cat.autocat},
+        {QStringLiteral("autocatRegexp"),    cat.autocatIsRegexp},
+        {QStringLiteral("regexp"),           cat.regexp},
+        {QStringLiteral("color"),            static_cast<qint64>(cat.color)},
+        {QStringLiteral("prio"),             static_cast<int>(cat.prio)},
+    };
+}
+
+DownloadCategory categoryFromCbor(const QCborMap& m)
+{
+    DownloadCategory cat;
+    cat.title = m.value(QStringLiteral("title")).toString().trimmed();
+    cat.incomingPath = m.value(QStringLiteral("incoming")).toString().trimmed();
+    cat.comment = m.value(QStringLiteral("comment")).toString();
+    cat.autocat = m.value(QStringLiteral("autocat")).toString().trimmed();
+    cat.autocatIsRegexp = m.value(QStringLiteral("autocatRegexp")).toBool(false);
+    cat.regexp = m.value(QStringLiteral("regexp")).toString().trimmed();
+    cat.color = static_cast<quint32>(
+        m.value(QStringLiteral("color")).toInteger(kCategoryColorAuto));
+    cat.prio = static_cast<quint8>(m.value(QStringLiteral("prio")).toInteger(cat.prio));
+    // The view-filter quartet is not on the wire: nothing reads it yet, and a
+    // GUI that never saw it would blank it on every round trip. Carried over
+    // from the stored entry by handleSetCategories instead.
+    return cat;
+}
+
+} // namespace
+
+void IpcClientHandler::handleGetCategories(const IpcMessage& msg)
+{
+    const auto categories = thePrefs.categories();
+
+    QCborArray out;
+    for (int i = 0; i < categories.size(); ++i)
+        out.append(categoryToCbor(categories.at(i), thePrefs.incomingDirForCategory(i), i));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+void IpcClientHandler::handleSetCategories(const IpcMessage& msg)
+{
+    const QCborArray incoming = msg.fieldArray(0);
+    if (incoming.size() > kMaxCategories) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(tr("At most %1 categories can be configured.").arg(kMaxCategories))));
+        return;
+    }
+
+    const auto stored = thePrefs.categories();
+    const QStringList oldDirs = thePrefs.allIncomingDirs();
+
+    QList<DownloadCategory> categories;
+    categories.reserve(static_cast<int>(incoming.size()));
+
+    // Where each entry used to live, so the downloads pointing at it can be
+    // moved with it. An entry without `oldIndex` is new and nothing points at
+    // it yet; an old index that never turns up here was deleted.
+    QHash<uint32, uint32> oldToNew;
+
+    for (int i = 0; i < incoming.size(); ++i) {
+        if (!incoming.at(i).isMap())
+            continue;
+
+        const QCborMap map = incoming.at(i).toMap();
+        DownloadCategory cat = categoryFromCbor(map);
+
+        const int oldIndex =
+            static_cast<int>(map.value(QStringLiteral("oldIndex")).toInteger(-1));
+        if (oldIndex > 0 && oldIndex < stored.size()) {
+            // Carry the fields the GUI is never given, from wherever the entry
+            // used to be — not from the slot it now occupies.
+            cat.filter = stored.at(oldIndex).filter;
+            cat.filterNeg = stored.at(oldIndex).filterNeg;
+            cat.care4all = stored.at(oldIndex).care4all;
+            cat.downloadInAlphabeticalOrder = stored.at(oldIndex).downloadInAlphabeticalOrder;
+
+            oldToNew.insert(static_cast<uint32>(oldIndex),
+                            static_cast<uint32>(categories.size()));
+        }
+
+        categories.append(cat);
+    }
+
+    // Renumber the downloads *before* the new list is stored, so nothing in
+    // between can read an index that no longer names what it used to.
+    if (theApp.downloadQueue)
+        theApp.downloadQueue->remapCategories(oldToNew);
+
+    thePrefs.setCategories(categories);
+
+    if (!thePrefs.save()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("Could not write preferences.yml."))));
+        return;
+    }
+
+    // A category folder is a shared folder, so gaining or losing one changes
+    // what we advertise. MFC reloads the share on exactly the same events
+    // (srchybrid/TransferWnd.cpp:915, 934, 1126).
+    if (theApp.sharedFileList && thePrefs.allIncomingDirs() != oldDirs)
+        theApp.sharedFileList->reload();
+
+    emit categoriesChanged();
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSetCategoryStatus(const IpcMessage& msg)
+{
+    const int category = static_cast<int>(msg.fieldInt(0));
+    const auto action = static_cast<Ipc::CategoryAction>(msg.fieldInt(1));
+
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Download queue unavailable")));
+        return;
+    }
+    if (category < 0 || category >= thePrefs.categoryCount()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Unknown category")));
+        return;
+    }
+
+    const auto cat = static_cast<uint32>(category);
+
+    switch (action) {
+    case Ipc::CategoryAction::Pause:
+        theApp.downloadQueue->setCatStatus(cat, true);
+        break;
+    case Ipc::CategoryAction::Resume:
+        theApp.downloadQueue->setCatStatus(cat, false);
+        break;
+    case Ipc::CategoryAction::Stop:
+        for (auto* file : theApp.downloadQueue->files())
+            if (file->category() == cat)
+                file->stopFile();
+        break;
+    case Ipc::CategoryAction::Cancel: {
+        // Copy first: cancelling frees the PartFile and removes it from the
+        // queue, which would invalidate the range underneath the loop.
+        const auto files = theApp.downloadQueue->files();
+        for (auto* file : files)
+            if (file->category() == cat)
+                cancelDownloadFile(file);
+        break;
+    }
+    case Ipc::CategoryAction::ResumeNext:
+        theApp.downloadQueue->startNextFile(category);
+        break;
+    default:
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Unknown category action")));
+        return;
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
 // Usenet — the download queue (723-728)
 //
 // The queue lives on UsenetSession, which DaemonApp owns because core may not
@@ -4894,6 +5080,67 @@ void IpcClientHandler::handleTestNewsServer(const IpcMessage& msg)
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+void IpcClientHandler::rebaseCategoryDirs(const QString& oldIncomingDir)
+{
+    const QString newIncomingDir = thePrefs.incomingDir();
+    if (oldIncomingDir.isEmpty() || newIncomingDir.isEmpty()
+        || oldIncomingDir == newIncomingDir)
+    {
+        return;
+    }
+
+    // Only the categories that lived *inside* the old incoming directory move
+    // with it. One pointed somewhere else entirely — another volume, say — was
+    // chosen deliberately and is left alone. MFC asks the user first
+    // (IDS_UPDATECATINCOMINGDIRS, srchybrid/PPgDirectories.cpp:232-248); here
+    // the alternative is a category silently pointing into a folder the user
+    // just moved away from, so it is done and logged.
+    const QString oldBase = QDir::cleanPath(QDir(oldIncomingDir).absolutePath());
+    const QString newBase = QDir::cleanPath(QDir(newIncomingDir).absolutePath());
+
+    auto categories = thePrefs.categories();
+    bool changed = false;
+
+    for (auto& cat : categories) {
+        if (cat.incomingPath.isEmpty())
+            continue;
+
+        const QString path = QDir::cleanPath(QDir(cat.incomingPath).absolutePath());
+        if (!path.startsWith(oldBase + QLatin1Char('/'), Qt::CaseInsensitive))
+            continue;
+
+        cat.incomingPath = newBase + path.mid(oldBase.size());
+        changed = true;
+        logInfo(QStringLiteral("Category \"%1\": incoming directory moved to %2")
+                    .arg(cat.displayName(), cat.incomingPath));
+    }
+
+    if (changed) {
+        thePrefs.setCategories(categories);
+        emit categoriesChanged();
+    }
+}
+
+void IpcClientHandler::cancelDownloadFile(PartFile* pf)
+{
+    if (!pf || !theApp.downloadQueue)
+        return;
+
+    if (thePrefs.rememberCancelledFiles() && theApp.knownFileList)
+        theApp.knownFileList->addCancelledFileID(pf->fileHash());
+    pf->stopFile(true);
+    theApp.downloadQueue->removeFile(pf);
+    // A *completed* download was handed to KnownFileList/SharedFileList, which
+    // then hold non-owning references to it. Cancelling removes the file entirely,
+    // so unlink it from both before freeing — otherwise the freed pointer would
+    // dangle in their maps and crash the next known.met save (KnownFile::writeToFile).
+    if (theApp.knownFileList)
+        theApp.knownFileList->remove(pf);
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->removeFile(pf);
+    delete pf;
+}
 
 bool IpcClientHandler::rejectIfKadUnavailable(const IpcMessage& msg, bool requireConnected)
 {

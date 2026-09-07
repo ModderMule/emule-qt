@@ -13,6 +13,7 @@
 #include "utils/EntityList.h"
 #include "utils/Types.h"
 
+#include <QHash>
 #include <QObject>
 #include <QStringList>
 
@@ -150,13 +151,48 @@ public:
 
     // -- Queue operations -----------------------------------------------------
 
-    void startNextFile(int category = -1);
+    /// Resume the highest-ranked paused download. @p category -1 means "any";
+    /// otherwise only that category is considered.
+    /// @return whether a download was actually resumed — which is how
+    /// startNextFileIfPrefs() knows a same-category search came up empty.
+    bool startNextFile(int category = -1);
+
+    /// What to do once a download in @p category finishes, per the user's
+    /// "start next paused file" preferences. Port of MFC's
+    /// StartNextFileIfPrefs (srchybrid/DownloadQueue.cpp:221-226), whose
+    /// tri-state this port stores as three booleans: off; any category; prefer
+    /// the same category but fall back; only the same category.
+    void startNextFileIfPrefs(int category);
+
     void sortByPriority();
     void process();
 
     // -- Category management --------------------------------------------------
+    //
+    // A download's category is an index into Preferences::categories(), so
+    // every list mutation has to renumber the downloads that point past it.
+    // MFC keeps the same pair (ResetCatParts / MoveCat,
+    // srchybrid/DownloadQueue.cpp:1105-1115, 1202-1220).
 
     void setCatStatus(uint32 category, bool paused);
+
+    /// Point every download at where its category has moved to.
+    ///
+    /// @param oldToNew  old index -> new index. An index the map does not
+    ///        mention has been deleted, and its downloads fall back to 0.
+    ///
+    /// One primitive instead of MFC's two (ResetCatParts for a deletion,
+    /// MoveCat for a reorder — srchybrid/DownloadQueue.cpp:1105, 1202). Both are
+    /// special cases of a remap, and inferring which one happened from the
+    /// before/after lengths is exactly the guess that re-files a download into
+    /// the wrong category when the user removes one *and* reorders in the same
+    /// edit — which the GUI, sending the whole list at once, can do.
+    void remapCategories(const QHash<uint32, uint32>& oldToNew);
+
+    /// Give a brand-new download the category whose autocat pattern matches its
+    /// name, if any. Called from addDownload(); never overrides a category the
+    /// caller already chose.
+    void applyAutoCategory(PartFile* file) const;
 
     // -- List integration -----------------------------------------------------
 

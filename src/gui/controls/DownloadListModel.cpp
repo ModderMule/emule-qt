@@ -314,7 +314,16 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColLastReception:
             return formatTimestamp(d.lastReception);
         case ColCategory:
-            return d.category > 0 ? QString::number(d.category) : QString{};
+            // Uncategorised downloads show nothing, as in MFC — "All" is not a
+            // category a file is *in*, it is the absence of one.
+            if (d.category <= 0)
+                return QString{};
+            // The name, not the index. A download can name a category that has
+            // since been removed, so the index is the fallback rather than the
+            // display.
+            return d.category < m_categoryNames.size()
+                       ? m_categoryNames.at(static_cast<int>(d.category))
+                       : QString::number(d.category);
         case ColAddedOn:
             return formatTimestamp(d.addedOn);
         default: break;
@@ -546,6 +555,21 @@ const DownloadRow* DownloadListModel::downloadAt(int row) const
     if (row >= 0 && row < static_cast<int>(m_downloads.size()))
         return &m_downloads[static_cast<size_t>(row)];
     return nullptr;
+}
+
+void DownloadListModel::setCategoryNames(QStringList names)
+{
+    if (m_categoryNames == names)
+        return;
+
+    m_categoryNames = std::move(names);
+
+    // Only the one column changed, and only its text: a reset here would
+    // destroy the view's selection for a rename.
+    if (!m_downloads.empty()) {
+        emit dataChanged(index(0, ColCategory), index(rowCount() - 1, ColCategory),
+                         {Qt::DisplayRole});
+    }
 }
 
 bool DownloadListModel::isSourceRow(const QModelIndex& index) const

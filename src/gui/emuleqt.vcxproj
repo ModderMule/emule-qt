@@ -202,6 +202,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="dialogs\AddFriendDialog.cpp" />
+    <ClCompile Include="dialogs\CategoryDialog.cpp" />
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp" />
     <ClCompile Include="dialogs\MediaInfoPanel.cpp" />
     <ClCompile Include="dialogs\BugReportDialog.cpp" />
@@ -299,6 +300,7 @@
     <ClInclude Include="utils\WebServices.h" />
     <ClInclude Include="app\SkinEngine.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
+    <QtMoc Include="dialogs\CategoryDialog.h" />
     <QtMoc Include="dialogs\ArchivePreviewPanel.h" />
     <QtMoc Include="dialogs\MediaInfoPanel.h" />
     <QtMoc Include="dialogs\BugReportDialog.h" />

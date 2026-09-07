@@ -54,6 +54,11 @@ void launchPreview(const QString& url);
 /// when neither is possible -- most often because the daemon binds its web
 /// server to loopback while both web surfaces are switched off, which no URL can
 /// work around.
-bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken);
+/// @param localPath  which folder to open against a local core. Empty means the
+///        global incoming directory; a category's own folder goes here.
+/// @param relPath     the same folder addressed for the remote browse page —
+///        "!N" for category N. Empty means the root listing.
+bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken,
+                        const QString& localPath = {}, const QString& relPath = {});
 
 } // namespace eMule

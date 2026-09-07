@@ -683,6 +683,9 @@
     <ClInclude Include="prefs\IndexerConfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="prefs\DownloadCategory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="prefs\NewsServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>

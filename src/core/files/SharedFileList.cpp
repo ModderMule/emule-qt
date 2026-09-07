@@ -379,10 +379,15 @@ bool SharedFileList::shouldBeShared(const QString& dirPath, const QString& fileP
     if (thePrefs.isUsenetTempPath(filePath.isEmpty() ? dirPath : filePath))
         return false;
 
-    // The incoming directory is always shared and can never be unshared. MFC also
-    // checks each category's incoming path here; this port has no categories.
-    if (samePath(dirPath, thePrefs.incomingDir()))
-        return true;
+    // The incoming directory is always shared and can never be unshared, and so
+    // is every category that has an incoming directory of its own — those are
+    // where completed downloads land, and a download you cannot be asked for is
+    // not a download you shared. MFC makes both checks here, walking its
+    // category array down to index 1 (srchybrid/SharedFileList.cpp:1390-1396);
+    // allIncomingDirs() folds index 0 into the global dir for us.
+    for (const QString& dir : thePrefs.allIncomingDirs())
+        if (samePath(dirPath, dir))
+            return true;
 
     if (mustBeShared)
         return false;
@@ -867,14 +872,20 @@ void SharedFileList::publish()
 
 void SharedFileList::findSharedFiles()
 {
-    // Add incoming directory
-    const QString incomingDir = thePrefs.incomingDir();
-    if (!incomingDir.isEmpty())
-        addFilesFromDirectory(incomingDir);
+    // Every incoming directory: the global one plus each category that has one
+    // of its own (MFC scans the same set, srchybrid/SharedFileList.cpp:577-580).
+    // Without this a file that completed into a category folder would only be
+    // shared until the next restart.
+    const QStringList incomingDirs = thePrefs.allIncomingDirs();
+    for (const QString& dir : incomingDirs)
+        if (!dir.isEmpty())
+            addFilesFromDirectory(dir);
 
     // Add configured shared directories
     for (const auto& dir : thePrefs.sharedDirs()) {
-        if (!dir.isEmpty() && dir != incomingDir)
+        const bool alreadyScanned = std::ranges::any_of(
+            incomingDirs, [&dir](const QString& inc) { return samePath(dir, inc); });
+        if (!dir.isEmpty() && !alreadyScanned)
             addFilesFromDirectory(dir);
     }
 

@@ -1186,16 +1186,36 @@ void PartFile::updateAutoDownPriority()
 
 bool PartFile::rightFileHasHigherPrio(const PartFile* left, const PartFile* right)
 {
-    if (!left || !right)
+    if (!right)
         return false;
+    if (!left)
+        return true;
 
-    // Higher category first
-    if (left->category() != right->category())
-        return left->category() < right->category();
+    // The *category's* priority, not its index. This used to compare the index
+    // itself, which ranked downloads by the arbitrary order the user happened to
+    // create their categories in. MFC ranks by Category_Struct::prio — the
+    // a4af priority the category dialog edits (srchybrid/PartFile.cpp:5159-5165).
+    const auto leftCat = thePrefs.category(static_cast<int>(left->category()));
+    const auto rightCat = thePrefs.category(static_cast<int>(right->category()));
+    if (leftCat.prio != rightCat.prio)
+        return rightCat.prio > leftCat.prio;
 
     // Higher download priority first (kPrVeryHigh=3 > kPrHigh=2 > etc.)
     if (left->downPriority() != right->downPriority())
         return left->downPriority() < right->downPriority();
+
+    // Within one non-default category the user may ask for alphabetical order,
+    // which is the point of the setting: a series downloads in episode order
+    // instead of whichever part happened to find sources first
+    // (srchybrid/PartFile.cpp:5167-5173).
+    if (left->category() != 0 && left->category() == right->category()
+        && leftCat.downloadInAlphabeticalOrder && !left->fileName().isEmpty()
+        && !right->fileName().isEmpty())
+    {
+        const int cmp = right->fileName().compare(left->fileName(), Qt::CaseInsensitive);
+        if (cmp != 0)
+            return cmp < 0;
+    }
 
     // Older file first (earlier creation time)
     return left->m_tCreated > right->m_tCreated;
@@ -1907,7 +1927,12 @@ void PartFile::completeFile()
     if (partPath.endsWith(QStringLiteral(".met")))
         partPath.chop(4);
 
-    const QString incomingDir = thePrefs.incomingDir();
+    // The category picks the folder; category 0 and a category with no folder
+    // of its own both resolve to the global incoming dir. MFC decides this at
+    // the same moment and the same way (srchybrid/PartFile.cpp:2840-2843) —
+    // deliberately *now*, not when the download was created, so a category
+    // whose folder was set after the download started still gets its file.
+    const QString incomingDir = thePrefs.incomingDirForCategory(static_cast<int>(m_category));
     const QString destPath = incomingDir + QDir::separator() + fileName();
 
     // Perform the file move asynchronously

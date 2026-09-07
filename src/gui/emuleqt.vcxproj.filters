@@ -28,6 +28,9 @@
     <ClCompile Include="dialogs\AddFriendDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\CategoryDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -217,6 +220,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="dialogs\AddFriendDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\CategoryDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\UsenetArchiveEntryDialog.h">

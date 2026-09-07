@@ -142,7 +142,6 @@ public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
 
     void setFolderFilter(SharedFilterType type, const QString& path = {});
-    void setIncomingDir(const QString& dir);
 
 protected:
     [[nodiscard]] bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
@@ -151,7 +150,6 @@ protected:
 private:
     SharedFilterType m_filterType = SharedFilterType::AllShared;
     QString m_filterPath;
-    QString m_incomingDir;
 };
 
 } // namespace eMule

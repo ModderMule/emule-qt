@@ -407,6 +407,7 @@
     <ClInclude Include="net\Pinger.h" />
     <ClInclude Include="utils\PlatformUtils.h" />
     <ClInclude Include="prefs\IndexerConfig.h" />
+    <ClInclude Include="prefs\DownloadCategory.h" />
     <ClInclude Include="prefs\NewsServer.h" />
     <ClInclude Include="prefs\Preferences.h" />
     <ClInclude Include="media\PreviewApps.h" />

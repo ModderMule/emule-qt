@@ -43,6 +43,7 @@ private slots:
     void unsharedMark_isNotAReAddGate();
     void excludeFile_survivesReload();
     void excludeFile_refusedForIncomingDir();
+    void excludeFile_refusedForCategoryIncomingDir();
     void sharedFilesConfig_roundTrips();
     void rescan_addsKeywordsThroughTheFrontDoor();
 
@@ -372,6 +373,43 @@ void tst_SharedFileList::excludeFile_refusedForIncomingDir()
     QVERIFY2(!shared.excludeFile(path),
              "a file in the incoming directory cannot be unshared (MFC ExcludeFile:1448)");
     QVERIFY(shared.shouldBeShared(incoming, path, false));
+}
+
+void tst_SharedFileList::excludeFile_refusedForCategoryIncomingDir()
+{
+    eMule::testing::TempDir tmp;
+    const QString incoming = tmp.filePath(QStringLiteral("incoming"));
+    const QString movies = tmp.filePath(QStringLiteral("movies"));
+    const QString path = writeFile(movies, QStringLiteral("film.bin"), QByteArray(256, 'm'));
+    QVERIFY(!path.isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(incoming);
+    thePrefs.setSharedDirs({});
+
+    eMule::DownloadCategory all;
+    all.title = QStringLiteral("All");
+    eMule::DownloadCategory cat;
+    cat.title = QStringLiteral("Movies");
+    cat.incomingPath = movies;
+    thePrefs.setCategories({all, cat});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    // A category's incoming directory is where its completed downloads land, so
+    // it carries the same rule as the global one: always shared, never
+    // unshareable (MFC ShouldBeShared:1394).
+    QVERIFY(shared.shouldBeShared(movies, path, false));
+    QVERIFY2(shared.shouldBeShared(movies, path, /*mustBeShared=*/true),
+             "a category incoming directory is shared unconditionally");
+    QVERIFY2(!shared.excludeFile(path),
+             "a file in a category incoming directory cannot be unshared");
+
+    // Dropping the category's folder gives the directory back its ordinary
+    // status — it is no longer somewhere downloads arrive.
+    thePrefs.setCategories({all});
+    QVERIFY(!shared.shouldBeShared(movies, path, false));
 }
 
 void tst_SharedFileList::sharedFilesConfig_roundTrips()

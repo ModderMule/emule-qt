@@ -85,6 +85,12 @@ void IpcServer::onNewConnection()
                 this, &IpcServer::usenetConfigChanged);
         connect(handler.get(), &IpcClientHandler::indexerConfigChanged,
                 this, &IpcServer::indexerConfigChanged);
+        // Broadcast rather than forward to the daemon: nothing outside the GUIs
+        // cares that the category list changed, and this is the object that
+        // knows every connected client.
+        connect(handler.get(), &IpcClientHandler::categoriesChanged, this, [this] {
+            broadcast(Ipc::IpcMessage(Ipc::IpcMsgType::PushCategoriesChanged));
+        });
 
         m_clients.push_back(std::move(handler));
     }

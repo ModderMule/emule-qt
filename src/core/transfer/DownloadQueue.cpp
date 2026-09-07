@@ -161,6 +161,12 @@ void DownloadQueue::addDownload(PartFile* file, bool paused)
     if (paused)
         file->pauseFile();
 
+    // Before the file reaches the list: the sort in onEntityAdded() ranks by
+    // category priority, so a file that lands in its category afterwards would
+    // sit in the wrong place until the next sort. MFC calls it here too
+    // (srchybrid/DownloadQueue.cpp:310).
+    applyAutoCategory(file);
+
     connectPartFileSignals(file);
 
     // EntityList::addEntity appends + invokes onEntityAdded() (sort/log/emit).
@@ -1073,7 +1079,7 @@ void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& sourc
 // Queue operations
 // ===========================================================================
 
-void DownloadQueue::startNextFile(int category)
+bool DownloadQueue::startNextFile(int category)
 {
     PartFile* bestFile = nullptr;
 
@@ -1088,10 +1094,12 @@ void DownloadQueue::startNextFile(int category)
             bestFile = file;
     }
 
-    if (bestFile) {
-        bestFile->resumeFile();
-        logInfo(QStringLiteral("Started next file: %1").arg(bestFile->fileName()));
-    }
+    if (!bestFile)
+        return false;
+
+    bestFile->resumeFile();
+    logInfo(QStringLiteral("Started next file: %1").arg(bestFile->fileName()));
+    return true;
 }
 
 void DownloadQueue::sortByPriority()
@@ -1508,6 +1516,107 @@ void DownloadQueue::setCatStatus(uint32 category, bool paused)
     }
 }
 
+void DownloadQueue::remapCategories(const QHash<uint32, uint32>& oldToNew)
+{
+    for (auto* file : m_items) {
+        const uint32 cat = file->category();
+        if (cat == 0)
+            continue; // "All" is never remapped: index 0 always exists
+
+        // Absent from the map means the category is gone. Falling back to 0 is
+        // MFC's answer too (ResetCatParts, srchybrid/DownloadQueue.cpp:1111) —
+        // the file keeps its place in the queue and loses only its label.
+        file->setCategory(oldToNew.value(cat, 0));
+    }
+
+    // Category priority is the first key rightFileHasHigherPrio() compares, so
+    // a remap can change the order the queue runs in.
+    sortByPriority();
+}
+
+void DownloadQueue::startNextFileIfPrefs(int category)
+{
+    if (!thePrefs.startNextPausedFile())
+        return;
+
+    // MFC stores one tri-state; this port stores it as three booleans that mean
+    // the same three things (srchybrid/DownloadQueue.cpp:221-226):
+    //   any category           -> look everywhere
+    //   prefer the same        -> try the category, then fall back to any
+    //   only the same category -> try the category and stop
+    if (!thePrefs.startNextPausedFileSameCat()) {
+        startNextFile(-1);
+        return;
+    }
+
+    if (startNextFile(category))
+        return;
+
+    if (!thePrefs.startNextPausedFileOnlySameCat())
+        startNextFile(-1);
+}
+
+void DownloadQueue::applyAutoCategory(PartFile* file) const
+{
+    // Never override a category the caller already picked, and there is nothing
+    // to match against until the user has made a category of their own.
+    if (!file || file->category() > 0)
+        return;
+
+    const auto categories = thePrefs.categories();
+    if (categories.size() < 2)
+        return;
+
+    const QString fileName = file->fileName();
+    if (fileName.isEmpty())
+        return;
+
+    // Highest index first, so the most recently added category wins a tie —
+    // MFC counts down for the same reason (srchybrid/DownloadQueue.cpp:1246).
+    for (int i = static_cast<int>(categories.size()) - 1; i > 0; --i) {
+        const QString pattern = categories.at(i).autocat.trimmed();
+        if (pattern.isEmpty())
+            continue;
+
+        bool matched = false;
+        if (categories.at(i).autocatIsRegexp) {
+            const QRegularExpression re(pattern, QRegularExpression::CaseInsensitiveOption);
+            matched = re.isValid() && re.match(fileName).hasMatch();
+        } else {
+            // '|'-separated terms; a term containing * or ? is a wildcard, any
+            // other is a plain substring. MFC's loop here is written
+            // `if (!cmpExt.IsEmpty()) break;` — inverted, so it bails on the
+            // first real term and the non-regexp branch never matches anything
+            // (its bFound also survives across outer iterations). Ported as
+            // intended rather than as written; the divergence is deliberate and
+            // is recorded in docs/categories.local.md.
+            for (const QStringView termView : QStringView{pattern}.split(u'|', Qt::SkipEmptyParts)) {
+                const QString term = termView.trimmed().toString();
+                if (term.isEmpty())
+                    continue;
+
+                if (term.contains(u'*') || term.contains(u'?')) {
+                    const auto wildcard = QRegularExpression::fromWildcard(
+                        term, Qt::CaseInsensitive, QRegularExpression::UnanchoredWildcardConversion);
+                    matched = wildcard.match(fileName).hasMatch();
+                } else {
+                    matched = fileName.contains(term, Qt::CaseInsensitive);
+                }
+
+                if (matched)
+                    break;
+            }
+        }
+
+        if (matched) {
+            file->setCategory(static_cast<uint32>(i));
+            logInfo(QStringLiteral("Auto-categorised %1 into \"%2\"")
+                        .arg(fileName, categories.at(i).displayName()));
+            return;
+        }
+    }
+}
+
 bool DownloadQueue::hasActiveTransfers() const
 {
     for (const auto* file : m_items) {
@@ -1581,6 +1690,12 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     // Keep completed file in the queue so it remains visible in the UI.
     // It will be skipped by process() loops (status != Ready/Empty).
     // Explicit removal happens via "Clear Completed" → removeFile().
+
+    // A finished download frees a slot, so the user's "start next paused file"
+    // preferences get their turn — preferring the category the finished file
+    // was in. MFC does this at the end of the same event
+    // (srchybrid/PartFile.cpp:3037).
+    startNextFileIfPrefs(static_cast<int>(file->category()));
 
     emit fileCompleted(file);
 }

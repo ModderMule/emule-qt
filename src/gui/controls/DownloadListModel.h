@@ -9,6 +9,7 @@
 #include <QAbstractItemModel>
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
 
 #include <cstdint>
 #include <vector>
@@ -128,6 +129,11 @@ public:
     /// Get the full download row for a top-level row index (nullptr if out of range).
     [[nodiscard]] const DownloadRow* downloadAt(int row) const;
 
+    /// Category titles by index, so the Category column can show a name instead
+    /// of a number. Index 0 ("All") is present but never displayed — a download
+    /// in it is uncategorised. Pushed in by TransferPanel, which owns the list.
+    void setCategoryNames(QStringList names);
+
     /// Check if an index represents a source row (child of a download).
     [[nodiscard]] bool isSourceRow(const QModelIndex& index) const;
 
@@ -153,6 +159,7 @@ private:
     [[nodiscard]] static int statusRank(const DownloadRow& d);
 
     std::vector<DownloadRow> m_downloads;
+    QStringList m_categoryNames;
 };
 
 } // namespace eMule

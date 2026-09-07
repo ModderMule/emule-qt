@@ -1281,18 +1281,45 @@ QString WebServer::incomingRoot() const
     return dir.isEmpty() ? QString{} : QFileInfo(dir).canonicalFilePath();
 }
 
-QString WebServer::resolveIncomingPath(const QString& relPath) const
+WebServer::IncomingRoot WebServer::splitIncomingPath(const QString& relPath) const
 {
-    const QString root = incomingRoot();
-    if (root.isEmpty())
-        return {};
-    if (relPath.isEmpty())
-        return root;
-
     // Windows clients send backslashes; normalise before anything is inspected,
-    // or "..\\.." walks straight past the component check below.
+    // or "..\\.." walks straight past the component check in the caller.
     QString rel = relPath;
     rel.replace(QLatin1Char('\\'), QLatin1Char('/'));
+
+    if (!rel.startsWith(QLatin1Char('!')))
+        return {incomingRoot(), rel, -1};
+
+    const qsizetype cut = rel.indexOf(QLatin1Char('/'));
+    const QStringView token = cut < 0 ? QStringView{rel}.mid(1)
+                                      : QStringView{rel}.mid(1, cut - 1);
+    bool ok = false;
+    const int index = token.toInt(&ok);
+    if (!ok || index <= 0 || !m_preferences)
+        return {};
+
+    // Only a category with a folder of its own is addressable this way. One that
+    // falls back to the global dir is already reachable at the plain root, and
+    // giving it a second address would let the same file appear twice.
+    const QString dir = m_preferences->category(index).incomingPath;
+    if (dir.isEmpty())
+        return {};
+
+    return {QFileInfo(m_preferences->incomingDirForCategory(index)).canonicalFilePath(),
+            cut < 0 ? QString{} : rel.mid(cut + 1), index};
+}
+
+QString WebServer::resolveIncomingPath(const QString& relPath) const
+{
+    const IncomingRoot selected = splitIncomingPath(relPath);
+    const QString root = selected.root;
+    if (root.isEmpty())
+        return {};
+    if (selected.remainder.isEmpty())
+        return root;
+
+    const QString rel = selected.remainder;
     if (QDir::isAbsolutePath(rel))
         return {};
 
@@ -1320,8 +1347,16 @@ QString WebServer::resolveIncomingPath(const QString& relPath) const
 QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString& relPath,
                                             const QString& token) const
 {
-    const QString here = relPath.isEmpty() ? QStringLiteral("Incoming")
-                                           : QStringLiteral("Incoming/") + relPath;
+    // A category root is addressed as "!N/...", which is an implementation
+    // detail the breadcrumb should not show — name the category instead.
+    const IncomingRoot selected = splitIncomingPath(relPath);
+    const QString rootLabel =
+        selected.categoryIndex > 0 && m_preferences
+            ? QStringLiteral("Incoming/") + m_preferences->category(selected.categoryIndex).title
+            : QStringLiteral("Incoming");
+    const QString here = selected.remainder.isEmpty()
+                             ? rootLabel
+                             : rootLabel + QLatin1Char('/') + selected.remainder;
     QString html = pageHead(here);
 
     html += QStringLiteral("<h1>%1</h1>").arg(here.toHtmlEscaped());
@@ -1329,7 +1364,20 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
     const QFileInfoList entries = QDir(absDir).entryInfoList(
         QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::DirsFirst | QDir::Name);
 
-    if (entries.isEmpty() && relPath.isEmpty()) {
+    // Every category with a folder of its own shows at the top level as a
+    // directory. They are not *inside* the global incoming folder, so nothing
+    // relative could reach them — the "!N" address is what makes them
+    // browsable at all.
+    QList<QPair<int, QString>> categoryRoots;
+    if (relPath.isEmpty() && m_preferences) {
+        const auto categories = m_preferences->categories();
+        for (int i = 1; i < categories.size(); ++i) {
+            if (!categories.at(i).incomingPath.isEmpty())
+                categoryRoots.append({i, categories.at(i).displayName()});
+        }
+    }
+
+    if (entries.isEmpty() && categoryRoots.isEmpty() && relPath.isEmpty()) {
         html += QStringLiteral("<p class=\"empty\">Nothing has finished downloading yet.</p>");
         html += QStringLiteral("</body></html>");
         return html.toUtf8();
@@ -1338,7 +1386,18 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
     html += QStringLiteral("<table><tr><th>Name</th><th>Size</th><th>Modified</th>"
                            "<th></th></tr>");
 
+    for (const auto& [index, title] : categoryRoots) {
+        html += QStringLiteral("<tr><td><a href=\"%1\">%2/</a></td><td class=\"n\"></td>"
+                               "<td class=\"n\"></td><td class=\"a\"></td></tr>")
+                    .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                                      QStringLiteral("path"),
+                                      QStringLiteral("!%1").arg(index)),
+                         title.toHtmlEscaped());
+    }
+
     if (!relPath.isEmpty()) {
+        // From "!1" this yields "", i.e. the virtual root that lists the
+        // category folders — which is where the user came from.
         const qsizetype cut = relPath.lastIndexOf(QLatin1Char('/'));
         const QString up = cut < 0 ? QString{} : relPath.left(cut);
         html += QStringLiteral("<tr><td><a href=\"%1\">../</a></td><td></td><td></td>"

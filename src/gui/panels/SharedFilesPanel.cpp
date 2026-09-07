@@ -978,14 +978,9 @@ void SharedFilesPanel::requestSharedFiles()
             row.aichHashStr    = m.value(QStringLiteral("aichHashStr")).toString();
             row.uploadDataRate = m.value(QStringLiteral("uploadDataRate")).toInteger();
 
-            // Capture incoming directory from first non-partfile
-            if (m_incomingDir.isEmpty() && !row.isPartFile)
-                m_incomingDir = row.path;
-
             rows.push_back(std::move(row));
         }
 
-        m_proxy->setIncomingDir(m_incomingDir);
         m_model->setFiles(std::move(rows));
         m_headerLabel->setText(tr("Shared Files (%1)").arg(m_model->fileCount()));
         restoreSelection(selection);

@@ -15,6 +15,8 @@
 
 namespace eMule {
 
+class PartFile;
+
 class IpcClientHandler : public QObject {
     Q_OBJECT
 
@@ -41,6 +43,11 @@ signals:
 
     /// The indexer account list changed and the daemon should re-read it.
     void indexerConfigChanged();
+
+    /// The category list changed. IpcServer turns this into a
+    /// PushCategoriesChanged broadcast, so a second GUI — and the tab bar of
+    /// the one that made the edit — refetch instead of drifting.
+    void categoriesChanged();
 
 private slots:
     void onMessageReceived(const Ipc::IpcMessage& msg);
@@ -126,6 +133,11 @@ private:
     void handleSetFileShared(const Ipc::IpcMessage& msg);
     void handleBrowseDirectory(const Ipc::IpcMessage& msg);
 
+    // Download categories (268-270)
+    void handleGetCategories(const Ipc::IpcMessage& msg);
+    void handleSetCategories(const Ipc::IpcMessage& msg);
+    void handleSetCategoryStatus(const Ipc::IpcMessage& msg);
+
     // Indexers (700-719) — the shared newznab/torznab client
     void handleGetIndexers(const Ipc::IpcMessage& msg);
     void handleSetIndexers(const Ipc::IpcMessage& msg);
@@ -165,6 +177,19 @@ private:
     /// @param requireConnected  true demands a live Kad connection, false only that Kad runs.
     /// @return true when the caller must return without doing any work.
     bool rejectIfKadUnavailable(const Ipc::IpcMessage& msg, bool requireConnected);
+
+    /// Move every category folder that lived inside @p oldIncomingDir along
+    /// with it, after the global incoming directory changed. Without this a
+    /// user who relocates their downloads finds their categories still writing
+    /// into the old tree.
+    void rebaseCategoryDirs(const QString& oldIncomingDir);
+
+    /// Cancel one download: remember the hash if asked to, stop it, take it out
+    /// of the queue and out of the two lists that hold non-owning references to
+    /// it, then free it. Shared by CancelDownload and by cancelling a whole
+    /// category, because getting this teardown order wrong dangles a pointer in
+    /// KnownFileList and crashes the next known.met save.
+    void cancelDownloadFile(PartFile* pf);
 
     // Preference application helpers (split to avoid MSVC C1061 nesting limit)
     bool applyPreferenceA(const QString& key, const QCborValue& val);

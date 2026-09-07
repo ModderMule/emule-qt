@@ -450,7 +450,7 @@ Replace MFC custom controls with Qt equivalents.
 - [x] Port `MetaDataDlg.cpp/h` → integrated as Metadata tab in FileDetailDialog (ED2K tag table)
 - [x] Port `CommentDialog.cpp/h` / `CommentDialogLst.cpp/h` → integrated as Comments tab in FileDetailDialog
 - [x] Port `ClientDetailDialog.cpp/h` → `QDialog` — `gui/dialogs/ClientDetailDialog.h/.cpp`
-- [ ] Port `CatDialog.cpp/h` → `QDialog` (download categories)
+- [x] Port `CatDialog.cpp/h` → `QDialog` — `gui/dialogs/CategoryDialog.h/.cpp` (per-category incoming dirs, autocat, colour, priority; see `docs/categories.local.md`)
 - [x] Port `AddFriend.cpp/h` → `QDialog` — `gui/dialogs/AddFriendDialog.h/.cpp`
 - [ ] Port `AddSourceDlg.cpp/h` → `QDialog`
 - [x] Port `DirectDownloadDlg.cpp/h` → `QDialog` — `gui/dialogs/PasteLinksDialog.h/.cpp` (paste ed2k links dialog)

@@ -66,6 +66,21 @@ sanitizeHttpCacheServers(const QList<HttpCacheServerConfig>& servers)
     return clean;
 }
 
+/// Do these two strings name the same directory? MFC's EqualPaths.
+///
+/// Compares resolved paths, not text: a category incoming dir and the global
+/// one are the same folder whether or not one of them carries a trailing
+/// separator or a "..". An empty string matches nothing, so an unset category
+/// path never collides with a real directory.
+[[nodiscard]] bool samePath(const QString& a, const QString& b)
+{
+    if (a.isEmpty() || b.isEmpty())
+        return false;
+    return QDir::cleanPath(QDir(a).absolutePath())
+               .compare(QDir::cleanPath(QDir(b).absolutePath()), Qt::CaseInsensitive)
+           == 0;
+}
+
 } // namespace
 
 // The SMTP password is stored AES-256-CBC encrypted in the YAML; the cipher now
@@ -153,6 +168,12 @@ struct Preferences::Data {
     QString configDir;
     QString fileCommentsFilePath;
     QStringList sharedDirs;
+
+    // Download categories. Never empty: index 0 is the implicit "All" category,
+    // seeded here so no caller has to cope with a category-less eMule. MFC gets
+    // the same guarantee from LoadCats' `i <= Count` loop, which runs once even
+    // for a missing Category.ini (srchybrid/Preferences.cpp:2467).
+    QList<DownloadCategory> categories{DownloadCategory{.title = QStringLiteral("All")}};
 
     // UPnP
     bool enableUPnP = true;
@@ -816,30 +837,82 @@ QStringList Preferences::tempDirs() const { return get(&Data::tempDirs); }
 
 bool Preferences::isShareableDirectory(const QString& dir) const
 {
-    if (dir.isEmpty())
-        return false;
-
-    const auto same = [](const QString& a, const QString& b) {
-        if (b.isEmpty())
-            return false;
-        return QDir::cleanPath(QDir(a).absolutePath())
-                   .compare(QDir::cleanPath(QDir(b).absolutePath()), Qt::CaseInsensitive) == 0;
-    };
-
-    if (same(dir, configDir()))
-        return false;
-    if (same(dir, incomingDir()))
-        return false;
-    for (const QString& tmp : tempDirs())
-        if (same(dir, tmp))
-            return false;
-
-    return true;
+    return isShareableDirectory(dir, configDir(), incomingDir(), tempDirs());
 }
 
 void Preferences::setTempDirs(const QStringList& val) { set(&Data::tempDirs, val); }
 
-QString Preferences::configDir() const
+// ---------------------------------------------------------------------------
+// Download categories
+// ---------------------------------------------------------------------------
+
+QList<DownloadCategory> Preferences::categories() const { return get(&Data::categories); }
+
+void Preferences::setCategories(const QList<DownloadCategory>& val)
+{
+    // Sanitised before the lock is taken: the check needs the config, incoming
+    // and temp directories, and reading those back here would re-enter a
+    // non-recursive lock.
+    set(&Data::categories,
+        sanitizeCategories(val, configDir(), incomingDir(), tempDirs()));
+}
+
+int Preferences::categoryCount() const
+{
+    QReadLocker lock(&m_lock);
+    return static_cast<int>(m_data->categories.size());
+}
+
+DownloadCategory Preferences::category(int index) const
+{
+    QReadLocker lock(&m_lock);
+    if (index < 0 || index >= m_data->categories.size())
+        return {};
+    return m_data->categories.at(index);
+}
+
+QString Preferences::incomingDirForCategory(int index) const
+{
+    const QString path = category(index).incomingPath;
+
+    // The existence test is not redundant with the load-time validation: the
+    // user can delete or unmount the folder while eMule runs, and a download
+    // that completes then still has to land somewhere. MFC makes the same
+    // check at the same moment (srchybrid/PartFile.cpp:2840).
+    if (!path.isEmpty() && QDir(path).exists())
+        return path;
+
+    return incomingDir();
+}
+
+QStringList Preferences::allIncomingDirs() const
+{
+    QStringList dirs;
+    dirs.append(incomingDir());
+
+    for (const auto& cat : categories()) {
+        if (cat.incomingPath.isEmpty())
+            continue;
+        // Two categories may legitimately point at one folder, and one of them
+        // may point at the global incoming dir. Callers scan and path-match
+        // over this list, so hand it to them already deduplicated — by path
+        // identity, not by string equality: "~/Movies" and "~/Movies/" are one
+        // directory and scanning it twice would hash every file twice.
+        const bool seen = std::ranges::any_of(dirs, [&cat](const QString& known) {
+            return samePath(known, cat.incomingPath);
+        });
+        if (!seen)
+            dirs.append(cat.incomingPath);
+    }
+
+    return dirs;
+}
+
+quint32 Preferences::categoryColor(int index) const { return category(index).color; }
+
+QString Preferences::configDir() const { return resolveConfigDir(get(&Data::configDir)); }
+
+QString Preferences::resolveConfigDir(const QString& stored)
 {
     // A --config override must redirect every consumer (server.met, nodes.dat,
     // known.met, ...), not just the preferences.yml lookup in main(). Read the
@@ -847,7 +920,7 @@ QString Preferences::configDir() const
     // saveImpl() keeps persisting the user's real path and a --config run
     // cannot leak its sandbox path into their preferences.yml.
     const QString overrideDir = AppConfig::configDirOverride();
-    return overrideDir.isEmpty() ? get(&Data::configDir) : overrideDir;
+    return overrideDir.isEmpty() ? stored : overrideDir;
 }
 
 void Preferences::setConfigDir(const QString& val) { set(&Data::configDir, val); }
@@ -2950,6 +3023,37 @@ bool Preferences::load(const QString& filePath)
             }
         }
 
+        // Download categories. After `directories`, because sanitizing a
+        // category path judges it against the incoming, temp and config dirs
+        // that block just loaded. MFC's LoadCats runs last for the same reason
+        // (srchybrid/Preferences.cpp:2401).
+        if (auto c = root["categories"]; c && c.IsSequence()) {
+            QList<DownloadCategory> list;
+            for (const auto& node : c) {
+                if (!node.IsMap())
+                    continue;
+
+                DownloadCategory entry;
+                entry.title = QString::fromStdString(node["title"].as<std::string>(""));
+                entry.incomingPath = QString::fromStdString(node["incoming"].as<std::string>(""));
+                entry.comment = QString::fromStdString(node["comment"].as<std::string>(""));
+                entry.autocat = QString::fromStdString(node["autocat"].as<std::string>(""));
+                entry.regexp = QString::fromStdString(node["regexp"].as<std::string>(""));
+                entry.color = node["color"].as<quint32>(kCategoryColorAuto);
+                entry.prio = static_cast<quint8>(node["prio"].as<int>(entry.prio));
+                entry.filter = node["filter"].as<int>(0);
+                entry.filterNeg = node["filterNeg"].as<bool>(false);
+                entry.care4all = node["care4all"].as<bool>(false);
+                entry.downloadInAlphabeticalOrder = node["alphabetical"].as<bool>(false);
+                entry.autocatIsRegexp = node["autocatRegexp"].as<bool>(false);
+
+                list.append(entry);
+            }
+
+            m_data->categories = sanitizeCategories(list, resolveConfigDir(m_data->configDir),
+                                                    m_data->incomingDir, m_data->tempDirs);
+        }
+
         // UPnP
         if (auto u = root["upnp"]) {
             m_data->enableUPnP = u["enableUPnP"].as<bool>(m_data->enableUPnP);
@@ -3805,6 +3909,40 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::EndSeq;
     out << YAML::EndMap;
 
+    // Download categories. A sequence, not a map: the index *is* the identity —
+    // part.met stores it (FT_CATEGORY) — so the order has to survive the round
+    // trip. Index 0 is written like any other so the file reads the way the tab
+    // bar looks; it is the loader that keeps its path empty.
+    out << YAML::Key << "categories" << YAML::Value << YAML::BeginSeq;
+    for (const auto& cat : m_data->categories) {
+        out << YAML::BeginMap;
+        out << YAML::Key << "title" << YAML::Value << cat.title.toStdString();
+        if (!cat.incomingPath.isEmpty())
+            out << YAML::Key << "incoming" << YAML::Value << cat.incomingPath.toStdString();
+        if (!cat.comment.isEmpty())
+            out << YAML::Key << "comment" << YAML::Value << cat.comment.toStdString();
+        if (!cat.autocat.isEmpty())
+            out << YAML::Key << "autocat" << YAML::Value << cat.autocat.toStdString();
+        if (cat.autocatIsRegexp)
+            out << YAML::Key << "autocatRegexp" << YAML::Value << cat.autocatIsRegexp;
+        if (!cat.regexp.isEmpty())
+            out << YAML::Key << "regexp" << YAML::Value << cat.regexp.toStdString();
+        out << YAML::Key << "color" << YAML::Value << cat.color;
+        out << YAML::Key << "prio" << YAML::Value << static_cast<int>(cat.prio);
+        // The view-filter trio is written only when set. Nothing reads it back
+        // yet; it is here so those modes can land without a file migration.
+        if (cat.filter != 0)
+            out << YAML::Key << "filter" << YAML::Value << cat.filter;
+        if (cat.filterNeg)
+            out << YAML::Key << "filterNeg" << YAML::Value << cat.filterNeg;
+        if (cat.care4all)
+            out << YAML::Key << "care4all" << YAML::Value << cat.care4all;
+        if (cat.downloadInAlphabeticalOrder)
+            out << YAML::Key << "alphabetical" << YAML::Value << cat.downloadInAlphabeticalOrder;
+        out << YAML::EndMap;
+    }
+    out << YAML::EndSeq;
+
     // UPnP
     out << YAML::Key << "upnp" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enableUPnP" << YAML::Value << m_data->enableUPnP;
@@ -4339,6 +4477,94 @@ bool Preferences::writeStatsBackup(const Data& d, const QString& filePath)
     }
 
     return true;
+}
+
+bool Preferences::isShareableDirectory(const QString& dir, const QString& configDir,
+                                       const QString& incomingDir,
+                                       const QStringList& tempDirs)
+{
+    if (dir.isEmpty())
+        return false;
+
+    if (samePath(dir, configDir))
+        return false;
+    if (samePath(dir, incomingDir))
+        return false;
+    for (const QString& tmp : tempDirs)
+        if (samePath(dir, tmp))
+            return false;
+
+    // Deliberately *not* rejecting the category incoming dirs, though they are
+    // shared unconditionally too. This same predicate validates a category's
+    // own path (MFC: srchybrid/CatDialog.cpp:163), so rejecting them here would
+    // make every category fail to keep the folder it already has. A category
+    // folder listed again under shared dirs is harmless: shouldBeShared()
+    // matches it on the category rule first.
+    return true;
+}
+
+QList<DownloadCategory>
+Preferences::sanitizeCategories(const QList<DownloadCategory>& cats, const QString& configDir,
+                                const QString& incomingDir, const QStringList& tempDirs)
+{
+    QList<DownloadCategory> clean;
+    clean.reserve(cats.size());
+
+    for (const auto& cat : cats) {
+        DownloadCategory entry = cat;
+        entry.title = entry.title.trimmed();
+        entry.incomingPath = entry.incomingPath.trimmed();
+
+        if (clean.isEmpty()) {
+            // Index 0 is the implicit "All" category. It carries no path of its
+            // own — that is what makes incomingDirForCategory(0) resolve to the
+            // global incoming dir, and it is why MFC's ShouldBeShared loop stops
+            // at index 1 (srchybrid/SharedFileList.cpp:1394). MFC leaves it empty
+            // at load and only fills it in from the GUI
+            // (srchybrid/Preferences.cpp:2484, TransferWnd.cpp:156); keeping it
+            // empty everywhere means there is no window where it is wrong.
+            entry.incomingPath.clear();
+            if (entry.title.isEmpty())
+                entry.title = QStringLiteral("All");
+            clean.append(entry);
+            continue;
+        }
+
+        if (!entry.incomingPath.isEmpty()) {
+            entry.incomingPath = QDir::cleanPath(QDir(entry.incomingPath).absolutePath());
+
+            // A path eMule uses for its own storage, or one we cannot create,
+            // degrades to the global incoming dir rather than losing the whole
+            // category — MFC's exact fallback (srchybrid/Preferences.cpp:2478).
+            // Stored as empty, not as a copy of incomingDir(): that way the
+            // category follows the global dir if the user later moves it.
+            if (!isShareableDirectory(entry.incomingPath, configDir, incomingDir, tempDirs)) {
+                entry.incomingPath.clear();
+            } else if (!QDir(entry.incomingPath).exists()
+                       && !QDir().mkpath(entry.incomingPath)) {
+                logWarning(QStringLiteral(
+                               "Category \"%1\": cannot use incoming directory %2 — "
+                               "falling back to the global incoming directory")
+                               .arg(entry.displayName(), entry.incomingPath));
+                entry.incomingPath.clear();
+            }
+        }
+
+        // A title is the only thing that makes a tab identifiable, so an entry
+        // without one gets MFC's placeholder rather than being dropped: losing
+        // a category silently renumbers every download behind it.
+        if (entry.title.isEmpty())
+            entry.title = entry.displayName();
+
+        clean.append(entry);
+        if (clean.size() >= kMaxCategories)
+            break;
+    }
+
+    if (clean.isEmpty())
+        clean.append(DownloadCategory{.title = QStringLiteral("All")});
+
+    return clean;
 }
 
 } // namespace eMule

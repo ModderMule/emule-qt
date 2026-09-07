@@ -89,6 +89,11 @@ private slots:
     void isFileExisting_basic();
     void sortByPriority_ordering();
     void startNextFile_resumesPaused();
+    void startNextFile_prefersTheSameCategory();
+    void autoCategory_assignsByPattern();
+    void remapCategories_afterRemoval();
+    void remapCategories_afterReorder();
+    void remapCategories_afterCombinedEdit();
     void init_scansDirectory();
     void checkAndAddSource_basic();
     void checkAndAddSource_rejectsUnusableHighIdOnly();
@@ -449,6 +454,167 @@ void tst_DownloadQueue::startNextFile_resumesPaused()
 
     // At least one should be resumed
     QVERIFY(!pf1->isPaused() || !pf2->isPaused());
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::startNextFile_prefersTheSameCategory()
+{
+    DownloadCategory all;
+    all.title = QStringLiteral("All");
+    DownloadCategory movies;
+    movies.title = QStringLiteral("Movies");
+    thePrefs.setCategories({all, movies});
+
+    thePrefs.setStartNextPausedFile(true);
+    thePrefs.setStartNextPausedFileSameCat(true);
+    thePrefs.setStartNextPausedFileOnlySameCat(false);
+
+    DownloadQueue dq;
+
+    uint8 hash1[16] = {21, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    uint8 hash2[16] = {21, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+
+    // The uncategorised file has the higher download priority, so "any
+    // category" would pick it. Preferring the same category must not.
+    auto* uncategorised = createTestPartFile(hash1, QStringLiteral("other.bin"), kPrHigh);
+    auto* inCategory = createTestPartFile(hash2, QStringLiteral("film.bin"), kPrLow);
+    inCategory->setCategory(1);
+
+    dq.addDownload(uncategorised, true);
+    dq.addDownload(inCategory, true);
+
+    dq.startNextFileIfPrefs(1);
+    QVERIFY2(!inCategory->isPaused(), "the same category wins over a higher priority");
+    QVERIFY(uncategorised->isPaused());
+
+    // Nothing paused is left in category 1, so the fallback takes over.
+    dq.startNextFileIfPrefs(1);
+    QVERIFY(!uncategorised->isPaused());
+
+    dq.deleteAll();
+    thePrefs.setStartNextPausedFile(false);
+    thePrefs.setCategories({all});
+}
+
+void tst_DownloadQueue::autoCategory_assignsByPattern()
+{
+    DownloadCategory all;
+    all.title = QStringLiteral("All");
+    DownloadCategory movies;
+    movies.title = QStringLiteral("Movies");
+    movies.autocat = QStringLiteral("mkv|avi");
+    DownloadCategory shows;
+    shows.title = QStringLiteral("Shows");
+    shows.autocat = QStringLiteral("^S[0-9]+E[0-9]+");
+    shows.autocatIsRegexp = true;
+    DownloadCategory images;
+    images.title = QStringLiteral("Images");
+    images.autocat = QStringLiteral("*.iso");
+    thePrefs.setCategories({all, movies, shows, images});
+
+    DownloadQueue dq;
+
+    struct Case { uint8 tag; const char* name; uint32 expected; };
+    const Case cases[] = {
+        {1, "holiday.mkv",       1},  // one of a '|' list
+        {2, "S01E02 pilot.mp4",  2},  // regular expression
+        {3, "ubuntu-24.04.iso",  3},  // wildcard term
+        {4, "notes.txt",         0},  // nothing matches
+    };
+
+    std::vector<PartFile*> files;
+    for (const auto& c : cases) {
+        uint8 hash[16] = {22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, c.tag};
+        auto* pf = createTestPartFile(hash, QString::fromLatin1(c.name));
+        dq.addDownload(pf, true);
+        QCOMPARE(pf->category(), c.expected);
+        files.push_back(pf);
+    }
+
+    // An explicit category is never overridden — MFC bails on the same test
+    // (srchybrid/DownloadQueue.cpp:1242).
+    uint8 hash5[16] = {22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5};
+    auto* explicitCat = createTestPartFile(hash5, QStringLiteral("holiday.mkv"));
+    explicitCat->setCategory(3);
+    dq.addDownload(explicitCat, true);
+    QCOMPARE(explicitCat->category(), 3U);
+
+    dq.deleteAll();
+    thePrefs.setCategories({all});
+}
+
+void tst_DownloadQueue::remapCategories_afterRemoval()
+{
+    DownloadQueue dq;
+
+    std::vector<PartFile*> files;
+    for (uint8 cat = 0; cat < 4; ++cat) {
+        uint8 hash[16] = {23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, cat};
+        auto* pf = createTestPartFile(hash, QStringLiteral("cat%1.bin").arg(cat));
+        pf->setCategory(cat);
+        dq.addDownload(pf, true);
+        files.push_back(pf);
+    }
+
+    // Category 2 was deleted, so it is simply absent from the map: 1 stays put,
+    // 3 slides into the gap, and 2's downloads fall back to All.
+    dq.remapCategories({{1, 1}, {3, 2}});
+
+    QCOMPARE(files[0]->category(), 0U);
+    QCOMPARE(files[1]->category(), 1U);
+    QCOMPARE(files[2]->category(), 0U);
+    QCOMPARE(files[3]->category(), 2U);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::remapCategories_afterReorder()
+{
+    DownloadQueue dq;
+
+    std::vector<PartFile*> files;
+    for (uint8 cat = 0; cat < 4; ++cat) {
+        uint8 hash[16] = {24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, cat};
+        auto* pf = createTestPartFile(hash, QStringLiteral("move%1.bin").arg(cat));
+        pf->setCategory(cat);
+        dq.addDownload(pf, true);
+        files.push_back(pf);
+    }
+
+    // The user dragged category 3 in front of category 1.
+    dq.remapCategories({{3, 1}, {1, 2}, {2, 3}});
+
+    QCOMPARE(files[0]->category(), 0U);
+    QCOMPARE(files[1]->category(), 2U);
+    QCOMPARE(files[2]->category(), 3U);
+    QCOMPARE(files[3]->category(), 1U);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::remapCategories_afterCombinedEdit()
+{
+    DownloadQueue dq;
+
+    std::vector<PartFile*> files;
+    for (uint8 cat = 0; cat < 4; ++cat) {
+        uint8 hash[16] = {25, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, cat};
+        auto* pf = createTestPartFile(hash, QStringLiteral("both%1.bin").arg(cat));
+        pf->setCategory(cat);
+        dq.addDownload(pf, true);
+        files.push_back(pf);
+    }
+
+    // Remove 1 *and* reorder in one edit — the case a length-based guess gets
+    // wrong: the list shrinks by one, so "the last category was removed" would
+    // send category 3's downloads to All and leave 2 pointing at 3's files.
+    dq.remapCategories({{3, 1}, {2, 2}});
+
+    QCOMPARE(files[0]->category(), 0U);
+    QCOMPARE(files[1]->category(), 0U);  // its category is gone
+    QCOMPARE(files[2]->category(), 2U);  // stayed where it was
+    QCOMPARE(files[3]->category(), 1U);  // moved to the front
 
     dq.deleteAll();
 }

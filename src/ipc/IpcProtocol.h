@@ -159,6 +159,36 @@ enum class IpcMsgType : int {
     /// always shared, a non-shareable directory never is.
     BrowseDirectory         = 267,
 
+    // -- Download categories (268-270) ---------------------------------------
+    //
+    // Their own opcodes rather than keys in Get/SetPreferences, for the reason
+    // the news-server and indexer lists have theirs: a list of maps whose
+    // *order is its identity* needs a contract of its own. A category's index
+    // is what part.met stores, so a set that silently reordered would
+    // re-file every download in the queue.
+
+    /// [] -> [[{index, title, incoming, resolvedIncoming, comment, autocat,
+    ///          autocatRegexp, color, prio}]]
+    /// Index 0 first and always present. `resolvedIncoming` is what
+    /// incomingDirForCategory() would answer — the GUI shows the effective
+    /// folder, which for index 0 and for an unset category is the global one.
+    GetCategories           = 268,
+    /// [[{...same shape, minus resolvedIncoming, plus oldIndex...}]]
+    ///     -> [ok: bool, error: string]
+    /// Replaces the whole list; entry 0 is forced to exist.
+    ///
+    /// `oldIndex` is the entry's `index` from the last GetCategories, or absent
+    /// for one the user just created. It is how the daemon moves each
+    /// download's category along with the category itself: position alone
+    /// cannot distinguish "category 2 was deleted" from "category 2 moved to
+    /// slot 3", and guessing wrong silently re-files live downloads.
+    /// A changed folder also re-scans the share.
+    SetCategories           = 269,
+    /// [category: int, action: int] -> [ok: bool]
+    /// Bulk pause/resume/stop/cancel over one category, plus "resume next".
+    /// See Ipc::CategoryAction.
+    SetCategoryStatus       = 270,
+
     // -- Indexers (700-719) --------------------------------------------------
     //
     // The shared newznab/torznab client, reserved here when the Usenet blocks
@@ -309,6 +339,10 @@ enum class IpcMsgType : int {
     PushFriendListChanged = 510,  ///< [] — friend list changed
     PushClientSharedFiles = 520,  ///< [clientHash, CborArray of files] — response to browse
     PushPortMapStatus     = 530,  ///< [{status, statusText, method, methodText, externalAddress}]
+    /// [] — the category list changed; re-fetch with GetCategories.
+    /// Carries no payload on purpose: every consumer wants the whole list
+    /// anyway, and a second GUI editing categories must not race a diff.
+    PushCategoriesChanged = 540,
 
     // -- Indexer pushes (900-909) --------------------------------------------
 
@@ -340,6 +374,23 @@ enum class IpcMsgType : int {
     /// Terminal outcome, broadcast **uncoalesced**: this is a transition, not a
     /// latest value, and a coalescing window would swallow it whole.
     PushUsenetItemFinished = 912,
+};
+
+/// What SetCategoryStatus should do to every download in the category.
+///
+/// MFC drives the same five from its category tab's context menu with the
+/// generic MP_PAUSE/MP_STOP/MP_CANCEL/MP_RESUME/MP_RESUMENEXT command ids
+/// (srchybrid/TransferWnd.cpp:951-966). Named here because those are Windows
+/// menu constants, and an IPC contract should not depend on a resource header.
+enum class CategoryAction : int {
+    Pause = 0,
+    Resume = 1,
+    Stop = 2,
+    /// Deletes the part files. The GUI confirms first — MFC asks
+    /// IDS_Q_CANCELDL — but the daemon does not second-guess the answer.
+    Cancel = 3,
+    /// Resume the single highest-ranked paused download in this category.
+    ResumeNext = 4,
 };
 
 // ---------------------------------------------------------------------------

@@ -114,6 +114,9 @@ signals:
     void kadUpdated(const Ipc::IpcMessage& msg);
     void kadSearchesChanged(const Ipc::IpcMessage& msg);
     void knownClientsChanged(const Ipc::IpcMessage& msg);
+    /// The daemon's category list changed — refetch it with GetCategories.
+    /// Carries no payload: every consumer wants the whole list.
+    void categoriesChanged(const Ipc::IpcMessage& msg);
     void chatMessageReceived(const Ipc::IpcMessage& msg);
     void friendListChanged(const Ipc::IpcMessage& msg);
     void clientSharedFilesReceived(const Ipc::IpcMessage& msg);

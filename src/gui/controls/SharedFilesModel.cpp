@@ -282,11 +282,6 @@ void SharedFilesSortProxy::setFolderFilter(SharedFilterType type, const QString&
 #endif
 }
 
-void SharedFilesSortProxy::setIncomingDir(const QString& dir)
-{
-    m_incomingDir = dir;
-}
-
 bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*sourceParent*/) const
 {
     auto* model = qobject_cast<SharedFilesModel*>(sourceModel());
@@ -299,12 +294,18 @@ bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*
     switch (m_filterType) {
     case SharedFilterType::AllShared:
         return true;
+    // "Incoming" is every folder finished downloads land in — the global one and
+    // each category that overrides it. The daemon already answers that question
+    // per file: a file it refuses to let us unshare is one of these, because
+    // that is the only rule that forces sharing on
+    // (IpcClientHandler's `canUnshare`). Comparing against one remembered path
+    // could only ever recognise a single incoming directory.
     case SharedFilterType::Incoming:
-        return !f->isPartFile && f->path == m_incomingDir;
+        return !f->isPartFile && !f->shareToggleable;
     case SharedFilterType::Incomplete:
         return f->isPartFile;
     case SharedFilterType::SharedDirs:
-        return !f->isPartFile && f->path != m_incomingDir;
+        return !f->isPartFile && f->shareToggleable;
     case SharedFilterType::SpecificDir: {
         // Normalize: strip trailing '/' (but keep bare "/") and compare case-insensitively
         auto normalize = [](QStringView p) -> QStringView {

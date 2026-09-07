@@ -89,6 +89,9 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::DeleteSharedFile:     return QStringLiteral("DeleteSharedFile");
     case T::UnshareFile:          return QStringLiteral("UnshareFile");
     case T::SetDownloadCategory:  return QStringLiteral("SetDownloadCategory");
+    case T::GetCategories:        return QStringLiteral("GetCategories");
+    case T::SetCategories:        return QStringLiteral("SetCategories");
+    case T::SetCategoryStatus:    return QStringLiteral("SetCategoryStatus");
     case T::GetDownloadDetails:   return QStringLiteral("GetDownloadDetails");
     case T::PreviewDownload:      return QStringLiteral("PreviewDownload");
     case T::RequestClientSharedFiles: return QStringLiteral("RequestClientSharedFiles");
@@ -558,6 +561,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushKadUpdate:        emit kadUpdated(msg); break;
     case IpcMsgType::PushKadSearchesChanged: emit kadSearchesChanged(msg); break;
     case IpcMsgType::PushKnownClientsChanged: emit knownClientsChanged(msg); break;
+    case IpcMsgType::PushCategoriesChanged:   emit categoriesChanged(msg); break;
     case IpcMsgType::PushChatMessage:        emit chatMessageReceived(msg); break;
     case IpcMsgType::PushFriendListChanged:  emit friendListChanged(msg); break;
     case IpcMsgType::PushClientSharedFiles:  emit clientSharedFilesReceived(msg); break;

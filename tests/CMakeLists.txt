@@ -201,6 +201,7 @@ emule_add_test(tst_SafeKadFastKad    FOLDER "Kademlia")
 
 # Module 29o: Preferences & configuration
 emule_add_test(tst_Preferences     FOLDER "Prefs")
+emule_add_test(tst_CategoryPrefs   FOLDER "Prefs")
 
 # Module 29s: Media & Preview
 emule_add_test(tst_MediaInfo       FOLDER "Media")
@@ -383,6 +384,20 @@ target_include_directories(tst_UsenetArchiveEntryDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_UsenetArchiveEntryDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# The add/edit category dialog. Constructed directly with a DownloadCategory, so
+# it needs the real dialog and DialogSizing but no daemon and no panel.
+emule_add_test(tst_CategoryDialog FOLDER "Gui"
+    SOURCES tst_CategoryDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CategoryDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
+target_include_directories(tst_CategoryDialog PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_CategoryDialog PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # Visibility-gated panel polling. Depends on nothing but Qt Widgets, same as above.
