@@ -56,6 +56,7 @@ private slots:
     void redact_removesTheKeyFromAUrl();
     void redact_removesTheKeyFromProse();
     void redact_leavesAKeylessUrlAlone();
+    void redact_coversTheOtherKeyParameterNames();
 };
 
 void tst_IndexerQuery::apiUrl_completesABareHost()
@@ -240,6 +241,33 @@ void tst_IndexerQuery::redact_leavesAKeylessUrlAlone()
     const QString plain = QStringLiteral("https://api.example.com/api?t=caps");
     QCOMPARE(redactApiKey(QUrl(plain)), plain);
     QCOMPARE(redactApiKey(plain), plain);
+}
+
+void tst_IndexerQuery::redact_coversTheOtherKeyParameterNames()
+{
+    // buildIndexerSearchUrl() writes `apikey`, but a *feed* URL is pasted from an
+    // indexer's own RSS page, and those name the key whatever the installation
+    // chose. `r` is newznab's own spelling on that endpoint.
+    const QStringList params{QStringLiteral("apikey"), QStringLiteral("api_key"),
+                             QStringLiteral("r"), QStringLiteral("token"),
+                             QStringLiteral("passkey"), QStringLiteral("rss_token")};
+
+    for (const QString& param : params) {
+        const QString raw = QStringLiteral("https://ix.example/rss?t=search&%1=SUPERSECRET&x=1")
+                                .arg(param);
+
+        const QString fromUrl = redactApiKey(QUrl(raw));
+        QVERIFY2(!fromUrl.contains(QStringLiteral("SUPERSECRET")), qPrintable(fromUrl));
+        // Everything else survives, or the redacted URL is useless for debugging.
+        QVERIFY(fromUrl.contains(QStringLiteral("t=search")));
+        QVERIFY(fromUrl.contains(QStringLiteral("x=1")));
+
+        // And in prose, which is how Qt's own network errors carry it.
+        const QString prose =
+            QStringLiteral("Error transferring %1 - server replied: Forbidden").arg(raw);
+        QVERIFY2(!redactApiKey(prose).contains(QStringLiteral("SUPERSECRET")),
+                 qPrintable(redactApiKey(prose)));
+    }
 }
 
 QTEST_MAIN(tst_IndexerQuery)

@@ -171,6 +171,7 @@ emule_add_test(tst_URLClient          FOLDER "Client")
 
 # Module 29j: File management
 emule_add_test(tst_AbstractFile       FOLDER "Files")
+emule_add_test(tst_ContainerSniffer   FOLDER "Media")
 emule_add_test(tst_ShareableFile      FOLDER "Files")
 emule_add_test(tst_StatisticFile      FOLDER "Files")
 emule_add_test(tst_Collection         FOLDER "Files")
@@ -200,6 +201,7 @@ emule_add_test(tst_Kademlia          FOLDER "Kademlia")
 emule_add_test(tst_SafeKadFastKad    FOLDER "Kademlia")
 
 # Module 29o: Preferences & configuration
+emule_add_test(tst_ConfigSeeding   FOLDER "Prefs" LIBRARIES yaml-cpp::yaml-cpp)
 emule_add_test(tst_Preferences     FOLDER "Prefs")
 emule_add_test(tst_CategoryPrefs   FOLDER "Prefs")
 
@@ -297,6 +299,11 @@ emule_add_test(tst_UsenetNzbParse FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetArticleFetch FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetSharing FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetQueue FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetWatchFolder FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetNzbUrl FOLDER "Usenet" LIBRARIES eMule::Usenet)
+# yaml-cpp direct, so the sidecar can be asserted to hold an *absolute* figure
+# rather than an increment.
+emule_add_test(tst_UsenetUsage FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cpp::yaml-cpp)
 
 # Phase 6a. Separate from tst_UsenetQueue because it asserts on the *order* the
 # scheduler asks in, not on the file that comes out; the two would otherwise
@@ -329,11 +336,19 @@ emule_add_test(tst_IndexerParse FOLDER "Indexer" LIBRARIES eMule::Indexer)
 emule_add_test(tst_IndexerQuery FOLDER "Indexer" LIBRARIES eMule::Indexer)
 emule_add_test(tst_IndexerSearch FOLDER "Indexer" LIBRARIES eMule::Indexer)
 emule_add_test(tst_IndexerPrefs FOLDER "Indexer" LIBRARIES eMule::Indexer yaml-cpp::yaml-cpp)
+emule_add_test(tst_IndexerFeedMatch FOLDER "Indexer" LIBRARIES eMule::Indexer)
+# Links eMule::Indexer only, on purpose: the poller reaches the Usenet queue
+# through an injected sink, and if it ever reached in directly this would
+# stop linking.
+emule_add_test(tst_IndexerFeedPoller FOLDER "Indexer" LIBRARIES eMule::Indexer)
 
 # Whole recorded indexer answers from EMULE_NZB_DIR -- the same directory the
 # live NZB download test takes releases from. Offline (it only reads files), so
 # it is not a live test; it simply skips where that variable is unset.
 emule_add_test(tst_IndexerFeed FOLDER "Indexer" LIBRARIES eMule::Indexer eMule::Usenet)
+
+# Source-level GUI checks — no widgets, no linking of the GUI target
+emule_add_test(tst_MenuIcons FOLDER "GUI")
 
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
@@ -400,6 +415,34 @@ target_include_directories(tst_CategoryDialog PRIVATE
 target_link_libraries(tst_CategoryDialog PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# The Options window's height budget. QStackedLayout's minimum is the MAX over its
+# pages, so one page without a scroll area sets the window height for all eighteen --
+# and the sidebar's grouping must not drift from the Page enum that uistate.yml stores.
+# Compiles the real dialog; IpcClient is nullptr, so no daemon is involved.
+emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
+    SOURCES tst_OptionsDialogSizing.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/AccordionSidebar.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/StatsGraph.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileAssociation.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/WebServices.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/AutoStart.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/Ed2kSchemeHandler.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+target_include_directories(tst_OptionsDialogSizing PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_OptionsDialogSizing PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
 # Visibility-gated panel polling. Depends on nothing but Qt Widgets, same as above.
 emule_add_test(tst_PanelPoller FOLDER "Gui"
     SOURCES tst_PanelPoller.cpp
@@ -409,17 +452,72 @@ target_include_directories(tst_PanelPoller PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_PanelPoller PRIVATE Qt6::Widgets)
 
+# What counts as a droppable .nzb. Pure mime inspection, so the real source
+# compiles standalone against the stub pch, same as above.
+emule_add_test(tst_NzbDrop FOLDER "Gui"
+    SOURCES tst_NzbDrop.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/NzbDrop.cpp")
+target_include_directories(tst_NzbDrop PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_NzbDrop PRIVATE Qt6::Widgets)
+
+# The .nzb file-type registration. Only the two generators are exercised — the
+# Windows and Linux writers compile on their own platform only, so this is the
+# whole of what a developer machine can check.
+emule_add_test(tst_FileAssociation FOLDER "Gui"
+    SOURCES tst_FileAssociation.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileAssociation.cpp")
+target_include_directories(tst_FileAssociation PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_FileAssociation PRIVATE Qt6::Widgets)
+
 # Downloads Status column — the daemon sends the raw enum token ("ready", "empty") and
 # the model turns it into MFC's wording. Pure string/int mapping, so the real source
 # compiles standalone against the stub pch.
 emule_add_test(tst_DownloadStatusText FOLDER "Gui"
     SOURCES tst_DownloadStatusText.cpp
-            "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp")
 target_include_directories(tst_DownloadStatusText PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_SOURCE_DIR}/src/core"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_DownloadStatusText PRIVATE Qt6::Widgets)
+
+# Column-0 marks: the rating icon and the red "not what it claims" exclamation.
+# Same standalone-source trick as tst_DownloadStatusText above.
+emule_add_test(tst_FileMarks FOLDER "Gui"
+    SOURCES tst_FileMarks.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+target_include_directories(tst_FileMarks PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_FileMarks PRIVATE Qt6::Widgets)
+
+# The Comments page and its editable subclass. Both are plain widgets over a details
+# CBOR map — no daemon, no panel — so the real sources compile standalone against the
+# stub pch, same trick as tst_FileMarks above.
+emule_add_test(tst_CommentsPanel FOLDER "Gui"
+    SOURCES tst_CommentsPanel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentsPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentEditPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+target_include_directories(tst_CommentsPanel PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_CommentsPanel PRIVATE Qt6::Widgets)
 
 # Tray icon download meter — pure painting, so the real source compiles standalone.
 emule_add_test(tst_TrayMeterIcon FOLDER "Gui"

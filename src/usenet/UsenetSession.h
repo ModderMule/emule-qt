@@ -24,6 +24,7 @@ namespace eMule::usenet {
 
 class NntpServerPool;
 class UsenetQueue;
+class UsenetWatchFolder;
 
 class UsenetSession : public QObject {
     Q_OBJECT
@@ -53,6 +54,11 @@ public:
     /// the GUI can list a paused queue with the feature switched off.
     [[nodiscard]] UsenetQueue* queue() const { return m_queue.get(); }
 
+    /// The .nzb intake folder. Present whether or not one is configured — an
+    /// empty watchDir is the off state, the same way an empty account list is
+    /// for indexers.
+    [[nodiscard]] UsenetWatchFolder* watchFolder() const { return m_watchFolder.get(); }
+
 signals:
     /// Forwarded straight from the queue. DaemonApp turns these into IPC pushes;
     /// UsenetQueue itself knows nothing about IPC, and core knows nothing about
@@ -69,6 +75,7 @@ private:
 
     std::unique_ptr<NntpServerPool> m_pool;
     std::unique_ptr<UsenetQueue> m_queue;
+    std::unique_ptr<UsenetWatchFolder> m_watchFolder;
     QTimer* m_bandwidthTimer = nullptr;
     bool m_running = false;
 };

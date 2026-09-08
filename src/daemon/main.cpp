@@ -92,7 +92,12 @@ int main(int argc, char* argv[])
     // -- Normal daemon startup ------------------------------------------------
 
     // Seed bundled config data (webserver assets, template, nodes.dat)
-    eMule::AppConfig::seedBundledData(configDir);
+    if (const auto seed = eMule::AppConfig::seedBundledData(configDir);
+        seed.seeded || seed.refreshed || seed.conflicts || seed.pruned) {
+        eMule::logInfo(QStringLiteral("Bundled data: %1 seeded, %2 refreshed, %3 kept with local "
+                               "edits, %4 removed")
+                    .arg(seed.seeded).arg(seed.refreshed).arg(seed.conflicts).arg(seed.pruned));
+    }
 
     // Enable debug-level output per logging pref (verbose / kadVerboseLog /
     // serverVerboseLog) so the corresponding logDebug()/logKad()/logServerVerbose()

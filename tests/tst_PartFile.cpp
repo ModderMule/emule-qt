@@ -52,6 +52,9 @@ private slots:
     void writeReadRoundTrip_withGaps();
     void percentCompleted_accuracy();
     void sourceTracking();
+    void ratingAveragesSourcesAndKadNotesTogether();
+    void aDepartedSourceStopsCounting();
+    void containerCheckWaitsForTheFirstBytes();
     void rightFileHasHigherPrio_ordering();
     void writePartStatus_basic();
     void getFilledArray_basic();
@@ -509,6 +512,100 @@ void tst_PartFile::percentCompleted_accuracy()
 
     pf.fillGap(750, 999); // 100%
     QVERIFY(qFuzzyCompare(pf.percentCompleted(), 100.0f));
+}
+
+void tst_PartFile::ratingAveragesSourcesAndKadNotesTogether()
+{
+    // Source ratings used to be received and dropped: the peer's value was stored
+    // on the client and nothing ever folded it into the file, so the indicator sat
+    // at 0 for practically every download and looked broken rather than empty.
+    PartFile pf;
+    pf.setFileSize(PARTSIZE);
+
+    UpDownClient poor;
+    poor.setFileRating(2);
+    pf.addSource(&poor);
+    pf.updateFileRatingCommentAvail();
+    QCOMPARE(pf.userRating(), 2u);
+    QVERIFY(pf.hasRating());
+
+    // A second opinion, and the average is rounded rather than truncated --
+    // MFC's ROUND(). Over a 1-5 scale truncation drags every average down a
+    // notch, so 2 and 5 must come out 4, not 3.
+    UpDownClient excellent;
+    excellent.setFileRating(5);
+    pf.addSource(&excellent);
+    pf.updateFileRatingCommentAvail();
+    QCOMPARE(pf.userRating(), 4u);
+
+    // A comment with no rating says "there is something to read" without
+    // pretending to be a score, so it must not move the average.
+    UpDownClient commenter;
+    commenter.setFileComment(QStringLiteral("works fine"));
+    pf.addSource(&commenter);
+    pf.updateFileRatingCommentAvail();
+    QCOMPARE(pf.userRating(), 4u);
+    QVERIFY(pf.hasComment());
+
+    // Kad notes land in the same average as the sources, not in a separate one.
+    // 16 bytes: addKadNote requires a stable publisher key of exactly that size.
+    pf.addKadNote(QByteArrayLiteral("publisher-0123456"), QStringLiteral("Some Movie.wmv"),
+                  QString{}, 5, time(nullptr));
+    QCOMPARE(pf.userRating(), 4u);   // (2 + 5 + 5) / 3 = 4
+}
+
+void tst_PartFile::aDepartedSourceStopsCounting()
+{
+    PartFile pf;
+    pf.setFileSize(PARTSIZE);
+
+    UpDownClient fake;
+    fake.setFileRating(1);
+    UpDownClient good;
+    good.setFileRating(4);
+    pf.addSource(&fake);
+    pf.addSource(&good);
+    pf.updateFileRatingCommentAvail();
+    QCOMPARE(pf.userRating(), 3u);   // (1 + 4) / 2 = 2.5, rounded up
+
+    // Once a peer is gone its opinion goes with it. removeSource() re-aggregates
+    // on its own, so nothing has to remember to ask.
+    pf.removeSource(&fake);
+    QCOMPARE(pf.userRating(), 4u);
+}
+
+void tst_PartFile::containerCheckWaitsForTheFirstBytes()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/container");
+    QDir().mkpath(tempDir);
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("Some Movie.wmv"));
+    pf.setFileSize(PARTSIZE);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    // Nothing downloaded yet. Opening the file here would read a hole full of
+    // zeroes and report a perfectly good download as a fake, so the only honest
+    // answer is "not yet" -- and it must not be cached, or the verdict would
+    // never be revisited once the bytes actually arrive.
+    QCOMPARE(pf.containerCheck().verdict, ContainerVerdict::Unchecked);
+    QVERIFY(!pf.containerCheck().isSuspect());
+
+    // The real fake's first bytes: random padding that happens to open on an
+    // MPEG frame sync. Not the ASF a .wmv has to be.
+    static const char kJunk[] = "\xFF\xFB\x10\xC0\x0B\x0A\x07\x05"
+                                "\x00\x07\x07\x0A";
+    std::vector<uint8> head(kJunk, kJunk + 12);
+    pf.writeToBuffer(12, head.data(), 0, 11, nullptr);
+    pf.flushBuffer();
+    QVERIFY(pf.isComplete(0, 11));
+
+    // Now there is something to judge, and the earlier Unchecked did not stick.
+    QCOMPARE(pf.containerCheck().verdict, ContainerVerdict::NoKnownContainer);
+    QVERIFY(pf.containerCheck().isSuspect());
+    QCOMPARE(pf.containerCheck().expected, QStringLiteral("ASF"));
+    QVERIFY(pf.containerCheck().actual.isEmpty());
 }
 
 void tst_PartFile::sourceTracking()

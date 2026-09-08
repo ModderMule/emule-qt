@@ -159,6 +159,9 @@
     <ClCompile Include="IndexerCaps.cpp" />
     <ClCompile Include="IndexerCapsStore.cpp" />
     <ClCompile Include="IndexerClient.cpp" />
+    <ClCompile Include="IndexerFeedList.cpp" />
+    <ClCompile Include="IndexerFeedMatch.cpp" />
+    <ClCompile Include="IndexerFeedStore.cpp" />
     <ClCompile Include="IndexerQuery.cpp" />
     <ClCompile Include="IndexerResult.cpp" />
     <ClCompile Include="IndexerSearch.cpp" />
@@ -168,9 +171,13 @@
     <ClInclude Include="IndexerCaps.h" />
     <ClInclude Include="IndexerCapsStore.h" />
     <ClInclude Include="IndexerConfig.h" />
+    <ClInclude Include="IndexerFeed.h" />
+    <ClInclude Include="IndexerFeedMatch.h" />
+    <ClInclude Include="IndexerFeedStore.h" />
     <ClInclude Include="IndexerQuery.h" />
     <ClInclude Include="IndexerResult.h" />
     <QtMoc Include="IndexerClient.h" />
+    <QtMoc Include="IndexerFeedList.h" />
     <QtMoc Include="IndexerSearch.h" />
     <QtMoc Include="IndexerSearchList.h" />
   </ItemGroup>

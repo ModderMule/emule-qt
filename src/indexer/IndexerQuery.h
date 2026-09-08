@@ -50,7 +50,9 @@ struct IndexerQuery {
                                          const IndexerQuery& query,
                                          const IndexerCaps* caps);
 
-/// The URL with the API key replaced by `<redacted>`.
+/// The URL with every credential-shaped query parameter replaced by
+/// `<redacted>` — `apikey`, but also the `r` that newznab's own RSS endpoint
+/// uses and which a pasted feed URL therefore carries.
 ///
 /// **Every log line, error string and IPC field that carries a URL must go
 /// through this.** The key is a query parameter, so an unredacted URL in

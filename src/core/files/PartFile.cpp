@@ -1281,6 +1281,11 @@ void PartFile::removeSource(UpDownClient* client)
     // Also remove from downloading sources
     removeDownloadingSource(client);
 
+    // A departed peer's opinion stops counting — MFC DownloadQueue.cpp:659-662.
+    // Only worth recomputing when it actually had one.
+    if (client->fileRating() > 0 || !client->fileComment().isEmpty())
+        updateFileRatingCommentAvail();
+
     updateAutoDownPriority();
     emit m_partNotifier.sourceRemoved(client);
 }
@@ -2237,6 +2242,21 @@ void PartFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
     uint32 ratingSum = 0;
     uint32 ratingCount = 0;
 
+    // Aggregate from the sources first — MFC PartFile.cpp:4370-4402. These are the
+    // ratings peers hand over with OP_FILEDESC; leaving them out (as this did) is
+    // why the rating stayed 0 for almost every download and the indicator looked
+    // broken rather than empty.
+    for (const UpDownClient* src : m_srcList) {
+        if (!src)
+            continue;
+        if (!hasNewComment && !src->fileComment().isEmpty())
+            hasNewComment = true;
+        if (src->fileRating() > 0 && src->fileRating() <= 5) {
+            ratingSum += src->fileRating();
+            ++ratingCount;
+        }
+    }
+
     // Aggregate from Kad notes cache
     for (const auto& [publisherId, note] : m_kadNotesCache) {
         if (!note.comment.isEmpty())
@@ -2254,7 +2274,12 @@ void PartFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
         changed = true;
     }
 
-    uint32 newRating = (ratingCount > 0) ? (ratingSum / ratingCount) : 0;
+    // Rounded, not truncated (MFC ROUND()). Over a 1-5 scale truncation drags
+    // every average down a notch: a 2 and a 5 average to 4, not 3.
+    const uint32 newRating =
+        (ratingCount > 0)
+            ? static_cast<uint32>((ratingSum + ratingCount / 2) / ratingCount)
+            : 0;
     if (newRating != m_userRating) {
         m_userRating = newRating;
         changed = true;
@@ -2262,6 +2287,26 @@ void PartFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
 
     if (changed)
         emit m_partNotifier.progressUpdated(m_percentCompleted);
+}
+
+bool PartFile::readContainerHead(QByteArray& head) const
+{
+    // Finished: the bytes sit in the destination file like any other known file.
+    if (m_status == PartFileStatus::Complete)
+        return ShareableFile::readContainerHead(head);
+
+    // Still downloading: only the .part file has them, and only once the first
+    // chunk landed. isComplete() is a gap-list scan, far cheaper than an open --
+    // and an open here would hand back a hole full of zeroes, which reads as a
+    // fake. Saying "not yet" is the honest answer until the bytes are real.
+    if (!isComplete(0, static_cast<uint64>(kContainerHeadBytes) - 1))
+        return false;
+
+    QFile file(m_fullName);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    head = file.read(kContainerHeadBytes);
+    return true;
 }
 
 // ===========================================================================

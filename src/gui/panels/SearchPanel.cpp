@@ -819,12 +819,6 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         return;
     }
 
-    const bool useOriginal = thePrefs.useOriginalIcons();
-    auto ico = [&](const char* res) -> QIcon {
-        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
-                           : QIcon();
-    };
-
     // Walk the selection once, as MFC does (SearchListCtrl.cpp:680-693): whether
     // anything is still downloadable, and whether anything is not yet spam — the
     // latter decides which way the spam item reads.
@@ -852,7 +846,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     }
 
     // Download — the default action, bold, as in MFC (SetDefaultItem at :731).
-    auto* downloadAction = m_contextMenu->addAction(ico("Download.ico"), tr("Download"));
+    auto* downloadAction = m_contextMenu->addAction(menuIcon("Download.ico"), tr("Download"));
     downloadAction->setEnabled(hasSelection && anyDownloadable);
     connect(downloadAction, &QAction::triggered, this, [this] {
         const auto sel = m_resultView->selectionModel()->selectedRows();
@@ -864,7 +858,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Details... — extended controls only, exactly as MFC gates it, because the
     // sheet's Metadata page is itself an extended-controls feature.
     if (thePrefs.showExtControls()) {
-        auto* detailsAction = m_contextMenu->addAction(ico("FileInfo.ico"), tr("Details..."));
+        auto* detailsAction = m_contextMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."));
         detailsAction->setEnabled(singleSel && tab);
         const uint32_t searchID = tab ? tab->searchID : 0;
         connect(detailsAction, &QAction::triggered, this, [this, searchID, singleHash] {
@@ -875,7 +869,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Comments... — the same sheet, forced onto its Comments page (MFC passes
     // IDD_COMMENTLST for MP_CMT, SearchListCtrl.cpp:817-824).
     {
-        auto* commentsAction = m_contextMenu->addAction(ico("FileComments.ico"), tr("Comments..."));
+        auto* commentsAction = m_contextMenu->addAction(menuIcon("FileComments.ico"), tr("Comments..."));
         commentsAction->setEnabled(singleSel && tab);
         const uint32_t searchID = tab ? tab->searchID : 0;
         connect(commentsAction, &QAction::triggered, this, [this, searchID, singleHash] {
@@ -886,7 +880,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     m_contextMenu->addSeparator();
 
     // Copy eD2K Links
-    auto* copyLinkAction = m_contextMenu->addAction(ico("eD2kLink.ico"), tr("Copy eD2K Links"));
+    auto* copyLinkAction = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"));
     copyLinkAction->setEnabled(hasSelection);
     connect(copyLinkAction, &QAction::triggered, this, [this] {
         QStringList links;
@@ -897,7 +891,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     });
 
     // Copy eD2K Links (HTML)
-    auto* copyHtmlAction = m_contextMenu->addAction(ico("Copy.ico"), tr("Copy eD2K Links (HTML)"));
+    auto* copyHtmlAction = m_contextMenu->addAction(menuIcon("Copy.ico"), tr("Copy eD2K Links (HTML)"));
     copyHtmlAction->setEnabled(hasSelection);
     connect(copyHtmlAction, &QAction::triggered, this, [this] {
         QStringList links;
@@ -921,7 +915,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     if (thePrefs.enableSearchResultFilter()) {
         const bool markAsSpam = anyNotSpam || !hasSelection;
         auto* spamAction = m_contextMenu->addAction(
-            ico("Spam.ico"), markAsSpam ? tr("Mark as Spam") : tr("Mark as not Spam"));
+            menuIcon("Spam.ico"), markAsSpam ? tr("Mark as Spam") : tr("Mark as not Spam"));
         spamAction->setEnabled(hasSelection);
         connect(spamAction, &QAction::triggered, this, [this, markAsSpam] {
             auto* tab = currentTab();
@@ -943,7 +937,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     }
 
     // Remove (remove from local results list)
-    auto* removeAction = m_contextMenu->addAction(ico("ListRemove.ico"), tr("Remove"));
+    auto* removeAction = m_contextMenu->addAction(menuIcon("ListRemove.ico"), tr("Remove"));
     removeAction->setEnabled(hasSelection);
     connect(removeAction, &QAction::triggered, this, [this] {
         auto* tab = currentTab();
@@ -963,7 +957,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     m_contextMenu->addSeparator();
 
     // Close Search Results
-    auto* closeAction = m_contextMenu->addAction(ico("CloseTab.ico"), tr("Close Search Results"));
+    auto* closeAction = m_contextMenu->addAction(menuIcon("CloseTab.ico"), tr("Close Search Results"));
     closeAction->setEnabled(m_tabBar->currentIndex() >= 0);
     connect(closeAction, &QAction::triggered, this, [this] {
         if (m_tabBar->currentIndex() >= 0)
@@ -971,7 +965,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     });
 
     // Close All Search Results
-    auto* closeAllAction = m_contextMenu->addAction(ico("DeleteAll.ico"), tr("Close All Search Results"));
+    auto* closeAllAction = m_contextMenu->addAction(menuIcon("DeleteAll.ico"), tr("Close All Search Results"));
     closeAllAction->setEnabled(!m_tabs.empty());
     connect(closeAllAction, &QAction::triggered, this, &SearchPanel::closeAllSearches);
 
@@ -982,19 +976,19 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     if (singleSel && m_downloadModel && !m_streamToken.isEmpty()) {
         const auto* dl = m_downloadModel->findByHash(singleHash);
         if (dl && dl->isPreviewPossible) {
-            connect(m_contextMenu->addAction(ico("Preview.ico"), tr("Preview")),
+            connect(m_contextMenu->addAction(menuIcon("Preview.ico"), tr("Preview")),
                     &QAction::triggered, this, [this, singleHash] { sendPreview(singleHash); });
         }
     }
 
     // Find... — over the whole result list, so selection is irrelevant.
-    auto* findAction = m_contextMenu->addAction(ico("Search.ico"), tr("Find..."));
+    auto* findAction = m_contextMenu->addAction(menuIcon("Search.ico"), tr("Find..."));
     findAction->setEnabled(tab && tab->proxy->rowCount() > 0);
     connect(findAction, &QAction::triggered, this,
             [this] { showFindInListDialog(this, m_resultView); });
 
     // Search Related Files — MFC turns the file name into a fresh search.
-    auto* relatedAction = m_contextMenu->addAction(ico("KadFileSearch.ico"),
+    auto* relatedAction = m_contextMenu->addAction(menuIcon("KadFileSearch.ico"),
                                                    tr("Search Related Files"));
     relatedAction->setEnabled(singleSel && !singleName.isEmpty());
     connect(relatedAction, &QAction::triggered, this, [this, singleName] {
@@ -1004,7 +998,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
 
     // Web Services — greyed when webservices.dat is empty or the selection is not
     // exactly one file, matching MFC's flag2 (SearchListCtrl.cpp:724-727).
-    auto* webMenu = m_contextMenu->addMenu(ico("Web.ico"), tr("Web Services"));
+    auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
     if (singleSel)
         WebServices::instance().populateFileMenu(webMenu, singleHash, singleName,
                                                  static_cast<uint64_t>(singleSize));
@@ -1077,6 +1071,8 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.fileType           = m.value(QStringLiteral("fileType")).toString();
             row.knownType          = static_cast<int>(m.value(QStringLiteral("knownType")).toInteger());
             row.isSpam             = m.value(QStringLiteral("isSpam")).toBool();
+            row.hasComment         = m.value(QStringLiteral("hasComment")).toBool();
+            row.userRating         = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
             row.artist             = m.value(QStringLiteral("artist")).toString();
             row.album              = m.value(QStringLiteral("album")).toString();
             row.title              = m.value(QStringLiteral("title")).toString();
@@ -1567,6 +1563,9 @@ void SearchPanel::fetchAndShowSearchDetails(uint32_t searchID, const QString& ha
             };
             connectKadNotesSearch(dlg, m_ipc, makeRequest);
             connectCommentFilter(dlg, m_ipc);
+            // No connectCommentPosting() here on purpose: a search hit is a file on
+            // someone else's disk, so its Comments page is the read-only one — as it
+            // is in MFC's CSearchResultFileDetailSheet, which hosts CCommentDialogLst.
             dlg->setWalker(makeSearchWalker(searchID, hash));
             connectDetailNavigation(dlg, m_ipc, makeRequest);
             dlg->show();

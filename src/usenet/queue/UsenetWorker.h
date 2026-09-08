@@ -58,6 +58,15 @@ struct UsenetFetchRequest {
     /// Server keys already asked for this article, so an escalation never asks
     /// the same account twice.
     QStringList ignoreServers;
+
+    /// Ask STAT instead of BODY: does this account still hold the article?
+    ///
+    /// No payload is transferred and **no file is touched** — not even created.
+    /// That matters more than it looks: the target directory and the output file
+    /// are made before the connection is leased, so a probe honoured any later
+    /// would still litter the temp tree with empty files for articles it only
+    /// asked about.
+    bool probeOnly = false;
 };
 
 struct UsenetFetchResult {
@@ -79,7 +88,20 @@ struct UsenetFetchResult {
     /// Which account answered or failed. Appended to ignoreServers on a retry.
     QString serverKey;
 
+    /// The same account's stable id, carried alongside rather than looked up.
+    /// applyServers() replaces m_servers on every settings save, so a result
+    /// still in flight can arrive after its row is gone — and resolving the id
+    /// then would silently drop the bytes it is about to be charged.
+    QString accountId;
+
     qint64 decodedBytes = 0;
+
+    /// Raw inbound bytes this job cost on the wire, including the greeting and
+    /// authentication when it opened the connection itself. What a provider's
+    /// allowance counts, as against decodedBytes, which is payload only.
+    /// Non-zero for a 430 and for a transfer that died half way, both of which
+    /// were still billed.
+    qint64 rawBytes = 0;
 
     /// Where those bytes landed in the final file, from the article's own
     /// `=ypart begin`. Together with decodedBytes this is the one byte range
@@ -89,6 +111,16 @@ struct UsenetFetchResult {
     /// From `=ybegin`. The only source of truth for an obfuscated post's name.
     QString articleFileName;
     qint64 declaredFileSize = 0;
+
+    /// Answer to a probeOnly request: this account has the article. Meaningless
+    /// for a normal fetch, and never a verdict on its own — one account saying no
+    /// is exactly what the failover ladder exists to survive.
+    bool articleExists = false;
+
+    /// Echoed back so the queue can route the result to the probe pass rather
+    /// than into the download's own bookkeeping, where a STAT would seal empty
+    /// files or inflate the PAR2 damage estimate.
+    bool probeOnly = false;
 
     /// The pool had nothing to lease — every candidate blocked, excluded, or at
     /// its connection limit. A "try again shortly", not a failure, and explicitly

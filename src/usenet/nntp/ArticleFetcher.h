@@ -3,6 +3,13 @@
 /// @file ArticleFetcher.h
 /// @brief One segment, end to end: BODY -> decode -> place in the file.
 ///
+/// Also the same sequence with the payload left out: stat() asks STAT instead of
+/// BODY and writes nothing, which is how the availability probe finds out
+/// whether an account still holds an article without paying for it. Two verbs,
+/// one sequence — the GROUP handling, the readiness check, the connect and the
+/// typed outcome are identical, and a second class would have had to copy all
+/// four.
+///
 /// The join between the three layers, and deliberately the only place that
 /// knows about all of them. It holds no policy: which server to ask and what to
 /// do about a failure belong to the pool and the queue respectively. What it
@@ -28,6 +35,7 @@ class BodyCommand;
 class GroupCommand;
 class NntpCommand;
 class NntpSocket;
+class StatCommand;
 
 class ArticleFetcher : public QObject {
     Q_OBJECT
@@ -47,6 +55,22 @@ public:
     /// NewsServer::joinGroup rather than done unconditionally.
     void fetch(NntpSocket* socket, const NzbSegment& segment,
                ArticleWriter* writer, const QString& group = {});
+
+    /// Ask whether @p segment exists on @p socket's server, transferring no
+    /// payload. Reports through the same finished() signal, so a caller that
+    /// only cares about the outcome needs no second code path.
+    ///
+    /// A `430` here is NntpError::ArticleNotFound exactly as it is for a body —
+    /// which is what lets the queue's failover ladder decide "unavailable" the
+    /// same way for both, meaning *every rung refused it* rather than *the first
+    /// one did*.
+    ///
+    /// @p group is honoured for the same reason fetch() honours it: a server
+    /// that demands a selected group for BODY will demand one for STAT.
+    void stat(NntpSocket* socket, const NzbSegment& segment, const QString& group = {});
+
+    /// Whether the last stat() found the article. Meaningless after a fetch().
+    [[nodiscard]] bool articleExists() const { return m_articleExists; }
 
     /// Filename the article declared in `=ybegin name=`. For an obfuscated post
     /// this is the only place the real name appears, so the queue reads it from
@@ -76,17 +100,25 @@ signals:
     void finished(eMule::usenet::NntpError error, const QString& text);
 
 private:
+    /// Which verb this run issues. The rest of the sequence is identical.
+    enum class Mode { Body, Stat };
+
     void onCommandFinished(NntpCommand* command);
+    bool beginRun(NntpSocket* socket, const NzbSegment& segment, const QString& group);
+    void startVerb();
     void startBody();
+    void startStat();
     void finish(NntpError error, const QString& text);
 
     NntpSocket* m_socket = nullptr;
     ArticleWriter* m_writer = nullptr;
     NzbSegment m_segment;
     QString m_group;
+    Mode m_mode = Mode::Body;
 
     std::unique_ptr<GroupCommand> m_groupCommand;
     std::unique_ptr<BodyCommand> m_bodyCommand;
+    std::unique_ptr<StatCommand> m_statCommand;
 
     QString m_articleFileName;
     qint64 m_declaredFileSize = 0;
@@ -97,6 +129,7 @@ private:
     /// so the connection stays in sync, but the outcome is the write error.
     QString m_writeError;
     bool m_positioned = false;
+    bool m_articleExists = false;
 };
 
 } // namespace eMule::usenet

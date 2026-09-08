@@ -94,6 +94,7 @@ namespace eMule::Ipc {
 
 [[nodiscard]] inline QCborMap toCbor(const PartFile& f)
 {
+    const ContainerCheck& cc = f.containerCheck();
     return QCborMap{
         {QStringLiteral("hash"),                 md4str(f.fileHash())},
         {QStringLiteral("fileName"),             f.fileName()},
@@ -122,6 +123,20 @@ namespace eMule::Ipc {
         {QStringLiteral("transferredData"),     static_cast<qint64>(f.statistic.allTimeTransferred())},
         {QStringLiteral("partMap"),             buildPartMap(f)},
         {QStringLiteral("isPreviewPossible"),  f.isPreviewPossible()},
+        // Comment/rating marks. userRating(true) folds in MFC's pseudo-rating 6,
+        // "a Kad note lookup is running", so the GUI rebuilds the whole predicate
+        // from these two.
+        {QStringLiteral("hasComment"),          f.hasComment()},
+        {QStringLiteral("userRating"),          static_cast<int>(f.userRating(true))},
+        // The container check, bound once: asking three times costs three gap-list
+        // scans (and three opens) per poll while the first part is still missing,
+        // because an unreadable head is deliberately not cached. Downloads are the
+        // one list small enough to read here; the share is warmed in the background
+        // by SharedFileList::warmContainerChecks(), and a part file is the same
+        // object in both lists, so whichever gets there first settles it for both.
+        {QStringLiteral("containerSuspect"),    cc.isSuspect()},
+        {QStringLiteral("containerExpected"),   cc.expected},
+        {QStringLiteral("containerActual"),     cc.actual},
     };
 }
 
@@ -178,6 +193,8 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("searchID"),            static_cast<qint64>(f.searchID()));
     m.insert(QStringLiteral("knownType"),           static_cast<int>(f.knownType()));
     m.insert(QStringLiteral("isSpam"),              f.isConsideredSpam());
+    m.insert(QStringLiteral("hasComment"),          f.hasComment());
+    m.insert(QStringLiteral("userRating"),          static_cast<int>(f.userRating(true)));
     // Media metadata from ED2K tags
     m.insert(QStringLiteral("artist"),  f.getStrTagValue(FT_MEDIA_ARTIST));
     m.insert(QStringLiteral("album"),   f.getStrTagValue(FT_MEDIA_ALBUM));

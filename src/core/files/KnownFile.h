@@ -214,6 +214,23 @@ public:
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
     void updatePartsInfo();
 
+    // Comment / rating — the user's own, i.e. the write half of
+    // AbstractFile::loadComment(). Distinct from hasComment()/userRating(), which
+    // aggregate what *other* people said and belong to updateFileRatingCommentAvail().
+    // They live on KnownFile rather than AbstractFile for MFC's reason: only a known
+    // file has the uploading-client list a new comment has to be pushed to.
+
+    /// Port of CKnownFile::SetFileComment (srchybrid/KnownFile.cpp:1161). A no-op when
+    /// unchanged; otherwise persists to fileinfo.ini, clears the Kad notes republish
+    /// timer so PublishNotes goes out again, and marks every client we are uploading
+    /// to so its next OP_FILEDESC carries the new text. Truncated to
+    /// MAXFILECOMMENTLEN — neither a peer nor a Kad note will carry more.
+    void setFileComment(const QString& comment);
+
+    /// Port of CKnownFile::SetFileRating (srchybrid/KnownFile.cpp:1174).
+    /// 0 = not rated, 1 = fake, 2..5 = poor..excellent; anything else is ignored.
+    void setFileRating(uint32 rating);
+
     // Collection support (for .emulecollection files shared on the network)
     [[nodiscard]] Collection* collection() const { return m_collection.get(); }
     void setCollection(std::unique_ptr<Collection> coll);
@@ -250,6 +267,10 @@ protected:
 
 private:
     void pruneKadNotes();  // drop expired entries, then cap to the newest N
+
+    /// Flag every peer we are uploading this file to, so its next OP_FILEDESC carries
+    /// the comment we just changed (MFC walks m_ClientUploadList in both setters).
+    void markUploadersCommentDirty();
 
     /// True when `src` holds at least one chunk the requester still wants, so it is
     /// worth exchanging. `requesterParts` is the requester's upload part status; an

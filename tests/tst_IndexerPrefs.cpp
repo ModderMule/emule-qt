@@ -63,6 +63,12 @@ private slots:
     void searchSettingsAreClamped();
     void defaultsAreSaneWithNoIndexersBlock();
 
+    // -- feeds ---------------------------------------------------------------
+    void feedsRoundTrip();
+    void aUrlFeedsAddressIsNotStoredInClear();
+    void anIntervalBelowTheFloorIsClamped();
+    void invalidFeedsAreDropped();
+
 private:
     QTemporaryDir m_dir;
     QString m_file;
@@ -326,6 +332,134 @@ void tst_IndexerPrefs::defaultsAreSaneWithNoIndexersBlock()
     QCOMPARE(p.indexerMaxPages(), 3);
     QCOMPARE(p.indexerTimeoutSeconds(), 30);
     QCOMPARE(p.indexerCapsRefreshDays(), 7);
+}
+
+void tst_IndexerPrefs::feedsRoundTrip()
+{
+    {
+        Preferences p;
+        IndexerFeed search;
+        search.name = QStringLiteral("Ubuntu");
+        search.query = QStringLiteral("ubuntu");
+        search.categories = {6000, 7000};
+        search.indexers = {QStringLiteral("Primary")};
+        search.accept = QStringLiteral("desktop");
+        search.reject = QStringLiteral("arm64");
+        search.minSize = 1024;
+        search.maxSize = 4096;
+        search.maxAgeDays = 14;
+        search.intervalMinutes = 45;
+        search.grabExisting = true;
+
+        IndexerFeed pasted;
+        pasted.name = QStringLiteral("Pasted");
+        pasted.kind = IndexerFeedKind::Url;
+        pasted.url = QStringLiteral("https://ix.example/rss?r=abc");
+        pasted.enabled = false;
+
+        p.setIndexerFeeds({search, pasted});
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    const auto feeds = p.indexerFeeds();
+    QCOMPARE(feeds.size(), 2);
+
+    QCOMPARE(feeds[0].name, QStringLiteral("Ubuntu"));
+    QCOMPARE(feeds[0].kind, IndexerFeedKind::SavedSearch);
+    QCOMPARE(feeds[0].query, QStringLiteral("ubuntu"));
+    QCOMPARE(feeds[0].categories, QList<int>({6000, 7000}));
+    QCOMPARE(feeds[0].indexers, QStringList{QStringLiteral("Primary")});
+    QCOMPARE(feeds[0].accept, QStringLiteral("desktop"));
+    QCOMPARE(feeds[0].reject, QStringLiteral("arm64"));
+    QCOMPARE(feeds[0].minSize, 1024);
+    QCOMPARE(feeds[0].maxSize, 4096);
+    QCOMPARE(feeds[0].maxAgeDays, 14);
+    QCOMPARE(feeds[0].intervalMinutes, 45);
+    QVERIFY(feeds[0].grabExisting);
+
+    QCOMPARE(feeds[1].name, QStringLiteral("Pasted"));
+    QCOMPARE(feeds[1].kind, IndexerFeedKind::Url);
+    QCOMPARE(feeds[1].url, QStringLiteral("https://ix.example/rss?r=abc"));
+    QVERIFY(!feeds[1].enabled);
+}
+
+void tst_IndexerPrefs::aUrlFeedsAddressIsNotStoredInClear()
+{
+    Preferences p;
+    IndexerFeed pasted;
+    pasted.name = QStringLiteral("Pasted");
+    pasted.kind = IndexerFeedKind::Url;
+    // A feed URL is a credential wearing a URL's clothes: newznab's RSS endpoint
+    // takes the key as a query parameter, so the whole string has to be stored
+    // the way an apiKey is.
+    pasted.url = QStringLiteral("https://ix.example/rss?t=search&r=SUPERSECRET");
+    p.setIndexerFeeds({pasted});
+    QVERIFY(p.saveTo(m_file));
+
+    const QString text = readAll(m_file);
+    QVERIFY2(!text.contains(QStringLiteral("SUPERSECRET")), qPrintable(text));
+    QVERIFY(text.contains(QStringLiteral("urlEnc")));
+}
+
+void tst_IndexerPrefs::anIntervalBelowTheFloorIsClamped()
+{
+    // Clamped in the setter and not only in the dialog: a hand-edited file
+    // naming one minute would poll a public indexer ninety-six times an hour,
+    // and the usual answer to that is a banned account.
+    Preferences p;
+    IndexerFeed feed;
+    feed.name = QStringLiteral("Impatient");
+    feed.intervalMinutes = 1;
+    p.setIndexerFeeds({feed});
+
+    QCOMPARE(p.indexerFeeds().size(), 1);
+    QCOMPARE(p.indexerFeeds().first().intervalMinutes, IndexerFeed::kMinIntervalMinutes);
+
+    // And on the way back in, for a file that was written by hand.
+    QVERIFY(p.saveTo(m_file));
+    QFile f(m_file);
+    QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+    QString text = QString::fromUtf8(f.readAll());
+    f.close();
+    text.replace(QStringLiteral("intervalMinutes: 15"), QStringLiteral("intervalMinutes: 1"));
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text));
+    f.write(text.toUtf8());
+    f.close();
+
+    Preferences reloaded;
+    QVERIFY(reloaded.load(m_file));
+    QCOMPARE(reloaded.indexerFeeds().first().intervalMinutes, IndexerFeed::kMinIntervalMinutes);
+}
+
+void tst_IndexerPrefs::invalidFeedsAreDropped()
+{
+    Preferences p;
+
+    IndexerFeed unnamed;
+    unnamed.query = QStringLiteral("x");
+
+    IndexerFeed urlless;
+    urlless.name = QStringLiteral("Broken");
+    urlless.kind = IndexerFeedKind::Url;
+
+    IndexerFeed fileScheme;
+    fileScheme.name = QStringLiteral("Local");
+    fileScheme.kind = IndexerFeedKind::Url;
+    // http and https only: a feed naming file: would have the daemon poll its
+    // own disk on a timer.
+    fileScheme.url = QStringLiteral("file:///etc/passwd");
+
+    IndexerFeed good;
+    good.name = QStringLiteral("Good");
+
+    IndexerFeed duplicate;
+    duplicate.name = QStringLiteral("GOOD");
+
+    p.setIndexerFeeds({unnamed, urlless, fileScheme, good, duplicate});
+    QCOMPARE(p.indexerFeeds().size(), 1);
+    QCOMPARE(p.indexerFeeds().first().name, QStringLiteral("Good"));
 }
 
 QTEST_MAIN(tst_IndexerPrefs)

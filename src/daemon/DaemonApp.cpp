@@ -15,6 +15,7 @@
 #include "stats/Statistics.h"
 #include "stats/StatsSnapshot.h"
 #include "UsenetSession.h"
+#include "IndexerFeedList.h"
 #include "IndexerSearchList.h"
 #include "IndexerResult.h"
 #include "queue/UsenetQueue.h"
@@ -122,6 +123,10 @@ bool DaemonApp::start()
     // Connect web server config changes from any IPC client
     connect(m_ipcServer.get(), &IpcServer::webServerConfigChanged,
             this, &DaemonApp::restartWebServer);
+    connect(m_ipcServer.get(), &IpcServer::webTemplateReloadRequested, this, [this] {
+        if (m_webServer)
+            m_webServer->reloadTemplate();
+    });
     connect(m_ipcServer.get(), &IpcServer::usenetConfigChanged,
             this, &DaemonApp::applyUsenetServers);
     connect(m_ipcServer.get(), &IpcServer::indexerConfigChanged,
@@ -144,6 +149,13 @@ bool DaemonApp::start()
     m_indexerSearches = std::make_unique<indexer::IndexerSearchList>();
     indexer::theIndexerSearchList = m_indexerSearches.get();
     connectIndexerPushes();
+
+    // Feeds. Constructed after the Usenet session, because the sink it is given
+    // reaches into that session's queue.
+    m_indexerFeeds = std::make_unique<indexer::IndexerFeedList>();
+    indexer::theIndexerFeeds = m_indexerFeeds.get();
+    connectIndexerFeedSink();
+    m_indexerFeeds->applyPreferences();
 
     m_running = true;
     logInfo(QStringLiteral("Daemon started — IPC server on %1:%2")
@@ -171,6 +183,12 @@ void DaemonApp::stop()
     // while the event loop is still turning. UsenetSession::stop() is also where
     // the worker threads are joined, so by the time it returns nothing is left
     // running that could reach a half-destroyed daemon.
+    // Feeds first: a poll in flight holds a QPointer to this list and a callback
+    // that reaches the Usenet queue through the sink, and both have to stop
+    // before either is torn down.
+    indexer::theIndexerFeeds = nullptr;
+    m_indexerFeeds.reset();
+
     indexer::theIndexerSearchList = nullptr;
     m_indexerSearches.reset();
 
@@ -179,7 +197,6 @@ void DaemonApp::stop()
         m_usenetSession->stop();
     m_usenetSession.reset();
 
-    removeLogForwarder();
     m_notifierBridge.reset();
 
     if (m_ipcServer)
@@ -192,6 +209,14 @@ void DaemonApp::stop()
 
     m_running = false;
     logInfo(QStringLiteral("Daemon stopped."));
+
+    // Last, so the whole teardown is on record. This used to run before the core
+    // session went away, which closed the log file sink mid-shutdown and threw
+    // away every line after it -- Kad's stop, the nodes.dat write and "Daemon
+    // stopped." all vanished, making a shrunken routing table unforensic.
+    // Forwarding to IPC clients is already a no-op by now (logMessageHandler
+    // null-checks m_ipcServer), so staying installed this long is free.
+    removeLogForwarder();
 }
 
 bool DaemonApp::isRunning() const
@@ -308,6 +333,10 @@ namespace {
 /// release collapses into a handful of sends.
 constexpr int kUsenetPushWindowMs = 250;
 
+/// Feed reports are not a live meter — a poll is minutes apart — so the only
+/// burst worth merging is the start/finish pair of one poll.
+constexpr int kFeedPushWindowMs = 250;
+
 } // namespace
 
 /// Defined in IpcClientHandler.cpp, beside the GetUsenetQueue row it must match.
@@ -385,6 +414,75 @@ void DaemonApp::applyIndexerConfig()
 {
     if (m_indexerSearches)
         m_indexerSearches->applyPreferences();
+    if (m_indexerFeeds)
+        m_indexerFeeds->applyPreferences();
+}
+
+void DaemonApp::connectIndexerFeedSink()
+{
+    if (!m_indexerFeeds)
+        return;
+
+    // The one place the two modules meet. eMule::Indexer must not depend on
+    // eMule::Usenet — a future BitTorrent module reuses the same client — so the
+    // feed poller hands out an .nzb and this maps the queue's answer back onto
+    // its own vocabulary. handleGrabIndexerResult performs the same join, and
+    // for the same reason.
+    m_indexerFeeds->setNzbSink(
+        [](const indexer::FeedAddRequest& request, QString& error) {
+            if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+                error = QObject::tr("The Usenet engine is not running.");
+                // Retry, not Rejected: the release is fine, the daemon is not.
+                return indexer::FeedAddOutcome::Retry;
+            }
+
+            usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
+            usenet::theUsenetSession->queue()->addNzb(request.payload, request.title, error,
+                                                      usenet::UsenetAddSource::Automatic,
+                                                      &outcome);
+
+            switch (outcome) {
+            case usenet::UsenetAddOutcome::Added:
+                return indexer::FeedAddOutcome::Added;
+            case usenet::UsenetAddOutcome::Duplicate:
+                // Terminal. The feed must stop asking — this is not a failure,
+                // it is the answer.
+                return indexer::FeedAddOutcome::AlreadyHave;
+            case usenet::UsenetAddOutcome::Invalid:
+                return indexer::FeedAddOutcome::Rejected;
+            case usenet::UsenetAddOutcome::Failed:
+                break;
+            }
+            return indexer::FeedAddOutcome::Retry;
+        });
+
+    if (!m_ipcServer)
+        return;
+
+    auto* coalescer = new Ipc::PushCoalescer(this);
+    connect(coalescer, &Ipc::PushCoalescer::ready, this, [this](const IpcMessage& msg) {
+        m_ipcServer->broadcast(msg);
+    });
+
+    connect(m_indexerFeeds.get(), &indexer::IndexerFeedList::feedStatusChanged, this,
+            [coalescer](const indexer::IndexerFeedStatus& status) {
+        // Keyed on the feed, so a busy feed cannot suppress another's report.
+        // A status is a latest value rather than a transition, which is exactly
+        // what coalescing is for.
+        coalescer->post(IpcMsgType::PushIndexerFeedStatus, [status] {
+            IpcMessage msg(IpcMsgType::PushIndexerFeedStatus, 0);
+            msg.append(QCborMap{
+                {QStringLiteral("name"),        status.name},
+                {QStringLiteral("lastPolled"),
+                 status.lastPolled.isValid() ? status.lastPolled.toSecsSinceEpoch() : qint64(0)},
+                {QStringLiteral("lastError"),   status.lastError},
+                {QStringLiteral("lastMatched"), status.lastMatched},
+                {QStringLiteral("seenCount"),   status.seenCount},
+                {QStringLiteral("polling"),     status.polling},
+            });
+            return msg;
+        }, kFeedPushWindowMs, qHash(status.name));
+    });
 }
 
 void DaemonApp::connectIndexerPushes()

@@ -2,6 +2,7 @@
 
 #include "nntp/NntpServerPool.h"
 #include "queue/UsenetQueue.h"
+#include "queue/UsenetWatchFolder.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
@@ -26,6 +27,7 @@ UsenetSession::UsenetSession(QObject* parent)
     : QObject(parent)
     , m_pool(std::make_unique<NntpServerPool>())
     , m_queue(std::make_unique<UsenetQueue>())
+    , m_watchFolder(std::make_unique<UsenetWatchFolder>(m_queue.get()))
 {
     connect(m_queue.get(), &UsenetQueue::itemChanged, this, &UsenetSession::itemChanged);
     connect(m_queue.get(), &UsenetQueue::itemAdded, this, &UsenetSession::itemAdded);
@@ -92,6 +94,12 @@ void UsenetSession::applyPreferences()
 {
     m_pool->setRetryInterval(thePrefs.usenetRetryIntervalSeconds());
     m_pool->setServers(thePrefs.usenetServers());
+
+    // Independent of the engine's own on/off switch. A folder full of .nzb files
+    // is worth picking up even with downloading paused — the items simply wait,
+    // which is what the queue is for.
+    if (m_watchFolder)
+        m_watchFolder->applyPreferences();
 
     if (m_queue) {
         m_queue->applyServers(thePrefs.usenetServers(),

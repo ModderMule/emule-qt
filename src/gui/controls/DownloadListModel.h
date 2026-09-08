@@ -65,6 +65,17 @@ struct DownloadRow {
     QByteArray partMap;  // per-part status: 0=done, 1=no-src, 2-254=src-freq, 255=downloading
     bool isPreviewPossible = false;
 
+    // Comment/rating, as MFC's indicator reads them. userRating is the wire
+    // value, so 6 means "a Kad note lookup is running".
+    bool hasComment = false;
+    int userRating = 0;
+
+    // The file's own bytes contradict its name. Independent of the rating above:
+    // that one is other people's opinion, this one is provable.
+    bool containerSuspect = false;
+    QString containerExpected;   // container the extension promises, e.g. "ASF"
+    QString containerActual;     // what it really is; empty when unrecognised
+
     std::vector<SourceRow> sources;  // child rows (populated when expanded)
 
     /// A completed download (green 100% bar). Completed files have no live

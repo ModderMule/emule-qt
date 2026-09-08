@@ -1,5 +1,6 @@
 #include "queue/UsenetQueue.h"
 
+#include "nntp/NntpServerPool.h"
 #include "nzb/NzbFile.h"
 #include "post/UsenetUnpacker.h"
 #include "queue/ArticleWriter.h"
@@ -52,6 +53,25 @@ constexpr qint64 kStreamingBoostMs = 30000;
 /// finding volumes that somehow do not improve the block count.
 constexpr int kMaxPar2Rounds = 8;
 
+/// Flush the usage meters after this much unrecorded traffic, whatever the
+/// timer says. An unclean exit otherwise costs a whole save interval of prepaid
+/// block credit — 300 MB at 5 MB/s.
+constexpr qint64 kUsageFlushBytes = 256 * 1024 * 1024;
+
+/// Ceiling on one release's sampled probe. A release of 50-100 files costs
+/// 50-100 status lines; this is only reached by something pathological, and a
+/// pathological NZB must not turn into a thousand round trips before the first
+/// article is fetched.
+constexpr int kMaxSampleProbes = 200;
+
+/// Share of each worker's capacity reserved for probes, as a divisor.
+///
+/// Reserved rather than leftover: a busy queue never *has* leftover slots, so a
+/// probe dispatched only from what downloads did not want would wait for the
+/// whole queue to drain. A quarter is enough to finish a sampled probe in a
+/// round trip or three and small enough that downloads do not notice.
+constexpr int kProbeCapacityDivisor = 4;
+
 /// Create @p path and its directory, empty. Returns false with @p error set.
 [[nodiscard]] bool createTargetFile(const QString& path, QString& error)
 {
@@ -92,6 +112,13 @@ void UsenetQueue::start()
         return;
     m_running = true;
 
+    // Meters before anything can spend: the base has to be on hand before the
+    // first article lands, or this run's bytes would be added to zero.
+    m_usage.load();
+    m_usage.setAccounts(m_servers);
+    m_usage.rollOverIfDue();
+    refreshQuotaState();
+
     // Restore before the workers exist, so nothing dispatches into a half-built
     // queue.
     for (const QString& path : UsenetQueueStore::listStateFiles()) {
@@ -103,6 +130,12 @@ void UsenetQueue::start()
             continue;
         }
         item->initFileStates(thePrefs.usenetTempDir());
+        // Re-derived rather than persisted: every message-id is already in the
+        // sidecar, so a stored digest would only be a second thing that could
+        // disagree with the first. Without this the duplicate guard is blind to
+        // everything restored from disk, which after one restart is everything.
+        item->articleDigest = nzbArticleDigest(item->nzb);
+        item->releaseKey = nzbReleaseKey(item->name, item->nzb.totalEncodedBytes());
 
         auto rt = std::make_unique<ItemRuntime>();
         rt->item = std::move(item);
@@ -142,19 +175,81 @@ void UsenetQueue::stop()
     for (auto& rt : m_items)
         cancelDirectUnpack(*rt);
 
+    // A probe does not survive the workers going away. Put the item back where
+    // it was so the sidecar records something resumable — load() would demote it
+    // anyway, but a queue stopped and restarted in-process never goes through
+    // load() at all.
+    for (auto& rt : m_items) {
+        if (rt->item->status == UsenetItemStatus::Checking) {
+            clearHealthCheck(*rt);
+            rt->item->status = UsenetItemStatus::Queued;
+            rt->item->stalledReason.clear();
+        }
+    }
+
     for (auto& rt : m_items)
         persist(*rt);
     m_items.clear();
+
+    // Absolute, so this cannot double-count whatever the last timed flush wrote.
+    m_usage.flush();
 }
 
 void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryIntervalSec)
 {
-    m_servers = servers;
+    // A row configured with no connections can never be leased, so keeping it
+    // would put a rung on the ladder that nothing can answer — every article
+    // reaching it would stall rather than escalate.
+    m_servers.clear();
+    m_servers.reserve(servers.size());
+    for (const NewsServer& s : servers) {
+        if (s.enabled && s.isValid() && s.maxConnections <= 0) {
+            logWarning(QStringLiteral("Usenet: ignoring %1 — it allows no connections")
+                           .arg(s.displayName()));
+            continue;
+        }
+        m_servers.append(s);
+    }
     m_retryIntervalSec = retryIntervalSec;
 
-    m_maxLevel = 0;
-    for (const auto& s : servers)
-        m_maxLevel = std::max(m_maxLevel, s.level);
+    // One definition of the ladder, shared with every worker's pool. Deriving it
+    // here rather than taking max(level) also drops the disabled rows the pool
+    // never had, which is what used to make the two disagree.
+    m_ladder = nntpLevelLadder(m_servers);
+
+    int usable = 0;
+    int optional = 0;
+    for (const NewsServer& s : std::as_const(m_servers)) {
+        if (!s.enabled || !s.isValid())
+            continue;
+        ++usable;
+        if (s.optional)
+            ++optional;
+    }
+    m_allServersOptional = usable > 0 && optional == usable;
+
+    // Context and reset days for the meters, then the answer they feed. Counters
+    // survive: this runs on every settings save, so re-seeding here would zero
+    // every meter each time the user pressed OK.
+    m_usage.setAccounts(m_servers);
+    m_usage.rollOverIfDue();
+    refreshQuotaState();
+    unparkQuotaStalls();
+
+    // Abandon any probe in flight. Its answer was about the old account list, and
+    // the workers holding its requests are about to be torn down — without this
+    // an item left Checking has nothing to finish it and sits there for good.
+    // No verdict is the right outcome: a probe that cannot complete must not
+    // stop a download.
+    for (auto& rt : m_items) {
+        if (rt->item->status != UsenetItemStatus::Checking)
+            continue;
+        const UsenetItemStatus resumeTo = rt->checkResumeStatus;
+        clearHealthCheck(*rt);
+        rt->item->status = resumeTo;
+        rt->item->stalledReason.clear();
+        emit itemChanged(rt->item->id);
+    }
 
     if (!m_running)
         return;
@@ -170,25 +265,55 @@ void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryInterv
 // Queue operations
 // ---------------------------------------------------------------------------
 
-QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString& error)
+QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString& error,
+                            UsenetAddSource source, UsenetAddOutcome* outcome)
 {
+    const auto report = [outcome](UsenetAddOutcome value) {
+        if (outcome)
+            *outcome = value;
+    };
+    report(UsenetAddOutcome::Failed);
+
     NzbInfo nzb;
-    if (!NzbFile::parse(data, nzb, error))
+    if (!NzbFile::parse(data, nzb, error)) {
+        report(UsenetAddOutcome::Invalid);
         return {};
+    }
 
     if (nzb.isEmpty()) {
         error = tr("The NZB contains no files.");
+        report(UsenetAddOutcome::Invalid);
+        return {};
+    }
+
+    QString displayName = name.isEmpty() ? nzb.name : name;
+    if (displayName.isEmpty())
+        displayName = tr("Usenet download");
+
+    // Before anything is created on disk: the preallocation loop below does not
+    // clean up after itself, so a refusal must happen ahead of it.
+    if (const UsenetQueueItem* existing = findDuplicate(nzb, displayName, source, error)) {
+        logInfo(QStringLiteral("Usenet: not adding \"%1\" — already queued as \"%2\"")
+                    .arg(displayName, existing->name));
+        report(UsenetAddOutcome::Duplicate);
         return {};
     }
 
     auto item = std::make_unique<UsenetQueueItem>();
     item->id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    item->name = name.isEmpty() ? nzb.name : name;
-    if (item->name.isEmpty())
-        item->name = tr("Usenet download");
+    item->name = displayName;
     item->nzb = std::move(nzb);
     item->nzb.name = item->name;
-    item->status = UsenetItemStatus::Queued;
+    // Enforced here rather than at each intake path, for the reason the duplicate
+    // guard is: every present and future automatic caller inherits it by
+    // construction. quotaParked is the counter-example — as a flag its two call
+    // sites had to be remembered separately, and forgetting one costs the user a
+    // share of their line indefinitely.
+    item->status = source == UsenetAddSource::Automatic && thePrefs.usenetAutoAddPaused()
+                       ? UsenetItemStatus::Paused
+                       : UsenetItemStatus::Queued;
+    item->articleDigest = nzbArticleDigest(item->nzb);
+    item->releaseKey = nzbReleaseKey(item->name, item->nzb.totalEncodedBytes());
     item->initFileStates(thePrefs.usenetTempDir());
 
     // Lay each target file out once, up front. Growing a file by seeking past its
@@ -215,15 +340,62 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     persist(*rt);
     m_items.push_back(std::move(rt));
 
+    const NzbShortfall shortfall = m_items.back()->item->nzb.shortfall();
     logInfo(QStringLiteral("Usenet: queued \"%1\" (%2 file(s), %3 article(s))")
                 .arg(m_items.back()->item->name)
                 .arg(m_items.back()->item->nzb.files.size())
                 .arg(m_items.back()->item->segmentCount()));
+    if (shortfall.missingSegments > 0) {
+        // The NZB is short of what its own subject counters claim. Said once,
+        // as information: those articles may still be on every server, and this
+        // has changed nothing about what will be fetched.
+        logWarning(QStringLiteral("Usenet: \"%1\" lists %2% of the articles its "
+                                  "subjects claim (%3 not listed)%4")
+                       .arg(m_items.back()->item->name)
+                       .arg(shortfall.percent())
+                       .arg(shortfall.missingSegments)
+                       .arg(shortfall.likelyRecoverable()
+                                ? QStringLiteral("; the recovery volumes should cover it")
+                                : QString()));
+    }
 
+    report(UsenetAddOutcome::Added);
     emit itemAdded(id);
     emit itemChanged(id);
+
+    // After the item is in m_items, so dispatchProbes() can find it, and after
+    // itemAdded so the GUI sees the row before it goes to Checking. Returns
+    // false — leaving the item plain Queued — whenever a probe cannot or should
+    // not run, which must cost nothing.
+    beginHealthCheck(*m_items.back());
+
     dispatch();
     return id;
+}
+
+bool UsenetQueue::recheckItem(const QString& id)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt)
+        return false;
+
+    // Not while it is downloading, post-processing or already checking: the
+    // probe shares the workers' connection budget, and re-asking about an item
+    // whose articles are actively arriving answers a question that is being
+    // answered better by the download itself.
+    // Queued and Paused only. Downloading and post-processing are answering the
+    // question better by doing it, and a *completed* item has nothing to decide:
+    // putting it through Checking would end with it back in the download states,
+    // which is a re-download nobody asked for.
+    const UsenetItemStatus status = rt->item->status;
+    if (status != UsenetItemStatus::Queued && status != UsenetItemStatus::Paused)
+        return false;
+
+    if (!beginHealthCheck(*rt))
+        return false;
+
+    dispatch();
+    return true;
 }
 
 bool UsenetQueue::removeItem(const QString& id, bool deleteFiles)
@@ -673,10 +845,30 @@ void UsenetQueue::setRateLimit(qint64 bytesPerSecond)
     }
 }
 
+bool UsenetQueue::setAccountUsage(const QString& accountId, qint64 periodBytes,
+                                  qint64 totalBytes)
+{
+    if (!m_usage.setUsage(accountId, periodBytes, totalBytes))
+        return false;
+
+    refreshQuotaState();
+    unparkQuotaStalls();
+    dispatch();
+    return true;
+}
+
+bool UsenetQueue::isOverQuota(const NewsServer& s) const
+{
+    return m_overQuota.contains(s.key());
+}
+
 bool UsenetQueue::hasActiveDownloads() const
 {
     for (const auto& rt : m_items) {
-        if (rt->item->isActive())
+        // A parked item is waiting on a billing day, not on the network.
+        // Counting it would reserve a share of the line for an engine that is
+        // downloading nothing, for as long as the allowance lasts.
+        if (rt->item->isActive() && !rt->quotaParked)
             return true;
     }
     return false;
@@ -688,10 +880,17 @@ bool UsenetQueue::hasActiveDownloads() const
 
 void UsenetQueue::startWorkers()
 {
+    // Distinct buckets, not rows: two hostnames of one grouped account share a
+    // budget, so counting both would size the thread pool for connections that
+    // can never be opened.
     int totalConnections = 0;
-    for (const auto& s : m_servers) {
-        if (s.enabled && s.isValid())
-            totalConnections += std::max(0, s.maxConnections);
+    {
+        const auto buckets = nntpConnectionBuckets(m_servers);
+        QHash<QString, int> distinct;
+        for (auto it = buckets.cbegin(); it != buckets.cend(); ++it)
+            distinct.insert(it->id, it->limit);
+        for (const int limit : std::as_const(distinct))
+            totalConnections += std::max(0, limit);
     }
     if (totalConnections <= 0)
         return;
@@ -728,7 +927,14 @@ void UsenetQueue::startWorkers()
     // Divide the connection budget rather than replicating it. N workers each
     // honouring maxConnections would open N times what the user configured, and
     // exceeding a provider's limit gets an account throttled or suspended.
+    m_workerLevels.clear();
+    m_workerServers.clear();
     for (int i = 0; i < workerCount; ++i) {
+        // Every slice keeps every row, differing only in maxConnections. That is
+        // load-bearing: nntpLevelLadder() ignores maxConnections, so a slice
+        // builds an identical ladder to this queue's and a rung means the same
+        // thing on both sides. Dropping a row whose share divided to zero used to
+        // renumber that worker's rungs.
         QList<NewsServer> slice;
         slice.reserve(m_servers.size());
         for (const NewsServer& s : m_servers) {
@@ -736,9 +942,32 @@ void UsenetQueue::startWorkers()
             const int base = std::max(0, s.maxConnections) / workerCount;
             const int remainder = std::max(0, s.maxConnections) % workerCount;
             copy.maxConnections = base + (i < remainder ? 1 : 0);
-            if (copy.maxConnections > 0)
-                slice.append(copy);
+            slice.append(copy);
         }
+
+        // Which rungs this worker can actually lease on. A grouped account's
+        // share can divide to zero here while another worker still holds it.
+        QSet<int> levels;
+        // The accounts behind those rungs, not just the rungs. A rung is only
+        // worth handing this worker an article for if the worker holds budget on
+        // an account there that the article is actually allowed to ask — and a
+        // spent allowance changes that answer without changing the slices.
+        QSet<QString> keys;
+        const auto buckets = nntpConnectionBuckets(slice);
+        for (const NewsServer& s : std::as_const(slice)) {
+            if (!s.enabled || !s.isValid())
+                continue;
+            if (buckets.value(s.key()).limit <= 0)
+                continue;
+            const auto rung = m_ladder.indexOf(s.level);
+            if (rung >= 0) {
+                levels.insert(int(rung));
+                keys.insert(s.key());
+            }
+        }
+        m_workerLevels.append(levels);
+        m_workerServers.append(keys);
+
         QMetaObject::invokeMethod(m_workers.at(i), "setServers", Qt::QueuedConnection,
                                   Q_ARG(QList<eMule::NewsServer>, slice),
                                   Q_ARG(int, m_retryIntervalSec));
@@ -768,6 +997,8 @@ void UsenetQueue::stopWorkers()
     m_workers.clear();
     m_workerCapacity.clear();
     m_workerInFlight.clear();
+    m_workerLevels.clear();
+    m_workerServers.clear();
 
     for (auto& rt : m_items) {
         rt->inFlight.clear();
@@ -897,11 +1128,27 @@ void UsenetQueue::dispatch()
     if (!m_running || m_workers.isEmpty())
         return;
 
+    // No usable account configured. nextServableLevel() answers -1 for every
+    // segment in that state, and acting on it would convert the whole queue into
+    // missing articles because the user disabled their servers.
+    if (m_ladder.isEmpty())
+        return;
+
     // A dispatch round that found nothing leasable stays parked until the next
     // tick clears this. Without it, every "no connection available" result would
     // trigger another identical round.
     if (m_starved)
         return;
+
+    // Once per round rather than once per segment, so every segment in a round
+    // sees the same answer and a meter crossing its allowance mid-round cannot
+    // make two articles disagree.
+    refreshQuotaState();
+
+    // Probes first, out of a reserved slice. They are cheap, short-lived and
+    // must not wait for the queue to drain; a Checking item is not in the order
+    // below at all, because isActive() is false for it.
+    dispatchProbes();
 
     // Highest priority first, then insertion order. Sorting the view rather than
     // m_items keeps the queue's own order stable for the GUI.
@@ -911,7 +1158,12 @@ void UsenetQueue::dispatch()
         // postRunning as well as isActive(): the status flips synchronously in
         // beginPostProcessing(), but the flag is what makes it impossible for a
         // second job to be queued for the same item while the first is out.
-        if (rt->item->isActive() && !rt->postRunning)
+        // quotaParked: waiting on a billing day, not on the network. It leaves
+        // the order until a rollover, a usage edit or a config change can change
+        // the answer — otherwise the cursor runs to the end with work still
+        // pending and onTick() rebuilds the whole plan four times a second for
+        // the rest of the month.
+        if (rt->item->isActive() && !rt->postRunning && !rt->quotaParked)
             order.append(rt.get());
     }
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
@@ -926,9 +1178,19 @@ void UsenetQueue::dispatch()
         return a->item->priority > b->item->priority;
     });
 
-    for (int w = 0; w < m_workers.size(); ++w) {
+    // Segments no account can be asked for any more. Resolved after the scan,
+    // never inside it: markSegmentMissing() reaches checkFileCompletion() ->
+    // beginPostProcessing(), which would flip an item `order` still lists as
+    // active. Skipping the completion call instead is worse — the file would
+    // never be finalized and onTick()'s pending test would rebuild its plan four
+    // times a second forever.
+    QList<QPair<ItemRuntime*, quint64>> unservable;
+    bool noMoreWork = false;
+
+    for (int w = 0; w < m_workers.size() && !noMoreWork; ++w) {
         while (m_workerInFlight.at(w) < m_workerCapacity.at(w)) {
             bool dispatched = false;
+            bool rungMismatch = false;
 
             for (ItemRuntime* rt : order) {
                 while (rt->planCursor < rt->plan.size()) {
@@ -953,6 +1215,46 @@ void UsenetQueue::dispatch()
                     const NzbFileInfo& info = rt->item->nzb.files.at(fileIndex);
                     const SegmentAttempt attempt = rt->attempts.value(key);
 
+                    // The rung is derived here, not stored on the attempt: while
+                    // an untried account remains on the current level this comes
+                    // back with the same level, which is what "escalate only when
+                    // every server below said 430" actually means.
+                    bool relaxed = false;
+                    const int level = nextServableLevel(attempt.tried, info.date, relaxed);
+                    if (level < 0) {
+                        unservable.append({rt, key});
+                        ++rt->planCursor;
+                        continue;
+                    }
+
+                    // An allowance is a scheduling filter laid over that verdict,
+                    // never part of it. -1 here means "wait", which is why the
+                    // cursor is left where it is: this segment is the next thing
+                    // to try once the money is there again.
+                    const int payLevel =
+                        nextAffordableLevel(attempt.tried, info.date, level, relaxed);
+                    if (payLevel < 0) {
+                        noteQuotaStall(*rt, attempt.tried, info.date);
+                        break;
+                    }
+
+                    QStringList ignore = attempt.tried;
+                    // Retention is dropped when relaxed; the allowance half never
+                    // is. A spent allowance is a measured fact, not a figure off
+                    // a pricing page.
+                    ignore += dispatchExclusions(payLevel, info.date, !relaxed);
+
+                    // This worker holds no budget on an account this article may
+                    // actually ask — a grouped account's share can divide to zero
+                    // here while another worker still holds it, and an account
+                    // over its allowance is excluded outright. Leave the cursor
+                    // alone and let a worker that does hold one take the segment.
+                    if (w < m_workerServers.size()
+                        && !workerCanServe(w, payLevel, ignore)) {
+                        rungMismatch = true;
+                        break;
+                    }
+
                     UsenetFetchRequest req;
                     req.itemId = rt->item->id;
                     req.fileIndex = fileIndex;
@@ -960,8 +1262,8 @@ void UsenetQueue::dispatch()
                     req.segment = info.segments.at(segIndex);
                     req.targetPath = st.tempPath;
                     req.group = info.groups.isEmpty() ? QString() : info.groups.first();
-                    req.level = attempt.level;
-                    req.ignoreServers = attempt.tried;
+                    req.level = payLevel;
+                    req.ignoreServers = std::move(ignore);
 
                     rt->inFlight.insert(key);
                     ++rt->planCursor;
@@ -979,13 +1281,28 @@ void UsenetQueue::dispatch()
                     dispatched = true;
                     break;
                 }
-                if (dispatched)
+                if (dispatched || rungMismatch)
                     break;
             }
 
-            if (!dispatched)
-                return;   // nothing left to hand out to any worker
+            if (!dispatched) {
+                // A rung this worker cannot serve says nothing about the next
+                // worker; anything else means there is no work left at all.
+                if (!rungMismatch)
+                    noMoreWork = true;
+                break;
+            }
         }
+    }
+
+    for (const auto& [rt, key] : std::as_const(unservable)) {
+        const int fileIndex = int(key >> 32);
+        const int segIndex = int(key & 0xFFFFFFFFu);
+        const NzbFileInfo& info = rt->item->nzb.files.at(fileIndex);
+        markSegmentMissing(*rt, fileIndex, segIndex,
+                           info.segments.at(segIndex).messageId,
+                           tr("no configured server can supply it"));
+        checkFileCompletion(*rt, fileIndex);
     }
 }
 
@@ -995,6 +1312,26 @@ void UsenetQueue::onTick()
 
     m_currentRate = m_bytesThisTick * 1000 / kTickMs;
     m_bytesThisTick = 0;
+
+    // The allowance clock, on the queue's own tick rather than lazily inside
+    // add(). A parked queue is by definition spending nothing, so a check that
+    // only ran when bytes arrived would never fire and a single-account queue
+    // would stay parked past its own billing day forever.
+    //
+    // Flushed on time *and* on volume: statsSaveInterval says how much
+    // measurement an unclean exit may cost, and a minute at 5 MB/s is 300 MB of
+    // prepaid block credit.
+    const uint32 saveInterval = thePrefs.statsSaveInterval();
+    const bool dueByTime = saveInterval > 0
+        && ++m_usageTicks * kTickMs >= int(saveInterval) * 1000;
+    if (dueByTime || m_usage.unflushedBytes() >= kUsageFlushBytes) {
+        m_usageTicks = 0;
+        if (m_usage.rollOverIfDue()) {
+            refreshQuotaState();
+            unparkQuotaStalls();
+        }
+        m_usage.flush();
+    }
 
     for (auto& rt : m_items) {
         if (rt->dirty) {
@@ -1046,6 +1383,14 @@ void UsenetQueue::onTick()
 
 void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result)
 {
+    // First, and above the item lookup below. Bytes spent on an article whose
+    // item was removed mid-flight were still spent, and stopWorkers() delivers
+    // its last results *after* stop() has cleared m_items. Keyed by the id the
+    // result carries rather than by a lookup into m_servers, because
+    // applyServers() replaces that list on every settings save.
+    if (!result.accountId.isEmpty() && result.rawBytes > 0)
+        m_usage.add(result.accountId, result.rawBytes);
+
     if (result.workerIndex >= 0 && result.workerIndex < m_workerInFlight.size()
         && m_workerInFlight.at(result.workerIndex) > 0) {
         m_workerInFlight[result.workerIndex] -= 1;
@@ -1054,6 +1399,17 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result)
     ItemRuntime* rt = runtimeFor(result.itemId);
     if (!rt) {
         // Removed while in flight. Nothing to record.
+        dispatch();
+        return;
+    }
+
+    // A probe answered. Routed here, above everything below, because both of the
+    // terminals below are destructive for a STAT: markSegmentDone() would add
+    // zero decoded bytes, seal the file and start post-processing, and
+    // markSegmentMissing() would set the resolved bit — stopping the article
+    // ever being fetched — and inflate the PAR2 damage estimate at the same time.
+    if (result.probeOnly) {
+        handleProbeResult(*rt, result);
         dispatch();
         return;
     }
@@ -1133,37 +1489,64 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
     const quint64 key = SegmentKey{result.fileIndex, result.segmentIndex}.packed();
     SegmentAttempt attempt = rt.attempts.value(key);
 
+    const qint64 posted = (result.fileIndex >= 0
+                           && result.fileIndex < rt.item->nzb.files.size())
+                              ? rt.item->nzb.files.at(result.fileIndex).date
+                              : 0;
+
     if (escalatesToNextLevel(result.error)) {
-        // This account does not have the article. Move up the ladder and never ask
-        // it again for this one.
+        // This account does not have the article. Record that and nothing else:
+        // the rung is derived from `tried`, so a sibling on the *same* level is
+        // asked next and the ladder only moves up once the level is exhausted.
+        // Incrementing a stored level here is what used to send the first 430
+        // straight to a paid fill server past an idle sibling.
         if (!result.serverKey.isEmpty() && !attempt.tried.contains(result.serverKey))
             attempt.tried.append(result.serverKey);
-        attempt.level += 1;
 
-        if (attempt.level > maxFailoverLevel()) {
+        // nextServableLevel() is quota-blind by construction, so a -1 here means
+        // every account was actually *asked* and said no — an allowance can
+        // never reach this verdict. That is the whole safety property, and it is
+        // why there is no quota test on this branch.
+        bool relaxed = false;
+        if (!m_ladder.isEmpty()
+            && nextServableLevel(attempt.tried, posted, relaxed) < 0) {
             // Genuinely missing everywhere. The file is short; PAR2 repair in
             // phase 4 is what will rescue it. Do not fail the whole item — a
             // release with one dead article is usually still repairable.
-            if (result.fileIndex >= 0 && result.fileIndex < rt.item->files.size())
-                rt.item->files[result.fileIndex].missingSegments += 1;
-
-            if (result.fileIndex >= 0 && result.fileIndex < rt.item->files.size()) {
-                UsenetFileState& st = rt.item->files[result.fileIndex];
-                if (result.segmentIndex >= 0 && result.segmentIndex < st.done.size())
-                    st.done.setBit(result.segmentIndex);   // stop retrying it
-            }
-            rt.attempts.remove(key);
-            rt.dirty = true;
-            logWarning(QStringLiteral("Usenet: article %1 is missing on every server")
-                           .arg(result.messageId));
+            markSegmentMissing(rt, result.fileIndex, result.segmentIndex,
+                               result.messageId, tr("missing on every server"));
             checkFileCompletion(rt, result.fileIndex);
             return;
         }
     } else {
         // A connection fault, not a content one. Stay on this level — the worker
         // has already backed the server off, so a sibling account picks it up.
-        attempt.transportRetries += 1;
-        if (attempt.transportRetries > kMaxTransportRetries) {
+        //
+        // Whose fault it was decides what happens when the budget runs out. A
+        // block or fill account is allowed to be down; the download must not die
+        // with it. An account with no key is a local fault (ArticleWriter failing
+        // to open the target), and that is nobody's block account.
+        const NewsServer* server = serverFor(result.serverKey);
+        const bool blameless = server && server->optional && !m_allServersOptional;
+        if (!blameless)
+            attempt.requiredFailure = true;
+
+        // An account skipped only because it has spent its allowance is a
+        // candidate we chose not to pay for, so this retry was spent against an
+        // artificially narrowed set. Charging it would let a spending limit burn
+        // a budget sized on the premise that a sibling picks the article up.
+        const bool quotaNarrowed = quotaBlockedCandidateExists(attempt.tried);
+        if (!quotaNarrowed)
+            attempt.transportRetries += 1;
+        if (!quotaNarrowed && attempt.transportRetries > kMaxTransportRetries) {
+            if (!attempt.requiredFailure) {
+                // Only optional accounts ever failed here, so the article is
+                // simply unavailable rather than the item being broken.
+                markSegmentMissing(rt, result.fileIndex, result.segmentIndex,
+                                   result.messageId, tr("optional server unavailable"));
+                checkFileCompletion(rt, result.fileIndex);
+                return;
+            }
             rt.item->status = UsenetItemStatus::Failed;
             rt.item->error = result.text.isEmpty() ? describeNntpError(result.error)
                                                    : result.text;
@@ -2029,6 +2412,717 @@ UsenetQueue::ItemRuntime* UsenetQueue::runtimeFor(const QString& id)
     for (auto& rt : m_items) {
         if (rt->item->id == id)
             return rt.get();
+    }
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Private — the failover ladder
+// ---------------------------------------------------------------------------
+
+const NewsServer* UsenetQueue::serverFor(const QString& serverKey) const
+{
+    if (serverKey.isEmpty())
+        return nullptr;
+    for (const NewsServer& s : m_servers) {
+        if (s.key() == serverKey)
+            return &s;
+    }
+    return nullptr;
+}
+
+bool UsenetQueue::retentionCovers(const NewsServer& s, qint64 date)
+{
+    // Both unknowns mean "no opinion", and an article that claims to be from the
+    // future is a broken NZB rather than evidence about the server.
+    if (s.retention <= 0 || date <= 0)
+        return true;
+
+    const qint64 ageDays = (QDateTime::currentSecsSinceEpoch() - date) / 86400;
+    if (ageDays < 0)
+        return true;
+    return ageDays <= s.retention;
+}
+
+int UsenetQueue::lowestUntriedRung(const QStringList& tried, qint64 date, int floorRung,
+                                   bool respectRetention, bool respectQuota) const
+{
+    int best = -1;
+    for (const NewsServer& s : m_servers) {
+        if (!s.enabled || !s.isValid())
+            continue;
+        if (tried.contains(s.key()))
+            continue;
+        if (respectRetention && !retentionCovers(s, date))
+            continue;
+        if (respectQuota && m_overQuota.contains(s.key()))
+            continue;
+
+        const auto rung = m_ladder.indexOf(s.level);
+        if (rung < 0 || int(rung) < floorRung)
+            continue;
+        if (best < 0 || int(rung) < best)
+            best = int(rung);
+    }
+    return best;
+}
+
+int UsenetQueue::nextServableLevel(const QStringList& tried, qint64 date, bool& relaxed) const
+{
+    relaxed = false;
+    if (m_ladder.isEmpty())
+        return -1;
+
+    // respectQuota is false at both call sites of this function, and that is the
+    // whole safety property: this answer is the *exhaustion verdict*, and an
+    // allowance is a spending decision, never evidence about where an article
+    // lives.
+    const int strict = lowestUntriedRung(tried, date, 0, /*retention*/ true, /*quota*/ false);
+    if (strict >= 0)
+        return strict;
+
+    // Nothing anywhere claims to be old enough. Retention is a figure the user
+    // typed off a pricing page, so believing it here would turn a fetchable
+    // article into a missing one — the expensive error. Ask anyway, starting
+    // from the bottom: the last account tried before giving up is the one
+    // retention had skipped.
+    const int fallback = lowestUntriedRung(tried, date, 0, false, false);
+    relaxed = fallback >= 0;
+    return fallback;
+}
+
+int UsenetQueue::nextAffordableLevel(const QStringList& tried, qint64 date, int floorRung,
+                                     bool& relaxed) const
+{
+    if (floorRung < 0 || floorRung >= m_ladder.size())
+        return -1;
+
+    const auto affordableAt = [&](int rung, bool respectRetention) {
+        const int userLevel = m_ladder.at(rung);
+        for (const NewsServer& s : m_servers) {
+            if (!s.enabled || !s.isValid() || s.level != userLevel)
+                continue;
+            if (tried.contains(s.key()) || m_overQuota.contains(s.key()))
+                continue;
+            if (respectRetention && !retentionCovers(s, date))
+                continue;
+            return true;
+        }
+        return false;
+    };
+
+    if (affordableAt(floorRung, true))
+        return floorRung;
+
+    // Same relaxation the ladder makes, one level down and for the same reason:
+    // without it a retention figure and an allowance could empty a rung between
+    // them, and the download would stop dead with nothing to say.
+    if (affordableAt(floorRung, false)) {
+        relaxed = true;
+        return floorRung;
+    }
+
+    // Nothing on this rung can be paid for. Whether to spend the next rung's
+    // money instead is the user's call, not ours — block credit is normally
+    // dearer per GB than the plan it would be covering, so the default is to
+    // wait.
+    const int userLevel = m_ladder.at(floorRung);
+    bool mayFallThrough = false;
+    for (const NewsServer& s : m_servers) {
+        if (!s.enabled || !s.isValid() || s.level != userLevel)
+            continue;
+        if (tried.contains(s.key()) || !m_overQuota.contains(s.key()))
+            continue;
+        if (s.quotaFallThrough) {
+            mayFallThrough = true;
+            break;
+        }
+    }
+    if (!mayFallThrough)
+        return -1;
+
+    const int strictUp = lowestUntriedRung(tried, date, floorRung + 1, true, true);
+    if (strictUp >= 0)
+        return strictUp;
+
+    const int relaxedUp = lowestUntriedRung(tried, date, floorRung + 1, false, true);
+    if (relaxedUp >= 0)
+        relaxed = true;
+    return relaxedUp;
+}
+
+QStringList UsenetQueue::dispatchExclusions(int rung, qint64 date, bool applyRetention) const
+{
+    QStringList out;
+    if (rung < 0 || rung >= m_ladder.size())
+        return out;
+
+    const int userLevel = m_ladder.at(rung);
+    for (const NewsServer& s : m_servers) {
+        if (!s.enabled || !s.isValid() || s.level != userLevel)
+            continue;
+        if (m_overQuota.contains(s.key()) || (applyRetention && !retentionCovers(s, date)))
+            out.append(s.key());
+    }
+    return out;
+}
+
+bool UsenetQueue::workerCanServe(int w, int rung, const QStringList& ignore) const
+{
+    if (w < 0 || w >= m_workerServers.size())
+        return true;   // no slice information: fall back to letting it try
+    if (rung < 0 || rung >= m_ladder.size())
+        return false;
+
+    const QSet<QString>& held = m_workerServers.at(w);
+    const int userLevel = m_ladder.at(rung);
+    for (const NewsServer& s : m_servers) {
+        if (!s.enabled || !s.isValid() || s.level != userLevel)
+            continue;
+        if (held.contains(s.key()) && !ignore.contains(s.key()))
+            return true;
+    }
+    return false;
+}
+
+bool UsenetQueue::quotaBlockedCandidateExists(const QStringList& tried) const
+{
+    for (const NewsServer& s : m_servers) {
+        if (!s.enabled || !s.isValid())
+            continue;
+        if (tried.contains(s.key()))
+            continue;
+        if (m_overQuota.contains(s.key()))
+            return true;
+    }
+    return false;
+}
+
+void UsenetQueue::refreshQuotaState()
+{
+    m_overQuota.clear();
+    if (m_servers.isEmpty())
+        return;
+
+    // Grouped accounts share one meter. `group` already means "one provider
+    // reached through two host names", so the plan behind them is one plan, and
+    // billing each row separately would simply be a wrong number. The allowance
+    // is the smallest one configured in the bucket — the same "smallest member
+    // wins" rule the connection limit uses, and chosen the same way: too high
+    // gets an account suspended.
+    const QHash<QString, NntpConnectionBucket> buckets = nntpConnectionBuckets(m_servers);
+
+    QHash<QString, qint64> spentByBucket;
+    QHash<QString, qint64> allowanceByBucket;
+
+    for (const NewsServer& s : m_servers) {
+        if (!s.enabled || !s.isValid())
+            continue;
+        const QString bucket = buckets.value(s.key()).id;
+        if (bucket.isEmpty())
+            continue;
+
+        spentByBucket[bucket] += m_usage.periodBytes(s.accountId);
+        if (s.isMetered()) {
+            const auto it = allowanceByBucket.constFind(bucket);
+            if (it == allowanceByBucket.constEnd() || s.quotaBytes < *it)
+                allowanceByBucket[bucket] = s.quotaBytes;
+        }
+    }
+
+    QSet<QString> warned;
+    for (const NewsServer& s : m_servers) {
+        if (!s.enabled || !s.isValid())
+            continue;
+        const QString bucket = buckets.value(s.key()).id;
+        const auto allowance = allowanceByBucket.constFind(bucket);
+        if (allowance == allowanceByBucket.constEnd())
+            continue;   // nothing in this bucket is metered
+
+        const qint64 spent = spentByBucket.value(bucket);
+        if (spent >= *allowance) {
+            m_overQuota.insert(s.key());
+            continue;
+        }
+
+        // Warn before it bites, once per bucket per period. A download that
+        // stops at 3 a.m. is a surprise; a line in the log the day before is
+        // the whole difference, and it is worth more than shaving the last
+        // 32 MB off the overshoot.
+        if (spent * 10 >= *allowance * 9 && !m_quotaWarned.contains(bucket)) {
+            warned.insert(bucket);
+            logWarning(QStringLiteral("Usenet: %1 has used %2% of its allowance")
+                           .arg(s.displayName())
+                           .arg(*allowance > 0 ? spent * 100 / *allowance : 0));
+        }
+    }
+
+    // Recomputed, not accumulated: a rollover or a correction drops the bucket
+    // back under 90% and the warning is armed again for the new period.
+    for (auto it = m_quotaWarned.begin(); it != m_quotaWarned.end();) {
+        const qint64 spent = spentByBucket.value(*it);
+        const auto allowance = allowanceByBucket.constFind(*it);
+        if (allowance == allowanceByBucket.constEnd() || spent * 10 < *allowance * 9)
+            it = m_quotaWarned.erase(it);
+        else
+            ++it;
+    }
+    m_quotaWarned.unite(warned);
+}
+
+void UsenetQueue::noteQuotaStall(ItemRuntime& rt, const QStringList& tried, qint64 date)
+{
+    rt.quotaParked = true;
+
+    // When the item comes back is the only useful half of the sentence, so work
+    // it out from the accounts that are actually blocking *this* article. A
+    // block account has no answer — it needs a top-up, not a wait.
+    QDate soonest;
+    bool blockOnly = true;
+    const QDate today = QDate::currentDate();
+
+    for (const NewsServer& s : m_servers) {
+        if (!s.enabled || !s.isValid() || tried.contains(s.key()))
+            continue;
+        if (!m_overQuota.contains(s.key()) || !retentionCovers(s, date))
+            continue;
+        if (s.quotaKind != NntpQuotaKind::Monthly)
+            continue;
+
+        blockOnly = false;
+        const QDate next = nntpQuotaNextReset(s.quotaResetDay, today);
+        if (next.isValid() && (!soonest.isValid() || next < soonest))
+            soonest = next;
+    }
+
+    rt.item->stalledReason = (!blockOnly && soonest.isValid())
+        ? tr("allowance spent, resumes %1").arg(soonest.toString(Qt::ISODate))
+        : tr("allowance spent — add credit or raise the limit");
+
+    // The stall is re-evaluated four times a second; unguarded this line would
+    // fill log.log inside an hour.
+    if (!m_quotaStallLogged) {
+        m_quotaStallLogged = true;
+        logWarning(QStringLiteral("Usenet: %1 is waiting — %2")
+                       .arg(rt.item->name, rt.item->stalledReason));
+    }
+
+    emit itemChanged(rt.item->id);
+}
+
+void UsenetQueue::unparkQuotaStalls()
+{
+    m_quotaStallLogged = false;
+    for (auto& rt : m_items) {
+        if (!rt->quotaParked)
+            continue;
+        rt->quotaParked = false;
+        rt->item->stalledReason.clear();
+        emit itemChanged(rt->item->id);
+    }
+}
+
+void UsenetQueue::markSegmentMissing(ItemRuntime& rt, int fileIndex, int segmentIndex,
+                                     const QString& messageId, const QString& reason)
+{
+    if (fileIndex < 0 || fileIndex >= rt.item->files.size())
+        return;
+
+    UsenetFileState& st = rt.item->files[fileIndex];
+    if (segmentIndex >= 0 && segmentIndex < st.done.size()) {
+        if (st.done.testBit(segmentIndex))
+            return;                       // already resolved; do not double-count
+        st.done.setBit(segmentIndex);     // resolved, not arrived — stop asking
+    }
+    st.missingSegments += 1;
+
+    rt.attempts.remove(SegmentKey{fileIndex, segmentIndex}.packed());
+    rt.dirty = true;
+
+    logWarning(QStringLiteral("Usenet: article %1 unavailable — %2")
+                   .arg(messageId, reason));
+}
+
+// ---------------------------------------------------------------------------
+// Availability probe
+//
+// "Does anybody still have this?", asked with STAT before a single article is
+// paid for. The rule it lives under, and the reason it can only ever pause an
+// item rather than fail one, is in docs/usenet-module.md beside its two
+// siblings: retention falls back to asking anyway, an allowance falls back to
+// waiting, and a health check falls back to downloading anyway.
+//
+// The ladder functions are reused verbatim — nextServableLevel(),
+// lowestUntriedRung(), nextAffordableLevel(), dispatchExclusions(),
+// workerCanServe(). That reuse *is* the correctness argument: a 430 appends to
+// `tried` and the rung is re-derived, so "unavailable" can only ever mean every
+// rung refused it. Deriving it any other way would be writing the ladder twice.
+// ---------------------------------------------------------------------------
+
+bool UsenetQueue::beginHealthCheck(ItemRuntime& rt)
+{
+    clearHealthCheck(rt);
+
+    const auto mode = usenetHealthCheckFromInt(thePrefs.usenetHealthCheck());
+    if (mode == UsenetHealthCheck::Off)
+        return false;
+
+    // Every one of these means "no verdict", never "do not download". A probe
+    // that cannot run must cost nothing, not even a tick.
+    if (!m_running || m_workers.isEmpty() || m_ladder.isEmpty())
+        return false;
+
+    const UsenetQueueItem& item = *rt.item;
+    for (int f = 0; f < item.nzb.files.size(); ++f) {
+        const NzbFileInfo& info = item.nzb.files.at(f);
+        if (info.segments.isEmpty())
+            continue;
+
+        if (mode == UsenetHealthCheck::Full) {
+            for (int seg = 0; seg < info.segments.size(); ++seg)
+                rt.checkPlan.append(SegmentKey{f, seg}.packed());
+            continue;
+        }
+
+        // One article stands for its file. Providers expire by post date and
+        // every article of one posted file carries that date, so a file is
+        // overwhelmingly present or absent as a unit.
+        rt.checkPlan.append(SegmentKey{f, 0}.packed());
+    }
+
+    if (mode == UsenetHealthCheck::Sample && rt.checkPlan.size() > kMaxSampleProbes)
+        rt.checkPlan.resize(kMaxSampleProbes);
+
+    if (rt.checkPlan.isEmpty())
+        return false;
+
+    rt.checkResumeStatus = rt.item->status;
+    rt.item->status = UsenetItemStatus::Checking;
+    rt.item->stalledReason = tr("checking availability");
+    emit itemChanged(rt.item->id);
+    return true;
+}
+
+void UsenetQueue::dispatchProbes()
+{
+    for (int w = 0; w < m_workers.size(); ++w) {
+        if (w >= m_workerCapacity.size() || w >= m_workerInFlight.size())
+            break;
+
+        const int reserved = std::max(1, m_workerCapacity.at(w) / kProbeCapacityDivisor);
+        int spent = 0;
+
+        while (spent < reserved && m_workerInFlight.at(w) < m_workerCapacity.at(w)) {
+            bool dispatched = false;
+
+            for (auto& owner : m_items) {
+                ItemRuntime* rt = owner.get();
+                if (rt->item->status != UsenetItemStatus::Checking)
+                    continue;
+
+                while (rt->checkCursor < rt->checkPlan.size()) {
+                    const quint64 key = rt->checkPlan.at(rt->checkCursor);
+                    const int fileIndex = int(key >> 32);
+                    const int segIndex = int(key & 0xFFFFFFFFu);
+
+                    if (rt->checkInFlight.contains(key)
+                        || fileIndex >= rt->item->nzb.files.size()) {
+                        ++rt->checkCursor;
+                        continue;
+                    }
+
+                    const NzbFileInfo& info = rt->item->nzb.files.at(fileIndex);
+                    if (segIndex >= info.segments.size()) {
+                        ++rt->checkCursor;
+                        continue;
+                    }
+
+                    const SegmentAttempt attempt = rt->checkAttempts.value(key);
+
+                    bool relaxed = false;
+                    const int level = nextServableLevel(attempt.tried, info.date, relaxed);
+                    if (level < 0) {
+                        // Every account has now refused it. That is the only
+                        // thing "unavailable" is ever allowed to mean.
+                        const qint64 weight = probeWeight(*rt, fileIndex, segIndex);
+                        rt->checkProbedBytes += weight;
+                        rt->checkMissingBytes += weight;
+                        rt->checkMissingFiles.insert(fileIndex);
+                        ++rt->checkCursor;
+                        continue;
+                    }
+
+                    // An allowance is not worth spending on advice. Skipping
+                    // leaves the article unprobed — no verdict about it, which is
+                    // the honest answer and costs nothing.
+                    const int payLevel =
+                        nextAffordableLevel(attempt.tried, info.date, level, relaxed);
+                    if (payLevel < 0) {
+                        ++rt->checkCursor;
+                        continue;
+                    }
+
+                    QStringList ignore = attempt.tried;
+                    ignore += dispatchExclusions(payLevel, info.date, !relaxed);
+
+                    if (w < m_workerServers.size() && !workerCanServe(w, payLevel, ignore))
+                        break;   // another worker holds this rung
+
+                    UsenetFetchRequest req;
+                    req.itemId = rt->item->id;
+                    req.fileIndex = fileIndex;
+                    req.segmentIndex = segIndex;
+                    req.segment = info.segments.at(segIndex);
+                    req.group = info.groups.isEmpty() ? QString() : info.groups.first();
+                    req.level = payLevel;
+                    req.ignoreServers = std::move(ignore);
+                    req.probeOnly = true;
+                    // targetPath deliberately left empty: nothing is written, and
+                    // the worker skips the mkpath and the open entirely.
+
+                    rt->checkInFlight.insert(key);
+                    ++rt->checkCursor;
+                    m_workerInFlight[w] += 1;
+                    ++spent;
+                    dispatched = true;
+
+                    QMetaObject::invokeMethod(
+                        m_workers.at(w), "fetchSegment", Qt::QueuedConnection,
+                        Q_ARG(eMule::usenet::UsenetFetchRequest, req));
+                    break;
+                }
+
+                if (dispatched)
+                    break;
+            }
+
+            if (!dispatched)
+                break;
+        }
+    }
+
+    // Resolved after the scan, never inside it: finishHealthCheck() changes the
+    // status of an item the loop above is still walking.
+    QList<ItemRuntime*> done;
+    for (auto& owner : m_items) {
+        ItemRuntime* rt = owner.get();
+        if (rt->item->status == UsenetItemStatus::Checking
+            && rt->checkInFlight.isEmpty()
+            && rt->checkCursor >= rt->checkPlan.size()) {
+            done.append(rt);
+        }
+    }
+    for (ItemRuntime* rt : std::as_const(done))
+        finishHealthCheck(*rt);
+}
+
+void UsenetQueue::handleProbeResult(ItemRuntime& rt, const UsenetFetchResult& result)
+{
+    const quint64 key = SegmentKey{result.fileIndex, result.segmentIndex}.packed();
+    rt.checkInFlight.remove(key);
+
+    if (rt.item->status != UsenetItemStatus::Checking)
+        return;   // recheck superseded, or the item moved on
+
+    const qint64 weight = probeWeight(rt, result.fileIndex, result.segmentIndex);
+
+    if (result.error == NntpError::None) {
+        rt.checkProbedBytes += weight;
+        rt.checkAttempts.remove(key);
+        return;
+    }
+
+    if (result.noServerAvailable) {
+        // Nothing leasable. Not an answer about the article — put it back and
+        // let the next round ask.
+        rt.checkPlan.insert(qBound(0, rt.checkCursor, int(rt.checkPlan.size())), key);
+        m_starved = true;
+        return;
+    }
+
+    SegmentAttempt attempt = rt.checkAttempts.value(key);
+
+    if (escalatesToNextLevel(result.error)) {
+        if (!result.serverKey.isEmpty() && !attempt.tried.contains(result.serverKey))
+            attempt.tried.append(result.serverKey);
+
+        const NzbFileInfo* info = result.fileIndex >= 0
+                                          && result.fileIndex < rt.item->nzb.files.size()
+                                      ? &rt.item->nzb.files.at(result.fileIndex)
+                                      : nullptr;
+        bool relaxed = false;
+        if (info && nextServableLevel(attempt.tried, info->date, relaxed) >= 0) {
+            // A sibling or a higher rung is still untried. One account saying no
+            // is what the ladder exists to survive, and calling it "unavailable"
+            // here would report 0% on releases that download perfectly.
+            rt.checkAttempts.insert(key, attempt);
+            rt.checkPlan.insert(qBound(0, rt.checkCursor, int(rt.checkPlan.size())), key);
+            return;
+        }
+
+        rt.checkProbedBytes += weight;
+        rt.checkMissingBytes += weight;
+        rt.checkMissingFiles.insert(result.fileIndex);
+        rt.checkAttempts.remove(key);
+        return;
+    }
+
+    // A transport fault says nothing about the article — the connection broke,
+    // the server was busy, the credential was wrong. Retry, and on giving up
+    // record **no opinion** rather than a shortfall: a provider having a bad
+    // minute must not read as a dead release.
+    attempt.transportRetries += 1;
+    if (attempt.transportRetries > kMaxTransportRetries) {
+        rt.checkAttempts.remove(key);
+        return;
+    }
+    rt.checkAttempts.insert(key, attempt);
+    rt.checkPlan.insert(qBound(0, rt.checkCursor, int(rt.checkPlan.size())), key);
+}
+
+void UsenetQueue::finishHealthCheck(ItemRuntime& rt)
+{
+    UsenetQueueItem& item = *rt.item;
+
+    // Both halves, combined into the one number a user can act on: articles the
+    // NZB never listed, and articles no account still holds.
+    const NzbShortfall nzbShort = item.nzb.shortfall();
+
+    UsenetHealthVerdict verdict;
+    verdict.probed = rt.checkProbedBytes > 0;
+    verdict.missingBytes = nzbShort.missingBytes + rt.checkMissingBytes;
+
+    // Recovery data the probe did not find missing. A volume the servers no
+    // longer hold repairs nothing, so counting it would make a dead release look
+    // rescuable.
+    for (int f = 0; f < item.nzb.files.size(); ++f) {
+        const NzbFileInfo& info = item.nzb.files.at(f);
+        if (info.isPar2Volume() && !rt.checkMissingFiles.contains(f))
+            verdict.recoveryBytes += info.encodedBytes();
+    }
+
+    const qint64 claimed = item.nzb.totalEncodedBytes() + nzbShort.missingBytes;
+    if (claimed > 0) {
+        const qint64 obtainable = std::max<qint64>(0, claimed - verdict.missingBytes);
+        verdict.percent = int(obtainable * 100 / claimed);
+    } else {
+        verdict.percent = 100;
+    }
+
+    item.healthPercent = verdict.percent;
+    item.healthMissingBytes = verdict.missingBytes;
+    item.healthRecoveryBytes = verdict.recoveryBytes;
+    item.healthProbed = verdict.probed;
+
+    const UsenetItemStatus resumeTo = rt.checkResumeStatus;
+    clearHealthCheck(rt);
+
+    const int threshold = thePrefs.usenetHealthMinPercent();
+    const bool short_ = threshold > 0 && verdict.percent < threshold
+                        && !verdict.likelyRecoverable();
+
+    if (short_) {
+        // Paused, never failed and never refused: the figure is a guess about
+        // articles nobody can ask a second question about, and the user is the
+        // only actor allowed to act on it. Resuming downloads the release
+        // exactly as if this had never run.
+        item.status = UsenetItemStatus::Paused;
+        item.stalledReason = tr("only %1% of this release looks available")
+                                 .arg(verdict.percent);
+        logWarning(QStringLiteral("Usenet: \"%1\" paused before downloading — "
+                                  "%2% available, %3 short, %4 recovery")
+                       .arg(item.name)
+                       .arg(verdict.percent)
+                       .arg(verdict.missingBytes)
+                       .arg(verdict.recoveryBytes));
+    } else {
+        // Back to where it was, not unconditionally to Queued: a recheck of a
+        // paused item must leave it paused. Asking a question about something is
+        // not a decision to start it.
+        item.status = resumeTo;
+        item.stalledReason.clear();
+        if (verdict.probed) {
+            logInfo(QStringLiteral("Usenet: \"%1\" checked out at %2%")
+                        .arg(item.name)
+                        .arg(verdict.percent));
+        }
+    }
+
+    rt.dirty = true;
+    persist(rt);
+    emit itemChanged(item.id);
+}
+
+void UsenetQueue::clearHealthCheck(ItemRuntime& rt) const
+{
+    rt.checkPlan.clear();
+    rt.checkCursor = 0;
+    rt.checkInFlight.clear();
+    rt.checkAttempts.clear();
+    rt.checkProbedBytes = 0;
+    rt.checkMissingBytes = 0;
+    rt.checkMissingFiles.clear();
+}
+
+qint64 UsenetQueue::probeWeight(const ItemRuntime& rt, int fileIndex, int segIndex) const
+{
+    if (fileIndex < 0 || fileIndex >= rt.item->nzb.files.size())
+        return 0;
+    const NzbFileInfo& info = rt.item->nzb.files.at(fileIndex);
+
+    // In Full mode every article is asked about, so each stands for itself. In
+    // Sample mode one article stands for its whole file, and weighting it as one
+    // article would make a dead 4 GB volume look like a rounding error.
+    if (usenetHealthCheckFromInt(thePrefs.usenetHealthCheck()) == UsenetHealthCheck::Full) {
+        return segIndex >= 0 && segIndex < info.segments.size()
+                   ? info.segments.at(segIndex).bytes
+                   : 0;
+    }
+    return info.encodedBytes();
+}
+
+const UsenetQueueItem* UsenetQueue::findDuplicate(const NzbInfo& nzb, const QString& name,
+                                                  UsenetAddSource source, QString& why) const
+{
+    const QString digest = nzbArticleDigest(nzb);
+    if (digest.isEmpty())
+        return nullptr;   // nothing to compare on; never a reason to refuse
+
+    const QString key = nzbReleaseKey(name, nzb.totalEncodedBytes());
+    const UsenetQueueItem* softMatch = nullptr;
+
+    for (const auto& rt : m_items) {
+        const UsenetQueueItem* item = rt->item.get();
+
+        if (item->articleDigest != digest) {
+            // A repost carries fresh message-ids, so only the soft key can see
+            // it. Remembered and reported at the end, never acted on: the key is
+            // a folded name plus a size, and two releases can honestly share both.
+            if (softMatch == nullptr && !key.isEmpty() && item->releaseKey == key)
+                softMatch = item;
+            continue;
+        }
+
+        // Literally the same articles from literally the same servers.
+        const bool finished = item->status == UsenetItemStatus::Complete;
+        if (finished && source == UsenetAddSource::Manual) {
+            // Re-downloading something on purpose is a thing people do — the
+            // same call Ed2kLinkImporter makes for a completed eD2K file. A feed
+            // asking for it again is a mistake, and that case is refused below.
+            return nullptr;
+        }
+
+        // No em dash: AddNzbUrlDialog splits its failure lines on " — ".
+        why = finished
+                  ? tr("\"%1\" has already been downloaded.").arg(item->name)
+                  : tr("\"%1\" is already in the queue.").arg(item->name);
+        return item;
+    }
+
+    if (softMatch != nullptr) {
+        logInfo(QStringLiteral("Usenet: \"%1\" looks like a repost of \"%2\" "
+                               "(same name and size, different articles) — adding it anyway")
+                    .arg(name, softMatch->name));
     }
     return nullptr;
 }

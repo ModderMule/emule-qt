@@ -37,6 +37,10 @@ signals:
     /// Emitted when web server configuration has changed via SetPreferences.
     void webServerConfigChanged();
 
+    /// The user asked for the web template to be re-read. Same forwarding route
+    /// as webServerConfigChanged, but reloads in place instead of restarting.
+    void webTemplateReloadRequested();
+
     /// The news-server list changed; the daemon should re-apply it to the
     /// connection pool. Same forwarding route as webServerConfigChanged.
     void usenetConfigChanged();
@@ -121,6 +125,7 @@ private:
     void handleOpenDownloadFolder(const Ipc::IpcMessage& msg);
     void handleMarkSearchSpam(const Ipc::IpcMessage& msg);
     void handleResetStats(const Ipc::IpcMessage& msg);
+    void handleReloadWebTemplate(const Ipc::IpcMessage& msg);
     void handleRestoreStats(const Ipc::IpcMessage& msg);
 
     // The only two handlers that answer after their call returns: both wait on a
@@ -147,13 +152,19 @@ private:
     void handleStopIndexerSearch(const Ipc::IpcMessage& msg);
     void handleRemoveIndexerSearch(const Ipc::IpcMessage& msg);
     void handleGrabIndexerResult(const Ipc::IpcMessage& msg);
+    void handleGetIndexerFeeds(const Ipc::IpcMessage& msg);
+    void handleSetIndexerFeeds(const Ipc::IpcMessage& msg);
+    void handlePollIndexerFeedNow(const Ipc::IpcMessage& msg);
 
     // Usenet (720-799)
     void handleGetNewsServers(const Ipc::IpcMessage& msg);
     void handleSetNewsServers(const Ipc::IpcMessage& msg);
     void handleTestNewsServer(const Ipc::IpcMessage& msg);
+    void handleSetNewsServerUsage(const Ipc::IpcMessage& msg);
     void handleGetUsenetQueue(const Ipc::IpcMessage& msg);
     void handleAddNzb(const Ipc::IpcMessage& msg);
+    void handleAddNzbUrl(const Ipc::IpcMessage& msg);
+    void handleCheckUsenetItem(const Ipc::IpcMessage& msg);
     void handleRemoveUsenetItem(const Ipc::IpcMessage& msg);
     void handlePauseUsenetItem(const Ipc::IpcMessage& msg);
     void handleResumeUsenetItem(const Ipc::IpcMessage& msg);
@@ -169,6 +180,7 @@ private:
     void handleGetServerState(const Ipc::IpcMessage& msg);
     void handleGetServerMessages(const Ipc::IpcMessage& msg);
     void handleSearchKadNotes(const Ipc::IpcMessage& msg);
+    void handleSetFileComment(const Ipc::IpcMessage& msg);
     void handleGetCollectionInfo(const Ipc::IpcMessage& msg);
     void handleSaveCollection(const Ipc::IpcMessage& msg);
 
@@ -199,6 +211,13 @@ private:
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;
     bool m_handshaked = false;
+    /// NZB downloads this connection has in flight. Bounded so a paste of a
+    /// thousand lines cannot turn the daemon into a port scanner — that, rather
+    /// than any single fetch, is what makes an operator-supplied URL worth
+    /// capping.
+    int m_nzbUrlFetchesInFlight = 0;
+    static constexpr int kMaxNzbUrlFetches = 4;
+
     int m_subscriptionMask = 0;
 };
 

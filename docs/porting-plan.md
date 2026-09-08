@@ -249,7 +249,7 @@ Phase 5 (complete):
 - [x] Part availability aggregation in `KnownFile::updatePartsInfo()` — client part-status aggregation
 - [x] `updateFileRatingCommentAvail()` in KnownFile, PartFile, CollectionFile — Kad notes cache
 - [x] File completion integration — DownloadQueue signal-based SharedFileList/KnownFileList add
-- [x] `loadComment()` — QSettings-based filecomments.ini loading
+- [x] `loadComment()` / `saveComment()` — MFC's `fileinfo.ini` layout (`[MD4 hex]` `Comment=`/`Rate=`); see `docs/file-comments.md`
 - [x] `createSrcInfoPacket()` — ED2K source info packet builder
 - [x] `getWords()` enhancement — min 3 UTF-8 bytes, dedup, extension removal
 
@@ -448,7 +448,7 @@ Replace MFC custom controls with Qt equivalents.
 - [x] Port `FileDetailDialog.cpp/h` + info/name/statistics variants → `QDialog` — `gui/dialogs/FileDetailDialog.h/.cpp` (7 tabs: General, File Names, Comments, Media Info, Metadata, ED2K Link, Archive Preview)
 - [x] Port `FileInfoDialog.cpp/h` → integrated as Media Info tab in FileDetailDialog
 - [x] Port `MetaDataDlg.cpp/h` → integrated as Metadata tab in FileDetailDialog (ED2K tag table)
-- [x] Port `CommentDialog.cpp/h` / `CommentDialogLst.cpp/h` → integrated as Comments tab in FileDetailDialog
+- [x] Port `CommentDialog.cpp/h` / `CommentDialogLst.cpp/h` → `CommentEditPanel` (IDD_COMMENT) on `CommentsPanel` (IDD_COMMENTLST), both in the Comments tab of FileDetailDialog
 - [x] Port `ClientDetailDialog.cpp/h` → `QDialog` — `gui/dialogs/ClientDetailDialog.h/.cpp`
 - [x] Port `CatDialog.cpp/h` → `QDialog` — `gui/dialogs/CategoryDialog.h/.cpp` (per-category incoming dirs, autocat, colour, priority; see `docs/categories.local.md`)
 - [x] Port `AddFriend.cpp/h` → `QDialog` — `gui/dialogs/AddFriendDialog.h/.cpp`

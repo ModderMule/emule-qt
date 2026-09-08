@@ -35,7 +35,9 @@
 #include "nntp/NewsServer.h"
 #include "post/UsenetDirectUnpack.h"
 #include "post/UsenetPostProcessor.h"
+#include "queue/UsenetHealth.h"
 #include "queue/UsenetQueueItem.h"
+#include "queue/UsenetUsage.h"
 #include "queue/UsenetWorker.h"
 #include "stream/UsenetStreamIndex.h"
 
@@ -89,7 +91,25 @@ public:
 
     /// Parse @p data and queue it. Returns the new item id, or an empty string
     /// with @p error set.
-    QString addNzb(const QByteArray& data, const QString& name, QString& error);
+    ///
+    /// @p source decides which existing items refuse a re-add. A release that is
+    /// still downloading is refused either way; a *completed* one is refused
+    /// only for an automatic add, because re-downloading something deliberately
+    /// is a thing people do and a thing feeds should not. Same split, and the
+    /// same reasoning, as Ed2kLinkImporter::Source.
+    /// @p outcome, when given, says *why* — which is what lets an automatic
+    /// caller stop retrying something it already has.
+    QString addNzb(const QByteArray& data, const QString& name, QString& error,
+                   UsenetAddSource source = UsenetAddSource::Manual,
+                   UsenetAddOutcome* outcome = nullptr);
+
+    /// Re-run the availability probe for @p id. A release queued a week ago is a
+    /// different question from the one answered when it was added.
+    ///
+    /// Returns false when the item is unknown, is not in a state that can be
+    /// probed, or when nothing could be asked — never an error the user has to
+    /// act on, because a probe that cannot run simply produces no verdict.
+    bool recheckItem(const QString& id);
 
     bool removeItem(const QString& id, bool deleteFiles);
     bool pauseItem(const QString& id);
@@ -222,8 +242,24 @@ public:
     [[nodiscard]] qint64 currentRate() const { return m_currentRate; }
 
     /// Whether anything is actually downloading, i.e. whether Usenet needs a
-    /// share of the budget at all.
+    /// share of the budget at all. An item parked on a spent allowance does not
+    /// count: it is not downloading and reserving a share of the line for it
+    /// would take bandwidth away from ED2K for as long as the quota lasts.
     [[nodiscard]] bool hasActiveDownloads() const;
+
+    /// Per-account byte meters. Read for the IPC report; written only here.
+    [[nodiscard]] const UsenetUsageTracker& usage() const { return m_usage; }
+
+    /// Whether @p s has spent its allowance. Grouped accounts share one meter:
+    /// `group` already means "one provider reached two ways", so the plan behind
+    /// those host names is one plan and two meters would simply be a wrong
+    /// number.
+    [[nodiscard]] bool isOverQuota(const NewsServer& s) const;
+
+    /// Correct one account's meter — a plan change, a block top-up, or our
+    /// count disagreeing with the provider's. -1 leaves a figure alone. Unparks
+    /// anything the old figure had stalled.
+    bool setAccountUsage(const QString& accountId, qint64 periodBytes, qint64 totalBytes);
 
 signals:
     /// Progress or state moved. Coalesced by the daemon before it reaches a GUI.
@@ -247,13 +283,26 @@ private:
         }
     };
 
-    /// Failover position of a segment that has already failed at least once.
-    /// Segments with no entry are at level 0 with nothing excluded, which is the
-    /// overwhelmingly common case — so this stays small even for a huge release.
+    /// What has already been tried for a segment that failed at least once.
+    /// Segments with no entry have tried nothing, which is the overwhelmingly
+    /// common case — so this stays small even for a huge release.
+    ///
+    /// **The failover rung is deliberately not stored.** It is derived from
+    /// `tried` by nextServableLevel() on every dispatch, which is what makes
+    /// "escalate only when every account on this level said 430" true by
+    /// construction: while an untried sibling remains, the same rung comes back.
+    /// A stored rung has to be incremented by somebody, and the somebody
+    /// incremented it on the *first* 430.
     struct SegmentAttempt {
-        int level = 0;
         QStringList tried;
         int transportRetries = 0;
+
+        /// Whether any account blamed for a transport fault here was one the
+        /// download is allowed to depend on. Optional accounts are not: a block
+        /// or fill account being down must not fail the item. Per segment rather
+        /// than per attempt, because successive retries reach different accounts
+        /// and one required failure anywhere has to keep the failing outcome.
+        bool requiredFailure = false;
     };
 
     /// One archive set being extracted while the item still downloads.
@@ -298,6 +347,53 @@ private:
         /// A job is with the post-processing thread. Nothing may dispatch for
         /// this item, and no second job may start, until it comes back.
         bool postRunning = false;
+
+        /// Every account that could still serve this item's next article has
+        /// spent its allowance. The item leaves the dispatch order until a
+        /// rollover, a usage edit or a config change can change the answer —
+        /// without that the plan cursor reaches the end with work still pending
+        /// and onTick() rebuilds the whole plan four times a second until the
+        /// billing day. Runtime only.
+        bool quotaParked = false;
+
+        // -- Availability probe -------------------------------------------
+        //
+        // A whole second key space, deliberately. Sharing `plan` / `planCursor`
+        // / `inFlight` / `attempts` looks obvious and is destructive: they are
+        // keyed by SegmentKey::packed(), so a probe and a fetch for the same
+        // article become mutually exclusive; dispatch() skips any segment whose
+        // done bit is set, so a probe could never look at anything already
+        // downloaded; and both terminals are wrong for a probe.
+        // markSegmentDone() would seal empty files and start post-processing on
+        // a STAT, and markSegmentMissing() sets the done bit *and* increments
+        // missingSegments — simultaneously stopping the article from ever being
+        // fetched and inflating the PAR2 damage estimate. The ladder functions
+        // are stateless and are reused; this state is not.
+        //
+        // All of it is runtime only. No probe survives a restart, and re-probing
+        // on every start would spend round trips to re-learn advice.
+        QList<quint64> checkPlan;
+        int checkCursor = 0;
+        QSet<quint64> checkInFlight;
+        QHash<quint64, SegmentAttempt> checkAttempts;
+
+        /// What to put the item back to when the probe finishes cleanly.
+        ///
+        /// Not always Queued: a recheck of a *paused* item must leave it paused.
+        /// Un-pausing something the user paused, as a side effect of asking a
+        /// question about it, would be the probe deciding something.
+        UsenetItemStatus checkResumeStatus = UsenetItemStatus::Queued;
+
+        /// Bytes each answered probe stood for, and how many of those no account
+        /// would serve. In Sample mode one article stands for its whole file, so
+        /// the weight is the file's; in Full mode it is the article's own.
+        qint64 checkProbedBytes = 0;
+        qint64 checkMissingBytes = 0;
+
+        /// Files with at least one article no account would serve. A recovery
+        /// volume in here cannot repair anything, so it stops counting towards
+        /// the recovery total.
+        QSet<int> checkMissingFiles;
 
         /// Somebody is streaming this item until at least this instant, so it
         /// sorts ahead of the priority field in dispatch(). Runtime only, never
@@ -449,7 +545,124 @@ private:
     void persist(ItemRuntime& rt);
 
     [[nodiscard]] ItemRuntime* runtimeFor(const QString& id);
-    [[nodiscard]] int maxFailoverLevel() const { return m_maxLevel; }
+    /// The configured account for @p serverKey, or null when it is gone.
+    [[nodiscard]] const NewsServer* serverFor(const QString& serverKey) const;
+
+    /// Whether @p s can plausibly still hold an article posted at @p date.
+    ///
+    /// Fails safe in every direction: an unknown date (0), an unknown retention
+    /// (0), a future date and a nonsense date all answer true. Retention is a
+    /// figure the user copied off a pricing page, not a protocol fact, so the
+    /// only safe error is to ask anyway.
+    [[nodiscard]] static bool retentionCovers(const NewsServer& s, qint64 date);
+
+    /// The rung to ask next for an article posted at @p date, given the accounts
+    /// in @p tried. -1 means the ladder is exhausted.
+    ///
+    /// @p relaxed is set when the answer was only reachable by ignoring the
+    /// configured retention figures — the caller then sends no retention
+    /// exclusions, so a wrong figure can never be the reason an article is
+    /// declared missing. The relaxed search restarts at rung 0, deliberately: the
+    /// last account tried before giving up is the one retention had skipped.
+    [[nodiscard]] int nextServableLevel(const QStringList& tried, qint64 date,
+                                        bool& relaxed) const;
+
+    /// Lowest rung at or above @p floorRung holding an untried account that
+    /// passes the requested filters, or -1.
+    ///
+    /// The one scan both ladder questions use. That nextServableLevel() passes
+    /// `respectQuota = false` is a structural guarantee rather than a comment:
+    /// no quota state can reach the exhaustion verdict, so a spent allowance can
+    /// never be the reason an article is declared missing.
+    /// Put @p rt into Checking and build its probe plan, or leave it alone and
+    /// return false. Returning false is the normal, safe outcome: the engine may
+    /// be stopped, no account may be configured, or the mode may be Off, and
+    /// none of those may delay a download by a millisecond.
+    bool beginHealthCheck(ItemRuntime& rt);
+
+    /// Hand probe requests to the workers, from a reserved slice of their
+    /// capacity. Reserved rather than leftover: a busy queue never has leftover
+    /// slots, and a Checking item would then wait for the whole queue to drain.
+    void dispatchProbes();
+
+    void handleProbeResult(ItemRuntime& rt, const UsenetFetchResult& result);
+
+    /// Turn the answers into a verdict and let the item go — to Queued, or to
+    /// Paused with a reason when the shortfall is past the threshold and the
+    /// recovery volumes cannot cover it. Never to Failed.
+    void finishHealthCheck(ItemRuntime& rt);
+
+    void clearHealthCheck(ItemRuntime& rt) const;
+
+    /// How many bytes one probe of this article stands for.
+    [[nodiscard]] qint64 probeWeight(const ItemRuntime& rt, int fileIndex,
+                                     int segIndex) const;
+
+    /// The queued item @p nzb would duplicate, or null. @p why is filled with a
+    /// sentence for the user when one is returned.
+    ///
+    /// ⚠️ The sentence must not contain " — ": AddNzbUrlDialog formats a failed
+    /// line as "<url> — <reason>" and recovers the URL with section(" — ", 0, 0),
+    /// so an em-dash-space inside the reason silently corrupts its retry list.
+    [[nodiscard]] const UsenetQueueItem* findDuplicate(const NzbInfo& nzb,
+                                                       const QString& name,
+                                                       UsenetAddSource source,
+                                                       QString& why) const;
+
+    [[nodiscard]] int lowestUntriedRung(const QStringList& tried, qint64 date, int floorRung,
+                                        bool respectRetention, bool respectQuota) const;
+
+    /// The rung this queue may actually *spend* on, at or above @p floorRung.
+    ///
+    /// -1 means every remaining candidate is over its allowance — a **wait**,
+    /// never a verdict, which is the whole difference from nextServableLevel().
+    /// @p relaxed is promoted to true when retention had to be ignored to find
+    /// one, so a retention guess can no more stall the queue than it can strand
+    /// an article.
+    [[nodiscard]] int nextAffordableLevel(const QStringList& tried, qint64 date,
+                                          int floorRung, bool& relaxed) const;
+
+    /// Accounts on @p rung that must not be asked for this article: over
+    /// allowance always, retention-uncovered only when @p applyRetention.
+    ///
+    /// The quota half is never relaxed — an over-quota account is a measured
+    /// fact, not a figure off a pricing page.
+    [[nodiscard]] QStringList dispatchExclusions(int rung, qint64 date,
+                                                 bool applyRetention) const;
+
+    /// Whether worker @p w holds connection budget on an account at @p rung that
+    /// is not in @p ignore. Subsumes the old rung-coverage test — with nothing
+    /// excluded it answers exactly what m_workerLevels did — and additionally
+    /// stops a worker being handed an article it can only bounce.
+    [[nodiscard]] bool workerCanServe(int w, int rung, const QStringList& ignore) const;
+
+    /// Whether an untried account exists that is only being skipped because it
+    /// has spent its allowance.
+    ///
+    /// While one does, a failure is not final: the article is reachable and we
+    /// are merely choosing not to pay for it. Both of handleSegmentFailure()'s
+    /// terminal transitions gate on this, because neither consults
+    /// nextServableLevel() and either would otherwise turn a spending limit into
+    /// a missing article or a failed item.
+    [[nodiscard]] bool quotaBlockedCandidateExists(const QStringList& tried) const;
+
+    /// Recompute the over-allowance set. Cheap (16 accounts at most) and done
+    /// once per dispatch round rather than once per segment, so every segment in
+    /// a round sees the same answer.
+    void refreshQuotaState();
+
+    /// Park @p rt and say why, once per stall rather than four times a second.
+    void noteQuotaStall(ItemRuntime& rt, const QStringList& tried, qint64 date);
+
+    /// Let every parked item try again — a rollover, a usage edit or a config
+    /// change happened, so the answer can have changed.
+    void unparkQuotaStalls();
+
+    /// Record a segment as resolved-but-absent and say why. The `done` bit means
+    /// resolved, so this is what stops the scheduler asking again; PAR2 repair is
+    /// what recovers the bytes.
+    void markSegmentMissing(ItemRuntime& rt, int fileIndex, int segmentIndex,
+                            const QString& messageId, const QString& reason);
 
     // std::vector, not QList: QList requires copyable elements and ItemRuntime
     // holds a unique_ptr.
@@ -462,7 +675,50 @@ private:
 
     QList<NewsServer> m_servers;
     int m_retryIntervalSec = 60;
-    int m_maxLevel = 0;
+
+    /// Distinct configured levels, ascending — the failover ladder. A level's
+    /// index here is its rung. Built by nntpLevelLadder() from the same list and
+    /// the same predicate every worker's pool uses, so the two cannot number the
+    /// rungs differently.
+    QList<int> m_ladder;
+
+    /// Every usable account is optional, so there is no "elsewhere" to try and
+    /// the flag means nothing. Without this a lone optional account being down
+    /// would mark every article missing and publish a silently ruined release
+    /// instead of failing legibly.
+    bool m_allServersOptional = false;
+
+    /// Rungs each worker can actually lease on. A grouped account's divided
+    /// share can be zero on most workers, and a worker asked for a rung it does
+    /// not hold answers "no server available" — indistinguishable from busy, and
+    /// it bounces every tick.
+    QList<QSet<int>> m_workerLevels;
+
+    /// The accounts behind those rungs. A rung is only worth giving a worker an
+    /// article for when the worker holds budget on an account there that this
+    /// article may ask — and a spent allowance changes that without changing any
+    /// slice, which is why the rung set alone is not enough.
+    QList<QSet<QString>> m_workerServers;
+
+    /// Per-account byte meters, and the sidecar behind them.
+    UsenetUsageTracker m_usage;
+
+    /// Keys of accounts that have spent their allowance. Recomputed per dispatch
+    /// round and **never** written into SegmentAttempt::tried, so a rollover or
+    /// a raised cap takes effect on the very next dispatch with no state to
+    /// migrate.
+    QSet<QString> m_overQuota;
+
+    /// Ticks since the last usage flush, and whether the "everything is over its
+    /// allowance" line has already been logged for the current stall. The stall
+    /// re-evaluates four times a second; unguarded it would fill log.log.
+    int m_usageTicks = 0;
+    bool m_quotaStallLogged = false;
+
+    /// Buckets already warned at 90% of their allowance, so the line is said
+    /// once rather than four times a second. Cleared when the figure drops back
+    /// under — a rollover or a correction re-arms it for the new period.
+    QSet<QString> m_quotaWarned;
 
     QThread* m_postThread = nullptr;
     UsenetPostProcessor* m_postProcessor = nullptr;

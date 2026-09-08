@@ -43,11 +43,16 @@ private slots:
     void segmentBytesAreEncodedSize();
     void messageIdBracketsAreStripped();
     void passwordComesFromMetaTag();
+    void nameComesFromMetaTag();
+    void metaNameDoesNotDisturbThePassword();
     void namespaceIsIgnored();
     void htmlErrorPageIsRejected();
     void malformedXmlIsRejected();
     void fileWithNoSegmentsIsSkipped();
     void completenessNeedsEveryPart();
+    void anNzbShortOfArticlesReportsTheShortfall();
+    void anObfuscatedPostWithNoPartCounterIsNotCalledIncomplete();
+    void recoveryVolumeBytesAreCountedSeparately();
     void par2FilesAreRecognised();
     void passwordFromFileName();
     void parseFileSeedsTheName();
@@ -147,6 +152,39 @@ void tst_UsenetNzbParse::passwordComesFromMetaTag()
     QCOMPARE(info.password, QStringLiteral("letmein"));
 }
 
+void tst_UsenetNzbParse::nameComesFromMetaTag()
+{
+    // Until this existed, parse() set no name at all -- only parseFile() did,
+    // from the file path. So an NZB arriving over IPC or from a URL always fell
+    // through to "Usenet download" even when it said what it was.
+    NzbInfo info;
+    QString error;
+    QVERIFY(NzbFile::parse(QByteArrayLiteral(R"NZB(<?xml version="1.0"?>
+<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">
+  <head>
+    <meta type="name">Some.Release-GRP</meta>
+  </head>
+  <file poster="t" date="1700000000" subject="&quot;a.bin&quot; yEnc (1/1)">
+    <groups><group>alt.binaries.test</group></groups>
+    <segments><segment bytes="10" number="1">m1@x</segment></segments>
+  </file>
+</nzb>
+)NZB"), info, error));
+    QCOMPARE(info.name, QStringLiteral("Some.Release-GRP"));
+}
+
+void tst_UsenetNzbParse::metaNameDoesNotDisturbThePassword()
+{
+    // Two metas in one head, read by the same branch. The sample carries a
+    // password and no name, so this also pins that an absent name stays absent
+    // rather than picking up the password's value.
+    NzbInfo info;
+    QString error;
+    QVERIFY(NzbFile::parse(sampleNzb(), info, error));
+    QCOMPARE(info.password, QStringLiteral("letmein"));
+    QVERIFY(info.name.isEmpty());
+}
+
 void tst_UsenetNzbParse::namespaceIsIgnored()
 {
     // Real NZBs carry the newzbin namespace, a wrong one, or none. Refusing any
@@ -224,6 +262,96 @@ void tst_UsenetNzbParse::completenessNeedsEveryPart()
     // honestly be said.
     file.partsTotal = 0;
     QVERIFY(file.hasAllSegments());
+}
+
+void tst_UsenetNzbParse::anNzbShortOfArticlesReportsTheShortfall()
+{
+    NzbInfo info;
+
+    NzbFileInfo whole;
+    whole.subject = QStringLiteral("\"a.r00\" yEnc (1/4)");
+    whole.partsTotal = 4;
+    whole.segments = {{QStringLiteral("a1"), 100, 1}, {QStringLiteral("a2"), 100, 2},
+                      {QStringLiteral("a3"), 100, 3}, {QStringLiteral("a4"), 100, 4}};
+
+    // The indexer never saw parts 3 and 4. Nothing here says the articles are
+    // gone from the servers -- only that this NZB cannot ask for them.
+    NzbFileInfo short_;
+    short_.subject = QStringLiteral("\"a.r01\" yEnc (1/4)");
+    short_.partsTotal = 4;
+    short_.segments = {{QStringLiteral("b1"), 200, 1}, {QStringLiteral("b2"), 200, 2}};
+
+    info.files = {whole, short_};
+
+    const NzbShortfall sf = info.shortfall();
+    QCOMPARE(sf.listedSegments, 6);
+    QCOMPARE(sf.missingSegments, 2);
+    // Priced at the short file's own mean (200), not the release's (150).
+    QCOMPARE(sf.missingBytes, qint64(400));
+    QCOMPARE(sf.unknownFiles, 0);
+    QCOMPARE(sf.percent(), 75);
+    QVERIFY(!sf.likelyRecoverable());
+}
+
+void tst_UsenetNzbParse::anObfuscatedPostWithNoPartCounterIsNotCalledIncomplete()
+{
+    // The normal shape of an obfuscated post: no readable name, no (n/m). It is
+    // the case that most needs a health figure and the one a naive
+    // segments/partsTotal ratio reads as 0% -- partsTotal is zero, so the ratio
+    // divides by nothing and the release looks entirely absent.
+    NzbInfo info;
+    NzbFileInfo obf;
+    obf.subject = QStringLiteral("aH3k9x2m yEnc");
+    obf.partsTotal = 0;
+    obf.segments = {{QStringLiteral("o1"), 100, 1}, {QStringLiteral("o2"), 100, 2}};
+    info.files = {obf};
+
+    const NzbShortfall sf = info.shortfall();
+    QCOMPARE(sf.missingSegments, 0);
+    QCOMPARE(sf.listedSegments, 2);
+    QCOMPARE(sf.percent(), 100);
+
+    // But "no opinion" is recorded rather than silently reported as certainty:
+    // 100% with unknownFiles set is a different statement from 100% without it.
+    QCOMPARE(sf.unknownFiles, 1);
+}
+
+void tst_UsenetNzbParse::recoveryVolumeBytesAreCountedSeparately()
+{
+    NzbInfo info;
+
+    NzbFileInfo payload;
+    payload.subject = QStringLiteral("\"a.r00\" yEnc (1/4)");
+    payload.fileName = QStringLiteral("a.r00");
+    payload.partsTotal = 4;
+    payload.segments = {{QStringLiteral("p1"), 100, 1}, {QStringLiteral("p2"), 100, 2},
+                        {QStringLiteral("p3"), 100, 3}};
+
+    // A recovery volume, not the index: par2RecoveryBlocks() reads the +NN.
+    NzbFileInfo vol;
+    vol.subject = QStringLiteral("\"a.vol000+10.par2\" yEnc (1/1)");
+    vol.fileName = QStringLiteral("a.vol000+10.par2");
+    vol.partsTotal = 1;
+    vol.segments = {{QStringLiteral("v1"), 5000, 1}};
+
+    // The index file carries no recovery data and must not be counted as if it did.
+    NzbFileInfo index;
+    index.subject = QStringLiteral("\"a.par2\" yEnc (1/1)");
+    index.fileName = QStringLiteral("a.par2");
+    index.partsTotal = 1;
+    index.segments = {{QStringLiteral("i1"), 900, 1}};
+
+    info.files = {payload, vol, index};
+
+    const NzbShortfall sf = info.shortfall();
+    QCOMPARE(sf.missingSegments, 1);
+    QCOMPARE(sf.missingBytes, qint64(100));
+    QCOMPARE(sf.recoveryBytes, qint64(5000));
+
+    // 100 bytes short against 5000 bytes of recovery: the percentage alone would
+    // call this damaged, which is why the verdict is not the percentage.
+    QVERIFY(sf.percent() < 100);
+    QVERIFY(sf.likelyRecoverable());
 }
 
 void tst_UsenetNzbParse::par2FilesAreRecognised()

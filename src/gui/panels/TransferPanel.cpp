@@ -118,15 +118,6 @@ constexpr int PrNormal  = 1;
 constexpr int PrHigh    = 2;
 constexpr int PrVeryHigh = 3;
 
-/// A menu icon from the original eMule resources, or none when the user has
-/// turned them off. Every context menu in this panel needs the same rule.
-[[nodiscard]] QIcon menuIcon(const char* res)
-{
-    return thePrefs.useOriginalIcons()
-               ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
-               : QIcon();
-}
-
 // ---------------------------------------------------------------------------
 // CategoryFilterProxy — filters downloads by category
 // ---------------------------------------------------------------------------
@@ -1176,6 +1167,11 @@ void TransferPanel::requestDownloads()
             row.acceptedRequests  = m.value(QStringLiteral("acceptedReqs")).toInteger();
             row.transferredData   = m.value(QStringLiteral("transferredData")).toInteger();
             row.isPreviewPossible = m.value(QStringLiteral("isPreviewPossible")).toBool();
+            row.hasComment        = m.value(QStringLiteral("hasComment")).toBool();
+            row.userRating        = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
+            row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
+            row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
+            row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
             if (auto partArr = m.value(QStringLiteral("partMap")).toArray(); !partArr.isEmpty()) {
                 row.partMap.resize(static_cast<qsizetype>(partArr.size()));
                 for (qsizetype i = 0; i < partArr.size(); ++i)
@@ -1616,6 +1612,7 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
         connectEd2kLinkRequests(dlg, m_ipc);
         connectKadNotesSearch(dlg, m_ipc, IpcMsgType::GetDownloadDetails);
         connectCommentFilter(dlg, m_ipc);
+        connectCommentPosting(dlg, m_ipc);
         dlg->setWalker(makeDownloadWalker(hash));
         connectDetailNavigation(dlg, m_ipc, IpcMsgType::GetDownloadDetails);
         dlg->show();
@@ -2098,7 +2095,7 @@ void TransferPanel::showCategoryMenu(int tabIndex, const QPoint& globalPos)
                    [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Pause); });
     menu.addAction(menuIcon("Stop.ico"), tr("Stop"), this,
                    [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Stop); });
-    menu.addAction(menuIcon("Resume.ico"), tr("Resume"), this,
+    menu.addAction(menuIcon("Start.ico"), tr("Resume"), this,
                    [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Resume); });
     menu.addAction(menuIcon("Delete.ico"), tr("Cancel"), this, [this, index] {
         // MFC asks first (IDS_Q_CANCELDL) and so does this: the action deletes

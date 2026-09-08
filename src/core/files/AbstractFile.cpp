@@ -5,9 +5,11 @@
 #include "files/AbstractFile.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
+#include "utils/Opcodes.h"
+#include "utils/SettingsUtils.h"
 
 #include <QObject>
-#include <QSettings>
+#include <QStringList>
 
 
 namespace eMule {
@@ -180,31 +182,44 @@ void AbstractFile::loadComment()
 {
     m_commentLoaded = true;
 
-    const QString iniPath = thePrefs.configDir() + QStringLiteral("/filecomments.ini");
-    if (!QFile::exists(iniPath))
-        return;
+    // MFC CAbstractFile::LoadComment (srchybrid/AbstractFile.cpp:126): one section
+    // per file in fileinfo.ini, named by the MD4 hex hash, keys "Comment" (UTF-8)
+    // and "Rate". Same layout as the original client, so an eMule config directory
+    // can be used as-is.
+    //
+    // Deliberately does not touch m_hasComment: that flag is the *aggregate* over
+    // peers and Kad notes, owned by updateFileRatingCommentAvail(). Setting it from
+    // your own comment made a file you commented briefly claim someone else had,
+    // until the next recompute wiped it. Your own comment shows as the
+    // FileCommentsOvl mark instead. MFC's LoadComment leaves it alone too.
+    Settings ini(thePrefs.fileCommentsFilePath());
+    const QString section = encodeBase16({fileHash(), 16}) + QLatin1Char('/');
 
-    QSettings settings(iniPath, QSettings::IniFormat);
-    const QString key = encodeBase16({fileHash(), 16});
-    const QString value = settings.value(key).toString();
-    if (value.isEmpty())
-        return;
+    // Read as a list and re-join, never as a plain QString. A comment the original
+    // client wrote is bare text, and a bare comma is QSettings' list separator — so
+    // "german audio, full length" parses as two elements and converts to an *empty*
+    // QString, silently losing every comment that has a comma in it. Reading it as
+    // the list QSettings thinks it is and joining it back is lossless either way: a
+    // value we wrote ourselves comes back quoted, hence as a single element.
+    m_comment = ini.value<QStringList>(section + QStringLiteral("Comment"))
+                    .join(QStringLiteral(", "))
+                    .left(MAXFILECOMMENTLEN);
 
-    // Format: "rating|comment"
-    const auto sepIdx = value.indexOf(u'|');
-    if (sepIdx < 0)
-        return;
+    const uint rate = ini.value<uint>(section + QStringLiteral("Rate"), 0u);
+    m_rating = (rate <= 5) ? rate : 0;
+}
 
-    bool ok = false;
-    const uint32 rating = value.left(sepIdx).toUInt(&ok);
-    if (ok && rating <= 5)
-        m_rating = rating;
+void AbstractFile::saveComment() const
+{
+    // The write half of loadComment(); the two are adjacent because they are the
+    // only code that knows the on-disk layout. Both keys go out together: every
+    // caller runs the lazy getters first, so the in-memory pair is always whole.
+    Settings ini(thePrefs.fileCommentsFilePath());
+    const QString section = encodeBase16({fileHash(), 16}) + QLatin1Char('/');
 
-    const QString comment = value.mid(sepIdx + 1);
-    if (!comment.isEmpty()) {
-        m_comment = comment;
-        m_hasComment = true;
-    }
+    ini.setValue(section + QStringLiteral("Comment"), m_comment);
+    ini.setValue(section + QStringLiteral("Rate"), static_cast<uint>(m_rating));
+    ini.sync();
 }
 
 void AbstractFile::setKadCommentSearchRunning(bool val)

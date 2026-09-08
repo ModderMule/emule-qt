@@ -35,6 +35,7 @@ static void unixSignalHandler(int)
 #include "app/MainWindow.h"
 #include "app/PowerManager.h"
 #include "app/UiState.h"
+#include "utils/FileAssociation.h"
 #include "dialogs/ClientSharedFilesDialog.h"
 #include "dialogs/CoreConnectDialog.h"
 #include "controls/LogWidget.h"
@@ -165,6 +166,12 @@ int main(int argc, char* argv[])
     const QString configDir = eMule::AppConfig::configDir();
     eMule::CrashHandler::install(configDir + QStringLiteral("/crashes"));
 
+    // --register-file-types / --unregister-file-types: do the one thing and go.
+    // Before the splash screen and before any IPC, because a packager's
+    // post-install script has no display and no daemon.
+    if (cli.handleFileTypeRegistration())
+        return 0;
+
     const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
     eMule::thePrefs.load(prefsPath);
 
@@ -200,8 +207,29 @@ int main(int argc, char* argv[])
     }
 
     // Seed bundled config data (webserver assets, template, nodes.dat)
-    eMule::AppConfig::seedBundledData(configDir);
+    if (const auto seed = eMule::AppConfig::seedBundledData(configDir);
+        seed.seeded || seed.refreshed || seed.conflicts || seed.pruned) {
+        eMule::logInfo(QStringLiteral("Bundled data: %1 seeded, %2 refreshed, %3 kept with local "
+                               "edits, %4 removed")
+                    .arg(seed.seeded).arg(seed.refreshed).arg(seed.conflicts).arg(seed.pruned));
+    }
     eMule::theUiState.load(configDir);
+
+    // Applied at every start, not only the first: idempotent, so it takes the
+    // association back from an application that took it away, and removes it
+    // promptly when the user turns the setting off.
+    if (eMule::gui::FileAssociation::isRuntimeRegistration()) {
+        QString assocError;
+        const bool assocOk = eMule::theUiState.associateNzbFiles()
+                                 ? eMule::gui::FileAssociation::registerNzbFileType(assocError)
+                                 : eMule::gui::FileAssociation::unregisterNzbFileType(assocError);
+        if (!assocOk) {
+            // Never fatal, and never a dialog: a desktop that will not take the
+            // association is not a reason to refuse to start.
+            eMule::logWarning(QStringLiteral("Could not update the .nzb file association: %1")
+                                  .arg(assocError));
+        }
+    }
 
     // Splash screen
     QSplashScreen* splash = nullptr;
@@ -651,7 +679,7 @@ int main(int argc, char* argv[])
 
     // Handle ed2k:// positional args and --screenshot/--options. The macOS Apple Event
     // route is already live — linkHandler went up before the splash screen.
-    cli.handleEd2kLinks(linkHandler);
+    cli.handleOpenArguments(linkHandler, mainWindow);
     cli.setupScreenshotTimer(app, mainWindow);
 
     const int result = QApplication::exec();

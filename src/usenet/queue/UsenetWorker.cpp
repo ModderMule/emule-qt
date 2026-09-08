@@ -95,18 +95,24 @@ void UsenetWorker::fetchSegment(UsenetFetchRequest request)
     auto job = std::make_unique<Job>();
     job->request = std::move(request);
 
-    // The directory is created here rather than by the queue because a user can
-    // delete the temp tree while the daemon runs, and the next article should
-    // recreate it instead of failing every remaining segment.
-    QDir().mkpath(QFileInfo(job->request.targetPath).absolutePath());
+    // A probe writes nothing, so it skips both of the steps below. They run
+    // *before* the connection is leased, so a probe that branched any later
+    // would create a directory and an empty file for every article it merely
+    // asked about.
+    if (!job->request.probeOnly) {
+        // The directory is created here rather than by the queue because a user can
+        // delete the temp tree while the daemon runs, and the next article should
+        // recreate it instead of failing every remaining segment.
+        QDir().mkpath(QFileInfo(job->request.targetPath).absolutePath());
 
-    job->writer = std::make_unique<ArticleWriter>();
-    QString error;
-    if (!job->writer->open(job->request.targetPath, error)) {
-        Job* raw = job.release();
-        m_jobs.append(raw);
-        finishJob(raw, NntpError::ProtocolError, error);
-        return;
+        job->writer = std::make_unique<ArticleWriter>();
+        QString error;
+        if (!job->writer->open(job->request.targetPath, error)) {
+            Job* raw = job.release();
+            m_jobs.append(raw);
+            finishJob(raw, NntpError::ProtocolError, error);
+            return;
+        }
     }
 
     NntpSocket* socket = m_pool->acquire(job->request.level, job->request.ignoreServers);
@@ -184,7 +190,10 @@ void UsenetWorker::startJob(Job* job)
             });
 
     const QString group = job->socket->server().joinGroup ? job->request.group : QString();
-    job->fetcher->fetch(job->socket, job->request.segment, job->writer.get(), group);
+    if (job->request.probeOnly)
+        job->fetcher->stat(job->socket, job->request.segment, group);
+    else
+        job->fetcher->fetch(job->socket, job->request.segment, job->writer.get(), group);
 }
 
 void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
@@ -202,15 +211,24 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
     result.error = error;
     result.text = text;
     result.noServerAvailable = job->noServerAvailable;
+    result.probeOnly = job->request.probeOnly;
 
-    if (job->socket)
+    if (job->socket) {
         result.serverKey = job->socket->server().key();
+        result.accountId = job->socket->server().accountId;
+        // Before release(): the socket goes back in the pool and the next job
+        // would otherwise take these bytes. Covers the whole job, so a lease
+        // that had to connect and authenticate first charges that to the
+        // account that opened it, exactly once.
+        result.rawBytes = job->socket->takeBytesRead();
+    }
 
     if (job->fetcher) {
         result.decodedBytes = job->fetcher->decodedBytes();
         result.decodedOffset = job->fetcher->decodedOffset();
         result.articleFileName = job->fetcher->articleFileName();
         result.declaredFileSize = job->fetcher->declaredFileSize();
+        result.articleExists = job->fetcher->articleExists();
     }
 
     if (job->writer) {
@@ -267,28 +285,36 @@ void UsenetWorker::applyRateLimits()
     // Divide this worker's share across its live sockets. Re-run on every acquire
     // and release so a shrinking set of connections gets the whole share rather
     // than throttling itself against sockets that are no longer reading.
-    const int live = int(m_jobsBySocket.size());
+    //
+    // Probes are excluded from the divisor and left unlimited. A STAT response is
+    // one status line — sixty bytes, which needs no token bucket — but counting
+    // it would shrink every concurrent download's share for as long as the probe
+    // held a connection. A health check that slowed the downloads down would be
+    // paying for itself twice.
+    int live = 0;
+    for (auto it = m_jobsBySocket.cbegin(); it != m_jobsBySocket.cend(); ++it) {
+        if (it.value() && !it.value()->request.probeOnly)
+            ++live;
+    }
     const qint64 perSocket = (m_rateLimit <= 0 || live <= 0)
                                  ? 0
                                  : std::max<qint64>(1, m_rateLimit / live);
 
     for (auto it = m_jobsBySocket.cbegin(); it != m_jobsBySocket.cend(); ++it) {
-        if (it.key())
-            it.key()->setReadRateLimit(perSocket);
+        if (!it.key())
+            continue;
+        const bool probe = it.value() && it.value()->request.probeOnly;
+        it.key()->setReadRateLimit(probe ? 0 : perSocket);
     }
 }
 
 int UsenetWorker::computeCapacity() const
 {
-    if (!m_pool)
-        return 0;
-
-    int capacity = 0;
-    for (const auto& server : m_pool->servers()) {
-        if (server.enabled && server.isValid())
-            capacity += std::max(0, server.maxConnections);
-    }
-    return capacity;
+    // The pool's own answer, not a sum over rows: grouped accounts share one
+    // budget, so two hostnames of one provider must count once. Summing rows
+    // would have the queue dispatch more work than this worker can lease, and
+    // every excess job would come straight back as noServerAvailable.
+    return m_pool ? m_pool->capacity() : 0;
 }
 
 } // namespace eMule::usenet

@@ -88,6 +88,18 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
     out << YAML::Key << "name" << YAML::Value << toStd(item.name);
     out << YAML::Key << "status" << YAML::Value << int(item.status);
     out << YAML::Key << "priority" << YAML::Value << item.priority;
+    // Optional keys, and kStateVersion deliberately does not move for them:
+    // load() *refuses* a sidecar newer than it knows, so a bump would make an
+    // older daemon drop the whole queue rather than lose one advisory figure.
+    // Same call already made for requestedPar2 and partLength.
+    if (item.healthPercent >= 0) {
+        out << YAML::Key << "healthPercent" << YAML::Value << item.healthPercent;
+        out << YAML::Key << "healthMissingBytes" << YAML::Value
+            << static_cast<long long>(item.healthMissingBytes);
+        out << YAML::Key << "healthRecoveryBytes" << YAML::Value
+            << static_cast<long long>(item.healthRecoveryBytes);
+        out << YAML::Key << "healthProbed" << YAML::Value << item.healthProbed;
+    }
     if (!item.requestedPar2.isEmpty()) {
         QList<int> requested(item.requestedPar2.cbegin(), item.requestedPar2.cend());
         std::sort(requested.begin(), requested.end());   // stable file, readable diffs
@@ -165,9 +177,13 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
     out << YAML::EndSeq;
     out << YAML::EndMap;
 
-    const QString finalPath = statePath(item.id);
-    const QString tempPath = finalPath + QStringLiteral(".backup");
-    const QString bakPath = finalPath + QStringLiteral(".bak");
+    return writeSidecarAtomically(statePath(item.id), out.c_str());
+}
+
+bool writeSidecarAtomically(const QString& path, const char* text)
+{
+    const QString tempPath = path + QStringLiteral(".backup");
+    const QString bakPath = path + QStringLiteral(".bak");
 
     {
         std::ofstream file(tempPath.toStdString(), std::ios::out | std::ios::trunc);
@@ -175,7 +191,7 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
             logError(QStringLiteral("Usenet: cannot write %1").arg(tempPath));
             return false;
         }
-        file << out.c_str();
+        file << text;
         if (!file.good()) {
             logError(QStringLiteral("Usenet: write failed for %1").arg(tempPath));
             return false;
@@ -183,14 +199,14 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
     }
 
     QFile::remove(bakPath);
-    if (QFile::exists(finalPath)) {
-        if (!QFile::rename(finalPath, bakPath))
-            QFile::remove(finalPath);
+    if (QFile::exists(path)) {
+        if (!QFile::rename(path, bakPath))
+            QFile::remove(path);
     }
-    if (!QFile::rename(tempPath, finalPath)) {
-        logError(QStringLiteral("Usenet: rename failed %1 -> %2").arg(tempPath, finalPath));
+    if (!QFile::rename(tempPath, path)) {
+        logError(QStringLiteral("Usenet: rename failed %1 -> %2").arg(tempPath, path));
         if (QFile::exists(bakPath))
-            QFile::rename(bakPath, finalPath);
+            QFile::rename(bakPath, path);
         return false;
     }
 
@@ -224,6 +240,15 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
         out.name = fromStd(root, "name");
         out.status = static_cast<UsenetItemStatus>(root["status"] ? root["status"].as<int>(0) : 0);
         out.priority = root["priority"] ? root["priority"].as<int>(0) : 0;
+        // Absent in a sidecar written before the health check existed, and
+        // absent is harmless: -1 means "not assessed", which is what an item
+        // that was never probed should say.
+        out.healthPercent = root["healthPercent"] ? root["healthPercent"].as<int>(-1) : -1;
+        out.healthMissingBytes =
+            root["healthMissingBytes"] ? root["healthMissingBytes"].as<long long>(0) : 0;
+        out.healthRecoveryBytes =
+            root["healthRecoveryBytes"] ? root["healthRecoveryBytes"].as<long long>(0) : 0;
+        out.healthProbed = root["healthProbed"] ? root["healthProbed"].as<bool>(false) : false;
         out.error = fromStd(root, "error");
         out.nzb.name = out.name;
         out.nzb.password = fromStd(root, "password");
@@ -306,8 +331,14 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
         // the tick notices, and post-processing starts again from the top. Every
         // stage is idempotent, and re-verifying costs far less than reasoning
         // about a repair that was halfway through.
-        if (out.status == UsenetItemStatus::Downloading || out.isPostProcessing())
+        //
+        // Checking joins them, for a slightly different reason: no probe survives
+        // a restart either, and re-probing on every start would spend round trips
+        // re-learning something advisory. The stored healthPercent is kept.
+        if (out.status == UsenetItemStatus::Downloading
+            || out.status == UsenetItemStatus::Checking || out.isPostProcessing()) {
             out.status = UsenetItemStatus::Queued;
+        }
 
         return true;
     } catch (const YAML::Exception& e) {

@@ -19,6 +19,7 @@
 <meta charset="[CharSet]">
 <link rel="icon" href="favicon.ico">
 <link rel="stylesheet" href="sprites.css">
+<link rel="stylesheet" href="sprite-rating.css">
 <title>[eMuleAppName] [version] - [WebControl]</title>
 <style>
 body {
@@ -89,6 +90,7 @@ form { display: inline; }
 <meta http-equiv="pragma" content="no-cache">
 <link rel="icon" href="favicon.ico">
 <link rel="stylesheet" href="sprites.css">
+<link rel="stylesheet" href="sprite-rating.css">
 <title>[eMuleAppName] [version] - [WebControl]</title>
 [StyleSheet]
 <script>
@@ -578,7 +580,10 @@ img { border: 0; }
  <td class="left">
   <span class="icon icon-[DownloadStatus]" style="vertical-align:middle"></span>
   &nbsp;
-  <span class="icon icon-file" style="vertical-align:middle"></span>
+  <span class="icon icon-filetype_[DownloadFileType]" style="vertical-align:middle"></span>
+  <span class="icon icon-rating_[DownloadFake]" style="vertical-align:middle" title="[DownloadFakeTitle]"></span>
+  <span class="icon icon-is_[DownloadCommentIcon]" style="vertical-align:middle" title="[DownloadRatingTitle]"></span>
+  <span class="icon icon-rating_[DownloadRating]" style="vertical-align:middle" title="[DownloadRatingTitle]"></span>
   &nbsp;[DownloadFileName]
  </td>
  <td class="right">[DownloadFileSize]</td>
@@ -792,7 +797,10 @@ img { border: 0; }
 <--TMPL_SHARED_LINE-->
 <tr oncontextmenu="sharedmenu(event,'[SharedED2kLink]')">
  <td class="left">
-  <span class="icon icon-file" style="vertical-align:middle"></span>
+  <span class="icon icon-filetype_[SharedFileType]" style="vertical-align:middle"></span>
+  <span class="icon icon-rating_[SharedFake]" style="vertical-align:middle" title="[SharedFakeTitle]"></span>
+  <span class="icon icon-is_[SharedCommentIcon]" style="vertical-align:middle" title="[SharedRatingTitle]"></span>
+  <span class="icon icon-rating_[SharedRating]" style="vertical-align:middle" title="[SharedRatingTitle]"></span>
   &nbsp;[SharedFileName]
  </td>
  <td class="right">[SharedFileSize]</td>
@@ -1099,6 +1107,7 @@ img { border: 0; }
  <meta charset="[CharSet]">
  <link rel="icon" href="favicon.ico">
  <link rel="stylesheet" href="sprites.css">
+<link rel="stylesheet" href="sprite-rating.css">
  <title>Comments</title>
  <style>
   body { font-family: Tahoma, sans-serif; font-size: 8pt; background: #005784; color: #fff; }

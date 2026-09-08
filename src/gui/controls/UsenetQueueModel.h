@@ -37,6 +37,11 @@ enum class UsenetRowStatus : int {
     Verifying = 5,
     Repairing = 6,
     Unpacking = 7,
+
+    /// Asking the servers whether they still hold the release, before anything
+    /// is spent on it. Not a download: an item here is deliberately not counted
+    /// as active by the daemon's bandwidth split either.
+    Checking = 8,
 };
 
 /// Whether the item is in the post-processing pipeline rather than downloading.
@@ -91,6 +96,21 @@ struct UsenetItemRow {
     int postPercent = 0;
     QString postDetail;
 
+    /// Why a queued item is standing still — an allowance spent, a probe still
+    /// running. Shown in the Status column the way postDetail is, and
+    /// deliberately not `error`: waiting for a billing day has failed nothing.
+    QString stalledReason;
+
+    /// How much of the release looks obtainable. **-1 means not assessed**,
+    /// which is not the same as 100 and must never render as it.
+    int healthPercent = -1;
+    qint64 healthMissingBytes = 0;
+    qint64 healthRecoveryBytes = 0;
+
+    /// Whether a server was actually asked. False means the figure is the NZB's
+    /// own arithmetic — a weaker claim, and the tooltip says so.
+    bool healthProbed = false;
+
     QList<UsenetFileRow> files;
 
     /// Bytes per second, derived by the model from consecutive updates. The
@@ -115,6 +135,13 @@ public:
         ColSpeed,
         ColRemaining,
         ColPriority,
+
+        /// Its own column rather than another clause on the Status cascade,
+        /// which is first-match-wins: a health clause appended there would be
+        /// invisible on exactly the failed, post-processing and stalled items
+        /// where it is most worth reading.
+        ColHealth,
+
         ColCount
     };
 

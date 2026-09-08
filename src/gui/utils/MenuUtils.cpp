@@ -4,11 +4,22 @@
 
 #include "utils/MenuUtils.h"
 
+#include "prefs/Preferences.h"
+
 #include <QAction>
 #include <QFont>
+#include <QLatin1String>
 #include <QMenu>
+#include <QString>
 
 namespace eMule {
+
+QIcon menuIcon(const char* resource)
+{
+    if (!resource || !thePrefs.useOriginalIcons())
+        return {};
+    return QIcon(QStringLiteral(":/icons/") + QLatin1String(resource));
+}
 
 void setMenuDefaultAction(QMenu* menu, QAction* action)
 {

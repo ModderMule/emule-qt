@@ -627,12 +627,10 @@ void tst_KadLiveNetwork::setupSharedFiles()
              qPrintable(QStringLiteral("Only %1/%2 files hashed")
                             .arg(addedSpy.count()).arg(copied)));
 
-    // Pre-write a comment/rating for the first shared file into filecomments.ini.
-    // This must happen before any test calls getFileRating()/getFileComment(),
-    // because loadComment() caches the result on first access.  If the INI entry
-    // doesn't exist yet, the cached value would be empty and later writes won't
-    // be picked up (m_commentLoaded stays true).
-    const QString iniPath = thePrefs.configDir() + QStringLiteral("/filecomments.ini");
+    // Seed a comment/rating on the first shared file, so the notes publish has
+    // something to say. The setters write fileinfo.ini and the in-memory pair in one
+    // step, so loadComment()'s first-access caching can no longer strand a stale
+    // empty value the way a hand-written INI could.
     QDir().mkpath(thePrefs.configDir());
     KnownFile* firstFile = nullptr;
     m_sharedFiles->forEachFile([&](KnownFile* file) {
@@ -640,10 +638,8 @@ void tst_KadLiveNetwork::setupSharedFiles()
             firstFile = file;
     });
     if (firstFile) {
-        QSettings settings(iniPath, QSettings::IniFormat);
-        const QString hashKey = encodeBase16({firstFile->fileHash(), 16});
-        settings.setValue(hashKey, QStringLiteral("4|test"));
-        settings.sync();
+        firstFile->setFileComment(QStringLiteral("test"));
+        firstFile->setFileRating(4);
     }
 
     theApp.sharedFileList = m_sharedFiles;
@@ -843,19 +839,12 @@ void tst_KadLiveNetwork::publishNotes_completesForComment()
     });
     QVERIFY2(noteFile != nullptr, "No shared files available for notes publishing");
 
-    // Write comment "test" with rating 4 (good) to the filecomments.ini
-    // Format: key=hex(md4hash), value="rating|comment"
-    const QString iniPath = thePrefs.configDir() + QStringLiteral("/filecomments.ini");
+    // Comment "test" with rating 4 (good). setFileComment/setFileRating persist to
+    // fileinfo.ini and clear the notes republish timer themselves, which is what
+    // makes publishNotes() return true below.
     QDir().mkpath(thePrefs.configDir());
-    {
-        QSettings settings(iniPath, QSettings::IniFormat);
-        const QString hashKey = encodeBase16({noteFile->fileHash(), 16});
-        settings.setValue(hashKey, QStringLiteral("4|test"));
-        settings.sync();
-    }
-
-    // Force publish time to 0 so publishNotes() returns true
-    noteFile->setLastPublishTimeKadNotes(0);
+    noteFile->setFileComment(QStringLiteral("test"));
+    noteFile->setFileRating(4);
 
     qDebug() << "Publishing notes for" << noteFile->fileName()
              << "comment:" << noteFile->getFileComment()

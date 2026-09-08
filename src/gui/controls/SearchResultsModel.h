@@ -29,6 +29,8 @@ struct SearchResultRow {
     int64_t bitrate = 0;
     int knownType = 0;
     bool isSpam = false;
+    bool hasComment = false;
+    int userRating = 0;   // wire value: 6 means a Kad note lookup is running
 };
 
 /// Table model backing the search results tree view in the Search panel.

@@ -45,6 +45,10 @@ public:
                               Tab initialTab = General,
                               QWidget* parent = nullptr);
 
+    /// Clear the Comments page's pending-changes state once the daemon has answered.
+    /// A no-op on a file the user cannot comment, where the page is the read-only one.
+    void commentApplied(bool ok) override;
+
     /// Swap the dialog to a different file — the Prev/Next walker's entry point.
     /// Rebuilds every tab (MFC's ChangedData()), because the Archive Preview tab
     /// comes and goes with the file type, and keeps the user on the tab they were

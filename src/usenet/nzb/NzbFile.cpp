@@ -76,6 +76,13 @@ bool NzbFile::parse(const QByteArray& data, NzbInfo& out, QString& error)
                 if (type.compare(QLatin1String("password"), Qt::CaseInsensitive) == 0
                     && !value.isEmpty()) {
                     out.password = value;
+                } else if (type.compare(QLatin1String("name"), Qt::CaseInsensitive) == 0
+                           && !value.isEmpty()) {
+                    // The release's own name. Only parseFile() used to set this,
+                    // from the file path, so an NZB arriving over IPC or from a
+                    // URL always fell through to "Usenet download" even when it
+                    // said what it was.
+                    out.name = value;
                 }
             }
 

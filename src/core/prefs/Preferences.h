@@ -10,6 +10,7 @@
 
 #include "prefs/DownloadCategory.h"
 #include "prefs/IndexerConfig.h"
+#include "prefs/IndexerFeed.h"
 #include "prefs/NewsServer.h"
 #include "utils/Types.h"
 
@@ -924,6 +925,45 @@ public:
     [[nodiscard]] bool usenetDirectUnpack() const;
     void setUsenetDirectUnpack(bool val);
 
+    // -- Usenet health check (before downloading) -----------------------------
+
+    /// Whether to ask the servers if they still hold a release before spending
+    /// anything on it. 0 off, 1 sample (the first article of each file), 2 full
+    /// (every article) — UsenetHealthCheck names these.
+    ///
+    /// Sampling is the default because expiry is wholesale: a provider retires
+    /// articles by post date and every article of one posted file shares that
+    /// date, so a file is overwhelmingly present or absent as a unit. Full is
+    /// correct and honest about its cost — a 15 GB release is tens of thousands
+    /// of round trips.
+    ///
+    /// **Whatever this says, a health check may never be the reason an article
+    /// is not fetched.** It is advice given before the money is spent.
+    [[nodiscard]] int usenetHealthCheck() const;
+    void setUsenetHealthCheck(int val);
+
+    /// Below this percentage a release is queued **paused**, with a reason, so
+    /// the user decides rather than the guess. Never failed and never refused.
+    /// A shortfall the release's own recovery volumes can cover does not trip it
+    /// however low the percentage goes. 0 shows the figure and never pauses.
+    [[nodiscard]] int usenetHealthMinPercent() const;
+    void setUsenetHealthMinPercent(int val);
+
+    /// Queue automatically-added downloads paused, so a feed or the watch folder
+    /// proposes rather than decides. Off by default — automatic downloading that
+    /// waits for a click is not automatic — and it applies to every automatic
+    /// intake path at once because addNzb() enforces it, not its callers.
+    [[nodiscard]] bool usenetAutoAddPaused() const;
+    void setUsenetAutoAddPaused(bool val);
+
+    /// A folder watched for .nzb files, empty when the feature is off.
+    ///
+    /// Refused when it sits inside the temp tree, the incoming directory or the
+    /// config directory: the scanner would then be reading files the daemon
+    /// itself is still writing.
+    [[nodiscard]] QString usenetWatchDir() const;
+    void setUsenetWatchDir(const QString& val);
+
     // -- Indexers (newznab / torznab) ----------------------------------------
     //
     // Deliberately *not* under usenet:. The client is shared — newznab and
@@ -940,6 +980,17 @@ public:
 
     /// Ceiling on the list, same reasoning as kMaxUsenetServers.
     static constexpr int kMaxIndexers = 16;
+
+    /// Saved feeds, polled on a schedule. Each one spends an indexer request per
+    /// interval and can queue downloads without anyone watching, which is why
+    /// the interval floor is enforced by setIndexerFeeds() rather than by the
+    /// dialog alone.
+    [[nodiscard]] QList<IndexerFeed> indexerFeeds() const;
+    void setIndexerFeeds(const QList<IndexerFeed>& val);
+
+    /// Generous, but bounded: every feed is a recurring request against someone
+    /// else's API.
+    static constexpr int kMaxFeeds = 32;
 
     /// Rows to request per API call. Clamped at request time to whatever the
     /// indexer advertises in `limits/@max`, which is often lower.
@@ -1490,6 +1541,18 @@ private:
     /// non-recursive QReadWriteLock.
     [[nodiscard]] static bool isShareableDirectory(const QString& dir,
                                                   const QString& configDir,
+                                                  const QString& incomingDir,
+                                                  const QStringList& tempDirs);
+
+    /// Empty unless @p dir is a usable watch folder. Refuses one that sits at or
+    /// below the config, incoming or temp trees — see the implementation for why
+    /// this is containment where isShareableDirectory() is equality.
+    /// Drop invalid and duplicate feeds, clamp the interval to its floor, and cap
+    /// the list. Shared by setIndexerFeeds() and the YAML loader — a hand-edited
+    /// file is exactly as capable of writing nonsense as an IPC client is.
+    [[nodiscard]] static QList<IndexerFeed> sanitizeFeeds(const QList<IndexerFeed>& feeds);
+
+    [[nodiscard]] static QString sanitizeWatchDir(const QString& dir, const QString& configDir,
                                                   const QString& incomingDir,
                                                   const QStringList& tempDirs);
 

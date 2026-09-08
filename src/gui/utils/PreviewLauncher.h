@@ -47,6 +47,32 @@ void launchPreview(const QString& url);
 [[nodiscard]] QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
                                         const QString& relPath = {});
 
+/// The core's web interface: `<scheme>://<daemonHost>:<webServerPort>/`.
+///
+/// The root page is the login form and there is no deep link past it -- a session
+/// id can only be minted by POSTing the password -- so the bare root is the only
+/// sensible target. Empty when there is no connection to build a host from. Says
+/// nothing about whether the web UI is switched on; that is the caller's gate,
+/// because only the caller can tell the user where to switch it on.
+[[nodiscard]] QString daemonWebUiUrl(const IpcClient* ipc);
+
+/// Empty when the browse page above is reachable, otherwise the user-facing
+/// reason it is not -- no connection, no stream token yet, or a remote core whose
+/// web server is pinned to loopback because both web surfaces are off.
+///
+/// Split out so a menu action can put the reason in a message box while
+/// openIncomingInBrowser() logs the same sentence: the two can then never
+/// disagree about when the page works. A *local* core needs neither surface
+/// enabled -- the browse route is registered unconditionally.
+[[nodiscard]] QString incomingBrowseUnavailableReason(const IpcClient* ipc,
+                                                      const QString& streamToken);
+
+/// Show the core's Incoming folder in the default browser, whatever machine the
+/// core runs on. The browse page has play and download links the file manager
+/// cannot offer, which is why a local core can want it too.
+bool openIncomingInBrowser(const IpcClient* ipc, const QString& streamToken,
+                           const QString& relPath = {});
+
 /// Show the core's Incoming folder: the OS file manager when the core runs on
 /// this machine, the browse page in the default browser when it does not.
 ///

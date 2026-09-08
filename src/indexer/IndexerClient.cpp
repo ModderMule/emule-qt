@@ -10,6 +10,28 @@
 
 namespace eMule::indexer {
 
+namespace {
+
+/// A row's id is `slug + '/' + guid`, so a feed with no account behind it still
+/// needs one. Mirrors IndexerConfig::slug() rather than calling it, because the
+/// input here is a display name and not a configured account.
+QString slugForSource(const QString& name)
+{
+    QString out;
+    out.reserve(name.size());
+    for (const QChar ch : name.trimmed().toLower()) {
+        if (ch.isLetterOrNumber())
+            out.append(ch);
+        else if (!out.endsWith(u'_'))
+            out.append(u'_');
+    }
+    while (out.endsWith(u'_'))
+        out.chop(1);
+    return out.isEmpty() ? QStringLiteral("indexer") : out;
+}
+
+} // namespace
+
 IndexerClient::IndexerClient(QObject* parent)
     : QObject(parent)
     , m_nam(new QNetworkAccessManager(this))
@@ -110,15 +132,25 @@ void IndexerClient::search(const IndexerConfig& config, const IndexerQuery& quer
         done(false, {}, tr("\"%1\" is not a usable URL.").arg(config.url));
         return;
     }
+    searchUrl(url, config.timeoutMs, config.displayName(), std::move(done));
+}
+
+void IndexerClient::searchUrl(const QUrl& url, int timeoutMs, const QString& sourceName,
+                              SearchCallback done)
+{
+    if (!url.isValid()) {
+        done(false, {}, tr("That is not a usable URL."));
+        return;
+    }
 
     QNetworkRequest request = Http::makeRequest(url);
-    request.setTransferTimeout(config.timeoutMs);
+    request.setTransferTimeout(timeoutMs);
 
     QNetworkReply* reply = m_nam->get(request);
     m_pending.insert(reply);
 
-    const QString name = config.displayName();
-    const QString slug = config.slug();
+    const QString name = sourceName;
+    const QString slug = slugForSource(sourceName);
 
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, url, name, slug, done = std::move(done)]() {
@@ -140,6 +172,11 @@ void IndexerClient::search(const IndexerConfig& config, const IndexerQuery& quer
 
 void IndexerClient::fetch(const IndexerConfig& config, const QUrl& url, FetchCallback done)
 {
+    fetchUrl(url, config.timeoutMs, std::move(done));
+}
+
+void IndexerClient::fetchUrl(const QUrl& url, int timeoutMs, FetchCallback done)
+{
     if (!url.isValid()) {
         done(false, {}, tr("The result carries no download URL."));
         return;
@@ -148,7 +185,7 @@ void IndexerClient::fetch(const IndexerConfig& config, const QUrl& url, FetchCal
     // The one place HttpFileDownload is the right tool: a single shot with a
     // size cap and transparent unwrapping of a gzipped .nzb.
     HttpFileDownload::Options opts;
-    opts.timeoutMs = config.timeoutMs;
+    opts.timeoutMs = timeoutMs;
     opts.maxBytes = kMaxResponseBytes;
 
     HttpFileDownload::get(this, url, opts,

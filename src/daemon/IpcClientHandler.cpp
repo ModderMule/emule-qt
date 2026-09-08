@@ -9,8 +9,11 @@
 #include "nntp/NntpSocket.h"
 #include "UsenetSession.h"
 #include "IndexerCapsStore.h"
+#include "IndexerFeedList.h"
+#include "IndexerQuery.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
+#include "nzb/NzbUrlFetch.h"
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 #include "webserver/WebServer.h"
@@ -44,6 +47,7 @@
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadMiscUtils.h"
 #include "httpcache/HttpCacheServerProbe.h"
+#include "media/ContainerSniffer.h"
 #include "portmap/PortMapper.h"
 #include "kademlia/KadPrefs.h"
 #include "net/ListenSocket.h"
@@ -68,6 +72,7 @@
 #include "utils/Log.h"
 
 #include <QCoreApplication>
+#include <QDate>
 #include <QFileInfo>
 #include <QHostAddress>
 #include <QPointer>
@@ -289,6 +294,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::OpenDownloadFolder:   handleOpenDownloadFolder(msg); break;
     case IpcMsgType::MarkSearchSpam:       handleMarkSearchSpam(msg); break;
     case IpcMsgType::ResetStats:           handleResetStats(msg); break;
+    case IpcMsgType::ReloadWebTemplate:    handleReloadWebTemplate(msg); break;
     case IpcMsgType::RestoreStats:         handleRestoreStats(msg); break;
     case IpcMsgType::ProbeHttpCacheServer: handleProbeHttpCacheServer(msg); break;
     case IpcMsgType::ApplyHttpCacheConfig: handleApplyHttpCacheConfig(msg); break;
@@ -309,12 +315,18 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::StopIndexerSearch:    handleStopIndexerSearch(msg); break;
     case IpcMsgType::RemoveIndexerSearch:  handleRemoveIndexerSearch(msg); break;
     case IpcMsgType::GrabIndexerResult:    handleGrabIndexerResult(msg); break;
+    case IpcMsgType::GetIndexerFeeds:      handleGetIndexerFeeds(msg); break;
+    case IpcMsgType::SetIndexerFeeds:      handleSetIndexerFeeds(msg); break;
+    case IpcMsgType::PollIndexerFeedNow:   handlePollIndexerFeedNow(msg); break;
 
     case IpcMsgType::GetNewsServers:       handleGetNewsServers(msg); break;
     case IpcMsgType::SetNewsServers:       handleSetNewsServers(msg); break;
     case IpcMsgType::TestNewsServer:       handleTestNewsServer(msg); break;
+    case IpcMsgType::SetNewsServerUsage:   handleSetNewsServerUsage(msg); break;
     case IpcMsgType::GetUsenetQueue:      handleGetUsenetQueue(msg); break;
     case IpcMsgType::AddNzb:              handleAddNzb(msg); break;
+    case IpcMsgType::AddNzbUrl:           handleAddNzbUrl(msg); break;
+    case IpcMsgType::CheckUsenetItem:     handleCheckUsenetItem(msg); break;
     case IpcMsgType::RemoveUsenetItem:    handleRemoveUsenetItem(msg); break;
     case IpcMsgType::PauseUsenetItem:     handlePauseUsenetItem(msg); break;
     case IpcMsgType::ResumeUsenetItem:    handleResumeUsenetItem(msg); break;
@@ -330,6 +342,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetServerState:      handleGetServerState(msg); break;
     case IpcMsgType::GetServerMessages:   handleGetServerMessages(msg); break;
     case IpcMsgType::SearchKadNotes:      handleSearchKadNotes(msg); break;
+    case IpcMsgType::SetFileComment:      handleSetFileComment(msg); break;
     case IpcMsgType::GetCollectionInfo:  handleGetCollectionInfo(msg); break;
     case IpcMsgType::SaveCollection:     handleSaveCollection(msg); break;
     default:
@@ -850,6 +863,52 @@ void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
+void IpcClientHandler::handleSetFileComment(const IpcMessage& msg)
+{
+    const QString hash    = msg.fieldString(0);
+    const QString comment = msg.fieldString(1).left(MAXFILECOMMENTLEN);
+    const auto    rating  = msg.fieldInt(2);
+
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Shared file list unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    if (rating < 0 || rating > 5) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Rating out of range")));
+        return;
+    }
+
+    // MFC's gate: an unshared file's comment is published nowhere, so the original
+    // skips exactly these files in OnApply and disables its page for them
+    // (srchybrid/CommentDialog.cpp:117-121, 172-179).
+    auto* file = theApp.sharedFileList->getFileByID(hashBuf);
+    if (!file) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+                                          QStringLiteral("File is not shared")));
+        return;
+    }
+
+    // Both always run. MFC guards them with `!strComment.IsEmpty() || !m_bMergedComment`
+    // and `m_iRating >= 0`, but those exist only for its multi-file selection merge —
+    // "the files disagreed, so leave this field alone". The port's detail dialog is
+    // single-file, so there is no merged state to protect.
+    file->setFileComment(comment);
+    file->setFileRating(static_cast<uint32>(rating));
+
+    logInfo(QStringLiteral("Comment set for \"%1\": rating %2, \"%3\"")
+                .arg(file->fileName(), QString::number(rating), comment));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
 void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
 {
     if (!theApp.serverConnect) {
@@ -1212,6 +1271,24 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
         m.insert(QStringLiteral("fileName"), kf->fileName());
         m.insert(QStringLiteral("fileSize"), static_cast<qint64>(kf->fileSize()));
         m.insert(QStringLiteral("fileType"), kf->fileType());
+        // Comment/rating marks, same shape as the download rows.
+        m.insert(QStringLiteral("hasComment"), kf->hasComment());
+        m.insert(QStringLiteral("userRating"), static_cast<int>(kf->userRating(true)));
+        // Separately, whether *we* commented or rated it — MFC's shared list draws that
+        // as an overlay on the type icon rather than as a rating mark
+        // (srchybrid/SharedFilesCtrl.cpp:561-562). Costs one lazy fileinfo.ini read per
+        // file, once, exactly as the original's per-file CIni does.
+        m.insert(QStringLiteral("ownComment"),
+                 !kf->getFileComment().isEmpty() || kf->getFileRating() > 0);
+        // The fake-file mark. Only what has already been settled: this loop walks a
+        // share that can hold tens of thousands of files, so it may not open any of
+        // them. SharedFileList::warmContainerChecks() does the reading a slice per
+        // tick, so a file the sweep has not reached yet reads as clean for now —
+        // Unchecked is not suspect, and claiming otherwise would be worse than late.
+        const ContainerCheck& cc = kf->containerCheckIfResolved();
+        m.insert(QStringLiteral("containerSuspect"), cc.isSuspect());
+        m.insert(QStringLiteral("containerExpected"), cc.expected);
+        m.insert(QStringLiteral("containerActual"), cc.actual);
         m.insert(QStringLiteral("upPriority"), static_cast<int>(kf->upPriority()));
         m.insert(QStringLiteral("isAutoUpPriority"), kf->isAutoUpPriority());
         m.insert(QStringLiteral("requests"), static_cast<qint64>(kf->statistic.requests()));
@@ -1782,6 +1859,12 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("usenetCleanupAfterUnpack"),
                  thePrefs.usenetCleanupAfterUnpack());
     prefs.insert(QStringLiteral("usenetDirectUnpack"), thePrefs.usenetDirectUnpack());
+    prefs.insert(QStringLiteral("usenetHealthCheck"),
+                 static_cast<qint64>(thePrefs.usenetHealthCheck()));
+    prefs.insert(QStringLiteral("usenetHealthMinPercent"),
+                 static_cast<qint64>(thePrefs.usenetHealthMinPercent()));
+    prefs.insert(QStringLiteral("usenetAutoAddPaused"), thePrefs.usenetAutoAddPaused());
+    prefs.insert(QStringLiteral("usenetWatchDir"), thePrefs.usenetWatchDir());
 
     // Indexers — the four search settings only. The account list travels over
     // GetIndexers=700 instead, because it carries API keys and needs the
@@ -2695,6 +2778,18 @@ void IpcClientHandler::handleMarkSearchSpam(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// handleReloadWebTemplate — re-read the web template from disk
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleReloadWebTemplate(const IpcMessage& msg)
+{
+    // The handler owns no back-pointer to the web server, so it takes the same
+    // route webServerConfigChanged does.
+    emit webTemplateReloadRequested();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(true)));
+}
+
+// ---------------------------------------------------------------------------
 // handleResetStats — reset session statistics
 // ---------------------------------------------------------------------------
 
@@ -3056,6 +3151,11 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
         // a browsed row up with the shared-files list.
         const QString hash = hashByPath.value(filePath.toLower());
 
+        // The fake-file mark. Read here and now rather than from the background sweep:
+        // a browsed row may not be shared at all, so there is often no KnownFile to ask,
+        // and one directory is bounded — the same trade the web incoming listing makes.
+        const ContainerCheck check = checkFile(filePath, name);
+
         files.append(QCborMap{
             {QStringLiteral("name"),      name},
             {QStringLiteral("path"),      filePath},
@@ -3063,6 +3163,9 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
             {QStringLiteral("shared"),    isShared},
             {QStringLiteral("canToggle"), canToggle},
             {QStringLiteral("hash"),      hash},
+            {QStringLiteral("containerSuspect"),  check.isSuspect()},
+            {QStringLiteral("containerExpected"), check.expected},
+            {QStringLiteral("containerActual"),   check.actual},
         });
     }
 
@@ -3208,6 +3311,19 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
             {QLatin1StringView("count"), count}});
     details.insert(QLatin1StringView("sourceNames"), sourceNames);
     details.insert(QLatin1StringView("comments"), comments);
+    details.insert(QLatin1StringView("notesSearchRunning"), pf->isKadCommentSearchRunning());
+
+    // The user's own comment/rating, and whether posting one is allowed. MFC's gate is
+    // "is it in the shared list" — it greys its comment page out for anything else,
+    // because a comment on an unshared file is published nowhere
+    // (srchybrid/CommentDialog.cpp:117-121). Looked up through the shared list rather
+    // than through `pf` because the lazy getters are non-const.
+    auto* ownFile = theApp.sharedFileList ? theApp.sharedFileList->getFileByID(hashBuf) : nullptr;
+    details.insert(QLatin1StringView("canComment"), ownFile != nullptr);
+    details.insert(QLatin1StringView("myComment"),
+                   ownFile ? ownFile->getFileComment() : QString{});
+    details.insert(QLatin1StringView("myRating"),
+                   static_cast<qint64>(ownFile ? ownFile->getFileRating() : 0u));
 
     // Plain ED2K link. Flag combinations are served on demand by GetEd2kLink, which
     // can express e.g. "hashset + hostname" — picking between pre-generated variants
@@ -3391,6 +3507,13 @@ void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
             {QLatin1StringView("count"), count}});
     details.insert(QLatin1StringView("sourceNames"), sourceNames);
     details.insert(QLatin1StringView("comments"), comments);
+    details.insert(QLatin1StringView("notesSearchRunning"), kf->isKadCommentSearchRunning());
+
+    // Reached through the shared list, so MFC's "is it shared" gate is satisfied by
+    // construction — see handleGetDownloadDetails for what the flag means.
+    details.insert(QLatin1StringView("canComment"), true);
+    details.insert(QLatin1StringView("myComment"), kf->getFileComment());
+    details.insert(QLatin1StringView("myRating"), static_cast<qint64>(kf->getFileRating()));
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
 }
@@ -3641,6 +3764,14 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUsenetCleanupAfterUnpack(val.toBool());
     else if (key == QStringLiteral("usenetDirectUnpack"))
         thePrefs.setUsenetDirectUnpack(val.toBool());
+    else if (key == QStringLiteral("usenetHealthCheck"))
+        thePrefs.setUsenetHealthCheck(int(val.toInteger()));
+    else if (key == QStringLiteral("usenetHealthMinPercent"))
+        thePrefs.setUsenetHealthMinPercent(int(val.toInteger()));
+    else if (key == QStringLiteral("usenetAutoAddPaused"))
+        thePrefs.setUsenetAutoAddPaused(val.toBool());
+    else if (key == QStringLiteral("usenetWatchDir"))
+        thePrefs.setUsenetWatchDir(val.toString());
     else if (key == QStringLiteral("indexerResultLimit"))
         thePrefs.setIndexerResultLimit(int(val.toInteger()));
     else if (key == QStringLiteral("indexerMaxPages"))
@@ -4132,6 +4263,69 @@ IndexerConfig indexerConfigFromCbor(const QCborMap& m)
     return config;
 }
 
+QCborMap indexerFeedToCbor(const IndexerFeed& feed, const indexer::IndexerFeedStatus& status)
+{
+    QCborArray categories;
+    for (const int cat : feed.categories)
+        categories.append(cat);
+
+    QCborArray indexers;
+    for (const auto& name : feed.indexers)
+        indexers.append(name);
+
+    // The URL is redacted, never sent whole. It carries the API key in its query
+    // — the same rule as GetIndexers and GetNewsServers, and for the same
+    // reason: a secret the GUI never holds cannot leak through a screenshot, a
+    // log, or an IPC session on a non-loopback socket.
+    return QCborMap{
+        {QStringLiteral("name"),            feed.name},
+        {QStringLiteral("kind"),            indexerFeedKindToString(feed.kind)},
+        {QStringLiteral("enabled"),         feed.enabled},
+        {QStringLiteral("query"),           feed.query},
+        {QStringLiteral("categories"),      categories},
+        {QStringLiteral("indexers"),        indexers},
+        {QStringLiteral("url"),             indexer::redactApiKey(QUrl(feed.url))},
+        {QStringLiteral("hasUrl"),          !feed.url.isEmpty()},
+        {QStringLiteral("accept"),          feed.accept},
+        {QStringLiteral("reject"),          feed.reject},
+        {QStringLiteral("minSize"),         feed.minSize},
+        {QStringLiteral("maxSize"),         feed.maxSize},
+        {QStringLiteral("maxAgeDays"),      feed.maxAgeDays},
+        {QStringLiteral("intervalMinutes"), feed.intervalMinutes},
+        {QStringLiteral("grabExisting"),    feed.grabExisting},
+        {QStringLiteral("lastPolled"),
+         status.lastPolled.isValid() ? status.lastPolled.toSecsSinceEpoch() : qint64(0)},
+        {QStringLiteral("lastError"),       status.lastError},
+        {QStringLiteral("lastMatched"),     status.lastMatched},
+        {QStringLiteral("seenCount"),       status.seenCount},
+        {QStringLiteral("polling"),         status.polling},
+    };
+}
+
+IndexerFeed indexerFeedFromCbor(const QCborMap& map)
+{
+    IndexerFeed feed;
+    feed.name = map.value(QStringLiteral("name")).toString().trimmed();
+    feed.kind = indexerFeedKindFromString(map.value(QStringLiteral("kind")).toString());
+    feed.enabled = map.value(QStringLiteral("enabled")).toBool(true);
+    feed.query = map.value(QStringLiteral("query")).toString();
+    feed.accept = map.value(QStringLiteral("accept")).toString();
+    feed.reject = map.value(QStringLiteral("reject")).toString();
+    feed.minSize = map.value(QStringLiteral("minSize")).toInteger(0);
+    feed.maxSize = map.value(QStringLiteral("maxSize")).toInteger(0);
+    feed.maxAgeDays = int(map.value(QStringLiteral("maxAgeDays")).toInteger(0));
+    feed.intervalMinutes = int(map.value(QStringLiteral("intervalMinutes")).toInteger(30));
+    feed.grabExisting = map.value(QStringLiteral("grabExisting")).toBool(false);
+
+    for (const auto& cat : map.value(QStringLiteral("categories")).toArray())
+        feed.categories.append(int(cat.toInteger(0)));
+    for (const auto& name : map.value(QStringLiteral("indexers")).toArray())
+        feed.indexers.append(name.toString());
+
+    // `url` is filled in by the caller from the stored value when absent.
+    return feed;
+}
+
 QCborMap indexerCapsToCbor(const indexer::IndexerCaps& caps)
 {
     QCborArray modes;
@@ -4270,6 +4464,108 @@ void IpcClientHandler::handleSetIndexers(const IpcMessage& msg)
     }
 
     emit indexerConfigChanged();
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleGetIndexerFeeds(const IpcMessage& msg)
+{
+    QCborArray out;
+    for (const auto& feed : thePrefs.indexerFeeds()) {
+        const indexer::IndexerFeedStatus status =
+            indexer::theIndexerFeeds ? indexer::theIndexerFeeds->statusFor(feed.name)
+                                     : indexer::IndexerFeedStatus{};
+        out.append(indexerFeedToCbor(feed, status));
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+void IpcClientHandler::handleSetIndexerFeeds(const IpcMessage& msg)
+{
+    const QCborArray incoming = msg.fieldArray(0);
+    if (incoming.size() > Preferences::kMaxFeeds) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(tr("At most %1 feeds can be configured.").arg(Preferences::kMaxFeeds))));
+        return;
+    }
+
+    QHash<QString, QString> storedUrls;
+    for (const auto& existing : thePrefs.indexerFeeds())
+        storedUrls.insert(existing.key(), existing.url);
+
+    QList<IndexerFeed> feeds;
+    feeds.reserve(int(incoming.size()));
+    for (const auto& value : incoming) {
+        if (!value.isMap())
+            continue;
+        const QCborMap map = value.toMap();
+        IndexerFeed feed = indexerFeedFromCbor(map);
+
+        if (feed.name.isEmpty()) {
+            sendMessage(IpcMessage::makeResult(
+                msg.seqId(), false, QCborValue(tr("A feed needs a name."))));
+            return;
+        }
+
+        // Absent means "keep what is stored" — the GUI was only ever shown a
+        // redacted URL, so it cannot send the real one back.
+        if (map.contains(QStringLiteral("url")))
+            feed.url = map.value(QStringLiteral("url")).toString().trimmed();
+        else
+            feed.url = storedUrls.value(feed.key());
+
+        if (feed.kind == IndexerFeedKind::Url && !feed.feedUrl().isValid()) {
+            sendMessage(IpcMessage::makeResult(
+                msg.seqId(), false,
+                QCborValue(tr("\"%1\" needs a usable http or https feed URL.").arg(feed.name))));
+            return;
+        }
+
+        // Reported, not clamped silently: a user who typed five minutes should
+        // learn why they got fifteen rather than watch the field change.
+        if (feed.intervalMinutes < IndexerFeed::kMinIntervalMinutes) {
+            sendMessage(IpcMessage::makeResult(
+                msg.seqId(), false,
+                QCborValue(tr("A feed cannot be checked more often than every %1 minutes.")
+                               .arg(IndexerFeed::kMinIntervalMinutes))));
+            return;
+        }
+
+        feeds.append(feed);
+    }
+
+    thePrefs.setIndexerFeeds(feeds);
+    if (!thePrefs.save()) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("Could not write preferences.yml."))));
+        return;
+    }
+
+    // The same route SetIndexers takes, rather than reaching into the poller
+    // here: IpcServer forwards it to DaemonApp::applyIndexerConfig(), which
+    // re-applies both lists. That is also what drops the sidecars of feeds the
+    // user deleted, so a later feed reusing a name seeds its own history rather
+    // than inheriting a stranger's.
+    emit indexerConfigChanged();
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handlePollIndexerFeedNow(const IpcMessage& msg)
+{
+    if (!indexer::theIndexerFeeds) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("Feeds are not running."))));
+        return;
+    }
+
+    QString error;
+    if (!indexer::theIndexerFeeds->pollNow(msg.fieldString(0), error)) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(error)));
+        return;
+    }
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
@@ -4452,7 +4748,11 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
         const QString itemId =
             usenet::theUsenetSession->queue()->addNzb(payload, name, addError);
         if (itemId.isEmpty()) {
-            self->sendMessage(IpcMessage::makeResult(seqId, false, QCborValue(addError)));
+            // The fallback its two siblings already have: an empty error here
+            // reaches the user as an empty dialog.
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false,
+                QCborValue(addError.isEmpty() ? tr("The NZB could not be read.") : addError)));
             return;
         }
 
@@ -4474,7 +4774,14 @@ namespace {
 
 /// Everything except the password. Shared by the get and the test paths so the
 /// two cannot drift into disagreeing about field names.
-QCborMap newsServerToCbor(const NewsServer& s)
+/// One account row. @p periodBytes / @p totalBytes / @p periodStart are the
+/// daemon's own measurements and travel **out only** — newsServerFromCbor()
+/// ignores them, exactly as it ignores `hasPassword`. Passing them in rather
+/// than reading the engine here keeps one serializer, so the get and the set
+/// cannot drift into disagreeing about field names.
+QCborMap newsServerToCbor(const NewsServer& s, qint64 periodBytes = 0,
+                          qint64 totalBytes = 0, const QString& periodStart = {},
+                          const QString& resetsOn = {}, bool overQuota = false)
 {
     return QCborMap{
         {QStringLiteral("name"),             s.name},
@@ -4491,6 +4798,17 @@ QCborMap newsServerToCbor(const NewsServer& s)
         {QStringLiteral("maxConnections"),   s.maxConnections},
         {QStringLiteral("certVerification"), int(s.certVerification)},
         {QStringLiteral("enabled"),          s.enabled},
+        {QStringLiteral("accountId"),        s.accountId},
+        {QStringLiteral("quotaKind"),        int(s.quotaKind)},
+        {QStringLiteral("quotaBytes"),       s.quotaBytes},
+        {QStringLiteral("quotaResetDay"),    s.quotaResetDay},
+        {QStringLiteral("quotaFallThrough"), s.quotaFallThrough},
+        // Read-only, like hasPassword.
+        {QStringLiteral("periodBytes"),      periodBytes},
+        {QStringLiteral("totalBytes"),       totalBytes},
+        {QStringLiteral("periodStart"),      periodStart},
+        {QStringLiteral("resetsOn"),         resetsOn},
+        {QStringLiteral("overQuota"),        overQuota},
     };
 }
 
@@ -4514,6 +4832,15 @@ NewsServer newsServerFromCbor(const QCborMap& m)
         m.value(QStringLiteral("certVerification"))
             .toInteger(int(NntpCertVerification::Strict)));
     s.enabled = m.value(QStringLiteral("enabled")).toBool(true);
+    s.accountId = m.value(QStringLiteral("accountId")).toString().trimmed();
+    s.quotaKind = static_cast<NntpQuotaKind>(
+        m.value(QStringLiteral("quotaKind")).toInteger(int(NntpQuotaKind::None)));
+    s.quotaBytes = m.value(QStringLiteral("quotaBytes")).toInteger(0);
+    s.quotaResetDay =
+        std::clamp(int(m.value(QStringLiteral("quotaResetDay")).toInteger(1)), 1, 31);
+    s.quotaFallThrough = m.value(QStringLiteral("quotaFallThrough")).toBool(false);
+    // periodBytes / totalBytes / periodStart / resetsOn / overQuota are the
+    // daemon's own measurements and are deliberately not read back.
     return s;
 }
 
@@ -4521,11 +4848,53 @@ NewsServer newsServerFromCbor(const QCborMap& m)
 
 void IpcClientHandler::handleGetNewsServers(const IpcMessage& msg)
 {
+    const auto* queue = usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
+
     QCborArray out;
-    for (const auto& server : thePrefs.usenetServers())
-        out.append(newsServerToCbor(server));
+    for (const auto& server : thePrefs.usenetServers()) {
+        if (!queue) {
+            out.append(newsServerToCbor(server));
+            continue;
+        }
+
+        const auto& usage = queue->usage();
+        const QDate start = usage.periodStart(server.accountId);
+        const QDate next = server.quotaKind == NntpQuotaKind::Monthly
+            ? usenet::nntpQuotaNextReset(server.quotaResetDay, QDate::currentDate())
+            : QDate();
+
+        // The reset date is computed here so the GUI never re-implements the
+        // short-month clamp — a plan billed on the 31st resets on the 28th in
+        // February, and two copies of that rule would eventually disagree.
+        out.append(newsServerToCbor(
+            server, usage.periodBytes(server.accountId), usage.totalBytes(server.accountId),
+            start.isValid() ? start.toString(Qt::ISODate) : QString(),
+            next.isValid() ? next.toString(Qt::ISODate) : QString(),
+            queue->isOverQuota(server)));
+    }
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+void IpcClientHandler::handleSetNewsServerUsage(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                           QCborValue(tr("The Usenet engine is not running."))));
+        return;
+    }
+
+    const QString accountId = msg.fieldString(0);
+    const qint64 periodBytes = msg.fieldInt(1);
+    const qint64 totalBytes = msg.fieldInt(2);
+
+    if (!usenet::theUsenetSession->queue()->setAccountUsage(accountId, periodBytes, totalBytes)) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false, QCborValue(tr("No usage is recorded for that account."))));
+        return;
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
 void IpcClientHandler::handleSetNewsServers(const IpcMessage& msg)
@@ -4542,8 +4911,12 @@ void IpcClientHandler::handleSetNewsServers(const IpcMessage& msg)
     // Index the stored list so an entry that arrives without a password can
     // keep the one already on disk.
     QHash<QString, QString> storedPasswords;
-    for (const auto& existing : thePrefs.usenetServers())
+    QHash<QString, QString> passwordsById;
+    for (const auto& existing : thePrefs.usenetServers()) {
         storedPasswords.insert(existing.key(), existing.pass);
+        if (!existing.accountId.isEmpty())
+            passwordsById.insert(existing.accountId, existing.pass);
+    }
 
     QList<NewsServer> servers;
     servers.reserve(int(incoming.size()));
@@ -4558,10 +4931,17 @@ void IpcClientHandler::handleSetNewsServers(const IpcMessage& msg)
             return;
         }
 
-        if (map.contains(QStringLiteral("password")))
+        if (map.contains(QStringLiteral("password"))) {
             server.pass = map.value(QStringLiteral("password")).toString();
-        else
+        } else if (!server.accountId.isEmpty()
+                   && passwordsById.contains(server.accountId)) {
+            // By id first: key() is host:port/user, so matching on it alone lost
+            // the password whenever the user edited a host or switched a
+            // provider to TLS — which changes the port.
+            server.pass = passwordsById.value(server.accountId);
+        } else {
             server.pass = storedPasswords.value(server.key());
+        }
 
         servers.append(server);
     }
@@ -4854,6 +5234,20 @@ QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
         // figure would sit frozen at 100% for the whole of it.
         {QStringLiteral("postPercent"),     item.postPercent},
         {QStringLiteral("postDetail"),      item.postDetail},
+        // Why a queued item is standing still — an allowance spent, today.
+        // Separate from `error`, which means the download failed.
+        {QStringLiteral("stalledReason"),   item.stalledReason},
+        // How much of the release looks obtainable, combining what the NZB never
+        // listed with what no account still holds. **-1 means not assessed**,
+        // which the GUI must not render as 100.
+        {QStringLiteral("healthPercent"),   item.healthPercent},
+        {QStringLiteral("healthMissingBytes"),
+                                            static_cast<qint64>(item.healthMissingBytes)},
+        {QStringLiteral("healthRecoveryBytes"),
+                                            static_cast<qint64>(item.healthRecoveryBytes)},
+        // False means the figure is the NZB's own arithmetic and no server was
+        // asked — a different statement from the same number with a probe behind it.
+        {QStringLiteral("healthProbed"),    item.healthProbed},
         {QStringLiteral("files"),           files},
     };
 }
@@ -4929,8 +5323,14 @@ void IpcClientHandler::handleAddNzb(const IpcMessage& msg)
         return;
     }
 
+    // Field 2 is the source. Positional, so an absent field reads as false and
+    // every existing caller is correctly treated as manual — which they are.
+    const auto source = msg.fieldBool(2) ? usenet::UsenetAddSource::Automatic
+                                         : usenet::UsenetAddSource::Manual;
+
     QString error;
-    const QString id = usenet::theUsenetSession->queue()->addNzb(data, name, error);
+    const QString id =
+        usenet::theUsenetSession->queue()->addNzb(data, name, error, source);
     if (id.isEmpty()) {
         // A user-facing refusal, not a protocol fault: the GUI shows this string
         // in a dialog, so it has to read like a sentence.
@@ -4941,6 +5341,99 @@ void IpcClientHandler::handleAddNzb(const IpcMessage& msg)
     }
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(id)));
+}
+
+void IpcClientHandler::handleCheckUsenetItem(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const QString id = msg.fieldString(0);
+    if (!usenet::theUsenetSession->queue()->recheckItem(id)) {
+        // Not an error about the release: the item may be downloading, may
+        // already be checking, or there may be no account to ask. A probe that
+        // cannot run produces no verdict, which is the whole safety property.
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(tr("This download cannot be checked right now."))));
+        return;
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(QString())));
+}
+
+void IpcClientHandler::handleAddNzbUrl(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const QUrl url(msg.fieldString(0).trimmed(), QUrl::StrictMode);
+    const auto source = msg.fieldBool(1) ? usenet::UsenetAddSource::Automatic
+                                         : usenet::UsenetAddSource::Manual;
+    if (const QString why = usenet::NzbUrlFetch::rejectReason(url); !why.isEmpty()) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(why)));
+        return;
+    }
+
+    if (m_nzbUrlFetchesInFlight >= kMaxNzbUrlFetches) {
+        sendMessage(IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(tr("Too many NZB downloads are already running — "
+                          "try again in a moment."))));
+        return;
+    }
+    ++m_nzbUrlFetchesInFlight;
+
+    // QPointer for the same reason handleGrabIndexerResult uses one: the fetch
+    // takes seconds and the client can disconnect inside them.
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+
+    usenet::NzbUrlFetch::fetch(this, url,
+                               [self, seqId, source](const usenet::NzbUrlFetch::Result& result) {
+        if (!self)
+            return;
+        --self->m_nzbUrlFetchesInFlight;
+
+        // A fetch failure and a parse failure are different problems and the
+        // user fixes them differently: one means the link or the network is
+        // wrong, the other means the link was fine and what came back was not an
+        // NZB — an indexer's HTML login page, most often. Qt embeds the request
+        // URL in its own error strings, so the key rides out with them unless
+        // this is redacted.
+        if (!result.ok()) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false, QCborValue(indexer::redactApiKey(result.error))));
+            return;
+        }
+
+        if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false, QCborValue(tr("The Usenet engine is not running."))));
+            return;
+        }
+
+        // An empty name is deliberate and useful: addNzb() then falls back to the
+        // NZB's own <meta type="name">, which is a better answer than anything
+        // an API-style URL could have told us.
+        QString error;
+        const QString id = usenet::theUsenetSession->queue()->addNzb(
+            result.data, result.name, error, source);
+        if (id.isEmpty()) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false,
+                QCborValue(error.isEmpty() ? tr("The NZB could not be read.") : error)));
+            return;
+        }
+
+        self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(id)));
+    });
 }
 
 void IpcClientHandler::handleRemoveUsenetItem(const IpcMessage& msg)

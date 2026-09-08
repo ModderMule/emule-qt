@@ -36,6 +36,20 @@ enum class UsenetItemStatus : quint8 {
     Verifying = 5,
     Repairing = 6,
     Unpacking = 7,
+
+    /// Asking the servers whether they still hold the release, before spending
+    /// anything on it. Appended rather than made an ItemRuntime flag on purpose:
+    /// isActive() is false here, so a checking item leaves the dispatch order
+    /// *and* stops counting as a live download for the bandwidth split, in one
+    /// edit rather than at two call sites somebody has to remember. A raw int in
+    /// a sidecar is a commitment, but every exhaustive switch over this enum has
+    /// no default and so becomes a -Wswitch warning — a compiler-enforced list of
+    /// everywhere that now needs an opinion.
+    ///
+    /// Never resumed *into*: UsenetQueueStore::load() demotes it to Queued
+    /// alongside Downloading, because no probe survives a restart and re-probing
+    /// on every start would spend round trips re-learning advice.
+    Checking = 8,
 };
 
 [[nodiscard]] QString describeUsenetItemStatus(UsenetItemStatus s);
@@ -189,6 +203,41 @@ public:
 
     /// What the pipeline is doing right now, for the Status column.
     QString postDetail;
+
+    /// Percentage of the release believed obtainable, or **-1 for "not
+    /// assessed"** — which is not the same as 100 and must not be shown as it.
+    ///
+    /// Combines both halves: articles the NZB never listed, and articles no
+    /// configured account still holds. Advisory in the strongest sense — nothing
+    /// in the download path reads it.
+    int healthPercent = -1;
+
+    /// Bytes behind that percentage, and the recovery data the release ships to
+    /// cover them. A shortfall smaller than the recovery is very likely
+    /// repairable, which is why the percentage alone is never the verdict.
+    qint64 healthMissingBytes = 0;
+    qint64 healthRecoveryBytes = 0;
+
+    /// Whether any server was actually asked. False means healthPercent, if set
+    /// at all, is the NZB's own arithmetic and says nothing about availability.
+    bool healthProbed = false;
+
+    /// Exact identity of the release: a digest over its message-ids.
+    /// See nzbArticleDigest(). **Not persisted** -- every message-id is already
+    /// in the sidecar, so this re-derives exactly on load, and a stored copy
+    /// would only be a second thing that could disagree with the first.
+    QString articleDigest;
+
+    /// Heuristic identity, for the "looks like a repost of" report. Also
+    /// re-derived rather than stored, for the same reason.
+    QString releaseKey;
+
+    /// Why the item is sitting still when it is neither downloading nor failed
+    /// — today, an allowance that has been spent. Not persisted, for the same
+    /// reason postDetail is not: it is a live condition, and a restart
+    /// re-derives it. Deliberately not `error`, which means "this download
+    /// failed"; waiting for a billing day has failed nothing.
+    QString stalledReason;
 
     /// Size the per-file state to match the parsed NZB. Safe to call twice.
     void initFileStates(const QString& tempRoot);

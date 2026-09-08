@@ -1,4 +1,8 @@
 #include "pch.h"
+#include <QUrl>
+#include "utils/FileAssociation.h"
+#include "panels/UsenetPanel.h"
+#include "app/MainWindow.h"
 /// @file CommandLineExec.cpp
 /// @brief Command-line parsing and execution for the GUI application.
 
@@ -32,11 +36,13 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_delayOption);
     m_parser.addOption(m_optionsOption);
     m_parser.addOption(m_configOption);
+    m_parser.addOption(m_registerTypesOption);
+    m_parser.addOption(m_unregisterTypesOption);
 
     m_parser.addPositionalArgument(
-        QStringLiteral("links"),
-        QStringLiteral("ed2k:// links to download."),
-        QStringLiteral("[ed2k://...]"));
+        QStringLiteral("files"),
+        QStringLiteral("ed2k:// links, and .nzb files to queue."),
+        QStringLiteral("[ed2k://... | file.nzb]"));
 
     m_parser.process(app);
 
@@ -102,6 +108,7 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("webinterface"), OptionsDialog::PageWebInterface},
             {QStringLiteral("usenet"),       OptionsDialog::PageUsenet},
             {QStringLiteral("indexers"),     OptionsDialog::PageIndexers},
+            {QStringLiteral("feeds"),        OptionsDialog::PageFeeds},
             {QStringLiteral("extended"),     OptionsDialog::PageExtended},
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index
@@ -184,14 +191,56 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
     }
 }
 
-void CommandLineExec::handleEd2kLinks(ExternalLinkHandler& linkHandler) const
+void CommandLineExec::handleOpenArguments(ExternalLinkHandler& linkHandler,
+                                          MainWindow& mainWindow) const
 {
+    bool linkTaken = false;
+
     for (const QString& arg : m_positionalArgs) {
         if (arg.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)) {
-            linkHandler.open(arg);
-            break;
+            // Unchanged: still the first link only.
+            if (!linkTaken) {
+                linkHandler.open(arg);
+                linkTaken = true;
+            }
+            continue;
         }
+
+        // A desktop launcher runs `Exec=... %U`, so the same argument arrives as
+        // a file:// URL from one caller and a plain path from another.
+        QString path = arg;
+        if (path.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive))
+            path = QUrl(path).toLocalFile();
+
+        if (!path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive))
+            continue;
+        if (!QFileInfo(path).isFile())
+            continue;
+
+        // Every .nzb, not just the first: opening a selection of them is an
+        // ordinary thing to do from a file manager.
+        if (auto* panel = mainWindow.usenetPanel())
+            panel->addNzbFile(path);
     }
+}
+
+bool CommandLineExec::handleFileTypeRegistration() const
+{
+    const bool wantRegister = m_parser.isSet(m_registerTypesOption);
+    const bool wantUnregister = m_parser.isSet(m_unregisterTypesOption);
+    if (!wantRegister && !wantUnregister)
+        return false;
+
+    QString error;
+    const bool ok = wantRegister ? gui::FileAssociation::registerNzbFileType(error)
+                                 : gui::FileAssociation::unregisterNzbFileType(error);
+    if (ok) {
+        logInfo(wantRegister ? QStringLiteral("Registered .nzb with the desktop")
+                             : QStringLiteral("Removed the .nzb file association"));
+    } else {
+        logError(QStringLiteral("File-type registration failed: %1").arg(error));
+    }
+    return true;
 }
 
 QString CommandLineExec::configOverride() const

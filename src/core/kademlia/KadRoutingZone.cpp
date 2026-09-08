@@ -872,7 +872,13 @@ void RoutingZone::writeFile()
             logKad(QStringLiteral("Failed to rename tmp → nodes.dat"));
             if (QFile::exists(bakPath))
                 QFile::rename(bakPath, s_nodesFilename);
+            return;
         }
+
+        // Counterpart to the "Loaded nodes.dat — N contacts" line at startup. A
+        // thin bootstrap next launch is only explainable if we recorded how thin
+        // the table was when we saved it.
+        logKad(QStringLiteral("Kad: Saved nodes.dat — %1 contacts").arg(contacts.size()));
 
     } catch (const FileException& e) {
         logKad(QStringLiteral("Failed to write Kad nodes file: %1").arg(QLatin1StringView(e.what())));

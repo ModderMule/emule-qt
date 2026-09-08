@@ -172,6 +172,14 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+
+    // A .nzb dropped anywhere on the window switches to the Usenet tab and is
+    // queued there. Narrow on purpose — nzbDropCandidates() accepts only .nzb
+    // files and http(s) .nzb links, so a future ed2k or collection drop is still
+    // free to be handled separately rather than swallowed here.
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
 
 private slots:
@@ -183,6 +191,8 @@ private slots:
     void onClipboardChanged();
     void buildToolsMenu();
     void onOpenIncomingFolder();
+    void onOpenDownloadsFolderInBrowser();
+    void onOpenWebUi();
     void onImportDownloads();
     void onFirstTimeWizard();
     void onIPFilter();

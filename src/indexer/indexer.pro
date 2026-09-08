@@ -13,6 +13,9 @@ SOURCES += \
     IndexerCaps.cpp \
     IndexerCapsStore.cpp \
     IndexerClient.cpp \
+    IndexerFeedList.cpp \
+    IndexerFeedMatch.cpp \
+    IndexerFeedStore.cpp \
     IndexerQuery.cpp \
     IndexerResult.cpp \
     IndexerSearch.cpp \
@@ -23,6 +26,10 @@ HEADERS += \
     IndexerCapsStore.h \
     IndexerClient.h \
     IndexerConfig.h \
+    IndexerFeed.h \
+    IndexerFeedList.h \
+    IndexerFeedMatch.h \
+    IndexerFeedStore.h \
     IndexerQuery.h \
     IndexerResult.h \
     IndexerSearch.h \

@@ -62,6 +62,7 @@ private slots:
     void capabilities_unsupported_isNotFatalToTheServer();
     void group_missing_reportsGroupNotFound();
     void stat_missingArticle_escalates();
+    void aStatRefusalDoesNotBackOffTheAccount();
     void dotStuffedBodyLine_isUnstuffed();
     void dropMidCommand_failsTheCommand();
     void readRateLimit_stillDeliversEverything();
@@ -298,6 +299,36 @@ void tst_NntpSocket::stat_missingArticle_escalates()
     }
 
     QCOMPARE(server.receivedCommands().count(QStringLiteral("STAT <part1@example>")), 2);
+}
+
+void tst_NntpSocket::aStatRefusalDoesNotBackOffTheAccount()
+{
+    // Every "I cannot answer for this article" code has to land on
+    // ArticleNotFound. ProtocolError is fatal to the connection, and
+    // UsenetWorker::finishJob() turns a fatal non-ArticleNotFound error into
+    // NntpServerPool::blockServer() — so a server that answers 412 to a STAT
+    // would have its whole account backed off on every probe. ArticleFetcher's
+    // stat() path is what constructs one, so this is live.
+    for (const int code : {430, 423, 420, 412}) {
+        StatCommand stat(QStringLiteral("gone@example"));
+        stat.onStatus(code, QStringLiteral("no such thing"));
+
+        QVERIFY(stat.failed());
+        QVERIFY(!stat.exists());
+        QCOMPARE(stat.error(), NntpError::ArticleNotFound);
+        QVERIFY2(!isFatalToConnection(stat.error()),
+                 qPrintable(QStringLiteral("code %1 would kill the connection").arg(code)));
+        QVERIFY2(escalatesToNextLevel(stat.error()),
+                 qPrintable(QStringLiteral("code %1 would not escalate").arg(code)));
+    }
+
+    // A code that genuinely means something is wrong still says so, or the
+    // mapping would swallow real faults as "article missing" and quietly
+    // escalate past a broken account instead of reporting it.
+    StatCommand broken(QStringLiteral("whatever@example"));
+    broken.onStatus(500, QStringLiteral("Command not recognized"));
+    QCOMPARE(broken.error(), NntpError::ProtocolError);
+    QVERIFY(isFatalToConnection(broken.error()));
 }
 
 void tst_NntpSocket::dotStuffedBodyLine_isUnstuffed()

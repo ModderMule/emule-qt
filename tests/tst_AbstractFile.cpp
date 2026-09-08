@@ -7,6 +7,8 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
+#include <QFile>
+#include <QTemporaryDir>
 #include <QTest>
 #include <cstring>
 
@@ -62,6 +64,7 @@ private slots:
     void tagByName_int64();
     void tagByName_str();
     void rating_and_comment();
+    void loadComment_readsFileInfoIni();
     void kadCommentSearchRunning();
     void getFileTypeByName_basic();
 };
@@ -497,6 +500,48 @@ void tst_AbstractFile::rating_and_comment()
     // loadComment is stubbed; getFileComment should not crash
     QString comment = file.getFileComment();
     QVERIFY(comment.isEmpty());
+}
+
+void tst_AbstractFile::loadComment_readsFileInfoIni()
+{
+    // The on-disk contract, written by hand so a change to the layout cannot pass
+    // silently: MFC's fileinfo.ini, one [MD4 hex] section per file with Comment and
+    // Rate (srchybrid/AbstractFile.cpp:126-131).
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString savedConfig = thePrefs.configDir();
+    thePrefs.setConfigDir(dir.path());
+
+    uint8 hash[16];
+    for (int i = 0; i < 16; ++i)
+        hash[i] = static_cast<uint8>(0x10 + i);
+
+    TestFile file;
+    file.setFileHash(hash);
+
+    // Written as raw text, the way the original client writes it — bare values, no
+    // quoting. Going through QSettings here would only prove QSettings round-trips
+    // itself; the point is that a config directory from real eMule can be read.
+    // Note the comma: it is QSettings' list separator, so this is the case that
+    // silently turns a comment into a QStringList if the reader is careless.
+    {
+        QFile ini(thePrefs.fileCommentsFilePath());
+        QVERIFY(ini.open(QIODevice::WriteOnly | QIODevice::Text));
+        ini.write("[" + encodeBase16({hash, 16}).toUtf8() + "]\n"
+                  "Comment=german audio, full length\n"
+                  "Rate=4\n");
+    }
+
+    QCOMPARE(file.getFileComment(), QStringLiteral("german audio, full length"));
+    QCOMPARE(file.getFileRating(), uint32{4});
+
+    // ...and it leaves the aggregate alone. hasComment() means *someone else*
+    // commented; it belongs to updateFileRatingCommentAvail(), which recomputes it
+    // from peers and Kad notes. A loader that set it made our own comment claim to
+    // be a stranger's until the next recompute took it away again.
+    QVERIFY(!file.hasComment());
+
+    thePrefs.setConfigDir(savedConfig);
 }
 
 void tst_AbstractFile::kadCommentSearchRunning()

@@ -157,19 +157,47 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
                 return QStringLiteral("%1 — %2").arg(it.statusText, it.error);
             if (isPostProcessing(it.status) && !it.postDetail.isEmpty())
                 return QStringLiteral("%1 — %2").arg(it.statusText, it.postDetail);
+            if (!it.stalledReason.isEmpty())
+                return QStringLiteral("%1 — %2").arg(it.statusText, it.stalledReason);
             return it.statusText;
         case ColSpeed:     return formatSpeed(it.speed);
         case ColRemaining: return formatSize(it.totalBytes - it.decodedBytes);
         case ColPriority:  return it.priority;
+        case ColHealth:
+            // A dash, not "100%": -1 means nothing was ever asked, and showing
+            // that as full health is the one way this column can lie.
+            if (it.healthPercent < 0)
+                return QStringLiteral("—");
+            if (it.healthPercent >= 100)
+                return QStringLiteral("100%");
+            return QStringLiteral("%1%").arg(it.healthPercent);
         default:           return {};
         }
 
-    case Qt::ToolTipRole:
+    case Qt::ToolTipRole: {
+        if (index.column() == ColHealth) {
+            if (it.healthPercent < 0)
+                return tr("Not checked.");
+            QString note = it.healthProbed
+                               ? tr("%1% of this release looks obtainable.")
+                                     .arg(it.healthPercent)
+                               : tr("%1% by the NZB's own article counts. "
+                                    "No server was asked.")
+                                     .arg(it.healthPercent);
+            if (it.healthMissingBytes > 0 && it.healthRecoveryBytes >= it.healthMissingBytes) {
+                // Said out loud, because a percentage on its own reads as damage
+                // when the release ships enough recovery data to repair it.
+                note += QLatin1Char('\n')
+                        + tr("The PAR2 recovery volumes should cover the shortfall.");
+            }
+            return note;
+        }
         if (it.missingSegments > 0) {
             return tr("%1\n%n article(s) could not be found on any server",
                       nullptr, it.missingSegments).arg(it.name);
         }
         return it.name;
+    }
 
     case Qt::FontRole:
         if (it.status == UsenetRowStatus::Downloading || isPostProcessing(it.status)) {
@@ -206,6 +234,7 @@ QVariant UsenetQueueModel::headerData(int section, Qt::Orientation orientation, 
     case ColSpeed:     return tr("Speed");
     case ColRemaining: return tr("Remaining");
     case ColPriority:  return tr("Priority");
+    case ColHealth:    return tr("Health");
     default:           return {};
     }
 }

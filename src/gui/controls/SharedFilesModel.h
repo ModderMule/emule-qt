@@ -19,6 +19,15 @@ struct SharedFileRow {
     QString fileName;
     int64_t fileSize = 0;
     QString fileType;
+    bool    hasComment = false;
+    int     userRating = 0;     // wire value: 6 means a Kad note lookup is running
+    bool    ownComment = false; // *we* commented or rated it — drawn as an overlay
+
+    // The file's own bytes contradict its name. Independent of the rating above:
+    // that one is an opinion, this one is a fact about the first twelve bytes.
+    bool    containerSuspect = false;
+    QString containerExpected;  // container the extension promises, e.g. "ASF"
+    QString containerActual;    // what it really is; empty when unrecognised
     int     upPriority = 1;     // kPrNormal
     bool    isAutoUpPriority = true;
     int64_t requests = 0;

@@ -10,6 +10,45 @@
 
 namespace eMule::usenet {
 
+QList<int> nntpLevelLadder(const QList<NewsServer>& servers)
+{
+    std::set<int> distinct;
+    for (const auto& s : servers) {
+        if (s.enabled && s.isValid())
+            distinct.insert(s.level);
+    }
+    return QList<int>(distinct.cbegin(), distinct.cend());
+}
+
+QHash<QString, NntpConnectionBucket> nntpConnectionBuckets(const QList<NewsServer>& servers)
+{
+    // Two passes: the group limits have to be known before a member can be
+    // pointed at one, and a member's own limit is only the answer when it is
+    // alone in its bucket.
+    QHash<int, int> groupLimit;
+    for (const auto& s : servers) {
+        if (!s.enabled || !s.isValid() || s.group <= 0)
+            continue;
+        const auto it = groupLimit.constFind(s.group);
+        groupLimit.insert(s.group, it == groupLimit.cend()
+                                       ? s.maxConnections
+                                       : std::min(*it, s.maxConnections));
+    }
+
+    QHash<QString, NntpConnectionBucket> out;
+    for (const auto& s : servers) {
+        if (!s.enabled || !s.isValid())
+            continue;
+        if (s.group > 0) {
+            out.insert(s.key(), {QStringLiteral("g%1").arg(s.group),
+                                 groupLimit.value(s.group)});
+        } else {
+            out.insert(s.key(), {QStringLiteral("s:") + s.key(), s.maxConnections});
+        }
+    }
+    return out;
+}
+
 NntpServerPool::NntpServerPool(QObject* parent)
     : QObject(parent)
 {
@@ -38,7 +77,7 @@ void NntpServerPool::setServers(QList<NewsServer> servers)
     }
 
     m_servers = std::move(servers);
-    normalizeLevels();
+    rebuildServerIndex();
     ++m_generation;
 }
 
@@ -85,12 +124,19 @@ NntpSocket* NntpServerPool::acquire(int level, const QStringList& ignoreServers)
             return lease.socket.get();
         }
 
-        if (connectionsFor(key) >= std::max(1, server->maxConnections))
+        // Grouped accounts share one budget, so the count is per bucket rather
+        // than per key. No std::max(1, ...) floor: UsenetQueue divides
+        // maxConnections across workers, and a slice that divided down to zero
+        // opening one connection anyway is exactly the replication the split
+        // exists to prevent. A limit of 0 means this pool may not lease this
+        // account at all.
+        const NntpConnectionBucket bucket = m_buckets.value(key);
+        if (bucket.limit <= 0 || connectionsInBucket(bucket.id) >= bucket.limit)
             continue;
 
         auto socket = std::make_unique<NntpSocket>();
         NntpSocket* raw = socket.get();
-        m_connections.push_back(Lease{std::move(socket), key, level, true});
+        m_connections.push_back(Lease{std::move(socket), key, bucket.id, level, true});
         raw->connectToServer(*server);
         m_rotation[level] = (start + i + 1) % candidates.size();
         return raw;
@@ -166,6 +212,21 @@ void NntpServerPool::closeIdleConnections()
     });
 }
 
+int NntpServerPool::capacity() const
+{
+    // Distinct buckets, not rows: two hostnames of one grouped account share a
+    // budget, so counting both would let the queue dispatch more work than this
+    // pool can ever lease and every excess job would come back "no server".
+    QHash<QString, int> seen;
+    for (auto it = m_buckets.cbegin(); it != m_buckets.cend(); ++it)
+        seen.insert(it->id, it->limit);
+
+    int total = 0;
+    for (const int limit : std::as_const(seen))
+        total += std::max(0, limit);
+    return total;
+}
+
 int NntpServerPool::busyCount() const
 {
     return static_cast<int>(std::ranges::count_if(m_connections,
@@ -176,10 +237,10 @@ int NntpServerPool::busyCount() const
 // Private
 // ---------------------------------------------------------------------------
 
-int NntpServerPool::connectionsFor(const QString& serverKey) const
+int NntpServerPool::connectionsInBucket(const QString& bucket) const
 {
     return static_cast<int>(std::ranges::count_if(
-        m_connections, [&serverKey](const Lease& l) { return l.serverKey == serverKey; }));
+        m_connections, [&bucket](const Lease& l) { return l.bucket == bucket; }));
 }
 
 qint64 NntpServerPool::nowSeconds() const
@@ -187,33 +248,26 @@ qint64 NntpServerPool::nowSeconds() const
     return QDateTime::currentSecsSinceEpoch();
 }
 
-void NntpServerPool::normalizeLevels()
+void NntpServerPool::rebuildServerIndex()
 {
     m_normalizedLevel.clear();
     m_rotation.clear();
     m_maxLevel = 0;
+    m_buckets = nntpConnectionBuckets(m_servers);
 
-    // Users write levels as 0/5/10 to leave room to insert later. Collapse them
-    // to 0..n so the failover ladder is just "level + 1" and no rung is empty —
-    // an empty rung would end the escalation early, silently.
-    std::set<int> distinct;
-    for (const auto& s : m_servers) {
-        if (s.enabled && s.isValid())
-            distinct.insert(s.level);
-    }
-    if (distinct.empty())
+    // The ladder comes from the shared function, not from a second copy of the
+    // rule: UsenetQueue decides when the ladder is exhausted and this decides who
+    // is on each rung, so the two numbering the rungs differently is a silent
+    // routing bug.
+    const QList<int> ladder = nntpLevelLadder(m_servers);
+    if (ladder.isEmpty())
         return;
 
-    QHash<int, int> map;
-    int next = 0;
-    for (int level : distinct)
-        map.insert(level, next++);
-
     for (const auto& s : m_servers) {
         if (s.enabled && s.isValid())
-            m_normalizedLevel.insert(s.key(), map.value(s.level));
+            m_normalizedLevel.insert(s.key(), int(ladder.indexOf(s.level)));
     }
-    m_maxLevel = next - 1;
+    m_maxLevel = int(ladder.size()) - 1;
 }
 
 void NntpServerPool::dropConnections(const QString& serverKey)

@@ -273,6 +273,36 @@ void connectCommentFilter(DetailDialog* dialog, IpcClient* ipc)
         });
 }
 
+// ── shared comment posting ─────────────────────────────────────────────
+
+void connectCommentPosting(DetailDialog* dialog, IpcClient* ipc)
+{
+    if (!dialog || !ipc)
+        return;
+
+    QPointer<DetailDialog> dlgPtr(dialog);
+    QObject::connect(dialog, &DetailDialog::postFileComment, dialog,
+        [ipc, dlgPtr](const QString& fileHash, const QString& comment, int rating) {
+            if (!ipc->isConnected())
+                return;
+            Ipc::IpcMessage req(Ipc::IpcMsgType::SetFileComment);
+            req.append(fileHash);
+            req.append(comment);
+            req.append(static_cast<qint64>(rating));
+            ipc->sendRequest(std::move(req), [dlgPtr, fileHash](const Ipc::IpcMessage& resp) {
+                if (!dlgPtr)
+                    return;
+                const bool ok = IpcFeedback::checkOrWarn(resp, dlgPtr,
+                                                         DetailDialog::tr("Comments"));
+                // The walker may have stepped onto another file while this was in
+                // flight; only the file the user actually typed against may have its
+                // pending-changes state cleared.
+                if (dlgPtr->subjectKey() == fileHash)
+                    dlgPtr->commentApplied(ok);
+            });
+        });
+}
+
 // ── private helpers ────────────────────────────────────────────────────
 
 void DetailDialog::buildButtonRow()

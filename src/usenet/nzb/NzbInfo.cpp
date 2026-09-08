@@ -35,6 +35,24 @@ bool NzbFileInfo::hasAllSegments() const
     return true;
 }
 
+int NzbFileInfo::missingSegmentCount() const
+{
+    // No counter in the subject: the honest answer is "no opinion", and 0 is how
+    // that is spelled here. NzbShortfall::unknownFiles is what carries the fact
+    // that an opinion was unavailable.
+    if (partsTotal <= 0)
+        return 0;
+    const int listed = int(segments.size());
+    return partsTotal > listed ? partsTotal - listed : 0;
+}
+
+qint64 NzbFileInfo::meanSegmentBytes() const
+{
+    if (segments.isEmpty())
+        return 0;
+    return encodedBytes() / segments.size();
+}
+
 bool NzbFileInfo::isPar2() const
 {
     // The name is not always available (obfuscated posts), so fall back to the
@@ -77,6 +95,36 @@ int NzbInfo::segmentCount() const
     for (const auto& file : files)
         total += int(file.segments.size());
     return total;
+}
+
+int NzbShortfall::percent() const
+{
+    const int claimed = listedSegments + missingSegments;
+    if (claimed <= 0)
+        return 100;
+    return int(qint64(listedSegments) * 100 / claimed);
+}
+
+NzbShortfall NzbInfo::shortfall() const
+{
+    NzbShortfall out;
+    for (const NzbFileInfo& file : files) {
+        out.listedSegments += int(file.segments.size());
+
+        if (file.partsTotal <= 0)
+            out.unknownFiles += 1;
+
+        const int missing = file.missingSegmentCount();
+        out.missingSegments += missing;
+        // Priced at this file's own mean, not the release's: a release mixes
+        // 700 KB archive volumes with a 2 KB .nfo, and one mean over all of them
+        // would misprice whichever kind actually lost articles.
+        out.missingBytes += qint64(missing) * file.meanSegmentBytes();
+
+        if (file.isPar2Volume())
+            out.recoveryBytes += file.encodedBytes();
+    }
+    return out;
 }
 
 } // namespace eMule::usenet

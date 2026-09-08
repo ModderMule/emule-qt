@@ -20,6 +20,7 @@
 #include <QHash>
 #include <QHostAddress>
 #include <QString>
+#include <QSet>
 #include <QStringList>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -99,6 +100,17 @@ public:
     // -- Observation --------------------------------------------------------
 
     /// Every command line received, in order, across all connections.
+    /// Answer 430 to STAT for @p messageId while still serving it to BODY.
+    ///
+    /// The asymmetry a health check is *about*. A probe's answer is a guess —
+    /// NNTP has one code for expired, taken down, never propagated and "not on
+    /// this server" — and this is how a wrong guess gets staged, so a test can
+    /// assert that believing it still costs the download nothing.
+    void setStatRefusal(const QString& messageId)
+    {
+        m_statRefusals.insert(normalizeId(messageId));
+    }
+
     [[nodiscard]] const QStringList& receivedCommands() const { return m_received; }
     [[nodiscard]] int connectionCount() const { return m_connections; }
 
@@ -215,7 +227,18 @@ private:
     void handleStat(QTcpSocket* sock, const QString& id)
     {
         const QString key = normalizeId(id);
-        if (!m_articles.contains(key)) {
+
+        // Consulted here as well as in handleBody(), so a probe can be given a
+        // transport failure for one named article rather than for whatever
+        // command happens to arrive next.
+        if (const auto drop = m_dropArticles.find(key);
+            drop != m_dropArticles.end() && drop.value() > 0) {
+            drop.value() -= 1;
+            sock->abort();
+            return;
+        }
+
+        if (m_statRefusals.contains(key) || !m_articles.contains(key)) {
             writeLine(sock, QByteArrayLiteral("430 No article with that message-id"));
             return;
         }
@@ -295,6 +318,9 @@ private:
     QHash<QString, QByteArray> m_articles;
 
     QHash<QString, int> m_dropArticles;
+
+    /// Articles STAT denies but BODY still serves. See setStatRefusal().
+    QSet<QString> m_statRefusals;
 
     QStringList m_received;
     int m_connections = 0;

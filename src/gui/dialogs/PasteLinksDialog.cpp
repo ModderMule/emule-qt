@@ -3,56 +3,25 @@
 
 #include "app/IpcClient.h"
 #include "utils/Ed2kLinkImporter.h"
-#include "utils/DialogSizing.h"
 
-#include <QLabel>
 #include <QMessageBox>
-#include <QPlainTextEdit>
 #include <QPointer>
-#include <QPushButton>
-#include <QVBoxLayout>
 
 namespace eMule {
 
 PasteLinksDialog::PasteLinksDialog(IpcClient* ipc, QWidget* parent)
-    : QDialog(parent)
+    : PasteTextDialog(
+          Chrome{tr("Paste eD2K Links"),
+                 QStringLiteral(":/icons/eD2kLinkPaste.ico"),
+                 tr("eD2K Links:"),
+                 tr("Paste one or more ed2k:// links here, one per line..."),
+                 tr("Download")},
+          parent)
     , m_ipc(ipc)
 {
-    setWindowTitle(tr("Paste eD2K Links"));
-    setWindowIcon(QIcon(QStringLiteral(":/icons/eD2kLinkPaste.ico")));
-
-    auto* layout = new QVBoxLayout(this);
-
-    auto* label = new QLabel(tr("eD2K Links:"), this);
-    layout->addWidget(label);
-
-    m_edit = new QPlainTextEdit(this);
-    m_edit->setPlaceholderText(tr("Paste one or more ed2k:// links here, one per line..."));
-    layout->addWidget(m_edit);
-
-    auto* btnLayout = new QHBoxLayout;
-    btnLayout->addStretch();
-
-    m_downloadBtn = new QPushButton(tr("Download"), this);
-    m_downloadBtn->setDefault(true);
-    m_downloadBtn->setEnabled(false);
-    btnLayout->addWidget(m_downloadBtn);
-
-    auto* cancelBtn = new QPushButton(tr("Cancel"), this);
-    btnLayout->addWidget(cancelBtn);
-
-    layout->addLayout(btnLayout);
-
-    connect(m_edit, &QPlainTextEdit::textChanged, this, [this] {
-        m_downloadBtn->setEnabled(!m_edit->toPlainText().trimmed().isEmpty());
-    });
-    connect(m_downloadBtn, &QPushButton::clicked, this, &PasteLinksDialog::onDownload);
-    connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-
-    DialogSizing::applySize(this, {}, QSize(450, 250), DialogSizing::Fit::Layout);
 }
 
-void PasteLinksDialog::onDownload()
+void PasteLinksDialog::onAccepted()
 {
     if (!m_ipc || !m_ipc->isConnected()) {
         QMessageBox::warning(this, tr("Not Connected"),
@@ -65,7 +34,7 @@ void PasteLinksDialog::onDownload()
     // cancelled file is how you deliberately re-download it.
     const QPointer<PasteLinksDialog> self(this);
     Ed2kLinkImporter::importLinks(
-        m_edit->toPlainText().trimmed(), m_ipc, this,
+        text(), m_ipc, this,
         Ed2kLinkImporter::Source::Manual,
         Ed2kLinkImporter::Prompt::Silent,
         [self](const Ed2kLinkImporter::Result& result) {

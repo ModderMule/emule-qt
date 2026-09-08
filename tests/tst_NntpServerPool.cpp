@@ -33,7 +33,8 @@ namespace {
 /// host:port/user by design, and two accounts really are two endpoints. Giving
 /// them distinct user names instead would make every lease fail authentication
 /// while the pool bookkeeping still looked right.
-NewsServer make(const QString& name, quint16 port, int level, int maxConnections = 2)
+NewsServer make(const QString& name, quint16 port, int level, int maxConnections = 2,
+                int group = 0)
 {
     NewsServer s;
     s.name = name;
@@ -44,6 +45,7 @@ NewsServer make(const QString& name, quint16 port, int level, int maxConnections
     s.pass = QStringLiteral("testpass");
     s.level = level;
     s.maxConnections = maxConnections;
+    s.group = group;
     return s;
 }
 
@@ -65,6 +67,11 @@ private slots:
     void retryIntervalZeroDisablesBlocking();
     void changingCredentialsDropsConnections();
     void generationBumpsOnEveryChange();
+    void groupedServersShareOneConnectionBudget();
+    void groupBudgetIsTheSmallestMemberLimit();
+    void ungroupedServersKeepSeparateBudgets();
+    void zeroConnectionServerIsNeverLeased();
+    void ladderIsBuiltFromTheConfiguredLevelsOnly();
 };
 
 void tst_NntpServerPool::sparseLevelsAreNormalized()
@@ -317,4 +324,105 @@ void tst_NntpServerPool::generationBumpsOnEveryChange()
 }
 
 QTEST_MAIN(tst_NntpServerPool)
+void tst_NntpServerPool::groupedServersShareOneConnectionBudget()
+{
+    // The same provider reached through two host names. Two rows, one account,
+    // and the plan's limit applies to the account -- not to each row, which is
+    // how you get an over-subscribed login and a 502.
+    FakeNntpServer one;
+    FakeNntpServer two;
+    const quint16 p1 = one.start();
+    const quint16 p2 = two.start();
+    QVERIFY(p1 != 0 && p2 != 0);
+
+    NntpServerPool pool;
+    pool.setServers({make(QStringLiteral("a"), p1, 0, 2, /*group*/ 7),
+                     make(QStringLiteral("b"), p2, 0, 2, /*group*/ 7)});
+
+    QCOMPARE(pool.capacity(), 2);
+    QVERIFY(pool.acquire(0) != nullptr);
+    QVERIFY(pool.acquire(0) != nullptr);
+    QCOMPARE(pool.acquire(0), nullptr);
+    QCOMPARE(pool.totalCount(), 2);
+}
+
+void tst_NntpServerPool::groupBudgetIsTheSmallestMemberLimit()
+{
+    // Members disagreeing is ambiguous by construction, so the bucket takes the
+    // smallest: too few connections costs throughput, too many gets the account
+    // suspended.
+    FakeNntpServer one;
+    FakeNntpServer two;
+    const quint16 p1 = one.start();
+    const quint16 p2 = two.start();
+    QVERIFY(p1 != 0 && p2 != 0);
+
+    NntpServerPool pool;
+    pool.setServers({make(QStringLiteral("a"), p1, 0, 3, /*group*/ 4),
+                     make(QStringLiteral("b"), p2, 0, 1, /*group*/ 4)});
+
+    QCOMPARE(pool.capacity(), 1);
+    QVERIFY(pool.acquire(0) != nullptr);
+    QCOMPARE(pool.acquire(0), nullptr);
+}
+
+void tst_NntpServerPool::ungroupedServersKeepSeparateBudgets()
+{
+    // 0 means "no group", not "one shared group". Collapsing every ungrouped
+    // account into a single bucket would silently halve everyone's throughput.
+    FakeNntpServer one;
+    FakeNntpServer two;
+    const quint16 p1 = one.start();
+    const quint16 p2 = two.start();
+    QVERIFY(p1 != 0 && p2 != 0);
+
+    NntpServerPool pool;
+    pool.setServers({make(QStringLiteral("a"), p1, 0, 2),
+                     make(QStringLiteral("b"), p2, 0, 2)});
+
+    QCOMPARE(pool.capacity(), 4);
+    for (int i = 0; i < 4; ++i)
+        QVERIFY2(pool.acquire(0) != nullptr, qPrintable(QStringLiteral("lease %1").arg(i)));
+    QCOMPARE(pool.acquire(0), nullptr);
+}
+
+void tst_NntpServerPool::zeroConnectionServerIsNeverLeased()
+{
+    // UsenetQueue divides maxConnections across workers, so a slice can legally
+    // arrive with nothing to spend. Both halves matter: the row keeps its rung,
+    // so every worker numbers the ladder identically, and it leases nothing, so
+    // the divided budget is not quietly replicated back up to one-per-worker.
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    const NewsServer broke = make(QStringLiteral("none"), port, 0, /*maxConnections*/ 0);
+    NntpServerPool pool;
+    pool.setServers({broke});
+
+    QCOMPARE(pool.levelOf(broke.key()), 0);
+    QCOMPARE(pool.capacity(), 0);
+    QCOMPARE(pool.acquire(0), nullptr);
+    QCOMPARE(pool.totalCount(), 0);
+}
+
+void tst_NntpServerPool::ladderIsBuiltFromTheConfiguredLevelsOnly()
+{
+    // The one definition of the ladder, shared with UsenetQueue. If the two ever
+    // build it differently, a rung means one thing to the scheduler and another
+    // to the pool it asks -- which is a routing bug that shows up as articles
+    // never reaching the fill server.
+    NewsServer disabled = make(QStringLiteral("off"), 119, 5);
+    disabled.enabled = false;
+
+    NewsServer starved = make(QStringLiteral("starved"), 443, 10, /*maxConnections*/ 0);
+
+    const QList<int> ladder = nntpLevelLadder(
+        {make(QStringLiteral("a"), 119, 0), disabled, starved});
+
+    // Disabled rows are gone; a row with no connections is NOT -- filtering on
+    // maxConnections here is what would make a worker's slice renumber the rungs.
+    QCOMPARE(ladder, QList<int>({0, 10}));
+}
+
 #include "tst_NntpServerPool.moc"

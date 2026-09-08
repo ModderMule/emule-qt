@@ -17,6 +17,7 @@
 #include "ipc/IpcMessage.h"
 
 class QAction;
+class QMimeData;
 class QLabel;
 class QMenu;
 class QSortFilterProxyModel;
@@ -41,10 +42,32 @@ public:
     /// Queue an .nzb from disk. Also the drop and menu entry point.
     void addNzbFile(const QString& path);
 
+    /// Ask for .nzb URLs and queue them. The daemon does the downloading, so a
+    /// link only its network can reach still works — see IpcProtocol.h,
+    /// AddNzbUrl.
+    void promptAddNzbUrl();
+
+    /// The "Add NZB from URL…" action, so the Tools menu can show the very same
+    /// one rather than a copy that drifts from it.
+    [[nodiscard]] QAction* addNzbUrlAction() const { return m_addUrlAction; }
+
     /// The daemon's per-process preview-stream token, handed out with the stats
     /// poll. Empty means the web server is not up, and Preview stays disabled —
     /// the same contract TransferPanel, SearchPanel and SharedFilesPanel use.
     void setStreamToken(const QString& token) { m_streamToken = token; }
+
+protected:
+    // Drops are accepted here and in MainWindow, so a drop works wherever the
+    // user happens to be. Both defer to nzbDropCandidates() rather than each
+    // deciding for itself what a droppable .nzb is.
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+
+public:
+    /// Queue everything .nzb-shaped in @p mime. Returns false when there was
+    /// nothing of ours in it, so a caller can leave the event alone.
+    bool acceptNzbDrop(const QMimeData* mime);
 
 private:
     /// The queue view's state, all of which a model change can disturb.
@@ -74,6 +97,7 @@ private:
     void onSetPriority(int priority);
     void onOpenFolder();
     void onPreview();
+    void onCheckAvailability();
 
     /// The file a Preview should stream, as (item id, index in the NZB).
     ///
@@ -103,12 +127,17 @@ private:
     QLabel* m_summary = nullptr;
 
     QAction* m_addAction = nullptr;
+    QAction* m_addUrlAction = nullptr;
+
+    /// Last quota-stall sentence shown in the status bar. The panel polls four
+    /// times a second, so posting on every refresh would repeat the notice
+    /// forever; this makes it fire on the transition only.
+    QString m_lastStallNotice;
     QAction* m_pauseAction = nullptr;
     QAction* m_resumeAction = nullptr;
     QAction* m_removeAction = nullptr;
-    QAction* m_removeWithFilesAction = nullptr;
-    QAction* m_openFolderAction = nullptr;
     QAction* m_previewAction = nullptr;
+    QAction* m_checkAction = nullptr;
 
     QString m_streamToken;
 

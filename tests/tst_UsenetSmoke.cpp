@@ -12,11 +12,13 @@
 /// Q_OBJECT type from the module and calls through it. It is meant to stay
 /// trivial. Behaviour lives in the per-subsystem tests.
 
+#include "UsenetPostingHarness.h"
 #include "UsenetSession.h"
 
 #include <QTest>
 
 using eMule::usenet::UsenetSession;
+using eMule::testing::usenet::useTempPrefs;
 
 class tst_UsenetSmoke : public QObject {
     Q_OBJECT
@@ -37,6 +39,15 @@ void tst_UsenetSmoke::constructs()
 
 void tst_UsenetSmoke::startStopIsIdempotent()
 {
+    // A temp config even though this test asserts nothing about files.
+    // start()/stop() run the real engine against the real preferences, and
+    // stop() flushes the per-account usage meter — so without this the smoke
+    // test writes zeros over the user's live ~/eMuleQt/Config/Usenet/usage.yml
+    // every time the suite runs. Harmless while their meters are empty and
+    // silent data loss the day they are not.
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
     UsenetSession session;
 
     session.start();

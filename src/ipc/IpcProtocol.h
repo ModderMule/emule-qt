@@ -120,6 +120,11 @@ enum class IpcMsgType : int {
     /// The searchID is required because a hash is only unique within a search tab.
     GetSearchResultDetails  = 260,
 
+    /// [] → re-read the web server template from disk. For "same path, edited
+    /// content"; a changed templatePath is a config change and already goes
+    /// through SetPreferences → restartWebServer().
+    ReloadWebTemplate       = 272,
+
     /// [fromSeq: int] -> {epoch, oldestSeq, samples: [[seq, down, up], ...]}
     /// Sample history for the toolbar download/upload graph. Core samples once a
     /// second and every GUI replays from its own seq, so a restarted GUI comes back
@@ -189,6 +194,22 @@ enum class IpcMsgType : int {
     /// See Ipc::CategoryAction.
     SetCategoryStatus       = 270,
 
+    /// [hash: string, comment: string, rating: int] -> [ok: bool]
+    /// Post the local user's own comment and rating for one file — the write half of
+    /// MFC's CCommentDialog::OnApply (srchybrid/CommentDialog.cpp:166-184). An empty
+    /// comment clears it; rating 0 means "not rated", 1 means fake, 2-5 poor..excellent.
+    ///
+    /// The file must be in the shared list. eMule never publishes a comment for a file
+    /// it is not sharing, which is exactly why the original greys its whole comment page
+    /// out for those (CommentDialog.cpp:117-121) rather than letting the user type into
+    /// a void. Part files are shared files here, so a download qualifies.
+    ///
+    /// The daemon persists both to fileinfo.ini, clears the Kad notes republish timer so
+    /// the next STORENOTES carries them, and marks every peer we are uploading to so its
+    /// next OP_FILEDESC does too. Nothing comes back but `ok`: your own comment never
+    /// appears in the `comments[]` of a details reply, which is other people's.
+    SetFileComment          = 271,
+
     // -- Indexers (700-719) --------------------------------------------------
     //
     // The shared newznab/torznab client, reserved here when the Usenet blocks
@@ -236,6 +257,25 @@ enum class IpcMsgType : int {
     /// GUI never issues the request.
     GrabIndexerResult       = 707,
 
+    /// [] -> [[{name, kind, enabled, query, categories, indexers, url, hasUrl,
+    ///          accept, reject, minSize, maxSize, maxAgeDays, intervalMinutes,
+    ///          grabExisting, lastPolled, lastError, lastMatched, seenCount,
+    ///          polling}]]
+    /// `url` arrives **redacted** and `hasUrl` says whether one is stored. A
+    /// pasted RSS link carries the API key in its query, so it is a credential
+    /// wearing a URL's clothes and gets the GetIndexers treatment.
+    GetIndexerFeeds         = 708,
+    /// [[{...same shape, plus optional `url`...}]] -> [ok: bool, error: string]
+    /// Replaces the whole list. An entry that omits `url` keeps the stored one,
+    /// which is what lets the Options page round-trip a feed whose URL it was
+    /// only ever shown redacted.
+    SetIndexerFeeds         = 709,
+    /// [name: string] -> [ok, error]
+    /// Check one feed now, or every enabled feed when the name is empty. Even
+    /// then they go one per tick rather than at once: a "check everything" click
+    /// must not open one request per feed at the same instant.
+    PollIndexerFeedNow      = 710,
+
     // -- Usenet (720-799) ----------------------------------------------------
     //
     // A block, not the next free integer. The core request space runs 100-299
@@ -281,10 +321,15 @@ enum class IpcMsgType : int {
     /// The whole queue. The GUI polls this; individual changes arrive as
     /// PushUsenetQueueItem, which carries one item in the same shape.
     GetUsenetQueue          = 723,
-    /// [nzbBytes: bytes, name: string] -> [ok, idOrError]
+    /// [nzbBytes: bytes, name: string, automatic: bool] -> [ok, idOrError]
     /// The GUI sends the file's contents rather than a path: the daemon may be on
     /// another machine, and a path that resolves on one would silently open the
     /// wrong file — or nothing — on the other.
+    ///
+    /// `automatic` decides which existing items refuse a re-add: a release still
+    /// downloading is refused either way, a *completed* one only for an automatic
+    /// add. Absent reads as false, which is what every GUI caller is — the field
+    /// exists for the watch folder and for feeds.
     AddNzb                  = 724,
     /// [id: string, deleteFiles: bool] -> [ok]
     RemoveUsenetItem        = 725,
@@ -312,6 +357,49 @@ enum class IpcMsgType : int {
     /// nothing to list), 4 NotAnArchive (a raw post or a `.001` split — one
     /// file, and there was never a choice). Only 1 is non-terminal.
     ListUsenetArchiveEntries = 729,
+
+    /// [url: string] -> [ok, idOrError]
+    /// **This one fetches.** The daemon downloads the .nzb itself rather than
+    /// having the GUI fetch it and post the bytes through AddNzb, for the reason
+    /// GrabIndexerResult fetches daemon-side: the URL is often reachable only
+    /// from the daemon's own network — a self-hosted indexer on the LAN it sits
+    /// on — and the bytes have to end up in its queue regardless.
+    ///
+    /// Only http and https are accepted. QNetworkAccessManager also speaks
+    /// file: and qrc:, and a client naming one of those would be asking the
+    /// daemon to read its own disk. Size, timeout and the no-downgrade redirect
+    /// policy are HttpFileDownload's, already.
+    ///
+    /// One URL per request. A paste of several is several requests, so a dead
+    /// link costs its own line and nothing more, and no reply waits out another
+    /// URL's timeout.
+    ///
+    /// Field 1 is the same `automatic` bit AddNzb takes.
+    AddNzbUrl               = 730,
+
+    /// [accountId: string, periodBytes: int64, totalBytes: int64] -> [ok, error]
+    ///
+    /// Correct one account's usage meter. -1 leaves a figure alone, so a plain
+    /// reset is [id, 0, -1].
+    ///
+    /// It exists because the meter is *measured*, not reported: NNTP has no
+    /// command that asks a provider what you have spent, so our figure is the
+    /// application-level inbound byte count and reads a few percent under theirs.
+    /// A user who switches plans, corrects a billing day or tops up a block
+    /// account has no other way to make it true. The counter itself travels
+    /// read-only on GetNewsServers, the way `hasPassword` does.
+    SetNewsServerUsage      = 731,
+
+    /// [itemId] -> [ok, error]. Re-run the availability probe for one queued
+    /// release: ask the configured accounts, with STAT, whether they still hold
+    /// it. A release queued a week ago is a different question from the one
+    /// answered when it was added, and there is otherwise no way to ask again.
+    ///
+    /// The verdict itself needs no opcode — it rides the item map that
+    /// GetUsenetQueue and PushUsenetQueueItem already carry, as postPercent and
+    /// stalledReason do. `ok` false means the item is unknown or is in a state
+    /// that cannot be probed; it never means the release is bad.
+    CheckUsenetItem         = 732,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -357,6 +445,11 @@ enum class IpcMsgType : int {
     /// perfectly good set of rows — one indexer being down is not a failed
     /// search.
     PushIndexerSearchDone  = 902,
+    /// [{name, lastPolled, lastError, lastMatched, seenCount, polling}]
+    /// Coalesced on the feed name. A feed's whole point is that it acts while
+    /// nobody is watching, so "last checked, this many matched, this error" is
+    /// the only visibility there is.
+    PushIndexerFeedStatus  = 903,
 
     // -- Usenet pushes (910-949) ---------------------------------------------
     //

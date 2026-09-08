@@ -44,6 +44,15 @@ enum class NntpCertVerification : quint8 {
     Strict = 2,   ///< Chain and hostname must both match. The default.
 };
 
+/// How a provider's allowance behaves. Two shapes are sold, and they expire
+/// differently: a subscription's cap comes back on a billing day, a block
+/// account's bytes are prepaid and never come back on their own.
+enum class NntpQuotaKind : quint8 {
+    None = 0,     ///< Unmetered. The default, so nothing changes for an existing config.
+    Monthly = 1,  ///< Resets on `quotaResetDay`.
+    Block = 2,    ///< A prepaid bucket. Only a top-up (a usage edit) refills it.
+};
+
 /// Default ports, by TLS mode.
 inline constexpr quint16 kDefaultNntpPort = 119;
 inline constexpr quint16 kDefaultNntpTlsPort = 563;
@@ -85,6 +94,34 @@ struct NewsServer {
     /// to be told 430.
     int retention = 0;
 
+    /// Stable identity for anything that must outlive an edit to the connection
+    /// parameters — today, the usage meter. Minted when the row is created and
+    /// never derived, because key() deliberately *is* derived: a changed host
+    /// really is a different connection, which is what the pool and
+    /// SegmentAttempt::tried need. Not a list index, so the objection recorded
+    /// at key() does not apply. Empty on a config written before quotas
+    /// existed; the daemon mints one on load.
+    QString accountId;
+
+    /// Which allowance this account is on. Bytes are counted whatever this
+    /// says — the figure is then already there when a cap is first set.
+    NntpQuotaKind quotaKind = NntpQuotaKind::None;
+
+    /// The allowance in bytes. 0 means no cap even when a kind is set, so a
+    /// half-filled form can never stall the queue.
+    qint64 quotaBytes = 0;
+
+    /// Billing day, 1-31, Monthly only. A month shorter than this rolls over on
+    /// its last day. Providers bill on the day you signed up, not the 1st.
+    int quotaResetDay = 1;
+
+    /// What to do once the allowance is spent: false parks the download, true
+    /// lets it fall through to the next priority level. Off by default because
+    /// it is a money decision — block credit is normally dearer per GB than the
+    /// plan it would be covering, and silently spending it is the one thing a
+    /// spending limit exists to prevent.
+    bool quotaFallThrough = false;
+
     /// Whether to issue GROUP before each article fetch. Almost no provider
     /// needs it for message-id access, and it costs a round trip, but a few
     /// old servers refuse BODY <msgid> without it.
@@ -93,6 +130,13 @@ struct NewsServer {
     int maxConnections = kDefaultMaxConnections;
     NntpCertVerification certVerification = NntpCertVerification::Strict;
     bool enabled = true;
+
+    /// Whether an allowance is actually in force. A kind with no byte figure is
+    /// a half-filled form, not a cap of zero.
+    [[nodiscard]] bool isMetered() const
+    {
+        return quotaKind != NntpQuotaKind::None && quotaBytes > 0;
+    }
 
     /// Whether this entry is usable at all. An empty host is the one hard
     /// requirement; everything else has a working default.

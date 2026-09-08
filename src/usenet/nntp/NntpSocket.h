@@ -77,6 +77,20 @@ public:
     void setReadRateLimit(qint64 bytesPerSecond);
     [[nodiscard]] qint64 readRateLimit() const { return m_readRateLimit; }
 
+    /// Inbound bytes since the last call, then zeroed.
+    ///
+    /// Everything off the wire — greeting, auth, status lines, article bodies,
+    /// dot-stuffing — because that is what a provider meters, and it is the
+    /// figure the quota accounting spends. Decrypted, so TLS record framing and
+    /// TCP headers are not in it; the count reads a few percent under a
+    /// provider's own.
+    ///
+    /// A *take* rather than a running total on purpose: a pooled connection
+    /// serves many articles in sequence and each caller wants the delta since
+    /// it last looked, which is also what stops two jobs charging the same
+    /// bytes twice.
+    [[nodiscard]] qint64 takeBytesRead();
+
     /// How long to wait for a response before giving up. Default 60 s, matching
     /// NZBGet's ServerPool timeout.
     void setResponseTimeout(int ms);
@@ -150,6 +164,7 @@ private:
 
     qint64 m_readRateLimit = 0;
     qint64 m_readBudget = 0;
+    qint64 m_bytesRead = 0;
 
     bool m_failed = false;
 };

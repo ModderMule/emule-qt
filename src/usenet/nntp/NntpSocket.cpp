@@ -182,6 +182,13 @@ void NntpSocket::setReadRateLimit(qint64 bytesPerSecond)
     m_refillTimer->start(kRefillIntervalMs);
 }
 
+qint64 NntpSocket::takeBytesRead()
+{
+    const qint64 spent = m_bytesRead;
+    m_bytesRead = 0;
+    return spent;
+}
+
 void NntpSocket::setResponseTimeout(int ms)
 {
     m_responseTimeoutMs = ms;
@@ -337,6 +344,7 @@ void NntpSocket::drain()
 
         QByteArray raw = m_socket->readLine();
         m_readBudget -= raw.size();
+        m_bytesRead += raw.size();   // before the CRLF chop: this is the wire count
 
         // Strip CRLF / LF. Everything downstream works on the bare line.
         while (raw.endsWith('\n') || raw.endsWith('\r'))

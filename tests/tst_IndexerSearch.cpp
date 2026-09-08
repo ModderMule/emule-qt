@@ -6,6 +6,8 @@
 /// the results and nothing more — with three configured, one being down should
 /// lose a third of the answers, not all of them.
 
+#include "FakeIndexerServer.h"
+
 #include "IndexerClient.h"
 #include "IndexerSearch.h"
 #include "IndexerQuery.h"
@@ -17,67 +19,7 @@
 #include <QUrlQuery>
 
 using namespace eMule::indexer;
-
-namespace {
-
-/// Minimal HTTP/1.0 responder. One request per connection, closed on write —
-/// enough for a client that issues plain GETs and reads to the end.
-class FakeIndexerServer : public QTcpServer {
-public:
-    /// Called with the request's query string; returns [status, body].
-    using Handler = std::function<QPair<int, QByteArray>(const QUrlQuery&)>;
-
-    explicit FakeIndexerServer(Handler handler, QObject* parent = nullptr)
-        : QTcpServer(parent)
-        , m_handler(std::move(handler))
-    {
-        listen(QHostAddress::LocalHost, 0);
-    }
-
-    [[nodiscard]] QString baseUrl() const
-    {
-        return QStringLiteral("http://127.0.0.1:%1/api").arg(serverPort());
-    }
-
-    int requestCount = 0;
-    QStringList seenQueries;
-
-protected:
-    void incomingConnection(qintptr handle) override
-    {
-        auto* socket = new QTcpSocket(this);
-        socket->setSocketDescriptor(handle);
-
-        connect(socket, &QTcpSocket::readyRead, this, [this, socket] {
-            const QByteArray request = socket->readAll();
-            const qsizetype start = request.indexOf(' ');
-            const qsizetype end = request.indexOf(' ', start + 1);
-            if (start < 0 || end < 0)
-                return;
-
-            const QUrl url(QString::fromUtf8(request.mid(start + 1, end - start - 1)));
-            const QUrlQuery query(url.query());
-
-            ++requestCount;
-            seenQueries.append(url.query());
-
-            const auto [status, body] = m_handler(query);
-            const QByteArray header =
-                QByteArrayLiteral("HTTP/1.0 ") + QByteArray::number(status)
-                + QByteArrayLiteral(" X\r\nContent-Type: application/xml\r\nContent-Length: ")
-                + QByteArray::number(body.size()) + QByteArrayLiteral("\r\n\r\n");
-            socket->write(header);
-            socket->write(body);
-            socket->disconnectFromHost();
-        });
-        connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
-    }
-
-private:
-    Handler m_handler;
-};
-
-} // namespace
+using namespace eMule::testing;
 
 // NOTE: feed() lives below the Q_OBJECT class because it holds raw strings, and
 // moc emits a zero-byte .moc for any file with one above the class — surfacing
@@ -130,7 +72,7 @@ IndexerConfig configFor(const FakeIndexerServer& server, const QString& name)
 
 void tst_IndexerSearch::singleIndexer_returnsItsRows()
 {
-    FakeIndexerServer server([](const QUrlQuery&) {
+    FakeIndexerServer server([](const QUrl&) {
         return qMakePair(200, feed({QStringLiteral("A"), QStringLiteral("B")}, 0, 2));
     });
 
@@ -155,10 +97,10 @@ void tst_IndexerSearch::twoIndexers_bothContributeAndDuplicatesCollapse()
     // "Shared" is offered by both. Dedup is heuristic — title plus size, because
     // the same release carries a different guid at every indexer — so the row
     // appears once and the unique ones survive.
-    FakeIndexerServer first([](const QUrlQuery&) {
+    FakeIndexerServer first([](const QUrl&) {
         return qMakePair(200, feed({QStringLiteral("Shared"), QStringLiteral("OnlyFirst")}, 0, 2));
     });
-    FakeIndexerServer second([](const QUrlQuery&) {
+    FakeIndexerServer second([](const QUrl&) {
         return qMakePair(200, feed({QStringLiteral("Shared"), QStringLiteral("OnlySecond")}, 0, 2));
     });
 
@@ -186,10 +128,10 @@ void tst_IndexerSearch::twoIndexers_bothContributeAndDuplicatesCollapse()
 
 void tst_IndexerSearch::oneIndexerFailing_doesNotLoseTheOther()
 {
-    FakeIndexerServer good([](const QUrlQuery&) {
+    FakeIndexerServer good([](const QUrl&) {
         return qMakePair(200, feed({QStringLiteral("Kept")}, 0, 1));
     });
-    FakeIndexerServer bad([](const QUrlQuery&) {
+    FakeIndexerServer bad([](const QUrl&) {
         return qMakePair(500, QByteArray("boom"));
     });
 
@@ -219,7 +161,7 @@ void tst_IndexerSearch::oneIndexerFailing_doesNotLoseTheOther()
 void tst_IndexerSearch::anErrorDocumentIsReportedNotSilentlyEmpty()
 {
     // HTTP 200 with an <error> body — how a wrong API key actually arrives.
-    FakeIndexerServer server([](const QUrlQuery&) {
+    FakeIndexerServer server([](const QUrl&) {
         return qMakePair(200,
             QByteArray(R"(<error code="100" description="Incorrect user credentials"/>)"));
     });
@@ -244,8 +186,9 @@ void tst_IndexerSearch::pagingStopsAtTheCap()
     // The indexer always answers with a full page and claims plenty more, so
     // only the page cap can end this. That cap is a spending limit: every page
     // is an API call against the user's allowance.
-    FakeIndexerServer server([](const QUrlQuery& query) {
-        const int offset = query.queryItemValue(QStringLiteral("offset")).toInt();
+    FakeIndexerServer server([](const QUrl& url) {
+        const int offset =
+            QUrlQuery(url.query()).queryItemValue(QStringLiteral("offset")).toInt();
         QStringList titles;
         for (int i = 0; i < 2; ++i)
             titles.append(QStringLiteral("R%1").arg(offset + i));
@@ -269,8 +212,9 @@ void tst_IndexerSearch::pagingStopsAtTheCap()
 
 void tst_IndexerSearch::pagingStopsWhenTheIndexerRunsOut()
 {
-    FakeIndexerServer server([](const QUrlQuery& query) {
-        const int offset = query.queryItemValue(QStringLiteral("offset")).toInt();
+    FakeIndexerServer server([](const QUrl& url) {
+        const int offset =
+            QUrlQuery(url.query()).queryItemValue(QStringLiteral("offset")).toInt();
         if (offset >= 2)
             return qMakePair(200, feed({}, offset, 3));
         return qMakePair(200, feed({QStringLiteral("A"), QStringLiteral("B")}, offset, 3));
@@ -293,8 +237,9 @@ void tst_IndexerSearch::pagingStopsWhenTheIndexerRunsOut()
 
 void tst_IndexerSearch::stopEndsTheSearchAndKeepsWhatArrived()
 {
-    FakeIndexerServer server([](const QUrlQuery& query) {
-        const int offset = query.queryItemValue(QStringLiteral("offset")).toInt();
+    FakeIndexerServer server([](const QUrl& url) {
+        const int offset =
+            QUrlQuery(url.query()).queryItemValue(QStringLiteral("offset")).toInt();
         return qMakePair(200, feed({QStringLiteral("P%1").arg(offset)}, offset, 100));
     });
 

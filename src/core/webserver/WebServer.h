@@ -18,6 +18,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class QHttpServer;
@@ -248,7 +249,8 @@ private:
     // sit on the stream token, not on the web-UI session or the API key, because
     // like preview they must work with both of those surfaces switched off.
     QHttpServerResponse handleIncomingListing(const QHttpServerRequest& req);
-    QHttpServerResponse handleIncomingStream(const QHttpServerRequest& req);
+    void handleIncomingStream(const QHttpServerRequest& req,
+                              QHttpServerResponder& responder);
     void handleIncomingDownload(const QHttpServerRequest& req, QHttpServerResponder& responder);
 
     /// True when the request carries the stream token. The gate all three share.
@@ -287,6 +289,13 @@ private:
     /// The listing page, and the one-element player page, as standalone HTML.
     /// Self-contained by necessity: with the web UI off there is no stylesheet,
     /// no sprite sheet and no template to lean on.
+    /// The rating/fake sprite sheet as one inline `data:` URI plus its nine cell
+    /// rules, so the incoming pages can draw exactly the marks the rest of the UI
+    /// draws. The sheet is 410 bytes and is seeded to config/webserver/ whether or
+    /// not the web UI is enabled, unlike the static route that normally serves it.
+    /// Empty when it cannot be read; callers fall back to the CSS-drawn mark.
+    [[nodiscard]] QString ratingSpriteCss() const;
+
     [[nodiscard]] QByteArray renderIncomingListing(const QString& absDir, const QString& relPath,
                                                    const QString& token) const;
     [[nodiscard]] QByteArray renderIncomingPlayer(const QString& relPath, const QString& fileName,
@@ -355,6 +364,10 @@ private:
     std::unique_ptr<class WebTemplateEngine> m_templateEngine;
     std::unique_ptr<class WebSessionManager> m_sessionManager;
     QString m_webDataDir;  // path to config/webserver/ assets
+
+    /// ratingSpriteCss(), built once. Empty string means "read and failed"; unset
+    /// means "not looked yet", so a missing sheet is not re-read on every request.
+    mutable std::optional<QString> m_ratingSpriteCss;
 
     // Manager pointers (not owned)
     DownloadQueue*  m_downloadQueue = nullptr;

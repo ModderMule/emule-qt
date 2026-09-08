@@ -21,12 +21,12 @@ class QLineEdit;
 class QCheckBox;
 class QComboBox;
 class QButtonGroup;
-class QListWidget;
 class QRadioButton;
 class QStackedWidget;
 class QPushButton;
 class QSlider;
 class QSpinBox;
+class QDoubleSpinBox;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QTreeView;
@@ -36,6 +36,7 @@ class QTimeEdit;
 
 namespace eMule {
 
+class AccordionSidebar;
 class IpcClient;
 class StatisticsPanel;
 
@@ -50,7 +51,10 @@ public:
     /// Switch to a specific page by index.
     void selectPage(int page);
 
-    /// Page indices matching sidebar order.
+    /// Indices into the stacked widget, and the value persisted as
+    /// UiState::optionsLastPage(). The sidebar groups these differently and carries
+    /// the values as item ids, so this order is free to stay put -- reordering it
+    /// would silently repoint every stored index and every numeric --options N.
     enum Page {
         PageGeneral = 0,
         PageDisplay,
@@ -68,6 +72,7 @@ public:
         PageWebInterface,
         PageUsenet,
         PageIndexers,
+        PageFeeds,
         PageExtended,
         PageCount
     };
@@ -88,6 +93,17 @@ private:
     void setupPages();
     void setupButtons();
 
+    /// Whether setupPages() gives a page its scrollbar, or the page brings its own.
+    enum class PageScroll {
+        Wrap,   ///< wrapped in a ContentScrollArea by addPage()
+        Self,   ///< scrolls internally; a second area would mean two scrollbars
+    };
+
+    /// Add @p page at stack index @p id. A page left unwrapped sets the minimum
+    /// height of *every* page, because QStackedLayout's minimum is the max over all
+    /// of them -- so the wrapping is stated here once rather than in 18 builders.
+    void addPage(Page id, QWidget* page, PageScroll scroll = PageScroll::Wrap);
+
     QWidget* createGeneralPage();
     QWidget* createDisplayPage();
     QWidget* createConnectionPage();
@@ -104,6 +120,7 @@ private:
     QWidget* createWebInterfacePage();
     QWidget* createUsenetPage();
     QWidget* createIndexersPage();
+    QWidget* createFeedsPage();
     QWidget* createExtendedPage();
     QWidget* createPlaceholderPage(const QString& title);
 
@@ -130,6 +147,11 @@ private:
     void selectNewsServer(int index);
     void populateNewsServerDetails(int index);
     void applyNewsServerDetails();
+    /// Refresh the "Used" line for the selected account. The figure is the
+    /// daemon's measurement and rides read-only on GetNewsServers.
+    void updateNewsServerUsageLabel();
+    /// Type in what the provider actually says, or 0 to start again.
+    void onCorrectNewsServerUsage();
     void addNewsServer();
     void removeNewsServer();
     void testNewsServer();
@@ -148,10 +170,27 @@ private:
     void removeIndexer();
     void testIndexer();
 
-    /// Grow the window when a test result needs more room than was budgeted for
-    /// it. Shared by both pages; see the definition for why nothing else can
-    /// give the height back.
-    void refitForTestResult(QLabel* result);
+    // Feeds — the same shape again, for the same reason. The one difference is
+    // "Check now" where the indexer page has "Test": a feed is not something you
+    // can test, only something you can make run early.
+    void loadFeeds();
+    void saveFeeds();
+    void refreshFeedTable();
+    void updateFeedRow(int index);
+    void selectFeed(int index);
+    void populateFeedDetails(int index);
+    void applyFeedDetails();
+    void addFeed();
+    void removeFeed();
+    void checkFeedNow();
+
+    /// Apply one PushIndexerFeedStatus report to the table, so a feed that polls
+    /// while the dialog is open updates in place.
+    void applyFeedStatus(const QCborMap& status);
+
+    /// Scroll a test result into view. Shared by both pages; see the definition for
+    /// why the label's own height is a message stale when this is called.
+    void revealTestResult(QLabel* result);
 
     void updateUsenetEnabledStates();
     void refreshScheduleTable();
@@ -169,7 +208,7 @@ private:
     static QIcon makePadlockIcon();
 
     IpcClient* m_ipc = nullptr;
-    QListWidget* m_sidebar = nullptr;
+    AccordionSidebar* m_sidebar = nullptr;
     QStackedWidget* m_pages = nullptr;
     QLabel* m_pageHeader = nullptr;
     QPushButton* m_applyBtn = nullptr;
@@ -355,6 +394,12 @@ private:
     QCheckBox*    m_usenetRenameCheck = nullptr;
     QCheckBox*    m_usenetUnpackCheck = nullptr;
     QCheckBox*    m_usenetDirectUnpackCheck = nullptr;
+    QComboBox*    m_usenetHealthCombo = nullptr;
+    QSpinBox*     m_usenetHealthMinSpin = nullptr;
+    QCheckBox*    m_usenetAutoPausedCheck = nullptr;
+    QLineEdit*    m_usenetWatchDirEdit = nullptr;
+    QPushButton*  m_usenetWatchDirBrowse = nullptr;
+    QCheckBox*    m_associateNzbCheck = nullptr;
     QCheckBox*    m_usenetCleanupCheck = nullptr;
     QTreeWidget*  m_usenetServerTable = nullptr;
     QPushButton*  m_usenetAddBtn = nullptr;
@@ -370,9 +415,16 @@ private:
     QSpinBox*     m_usenetLevelSpin = nullptr;
     QSpinBox*     m_usenetConnSpin = nullptr;
     QSpinBox*     m_usenetRetentionSpin = nullptr;
+    QSpinBox*     m_usenetGroupSpin = nullptr;
     QCheckBox*    m_usenetEntryEnabledCheck = nullptr;
     QCheckBox*    m_usenetOptionalCheck = nullptr;
     QCheckBox*    m_usenetJoinGroupCheck = nullptr;
+    QComboBox*    m_usenetQuotaKindCombo = nullptr;
+    QDoubleSpinBox* m_usenetQuotaSpin = nullptr;
+    QSpinBox*     m_usenetQuotaDaySpin = nullptr;
+    QCheckBox*    m_usenetQuotaFallThroughCheck = nullptr;
+    QLabel*       m_usenetUsageLabel = nullptr;
+    QPushButton*  m_usenetUsageEditBtn = nullptr;
     QLabel*       m_usenetTestResult = nullptr;
 
     /// Working copy of the server list. `password` is only set on an entry the
@@ -399,6 +451,30 @@ private:
 
     QList<QCborMap> m_indexers;
     int m_currentIndexer = -1;
+
+    // Feeds page
+    QTreeWidget* m_feedTable = nullptr;
+    QPushButton* m_feedAddBtn = nullptr;
+    QPushButton* m_feedRemoveBtn = nullptr;
+    QPushButton* m_feedCheckBtn = nullptr;
+    QLabel* m_feedStatusLabel = nullptr;
+    QCheckBox* m_feedEnabledCheck = nullptr;
+    QLineEdit* m_feedNameEdit = nullptr;
+    QComboBox* m_feedKindCombo = nullptr;
+    QLineEdit* m_feedQueryEdit = nullptr;
+    QLineEdit* m_feedCategoriesEdit = nullptr;
+    QLineEdit* m_feedIndexersEdit = nullptr;
+    QLineEdit* m_feedUrlEdit = nullptr;
+    QLineEdit* m_feedAcceptEdit = nullptr;
+    QLineEdit* m_feedRejectEdit = nullptr;
+    QSpinBox* m_feedMinSizeSpin = nullptr;
+    QSpinBox* m_feedMaxSizeSpin = nullptr;
+    QSpinBox* m_feedMaxAgeSpin = nullptr;
+    QSpinBox* m_feedIntervalSpin = nullptr;
+    QCheckBox* m_feedGrabExistingCheck = nullptr;
+
+    QList<QCborMap> m_feeds;
+    int m_currentFeed = -1;
 
     QCheckBox*    m_schedEnabledCheck = nullptr;
     QTreeWidget*  m_schedTable = nullptr;

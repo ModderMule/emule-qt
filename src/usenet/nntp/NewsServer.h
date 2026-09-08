@@ -16,6 +16,7 @@ namespace eMule::usenet {
 using eMule::NewsServer;
 using TlsMode = eMule::NntpTlsMode;
 using CertVerification = eMule::NntpCertVerification;
+using QuotaKind = eMule::NntpQuotaKind;
 using eMule::kDefaultNntpPort;
 using eMule::kDefaultNntpTlsPort;
 

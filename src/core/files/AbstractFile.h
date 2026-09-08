@@ -97,6 +97,9 @@ public:
     const QString& getFileComment();
     uint32 getFileRating();
 
+    /// Read the user's own comment/rating for this file out of fileinfo.ini.
+    /// Lazy: the getters above call it on first access and never reload, so
+    /// anything that writes m_comment/m_rating must run a getter first.
     void loadComment();
 
     virtual void updateFileRatingCommentAvail(bool forceUpdate = false) = 0;
@@ -117,6 +120,10 @@ public:
     void setKadCommentSearchRunning(bool val);
 
 protected:
+    /// The write half of loadComment(). Protected: only KnownFile posts a comment,
+    /// and only it knows to re-arm the Kad publish and dirty the uploaders with it.
+    void saveComment() const;
+
     std::vector<Tag> m_tags;
     EMFileSize m_fileSize = 0;              // must be before m_fileIdentifier (init order)
     FileIdentifier m_fileIdentifier;

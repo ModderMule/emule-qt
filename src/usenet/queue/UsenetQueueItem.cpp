@@ -51,6 +51,7 @@ QString describeUsenetItemStatus(UsenetItemStatus s)
     case UsenetItemStatus::Verifying:   return QObject::tr("Verifying");
     case UsenetItemStatus::Repairing:   return QObject::tr("Repairing");
     case UsenetItemStatus::Unpacking:   return QObject::tr("Unpacking");
+    case UsenetItemStatus::Checking:    return QObject::tr("Checking");
     }
     return QObject::tr("Unknown");
 }

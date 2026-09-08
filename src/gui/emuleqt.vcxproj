@@ -210,11 +210,15 @@
     <ClCompile Include="dialogs\ClientDetailDialog.cpp" />
     <ClCompile Include="dialogs\ClientSharedFilesDialog.cpp" />
     <ClCompile Include="dialogs\UsenetArchiveEntryDialog.cpp" />
+    <ClCompile Include="utils\FileAssociation.cpp" />
     <ClCompile Include="utils\FileTypeIcons.cpp" />
+    <ClCompile Include="utils\NzbDrop.cpp" />
+    <ClCompile Include="utils\RatingIcons.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
     <ClCompile Include="app\ExternalLinkHandler.cpp" />
     <ClCompile Include="controls\ContactsGraph.cpp" />
+    <ClCompile Include="controls\AccordionSidebar.cpp" />
     <ClCompile Include="controls\ContentScrollArea.cpp" />
     <ClCompile Include="dialogs\CoreConnectDialog.cpp" />
     <ClCompile Include="controls\DownloadListModel.cpp" />
@@ -222,6 +226,7 @@
     <ClCompile Include="app\Ed2kSchemeHandler.cpp" />
     <ClCompile Include="dialogs\CollectionCreateDialog.cpp" />
     <ClCompile Include="dialogs\CollectionViewDialog.cpp" />
+    <ClCompile Include="dialogs\CommentEditPanel.cpp" />
     <ClCompile Include="dialogs\CommentsPanel.cpp" />
     <ClCompile Include="dialogs\DetailDialog.cpp" />
     <ClCompile Include="dialogs\FileDetailDialog.cpp" />
@@ -244,7 +249,9 @@
     <ClCompile Include="app\MiniMuleWidget.cpp" />
     <ClCompile Include="dialogs\NetworkInfoDialog.cpp" />
     <ClCompile Include="dialogs\OptionsDialog.cpp" />
+    <ClCompile Include="dialogs\AddNzbUrlDialog.cpp" />
     <ClCompile Include="dialogs\PasteLinksDialog.cpp" />
+    <ClCompile Include="dialogs\PasteTextDialog.cpp" />
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp" />
     <ClCompile Include="app\PowerManager.cpp" />
     <ClCompile Include="panels\SearchPanel.cpp" />
@@ -284,7 +291,10 @@
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
     <ClInclude Include="utils\DialogSizing.h" />
+    <ClInclude Include="utils\FileAssociation.h" />
     <ClInclude Include="utils\FileTypeIcons.h" />
+    <ClInclude Include="utils\NzbDrop.h" />
+    <ClInclude Include="utils\RatingIcons.h" />
     <ClInclude Include="utils\Ed2kLinkImporter.h" />
     <ClInclude Include="utils\HttpCacheLinkImporter.h" />
     <ClInclude Include="dialogs\FindInListDialog.h" />
@@ -311,6 +321,7 @@
     <QtMoc Include="controls\ClientListModel.h" />
     <ClInclude Include="app\CommandLineExec.h" />
     <QtMoc Include="controls\ContactsGraph.h" />
+    <QtMoc Include="controls\AccordionSidebar.h" />
     <QtMoc Include="controls\ContentScrollArea.h" />
     <QtMoc Include="dialogs\CoreConnectDialog.h" />
     <QtMoc Include="controls\DownloadListModel.h" />
@@ -318,6 +329,7 @@
     <ClInclude Include="app\Ed2kSchemeHandler.h" />
     <QtMoc Include="dialogs\CollectionCreateDialog.h" />
     <QtMoc Include="dialogs\CollectionViewDialog.h" />
+    <QtMoc Include="dialogs\CommentEditPanel.h" />
     <QtMoc Include="dialogs\CommentsPanel.h" />
     <QtMoc Include="dialogs\DetailDialog.h" />
     <QtMoc Include="dialogs\FileDetailDialog.h" />
@@ -339,7 +351,9 @@
     <QtMoc Include="app\MiniMuleWidget.h" />
     <QtMoc Include="dialogs\NetworkInfoDialog.h" />
     <QtMoc Include="dialogs\OptionsDialog.h" />
+    <QtMoc Include="dialogs\AddNzbUrlDialog.h" />
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
+    <QtMoc Include="dialogs\PasteTextDialog.h" />
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />
     <ClInclude Include="app\PowerManager.h" />
     <QtMoc Include="panels\SearchPanel.h" />

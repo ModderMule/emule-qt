@@ -29,6 +29,7 @@ SOURCES += \
     nntp/NntpServerPool.cpp \
     nntp/NntpSocket.cpp \
     nzb/NzbFile.cpp \
+    nzb/NzbUrlFetch.cpp \
     nzb/NzbInfo.cpp \
     nzb/SubjectParser.cpp \
     post/Par2Verifier.cpp \
@@ -37,8 +38,11 @@ SOURCES += \
     post/UsenetUnpacker.cpp \
     queue/ArticleWriter.cpp \
     queue/UsenetQueue.cpp \
+    queue/UsenetWatchFolder.cpp \
     queue/UsenetQueueItem.cpp \
     queue/UsenetQueueStore.cpp \
+    queue/UsenetHealth.cpp \
+    queue/UsenetUsage.cpp \
     queue/UsenetWorker.cpp \
     stream/RarReader.cpp \
     stream/UsenetStreamIndex.cpp
@@ -53,6 +57,7 @@ HEADERS += \
     nntp/NntpServerPool.h \
     nntp/NntpSocket.h \
     nzb/NzbFile.h \
+    nzb/NzbUrlFetch.h \
     nzb/NzbInfo.h \
     nzb/SubjectParser.h \
     post/Par2Verifier.h \
@@ -61,8 +66,11 @@ HEADERS += \
     post/UsenetUnpacker.h \
     queue/ArticleWriter.h \
     queue/UsenetQueue.h \
+    queue/UsenetWatchFolder.h \
     queue/UsenetQueueItem.h \
     queue/UsenetQueueStore.h \
+    queue/UsenetHealth.h \
+    queue/UsenetUsage.h \
     queue/UsenetWorker.h \
     stream/RarReader.h \
     stream/UsenetStreamIndex.h

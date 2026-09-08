@@ -78,9 +78,17 @@ public:
     /// @p onAllDone runs at most once, and is skipped when @p context has been destroyed
     /// by then. A request that cannot be queued counts as completed, so a mid-batch
     /// disconnect can never leave the completion hanging.
-    void sendBatchRequest(const QStringList& hashes,
-                          const std::function<Ipc::IpcMessage(const QString& hash)>& build,
-                          QObject* context, std::function<void()> onAllDone);
+    ///
+    /// @p onEach, when given, sees every reply as it lands, keyed by the string
+    /// that built it — so a caller can report which entries failed rather than
+    /// only that some did. A request that could not be queued calls it with a
+    /// default-constructed message, which reads as a failure, keeping one code
+    /// path for both.
+    void sendBatchRequest(const QStringList& keys,
+                          const std::function<Ipc::IpcMessage(const QString& key)>& build,
+                          QObject* context, std::function<void()> onAllDone,
+                          std::function<void(const QString& key,
+                                             const Ipc::IpcMessage& reply)> onEach = {});
 
     /// Send a Shutdown request to the daemon, then disconnect.
     /// Use this when the GUI launched the daemon and is about to close.
@@ -137,6 +145,10 @@ signals:
     /// [searchId, error] — the fan-out is over. `error` names the indexers that
     /// failed and is often set alongside perfectly good rows.
     void indexerSearchFinished(const Ipc::IpcMessage& msg);
+
+    /// One feed's last-poll report. The Options page is the only listener —
+    /// a feed acts unattended, so this is the only visibility there is.
+    void indexerFeedStatus(const Ipc::IpcMessage& msg);
 
     /// Emitted for every outgoing request and incoming message when enableIpcLog is on.
     void ipcLogMessage(const QString& text, bool outgoing);

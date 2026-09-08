@@ -5,6 +5,7 @@
 #include "controls/SearchResultsModel.h"
 
 #include "utils/FileTypeIcons.h"
+#include "utils/RatingIcons.h"
 
 #include <QColor>
 #include <QHash>
@@ -97,7 +98,16 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::DecorationRole && index.column() == ColFileName) {
-        return fileTypeIcon(r.fileType);
+        // Spam takes the rating mark's place rather than sitting beside it --
+        // MFC SearchListCtrl.cpp:1276-1278. A result flagged as spam has nothing
+        // useful to say about quality, so the two never compete for the cell.
+        const FileMark mark = r.isSpam ? FileMark::Spam
+                                       : ratingMark(r.hasComment, r.userRating);
+        // No container mark and no own-comment overlay: these files are on other
+        // people's disks, so we have neither their bytes nor a comment to publish.
+        // MFC's search list registers the overlay image and then never draws it.
+        return fileMarksIcon(r.fileType, /*containerSuspect*/ false,
+                             /*ownComment*/ false, mark);
     }
 
     // Raw values for sorting

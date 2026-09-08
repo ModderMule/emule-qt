@@ -21,6 +21,7 @@
 
 #include <QDir>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QTextStream>
@@ -284,6 +285,9 @@ void SharedFileList::onEntityAdded(KnownFile* file)
 {
     // We share it again, so we no longer "used to" — MFC AddFile:695.
     m_unsharedFiles.erase(keyFor(file));
+
+    // A new file has a verdict nobody has asked for yet.
+    m_containerSweepIdle = false;
 }
 
 void SharedFileList::onEntityRemoved(KnownFile* file)
@@ -308,6 +312,8 @@ void SharedFileList::process()
         sendListToServer();
         m_lastPublishED2K = std::time(nullptr);
     }
+
+    warmContainerChecks();
 }
 
 // ---------------------------------------------------------------------------
@@ -1142,6 +1148,62 @@ KnownFile* SharedFileList::fileAtIndexLocked(uint32 index) const
     auto it = m_map.begin();
     std::advance(it, index);
     return it->second;
+}
+
+// ---------------------------------------------------------------------------
+// warmContainerChecks — settle fake-file verdicts a slice at a time
+// ---------------------------------------------------------------------------
+
+void SharedFileList::warmContainerChecks()
+{
+    if (m_containerSweepIdle)
+        return;
+
+    // 15 ms of a 1 s tick. A verdict costs one 12-byte read and only for the ~20
+    // media extensions expectedContainer() promises anything about, so a share of a
+    // few thousand settles in the first tick or two and a huge one fills in visibly.
+    constexpr qint64 kBudgetMs = 15;
+    constexpr size_t kSliceFiles = 512;
+
+    // Collect under the map lock, read outside it: containerCheck() opens files and
+    // forEach() holds the lock for the whole callback. Keeping raw pointers across
+    // the release is safe because files join and leave the share on this same thread.
+    std::vector<KnownFile*> pending;
+    pending.reserve(kSliceFiles);
+    size_t unresolved = 0;
+    forEach([&](KnownFile* file) {
+        if (!file || file->containerCheckResolved())
+            return;
+        if (unresolved++ < m_containerSweepSkip)
+            return;
+        if (pending.size() < kSliceFiles)
+            pending.push_back(file);
+    });
+
+    if (pending.empty()) {
+        // Nothing left, or we stepped past the end of the ones that refuse to answer.
+        m_containerSweepIdle = (m_containerSweepSkip == 0);
+        m_containerSweepSkip = 0;
+        return;
+    }
+
+    QElapsedTimer budget;
+    budget.start();
+    size_t tried = 0;
+    size_t stillUnresolved = 0;
+    for (auto* file : pending) {
+        file->containerCheck();   // resolves and memoises, or the bytes are not there yet
+        ++tried;
+        if (!file->containerCheckResolved())
+            ++stillUnresolved;
+        if (budget.elapsed() >= kBudgetMs)
+            break;
+    }
+
+    // Step over the ones that could not answer so the next slice reaches new files.
+    // A part file gets its turn again on the next wrap, by which time the first part
+    // may have landed.
+    m_containerSweepSkip = (tried == stillUnresolved) ? m_containerSweepSkip + tried : 0;
 }
 
 } // namespace eMule

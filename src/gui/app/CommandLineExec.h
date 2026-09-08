@@ -48,7 +48,15 @@ public:
     /// for the daemon correct: a link given on the command line always arrives before the
     /// IPC connection is up, and the handler holds it until there is a daemon to import
     /// it into instead of guessing at a delay.
-    void handleEd2kLinks(ExternalLinkHandler& linkHandler) const;
+    /// Also queues the .nzb paths, which is why it is not called
+    /// handleEd2kLinks any more: a desktop launcher passes `%U`, so what arrives
+    /// here is whatever the user double-clicked.
+    void handleOpenArguments(ExternalLinkHandler& linkHandler, MainWindow& mainWindow) const;
+
+    /// --register-file-types / --unregister-file-types, for a packager's
+    /// post-install script or a user who turned the setting off. Returns true
+    /// when one was given and handled, and the caller should then exit.
+    [[nodiscard]] bool handleFileTypeRegistration() const;
 
 private:
     /// mkpath the parent dir, write @p pixmap to @p path, log the outcome.
@@ -93,6 +101,14 @@ private:
         QStringLiteral("config"),
         QStringLiteral("Override config directory (default: platform-specific)."),
         QStringLiteral("path")};
+
+    QCommandLineOption m_registerTypesOption{
+        QStringLiteral("register-file-types"),
+        QStringLiteral("Claim .nzb files for this executable, then exit.")};
+
+    QCommandLineOption m_unregisterTypesOption{
+        QStringLiteral("unregister-file-types"),
+        QStringLiteral("Give up the .nzb file association, then exit.")};
 
     // Cached parsed values
     bool m_screenshotMode = false;

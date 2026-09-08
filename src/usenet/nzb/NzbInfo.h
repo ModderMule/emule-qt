@@ -49,6 +49,22 @@ struct NzbFileInfo {
     /// which is different from an article being missing on a server.
     [[nodiscard]] bool hasAllSegments() const;
 
+    /// How many articles the subject counter claims that this file does not
+    /// list. Zero when `partsTotal` is 0 — **not** because nothing is missing,
+    /// but because an obfuscated post carries no counter and the question cannot
+    /// be answered. Treating that as "complete" is what hasAllSegments() does
+    /// and is the right default; treating it as "all missing" would read every
+    /// obfuscated release as unfetchable.
+    ///
+    /// Also zero when the counter is *lower* than the segment list, which real
+    /// posts do — some posters put the file count in the subject rather than the
+    /// part count.
+    [[nodiscard]] int missingSegmentCount() const;
+
+    /// Mean encoded article size, used to price missingSegmentCount() in bytes.
+    /// Zero for a file with no segments, which the parser drops anyway.
+    [[nodiscard]] qint64 meanSegmentBytes() const;
+
     /// Any part of a PAR2 set — the index file or a recovery volume.
     [[nodiscard]] bool isPar2() const;
 
@@ -70,6 +86,45 @@ struct NzbFileInfo {
     [[nodiscard]] bool isPar2Volume() const { return par2RecoveryBlocks() > 0; }
 };
 
+/// What an .nzb is short of *by its own account*.
+///
+/// **Not a statement about any server.** A file whose subject says `(1/42)`
+/// while listing 40 segments means the indexer never saw two articles; those
+/// articles may well still be on every provider, but this NZB cannot ask for
+/// them. Whether the servers still hold what the NZB *does* list is a separate
+/// question with a separate answer — see UsenetQueue's availability probe.
+struct NzbShortfall {
+    /// Articles listed, i.e. what the queue will actually try to fetch.
+    int listedSegments = 0;
+
+    /// Articles the subject counters claim exist and the NZB does not list.
+    int missingSegments = 0;
+
+    /// missingSegments priced at each file's own mean article size. Estimated:
+    /// the NZB says nothing about the size of an article it does not list.
+    qint64 missingBytes = 0;
+
+    /// Encoded size of the PAR2 recovery volumes this release ships. A
+    /// shortfall smaller than this is very likely repairable, which is why a
+    /// bare percentage would be alarmism.
+    qint64 recoveryBytes = 0;
+
+    /// Files with no part counter, so with no opinion either way. A release
+    /// that is entirely these is not "100% complete" — it is unknown.
+    int unknownFiles = 0;
+
+    /// Percentage of the claimed article count that the NZB actually lists.
+    /// 100 when nothing is known to be missing, including when nothing is
+    /// knowable.
+    [[nodiscard]] int percent() const;
+
+    /// Whether the shortfall is small enough for the shipped recovery data to
+    /// plausibly cover. Byte-level and deliberately crude: the par2 block size
+    /// is not knowable until the index file is downloaded.
+    [[nodiscard]] bool likelyRecoverable() const
+    { return missingBytes == 0 || recoveryBytes >= missingBytes; }
+};
+
 /// One .nzb.
 struct NzbInfo {
     QString name;        ///< display name, normally the .nzb file's own name
@@ -79,6 +134,9 @@ struct NzbInfo {
     [[nodiscard]] qint64 totalEncodedBytes() const;
     [[nodiscard]] int segmentCount() const;
     [[nodiscard]] bool isEmpty() const { return files.isEmpty(); }
+
+    /// What this NZB is short of, summed over its files. Free — no network.
+    [[nodiscard]] NzbShortfall shortfall() const;
 };
 
 } // namespace eMule::usenet

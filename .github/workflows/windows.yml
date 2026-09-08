@@ -151,7 +151,8 @@ jobs:
             -DVCPKG_INSTALLED_DIR="$PWD\build\vcpkg_installed" `
             -DCMAKE_C_COMPILER_LAUNCHER=ccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
-            -DEMULE_BUILD_TESTS=OFF
+            -DEMULE_BUILD_TESTS=OFF `
+            -DEMULE_SEED_FROM_SOURCE_TREE=OFF
 
       - name: Build
         shell: pwsh

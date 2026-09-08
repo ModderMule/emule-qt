@@ -201,6 +201,7 @@
     <ClCompile Include="net\EncryptedStreamSocket.cpp" />
     <ClCompile Include="crypto\FileIdentifier.cpp" />
     <ClCompile Include="media\FrameGrabThread.cpp" />
+    <ClCompile Include="media\ContainerSniffer.cpp" />
     <ClCompile Include="friends\Friend.cpp" />
     <ClCompile Include="friends\FriendList.cpp" />
     <ClCompile Include="net\HttpClientReqSocket.cpp" />
@@ -256,6 +257,7 @@
     <ClCompile Include="utils\PerfLog.cpp" />
     <ClCompile Include="net\Pinger.cpp" />
     <ClCompile Include="prefs\IndexerConfig.cpp" />
+    <ClCompile Include="prefs\IndexerFeed.cpp" />
     <ClCompile Include="prefs\Preferences.cpp" />
     <ClCompile Include="media\PreviewApps.cpp" />
     <ClCompile Include="media\PreviewThread.cpp" />
@@ -389,6 +391,7 @@
     <ClInclude Include="crypto\MD5Hash.h" />
     <ClInclude Include="utils\MapKey.h" />
     <ClInclude Include="media\MediaInfo.h" />
+    <ClInclude Include="media\ContainerSniffer.h" />
     <ClInclude Include="utils\OtherFunctions.h" />
     <ClInclude Include="net\DefaultGateway.h" />
     <ClInclude Include="portmap\PortMapTypes.h" />
@@ -408,6 +411,7 @@
     <ClInclude Include="utils\PlatformUtils.h" />
     <ClInclude Include="prefs\IndexerConfig.h" />
     <ClInclude Include="prefs\DownloadCategory.h" />
+    <ClInclude Include="prefs\IndexerFeed.h" />
     <ClInclude Include="prefs\NewsServer.h" />
     <ClInclude Include="prefs\Preferences.h" />
     <ClInclude Include="media\PreviewApps.h" />

@@ -1511,15 +1511,45 @@ void UpDownClient::processMuleCommentPacket(const uint8* data, uint32 size)
 {
     SafeMemFile file(data, size);
 
-    m_fileRating = file.readUInt8();
+    uint8 rating = file.readUInt8();
 
+    QString comment;
     const uint32 commentLen = file.readUInt32();
     if (commentLen > 0) {
-        m_fileComment = file.readString(true, commentLen);
-        if (m_fileComment.length() > MAXFILECOMMENTLEN)
-            m_fileComment.truncate(MAXFILECOMMENTLEN);
-    } else {
-        m_fileComment.clear();
+        comment = file.readString(true, commentLen);
+        if (comment.length() > MAXFILECOMMENTLEN)
+            comment.truncate(MAXFILECOMMENTLEN);
+    }
+
+    // Spam filter, MFC BaseClient.cpp:1075-1091. The default list is the usual
+    // link bait ("http://|www.|ftp." ...); a hit voids the whole submission,
+    // rating included, because a peer advertising a URL is not rating the file.
+    const QString filter = thePrefs.commentFilter();
+    if (!comment.isEmpty() && !filter.isEmpty()) {
+        const QString lower = comment.toLower();
+        const QStringList terms = filter.split(QLatin1Char('|'), Qt::SkipEmptyParts);
+        for (const QString& term : terms) {
+            // The stored filter is already lower case; compare like for like.
+            if (lower.contains(term)) {
+                comment.clear();
+                rating = 0;
+                setSpammer(true);
+                break;
+            }
+        }
+    }
+
+    // Only a surviving submission overwrites what this peer said before —
+    // matching MFC, where a filtered comment leaves the earlier one standing
+    // rather than silently erasing it.
+    if (!comment.isEmpty() || rating > 0) {
+        m_fileComment = comment;
+        m_fileRating = rating;
+        // The whole point of receiving this: fold it into the file's aggregate,
+        // which is what the rating indicator draws. Without this call the value
+        // was stored and never read by anything.
+        if (m_reqFile)
+            m_reqFile->updateFileRatingCommentAvail();
     }
 
     m_commentDirty = true;

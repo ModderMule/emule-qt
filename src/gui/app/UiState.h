@@ -106,6 +106,19 @@ public:
         scheduleSave();   // a session that never exits cleanly still keeps it
     }
 
+    /// Claim .nzb with the desktop at every start, and give it up when off.
+    ///
+    /// GUI-only, and here rather than in preferences.yml for exactly the reason
+    /// lastVersionCheck is: the daemon owns that file and knows nothing about
+    /// the desktop it is not running on. It is also the *GUI's* executable path
+    /// that gets registered, which the daemon could not supply.
+    [[nodiscard]] bool associateNzbFiles() const { return m_associateNzbFiles; }
+    void setAssociateNzbFiles(bool on)
+    {
+        m_associateNzbFiles = on;
+        scheduleSave();
+    }
+
     /// Toolbar button order (empty = default).
     [[nodiscard]] const QList<int>& toolbarButtonOrder() const { return m_toolbarButtonOrder; }
     void setToolbarButtonOrder(const QList<int>& order) { m_toolbarButtonOrder = order; }
@@ -162,6 +175,7 @@ private:
     bool m_windowMaximized = false;
     int  m_optionsLastPage = 0;
     int64_t m_lastVersionCheck = 0;
+    bool m_associateNzbFiles = true;
     QList<int> m_toolbarButtonOrder;
     int  m_toolbarButtonStyle = 3;
     QString m_toolbarSkinPath;

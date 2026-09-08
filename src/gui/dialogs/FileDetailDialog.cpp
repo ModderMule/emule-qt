@@ -3,6 +3,8 @@
 /// @brief Tabbed file-detail dialog implementation.
 
 #include "FileDetailDialog.h"
+
+#include "CommentEditPanel.h"
 #include "ArchivePreviewPanel.h"
 #include "MetadataPage.h"
 #include "app/IpcClient.h"
@@ -238,15 +240,34 @@ QWidget* FileDetailDialog::createFileNamesTab(const QCborMap& d)
 
 QWidget* FileDetailDialog::createCommentsTab(const QCborMap& d)
 {
-    // Same page widget the search-result detail dialog uses, mirroring MFC where
-    // both sheets host one CCommentDialogLst.
-    m_commentsPanel = new CommentsPanel(QStringLiteral("fileDetailComments"));
+    // MFC has two comment pages: the editable IDD_COMMENT on the shared-file sheet,
+    // and the read-only IDD_COMMENTLST on the download and search sheets. This port
+    // has one dialog class serving all three, so the daemon's `canComment` — its own
+    // sharedfiles->GetFileByID gate, the one CCommentDialog uses — picks the page.
+    // A shared part file therefore gets the editor from the Downloads list too; the
+    // original only offers it from Shared Files, but it publishes notes for exactly
+    // the same set of files.
+    if (d.value(QLatin1StringView("canComment")).toBool()) {
+        auto* editor = new CommentEditPanel(QStringLiteral("fileDetailComments"));
+        connect(editor, &CommentEditPanel::postComment,
+                this, &DetailDialog::postFileComment);
+        m_commentsPanel = editor;
+    } else {
+        m_commentsPanel = new CommentsPanel(QStringLiteral("fileDetailComments"));
+    }
+
     connect(m_commentsPanel, &CommentsPanel::searchKadNotes,
             this, &DetailDialog::searchKadNotes);
     connect(m_commentsPanel, &CommentsPanel::commentFilterChanged,
             this, &DetailDialog::commentFilterChanged);
     m_commentsPanel->setDetails(d);
     return m_commentsPanel;
+}
+
+void FileDetailDialog::commentApplied(bool ok)
+{
+    if (auto* editor = qobject_cast<CommentEditPanel*>(m_commentsPanel))
+        editor->commentApplied(ok);
 }
 
 // ── Dynamic-tab population / refresh ───────────────────────────────────

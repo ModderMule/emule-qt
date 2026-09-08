@@ -6,6 +6,7 @@
 #include "Opcodes.h"
 #include "prefs/Preferences.h"
 
+#include <QCoreApplication>
 #include <QUrl>
 
 
@@ -377,6 +378,24 @@ QString getFileTypeByName(const QString& fileName)
     case ED2KFileType::EmuleCollection: return QStringLiteral(ED2KFTSTR_EMULECOLLECTION);
     default:                            return {};
     }
+}
+
+// ---------------------------------------------------------------------------
+// File rating
+// ---------------------------------------------------------------------------
+
+QString ratingLabel(int rating)
+{
+    static const char* const kLabels[6] = {
+        QT_TRANSLATE_NOOP("Rating", "Not rated"),
+        QT_TRANSLATE_NOOP("Rating", "Invalid / Corrupt / Fake"),
+        QT_TRANSLATE_NOOP("Rating", "Poor"),
+        QT_TRANSLATE_NOOP("Rating", "Fair"),
+        QT_TRANSLATE_NOOP("Rating", "Good"),
+        QT_TRANSLATE_NOOP("Rating", "Excellent"),
+    };
+    const int i = (rating < 0 || rating > 5) ? 0 : rating;
+    return QCoreApplication::translate("Rating", kLabels[i]);
 }
 
 // ---------------------------------------------------------------------------

@@ -119,10 +119,23 @@ void StatCommand::onStatus(int code, const QString& text)
         m_exists = true;
         return;
     }
-    // 430 is the expected "this server does not have it" answer, and the whole
-    // reason STAT exists. It is a routing fact, not a malfunction, so it must
-    // not be logged as an error anywhere up the stack.
-    if (code == 430) {
+    // Four ways of saying "I cannot answer for this article", and all four are
+    // routing facts rather than malfunctions:
+    //
+    //   430  no article with that message-id — the expected answer, and the
+    //        whole reason STAT exists
+    //   423  no article with that number
+    //   420  no article selected
+    //   412  no newsgroup selected
+    //
+    // Only 430 can arise from the message-id form this class always sends, but
+    // the others must not be ProtocolError: that is fatal to the connection
+    // (NntpError.h), and UsenetWorker::finishJob() turns a fatal non-
+    // ArticleNotFound error into NntpServerPool::blockServer(). A server that
+    // answered 412 would therefore have its whole account backed off on every
+    // probe — a health check making an account unusable, which is precisely the
+    // outcome the feature exists to avoid.
+    if (code == 430 || code == 423 || code == 420 || code == 412) {
         fail(NntpError::ArticleNotFound, QStringLiteral("<%1>").arg(m_messageId));
         return;
     }

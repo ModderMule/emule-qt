@@ -412,6 +412,12 @@ public:
     [[nodiscard]] bool isRecoveringArchive() const { return m_recoveringArchive; }
     void setRecoveringArchive(bool val) { m_recoveringArchive = val; }
 
+protected:
+    /// A download is judged as soon as its first bytes land, not at completion:
+    /// the sooner a fake is named the less bandwidth it costs. Reads the `.part`
+    /// file, which is laid out at the same offsets as the finished one.
+    [[nodiscard]] bool readContainerHead(QByteArray& head) const override;
+
 private:
     void initPartFile();
     void completeFile();

@@ -3,28 +3,23 @@
 /// @file PasteLinksDialog.h
 /// @brief Dialog for pasting eD2K links to download, matching MFC CDirectDownloadDlg.
 
-#include <QDialog>
-
-class QPlainTextEdit;
-class QPushButton;
+#include "dialogs/PasteTextDialog.h"
 
 namespace eMule {
 
 class IpcClient;
 
-class PasteLinksDialog : public QDialog {
+class PasteLinksDialog : public PasteTextDialog {
     Q_OBJECT
 
 public:
     explicit PasteLinksDialog(IpcClient* ipc, QWidget* parent = nullptr);
 
-private slots:
-    void onDownload();
+protected:
+    void onAccepted() override;
 
 private:
     IpcClient* m_ipc;
-    QPlainTextEdit* m_edit;
-    QPushButton* m_downloadBtn;
 };
 
 } // namespace eMule

@@ -6,7 +6,15 @@
 #include "controls/UsenetQueueModel.h"
 #include "utils/PanelPoller.h"
 #include "dialogs/UsenetArchiveEntryDialog.h"
+#include "utils/MenuUtils.h"
+#include "utils/NzbDrop.h"
+
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include "utils/PreviewLauncher.h"
+#include "dialogs/AddNzbUrlDialog.h"
 #include "utils/StatusBarNotifier.h"
 
 #include <QAction>
@@ -44,6 +52,7 @@ namespace {
     case 5: return UsenetRowStatus::Verifying;
     case 6: return UsenetRowStatus::Repairing;
     case 7: return UsenetRowStatus::Unpacking;
+    case 8: return UsenetRowStatus::Checking;
     default: return UsenetRowStatus::Queued;
     }
 }
@@ -55,8 +64,15 @@ namespace {
     r.name = m.value(QStringLiteral("name")).toString();
     r.status = statusFromInt(int(m.value(QStringLiteral("status")).toInteger()));
     r.statusText = m.value(QStringLiteral("statusText")).toString();
-    r.postPercent = m.value(QStringLiteral("postPercent")).toInteger(0);
+    r.postPercent = int(m.value(QStringLiteral("postPercent")).toInteger(0));
     r.postDetail = m.value(QStringLiteral("postDetail")).toString();
+    r.stalledReason = m.value(QStringLiteral("stalledReason")).toString();
+    // -1 is the daemon's "not assessed", and the default here has to agree with
+    // it: an older daemon sends no key at all, and 0 would render as 0% health.
+    r.healthPercent = int(m.value(QStringLiteral("healthPercent")).toInteger(-1));
+    r.healthMissingBytes = m.value(QStringLiteral("healthMissingBytes")).toInteger();
+    r.healthRecoveryBytes = m.value(QStringLiteral("healthRecoveryBytes")).toInteger();
+    r.healthProbed = m.value(QStringLiteral("healthProbed")).toBool();
     r.priority = int(m.value(QStringLiteral("priority")).toInteger());
     r.percent = int(m.value(QStringLiteral("percent")).toInteger());
     r.totalBytes = m.value(QStringLiteral("totalBytes")).toInteger();
@@ -183,6 +199,71 @@ void UsenetPanel::addNzbFile(const QString& path)
     });
 }
 
+bool UsenetPanel::acceptNzbDrop(const QMimeData* mime)
+{
+    const auto candidates = gui::nzbDropCandidates(mime);
+    if (candidates.isEmpty())
+        return false;
+
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(this, tr("Add NZB"), tr("Not connected to the eMule core."));
+        return true;   // ours, and refused with a reason — not something to pass on
+    }
+
+    for (const QString& path : candidates.files)
+        addNzbFile(path);
+
+    for (const QString& url : candidates.urls) {
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::AddNzbUrl);
+        msg.append(url);
+        m_ipc->sendRequest(msg, [this, url](const Ipc::IpcMessage& resp) {
+            if (!resp.fieldBool(0)) {
+                QMessageBox::warning(this, tr("Add NZB from URL"),
+                                     resp.fieldString(1).isEmpty()
+                                         ? tr("Could not add %1.").arg(url)
+                                         : resp.fieldString(1));
+                return;
+            }
+            m_poller->refreshNow();
+        });
+    }
+
+    return true;
+}
+
+void UsenetPanel::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (gui::nzbDropCandidates(event->mimeData()).isEmpty())
+        return;   // not ours: leave the event unaccepted so it can fall through
+    event->acceptProposedAction();
+}
+
+void UsenetPanel::dragMoveEvent(QDragMoveEvent* event)
+{
+    if (gui::nzbDropCandidates(event->mimeData()).isEmpty())
+        return;
+    event->acceptProposedAction();
+}
+
+void UsenetPanel::dropEvent(QDropEvent* event)
+{
+    if (acceptNzbDrop(event->mimeData()))
+        event->acceptProposedAction();
+}
+
+void UsenetPanel::promptAddNzbUrl()
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(this, tr("Add NZB from URL"),
+                             tr("Not connected to the eMule core."));
+        return;
+    }
+
+    AddNzbUrlDialog dlg(m_ipc, this);
+    if (dlg.exec() == QDialog::Accepted)
+        m_poller->refreshNow();
+}
+
 // ---------------------------------------------------------------------------
 // Private — construction
 // ---------------------------------------------------------------------------
@@ -196,16 +277,37 @@ void UsenetPanel::setupUi()
     auto* toolbar = new QToolBar(this);
     toolbar->setIconSize(QSize(16, 16));
 
-    m_addAction = toolbar->addAction(tr("Add NZB…"), this, &UsenetPanel::onAddNzb);
+    m_addAction = toolbar->addAction(menuIcon("ListAdd.ico"), tr("Add NZB…"),
+                                     this, &UsenetPanel::onAddNzb);
     toolbar->addSeparator();
-    m_pauseAction = toolbar->addAction(tr("Pause"), this, &UsenetPanel::onPause);
-    m_resumeAction = toolbar->addAction(tr("Resume"), this, &UsenetPanel::onResume);
-    m_removeAction = toolbar->addAction(tr("Remove"), this, [this] { onRemove(false); });
+    m_pauseAction = toolbar->addAction(menuIcon("Pause.ico"), tr("Pause"),
+                                       this, &UsenetPanel::onPause);
+    // Start.ico, not Resume.ico: the latter has never existed, and asking for it
+    // yields a valid null icon that renders as nothing. tst_MenuIcons pins it.
+    m_resumeAction = toolbar->addAction(menuIcon("Start.ico"), tr("Resume"),
+                                        this, &UsenetPanel::onResume);
+    m_removeAction = toolbar->addAction(menuIcon("ListRemove.ico"), tr("Remove"),
+                                        this, [this] { onRemove(false); });
+
+    // Context menu and the Tools menu, but not the toolbar: MFC parity argues
+    // against a second Add button, and one QAction shared by both menus is what
+    // keeps their text and state from drifting apart.
+    m_addUrlAction = new QAction(menuIcon("DirectDownload.ico"),
+                                 tr("Add NZB from URL…"), this);
+    connect(m_addUrlAction, &QAction::triggered, this, &UsenetPanel::promptAddNzbUrl);
 
     // Context menu only — a toolbar entry would be enabled for most of a
     // release's life and do nothing, because most posts are RAR sets.
-    m_previewAction = new QAction(tr("Preview"), this);
+    m_previewAction = new QAction(menuIcon("Preview.ico"), tr("Preview"), this);
     connect(m_previewAction, &QAction::triggered, this, &UsenetPanel::onPreview);
+
+    // Context menu only, and for the same reason: a release queued a week ago is
+    // a different question from the one answered when it was added, but it is
+    // not something anybody wants a toolbar button for.
+    m_checkAction = new QAction(menuIcon("ServerInfo.ico"),
+                                tr("Check Availability"), this);
+    connect(m_checkAction, &QAction::triggered, this,
+            &UsenetPanel::onCheckAvailability);
     layout->addWidget(toolbar);
 
     auto* view = new ListTreeView(this);
@@ -229,7 +331,7 @@ void UsenetPanel::setupUi()
 
     // bindColumns only after setModel(): a header with no sections cannot take a
     // restore, and caching that empty state would destroy the saved layout.
-    view->bindColumns(QStringLiteral("usenetQueue"), {280, 80, 75, 160, 85, 85, 60});
+    view->bindColumns(QStringLiteral("usenetQueue"), {280, 80, 75, 160, 85, 85, 60, 60});
 
     connect(m_view, &QWidget::customContextMenuRequested,
             this, &UsenetPanel::onContextMenu);
@@ -247,7 +349,8 @@ void UsenetPanel::setupUi()
     m_summary->setContentsMargins(6, 2, 6, 2);
     layout->addWidget(m_summary);
 
-    setAcceptDrops(false);
+    // Drops land here as well as on the main window; see acceptNzbDrop().
+    setAcceptDrops(true);
     updateActions();
     updateSummary();
 }
@@ -394,32 +497,39 @@ void UsenetPanel::onContextMenu(const QPoint& pos)
 
     QMenu menu(this);
     menu.addAction(m_addAction);
+    menu.addAction(m_addUrlAction);
     if (!ids.isEmpty()) {
         menu.addSeparator();
         menu.addAction(m_pauseAction);
         menu.addAction(m_resumeAction);
         menu.addSeparator();
 
-        auto* priorityMenu = menu.addMenu(tr("Priority"));
-        priorityMenu->addAction(tr("High"), this, [this] { onSetPriority(1); });
-        priorityMenu->addAction(tr("Normal"), this, [this] { onSetPriority(0); });
-        priorityMenu->addAction(tr("Low"), this, [this] { onSetPriority(-1); });
+        auto* priorityMenu = menu.addMenu(menuIcon("FilePriority.ico"), tr("Priority"));
+        priorityMenu->addAction(menuIcon("PriorityHigh.ico"), tr("High"), this,
+                                [this] { onSetPriority(1); });
+        priorityMenu->addAction(menuIcon("PriorityNormal.ico"), tr("Normal"), this,
+                                [this] { onSetPriority(0); });
+        priorityMenu->addAction(menuIcon("PriorityLow.ico"), tr("Low"), this,
+                                [this] { onSetPriority(-1); });
 
         menu.addSeparator();
+        menu.addAction(m_checkAction);
         menu.addAction(m_previewAction);
-        menu.addAction(tr("Open Folder"), this, &UsenetPanel::onOpenFolder);
+        menu.addAction(menuIcon("FolderOpen.ico"), tr("Open Folder"), this,
+                       &UsenetPanel::onOpenFolder);
         menu.addSeparator();
         menu.addAction(m_removeAction);
-        menu.addAction(tr("Remove and Delete Files"), this, [this] { onRemove(true); });
+        menu.addAction(menuIcon("Delete.ico"), tr("Remove and Delete Files"), this,
+                       [this] { onRemove(true); });
     }
     menu.exec(m_view->viewport()->mapToGlobal(pos));
 }
 
 void UsenetPanel::onAddNzb()
 {
-    const QString path = QFileDialog::getOpenFileName(
+    const QStringList paths = QFileDialog::getOpenFileNames(
         this, tr("Add NZB"), QString(), tr("NZB files (*.nzb);;All files (*)"));
-    if (!path.isEmpty())
+    for (const QString& path : paths)
         addNzbFile(path);
 }
 
@@ -550,6 +660,25 @@ QPair<QString, int> UsenetPanel::previewTarget() const
     return {row->id, best->index};
 }
 
+void UsenetPanel::onCheckAvailability()
+{
+    const QStringList ids = selectedItemIds();
+    if (!m_ipc || ids.isEmpty())
+        return;
+
+    for (const QString& id : ids) {
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::CheckUsenetItem);
+        msg.append(id);
+        m_ipc->sendRequest(msg, [this](const Ipc::IpcMessage& resp) {
+            // A refusal here is "not right now", not "this release is bad", so
+            // it goes to the status bar rather than into a dialog.
+            if (!resp.fieldBool(0))
+                StatusBarNotifier::post(resp.fieldString(1), 5000);
+            m_poller->refreshNow();
+        });
+    }
+}
+
 void UsenetPanel::onPreview()
 {
     const auto [itemId, fileIndex] = previewTarget();
@@ -598,6 +727,7 @@ void UsenetPanel::updateActions()
     m_pauseAction->setEnabled(any);
     m_resumeAction->setEnabled(any);
     m_removeAction->setEnabled(any);
+    m_checkAction->setEnabled(any);
 
     // Both halves matter: the daemon has to say the file is playable *and* the
     // stream token has to have arrived, or the action offers a URL that cannot
@@ -647,10 +777,15 @@ void UsenetPanel::updateSummary()
     int active = 0;
     qint64 total = 0;
     qint64 done = 0;
+    QString stalled;
     for (int i = 0; i < count; ++i) {
         const auto* row = m_model->findById(m_model->idAt(i));
         if (!row)
             continue;
+        // The reason is queue-level, so every stalled row carries the same
+        // sentence and the first is as good as any.
+        if (stalled.isEmpty() && !row->stalledReason.isEmpty())
+            stalled = row->stalledReason;
         // Post-processing counts as active: the item is still working, and a
         // summary that says "0 active" while a repair is running reads as a
         // stall.
@@ -664,10 +799,25 @@ void UsenetPanel::updateSummary()
     }
 
     const int percent = total > 0 ? int(done * 100 / total) : 0;
-    m_summary->setText(tr("%1 download(s), %2 active — %3% complete")
-                           .arg(count)
-                           .arg(active)
-                           .arg(percent));
+    QString text = tr("%1 download(s), %2 active — %3% complete")
+                       .arg(count)
+                       .arg(active)
+                       .arg(percent);
+
+    // A queue that has stopped must say so here too. The Status column carries
+    // it per row, but a user watching the totals sit still is looking at this
+    // line, and "0 active" on its own reads as a bug.
+    if (!stalled.isEmpty())
+        text += tr(" — %1").arg(stalled);
+
+    m_summary->setText(text);
+
+    if (!stalled.isEmpty() && stalled != m_lastStallNotice) {
+        StatusBarNotifier::post(tr("Usenet: %1").arg(stalled), 6000);
+    } else if (stalled.isEmpty() && !m_lastStallNotice.isEmpty()) {
+        StatusBarNotifier::post(tr("Usenet: downloading again."), 4000);
+    }
+    m_lastStallNotice = stalled;
 }
 
 } // namespace eMule

@@ -2,6 +2,8 @@
 /// @brief Command-line parsing and one-shot CLI command execution for the daemon.
 
 #include "CommandLineExec.h"
+#include <QFileInfo>
+#include <QFile>
 #include "CliIpcClient.h"
 
 #include "IpcMessage.h"
@@ -24,6 +26,7 @@ void CommandLineExec::parse(QCoreApplication& app)
 
     m_parser.addOption(m_portOption);
     m_parser.addOption(m_addLinkOption);
+    m_parser.addOption(m_addNzbOption);
     m_parser.addOption(m_connectOption);
     m_parser.addOption(m_disconnectOption);
     m_parser.addOption(m_connectKadOption);
@@ -36,6 +39,7 @@ void CommandLineExec::parse(QCoreApplication& app)
 bool CommandLineExec::hasCommand() const
 {
     return m_parser.isSet(m_addLinkOption)
+        || m_parser.isSet(m_addNzbOption)
         || m_parser.isSet(m_connectOption)
         || m_parser.isSet(m_disconnectOption)
         || m_parser.isSet(m_connectKadOption)
@@ -98,6 +102,29 @@ int CommandLineExec::execCommand(QCoreApplication& app)
                          "Only ed2k file links and HTTP Cache configuration links "
                          "are supported.\n");
             return 1;
+        }
+
+    } else if (m_parser.isSet(m_addNzbOption)) {
+        const QString target = m_parser.value(m_addNzbOption).trimmed();
+
+        if (target.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive)
+            || target.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
+            // The daemon fetches it, for the reason AddNzbUrl exists: the URL is
+            // often reachable only from the daemon's own network.
+            msg = Ipc::IpcMessage(Ipc::IpcMsgType::AddNzbUrl, 2);
+            msg.append(target);
+            timeoutMs = 20'000;
+
+        } else {
+            QFile file(target);
+            if (!file.open(QIODevice::ReadOnly)) {
+                std::fprintf(stderr, "Cannot read %s\n", qPrintable(target));
+                return 1;
+            }
+            // Contents, not the path: the daemon may be on another machine.
+            msg = Ipc::IpcMessage(Ipc::IpcMsgType::AddNzb, 2);
+            msg.append(QCborValue(file.readAll()));
+            msg.append(QFileInfo(target).completeBaseName());
         }
 
     } else if (m_parser.isSet(m_connectOption)) {

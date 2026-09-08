@@ -52,6 +52,10 @@ private slots:
     void offer_skipsLargeFilesForServersThatCannotIndexThem();
     void offer_marksPublishedSoTheNextPassIsEmpty();
 
+    // Fake-file verdicts (warmContainerChecks)
+    void theSweepSettlesVerdictsOffThePollPath();
+    void theSweepStopsAndANewFileRestartsIt();
+
     // Locking (one mutex, no nesting)
     void concurrentIterationWhileMutating();
     void reloadDoesNotDeadlockAgainstTheScan();
@@ -84,6 +88,19 @@ QString writeFile(const QString& dir, const QString& name, const QByteArray& con
     f.write(content);
     f.close();
     return QDir(dir).filePath(name);
+}
+
+/// A shared file backed by real bytes on disk, so the container sweep has something
+/// to read. The name lies about the contents on purpose.
+KnownFile* makeFileOnDisk(KnownFileList& known, SharedFileList& shared, uint8 hashByte,
+                          const QString& dir, const QString& name, const QByteArray& head)
+{
+    const QString path = writeFile(dir, name, head);
+    auto* f = makeFile(known, hashByte, name, static_cast<uint64>(head.size()));
+    f->setPath(dir);
+    f->setFilePath(path);
+    shared.safeAddKFile(f);
+    return f;
 }
 
 } // namespace
@@ -665,6 +682,69 @@ void tst_SharedFileList::reloadDoesNotDeadlockAgainstTheScan()
 
     // Getting here at all is the assertion; the count just confirms the scan ran.
     QVERIFY(shared.getHashingCount() >= 0);
+}
+
+// ---------------------------------------------------------------------------
+// Fake-file verdicts — the sweep that keeps the IPC poll path off the disk
+// ---------------------------------------------------------------------------
+
+void tst_SharedFileList::theSweepSettlesVerdictsOffThePollPath()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    // Random padding named .wmv: not the ASF the extension promises, and not
+    // anything else we can name either.
+    const QByteArray junk("\xFF\xFB\x10\xC0\x0B\x0A\x07\x05\x00\x07\x07\x0A", 12);
+    const QByteArray asf("\x30\x26\xB2\x75\x8E\x66\xCF\x11\xA6\xD9\x00\xAA", 12);
+
+    auto* fake = makeFileOnDisk(knownFiles, shared, 0x21, dir.path(),
+                                QStringLiteral("fake.wmv"), junk);
+    auto* real = makeFileOnDisk(knownFiles, shared, 0x22, dir.path(),
+                                QStringLiteral("real.wmv"), asf);
+
+    // Nothing has looked yet, and nothing may: this is what the list payload reads.
+    QVERIFY(!fake->containerCheckResolved());
+    QVERIFY(!fake->containerCheckIfResolved().isSuspect());
+
+    shared.process();
+
+    QVERIFY(fake->containerCheckResolved());
+    QVERIFY(fake->containerCheckIfResolved().isSuspect());
+    QCOMPARE(fake->containerCheckIfResolved().expected, QStringLiteral("ASF"));
+
+    // And the honest one is settled too, as not suspect — the sweep is not a
+    // fake-detector, it is what makes the verdict available at all.
+    QVERIFY(real->containerCheckResolved());
+    QVERIFY(!real->containerCheckIfResolved().isSuspect());
+}
+
+void tst_SharedFileList::theSweepStopsAndANewFileRestartsIt()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    const QByteArray asf("\x30\x26\xB2\x75\x8E\x66\xCF\x11\xA6\xD9\x00\xAA", 12);
+    makeFileOnDisk(knownFiles, shared, 0x31, dir.path(), QStringLiteral("one.wmv"), asf);
+
+    // First tick resolves it, the second finds nothing left and parks the sweep.
+    shared.process();
+    shared.process();
+
+    // A file joining the share afterwards must re-arm it. This is the whole of what
+    // the idle flag can get wrong: park once and a file added later never gets a
+    // verdict, so its mark never appears no matter how long the daemon runs.
+    auto* late = makeFileOnDisk(knownFiles, shared, 0x32, dir.path(),
+                                QStringLiteral("late.wmv"),
+                                QByteArray("\xFF\xFB\x10\xC0\x0B\x0A\x07\x05\x00\x07\x07\x0A", 12));
+    QVERIFY(!late->containerCheckResolved());
+    shared.process();
+    QVERIFY(late->containerCheckResolved());
+    QVERIFY(late->containerCheckIfResolved().isSuspect());
 }
 
 QTEST_MAIN(tst_SharedFileList)

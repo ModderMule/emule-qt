@@ -126,11 +126,14 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushIndexerResults:   return QStringLiteral("PushIndexerResults");
     case T::PushIndexerProgress:  return QStringLiteral("PushIndexerProgress");
     case T::PushIndexerSearchDone: return QStringLiteral("PushIndexerSearchDone");
+    case T::PushIndexerFeedStatus: return QStringLiteral("PushIndexerFeedStatus");
     case T::GetNewsServers:       return QStringLiteral("GetNewsServers");
     case T::SetNewsServers:       return QStringLiteral("SetNewsServers");
     case T::TestNewsServer:       return QStringLiteral("TestNewsServer");
+    case T::SetNewsServerUsage:   return QStringLiteral("SetNewsServerUsage");
     case T::GetUsenetQueue:       return QStringLiteral("GetUsenetQueue");
     case T::AddNzb:               return QStringLiteral("AddNzb");
+    case T::AddNzbUrl:            return QStringLiteral("AddNzbUrl");
     case T::RemoveUsenetItem:     return QStringLiteral("RemoveUsenetItem");
     case T::PauseUsenetItem:      return QStringLiteral("PauseUsenetItem");
     case T::ResumeUsenetItem:     return QStringLiteral("ResumeUsenetItem");
@@ -316,31 +319,44 @@ int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
     return seqId;
 }
 
-void IpcClient::sendBatchRequest(const QStringList& hashes,
+void IpcClient::sendBatchRequest(const QStringList& keys,
                                  const std::function<IpcMessage(const QString&)>& build,
-                                 QObject* context, std::function<void()> onAllDone)
+                                 QObject* context, std::function<void()> onAllDone,
+                                 std::function<void(const QString&, const IpcMessage&)> onEach)
 {
-    if (hashes.isEmpty() || !build || !isConnected())
+    if (keys.isEmpty() || !build || !isConnected())
         return;
 
-    auto pending = std::make_shared<qsizetype>(hashes.size());
+    auto pending = std::make_shared<qsizetype>(keys.size());
     auto done = std::make_shared<std::function<void()>>(std::move(onAllDone));
+    auto each = std::make_shared<std::function<void(const QString&, const IpcMessage&)>>(
+        std::move(onEach));
     const QPointer<QObject> guard(context);
 
     auto settle = [pending, done, guard]() {
         if (--(*pending) == 0 && guard && *done)
             (*done)();
     };
+    auto report = [each, guard](const QString& key, const IpcMessage& reply) {
+        if (guard && *each)
+            (*each)(key, reply);
+    };
 
-    for (const QString& hash : hashes) {
-        if (hash.isEmpty()) {
+    for (const QString& key : keys) {
+        if (key.isEmpty()) {
+            report(key, {});
             settle();
             continue;
         }
         // A request that never got queued must still settle, or a disconnect in the middle
         // of a batch would leave the completion — and with it the list refresh — hanging.
-        if (sendRequest(build(hash), [settle](const IpcMessage&) { settle(); }) < 0)
+        if (sendRequest(build(key), [settle, report, key](const IpcMessage& reply) {
+                report(key, reply);
+                settle();
+            }) < 0) {
+            report(key, {});
             settle();
+        }
     }
 }
 
@@ -350,6 +366,13 @@ void IpcClient::sendBatchRequest(const QStringList& hashes,
 
 void IpcClient::onSocketConnected()
 {
+    // A connected() that outlived its socket being dropped. onSocketError()
+    // disconnects before deleting now, so this should be unreachable — it stays
+    // because the cost of being wrong here is a null dereference in
+    // IpcConnection's constructor rather than a missed reconnect.
+    if (!m_socket)
+        return;
+
     // Reset backoff on successful TCP connect
     m_reconnectDelayMs = 1000;
 
@@ -463,8 +486,16 @@ void IpcClient::onSocketError()
                                  : QStringLiteral("Unknown error");
     emit connectionFailed(err);
 
-    // Clean up the failed socket so scheduleReconnect starts fresh
+    // Clean up the failed socket so scheduleReconnect starts fresh.
+    //
+    // Disconnect *before* deleteLater, exactly as resetConnection() does.
+    // deleteLater is deferred, so the socket outlives this slot and stays wired
+    // to onSocketConnected() — and QAbstractSocket can still emit connected()
+    // afterwards from the same fetchConnectionParameters() pass. That reached
+    // onSocketConnected() with m_socket already null and crashed in
+    // IpcConnection's constructor, which dereferences the socket it is handed.
     if (m_socket) {
+        disconnect(m_socket, nullptr, this, nullptr);
         m_socket->deleteLater();
         m_socket = nullptr;
     }
@@ -553,6 +584,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushIndexerResults:   emit indexerResultsReceived(msg); break;
     case IpcMsgType::PushIndexerProgress:  emit indexerSearchProgress(msg); break;
     case IpcMsgType::PushIndexerSearchDone: emit indexerSearchFinished(msg); break;
+    case IpcMsgType::PushIndexerFeedStatus: emit indexerFeedStatus(msg); break;
     case IpcMsgType::PushUsenetQueueItem:  emit usenetItemUpdated(msg); break;
     case IpcMsgType::PushUsenetItemRemoved: emit usenetItemRemoved(msg); break;
     case IpcMsgType::PushUsenetItemFinished: emit usenetItemFinished(msg); break;

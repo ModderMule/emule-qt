@@ -99,6 +99,11 @@ void showClientDetails(QWidget* parent, IpcClient* ipc, const QString& clientHas
 /// filter to incoming Kad notes, so nothing else has to be refreshed here.
 void connectCommentFilter(DetailDialog* dialog, IpcClient* ipc);
 
+/// Wire the editable Comments page's Apply to the daemon's SetFileComment request.
+/// The daemon persists the comment, re-arms the Kad notes publish and dirties every
+/// peer we upload to, so nothing here has to be refreshed afterwards.
+void connectCommentPosting(DetailDialog* dialog, IpcClient* ipc);
+
 /// A value label for a detail form row: selectable, and wrapping across the full width
 /// of the row rather than at whatever width QLabel's own heuristic picks — a value that
 /// wrapped inside a 90 pixel column while the dialog was 700 wide is how the File Details
@@ -144,6 +149,10 @@ public:
     /// without a list (ChatSelector, FriendListCtrl).
     void setWalker(DetailWalker walker);
 
+    /// Outcome of a postFileComment() round trip. Only the dialog that hosts an
+    /// editable Comments page has anywhere to put it; the rest ignore it.
+    virtual void commentApplied(bool /*ok*/) {}
+
 signals:
     /// The walker moved to @p key; fetch its details and call setDetails().
     void navigated(const QString& key);
@@ -154,6 +163,9 @@ signals:
     /// The user edited the comment spam filter (a `|`-separated list); the owning
     /// panel pushes it to the daemon.
     void commentFilterChanged(const QString& filter);
+
+    /// The user pressed Apply on the editable Comments page.
+    void postFileComment(const QString& fileHash, const QString& comment, int rating);
 
 protected:
     /// Where subclasses put their content. The button row sits below it.

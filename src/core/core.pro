@@ -119,6 +119,7 @@ SOURCES += \
     kademlia/KadUDPListener.cpp \
     kademlia/KadUInt128.cpp \
     media/FrameGrabThread.cpp \
+    media/ContainerSniffer.cpp \
     media/MediaInfo.cpp \
     media/PreviewApps.cpp \
     media/PreviewThread.cpp \
@@ -143,6 +144,7 @@ SOURCES += \
     net/SmtpClient.cpp \
     net/UDPSocket.cpp \
     prefs/IndexerConfig.cpp \
+    prefs/IndexerFeed.cpp \
     prefs/Preferences.cpp \
     protocol/ED2KLink.cpp \
     protocol/Tag.cpp \
@@ -242,6 +244,7 @@ HEADERS += \
     kademlia/KadUDPListener.h \
     kademlia/KadUInt128.h \
     media/FrameGrabThread.h \
+    media/ContainerSniffer.h \
     media/MediaInfo.h \
     media/PreviewApps.h \
     media/PreviewThread.h \
@@ -270,6 +273,7 @@ HEADERS += \
     net/UDPSocket.h \
     prefs/DownloadCategory.h \
     prefs/IndexerConfig.h \
+    prefs/IndexerFeed.h \
     prefs/Preferences.h \
     protocol/ED2KLink.h \
     protocol/Tag.h \

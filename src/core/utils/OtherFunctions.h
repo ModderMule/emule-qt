@@ -204,6 +204,17 @@ enum class ED2KFileType : uint8 {
 [[nodiscard]] QString getFileTypeByName(const QString& fileName);
 
 // ---------------------------------------------------------------------------
+// File rating
+// ---------------------------------------------------------------------------
+
+/// A user rating as words -- MFC GetRateString (srchybrid/OtherFunctions.cpp:786).
+/// Anything out of 0-5 falls back to "Not rated", as the original does.
+///
+/// Here rather than in the GUI because both front ends name the same six values:
+/// the Qt lists in their tooltips and rating combo, the web UI in its icon titles.
+[[nodiscard]] QString ratingLabel(int rating);
+
+// ---------------------------------------------------------------------------
 // Comparison helpers (three-way, for sort callbacks)
 // ---------------------------------------------------------------------------
 

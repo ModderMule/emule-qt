@@ -18,6 +18,7 @@
 #include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
+#include <QUuid>
 
 #include <algorithm>
 
@@ -566,9 +567,14 @@ struct Preferences::Data {
     bool usenetUnpack = true;
     bool usenetCleanupAfterUnpack = true;
     bool usenetDirectUnpack = true;
+    int usenetHealthCheck = 1;         // 0 off, 1 sample, 2 full
+    int usenetHealthMinPercent = 95;
+    bool usenetAutoAddPaused = false;
+    QString usenetWatchDir;
 
     // -- Indexers (newznab / torznab), a shared module's settings -------------
     QList<IndexerConfig> indexers;
+    QList<IndexerFeed> indexerFeeds;
     int indexerResultLimit = 100;
     int indexerMaxPages = 3;
     int indexerTimeoutSeconds = 30;
@@ -925,7 +931,16 @@ QString Preferences::resolveConfigDir(const QString& stored)
 
 void Preferences::setConfigDir(const QString& val) { set(&Data::configDir, val); }
 
-QString Preferences::fileCommentsFilePath() const { return get(&Data::fileCommentsFilePath); }
+QString Preferences::fileCommentsFilePath() const
+{
+    // MFC resolves this once in CPreferences::Init (srchybrid/Preferences.cpp:510).
+    // Two sequential locks, never nested: get() and configDir() each take the read
+    // lock and QReadWriteLock is not recursive.
+    const QString stored = get(&Data::fileCommentsFilePath);
+    if (!stored.isEmpty())
+        return stored;
+    return QDir(configDir()).filePath(QStringLiteral("fileinfo.ini"));
+}
 
 void Preferences::setFileCommentsFilePath(const QString& val) { set(&Data::fileCommentsFilePath, val); }
 
@@ -1581,6 +1596,13 @@ void Preferences::setUsenetServers(const QList<NewsServer>& val)
         if (clean.size() >= kMaxUsenetServers)
             break;
         clean.append(server);
+
+        // Every account gets a stable id here, on the one path every writer goes
+        // through. The usage meter is keyed by it, and an id minted lazily — or
+        // only on load — would give a newly added account a fresh meter on every
+        // restart until something happened to write the file.
+        if (clean.last().accountId.isEmpty())
+            clean.last().accountId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     }
     set(&Data::usenetServers, clean);
 }
@@ -1655,6 +1677,48 @@ void Preferences::setUsenetDirectUnpack(bool val)
     set(&Data::usenetDirectUnpack, val);
 }
 
+int Preferences::usenetHealthCheck() const
+{
+    return get(&Data::usenetHealthCheck);
+}
+
+void Preferences::setUsenetHealthCheck(int val)
+{
+    set(&Data::usenetHealthCheck, std::clamp(val, 0, 2));
+}
+
+int Preferences::usenetHealthMinPercent() const
+{
+    return get(&Data::usenetHealthMinPercent);
+}
+
+void Preferences::setUsenetHealthMinPercent(int val)
+{
+    // 0 disables the pause without disabling the figure — a reasonable thing to
+    // want: see the number, never be stopped by it.
+    set(&Data::usenetHealthMinPercent, std::clamp(val, 0, 100));
+}
+
+bool Preferences::usenetAutoAddPaused() const
+{
+    return get(&Data::usenetAutoAddPaused);
+}
+
+void Preferences::setUsenetAutoAddPaused(bool val)
+{
+    set(&Data::usenetAutoAddPaused, val);
+}
+
+QString Preferences::usenetWatchDir() const
+{
+    return get(&Data::usenetWatchDir);
+}
+
+void Preferences::setUsenetWatchDir(const QString& val)
+{
+    set(&Data::usenetWatchDir, sanitizeWatchDir(val, configDir(), incomingDir(), tempDirs()));
+}
+
 // ---------------------------------------------------------------------------
 // Indexers (newznab / torznab)
 // ---------------------------------------------------------------------------
@@ -1662,6 +1726,51 @@ void Preferences::setUsenetDirectUnpack(bool val)
 QList<IndexerConfig> Preferences::indexers() const
 {
     return get(&Data::indexers);
+}
+
+QList<IndexerFeed> Preferences::indexerFeeds() const
+{
+    return get(&Data::indexerFeeds);
+}
+
+void Preferences::setIndexerFeeds(const QList<IndexerFeed>& val)
+{
+    set(&Data::indexerFeeds, sanitizeFeeds(val));
+}
+
+QList<IndexerFeed> Preferences::sanitizeFeeds(const QList<IndexerFeed>& feeds)
+{
+    QList<IndexerFeed> clean;
+    QSet<QString> seen;
+
+    for (const auto& feed : feeds) {
+        IndexerFeed entry = feed;
+        entry.name = entry.name.trimmed();
+        entry.url = entry.url.trimmed();
+
+        if (!entry.isValid())
+            continue;
+        if (seen.contains(entry.key()))
+            continue;
+        seen.insert(entry.key());
+
+        // Clamped here and not only in the dialog. A hand-edited file naming one
+        // minute would poll a public indexer ninety-six times an hour, and the
+        // usual answer to that is a banned account rather than a warning.
+        entry.intervalMinutes = std::max(entry.intervalMinutes, IndexerFeed::kMinIntervalMinutes);
+        if (entry.minSize < 0)
+            entry.minSize = 0;
+        if (entry.maxSize < 0)
+            entry.maxSize = 0;
+        if (entry.maxAgeDays < 0)
+            entry.maxAgeDays = 0;
+
+        clean.append(entry);
+        if (clean.size() >= kMaxFeeds)
+            break;
+    }
+
+    return clean;
 }
 
 void Preferences::setIndexers(const QList<IndexerConfig>& val)
@@ -3500,6 +3609,20 @@ bool Preferences::load(const QString& filePath)
             m_data->usenetDownloadSharePercent = std::clamp(
                 un["downloadSharePercent"].as<int>(m_data->usenetDownloadSharePercent),
                 1, 99);
+            m_data->usenetHealthCheck = std::clamp(
+                un["healthCheck"].as<int>(m_data->usenetHealthCheck), 0, 2);
+            m_data->usenetHealthMinPercent = std::clamp(
+                un["healthMinPercent"].as<int>(m_data->usenetHealthMinPercent), 0, 100);
+            m_data->usenetAutoAddPaused =
+                un["autoAddPaused"].as<bool>(m_data->usenetAutoAddPaused);
+            if (un["watchDir"]) {
+                // Sanitised here as well as in the setter: a hand-edited file is
+                // exactly as capable of naming the temp tree as an IPC client is.
+                m_data->usenetWatchDir = sanitizeWatchDir(
+                    QString::fromStdString(un["watchDir"].as<std::string>("")),
+                    resolveConfigDir(m_data->configDir), m_data->incomingDir,
+                    m_data->tempDirs);
+            }
 
             if (const auto servers = un["servers"]; servers && servers.IsSequence()) {
                 QList<NewsServer> list;
@@ -3524,6 +3647,20 @@ bool Preferences::load(const QString& filePath)
                     entry.optional = node["optional"].as<bool>(false);
                     entry.retention = node["retention"].as<int>(0);
                     entry.joinGroup = node["joinGroup"].as<bool>(false);
+                    entry.accountId =
+                        QString::fromStdString(node["accountId"].as<std::string>("")).trimmed();
+                    entry.quotaKind = static_cast<NntpQuotaKind>(
+                        node["quotaKind"].as<int>(static_cast<int>(NntpQuotaKind::None)));
+                    entry.quotaBytes = node["quotaBytes"].as<long long>(0);
+                    entry.quotaResetDay = std::clamp(node["quotaResetDay"].as<int>(1), 1, 31);
+                    entry.quotaFallThrough = node["quotaFallThrough"].as<bool>(false);
+
+                    // A row written before quotas existed has no id. Mint one
+                    // now rather than at first use: the usage meter is keyed by
+                    // it, and an id minted lazily would be a fresh meter every
+                    // restart until something happened to save the file.
+                    if (entry.accountId.isEmpty())
+                        entry.accountId = QUuid::createUuid().toString(QUuid::WithoutBraces);
                     entry.maxConnections = node["maxConnections"].as<int>(kDefaultMaxConnections);
                     entry.certVerification = static_cast<NntpCertVerification>(
                         node["certVerification"].as<int>(
@@ -3633,6 +3770,74 @@ bool Preferences::load(const QString& filePath)
                 }
 
                 m_data->indexers = list;
+            }
+
+            if (const auto feeds = ix["feeds"]; feeds && feeds.IsSequence()) {
+                QList<IndexerFeed> list;
+
+                for (const auto& node : feeds) {
+                    if (!node.IsMap())
+                        continue;
+
+                    IndexerFeed entry;
+                    entry.name = QString::fromStdString(node["name"].as<std::string>("")).trimmed();
+                    if (entry.name.isEmpty())
+                        continue;
+
+                    entry.kind = indexerFeedKindFromString(
+                        QString::fromStdString(node["kind"].as<std::string>("search")));
+                    entry.enabled = node["enabled"].as<bool>(true);
+                    entry.query = QString::fromStdString(node["query"].as<std::string>(""));
+                    entry.accept = QString::fromStdString(node["accept"].as<std::string>(""));
+                    entry.reject = QString::fromStdString(node["reject"].as<std::string>(""));
+                    entry.minSize = node["minSize"].as<qint64>(0);
+                    entry.maxSize = node["maxSize"].as<qint64>(0);
+                    entry.maxAgeDays = node["maxAgeDays"].as<int>(0);
+                    entry.intervalMinutes = node["intervalMinutes"].as<int>(30);
+                    entry.grabExisting = node["grabExisting"].as<bool>(false);
+
+                    if (const auto cats = node["categories"]; cats && cats.IsSequence()) {
+                        for (const auto& cat : cats)
+                            entry.categories.append(cat.as<int>(0));
+                    }
+                    if (const auto names = node["indexers"]; names && names.IsSequence()) {
+                        for (const auto& name : names) {
+                            entry.indexers.append(
+                                QString::fromStdString(name.as<std::string>("")));
+                        }
+                    }
+
+                    if (node["urlEnc"]) {
+                        // A feed URL is a credential: newznab's RSS endpoint
+                        // takes the key as a query parameter, so the whole
+                        // string is as sensitive as an apiKey and is stored the
+                        // same way.
+                        const auto enc = QString::fromStdString(node["urlEnc"].as<std::string>(""));
+                        if (m_data->notifyEmailEncKey.isEmpty()) {
+                            logWarning(QStringLiteral(
+                                "Feeds: %1 has a stored URL but no encryption key in "
+                                "preferences.yml — re-enter it")
+                                           .arg(entry.name));
+                        } else {
+                            entry.url = aesDecryptFromBase64(enc, m_data->notifyEmailEncKey);
+                            if (entry.url.isEmpty() && !enc.isEmpty()) {
+                                logWarning(QStringLiteral(
+                                    "Feeds: could not decrypt the stored URL for %1 "
+                                    "— re-enter it")
+                                               .arg(entry.name));
+                            }
+                        }
+                    } else if (node["url"]) {
+                        // Plaintext escape hatch, rewritten as urlEnc on save.
+                        entry.url = QString::fromStdString(node["url"].as<std::string>(""));
+                    }
+
+                    list.append(entry);
+                    if (list.size() >= kMaxFeeds)
+                        break;
+                }
+
+                m_data->indexerFeeds = sanitizeFeeds(list);
             }
         }
 
@@ -4300,8 +4505,16 @@ bool Preferences::saveImpl(const QString& filePath) const
                                                     [](const IndexerConfig& indexer) {
                                                         return !indexer.apiKey.isEmpty();
                                                     });
+    // And once more for a pasted feed URL. It looks like a URL and is stored like
+    // a password, because newznab's RSS endpoint takes the API key as a query
+    // parameter — so a user whose only secret is a feed still needs a key, or
+    // the feed is silently dropped on the first save.
+    const bool haveFeedUrl = std::ranges::any_of(m_data->indexerFeeds,
+                                                 [](const IndexerFeed& feed) {
+                                                     return !feed.url.isEmpty();
+                                                 });
     if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey
-                             || haveUsenetPassword || haveIndexerKey)) {
+                             || haveUsenetPassword || haveIndexerKey || haveFeedUrl)) {
         encKey = aesRandomKey();
         m_data->notifyEmailEncKey = encKey;
     }
@@ -4365,6 +4578,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "cleanupAfterUnpack" << YAML::Value
         << m_data->usenetCleanupAfterUnpack;
     out << YAML::Key << "directUnpack" << YAML::Value << m_data->usenetDirectUnpack;
+    out << YAML::Key << "healthCheck" << YAML::Value << m_data->usenetHealthCheck;
+    out << YAML::Key << "healthMinPercent" << YAML::Value << m_data->usenetHealthMinPercent;
+    out << YAML::Key << "autoAddPaused" << YAML::Value << m_data->usenetAutoAddPaused;
+    if (!m_data->usenetWatchDir.isEmpty())
+        out << YAML::Key << "watchDir" << YAML::Value << m_data->usenetWatchDir.toStdString();
     out << YAML::Key << "servers" << YAML::Value << YAML::BeginSeq;
     for (const auto& server : m_data->usenetServers) {
         out << YAML::BeginMap;
@@ -4388,6 +4606,20 @@ bool Preferences::saveImpl(const QString& filePath) const
             out << YAML::Key << "retention" << YAML::Value << server.retention;
         if (server.joinGroup)
             out << YAML::Key << "joinGroup" << YAML::Value << server.joinGroup;
+        if (!server.accountId.isEmpty())
+            out << YAML::Key << "accountId" << YAML::Value << server.accountId.toStdString();
+        // Written only when set, like group/optional/retention above, so an
+        // unmetered account's block stays byte-identical to what it was.
+        if (server.quotaKind != NntpQuotaKind::None) {
+            out << YAML::Key << "quotaKind" << YAML::Value
+                << static_cast<int>(server.quotaKind);
+            out << YAML::Key << "quotaBytes" << YAML::Value
+                << static_cast<long long>(server.quotaBytes);
+            if (server.quotaKind == NntpQuotaKind::Monthly)
+                out << YAML::Key << "quotaResetDay" << YAML::Value << server.quotaResetDay;
+            if (server.quotaFallThrough)
+                out << YAML::Key << "quotaFallThrough" << YAML::Value << server.quotaFallThrough;
+        }
         out << YAML::Key << "maxConnections" << YAML::Value << server.maxConnections;
         out << YAML::Key << "certVerification" << YAML::Value
             << static_cast<int>(server.certVerification);
@@ -4423,6 +4655,61 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::EndMap;
     }
     out << YAML::EndSeq;
+
+    // Feeds. Optional fields written only when set, so a plain keyword feed's
+    // block stays two lines and stays readable.
+    if (!m_data->indexerFeeds.isEmpty()) {
+        out << YAML::Key << "feeds" << YAML::Value << YAML::BeginSeq;
+        for (const auto& feed : m_data->indexerFeeds) {
+            out << YAML::BeginMap;
+            out << YAML::Key << "name" << YAML::Value << feed.name.toStdString();
+            out << YAML::Key << "kind" << YAML::Value
+                << indexerFeedKindToString(feed.kind).toStdString();
+
+            if (feed.kind == IndexerFeedKind::Url) {
+                if (!feed.url.isEmpty() && !encKey.isEmpty()) {
+                    // Encrypted, not written verbatim: the URL carries the API
+                    // key as a query parameter.
+                    out << YAML::Key << "urlEnc" << YAML::Value
+                        << aesEncryptToBase64(feed.url, encKey).toStdString();
+                }
+            } else {
+                if (!feed.query.isEmpty())
+                    out << YAML::Key << "query" << YAML::Value << feed.query.toStdString();
+                if (!feed.categories.isEmpty()) {
+                    out << YAML::Key << "categories" << YAML::Value << YAML::Flow
+                        << YAML::BeginSeq;
+                    for (const int cat : feed.categories)
+                        out << cat;
+                    out << YAML::EndSeq;
+                }
+                if (!feed.indexers.isEmpty()) {
+                    out << YAML::Key << "indexers" << YAML::Value << YAML::BeginSeq;
+                    for (const auto& name : feed.indexers)
+                        out << name.toStdString();
+                    out << YAML::EndSeq;
+                }
+            }
+
+            if (!feed.accept.isEmpty())
+                out << YAML::Key << "accept" << YAML::Value << feed.accept.toStdString();
+            if (!feed.reject.isEmpty())
+                out << YAML::Key << "reject" << YAML::Value << feed.reject.toStdString();
+            if (feed.minSize > 0)
+                out << YAML::Key << "minSize" << YAML::Value << static_cast<long long>(feed.minSize);
+            if (feed.maxSize > 0)
+                out << YAML::Key << "maxSize" << YAML::Value << static_cast<long long>(feed.maxSize);
+            if (feed.maxAgeDays > 0)
+                out << YAML::Key << "maxAgeDays" << YAML::Value << feed.maxAgeDays;
+            out << YAML::Key << "intervalMinutes" << YAML::Value << feed.intervalMinutes;
+            if (feed.grabExisting)
+                out << YAML::Key << "grabExisting" << YAML::Value << feed.grabExisting;
+            out << YAML::Key << "enabled" << YAML::Value << feed.enabled;
+            out << YAML::EndMap;
+        }
+        out << YAML::EndSeq;
+    }
+
     out << YAML::EndMap;
 
     // UI State is now in its own uistate.yml (managed by UiState class)
@@ -4501,6 +4788,38 @@ bool Preferences::isShareableDirectory(const QString& dir, const QString& config
     // folder listed again under shared dirs is harmless: shouldBeShared()
     // matches it on the category rule first.
     return true;
+}
+
+QString Preferences::sanitizeWatchDir(const QString& dir, const QString& configDir,
+                                      const QString& incomingDir,
+                                      const QStringList& tempDirs)
+{
+    const QString trimmed = dir.trimmed();
+    if (trimmed.isEmpty())
+        return {};
+
+    // Containment, not equality — unlike isShareableDirectory(). A shared folder
+    // that merely sits beside the temp tree is fine; a *watched* one below it is
+    // not, because the scanner would be reading .nzb files the daemon is itself
+    // still writing, and would then move them out from under it.
+    const auto isInside = [&trimmed](const QString& root) {
+        if (root.isEmpty())
+            return false;
+        const QString cleanRoot = QDir::cleanPath(QDir(root).absolutePath());
+        const QString cleanDir = QDir::cleanPath(QFileInfo(trimmed).absoluteFilePath());
+        if (cleanDir.compare(cleanRoot, Qt::CaseInsensitive) == 0)
+            return true;
+        // The separator matters: a sibling "Temp Archive" must not match "Temp".
+        return cleanDir.startsWith(cleanRoot + QLatin1Char('/'), Qt::CaseInsensitive);
+    };
+
+    if (isInside(configDir) || isInside(incomingDir))
+        return {};
+    for (const QString& tmp : tempDirs)
+        if (isInside(tmp))
+            return {};
+
+    return trimmed;
 }
 
 QList<DownloadCategory>

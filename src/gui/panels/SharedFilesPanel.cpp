@@ -245,17 +245,11 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     else
         m_contextMenu->clear();
 
-    const bool useOriginal = thePrefs.useOriginalIcons();
-    auto ico = [&](const char* res) -> QIcon {
-        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
-                           : QIcon();
-    };
-
     // Open File — one complete file at a time. Against a remote core the file lives on
     // the daemon's host and travels over the web server, so this stays available there
     // as long as the stream token has arrived.
     {
-        auto* act = m_contextMenu->addAction(ico("FileOpen.ico"), tr("Open File"), this,
+        auto* act = m_contextMenu->addAction(menuIcon("FileOpen.ico"), tr("Open File"), this,
                                              [this, hashes]() { openSharedFile(hashes.value(0)); });
         const bool canOpen = singleSel && single && !single->isPartFile
                              && (localConn || !m_streamToken.isEmpty());
@@ -268,7 +262,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // Open Folder
     {
-        auto* act = m_contextMenu->addAction(ico("FolderOpen.ico"), tr("Open Folder"), this,
+        auto* act = m_contextMenu->addAction(menuIcon("FolderOpen.ico"), tr("Open Folder"), this,
                                              [this, hashes]() {
             if (const SharedFileRow* f = m_model->findByHash(hashes.value(0)))
                 QDesktopServices::openUrl(QUrl::fromLocalFile(f->path));
@@ -280,7 +274,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // Rename
     {
-        auto* act = m_contextMenu->addAction(ico("Rename.ico"), tr("Rename..."), this,
+        auto* act = m_contextMenu->addAction(menuIcon("Rename.ico"), tr("Rename..."), this,
                                              [this, hashes]() {
             const SharedFileRow* f = m_model->findByHash(hashes.value(0));
             if (!f || !m_ipc || !m_ipc->isConnected())
@@ -306,7 +300,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     // Delete From Disk — every selected file must be complete, or an in-progress
     // download would be destroyed (the daemon's handler has no such guard).
     {
-        auto* act = m_contextMenu->addAction(ico("Delete.ico"), tr("Delete From Disk"), this,
+        auto* act = m_contextMenu->addAction(menuIcon("Delete.ico"), tr("Delete From Disk"), this,
                                              [this, hashes]() { sendDeleteFilesBatch(hashes); });
         act->setEnabled(hasSel && allComplete);
     }
@@ -321,7 +315,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         const bool anyUnshareable = std::ranges::any_of(sel, [](const SharedFileRow* f) {
             return !f->isPartFile && f->shareToggleable;
         });
-        auto* act = m_contextMenu->addAction(ico("ListRemove.ico"), tr("Unshare"), this,
+        auto* act = m_contextMenu->addAction(menuIcon("ListRemove.ico"), tr("Unshare"), this,
                                              [this, completeHashes]() {
             sendUnshareBatch(completeHashes);
         });
@@ -332,7 +326,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // Priority (Upload) submenu
     {
-        auto* prioMenu = m_contextMenu->addMenu(ico("FilePriority.ico"), tr("Priority (Upload)"));
+        auto* prioMenu = m_contextMenu->addMenu(menuIcon("FilePriority.ico"), tr("Priority (Upload)"));
         prioMenu->setEnabled(hasSel);
         if (hasSel) {
             // A mixed selection gets no check mark at all — MFC clears uPrioMenuItem the
@@ -367,7 +361,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         const bool hasAuthorKey = isColl && single->hasCollectionAuthorKey;
         const QString hash = hasSel ? hashes.constFirst() : QString{};
 
-        auto* collMenu = m_contextMenu->addMenu(ico("SharedFilesList.ico"), tr("Collection"));
+        auto* collMenu = m_contextMenu->addMenu(menuIcon("SharedFilesList.ico"), tr("Collection"));
 
         // Create Collection...
         auto* createAct = collMenu->addAction(tr("Create Collection..."), this, [this, hashes]() {
@@ -452,7 +446,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     // Details... — the dialog shows one file, so single selection only (as in Transfers)
     {
         const QString hash = hasSel ? hashes.constFirst() : QString{};
-        auto* act = m_contextMenu->addAction(ico("FileInfo.ico"), tr("Details..."), this,
+        auto* act = m_contextMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."), this,
                                              [this, hash]() {
             fetchAndShowSharedFileDetails(hash, FileDetailDialog::General);
         });
@@ -462,7 +456,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     // Comments...
     {
         const QString hash = hasSel ? hashes.constFirst() : QString{};
-        auto* act = m_contextMenu->addAction(ico("FileComments.ico"), tr("Comments..."), this,
+        auto* act = m_contextMenu->addAction(menuIcon("FileComments.ico"), tr("Comments..."), this,
                                              [this, hash]() {
             fetchAndShowSharedFileDetails(hash, FileDetailDialog::Comments);
         });
@@ -471,21 +465,21 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     // eD2K Links — one link per selected file, as MFC's MP_GETED2KLINK does
     {
-        auto* act = m_contextMenu->addAction(ico("eD2kLink.ico"), tr("eD2K Links..."), this,
+        auto* act = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("eD2K Links..."), this,
                                              [this, hashes]() { copyEd2kLinks(hashes); });
         act->setEnabled(hasSel);
     }
 
     // Find — searches the list itself, so it only needs the list to be non-empty
     {
-        auto* act = m_contextMenu->addAction(ico("Search.ico"), tr("Find..."));
+        auto* act = m_contextMenu->addAction(menuIcon("Search.ico"), tr("Find..."));
         connect(act, &QAction::triggered, this, &SharedFilesPanel::showFindDialog);
         act->setEnabled(m_proxy->rowCount() > 0);
     }
 
     // Web Services submenu — the macros describe one file (MFC greys it for a multi-selection)
     {
-        auto* webMenu = m_contextMenu->addMenu(ico("Web.ico"), tr("Web Services"));
+        auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
         if (single) {
             WebServices::instance().populateFileMenu(webMenu, single->hash, single->fileName,
                                                       static_cast<uint64_t>(single->fileSize));
@@ -938,6 +932,12 @@ void SharedFilesPanel::requestSharedFiles()
             row.fileName          = m.value(QStringLiteral("fileName")).toString();
             row.fileSize          = m.value(QStringLiteral("fileSize")).toInteger();
             row.fileType          = m.value(QStringLiteral("fileType")).toString();
+            row.hasComment        = m.value(QStringLiteral("hasComment")).toBool();
+            row.ownComment        = m.value(QStringLiteral("ownComment")).toBool();
+            row.userRating        = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
+            row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
+            row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
+            row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
             row.upPriority        = static_cast<int>(m.value(QStringLiteral("upPriority")).toInteger());
             row.isAutoUpPriority  = m.value(QStringLiteral("isAutoUpPriority")).toBool();
             row.requests          = m.value(QStringLiteral("requests")).toInteger();
@@ -1024,6 +1024,9 @@ void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
             row.hash            = m.value(QStringLiteral("hash")).toString();
             row.shareChecked    = m.value(QStringLiteral("shared")).toBool();
             row.shareToggleable = m.value(QStringLiteral("canToggle")).toBool();
+            row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
+            row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
+            row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
             row.path            = dirPath;
             if (row.shareChecked)
                 ++sharedCount;
@@ -1643,6 +1646,7 @@ void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int ta
         connectEd2kLinkRequests(dlg, m_ipc);
         connectKadNotesSearch(dlg, m_ipc, IpcMsgType::GetSharedFileDetails);
         connectCommentFilter(dlg, m_ipc);
+        connectCommentPosting(dlg, m_ipc);
         dlg->setWalker(makeSharedFileWalker(hash));
         connectDetailNavigation(dlg, m_ipc, IpcMsgType::GetSharedFileDetails);
         dlg->show();

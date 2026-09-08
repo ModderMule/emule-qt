@@ -33,7 +33,7 @@ struct LogEntry {
 };
 
 namespace usenet { class UsenetSession; }
-namespace indexer { class IndexerSearchList; }
+namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
     Q_OBJECT
@@ -127,6 +127,10 @@ private:
     /// not core objects.
     void connectIndexerPushes();
 
+    /// Hand the feed poller somewhere to put an .nzb, and forward its status
+    /// reports. The only place eMule::Indexer and eMule::Usenet meet.
+    void connectIndexerFeedSink();
+
     void installLogForwarder();
     void removeLogForwarder();
     static void logMessageHandler(QtMsgType type, const QMessageLogContext& context,
@@ -138,6 +142,7 @@ private:
     std::unique_ptr<WebServer> m_webServer;
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;
+    std::unique_ptr<indexer::IndexerFeedList> m_indexerFeeds;
     bool m_running = false;
 
     static DaemonApp* s_instance;

@@ -64,6 +64,18 @@ public:
     /// so the API key embedded in the URL never has to leave the daemon.
     void fetch(const IndexerConfig& config, const QUrl& url, FetchCallback done);
 
+    /// The same two calls with no account behind them, for a feed the user
+    /// pasted as a bare RSS link. Everything else — the redaction, the size cap,
+    /// keeping an error document's body — is identical, so the account-taking
+    /// overloads above delegate here rather than repeating any of it.
+    void fetchUrl(const QUrl& url, int timeoutMs, FetchCallback done);
+
+    /// GET @p url and parse the answer as a newznab/torznab search response.
+    /// @p sourceName tags every row with where it came from, the way an
+    /// account's display name does.
+    void searchUrl(const QUrl& url, int timeoutMs, const QString& sourceName,
+                   SearchCallback done);
+
     /// Abort everything in flight. Called when a search is stopped and at
     /// teardown; a reply outliving its callback's captures is the usual way this
     /// kind of class crashes.

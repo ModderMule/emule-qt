@@ -92,6 +92,21 @@ target_compile_definitions(emule_platform INTERFACE
     $<$<PLATFORM_ID:Windows>:_UNICODE>
 )
 
+# Where a locally-built binary finds data/config. Packaged builds ship their own
+# copy (.app Resources/config, or config/ next to the exe) and should configure
+# with -DEMULE_SEED_FROM_SOURCE_TREE=OFF so no build-machine path is baked in.
+# Defined either way, empty when off, so the seeding code compiles identically
+# everywhere -- CI builds with tests off and would never catch an #ifdef'd block.
+option(EMULE_SEED_FROM_SOURCE_TREE
+       "Let a locally-built binary seed config data from the repo's data/config" ON)
+if(EMULE_SEED_FROM_SOURCE_TREE)
+    set(_emule_source_config "${PROJECT_SOURCE_DIR}/data/config")
+else()
+    set(_emule_source_config "")
+endif()
+target_compile_definitions(emule_platform INTERFACE
+    EMULE_SOURCE_CONFIG_DIR="${_emule_source_config}")
+
 # ---------------------------------------------------------------------------
 # Convenience "all common settings" target
 # ---------------------------------------------------------------------------

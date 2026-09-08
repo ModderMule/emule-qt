@@ -10,6 +10,7 @@
 #include "utils/Types.h"   // pulls in generated config.h (EMULE_VERSION_STRING)
 
 #include <QString>
+#include <QStringList>
 #include <QLatin1StringView>
 
 namespace eMule {
@@ -59,13 +60,40 @@ public:
     [[nodiscard]] static int multiUserSharingMode();
 #endif
 
-    /// Seed bundled config data into @p configDir.
+    /// What one seeding pass did. Counts, so a caller can log a single line
+    /// and a test can assert on the outcome instead of on side effects.
+    struct SeedReport {
+        int seeded    = 0;   ///< file was missing
+        int refreshed = 0;   ///< bundled copy moved on, ours was untouched
+        int preserved = 0;   ///< user edited it, left alone
+        int conflicts = 0;   ///< user edited it *and* the bundle moved -> .new written
+        int pruned    = 0;   ///< no longer bundled, removed
+    };
+
+    /// Seed and refresh bundled config data in @p configDir.
     ///
-    /// Looks for a bundled config directory next to the running binary
-    /// (app bundle Resources/config/ or dev-build source tree) and
-    /// recursively copies any files that don't already exist in the
-    /// user's config directory.
-    static void seedBundledData(const QString& configDir);
+    /// Finds the bundled config directory next to the running binary and
+    /// delegates to seedFrom(). Does nothing when there is no bundle.
+    static SeedReport seedBundledData(const QString& configDir);
+
+    /// Sync @p configDir against @p bundleDir.
+    ///
+    /// Managed assets (eMule.tmpl, webserver/*) track the bundle; the files in
+    /// kSeedOnce are live data the app rewrites and are only ever copied when
+    /// missing. Staleness is decided on SHA-256, three ways, against the
+    /// manifest written by the last pass -- never on mtime, which git does not
+    /// preserve across a checkout and which cannot tell "the bundle moved on"
+    /// from "the user edited their copy". A hand-edited file is never
+    /// overwritten; it gets a .new sibling instead.
+    ///
+    /// Single pass, guarded by a QLockFile because the daemon and the GUI both
+    /// call this within moments of each other.
+    static SeedReport seedFrom(const QString& bundleDir, const QString& configDir);
+
+    /// Bundle locations to try, most specific first, for a binary in @p appDir.
+    /// Split out so the three shipped layouts can be asserted from any host --
+    /// they are pure path arithmetic and need no Linux or Windows to check.
+    [[nodiscard]] static QStringList bundleCandidates(const QString& appDir);
 };
 
 } // namespace eMule

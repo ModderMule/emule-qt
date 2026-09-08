@@ -103,6 +103,25 @@ into `NntpCheckCon` with a different state enum, leaving two near-identical
 place the rule lives. Getting it backwards either hammers a dead server or gives
 up on an article a fill server would have had.
 
+Three account fields shape the ladder, and all three are consumed — `group` in
+the pool, `optional` and `retention` in the queue:
+
+- **`group`** — accounts sharing a non-zero group id are one account for
+  connection limits, so the same provider reached through two host names cannot
+  open twice what the plan allows. The bucket's limit is the **smallest**
+  `maxConnections` among its members. `0` is ungrouped and gets a bucket of its
+  own. Because `UsenetQueue` divides `maxConnections` across workers with a
+  split that is monotone and sums exactly, the per-worker bucket caps sum to
+  exactly the configured group limit.
+- **`optional`** — a block or fill account is allowed to be down. Its transport
+  faults still count against the segment's retry budget, but when the budget runs
+  out with *only* optional accounts to blame, the **article** is recorded missing
+  rather than the **item** failed. An account with no key at all (a local disk
+  fault) counts as required, and when every configured account is optional the
+  flag is ignored — otherwise a lone optional account being briefly down would
+  mark every article missing and publish a silently ruined release.
+- **`retention`** — see below. It is an optimisation and never a verdict.
+
 ## Configuration and credentials
 
 Servers live in `preferences.yml` under `usenet:`, which the daemon owns. The
@@ -123,6 +142,10 @@ usenet:
       user: someone
       passEnc: <base64>
       level: 0
+      group: 0              # 0 = ungrouped; see Failover
+      optional: false       # a block account: never fails a download on its own
+      retention: 0          # days, 0 = unknown
+      joinGroup: false      # issue GROUP before each fetch
       maxConnections: 40      # default; kDefaultMaxConnections
       certVerification: 2   # 0 none, 1 minimal, 2 strict
       enabled: true
@@ -136,7 +159,35 @@ usenet:
   par2RenameFiles: true     # restore real filenames from PAR2 metadata
   unpack: true              # extract RAR/7z/ZIP volume sets
   cleanupAfterUnpack: true  # publish the payload only
+  healthCheck: 1            # 0 off, 1 sample one article per file, 2 every article
+  healthMinPercent: 95      # below this a release is queued *paused*, never failed
+  autoAddPaused: false      # queue automatic adds paused, so a feed proposes
+  watchDir: ""              # a folder .nzb files are picked up from; empty = off
+  servers:
+    - host: news.example.com
+      port: 563
+      level: 0              # rung on the failover ladder; lower is tried first
+      group: 0              # >0 pools connection limits across host names
+      optional: false       # true = a block account; never fails a download alone
+      retention: 3000       # days, 0 = unknown. A guess, never a verdict
+      joinGroup: false      # GROUP before each BODY; a few old servers need it
+      accountId: 6f1c…      # stable identity for the usage meter; minted, not typed
+      quotaKind: 1          # 0 unmetered (default), 1 monthly, 2 prepaid block
+      quotaBytes: 500000000000
+      quotaResetDay: 17     # billing day; a short month rolls on its last day
+      quotaFallThrough: false  # spent -> wait, rather than spend the next level
 ```
+
+Every `quota*` key is written only when an allowance is set, so an unmetered
+account's block is byte-identical to what it was before the feature existed.
+
+`accountId` is deliberately **not** `key()`. `key()` is `host:port/user` and is
+the right identity for the pool and for "servers already tried" — a changed host
+really is a different connection — but switching a provider to TLS changes the
+port and rotating a credential changes the user, and under `key()` either would
+silently start a fresh meter. Under-counting over-spends, so the meter gets its
+own opaque id, minted in `Preferences::setUsenetServers()` where every writer
+passes.
 
 Passwords are AES-encrypted under the one file-wide key that
 `notifications.emailEncryptionKey` carries. **This is obfuscation, not secrecy**
@@ -194,9 +245,23 @@ Options → **Usenet** (`OptionsDialog::PageUsenet`, reachable as
 button. Column layout persists under the `optionsUsenetServers` key in
 `uistate.yml`.
 
-The download queue is phase 3 and will be a **standalone Usenet tab**. Merging it
-into the shared transfer list is a separate refactor for after every phase is
-built and tested — nothing in phases 0–6 is shaped around that merge.
+The page also carries the two automatic-intake settings — "Start automatic
+downloads paused" beside the health check, and the watch folder with its Browse
+button — and, on Windows and Linux, an "Open .nzb files with eMule Qt" checkbox.
+That last one is absent on macOS, where the bundle declares its document types
+and there is nothing to switch.
+
+Options → **Feeds** (`PageFeeds`) is a sibling of the Indexers page and copies it
+function for function, with **Check now** where Indexers has **Test** — a feed is
+not something you can test, only something you can make run early. Its status
+line and Last-checked column update from `PushIndexerFeedStatus` while the dialog
+is open, because a feed can finish a poll on its own schedule with the page in
+front of you.
+
+The download queue is a **standalone Usenet tab**. Merging it into the shared
+transfer list is a separate refactor for after every phase is built and tested —
+nothing in phases 0–6 is shaped around that merge. The tab accepts dropped .nzb
+files, as does the main window, which switches to it.
 
 ## yEnc
 
@@ -245,12 +310,18 @@ not compiled in — obfuscation schemes change faster than releases ship.
 | Target | Covers |
 |---|---|
 | `tst_UsenetSmoke` | the library links and moc ran |
-| `tst_NntpSocket` | greeting, auth, TLS modes, watchdog, dot-unstuffing, rate limit |
-| `tst_NntpServerPool` | level normalisation, rotation, exclusion, backoff |
+| `tst_NntpSocket` | greeting, auth, TLS modes, watchdog, dot-unstuffing, rate limit; and every "cannot answer for this article" code (430/423/420/412) mapping to `ArticleNotFound` rather than to a protocol error, which is fatal to the connection and would back the whole account off on every probe |
+| `tst_NntpServerPool` | level normalisation, rotation, exclusion, backoff; grouped accounts sharing one connection budget and an ungrouped pair keeping separate ones; a server divided down to zero connections keeping its rung but leasing nothing; the shared ladder built from the configured levels only |
 | `tst_UsenetPrefs` | round trip, encryption, ordering, mint condition, caps |
 | `tst_UsenetYenc` | CRC vector, every byte value, the four traps above |
-| `tst_UsenetNzbParse` | schema, namespaces, HTML error pages, subject heuristics |
+| `tst_UsenetNzbParse` | schema, namespaces, HTML error pages, subject heuristics; and the NZB's own shortfall — a short segment run reported with its bytes priced at *that file's* mean, an obfuscated post with no part counter **not** called incomplete, and the par2 index file kept out of the recovery total it carries no recovery data for |
 | `tst_UsenetArticleFetch` | a multi-part file assembled **out of order**, byte-identical |
+| `tst_UsenetQueue` | the ladder: every account on a level asked before escalating (a sibling used to be skipped on the first 430); an article older than an account's retention skipped while another can serve it, and **fetched anyway when none can** — the fail-safe; a dead *optional* account costing one article rather than the download, and the same account not optional still failing it; an NZB naming itself through `<meta type="name">` when the caller supplies no name. Allowances: raw wire bytes booked against the account that served them and against one that only answered 430; an account over its allowance skipped while a sibling serves, and **never asked**; a spent allowance parking the download rather than failing it or declaring an article missing, and resuming when the limit is raised; a dead *optional* account unable to strand an article the allowance is hiding; and a spent rung parking rather than spending the next one until asked; the 90% warning said once rather than four times a second. Health: STAT issued **before** any BODY; sampling asking exactly one article per file; an article the second server holds **not** counted unavailable — the ladder-blind version pauses four releases that download perfectly; a probe whose answer is wrong changing nothing at all (`missingSegments == 0`, payload byte-identical) — the fail-safe twin of the retention case; a short release added *paused* and downloading in full on resume; a checking item not counted as a live download; and no verdict at all when there is nothing to ask. Duplicates: the same NZB refused under a different name, a manual re-add of a completed release allowed and an automatic one skipped, a repost with fresh message-ids **not** a duplicate, the guard surviving a restart, and the refusal sentence carrying no em dash; `addNzb()` reporting Added / Duplicate / Invalid, and an automatic add queued *paused* when the user asked for that while a manual one is not |
+| `tst_UsenetWatchFolder` | intake: a file still being written left alone until its size and mtime hold still — the regression files it into `_failed/`, which looks exactly like a corrupt download; a queued .nzb moved to `_processed/` and an unreadable one to `_failed/`; a **duplicate** treated as processed rather than failed; files already present when the daemon started picked up, since no watcher event ever fires for those; and the two output folders never rescanned — otherwise the scanner re-queues its own output forever |
+| `tst_NzbDrop` | what a drop is: .nzb files and http(s) links whose *path* ends .nzb, several at once, and an indexer link with a query string after it — against `.emulecollection`, `server.met`, an `ed2k:` link, an ftp URL and a plain-text drag, all of which must fall through untouched |
+| `tst_FileAssociation` | what registration *would* write, on every platform at once: the desktop entry claiming both .nzb and the ed2k scheme, an `Exec=` path with spaces quoted, and the registry values staying under `HKEY_CURRENT_USER` — an `HKLM` write needs elevation a portable zip cannot ask for |
+| `tst_UsenetUsage` | the meter, without a socket or a thread: the billing day clamped to a short month and coming back out of one; a daemon off across eleven billing days resetting **once**, and the second call a no-op; a clock that moved back refusing to resurrect a spent period; a block account never resetting; a flush that runs three times changing nothing and an unclean exit losing only the unflushed session; a correction surviving the next flush; re-applying the server list keeping the counters; and the meter surviving a port and username edit — the whole reason it is keyed by `accountId` |
+| `tst_UsenetNzbUrl` | the URL intake: `file:`, `qrc:`, `ftp:`, `data:`, hostless and relative links refused; a **private address accepted**, pinned so nobody blocks the self-hosted-indexer case; the display name stripped of `.nzb`/`.gz`, percent-decoded, and empty for API-style URLs; a plain and a gzipped `.nzb` fetched; a 404 reported as a *download* failure rather than a parse one; and no callback after its context dies |
 | `tst_UsenetPar2` | verify, repair, rename and the blocks-needed figure, against sets built in-process by `Par2::par2creator` |
 | `tst_UsenetUnpack` | volume-set detection across all three naming schemes; path-traversal and reserved-name refusals; a multi-volume RAR set extracted through the whole list, and a set skipped because it was unpacked during the download |
 | `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing |
@@ -349,6 +420,352 @@ briefly busy, or leaves a paid block account never used.
 An article missing on every level is recorded in `missingSegments` and its bit is
 set in `done` — the bit means **resolved**, not "arrived". The file is then short
 by design; PAR2 repair in phase 4 is what fills the hole.
+
+**The rung is derived, never stored.** `SegmentAttempt` carries the accounts
+already tried and `nextServableLevel()` computes the rung from them on every
+dispatch. That is what makes "escalate only when *every* account on this level
+said 430" true by construction: while an untried sibling remains, the same rung
+comes back. A stored rung has to be incremented by somebody, and it used to be
+incremented on the *first* 430 — sending the article to a paid fill server past
+an idle level-0 sibling. It also removes the second place the ladder was
+numbered: `nntpLevelLadder()` is now the only definition, shared by the queue and
+by every worker's pool, and a worker's divided slice keeps every row precisely so
+the two cannot number the rungs differently.
+
+### Retention is a guess, so it may never be a verdict
+
+There is no retention command in NNTP. `GROUP` returns article *numbers*,
+`LIST ACTIVE.TIMES` returns group creation times, and nothing reports an expiry
+policy — so `NewsServer::retention` is a figure the user copied off a provider's
+pricing page. Nor do providers *enforce* it: retention is when articles age out
+of the spool, and what you get for an expired one is `430`, the same answer as a
+takedown, an incomplete post, or an article that never propagated.
+
+The two failure modes are therefore not symmetric. Asking a server that cannot
+have the article costs one round trip. *Skipping* a server on a wrong figure
+turns a fetchable article into a missing one, which spends PAR2 blocks or fails
+the release. So:
+
+> Retention may reorder, and may skip an account while another could still serve
+> the article. It may **never** be the reason an article is declared missing.
+
+`nextServableLevel()` implements that directly: it looks for the lowest rung with
+an untried account that retention says could hold the article, and if no such
+account exists *anywhere* it returns the lowest rung with any untried account at
+all and tells the caller to send no retention exclusions. The relaxed search
+restarts at rung 0 deliberately — the last account tried before giving up is the
+one retention had skipped. `tst_UsenetQueue::aRetentionGuessNeverMakesAnArticleMissing`
+is the assertion, and it is the reason the field is safe to honour.
+
+### An allowance may not be a verdict either — but it waits instead of asking
+
+`NewsServer::quotaKind` / `quotaBytes` cap what an account may spend. The rule is
+the retention rule with one deliberate difference:
+
+> An allowance may **never** be the reason an article is declared missing, and
+> never the reason an item fails. Where retention falls back to *asking anyway* —
+> believing a wrong figure costs one round trip — an allowance falls back to
+> *waiting*: ignoring it costs the user money.
+
+Three things make that true, and all three are load-bearing:
+
+1. **`nextServableLevel()` never sees an allowance.** It is the exhaustion
+   verdict — `dispatch()` turns its `-1` into `markSegmentMissing()` — so it
+   passes `respectQuota = false` into the shared `lowestUntriedRung()` scan, and
+   the scheduling question `nextAffordableLevel()` is a separate caller. Wiring
+   the allowance into the verdict is the tidy-looking implementation that ruins
+   releases: with one spent account, *every* article in the queue is declared
+   "no configured server can supply it", the release is assembled full of holes,
+   and the item fails. `tst_UsenetQueue::aQuotaNeverMakesAnArticleMissing` is
+   that assertion.
+2. **The two other terminal transitions gate on
+   `quotaBlockedCandidateExists()`.** `handleSegmentFailure()`'s `optional`
+   exemption marks an article missing when the transport budget runs out, and
+   its `requiredFailure` path fails the whole item — neither consults the ladder.
+   So a required account excluded for *spending* rather than for saying no would
+   let a flaky block account quietly declare articles missing that the required
+   account was holding all along. A retry made while such a candidate exists is
+   also not charged: `kMaxTransportRetries` was sized on the premise that a
+   sibling picks the article up, and the allowance removed the sibling.
+3. **Order: the allowance is hard, retention is soft.** Exclusions are computed
+   as `tried ∪ over-allowance` first; retention is added only while something is
+   still left after it. Otherwise a retention figure and an allowance can empty a
+   rung between them and the download stops dead with nothing to say — a stall
+   rather than a missing bit, which the retention test cannot see.
+
+**Out of allowance parks by default.** Falling through to the next rung spends
+the *next* account's money to honour a limit on this one, and block credit is
+normally dearer per GB than the plan it would be covering — so it is an opt-in
+per account (`quotaFallThrough`), and the default is to wait. A parked item drops
+out of the dispatch order until a rollover, a usage correction or a settings save
+can change the answer; without that the plan cursor reaches the end with work
+still pending and `onTick()` rebuilds a 10 000-entry plan four times a second
+until the billing day. It also stops counting as an active download, or
+`updateBandwidthSplit()` would reserve a quarter of Usenet's share for an engine
+fetching nothing, indefinitely.
+
+The ceiling is **soft**: articles already in flight are not aborted, because the
+bytes are spent either way and killing the transfer wastes the article too. The
+overshoot is one article per connection — about 32 MB at the default 40 — which
+is 0.005% of a 1 TB cap and far below the measurement error below. An abort path
+would spend *more* money to enforce the limit; the effort went into warning at
+90% of the allowance instead, once per bucket per period, because a download that
+stops at 3 a.m. is a surprise and a log line the day before is not.
+
+### What the meter counts, and what it cannot
+
+There is no NNTP command that reports usage, so the figure is measured locally:
+`NntpSocket::drain()` already meters every inbound line for the rate limiter, and
+the counter rides the same line, before the CRLF is chopped. `UsenetWorker`
+takes the delta per job, so a 430 and a transfer that died at 90% are both
+billed — the provider billed them.
+
+| not counted | size | material at a monthly cap? |
+|---|---|---|
+| TLS record framing | 0.1-0.2% | no |
+| TCP/IP headers, if the provider bills at that level | 2-3% | yes, but unmeasurable from `QSslSocket` |
+| commands we send | ~0.015% | no |
+
+So the number reads a few percent **under** a provider's own, and the Options
+page says so. Counting `decodedBytes` instead would have been the largest error
+in the feature — yEnc expansion, CRLFs and dot-stuffing are 2-4%, in the wrong
+direction, and the ladder's 430s would have been free.
+
+Grouped accounts share one meter and one allowance: `group` already means "one
+provider reached through two host names", so the plan behind them is one plan,
+and the allowance is the smallest configured in the bucket — the same
+smallest-member rule the connection limit uses.
+
+### A health check is only ever advice — it downloads anyway
+
+The third instance of the same rule, and the weakest of the three, which is
+exactly why it is worth writing down:
+
+> A health check may never be the reason an article is not fetched, and never the
+> reason an item fails. Retention falls back to **asking anyway**; an allowance
+> falls back to **waiting**; a health check falls back to **downloading anyway**.
+
+`StatCommand` asks whether an account still holds an article without
+transferring it. That is worth doing before a 15 GB release is paid for, and the
+answer is worth almost nothing on its own: `430` is expired, taken down, never
+propagated, or simply not on *this* server, and NNTP has one code for all four.
+
+Two consequences shape the whole implementation.
+
+**A probe that asks one account is worthless.** The ladder exists because
+accounts differ, so an article counts as unavailable only when *every rung* has
+refused it. That is what `nextServableLevel()` already means, so the probe reuses
+it — along with `lowestUntriedRung()`, `nextAffordableLevel()`,
+`dispatchExclusions()` and `workerCanServe()`, all of which are stateless in the
+pass. The reuse is the correctness argument: a 430 appends to `tried`, the rung
+is re-derived, and escalation happens by construction. Deriving it separately
+would be writing the ladder a second time and getting it wrong — with a
+ladder-blind probe, `tst_UsenetQueue` does not merely mis-report, it *pauses four
+releases that download perfectly*.
+
+**The probe may not share the download's state.** `plan`, `planCursor`,
+`inFlight` and `attempts` are keyed by one `SegmentKey` space, and both of their
+terminals are destructive for a STAT: `markSegmentDone()` would seal empty files
+and start post-processing, and `markSegmentMissing()` sets the resolved bit *and*
+increments `missingSegments` — simultaneously stopping the article from ever
+being fetched and inflating the PAR2 damage estimate. So `ItemRuntime` carries a
+second, parallel key space (`checkPlan`, `checkCursor`, `checkInFlight`,
+`checkAttempts`), all of it runtime only.
+
+### Two numbers, deliberately not merged
+
+| | source | cost | a shortfall means |
+|---|---|---|---|
+| NZB completeness | the `.nzb`, via `NzbInfo::shortfall()` | free | the *indexer* never saw those articles; they may still be on every server |
+| Server availability | `STAT` across the ladder | one round trip, ~110 bytes | the *servers* no longer hold them |
+
+`hasAllSegments()` returns **true** when `partsTotal` is 0, and that is right: an
+obfuscated post carries no `(n/m)` counter, so completeness is unknowable rather
+than perfect. Those files land in `NzbShortfall::unknownFiles` and in neither
+column — counting them either way is the easiest way to get this badly wrong, and
+`anObfuscatedPostWithNoPartCounterIsNotCalledIncomplete` is what stops it.
+
+Neither number is the verdict on its own, because a release ships its own
+redundancy. `par2RecoveryBlocks()` reads the recovery-volume sizes straight out
+of the NZB names, so a release twelve articles short with 512 MB of recovery data
+is fine, and saying "97%" without that context is alarmism. The comparison is
+byte-level and deliberately crude — the par2 block size is not knowable until the
+index file is downloaded — and a volume the probe found missing stops counting
+towards it.
+
+### Sampling, and what it costs
+
+`usenet.healthCheck`: `0` off, `1` sample (the default), `2` full.
+
+Sampling asks about the **first listed article of each file**, capped at 200.
+Expiry is wholesale — a provider retires articles by post date and every article
+of one posted file shares that date — so one article stands for its file, and a
+release of 50-100 files costs 50-100 status lines: two or three round trips deep
+across the pool. Full mode is certain and honest about its cost: a 15 GB release
+is tens of thousands of round trips.
+
+Probe bytes are billed to the account that answered, through the same
+`rawBytes` path as everything else, because the provider billed them. Probe
+sockets are excluded from `applyRateLimits()`'s divisor and left unlimited: sixty
+bytes needs no token bucket, and counting them would shrink every concurrent
+download's share for as long as the probe held a connection.
+
+### What happens to a short release
+
+It is added **`Paused`**, with the reason in `stalledReason` — never `Failed`,
+and never refused at the door. Resuming downloads it exactly as if the probe had
+never run, which `aShortReleaseIsAddedPausedNotFailed` asserts both ways.
+
+`UsenetItemStatus::Checking` is a real status rather than another runtime flag,
+because `isActive()` is false for it — so a checking item leaves the dispatch
+order *and* stops counting as a live download for
+`UsenetSession::updateBandwidthSplit()`, in one edit rather than at two call
+sites somebody has to remember. `quotaParked` is the counter-example; it needed
+patching in twice. `describeUsenetItemStatus()` has no `default`, so appending
+the enumerator turned every exhaustive switch into a `-Wswitch` warning: a
+compiler-enforced list of everywhere that now needs an opinion.
+
+A sidecar that says `Checking` loads as `Queued`, on the same line that already
+does this for `Downloading` and the post-processing states. No probe survives a
+restart, and re-probing on every start would spend round trips re-learning
+advice.
+
+A probe is skipped entirely — no verdict, no delay — when the engine is stopped,
+no account is configured, the ladder is empty, or every account that could answer
+is over its allowance. `healthPercent` is then **-1**, which is not 100 and must
+never render as it.
+
+### Not adding the same release twice
+
+`addNzb()` identifies a release by a digest over its **sorted message-ids**. That
+is identity, not a heuristic: two NZBs sharing message-ids fetch literally the
+same articles from literally the same servers, whatever their names say. A
+*repost* carries fresh ids and is correctly not a match — only the soft key
+(folded name plus total size, the shape `IndexerResult::dedupKey()` already uses)
+can see that, and it is therefore only ever logged.
+
+Both are re-derived on load rather than stored: every message-id is already in
+the sidecar, so a persisted digest would only be a second thing that could
+disagree with the first. Without that step the guard is blind to everything
+restored from disk, which after one restart is every item there is.
+
+Manual and automatic adds differ, exactly as `Ed2kLinkImporter::Source` already
+makes them differ for eD2K links: a release still downloading is refused either
+way, but a *completed* one is refused only for an automatic add, because
+deliberately fetching something again is a thing people do and a thing feeds
+should not. The watch folder and the feed poller are the two automatic callers,
+and both inherit the split without knowing about it — the guard lives in
+`addNzb()`, so every present and future intake path gets it by construction.
+
+⚠️ **A refusal sentence must not contain `" — "`.** `AddNzbUrlDialog` formats a
+failed line as `"<url> — <reason>"` and recovers the URL with
+`section(" — ", 0, 0)`, so an em-dash-space inside the reason silently truncates
+its retry list. `aRefusalSentenceCarriesNoEmDash` is the guard.
+
+An item removed from the queue leaves no trace, so re-adding its NZB is not
+detected. That needs a completed-downloads history, which is a separate feature.
+
+`addNzb()` also reports **why** it did what it did, through an optional
+`UsenetAddOutcome` out-parameter: `Added`, `Duplicate`, `Invalid` or `Failed`.
+An automatic actor that cannot tell "we already have this" from "that did not
+work" retries a duplicate on every poll forever, and matching on the error
+*text* to avoid that breaks the first time a sentence is reworded or translated.
+The watch folder uses it to decide between `_processed/` and `_failed/`; the feed
+poller uses it to decide between forgetting a release and trying it again.
+
+### Automatic adds, and the one setting that governs all of them
+
+`usenet.autoAddPaused` (off by default) queues anything added automatically in
+`Paused`, so a feed proposes rather than decides. It is enforced **inside
+`addNzb()`** rather than at each call site, for the same reason the duplicate
+guard is: `quotaParked` is the counter-example, a flag whose two call sites had
+to be remembered separately, and forgetting the second one cost the user a share
+of their line indefinitely.
+
+It composes with the health check for free. An auto-paused item still goes
+through `beginHealthCheck()`, and `ItemRuntime::checkResumeStatus` — added for
+the paused-recheck case — puts it back to `Paused` when the probe finishes.
+
+## Intake
+
+There are five ways an .nzb reaches the queue, and only the first two existed
+before: the file dialog, a pasted URL, a drop, the desktop, and the watch folder.
+A feed is the sixth and lives in `docs/indexer-module.md`, because the polling
+belongs to the indexer module.
+
+**Drag and drop.** `nzbDropCandidates()` (`src/gui/utils/NzbDrop.h`) decides what
+a droppable .nzb is, once, for both `UsenetPanel` and `MainWindow`. Answering it
+in two places is how a window ends up accepting something the panel then refuses.
+It takes local files ending `.nzb` and http(s) URLs whose *path* does — the path,
+because an indexer's download link carries its API key after it. Everything else
+falls through untouched, which is what keeps a future `.emulecollection`,
+`server.met` or `ed2k:` drop free to be handled properly rather than swallowed
+here. A drop is a deliberate act, so the source stays `Manual`.
+
+**The desktop.** `ExternalLinkHandler` already received `QEvent::FileOpen` and
+dropped anything `Ed2kLinkImporter::linkFromFileOpenEvent()` did not claim — a
+fall-through that class's header documents and nothing consumed. It now consumes
+it. ⚠️ Read `QFileOpenEvent::file()`, never `url()`: an `ed2k:` URL comes back
+empty through `url()`, and this code path has been bitten by that before.
+
+**The command line.** A positional argument may be an `ed2k:` link, a `.nzb`
+path, or a `file://` URL — a desktop launcher runs `Exec=… %U`, so the same
+argument arrives one way from a file manager and another from a shell. Links keep
+their old first-one-only behaviour; every `.nzb` is queued, because opening a
+selection of them is an ordinary thing to do. The daemon has `--add-nzb` beside
+its existing `--add-link`.
+
+**File-type registration.** `bundle-win.ps1` makes a bare zip and
+`bundle-linux.sh` a bare tarball, so there is no installer to hang a registration
+step off and the application registers itself. Everything is per-user —
+`HKEY_CURRENT_USER\Software\Classes` and `$XDG_DATA_HOME` — because a portable
+archive has no moment at which to ask for elevation. macOS is declarative and has
+no runtime path at all: `Info.plist`'s `CFBundleDocumentTypes` is the whole
+mechanism, with `LSHandlerRank` **Alternate** so a dedicated NZB client keeps
+priority.
+
+The two generators in `src/gui/utils/FileAssociation.h` are pure and produce what
+registration *would* write, which is the only part of it a developer machine can
+check — the Windows and Linux writers compile on their own platform only. The
+Linux desktop entry also claims `x-scheme-handler/ed2k`, which costs nothing and
+finally gives Linux the ed2k handling the macOS bundle has had all along.
+
+The setting lives in **`uistate.yml`**, not `preferences.yml`: the daemon owns
+that file and knows nothing about the desktop it is not running on, and it is the
+*GUI's* executable path being registered. It is re-applied at every start, so an
+application that takes the association does not keep it.
+
+### The watch folder
+
+`usenet.watchDir`, empty when off. Any `.nzb` left there is queued and then moved
+into `_processed/` — or `_failed/`, when it could not be read. Moved, never
+deleted: the queue is not a receipt, and someone who wants to know what became of
+a file they dropped should be able to look.
+
+Three things are not obvious from the code:
+
+- **A file still being written has not arrived yet.** The watcher fires when a
+  file is *created*, which for anything larger than a buffer is before the writer
+  has finished. `NzbFile::parse()` rejects a truncated document, so half a file
+  can never become half a release — the damage is the **move**: without a settle
+  check the fragment is declared invalid and filed into `_failed/`, which looks
+  exactly like a corrupt download and takes the user's .nzb away from where they
+  put it. A candidate is read only once its size and mtime have held still for
+  two seconds.
+- **The watcher alone is not enough, twice over.** FSEvents coalesces, and no
+  event ever fires for files that were already there when the daemon started.
+  Hence a 30 s rescan *and* a scan at startup.
+- **`_processed/` and `_failed/` are excluded from the scan.** A scanner that
+  reads its own output re-queues every release it ever handled, on every scan,
+  forever.
+
+A duplicate goes to `_processed/`, not `_failed/`: "we already have it" is the
+answer, not a failure. That is the `UsenetAddOutcome::Duplicate` seam earning its
+keep — and the reason it exists.
+
+The directory is refused when it sits at or below the temp, incoming or config
+trees. That is *containment*, where `isShareableDirectory()` is equality, because
+the scanner would otherwise be reading files the daemon itself is writing.
 
 ## Post-processing
 
@@ -610,6 +1027,9 @@ Requests `720–799`, pushes `910–949`.
 | `GetNewsServers = 720` / `SetNewsServers = 721` / `TestNewsServer = 722` | provider accounts; the password never travels to the GUI |
 | `GetUsenetQueue = 723` | the whole queue |
 | `AddNzb = 724` | the file's **contents**, not a path — the daemon may be on another machine |
+| `AddNzbUrl = 730` | `[url]` → `[ok, idOrError]`. **The daemon fetches.** A `.nzb` link is often reachable only from the daemon's own network — a self-hosted indexer on its LAN — and the bytes have to reach the queue regardless, so a GUI-side fetch is two hops. `http`/`https` only: `QNetworkAccessManager` also speaks `file:` and `qrc:`, and a client naming one of those would be asking the daemon to read its own disk. Private addresses are deliberately allowed — that is where self-hosted indexers live. One URL per request, so a dead link costs its own line and no reply waits out another URL's timeout. |
+| `SetNewsServerUsage = 731` | `[accountId, periodBytes, totalBytes]` → `[ok, error]`. -1 leaves a figure alone, so a reset is `[id, 0, -1]`. It exists because the meter is *measured*, not reported — a user who switches plans, corrects a billing day or tops up a block account has no other way to make it true. The counters themselves ride **read-only** on `GetNewsServers`, the way `hasPassword` does |
+| `CheckUsenetItem = 732` | `[itemId]` → `[ok, error]`. Re-run the availability probe: ask the accounts, with STAT, whether they still hold the release. A release queued a week ago is a different question from the one answered when it was added. The **verdict** needs no opcode — it rides the item map `GetUsenetQueue` and `PushUsenetQueueItem` already carry, as `postPercent` and `stalledReason` do. `ok` false means "not right now" (unknown item, wrong state, nothing to ask), never "this release is bad" |
 | `RemoveUsenetItem = 725` … `SetUsenetItemPriority = 728` | per-item actions |
 | `ListUsenetArchiveEntries = 729` | the files inside an archive set; **this one fetches** |
 | `PushUsenetQueueItem = 910` | one item, coalesced on its id |
@@ -871,6 +1291,29 @@ Segment completion is a `QBitArray`, base64 inside the YAML — 1.25 KB for a
 10 000-article release, which is what makes per-segment resume affordable.
 `Downloading` is demoted to `Queued` on load: nothing is in flight after a
 restart.
+
+`Config/Usenet/usage.yml` holds the per-account meters beside those sidecars
+(they are globbed by `*.nzbstate`, so a `.yml` among them is never mistaken for
+a queue item), through the same rotation dance — extracted as
+`writeSidecarAtomically()` rather than copied a third time.
+
+Two rules the counter is shaped by, both learned elsewhere in this codebase:
+
+- **Base + session, written absolutely.** `load()` reads the base, `add()` only
+  touches the session, `flush()` writes their sum — so flushing twice changes
+  nothing and an unclean exit loses only the session. The increment-on-save shape
+  it replaces lost a whole session to a `kill -9` and double-counted the moment
+  it ran on a timer. A correction zeroes base *and* session together, or the next
+  absolute write emits `0 + session` and brings the old figure back. Flushed on
+  `statsSaveInterval` **and** after 256 MB, because a minute at 5 MB/s is 300 MB
+  of prepaid credit.
+- **A period identifier, not a "last reset" timestamp.** `periodStart` is
+  recomputed from the calendar and today's date, so a daemon that was off across
+  four billing days resets exactly once and lands in the right period, and a
+  clock that moved backwards is refused rather than allowed to resurrect a spent
+  period. The check runs on the queue's own tick, not lazily inside `add()`: a
+  parked queue spends nothing, so a lazy check would never fire and a
+  single-account queue would sit parked past its own billing day forever.
 
 ## Build note
 

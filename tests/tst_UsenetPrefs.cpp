@@ -68,6 +68,9 @@ private slots:
     void invalidServersAreDropped();
     void listIsCapped();
     void defaultsAreSaneWithNoUsenetBlock();
+    void quotaFieldsRoundTrip();
+    void aConfigWithoutQuotasLoadsUnmeteredWithAnId();
+    void healthCheckSettingsRoundTrip();
 
 private:
     QTemporaryDir m_dir;
@@ -335,5 +338,110 @@ void tst_UsenetPrefs::defaultsAreSaneWithNoUsenetBlock()
     QCOMPARE(p2.usenetRetryIntervalSeconds(), 60);
 }
 
+void tst_UsenetPrefs::healthCheckSettingsRoundTrip()
+{
+    {
+        Preferences p;
+        // Sampling on, and a pause threshold: the shipped defaults, so a fresh
+        // config has to come back saying exactly this.
+        QCOMPARE(p.usenetHealthCheck(), 1);
+        QCOMPARE(p.usenetHealthMinPercent(), 95);
+
+        p.setUsenetHealthCheck(2);
+        p.setUsenetHealthMinPercent(80);
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    Preferences p2;
+    QVERIFY(p2.load(m_file));
+    QCOMPARE(p2.usenetHealthCheck(), 2);
+    QCOMPARE(p2.usenetHealthMinPercent(), 80);
+
+    // Both are clamped rather than trusted: the mode indexes a three-entry combo
+    // and a stray value would silently mean "off", while a percentage outside
+    // 0-100 would make the comparison that gates the pause meaningless.
+    p2.setUsenetHealthCheck(9);
+    QCOMPARE(p2.usenetHealthCheck(), 2);
+    p2.setUsenetHealthCheck(-1);
+    QCOMPARE(p2.usenetHealthCheck(), 0);
+    p2.setUsenetHealthMinPercent(500);
+    QCOMPARE(p2.usenetHealthMinPercent(), 100);
+}
+
 QTEST_MAIN(tst_UsenetPrefs)
+
+void tst_UsenetPrefs::quotaFieldsRoundTrip()
+{
+    QString mainId;
+    {
+        Preferences p;
+        NewsServer main = makeServer(QStringLiteral("main"),
+                                     QStringLiteral("news.example.com"), 563);
+        main.quotaKind = NntpQuotaKind::Monthly;
+        main.quotaBytes = 500000000000LL;
+        main.quotaResetDay = 17;
+        main.quotaFallThrough = true;
+
+        NewsServer block = makeServer(QStringLiteral("block"),
+                                      QStringLiteral("block.example.net"), 563);
+        block.quotaKind = NntpQuotaKind::Block;
+        block.quotaBytes = 1000000000000LL;
+
+        p.setUsenetServers({main, block});
+        QVERIFY(p.saveTo(m_file));
+        mainId = p.usenetServers().at(0).accountId;
+    }
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    const auto servers = p.usenetServers();
+    QCOMPARE(servers.size(), 2);
+
+    QCOMPARE(servers.at(0).quotaKind, NntpQuotaKind::Monthly);
+    QCOMPARE(servers.at(0).quotaBytes, 500000000000LL);
+    QCOMPARE(servers.at(0).quotaResetDay, 17);
+    QCOMPARE(servers.at(0).quotaFallThrough, true);
+    QVERIFY(servers.at(0).isMetered());
+
+    QCOMPARE(servers.at(1).quotaKind, NntpQuotaKind::Block);
+    QCOMPARE(servers.at(1).quotaBytes, 1000000000000LL);
+    // Not written for a block account, so it comes back as the default rather
+    // than as whatever happened to be in memory.
+    QCOMPARE(servers.at(1).quotaResetDay, 1);
+    QCOMPARE(servers.at(1).quotaFallThrough, false);
+
+    // The id is what the usage meter is keyed by, so it has to survive the file
+    // — a minted-every-load id would be a fresh meter on every restart.
+    QVERIFY(!mainId.isEmpty());
+    QCOMPARE(servers.at(0).accountId, mainId);
+    QVERIFY(servers.at(0).accountId != servers.at(1).accountId);
+}
+
+void tst_UsenetPrefs::aConfigWithoutQuotasLoadsUnmeteredWithAnId()
+{
+    // Nothing changes for an existing configuration: no allowance, nothing
+    // excluded, nothing parked. The id is minted on load rather than lazily, so
+    // the meter has something stable to key on from the first article.
+    {
+        QFile f(m_file);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("usenet:\n"
+                "  servers:\n"
+                "    - host: news.example.com\n"
+                "      port: 563\n");
+        f.close();
+    }
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    const auto servers = p.usenetServers();
+    QCOMPARE(servers.size(), 1);
+    QCOMPARE(servers.at(0).quotaKind, NntpQuotaKind::None);
+    QCOMPARE(servers.at(0).quotaBytes, 0);
+    QCOMPARE(servers.at(0).quotaResetDay, 1);
+    QVERIFY(!servers.at(0).isMetered());
+    QVERIFY(!servers.at(0).accountId.isEmpty());
+}
+
+
 #include "tst_UsenetPrefs.moc"

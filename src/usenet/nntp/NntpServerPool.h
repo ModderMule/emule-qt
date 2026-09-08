@@ -38,6 +38,38 @@ namespace eMule::usenet {
 
 class NntpSocket;
 
+/// Distinct user levels of the usable servers, ascending.
+///
+/// A level's index in this list *is* its rung, so the failover ladder has no
+/// empty rungs — users write 0/5/10 to leave room to insert later, and an
+/// escalation that stepped through the gaps would stall on rungs nobody is on.
+///
+/// Filtered by `enabled && isValid()` and by nothing else — in particular NOT by
+/// maxConnections. UsenetQueue hands each worker a slice of the server list with
+/// maxConnections already divided, and if that could change the ladder, a
+/// worker's pool would number the rungs differently from the queue that asks it
+/// for one.
+[[nodiscard]] QList<int> nntpLevelLadder(const QList<NewsServer>& servers);
+
+/// How many connections a set of accounts may hold together.
+///
+/// Servers sharing a group id are one account for this purpose — the same
+/// provider reached through two hostnames — so they share a bucket and its
+/// limit. `group <= 0` is ungrouped and gets a bucket of its own: 0 is the
+/// documented "no group" value, and a negative id is a typo, not a group.
+struct NntpConnectionBucket {
+    QString id;
+    int limit = 0;
+};
+
+/// Bucket per server key. The limit of a grouped bucket is the **smallest**
+/// maxConnections among its enabled members: the split UsenetQueue applies is
+/// monotone and sums exactly, so per-worker caps then sum to exactly the
+/// configured group limit. Erring low costs throughput; erring high gets the
+/// account throttled or suspended, which is the worse failure.
+[[nodiscard]] QHash<QString, NntpConnectionBucket>
+nntpConnectionBuckets(const QList<NewsServer>& servers);
+
 class NntpServerPool : public QObject {
     Q_OBJECT
 
@@ -89,6 +121,12 @@ public:
     /// Close and drop every pooled connection that is not currently leased.
     void closeIdleConnections();
 
+    /// How many connections this pool may hold at once: the sum of its distinct
+    /// bucket limits. Grouped accounts count once, so a worker's real ceiling is
+    /// lower than the sum of its rows and the queue must size its dispatch by
+    /// this rather than by the row count.
+    [[nodiscard]] int capacity() const;
+
     [[nodiscard]] int busyCount() const;
     [[nodiscard]] int totalCount() const { return static_cast<int>(m_connections.size()); }
 
@@ -96,6 +134,7 @@ private:
     struct Lease {
         std::unique_ptr<NntpSocket> socket;
         QString serverKey;
+        QString bucket;     ///< which connection budget this lease spends
         int level = 0;
         bool inUse = false;
     };
@@ -111,13 +150,14 @@ private:
     /// already uses for the ArticleFetcher, for the same reason.
     static void retire(Lease& lease);
 
-    [[nodiscard]] int connectionsFor(const QString& serverKey) const;
+    [[nodiscard]] int connectionsInBucket(const QString& bucket) const;
     [[nodiscard]] qint64 nowSeconds() const;
-    void normalizeLevels();
+    void rebuildServerIndex();
     void dropConnections(const QString& serverKey);
 
     QList<NewsServer> m_servers;
     QHash<QString, int> m_normalizedLevel;   ///< server key -> 0..maxLevel
+    QHash<QString, NntpConnectionBucket> m_buckets;   ///< server key -> its budget
     QHash<QString, qint64> m_blockedUntil;   ///< server key -> epoch seconds
 
     std::vector<Lease> m_connections;

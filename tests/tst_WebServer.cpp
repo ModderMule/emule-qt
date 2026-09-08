@@ -1,6 +1,7 @@
 /// @file tst_WebServer.cpp
 /// @brief Unit tests for the JSON REST API WebServer (Module 19).
 
+#include "TestHelpers.h"
 #include "webserver/WebServer.h"
 
 #include "friends/FriendList.h"
@@ -12,6 +13,7 @@
 #include "stats/StatsHistory.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
+#include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
 
@@ -23,11 +25,15 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
+#include <QRegularExpression>
+#include <QSet>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+
+#include <cstring>
 #include <QTimer>
 
 using namespace eMule;
@@ -106,6 +112,14 @@ private slots:
     void incomingRefusesToEscapeTheIncomingDir();
     void incomingDownloadSendsTheWholeFileAsAnAttachment();
     void incomingStreamHonoursARangeRequest();
+    void incomingStreamServesABoundedRangeWithoutCapping();
+    void incomingStreamRejectsARangeItCannotSatisfy();
+    void incomingPlayerWarnsAboutAnUnplayableContainer();
+    void incomingDetectsAFileWhoseBytesContradictItsName();
+    void incomingListingMarksTheFilesThatAreNotWhatTheyClaim();
+    void incomingListingDrawsTheSameMarksAsEveryOtherList();
+    void everySpriteTokenTheTemplateAsksForExists();
+    void theTemplateRowsAskForPerFileIcons();
 
     void graphVars_carryTheSeriesOldestFirst();
     void graphVars_ratesAreBytesPerSecond();
@@ -134,6 +148,7 @@ private:
     // Blocking GET against an arbitrary port; returns the HTTP status code.
     // Used by the independence tests, which spin up their own servers.
     int rawGetStatus(uint16 port, const QString& path, bool withKey);
+    QString rawGetBody(uint16 port, const QString& path);
 
     // Start a throwaway WebServer with the given UI/REST flags on a random port,
     // wired to the shared fixture dependencies. Caller owns and must stop it.
@@ -532,6 +547,21 @@ int tst_WebServer::rawGetStatus(uint16 port, const QString& path, bool withKey)
     const int code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     reply->deleteLater();
     return code;
+}
+
+QString tst_WebServer::rawGetBody(uint16 port, const QString& path)
+{
+    QNetworkRequest req(QUrl(QStringLiteral("http://127.0.0.1:%1%2").arg(port).arg(path)));
+    QNetworkReply* reply = m_nam.get(req);
+    if (!reply->isFinished()) {
+        QEventLoop loop;
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+    const QString body = QString::fromUtf8(reply->readAll());
+    reply->deleteLater();
+    return body;
 }
 
 std::unique_ptr<WebServer> tst_WebServer::startServer(bool webUiEnabled, bool restApiEnabled)
@@ -1143,9 +1173,32 @@ void tst_WebServer::buildIncomingTree()
     };
 
     write(QStringLiteral("Season 1/episode.txt"), QByteArrayLiteral("nested"));
-    write(QStringLiteral("clip.mp4"), QByteArrayLiteral("not really an mp4"));
-    write(QStringLiteral("movie.mkv"), QByteArrayLiteral("not really an mkv"));
+    // Both carry the signature their extension requires. They used to be stubs
+    // reading "not really an mp4", which the container check quite rightly began
+    // reporting as fakes — an honest name is what the tests around them mean.
+    static const char kMp4Stub[] = "\x00\x00\x00\x18" "ftypisom\x00\x00\x02\x00";
+    static const char kMkvStub[] = "\x1A\x45\xDF\xA3\x01\x00\x00\x00"
+                                   "\x00\x00\x00\x23";
+    write(QStringLiteral("clip.mp4"), QByteArray(kMp4Stub, 16));
+    write(QStringLiteral("movie.mkv"), QByteArray(kMkvStub, 12));
     write(QStringLiteral("notes.txt"), QByteArrayLiteral("plain"));
+
+    // Three names to hold the container check to. Written as sized QByteArrays
+    // because the signatures carry NUL bytes, which QByteArrayLiteral truncates.
+    static const char kAsfMagic[] = "\x30\x26\xB2\x75\x8E\x66\xCF\x11"
+                                    "\xA6\xD9\x00\xAA\x00\x62\xCE\x6C";
+    static const char kMp4Magic[] = "\x00\x00\x00\x18" "ftypmp42\x00\x00\x00\x00";
+    // The first twelve bytes of the real 529 MB fake that prompted this: random
+    // padding whose first two bytes land on an MPEG frame sync by chance, which
+    // is exactly how file(1) gets talked into calling it a 32 kbps MP3. Nothing
+    // may identify this as audio — the only true statement about it is that it
+    // is not the ASF a .wmv has to be.
+    static const char kJunk[]     = "\xFF\xFB\x10\xC0\x0B\x0A\x07\x05"
+                                    "\x00\x07\x07\x0A";
+
+    write(QStringLiteral("real.wmv"), QByteArray(kAsfMagic, 16));
+    write(QStringLiteral("fake.wmv"), QByteArray(kJunk, 12));
+    write(QStringLiteral("mislabelled.avi"), QByteArray(kMp4Magic, 16));
 
     // Larger than kPreviewChunkBytes, so a download served through the preview
     // path — which caps its body at 4 MiB — fails this fixture instead of
@@ -1202,14 +1255,17 @@ void tst_WebServer::incomingListingShowsFilesAndFolders()
     // A folder navigates; it is never offered as a download.
     QVERIFY(html.contains(QStringLiteral("path=Season%201")));
 
-    // Video and audio get a second link, and which one depends on whether a
-    // browser can play the container at all.
+    // Video and audio get a second link, and it is the player page whether or
+    // not a browser can decode the container. The listing never hands out the
+    // raw byte URL: clicking that on a .mkv downloads the file instead of
+    // playing it, which is not what a link in a page should do.
     QVERIFY(html.contains(QStringLiteral(">Play<")));
     QVERIFY(html.contains(QStringLiteral("play=clip.mp4")));
-    QVERIFY(html.contains(QStringLiteral(">Stream<")));
+    QVERIFY(!html.contains(QStringLiteral(">Stream<")));
+    QVERIFY(!html.contains(QStringLiteral("/api/v1/incoming/stream")));
     // &amp;, not &: the href is HTML-escaped, which is what keeps a release name
     // containing an ampersand from ending the attribute early.
-    QVERIFY(html.contains(QStringLiteral("/api/v1/incoming/stream?token=%1&amp;file=movie.mkv")
+    QVERIFY(html.contains(QStringLiteral("/api/v1/incoming?token=%1&amp;play=movie.mkv")
                               .arg(m_webServer->streamToken())));
 
     // A plain file has exactly one action.
@@ -1224,6 +1280,269 @@ void tst_WebServer::incomingListingShowsFilesAndFolders()
     const QString subHtml = QString::fromUtf8(sub.rawBody);
     QVERIFY(subHtml.contains(QStringLiteral("episode.txt")));
     QVERIFY(subHtml.contains(QStringLiteral("../")));
+}
+
+void tst_WebServer::theTemplateRowsAskForPerFileIcons()
+{
+    // Guards the half the sprite-token test cannot see: that the template still
+    // asks for the keys the builders set. A key renamed on one side only leaves
+    // a literal "[DownloadFileType]" in the page, which no sprite check notices.
+    // It does not prove the builders fill them -- buildTransferPage needs a
+    // logged-in session to render, which is a much heavier fixture.
+    QFile tmpl(eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"));
+    QVERIFY(tmpl.open(QIODevice::ReadOnly));
+    const QString text = QString::fromUtf8(tmpl.readAll());
+
+    const auto section = [&text](const QString& name) {
+        const QString open = QStringLiteral("<--TMPL_%1-->").arg(name);
+        const QString close = QStringLiteral("<--TMPL_%1_END-->").arg(name);
+        const qsizetype from = text.indexOf(open);
+        const qsizetype to = text.indexOf(close, from);
+        return (from < 0 || to < 0) ? QString{} : text.mid(from, to - from);
+    };
+
+    const QString down = section(QStringLiteral("TRANSFER_DOWN_LINE"));
+    const QString shared = section(QStringLiteral("SHARED_LINE"));
+    QVERIFY(!down.isEmpty());
+    QVERIFY(!shared.isEmpty());
+
+    for (const QString& key : {QStringLiteral("icon-filetype_[DownloadFileType]"),
+                               QStringLiteral("icon-rating_[DownloadFake]"),
+                               QStringLiteral("icon-is_[DownloadCommentIcon]"),
+                               QStringLiteral("icon-rating_[DownloadRating]")}) {
+        QVERIFY2(down.contains(key), qPrintable(key));
+    }
+    for (const QString& key : {QStringLiteral("icon-filetype_[SharedFileType]"),
+                               // The shared rows used to be the one list with no
+                               // fake mark, so a file kept its red exclamation only
+                               // until it finished downloading.
+                               QStringLiteral("icon-rating_[SharedFake]"),
+                               QStringLiteral("icon-is_[SharedCommentIcon]"),
+                               QStringLiteral("icon-rating_[SharedRating]")}) {
+        QVERIFY2(shared.contains(key), qPrintable(key));
+    }
+
+    // Every mark says what it means on hover. Without this the classic UI is the
+    // one surface where an icon explains nothing — the Qt lists have tooltips and
+    // the incoming listing has a title.
+    for (const QString& key : {QStringLiteral("title=\"[DownloadFakeTitle]\""),
+                               QStringLiteral("title=\"[DownloadRatingTitle]\"")}) {
+        QVERIFY2(down.contains(key), qPrintable(key));
+    }
+    for (const QString& key : {QStringLiteral("title=\"[SharedFakeTitle]\""),
+                               QStringLiteral("title=\"[SharedRatingTitle]\"")}) {
+        QVERIFY2(shared.contains(key), qPrintable(key));
+    }
+
+    // The generic one-icon-fits-all sprite is gone from both rows. Leaving it in
+    // would put two file icons side by side rather than replacing it.
+    QVERIFY(!down.contains(QStringLiteral("icon-file\"")));
+    QVERIFY(!shared.contains(QStringLiteral("icon-file\"")));
+
+    // The new stylesheet is actually linked, or every rating span renders blank.
+    QVERIFY(text.contains(QStringLiteral("href=\"sprite-rating.css\"")));
+}
+
+void tst_WebServer::everySpriteTokenTheTemplateAsksForExists()
+{
+    // The template composes a class name from a prefix it hardcodes and a token
+    // the C++ supplies -- "icon-filetype_" + "video". A token with no matching
+    // rule renders as a blank gap with no error anywhere, which is how the
+    // pre-existing icon-connected bug survived: the server rows have been asking
+    // for a class sprites.css never defined. Check the whole surface here.
+    QSet<QString> classes;
+    for (const QString& sheet : {QStringLiteral("sprites.css"),
+                                 QStringLiteral("sprite-rating.css")}) {
+        QFile css(eMule::testing::projectDataDir() + QStringLiteral("/config/webserver/") + sheet);
+        QVERIFY2(css.open(QIODevice::ReadOnly), qPrintable(sheet));
+        const QString text = QString::fromUtf8(css.readAll());
+
+        static const QRegularExpression rx(QStringLiteral("\\.icon-([A-Za-z0-9_]+)"));
+        auto it = rx.globalMatch(text);
+        while (it.hasNext())
+            classes.insert(it.next().captured(1));
+    }
+    QVERIFY(!classes.isEmpty());
+
+    QStringList wanted;
+    // webFileTypeToken() -- every branch of it, ED2KFileType::Image included,
+    // which maps to "picture" rather than the obvious "image".
+    for (const QString& t : {QStringLiteral("audio"), QStringLiteral("video"),
+                             QStringLiteral("picture"), QStringLiteral("program"),
+                             QStringLiteral("document"), QStringLiteral("archive"),
+                             QStringLiteral("cdimage"), QStringLiteral("emulecollection"),
+                             QStringLiteral("other")}) {
+        wanted << QStringLiteral("filetype_") + t;
+    }
+    // webCommentToken(), composed by the template as is_<token>. All three must
+    // be 16px wide or the filename jumps between rows -- is_halfnone is 8px, so
+    // the blank is is_none.
+    for (const QString& t : {QStringLiteral("halfcmtgood"), QStringLiteral("halfcmtbad"),
+                             QStringLiteral("none")}) {
+        wanted << QStringLiteral("is_") + t;
+    }
+    // webRatingToken() plus the fake mark. "none" is the common row, so a
+    // missing blank would put a gap on almost every line.
+    for (const QString& t : {QStringLiteral("none"), QStringLiteral("0"), QStringLiteral("1"),
+                             QStringLiteral("2"), QStringLiteral("3"), QStringLiteral("4"),
+                             QStringLiteral("5"), QStringLiteral("search"),
+                             QStringLiteral("fake")}) {
+        wanted << QStringLiteral("rating_") + t;
+    }
+
+    for (const QString& cls : wanted) {
+        QVERIFY2(classes.contains(cls),
+                 qPrintable(QStringLiteral("no .icon-%1 rule in any stylesheet").arg(cls)));
+    }
+}
+
+void tst_WebServer::incomingListingMarksTheFilesThatAreNotWhatTheyClaim()
+{
+    const auto root = sendRanged(incomingUrl(QStringLiteral("/api/v1/incoming")), {});
+    QCOMPARE(root.statusCode, 200);
+    const QString html = QString::fromUtf8(root.rawBody);
+
+    // One marker per suspect row. Finding this out only after clicking Play and
+    // watching a black rectangle is how the original bug got reported.
+    //
+    // This is the fallback mark, drawn in the page's own CSS: the fixture's config
+    // dir has no sprite sheet to inline. The sheet case is the next test.
+    QCOMPARE(html.count(QStringLiteral("class=\"bad\"")), 2);
+
+    // Each marker says which kind of wrong it is, because the two call for
+    // different reactions: a misnamed container still plays, a fake never will.
+    QVERIFY(html.contains(QStringLiteral("the contents are MP4")));
+    QVERIFY(html.contains(QStringLiteral("matches no media container we recognise")));
+
+    // The marker sits in front of the name it belongs to.
+    QVERIFY(html.contains(QStringLiteral("!</span>fake.wmv")));
+    QVERIFY(html.contains(QStringLiteral("!</span>mislabelled.avi")));
+
+    // Nothing else is marked. real.wmv is a genuine ASF, clip.mp4 a genuine MP4,
+    // and notes.txt an extension we make no promise about at all — a red mark on
+    // any of those would be worse than no mark at all.
+    for (const QString& honest : {QStringLiteral("real.wmv"), QStringLiteral("clip.mp4"),
+                                  QStringLiteral("movie.mkv"), QStringLiteral("notes.txt")}) {
+        QVERIFY2(!html.contains(QStringLiteral("!</span>") + honest),
+                 qPrintable(QStringLiteral("marked an honest file: %1").arg(honest)));
+    }
+}
+
+void tst_WebServer::incomingListingDrawsTheSameMarksAsEveryOtherList()
+{
+    // With the sprite sheet reachable the listing stops drawing its own red circle
+    // and uses the art every other list uses. It cannot *link* the sheet — the
+    // static asset route only exists while the web UI is on, and this page is
+    // reachable on a stream token with it off — so it carries it inline instead.
+    QTemporaryDir configDir;
+    QVERIFY(configDir.isValid());
+    QVERIFY(QDir().mkpath(configDir.filePath(QStringLiteral("webserver"))));
+    QVERIFY(QFile::copy(QStringLiteral(EMULE_STRINGIFY(EMULE_PROJECT_DATA_DIR)
+                                       "/config/webserver/sprite-rating.png"),
+                        configDir.filePath(QStringLiteral("webserver/sprite-rating.png"))));
+
+    // The share knows one of the incoming files and has a rating for it, so the row
+    // gets both marks — the fake mark from its bytes, the rating from other users.
+    auto* known = new KnownFile();
+    uint8 hash[16];
+    std::memset(hash, 0x5A, 16);
+    known->setFileHash(hash);
+    known->setFileName(QStringLiteral("fake.wmv"));
+    known->setFilePath(QDir(m_incoming->path()).filePath(QStringLiteral("fake.wmv")));
+    known->setFileSize(12);
+    known->setUserRating(4);   // Good
+    m_knownFiles->safeAddKFile(known);
+    QVERIFY(m_sharedFiles->safeAddKFile(known));
+
+    const QString savedConfigDir = m_preferences->configDir();
+    const bool savedIndicate = m_preferences->indicateRatings();
+    m_preferences->setConfigDir(configDir.path());
+    m_preferences->setIndicateRatings(true);
+
+    auto server = startServer(/*webUiEnabled*/ false, /*restApiEnabled*/ true);
+    QVERIFY(server->isRunning());
+    const QString html = rawGetBody(server->port(),
+                                    QStringLiteral("/api/v1/incoming?token=")
+                                        + server->streamToken());
+    server->stop();
+
+    m_preferences->setConfigDir(savedConfigDir);
+    m_preferences->setIndicateRatings(savedIndicate);
+    m_sharedFiles->removeFile(known);
+
+    // The sheet rides along once, as a data: URI — not one request per icon, and no
+    // request at all to a route that may not be registered.
+    QCOMPARE(html.count(QStringLiteral("data:image/png;base64,")), 1);
+
+    // Cell 8 is rating_fake, the RatingBad art the Qt lists and the web UI draw.
+    // The CSS-drawn fallback circle is gone now that there is a real sheet.
+    QVERIFY(html.contains(QStringLiteral("class=\"rm rm8\"")));
+    QVERIFY(!html.contains(QStringLiteral("class=\"bad\"")));
+    QVERIFY(html.contains(QStringLiteral("very likely a fake")));
+
+    // ...and cell 5 is rating_4, "Good" — the half of the marks this page never had.
+    QVERIFY(html.contains(QStringLiteral("class=\"rm rm5\"")));
+    QVERIFY(html.contains(QStringLiteral("Rating: Good")));
+}
+
+void tst_WebServer::incomingDetectsAFileWhoseBytesContradictItsName()
+{
+    const auto typeOf = [this](const QString& file) {
+        const auto resp = sendRanged(
+            incomingUrl(QStringLiteral("/api/v1/incoming/stream"),
+                        QStringLiteral("file"), file), {});
+        return resp.headers.value(QStringLiteral("content-type"));
+    };
+
+    // Knowing a file is not what it claims is not the same as knowing what it
+    // is. This one carries no signature we recognise, so the type stays the one
+    // its name implies — guessing "audio/mpeg" off a chance frame sync would
+    // just swap one wrong answer for another.
+    QCOMPARE(typeOf(QStringLiteral("fake.wmv")), QStringLiteral("video/x-ms-wmv"));
+
+    // When the real container *is* identified, serving it is what makes the file
+    // play at all, so the override still happens.
+    QCOMPARE(typeOf(QStringLiteral("mislabelled.avi")), QStringLiteral("video/mp4"));
+
+    // The honest .wmv keeps the extension's type. This is the assertion that
+    // stops anyone "improving" the route into content-based detection for every
+    // file: QMimeDatabase would call this video/x-ms-asf and, worse, demote
+    // every real .mp4 to video/quicktime, which some browsers refuse to play.
+    QCOMPARE(typeOf(QStringLiteral("real.wmv")), QStringLiteral("video/x-ms-wmv"));
+
+    // And nothing fires on an extension we hold no promise over.
+    QCOMPARE(typeOf(QStringLiteral("notes.txt")), QStringLiteral("text/plain"));
+    QCOMPARE(typeOf(QStringLiteral("clip.mp4")), QStringLiteral("video/mp4"));
+
+    const auto playerFor = [this](const QString& file) {
+        const auto resp = sendRanged(
+            incomingUrl(QStringLiteral("/api/v1/incoming"), QStringLiteral("play"), file), {});
+        return QString::fromUtf8(resp.rawBody);
+    };
+
+    // The page says the file is a fake rather than blaming the browser. That
+    // difference is the whole point: the old wording sent someone to VLC, where
+    // it also played nothing, so the trip was wasted twice.
+    const QString fake = playerFor(QStringLiteral("fake.wmv"));
+    QVERIFY(fake.contains(QStringLiteral("fake or a corrupt download")));
+    QVERIFY(fake.contains(QStringLiteral("ASF")));
+    QVERIFY(!fake.contains(QStringLiteral("cannot decode")));
+    // And it does not go on to recommend the player it just ruled out.
+    QVERIFY(!fake.contains(QStringLiteral("Open this URL in VLC")));
+
+    // A container we did identify is named, and gets the element its real
+    // content can use.
+    const QString wrong = playerFor(QStringLiteral("mislabelled.avi"));
+    QVERIFY(wrong.contains(QStringLiteral("contents are <strong>MP4</strong>")));
+    QVERIFY(wrong.contains(QStringLiteral("<video controls autoplay")));
+    QVERIFY(!wrong.contains(QStringLiteral("fake or a corrupt download")));
+
+    // The honest .wmv gets the other notice: the container is real, the browser
+    // just has no decoder for it, and there VLC genuinely is the answer.
+    const QString real = playerFor(QStringLiteral("real.wmv"));
+    QVERIFY(real.contains(QStringLiteral("cannot decode")));
+    QVERIFY(real.contains(QStringLiteral("Open this URL in VLC")));
+    QVERIFY(!real.contains(QStringLiteral("fake or a corrupt download")));
 }
 
 void tst_WebServer::incomingRefusesToEscapeTheIncomingDir()
@@ -1285,12 +1604,92 @@ void tst_WebServer::incomingStreamHonoursARangeRequest()
     QVERIFY(ranged.headers.value(QStringLiteral("content-disposition"))
                 .startsWith(QStringLiteral("inline")));
 
-    // No Range at all still comes back partial, because the body is capped —
-    // which is exactly why the download route cannot share this path.
+    // No Range asked for, so the whole representation comes back — a 200, not a
+    // capped 206. Answering 206 here is what made a browser save a 4 MiB stub of
+    // a 400 MB video and call it a download.
     const auto whole = sendRanged(url, {});
-    QCOMPARE(whole.statusCode, 206);
-    QVERIFY(whole.rawBody.size() < m_bigFileBytes.size());
-    QCOMPARE(whole.rawBody, m_bigFileBytes.left(whole.rawBody.size()));
+    QCOMPARE(whole.statusCode, 200);
+    QCOMPARE(whole.rawBody.size(), m_bigFileBytes.size());
+    QCOMPARE(whole.rawBody, m_bigFileBytes);
+    QVERIFY(!whole.headers.contains(QStringLiteral("content-range")));
+    QCOMPARE(whole.headers.value(QStringLiteral("content-length")),
+             QString::number(m_bigFileBytes.size()));
+    QCOMPARE(whole.headers.value(QStringLiteral("accept-ranges")), QStringLiteral("bytes"));
+}
+
+void tst_WebServer::incomingStreamServesABoundedRangeWithoutCapping()
+{
+    // Spans well past kPreviewChunkBytes. The preview path would have clamped
+    // this to 4 MiB and said so in its Content-Range; a finished file on disk is
+    // read straight off the device, so what was asked for is what arrives.
+    const auto resp = sendRanged(
+        incomingUrl(QStringLiteral("/api/v1/incoming/stream"), QStringLiteral("file"),
+                    QStringLiteral("big.bin")),
+        QByteArrayLiteral("bytes=100-4300000"));
+
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(resp.rawBody.size(), qsizetype(4300000 - 100 + 1));
+    QCOMPARE(resp.rawBody, m_bigFileBytes.mid(100, 4300000 - 100 + 1));
+    QCOMPARE(resp.headers.value(QStringLiteral("content-range")),
+             QStringLiteral("bytes 100-4300000/%1").arg(m_bigFileBytes.size()));
+
+    // An open-ended range runs to the end of the file, for the same reason.
+    const auto open = sendRanged(
+        incomingUrl(QStringLiteral("/api/v1/incoming/stream"), QStringLiteral("file"),
+                    QStringLiteral("big.bin")),
+        QByteArrayLiteral("bytes=4194304-"));
+    QCOMPARE(open.statusCode, 206);
+    QCOMPARE(open.rawBody, m_bigFileBytes.mid(4194304));
+    QCOMPARE(open.headers.value(QStringLiteral("content-range")),
+             QStringLiteral("bytes 4194304-%1/%2")
+                 .arg(m_bigFileBytes.size() - 1).arg(m_bigFileBytes.size()));
+}
+
+void tst_WebServer::incomingStreamRejectsARangeItCannotSatisfy()
+{
+    const QString url = incomingUrl(QStringLiteral("/api/v1/incoming/stream"),
+                                    QStringLiteral("file"), QStringLiteral("big.bin"));
+
+    for (const QByteArray& range : {QByteArrayLiteral("bytes=5242880-"),   // == file size
+                                    QByteArrayLiteral("bytes=abc"),        // malformed
+                                    QByteArrayLiteral("bytes=-500")}) {    // suffix, unsupported
+        const auto resp = sendRanged(url, range);
+        QVERIFY2(resp.statusCode == 416,
+                 qPrintable(QStringLiteral("served %1 for Range: %2")
+                                .arg(resp.statusCode).arg(QString::fromLatin1(range))));
+        QCOMPARE(resp.headers.value(QStringLiteral("content-range")),
+                 QStringLiteral("bytes */%1").arg(m_bigFileBytes.size()));
+    }
+}
+
+void tst_WebServer::incomingPlayerWarnsAboutAnUnplayableContainer()
+{
+    const auto unplayable = sendRanged(
+        incomingUrl(QStringLiteral("/api/v1/incoming"), QStringLiteral("play"),
+                    QStringLiteral("movie.mkv")), {});
+    QCOMPARE(unplayable.statusCode, 200);
+    const QString mkv = QString::fromUtf8(unplayable.rawBody);
+
+    // The player is offered either way — browsers differ — but a container none
+    // of them decode gets an explanation and the URL an external player wants,
+    // instead of a black box with no error on it.
+    QVERIFY(mkv.contains(QStringLiteral("<video controls autoplay")));
+    QVERIFY(mkv.contains(QStringLiteral("cannot decode")));
+    QVERIFY(mkv.contains(QStringLiteral(".mkv")));
+    QVERIFY(mkv.contains(QStringLiteral("/api/v1/incoming/stream?token=%1&amp;file=movie.mkv")
+                             .arg(m_webServer->streamToken())));
+
+    const auto playable = sendRanged(
+        incomingUrl(QStringLiteral("/api/v1/incoming"), QStringLiteral("play"),
+                    QStringLiteral("clip.mp4")), {});
+    QCOMPARE(playable.statusCode, 200);
+    const QString mp4 = QString::fromUtf8(playable.rawBody);
+    QVERIFY(mp4.contains(QStringLiteral("<video controls autoplay")));
+    QVERIFY(!mp4.contains(QStringLiteral("cannot decode")));
+
+    // Both pages still offer the download, whatever the container.
+    QVERIFY(mkv.contains(QStringLiteral("Download this file")));
+    QVERIFY(mp4.contains(QStringLiteral("Download this file")));
 }
 
 // ---------------------------------------------------------------------------

@@ -81,6 +81,8 @@ void IpcServer::onNewConnection()
                 this, &IpcServer::onClientDisconnected);
         connect(handler.get(), &IpcClientHandler::webServerConfigChanged,
                 this, &IpcServer::webServerConfigChanged);
+        connect(handler.get(), &IpcClientHandler::webTemplateReloadRequested,
+                this, &IpcServer::webTemplateReloadRequested);
         connect(handler.get(), &IpcClientHandler::usenetConfigChanged,
                 this, &IpcServer::usenetConfigChanged);
         connect(handler.get(), &IpcClientHandler::indexerConfigChanged,

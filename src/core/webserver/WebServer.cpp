@@ -14,6 +14,7 @@
 #include "files/SharedFileList.h"
 #include "friends/Friend.h"
 #include "friends/FriendList.h"
+#include "media/ContainerSniffer.h"
 #include "prefs/Preferences.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
@@ -46,6 +47,7 @@
 #include <QMimeDatabase>
 #include <QPromise>
 #include <QRegularExpression>
+#include <QSet>
 #include <QSslConfiguration>
 #include <QSslKey>
 #include <QSslServer>
@@ -136,6 +138,68 @@ constexpr int kStreamPollMs = 250;
     err.setHeaders(std::move(h));
     return err;
 }
+
+/// A read-only window [start, start+length) onto a file.
+///
+/// What lets the incoming stream route answer a Range without assembling the
+/// body in memory the way serveRange has to. QHttpServerResponder writes a
+/// device to its end and takes Content-Length off size(), so the window has to
+/// live inside the device: a bare QFile seeked to the offset would over-report
+/// both.
+class RangeFileDevice : public QIODevice     // no Q_OBJECT: adds no signals
+{
+public:
+    RangeFileDevice(const QString& path, qint64 start, qint64 length, QObject* parent)
+        : QIODevice(parent), m_file(path), m_start(start), m_length(length)
+    {
+    }
+
+    bool open(OpenMode mode) override
+    {
+        if (!m_file.open(QIODevice::ReadOnly) || !m_file.seek(m_start)) {
+            m_file.close();
+            return false;
+        }
+        return QIODevice::open(mode);
+    }
+
+    void close() override
+    {
+        QIODevice::close();
+        m_file.close();
+    }
+
+    /// The window, not the file. Everything else follows from this: QIODevice
+    /// derives bytesAvailable() and atEnd() from it, and the responder sends it
+    /// as Content-Length.
+    qint64 size() const override { return m_length; }
+
+    bool isSequential() const override { return false; }
+
+    bool seek(qint64 pos) override
+    {
+        if (pos < 0 || pos > m_length || !m_file.seek(m_start + pos))
+            return false;
+        return QIODevice::seek(pos);
+    }
+
+protected:
+    qint64 readData(char* data, qint64 maxSize) override
+    {
+        // pos() is where this read starts -- QIODevice advances it afterwards.
+        const qint64 left = m_length - pos();
+        if (left <= 0)
+            return 0;
+        return m_file.read(data, qMin(maxSize, left));
+    }
+
+    qint64 writeData(const char*, qint64) override { return -1; }
+
+private:
+    QFile  m_file;
+    qint64 m_start;
+    qint64 m_length;
+};
 
 QHttpServerResponse jsonError(int code, const QString& message)
 {
@@ -409,14 +473,14 @@ void WebServer::registerRoutes()
             return handleIncomingListing(req);
         });
 
+    // The two routes in the daemon that answer through the responder rather than
+    // by returning a response, for the same reason: every QHttpServerResponse
+    // holds its body in memory, and these two hand over a whole file.
     m_server->route(QStringLiteral("/api/v1/incoming/stream"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            return handleIncomingStream(req);
+        [this](const QHttpServerRequest& req, QHttpServerResponder& responder) {
+            handleIncomingStream(req, responder);
         });
 
-    // The only route in the daemon that answers through the responder rather than
-    // by returning a response: a download is the whole file, and every
-    // QHttpServerResponse holds its body in memory.
     m_server->route(QStringLiteral("/api/v1/incoming/download"), QHttpServerRequest::Method::Get,
         [this](const QHttpServerRequest& req, QHttpServerResponder& responder) {
             handleIncomingDownload(req, responder);
@@ -1092,9 +1156,13 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
 
 namespace {
 
-/// Containers a browser plays by itself. Everything else that is video or audio
-/// still gets a stream link -- VLC takes the URL and seeks in it -- just not an
-/// inline player, which would show a black box and no error.
+/// Containers a browser plays by itself.
+///
+/// It does not decide *which* link a file gets -- every video and audio file
+/// gets the player page, because a link in a page that silently starts a
+/// download instead is the worse surprise. It decides whether that page warns
+/// and offers the raw URL for VLC, so what the user sees when the black box
+/// stays black is an explanation rather than nothing.
 bool isBrowserPlayable(const QString& fileName)
 {
     static const QStringList kExt = {
@@ -1132,9 +1200,72 @@ QString humanSize(qint64 bytes)
                                  .arg(QLatin1String(kUnit[u]));
 }
 
+/// The `filetype_*` sprite suffix for a name — MFC _GetWebImageNameForFileType
+/// (srchybrid/WebServer.cpp:4157-4188). Note IMAGE maps to "picture", not
+/// "image": that is what the shipped sprite is called.
+QString webFileTypeToken(const QString& fileName)
+{
+    switch (getED2KFileTypeID(fileName)) {
+    case ED2KFileType::Audio:           return QStringLiteral("audio");
+    case ED2KFileType::Video:           return QStringLiteral("video");
+    case ED2KFileType::Image:           return QStringLiteral("picture");
+    case ED2KFileType::Program:         return QStringLiteral("program");
+    case ED2KFileType::Document:        return QStringLiteral("document");
+    case ED2KFileType::Archive:         return QStringLiteral("archive");
+    case ED2KFileType::CDImage:         return QStringLiteral("cdimage");
+    case ED2KFileType::EmuleCollection: return QStringLiteral("emulecollection");
+    default:                            return QStringLiteral("other");
+    }
+}
+
+/// The `is_*` sprite suffix. Three states, exactly MFC's iComment
+/// (srchybrid/WebServer.cpp:1881-1884, 2184-2196): nothing, something to read,
+/// or a bad rating — which is rating 1, "Invalid / Corrupt / Fake".
+///
+/// The blank is is_none, not is_halfnone: the "half" blank is 8px wide because
+/// MFC pairs it with the 8px getflc icon in one cell, and using it alone would
+/// shift the filename on every row that has no comment.
+QString webCommentToken(const AbstractFile& f)
+{
+    if (f.hasBadRating())
+        return QStringLiteral("halfcmtbad");
+    if (f.hasComment() || f.hasRating())
+        return QStringLiteral("halfcmtgood");
+    return QStringLiteral("none");
+}
+
+/// The `rating_*` sprite suffix. MFC's web UI stops at the three-state comment
+/// icon above; the GUI shows all six, and so does this.
+QString webRatingToken(const AbstractFile& f, bool indicateRatings)
+{
+    // Same predicate the GUI uses, and the same preference governs it.
+    if (!indicateRatings
+        || !(f.hasComment() || f.hasRating() || f.isKadCommentSearchRunning())) {
+        return QStringLiteral("none");
+    }
+    const uint32 rating = f.userRating(true);
+    if (rating == 6)
+        return QStringLiteral("search");
+    return QString::number(rating <= 5 ? rating : 0);
+}
+
+/// What those two icons mean, for their title=. Same either/or the Qt lists make in
+/// fileMarksTooltip(): the rating when there is one, otherwise only that there is
+/// something to read. Empty when the row says nothing, so the span stays silent.
+QString webRatingTitle(const AbstractFile& f)
+{
+    const uint32 rating = f.userRating(true);
+    if (rating == 6)
+        return QStringLiteral("Looking for comments on Kad");
+    if (rating >= 1 && rating <= 5)
+        return QStringLiteral("Rating: %1").arg(ratingLabel(static_cast<int>(rating)));
+    return f.hasComment() ? QStringLiteral("Has comments") : QString{};
+}
+
 /// Shared head of both pages. Inline everything: with the web UI disabled there
-/// is no stylesheet route to link to.
-QString pageHead(const QString& title)
+/// is no stylesheet route to link to. @p extraCss is appended inside the same
+/// <style>, which is how the rating sprite sheet gets in (see ratingSpriteCss()).
+QString pageHead(const QString& title, const QString& extraCss = {})
 {
     return QStringLiteral(
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
@@ -1154,7 +1285,22 @@ QString pageHead(const QString& title)
         "td.a{white-space:nowrap}td.a a{margin-right:12px}"
         "video,audio{width:100%;max-width:960px;background:#000;border-radius:6px}"
         "p.empty{color:#606770}"
-        "</style></head><body>").arg(title.toHtmlEscaped());
+        "div.warn{max-width:960px;margin:16px 0;padding:12px 14px;background:#fff8e1;"
+        "border:1px solid #f0d999;border-radius:6px}"
+        "div.warn p{margin:0 0 8px}"
+        "div.warn form{display:flex;gap:8px}"
+        "div.warn input{flex:1;min-width:0;font:12px ui-monospace,Menlo,Consolas,monospace;"
+        "padding:6px 8px;border:1px solid #dcdfe3;border-radius:4px;background:#fff;"
+        "color:#1c1e21}"
+        "div.warn button{padding:6px 12px;border:1px solid #dcdfe3;border-radius:4px;"
+        "background:#f0f2f5;color:#1c1e21;cursor:pointer}"
+        // The fallback mark, drawn in CSS: the static asset route only exists while
+        // the web UI is enabled, and this page is reachable on a stream token with it
+        // off. Used when the sprite sheet cannot be read — see ratingSpriteCss().
+        "span.bad{display:inline-block;width:15px;height:15px;line-height:15px;"
+        "text-align:center;border-radius:50%;background:#d93025;color:#fff;"
+        "font-weight:700;font-size:11px;margin-right:6px;cursor:help}"
+        "%2</style></head><body>").arg(title.toHtmlEscaped(), extraCss);
 }
 
 } // namespace
@@ -1198,25 +1344,115 @@ QHttpServerResponse WebServer::handleIncomingListing(const QHttpServerRequest& r
                                renderIncomingListing(abs, rel, token));
 }
 
-QHttpServerResponse WebServer::handleIncomingStream(const QHttpServerRequest& req)
+void WebServer::handleIncomingStream(const QHttpServerRequest& req,
+                                    QHttpServerResponder& responder)
 {
     if (!hasStreamToken(req)) {
         logWarning(QStringLiteral("Incoming: 401 — invalid or missing stream token"));
-        return jsonError(401, QStringLiteral("Invalid or missing stream token"));
+        responder.sendResponse(jsonError(401, QStringLiteral("Invalid or missing stream token")));
+        return;
     }
 
     const QUrlQuery query(req.query());
     const QString rel = query.queryItemValue(QStringLiteral("file"), QUrl::FullyDecoded);
     const QString abs = resolveIncomingPath(rel);
-    if (abs.isEmpty() || !QFileInfo(abs).isFile()) {
+    const QFileInfo info(abs);
+    if (abs.isEmpty() || !info.isFile()) {
         logWarning(QStringLiteral("Incoming: 404 — cannot stream %1").arg(rel));
-        return jsonError(404, QStringLiteral("File not found"));
+        responder.sendResponse(jsonError(404, QStringLiteral("File not found")));
+        return;
     }
 
-    // The same Range implementation the two preview routes use, so a player gets
-    // the seeking it expects and the daemon never assembles more than one window.
-    return serveRange({{abs, 0, 0, 0}}, QFileInfo(abs).fileName(), 0, 0,
-                      req.headers().combinedValue(QByteArrayLiteral("Range")));
+    const qint64 fileSize = info.size();
+    if (fileSize <= 0) {
+        logWarning(QStringLiteral("Incoming: 404 — nothing to stream in %1").arg(rel));
+        responder.sendResponse(jsonError(404, QStringLiteral("File not available")));
+        return;
+    }
+
+    // Deliberately not serveRange(). That one assembles its body in memory,
+    // because a preview is stitched out of a release that is still arriving, and
+    // its 4 MiB cap makes every answer a 206 — including the answer to a request
+    // that carried no Range at all, which a browser then saves as a truncated
+    // download. A finished file is one contiguous file on disk with no holes, so
+    // it streams straight off the device and a range-less GET gets its 200.
+    const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
+
+    qint64 start = 0;
+    qint64 end   = fileSize - 1;
+    const bool hasRange = !rangeHeader.isEmpty();
+
+    if (hasRange) {
+        qint64 parsedEnd = -1;
+        if (!parseRange(rangeHeader, start, parsedEnd)) {
+            logWarning(QStringLiteral("Incoming: 416 — malformed Range header: %1")
+                           .arg(QString::fromLatin1(rangeHeader)));
+            responder.sendResponse(rangeNotSatisfiable(fileSize));
+            return;
+        }
+        end = parsedEnd < 0 ? fileSize - 1 : parsedEnd;
+        // RFC 7233 §2.1: clamp last-byte-pos to file size
+        if (end >= fileSize)
+            end = fileSize - 1;
+        if (start >= fileSize || start > end) {
+            logWarning(QStringLiteral("Incoming: 416 — out of bounds: start=%1 end=%2 size=%3")
+                           .arg(start).arg(end).arg(fileSize));
+            responder.sendResponse(rangeNotSatisfiable(fileSize));
+            return;
+        }
+    }
+
+    // Parented rather than owned outright, same as the download route: the
+    // responder documents that it takes the device, and a parent makes the other
+    // reading harmless instead of a leak per request.
+    auto* device = new RangeFileDevice(abs, start, end - start + 1, this);
+    if (!device->open(QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("Incoming: 500 — cannot open %1").arg(abs));
+        delete device;
+        responder.sendResponse(jsonError(500, QStringLiteral("Cannot open file")));
+        return;
+    }
+
+    const QString name = info.fileName();
+    QMimeDatabase mimeDb;
+
+    // The extension decides the type, not the content: QMimeDatabase content
+    // matching demotes every real .mp4 to video/quicktime, which some browsers
+    // then refuse to play. The one exception is a file whose magic positively
+    // contradicts its name -- an incoming folder is full of those, and sending
+    // the type it really is turns a player stuck at 0:00 into one that plays.
+    QString mimeName = mimeDb.mimeTypeForFile(name, QMimeDatabase::MatchExtension).name();
+    if (const ContainerCheck real = checkFile(abs, name); real.isSuspect()) {
+        // Only a container we positively identified may change the type. Knowing
+        // the file is not what it claims is not the same as knowing what it is,
+        // and guessing there would just trade one wrong type for another.
+        logWarning(QStringLiteral("Incoming: %1 is named .%2 but contains %3")
+                       .arg(name, info.suffix().toLower(),
+                            real.actual.isEmpty() ? QStringLiteral("no recognised container")
+                                                  : real.actual));
+        if (!real.mimeType.isEmpty())
+            mimeName = real.mimeType;
+    }
+
+    QHttpHeaders headers;
+    headers.append(QHttpHeaders::WellKnownHeader::ContentType, mimeName);
+    // Unlike the download route this one keeps the promise, so it may make it.
+    headers.append(QByteArrayLiteral("Accept-Ranges"), QStringLiteral("bytes"));
+    if (hasRange) {
+        headers.append(QByteArrayLiteral("Content-Range"),
+                       QStringLiteral("bytes %1-%2/%3").arg(start).arg(end).arg(fileSize));
+    }
+    // inline, not attachment: this route exists to be played. Quoted the same way
+    // the download route quotes it — a name carrying a quote would otherwise end
+    // the header value early.
+    headers.append(QHttpHeaders::WellKnownHeader::ContentDisposition,
+                   QStringLiteral("inline; filename=\"%1\"; filename*=UTF-8''%2")
+                       .arg(QString(name).remove(QLatin1Char('"')).remove(QLatin1Char('\\')),
+                            QString::fromLatin1(QUrl::toPercentEncoding(name))));
+
+    responder.write(device, headers,
+                    hasRange ? static_cast<QHttpServerResponse::StatusCode>(206)
+                             : QHttpServerResponse::StatusCode::Ok);
 }
 
 void WebServer::handleIncomingDownload(const QHttpServerRequest& req,
@@ -1344,6 +1580,36 @@ QString WebServer::resolveIncomingPath(const QString& relPath) const
     return abs;
 }
 
+QString WebServer::ratingSpriteCss() const
+{
+    if (m_ratingSpriteCss)
+        return *m_ratingSpriteCss;
+
+    // Carry the sheet rather than link it: the static asset route only exists while
+    // the web UI is on, and this page is reachable on a stream token with it off.
+    // At 410 bytes that is cheaper than the request it saves, and it keeps the marks
+    // pixel-identical to the ones the web UI and the Qt lists draw.
+    QFile sheet(m_webDataDir + QStringLiteral("/sprite-rating.png"));
+    if (!sheet.open(QIODevice::ReadOnly)) {
+        m_ratingSpriteCss.emplace();
+        return *m_ratingSpriteCss;
+    }
+
+    // Cell order and offsets are generate_sprites.py's, the same ones
+    // config/webserver/sprite-rating.css uses: none, 0-5, search, fake.
+    QString css = QStringLiteral(
+        ".rm{display:inline-block;width:16px;height:16px;vertical-align:middle;"
+        "background-image:url(data:image/png;base64,%1)}")
+        .arg(QString::fromLatin1(sheet.readAll().toBase64()));
+    for (int cell = 0; cell < 9; ++cell) {
+        css += QStringLiteral(".rm%1{background-position:-%2px 0}")
+                   .arg(cell).arg(cell * 16);
+    }
+
+    m_ratingSpriteCss = css;
+    return *m_ratingSpriteCss;
+}
+
 QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString& relPath,
                                             const QString& token) const
 {
@@ -1357,7 +1623,8 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
     const QString here = selected.remainder.isEmpty()
                              ? rootLabel
                              : rootLabel + QLatin1Char('/') + selected.remainder;
-    QString html = pageHead(here);
+    const QString spriteCss = ratingSpriteCss();
+    QString html = pageHead(here, spriteCss);
 
     html += QStringLiteral("<h1>%1</h1>").arg(here.toHtmlEscaped());
 
@@ -1381,6 +1648,32 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
         html += QStringLiteral("<p class=\"empty\">Nothing has finished downloading yet.</p>");
         html += QStringLiteral("</body></html>");
         return html.toUtf8();
+    }
+
+    // One pass over the share, not one lookup per entry: forEachFile() holds the map
+    // lock for its duration, and a finished-downloads folder can hold thousands of
+    // files. Same trick, for the same reason, as handleBrowseDirectory().
+    //
+    // Matched on the canonical path, because the two sides spell it differently: the
+    // share stores the path as configured, incomingRoot() hands back the canonical
+    // form, and on macOS a temp or symlinked folder is /var here and /private/var
+    // there. canonicalFilePath() is a syscall, so it runs only for shared files whose
+    // *name* occurs in this directory — bounded by the listing, not by the share.
+    QSet<QString> namesHere;
+    for (const QFileInfo& fi : entries) {
+        if (!fi.isDir())
+            namesHere.insert(fi.fileName().toLower());
+    }
+    QHash<QString, KnownFile*> sharedByPath;
+    if (m_sharedFiles && !namesHere.isEmpty()) {
+        m_sharedFiles->forEachFile([&](KnownFile* file) {
+            if (!file || file->filePath().isEmpty()
+                || !namesHere.contains(file->fileName().toLower()))
+                return;
+            const QString canonical = QFileInfo(file->filePath()).canonicalFilePath();
+            if (!canonical.isEmpty())
+                sharedByPath.insert(canonical.toLower(), file);
+        });
     }
 
     html += QStringLiteral("<table><tr><th>Name</th><th>Size</th><th>Modified</th>"
@@ -1425,23 +1718,64 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
                               .arg(incomingHref(QStringLiteral("/api/v1/incoming/download"),
                                                 token, QStringLiteral("file"), rel));
 
-        // Video and audio get a second link. Which one depends on whether the
-        // browser can play the container at all: anything else would be a black
-        // box with no error on it.
+        // Video and audio get a second link, and it is always the player page --
+        // never the raw stream URL. Whether the browser can decode the container
+        // is a question the player page answers; a link here that turns into a
+        // download the moment it is clicked is not a link the listing should
+        // offer at all.
         const ED2KFileType type = getED2KFileTypeID(name);
-        if (type == ED2KFileType::Video || type == ED2KFileType::Audio) {
-            actions += isBrowserPlayable(name)
-                ? QStringLiteral("<a href=\"%1\">Play</a>")
-                      .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
-                                        QStringLiteral("play"), rel))
-                : QStringLiteral("<a href=\"%1\">Stream</a>")
-                      .arg(incomingHref(QStringLiteral("/api/v1/incoming/stream"), token,
-                                        QStringLiteral("file"), rel));
+        const bool media = type == ED2KFileType::Video || type == ED2KFileType::Audio;
+        if (media) {
+            actions += QStringLiteral("<a href=\"%1\">Play</a>")
+                           .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                                             QStringLiteral("play"), rel));
         }
 
-        html += QStringLiteral("<tr><td>%1</td><td class=\"n\">%2</td><td class=\"n\">%3</td>"
-                               "<td class=\"a\">%4</td></tr>")
-                    .arg(name.toHtmlEscaped(), humanSize(fi.size()), modified, actions);
+        // Say it here rather than only on the player page. Finding out that a file is
+        // not what it claims after clicking Play and watching a black rectangle is how
+        // this got reported in the first place. No file-type gate: checkFile() already
+        // answers Unchecked for every extension we promise nothing about, and gating
+        // again only made this list narrower than the other three.
+        //
+        // Prefer the shared file's own verdict where there is one — the daemon's sweep
+        // has usually settled it already, and it is the same answer either way.
+        const KnownFile* known = sharedByPath.value(fi.canonicalFilePath().toLower(), nullptr);
+        ContainerCheck check;
+        if (known)
+            check = known->containerCheckIfResolved();
+        // Nothing has settled it yet — read it. One directory is bounded, and going
+        // quiet until the sweep gets round to it would lose a mark this page has
+        // always drawn. checkFile() costs nothing for an extension we promise
+        // nothing about, which is what Unchecked also means here.
+        if (check.verdict == ContainerVerdict::Unchecked)
+            check = checkFile(fi.absoluteFilePath(), name);
+        QString marker;
+        if (check.isSuspect()) {
+            const QString why = containerWarningText(check, name).toHtmlEscaped();
+            marker = spriteCss.isEmpty()
+                         // No sheet: fall back to the mark drawn in the page's own CSS.
+                         ? QStringLiteral("<span class=\"bad\" title=\"%1\">!</span>").arg(why)
+                         : QStringLiteral("<span class=\"rm rm8\" title=\"%1\"></span>").arg(why);
+        }
+
+        // And what other users said, for the files the share knows — the same rating
+        // mark, from the same sheet, as the Qt lists and the web UI draw.
+        QString rating;
+        if (known && !spriteCss.isEmpty()) {
+            const QString cell = webRatingToken(*known, m_preferences
+                                                        && m_preferences->indicateRatings());
+            if (cell != QLatin1String("none")) {
+                rating = QStringLiteral("<span class=\"rm rm%1\" title=\"%2\"></span>")
+                             .arg(cell == QLatin1String("search")
+                                      ? QStringLiteral("7") : QString::number(cell.toInt() + 1),
+                                  webRatingTitle(*known).toHtmlEscaped());
+            }
+        }
+
+        html += QStringLiteral("<tr><td>%1%2%3</td><td class=\"n\">%4</td><td class=\"n\">%5</td>"
+                               "<td class=\"a\">%6</td></tr>")
+                    .arg(marker, rating, name.toHtmlEscaped(), humanSize(fi.size()), modified,
+                         actions);
     }
 
     html += QStringLiteral("</table></body></html>");
@@ -1455,7 +1789,15 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
     const QString folder = cut < 0 ? QString{} : relPath.left(cut);
     const QString src = incomingHref(QStringLiteral("/api/v1/incoming/stream"), token,
                                      QStringLiteral("file"), relPath);
-    const bool audio = getED2KFileTypeID(fileName) == ED2KFileType::Audio;
+    // A file whose magic contradicts its name decides its own element -- the fake
+    // .wmv that prompted this is an MP3, and a <video> tag can only ever show a
+    // black rectangle for it.
+    const QString absPath = resolveIncomingPath(relPath);
+    const ContainerCheck real = checkFile(absPath, fileName);
+    const QString realMime = real.mimeType;
+    const bool audio = realMime.isEmpty()
+                           ? getED2KFileTypeID(fileName) == ED2KFileType::Audio
+                           : realMime.startsWith(QLatin1String("audio/"));
 
     QString html = pageHead(fileName);
     html += QStringLiteral("<h1><a href=\"%1\">&larr;</a> %2</h1>")
@@ -1464,6 +1806,66 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
                      fileName.toHtmlEscaped());
     html += QStringLiteral("<%1 controls autoplay src=\"%2\"></%1>")
                 .arg(audio ? QStringLiteral("audio") : QStringLiteral("video"), src);
+
+    // The element above is offered either way -- browsers differ, and one that
+    // does decode this container should not be talked out of it. The notice
+    // below says why it might stay black, and the two reasons are worth telling
+    // apart: a container the browser has no decoder for is fixed by opening VLC,
+    // a file whose bytes are not what its name claims is fixed by nothing, and
+    // sending someone to VLC for that one just wastes their time twice.
+    const QString ext = QFileInfo(fileName).suffix().toLower();
+    QString notice;
+    QString callToAction = QStringLiteral("Open this URL in VLC or another player:");
+    if (real.verdict == ContainerVerdict::WrongContainer) {
+        notice = QStringLiteral(
+                     "This file is named <strong>.%1</strong> but its contents are "
+                     "<strong>%2</strong>. The name is wrong — common for files off "
+                     "the ed2k network — so a player that trusts it finds no %3 and "
+                     "sits at 0:00. It is being served as its real type, so it may "
+                     "still play above.")
+                     .arg(ext.toHtmlEscaped(), real.actual.toHtmlEscaped(),
+                          real.expected.toHtmlEscaped());
+    } else if (real.verdict == ContainerVerdict::NoKnownContainer) {
+        // The signature its extension requires is missing and nothing else
+        // matches, which is what a fake usually looks like from here. Say that
+        // plainly: pointing this one at VLC only wastes the trip twice.
+        notice = QStringLiteral(
+                     "This file is named <strong>.%1</strong> but does not start with "
+                     "the %2 signature every one of them has, and its contents match no "
+                     "media container we recognise. It is very likely a fake or a "
+                     "corrupt download — no player will get anything out of it.")
+                     .arg(ext.toHtmlEscaped(), real.expected.toHtmlEscaped());
+        // Not "open this in VLC": we just said nothing will play it, and sending
+        // someone off to prove that for themselves is how this bug got reported.
+        callToAction = QStringLiteral("The raw URL, if you want to look for yourself:");
+    } else if (!isBrowserPlayable(fileName)) {
+        notice = QStringLiteral("Your browser probably cannot decode <strong>.%1</strong>.")
+                     .arg(ext.toHtmlEscaped());
+    }
+
+    if (!notice.isEmpty()) {
+        html += QStringLiteral(
+            "<div class=\"warn\"><p>%1 %3</p>"
+            "<form onsubmit=\"return false\">"
+            "<input id=\"u\" readonly value=\"%2\">"
+            "<button id=\"c\">Copy</button></form></div>"
+            // location.origin rather than a URL built on the server: the daemon
+            // does not reliably know the scheme, host or port it was reached
+            // through, and the browser does.
+            "<script>"
+            "var i=document.getElementById('u');"
+            "i.value=location.origin+i.value;"
+            "document.getElementById('c').onclick=function(){"
+            "i.select();"
+            // navigator.clipboard is undefined over plain HTTP to anything but
+            // localhost, which is the common case for a core on the LAN.
+            "if(navigator.clipboard)navigator.clipboard.writeText(i.value);"
+            "else document.execCommand('copy');"
+            "this.textContent='Copied';"
+            "};"
+            "</script>").arg(notice, src, callToAction);
+    }
+
     html += QStringLiteral("<p><a href=\"%1\">Download this file</a></p>")
                 .arg(incomingHref(QStringLiteral("/api/v1/incoming/download"), token,
                                   QStringLiteral("file"), relPath));
@@ -2165,7 +2567,22 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
         for (const auto* file : m_downloadQueue->files()) {
             QHash<QString, QString> lineVars;
             lineVars[QStringLiteral("Session")] = sessionId;
-            lineVars[QStringLiteral("DownloadFileName")] = file->fileName();
+            // The engine substitutes raw, so anything user-supplied has to be
+            // escaped here or a file named with a "<" injects markup.
+            lineVars[QStringLiteral("DownloadFileName")] = file->fileName().toHtmlEscaped();
+            lineVars[QStringLiteral("DownloadFileType")] = webFileTypeToken(file->fileName());
+            lineVars[QStringLiteral("DownloadCommentIcon")] = webCommentToken(*file);
+            lineVars[QStringLiteral("DownloadRating")] =
+                webRatingToken(*file, m_preferences && m_preferences->indicateRatings());
+            lineVars[QStringLiteral("DownloadRatingTitle")] =
+                webRatingTitle(*file).toHtmlEscaped();
+            // The download list is tens of files and the verdict is cached after the
+            // first look, so this one may read. The share cannot — see the shared page.
+            const ContainerCheck& cc = file->containerCheck();
+            lineVars[QStringLiteral("DownloadFake")] =
+                cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
+            lineVars[QStringLiteral("DownloadFakeTitle")] =
+                containerWarningText(cc, file->fileName()).toHtmlEscaped();
             lineVars[QStringLiteral("DownloadFileSize")] = QString::number(file->fileSize());
             lineVars[QStringLiteral("DownloadFileHash")] = md4str(file->fileHash());
             lineVars[QStringLiteral("DownloadCompleted")] = QString::number(file->completedSize());
@@ -2339,7 +2756,20 @@ QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& session
         m_sharedFiles->forEachFile([&](KnownFile* file) {
             QHash<QString, QString> lineVars;
             lineVars[QStringLiteral("Session")] = sessionId;
-            lineVars[QStringLiteral("SharedFileName")] = file->fileName();
+            lineVars[QStringLiteral("SharedFileName")] = file->fileName().toHtmlEscaped();
+            lineVars[QStringLiteral("SharedFileType")] = webFileTypeToken(file->fileName());
+            lineVars[QStringLiteral("SharedCommentIcon")] = webCommentToken(*file);
+            lineVars[QStringLiteral("SharedRating")] =
+                webRatingToken(*file, m_preferences && m_preferences->indicateRatings());
+            lineVars[QStringLiteral("SharedRatingTitle")] =
+                webRatingTitle(*file).toHtmlEscaped();
+            // Only what the daemon's background sweep has settled: this walks the whole
+            // share, so it may not open files (SharedFileList::warmContainerChecks).
+            const ContainerCheck& cc = file->containerCheckIfResolved();
+            lineVars[QStringLiteral("SharedFake")] =
+                cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
+            lineVars[QStringLiteral("SharedFakeTitle")] =
+                containerWarningText(cc, file->fileName()).toHtmlEscaped();
             lineVars[QStringLiteral("SharedFileSize")] = QString::number(file->fileSize());
             lineVars[QStringLiteral("SharedFileHash")] = md4str(file->fileHash());
             lineVars[QStringLiteral("SharedRequests")] = QString::number(file->statistic.requests());

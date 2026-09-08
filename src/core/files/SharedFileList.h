@@ -233,6 +233,14 @@ private:
     /// runs outside the map lock — see the hook contract in EntityMap.h.
     void detectCollection(KnownFile* file);
 
+    /// Settle a few files' container verdicts per tick, off the IPC poll path.
+    ///
+    /// handleGetSharedFiles() walks the whole share on every poll and must never
+    /// open a file for it, so the reading happens here instead: 12 bytes per file
+    /// with a media extension, memoised on the file, under a millisecond budget.
+    /// The list payloads then report whatever this has resolved so far.
+    void warmContainerChecks();
+
     // EntityMap<MD4Key, KnownFile> hooks. Storage (m_map) and the mutex guarding it
     // live in the base. These carry only work that must happen under that lock;
     // everything with a side effect lives in safeAddKFile()/removeFile().
@@ -264,6 +272,17 @@ private:
     std::list<UnknownFileEntry> m_waitingForHash;
     uint64 m_generation = 0;
     bool m_hashingInProgress = false;
+
+    /// Set once a whole pass found every file resolved; cleared when a file joins the
+    /// share. A part file whose first part has not landed never resolves and so keeps
+    /// the sweep awake — which is the point, it has to be caught when the bytes come.
+    /// Main thread only.
+    bool m_containerSweepIdle = false;
+
+    /// How many still-unresolved files to step over before filling the next slice, so
+    /// files that cannot answer (an unreadable one, a part file with no first part)
+    /// cannot fill every slice forever and starve the rest. Wraps to 0 at the end.
+    size_t m_containerSweepSkip = 0;
 
     /// ED2K republish throttle — MFC m_lastPublishED2KFlag / m_lastPublishED2K
     /// (srchybrid/SharedFileList.cpp:1229-1236). Main thread only.

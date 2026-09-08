@@ -22,6 +22,15 @@ namespace eMule::usenet {
 
 class UsenetQueueItem;
 
+/// Write @p text to @p path through PartFile::savePartFile()'s rotation dance:
+/// write a `.backup`, rotate the live file to `.bak`, rename the backup into
+/// place, and put the `.bak` back if that rename fails. A sidecar truncated by
+/// a power cut is otherwise indistinguishable from an empty one.
+///
+/// Free rather than a member because the usage meter needs the same dance and
+/// this would otherwise be its third open-coded copy in the module's orbit.
+[[nodiscard]] bool writeSidecarAtomically(const QString& path, const char* text);
+
 class UsenetQueueStore {
 public:
     /// Directory holding the sidecars. Created on demand.

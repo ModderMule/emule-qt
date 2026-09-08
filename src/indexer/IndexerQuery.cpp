@@ -4,6 +4,7 @@
 #include <QUrlQuery>
 
 #include <algorithm>
+#include <array>
 
 namespace eMule::indexer {
 
@@ -11,6 +12,20 @@ namespace {
 
 constexpr QLatin1StringView kApiKeyParam{"apikey"};
 constexpr QLatin1StringView kRedacted{"<redacted>"};
+
+/// Every query parameter that has been seen carrying a credential.
+///
+/// `apikey` is what buildIndexerSearchUrl() writes, but a feed URL is *pasted*
+/// from an indexer's own RSS page and those use whatever the installation
+/// chose — `r` is the newznab default on the RSS endpoint, and Jackett and the
+/// torrent trackers use the rest. Over-redacting a harmless parameter costs a
+/// display artefact in a log line; under-redacting costs the key, and this is
+/// the only layer.
+constexpr std::array kSecretParams{
+    QLatin1StringView{"apikey"}, QLatin1StringView{"api_key"},
+    QLatin1StringView{"r"},      QLatin1StringView{"token"},
+    QLatin1StringView{"passkey"}, QLatin1StringView{"rss_token"},
+};
 
 /// Start from whatever the user configured, keeping any query they typed — a
 /// self-hosted endpoint may need an extra parameter we know nothing about.
@@ -112,11 +127,18 @@ QString redactApiKey(const QUrl& url)
         return url.toString();
 
     QUrlQuery query(url.query());
-    if (!query.hasQueryItem(QString(kApiKeyParam)))
-        return url.toString();
+    bool touched = false;
+    for (const auto param : kSecretParams) {
+        const QString name(param);
+        if (!query.hasQueryItem(name))
+            continue;
+        query.removeAllQueryItems(name);
+        query.addQueryItem(name, QString(kRedacted));
+        touched = true;
+    }
 
-    query.removeAllQueryItems(QString(kApiKeyParam));
-    query.addQueryItem(QString(kApiKeyParam), QString(kRedacted));
+    if (!touched)
+        return url.toString();
 
     QUrl copy = url;
     copy.setQuery(query);
@@ -128,7 +150,7 @@ QString redactApiKey(const QString& text)
     // Qt's network error strings embed the request URL verbatim, so the key
     // arrives inside prose that no QUrl parse will reach.
     static const QRegularExpression re(
-        QStringLiteral("([?&]apikey=)[^&\\s\"'<>]*"),
+        QStringLiteral("([?&](?:apikey|api_key|r|token|passkey|rss_token)=)[^&\\s\"'<>]*"),
         QRegularExpression::CaseInsensitiveOption);
 
     QString out = text;

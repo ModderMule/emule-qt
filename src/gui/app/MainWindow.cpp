@@ -31,12 +31,17 @@
 #include "prefs/Preferences.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/PreviewLauncher.h"
+#include "utils/NzbDrop.h"
 #include "utils/StatusBarNotifier.h"
 
 #include "dialogs/PasteLinksDialog.h"
 #include "dialogs/ToolbarCustomizeDialog.h"
 
 #include <QAction>
+#include <QMimeData>
+#include <QDropEvent>
+#include <QDragMoveEvent>
+#include <QDragEnterEvent>
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
@@ -73,6 +78,9 @@ MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
     setWindowTitle(tr("eMule Qt v%1").arg(QApplication::applicationVersion()));
+
+    // A .nzb dropped anywhere on the window is queued, whichever tab is up.
+    setAcceptDrops(true);
 
     setupPages();
     rebuildToolbar();
@@ -481,6 +489,33 @@ void MainWindow::showNotification(const QString& title, const QString& message)
     }
 }
 
+void MainWindow::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (gui::nzbDropCandidates(event->mimeData()).isEmpty())
+        return;
+    event->acceptProposedAction();
+}
+
+void MainWindow::dragMoveEvent(QDragMoveEvent* event)
+{
+    if (gui::nzbDropCandidates(event->mimeData()).isEmpty())
+        return;
+    event->acceptProposedAction();
+}
+
+void MainWindow::dropEvent(QDropEvent* event)
+{
+    if (m_usenetPanel == nullptr)
+        return;
+    if (!m_usenetPanel->acceptNzbDrop(event->mimeData()))
+        return;
+
+    // Switch to where the result of the drop is, so it does not vanish into a
+    // tab the user is not looking at.
+    switchToTab(TabUsenet);
+    event->acceptProposedAction();
+}
+
 void MainWindow::closeEvent(QCloseEvent* event)
 {
     // Minimize to tray instead of exiting (unless force-quit via Exit action / Cmd+Q)
@@ -620,6 +655,14 @@ void MainWindow::buildToolsMenu()
         tr("Open Incoming Folder..."),
         this, &MainWindow::onOpenIncomingFolder);
 
+    // The same folder as above, but through the core's own browse page: it lists
+    // every category folder and offers play/download links the file manager has
+    // no equivalent for, so it is worth reaching even with a local core.
+    m_toolsMenu->addAction(
+        QIcon(QStringLiteral(":/icons/DownloadsFolder.ico")),
+        tr("Open Downloads Folder in Browser"),
+        this, &MainWindow::onOpenDownloadsFolderInBrowser);
+
     m_toolsMenu->addAction(
         QIcon(QStringLiteral(":/icons/Convert.ico")),
         tr("Import Downloads (eM,eD,ON)..."),
@@ -640,7 +683,19 @@ void MainWindow::buildToolsMenu()
         tr("Paste eD2K Links..."),
         this, &MainWindow::onPasteLinks);
 
+    // The panel's own action, not a copy: both menus then show one text, one
+    // icon and one enabled state. addAction(QAction*) does not take ownership,
+    // and this menu is cleared and rebuilt on every aboutToShow, so re-adding it
+    // is safe.
+    if (m_usenetPanel)
+        m_toolsMenu->addAction(m_usenetPanel->addNzbUrlAction());
+
     m_toolsMenu->addSeparator();
+
+    m_toolsMenu->addAction(
+        QIcon(QStringLiteral(":/icons/Web.ico")),
+        tr("Open WebUI"),
+        this, &MainWindow::onOpenWebUi);
 
     m_toolsMenu->addAction(
         QIcon(QStringLiteral(":/icons/Web.ico")),
@@ -698,6 +753,46 @@ void MainWindow::onOpenIncomingFolder()
     // core the incoming path names the *daemon's* filesystem, so the decision of
     // what to open lives in one place for all three.
     openIncomingFolder(m_ipc, m_streamToken);
+}
+
+void MainWindow::onOpenDownloadsFolderInBrowser()
+{
+    // Not gated on webServerEnabled(): the browse route is registered whatever the
+    // web UI and REST flags say, so the only thing that can stop it is an
+    // unreachable listener or a token that has not arrived yet.
+    const QString reason = incomingBrowseUnavailableReason(m_ipc, m_streamToken);
+    if (!reason.isEmpty()) {
+        QMessageBox::warning(this, tr("Cannot Open Downloads Folder"), reason);
+        return;
+    }
+
+    openIncomingInBrowser(m_ipc, m_streamToken);
+}
+
+void MainWindow::onOpenWebUi()
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(this, tr("Cannot Open Web Interface"),
+                             tr("Not connected to the core."));
+        return;
+    }
+
+    // The core serves the UI only while this is on (DaemonApp::startWebServer),
+    // so opening the URL anyway would land the browser on a refused connection.
+    if (!thePrefs.webServerEnabled()) {
+        QMessageBox box(QMessageBox::Warning, tr("Web Interface Disabled"),
+                        tr("The web interface is disabled.\n\n"
+                           "Enable it under Options → Web Interface, then try again."),
+                        QMessageBox::Cancel, this);
+        auto* openOptions = box.addButton(tr("Open Options"), QMessageBox::AcceptRole);
+        box.setDefaultButton(openOptions);
+        box.exec();
+        if (box.clickedButton() == openOptions)
+            showOptionsDialog(OptionsDialog::PageWebInterface);
+        return;
+    }
+
+    QDesktopServices::openUrl(QUrl(daemonWebUiUrl(m_ipc)));
 }
 
 void MainWindow::onImportDownloads()
@@ -1365,6 +1460,13 @@ void MainWindow::setupPages()
     // Tab 8: Usenet
     m_usenetPanel = new UsenetPanel(this);
     m_pages->addWidget(m_usenetPanel);
+
+    // Reached from the Tools menu as well as the panel's own context menu, so
+    // show the queue the URL is being added to. Connected here rather than in
+    // buildToolsMenu(), which reruns on every aboutToShow and would stack one
+    // connection per opening of the menu.
+    connect(m_usenetPanel->addNzbUrlAction(), &QAction::triggered, this,
+            [this] { switchToTab(TabUsenet); });
 }
 
 

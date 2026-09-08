@@ -32,9 +32,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 TRANSLATIONS_DIR="$PROJECT_DIR/lang"
 
-# Source directories to scan for tr() calls
+# Source directories to scan for tr() calls.
+#
+# The GUI tree, plus the two core files that hold strings the GUI shows. They live
+# in core because the web UI names the same values (the six rating labels, the
+# "not what it claims" sentence), and scanning all of src/core to reach them would
+# drag in every daemon-side log line. Named individually on purpose — lupdate takes
+# files as happily as directories.
 SOURCE_DIRS=(
     "$PROJECT_DIR/src/gui"
+    "$PROJECT_DIR/src/core/utils/OtherFunctions.cpp"
+    "$PROJECT_DIR/src/core/media/ContainerSniffer.cpp"
 )
 
 # Base name for .ts/.qm files

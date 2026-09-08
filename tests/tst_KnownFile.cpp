@@ -4,11 +4,14 @@
 
 #include "TestHelpers.h"
 #include "crypto/MD4Hash.h"
+#include "client/UpDownClient.h"
 #include "files/KnownFile.h"
+#include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "utils/SafeFile.h"
 
 #include <QBuffer>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
@@ -173,6 +176,15 @@ private slots:
     // --- Frame grabbing ---
     void requestGrabFrames_signal();
     void requestGrabFrames_nonVideo();
+
+    // --- Comment / rating (the user's own) ---
+    void setComment_roundTripsThroughIni();
+    void setComment_survivesNonAscii();
+    void setComment_marksUploadersDirty();
+    void setComment_unchangedIsANoOp();
+    void setComment_rearmsTheKadNotesPublish();
+    void setComment_truncatesAndClampsLikeTheWire();
+    void setComment_leavesTheAggregateAlone();
 
     // --- Hashing (Phase 3) ---
     void createHash_emptyData();
@@ -834,6 +846,221 @@ void tst_KnownFile::createHashFromFile_basic()
     uint8 hash[16]{};
     QVERIFY(KnownFile::createHashFromFile(filePath, 256, hash, nullptr));
     QVERIFY(!isnulmd4(hash));
+}
+
+
+// ---------------------------------------------------------------------------
+// Comment / rating — the user's own
+// ---------------------------------------------------------------------------
+//
+// Distinct from hasComment()/userRating(), which aggregate what other people said.
+// These are what setFileComment/setFileRating write, what fileinfo.ini stores, and
+// what the Kad notes publish and OP_FILEDESC carry.
+
+namespace {
+
+/// A config dir of its own for one test, so fileinfo.ini writes never touch the
+/// user's real one. Puts thePrefs back on the way out.
+class ScopedConfigDir {
+public:
+    ScopedConfigDir() : m_saved(thePrefs.configDir())
+    {
+        thePrefs.setConfigDir(m_dir.path());
+    }
+    ~ScopedConfigDir() { thePrefs.setConfigDir(m_saved); }
+
+    [[nodiscard]] bool isValid() const { return m_dir.isValid(); }
+
+private:
+    QTemporaryDir m_dir;
+    QString       m_saved;
+};
+
+/// A file with a distinctive, asymmetric hash — the INI section is named after it.
+void seedHash(KnownFile& file, uint8 first)
+{
+    uint8 hash[16];
+    for (int i = 0; i < 16; ++i)
+        hash[i] = static_cast<uint8>(first + i * 7);
+    file.setFileHash(hash);
+}
+
+} // namespace
+
+void tst_KnownFile::setComment_roundTripsThroughIni()
+{
+    ScopedConfigDir cfg;
+    QVERIFY(cfg.isValid());
+
+    KnownFile writer;
+    seedHash(writer, 0x11);
+    writer.setFileComment(QStringLiteral("german audio, full length"));
+    writer.setFileRating(4);
+
+    QCOMPARE(writer.getFileComment(), QStringLiteral("german audio, full length"));
+    QCOMPARE(writer.getFileRating(), uint32{4});
+
+    // A second instance of the same file must find it on disk — that is the whole
+    // point, since the file objects are rebuilt from known.met on every start.
+    KnownFile reader;
+    seedHash(reader, 0x11);
+    QCOMPARE(reader.getFileComment(), QStringLiteral("german audio, full length"));
+    QCOMPARE(reader.getFileRating(), uint32{4});
+
+    // Pin the layout itself, so switching format cannot pass silently: MFC's
+    // fileinfo.ini, section = MD4 hex, keys Comment and Rate.
+    QSettings ini(thePrefs.fileCommentsFilePath(), QSettings::IniFormat);
+    const QString section = encodeBase16({writer.fileHash(), 16});
+    QCOMPARE(ini.value(section + QStringLiteral("/Comment")).toString(),
+             QStringLiteral("german audio, full length"));
+    QCOMPARE(ini.value(section + QStringLiteral("/Rate")).toInt(), 4);
+}
+
+void tst_KnownFile::setComment_survivesNonAscii()
+{
+    ScopedConfigDir cfg;
+    QVERIFY(cfg.isValid());
+
+    // MFC writes the comment as UTF-8 (CIni::WriteStringUTF8); Qt 6 writes INI as
+    // UTF-8 too. A comment is free text in whatever language the user speaks, so a
+    // round trip that mangles it is a real loss.
+    const QString comment = QStringLiteral("Größe stimmt — 日本語字幕, ✔");
+
+    KnownFile writer;
+    seedHash(writer, 0x23);
+    writer.setFileComment(comment);
+
+    KnownFile reader;
+    seedHash(reader, 0x23);
+    QCOMPARE(reader.getFileComment(), comment);
+}
+
+void tst_KnownFile::setComment_marksUploadersDirty()
+{
+    ScopedConfigDir cfg;
+    QVERIFY(cfg.isValid());
+
+    KnownFile file;
+    seedHash(file, 0x31);
+
+    UpDownClient a;
+    UpDownClient b;
+    file.addUploadingClient(&a);
+    file.addUploadingClient(&b);
+    a.setCommentDirty(false);
+    b.setCommentDirty(false);
+
+    // This is the only thing that puts a new comment on the wire: sendCommentInfo()
+    // returns early unless the flag is set.
+    file.setFileComment(QStringLiteral("first"));
+    QVERIFY(a.commentDirty());
+    QVERIFY(b.commentDirty());
+
+    a.setCommentDirty(false);
+    b.setCommentDirty(false);
+    file.setFileRating(5);
+    QVERIFY(a.commentDirty());
+    QVERIFY(b.commentDirty());
+
+    file.removeUploadingClient(&a);
+    file.removeUploadingClient(&b);
+}
+
+void tst_KnownFile::setComment_unchangedIsANoOp()
+{
+    ScopedConfigDir cfg;
+    QVERIFY(cfg.isValid());
+
+    KnownFile file;
+    seedHash(file, 0x41);
+    file.setFileComment(QStringLiteral("same"));
+    file.setFileRating(3);
+
+    UpDownClient peer;
+    file.addUploadingClient(&peer);
+    peer.setCommentDirty(false);
+
+    const time_t republishAt = std::time(nullptr) + 3600;
+    file.setLastPublishTimeKadNotes(republishAt);
+
+    // MFC compares before doing anything (KnownFile.cpp:1163, 1176). Re-posting the
+    // same text must not re-publish to Kad or re-push to every peer.
+    file.setFileComment(QStringLiteral("same"));
+    file.setFileRating(3);
+
+    QVERIFY(!peer.commentDirty());
+    QCOMPARE(file.lastPublishTimeKadNotes(), republishAt);
+
+    file.removeUploadingClient(&peer);
+}
+
+void tst_KnownFile::setComment_rearmsTheKadNotesPublish()
+{
+    ScopedConfigDir cfg;
+    QVERIFY(cfg.isValid());
+
+    KnownFile file;
+    seedHash(file, 0x51);
+    file.setLastPublishTimeKadNotes(std::time(nullptr) + 10000);
+    QVERIFY(!file.publishNotes());          // nothing to say, and not due anyway
+
+    file.setFileComment(QStringLiteral("worth publishing"));
+    QCOMPARE(file.lastPublishTimeKadNotes(), time_t{0});
+    QVERIFY(file.publishNotes());           // due now, and it has something to say
+
+    // Same for a rating on its own — a bare "this is fake" is worth publishing too.
+    KnownFile rated;
+    seedHash(rated, 0x52);
+    rated.setLastPublishTimeKadNotes(std::time(nullptr) + 10000);
+    rated.setFileRating(1);
+    QCOMPARE(rated.lastPublishTimeKadNotes(), time_t{0});
+    QVERIFY(rated.publishNotes());
+}
+
+void tst_KnownFile::setComment_truncatesAndClampsLikeTheWire()
+{
+    ScopedConfigDir cfg;
+    QVERIFY(cfg.isValid());
+
+    KnownFile file;
+    seedHash(file, 0x61);
+
+    // Neither OP_FILEDESC nor a Kad note will carry more than MAXFILECOMMENTLEN, so
+    // storing more would only mislead the user about what other people will see.
+    file.setFileComment(QString(300, QLatin1Char('x')));
+    QCOMPARE(file.getFileComment().length(), int{MAXFILECOMMENTLEN});
+
+    // Ratings are 0-5; anything else is not a rating and is ignored rather than
+    // clamped, so a bad value cannot silently become "excellent".
+    file.setFileRating(4);
+    file.setFileRating(9);
+    QCOMPARE(file.getFileRating(), uint32{4});
+}
+
+void tst_KnownFile::setComment_leavesTheAggregateAlone()
+{
+    ScopedConfigDir cfg;
+    QVERIFY(cfg.isValid());
+
+    KnownFile file;
+    seedHash(file, 0x71);
+
+    // Somebody else rated it 2 and said something.
+    file.addKadNote(QByteArray(16, 'p'), QStringLiteral("movie.avi"),
+                    QStringLiteral("blurry"), 2, std::time(nullptr));
+    QCOMPARE(file.userRating(), uint32{2});
+    QVERIFY(file.hasComment());
+
+    // Our own opinion is a separate value and must not overwrite theirs — the marks
+    // in the file lists read the aggregate, and a self-rating that fed it would let
+    // anyone paint their own file five stars.
+    file.setFileComment(QStringLiteral("mine"));
+    file.setFileRating(5);
+
+    QCOMPARE(file.userRating(), uint32{2});
+    QVERIFY(file.hasComment());
+    QCOMPARE(file.getFileRating(), uint32{5});
+    QCOMPARE(file.getFileComment(), QStringLiteral("mine"));
 }
 
 QTEST_MAIN(tst_KnownFile)

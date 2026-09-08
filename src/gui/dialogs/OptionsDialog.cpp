@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "utils/FileAssociation.h"
 #include "dialogs/OptionsDialog.h"
 #include "dialogs/FirstStartWizard.h"
 
@@ -8,12 +9,18 @@
 #include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/AccordionSidebar.h"
+#include "controls/ContentScrollArea.h"
 #include "panels/StatisticsPanel.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
 #include "utils/DialogSizing.h"
+#include "utils/StatusBarNotifier.h"
+#include "utils/StringUtils.h"
 
 #include "IpcMessage.h"
+
+#include <iterator>   // std::size, for the sidebar table asserts
 
 #include <QCborArray>
 #include <QApplication>
@@ -43,6 +50,7 @@
 #include <QScrollArea>
 #include <QSoundEffect>
 #include <QMessageBox>
+#include <QDate>
 #include <QLocale>
 #include <QPainter>
 #include <QProcess>
@@ -50,9 +58,11 @@
 #include <QScreen>
 #include <QSettings>
 #include <QSlider>
+#include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QTabWidget>
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -75,13 +85,23 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
 {
     setWindowTitle(tr("Options"));
 
+    // A feed can finish a poll while this dialog is open — from its own
+    // schedule, not only from Check now — so the table updates in place rather
+    // than going stale until the next time the page is opened.
+    if (m_ipc) {
+        connect(m_ipc, &IpcClient::indexerFeedStatus, this,
+                [this](const Ipc::IpcMessage& msg) {
+            applyFeedStatus(msg.fieldMap(0));
+        });
+    }
+
     auto* mainLayout = new QHBoxLayout;
 
-    // Left sidebar
-    m_sidebar = new QListWidget(this);
+    // Left sidebar. No setFixedWidth: 200 px was already tight for "Messages and
+    // Comments" with a 16 px icon, and the accordion adds bold group captions on top --
+    // AccordionSidebar::sizeHint() measures them instead.
+    m_sidebar = new AccordionSidebar(this);
     setupSidebar();
-    m_sidebar->setFixedWidth(200);
-    m_sidebar->setIconSize(QSize(16, 16));
     mainLayout->addWidget(m_sidebar);
 
     // Right side: header + pages + buttons
@@ -130,7 +150,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     setLayout(mainLayout);
 
     // Connections
-    connect(m_sidebar, &QListWidget::currentRowChanged,
+    connect(m_sidebar, &AccordionSidebar::currentItemChanged,
             this, &OptionsDialog::onPageChanged);
     connect(okBtn, &QPushButton::clicked, this, &OptionsDialog::onOk);
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
@@ -141,7 +161,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     const int storedPage = theUiState.optionsLastPage();
     const int lastPage =
         (storedPage >= 0 && storedPage < PageCount) ? storedPage : int{PageGeneral};
-    m_sidebar->setCurrentRow(lastPage);
+    m_sidebar->setCurrentItemId(lastPage);
     onPageChanged(lastPage);
 
     // Load current settings into controls (before wiring change signals
@@ -386,7 +406,17 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
         m_proxyPasswordEdit->setEnabled(proxyOn && on);
     });
 
-    DialogSizing::applySize(this, {}, QSize(800, 640), DialogSizing::Fit::Layout);
+    // A designed minimum, not {}: every page is behind a scroll area now, so the
+    // layout minimum has collapsed to the sidebar plus a scrollbar and would let the
+    // window be dragged down to a few hundred pixels. Fit::Layout, not Fit::Content --
+    // the latter asks ContentScrollArea for the content's *full* height, which is the
+    // 1300 px Usenet column this all exists to stop.
+    // 700, not the old 640: measured against every page's preferred height, that is
+    // where the scrollbar stops appearing on the ordinary ones (General 665, Web
+    // Interface 674) while still fitting a 768 px screen. The three list pages -- Usenet,
+    // Feeds, Indexers -- scroll, which is what the scroll areas are for.
+    DialogSizing::applySize(this, QSize(720, 520), QSize(800, 700),
+                            DialogSizing::Fit::Layout);
 }
 
 OptionsDialog::~OptionsDialog() = default;
@@ -394,16 +424,16 @@ OptionsDialog::~OptionsDialog() = default;
 void OptionsDialog::selectPage(int page)
 {
     if (page >= 0 && page < PageCount)
-        m_sidebar->setCurrentRow(page);
+        m_sidebar->setCurrentItemId(page);
 }
 
 void OptionsDialog::done(int result)
 {
     // Remember the page across every close path — OK, Cancel, Esc and the
     // window close button all route through QDialog::done().
-    const int row = m_sidebar->currentRow();
-    if (row >= 0 && row < PageCount)
-        theUiState.setOptionsLastPage(row);
+    const int page = m_sidebar->currentItemId();
+    if (page >= 0 && page < PageCount)
+        theUiState.setOptionsLastPage(page);
 
     QDialog::done(result);
 }
@@ -412,14 +442,18 @@ void OptionsDialog::done(int result)
 // Slots
 // ---------------------------------------------------------------------------
 
-void OptionsDialog::onPageChanged(int row)
+void OptionsDialog::onPageChanged(int page)
 {
-    if (row >= 0 && row < PageCount) {
-        m_pages->setCurrentIndex(row);
-        auto* item = m_sidebar->item(row);
-        if (item)
-            m_pageHeader->setText(QStringLiteral("  %1").arg(item->text()));
-    }
+    if (page < 0 || page >= PageCount)
+        return;
+
+    m_pages->setCurrentIndex(page);
+
+    const QString name = m_sidebar->currentItemText();
+    m_pageHeader->setText(QStringLiteral("  %1").arg(name));
+    // MorphXT puts the whole trail in the title bar (PreferencesDlg.cpp:582); the blue
+    // header bar keeps saying only where you are.
+    setWindowTitle(tr("Options -> %1 -> %2").arg(m_sidebar->currentGroupTitle(), name));
 }
 
 void OptionsDialog::onOk()
@@ -441,6 +475,56 @@ void OptionsDialog::markDirty()
     m_applyBtn->setEnabled(true);
 }
 
+namespace {
+
+/// Room for a spin box's special value text.
+///
+/// QFormLayout::ExpandingFieldsGrow only grows fields whose size policy expands, and a
+/// spin box's does not -- it gets its size hint, which is measured from the widest
+/// *number* it can hold. A word standing in for a number ("Never back off" for 0) is
+/// simply wider than that, so the line edit scrolls sideways instead and the first
+/// letters are the ones that go.
+void fitSpecialValue(QAbstractSpinBox* spin)
+{
+    if (!spin || spin->specialValueText().isEmpty())
+        return;
+    const int text = spin->fontMetrics().horizontalAdvance(spin->specialValueText());
+    spin->setMinimumWidth(std::max(spin->sizeHint().width(), text + 44));
+}
+
+/// Room for @p rows of items plus the header.
+///
+/// Inside a scroll area every page is laid out at its layout *minimum* the moment the
+/// window is too short for it, and a QTreeWidget's own minimum is a header and about one
+/// row. Without a floor said out loud here, the first page that has to scroll paints its
+/// list as a sliver -- worst on Directories, whose tree carries the layout's only stretch
+/// factor and has no trailing addStretch() to give way instead.
+enum class ListGrowth {
+    Free,    ///< the list takes any slack the page has -- it *is* the page's content
+    Capped,  ///< stays at @p rows: a chooser above a form, where growing only pushes
+             ///< the form it belongs to off the bottom
+};
+
+void giveListRoom(QAbstractItemView* view, int rows = 5,
+                  ListGrowth growth = ListGrowth::Free)
+{
+    if (!view)
+        return;
+    const int rowHeight = view->fontMetrics().height() + 6;
+    int       header    = 0;
+    if (const auto* tree = qobject_cast<const QTreeWidget*>(view))
+        header = tree->header()->sizeHint().height();
+
+    const int wanted = header + rows * rowHeight + 2 * view->frameWidth();
+    view->setMinimumHeight(wanted);
+    if (growth == ListGrowth::Capped) {
+        view->setMaximumHeight(wanted);
+        view->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Setup: sidebar
 // ---------------------------------------------------------------------------
@@ -448,103 +532,131 @@ void OptionsDialog::markDirty()
 void OptionsDialog::setupSidebar()
 {
     struct PageDef {
+        Page        id;
         const char* label;
         QStyle::StandardPixmap icon;
         const char* originalIcon;  // resource path when using original eMule icons
     };
 
-    static constexpr PageDef pages[] = {
-        {"General",               QStyle::SP_FileDialogDetailedView, "Preferences.ico"},
-        {"Display",               QStyle::SP_DesktopIcon,            "Display.ico"},
-        {"Connection",            QStyle::SP_DriveNetIcon,           "Connection.ico"},
-        {"Proxy",                 QStyle::SP_BrowserReload,          "Proxy.ico"},
-        {"Server",                QStyle::SP_ComputerIcon,           "Server.ico"},
-        {"Directories",           QStyle::SP_DirIcon,                "Folders.ico"},
-        {"Files",                 QStyle::SP_FileIcon,               "FileTypeAny.ico"},
-        {"Notifications",         QStyle::SP_MessageBoxInformation,  "Notifications.ico"},
-        {"Statistics",            QStyle::SP_DialogHelpButton,       "Statistics.ico"},
-        {"IRC",                   QStyle::SP_DialogApplyButton,      "IRC.ico"},
-        {"Messages and Comments", QStyle::SP_MessageBoxQuestion,     "Chat.ico"},
-        {"Security",              QStyle::SP_CustomBase,             "Security.ico"},
-        {"Scheduler",             QStyle::SP_DialogResetButton,      "Scheduler.ico"},
-        {"Web Interface",         QStyle::SP_DriveNetIcon,           "Web.ico"},
-        {"Usenet",                QStyle::SP_DriveNetIcon,           "Usenet.ico"},
-        {"Indexers",              QStyle::SP_FileDialogContentsView, "Search.ico"},
-        {"Extended",              QStyle::SP_DialogCancelButton,     "Tweak.ico"},
+    // Grouping follows MorphXT's CPreferencesDlg::Localize() (PreferencesDlg.cpp:351),
+    // with Usenet taking the slot "Mod options" held there. The order here is the
+    // *sidebar's*; the Page values keep the stacked-page order, which is what lets the
+    // two diverge without touching anything that persists a page index.
+    static constexpr PageDef kGeneralPages[] = {
+        {PageGeneral,       "General",               QStyle::SP_FileDialogDetailedView, "Preferences.ico"},
+        {PageDisplay,       "Display",               QStyle::SP_DesktopIcon,            "Display.ico"},
+        {PageConnection,    "Connection",            QStyle::SP_DriveNetIcon,           "Connection.ico"},
+        {PageServer,        "Server",                QStyle::SP_ComputerIcon,           "Server.ico"},
+        {PageDirectories,   "Directories",           QStyle::SP_DirIcon,                "Folders.ico"},
+        {PageFiles,         "Files",                 QStyle::SP_FileIcon,               "FileTypeAny.ico"},
+        {PageNotifications, "Notifications",         QStyle::SP_MessageBoxInformation,  "Notifications.ico"},
+        {PageMessages,      "Messages and Comments", QStyle::SP_MessageBoxQuestion,     "Chat.ico"},
+        {PageSecurity,      "Security",              QStyle::SP_CustomBase,             "Security.ico"},
     };
+    static constexpr PageDef kAdvancedPages[] = {
+        {PageProxy,         "Proxy",                 QStyle::SP_BrowserReload,          "Proxy.ico"},
+        {PageIRC,           "IRC",                   QStyle::SP_DialogApplyButton,      "IRC.ico"},
+        {PageStatistics,    "Statistics",            QStyle::SP_DialogHelpButton,       "Statistics.ico"},
+        {PageScheduler,     "Scheduler",             QStyle::SP_DialogResetButton,      "Scheduler.ico"},
+        {PageWebInterface,  "Web Interface",         QStyle::SP_DriveNetIcon,           "Web.ico"},
+        {PageExtended,      "Extended",              QStyle::SP_DialogCancelButton,     "Tweak.ico"},
+    };
+    static constexpr PageDef kUsenetPages[] = {
+        {PageUsenet,        "Usenet",                QStyle::SP_DriveNetIcon,           "Usenet.ico"},
+        {PageIndexers,      "Indexers",              QStyle::SP_FileDialogContentsView, "Search.ico"},
+        {PageFeeds,         "Feeds",                 QStyle::SP_BrowserReload,          "SearchEdit.ico"},
+    };
+
+    // A page added to the enum and to setupPages() but forgotten here would simply be
+    // unreachable, with nothing to say so. The count catches a missing entry, the bit set
+    // catches a duplicated one -- neither alone catches both.
+    constexpr auto idMask = [](const auto& table) constexpr {
+        unsigned mask = 0;
+        for (const PageDef& def : table)
+            mask |= 1u << unsigned(def.id);
+        return mask;
+    };
+    static_assert(std::size(kGeneralPages) + std::size(kAdvancedPages)
+                          + std::size(kUsenetPages) == std::size_t(PageCount),
+                  "every Page must appear in a sidebar group");
+    static_assert((idMask(kGeneralPages) | idMask(kAdvancedPages) | idMask(kUsenetPages))
+                      == (1u << unsigned(PageCount)) - 1u,
+                  "every Page must appear in exactly one sidebar group");
 
     const bool useOriginal = thePrefs.useOriginalIcons();
 
-    for (const auto& [label, icon, resIcon] : pages) {
-        QIcon qicon;
-        if (useOriginal) {
-            qicon = QIcon(QStringLiteral(":/icons/") + QLatin1String(resIcon));
+    const auto fill = [this, useOriginal](const QString& title, const auto& table) {
+        const int group = m_sidebar->addGroup(title);
+        for (const PageDef& def : table) {
+            QIcon qicon;
+            if (useOriginal)
+                qicon = QIcon(QStringLiteral(":/icons/") + QLatin1String(def.originalIcon));
+            else if (def.icon == QStyle::SP_CustomBase)
+                qicon = makePadlockIcon();
+            else
+                qicon = style()->standardIcon(def.icon);
+            m_sidebar->addItem(group, qicon, tr(def.label), int(def.id));
         }
-        else if (icon == QStyle::SP_CustomBase)
-            qicon = makePadlockIcon();
-        else
-            qicon = style()->standardIcon(icon);
-        auto* item = new QListWidgetItem(qicon, tr(label));
-        m_sidebar->addItem(item);
-    }
+    };
+
+    fill(tr("General options"),  kGeneralPages);
+    fill(tr("Advanced options"), kAdvancedPages);
+    fill(tr("Usenet"),           kUsenetPages);
 }
 
 // ---------------------------------------------------------------------------
 // Setup: pages
 // ---------------------------------------------------------------------------
 
+void OptionsDialog::addPage(Page id, QWidget* page, PageScroll scroll)
+{
+    // The stack index *is* the Page value: UiState::optionsLastPage() and the numeric
+    // --options N fallback both hand us one straight from a previous run.
+    Q_ASSERT(m_pages->count() == int(id));
+
+    if (scroll == PageScroll::Self) {
+        m_pages->addWidget(page);
+        return;
+    }
+
+    DialogSizing::enableHeightForWidth(page);
+    auto* area = new ContentScrollArea(m_pages);
+    // A scroll area has no meaningful minimum width, so wrapping would drop the width
+    // floor along with the height one -- and with the horizontal bar switched off, that
+    // clips instead of scrolling. Keep the width this page has always asked for.
+    if (page->layout())
+        area->setMinimumWidth(page->layout()->totalMinimumSize().width());
+    area->setWidget(page);
+    m_pages->addWidget(area);
+}
+
 void OptionsDialog::setupPages()
 {
-    // General — fully implemented
-    m_pages->addWidget(createGeneralPage());
+    addPage(PageGeneral,       createGeneralPage());
+    addPage(PageDisplay,       createDisplayPage());
+    addPage(PageConnection,    createConnectionPage());
+    addPage(PageProxy,         createProxyPage());
+    addPage(PageServer,        createServerPage());
+    addPage(PageDirectories,   createDirectoriesPage());
+    addPage(PageFiles,         createFilesPage());
+    addPage(PageNotifications, createNotificationsPage());
+    addPage(PageStatistics,    createStatisticsPage());
+    addPage(PageIRC,           createIRCPage());
+    addPage(PageMessages,      createMessagesPage());
+    addPage(PageSecurity,      createSecurityPage());
+    addPage(PageScheduler,     createSchedulerPage());
+    addPage(PageWebInterface,  createWebInterfacePage());
 
-    // Display — fully implemented
-    m_pages->addWidget(createDisplayPage());
+    // Usenet — news server accounts (NNTP). Its two tabs scroll individually, so the
+    // tab bar stays put rather than scrolling away with the form under it.
+    addPage(PageUsenet,        createUsenetPage(), PageScroll::Self);
 
-    // Connection — fully implemented
-    m_pages->addWidget(createConnectionPage());
+    addPage(PageIndexers,      createIndexersPage());
+    addPage(PageFeeds,         createFeedsPage());
 
-    // Proxy — fully implemented
-    m_pages->addWidget(createProxyPage());
-
-    // Server — fully implemented
-    m_pages->addWidget(createServerPage());
-
-    // Directories — fully implemented
-    m_pages->addWidget(createDirectoriesPage());
-
-    // Files — fully implemented
-    m_pages->addWidget(createFilesPage());
-
-    // Notifications — fully implemented
-    m_pages->addWidget(createNotificationsPage());
-
-    // Statistics — fully implemented
-    m_pages->addWidget(createStatisticsPage());
-
-    // IRC — fully implemented
-    m_pages->addWidget(createIRCPage());
-
-    // Messages and Comments — fully implemented
-    m_pages->addWidget(createMessagesPage());
-
-    // Security — fully implemented
-    m_pages->addWidget(createSecurityPage());
-
-    // Scheduler — fully implemented
-    m_pages->addWidget(createSchedulerPage());
-
-    // Web Interface — fully implemented
-    m_pages->addWidget(createWebInterfacePage());
-
-    // Usenet — news server accounts (NNTP)
-    m_pages->addWidget(createUsenetPage());
-
-    // Indexers — the shared newznab/torznab search accounts
-    m_pages->addWidget(createIndexersPage());
-
-    // Extended — fully implemented
-    m_pages->addWidget(createExtendedPage());
+    // Extended keeps its own scroll area: the red warning and the two sliders are
+    // deliberately outside it, and a wrapper here would scroll them away.
+    addPage(PageExtended,      createExtendedPage(), PageScroll::Self);
 }
 
 void OptionsDialog::setupButtons()
@@ -1355,6 +1467,7 @@ QWidget* OptionsDialog::createDirectoriesPage()
         m_sharedDirsTree->setColumnHidden(i, true);
     m_sharedDirsTree->setHeaderHidden(true);
 
+    giveListRoom(m_sharedDirsTree, 8);
     sharedLayout->addWidget(m_sharedDirsTree);
     layout->addWidget(sharedGroup, 1);  // stretch factor for the tree
 
@@ -1910,6 +2023,7 @@ QWidget* OptionsDialog::createIRCPage()
     ignoreQuit->setCheckState(0, Qt::Checked);
 
     m_ircMiscTree->expandAll();
+    giveListRoom(m_ircMiscTree, 8);
     miscLayout->addWidget(m_ircMiscTree);
     layout->addWidget(miscGroup);
 
@@ -2509,6 +2623,22 @@ QWidget* OptionsDialog::createWebInterfacePage()
         markDirty();
     });
 
+    // The template is read once when the web server starts, so an edit to the
+    // live .tmpl needs either a daemon restart or this. Only the content is
+    // re-read: a changed path is a config change and goes through Apply.
+    connect(m_webTemplateReloadBtn, &QPushButton::clicked, this, [this] {
+        if (!m_ipc)
+            return;
+        m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::ReloadWebTemplate),
+                           [](const Ipc::IpcMessage& resp) {
+                               StatusBarNotifier::post(
+                                   resp.fieldBool(0)
+                                       ? OptionsDialog::tr("Web template reloaded")
+                                       : OptionsDialog::tr("Web template reload failed"),
+                                   4000);
+                           });
+    });
+
     // Browse buttons
     connect(m_webTemplateBrowseBtn, &QPushButton::clicked, this, [this] {
         auto path = QFileDialog::getOpenFileName(this, tr("Select Template File"),
@@ -2626,6 +2756,17 @@ void invalidateLayoutTree(QLayout* layout)
     layout->invalidate();
 }
 
+/// Decimal GB, to match the spin box and the invoice it was copied from.
+///
+/// Deliberately **not** formatByteSize(): that is 1024-based and still writes
+/// "GB", so a 500 GB plan typed in came back displayed as 465.66 GB beside its
+/// own spin box — and the table column disagreed with the detail line about the
+/// same number of bytes. Providers quote decimal; these have to agree.
+[[nodiscard]] QString formatQuotaGb(qint64 bytes)
+{
+    return QStringLiteral("%1 GB").arg(double(bytes) / 1e9, 0, 'f', 1);
+}
+
 void addTestRow(QFormLayout* form, QWidget* parent, QPushButton*& button,
                 QLabel*& result)
 {
@@ -2642,18 +2783,60 @@ void addTestRow(QFormLayout* form, QWidget* parent, QPushButton*& button,
     form->addRow(QString{}, row);
 }
 
+/// The same shape as addTestRow: a wrapping, selectable label with one button
+/// beside it. Extracted rather than copied because the Usenet page now has two
+/// of these and a third would be the point at which they drifted apart.
+void addLabelledButtonRow(QFormLayout* form, QWidget* parent, const QString& caption,
+                          const QString& buttonText, QPushButton*& button, QLabel*& result)
+{
+    auto* row = new QHBoxLayout;
+
+    result = new QLabel(parent);
+    result->setWordWrap(true);
+    result->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    DialogSizing::enableHeightForWidth(result);
+    row->addWidget(result, 1);
+
+    button = new QPushButton(buttonText, parent);
+    row->addWidget(button);
+
+    form->addRow(caption, row);
+}
+
 } // namespace
 
 QWidget* OptionsDialog::createUsenetPage()
 {
     auto* page = new QWidget(this);
-    auto* mainLayout = new QVBoxLayout(page);
-    mainLayout->setContentsMargins(4, 4, 4, 4);
+    auto* pageLayout = new QVBoxLayout(page);
+    pageLayout->setContentsMargins(4, 4, 4, 4);
 
     m_usenetEnabledCheck = new QCheckBox(tr("Enable Usenet downloads"), page);
     m_usenetEnabledCheck->setToolTip(
         tr("Gates automatic activity only. Adding a download by hand always works."));
-    mainLayout->addWidget(m_usenetEnabledCheck);
+    pageLayout->addWidget(m_usenetEnabledCheck);
+
+    // Two tabs rather than the one ~1300 px column this page used to be -- which, being
+    // the tallest of the eighteen, set the minimum height of every one of them.
+    auto* tabs = new QTabWidget(page);
+    pageLayout->addWidget(tabs, 1);
+
+    // Each tab scrolls on its own, so the tab bar stays put instead of scrolling away
+    // with the form under it. That is why setupPages() hands this page over as
+    // PageScroll::Self -- an outer wrapper on top would mean two vertical scrollbars.
+    const auto addTab = [tabs](const QString& title) {
+        auto* body = new QWidget;
+        auto* layout = new QVBoxLayout(body);
+        layout->setContentsMargins(4, 4, 4, 4);
+        DialogSizing::enableHeightForWidth(body);
+        auto* area = new ContentScrollArea(tabs);
+        area->setWidget(body);
+        tabs->addTab(area, title);
+        return layout;
+    };
+    auto* accountLayout  = addTab(tr("Account"));
+
+    auto* advancedLayout = addTab(tr("Advanced"));
 
     // -- Account list -------------------------------------------------------
     auto* serversGroup = new QGroupBox(tr("News servers"), page);
@@ -2662,12 +2845,20 @@ QWidget* OptionsDialog::createUsenetPage()
     auto* table = new ListTreeWidget(serversGroup);
     m_usenetServerTable = table;
     m_usenetServerTable->setHeaderLabels(
-        {tr("Name"), tr("Host"), tr("Port"), tr("Priority"), tr("Connections")});
+        {tr("Name"), tr("Host"), tr("Port"), tr("Priority"), tr("Connections"), tr("Used")});
     m_usenetServerTable->setRootIsDecorated(false);
     m_usenetServerTable->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_usenetServerTable->setColumnCount(5);
+    m_usenetServerTable->setColumnCount(6);
     m_usenetServerTable->header()->setStretchLastSection(true);
-    table->bindColumns(QStringLiteral("optionsUsenetServers"), {110, 170, 55, 65, 80});
+    // Going from five columns to six makes QHeaderView reject the stored state
+    // once, so widths fall back to these defaults a single time. That is the
+    // whole cost; the layout persists again from the next run.
+    // Six columns have to fit where five did, so Host and Name give up the room
+    // rather than the table growing a horizontal scrollbar it never had. 0 for
+    // the last: stretchLastSection owns it, and resizing a stretched section
+    // fights the stretch instead of widening it.
+    table->bindColumns(QStringLiteral("optionsUsenetServers"), {95, 130, 42, 52, 78, 0});
+    giveListRoom(m_usenetServerTable, 5, ListGrowth::Capped);
     serversLayout->addWidget(m_usenetServerTable);
 
     auto* btnRow = new QHBoxLayout;
@@ -2677,7 +2868,7 @@ QWidget* OptionsDialog::createUsenetPage()
     btnRow->addWidget(m_usenetAddBtn);
     btnRow->addWidget(m_usenetRemoveBtn);
     serversLayout->addLayout(btnRow);
-    mainLayout->addWidget(serversGroup);
+    accountLayout->addWidget(serversGroup);
 
     // -- Details ------------------------------------------------------------
     auto* details = new QGroupBox(tr("Account"), page);
@@ -2738,31 +2929,99 @@ QWidget* OptionsDialog::createUsenetPage()
            "or fill account worth having."));
     form->addRow(tr("Priority level:"), m_usenetLevelSpin);
 
-    m_usenetRetentionSpin = new QSpinBox(details);
+    addTestRow(form, details, m_usenetTestBtn, m_usenetTestResult);
+
+    accountLayout->addWidget(details);
+    accountLayout->addStretch();
+
+    // -- Details, continued -------------------------------------------------
+    // The same selected account, tuned rather than identified. Not titled "Account"
+    // twice: two group boxes of that name in one dialog is unreadable in a bug report.
+    auto* advDetails = new QGroupBox(tr("Account options"), page);
+    auto* advForm = new QFormLayout(advDetails);
+    advForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    DialogSizing::enableHeightForWidth(advDetails);
+
+    m_usenetRetentionSpin = new QSpinBox(advDetails);
     m_usenetRetentionSpin->setRange(0, 10000);
     m_usenetRetentionSpin->setSpecialValueText(tr("Unknown"));
+    fitSpecialValue(m_usenetRetentionSpin);
     m_usenetRetentionSpin->setSuffix(tr(" days"));
-    form->addRow(tr("Retention:"), m_usenetRetentionSpin);
+    advForm->addRow(tr("Retention:"), m_usenetRetentionSpin);
 
-    m_usenetCertCombo = new QComboBox(details);
+    m_usenetGroupSpin = new QSpinBox(advDetails);
+    m_usenetGroupSpin->setRange(0, 99);
+    m_usenetGroupSpin->setSpecialValueText(tr("None"));
+    fitSpecialValue(m_usenetGroupSpin);
+    m_usenetGroupSpin->setToolTip(
+        tr("Accounts sharing a group number count as one for connection limits — "
+           "use it when the same provider is reached through two host names, so "
+           "the two entries cannot open twice what the plan allows."));
+    advForm->addRow(tr("Connection group:"), m_usenetGroupSpin);
+
+    m_usenetCertCombo = new QComboBox(advDetails);
     // Order matches NntpCertVerification.
     m_usenetCertCombo->addItem(tr("None — accept any certificate"));
     m_usenetCertCombo->addItem(tr("Minimal — allow a host name mismatch"));
     m_usenetCertCombo->addItem(tr("Strict"));
     m_usenetCertCombo->setCurrentIndex(int(NntpCertVerification::Strict));
-    form->addRow(tr("Certificate check:"), m_usenetCertCombo);
+    advForm->addRow(tr("Certificate check:"), m_usenetCertCombo);
 
     m_usenetOptionalCheck = new QCheckBox(
-        tr("Optional — never fail a download on its own"), details);
-    form->addRow(m_usenetOptionalCheck);
+        tr("Optional — never fail a download on its own"), advDetails);
+    advForm->addRow(m_usenetOptionalCheck);
 
     m_usenetJoinGroupCheck = new QCheckBox(
-        tr("Send GROUP before fetching (only needed by a few old servers)"), details);
-    form->addRow(m_usenetJoinGroupCheck);
+        tr("Send GROUP before fetching (only needed by a few old servers)"), advDetails);
+    advForm->addRow(m_usenetJoinGroupCheck);
 
-    addTestRow(form, details, m_usenetTestBtn, m_usenetTestResult);
+    m_usenetQuotaKindCombo = new QComboBox(advDetails);
+    // Index order matches NntpQuotaKind, the convention the TLS and certificate
+    // combos already use, so currentIndex() *is* the enum.
+    m_usenetQuotaKindCombo->addItem(tr("Unmetered"));
+    m_usenetQuotaKindCombo->addItem(tr("Monthly allowance"));
+    m_usenetQuotaKindCombo->addItem(tr("Block account (prepaid)"));
+    advForm->addRow(tr("Allowance:"), m_usenetQuotaKindCombo);
 
-    mainLayout->addWidget(details);
+    m_usenetQuotaSpin = new QDoubleSpinBox(advDetails);
+    m_usenetQuotaSpin->setRange(0.0, 1000000.0);
+    m_usenetQuotaSpin->setDecimals(1);
+    m_usenetQuotaSpin->setSuffix(tr(" GB"));
+    m_usenetQuotaSpin->setSpecialValueText(tr("No limit"));
+    fitSpecialValue(m_usenetQuotaSpin);
+    m_usenetQuotaSpin->setToolTip(
+        tr("Decimal GB, because that is what an invoice says — entering a 1000 GB "
+           "plan as GiB would be 7%% over.\n\n"
+           "Set it slightly under your plan. The figure is measured here, so it "
+           "reads a few percent below your provider's, and articles already in "
+           "flight when the limit is reached still finish."));
+    advForm->addRow(tr("Allowance size:"), m_usenetQuotaSpin);
+
+    m_usenetQuotaDaySpin = new QSpinBox(advDetails);
+    m_usenetQuotaDaySpin->setRange(1, 31);
+    m_usenetQuotaDaySpin->setToolTip(
+        tr("Your billing day — providers reset on the day you signed up, not on "
+           "the 1st. A month shorter than this rolls over on its last day."));
+    advForm->addRow(tr("Resets on day:"), m_usenetQuotaDaySpin);
+
+    m_usenetQuotaFallThroughCheck = new QCheckBox(
+        tr("When the allowance is spent, use the next priority level"), advDetails);
+    m_usenetQuotaFallThroughCheck->setToolTip(
+        tr("Off by default: block credit usually costs more per GB than the plan "
+           "it would be covering, and spending it without being asked is the one "
+           "thing a limit exists to prevent. Left off, downloads wait for the "
+           "allowance instead — they are never failed and no article is ever "
+           "given up on."));
+    advForm->addRow(m_usenetQuotaFallThroughCheck);
+
+    addLabelledButtonRow(advForm, advDetails, tr("Used:"), tr("Correct…"),
+                         m_usenetUsageEditBtn, m_usenetUsageLabel);
+    // One line, always. A QFormLayout row does not grow for a wrapped label, so
+    // a second line is simply cut off — the detail lives in the tooltip instead.
+    m_usenetUsageLabel->setWordWrap(false);
+
+
+    advancedLayout->addWidget(advDetails);
 
     auto* retryRow = new QHBoxLayout;
     retryRow->addWidget(new QLabel(tr("Retry a failed server after:"), page));
@@ -2770,9 +3029,10 @@ QWidget* OptionsDialog::createUsenetPage()
     m_usenetRetrySpin->setRange(0, 3600);
     m_usenetRetrySpin->setSuffix(tr(" s"));
     m_usenetRetrySpin->setSpecialValueText(tr("Never back off"));
+    fitSpecialValue(m_usenetRetrySpin);
     retryRow->addWidget(m_usenetRetrySpin);
     retryRow->addStretch();
-    mainLayout->addLayout(retryRow);
+    advancedLayout->addLayout(retryRow);
 
     auto* shareRow = new QHBoxLayout;
     shareRow->addWidget(new QLabel(tr("Share of the download limit:"), page));
@@ -2785,7 +3045,120 @@ QWidget* OptionsDialog::createUsenetPage()
            "the other, so this only applies when both are busy."));
     shareRow->addWidget(m_usenetShareSpin);
     shareRow->addStretch();
-    mainLayout->addLayout(shareRow);
+    advancedLayout->addLayout(shareRow);
+
+    // Before downloading, so it goes above "After downloading" rather than into
+    // it: the question this answers is whether to spend anything at all.
+    auto* addGroup = new QGroupBox(tr("When adding"), page);
+    auto* addLayout = new QVBoxLayout(addGroup);
+
+    auto* healthRow = new QHBoxLayout;
+    healthRow->addWidget(new QLabel(tr("Check availability:"), addGroup));
+    m_usenetHealthCombo = new QComboBox(addGroup);
+    m_usenetHealthCombo->addItem(tr("Do not check"));
+    m_usenetHealthCombo->addItem(tr("Sample one article per file"));
+    m_usenetHealthCombo->addItem(tr("Check every article"));
+    m_usenetHealthCombo->setToolTip(
+        tr("Before downloading anything, ask your providers whether they still "
+           "hold the release. It costs one small request per article asked "
+           "about and no payload at all.\n\n"
+           "Sampling asks about the first article of each file, which is "
+           "usually enough: providers expire whole posts by date, so a file is "
+           "almost always present or absent as a unit. Checking every article "
+           "is certain but can mean tens of thousands of requests for a large "
+           "release.\n\n"
+           "The answer is never a verdict. Nothing here can stop an article "
+           "being fetched — an article your providers deny may still arrive, "
+           "and a release this pauses downloads normally when you resume it."));
+    healthRow->addWidget(m_usenetHealthCombo);
+    healthRow->addStretch();
+    addLayout->addLayout(healthRow);
+
+    auto* healthMinRow = new QHBoxLayout;
+    healthMinRow->addWidget(new QLabel(tr("Pause below:"), addGroup));
+    m_usenetHealthMinSpin = new QSpinBox(addGroup);
+    m_usenetHealthMinSpin->setRange(0, 100);
+    m_usenetHealthMinSpin->setSuffix(tr(" %"));
+    m_usenetHealthMinSpin->setSpecialValueText(tr("never"));
+    fitSpecialValue(m_usenetHealthMinSpin);
+    m_usenetHealthMinSpin->setToolTip(
+        tr("A release that looks emptier than this is added paused, with the "
+           "reason shown, so you decide rather than the guess. It is never "
+           "failed and never refused.\n\n"
+           "A shortfall the release's own PAR2 recovery volumes can cover does "
+           "not pause it, however low the figure goes."));
+    healthMinRow->addWidget(m_usenetHealthMinSpin);
+    healthMinRow->addStretch();
+    addLayout->addLayout(healthMinRow);
+
+    m_usenetAutoPausedCheck =
+        new QCheckBox(tr("Start automatic downloads paused"), addGroup);
+    m_usenetAutoPausedCheck->setToolTip(
+        tr("Applies to anything queued without you asking for it directly: the "
+           "watch folder below, and feeds.\n\n"
+           "With this on, an automatic download waits for you to press Resume, so "
+           "a feed proposes rather than decides. Anything you add yourself starts "
+           "normally either way."));
+    addLayout->addWidget(m_usenetAutoPausedCheck);
+
+    advancedLayout->addWidget(addGroup);
+
+    // -- Watch folder -------------------------------------------------------
+    auto* watchGroup = new QGroupBox(tr("Watch folder"), page);
+    auto* watchLayout = new QVBoxLayout(watchGroup);
+
+    auto* watchIntro = new QLabel(
+        tr("Any .nzb file left in this folder is queued and then moved into a "
+           "_processed subfolder — or _failed, if it could not be read."),
+        watchGroup);
+    watchIntro->setWordWrap(true);
+    watchLayout->addWidget(watchIntro);
+
+    auto* watchRow = new QHBoxLayout;
+    m_usenetWatchDirEdit = new QLineEdit(watchGroup);
+    m_usenetWatchDirEdit->setPlaceholderText(tr("No folder is being watched"));
+    m_usenetWatchDirEdit->setToolTip(
+        tr("A file is only read once it has stopped changing, so a large .nzb "
+           "still being copied in is left alone until it is complete.\n\n"
+           "It cannot be inside your temp, incoming or configuration folders: "
+           "the daemon writes there itself."));
+    watchRow->addWidget(m_usenetWatchDirEdit, 1);
+    m_usenetWatchDirBrowse = new QPushButton(tr("Browse…"), watchGroup);
+    watchRow->addWidget(m_usenetWatchDirBrowse);
+    watchLayout->addLayout(watchRow);
+
+    advancedLayout->addWidget(watchGroup);
+
+    // -- Desktop integration ------------------------------------------------
+    if (gui::FileAssociation::isRuntimeRegistration()) {
+        // macOS declares its document types in the bundle, so there is nothing
+        // here to switch on or off.
+        auto* desktopGroup = new QGroupBox(tr("Desktop"), page);
+        auto* desktopLayout = new QVBoxLayout(desktopGroup);
+
+        m_associateNzbCheck =
+            new QCheckBox(tr("Open .nzb files with eMule Qt"), desktopGroup);
+        m_associateNzbCheck->setToolTip(
+            tr("Claim .nzb files for this copy of eMule Qt, so double-clicking "
+               "one queues it. The setting is for you alone and needs no "
+               "administrator; it is re-applied at every start, so another "
+               "program taking the association does not keep it."));
+        desktopLayout->addWidget(m_associateNzbCheck);
+        advancedLayout->addWidget(desktopGroup);
+
+        connect(m_associateNzbCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    }
+
+    connect(m_usenetAutoPausedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_usenetWatchDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
+    connect(m_usenetWatchDirBrowse, &QPushButton::clicked, this, [this] {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("Watch folder"), m_usenetWatchDirEdit->text());
+        if (dir.isEmpty())
+            return;
+        m_usenetWatchDirEdit->setText(dir);
+        markDirty();
+    });
 
     auto* postGroup = new QGroupBox(tr("After downloading"), page);
     auto* postLayout = new QVBoxLayout(postGroup);
@@ -2831,9 +3204,9 @@ QWidget* OptionsDialog::createUsenetPage()
            "files with eD2K peers, who have no use for them."));
     postLayout->addWidget(m_usenetCleanupCheck);
 
-    mainLayout->addWidget(postGroup);
+    advancedLayout->addWidget(postGroup);
 
-    mainLayout->addStretch();
+    advancedLayout->addStretch();
 
     // -- Wiring -------------------------------------------------------------
     // Gates auto-start only, so it greys nothing -- see updateUsenetEnabledStates().
@@ -2853,6 +3226,15 @@ QWidget* OptionsDialog::createUsenetPage()
     // Same reasoning: unpacking early is still unpacking.
     connect(m_usenetUnpackCheck, &QCheckBox::toggled, m_usenetDirectUnpackCheck,
             &QWidget::setEnabled);
+
+    connect(m_usenetHealthCombo, &QComboBox::currentIndexChanged, this,
+            &OptionsDialog::markDirty);
+    connect(m_usenetHealthMinSpin, &QSpinBox::valueChanged, this,
+            &OptionsDialog::markDirty);
+    // A threshold means nothing with no check behind it, and greying it says so
+    // rather than leaving a control that silently does nothing.
+    connect(m_usenetHealthCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index) { m_usenetHealthMinSpin->setEnabled(index > 0); });
 
     connect(m_usenetAddBtn, &QPushButton::clicked, this, &OptionsDialog::addNewsServer);
     connect(m_usenetRemoveBtn, &QPushButton::clicked, this, &OptionsDialog::removeNewsServer);
@@ -2884,6 +3266,7 @@ QWidget* OptionsDialog::createUsenetPage()
     connect(m_usenetConnSpin, &QSpinBox::valueChanged, this, commit);
     connect(m_usenetLevelSpin, &QSpinBox::valueChanged, this, commit);
     connect(m_usenetRetentionSpin, &QSpinBox::valueChanged, this, commit);
+    connect(m_usenetGroupSpin, &QSpinBox::valueChanged, this, commit);
     connect(m_usenetTlsCombo, &QComboBox::currentIndexChanged, this, [this, commit](int index) {
         // Move the port with the encryption mode, but only while it still holds
         // the default for the previous mode — never stomp a port the user typed.
@@ -2898,6 +3281,16 @@ QWidget* OptionsDialog::createUsenetPage()
     connect(m_usenetEntryEnabledCheck, &QCheckBox::toggled, this, commit);
     connect(m_usenetOptionalCheck, &QCheckBox::toggled, this, commit);
     connect(m_usenetJoinGroupCheck, &QCheckBox::toggled, this, commit);
+    connect(m_usenetQuotaSpin, &QDoubleSpinBox::valueChanged, this, commit);
+    connect(m_usenetQuotaDaySpin, &QSpinBox::valueChanged, this, commit);
+    connect(m_usenetQuotaFallThroughCheck, &QCheckBox::toggled, this, commit);
+    connect(m_usenetQuotaKindCombo, &QComboBox::currentIndexChanged, this,
+            [this, commit] {
+        commit();
+        updateUsenetEnabledStates();   // the size and day fields follow the kind
+    });
+    connect(m_usenetUsageEditBtn, &QPushButton::clicked,
+            this, &OptionsDialog::onCorrectNewsServerUsage);
 
     // Initial state: nothing selected yet, so the Account box starts greyed.
     updateUsenetEnabledStates();
@@ -2914,12 +3307,31 @@ void OptionsDialog::updateUsenetEnabledStates()
     const std::initializer_list<QWidget*> detailWidgets{
         m_usenetNameEdit, m_usenetHostEdit, m_usenetUserEdit, m_usenetPassEdit,
         m_usenetPortSpin, m_usenetConnSpin, m_usenetLevelSpin,
-        m_usenetRetentionSpin, m_usenetTlsCombo, m_usenetCertCombo,
+        m_usenetRetentionSpin, m_usenetGroupSpin, m_usenetTlsCombo, m_usenetCertCombo,
         m_usenetEntryEnabledCheck, m_usenetOptionalCheck,
-        m_usenetJoinGroupCheck, m_usenetTestBtn, m_usenetRemoveBtn};
+        m_usenetJoinGroupCheck, m_usenetQuotaKindCombo, m_usenetTestBtn,
+        m_usenetRemoveBtn};
     for (QWidget* w : detailWidgets) {
         if (w)
             w->setEnabled(anySelected);
+    }
+
+    // The allowance fields follow the kind, the way "Unpack while downloading"
+    // follows "Unpack archives": a size on an unmetered account and a billing
+    // day on a prepaid block are both meaningless.
+    const int kind = m_usenetQuotaKindCombo ? m_usenetQuotaKindCombo->currentIndex() : 0;
+    if (m_usenetQuotaSpin)
+        m_usenetQuotaSpin->setEnabled(anySelected && kind != int(NntpQuotaKind::None));
+    if (m_usenetQuotaDaySpin)
+        m_usenetQuotaDaySpin->setEnabled(anySelected && kind == int(NntpQuotaKind::Monthly));
+    if (m_usenetQuotaFallThroughCheck)
+        m_usenetQuotaFallThroughCheck->setEnabled(anySelected
+                                                  && kind != int(NntpQuotaKind::None));
+    // Nothing to correct until the daemon has told us what it has measured.
+    if (m_usenetUsageEditBtn) {
+        const bool known = anySelected && m_currentNewsServer < m_newsServers.size()
+            && m_newsServers.at(m_currentNewsServer).contains(QStringLiteral("periodBytes"));
+        m_usenetUsageEditBtn->setEnabled(known);
     }
 }
 
@@ -3007,6 +3419,8 @@ void OptionsDialog::updateNewsServerRow(int index)
     item->setText(3, QString::number(s.value(QStringLiteral("level")).toInteger(0)));
     item->setText(4, QString::number(s.value(QStringLiteral("maxConnections"))
                                      .toInteger(kDefaultMaxConnections)));
+    const qint64 used = s.value(QStringLiteral("periodBytes")).toInteger(0);
+    item->setText(5, used > 0 ? formatQuotaGb(used) : QString{});
 
     // Disabled accounts stay visible but read as inactive, the way a disabled
     // schedule entry does. Re-enabling clears the role instead of painting a
@@ -3061,8 +3475,10 @@ void OptionsDialog::populateNewsServerDetails(int index)
     const QSignalBlocker b1(m_usenetNameEdit), b2(m_usenetHostEdit), b3(m_usenetPortSpin),
         b4(m_usenetTlsCombo), b5(m_usenetUserEdit), b6(m_usenetPassEdit),
         b7(m_usenetConnSpin), b8(m_usenetLevelSpin), b9(m_usenetRetentionSpin),
+        bg(m_usenetGroupSpin),
         b10(m_usenetCertCombo), b11(m_usenetEntryEnabledCheck), b12(m_usenetOptionalCheck),
-        b13(m_usenetJoinGroupCheck);
+        b13(m_usenetJoinGroupCheck), bq1(m_usenetQuotaKindCombo), bq2(m_usenetQuotaSpin),
+        bq3(m_usenetQuotaDaySpin), bq4(m_usenetQuotaFallThroughCheck);
 
     m_usenetNameEdit->setText(s.value(QStringLiteral("name")).toString());
     m_usenetHostEdit->setText(s.value(QStringLiteral("host")).toString());
@@ -3074,12 +3490,21 @@ void OptionsDialog::populateNewsServerDetails(int index)
         int(s.value(QStringLiteral("maxConnections")).toInteger(kDefaultMaxConnections)));
     m_usenetLevelSpin->setValue(int(s.value(QStringLiteral("level")).toInteger(0)));
     m_usenetRetentionSpin->setValue(int(s.value(QStringLiteral("retention")).toInteger(0)));
+    m_usenetGroupSpin->setValue(int(s.value(QStringLiteral("group")).toInteger(0)));
     m_usenetCertCombo->setCurrentIndex(
         int(s.value(QStringLiteral("certVerification"))
                 .toInteger(int(NntpCertVerification::Strict))));
     m_usenetEntryEnabledCheck->setChecked(s.value(QStringLiteral("enabled")).toBool(true));
     m_usenetOptionalCheck->setChecked(s.value(QStringLiteral("optional")).toBool(false));
     m_usenetJoinGroupCheck->setChecked(s.value(QStringLiteral("joinGroup")).toBool(false));
+    m_usenetQuotaKindCombo->setCurrentIndex(
+        int(s.value(QStringLiteral("quotaKind")).toInteger(int(NntpQuotaKind::None))));
+    m_usenetQuotaSpin->setValue(
+        double(s.value(QStringLiteral("quotaBytes")).toInteger(0)) / 1e9);
+    m_usenetQuotaDaySpin->setValue(int(s.value(QStringLiteral("quotaResetDay")).toInteger(1)));
+    m_usenetQuotaFallThroughCheck->setChecked(
+        s.value(QStringLiteral("quotaFallThrough")).toBool(false));
+    updateNewsServerUsageLabel();
 
     // The daemon sends `hasPassword`, never the password. Show that a secret is
     // stored without pretending to display it: typing here replaces it, leaving
@@ -3089,6 +3514,12 @@ void OptionsDialog::populateNewsServerDetails(int index)
     m_usenetPassEdit->setText(s.value(QStringLiteral("password")).toString());
     m_usenetPassEdit->setPlaceholderText(
         stored ? tr("(unchanged)") : tr("(none set)"));
+
+    // Again, now that the combo holds *this* row's kind. The call at the top of
+    // this function ran against the previous row's, and the fill above is under
+    // a QSignalBlocker, so currentIndexChanged never fired to correct it — which
+    // left the allowance fields greyed on a metered account.
+    updateUsenetEnabledStates();
 }
 
 void OptionsDialog::applyNewsServerDetails()
@@ -3105,10 +3536,18 @@ void OptionsDialog::applyNewsServerDetails()
     s.insert(QStringLiteral("maxConnections"), m_usenetConnSpin->value());
     s.insert(QStringLiteral("level"), m_usenetLevelSpin->value());
     s.insert(QStringLiteral("retention"), m_usenetRetentionSpin->value());
+    s.insert(QStringLiteral("group"), m_usenetGroupSpin->value());
     s.insert(QStringLiteral("certVerification"), m_usenetCertCombo->currentIndex());
     s.insert(QStringLiteral("enabled"), m_usenetEntryEnabledCheck->isChecked());
     s.insert(QStringLiteral("optional"), m_usenetOptionalCheck->isChecked());
     s.insert(QStringLiteral("joinGroup"), m_usenetJoinGroupCheck->isChecked());
+    s.insert(QStringLiteral("quotaKind"), m_usenetQuotaKindCombo->currentIndex());
+    // Decimal GB in, bytes out: an invoice says GB, and storing the typed figure
+    // would make the unit part of the stored value.
+    s.insert(QStringLiteral("quotaBytes"),
+             qint64(m_usenetQuotaSpin->value() * 1e9 + 0.5));
+    s.insert(QStringLiteral("quotaResetDay"), m_usenetQuotaDaySpin->value());
+    s.insert(QStringLiteral("quotaFallThrough"), m_usenetQuotaFallThroughCheck->isChecked());
 
     // Only attach `password` when the user actually typed one. An absent field
     // means "keep the stored secret" -- which is the only way a GUI that was
@@ -3120,6 +3559,94 @@ void OptionsDialog::applyNewsServerDetails()
         s.remove(QStringLiteral("password"));
 
     m_newsServers[m_currentNewsServer] = s;
+}
+
+void OptionsDialog::updateNewsServerUsageLabel()
+{
+    if (!m_usenetUsageLabel)
+        return;
+    if (m_currentNewsServer < 0 || m_currentNewsServer >= m_newsServers.size()) {
+        m_usenetUsageLabel->clear();
+        return;
+    }
+
+    const QCborMap& s = m_newsServers.at(m_currentNewsServer);
+    if (!s.contains(QStringLiteral("periodBytes"))) {
+        // The engine is not running, so nothing has been measured to report.
+        m_usenetUsageLabel->setText(tr("not measured — the Usenet engine is stopped"));
+        return;
+    }
+
+    const qint64 used = s.value(QStringLiteral("periodBytes")).toInteger(0);
+    const qint64 allowance = s.value(QStringLiteral("quotaBytes")).toInteger(0);
+    const int kind = int(s.value(QStringLiteral("quotaKind")).toInteger(0));
+    const QString resets = s.value(QStringLiteral("resetsOn")).toString();
+
+    QString text;
+    if (kind == int(NntpQuotaKind::None) || allowance <= 0)
+        text = tr("%1 used").arg(formatQuotaGb(used));
+    else
+        text = tr("%1 of %2").arg(formatQuotaGb(used), formatQuotaGb(allowance));
+
+    if (kind == int(NntpQuotaKind::Monthly) && !resets.isEmpty()) {
+        // Short and local: the row is one line, and the daemon's ISO date is for
+        // the wire, not for reading.
+        const QDate when = QDate::fromString(resets, Qt::ISODate);
+        text += tr(", resets %1").arg(when.isValid()
+                                          ? QLocale::system().toString(when, QLocale::ShortFormat)
+                                          : resets);
+    }
+    if (s.value(QStringLiteral("overQuota")).toBool(false))
+        text += tr(" — spent");
+
+    // Say whose number it is. Ours is the application-level inbound byte count,
+    // so it reads a few percent under the provider's and a user comparing the
+    // two would otherwise file it as a bug.
+    m_usenetUsageLabel->setText(text);
+    m_usenetUsageLabel->setToolTip(
+        tr("Measured here, not reported by the provider — NNTP has no command "
+           "that asks. Expect a few percent below your provider's own figure."));
+}
+
+void OptionsDialog::onCorrectNewsServerUsage()
+{
+    if (!m_ipc || m_currentNewsServer < 0 || m_currentNewsServer >= m_newsServers.size())
+        return;
+
+    const QCborMap& s = m_newsServers.at(m_currentNewsServer);
+    const QString accountId = s.value(QStringLiteral("accountId")).toString();
+    if (accountId.isEmpty())
+        return;
+
+    // Typing in the provider's own figure is strictly more useful than a reset
+    // button, and it is the only recourse when a plan changes mid-period or a
+    // block account is topped up. 0 is the reset.
+    bool ok = false;
+    const double current = double(s.value(QStringLiteral("periodBytes")).toInteger(0)) / 1e9;
+    const double value = QInputDialog::getDouble(
+        this, tr("Correct usage"),
+        tr("Used this period, in GB.\n\nEnter what your provider's control panel "
+           "says, or 0 to start again."),
+        current, 0.0, 1000000.0, 1, &ok);
+    if (!ok)
+        return;
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetNewsServerUsage);
+    msg.append(accountId);
+    msg.append(qint64(value * 1e9 + 0.5));
+    msg.append(qint64(-1));   // leave the all-time figure alone
+    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+        if (!resp.fieldBool(0)) {
+            QMessageBox::warning(this, tr("News servers"),
+                                 resp.fieldString(1).isEmpty()
+                                     ? tr("The usage counter could not be changed.")
+                                     : resp.fieldString(1));
+            return;
+        }
+        // Re-read rather than patch the working copy: the daemon may have rolled
+        // the period over in the same breath.
+        loadNewsServers();
+    });
 }
 
 void OptionsDialog::addNewsServer()
@@ -3188,7 +3715,7 @@ void OptionsDialog::testNewsServer()
         if (!resp.fieldBool(0)) {
             m_usenetTestResult->setText(resp.fieldString(1));
             m_usenetTestResult->setStyleSheet(QStringLiteral("color: #c62828;"));
-            refitForTestResult(m_usenetTestResult);
+            revealTestResult(m_usenetTestResult);
             return;
         }
         const QCborArray result = resp.fieldArray(1);
@@ -3199,7 +3726,7 @@ void OptionsDialog::testNewsServer()
         m_usenetTestResult->setText(result.at(1).toString());
         m_usenetTestResult->setStyleSheet(
             ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
-        refitForTestResult(m_usenetTestResult);
+        revealTestResult(m_usenetTestResult);
     });
 }
 
@@ -3241,6 +3768,7 @@ QWidget* OptionsDialog::createIndexersPage()
     m_indexerTable->setColumnCount(4);
     m_indexerTable->header()->setStretchLastSection(true);
     table->bindColumns(QStringLiteral("optionsIndexers"), {130, 240, 80, 70});
+    giveListRoom(m_indexerTable, 5, ListGrowth::Capped);
     listLayout->addWidget(m_indexerTable);
 
     auto* btnRow = new QHBoxLayout;
@@ -3364,6 +3892,199 @@ QWidget* OptionsDialog::createIndexersPage()
     return page;
 }
 
+// ---------------------------------------------------------------------------
+// Feeds page — saved searches, polled on a schedule
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createFeedsPage()
+{
+    auto* page = new QWidget(this);
+    auto* mainLayout = new QVBoxLayout(page);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+
+    auto* intro = new QLabel(
+        tr("A feed is a search that runs on its own and queues what it finds. Its "
+           "first check adds nothing — it only records what the indexer already "
+           "lists, because otherwise a new feed would download everything still "
+           "on the server."), page);
+    intro->setWordWrap(true);
+    mainLayout->addWidget(intro);
+
+    // -- Feed list ----------------------------------------------------------
+    auto* listGroup = new QGroupBox(tr("Feeds"), page);
+    auto* listLayout = new QVBoxLayout(listGroup);
+
+    auto* table = new ListTreeWidget(listGroup);
+    m_feedTable = table;
+    m_feedTable->setHeaderLabels({tr("Name"), tr("Search"), tr("Every"), tr("Last checked")});
+    m_feedTable->setRootIsDecorated(false);
+    m_feedTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_feedTable->setColumnCount(4);
+    m_feedTable->header()->setStretchLastSection(true);
+    table->bindColumns(QStringLiteral("optionsFeeds"), {130, 200, 70, 140});
+    giveListRoom(m_feedTable, 5, ListGrowth::Capped);
+    listLayout->addWidget(m_feedTable);
+
+    auto* btnRow = new QHBoxLayout;
+    btnRow->addStretch();
+    m_feedAddBtn = new QPushButton(tr("Add"), listGroup);
+    m_feedRemoveBtn = new QPushButton(tr("Remove"), listGroup);
+    btnRow->addWidget(m_feedAddBtn);
+    btnRow->addWidget(m_feedRemoveBtn);
+    listLayout->addLayout(btnRow);
+    mainLayout->addWidget(listGroup);
+
+    // -- Details ------------------------------------------------------------
+    auto* details = new QGroupBox(tr("Feed"), page);
+    auto* form = new QFormLayout(details);
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    DialogSizing::enableHeightForWidth(details);
+
+    m_feedEnabledCheck = new QCheckBox(tr("Enabled"), details);
+    form->addRow(m_feedEnabledCheck);
+
+    m_feedNameEdit = new QLineEdit(details);
+    m_feedNameEdit->setPlaceholderText(tr("Display name"));
+    m_feedNameEdit->setToolTip(
+        tr("Also the identity of this feed: it names the file that remembers what "
+           "the feed has already seen."));
+    form->addRow(tr("Name:"), m_feedNameEdit);
+
+    m_feedKindCombo = new QComboBox(details);
+    // Order matches IndexerFeedKind, so currentIndex() is the enum value.
+    m_feedKindCombo->addItem(tr("Search my indexers"));
+    m_feedKindCombo->addItem(tr("An RSS address I paste"));
+    form->addRow(tr("Source:"), m_feedKindCombo);
+
+    m_feedQueryEdit = new QLineEdit(details);
+    m_feedQueryEdit->setToolTip(
+        tr("Keywords. Leave it empty to take everything new in the categories "
+           "below."));
+    form->addRow(tr("Search for:"), m_feedQueryEdit);
+
+    m_feedCategoriesEdit = new QLineEdit(details);
+    m_feedCategoriesEdit->setPlaceholderText(tr("e.g. 2000, 5000"));
+    m_feedCategoriesEdit->setToolTip(
+        tr("Newznab category numbers, separated by commas. Empty means every "
+           "category."));
+    form->addRow(tr("Categories:"), m_feedCategoriesEdit);
+
+    m_feedIndexersEdit = new QLineEdit(details);
+    m_feedIndexersEdit->setToolTip(
+        tr("Which indexers to ask, by name and separated by commas. Empty means "
+           "all of them.\n\nAdding one later does not fetch its back catalogue: "
+           "a new indexer gets its own first check, which adds nothing."));
+    form->addRow(tr("Indexers:"), m_feedIndexersEdit);
+
+    m_feedUrlEdit = new QLineEdit(details);
+    m_feedUrlEdit->setPlaceholderText(QStringLiteral("https://indexer.example/rss?..."));
+    m_feedUrlEdit->setToolTip(
+        tr("The RSS address from your indexer's website. It contains your API "
+           "key, so it is stored encrypted and is only ever shown back to you "
+           "with the key hidden."));
+    form->addRow(tr("Feed URL:"), m_feedUrlEdit);
+
+    m_feedAcceptEdit = new QLineEdit(details);
+    m_feedAcceptEdit->setToolTip(
+        tr("Only queue releases whose name matches this pattern. Empty accepts "
+           "everything."));
+    form->addRow(tr("Must match:"), m_feedAcceptEdit);
+
+    m_feedRejectEdit = new QLineEdit(details);
+    m_feedRejectEdit->setToolTip(
+        tr("Never queue a release whose name matches this pattern. It wins over "
+           "the one above."));
+    form->addRow(tr("Must not match:"), m_feedRejectEdit);
+
+    m_feedMinSizeSpin = new QSpinBox(details);
+    m_feedMinSizeSpin->setRange(0, 1024 * 1024);
+    m_feedMinSizeSpin->setSuffix(tr(" MB"));
+    m_feedMinSizeSpin->setSpecialValueText(tr("no minimum"));
+    fitSpecialValue(m_feedMinSizeSpin);
+    form->addRow(tr("Smallest:"), m_feedMinSizeSpin);
+
+    m_feedMaxSizeSpin = new QSpinBox(details);
+    m_feedMaxSizeSpin->setRange(0, 1024 * 1024);
+    m_feedMaxSizeSpin->setSuffix(tr(" MB"));
+    m_feedMaxSizeSpin->setSpecialValueText(tr("no maximum"));
+    fitSpecialValue(m_feedMaxSizeSpin);
+    form->addRow(tr("Largest:"), m_feedMaxSizeSpin);
+
+    m_feedMaxAgeSpin = new QSpinBox(details);
+    m_feedMaxAgeSpin->setRange(0, 3650);
+    m_feedMaxAgeSpin->setSuffix(tr(" days"));
+    m_feedMaxAgeSpin->setSpecialValueText(tr("any age"));
+    fitSpecialValue(m_feedMaxAgeSpin);
+    form->addRow(tr("Posted within:"), m_feedMaxAgeSpin);
+
+    m_feedIntervalSpin = new QSpinBox(details);
+    m_feedIntervalSpin->setRange(IndexerFeed::kMinIntervalMinutes, 10080);
+    m_feedIntervalSpin->setSuffix(tr(" minutes"));
+    m_feedIntervalSpin->setToolTip(
+        tr("How often to check. Fifteen minutes is the floor: most indexers ask "
+           "for no more than that, and checking harder gets an account "
+           "suspended."));
+    form->addRow(tr("Check every:"), m_feedIntervalSpin);
+
+    m_feedGrabExistingCheck = new QCheckBox(tr("Queue what it already lists"), details);
+    m_feedGrabExistingCheck->setToolTip(
+        tr("Normally a feed's first check only takes note of what is there and "
+           "queues nothing, because everything an indexer still holds is new to "
+           "a feed that has never run. Turn this on to take the back catalogue "
+           "as well — it can be a great deal of it."));
+    form->addRow(m_feedGrabExistingCheck);
+
+    auto* checkRow = new QHBoxLayout;
+    m_feedCheckBtn = new QPushButton(tr("Check now"), details);
+    checkRow->addWidget(m_feedCheckBtn);
+    m_feedStatusLabel = new QLabel(details);
+    m_feedStatusLabel->setWordWrap(true);
+    checkRow->addWidget(m_feedStatusLabel, 1);
+    form->addRow(QString(), checkRow);
+
+    mainLayout->addWidget(details);
+    mainLayout->addStretch();
+
+    connect(m_feedTable, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem* current, QTreeWidgetItem*) {
+        applyFeedDetails();
+        selectFeed(current ? m_feedTable->indexOfTopLevelItem(current) : -1);
+    });
+    connect(m_feedAddBtn, &QPushButton::clicked, this, &OptionsDialog::addFeed);
+    connect(m_feedRemoveBtn, &QPushButton::clicked, this, &OptionsDialog::removeFeed);
+    connect(m_feedCheckBtn, &QPushButton::clicked, this, &OptionsDialog::checkFeedNow);
+
+    connect(m_feedKindCombo, &QComboBox::currentIndexChanged, this, [this](int index) {
+        // A URL feed carries its own query; a saved search builds one.
+        const bool have = m_currentFeed >= 0 && m_currentFeed < m_feeds.size();
+        const bool isUrl = index == 1;
+        m_feedUrlEdit->setEnabled(have && isUrl);
+        m_feedQueryEdit->setEnabled(have && !isUrl);
+        m_feedCategoriesEdit->setEnabled(have && !isUrl);
+        m_feedIndexersEdit->setEnabled(have && !isUrl);
+        markDirty();
+    });
+
+    for (QLineEdit* edit : {m_feedNameEdit, m_feedQueryEdit, m_feedCategoriesEdit,
+                            m_feedIndexersEdit, m_feedUrlEdit, m_feedAcceptEdit,
+                            m_feedRejectEdit}) {
+        connect(edit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
+    }
+    for (QSpinBox* spin : {m_feedMinSizeSpin, m_feedMaxSizeSpin, m_feedMaxAgeSpin,
+                           m_feedIntervalSpin}) {
+        connect(spin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    }
+    for (QCheckBox* check : {m_feedEnabledCheck, m_feedGrabExistingCheck})
+        connect(check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+
+    // Start in the nothing-selected state. loadFeeds() only reaches selectFeed()
+    // once the daemon answers, and until then an enabled-looking form invites
+    // typing into fields that belong to no feed.
+    selectFeed(-1);
+
+    return page;
+}
+
 void OptionsDialog::loadIndexers()
 {
     if (!m_ipc)
@@ -3409,6 +4130,353 @@ void OptionsDialog::saveIndexers()
                                  ? tr("The indexer list could not be saved.")
                                  : resp.fieldString(1));
     });
+}
+
+void OptionsDialog::loadFeeds()
+{
+    if (!m_ipc)
+        return;
+
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetIndexerFeeds),
+                       [this](const Ipc::IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+
+        m_feeds.clear();
+        const QCborArray rows = resp.fieldArray(1);
+        m_feeds.reserve(int(rows.size()));
+        for (const auto& row : rows) {
+            if (!row.isMap())
+                continue;
+            QCborMap feed = row.toMap();
+            // The URL arrives redacted, and `url` doubles as "the new one the
+            // user typed". Keep the redacted text under its own key so the field
+            // can show it without applyFeedDetails() mistaking it for an edit —
+            // and so an untouched feed does not appear to lose its address.
+            feed.insert(QStringLiteral("displayUrl"), feed.value(QStringLiteral("url")));
+            feed.remove(QStringLiteral("url"));
+            m_feeds.append(feed);
+        }
+
+        m_currentFeed = -1;
+        refreshFeedTable();
+        selectFeed(m_feeds.isEmpty() ? -1 : 0);
+    });
+}
+
+void OptionsDialog::saveFeeds()
+{
+    if (!m_ipc)
+        return;
+
+    applyFeedDetails();
+
+    QCborArray rows;
+    for (const QCborMap& feed : std::as_const(m_feeds)) {
+        QCborMap row = feed;
+        row.remove(QStringLiteral("displayUrl"));   // ours, not the wire's
+        rows.append(row);
+    }
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetIndexerFeeds);
+    msg.append(rows);
+    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+        if (resp.fieldBool(0))
+            return;
+        QMessageBox::warning(this, tr("Feeds"),
+                             resp.fieldString(1).isEmpty()
+                                 ? tr("The feed list could not be saved.")
+                                 : resp.fieldString(1));
+    });
+}
+
+void OptionsDialog::refreshFeedTable()
+{
+    if (!m_feedTable)
+        return;
+
+    const QSignalBlocker block(m_feedTable);
+    const int keep = m_currentFeed;
+    m_feedTable->clear();
+
+    for (int i = 0; i < m_feeds.size(); ++i) {
+        new QTreeWidgetItem(m_feedTable);
+        updateFeedRow(i);
+    }
+
+    if (keep >= 0 && keep < m_feeds.size())
+        m_feedTable->setCurrentItem(m_feedTable->topLevelItem(keep));
+}
+
+void OptionsDialog::updateFeedRow(int index)
+{
+    if (!m_feedTable || index < 0 || index >= m_feeds.size())
+        return;
+    QTreeWidgetItem* item = m_feedTable->topLevelItem(index);
+    if (item == nullptr)
+        return;
+
+    const QCborMap& feed = m_feeds.at(index);
+    const bool isUrl = feed.value(QStringLiteral("kind")).toString() == QLatin1String("url");
+
+    item->setText(0, feed.value(QStringLiteral("name")).toString());
+    item->setText(1, isUrl ? feed.value(QStringLiteral("displayUrl")).toString()
+                           : feed.value(QStringLiteral("query")).toString());
+    item->setText(2, tr("%1 min")
+                         .arg(feed.value(QStringLiteral("intervalMinutes")).toInteger(30)));
+
+    const qint64 polled = feed.value(QStringLiteral("lastPolled")).toInteger(0);
+    const QString error = feed.value(QStringLiteral("lastError")).toString();
+    if (feed.value(QStringLiteral("polling")).toBool())
+        item->setText(3, tr("checking…"));
+    else if (!error.isEmpty())
+        item->setText(3, error);
+    else if (polled > 0)
+        item->setText(3, QDateTime::fromSecsSinceEpoch(polled).toString(Qt::TextDate));
+    else
+        item->setText(3, tr("never"));
+
+    // Greyed rather than hidden: a disabled feed still has history worth seeing.
+    const bool enabled = feed.value(QStringLiteral("enabled")).toBool(true);
+    for (int col = 0; col < m_feedTable->columnCount(); ++col)
+        item->setForeground(col, enabled ? QBrush() : QBrush(Qt::gray));
+}
+
+void OptionsDialog::selectFeed(int index)
+{
+    m_currentFeed = index;
+    populateFeedDetails(index);
+
+    const bool have = index >= 0 && index < m_feeds.size();
+    if (m_feedRemoveBtn)
+        m_feedRemoveBtn->setEnabled(have);
+    if (m_feedCheckBtn)
+        m_feedCheckBtn->setEnabled(have);
+}
+
+void OptionsDialog::populateFeedDetails(int index)
+{
+    if (!m_feedNameEdit)
+        return;
+
+    const bool have = index >= 0 && index < m_feeds.size();
+    const QCborMap feed = have ? m_feeds.at(index) : QCborMap{};
+
+    const QSignalBlocker b1(m_feedNameEdit);
+    const QSignalBlocker b2(m_feedKindCombo);
+    const QSignalBlocker b3(m_feedQueryEdit);
+    const QSignalBlocker b4(m_feedCategoriesEdit);
+    const QSignalBlocker b5(m_feedIndexersEdit);
+    const QSignalBlocker b6(m_feedUrlEdit);
+    const QSignalBlocker b7(m_feedAcceptEdit);
+    const QSignalBlocker b8(m_feedRejectEdit);
+    const QSignalBlocker b9(m_feedMinSizeSpin);
+    const QSignalBlocker b10(m_feedMaxSizeSpin);
+    const QSignalBlocker b11(m_feedMaxAgeSpin);
+    const QSignalBlocker b12(m_feedIntervalSpin);
+    const QSignalBlocker b13(m_feedEnabledCheck);
+    const QSignalBlocker b14(m_feedGrabExistingCheck);
+
+    m_feedNameEdit->setText(feed.value(QStringLiteral("name")).toString());
+    const bool isUrl = feed.value(QStringLiteral("kind")).toString() == QLatin1String("url");
+    m_feedKindCombo->setCurrentIndex(isUrl ? 1 : 0);
+    m_feedQueryEdit->setText(feed.value(QStringLiteral("query")).toString());
+
+    QStringList categories;
+    for (const auto& cat : feed.value(QStringLiteral("categories")).toArray())
+        categories.append(QString::number(cat.toInteger(0)));
+    m_feedCategoriesEdit->setText(categories.join(QStringLiteral(", ")));
+
+    QStringList indexers;
+    for (const auto& name : feed.value(QStringLiteral("indexers")).toArray())
+        indexers.append(name.toString());
+    m_feedIndexersEdit->setText(indexers.join(QStringLiteral(", ")));
+
+    // Arrives redacted, and is sent back only when the user retypes it — the
+    // same round-trip rule the indexer API key uses, because it *is* one.
+    m_feedUrlEdit->setText(feed.value(QStringLiteral("displayUrl")).toString());
+    m_feedAcceptEdit->setText(feed.value(QStringLiteral("accept")).toString());
+    m_feedRejectEdit->setText(feed.value(QStringLiteral("reject")).toString());
+    m_feedMinSizeSpin->setValue(
+        int(feed.value(QStringLiteral("minSize")).toInteger(0) / (1024 * 1024)));
+    m_feedMaxSizeSpin->setValue(
+        int(feed.value(QStringLiteral("maxSize")).toInteger(0) / (1024 * 1024)));
+    m_feedMaxAgeSpin->setValue(int(feed.value(QStringLiteral("maxAgeDays")).toInteger(0)));
+    m_feedIntervalSpin->setValue(
+        int(feed.value(QStringLiteral("intervalMinutes")).toInteger(30)));
+    m_feedEnabledCheck->setChecked(feed.value(QStringLiteral("enabled")).toBool(true));
+    m_feedGrabExistingCheck->setChecked(
+        feed.value(QStringLiteral("grabExisting")).toBool(false));
+
+    // The kind decides which half of the form applies — but with nothing
+    // selected neither does, so `have` gates both.
+    m_feedUrlEdit->setEnabled(have && isUrl);
+    m_feedQueryEdit->setEnabled(have && !isUrl);
+    m_feedCategoriesEdit->setEnabled(have && !isUrl);
+    m_feedIndexersEdit->setEnabled(have && !isUrl);
+
+    for (QWidget* w : {static_cast<QWidget*>(m_feedNameEdit),
+                       static_cast<QWidget*>(m_feedKindCombo),
+                       static_cast<QWidget*>(m_feedAcceptEdit),
+                       static_cast<QWidget*>(m_feedRejectEdit),
+                       static_cast<QWidget*>(m_feedMinSizeSpin),
+                       static_cast<QWidget*>(m_feedMaxSizeSpin),
+                       static_cast<QWidget*>(m_feedMaxAgeSpin),
+                       static_cast<QWidget*>(m_feedIntervalSpin),
+                       static_cast<QWidget*>(m_feedEnabledCheck),
+                       static_cast<QWidget*>(m_feedGrabExistingCheck)}) {
+        w->setEnabled(have);
+    }
+
+    if (m_feedStatusLabel) {
+        const qint64 matched = feed.value(QStringLiteral("lastMatched")).toInteger(0);
+        const qint64 seen = feed.value(QStringLiteral("seenCount")).toInteger(0);
+        m_feedStatusLabel->setText(
+            have ? tr("%1 queued on the last check; %2 releases remembered.")
+                       .arg(matched).arg(seen)
+                 : QString());
+    }
+}
+
+void OptionsDialog::applyFeedDetails()
+{
+    if (m_currentFeed < 0 || m_currentFeed >= m_feeds.size() || !m_feedNameEdit)
+        return;
+
+    QCborMap feed = m_feeds.at(m_currentFeed);
+    feed.insert(QStringLiteral("name"), m_feedNameEdit->text().trimmed());
+    feed.insert(QStringLiteral("kind"),
+                m_feedKindCombo->currentIndex() == 1 ? QStringLiteral("url")
+                                                     : QStringLiteral("search"));
+    feed.insert(QStringLiteral("query"), m_feedQueryEdit->text().trimmed());
+
+    QCborArray categories;
+    const auto catParts = m_feedCategoriesEdit->text().split(QLatin1Char(','),
+                                                             Qt::SkipEmptyParts);
+    for (const QString& part : catParts) {
+        bool ok = false;
+        const int value = part.trimmed().toInt(&ok);
+        if (ok)
+            categories.append(value);
+    }
+    feed.insert(QStringLiteral("categories"), categories);
+
+    QCborArray indexers;
+    const auto nameParts = m_feedIndexersEdit->text().split(QLatin1Char(','),
+                                                            Qt::SkipEmptyParts);
+    for (const QString& part : nameParts) {
+        if (!part.trimmed().isEmpty())
+            indexers.append(part.trimmed());
+    }
+    feed.insert(QStringLiteral("indexers"), indexers);
+
+    // Only sent when the user actually typed one. SetIndexerFeeds reads a
+    // *missing* url as "keep the stored one", which is what lets the dialog
+    // round-trip a feed whose address it was only ever shown redacted.
+    const QString typedUrl = m_feedUrlEdit->text().trimmed();
+    if (typedUrl != feed.value(QStringLiteral("displayUrl")).toString()) {
+        feed.insert(QStringLiteral("url"), typedUrl);
+        feed.insert(QStringLiteral("displayUrl"), typedUrl);
+    } else {
+        feed.remove(QStringLiteral("url"));
+    }
+
+    feed.insert(QStringLiteral("accept"), m_feedAcceptEdit->text());
+    feed.insert(QStringLiteral("reject"), m_feedRejectEdit->text());
+    feed.insert(QStringLiteral("minSize"),
+                qint64(m_feedMinSizeSpin->value()) * 1024 * 1024);
+    feed.insert(QStringLiteral("maxSize"),
+                qint64(m_feedMaxSizeSpin->value()) * 1024 * 1024);
+    feed.insert(QStringLiteral("maxAgeDays"), m_feedMaxAgeSpin->value());
+    feed.insert(QStringLiteral("intervalMinutes"), m_feedIntervalSpin->value());
+    feed.insert(QStringLiteral("enabled"), m_feedEnabledCheck->isChecked());
+    feed.insert(QStringLiteral("grabExisting"), m_feedGrabExistingCheck->isChecked());
+
+    m_feeds[m_currentFeed] = feed;
+    updateFeedRow(m_currentFeed);
+}
+
+void OptionsDialog::addFeed()
+{
+    applyFeedDetails();
+
+    QCborMap feed;
+    feed.insert(QStringLiteral("name"), tr("New feed"));
+    feed.insert(QStringLiteral("kind"), QStringLiteral("search"));
+    feed.insert(QStringLiteral("enabled"), true);
+    feed.insert(QStringLiteral("intervalMinutes"), 30);
+    // Off, and the whole safety argument rests on it staying that way by
+    // default: everything an indexer still lists is new to a feed that has never
+    // run.
+    feed.insert(QStringLiteral("grabExisting"), false);
+    m_feeds.append(feed);
+
+    refreshFeedTable();
+    selectFeed(int(m_feeds.size()) - 1);
+    if (m_feedNameEdit) {
+        m_feedNameEdit->setFocus();
+        m_feedNameEdit->selectAll();
+    }
+    markDirty();
+}
+
+void OptionsDialog::removeFeed()
+{
+    if (m_currentFeed < 0 || m_currentFeed >= m_feeds.size())
+        return;
+
+    m_feeds.removeAt(m_currentFeed);
+    const int next = qMin(m_currentFeed, int(m_feeds.size()) - 1);
+    m_currentFeed = -1;
+    refreshFeedTable();
+    selectFeed(next);
+    markDirty();
+}
+
+void OptionsDialog::checkFeedNow()
+{
+    if (!m_ipc || m_currentFeed < 0 || m_currentFeed >= m_feeds.size())
+        return;
+
+    // The daemon polls the feed it has stored, so an edit that is still only in
+    // this dialog would be checked in its old form. Save first.
+    saveFeeds();
+
+    const QString name = m_feeds.at(m_currentFeed).value(QStringLiteral("name")).toString();
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::PollIndexerFeedNow);
+    msg.append(name);
+    m_ipc->sendRequest(std::move(msg), [this, name](const Ipc::IpcMessage& resp) {
+        if (!resp.fieldBool(0)) {
+            QMessageBox::warning(this, tr("Feeds"),
+                                 resp.fieldString(1).isEmpty()
+                                     ? tr("\"%1\" could not be checked.").arg(name)
+                                     : resp.fieldString(1));
+            return;
+        }
+        if (m_feedStatusLabel)
+            m_feedStatusLabel->setText(tr("Checking \"%1\"…").arg(name));
+    });
+}
+
+void OptionsDialog::applyFeedStatus(const QCborMap& status)
+{
+    const QString name = status.value(QStringLiteral("name")).toString();
+    for (int i = 0; i < m_feeds.size(); ++i) {
+        if (m_feeds.at(i).value(QStringLiteral("name")).toString() != name)
+            continue;
+
+        QCborMap feed = m_feeds.at(i);
+        for (const auto& key : {QStringLiteral("lastPolled"), QStringLiteral("lastError"),
+                                QStringLiteral("lastMatched"), QStringLiteral("seenCount"),
+                                QStringLiteral("polling")}) {
+            feed.insert(key, status.value(key));
+        }
+        m_feeds[i] = feed;
+        updateFeedRow(i);
+        if (i == m_currentFeed)
+            populateFeedDetails(i);
+        return;
+    }
 }
 
 void OptionsDialog::refreshIndexerTable()
@@ -3606,7 +4674,7 @@ void OptionsDialog::testIndexer()
         if (!resp.fieldBool(0)) {
             m_indexerTestResult->setText(resp.fieldString(1));
             m_indexerTestResult->setStyleSheet(QStringLiteral("color: #c62828;"));
-            refitForTestResult(m_indexerTestResult);
+            revealTestResult(m_indexerTestResult);
             return;
         }
         const QCborArray result = resp.fieldArray(1);
@@ -3617,45 +4685,39 @@ void OptionsDialog::testIndexer()
                                         : result.at(2).toString());
         m_indexerTestResult->setStyleSheet(
             ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
-        refitForTestResult(m_indexerTestResult);
+        revealTestResult(m_indexerTestResult);
     });
 }
 
-/// Grow the window when a test result needs more room than was budgeted for it.
+/// Bring a test result into view.
 ///
 /// A provider answers with its own status line, so the text is unbounded: "502
-/// Authentication Failed" fits on one line, a certificate mismatch does not.
-/// The label wraps, but its extra lines never reach QLayout::minimumSize() --
-/// only heightForWidth() knows about them -- so the dialog's floor, frozen by
-/// DialogSizing::applySize() in the constructor while the label was still empty,
-/// does not rise and the group box is simply painted short.
+/// Authentication Failed" fits on one line, a certificate mismatch does not. The label
+/// wraps, but its extra lines never reach QLayout::minimumSize() -- only heightForWidth()
+/// knows about them -- so nothing above notices that the row grew.
 ///
-/// Nothing else on these pages can give the height back: the page's trailing
-/// stretch is already at zero when the dialog sits at that floor, which is
-/// exactly where it opens. So the window takes the difference.
-///
-/// Grow-only, like applySize(): a later, shorter message leaves the size alone
-/// rather than snapping back under a window the user may have resized.
-void OptionsDialog::refitForTestResult(QLabel* result)
+/// This used to grow the window instead, because the page had no scrollbar and its
+/// trailing stretch was already at zero. It has one now, so the answer is to scroll to
+/// the message rather than to ratchet the dialog's minimum height up for the rest of the
+/// session with nothing able to give it back.
+void OptionsDialog::revealTestResult(QLabel* result)
 {
     QWidget* group = result ? result->parentWidget() : nullptr;
     if (!group || !group->layout())
         return;
 
     // The label's new text has not reached the cached heights yet: setText() only
-    // invalidates the *widget's* layout and posts a LayoutRequest, so the nested
-    // row layout still answers with the height the previous message needed.
-    // Invalidate the whole subtree, or the measurement below is one message stale.
-    QLayout* form = group->layout();
-    invalidateLayoutTree(form);
+    // invalidates the *widget's* layout and posts a LayoutRequest, so the nested row
+    // layout still answers with the height the previous message needed. Invalidate the
+    // whole subtree, or the scroll below is one message stale.
+    invalidateLayoutTree(group->layout());
 
-    const int extra = form->totalHeightForWidth(group->width()) - group->height();
-    if (extra <= 0)
-        return;
-
-    const int budget = screen() ? screen()->availableGeometry().height() : height() + extra;
-    setMinimumHeight(qMin(minimumHeight() + extra, budget));
-    resize(width(), qMin(height() + extra, budget));
+    for (QWidget* w = result->parentWidget(); w; w = w->parentWidget()) {
+        if (auto* area = qobject_cast<QScrollArea*>(w)) {
+            area->ensureWidgetVisible(result);
+            return;
+        }
+    }
 }
 
 QWidget* OptionsDialog::createExtendedPage()
@@ -3712,6 +4774,7 @@ QWidget* OptionsDialog::createExtendedPage()
     m_serverKeepAliveSpin = new QSpinBox(tcpGroup);
     m_serverKeepAliveSpin->setRange(0, 60);
     m_serverKeepAliveSpin->setSpecialValueText(tr("Disabled"));
+    fitSpecialValue(m_serverKeepAliveSpin);
     tcpRow3->addWidget(m_serverKeepAliveSpin);
     tcpRow3->addStretch();
     tcpLayout->addLayout(tcpRow3);
@@ -4132,6 +5195,7 @@ QWidget* OptionsDialog::createSchedulerPage()
     m_schedTable->setColumnCount(3);
     m_schedTable->header()->setStretchLastSection(true);
     schedTable->bindColumns(QStringLiteral("optionsScheduler"), {200, 180, 100});
+    giveListRoom(m_schedTable, 5, ListGrowth::Capped);
     mainLayout->addWidget(m_schedTable);
 
     // Details group box
@@ -4186,6 +5250,7 @@ QWidget* OptionsDialog::createSchedulerPage()
     m_schedActionsTable->setContextMenuPolicy(Qt::CustomContextMenu);
     m_schedActionsTable->header()->setStretchLastSection(true);
     schedActionsTable->bindColumns(QStringLiteral("optionsSchedulerActions"), {260, 160});
+    giveListRoom(m_schedActionsTable, 4, ListGrowth::Capped);
     actionLayout->addWidget(m_schedActionsTable);
     detailsLayout->addWidget(actionGroup);
 
@@ -4627,6 +5692,7 @@ void OptionsDialog::loadSettings()
     loadSchedulerData();
     loadNewsServers();
     loadIndexers();
+    loadFeeds();
 }
 
 // ---------------------------------------------------------------------------
@@ -4984,6 +6050,14 @@ void OptionsDialog::saveSettings()
         req.append(m_usenetDirectUnpackCheck->isChecked());
         req.append(QStringLiteral("usenetCleanupAfterUnpack"));
         req.append(m_usenetCleanupCheck->isChecked());
+        req.append(QStringLiteral("usenetHealthCheck"));
+        req.append(static_cast<qint64>(m_usenetHealthCombo->currentIndex()));
+        req.append(QStringLiteral("usenetHealthMinPercent"));
+        req.append(static_cast<qint64>(m_usenetHealthMinSpin->value()));
+        req.append(QStringLiteral("usenetAutoAddPaused"));
+        req.append(m_usenetAutoPausedCheck->isChecked());
+        req.append(QStringLiteral("usenetWatchDir"));
+        req.append(m_usenetWatchDirEdit->text().trimmed());
 
         // Indexers page. The account list goes over SetIndexers=701 instead --
         // it carries API keys and has its own keep-the-stored-key rule.
@@ -5455,7 +6529,25 @@ void OptionsDialog::saveSettings()
 
     saveSchedulerData();
     saveNewsServers();
+    // GUI-only, so it never travels over SetPreferences: the daemon owns
+    // preferences.yml and knows nothing about the desktop it is not running on,
+    // and it is this executable's path that gets registered.
+    if (m_associateNzbCheck
+        && m_associateNzbCheck->isChecked() != theUiState.associateNzbFiles()) {
+        theUiState.setAssociateNzbFiles(m_associateNzbCheck->isChecked());
+        QString assocError;
+        const bool ok = m_associateNzbCheck->isChecked()
+                            ? gui::FileAssociation::registerNzbFileType(assocError)
+                            : gui::FileAssociation::unregisterNzbFileType(assocError);
+        if (!ok) {
+            QMessageBox::warning(this, tr("File types"),
+                                 tr("Could not update the .nzb file association: %1")
+                                     .arg(assocError));
+        }
+    }
+
     saveIndexers();
+    saveFeeds();
 
     // The graph palette is GUI-only state, so it goes to uistate.yml rather than over
     // SetPreferences. The tray meter picks its colour up on the next 1 s rate tick.
@@ -5640,6 +6732,19 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         prefs.value(QStringLiteral("usenetCleanupAfterUnpack")).toBool(true));
     m_usenetDirectUnpackCheck->setChecked(
         prefs.value(QStringLiteral("usenetDirectUnpack")).toBool(true));
+    m_usenetHealthCombo->setCurrentIndex(
+        int(prefs.value(QStringLiteral("usenetHealthCheck")).toInteger(1)));
+    m_usenetHealthMinSpin->setValue(
+        int(prefs.value(QStringLiteral("usenetHealthMinPercent")).toInteger(95)));
+    if (m_usenetAutoPausedCheck) {
+        m_usenetAutoPausedCheck->setChecked(
+            prefs.value(QStringLiteral("usenetAutoAddPaused")).toBool(false));
+    }
+    if (m_usenetWatchDirEdit)
+        m_usenetWatchDirEdit->setText(prefs.value(QStringLiteral("usenetWatchDir")).toString());
+    if (m_associateNzbCheck)
+        m_associateNzbCheck->setChecked(theUiState.associateNzbFiles());
+    m_usenetHealthMinSpin->setEnabled(m_usenetHealthCombo->currentIndex() > 0);
     m_usenetCleanupCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     m_usenetDirectUnpackCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     updateUsenetEnabledStates();

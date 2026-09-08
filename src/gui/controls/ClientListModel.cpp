@@ -6,6 +6,7 @@
 
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
+#include "utils/RatingIcons.h"
 
 #include <QColor>
 #include <QIcon>
@@ -76,19 +77,6 @@ QString priorityStr(int prio, bool isAuto)
     if (isAuto)
         return QObject::tr("Auto [%1]").arg(name);
     return name;
-}
-
-/// File rating display string matching MFC GetRateString().
-QString ratingStr(uint8_t r)
-{
-    switch (r) {
-    case 1: return QObject::tr("Fake");
-    case 2: return QObject::tr("Poor");
-    case 3: return QObject::tr("Fair");
-    case 4: return QObject::tr("Good");
-    case 5: return QObject::tr("Excellent");
-    default: return {};
-    }
 }
 
 /// SourceFrom enum to display string.
@@ -301,7 +289,7 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         case 0: return c.userName;
         case 1: return c.fileName;
         case 2: return c.filePriority >= 0 ? priorityStr(c.filePriority, c.isAutoPriority) : QString{};
-        case 3: return c.fileRating > 0 ? ratingStr(c.fileRating) : QString{};
+        case 3: return c.fileRating > 0 ? ratingText(c.fileRating) : QString{};
         case 4: return c.remoteQueueRank > 0 ? QString::number(c.remoteQueueRank) : QString{};
         case 5: return c.askedCount > 0 ? QString::number(c.askedCount) : QString{};
         case 6: return formatWaitTime(c.waitStartTime);

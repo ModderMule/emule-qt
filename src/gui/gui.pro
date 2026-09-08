@@ -82,8 +82,10 @@ SOURCES += \
     app/PowerManager.cpp \
     app/UiState.cpp \
     app/VersionChecker.cpp \
+    controls/AccordionSidebar.cpp \
     controls/ClientListModel.cpp \
     controls/ContactsGraph.cpp \
+    controls/ContentScrollArea.cpp \
     controls/DownloadListModel.cpp \
     controls/DownloadProgressDelegate.cpp \
     controls/FriendListModel.cpp \
@@ -103,6 +105,7 @@ SOURCES += \
     dialogs/CategoryDialog.cpp \
     dialogs/ArchivePreviewPanel.cpp \
     dialogs/ClientDetailDialog.cpp \
+    dialogs/CommentEditPanel.cpp \
     dialogs/CommentsPanel.cpp \
     dialogs/CoreConnectDialog.cpp \
     dialogs/DetailDialog.cpp \
@@ -113,7 +116,9 @@ SOURCES += \
     dialogs/MetadataPage.cpp \
     dialogs/NetworkInfoDialog.cpp \
     dialogs/OptionsDialog.cpp \
+    dialogs/AddNzbUrlDialog.cpp \
     dialogs/PasteLinksDialog.cpp \
+    dialogs/PasteTextDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
     dialogs/UsenetArchiveEntryDialog.cpp \
     panels/IrcPanel.cpp \
@@ -135,8 +140,11 @@ HEADERS += \
     app/PowerManager.h \
     app/UiState.h \
     app/VersionChecker.h \
+    controls/AccordionSidebar.h \
+    controls/AbstractListView.h \
     controls/ClientListModel.h \
     controls/ContactsGraph.h \
+    controls/ContentScrollArea.h \
     controls/DownloadListModel.h \
     controls/DownloadProgressDelegate.h \
     controls/FriendListModel.h \
@@ -156,6 +164,7 @@ HEADERS += \
     dialogs/CategoryDialog.h \
     dialogs/ArchivePreviewPanel.h \
     dialogs/ClientDetailDialog.h \
+    dialogs/CommentEditPanel.h \
     dialogs/CommentsPanel.h \
     dialogs/CoreConnectDialog.h \
     dialogs/DetailDialog.h \
@@ -166,7 +175,9 @@ HEADERS += \
     dialogs/MetadataPage.h \
     dialogs/NetworkInfoDialog.h \
     dialogs/OptionsDialog.h \
+    dialogs/AddNzbUrlDialog.h \
     dialogs/PasteLinksDialog.h \
+    dialogs/PasteTextDialog.h \
     dialogs/SearchDetailDialog.h \
     dialogs/UsenetArchiveEntryDialog.h \
     panels/IrcPanel.h \

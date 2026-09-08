@@ -6,6 +6,7 @@
 
 #include "controls/AbstractListView.h"
 #include "prefs/Preferences.h"
+#include "utils/RatingIcons.h"
 
 #include <QCborArray>
 #include <QClipboard>
@@ -17,23 +18,6 @@
 #include <QTreeWidget>
 
 namespace eMule {
-
-namespace {
-
-/// Star string for a 1-5 rating, matching the labels of MFC's rating image list
-/// (srchybrid/CommentListCtrl.cpp:53-58).
-QString ratingStars(int rating)
-{
-    if (rating <= 0 || rating > 5)
-        return {};
-    static constexpr const char* labels[] = {
-        nullptr, "Poor", "Fair", "Good", "Very Good", "Excellent"
-    };
-    const QString stars = QString(rating, QChar(0x2605));   // ★
-    return QStringLiteral("%1 (%2)").arg(stars, QLatin1StringView(labels[rating]));
-}
-
-} // anonymous namespace
 
 // ── construction ───────────────────────────────────────────────────────
 
@@ -58,10 +42,13 @@ void CommentsPanel::setDetails(const QCborMap& details)
         const QString userName = m.value(QLatin1StringView("userName")).toString();
 
         auto* item = new QTreeWidgetItem(m_tree);
-        item->setText(ColRating, ratingStars(rating));
-        item->setData(ColRating, Qt::UserRole, rating);     // numeric sort key
-        if (rating >= 0 && rating <= 5 && thePrefs.useOriginalIcons())
-            item->setIcon(ColRating, QIcon(QStringLiteral(":/icons/FileRating%1.ico").arg(rating)));
+        // Icon plus MFC's own words for the value, with no stars — GetRateString is
+        // what CCommentListCtrl::AddComment puts in this column, for every value
+        // including 0 ("Not rated"), because a comment-only row still has a cell.
+        item->setText(ColRating, ratingLabel(rating));
+        item->setData(ColRating, Qt::UserRole, rating);     // numeric sort key: the
+                                                            // text is not monotonic
+        item->setIcon(ColRating, ratingIcon(rating));
         item->setText(ColComment,  m.value(QLatin1StringView("comment")).toString());
         item->setText(ColFileName, m.value(QLatin1StringView("name")).toString());
         item->setText(ColUserName, userName);
@@ -91,6 +78,7 @@ void CommentsPanel::setKadSearchRunning(bool running)
 void CommentsPanel::buildUi(const QString& stateKey)
 {
     auto* layout = new QVBoxLayout(this);
+    m_layout = layout;
 
     auto* tree = new ListTreeWidget;
     m_tree = tree;
@@ -102,7 +90,10 @@ void CommentsPanel::buildUi(const QString& stateKey)
     m_tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     m_tree->header()->setStretchLastSection(true);
-    tree->bindColumns(stateKey, {80, 340, 200, 160, 80});
+    // Rating gets 150 rather than MFC's 80: the widest label is the one that matters
+    // most ("Invalid / Corrupt / Fake"), and at 80 it elides to "Invali...", which is
+    // the one case where the user must be able to read the cell at a glance.
+    tree->bindColumns(stateKey, {180, 340, 200, 160, 80});
 
     m_emptyLabel = new QLabel(tr("No comments or ratings available for this file."));
     m_emptyLabel->setWordWrap(true);

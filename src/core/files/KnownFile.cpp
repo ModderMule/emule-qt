@@ -416,6 +416,13 @@ void KnownFile::addKadNote(const QByteArray& publisherId, const QString& fileNam
     info.lastSeen = now;
 
     pruneKadNotes();
+
+    // Feed the aggregate too. m_kadNotes above is the display cache the notes
+    // tab reads; the rating indicator is computed from AbstractFile's cache, and
+    // filling only one of the two left every Kad note out of the rating — the
+    // same dead-writer shape as the source ratings in PartFile.
+    // This also runs updateFileRatingCommentAvail(), so the mark refreshes.
+    AbstractFile::addKadNote(publisherId, rating, comment);
 }
 
 QByteArray KnownFile::serializeKadNotes() const
@@ -706,6 +713,42 @@ void KnownFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
 
     if (changed)
         emit m_notifier.fileUpdated();
+}
+
+// ===========================================================================
+// Comment / rating — the user's own
+// ===========================================================================
+//
+// MFC KnownFile.cpp:1161-1185. Both setters do the same three things beyond the
+// assignment, and all three are what makes a posted comment actually travel:
+// persist it, re-arm the Kad notes publish, and dirty every uploader so
+// sendCommentInfo() puts it on the wire.
+//
+// Note the getter call before the comparison. getFileComment()/getFileRating()
+// lazily loadComment() on first access and never reload, so assigning first would
+// let a later lazy load quietly overwrite what the user just typed.
+
+void KnownFile::setFileComment(const QString& comment)
+{
+    const QString trimmed = comment.left(MAXFILECOMMENTLEN);
+    if (getFileComment() == trimmed)
+        return;
+
+    m_comment = trimmed;
+    setLastPublishTimeKadNotes(0);
+    saveComment();
+    markUploadersCommentDirty();
+}
+
+void KnownFile::setFileRating(uint32 rating)
+{
+    if (rating > 5 || getFileRating() == rating)
+        return;
+
+    m_rating = rating;
+    setLastPublishTimeKadNotes(0);
+    saveComment();
+    markUploadersCommentDirty();
 }
 
 bool KnownFile::publishSrc()
@@ -1238,6 +1281,16 @@ bool KnownFile::sourceHasNeededPart(const UpDownClient* src,
             return true;
     }
     return false;
+}
+
+void KnownFile::markUploadersCommentDirty()
+{
+    // Unconditional, exactly as MFC: sendCommentInfo() is where the peer's
+    // acceptCommentVer is checked, and a peer that cannot take a comment costs
+    // nothing but a flag here.
+    for (auto* client : m_uploadingClients)
+        if (client)
+            client->setCommentDirty(true);
 }
 
 } // namespace eMule

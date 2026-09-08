@@ -84,6 +84,7 @@ void UiState::load(const QString& configDir)
         m_windowMaximized  = root["windowMaximized"].as<bool>(m_windowMaximized);
         m_optionsLastPage  = root["optionsLastPage"].as<int>(m_optionsLastPage);
         m_lastVersionCheck = root["lastVersionCheck"].as<int64_t>(m_lastVersionCheck);
+        m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
 
         m_toolbarSkinPath = QString::fromStdString(
@@ -167,6 +168,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "windowMaximized"  << YAML::Value << m_windowMaximized;
     out << YAML::Key << "optionsLastPage"  << YAML::Value << m_optionsLastPage;
     out << YAML::Key << "lastVersionCheck" << YAML::Value << m_lastVersionCheck;
+    out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
 
     if (!m_toolbarSkinPath.isEmpty())

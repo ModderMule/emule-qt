@@ -1,4 +1,6 @@
 #include "pch.h"
+#include <QFileInfo>
+#include "panels/UsenetPanel.h"
 #include "app/ExternalLinkHandler.h"
 
 #include "app/AppConfig.h"
@@ -86,6 +88,22 @@ bool ExternalLinkHandler::eventFilter(QObject* watched, QEvent* event)
         if (!link.isEmpty()) {
             // Off the Apple Event's call stack before anything modal can open.
             QTimer::singleShot(0, this, [this, link] { open(link); });
+            return true;
+        }
+
+        // The fall-through the importer's header documents, which until now had
+        // no consumer: a .nzb double-clicked in Finder arrives as a path here.
+        // file(), never url() — an ed2k link comes back empty through url(), and
+        // this code path has been bitten by that before.
+        const QString path = static_cast<QFileOpenEvent*>(event)->file();
+        if (path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive)
+            && QFileInfo(path).isFile()) {
+            QTimer::singleShot(0, this, [this, path] {
+                if (m_mainWindow && m_mainWindow->usenetPanel()) {
+                    m_mainWindow->usenetPanel()->addNzbFile(path);
+                    m_mainWindow->switchToTab(MainWindow::TabUsenet);
+                }
+            });
             return true;
         }
     }

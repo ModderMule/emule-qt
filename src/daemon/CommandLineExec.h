@@ -44,6 +44,11 @@ private:
                        "ed2k://|httpcache| configuration link."),
         QStringLiteral("link")};
 
+    QCommandLineOption m_addNzbOption{
+        QStringLiteral("add-nzb"),
+        QStringLiteral("Queue a Usenet download from an .nzb file or an http(s) URL."),
+        QStringLiteral("path-or-url")};
+
     QCommandLineOption m_connectOption{
         {QStringLiteral("c"), QStringLiteral("connect")},
         QStringLiteral("Connect to an eD2K server.")};

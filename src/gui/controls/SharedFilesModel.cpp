@@ -5,6 +5,7 @@
 #include "controls/SharedFilesModel.h"
 
 #include "utils/OtherFunctions.h"
+#include "utils/RatingIcons.h"
 
 namespace eMule {
 
@@ -100,6 +101,15 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
 
     const auto& f = m_rows[static_cast<size_t>(index.row())];
 
+    // Type icon plus eMule's comment/rating mark, as MFC's shared list draws them
+    // (srchybrid/SharedFilesCtrl.cpp:561-568), plus the port's own fake-file mark,
+    // the same one the download list draws. Nothing here touches the disk: the
+    // daemon's background sweep settled the verdict and sent a bool.
+    if (role == Qt::DecorationRole && index.column() == ColFileName) {
+        return fileMarksIcon(f.fileType, f.containerSuspect, f.ownComment,
+                             ratingMark(f.hasComment, f.userRating));
+    }
+
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColFileName:
@@ -131,7 +141,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ToolTipRole) {
-        return QStringLiteral(
+        const QString tip = QStringLiteral(
             "File Name:\t%1\n"
             "ED2K Hash:\t%2\n"
             "Type:\t%3\n"
@@ -148,6 +158,10 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             .arg(formatSize(f.transferred), formatSize(f.allTimeTransferred))
             .arg(f.completeSources)
             .arg(f.path);
+        // The marks in column 0 explain themselves here, worded exactly as they are
+        // in the download list — same helper, same cell, same sentence.
+        return QString(tip + fileMarksTooltip(f.fileName, f.containerSuspect,
+                                             f.containerActual, f.hasComment, f.userRating));
     }
 
     // Raw data for sorting

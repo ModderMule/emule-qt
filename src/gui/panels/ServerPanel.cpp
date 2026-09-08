@@ -11,6 +11,7 @@
 #include "app/UiState.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/ListActivation.h"
+#include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "IpcMessage.h"
 #include "net/HttpFileDownload.h"
@@ -279,10 +280,12 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     else
         m_serverMenu->clear();
 
-    const bool useOriginal = thePrefs.useOriginalIcons();
-    auto ico = [&](const char* res, QStyle::StandardPixmap sp) -> QIcon {
-        return useOriginal ? QIcon(QStringLiteral(":/icons/") + QLatin1String(res))
-                           : style()->standardIcon(sp);
+    // The only panel with a fallback: with original icons off it shows the
+    // platform's own rather than nothing. style() is the widget's, not
+    // QApplication's, which is why this stays a lambda over the shared helper.
+    auto ico = [this](const char* res, QStyle::StandardPixmap sp) -> QIcon {
+        const QIcon icon = menuIcon(res);
+        return icon.isNull() ? style()->standardIcon(sp) : icon;
     };
 
     // -- Connect To -----------------------------------------------------------

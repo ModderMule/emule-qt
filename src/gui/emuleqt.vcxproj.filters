@@ -43,6 +43,12 @@
     <ClCompile Include="dialogs\ClientDetailDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\AccordionSidebar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\ContentScrollArea.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\ClientListModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -62,6 +68,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\Ed2kSchemeHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\CommentEditPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\CommentsPanel.cpp">
@@ -106,6 +115,12 @@
     <ClCompile Include="utils\PanelPoller.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\FileAssociation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\NzbDrop.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="panels\IrcPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -142,7 +157,13 @@
     <ClCompile Include="dialogs\OptionsDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\AddNzbUrlDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\PasteLinksDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\PasteTextDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\PowerManager.cpp">
@@ -211,6 +232,9 @@
     <ClCompile Include="utils\FileTypeIcons.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\RatingIcons.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -255,16 +279,31 @@
     <ClInclude Include="utils\FileTypeIcons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\RatingIcons.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\IpcFeedback.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\ViewNavigation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\FileAssociation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\NzbDrop.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="utils\PanelPoller.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\ClientDetailDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\AccordionSidebar.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\ContentScrollArea.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\ClientListModel.h">
@@ -288,6 +327,9 @@
     <ClInclude Include="app\Ed2kSchemeHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <QtMoc Include="dialogs\CommentEditPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\CommentsPanel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -348,7 +390,13 @@
     <QtMoc Include="dialogs\OptionsDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\AddNzbUrlDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\PasteLinksDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\PasteTextDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="app\PowerManager.h">

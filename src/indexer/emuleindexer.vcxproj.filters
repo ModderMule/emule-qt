@@ -24,6 +24,15 @@
     <ClCompile Include="IndexerClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="IndexerFeedList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IndexerFeedMatch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IndexerFeedStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="IndexerQuery.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -47,6 +56,15 @@
     <ClInclude Include="IndexerConfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="IndexerFeed.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IndexerFeedMatch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IndexerFeedStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="IndexerQuery.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -54,6 +72,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="IndexerClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="IndexerFeedList.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="IndexerSearch.h">

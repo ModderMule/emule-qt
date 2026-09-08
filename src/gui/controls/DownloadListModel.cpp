@@ -7,8 +7,10 @@
 #include "client/ClientStateDefs.h"
 
 #include "utils/OtherFunctions.h"
+#include "utils/RatingIcons.h"
 
 #include <QColor>
+#include <QFileInfo>
 #include <QDateTime>
 
 namespace eMule {
@@ -292,6 +294,17 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
 
     const auto& d = m_downloads[static_cast<size_t>(index.row())];
 
+    // Column 0 carries the type icon and, when there is something to say, the
+    // marks: a red exclamation for a file whose bytes contradict its name, and
+    // eMule's comment/rating mark. MFC draws the same three in DrawFileItem
+    // (srchybrid/DownloadListCtrl.cpp:400-411).
+    if (role == Qt::DecorationRole && index.column() == ColFileName) {
+        // No own-comment overlay: MFC's download list overlays are the secure and
+        // obfuscated badges, not this one (srchybrid/DownloadListCtrl.cpp:202-205).
+        return fileMarksIcon(d.fileType, d.containerSuspect, /*ownComment*/ false,
+                             ratingMark(d.hasComment, d.userRating));
+    }
+
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColFileName:   return d.fileName;
@@ -331,7 +344,14 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ToolTipRole) {
-        return tr(
+        // Shared with the shared-files list, which draws the same cell — see
+        // fileMarksTooltip(). It says which of the two kinds of wrong this is:
+        // "not the container it claims" and "we cannot name what it is" call for
+        // different reactions, and the player page already tells them apart.
+        const QString extra = fileMarksTooltip(d.fileName, d.containerSuspect,
+                                               d.containerActual, d.hasComment, d.userRating);
+
+        QString tip = tr(
             "File Name:\t%1\n"
             "ED2K Hash:\t%2\n"
             "Size:\t%3\n"
@@ -352,6 +372,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                  QStringLiteral("%1 / %2").arg(d.transferringSrcCount).arg(d.sourceCount))
             .arg(d.requests).arg(d.acceptedRequests)
             .arg(formatSize(d.transferredData));
+        tip += extra;
+        return tip;
     }
 
     // Raw data for sorting

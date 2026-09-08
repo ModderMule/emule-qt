@@ -4,6 +4,8 @@
 #include "TestHelpers.h"
 #include "files/ShareableFile.h"
 
+#include <QFile>
+#include <QTemporaryDir>
 #include <QTest>
 
 using namespace eMule;
@@ -19,6 +21,7 @@ private slots:
     void sharedDirectory_shellLink();
     void verifiedFileType();
     void infoSummary();
+    void theResolvedVerdictNeverReadsTheDisk();
 };
 
 void tst_ShareableFile::construct_default()
@@ -84,6 +87,41 @@ void tst_ShareableFile::infoSummary()
     QVERIFY(summary.contains(QStringLiteral("test.mp3")));
     QVERIFY(summary.contains(QStringLiteral("1048576")));
     QVERIFY(summary.contains(QStringLiteral("/music")));
+}
+
+void tst_ShareableFile::theResolvedVerdictNeverReadsTheDisk()
+{
+    // The whole point of the accessor: handleGetSharedFiles() walks a share of tens
+    // of thousands of files on every poll and may not open any of them. So before
+    // anything has looked, the answer is Unchecked — and Unchecked is not suspect,
+    // so a file the background sweep has not reached yet draws no mark rather than
+    // a wrong one.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("fake.wmv"));
+    {
+        QFile out(path);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        // Random padding whose first bytes land on an MPEG frame sync — not the ASF
+        // a .wmv has to be, and not anything else we can name either.
+        out.write("\xFF\xFB\x10\xC0\x0B\x0A\x07\x05\x00\x07\x07\x0A", 12);
+    }
+
+    ShareableFile f;
+    f.setFileName(QStringLiteral("fake.wmv"));
+    f.setFilePath(path);
+
+    QVERIFY(!f.containerCheckResolved());
+    QCOMPARE(f.containerCheckIfResolved().verdict, ContainerVerdict::Unchecked);
+    QVERIFY(!f.containerCheckIfResolved().isSuspect());
+    // Still nothing looked — asking must not have been what made it look.
+    QVERIFY(!f.containerCheckResolved());
+
+    // The sweep does the reading, and afterwards both accessors agree.
+    QVERIFY(f.containerCheck().isSuspect());
+    QVERIFY(f.containerCheckResolved());
+    QVERIFY(f.containerCheckIfResolved().isSuspect());
+    QCOMPARE(f.containerCheckIfResolved().expected, QStringLiteral("ASF"));
 }
 
 QTEST_MAIN(tst_ShareableFile)

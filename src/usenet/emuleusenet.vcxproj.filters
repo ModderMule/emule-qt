@@ -42,6 +42,9 @@
     <ClCompile Include="nzb\NzbInfo.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="nzb\NzbUrlFetch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="nzb\SubjectParser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -60,6 +63,9 @@
     <ClCompile Include="queue\ArticleWriter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="queue\UsenetHealth.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="queue\UsenetQueue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -67,6 +73,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="queue\UsenetQueueStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetUsage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetWatchFolder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="queue\UsenetWorker.cpp">
@@ -98,6 +110,9 @@
     <ClInclude Include="nzb\NzbInfo.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="nzb\NzbUrlFetch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="nzb\SubjectParser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -110,10 +125,16 @@
     <ClInclude Include="queue\ArticleWriter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="queue\UsenetHealth.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="queue\UsenetQueueItem.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue\UsenetQueueStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue\UsenetUsage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="stream\RarReader.h">
@@ -141,6 +162,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="queue\UsenetQueue.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="queue\UsenetWatchFolder.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="queue\UsenetWorker.h">

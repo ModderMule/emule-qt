@@ -51,6 +51,7 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DEMULE_BUILD_TESTS=OFF
+          -DEMULE_SEED_FROM_SOURCE_TREE=OFF
 
       - name: Build
         run: cmake --build build --parallel 2
