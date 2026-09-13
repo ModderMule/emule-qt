@@ -211,7 +211,10 @@ void CollectionCreateDialog::populateSharedFiles()
             auto* item = new QTreeWidgetItem(m_sharedTree);
             item->setText(0, name);
             item->setData(0, Qt::UserRole, hash);          // store hash
-            item->setData(0, Qt::UserRole + 1, size);      // store size for sorting
+            // Carried for the collection file it becomes, not for sorting: these
+            // trees have a single Name column and nothing sorts by size. A size
+            // column added here would need a SortRole key (controls/SortableItems.h).
+            item->setData(0, Qt::UserRole + 1, size);
 
             // If this was pre-selected, move it to collection
             if (m_preselectedHashes.contains(hash)) {

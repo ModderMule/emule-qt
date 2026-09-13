@@ -7,6 +7,7 @@
 /// session counters, and transfer time accumulation.  Provides
 /// getters and Qt signals for GUI consumption.
 
+#include "stats/NetworkCounters.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -59,8 +60,25 @@ public:
     [[nodiscard]] uint32 transferTime() const;
     [[nodiscard]] uint32 uploadTime() const;
     [[nodiscard]] uint32 downloadTime() const;
+    /// Every second spent logged in to an eD2K server this session, the live
+    /// connection included (MFC: CStatistics::GetServerDuration).
     [[nodiscard]] uint32 serverDuration() const;
+    /// Just the connection we are on now; 0 when disconnected.
+    [[nodiscard]] uint32 thisServerDuration() const { return m_timeThisServerDuration; }
     void add2TotalServerDuration();
+
+    /// Logged in to an eD2K server (MFC's CS_CONNECTED, ServerConnect.cpp:212).
+    ///
+    /// The first login of the session is not a *re*connect, so it does not count
+    /// — MFC keeps the raw count and subtracts one everywhere it shows or saves
+    /// it (StatisticsDlg.cpp:1415, Preferences.cpp:857); counting the right
+    /// thing here keeps every reader honest instead.
+    void serverConnected();
+
+    /// That connection ended, any which way. Idempotent, so every teardown path
+    /// may call it: banks the time from the connect stamp rather than from the
+    /// last 1 Hz update, which loses up to a second per drop.
+    void serverDisconnected();
 
     // --- Current rate getters (KB/s) ---
 
@@ -132,9 +150,25 @@ public:
     [[nodiscard]] uint64 sessionSentBytes() const { return m_sessionSentBytes.load(); }
     [[nodiscard]] uint64 sessionSentBytesToFriend() const { return m_sessionSentBytesToFriend.load(); }
 
+    /// Both also start the session transfer clock (MFC's SetTimeOnTransfer).
     void addSessionReceivedBytes(uint64 bytes);
     void addSessionSentBytes(uint64 bytes);
     void addSessionSentBytesToFriend(uint64 bytes);
+
+    // --- Usenet / indexer counters ---
+    //
+    // The session half of the blocks Preferences banks as cumUsenet/cumIndexer.
+    // The usenet and indexer modules bump them; core only stores and sums. Daemon
+    // thread only, so plain integers rather than atomics.
+
+    [[nodiscard]] UsenetCounters& usenetSession();
+    [[nodiscard]] const UsenetCounters& usenetSession() const { return m_usenetSession; }
+    [[nodiscard]] IndexerCounters& indexerSession();
+    [[nodiscard]] const IndexerCounters& indexerSession() const { return m_indexerSession; }
+
+    /// Banked base + this session — what the tree shows and the flush writes.
+    [[nodiscard]] UsenetCounters cumulativeUsenet() const;
+    [[nodiscard]] IndexerCounters cumulativeIndexer() const;
 
     // --- Download quality counters ---
     //
@@ -176,16 +210,17 @@ public:
     /// Seconds since the session started; 0 until it has been stamped.
     [[nodiscard]] uint32 uptimeSecs() const;
 
-    [[nodiscard]] uint32 transferStartTime() const { return m_transferStartTime; }
-    void setTransferStartTime(uint32 val) { m_transferStartTime = val; }
+    [[nodiscard]] uint32 transferStartTime() const { return m_transferStartTime.load(); }
+    void setTransferStartTime(uint32 val) { m_transferStartTime.store(val); }
 
     [[nodiscard]] uint32 serverConnectTime() const { return m_serverConnectTime; }
     void setServerConnectTime(uint32 val) { m_serverConnectTime = val; }
 
     // --- Per-client/port/source transfer breakdown ---
 
-    /// Record a data transfer for per-client-type, per-port, per-source tracking.
-    /// Called from upload/download client code after each block transfer.
+    /// Record a data transfer for per-client-type, per-port, per-source tracking,
+    /// and add it to the session totals. Called from upload/download client code
+    /// after each block transfer.
     void addTransferData(ClientSoftware clientType, uint16 port,
                          bool isPartFile, bool isUpload, uint64 bytes);
 
@@ -226,14 +261,10 @@ public:
         uint32 connPeak = 0;
         uint32 connMaxLimitReached = 0;
 
-        // HTTP Cache. These live in HttpCacheManager for the same reason the
+        // HTTP Cache. This lives in HttpCacheManager for the same reason the
         // session counters above live in their own subsystems: Statistics does
         // not reach into theApp, the caller brings the numbers.
-        uint64 httpCacheBytesPublished = 0;
-        uint64 httpCacheBytesFetched = 0;
-        uint64 httpCacheBytesSaved = 0;
-        uint32 httpCacheChunksPublished = 0;
-        uint32 httpCacheChunksFetched = 0;
+        HttpCacheCounters httpCache;
     };
 
     /// Every cumulative counter the Statistics tree shows.  Each field is the
@@ -304,12 +335,10 @@ public:
         uint64 upFromFile = 0;
         uint64 upFromPartfile = 0;
 
-        // HTTP Cache
-        uint64 httpCacheBytesPublished = 0;   ///< ciphertext pushed to the cache
-        uint64 httpCacheBytesFetched = 0;     ///< plaintext pulled back out of it
-        uint64 httpCacheBytesSaved = 0;       ///< upstream not spent thanks to it
-        uint32 httpCacheChunksPublished = 0;
-        uint32 httpCacheChunksFetched = 0;
+        // Counter blocks
+        HttpCacheCounters httpCache;
+        UsenetCounters usenet;
+        IndexerCounters indexer;
     };
 
     /// Cumulative totals as of right now — what both the Statistics tree and the
@@ -320,6 +349,7 @@ public:
     /// Write cumulativeTotals() into @p prefs.  Absolute, not additive: running
     /// it twice changes nothing, which is what lets it run on a timer instead of
     /// only at shutdown.  Does not save the file — the caller decides when.
+    /// Also banks the Total average rates, as MFC's SaveStats does.
     void flushCumulativeToPrefs(Preferences& prefs,
                                 const ExternalSessionCounters& ext) const;
 
@@ -344,9 +374,6 @@ signals:
 
     /// Emitted after compDown/UpDatarateOverhead() — overhead rates recomputed.
     void overheadStatsUpdated();
-
-    /// Emitted when session byte counters change.
-    void sessionBytesChanged();
 
 private:
     /// Internal rate history entry for time-windowed averaging.
@@ -395,13 +422,23 @@ private:
 
     // Global state
     uint16 m_reconnects = 0;
+    bool m_serverConnectedOnce = false;   // the next login is a reconnect
     uint32 m_filteredClients = 0;
     uint64 m_startTick = 0;
-    uint32 m_transferStartTime = 0;
+    std::atomic<uint32> m_transferStartTime{0};   // stamped from transfer threads too
     uint32 m_serverConnectTime = 0;
 
     // Cumulative values as they stood in Preferences when the session started.
     CumulativeTotals m_cumBase;
+
+    // connAvgDown/UpRate as of the rebase. The Total average blends the session
+    // with this snapshot, not with the live pref: the flush writes the blend back,
+    // and reading that again would compound it every interval.
+    float m_connAvgDownBase = 0.0f;
+    float m_connAvgUpBase = 0.0f;
+
+    UsenetCounters m_usenetSession;
+    IndexerCounters m_indexerSession;
 
     // Global progress
     float m_globalDone = 0.0f;
@@ -464,6 +501,9 @@ private:
     std::atomic<uint64> m_sesCompressionGain{0};
     std::atomic<uint64> m_sesCorruptionLoss{0};
     std::atomic<uint32> m_sesIchPartsSaved{0};
+
+    /// Start the session transfer clock on the first byte (MFC: SetTimeOnTransfer).
+    void markTransferStarted();
 };
 
 } // namespace eMule

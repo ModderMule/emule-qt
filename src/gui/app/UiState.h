@@ -136,8 +136,9 @@ public:
     void setSkinProfilePath(const QString& path) { m_skinProfilePath = path; }
 
     /// Number of statistics colours, in MFC's index order
-    /// (srchybrid/Preferences.h:198 — m_adwStatsColors[15]).
-    static constexpr int kStatsColorCount = 15;
+    /// (srchybrid/Preferences.h:198 — m_adwStatsColors[15]), plus our own slots
+    /// appended after MFC's: 15 is the Download graph's Usenet line.
+    static constexpr int kStatsColorCount = 16;
 
     /// MFC's factory palette, indexed exactly as CPreferences::ResetStatsColor does
     /// (srchybrid/Preferences.cpp:1817-1821). Slot 11 (the tray meter bar) is an

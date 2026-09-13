@@ -6,9 +6,11 @@
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 
 #include "IpcMessage.h"
 #include "utils/DialogSizing.h"
+#include "utils/StringUtils.h"
 
 #include <QHeaderView>
 #include <QPushButton>
@@ -19,24 +21,6 @@
 namespace eMule {
 
 using namespace Ipc;
-
-namespace {
-
-/// Format a byte count for display (B / KiB / MiB / GiB).
-QString formatBytes(int64_t bytes)
-{
-    if (bytes < 0)
-        return {};
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
-}
-
-} // anonymous namespace
 
 ClientSharedFilesDialog::ClientSharedFilesDialog(const QString& clientName,
                                                    const QCborArray& files,
@@ -59,17 +43,22 @@ ClientSharedFilesDialog::ClientSharedFilesDialog(const QString& clientName,
         const int64_t fileSize = map.value(QStringLiteral("fileSize")).toInteger();
         const QString hash = map.value(QStringLiteral("hash")).toString();
 
-        auto* nameItem = new QStandardItem(fileName);
+        // SortableStandardItem throughout: this model is bound straight to the
+        // view with no proxy, so QStandardItemModel::sortRole() -- Qt::DisplayRole
+        // -- is what orders it, and every Qt::UserRole here is a payload
+        // downloadSelected() reads, not a sort key.
+        auto* nameItem = new SortableStandardItem(fileName);
         nameItem->setEditable(false);
         nameItem->setData(hash, Qt::UserRole);
         nameItem->setData(fileName, Qt::UserRole + 1);
         nameItem->setData(static_cast<qlonglong>(fileSize), Qt::UserRole + 2);
 
-        auto* sizeItem = new QStandardItem(formatBytes(fileSize));
+        auto* sizeItem = new SortableStandardItem(formatByteSize(fileSize));
         sizeItem->setEditable(false);
         sizeItem->setData(static_cast<qlonglong>(fileSize), Qt::UserRole);
+        sizeItem->setData(static_cast<qlonglong>(fileSize), SortRole);
 
-        auto* hashItem = new QStandardItem(hash);
+        auto* hashItem = new SortableStandardItem(hash);
         hashItem->setEditable(false);
 
         m_model->appendRow({nameItem, sizeItem, hashItem});

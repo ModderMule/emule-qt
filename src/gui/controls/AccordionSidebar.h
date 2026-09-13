@@ -76,6 +76,10 @@ private:
 
     void onListRowChanged(int group, int row);
 
+    /// Open the first group that has an item, silently. A sidebar nobody has called
+    /// setCurrentItemId() on would otherwise show three headers and no list at all.
+    void ensureSomethingCurrent();
+
     [[nodiscard]] const Group* groupAt(int index) const;
 
     QVBoxLayout*       m_layout = nullptr;

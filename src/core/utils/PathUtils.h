@@ -11,6 +11,7 @@
 #include <QString>
 
 #include <cstdint>
+#include <optional>
 
 namespace eMule {
 
@@ -49,7 +50,18 @@ enum class AppDir {
 
 /// Free disk space in bytes on the volume containing @p path.
 /// Returns 0 on error.
+///
+/// ⚠️ 0 therefore means *either* "full" or "could not tell" — an unmounted
+/// volume, a drive letter that is gone. A guard that has to act on the answer
+/// wants tryFreeDiskSpace() instead, which keeps the two apart.
 [[nodiscard]] std::uint64_t freeDiskSpace(const QString& path);
+
+/// Free disk space in bytes, or nothing when the volume could not be read.
+///
+/// The distinction freeDiskSpace() cannot make. Pausing downloads because a path
+/// is unreadable is a different decision from pausing them because the disk is
+/// full, and only the caller knows which way it wants to be wrong.
+[[nodiscard]] std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path);
 
 /// Sanitize a file name by removing or replacing invalid characters.
 [[nodiscard]] QString sanitizeFilename(const QString& name);

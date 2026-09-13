@@ -71,8 +71,12 @@ public:
     /// Options page's Test button and the staleness refresh.
     void probeCaps(const IndexerConfig& config, ProbeCallback done);
 
+    /// @p password is the archive passphrase the feed advertised, empty when it
+    /// advertised none. Carried out with the payload because the IndexerResult
+    /// itself never leaves this module.
     using GrabCallback = std::function<void(bool ok, const QByteArray& payload,
-                                            const QString& name, const QString& error)>;
+                                            const QString& name, const QString& password,
+                                            const QString& error)>;
 
     /// Fetch one result's .nzb. Runs here rather than in the GUI because the URL
     /// carries the API key, and the GUI is never given one.

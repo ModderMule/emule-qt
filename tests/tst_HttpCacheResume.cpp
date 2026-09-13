@@ -9,6 +9,7 @@
 /// connections, ignores Range, or lies in Content-Range, and check the part file
 /// byte for byte.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
@@ -16,6 +17,7 @@
 #include "files/PartFile.h"
 #include "httpcache/HttpCacheClient.h"
 #include "prefs/Preferences.h"
+#include "stats/Statistics.h"
 #include "utils/Opcodes.h"
 
 #include <QCryptographicHash>
@@ -609,6 +611,8 @@ void tst_HttpCacheResume::downloadedBytesAreAccountedOnce()
     //
     // Asserted across a *resumed* transfer on purpose: a double-booked resume would show up
     // here as roughly one and a half parts downloaded.
+    eMule::testing::ScopedStatistics stats;
+
     FakeCacheServer server(m_cipher);
     QVERIFY(server.listen(QHostAddress::LocalHost));
     server.setScript({Behaviour{.dropAfter = 400'000}, Behaviour{}});
@@ -626,6 +630,14 @@ void tst_HttpCacheResume::downloadedBytesAreAccountedOnce()
     // Plaintext bytes that reached the part file, counted once despite the mid-transfer drop.
     QCOMPARE(client->transferredDown(), static_cast<uint64>(kPlainLength));
     QCOMPARE(client->sessionPayloadDown(), static_cast<uint64>(kPlainLength));
+
+    // And the same bytes in the Transfer branch: they are ed2k part-file data,
+    // whichever socket brought them. They used to be in none of "Downloaded
+    // Data", the UL:DL ratios or the cumulative total. Under the URL client row,
+    // like every other HTTP download (MFC books its PeerCache the same way).
+    QCOMPARE(stats->sessionReceivedBytes(), static_cast<uint64>(kPlainLength));
+    QCOMPARE(stats->sesDownByClient(Statistics::clientIndex(ClientSoftware::URL)),
+             static_cast<uint64>(kPlainLength));
 
     // sessionDown() is the lifetime total minus the mark taken when the download session
     // began. Nothing has reset this client, so the mark is still zero and the two agree.

@@ -6,6 +6,7 @@
 #include "IpcServer.h"
 
 #include "IpcMessage.h"
+#include "LogRelay.h"
 
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
@@ -13,6 +14,7 @@
 #include "net/HttpDefaults.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
+#include "stats/StatsHistory.h"
 #include "stats/StatsSnapshot.h"
 #include "UsenetSession.h"
 #include "IndexerFeedList.h"
@@ -41,10 +43,14 @@ using namespace Ipc;
 
 DaemonApp* DaemonApp::s_instance = nullptr;
 QtMessageHandler DaemonApp::s_previousHandler = nullptr;
-int64_t DaemonApp::s_nextLogId = 1;
-std::deque<LogEntry> DaemonApp::s_logBuffer;
-std::mutex DaemonApp::s_logMutex;
 QString DaemonApp::s_sessionToken;
+
+namespace {
+
+/// Process lifetime, not DaemonApp's: a worker thread can log until it is joined.
+Q_GLOBAL_STATIC(Ipc::LogRelay, s_logRelay)
+
+} // namespace
 
 DaemonApp::DaemonApp(QObject* parent)
     : QObject(parent)
@@ -140,6 +146,17 @@ bool DaemonApp::start()
     m_usenetSession = std::make_unique<usenet::UsenetSession>();
     usenet::theUsenetSession = m_usenetSession.get();
     connectUsenetPushes();
+
+    // The Download graph's Usenet line. Core cannot see the engine, so it is
+    // handed a reader — through the global, which stop() nulls first.
+    if (theApp.statsHistory) {
+        theApp.statsHistory->setUsenetDownRateSource([] {
+            const auto* session = usenet::theUsenetSession;
+            return (session && session->queue())
+                       ? static_cast<float>(session->queue()->currentRate()) / 1024.0f
+                       : 0.0f;
+        });
+    }
     if (thePrefs.usenetEnabled())
         m_usenetSession->start();
 
@@ -192,10 +209,17 @@ void DaemonApp::stop()
     indexer::theIndexerSearchList = nullptr;
     m_indexerSearches.reset();
 
+    if (theApp.statsHistory)
+        theApp.statsHistory->setUsenetDownRateSource({});
     usenet::theUsenetSession = nullptr;
     if (m_usenetSession)
         m_usenetSession->stop();
     m_usenetSession.reset();
+
+    // stopWorkers() delivers its last results after the flush at the top, and
+    // they are counted in core; bank them too. main() saves once more after this.
+    if (theApp.statistics)
+        flushCumulativeStats(thePrefs);
 
     m_notifierBridge.reset();
 
@@ -214,8 +238,8 @@ void DaemonApp::stop()
     // session went away, which closed the log file sink mid-shutdown and threw
     // away every line after it -- Kad's stop, the nodes.dat write and "Daemon
     // stopped." all vanished, making a shrunken routing table unforensic.
-    // Forwarding to IPC clients is already a no-op by now (logMessageHandler
-    // null-checks m_ipcServer), so staying installed this long is free.
+    // Forwarding to IPC clients is already a no-op by now (the relay's
+    // connection null-checks m_ipcServer), so staying installed this long is free.
     removeLogForwarder();
 }
 
@@ -437,16 +461,25 @@ void DaemonApp::connectIndexerFeedSink()
             }
 
             usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
-            usenet::theUsenetSession->queue()->addNzb(request.payload, request.title, error,
-                                                      usenet::UsenetAddSource::Automatic,
-                                                      &outcome);
+            usenet::theUsenetSession->queue()->addNzb(
+                request.payload, request.title, error,
+                {.source = usenet::UsenetAddSource::Automatic,
+                 .password = request.password,
+                 .category = request.downloadCategory},
+                &outcome);
+            usenet::theUsenetSession->queue()->stats().noteAdd(usenet::UsenetAddOrigin::Feed,
+                                                               outcome);
 
             switch (outcome) {
             case usenet::UsenetAddOutcome::Added:
                 return indexer::FeedAddOutcome::Added;
             case usenet::UsenetAddOutcome::Duplicate:
+            case usenet::UsenetAddOutcome::AlreadyDownloaded:
                 // Terminal. The feed must stop asking — this is not a failure,
-                // it is the answer.
+                // it is the answer. AlreadyDownloaded joins it deliberately: a
+                // person re-downloading something on purpose is a legitimate act
+                // and a feed doing it is a mistake, so the feed never gets the
+                // question, only the verdict.
                 return indexer::FeedAddOutcome::AlreadyHave;
             case usenet::UsenetAddOutcome::Invalid:
                 return indexer::FeedAddOutcome::Rejected;
@@ -547,6 +580,14 @@ void DaemonApp::installLogForwarder()
     s_instance = this;
     if (s_sessionToken.isEmpty())
         s_sessionToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    // First touch, so the relay is created here on the main thread -- it forwards
+    // from the thread it lives on. Lines logged before the IPC server exists reach
+    // nobody and stay buffered for SyncLogs.
+    connect(s_logRelay(), &Ipc::LogRelay::ready, this, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
     s_previousHandler = qInstallMessageHandler(logMessageHandler);
 }
 
@@ -556,19 +597,16 @@ void DaemonApp::removeLogForwarder()
         qInstallMessageHandler(s_previousHandler);
         s_previousHandler = nullptr;
         s_instance = nullptr;
+        if (auto* relay = s_logRelay())
+            disconnect(relay, nullptr, this, nullptr);
         closeLogFileSink();
     }
 }
 
-std::vector<LogEntry> DaemonApp::logsSince(int64_t lastLogId)
+std::vector<Ipc::LogEntry> DaemonApp::logsSince(int64_t lastLogId)
 {
-    std::lock_guard lock(s_logMutex);
-    std::vector<LogEntry> result;
-    for (const auto& entry : s_logBuffer) {
-        if (entry.id > lastLogId)
-            result.push_back(entry);
-    }
-    return result;
+    auto* relay = s_logRelay();
+    return relay ? relay->since(lastLogId) : std::vector<Ipc::LogEntry>{};
 }
 
 QString DaemonApp::sessionToken()
@@ -587,28 +625,10 @@ void DaemonApp::logMessageHandler(QtMsgType type, const QMessageLogContext& cont
     if (std::strncmp(cat, "emule.", 6) != 0)
         return;
 
-    // Assign incremental ID and buffer the entry
-    const qint64 ts = QDateTime::currentSecsSinceEpoch();
-    qint64 logId;
-    {
-        std::lock_guard lock(s_logMutex);
-        logId = s_nextLogId++;
-        s_logBuffer.push_back({logId, QString::fromUtf8(cat), type, msg, ts});
-        while (static_cast<int>(s_logBuffer.size()) > MaxLogBuffer)
-            s_logBuffer.pop_front();
-    }
-
-    // Broadcast to connected GUI clients (with log ID and timestamp)
-    if (!s_instance || !s_instance->m_ipcServer)
-        return;
-
-    IpcMessage push(IpcMsgType::PushLogMessage, 0);
-    push.append(static_cast<qint64>(logId));
-    push.append(QString::fromUtf8(cat));
-    push.append(static_cast<qint64>(type));
-    push.append(msg);
-    push.append(ts);
-    s_instance->m_ipcServer->broadcast(push);
+    // Runs on whichever thread logged, so no socket is touched here: the relay
+    // buffers the line and broadcasts it from the main thread, which owns them.
+    if (auto* relay = s_logRelay())
+        relay->append(QString::fromUtf8(cat), type, msg);
 }
 
 void DaemonApp::applyLogFilterRules()

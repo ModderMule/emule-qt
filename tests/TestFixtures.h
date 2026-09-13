@@ -16,6 +16,7 @@
 #include "net/ClientReqSocket.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "stats/Statistics.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
@@ -200,6 +201,24 @@ public:
 private:
     ScopedLabNetworkMode m_lab;
     bool m_savedFilter;
+};
+
+/// Publishes a Statistics instance as theApp.statistics for the duration of a
+/// test, so a failed assertion cannot leave the global dangling. Anything that
+/// counts through theApp.statistics — the eD2K transfer breakdown, the Usenet
+/// and indexer counters — is a no-op without one.
+class ScopedStatistics {
+public:
+    ScopedStatistics() { theApp.statistics = &m_stats; }
+    ~ScopedStatistics() { theApp.statistics = nullptr; }
+    ScopedStatistics(const ScopedStatistics&) = delete;
+    ScopedStatistics& operator=(const ScopedStatistics&) = delete;
+
+    Statistics* operator->() { return &m_stats; }
+    Statistics& get() { return m_stats; }
+
+private:
+    Statistics m_stats;
 };
 
 /// Connect a ClientReqSocket to a throwaway local server so the client counts as connected

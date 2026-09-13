@@ -108,10 +108,37 @@ bool pathsEqual(const QString& a, const QString& b)
 
 std::uint64_t freeDiskSpace(const QString& path)
 {
-    QStorageInfo info(path);
-    if (!info.isValid() || !info.isReady())
-        return 0;
-    return static_cast<std::uint64_t>(info.bytesAvailable());
+    return tryFreeDiskSpace(path).value_or(0);
+}
+
+std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path)
+{
+    if (path.isEmpty())
+        return std::nullopt;
+
+    // ⚠️ QStorageInfo answers for a path that does not exist by being *invalid*,
+    // not by resolving the volume that would hold it. A scratch or incoming
+    // directory is created on first use, so asking about one before then would
+    // read as "this volume cannot be measured" — and a guard acting on that
+    // would park a fresh install forever. Walk up to the nearest ancestor that
+    // exists; the volume is the same one either way.
+    // Climbed by path rather than with QDir::cdUp(), which refuses to move into
+    // a parent that does not exist either — and a scratch tree is usually
+    // missing several levels at once on first use.
+    QString probe = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+    while (!probe.isEmpty()) {
+        if (QFileInfo::exists(probe)) {
+            QStorageInfo info(probe);
+            if (info.isValid() && info.isReady())
+                return static_cast<std::uint64_t>(info.bytesAvailable());
+            return std::nullopt;
+        }
+        const QString parent = QFileInfo(probe).absolutePath();
+        if (parent == probe)
+            break;                       // reached the root without finding anything
+        probe = parent;
+    }
+    return std::nullopt;
 }
 
 QString sanitizeFilename(const QString& name)

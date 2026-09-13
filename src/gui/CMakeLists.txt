@@ -123,8 +123,20 @@ target_precompile_headers(emuleqt PRIVATE
 )
 
 # -- Translations (i18n) ----------------------------------------------------
-# Compile any .ts files found in lang/ into .qm and copy to build dir.
-# To extract strings or add languages, use: ./scripts/localize.sh
+# Compile any .ts files found in lang/ into .qm. To extract strings or add
+# languages, use: ./scripts/localize.sh
+#
+# lrelease writes the .qm flat into <build>/src/gui/. That is not one of the
+# shipped layouts, so a locally-built binary finds them only through the absolute
+# EMULE_DEV_LANG_DIR baked in by cmake/CompilerSettings.cmake -- keep the two in
+# step. Relocating them here is not worth it: qt_standard_project_setup() creates
+# the lrelease target in the *root* scope, so the OUTPUT_LOCATION source property
+# set here is never read, and the QM_OUTPUT_DIRECTORY argument that would work is
+# Qt 6.9+ while we build against 6.5 and up.
+#
+# QM_FILES_OUTPUT_VARIABLE looks unused but must stay -- passing it is what stops
+# qt_add_translations embedding the .qm into the binary at :/i18n/ instead of
+# writing them out as files.
 
 file(GLOB TS_FILES "${CMAKE_SOURCE_DIR}/lang/emuleqt_*.ts")
 if(TS_FILES)

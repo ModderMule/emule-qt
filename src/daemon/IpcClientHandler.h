@@ -8,7 +8,9 @@
 
 #include "IpcConnection.h"
 #include "IpcMessage.h"
+#include "utils/Types.h"
 
+#include <QHash>
 #include <QObject>
 
 #include <memory>
@@ -16,6 +18,13 @@
 namespace eMule {
 
 class PartFile;
+
+namespace usenet {
+// Forward-declared rather than included: the underlying type is fixed, so this is
+// enough for a parameter, and daemon headers stay free of the Usenet module.
+enum class UsenetAddOutcome : quint8;
+enum class UsenetAddOrigin : quint8;
+} // namespace usenet
 
 class IpcClientHandler : public QObject {
     Q_OBJECT
@@ -158,6 +167,7 @@ private:
 
     // Usenet (720-799)
     void handleGetNewsServers(const Ipc::IpcMessage& msg);
+    void handleGetUsenetStats(const Ipc::IpcMessage& msg);
     void handleSetNewsServers(const Ipc::IpcMessage& msg);
     void handleTestNewsServer(const Ipc::IpcMessage& msg);
     void handleSetNewsServerUsage(const Ipc::IpcMessage& msg);
@@ -165,10 +175,22 @@ private:
     void handleAddNzb(const Ipc::IpcMessage& msg);
     void handleAddNzbUrl(const Ipc::IpcMessage& msg);
     void handleCheckUsenetItem(const Ipc::IpcMessage& msg);
+    void handleGetUsenetKnownTypes(const Ipc::IpcMessage& msg);
+    void handleGetUsenetItemDetails(const Ipc::IpcMessage& msg);
+
+    /// Reply for every NZB intake path: the item id or the refusal sentence, plus
+    /// a UsenetAddOutcome int so the GUI can tell an "already downloaded" it may
+    /// ask about from a failure it may not. Also where an IPC add is counted for
+    /// the statistics, as @p origin.
+    void sendAddNzbResult(int seqId, const QString& itemId, const QString& error,
+                          usenet::UsenetAddOutcome outcome, usenet::UsenetAddOrigin origin);
     void handleRemoveUsenetItem(const Ipc::IpcMessage& msg);
     void handlePauseUsenetItem(const Ipc::IpcMessage& msg);
     void handleResumeUsenetItem(const Ipc::IpcMessage& msg);
     void handleSetUsenetItemPriority(const Ipc::IpcMessage& msg);
+    void handleSetUsenetItemCategory(const Ipc::IpcMessage& msg);
+    void handleSetUsenetCategoryStatus(const Ipc::IpcMessage& msg);
+    void handleSetUsenetItemPassword(const Ipc::IpcMessage& msg);
     void handleListUsenetArchiveEntries(const Ipc::IpcMessage& msg);
     void handleSetDownloadCategory(const Ipc::IpcMessage& msg);
     void handleGetDownloadDetails(const Ipc::IpcMessage& msg);
@@ -194,6 +216,9 @@ private:
     /// with it, after the global incoming directory changed. Without this a
     /// user who relocates their downloads finds their categories still writing
     /// into the old tree.
+    /// Renumber every feed's download category after the list changed.
+    void remapFeedCategories(const QHash<uint32, uint32>& oldToNew);
+
     void rebaseCategoryDirs(const QString& oldIncomingDir);
 
     /// Cancel one download: remember the hash if asked to, stop it, take it out

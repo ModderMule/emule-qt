@@ -13,6 +13,7 @@
 #include "utils/EntityList.h"
 #include "utils/Types.h"
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QStringList>
@@ -167,6 +168,21 @@ public:
     void sortByPriority();
     void process();
 
+    /// Pause every download that cannot be written, and resume them when the
+    /// volume has room again. Mirrors MFC's CDownloadQueue::CheckDiskspace
+    /// (srchybrid/DownloadQueue.cpp:964).
+    ///
+    /// The pause is *not* the user's pause: PartFile::pauseFile(true) leaves
+    /// m_paused clear and reports Insufficient instead, so a file paused for
+    /// space resumes by itself and one the user paused stays paused. That whole
+    /// mechanism was already ported and had no caller until now.
+    void checkDiskspace();
+
+    /// checkDiskspace() at most every kDiskCheckIntervalMs, for the tick to
+    /// call. MFC re-checks every 15 minutes (DISKSPACERECHECKTIME); a write
+    /// failure calls the unthrottled one directly instead of waiting.
+    void checkDiskspaceTimed();
+
     // -- Category management --------------------------------------------------
     //
     // A download's category is an index into Preferences::categories(), so
@@ -232,6 +248,12 @@ signals:
     void fileCompleted(eMule::PartFile* file);
 
 private:
+    /// When the volume was last measured, for checkDiskspaceTimed().
+    QElapsedTimer m_diskCheckClock;
+
+    /// Whether the "no room" line has already been said for the current stall.
+    bool m_diskStallLogged = false;
+
     void onDownloadCompleted(PartFile* file);
     void connectPartFileSignals(PartFile* file);
 

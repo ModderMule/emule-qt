@@ -4,7 +4,9 @@
 #include "IndexerClient.h"
 #include "IndexerSearch.h"
 
+#include "app/AppContext.h"
 #include "prefs/Preferences.h"
+#include "stats/Statistics.h"
 #include "utils/Log.h"
 
 #include <QPointer>
@@ -135,6 +137,8 @@ quint32 IndexerSearchList::startSearch(const IndexerQuery& query, IndexerKind wa
 
     m_searches.insert(id, search);
     search->start(m_caps);
+    if (theApp.statistics)
+        ++theApp.statistics->indexerSession().searches;
     return id;
 }
 
@@ -182,29 +186,30 @@ void IndexerSearchList::grab(quint32 searchId, const QString& resultId, GrabCall
 {
     const auto it = m_searches.constFind(searchId);
     if (it == m_searches.constEnd()) {
-        done(false, {}, {}, tr("That search is no longer open."));
+        done(false, {}, {}, {}, tr("That search is no longer open."));
         return;
     }
 
     const IndexerSearch* search = *it;
     const IndexerResult* result = search->find(resultId);
     if (!result) {
-        done(false, {}, {}, tr("That result is no longer in the list."));
+        done(false, {}, {}, {}, tr("That result is no longer in the list."));
         return;
     }
 
     const IndexerConfig* account = search->accountFor(*result);
     if (!account) {
-        done(false, {}, {},
+        done(false, {}, {}, {},
              tr("The indexer \"%1\" is no longer configured.").arg(result->indexerName));
         return;
     }
 
     const QString name = result->title;
+    const QString password = result->password;
     m_client->fetch(*account, result->downloadUrl,
-                    [name, done = std::move(done)](bool ok, const QByteArray& body,
-                                                   const QString& error) {
-        done(ok, body, name, error);
+                    [name, password, done = std::move(done)](bool ok, const QByteArray& body,
+                                                             const QString& error) {
+        done(ok, body, name, password, error);
     });
 }
 

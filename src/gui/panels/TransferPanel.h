@@ -37,6 +37,7 @@ class QVBoxLayout;
 
 namespace eMule {
 
+class CategoryTabBar;
 class ClientListModel;
 struct ClientRow;
 class DownloadListModel;
@@ -67,7 +68,7 @@ public:
     [[nodiscard]] DownloadListModel* downloadModel() const { return m_downloadModel; }
 
     /// Set the stream token for preview streaming (received from daemon GetStats).
-    void setStreamToken(const QString& token) { m_streamToken = token; }
+    void setStreamToken(const QString& token);
 
 signals:
     /// Emitted when user requests to search for files related to a download.
@@ -167,32 +168,15 @@ private:
     [[nodiscard]] static QString clientViewName(int clientView);
     /// List name with its current row count, for the toolbar's bold label.
     [[nodiscard]] QString clientLabelText(int clientView) const;
-    void updateCategoryTabs();
-
     // -- Categories -----------------------------------------------------------
 
-    /// Ask the daemon for the category list and rebuild the tab bar from it.
-    void requestCategories();
-    /// Send the whole list back. The contract is a replace, so every edit —
-    /// add, edit, remove, reorder — goes through here.
-    /// @param oldIndex  each entry's index in the daemon's current list, -1 for
-    ///        a new one. Positionally parallel to @p categories.
-    void sendCategories(const QList<DownloadCategory>& categories,
-                        const QList<int>& oldIndex);
-    /// Right-click on a category tab: MFC's tab menu
-    /// (srchybrid/TransferWnd.cpp:677-780).
-    void showCategoryMenu(int tabIndex, const QPoint& globalPos);
-    void addCategoryInteractive();
-    void editCategory(int index);
-    void removeCategory(int index);
+    /// The ED2K-only half of a category tab's context menu. CategoryTabBar owns
+    /// the rest — the entries that edit the category itself are the same for
+    /// both networks, these five and the a4af priority are not.
+    void populateCategoryMenu(QMenu* menu, int index);
+
     /// Bulk pause/resume/stop/cancel/resume-next over one category.
     void sendCategoryStatus(int index, Ipc::CategoryAction action);
-    /// Display name for a category index, for the tab bar, the Category column
-    /// and the assign menu. Falls back to the raw index for a stale one.
-    [[nodiscard]] QString categoryTitle(int index) const;
-    /// Every category title, index-ordered — what DownloadListModel needs to
-    /// render the Category column.
-    [[nodiscard]] QStringList categoryNames() const;
     void showPriorityMenu();
     void showFindDialog();
     void onClientContextMenu(QTreeView* view, ClientListModel* model, const QPoint& pos);
@@ -240,7 +224,7 @@ private:
     TransferToolbar* m_toolbar2 = nullptr;
 
     // Category tab bar — only meaningful while the top pane shows Downloads
-    QTabBar* m_categoryTabBar = nullptr;
+    CategoryTabBar* m_categoryTabBar = nullptr;
 
     // Pane content areas and the view each currently holds
     QVBoxLayout* m_topContent = nullptr;
@@ -282,22 +266,6 @@ private:
 
     // Toolbar "Clear Completed" action (greyed when no completed downloads)
     QAction* m_clearCompletedAction = nullptr;
-
-    /// The daemon's category list, index-ordered — index 0 is "All". Mirrored
-    /// here because it drives three things at once (the tab bar, the Category
-    /// column and the assign menu) and refetching for each would triple the
-    /// traffic. Refreshed on PushCategoriesChanged.
-    QList<DownloadCategory> m_categories;
-
-    /// Where each entry sat in the daemon's list when it was fetched. Sent back
-    /// as `oldIndex` so a reorder or a removal moves the downloads with their
-    /// category instead of leaving them pointing at whatever now occupies the
-    /// slot. -1 for a category the user has just created.
-    QList<int> m_categoryOldIndex;
-
-    /// The global incoming directory, as the daemon resolves it. Seeds the
-    /// category dialog's browse button and its "leave empty for" placeholder.
-    QString m_defaultIncomingDir;
 
     // Hashes of currently expanded downloads (for source fetching)
     QSet<QString> m_expandedDownloads;

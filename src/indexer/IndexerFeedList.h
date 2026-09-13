@@ -69,6 +69,17 @@ struct FeedAddRequest {
     QString feedName;
     QString title;
     QByteArray payload;
+
+    /// The archive passphrase the feed advertised, empty when it advertised
+    /// none. An *automatic* add, so the NZB's own metadata still outranks it —
+    /// see UsenetQueue::addNzb().
+    QString password;
+
+    /// The download category the feed files its matches into, 0 for none.
+    ///
+    /// An opaque int on the way past: this module still names nothing in
+    /// eMule::Usenet, and what the number indexes is the sink's business.
+    int downloadCategory = 0;
 };
 
 /// What the GUI is shown about a feed. Everything here is a report, not a

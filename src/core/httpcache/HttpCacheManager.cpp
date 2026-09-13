@@ -522,8 +522,8 @@ void HttpCacheManager::onPublishFinished(const QString& key, const QString& serv
     nudgeKadRepublish(offer.fileHash);
 
     m_publishedToday += offer.cipherLength;
-    m_sessionBytesPublished += offer.cipherLength;
-    ++m_sessionChunksPublished;
+    m_session.bytesPublished += offer.cipherLength;
+    ++m_session.chunksPublished;
 
     logInfo(QStringLiteral("HTTP Cache: published part %1 (%2 bytes) -> %3")
                 .arg(offer.partIndex)
@@ -678,7 +678,7 @@ void HttpCacheManager::offerToQueue(Entry& entry)
         // what "Upload Saved" counts. A relayed chunk cost us no upload at all, so
         // every one of its offers is a saving, the first included.
         if (entry.relayed || entry.offersSent > 1)
-            m_sessionBytesSaved += entry.offer.plainLength;
+            m_session.bytesSaved += entry.offer.plainLength;
 
         // The offer replaces the slot. A peer holding one is sent back to the
         // queue so the freed upstream goes to somebody the cache cannot help;
@@ -896,6 +896,7 @@ void HttpCacheManager::addKadChunks(const std::vector<HttpCacheOffer>& chunks)
 
         m_fetches.insert(key, client);
         m_kadFetches.insert(key);
+        ++m_session.kadChunks;
 
         logInfo(QStringLiteral("HTTP Cache: fetching part %1 of '%2' from a chunk found in Kad")
                     .arg(offer.partIndex).arg(file->fileName()));
@@ -915,7 +916,10 @@ void HttpCacheManager::handleOffer(UpDownClient* sender, const HttpCacheOffer& o
     report.fileHash = offer.fileHash;
     report.partIndex = offer.partIndex;
 
+    ++m_session.offersReceived;
+
     const auto decline = [&](HttpCacheResult why) {
+        ++m_session.offersDeclined;
         report.result = why;
         reply(sender, report, true);
     };
@@ -1018,9 +1022,13 @@ void HttpCacheManager::onFetchFinished(HttpCacheClient* client, HttpCacheResult 
 
     const bool fromKad = m_kadFetches.remove(key);
 
+    // Every attempt after the first was a reconnect into the middle of the part.
+    // Counted whatever the outcome: it is what a flaky cache server costs.
+    m_session.resumes += static_cast<uint64>(std::max(0, client->attemptCount() - 1));
+
     if (result == HttpCacheResult::Ok) {
-        m_sessionBytesFetched += bytesFetched;
-        ++m_sessionChunksFetched;
+        m_session.bytesFetched += bytesFetched;
+        ++m_session.chunksFetched;
 
         // Ok here means the ciphertext matched the digest the peer pinned, not that
         // the plaintext is right — MD4 has not run yet and will not until the part
@@ -1032,6 +1040,11 @@ void HttpCacheManager::onFetchFinished(HttpCacheClient* client, HttpCacheResult 
                                               fromKad,
                                               client->offer()});
     } else {
+        // NotWanted is not a failure: the offer was withdrawn, the part arrived
+        // over ed2k first, or we are shutting down.
+        if (result != HttpCacheResult::NotWanted)
+            ++m_session.fetchesFailed;
+
         logDebug(QStringLiteral("HTTP Cache: fetch of part %1 ended with code %2")
                      .arg(client->partIndex())
                      .arg(static_cast<int>(result)));
@@ -1103,6 +1116,10 @@ void HttpCacheManager::reportPartCorrupt(const std::array<uint8, 16>& fileHash, 
 
     const FetchedFrom record = it.value();
     m_fetchedFrom.remove(key);
+
+    // One per part: the ledger entry is gone above, so re-verification of the
+    // same part cannot count it twice.
+    ++m_session.partsCorrupt;
 
     // If an earlier flush already promoted this chunk for relay, stop handing it out.
     // Reachable when a part verifies and later fails — a disk fault, or an AICH

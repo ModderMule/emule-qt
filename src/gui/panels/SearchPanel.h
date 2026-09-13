@@ -146,7 +146,17 @@ private:
 
     /// Queue the selected indexer result: the daemon fetches the NZB with its own
     /// API key and hands it to the Usenet queue. The GUI never sees the URL.
-    void grabIndexerResult(int proxyRow);
+    /// Send one indexer grab. @p force means the user was shown the row's Known
+    /// column, asked, and said yes.
+    void sendIndexerGrab(int proxyRow, bool force, int category = 0);
+
+    /// Category titles, index 0 first, for the Download To submenu. Refreshed
+    /// from the daemon rather than kept in sync by hand, on the same
+    /// categoriesChanged signal CategoryTabBar listens to — a context menu
+    /// cannot wait for a round trip, so the list has to be there already.
+    void requestCategories();
+
+    QStringList m_categoryTitles;
 
     /// The tab a searchID belongs to, or nullptr. Indexer searches and ED2K
     /// searches number their ids independently, so this is only ever called from
@@ -157,7 +167,19 @@ private:
     QWidget* createSearchBar();
     void setupResultHeader(bool forIndexer);
     void requestSearchResults(uint32_t searchID);
-    void downloadResult(int row);
+    /// Download every selected row, asking once about the ones we already have.
+    ///
+    /// The entry point for all four ways a download starts here — Enter, the
+    /// Download button, the context menu and a double click — so the question is
+    /// asked once per action instead of once per selected row. Routes indexer
+    /// rows to the grab path, which has no hash to download by.
+    /// @p category files an indexer grab into that category; 0 is "nobody
+    /// chose", which lets the daemon auto-categorise. Ignored for an eD2K row,
+    /// which has its own category machinery on the Transfers tab.
+    void downloadResults(const QModelIndexList& proxyRows, int category = 0);
+
+    /// Send one ED2K download request for a proxy row.
+    void sendDownloadRequest(int proxyRow);
     [[nodiscard]] QString buildEd2kLink(int proxyRow);
     void copyEd2kLink(int row);
     void closeSearch(int tabIndex);
@@ -173,6 +195,10 @@ private:
     void addToSearchHistory(const QString& expression);
     void sendPreview(const QString& hash);
     void refreshKnownTypes();
+
+    /// The same question for indexer tabs, over GetUsenetKnownTypes. A separate
+    /// pass because an indexer row has no hash to ask about — only a title.
+    void refreshUsenetKnownTypes();
 
     /// Open the MFC-style search-result detail sheet for @p hash in tab @p searchID.
     /// Open the result sheet for @p index (proxy coordinates) — the Alt+Enter action.

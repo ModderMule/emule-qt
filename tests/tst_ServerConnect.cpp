@@ -1,8 +1,10 @@
 /// @file tst_ServerConnect.cpp
 /// @brief Tests for server/ServerConnect — connection state machine, retry, timeout.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
+#include "stats/Statistics.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
@@ -168,6 +170,9 @@ private slots:
     void serverMessage_errorAndWarningNotShown();
     void serverMessage_recordsServerVersion();
     void serverMessage_splitsOnBareNewlines();
+
+    // Statistics
+    void statistics_timeAndReconnectsAcrossTwoConnections();
 };
 
 // ---------------------------------------------------------------------------
@@ -875,6 +880,72 @@ void tst_ServerConnect::serverMessage_splitsOnBareNewlines()
     QTRY_COMPARE_WITH_TIMEOUT(fx.msgSpy->count(), 4, 5000);
     QCOMPARE(fx.msgSpy->at(2).at(1).toString(), QStringLiteral("Welcome"));
     QCOMPARE(fx.msgSpy->at(3).at(1).toString(), QStringLiteral("Last line"));
+}
+
+// ---------------------------------------------------------------------------
+// Statistics
+// ---------------------------------------------------------------------------
+
+/// "Server Duration" and "Reconnects" read 0 for the life of the port until
+/// 2026-09-12: the three writers had no callers at all. MFC hangs them off
+/// CS_CONNECTED and its two teardown paths (srchybrid/ServerConnect.cpp:212,
+/// 339, 435); here the login and destroySocket() are the equivalents, and this
+/// drives both through a real login, a peer drop and a second login.
+void tst_ServerConnect::statistics_timeAndReconnectsAcrossTwoConnections()
+{
+    eMule::testing::ScopedStatistics stats;
+
+    QTcpServer tcpServer;
+    QVERIFY(tcpServer.listen(QHostAddress::LocalHost, 0));
+    Server srv = makeLoopbackServer(tcpServer.serverPort());
+
+    ServerList list;
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+
+    const auto login = [&]() -> QTcpSocket* {
+        conn.connectToServer(&srv, false, true);
+        if (!tcpServer.waitForNewConnection(5000))
+            return nullptr;
+        QTcpSocket* peer = tcpServer.nextPendingConnection();
+        if (!peer)
+            return nullptr;
+        QTest::qWait(200);
+        writeIdChange(peer, 0x12345678);
+        return peer;
+    };
+
+    QTcpSocket* peer = login();
+    QVERIFY(peer != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(conn.isConnected(), 5000);
+
+    // The first login is not a reconnect, and the clock is running.
+    QCOMPARE(stats->reconnects(), uint16{0});
+    QVERIFY(stats->serverConnectTime() != 0);
+
+    // Rewind rather than wait: what is being tested is that the seconds are
+    // banked at all, not how long a test sleeps.
+    stats->setServerConnectTime(stats->serverConnectTime() - SEC2MS(3));
+    peer->abort();
+    QTRY_VERIFY_WITH_TIMEOUT(!conn.isConnected(), 5000);
+
+    QCOMPARE(stats->serverConnectTime(), uint32{0});   // the clock stopped
+    QCOMPARE(stats->thisServerDuration(), uint32{0});
+    const uint32 firstSession = stats->serverDuration();
+    QVERIFY2(firstSession >= 3, qPrintable(QString::number(firstSession)));
+
+    peer = login();
+    QVERIFY(peer != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(conn.isConnected(), 5000);
+    QCOMPARE(stats->reconnects(), uint16{1});
+
+    stats->setServerConnectTime(stats->serverConnectTime() - SEC2MS(5));
+    QVERIFY(conn.disconnect());
+    QCOMPARE(stats->serverConnectTime(), uint32{0});
+    QVERIFY2(stats->serverDuration() >= firstSession + 5,
+             qPrintable(QString::number(stats->serverDuration())));
+
+    peer->close();
 }
 
 // ---------------------------------------------------------------------------

@@ -50,6 +50,9 @@ struct ClientRow {
     bool hasCredit = false;
     bool isFriend = false;
     int64_t upDatarate = 0;       // bytes/sec upload rate
+    int64_t downDatarate = 0;     // bytes/sec download rate
+    int64_t downloadedTotal = 0;  // credit totals across sessions (0 = no credits)
+    int64_t uploadedTotal = 0;
     int64_t uploadStartDelay = 0;  // ms since upload started (0 = not uploading)
     int filePriority = -1;         // download priority of queued file (-1 = unknown)
     bool isAutoPriority = false;   // whether file priority is auto

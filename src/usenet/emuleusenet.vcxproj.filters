@@ -48,6 +48,9 @@
     <ClCompile Include="nzb\SubjectParser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="post\Par2NameIndex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="post\Par2Verifier.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -66,6 +69,9 @@
     <ClCompile Include="queue\UsenetHealth.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="queue\UsenetHistory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="queue\UsenetQueue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -73,6 +79,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="queue\UsenetQueueStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetStatistics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="queue\UsenetUsage.cpp">
@@ -85,6 +94,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stream\RarReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stream\UsenetEncryptedPreview.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stream\UsenetStreamIndex.cpp">
@@ -116,6 +128,9 @@
     <ClInclude Include="nzb\SubjectParser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="post\Par2NameIndex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="post\Par2Verifier.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -128,10 +143,16 @@
     <ClInclude Include="queue\UsenetHealth.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="queue\UsenetHistory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="queue\UsenetQueueItem.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue\UsenetQueueStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue\UsenetStatistics.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue\UsenetUsage.h">
@@ -168,6 +189,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="queue\UsenetWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="stream\UsenetEncryptedPreview.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

@@ -18,7 +18,10 @@ class AddNzbUrlDialog : public PasteTextDialog {
     Q_OBJECT
 
 public:
-    explicit AddNzbUrlDialog(IpcClient* ipc, QWidget* parent = nullptr);
+    /// @p categories is the user's category list in their own order, index 0
+    /// first, for the queue-options row.
+    explicit AddNzbUrlDialog(IpcClient* ipc, const QStringList& categories,
+                             QWidget* parent = nullptr);
 
     /// Most links people paste are one at a time; the cap is here so a stray
     /// paste of a whole page gets a sentence instead of most of its lines

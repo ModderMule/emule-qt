@@ -6,24 +6,11 @@
 
 #include "utils/OtherFunctions.h"
 #include "utils/RatingIcons.h"
+#include "utils/StringUtils.h"
 
 namespace eMule {
 
 namespace {
-
-/// Format a byte count for display (B / KiB / MiB / GiB).
-QString formatSize(int64_t bytes)
-{
-    if (bytes < 0)
-        return {};
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
-}
 
 /// Map ED2K file type codes to display names matching MFC.
 QString fileTypeDisplay(const QString& type)
@@ -115,7 +102,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColFileName:
             return f.fileName;
         case ColSize:
-            return formatSize(f.fileSize);
+            return formatByteSize(f.fileSize);
         case ColType:
             return fileTypeDisplay(f.fileType);
         case ColPriority:
@@ -124,7 +111,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             return QStringLiteral("%1 (%2)").arg(f.requests).arg(f.allTimeRequests);
         case ColTransferred:
             return QStringLiteral("%1 (%2)")
-                .arg(formatSize(f.transferred), formatSize(f.allTimeTransferred));
+                .arg(formatByteSize(f.transferred), formatByteSize(f.allTimeTransferred));
         case ColSharedParts: {
             if (f.fileSize <= 0) return QStringLiteral("0%");
             const double pct = 100.0 * static_cast<double>(f.completedSize) / static_cast<double>(f.fileSize);
@@ -155,7 +142,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
                  priorityDisplay(f.upPriority, f.isAutoUpPriority))
             .arg(f.requests).arg(f.allTimeRequests)
             .arg(f.acceptedUploads).arg(f.allTimeAccepted)
-            .arg(formatSize(f.transferred), formatSize(f.allTimeTransferred))
+            .arg(formatByteSize(f.transferred), formatByteSize(f.allTimeTransferred))
             .arg(f.completeSources)
             .arg(f.path);
         // The marks in column 0 explain themselves here, worded exactly as they are

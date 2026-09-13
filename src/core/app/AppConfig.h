@@ -94,6 +94,15 @@ public:
     /// Split out so the three shipped layouts can be asserted from any host --
     /// they are pure path arithmetic and need no Linux or Windows to check.
     [[nodiscard]] static QStringList bundleCandidates(const QString& appDir);
+
+    /// Where to look for emuleqt_*.qm, most specific first, for a binary in
+    /// @p appDir. Same shape and same rule as bundleCandidates(): a real bundle
+    /// wins, the local build tree is always last and is empty in a packaged build.
+    ///
+    /// Returns the whole list, not the first hit that works: main() wants the first
+    /// directory a translator loads from, but the Options dialog has to union the
+    /// locales it finds across all of them.
+    [[nodiscard]] static QStringList langCandidates(const QString& appDir);
 };
 
 } // namespace eMule

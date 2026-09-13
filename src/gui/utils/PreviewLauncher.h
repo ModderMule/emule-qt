@@ -47,6 +47,25 @@ void launchPreview(const QString& url);
 [[nodiscard]] QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
                                         const QString& relPath = {});
 
+/// The daemon's page for one file inside its Incoming folder.
+///
+/// A separate builder from daemonIncomingUrl() because the listing route answers
+/// **400 "Not a folder"** for a `path=` naming a file — the player page is the
+/// same route under `play=`, and a non-media file is served by
+/// /api/v1/incoming/download. So a folder URL cannot stand in for this.
+///
+/// @p play picks the browser player page — one <video>/<audio> tag plus a
+/// download link — over the plain attachment download. Empty on the same terms
+/// as the other builders: no connection, no token, no path.
+[[nodiscard]] QString daemonIncomingFileUrl(const IpcClient* ipc, const QString& streamToken,
+                                            const QString& relPath, bool play);
+
+/// Open that page in the default browser, refusing through
+/// incomingBrowseUnavailableReason() so a loopback-only web server produces one
+/// wording here and in openIncomingInBrowser(), never two.
+bool openIncomingFileInBrowser(const IpcClient* ipc, const QString& streamToken,
+                               const QString& relPath, bool play);
+
 /// The core's web interface: `<scheme>://<daemonHost>:<webServerPort>/`.
 ///
 /// The root page is the login form and there is no deep link past it -- a session

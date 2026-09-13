@@ -12,12 +12,19 @@
 /// no longer matches the Page enum — and the enum is what `UiState::optionsLastPage()`
 /// persists and what `--options N` accepts. Reordering it would silently repoint every
 /// stored index, which is a bug that only shows up on somebody else's machine.
+///
+/// Being the one test that builds the real dialog, it also checks a few values the
+/// offline load path puts on the pages.
 
 #include "app/UiState.h"
 #include "controls/AccordionSidebar.h"
 #include "dialogs/OptionsDialog.h"
+#include "prefs/Preferences.h"
 
+#include <QCheckBox>
+#include <QLabel>
 #include <QScrollArea>
+#include <QSlider>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTest>
@@ -63,6 +70,10 @@ private slots:
     void outOfRangeStoredPageFallsBackToGeneral();
     void breadcrumbNamesGroupAndPage();
     void usenetPageHasAccountAndAdvancedTabs();
+
+    // --- values loaded into the pages (offline: IpcClient nullptr) ---------
+    void anUnlimitedLimitParksAtTheCapacity();
+    void theIpcLogBoxShowsTheStoredValue();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -158,9 +169,11 @@ void TestOptionsDialogSizing::breadcrumbNamesGroupAndPage()
              qPrintable(dlg.windowTitle()));
 }
 
-/// The per-account fields are split across two tabs while the server table sits on the
-/// first, so the fields on the hidden tab have to be real widgets that populate normally.
-/// Building them lazily would make the first commit write defaults over half the account.
+/// The tabs split the page by scope, not by difficulty: the Account tab owns the server
+/// table and *every* field belonging to the selected server, the Advanced tab owns only
+/// settings that apply to the whole engine. Put a per-account field on the Advanced tab
+/// and it sits on a tab with no account chooser, where it reads as global — which is a
+/// wrong answer to "what does this apply to", not a layout nit.
 void TestOptionsDialogSizing::usenetPageHasAccountAndAdvancedTabs()
 {
     OptionsDialog dlg(nullptr, nullptr);
@@ -170,14 +183,63 @@ void TestOptionsDialogSizing::usenetPageHasAccountAndAdvancedTabs()
     QVERIFY(tabs);
     QCOMPARE(tabs->count(), 2);
 
+    // By object name, because the titles are tr()'d and a translated build would
+    // otherwise pass this test by finding nothing at all.
+    const auto perAccountGroups = [](QWidget* tab) {
+        int found = 0;
+        for (const QWidget* w : tab->findChildren<QWidget*>())
+            found += w->objectName().startsWith(QStringLiteral("usenetAccount")) ? 1 : 0;
+        return found;
+    };
+    QCOMPARE(perAccountGroups(tabs->widget(0)), 2);
+    QCOMPARE(perAccountGroups(tabs->widget(1)), 0);
+
     // Both tabs are built up front, so a widget that lives on the hidden one is findable
-    // and enabled-able from the moment the page exists.
+    // and enabled-able from the moment the page exists. Building the Advanced tab lazily
+    // would make the first commit write defaults over half the global settings.
     tabs->setCurrentIndex(0);
     QVERIFY(tabs->widget(1)->findChildren<QWidget*>().size() > 5);
 
     // Each tab scrolls on its own; an outer wrapper as well would mean two scrollbars.
     QVERIFY(qobject_cast<QScrollArea*>(tabs->widget(0)));
     QVERIFY(qobject_cast<QScrollArea*>(tabs->widget(1)));
+}
+
+/// An unlimited limit left the slider at its floor of 1, so ticking the box and pressing
+/// OK throttled transfers to 1 KB/s. MFC parks it at the capacity (PPgConnection.cpp:177-184).
+void TestOptionsDialogSizing::anUnlimitedLimitParksAtTheCapacity()
+{
+    thePrefs.setMaxGraphDownloadRate(300);
+    thePrefs.setMaxDownload(0);
+    OptionsDialog dlg(nullptr, nullptr);
+
+    const auto sliders =
+        stackOf(dlg)->widget(OptionsDialog::PageConnection)->findChildren<QSlider*>();
+    QCOMPARE(sliders.size(), 2);   // download, then upload
+    QSlider* down = sliders.front();
+    QVERIFY(!down->isEnabled());
+    QCOMPARE(down->value(), 300);
+
+    bool labelShowsIt = false;
+    for (const QLabel* l : down->parentWidget()->findChildren<QLabel*>())
+        labelShowsIt |= l->text() == QStringLiteral("300 KB/s");
+    QVERIFY(labelShowsIt);
+}
+
+/// The box was read from GetPreferences, which never carried the key, so it opened
+/// unticked and the next OK switched the IPC log tab off.
+void TestOptionsDialogSizing::theIpcLogBoxShowsTheStoredValue()
+{
+    thePrefs.setEnableIpcLog(true);
+    OptionsDialog dlg(nullptr, nullptr);
+
+    QCheckBox* box = nullptr;
+    for (QCheckBox* c : dlg.findChildren<QCheckBox*>())
+        if (c->text() == QStringLiteral("Enable IPC log tab"))
+            box = c;
+    QVERIFY(box);
+    QVERIFY(box->isChecked());
+    thePrefs.setEnableIpcLog(false);
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

@@ -1,7 +1,9 @@
 #include "queue/UsenetQueue.h"
 
 #include "nntp/NntpServerPool.h"
+#include "nntp/NntpSocket.h"
 #include "nzb/NzbFile.h"
+#include "post/Par2Verifier.h"
 #include "post/UsenetUnpacker.h"
 #include "queue/ArticleWriter.h"
 #include "queue/UsenetQueueStore.h"
@@ -9,11 +11,14 @@
 #include "app/AppContext.h"
 #include "files/SharedFileList.h"
 #include "prefs/Preferences.h"
-#include "stats/Statistics.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/PathUtils.h"
+#include "utils/StringUtils.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -38,6 +43,22 @@ constexpr int kTickMs = 250;
 /// is the commonest one — so this is generous.
 constexpr int kMaxTransportRetries = 6;
 
+/// How many times one segment may fail to *write* before the item is failed with
+/// the local error. A full disk parks the queue instead and never reaches this;
+/// what this bounds is the fault that parking cannot fix — a read-only volume, a
+/// permission, a path that has gone — which would otherwise retry forever.
+constexpr int kMaxWriteFailures = 3;
+
+/// How often the free-space question is actually put to the file system. The
+/// tick runs four times a second and QStorageInfo is a syscall; the answer does
+/// not change that fast.
+constexpr int kDiskCheckIntervalMs = 2000;
+
+/// How far above the floor space has to climb before the queue starts again.
+/// Without it a release resumes, writes one article, drops back under the floor
+/// and parks again, once per article.
+constexpr qint64 kDiskUnparkHeadroom = 16 * 1024 * 1024;
+
 /// Upper bound on worker threads. Beyond this the TLS and decode work is no
 /// longer the constraint and the thread count is just context switching.
 constexpr int kMaxWorkers = 8;
@@ -52,6 +73,19 @@ constexpr qint64 kStreamingBoostMs = 30000;
 /// returning false is the real terminator; this catches the case where it keeps
 /// finding volumes that somehow do not improve the block count.
 constexpr int kMaxPar2Rounds = 8;
+
+/// Refuse to read an index .par2 larger than this for its file list.
+///
+/// listFiles() scans no data, so the cost is reading the packets — but it is
+/// blocking IO on the daemon thread, and an index this size means a release big
+/// enough that post-processing can do the naming instead. A real one is
+/// kilobytes.
+constexpr qint64 kMaxPar2IndexBytes = 8 * 1024 * 1024;
+
+/// Ceiling on how many articles the naming prefetch takes per file before giving
+/// up on reaching PAR2's 16 KiB window. Real posts need one; this only stops an
+/// NZB full of tiny segments from turning the prefetch into the whole download.
+constexpr int kMaxPrefetchArticles = 8;
 
 /// Flush the usage meters after this much unrecorded traffic, whatever the
 /// timer says. An unclean exit otherwise costs a whole save interval of prepaid
@@ -95,6 +129,9 @@ UsenetQueue::UsenetQueue(QObject* parent)
     qRegisterMetaType<UsenetFetchRequest>("eMule::usenet::UsenetFetchRequest");
     qRegisterMetaType<UsenetFetchResult>("eMule::usenet::UsenetFetchResult");
     qRegisterMetaType<QList<eMule::NewsServer>>("QList<eMule::NewsServer>");
+    qRegisterMetaType<UsenetEncryptedPreviewJob>("eMule::usenet::UsenetEncryptedPreviewJob");
+    qRegisterMetaType<UsenetEncryptedPreviewResult>(
+        "eMule::usenet::UsenetEncryptedPreviewResult");
 }
 
 UsenetQueue::~UsenetQueue()
@@ -115,6 +152,7 @@ void UsenetQueue::start()
     // Meters before anything can spend: the base has to be on hand before the
     // first article lands, or this run's bytes would be added to zero.
     m_usage.load();
+    m_history.load();
     m_usage.setAccounts(m_servers);
     m_usage.rollOverIfDue();
     refreshQuotaState();
@@ -150,6 +188,11 @@ void UsenetQueue::start()
     startWorkers();
     startPostProcessor();
 
+    // The counter is process-wide and monotonic, so the first tick's delta must
+    // not include everything read before this start.
+    m_lastWireBytes = NntpSocket::totalWireBytesRead();
+    m_stats.restartSampling();
+
     if (!m_tickTimer) {
         m_tickTimer = new QTimer(this);
         m_tickTimer->setInterval(kTickMs);
@@ -169,11 +212,16 @@ void UsenetQueue::stop()
     if (m_tickTimer)
         m_tickTimer->stop();
 
+    // Nothing is arriving any more; a restart must not read the last run's rate.
+    m_rateWindow.clear();
+
     stopWorkers();
     stopPostProcessor();
 
-    for (auto& rt : m_items)
+    for (auto& rt : m_items) {
         cancelDirectUnpack(*rt);
+        cancelEncryptedPreview(*rt);
+    }
 
     // A probe does not survive the workers going away. Put the item back where
     // it was so the sidecar records something resumable — load() would demote it
@@ -266,7 +314,7 @@ void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryInterv
 // ---------------------------------------------------------------------------
 
 QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString& error,
-                            UsenetAddSource source, UsenetAddOutcome* outcome)
+                            const UsenetAddOptions& options, UsenetAddOutcome* outcome)
 {
     const auto report = [outcome](UsenetAddOutcome value) {
         if (outcome)
@@ -287,15 +335,27 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     }
 
     QString displayName = name.isEmpty() ? nzb.name : name;
+
+    // `Release{{secret}}.nzb`, the convention NZBGet writes. This used to live
+    // in NzbFile::parseFile(), which nothing but tests ever called — every real
+    // intake path comes through here with the name as a separate argument, so
+    // the convention has never once fired in the running program.
+    const QString namePassword = NzbFile::takePasswordFromName(displayName);
+
     if (displayName.isEmpty())
         displayName = tr("Usenet download");
 
+    if (options.source == UsenetAddSource::Manual && !options.password.isEmpty())
+        nzb.password = options.password;
+    else if (nzb.password.isEmpty())
+        nzb.password = namePassword.isEmpty() ? options.password : namePassword;
+
     // Before anything is created on disk: the preallocation loop below does not
     // clean up after itself, so a refusal must happen ahead of it.
-    if (const UsenetQueueItem* existing = findDuplicate(nzb, displayName, source, error)) {
-        logInfo(QStringLiteral("Usenet: not adding \"%1\" — already queued as \"%2\"")
-                    .arg(displayName, existing->name));
-        report(UsenetAddOutcome::Duplicate);
+    const UsenetAddOutcome verdict = findDuplicate(nzb, displayName, options.force, error);
+    if (verdict != UsenetAddOutcome::Added) {
+        logInfo(QStringLiteral("Usenet: not adding \"%1\": %2").arg(displayName, error));
+        report(verdict);
         return {};
     }
 
@@ -309,9 +369,23 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     // construction. quotaParked is the counter-example — as a flag its two call
     // sites had to be remembered separately, and forgetting one costs the user a
     // share of their line indefinitely.
-    item->status = source == UsenetAddSource::Automatic && thePrefs.usenetAutoAddPaused()
+    item->status = options.paused
+                           || (options.source == UsenetAddSource::Automatic
+                               && thePrefs.usenetAutoAddPaused())
                        ? UsenetItemStatus::Paused
                        : UsenetItemStatus::Queued;
+    item->priority = clampUsenetPriority(options.priority);
+    // Same shape as DownloadQueue::addDownload(): a category the caller picked
+    // is never overridden, and only 0 -- "nobody chose" -- reaches the matcher.
+    // Here rather than at each intake path for the reason directly above.
+    item->category = options.category > 0
+                         ? options.category
+                         : matchAutoCategory(thePrefs.categories(), item->name);
+    if (options.category <= 0 && item->category > 0) {
+        logInfo(QStringLiteral("Usenet: auto-categorised %1 into \"%2\"")
+                    .arg(item->name,
+                         thePrefs.category(item->category).displayName()));
+    }
     item->articleDigest = nzbArticleDigest(item->nzb);
     item->releaseKey = nzbReleaseKey(item->name, item->nzb.totalEncodedBytes());
     item->initFileStates(thePrefs.usenetTempDir());
@@ -418,12 +492,22 @@ bool UsenetQueue::removeItem(const QString& id, bool deleteFiles)
         // except it is ours to join: it blocks in a read of a directory that is
         // about to be deleted.
         cancelDirectUnpack(*m_items.at(size_t(i)));
+        cancelEncryptedPreview(*m_items.at(size_t(i)));
 
         if (deleteFiles) {
             const QString itemDir =
                 QDir(thePrefs.usenetTempDir()).filePath(id);
             QDir(itemDir).removeRecursively();
         }
+        // Recorded before the erase, while the item is still readable. A release
+        // that finished and is only now being cleared is still Downloaded —
+        // record() keeps that, so clearing a row cannot read back as giving up.
+        const UsenetQueueItem& item = *m_items.at(size_t(i))->item;
+        m_history.record(item, item.status == UsenetItemStatus::Complete
+                                   ? UsenetHistoryState::Downloaded
+                                   : UsenetHistoryState::Cancelled);
+        m_history.save();
+
         UsenetQueueStore::remove(id);
         m_items.erase(m_items.begin() + i);
 
@@ -444,6 +528,7 @@ bool UsenetQueue::pauseItem(const QString& id)
     // No more volumes are coming, so a run would block until resume. Drop it;
     // the set restarts from volume one when the download does, at disk speed.
     cancelDirectUnpack(*rt);
+    cancelEncryptedPreview(*rt);
     persist(*rt);
     emit itemChanged(id);
     return true;
@@ -457,6 +542,28 @@ bool UsenetQueue::resumeItem(const QString& id)
     if (rt->item->status != UsenetItemStatus::Paused
         && rt->item->status != UsenetItemStatus::Failed)
         return false;
+
+    // A failed item whose accounts have changed since it failed re-asks the
+    // articles nobody had. That is what "retries from the top of the ladder"
+    // below can actually mean for the usual failure, where every segment is
+    // already resolved and the plan is empty.
+    //
+    // Gated on the ladder having changed rather than done unconditionally,
+    // because Resume has three callers: this one, the category-wide resume —
+    // where "All" is every item in the queue — and setItemPassword(), which
+    // resumes so the new passphrase is tried. Re-asking a few thousand dead
+    // articles across three rungs, to be told the same thing, is not what any of
+    // the three asked for. When the account list is the same, the explicit
+    // retry is the way to insist.
+    if (rt->item->status == UsenetItemStatus::Failed
+        && !rt->item->failedLadder.isEmpty()
+        && rt->item->failedLadder != serverLadderDigest()) {
+        logInfo(QStringLiteral("Usenet: \"%1\" is being resumed with a different "
+                               "set of accounts — asking again for what was missing")
+                    .arg(rt->item->name));
+        if (retryMissingArticles(id))
+            return true;
+    }
 
     rt->item->status = UsenetItemStatus::Queued;
     rt->item->error.clear();
@@ -478,16 +585,156 @@ bool UsenetQueue::resumeItem(const QString& id)
     return true;
 }
 
+bool UsenetQueue::retryMissingArticles(const QString& id)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt)
+        return false;
+
+    // Failed only, and never over a running job. A Complete item has nothing
+    // short in it, and a post-processing one is being read from another thread.
+    if (rt->item->status != UsenetItemStatus::Failed || rt->postRunning)
+        return false;
+
+    // Every file has to be able to say *which* articles it is short of. A
+    // sidecar written before the missing map existed carries a count and no
+    // map, and guessing from the count would re-ask the whole file.
+    for (const UsenetFileState& st : rt->item->files) {
+        if (st.missingSegments != int(st.missing.count(true))) {
+            logWarning(QStringLiteral("Usenet: cannot retry \"%1\" — it was queued "
+                                      "before this version recorded which articles "
+                                      "were missing")
+                           .arg(rt->item->name));
+            return false;
+        }
+    }
+
+    rt->refetch = {};
+    QStringList refused;
+    for (int f = 0; f < rt->item->files.size(); ++f) {
+        if (rt->item->files.at(f).missingSegments <= 0)
+            continue;
+        if (!rearmMissingSegments(*rt, f))
+            refused.append(rt->item->bestFileName(f));
+    }
+
+    if (rt->refetch.armed == 0) {
+        if (!refused.isEmpty()) {
+            logWarning(QStringLiteral("Usenet: nothing to retry for \"%1\" — %2 no "
+                                      "longer on disk")
+                           .arg(rt->item->name, refused.join(QStringLiteral(", "))));
+        }
+        return false;
+    }
+
+    // The recovery cycle gets its rounds back: a retry that fills holes changes
+    // what a verify will conclude, and the old count belongs to the old attempt.
+    // requestedPar2 is kept — those volumes were already fetched or planned, and
+    // asking for them twice would buy the same blocks twice.
+    rt->par2Rounds = 0;
+
+    // Not restartDirectUnpack(), which resumeItem() does: a replay offers every
+    // sealed volume and then blocks forever on the one with the hole, and at
+    // end-of-set libarchive returns a *prefix* extraction that post-processing
+    // would treat as a finished unpack. Direct unpack is a latency optimisation
+    // for a live download; a retry is not latency-sensitive.
+    cancelDirectUnpack(*rt);
+
+    rt->item->status = UsenetItemStatus::Queued;
+    rt->item->error.clear();
+    rt->attempts.clear();       // back to rung 0 over the accounts configured now
+    rebuildPlan(*rt);
+    persist(*rt);
+
+    logInfo(QStringLiteral("Usenet: asking again for %1 missing article(s) of \"%2\"")
+                .arg(rt->refetch.armed)
+                .arg(rt->item->name));
+
+    emit itemChanged(id);
+    dispatch();
+    return true;
+}
+
 bool UsenetQueue::setItemPriority(const QString& id, int priority)
 {
     ItemRuntime* rt = runtimeFor(id);
     if (!rt)
         return false;
 
-    rt->item->priority = priority;
+    // Clamped here rather than at the handler, for the reason addNzb() clamps
+    // there too: a value outside the five levels makes a bucket nothing can name
+    // and no menu entry can ever select again.
+    rt->item->priority = clampUsenetPriority(priority);
     persist(*rt);
     emit itemChanged(id);
     dispatch();
+    return true;
+}
+
+bool UsenetQueue::setItemCategory(const QString& id, int category)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt)
+        return false;
+
+    const int wanted = category > 0 ? category : 0;
+    if (rt->item->category == wanted)
+        return true;
+
+    // No dispatch(): a category decides where a release *lands*, not when it
+    // runs. Only the ED2K queue sorts on it, and only because a category carries
+    // the a4af rank that Usenet has no equivalent of.
+    rt->item->category = wanted;
+    persist(*rt);
+    emit itemChanged(id);
+    return true;
+}
+
+void UsenetQueue::remapCategories(const QHash<uint32, uint32>& oldToNew)
+{
+    for (auto& rt : m_items) {
+        const int mapped = remapCategoryIndex(rt->item->category, oldToNew);
+        if (mapped == rt->item->category)
+            continue;
+
+        rt->item->category = mapped;
+        persist(*rt);
+        emit itemChanged(rt->item->id);
+    }
+}
+
+bool UsenetQueue::setItemPassword(const QString& id, const QString& password)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt)
+        return false;
+
+    if (rt->item->nzb.password == password)
+        return true;
+
+    rt->item->nzb.password = password;
+
+    // The streaming index caches what it parsed out of the volumes, and for an
+    // encrypted set that answer was "cannot read this". A new password makes it
+    // a different question.
+    rt->streamIndex.invalidate();
+
+    // A prefix decrypted with the old password is garbage, and the high-water
+    // mark that protects it from shrinking would otherwise protect the garbage.
+    cancelEncryptedPreview(*rt);
+    if (!rt->encryptedPreview.path.isEmpty())
+        QFile::remove(rt->encryptedPreview.path);
+    rt->encryptedPreview = EncryptedPreviewRun{};
+
+    if (rt->item->status == UsenetItemStatus::Failed) {
+        // Everything is already on disk; resumeItem() clears the error, finds
+        // nothing left to fetch and runs post-processing again on the next tick.
+        persist(*rt);
+        return resumeItem(id);
+    }
+
+    persist(*rt);
+    emit itemChanged(id);
     return true;
 }
 
@@ -530,8 +777,7 @@ UsenetQueue::PreviewInfo UsenetQueue::previewability(const QString& itemId, int 
         return out;
     }
 
-    const QString name = st.articleFileName.isEmpty() ? item.nzb.files.at(fileIndex).fileName
-                                                      : st.articleFileName;
+    const QString name = item.bestFileName(fileIndex);
     if (name.isEmpty() || !UsenetUnpacker::isArchiveVolume(name))
         return out;
 
@@ -601,6 +847,15 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
         if (streamFromExtraction(*rt, fileIndex, entryOrdinal, info)) {
             if (active) {
                 promoteExtractionVolume(*rt, fileIndex);
+                dispatch();
+            }
+            return info;
+        }
+        // Last resort, and the only one that works for a password-protected
+        // set: re-run the external unpacker over the volumes that have landed.
+        if (streamFromEncryptedPreview(*rt, fileIndex, info)) {
+            if (active) {
+                promoteEncryptedPreviewVolumes(*rt, fileIndex);
                 dispatch();
             }
             return info;
@@ -874,6 +1129,14 @@ bool UsenetQueue::hasActiveDownloads() const
     return false;
 }
 
+int UsenetQueue::activeFetches() const
+{
+    int total = 0;
+    for (const int inFlight : m_workerInFlight)
+        total += inFlight;
+    return total;
+}
+
 // ---------------------------------------------------------------------------
 // Private — workers
 // ---------------------------------------------------------------------------
@@ -911,10 +1174,19 @@ void UsenetQueue::startWorkers()
         // thread. A socket destroyed from another thread is a crash, not a leak.
         connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 
-        connect(worker, &UsenetWorker::segmentFinished,
-                this, &UsenetQueue::onSegmentFinished, Qt::QueuedConnection);
-        connect(worker, &UsenetWorker::capacityChanged,
-                this, &UsenetQueue::onCapacityChanged, Qt::QueuedConnection);
+        // Both carry this worker set's generation. Results and capacities are
+        // addressed by slot index, the indices restart at 0 on every rebuild,
+        // and everything a torn-down worker posted is still in the queue.
+        const quint32 generation = m_workerGeneration;
+        connect(worker, &UsenetWorker::segmentFinished, this,
+                [this, generation](const UsenetFetchResult& result) {
+                    onSegmentFinished(result, generation == m_workerGeneration);
+                }, Qt::QueuedConnection);
+        connect(worker, &UsenetWorker::capacityChanged, this,
+                [this, generation](int workerIndex, int capacity) {
+                    if (generation == m_workerGeneration)
+                        onCapacityChanged(workerIndex, capacity);
+                }, Qt::QueuedConnection);
 
         m_threads.append(thread);
         m_workers.append(worker);
@@ -982,6 +1254,10 @@ void UsenetQueue::startWorkers()
 
 void UsenetQueue::stopWorkers()
 {
+    // First: everything these workers have already posted, and everything the
+    // blocking shutdown below is about to post, is now stale.
+    ++m_workerGeneration;
+
     for (UsenetWorker* w : m_workers) {
         // Blocking, so every socket is torn down inside its own thread before the
         // event loop that owns it stops.
@@ -1077,48 +1353,113 @@ void UsenetQueue::rebuildPlan(ItemRuntime& rt)
 
     const UsenetQueueItem& item = *rt.item;
 
-    // Two passes, PAR2 last: the index .par2 is small and only interesting if
-    // something came up short, so there is no reason to spend a connection on it
-    // first.
+    // Unfetched segments of a file, in part-number order rather than document
+    // order. An NZB is free to list its <segment> elements in any order and
+    // plenty do; NzbInfo only sorts inside hasAllSegments(). Fetching in part
+    // order is what makes the written prefix grow from byte 0, which is the
+    // whole of what streaming needs.
     //
-    // Recovery volumes are a stronger case and are not scheduled at all. They
-    // are typically a tenth of a release and are pure waste on a healthy one, so
+    // The *indices* are sorted, never the segment list itself: `done` is a bit
+    // per index into that list, so reordering it would silently reattribute
+    // every bit in the release.
+    const auto pendingSegments = [&](int f) {
+        QList<int> order;
+        if (f < 0 || f >= item.files.size() || f >= item.nzb.files.size())
+            return order;
+
+        const UsenetFileState& st = item.files.at(f);
+        const auto& segments = item.nzb.files.at(f).segments;
+        order.reserve(segments.size());
+        for (int s = 0; s < segments.size(); ++s) {
+            if (s < st.done.size() && st.done.testBit(s))
+                continue;
+            order.append(s);
+        }
+        std::stable_sort(order.begin(), order.end(), [&segments](int a, int b) {
+            return segments.at(a).number < segments.at(b).number;
+        });
+        return order;
+    };
+
+    // The index .par2, as opposed to a recovery volume. Testing isPar2() alone
+    // here would hoist *requested* recovery volumes to the front of a round-two
+    // plan, ahead of the payload the repair is for.
+    const auto isIndexPar2 = [&](int f) {
+        const NzbFileInfo& info = item.nzb.files.at(f);
+        return info.isPar2() && !info.isPar2Volume();
+    };
+
+    // Normally the index .par2 goes last: it is small and only interesting if
+    // something came up short. On a release that cannot name itself that is
+    // exactly backwards — it is then the one file that says what the others are.
+    // It is already in the plan either way, so this costs no extra articles.
+    const bool hoistPar2 = rt.par2NamesState != ItemRuntime::Par2NamesState::Loaded
+                           && m_par2Enabled && m_renameEnabled
+                           && Par2Verifier::available()
+                           && looksObfuscated(item);
+
+    // File -> the segments pass 2 already took, so pass 3 does not list them
+    // twice. Harmless in dispatch(), which checks inFlight and done, but a plan
+    // nobody can read back is its own bug.
+    QHash<int, QSet<int>> prefetched;
+
+    if (hoistPar2) {
+        for (int f = 0; f < item.nzb.files.size(); ++f) {
+            if (f >= item.files.size() || !isPlanned(rt, f) || !isIndexPar2(f))
+                continue;
+            for (const int s : pendingSegments(f))
+                rt.plan.append(SegmentKey{f, s}.packed());
+        }
+
+        // The opening of every still-unnamed payload file: the prefetch pass.
+        //
+        // Enough articles to reach PAR2's 16 KiB identity window, not one --
+        // "one article" is only the same thing while articles are ~700 KB, and a
+        // post with small ones would leave every name unsettled forever while
+        // the prefetch asked again each tick. Sized from the *encoded* bytes the
+        // NZB declares, which over-estimates the decoded payload and is
+        // therefore safe in the direction that matters, and capped so a
+        // pathological NZB cannot turn the prefetch into the whole download.
+        for (int f = 0; f < item.nzb.files.size(); ++f) {
+            if (f >= item.files.size() || !isPlanned(rt, f))
+                continue;
+            if (item.nzb.files.at(f).isPar2() || !item.files.at(f).par2FileName.isEmpty())
+                continue;
+
+            const auto& segments = item.nzb.files.at(f).segments;
+            qint64 have = item.files.at(f).availableFrom(0);
+            int taken = 0;
+
+            for (const int s : pendingSegments(f)) {
+                if (have >= kPar2Hash16kBytes || taken >= kMaxPrefetchArticles)
+                    break;
+                prefetched[f].insert(s);
+                rt.plan.append(SegmentKey{f, s}.packed());
+                have += s < segments.size() ? segments.at(s).bytes : 0;
+                ++taken;
+            }
+        }
+    }
+
+    // Payload, then PAR2. Recovery volumes are not scheduled at all: they are
+    // typically a tenth of a release and pure waste on a healthy one, so
     // isPlanned() keeps them out until a verify says how many are needed and
     // requestPar2Volumes() puts exactly those into requestedPar2.
     for (const bool par2Pass : {false, true}) {
         for (int f = 0; f < item.nzb.files.size(); ++f) {
             if (item.nzb.files.at(f).isPar2() != par2Pass)
                 continue;
-            if (f >= item.files.size())
+            if (f >= item.files.size() || !isPlanned(rt, f))
                 continue;
-            if (!isPlanned(rt, f))
-                continue;
+            if (hoistPar2 && par2Pass && isIndexPar2(f))
+                continue;   // already at the front
 
-            const UsenetFileState& st = item.files.at(f);
-            const auto& segments = item.nzb.files.at(f).segments;
-
-            // In part-number order, not document order. An NZB is free to list
-            // its <segment> elements in any order and plenty do; NzbInfo only
-            // sorts inside hasAllSegments(). Fetching in part order is what
-            // makes the written prefix grow from byte 0, which is the whole of
-            // what streaming needs.
-            //
-            // The *indices* are sorted, never the segment list itself: `done`
-            // is a bit per index into that list, so reordering it would
-            // silently reattribute every bit in the release.
-            QList<int> order;
-            order.reserve(segments.size());
-            for (int s = 0; s < segments.size(); ++s) {
-                if (s < st.done.size() && st.done.testBit(s))
+            const QSet<int> taken = prefetched.value(f);
+            for (const int s : pendingSegments(f)) {
+                if (taken.contains(s))
                     continue;
-                order.append(s);
-            }
-            std::stable_sort(order.begin(), order.end(), [&segments](int a, int b) {
-                return segments.at(a).number < segments.at(b).number;
-            });
-
-            for (const int s : std::as_const(order))
                 rt.plan.append(SegmentKey{f, s}.packed());
+            }
         }
     }
 }
@@ -1138,6 +1479,19 @@ void UsenetQueue::dispatch()
     // tick clears this. Without it, every "no connection available" result would
     // trigger another identical round.
     if (m_starved)
+        return;
+
+    // No room to put what we would ask for. Like the allowance, this waits: it
+    // never touches `tried`, never spends a retry and never reaches
+    // markSegmentMissing(), so a full disk cannot invent a hole in a release
+    // that is fine.
+    //
+    // Measured here as well as on the tick because an add dispatches
+    // immediately: without this the first release of a session would be fetched
+    // before the first tick had ever looked at the volume. Self-gated, so this
+    // is a syscall at most every kDiskCheckIntervalMs however often it is asked.
+    refreshDiskState();
+    if (m_diskBlocked)
         return;
 
     // Once per round rather than once per segment, so every segment in a round
@@ -1310,8 +1664,18 @@ void UsenetQueue::onTick()
 {
     m_starved = false;
 
-    m_currentRate = m_bytesThisTick * 1000 / kTickMs;
-    m_bytesThisTick = 0;
+    // Cheap: self-gated to kDiskCheckIntervalMs, and a no-op when the user has
+    // the check switched off.
+    refreshDiskState();
+
+    // Wire bytes as they are read, not decoded bytes at article completion: a
+    // throttled connection spends seconds on one article, and forty that started
+    // together finish together, so a completion count reads as bursts and gaps
+    // while the line is in fact full the whole time.
+    const qint64 wire = NntpSocket::totalWireBytesRead();
+    m_rateWindow.push(wire - m_lastWireBytes, kTickMs);
+    m_lastWireBytes = wire;
+    m_stats.tick(kTickMs, currentRate(), NntpSocket::openConnectionCount());
 
     // The allowance clock, on the queue's own tick rather than lazily inside
     // add(). A parked queue is by definition spending nothing, so a check that
@@ -1363,6 +1727,11 @@ void UsenetQueue::onTick()
             }
         }
 
+        // The restart path for the PAR2 name list. A restored item's index .par2
+        // sealed in an earlier session, so no sealFile() is coming to ask for it
+        // — the same gap checkItemCompletion() is called here to cover.
+        learnPar2Names(*rt);
+
         if (pending) {
             rebuildPlan(*rt);
         } else {
@@ -1381,7 +1750,7 @@ void UsenetQueue::onTick()
 // Private — results
 // ---------------------------------------------------------------------------
 
-void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result)
+void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool current)
 {
     // First, and above the item lookup below. Bytes spent on an article whose
     // item was removed mid-flight were still spent, and stopWorkers() delivers
@@ -1390,8 +1759,11 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result)
     // applyServers() replaces that list on every settings save.
     if (!result.accountId.isEmpty() && result.rawBytes > 0)
         m_usage.add(result.accountId, result.rawBytes);
+    m_stats.noteResult(result);
 
-    if (result.workerIndex >= 0 && result.workerIndex < m_workerInFlight.size()
+    // Only for a worker that still exists. A torn-down worker's slot number now
+    // belongs to its replacement, and stopWorkers() already zeroed the list.
+    if (current && result.workerIndex >= 0 && result.workerIndex < m_workerInFlight.size()
         && m_workerInFlight.at(result.workerIndex) > 0) {
         m_workerInFlight[result.workerIndex] -= 1;
     }
@@ -1409,13 +1781,38 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result)
     // markSegmentMissing() would set the resolved bit — stopping the article
     // ever being fetched — and inflate the PAR2 damage estimate at the same time.
     if (result.probeOnly) {
-        handleProbeResult(*rt, result);
+        // A probe from a torn-down worker answers a check that no longer exists;
+        // applyServers() put the item back to its resume status.
+        if (current)
+            handleProbeResult(*rt, result);
         dispatch();
         return;
     }
 
     const quint64 key = SegmentKey{result.fileIndex, result.segmentIndex}.packed();
-    rt->inFlight.remove(key);
+    if (current)
+        rt->inFlight.remove(key);
+
+    // A failure nobody is to blame for and nothing can be learned from:
+    //
+    //   - aborted / stale: we cut the article off ourselves (engine stop,
+    //     settings save). stopWorkers() already cleared every in-flight marker
+    //     and rewound every plan cursor, so the segment is dispatched again as
+    //     it stands. Spending a retry here is how seven settings saves used to
+    //     fail an item with "Shutting down";
+    //   - the item is no longer active: a paused or failed item's leftovers.
+    //     resumeItem() clears the attempts and rebuilds the plan, and failing an
+    //     already-failed item again would count and announce it twice.
+    if (result.error != NntpError::None
+        && (result.aborted || !current || !rt->item->isActive())) {
+        // The one case where the plan still needs it back: a live worker's own
+        // shutdown result, which stopWorkers() has not rewound (yet).
+        if (current && rt->item->isActive()) {
+            rt->plan.insert(qBound(0, rt->planCursor, int(rt->plan.size())), key);
+        }
+        dispatch();
+        return;
+    }
 
     if (result.error == NntpError::None) {
         markSegmentDone(*rt, result);
@@ -1450,8 +1847,14 @@ void UsenetQueue::markSegmentDone(ItemRuntime& rt, const UsenetFetchResult& resu
         return;
 
     UsenetFileState& st = rt.item->files[result.fileIndex];
-    if (result.segmentIndex >= 0 && result.segmentIndex < st.done.size())
+    if (result.segmentIndex >= 0 && result.segmentIndex < st.done.size()) {
+        // Already resolved. A torn-down worker's result can arrive after the
+        // segment was dispatched again, and adding its bytes a second time
+        // would put the file over its own size.
+        if (st.done.testBit(result.segmentIndex))
+            return;
         st.done.setBit(result.segmentIndex);
+    }
 
     st.decodedBytes += result.decodedBytes;
 
@@ -1473,13 +1876,26 @@ void UsenetQueue::markSegmentDone(ItemRuntime& rt, const UsenetFetchResult& resu
     rt.attempts.remove(SegmentKey{result.fileIndex, result.segmentIndex}.packed());
     rt.dirty = true;
 
-    m_bytesThisTick += result.decodedBytes;
+    // The one place a hole is allowed to close: the bytes are on disk now. Doing
+    // it when a retry *arms* the segment instead would tell direct unpack, the
+    // encrypted preview and post-processing that a file padded with zeros is
+    // whole, and each of them would act on it.
+    if (result.segmentIndex >= 0 && result.segmentIndex < st.missing.size()
+        && st.missing.testBit(result.segmentIndex)) {
+        st.missing.clearBit(result.segmentIndex);
+        st.missingSegments = qMax(0, st.missingSegments - 1);
+        noteRefetchResolved(rt, result.fileIndex, result.segmentIndex, /*landed*/ true);
+    }
 
-    // Usenet bytes are real received bytes and belong in the session total the
-    // same as ED2K's. The counter is std::atomic, so this is safe wherever it
-    // runs — though in practice this is the daemon thread.
-    if (theApp.statistics && result.decodedBytes > 0)
-        theApp.statistics->addSessionReceivedBytes(quint64(result.decodedBytes));
+    // Payload of a recovery volume a short verify asked for. The decoded bytes
+    // themselves were counted in noteResult(); the Statistics Transfer branch is
+    // eD2K's alone.
+    if (rt.item->requestedPar2.contains(result.fileIndex) && result.decodedBytes > 0)
+        m_stats.bump(&UsenetCounters::recoveryBytes, quint64(result.decodedBytes));
+
+    // Before the completion check, which may seal the file: a name may only be
+    // learned while it is still unsealed.
+    resolvePar2Name(rt, result.fileIndex);
 
     checkFileCompletion(rt, result.fileIndex);
 }
@@ -1488,6 +1904,40 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
 {
     const quint64 key = SegmentKey{result.fileIndex, result.segmentIndex}.packed();
     SegmentAttempt attempt = rt.attempts.value(key);
+
+    // A local fault says nothing about any server, so it takes none of the
+    // ladder's machinery with it: the account is not added to `tried`, no
+    // transport retry is spent, `requiredFailure` stays clear, and the segment
+    // simply goes back into the plan at the cursor. Before this branch existed a
+    // full disk was a ProtocolError, which backed the provider off for a minute
+    // and — if the account happened to be optional — booked the article as
+    // missing on a release that was perfectly fine.
+    if (result.error == NntpError::WriteFailed) {
+        attempt.writeFailures += 1;
+
+        // Re-check now rather than waiting for the tick: if the volume really is
+        // full the queue should park this round, not after another six articles
+        // have failed the same way.
+        refreshDiskState(/*force*/ true);
+
+        // A fault that is not about space — permissions, a read-only volume, a
+        // path that has gone — would otherwise spin here forever. Fail the item
+        // with the local error text, which is the one thing this code never used
+        // to do: a local problem failing locally, naming the path and not a
+        // provider.
+        if (attempt.writeFailures > kMaxWriteFailures && !m_diskBlocked) {
+            rt.attempts.remove(key);
+            failItem(rt, tr("Cannot write to the download folder: %1")
+                             .arg(result.text.isEmpty() ? describeNntpError(result.error)
+                                                        : result.text));
+            return;
+        }
+
+        rt.attempts.insert(key, attempt);
+        rt.plan.insert(qBound(0, rt.planCursor, int(rt.plan.size())), key);
+        rt.dirty = true;
+        return;
+    }
 
     const qint64 posted = (result.fileIndex >= 0
                            && result.fileIndex < rt.item->nzb.files.size())
@@ -1513,8 +1963,14 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
             // Genuinely missing everywhere. The file is short; PAR2 repair in
             // phase 4 is what will rescue it. Do not fail the whole item — a
             // release with one dead article is usually still repairable.
-            markSegmentMissing(rt, result.fileIndex, result.segmentIndex,
-                               result.messageId, tr("missing on every server"));
+            //
+            // "Damaged" rather than "missing" when the last server to be asked
+            // had a copy it could not decode: the two look identical from here
+            // and read very differently in a log.
+            markSegmentMissing(rt, result.fileIndex, result.segmentIndex, result.messageId,
+                               result.error == NntpError::ArticleCorrupt
+                                   ? tr("no server has an undamaged copy")
+                                   : tr("missing on every server"));
             checkFileCompletion(rt, result.fileIndex);
             return;
         }
@@ -1547,14 +2003,12 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
                 checkFileCompletion(rt, result.fileIndex);
                 return;
             }
-            rt.item->status = UsenetItemStatus::Failed;
-            rt.item->error = result.text.isEmpty() ? describeNntpError(result.error)
-                                                   : result.text;
+            // Through failItem(), not by hand: an item that dies here has the
+            // same extraction and preview runs waiting on volumes that are now
+            // never coming as one that dies in post-processing.
             rt.attempts.remove(key);
-            rt.dirty = true;
-            persist(rt);
-            emit itemChanged(rt.item->id);
-            emit itemFinished(rt.item->id, false, rt.item->error);
+            failItem(rt, result.text.isEmpty() ? describeNntpError(result.error)
+                                               : result.text);
             return;
         }
     }
@@ -1625,14 +2079,7 @@ void UsenetQueue::sealFile(ItemRuntime& rt, int fileIndex)
     // inferred in that case — the NZB's own `bytes` is the *encoded* size — so
     // the file is left as it is and verification will call it damaged, which is
     // the honest answer.
-    if (st.declaredSize > 0) {
-        QFile f(st.tempPath);
-        if (f.open(QIODevice::ReadWrite)) {
-            if (f.size() < st.declaredSize)
-                f.resize(st.declaredSize);
-            f.close();
-        }
-    }
+    padToDeclaredSize(st);
 
     // Drop the .usenetpart suffix and take the real filename, still inside the
     // item's scratch directory.
@@ -1648,15 +2095,23 @@ void UsenetQueue::sealFile(ItemRuntime& rt, int fileIndex)
     // whatever a file is called, and the share scan does not recurse into it in
     // the first place. Guard 2 goes on doing its real job at the other end, on
     // the staged copy inside the incoming directory.
-    const NzbFileInfo& info = rt.item->nzb.files.at(fileIndex);
-    QString name = st.articleFileName;
-    if (name.isEmpty())
-        name = info.fileName;
+    QString name = rt.item->bestFileName(fileIndex);
     if (name.isEmpty())
         name = QStringLiteral("%1-%2").arg(rt.item->name).arg(fileIndex);
-    name = QFileInfo(name).fileName();       // never let an NZB choose a directory
+    name = QFileInfo(name).fileName();       // never let a stranger choose a directory
 
     const QString itemDir = QFileInfo(st.tempPath).absolutePath();
+
+    // Already sealed under this exact name — a retry re-armed one of its
+    // articles and the last of them has just landed. uniqueDestination() tests
+    // QFile::exists() with no identity check, so asking it again would collide
+    // the file with itself and mint "movie (1).mkv".
+    if (st.tempPath == QDir(itemDir).filePath(name)) {
+        st.finalized = true;
+        rt.dirty = true;
+        return;
+    }
+
     const QString sealedPath = uniqueDestination(itemDir, name);
 
     if (st.tempPath != sealedPath) {
@@ -1670,6 +2125,14 @@ void UsenetQueue::sealFile(ItemRuntime& rt, int fileIndex)
 
     st.finalized = true;
     rt.dirty = true;
+
+    // The index .par2 is the one file in the release that says what the others
+    // are called, so the moment it lands is the moment to ask it.
+    if (fileIndex < rt.item->nzb.files.size()
+        && rt.item->nzb.files.at(fileIndex).isPar2()
+        && !rt.item->nzb.files.at(fileIndex).isPar2Volume()) {
+        learnPar2Names(rt);
+    }
 
     // The file is now its declared length on disk, so the whole of it is
     // readable — holes included, as zeros. Collapsing the interval list says
@@ -1694,6 +2157,13 @@ void UsenetQueue::sealFile(ItemRuntime& rt, int fileIndex)
 void UsenetQueue::checkItemCompletion(ItemRuntime& rt)
 {
     if (rt.postRunning)
+        return;
+
+    // Paused, failed or checking. pauseItem() does not cancel the articles
+    // already in flight, and the last of them landing must not carry the item
+    // off into post-processing behind the user's back. onTick() comes back here
+    // once the item is active again and its plan is exhausted.
+    if (!rt.item->isActive())
         return;
 
     // "Every *planned* file is finished", not every file. The recovery volumes
@@ -1729,6 +2199,12 @@ void UsenetQueue::checkItemCompletion(ItemRuntime& rt)
 void UsenetQueue::pumpDirectUnpack(ItemRuntime& rt, int fileIndex)
 {
     if (!m_directUnpackEnabled || !m_unpackEnabled)
+        return;
+    // A volume sealed by an article that outlived the download. pauseItem() and
+    // failItem() cancelled the runs precisely so nothing would sit holding a
+    // thread for volumes that are not coming; restartDirectUnpack() picks the
+    // set up again on resume.
+    if (!rt.item->isActive())
         return;
     if (fileIndex < 0 || fileIndex >= rt.item->files.size())
         return;
@@ -1951,8 +2427,8 @@ bool UsenetQueue::streamFromExtraction(ItemRuntime& rt, int fileIndex, int entry
         // Staging renamed it into the incoming directory, flattened to its base
         // name. Following it there is what keeps playback alive across the
         // moment the download finishes.
-        const QFileInfo published(
-            QDir(thePrefs.incomingDir()).filePath(QFileInfo(entry->path).fileName()));
+        const QFileInfo published(QDir(thePrefs.incomingDirForCategory(rt.item->category))
+                                      .filePath(QFileInfo(entry->path).fileName()));
         if (!published.exists())
             return true;
         path = published.absoluteFilePath();
@@ -2089,15 +2565,12 @@ QString UsenetQueue::volumeNameOf(const ItemRuntime& rt, int fileIndex)
 {
     if (fileIndex < 0 || fileIndex >= rt.item->files.size())
         return {};
+    // A sealed file already carries its real name on disk, which beats every
+    // guess; before that, whatever the best source says.
     const UsenetFileState& st = rt.item->files.at(fileIndex);
-    // A sealed file already carries its real name; before that, the best guess
-    // is what the article header said, then what the NZB claimed.
     if (st.finalized)
         return QFileInfo(st.tempPath).fileName();
-    if (!st.articleFileName.isEmpty())
-        return st.articleFileName;
-    return fileIndex < rt.item->nzb.files.size() ? rt.item->nzb.files.at(fileIndex).fileName
-                                                 : QString();
+    return rt.item->bestFileName(fileIndex);
 }
 
 void UsenetQueue::endDirectUnpackSets(ItemRuntime& rt)
@@ -2106,6 +2579,256 @@ void UsenetQueue::endDirectUnpackSets(ItemRuntime& rt)
         if (run.running && run.worker)
             run.worker->endOfSet();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Encrypted preview — the third byte source
+//
+// A password-protected set defeats both of the others. The byte map cannot
+// work in principle: the bytes on disk are encrypted, so a slice of a volume is
+// not a slice of the movie. Direct unpack cannot work in practice: it feeds
+// libarchive one volume at a time, and libarchive is exactly the thing that
+// cannot decrypt RAR.
+//
+// So run the external tool over the volumes that *have* landed and keep the
+// prefix it produces before it hits one that has not. RAR allows that because
+// its headers sit at the front of every volume. 7z does not and never will —
+// its metadata lives at the end of the set, so an incomplete one decodes to
+// zero bytes.
+//
+// Every run restarts at byte 0 with no resume, so the cost of this grows with
+// the prefix. Nothing below starts on its own: it takes a preview request, new
+// volumes since the last run, and kEncryptedPreviewRerunMs.
+// ---------------------------------------------------------------------------
+
+bool UsenetQueue::streamFromEncryptedPreview(ItemRuntime& rt, int fileIndex, StreamInfo& info)
+{
+    if (!thePrefs.usenetEncryptedPreview())
+        return false;
+
+    // No password, nothing to decrypt with. The refusal the user then sees names
+    // the password, which is the actionable half of the problem.
+    if (rt.item->nzb.password.isEmpty())
+        return false;
+
+    const auto position = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, fileIndex));
+    if (position.index < 0)
+        return false;
+    if (!setIsRar(rt, position.baseName))
+        return false;
+
+    // A keep-pace extraction that already ran and failed for some *other* reason
+    // settles the question: an external decryptor can do nothing libarchive
+    // could not, and spawning one per poll for a set that is merely broken is
+    // pure cost. Only meaningful when direct unpack is on — with it off there is
+    // no run to ask, and the password plus the format is all we have.
+    const auto unpack = rt.directUnpack.constFind(position.baseName);
+    if (unpack != rt.directUnpack.constEnd() && !unpack->running && !unpack->result.ok
+        && !unpack->result.encrypted) {
+        return false;
+    }
+
+    EncryptedPreviewRun& run = rt.encryptedPreview;
+    if (!run.setKey.isEmpty() && run.setKey != position.baseName)
+        return false;   // a second set in the same release; one run per item
+    if (run.refused)
+        return false;
+
+    maybeStartEncryptedPreview(rt, position.baseName);
+
+    // Everything from here answers "wait" rather than "never", the same
+    // contract streamFromExtraction() keeps: the route treats a reason as final,
+    // and a player that gets one does not come back.
+    if (run.bytes <= 0 || run.memberSize <= 0 || run.member.isEmpty())
+        return true;
+    if (!QFileInfo::exists(run.path))
+        return true;
+
+    info.fileName = QFileInfo(run.member).fileName();
+    info.totalSize = run.memberSize;
+    info.availableEnd = qMin(run.bytes, run.memberSize);
+    info.complete = run.bytes >= run.memberSize;
+    info.notSeekableReason.clear();
+    info.pieces.append({run.path, 0, 0, info.availableEnd});
+    return true;
+}
+
+void UsenetQueue::maybeStartEncryptedPreview(ItemRuntime& rt, const QString& baseName)
+{
+    EncryptedPreviewRun& run = rt.encryptedPreview;
+    if (run.running) {
+        run.rerunWanted = true;
+        return;
+    }
+    if (run.refused)
+        return;
+    if (m_encryptedPreviewRuns >= kMaxEncryptedPreviews)
+        return;
+
+    const QStringList volumes = sealedVolumesOf(rt, baseName);
+    if (volumes.isEmpty())
+        return;   // volume one is not in yet; the caller is already saying "wait"
+
+    // A run over the same volumes decrypts the same bytes to the same length.
+    if (volumes.size() <= run.volumesAtLastRun && run.bytes > 0)
+        return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (run.lastRunMs != 0 && now - run.lastRunMs < kEncryptedPreviewRerunMs)
+        return;
+
+    run.setKey = baseName;
+    run.lastRunMs = now;
+    run.volumesAtLastRun = int(volumes.size());
+    run.rerunWanted = false;
+    if (run.path.isEmpty()) {
+        // Beside the volumes rather than in the incoming directory: this is
+        // scratch, and the share scan must never see it. usenetTempDir() is
+        // refused by shouldBeShared() ahead of every other rule.
+        run.path = QDir(QDir(thePrefs.usenetTempDir()).filePath(rt.item->id))
+                       .filePath(QStringLiteral(".preview-") + baseName);
+    }
+
+    if (!run.worker) {
+        run.worker = new UsenetEncryptedPreview;
+        run.thread = new QThread;
+        run.thread->setObjectName(QStringLiteral("UsenetEncryptedPreview"));
+        run.worker->moveToThread(run.thread);
+        connect(run.worker, &UsenetEncryptedPreview::finished,
+                this, &UsenetQueue::onEncryptedPreviewFinished, Qt::QueuedConnection);
+        run.thread->start();
+    }
+
+    UsenetEncryptedPreviewJob job;
+    job.itemId = rt.item->id;
+    job.setKey = baseName;
+    job.volumes = volumes;
+    job.member = run.member;         // empty on the first run; the worker chooses
+    job.memberSize = run.memberSize;
+    job.password = rt.item->nzb.password;
+    job.externalTool = thePrefs.usenetExternalUnpacker();
+    job.outPath = run.path;
+
+    run.running = true;
+    ++m_encryptedPreviewRuns;
+    QMetaObject::invokeMethod(run.worker, "run", Qt::QueuedConnection,
+                              Q_ARG(eMule::usenet::UsenetEncryptedPreviewJob, job));
+}
+
+void UsenetQueue::onEncryptedPreviewFinished(
+    const eMule::usenet::UsenetEncryptedPreviewResult& result)
+{
+    ItemRuntime* rt = runtimeFor(result.itemId);
+    if (m_encryptedPreviewRuns > 0)
+        --m_encryptedPreviewRuns;
+    if (!rt)
+        return;
+
+    EncryptedPreviewRun& run = rt->encryptedPreview;
+    run.running = false;
+    run.refused = run.refused || result.refused;
+
+    if (!result.member.isEmpty()) {
+        run.member = result.member;
+        run.memberSize = result.memberSize;
+    }
+    // Only ever raised. A run killed early, or one that lost a race with a
+    // repair, must not shorten a file a player is already reading.
+    if (result.bytes > run.bytes)
+        run.bytes = result.bytes;
+
+    if (run.rerunWanted && !run.refused) {
+        run.rerunWanted = false;
+        // Past the interval by construction: the run itself took longer than a
+        // poll, and this only fires when somebody asked during it.
+        run.lastRunMs = 0;
+        maybeStartEncryptedPreview(*rt, run.setKey);
+    }
+}
+
+void UsenetQueue::promoteEncryptedPreviewVolumes(ItemRuntime& rt, int fileIndex)
+{
+    const auto position = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, fileIndex));
+    if (position.index < 0)
+        return;
+
+    // The first unsealed volume, and the one after it. A run stops at the first
+    // gap, so that volume is exactly what the next run needs; asking for two
+    // keeps the pipeline from emptying every time one completes.
+    const int have = int(sealedVolumesOf(rt, position.baseName).size());
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
+        if (pos.index < 0 || pos.baseName != position.baseName)
+            continue;
+        const int ordinal = volumeOrdinal(rt, f, position.baseName);
+        if (ordinal < have || ordinal > have + 1)
+            continue;
+        const UsenetFileState& st = rt.item->files.at(f);
+        if (!st.finalized && st.declaredSize > 0)
+            promoteRange(rt, f, 0, st.declaredSize);
+    }
+}
+
+QStringList UsenetQueue::sealedVolumesOf(const ItemRuntime& rt, const QString& baseName) const
+{
+    QHash<int, QString> byOrdinal;
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
+        if (pos.index < 0 || pos.baseName != baseName)
+            continue;
+        const UsenetFileState& st = rt.item->files.at(f);
+        // missingSegments matters as much as finalized: sealFile() pads a hole
+        // with zeros, and zeros inside an encrypted stream are not a short read,
+        // they are wrong bytes that decrypt to garbage.
+        if (!st.finalized || st.missingSegments > 0)
+            continue;
+        const int ordinal = volumeOrdinal(rt, f, baseName);
+        if (ordinal >= 0)
+            byOrdinal.insert(ordinal, st.tempPath);
+    }
+
+    QStringList volumes;
+    for (int i = 0; byOrdinal.contains(i); ++i)
+        volumes.append(byOrdinal.value(i));
+    return volumes;
+}
+
+bool UsenetQueue::setIsRar(const ItemRuntime& rt, const QString& baseName) const
+{
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const QString name = volumeNameOf(rt, f);
+        const auto pos = UsenetUnpacker::volumePositionOf(name);
+        if (pos.index < 0 || pos.baseName != baseName)
+            continue;
+        const QString lower = name.toLower();
+        if (lower.endsWith(QLatin1String(".rar")))
+            return true;
+        // `.r00`, `.r01`, … — the old scheme, whose first volume is the bare
+        // `.rar` the branch above catches.
+        static const QRegularExpression rNN(QStringLiteral("\\.r\\d{2,3}$"));
+        if (rNN.match(lower).hasMatch())
+            return true;
+    }
+    return false;
+}
+
+void UsenetQueue::cancelEncryptedPreview(ItemRuntime& rt)
+{
+    EncryptedPreviewRun& run = rt.encryptedPreview;
+    if (!run.worker)
+        return;
+
+    run.worker->cancel();
+    run.thread->quit();
+    run.thread->wait();
+    delete run.worker;
+    delete run.thread;
+    if (run.running && m_encryptedPreviewRuns > 0)
+        --m_encryptedPreviewRuns;
+    run.worker = nullptr;
+    run.thread = nullptr;
+    run.running = false;
+    run.rerunWanted = false;
 }
 
 void UsenetQueue::cancelDirectUnpack(ItemRuntime& rt)
@@ -2141,6 +2864,8 @@ void UsenetQueue::onDirectUnpackFinished(const eMule::usenet::UsenetDirectUnpack
     if (it->running)
         --m_directUnpackRuns;
     it->running = false;
+    if (result.ok)
+        m_stats.bump(&UsenetCounters::directUnpacks);
 
     // The worker has returned from run(); its thread can go. Deleting it here
     // rather than in cancelDirectUnpack() keeps a finished run from holding a
@@ -2159,6 +2884,29 @@ void UsenetQueue::onDirectUnpackFinished(const eMule::usenet::UsenetDirectUnpack
 
 void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
 {
+    // The *other* volume. Staging renames the payload into the incoming
+    // directory and falls back to a copy when that crosses a filesystem, so
+    // publishing needs room for the whole release on a disk the download phase
+    // never touched. Failing there would throw away a download that finished.
+    //
+    // Left where it is rather than failed: checkItemCompletion() runs again on
+    // the next tick, so this is a wait, like every other floor in this module.
+    const QString incoming = thePrefs.incomingDirForCategory(rt.item->category);
+    if (!volumeHasRoom(incoming)) {
+        if (rt.item->stalledReason.isEmpty()) {
+            rt.item->stalledReason = tr("waiting for disk space to publish");
+            logWarning(QStringLiteral("Usenet: \"%1\" is downloaded but \"%2\" has no "
+                                      "room for it")
+                           .arg(rt.item->name, incoming));
+            emit itemChanged(rt.item->id);
+        }
+        return;
+    }
+    if (!rt.item->stalledReason.isEmpty()) {
+        rt.item->stalledReason.clear();
+        emit itemChanged(rt.item->id);
+    }
+
     // From here the extracted files belong to post-processing: a repair discards
     // them, staging renames them into the incoming directory. A preview must
     // stop being served from them before either happens.
@@ -2184,17 +2932,30 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
         for (const auto& st : rt.item->files) {
             if (st.tempPath.isEmpty() || !QFile::exists(st.tempPath))
                 continue;
-            const QString name = QFileInfo(st.tempPath).completeBaseName();
-            const QString finalPath = uniqueDestination(thePrefs.incomingDir(), name);
-            if (QFile::rename(st.tempPath, finalPath + QString(Preferences::kUsenetPartSuffix)))
-                synthetic.staged.append({finalPath + QString(Preferences::kUsenetPartSuffix),
-                                         finalPath});
+            // fileName(), not completeBaseName(): sealFile() has already renamed
+            // this to the release's real filename, extension and all, precisely
+            // because everything downstream works by extension. Stripping it here
+            // published "movie" for movie.mkv — no OS handler, and
+            // getED2KFileTypeID() reads it as Any.
+            const QString name = QFileInfo(st.tempPath).fileName();
+            const QString finalPath = uniqueDestination(
+                thePrefs.incomingDirForCategory(rt.item->category), name);
+            const QString stagedPath = finalPath + QString(Preferences::kUsenetPartSuffix);
+
+            // uniqueDestination() checked the final name; the rename target is the
+            // staged one, so clear a leftover the way stageForPublish() does.
+            QFile::remove(stagedPath);
+
+            if (QFile::rename(st.tempPath, stagedPath))
+                synthetic.staged.append({st.tempPath, stagedPath, finalPath});
         }
         onPostFinished(synthetic);
         return;
     }
 
     rt.postRunning = true;
+    rt.postStage = PostStage::Idle;   // queued behind other jobs until it reports
+    rt.postStageClock.start();
     rt.item->status = UsenetItemStatus::Verifying;
     rt.item->postPercent = 0;
     rt.item->postDetail.clear();
@@ -2205,8 +2966,14 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
     UsenetPostJob job;
     job.itemId = rt.item->id;
     job.workDir = QDir(thePrefs.usenetTempDir()).filePath(rt.item->id);
-    job.destDir = thePrefs.incomingDir();
+    // The index is stored on the item; the folder is asked for here, at the last
+    // moment. A category repointed, renamed or deleted while the release was
+    // downloading resolves now — and incomingDirForCategory() re-tests the
+    // directory on every call, so an unmounted volume falls back rather than
+    // stranding a finished release.
+    job.destDir = thePrefs.incomingDirForCategory(rt.item->category);
     job.password = rt.item->nzb.password;
+    job.externalUnpacker = thePrefs.usenetExternalUnpacker();
     job.par2Enabled = m_par2Enabled;
     job.renameEnabled = m_renameEnabled;
     job.unpackEnabled = m_unpackEnabled;
@@ -2235,6 +3002,12 @@ void UsenetQueue::onPostStage(const QString& itemId, int stage, int percent,
     if (!rt)
         return;
 
+    if (PostStage(stage) != rt->postStage) {
+        closePostStage(*rt);
+        rt->postStage = PostStage(stage);
+        rt->postStageClock.start();
+    }
+
     switch (PostStage(stage)) {
     case PostStage::Repairing: rt->item->status = UsenetItemStatus::Repairing; break;
     case PostStage::Unpacking: rt->item->status = UsenetItemStatus::Unpacking; break;
@@ -2258,19 +3031,29 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
     rt->item->postPercent = 0;
     rt->item->postDetail.clear();
 
+    closePostStage(*rt);
+    m_stats.notePostFinished(result);
+
     // Repair rewrites volumes, rename moves them and unpack publishes elsewhere.
     // Every cached path and parsed header in the streaming index is suspect.
     rt->streamIndex.invalidate();
 
     // -- the cycle: verification came up short, go and fetch the blocks ----
     if (result.needsMoreBlocks) {
+        // A short verify only counts once it is final: normally it sends the
+        // item back for recovery volumes and a later round is the verdict.
+        const auto giveUp = [this, rt](const QString& message) {
+            m_stats.bump(&UsenetCounters::par2Verified);
+            m_stats.bump(&UsenetCounters::par2RepairFailed);
+            failItem(*rt, message);
+        };
         if (++rt->par2Rounds > kMaxPar2Rounds) {
-            failItem(*rt, tr("Repair still incomplete after %1 rounds").arg(kMaxPar2Rounds));
+            giveUp(tr("Repair still incomplete after %1 rounds").arg(kMaxPar2Rounds));
             return;
         }
         if (!requestPar2Volumes(*rt, result.blocksNeeded)) {
-            failItem(*rt, tr("Not enough recovery data: %n more block(s) needed",
-                             nullptr, result.blocksNeeded));
+            giveUp(tr("Not enough recovery data: %n more block(s) needed",
+                      nullptr, result.blocksNeeded));
             return;
         }
 
@@ -2286,9 +3069,20 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
     }
 
     if (!result.success) {
+        // Recorded before failItem(), which persists: a restart must still know
+        // this item is one password away from working, or the GUI's
+        // "Set Password…" hint disappears across a daemon restart.
+        rt->item->passwordRequired = result.passwordRequired;
         failItem(*rt, result.message);
         return;
     }
+
+    rt->item->passwordRequired = false;
+
+    // The volumes are about to be deleted and the work directory removed, so a
+    // preview re-run over them has nothing left to read. Joined here rather than
+    // left to the item's removal, which may be days away.
+    cancelEncryptedPreview(*rt);
 
     publishStaged(*rt, result);
 
@@ -2297,10 +3091,16 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
 
     rt->item->status = UsenetItemStatus::Complete;
     rt->item->error.clear();
+    rt->item->failedLadder.clear();   // it succeeded; there is nothing to retry against
+    rt->refetch = {};
+    // Only the terminal round reaches here — needsMoreBlocks and a failed verify
+    // both return above — so this records exactly one completion per release.
+    m_history.record(*rt->item, UsenetHistoryState::Downloaded);
+    m_history.save();
     persist(*rt);
 
     emit itemChanged(rt->item->id);
-    emit itemFinished(rt->item->id, true, tr("Download complete"));
+    finishItem(*rt, true, tr("Download complete"));
 
     // Everything worth keeping has been moved out by now; what is left is
     // scratch, archive volumes and recovery data.
@@ -2342,6 +3142,7 @@ bool UsenetQueue::requestPar2Volumes(ItemRuntime& rt, int blocks)
         }
 
         rt.item->requestedPar2.insert(c.fileIndex);
+        m_stats.bump(&UsenetCounters::recoveryVolumes);
         covered += c.blocks;
         if (covered >= blocks)
             break;
@@ -2354,7 +3155,9 @@ bool UsenetQueue::requestPar2Volumes(ItemRuntime& rt, int blocks)
 
 void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
 {
-    for (const auto& [stagedPath, finalPath] : result.staged) {
+    QStringList published;
+
+    for (const auto& [source, stagedPath, finalPath] : result.staged) {
         // The staged file already sits in the incoming directory carrying the
         // .usenetpart suffix, which the share scan skips by name. This rename is
         // in-place and therefore atomic: there is no instant at which a
@@ -2378,12 +3181,28 @@ void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
 
         logInfo(QStringLiteral("Usenet: completed \"%1\"")
                     .arg(QFileInfo(finalPath).fileName()));
+
+        published.append(finalPath);
+
+        // The per-file record is what the GUI shows; point it at where the file
+        // actually ended up rather than the scratch path it no longer occupies.
+        //
+        // Matched by source path, never by position: the payload list is sorted
+        // by name and drops every .par2, so the two lists differ in order and in
+        // length as soon as a release ships a recovery set. Only a file staged
+        // straight out of the NZB has an NZB file to belong to at all — an
+        // extracted member deliberately leaves every finalPath empty.
+        for (auto& st : rt.item->files) {
+            if (!st.tempPath.isEmpty() && st.tempPath == source) {
+                st.finalPath = finalPath;
+                break;
+            }
+        }
     }
 
-    // The per-file record is what the GUI shows; point it at where the file
-    // actually ended up rather than the scratch path it no longer occupies.
-    for (int f = 0; f < rt.item->files.size() && f < result.staged.size(); ++f)
-        rt.item->files[f].finalPath = result.staged.at(f).second;
+    // What the release actually published, which `files` cannot answer for an
+    // unpacked one. This is what "Open File" opens.
+    rt.item->publishedPaths = published;
 }
 
 void UsenetQueue::failItem(ItemRuntime& rt, const QString& message)
@@ -2391,14 +3210,32 @@ void UsenetQueue::failItem(ItemRuntime& rt, const QString& message)
     rt.postRunning = false;
     // No more volumes are coming, so a run would hold its thread until shutdown.
     cancelDirectUnpack(rt);
+    cancelEncryptedPreview(rt);
     rt.item->status = UsenetItemStatus::Failed;
-    rt.item->error = message;
+
+    // What the retry achieved, said once, here — otherwise a second failure is
+    // word for word the first one and the button reads as broken. The counters
+    // are cleared with it: they describe the attempt that just ended.
+    rt.item->error = rt.refetch.armed > 0
+        ? (rt.refetch.landed > 0
+               ? tr("%1; %2 of %3 re-fetched article(s) came back")
+                     .arg(message).arg(rt.refetch.landed).arg(rt.refetch.armed)
+               : tr("%1; none of the %2 missing article(s) came back")
+                     .arg(message).arg(rt.refetch.armed))
+        : message;
+    rt.refetch = {};
+
+    // Which accounts could not supply it. Resume re-asks only once this differs
+    // from what is configured then, so the same button pressed twice costs
+    // nothing and the same button after adding a fill account costs a retry.
+    rt.item->failedLadder = serverLadderDigest();
     persist(rt);
 
-    logWarning(QStringLiteral("Usenet: \"%1\" failed: %2").arg(rt.item->name, message));
+    logWarning(QStringLiteral("Usenet: \"%1\" failed: %2")
+                   .arg(rt.item->name, rt.item->error));
 
     emit itemChanged(rt.item->id);
-    emit itemFinished(rt.item->id, false, message);
+    finishItem(rt, false, rt.item->error);
 }
 
 void UsenetQueue::persist(ItemRuntime& rt)
@@ -2730,11 +3567,25 @@ void UsenetQueue::markSegmentMissing(ItemRuntime& rt, int fileIndex, int segment
 
     UsenetFileState& st = rt.item->files[fileIndex];
     if (segmentIndex >= 0 && segmentIndex < st.done.size()) {
+        // Guarded on the *missing* bit, not the done bit: a retry clears the
+        // done bit of an article already counted here, and guarding on that one
+        // would count the same hole — and bump articlesMissing — a second time
+        // when the retry fails the same way.
+        if (st.missing.size() > segmentIndex && st.missing.testBit(segmentIndex)) {
+            st.done.setBit(segmentIndex);  // re-armed, and still nowhere
+            rt.dirty = true;
+            noteRefetchResolved(rt, fileIndex, segmentIndex, /*landed*/ false);
+            return;
+        }
         if (st.done.testBit(segmentIndex))
             return;                       // already resolved; do not double-count
         st.done.setBit(segmentIndex);     // resolved, not arrived — stop asking
+        if (st.missing.size() < st.done.size())
+            st.missing.resize(st.done.size());
+        st.missing.setBit(segmentIndex);
     }
     st.missingSegments += 1;
+    m_stats.bump(&UsenetCounters::articlesMissing);
 
     rt.attempts.remove(SegmentKey{fileIndex, segmentIndex}.packed());
     rt.dirty = true;
@@ -2799,6 +3650,7 @@ bool UsenetQueue::beginHealthCheck(ItemRuntime& rt)
     rt.checkResumeStatus = rt.item->status;
     rt.item->status = UsenetItemStatus::Checking;
     rt.item->stalledReason = tr("checking availability");
+    m_stats.bump(&UsenetCounters::healthChecks);
     emit itemChanged(rt.item->id);
     return true;
 }
@@ -3021,6 +3873,10 @@ void UsenetQueue::finishHealthCheck(ItemRuntime& rt)
     const bool short_ = threshold > 0 && verdict.percent < threshold
                         && !verdict.likelyRecoverable();
 
+    m_stats.bump(short_           ? &UsenetCounters::healthPaused
+                 : verdict.probed ? &UsenetCounters::healthPassed
+                                  : &UsenetCounters::healthInconclusive);
+
     if (short_) {
         // Paused, never failed and never refused: the figure is a guess about
         // articles nobody can ask a second question about, and the user is the
@@ -3081,16 +3937,25 @@ qint64 UsenetQueue::probeWeight(const ItemRuntime& rt, int fileIndex, int segInd
     return info.encodedBytes();
 }
 
-const UsenetQueueItem* UsenetQueue::findDuplicate(const NzbInfo& nzb, const QString& name,
-                                                  UsenetAddSource source, QString& why) const
+UsenetAddOutcome UsenetQueue::findDuplicate(const NzbInfo& nzb, const QString& name,
+                                            bool force, QString& why) const
 {
     const QString digest = nzbArticleDigest(nzb);
     if (digest.isEmpty())
-        return nullptr;   // nothing to compare on; never a reason to refuse
+        return UsenetAddOutcome::Added;   // nothing to compare on; never a refusal
 
     const QString key = nzbReleaseKey(name, nzb.totalEncodedBytes());
     const UsenetQueueItem* softMatch = nullptr;
+    const UsenetQueueItem* inFlight = nullptr;
+    const UsenetQueueItem* finished = nullptr;
 
+    // The live queue, always — force does not reach this loop, which is what
+    // guarantees a download in flight can never be started a second time.
+    //
+    // The whole list, not the first hit: a forced re-download leaves the finished
+    // item listed *and* adds a second one, so both exist with the same digest and
+    // whichever came first would decide the answer. In flight always wins — it is
+    // the stronger claim and the only one nothing can override.
     for (const auto& rt : m_items) {
         const UsenetQueueItem* item = rt->item.get();
 
@@ -3104,27 +3969,427 @@ const UsenetQueueItem* UsenetQueue::findDuplicate(const NzbInfo& nzb, const QStr
         }
 
         // Literally the same articles from literally the same servers.
-        const bool finished = item->status == UsenetItemStatus::Complete;
-        if (finished && source == UsenetAddSource::Manual) {
-            // Re-downloading something on purpose is a thing people do — the
-            // same call Ed2kLinkImporter makes for a completed eD2K file. A feed
-            // asking for it again is a mistake, and that case is refused below.
-            return nullptr;
+        if (item->status == UsenetItemStatus::Complete) {
+            if (finished == nullptr)
+                finished = item;
+        } else {
+            inFlight = item;
+            break;
         }
-
-        // No em dash: AddNzbUrlDialog splits its failure lines on " — ".
-        why = finished
-                  ? tr("\"%1\" has already been downloaded.").arg(item->name)
-                  : tr("\"%1\" is already in the queue.").arg(item->name);
-        return item;
     }
+
+    // No em dash in either sentence: AddNzbUrlDialog splits its failure lines
+    // on " — " to recover the URL.
+    if (inFlight != nullptr) {
+        why = tr("\"%1\" is already in the queue.").arg(inFlight->name);
+        return UsenetAddOutcome::Duplicate;
+    }
+    if (finished != nullptr && !force) {
+        why = tr("\"%1\" has already been downloaded.").arg(finished->name);
+        return UsenetAddOutcome::AlreadyDownloaded;
+    }
+    if (finished != nullptr)
+        return UsenetAddOutcome::Added;   // asked, and answered yes
 
     if (softMatch != nullptr) {
         logInfo(QStringLiteral("Usenet: \"%1\" looks like a repost of \"%2\" "
                                "(same name and size, different articles) — adding it anyway")
                     .arg(name, softMatch->name));
     }
-    return nullptr;
+
+    // Then what has left the queue. Reached only when the caller has not already
+    // answered the question — the structural half of "force overrides the history
+    // and nothing else".
+    if (!force) {
+        m_history.load();
+        if (const UsenetHistoryEntry* past = m_history.findByDigest(digest)) {
+            why = past->state == UsenetHistoryState::Cancelled
+                      ? tr("You previously cancelled the download of \"%1\".").arg(past->name)
+                      : tr("You already downloaded \"%1\".").arg(past->name);
+            return UsenetAddOutcome::AlreadyDownloaded;
+        }
+    }
+
+    return UsenetAddOutcome::Added;
+}
+
+int UsenetQueue::knownTypeForTitle(const QString& title) const
+{
+    const QString folded = usenetFoldedReleaseName(title);
+    if (folded.isEmpty())
+        return 0;
+
+    for (const auto& rt : m_items) {
+        if (usenetFoldedReleaseName(rt->item->name) != folded)
+            continue;
+        if (rt->item->status != UsenetItemStatus::Complete)
+            return 2;   // Downloading — in the queue right now
+    }
+
+    m_history.load();
+    if (const UsenetHistoryEntry* past = m_history.findByName(title))
+        return past->state == UsenetHistoryState::Cancelled ? 4 : 3;
+
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Names from the PAR2 set
+// ---------------------------------------------------------------------------
+
+bool UsenetQueue::looksObfuscated(const UsenetQueueItem& item)
+{
+    bool sawPayload = false;
+    bool sawIndex = false;
+
+    for (int f = 0; f < item.nzb.files.size(); ++f) {
+        const NzbFileInfo& info = item.nzb.files.at(f);
+        if (info.isPar2()) {
+            sawIndex = sawIndex || !info.isPar2Volume();
+            continue;
+        }
+
+        sawPayload = true;
+        const QString name = item.bestFileName(f);
+        if (name.isEmpty())
+            continue;   // no name yet is as obfuscated as a junk one
+
+        if (UsenetUnpacker::volumePositionOf(name).index >= 0)
+            return false;
+
+        const ED2KFileType type = getED2KFileTypeID(name);
+        if (type == ED2KFileType::Video || type == ED2KFileType::Audio)
+            return false;
+    }
+
+    // Nothing to hoist without an index .par2 to hoist -- and a release with no
+    // payload is not a release.
+    return sawPayload && sawIndex;
+}
+
+void UsenetQueue::learnPar2Names(ItemRuntime& rt)
+{
+    if (rt.par2NamesState != ItemRuntime::Par2NamesState::Unread)
+        return;
+
+    // The same switch that governs post-processing's rename pass: one setting
+    // for one behaviour, rather than a second one nobody would think to look for.
+    if (!m_par2Enabled || !m_renameEnabled || !Par2Verifier::available()) {
+        rt.par2NamesState = ItemRuntime::Par2NamesState::Unavailable;
+        return;
+    }
+
+    QString indexPath;
+    for (int i = 0; i < rt.item->nzb.files.size() && i < rt.item->files.size(); ++i) {
+        const NzbFileInfo& info = rt.item->nzb.files.at(i);
+        if (!info.isPar2() || info.isPar2Volume())
+            continue;
+
+        const UsenetFileState& st = rt.item->files.at(i);
+        if (!st.finalized || st.tempPath.isEmpty() || !QFileInfo::exists(st.tempPath))
+            continue;
+
+        indexPath = st.tempPath;
+        break;
+    }
+
+    // Left Unread on purpose: the index may simply not have landed yet, and the
+    // next sealed file asks again. Only a *failed read* is final.
+    if (indexPath.isEmpty())
+        return;
+
+    if (QFileInfo(indexPath).size() > kMaxPar2IndexBytes) {
+        logInfo(QStringLiteral("Usenet: PAR2 index for \"%1\" is too large to read for names")
+                    .arg(rt.item->name));
+        rt.par2NamesState = ItemRuntime::Par2NamesState::Unavailable;
+        return;
+    }
+
+    QElapsedTimer clock;
+    clock.start();
+
+    Par2Verifier verifier;
+    const Par2FileList list =
+        verifier.listFiles(indexPath, QFileInfo(indexPath).absolutePath());
+
+    if (!list.ok()) {
+        rt.par2NamesState = ItemRuntime::Par2NamesState::Unavailable;
+        return;
+    }
+
+    rt.par2Names.setFiles(list.files);
+    rt.par2NamesState = ItemRuntime::Par2NamesState::Loaded;
+
+    // A file that already sealed owns the name it sealed under, so nothing else
+    // may be given it.
+    for (const UsenetFileState& st : rt.item->files) {
+        if (st.finalized && !st.tempPath.isEmpty())
+            rt.par2Names.claim(QFileInfo(st.tempPath).fileName());
+    }
+
+    logInfo(QStringLiteral("Usenet: PAR2 set names %1 file(s) of \"%2\" (%3 ms)")
+                .arg(rt.par2Names.size())
+                .arg(rt.item->name)
+                .arg(clock.elapsed()));
+
+    // Whatever has already arrived far enough can be named right now, in file
+    // order so the answer does not depend on what landed first.
+    for (int i = 0; i < rt.item->files.size(); ++i)
+        resolvePar2Name(rt, i);
+}
+
+void UsenetQueue::resolvePar2Name(ItemRuntime& rt, int fileIndex)
+{
+    if (rt.par2NamesState != ItemRuntime::Par2NamesState::Loaded)
+        return;
+    if (fileIndex < 0 || fileIndex >= rt.item->files.size()
+        || fileIndex >= rt.item->nzb.files.size()) {
+        return;
+    }
+    if (rt.item->nzb.files.at(fileIndex).isPar2())
+        return;
+
+    UsenetFileState& st = rt.item->files[fileIndex];
+    if (st.finalized || !st.par2FileName.isEmpty() || st.declaredSize <= 0)
+        return;
+
+    // availableFrom(0), never QFileInfo::size(): the scratch file is written at
+    // absolute offsets, so its length on disk is the highest byte written and
+    // says nothing about whether the opening 16 KiB are real. A file whose first
+    // article was missing everywhere never satisfies this, and correctly falls
+    // through to post-processing's sliding-window rename.
+    if (st.availableFrom(0) < Par2NameIndex::bytesNeededFor(st.declaredSize))
+        return;
+
+    const QString matched = rt.par2Names.matchFile(st.tempPath, st.declaredSize);
+    if (matched.isEmpty())
+        return;
+
+    // PAR2 stores paths, and this one came off Usenet.
+    const QString safe = sanitizeName(QFileInfo(matched).fileName());
+    if (safe.isEmpty() || !rt.par2Names.claim(safe))
+        return;
+
+    st.par2FileName = safe;
+    rt.dirty = true;
+
+    // The set cache is keyed by base name, and this changes it.
+    rt.streamIndex.invalidate();
+
+    logInfo(QStringLiteral("Usenet: PAR2 names file %1 of \"%2\" \"%3\"")
+                .arg(fileIndex).arg(rt.item->name, safe));
+    emit itemChanged(rt.item->id);
+}
+
+void UsenetQueue::finishItem(ItemRuntime& rt, bool success, const QString& message)
+{
+    m_stats.noteItemFinished(success, rt.item->decodedBytes());
+    emit itemFinished(rt.item->id, success, message);
+}
+
+void UsenetQueue::closePostStage(ItemRuntime& rt)
+{
+    if (rt.postStageClock.isValid())
+        m_stats.addPostStageTime(rt.postStage, rt.postStageClock.elapsed());
+    rt.postStageClock.invalidate();
+    rt.postStage = PostStage::Idle;
+}
+
+void UsenetQueue::padToDeclaredSize(const UsenetFileState& st)
+{
+    // declaredSize arrives with the first article that turns up, so it is zero
+    // only when a file is missing its opening article too. Nothing can be
+    // inferred in that case — the NZB's own `bytes` is the *encoded* size — so
+    // the file is left as it is and verification will call it damaged, which is
+    // the honest answer.
+    if (st.declaredSize <= 0 || st.tempPath.isEmpty())
+        return;
+
+    QFile f(st.tempPath);
+    if (!f.open(QIODevice::ReadWrite))
+        return;
+    if (f.size() < st.declaredSize)
+        f.resize(st.declaredSize);
+    f.close();
+}
+
+bool UsenetQueue::rearmMissingSegments(ItemRuntime& rt, int fileIndex)
+{
+    if (fileIndex < 0 || fileIndex >= rt.item->files.size())
+        return false;
+
+    UsenetFileState& st = rt.item->files[fileIndex];
+
+    // The file has to still be where the state says, and be the length it says.
+    // ArticleWriter::open() creates what it cannot find, so a re-arm against a
+    // renamed or deleted file would build a fresh sparse file holding one
+    // article — which the unpack and share scans would then find beside the real
+    // one. par2's rename pass is the commonest cause and it leaves the release
+    // intact under another name, so look there before giving up.
+    const auto usable = [&st](const QString& path) {
+        const QFileInfo info(path);
+        return info.isFile() && (st.declaredSize <= 0 || info.size() >= st.declaredSize);
+    };
+
+    if (!usable(st.tempPath)) {
+        const QString itemDir = QFileInfo(st.tempPath).absolutePath();
+        const QString byName = rt.item->bestFileName(fileIndex);
+        const QString rescued = byName.isEmpty()
+            ? QString()
+            : QDir(itemDir).filePath(QFileInfo(byName).fileName());
+
+        if (rescued.isEmpty() || !usable(rescued))
+            return false;
+
+        logInfo(QStringLiteral("Usenet: \"%1\" was renamed by the repair — "
+                               "retrying against \"%2\"")
+                    .arg(rt.item->name, QFileInfo(rescued).fileName()));
+        st.tempPath = rescued;
+    }
+
+    int armed = 0;
+    for (qsizetype s = 0; s < st.missing.size(); ++s) {
+        if (!st.missing.testBit(s))
+            continue;
+        if (s < st.done.size())
+            st.done.clearBit(s);        // the only place a done bit is ever cleared
+        ++armed;
+    }
+    if (armed == 0)
+        return false;
+
+    rt.refetch.armed += armed;
+    rt.refetch.outstanding += armed;
+    rt.refetch.files.insert(fileIndex);
+    rt.dirty = true;
+    return true;
+}
+
+void UsenetQueue::noteRefetchResolved(ItemRuntime& rt, int fileIndex, int segmentIndex,
+                                      bool landed)
+{
+    Q_UNUSED(fileIndex)
+    Q_UNUSED(segmentIndex)
+
+    if (rt.refetch.outstanding <= 0)
+        return;
+
+    if (landed)
+        ++rt.refetch.landed;
+    if (--rt.refetch.outstanding > 0)
+        return;
+
+    // The last one. Pad now rather than per article: a hole at the *end* of a
+    // file leaves nothing to grow it later, and sealFile() will not run again on
+    // a file that is already finalized.
+    for (const int f : rt.refetch.files) {
+        if (f >= 0 && f < rt.item->files.size())
+            padToDeclaredSize(rt.item->files.at(f));
+    }
+
+    // Paths did not move — that is the point of not un-sealing — but the index
+    // caches parsed headers and how far it scanned, and a re-fetched article can
+    // turn a region it read as zeros into a real volume header.
+    rt.streamIndex.invalidate();
+
+    logInfo(QStringLiteral("Usenet: retry of \"%1\" recovered %2 of %3 article(s)")
+                .arg(rt.item->name)
+                .arg(rt.refetch.landed)
+                .arg(rt.refetch.armed));
+}
+
+void UsenetQueue::refreshDiskState(bool force)
+{
+    if (!thePrefs.checkDiskspace()) {
+        if (m_diskBlocked) {
+            m_diskBlocked = false;
+            m_diskStallLogged = false;
+            for (auto& rt : m_items) {
+                if (!rt->item->stalledReason.isEmpty() && rt->item->isActive()) {
+                    rt->item->stalledReason.clear();
+                    emit itemChanged(rt->item->id);
+                }
+            }
+        }
+        return;
+    }
+
+    // QStorageInfo is a syscall and the tick runs four times a second.
+    if (!force && m_diskCheckClock.isValid()
+        && m_diskCheckClock.elapsed() < kDiskCheckIntervalMs) {
+        return;
+    }
+    m_diskCheckClock.start();
+
+    const QString dir = thePrefs.usenetTempDir();
+    const qint64 floor = qint64(thePrefs.minFreeDiskSpace());
+    const std::optional<std::uint64_t> free = eMule::tryFreeDiskSpace(dir);
+
+    // Unknown counts as blocked. Writing into a volume nothing can measure is
+    // how the article-level failure path gets exercised, and that path is the
+    // one this exists to keep out of the ladder. Waiting is always recoverable;
+    // a wrong verdict about an article is not.
+    const bool blocked = !free.has_value()
+        ? true
+        : (m_diskBlocked ? qint64(*free) < floor + kDiskUnparkHeadroom
+                         : qint64(*free) < floor);
+
+    if (blocked == m_diskBlocked)
+        return;
+
+    m_diskBlocked = blocked;
+
+    const QString reason = !free.has_value()
+        ? tr("cannot read free space on the download folder")
+        : tr("waiting for disk space — %1 free, %2 required")
+              .arg(formatByteSize(qint64(*free)), formatByteSize(floor));
+
+    for (auto& rt : m_items) {
+        if (!rt->item->isActive())
+            continue;
+        rt->item->stalledReason = blocked ? reason : QString();
+        emit itemChanged(rt->item->id);
+    }
+
+    if (blocked) {
+        if (!m_diskStallLogged) {
+            m_diskStallLogged = true;
+            logWarning(QStringLiteral("Usenet: paused — %1 (%2)").arg(reason, dir));
+        }
+    } else {
+        m_diskStallLogged = false;
+        logInfo(QStringLiteral("Usenet: resuming — the download folder has room again"));
+    }
+}
+
+bool UsenetQueue::volumeHasRoom(const QString& dir) const
+{
+    if (!thePrefs.checkDiskspace() || dir.isEmpty())
+        return true;
+
+    const std::optional<std::uint64_t> free = eMule::tryFreeDiskSpace(dir);
+    return free.has_value() && qint64(*free) >= qint64(thePrefs.minFreeDiskSpace());
+}
+
+QString UsenetQueue::serverLadderDigest() const
+{
+    // The accounts, not their settings: key() is host/port/user, so switching a
+    // provider to TLS or fixing a password is a different connection and counts
+    // as a change. Retention and level are deliberately out — retention may
+    // never cause a missing verdict, and level only reorders.
+    QStringList keys;
+    keys.reserve(m_servers.size());
+    for (const NewsServer& s : m_servers) {
+        if (s.enabled && s.isValid())
+            keys.append(s.key());
+    }
+    keys.sort();
+
+    return QString::fromLatin1(
+        QCryptographicHash::hash(keys.join(QChar(u'\n')).toUtf8(),
+                                 QCryptographicHash::Sha1)
+            .toHex()
+            .left(16));
 }
 
 } // namespace eMule::usenet

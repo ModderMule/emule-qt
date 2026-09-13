@@ -82,7 +82,8 @@ struct StatsSnapshot {
     qint64 transferTime = 0;
     qint64 uploadTime = 0;
     qint64 downloadTime = 0;
-    qint64 serverDuration = 0;
+    qint64 serverDuration = 0;       ///< every server connection this session
+    qint64 currentServerDuration = 0;///< the one we are on now; 0 if offline
 
     // --- Global state ---
     qint64 reconnects = 0;
@@ -186,16 +187,11 @@ struct StatsSnapshot {
     qint64 cumUpFromPartfile = 0;
 
     // --- HTTP Cache ---
-    qint64 sesHttpCachePublished = 0;   ///< ciphertext bytes pushed to the cache
-    qint64 sesHttpCacheFetched = 0;     ///< plaintext bytes pulled back out
-    qint64 sesHttpCacheSaved = 0;       ///< upstream not spent thanks to it
-    qint64 sesHttpCacheChunksUp = 0;
-    qint64 sesHttpCacheChunksDown = 0;
-    qint64 cumHttpCachePublished = 0;
-    qint64 cumHttpCacheFetched = 0;
-    qint64 cumHttpCacheSaved = 0;
-    qint64 cumHttpCacheChunksUp = 0;
-    qint64 cumHttpCacheChunksDown = 0;
+    /// Both directions of the HTTP Cache, session and banked. Sent as two nested
+    /// maps ("httpCacheSession"/"httpCacheCumulative") keyed by the block's own
+    /// field names, so a new counter needs no key here.
+    HttpCacheCounters sesHttpCache;
+    HttpCacheCounters cumHttpCache;
 
     // --- Cumulative sessions ---
     qint64 cumUpSuccessful = 0;

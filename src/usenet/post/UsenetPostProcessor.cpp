@@ -3,6 +3,7 @@
 
 #include "post/UsenetPostProcessor.h"
 
+#include "post/Par2NameIndex.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -10,6 +11,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
+#include <QSet>
 
 namespace eMule::usenet {
 
@@ -20,14 +23,43 @@ namespace {
 /// its own, and inside workDir so a failed job leaves nothing behind after the
 /// queue removes the item directory.
 
+/// Every PAR2 packet begins with this (par2fileformat.cpp:25), so a file that
+/// starts with it is a par2 file whatever it is called.
+constexpr char kPar2Magic[] = "PAR2\0PKT";
+constexpr int kPar2MagicLen = 8;
+
+[[nodiscard]] bool looksLikePar2(const QString& path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+    return f.read(kPar2MagicLen) == QByteArray(kPar2Magic, kPar2MagicLen);
+}
+
+/// The par2 files of a release, by extension and then by content.
+///
+/// The content check is not redundant. A post that obfuscates the .par2
+/// *subjects* as well leaves nothing with the extension: NzbFileInfo::isPar2()
+/// is a substring test over the filename or the subject, so the queue never
+/// recognises those files either, and such a release is today never verified,
+/// never repaired and never unpacked — in silence. Nothing can fix that before
+/// the bytes land, because you cannot fetch first a file you cannot identify;
+/// once they have, the file says what it is.
 [[nodiscard]] QStringList par2FilesIn(const QString& dir)
 {
     QStringList result;
     const QFileInfoList entries = QDir(dir).entryInfoList(QDir::Files | QDir::NoDotAndDotDot,
                                                           QDir::Name);
     for (const QFileInfo& fi : entries) {
-        if (fi.suffix().compare(QLatin1String("par2"), Qt::CaseInsensitive) == 0)
+        if (fi.suffix().compare(QLatin1String("par2"), Qt::CaseInsensitive) == 0) {
             result.append(fi.absoluteFilePath());
+            continue;
+        }
+        if (fi.size() >= kPar2MagicLen && looksLikePar2(fi.absoluteFilePath())) {
+            logInfo(QStringLiteral("Usenet: \"%1\" is a PAR2 file under another name")
+                        .arg(fi.fileName()));
+            result.append(fi.absoluteFilePath());
+        }
     }
     return result;
 }
@@ -46,6 +78,104 @@ namespace {
     return true;
 }
 
+/// Delete what par2 moved aside rather than deleted.
+///
+/// RenameTargetFiles() renames a damaged target to "<name>.1" and keeps it,
+/// because we pass purgefiles=false -- and we pass false on purpose, since
+/// par2's purge deletes RemoveParFiles() too and the queue's on-demand recovery
+/// round would then reload a set that is gone. So the backups are ours to clear,
+/// and they have to go before anything walks this folder: they are a
+/// known-damaged copy of a payload file, and publishing one offers it to ED2K
+/// peers as if it were the release.
+///
+/// Not routed through `consumed`: that list is "the originals", which the
+/// cleanup preference is allowed to keep. These are par2's scratch, and
+/// VerifyTargetFiles() has already proved the repaired file correct.
+void removePar2Backups(const QStringList& backups)
+{
+    for (const QString& path : backups) {
+        if (!QFile::exists(path))
+            continue;
+        if (QFile::remove(path))
+            logInfo(QStringLiteral("Usenet: removed PAR2 backup \"%1\"")
+                        .arg(QFileInfo(path).fileName()));
+        else
+            logWarning(QStringLiteral("Usenet: cannot remove PAR2 backup \"%1\"").arg(path));
+    }
+}
+
+/// Delete copies of a covered file that are sitting under some other name.
+///
+/// A repair does not overwrite what it repaired. When the damaged file carried
+/// the *right* name par2 moves it aside as "<name>.1" and reports it, which
+/// removePar2Backups() clears. When it carried an obfuscated one, par2 never
+/// matched a target to it at all: it built the correct file from the blocks it
+/// could read and left the original exactly where it was, unreported. The work
+/// folder then holds the release twice, once good and once damaged, and
+/// payloadFilesIn() would offer both to ED2K peers.
+///
+/// The rule is that a covered file is published under its covered name and
+/// nowhere else. hash16k identifies an undamaged copy exactly; a damaged one
+/// cannot be hashed into place — the damage may be *inside* the identity window,
+/// which is the very reason it was never named — so a file of exactly a covered
+/// file's length, under a name the set does not use, while the properly named
+/// file is right there, counts too.
+void removeStaleCopiesOfCoveredFiles(const QString& par2Path, const QString& dir)
+{
+    Par2Verifier verifier;
+    const Par2FileList list = verifier.listFiles(par2Path, dir);
+    if (!list.ok())
+        return;
+
+    QSet<QString> coveredNames;
+    QHash<qint64, QString> coveredBySize;
+    Par2NameIndex names;
+    names.setFiles(list.files);
+
+    for (const Par2SetFile& f : list.files) {
+        if (!f.recoverable)
+            continue;
+        const QString bare = QFileInfo(f.fileName).fileName();
+        coveredNames.insert(bare);
+        if (QFileInfo::exists(QDir(dir).filePath(bare)))
+            coveredBySize.insert(f.size, bare);
+    }
+    if (coveredNames.isEmpty())
+        return;
+
+    for (const QFileInfo& fi : QDir(dir).entryInfoList(QDir::Files | QDir::NoDotAndDotDot)) {
+        if (coveredNames.contains(fi.fileName()))
+            continue;
+        if (fi.suffix().compare(QLatin1String("par2"), Qt::CaseInsensitive) == 0)
+            continue;
+        if (fi.size() >= kPar2MagicLen && looksLikePar2(fi.absoluteFilePath()))
+            continue;
+
+        QString of = names.matchFile(fi.absoluteFilePath(), fi.size());
+        if (of.isEmpty())
+            of = coveredBySize.value(fi.size());
+        if (of.isEmpty())
+            continue;
+
+        // Only when the good one is actually there. Otherwise this *is* the
+        // file, merely misnamed, and deleting it would destroy the release.
+        const QString good = QFileInfo(of).fileName();
+        if (!QFileInfo::exists(QDir(dir).filePath(good)))
+            continue;
+
+        if (QFile::remove(fi.absoluteFilePath())) {
+            logInfo(QStringLiteral("Usenet: removed \"%1\", a stale copy of \"%2\"")
+                        .arg(fi.fileName(), good));
+        }
+    }
+}
+
+/// What is left in the work folder that could be the release itself.
+///
+/// The two exclusions are the same ones par2FilesIn() includes, and they have to
+/// stay in step: recovery data is of no use to an ED2K peer, and a par2 file
+/// posted under a name that hides it would otherwise be published as if it were
+/// the movie.
 [[nodiscard]] QStringList payloadFilesIn(const QString& dir)
 {
     QStringList result;
@@ -53,6 +183,8 @@ namespace {
                                                           QDir::Name);
     for (const QFileInfo& fi : entries) {
         if (fi.suffix().compare(QLatin1String("par2"), Qt::CaseInsensitive) == 0)
+            continue;
+        if (fi.size() >= kPar2MagicLen && looksLikePar2(fi.absoluteFilePath()))
             continue;
         result.append(fi.absoluteFilePath());
     }
@@ -137,12 +269,15 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
                 emitStage(job.itemId, PostStage::Verifying, percent, file);
             });
             const Par2Result renamed = verifier.rename(index, job.workDir);
+            removePar2Backups(renamed.backupFiles);
             // par2's rename pass repairs as a side effect: RenameTargetFiles()
             // lives inside `if (dorepair)`, so a renameonly run still rewrites
             // damaged data. The verify that follows then reports Clean, which
             // makes the *later* outcome useless as a "were the volumes touched"
             // signal — so record it here.
             par2Repaired = par2Repaired || renamed.outcome == Par2Outcome::Repaired;
+            result.repaired = par2Repaired;
+            result.blocksRepaired += renamed.repairedBlocks;
             if (renamed.renamedFiles > 0) {
                 logInfo(QStringLiteral("Usenet: recovered %1 filename(s) from PAR2")
                             .arg(renamed.renamedFiles));
@@ -181,8 +316,11 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             });
 
             const Par2Result repaired = verifier.repair(index, job.workDir);
+            removePar2Backups(repaired.backupFiles);
             result.par2Outcome = repaired.outcome;
             par2Repaired = par2Repaired || repaired.outcome == Par2Outcome::Repaired;
+            result.repaired = par2Repaired;
+            result.blocksRepaired += repaired.repairedBlocks;
 
             if (!repaired.ok()) {
                 result.message = repaired.outcome == Par2Outcome::Cancelled
@@ -198,6 +336,11 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             emit finished(result);
             return;
         }
+
+        // The set is good now, so every file it covers is on disk under its own
+        // name — and anything else that is a copy of one is a leftover of the
+        // repair, not part of the release.
+        removeStaleCopiesOfCoveredFiles(index, job.workDir);
     } else if (job.hasMissingSegments) {
         // The one case phase 3 got wrong: a short file used to be published and
         // offered to peers regardless. Without a usable recovery set there is
@@ -253,17 +396,26 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             emitStage(job.itemId, PostStage::Unpacking, percent, file);
         });
 
-        const auto unpacked = unpacker.unpack(job.workDir, unpackDir, job.password, skip);
+        const auto unpacked =
+            unpacker.unpack(job.workDir, unpackDir, job.password, skip, job.externalUnpacker);
 
         if (!unpacked.ok) {
+            // Carried before the early return, or the GUI cannot tell a release
+            // that needs a password from one that is simply broken.
+            result.passwordRequired = unpacked.passwordRequired;
+            result.wrongPassword = unpacked.wrongPassword;
+            result.unpackOutcome = unpacked.passwordRequired ? UsenetUnpackOutcome::PasswordRequired
+                                                             : UsenetUnpackOutcome::Failed;
             result.message = unpacked.error;
             emit finished(result);
             return;
         }
 
         if (unpacked.nothingToDo && directPayload.isEmpty()) {
+            result.unpackOutcome = UsenetUnpackOutcome::NothingToUnpack;
             payload = payloadFilesIn(job.workDir);
         } else {
+            result.unpackOutcome = UsenetUnpackOutcome::Unpacked;
             // A par2 rename between the download and here would stale the skip
             // key, so a set can be extracted twice over the same output. Both
             // lists then name it; de-duplicate rather than publish it twice.
@@ -280,6 +432,19 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
         }
     } else {
         payload = payloadFilesIn(job.workDir);
+    }
+
+    // Publishing nothing is never a success, and `consumed` is a delete list.
+    //
+    // Belt and braces over the same guard in UsenetUnpacker: the two failures
+    // this catches — an archive that lists no members, and a payload that got
+    // filtered away — reach here by different routes, and the consequence is the
+    // same either way. A release that unpacked to nothing used to be marked
+    // Complete with every volume deleted after it.
+    if (payload.isEmpty() && !consumed.isEmpty()) {
+        result.message = QObject::tr("Nothing could be published from this release");
+        emit finished(result);
+        return;
     }
 
     // Recovery volumes are never payload. They exist to repair the release, and
@@ -355,7 +520,7 @@ bool UsenetPostProcessor::stageForPublish(const QStringList& files, const QStrin
             QFile::remove(source);
         }
 
-        result.staged.append({stagedPath, finalPath});
+        result.staged.append({source, stagedPath, finalPath});
 
         if (!files.isEmpty()) {
             emitStage(result.itemId, PostStage::Staging,

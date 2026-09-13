@@ -127,6 +127,10 @@ struct UsenetFetchResult {
     /// flagged because the queue must not spend a retry on it: a server backing
     /// off for 60 s would otherwise burn an item's whole retry budget in a second.
     bool noServerAvailable = false;
+
+    /// Failed because we tore the worker down (engine stop, settings save), not
+    /// because the provider did anything. Statistics must not blame the server.
+    bool aborted = false;
 };
 
 class UsenetWorker : public QObject {

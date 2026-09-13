@@ -5,6 +5,7 @@
 #include "CommentsPanel.h"
 
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 #include "prefs/Preferences.h"
 #include "utils/RatingIcons.h"
 
@@ -41,13 +42,14 @@ void CommentsPanel::setDetails(const QCborMap& details)
         const int rating = static_cast<int>(m.value(QLatin1StringView("rating")).toInteger());
         const QString userName = m.value(QLatin1StringView("userName")).toString();
 
-        auto* item = new QTreeWidgetItem(m_tree);
+        auto* item = new SortableTreeItem(m_tree);
         // Icon plus MFC's own words for the value, with no stars — GetRateString is
         // what CCommentListCtrl::AddComment puts in this column, for every value
         // including 0 ("Not rated"), because a comment-only row still has a cell.
         item->setText(ColRating, ratingLabel(rating));
-        item->setData(ColRating, Qt::UserRole, rating);     // numeric sort key: the
-                                                            // text is not monotonic
+        // Sorted on the ordinal because the label is not monotonic: as text
+        // "Excellent" leads "Fair", "Fake", "Good", "Not rated" and "Poor".
+        item->setData(ColRating, SortRole, rating);
         item->setIcon(ColRating, ratingIcon(rating));
         item->setText(ColComment,  m.value(QLatin1StringView("comment")).toString());
         item->setText(ColFileName, m.value(QLatin1StringView("name")).toString());

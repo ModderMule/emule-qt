@@ -76,6 +76,14 @@ public:
     /// for automatic imports, so a manual paste can still start a re-download.
     [[nodiscard]] static bool shouldSkip(SearchFile::KnownType type, Source source);
 
+    /// True when a file in state @p type should be added only after asking.
+    ///
+    /// The middle ground shouldSkip() has no room for: downloaded and cancelled
+    /// files are not re-added by an automatic import at all, and a manual one may
+    /// re-add them — but silently is the wrong way. Never true for a state
+    /// shouldSkip() already refuses, so the two are safe to test in either order.
+    [[nodiscard]] static bool shouldConfirm(SearchFile::KnownType type, Source source);
+
     /// Human-readable reason a file in state @p type was skipped, for logs and the
     /// status bar. Empty when @p type is not a skip-worthy state.
     [[nodiscard]] static QString skipReason(SearchFile::KnownType type);

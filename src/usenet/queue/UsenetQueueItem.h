@@ -19,6 +19,9 @@
 #include <QList>
 #include <QSet>
 #include <QString>
+#include <QStringList>
+
+#include <array>
 
 namespace eMule::usenet {
 
@@ -54,6 +57,41 @@ enum class UsenetItemStatus : quint8 {
 
 [[nodiscard]] QString describeUsenetItemStatus(UsenetItemStatus s);
 
+/// The five levels a release can be queued at. Five rather than eD2K's three
+/// because a Usenet queue holds a few large releases where "this one before
+/// those two, but after the one I am watching" is a thing people mean; NZBGet
+/// ships the same five for the same reason. The values are the stored ints, so
+/// the original three keep their meaning and an old sidecar needs no migration.
+inline constexpr int kUsenetPriorityVeryLow = -2;
+inline constexpr int kUsenetPriorityLow = -1;
+inline constexpr int kUsenetPriorityNormal = 0;
+inline constexpr int kUsenetPriorityHigh = 1;
+inline constexpr int kUsenetPriorityVeryHigh = 2;
+
+/// Highest first — menu order, and the order the queue runs them in.
+inline constexpr std::array kUsenetPriorityLevels{
+    kUsenetPriorityVeryHigh, kUsenetPriorityHigh, kUsenetPriorityNormal,
+    kUsenetPriorityLow, kUsenetPriorityVeryLow,
+};
+
+/// The names live in the GUI (`usenetPriorityName()`), not here: the GUI does
+/// not link eMule::Usenet, and the wire carries the int. The daemon clamps, so
+/// the two cannot disagree about how many levels there are.
+///
+/// Into [kUsenetPriorityVeryLow, kUsenetPriorityVeryHigh]. A GUI sending 7 is a
+/// bug worth bounding rather than obeying: an out-of-range value would make a
+/// sixth bucket that nothing can name and no menu entry can ever select again.
+[[nodiscard]] int clampUsenetPriority(int priority);
+
+/// Strip anything a file system would object to, and anything that would let a
+/// crafted name escape the temp directory.
+///
+/// Every name that reaches this module comes from a stranger: an NZB subject is
+/// attacker-controlled, `=ybegin name=` is whatever the poster wrote, and PAR2
+/// stores *paths*, not bare filenames. None of them may be handed to the disk
+/// unexamined.
+[[nodiscard]] QString sanitizeName(const QString& raw);
+
 /// Per-file progress. Parallel to NzbInfo::files — same index, same order.
 struct UsenetFileState {
     /// Scratch file under the Usenet temp tree, always carrying
@@ -63,10 +101,21 @@ struct UsenetFileState {
     /// Where it landed once complete. Empty until then.
     QString finalPath;
 
-    /// The name yEnc declared in `=ybegin name=`. For an obfuscated post this is
-    /// the only place the real filename exists, so it overrides whatever the
-    /// subject parser guessed.
+    /// The name yEnc declared in `=ybegin name=`. For a *partially* obfuscated
+    /// post this is the only place the real filename exists, so it overrides
+    /// whatever the subject parser guessed. A fully obfuscated one scrambles
+    /// this too — see par2FileName.
     QString articleFileName;
+
+    /// The name the PAR2 recovery set gives this file, matched by its length and
+    /// the MD5 of its first 16 KiB.
+    ///
+    /// Outranks every other source because it is the only one that is *checked*:
+    /// a subject is a stranger's formatting and `=ybegin name=` is whatever the
+    /// poster typed, but this one had to hash-match the bytes on disk. Empty on
+    /// any release that is not obfuscated, and empty until both the index .par2
+    /// and this file's first 16 KiB have landed.
+    QString par2FileName;
 
     /// Total size from `=ybegin size=`, 0 until the first article arrives. The
     /// NZB cannot supply this — its `bytes` is the *encoded* size.
@@ -76,9 +125,26 @@ struct UsenetFileState {
     ///
     /// The bit means **resolved**, not "arrived": a segment missing on every
     /// server in the ladder is also set, so the scheduler stops asking for it.
-    /// `missingSegments` is what distinguishes the two, and a file with a
-    /// non-zero count is short by design — PAR2 repair is what recovers it.
+    /// `missing` is which of the two, and a file with a non-zero
+    /// `missingSegments` is short by design — PAR2 repair is what recovers it.
+    ///
+    /// A retry clears a done bit whose `missing` bit is set, and that is the
+    /// only thing in the module that ever clears one.
     QBitArray done;
+
+    /// Which segments were resolved by being unavailable rather than by
+    /// arriving. Same indexing as `done`, and always a subset of it except
+    /// between a retry re-arming a segment and that segment resolving again.
+    ///
+    /// It exists so "no server has this" can be revisited: the verdict was about
+    /// the servers configured at the time it was reached, and the user may since
+    /// have added one. `missingSegments` is its population count and stays the
+    /// figure everything else reads -- see the invariant on `missingSegments`.
+    ///
+    /// An optional sidecar key. An older sidecar loads it empty while
+    /// `missingSegments` is non-zero, which is exactly the state a retry refuses
+    /// rather than guesses at.
+    QBitArray missing;
 
     /// Byte ranges actually on disk, merged and sorted, half-open `[start, end)`.
     ///
@@ -107,8 +173,15 @@ struct UsenetFileState {
     bool finalized = false;
 
     /// How many articles were missing on every server in the ladder. Non-zero
-    /// means the finished file has holes in it: PAR2 repair (phase 4) is what
-    /// fills them, and until then this is the only record that they exist.
+    /// means the file **has zeros in it right now** -- which is how direct
+    /// unpack, the sealed-volume replay, the encrypted preview and
+    /// post-processing all read it, so it may only fall when bytes actually
+    /// arrive, never when a retry merely decides to ask again.
+    ///
+    /// Invariant, checked before a retry is allowed: `missing.count(true) ==
+    /// missingSegments`. A sidecar written before `missing` existed fails it,
+    /// and that is the signal to refuse rather than guess which articles they
+    /// were.
     int missingSegments = 0;
 
     [[nodiscard]] bool allSegmentsDone() const;
@@ -142,13 +215,51 @@ public:
     NzbInfo nzb;
     UsenetItemStatus status = UsenetItemStatus::Queued;
 
-    /// Higher runs first. Matches the ED2K convention rather than NZBGet's.
+    /// Higher runs first; see kUsenetPriorityVeryHigh and friends. Persisted as
+    /// the raw int, so the three original values keep the meaning they had.
     int priority = 0;
+
+    /// The accounts that could have served this item, digested, as they were
+    /// when it failed. Empty until it fails, and cleared when it succeeds.
+    ///
+    /// Resume re-asks the missing articles only when this differs from the
+    /// current set -- i.e. when the user has actually changed something a retry
+    /// could benefit from. Without the gate, Resume would re-ask every dead
+    /// article of every failed release each time it is pressed, and
+    /// setItemPassword() resumes too, so setting a passphrase would do it
+    /// silently. An optional sidecar key; absent means "never failed here", and
+    /// an upgraded daemon therefore re-asks nothing on its first run.
+    QString failedLadder;
+
+    /// Index into `Preferences::categories()`, 0 being the implicit "All".
+    ///
+    /// The *index* is stored and the folder is asked for at completion, never
+    /// cached here: a release is categorised when it is queued and lands hours
+    /// later, and the user can repoint or delete the category in between. See
+    /// `Preferences::incomingDirForCategory()`, which is the single resolution
+    /// point and already falls back when the folder is gone.
+    int category = 0;
 
     QList<UsenetFileState> files;
 
     /// Set when the item stopped for a reason worth showing the user.
     QString error;
+
+    /// The release is password-protected and no password we have opens it.
+    ///
+    /// Persisted rather than derived from `error`, because the GUI turns it into
+    /// a "Set Password…" prompt and matching on message text would break the
+    /// moment the message is translated. Cleared by a successful post-processing
+    /// run, so a retry that works leaves nothing behind.
+    bool passwordRequired = false;
+
+    /// Absolute paths of what this release actually published, in staging order.
+    ///
+    /// Not derivable from `files`: an unpacked release publishes the *extracted*
+    /// members, which are not NZB files at all, and even a raw one publishes in
+    /// name order with the .par2 files dropped. Persisted, so a completed item is
+    /// still openable after a restart.
+    QStringList publishedPaths;
 
     /// Indices into nzb.files of the PAR2 recovery volumes actually asked for.
     ///
@@ -171,6 +282,14 @@ public:
     /// partial `.rar`, which no player opens, and mapping reads through the
     /// volume headers is Tier B (phase 6b). Better a disabled menu entry than a
     /// preview that fails at play time.
+    /// The best name known for @p fileIndex: the PAR2 set's, else the one yEnc
+    /// declared, else what the subject parser recovered from the NZB.
+    ///
+    /// Empty when none of the three has an answer yet. Callers add their own
+    /// last-resort fallback, because it genuinely differs — sealFile() invents
+    /// one, the streaming index would rather ask for more bytes.
+    [[nodiscard]] QString bestFileName(int fileIndex) const;
+
     [[nodiscard]] bool isFilePreviewable(int fileIndex) const;
 
     /// 0-100. Uses segment counts, not bytes: NzbSegment::bytes is the encoded

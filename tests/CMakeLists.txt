@@ -288,6 +288,8 @@ emule_add_test(tst_IpcConnection FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_PreferencesIpc FOLDER "Ipc" LIBRARIES eMule::Ipc yaml-cpp::yaml-cpp)
 # Push broadcast rate limiter — pure Qt Core, so it links the real library directly.
 emule_add_test(tst_PushCoalescer FOLDER "Ipc" LIBRARIES eMule::Ipc)
+# Daemon log buffer and its main-thread forward to the IPC sockets.
+emule_add_test(tst_LogRelay FOLDER "Ipc" LIBRARIES eMule::Ipc)
 
 # Usenet (NNTP) module
 emule_add_test(tst_UsenetSmoke FOLDER "Usenet" LIBRARIES eMule::Usenet)
@@ -296,6 +298,7 @@ emule_add_test(tst_NntpServerPool FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetPrefs FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cpp::yaml-cpp)
 emule_add_test(tst_UsenetYenc FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetNzbParse FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetSubjectPatterns FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetArticleFetch FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetSharing FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetQueue FOLDER "Usenet" LIBRARIES eMule::Usenet)
@@ -304,6 +307,11 @@ emule_add_test(tst_UsenetNzbUrl FOLDER "Usenet" LIBRARIES eMule::Usenet)
 # yaml-cpp direct, so the sidecar can be asserted to hold an *absolute* figure
 # rather than an increment.
 emule_add_test(tst_UsenetUsage FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cpp::yaml-cpp)
+emule_add_test(tst_UsenetHistory FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cpp::yaml-cpp)
+# The ED2K/Usenet download split: pure arithmetic, no queue or socket.
+emule_add_test(tst_UsenetBandwidthSplit FOLDER "Usenet" LIBRARIES eMule::Usenet)
+# How engine events become Statistics window counters: no socket either.
+emule_add_test(tst_UsenetStatistics FOLDER "Usenet" LIBRARIES eMule::Usenet)
 
 # Phase 6a. Separate from tst_UsenetQueue because it asserts on the *order* the
 # scheduler asks in, not on the file that comes out; the two would otherwise
@@ -317,6 +325,8 @@ emule_add_test(tst_RarReader FOLDER "Usenet" LIBRARIES eMule::Usenet)
 # unnecessary.
 emule_add_test(tst_UsenetDirectUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetPassword FOLDER "Usenet" LIBRARIES eMule::Usenet)
+set_tests_properties(tst_UsenetPassword PROPERTIES TIMEOUT 180)
 
 # Phase 4 end to end: par2 fixtures are generated in-process, so this one needs
 # the par2 headers too. The repair pass is real work, hence the raised timeout.
@@ -401,6 +411,62 @@ target_include_directories(tst_UsenetArchiveEntryDialog PRIVATE
 target_link_libraries(tst_UsenetArchiveEntryDialog PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# The release details view. Same shape as the chooser above: driven through
+# applyDetails() with hand-built CBOR, so no daemon and no panel.
+emule_add_test(tst_UsenetDetailsDialog FOLDER "Gui"
+    SOURCES tst_UsenetDetailsDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetDetailsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
+            # The model marks a password-protected release with menuIcon().
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PreviewLauncher.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+target_include_directories(tst_UsenetDetailsDialog PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_UsenetDetailsDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# The category tab's filter proxy. Pure model plumbing -- no daemon, no panel,
+# no widgets beyond QAbstractItemModel -- which is the whole reason the proxy was
+# lifted out of TransferPanel.cpp where none of it could be reached.
+emule_add_test(tst_CategoryFilterProxy FOLDER "Gui"
+    SOURCES tst_CategoryFilterProxy.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/CategoryFilterProxy.cpp")
+target_include_directories(tst_CategoryFilterProxy PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_CategoryFilterProxy PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# Columns that hold numbers must sort like numbers. Covers both halves of the
+# fix: the shared item classes in controls/SortableItems.h, and the Qt::UserRole
+# answers the models feed a QSortFilterProxyModel, plus the MFC colour cues the
+# same models carry. Same standalone-source trick as tst_DownloadStatusText --
+# no daemon, no panel.
+emule_add_test(tst_ListSorting FOLDER "Gui"
+    SOURCES tst_ListSorting.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ServerListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ClientListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
+            # The Usenet model marks a password-protected release with menuIcon().
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp")
+target_include_directories(tst_ListSorting PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_ListSorting PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
 # The add/edit category dialog. Constructed directly with a DownloadCategory, so
 # it needs the real dialog and DialogSizing but no daemon and no panel.
 emule_add_test(tst_CategoryDialog FOLDER "Gui"
@@ -418,7 +484,8 @@ target_link_libraries(tst_CategoryDialog PRIVATE
 # The Options window's height budget. QStackedLayout's minimum is the MAX over its
 # pages, so one page without a scroll area sets the window height for all eighteen --
 # and the sidebar's grouping must not drift from the Page enum that uistate.yml stores.
-# Compiles the real dialog; IpcClient is nullptr, so no daemon is involved.
+# Compiles the real dialog; IpcClient is nullptr, so no daemon is involved -- which also
+# makes it the place to check what the offline load path puts on the pages.
 emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
     SOURCES tst_OptionsDialogSizing.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
@@ -443,6 +510,21 @@ target_include_directories(tst_OptionsDialogSizing PRIVATE
 target_link_libraries(tst_OptionsDialogSizing PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# The Statistics window's Usenet branch, fed a GetUsenetStats reply in wire shape.
+emule_add_test(tst_StatisticsPanel FOLDER "Gui"
+    SOURCES tst_StatisticsPanel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/StatsGraph.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+target_include_directories(tst_StatisticsPanel PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_StatisticsPanel PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
 # Visibility-gated panel polling. Depends on nothing but Qt Widgets, same as above.
 emule_add_test(tst_PanelPoller FOLDER "Gui"
     SOURCES tst_PanelPoller.cpp
@@ -461,6 +543,16 @@ target_include_directories(tst_NzbDrop PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_NzbDrop PRIVATE Qt6::Widgets)
+
+# What waits for the daemon on a cold start. ExternalLinkHandler owns one of these
+# but cannot be tested itself — it reaches MainWindow — so the waiting rules were
+# split out into a header the test can compile against on its own.
+emule_add_test(tst_PendingOpenQueue FOLDER "Gui"
+    SOURCES tst_PendingOpenQueue.cpp)
+target_include_directories(tst_PendingOpenQueue PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_PendingOpenQueue PRIVATE Qt6::Widgets)
 
 # The .nzb file-type registration. Only the two generators are exercised — the
 # Windows and Linux writers compile on their own platform only, so this is the

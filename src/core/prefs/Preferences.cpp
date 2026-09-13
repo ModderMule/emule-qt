@@ -21,6 +21,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <atomic>
 
 #include <yaml-cpp/yaml.h>
 
@@ -34,6 +35,23 @@ namespace {
 ///   1 — video player resolved on first run
 ///   2 — ipFilterLevel raised off the legacy 100, which filtered nothing
 constexpr uint32 kCurrentPrefsVersion = 2;
+
+/// See Preferences::usenetSubjectPatternsRevision().
+///
+/// Process-scope and never reset: load() replaces the whole Data object (and
+/// does it again in its catch), so a member would go back to 0 and a cache
+/// holding 0 would look fresh while its rules were stale. Starts at 1 so a
+/// zero-initialised cache is always stale on first use.
+std::atomic<quint64> g_subjectPatternRevision{1};
+
+/// Bumps that revision on the way out of load(), whichever way load() leaves —
+/// the first-run path, the success path and the catch all replace Data, so all
+/// three have to invalidate. Declared *after* the write locker so it runs while
+/// the lock is still held: a reader that gets in afterwards sees the new data
+/// and the new number together.
+struct SubjectRevisionBump {
+    ~SubjectRevisionBump() { ++g_subjectPatternRevision; }
+};
 
 /// Normalise, drop the unusable, collapse duplicates, and enforce the cap.
 ///
@@ -349,11 +367,9 @@ struct Preferences::Data {
     // Per-source cumulative upload bytes
     uint64 cumUpFromFile = 0;
     uint64 cumUpFromPartfile = 0;
-    uint64 cumHttpCacheBytesPublished = 0;
-    uint64 cumHttpCacheBytesFetched = 0;
-    uint64 cumHttpCacheBytesSaved = 0;
-    uint32 cumHttpCacheChunksPublished = 0;
-    uint32 cumHttpCacheChunksFetched = 0;
+    HttpCacheCounters cumHttpCache;
+    UsenetCounters cumUsenet;
+    IndexerCounters cumIndexer;
 
     // Records
     uint32 recMaxWorkingServers = 0;
@@ -567,10 +583,13 @@ struct Preferences::Data {
     bool usenetUnpack = true;
     bool usenetCleanupAfterUnpack = true;
     bool usenetDirectUnpack = true;
+    bool usenetEncryptedPreview = true;
+    QString usenetExternalUnpacker;    // empty = search PATH and the usual places
     int usenetHealthCheck = 1;         // 0 off, 1 sample, 2 full
     int usenetHealthMinPercent = 95;
     bool usenetAutoAddPaused = false;
     QString usenetWatchDir;
+    QList<UsenetSubjectPattern> usenetSubjectPatterns;   ///< empty = the built-ins
 
     // -- Indexers (newznab / torznab), a shared module's settings -------------
     QList<IndexerConfig> indexers;
@@ -1337,11 +1356,13 @@ PREF_GS(uint64, cumDownPortOther, CumDownPortOther)
 
 PREF_GS(uint64, cumUpFromFile, CumUpFromFile)
 PREF_GS(uint64, cumUpFromPartfile, CumUpFromPartfile)
-PREF_GS(uint64, cumHttpCacheBytesPublished, CumHttpCacheBytesPublished)
-PREF_GS(uint64, cumHttpCacheBytesFetched, CumHttpCacheBytesFetched)
-PREF_GS(uint64, cumHttpCacheBytesSaved, CumHttpCacheBytesSaved)
-PREF_GS(uint32, cumHttpCacheChunksPublished, CumHttpCacheChunksPublished)
-PREF_GS(uint32, cumHttpCacheChunksFetched, CumHttpCacheChunksFetched)
+HttpCacheCounters Preferences::cumHttpCache() const { return get(&Data::cumHttpCache); }
+void Preferences::setCumHttpCache(const HttpCacheCounters& val) { set(&Data::cumHttpCache, val); }
+
+UsenetCounters Preferences::cumUsenet() const { return get(&Data::cumUsenet); }
+void Preferences::setCumUsenet(const UsenetCounters& val) { set(&Data::cumUsenet, val); }
+IndexerCounters Preferences::cumIndexer() const { return get(&Data::cumIndexer); }
+void Preferences::setCumIndexer(const IndexerCounters& val) { set(&Data::cumIndexer, val); }
 
 PREF_GS(uint32, recMaxWorkingServers, RecMaxWorkingServers)
 PREF_GS(uint32, recMaxUsersOnline, RecMaxUsersOnline)
@@ -1353,6 +1374,43 @@ PREF_GS(uint64, recMaxLargestFile, RecMaxLargestFile)
 
 #undef PREF_GET_SET
 #undef PREF_GS
+
+namespace {
+
+// A statistics value as YAML: a counter block becomes a nested map keyed by its
+// field walk, anything else is a plain scalar.
+template<class T>
+void emitStatValue(YAML::Emitter& out, const T& value)
+{
+    if constexpr (CounterBlock<T>) {
+        out << YAML::BeginMap;
+        T::forEachField([&](const char* key, uint64 T::* m, CounterAgg) {
+            out << YAML::Key << key << YAML::Value << value.*m;
+        });
+        out << YAML::EndMap;
+    } else {
+        out << value;
+    }
+}
+
+// The inverse. A missing node or key keeps @p fallback, like as<T>(fallback).
+template<class T>
+[[nodiscard]] T readStatValue(const YAML::Node& node, const T& fallback)
+{
+    if constexpr (CounterBlock<T>) {
+        T out = fallback;
+        if (node && node.IsMap()) {
+            T::forEachField([&](const char* key, uint64 T::* m, CounterAgg) {
+                out.*m = node[key].template as<uint64>(out.*m);
+            });
+        }
+        return out;
+    } else {
+        return node.template as<T>(fallback);
+    }
+}
+
+} // namespace
 
 // The one and only list of what "cumulative statistics" means. Templated on the
 // Data type so the same walk serves a mutating visitor (reset, restore) and a
@@ -1434,11 +1492,10 @@ void Preferences::forEachCumulativeStat(D& d, F&& f)
     f("cumUpFromFile", d.cumUpFromFile);
     f("cumUpFromPartfile", d.cumUpFromPartfile);
 
-    f("cumHttpCacheBytesPublished", d.cumHttpCacheBytesPublished);
-    f("cumHttpCacheBytesFetched", d.cumHttpCacheBytesFetched);
-    f("cumHttpCacheBytesSaved", d.cumHttpCacheBytesSaved);
-    f("cumHttpCacheChunksPublished", d.cumHttpCacheChunksPublished);
-    f("cumHttpCacheChunksFetched", d.cumHttpCacheChunksFetched);
+    // Whole blocks, written as nested maps (emitStatValue/readStatValue).
+    f("cumHttpCache", d.cumHttpCache);
+    f("cumUsenet", d.cumUsenet);
+    f("cumIndexer", d.cumIndexer);
 
     // The cumulative rates are records rather than sums, but MFC clears them
     // with the rest (srchybrid/Preferences.cpp:1140-1163), so they travel with
@@ -1514,7 +1571,7 @@ bool Preferences::restoreCumulativeStats()
         const YAML::Node root = YAML::LoadFile(path.toStdString());
 
         forEachCumulativeStat(d, [&root](const char* key, auto& value) {
-            value = root[key].as<std::decay_t<decltype(value)>>(value);
+            value = readStatValue(root[key], value);
         });
 
         // Records are merged, not overwritten: a record set after the reset is
@@ -1677,6 +1734,26 @@ void Preferences::setUsenetDirectUnpack(bool val)
     set(&Data::usenetDirectUnpack, val);
 }
 
+bool Preferences::usenetEncryptedPreview() const
+{
+    return get(&Data::usenetEncryptedPreview);
+}
+
+void Preferences::setUsenetEncryptedPreview(bool val)
+{
+    set(&Data::usenetEncryptedPreview, val);
+}
+
+QString Preferences::usenetExternalUnpacker() const
+{
+    return get(&Data::usenetExternalUnpacker);
+}
+
+void Preferences::setUsenetExternalUnpacker(const QString& val)
+{
+    set(&Data::usenetExternalUnpacker, val);
+}
+
 int Preferences::usenetHealthCheck() const
 {
     return get(&Data::usenetHealthCheck);
@@ -1717,6 +1794,50 @@ QString Preferences::usenetWatchDir() const
 void Preferences::setUsenetWatchDir(const QString& val)
 {
     set(&Data::usenetWatchDir, sanitizeWatchDir(val, configDir(), incomingDir(), tempDirs()));
+}
+
+QList<UsenetSubjectPattern> Preferences::usenetSubjectPatterns() const
+{
+    return get(&Data::usenetSubjectPatterns);
+}
+
+void Preferences::setUsenetSubjectPatterns(const QList<UsenetSubjectPattern>& val)
+{
+    // Sanitised before the lock: m_lock is not recursive.
+    const QList<UsenetSubjectPattern> clean = sanitizeSubjectPatterns(val);
+    set(&Data::usenetSubjectPatterns, clean);
+    ++g_subjectPatternRevision;
+}
+
+quint64 Preferences::usenetSubjectPatternsRevision()
+{
+    return g_subjectPatternRevision.load(std::memory_order_relaxed);
+}
+
+QList<UsenetSubjectPattern> Preferences::sanitizeSubjectPatterns(
+    const QList<UsenetSubjectPattern>& patterns)
+{
+    QList<UsenetSubjectPattern> out;
+    QSet<QString> seen;
+
+    for (const UsenetSubjectPattern& p : patterns) {
+        UsenetSubjectPattern clean = p;
+        clean.name = clean.name.trimmed();
+
+        // The pattern is *not* trimmed. A regex can legitimately end in a
+        // literal space or in " $", and quietly editing what the user wrote is
+        // the exact kind of helpfulness this whole preference exists to avoid.
+        if (!clean.isValid())
+            continue;
+        if (seen.contains(clean.key()))
+            continue;
+        if (out.size() >= kMaxSubjectPatterns)
+            break;
+
+        seen.insert(clean.key());
+        out.append(std::move(clean));
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -2975,6 +3096,7 @@ void Preferences::resolveDefaultVideoPlayer()
 bool Preferences::load(const QString& filePath)
 {
     QWriteLocker lock(&m_lock);
+    const SubjectRevisionBump bumpOnExit;
 
     m_filePath = filePath;
     m_data = std::make_unique<Data>();
@@ -3344,6 +3466,11 @@ bool Preferences::load(const QString& filePath)
             m_data->cumUpFromFile = st["cumUpFromFile"].as<uint64>(m_data->cumUpFromFile);
             m_data->cumUpFromPartfile = st["cumUpFromPartfile"].as<uint64>(m_data->cumUpFromPartfile);
 
+            // HTTP Cache / Usenet / indexer cumulative blocks
+            m_data->cumHttpCache = readStatValue(st["cumHttpCache"], m_data->cumHttpCache);
+            m_data->cumUsenet = readStatValue(st["cumUsenet"], m_data->cumUsenet);
+            m_data->cumIndexer = readStatValue(st["cumIndexer"], m_data->cumIndexer);
+
             // Records
             m_data->recMaxWorkingServers = st["recMaxWorkingServers"].as<uint32>(m_data->recMaxWorkingServers);
             m_data->recMaxUsersOnline = st["recMaxUsersOnline"].as<uint32>(m_data->recMaxUsersOnline);
@@ -3606,6 +3733,11 @@ bool Preferences::load(const QString& filePath)
                 un["cleanupAfterUnpack"].as<bool>(m_data->usenetCleanupAfterUnpack);
             m_data->usenetDirectUnpack =
                 un["directUnpack"].as<bool>(m_data->usenetDirectUnpack);
+            m_data->usenetEncryptedPreview =
+                un["encryptedPreview"].as<bool>(m_data->usenetEncryptedPreview);
+            m_data->usenetExternalUnpacker = QString::fromStdString(
+                un["externalUnpacker"].as<std::string>(
+                    m_data->usenetExternalUnpacker.toStdString()));
             m_data->usenetDownloadSharePercent = std::clamp(
                 un["downloadSharePercent"].as<int>(m_data->usenetDownloadSharePercent),
                 1, 99);
@@ -3615,6 +3747,34 @@ bool Preferences::load(const QString& filePath)
                 un["healthMinPercent"].as<int>(m_data->usenetHealthMinPercent), 0, 100);
             m_data->usenetAutoAddPaused =
                 un["autoAddPaused"].as<bool>(m_data->usenetAutoAddPaused);
+            if (const auto pats = un["subjectPatterns"]; pats && pats.IsSequence()) {
+                QList<UsenetSubjectPattern> list;
+                for (const auto& node : pats) {
+                    if (!node.IsMap())
+                        continue;
+
+                    UsenetSubjectPattern p;
+                    p.name = QString::fromStdString(node["name"].as<std::string>(""));
+                    p.pattern = QString::fromStdString(node["pattern"].as<std::string>(""));
+
+                    // A rule with no usable role is dropped rather than
+                    // defaulted: guessing would quietly fill the wrong field.
+                    // A bad *regex*, by contrast, is kept — see
+                    // sanitizeSubjectPatterns().
+                    if (!usenetSubjectRoleFromName(
+                            QString::fromStdString(node["role"].as<std::string>("")), p.role)) {
+                        continue;
+                    }
+
+                    p.pick = usenetSubjectPickFromName(
+                        QString::fromStdString(node["pick"].as<std::string>("first")));
+                    p.caseInsensitive = node["caseInsensitive"].as<bool>(false);
+                    p.enabled = node["enabled"].as<bool>(true);
+                    list.append(std::move(p));
+                }
+                m_data->usenetSubjectPatterns = sanitizeSubjectPatterns(list);
+            }
+
             if (un["watchDir"]) {
                 // Sanitised here as well as in the setter: a hand-edited file is
                 // exactly as capable of naming the temp tree as an IPC client is.
@@ -3795,6 +3955,10 @@ bool Preferences::load(const QString& filePath)
                     entry.maxAgeDays = node["maxAgeDays"].as<int>(0);
                     entry.intervalMinutes = node["intervalMinutes"].as<int>(30);
                     entry.grabExisting = node["grabExisting"].as<bool>(false);
+                    // Not clamped against categoryCount() here: that would make
+                    // a feed's destination depend on the order this function
+                    // reads its blocks in. SetCategories is what keeps it right.
+                    entry.downloadCategory = node["downloadCategory"].as<int>(0);
 
                     if (const auto cats = node["categories"]; cats && cats.IsSequence()) {
                         for (const auto& cat : cats)
@@ -4328,6 +4492,14 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "cumUpFromFile" << YAML::Value << m_data->cumUpFromFile;
     out << YAML::Key << "cumUpFromPartfile" << YAML::Value << m_data->cumUpFromPartfile;
 
+    // HTTP Cache / Usenet / indexer cumulative blocks
+    out << YAML::Key << "cumHttpCache" << YAML::Value;
+    emitStatValue(out, m_data->cumHttpCache);
+    out << YAML::Key << "cumUsenet" << YAML::Value;
+    emitStatValue(out, m_data->cumUsenet);
+    out << YAML::Key << "cumIndexer" << YAML::Value;
+    emitStatValue(out, m_data->cumIndexer);
+
     // Records
     out << YAML::Key << "recMaxWorkingServers" << YAML::Value << m_data->recMaxWorkingServers;
     out << YAML::Key << "recMaxUsersOnline" << YAML::Value << m_data->recMaxUsersOnline;
@@ -4578,11 +4750,39 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "cleanupAfterUnpack" << YAML::Value
         << m_data->usenetCleanupAfterUnpack;
     out << YAML::Key << "directUnpack" << YAML::Value << m_data->usenetDirectUnpack;
+    out << YAML::Key << "encryptedPreview" << YAML::Value << m_data->usenetEncryptedPreview;
+    if (!m_data->usenetExternalUnpacker.isEmpty()) {
+        out << YAML::Key << "externalUnpacker" << YAML::Value
+            << m_data->usenetExternalUnpacker.toStdString();
+    }
     out << YAML::Key << "healthCheck" << YAML::Value << m_data->usenetHealthCheck;
     out << YAML::Key << "healthMinPercent" << YAML::Value << m_data->usenetHealthMinPercent;
     out << YAML::Key << "autoAddPaused" << YAML::Value << m_data->usenetAutoAddPaused;
     if (!m_data->usenetWatchDir.isEmpty())
         out << YAML::Key << "watchDir" << YAML::Value << m_data->usenetWatchDir.toStdString();
+
+    // Only when the user has actually set some. Writing the built-ins out would
+    // change every existing preferences.yml for nothing, and would freeze this
+    // release's defaults into installations that should keep following ours.
+    if (!m_data->usenetSubjectPatterns.isEmpty()) {
+        out << YAML::Key << "subjectPatterns" << YAML::Value << YAML::BeginSeq;
+        for (const UsenetSubjectPattern& p : m_data->usenetSubjectPatterns) {
+            out << YAML::BeginMap;
+            out << YAML::Key << "name" << YAML::Value << p.name.toStdString();
+            out << YAML::Key << "role" << YAML::Value
+                << usenetSubjectRoleName(p.role).toStdString();
+            out << YAML::Key << "pattern" << YAML::Value << p.pattern.toStdString();
+            if (p.pick != UsenetSubjectPick::First)
+                out << YAML::Key << "pick" << YAML::Value << usenetSubjectPickName(p.pick).toStdString();
+            if (p.caseInsensitive)
+                out << YAML::Key << "caseInsensitive" << YAML::Value << true;
+            if (!p.enabled)
+                out << YAML::Key << "enabled" << YAML::Value << false;
+            out << YAML::EndMap;
+        }
+        out << YAML::EndSeq;
+    }
+
     out << YAML::Key << "servers" << YAML::Value << YAML::BeginSeq;
     for (const auto& server : m_data->usenetServers) {
         out << YAML::BeginMap;
@@ -4704,6 +4904,8 @@ bool Preferences::saveImpl(const QString& filePath) const
             out << YAML::Key << "intervalMinutes" << YAML::Value << feed.intervalMinutes;
             if (feed.grabExisting)
                 out << YAML::Key << "grabExisting" << YAML::Value << feed.grabExisting;
+            if (feed.downloadCategory > 0)
+                out << YAML::Key << "downloadCategory" << YAML::Value << feed.downloadCategory;
             out << YAML::Key << "enabled" << YAML::Value << feed.enabled;
             out << YAML::EndMap;
         }
@@ -4740,7 +4942,8 @@ bool Preferences::writeStatsBackup(const Data& d, const QString& filePath)
     out << YAML::BeginMap;
 
     forEachCumulativeStat(d, [&out](const char* key, const auto& value) {
-        out << YAML::Key << key << YAML::Value << value;
+        out << YAML::Key << key << YAML::Value;
+        emitStatValue(out, value);
     });
     forEachStatRecord(d, [&out](const char* key, const auto& value) {
         out << YAML::Key << key << YAML::Value << value;

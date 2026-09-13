@@ -114,7 +114,10 @@ struct ArchiveReader::Impl {
     QString passphrase;
     QString formatName;
     QStringList rejected;
+    QString lastError;
     bool encrypted = false;
+    bool encryptionBlocked = false;
+    bool wrongPassphrase = false;
     bool opened = false;
 };
 
@@ -188,7 +191,10 @@ void ArchiveReader::close()
     m_impl->filePath.clear();
     m_impl->formatName.clear();
     m_impl->rejected.clear();
+    m_impl->lastError.clear();
     m_impl->encrypted = false;
+    m_impl->encryptionBlocked = false;
+    m_impl->wrongPassphrase = false;
     m_impl->opened = false;
     // passphrase deliberately survives: it is set before open(), not by it.
 }
@@ -321,6 +327,35 @@ void ArchiveReader::setPassphrase(const QString& passphrase)
 bool ArchiveReader::hasEncryptedEntries() const
 {
     return m_impl->encrypted;
+}
+
+bool ArchiveReader::encryptionBlocked() const
+{
+    if (m_impl->encryptionBlocked)
+        return true;
+
+    // The header-encrypted case announces itself by failing, and is caught
+    // above. The *data*-encrypted one does not: RAR4 with FHD_PASSWORD and 7z
+    // with an AES codec both list their members perfectly happily and only fail
+    // when something reads one — libarchive's `return ARCHIVE_FATAL` for it is
+    // commented out on purpose, so that a caller can at least see the names.
+    //
+    // Waiting for that read would mean discovering it halfway through an
+    // extraction, with half a release already written. ZIP is the one format
+    // libarchive can actually decrypt, so for every other one an encrypted entry
+    // is a refusal that has not happened yet.
+    return m_impl->encrypted
+           && !m_impl->formatName.contains(QLatin1String("ZIP"), Qt::CaseInsensitive);
+}
+
+bool ArchiveReader::wrongPassphrase() const
+{
+    return m_impl->wrongPassphrase;
+}
+
+QString ArchiveReader::lastError() const
+{
+    return m_impl->lastError;
 }
 
 QString ArchiveReader::formatName() const
@@ -493,13 +528,60 @@ bool ArchiveReader::extractAllFrom(ArchiveVolumeSource& source, const QString& d
     }
 
     if (result != ARCHIVE_OK) {
+        noteReadFailure(ar, result);
         logWarning(QStringLiteral("ArchiveReader: cannot %1 '%2': %3")
-                       .arg(QString::fromLatin1(what), m_impl->filePath,
-                            QString::fromUtf8(archive_error_string(ar))));
+                       .arg(QString::fromLatin1(what), m_impl->filePath, m_impl->lastError));
         archive_read_free(ar);
         return nullptr;
     }
     return ar;
+}
+
+// A header loop that stops for any reason but ARCHIVE_EOF has failed, and until
+// this existed nothing looked at *why*. That is how a header-encrypted RAR read
+// as an empty-but-valid archive: libarchive returns ARCHIVE_FATAL on the very
+// first header, the `== ARCHIVE_OK` loop exits without a single iteration, and
+// an unpack of zero files then counted as a success — with the volumes deleted
+// after it.
+//
+// archive_read_has_encrypted_entries() is the only signal available in that
+// case, because no entry was ever handed out to carry the per-entry flag. It
+// answers ARCHIVE_READ_FORMAT_ENCRYPTION_DONT_KNOW (-1) before the format has
+// looked, so only a literal 1 means yes.
+void ArchiveReader::noteReadFailure(::archive* ar, int status) const
+{
+    if (status == ARCHIVE_EOF)
+        return;
+
+    if (const char* err = archive_error_string(ar))
+        m_impl->lastError = QString::fromUtf8(err);
+
+    if (archive_read_has_encrypted_entries(ar) == 1)
+        m_impl->encrypted = true;
+
+    // The formats say so in words and in no other way — there is no error code
+    // for "encrypted". libarchive's own strings, all four of them:
+    //   rar.c    "RAR encryption support unavailable."
+    //   rar5.c   "Encryption is not supported"
+    //            "Reading encrypted data is not currently supported"
+    //   7zip.c   "Crypto codec not supported yet (ID: 0x…)"
+    //            "The %s is encrypted, but currently not supported"
+    //   zip.c    "Incorrect passphrase" / "Too many incorrect passphrases"
+    //            "Encrypted file is unsupported"
+    static constexpr const char* kEncryptionWords[] = {
+        "encryption", "encrypted", "Crypto codec", "passphrase",
+    };
+    for (const char* word : kEncryptionWords) {
+        if (m_impl->lastError.contains(QLatin1String(word), Qt::CaseInsensitive)) {
+            m_impl->encryptionBlocked = true;
+            break;
+        }
+    }
+
+    // ZIP is the only reader that can tell a wrong passphrase from a missing
+    // one, because it is the only one that tries.
+    if (m_impl->lastError.contains(QLatin1String("passphrase"), Qt::CaseInsensitive))
+        m_impl->wrongPassphrase = true;
 }
 
 bool ArchiveReader::scanEntries()
@@ -509,7 +591,8 @@ bool ArchiveReader::scanEntries()
         return false;
 
     struct archive_entry* entry = nullptr;
-    while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
+    int status = ARCHIVE_OK;
+    while ((status = archive_read_next_header(ar, &entry)) == ARCHIVE_OK) {
         Impl::Entry e;
         const char* pathname = archive_entry_pathname_utf8(entry);
         if (!pathname)
@@ -528,7 +611,19 @@ bool ArchiveReader::scanEntries()
     if (const char* fmt = archive_format_name(ar))
         m_impl->formatName = QString::fromUtf8(fmt);
 
+    // Before the free, which invalidates both the handle and its error string.
+    noteReadFailure(ar, status);
     archive_read_free(ar);
+
+    if (status != ARCHIVE_EOF) {
+        // A header-encrypted set lands here having listed nothing. Reporting it
+        // as an open failure is the whole point: the previous `return true`
+        // handed the caller an archive that claimed to contain no files.
+        logWarning(QStringLiteral("ArchiveReader: '%1' could not be listed: %2")
+                       .arg(m_impl->filePath, m_impl->lastError));
+        return false;
+    }
+
     m_impl->opened = true;
     return true;
 }
@@ -551,7 +646,8 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
     static constexpr int kBufSize = 65536;
     char buf[kBufSize];
 
-    while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
+    int status = ARCHIVE_OK;
+    while ((status = archive_read_next_header(ar, &entry)) == ARCHIVE_OK) {
         ++entryIndex;
         const char* pathname = archive_entry_pathname_utf8(entry);
         if (!pathname)
@@ -609,8 +705,12 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
         for (;;) {
             const auto readSize = archive_read_data(ar, buf, kBufSize);
             if (readSize < 0) {
+                // 7z and RAR5 only refuse encrypted *data*, having listed the
+                // member happily — so this branch, not the header loop, is where
+                // an encrypted 7z announces itself.
+                noteReadFailure(ar, int(readSize));
                 logWarning(QStringLiteral("ArchiveReader: read error in '%1': %2")
-                               .arg(rawName, QString::fromUtf8(archive_error_string(ar))));
+                               .arg(rawName, m_impl->lastError));
                 allOk = false;
                 break;
             }
@@ -635,6 +735,17 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
         if (m_impl->sink)
             m_impl->sink(entryIndex, rawName, destPath, written, entrySize, /*finished*/ true);
         m_impl->extracted.append(destPath);
+    }
+
+    // Same trap as scanEntries(): the loop condition swallowed every reason the
+    // walk could stop, so an archive that failed on its first header extracted
+    // nothing and reported success. A live set ends at ARCHIVE_EOF like any
+    // other — ArchiveVolumeSource returning false is how it says "no more".
+    if (status != ARCHIVE_EOF) {
+        noteReadFailure(ar, status);
+        logWarning(QStringLiteral("ArchiveReader: extraction of '%1' stopped: %2")
+                       .arg(m_impl->filePath, m_impl->lastError));
+        allOk = false;
     }
 
     return allOk;

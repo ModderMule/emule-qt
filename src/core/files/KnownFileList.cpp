@@ -5,17 +5,31 @@
 /// Manages known.met and cancelled.met persistence.
 
 #include "files/KnownFileList.h"
+#include "app/AppContext.h"
 #include "files/KnownFile.h"
+#include "files/SharedFileList.h"
+#include "prefs/Preferences.h"
+#include "protocol/Tag.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
 
 #include <QFile>
+#include <QRandomGenerator>
+
+#include <vector>
 
 
 namespace eMule {
 
 static constexpr uint32 kKnownFileListSaveInterval = MIN2S(11);
-static constexpr uint8 kCancelledMetHeader = 0xE1;
+
+// cancelled.met, MFC's layout (srchybrid/KnownFileList.cpp:44-48):
+//   <header 1><version 1><seed 4><count 4>[<keyedHash 16><tagCount 1>[tags] * count]
+// The tag count is always written as 0 and exists so a later version can add
+// fields without breaking this reader. An earlier port wrote 0xE1 with bare
+// 16-byte records; that file is dropped rather than migrated — see
+// loadCancelledFiles(), and note the seed bug meant its keys matched nothing.
+static constexpr uint8 kCancelledMetHeader = MET_HEADER_I64TAGS;
 static constexpr uint8 kCancelledMetVersion = 0x01;
 
 // ---------------------------------------------------------------------------
@@ -60,12 +74,29 @@ void KnownFileList::save()
         // Clean up stale .tmp from a previous failed save
         QFile::remove(tmpPath);
 
+        // What "Remember downloaded files" actually does: with it off, only files
+        // we are currently sharing survive the write, so a completed download is
+        // forgotten as soon as it leaves the shared list. MFC decides it the same
+        // way (srchybrid/KnownFileList.cpp:211). Collected before the write rather
+        // than rewinding to patch the count afterwards, as MFC does at :217.
+        const bool rememberAll = thePrefs.rememberDownloadedFiles();
+        std::vector<const KnownFile*> toWrite;
+        toWrite.reserve(m_filesMap.size());
+        for (const auto& [key, knownFile] : m_filesMap) {
+            if (rememberAll
+                || (theApp.sharedFileList
+                    && theApp.sharedFileList->getFileByID(knownFile->fileHash()) == knownFile))
+            {
+                toWrite.push_back(knownFile);
+            }
+        }
+
         // Write to temp file
         {
             SafeFile file(tmpPath, QIODevice::WriteOnly);
             file.writeUInt8(MET_HEADER_I64TAGS);
-            file.writeUInt32(static_cast<uint32>(m_filesMap.size()));
-            for (const auto& [key, knownFile] : m_filesMap) {
+            file.writeUInt32(static_cast<uint32>(toWrite.size()));
+            for (const KnownFile* knownFile : toWrite) {
                 knownFile->writeToFile(file);
             }
         } // file closed before rename
@@ -212,20 +243,42 @@ bool KnownFileList::isFilePtrInList(const KnownFile* file) const
 
 void KnownFileList::addCancelledFileID(const uint8* hash)
 {
+    if (!thePrefs.rememberCancelledFiles())
+        return;
+    // Minted here, on the first insert, and never again — the seed is what every
+    // stored key was derived from, so generating it at save time (as this used to)
+    // wrote a header seed that disagreed with every record beneath it, and nothing
+    // matched after a restart. MFC mints it in the same place, and forces it
+    // non-zero for the same reason: 0 is the "not seeded yet" sentinel, so a
+    // genuinely zero seed would be re-minted on every call
+    // (srchybrid/KnownFileList.cpp:383-386).
+    if (m_cancelledSeed == 0)
+        m_cancelledSeed = (QRandomGenerator::global()->generate() % 0xFFFFFFFEu) + 1;
     m_cancelledFiles.insert(makeCancelledKey(hash));
 }
 
 bool KnownFileList::isCancelledFileByID(const uint8* hash) const
 {
+    if (!thePrefs.rememberCancelledFiles())
+        return false;
     return m_cancelledFiles.contains(makeCancelledKey(hash));
 }
 
 MD4Key KnownFileList::makeCancelledKey(const uint8* hash) const
 {
-    // Apply MD5(seed + hash) to obfuscate stored hashes
+    // The file stores MD5(seed || md4hash), never the hash itself, so reading it
+    // tells nobody which files were cancelled: without the seed a candidate hash
+    // cannot be tested, and two installations' files cannot be compared.
+    // Little-endian seed bytes, matching MFC's PokeUInt32.
+    uint8 seedLe[4];
+    seedLe[0] = static_cast<uint8>(m_cancelledSeed);
+    seedLe[1] = static_cast<uint8>(m_cancelledSeed >> 8);
+    seedLe[2] = static_cast<uint8>(m_cancelledSeed >> 16);
+    seedLe[3] = static_cast<uint8>(m_cancelledSeed >> 24);
+
     MD4Key result;
     QCryptographicHash md5(QCryptographicHash::Md5);
-    md5.addData(QByteArrayView(reinterpret_cast<const char*>(&m_cancelledSeed), 4));
+    md5.addData(QByteArrayView(reinterpret_cast<const char*>(seedLe), 4));
     md5.addData(QByteArrayView(reinterpret_cast<const char*>(hash), 16));
     auto digest = md5.result();
     std::memcpy(result.data.data(), digest.constData(), 16);
@@ -302,6 +355,11 @@ bool KnownFileList::loadCancelledFiles()
 {
     const QString filePath = m_configDir + QStringLiteral("/cancelled.met");
 
+    // Off means forget, as it does in MFC (srchybrid/KnownFileList.cpp:126): the
+    // list is not read, and the next save writes it out empty.
+    if (!thePrefs.rememberCancelledFiles())
+        return true;
+
     if (!QFile::exists(filePath))
         return true;
 
@@ -310,20 +368,34 @@ bool KnownFileList::loadCancelledFiles()
 
         uint8 header = file.readUInt8();
         if (header != kCancelledMetHeader) {
-            logWarning(QStringLiteral("cancelled.met: bad header"));
-            return false;
+            // Either MFC's pre-0x0F layout or this port's old 0xE1 one. Neither is
+            // worth converting: the 0xE1 files were written with a seed that never
+            // matched their own records, so there is nothing in them to recover.
+            logWarning(QStringLiteral("cancelled.met: unsupported header 0x%1, starting a new list")
+                           .arg(header, 2, 16, QChar(u'0')));
+            QFile::remove(filePath);
+            return true;
         }
 
         uint8 version = file.readUInt8();
-        if (version != kCancelledMetVersion)
+        if (version > kCancelledMetVersion)
             return false;
 
         m_cancelledSeed = file.readUInt32();
-        uint32 count = file.readUInt32();
+        if (m_cancelledSeed == 0) {
+            // An empty list written before anything was ever cancelled. Mint now so
+            // the first insert does not have to.
+            m_cancelledSeed = (QRandomGenerator::global()->generate() % 0xFFFFFFFEu) + 1;
+        }
 
+        uint32 count = file.readUInt32();
         for (uint32 i = 0; i < count; ++i) {
             MD4Key key;
             file.read(key.data.data(), 16);
+            // Always 0 today. Read and discarded so a later version can add fields
+            // here without this reader losing its place.
+            for (uint8 t = file.readUInt8(); t > 0; --t)
+                Tag skipped(file, false);
             m_cancelledFiles.insert(key);
         }
 
@@ -345,11 +417,9 @@ void KnownFileList::saveCancelledFiles()
     const QString tmpPath  = filePath + QStringLiteral(".tmp");
     const QString bakPath  = filePath + QStringLiteral(".bak");
 
-    // Generate seed on first save
-    if (m_cancelledSeed == 0) {
-        std::random_device rd;
-        m_cancelledSeed = rd();
-    }
+    // No seed minting here: addCancelledFileID() owns that, so the header can never
+    // claim a seed the records below it were not derived from.
+    const bool remember = thePrefs.rememberCancelledFiles();
 
     try {
         QFile::remove(tmpPath);
@@ -358,10 +428,17 @@ void KnownFileList::saveCancelledFiles()
             SafeFile file(tmpPath, QIODevice::WriteOnly);
             file.writeUInt8(kCancelledMetHeader);
             file.writeUInt8(kCancelledMetVersion);
+            // Written whether or not the list is: an empty file that keeps its seed
+            // stays consistent with itself if the preference comes back on.
             file.writeUInt32(m_cancelledSeed);
-            file.writeUInt32(static_cast<uint32>(m_cancelledFiles.size()));
-            for (const auto& key : m_cancelledFiles) {
-                file.write(key.data.data(), 16);
+            if (!remember) {
+                file.writeUInt32(0);
+            } else {
+                file.writeUInt32(static_cast<uint32>(m_cancelledFiles.size()));
+                for (const auto& key : m_cancelledFiles) {
+                    file.write(key.data.data(), 16);
+                    file.writeUInt8(0);   // tag count
+                }
             }
         }
 

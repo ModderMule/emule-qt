@@ -4,12 +4,14 @@
 
 #include "utils/WebServices.h"
 
+#include "app/AppConfig.h"
+
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMenu>
-#include <QStandardPaths>
 #include <QTextStream>
 #include <QUrl>
 
@@ -29,18 +31,32 @@ WebServices& WebServices::instance()
 // Config file path
 // ---------------------------------------------------------------------------
 
+QString WebServices::userFilePath()
+{
+    // AppConfig, not QStandardPaths: it is the only resolver that honours --config
+    // and it knows the macOS layout (~/eMuleQt/Config, not ~/Library/Preferences).
+    // Seeded here on first run -- webservices.dat is in AppConfig's kSeedOnce list.
+    return AppConfig::configDir() + QStringLiteral("/webservices.dat");
+}
+
 QString WebServices::servicesFilePath() const
 {
-    // Look for webservices.dat in the application config directory,
-    // falling back to the data directory shipped with the install.
-    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    const QString configPath = configDir + QStringLiteral("/webservices.dat");
-    if (QFile::exists(configPath))
-        return configPath;
+    const QString userPath = userFilePath();
+    if (QFile::exists(userPath))
+        return userPath;
 
-    // Shipped default next to the executable
-    const QString appDir = QCoreApplication::applicationDirPath();
-    return appDir + QStringLiteral("/data/config/webservices.dat");
+    // Not seeded yet. Same candidate list the seeder walks, so a .app bundle and a
+    // source-tree build both resolve.
+    const QStringList bundleDirs =
+        AppConfig::bundleCandidates(QCoreApplication::applicationDirPath());
+    for (const QString& dir : bundleDirs) {
+        const QString shipped = dir + QStringLiteral("/webservices.dat");
+        if (QFile::exists(shipped))
+            return shipped;
+    }
+
+    // Name the user's copy even when absent, so callers can create it.
+    return userPath;
 }
 
 // ---------------------------------------------------------------------------

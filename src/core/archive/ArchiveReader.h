@@ -72,15 +72,39 @@ public:
     [[nodiscard]] uint16 entryMode(int index) const;
     [[nodiscard]] QStringList entryNames() const;
 
-    /// Passphrase for encrypted members, applied at open(). libarchive can
-    /// decrypt ZIP and 7z. It can only *detect* RAR encryption, never undo it —
-    /// see hasEncryptedEntries().
+    /// Passphrase for encrypted members, applied at open(). **libarchive
+    /// decrypts ZIP only** — ZipCrypto and WinZip AES. For 7z it stops at
+    /// "Crypto codec not supported yet", and for RAR at "RAR encryption support
+    /// unavailable"; both are detection, never decryption. Anything else needs
+    /// ExternalUnpacker — see encryptionBlocked().
     void setPassphrase(const QString& passphrase);
 
-    /// True when the archive declared any member's data encrypted. For RAR this
-    /// is as far as libarchive goes, so a caller must report it rather than let
-    /// extraction fail with a meaningless read error.
+    /// True when the archive declared any member's data encrypted.
+    ///
+    /// Note this can be true for a set that still extracts perfectly: an
+    /// encrypted ZIP opened with the right passphrase says yes here. Use
+    /// encryptionBlocked() to ask the question a caller actually has.
     [[nodiscard]] bool hasEncryptedEntries() const;
+
+    /// True when encryption is what stopped this reader — the case where the
+    /// bytes are there, the password may even be right, and libarchive simply
+    /// has no decryptor for the format. That is the signal to hand the set to
+    /// ExternalUnpacker rather than report a corrupt archive.
+    ///
+    /// Header-encrypted sets are the reason this is not just
+    /// hasEncryptedEntries(): a RAR4 MHD_PASSWORD or RAR5 HEAD_CRYPT archive
+    /// fails on its *first* header, so no entry is ever seen and no entry flag
+    /// is ever set. lastError() carries libarchive's own words.
+    [[nodiscard]] bool encryptionBlocked() const;
+
+    /// True when the passphrase was refused as wrong, as opposed to missing or
+    /// unsupported. ZIP is the only format that can tell us this.
+    [[nodiscard]] bool wrongPassphrase() const;
+
+    /// libarchive's message from the last failure, empty after a clean run.
+    /// Worth surfacing: "Unexpected end of archive" and "RAR encryption support
+    /// unavailable" are the same return code and completely different problems.
+    [[nodiscard]] QString lastError() const;
 
     /// libarchive's name for the detected format, e.g. "RAR5", "ZIP", "7-Zip".
     [[nodiscard]] QString formatName() const;
@@ -157,6 +181,12 @@ private:
 
     /// Walk the archive once, recording entry metadata. The open() forms only.
     [[nodiscard]] bool scanEntries();
+
+    /// Record why a header loop stopped early. @p status is the non-ARCHIVE_OK
+    /// code archive_read_next_header() returned; ARCHIVE_EOF is the clean end
+    /// and records nothing. Everything else is a failure, and the only place
+    /// encryption of a *header*-encrypted set can be noticed at all.
+    void noteReadFailure(::archive* ar, int status) const;
 
     /// The extraction loop itself, over an already-opened handle. Shared by the
     /// on-disk and the live path, which differ only in how @p ar was opened.

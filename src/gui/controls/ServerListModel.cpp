@@ -1,10 +1,49 @@
 #include "pch.h"
 #include "controls/ServerListModel.h"
 
+#include "prefs/Preferences.h"
+#include "utils/ColorUtils.h"
+
 #include <QCborMap>
 #include <QColor>
 
 namespace eMule {
+
+namespace {
+
+/// A fixed-width sort key for an address, because the displayed form sorts by
+/// leading digit: "192.168.1.10" lands before "192.168.1.9".
+///
+/// An IPv6 literal has no octets to pad and is left as it is. The key stays a
+/// QString either way, so the column keeps a single type and every IPv4 row
+/// sorts ahead of every IPv6 one — arbitrary, but stable and grouped.
+QString addressSortKey(const QString& ip, uint16_t port)
+{
+    QString host = ip;
+    const QStringList octets = ip.split(QLatin1Char('.'));
+    if (octets.size() == 4) {
+        QStringList padded;
+        padded.reserve(4);
+        for (const QString& octet : octets)
+            padded << QStringLiteral("%1").arg(octet.toUInt(), 3, 10, QLatin1Char('0'));
+        host = padded.join(QLatin1Char('.'));
+    }
+    return QStringLiteral("%1:%2").arg(host).arg(port, 5, 10, QLatin1Char('0'));
+}
+
+/// Strength order, which the wire value is not — it is 0 Normal, 1 High, 2 Low.
+/// MFC sorts this column by strength (ServerListCtrl.cpp:632-645); by name it
+/// comes out High, Low, Normal.
+int preferenceRank(int wireValue)
+{
+    switch (wireValue) {
+    case 2:  return 0;   // Low
+    case 1:  return 2;   // High
+    default: return 1;   // Normal
+    }
+}
+
+} // namespace
 
 ServerListModel::ServerListModel(QObject* parent)
     : AbstractTableModel<ServerRow>(parent)
@@ -39,12 +78,12 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::UserRole) {
         switch (index.column()) {
         case ColName:        return r.name;
-        case ColIP:          return QStringLiteral("%1:%2").arg(r.ip).arg(r.port, 5, 10, QLatin1Char('0'));
+        case ColIP:          return addressSortKey(r.ip, r.port);
         case ColDescription: return r.description;
         case ColPing:        return r.ping;
         case ColUsers:       return r.users;
         case ColMaxUsers:    return r.maxUsers;
-        case ColPreference:  return r.preference;
+        case ColPreference:  return preferenceRank(r.preferenceValue);
         case ColFailed:      return r.failed;
         case ColStatic:      return r.isStatic ? 1 : 0;
         case ColSoftFiles:   return r.softFiles;
@@ -54,9 +93,16 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         }
     }
 
+    // MFC ServerListCtrl.cpp:209-214: light grey once dead, grey from the second failure.
+    // deadServerRetries 0 means "never remove" here, so nothing counts as dead.
     if (role == Qt::ForegroundRole) {
         if (m_connectedServerId != 0 && r.serverId == m_connectedServerId)
             return QColor(0x33, 0x99, 0xFF);
+        const uint32_t deadRetries = thePrefs.deadServerRetries();
+        if (deadRetries > 0 && r.failed >= deadRetries)
+            return dimmedText(0.75);
+        if (r.failed >= 2)
+            return dimmedText(0.5);
         return {};
     }
 
@@ -126,6 +172,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         row.obfuscation = m.value(QStringLiteral("obfuscation")).toBool();
 
         const int pref  = static_cast<int>(m.value(QStringLiteral("preference")).toInteger());
+        row.preferenceValue = pref;
         row.preference = QStringLiteral("Normal");
         for (const auto& [v, s] : prefNames) {
             if (v == pref) { row.preference = QString::fromLatin1(s); break; }

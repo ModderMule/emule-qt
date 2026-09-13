@@ -85,27 +85,40 @@ target_compile_definitions(emule_platform INTERFACE
     # Project
     SUPPORT_LARGE_FILES
     $<$<CONFIG:Debug>:EMULE_DEBUG>
-    $<$<CONFIG:Debug>:EMULE_DEV_BUILD>
     $<$<PLATFORM_ID:Windows>:NOMINMAX>
     $<$<PLATFORM_ID:Windows>:WIN32_LEAN_AND_MEAN>
     $<$<PLATFORM_ID:Windows>:UNICODE>
     $<$<PLATFORM_ID:Windows>:_UNICODE>
 )
 
-# Where a locally-built binary finds data/config. Packaged builds ship their own
-# copy (.app Resources/config, or config/ next to the exe) and should configure
-# with -DEMULE_SEED_FROM_SOURCE_TREE=OFF so no build-machine path is baked in.
-# Defined either way, empty when off, so the seeding code compiles identically
-# everywhere -- CI builds with tests off and would never catch an #ifdef'd block.
+# Where a locally-built binary finds its shipped data. Packaged builds ship their
+# own copies (.app Resources/, or config/ and lang/ next to the exe) and should
+# configure with -DEMULE_SEED_FROM_SOURCE_TREE=OFF so no build-machine path is
+# baked in. Both are defined either way, empty when off, so the code compiles
+# identically everywhere -- CI builds with tests off and would never catch an
+# #ifdef'd block.
+#
+# Note the asymmetry. data/config is committed, so the config fallback points at
+# the source tree. The .qm are not (.gitignore has *.qm) -- lrelease writes them
+# into the build tree, so the lang fallback points there instead: flat in
+# <build>/src/gui, next to the binary, which is where qt_add_translations puts
+# them. See the note in src/gui/CMakeLists.txt before moving either.
+#
+# One option for both: the hazard is the same (a build-machine path baked into a
+# shipped binary) and all three release workflows already pass OFF. A separate
+# option would default ON, so missing one workflow would ship that path silently.
 option(EMULE_SEED_FROM_SOURCE_TREE
-       "Let a locally-built binary seed config data from the repo's data/config" ON)
+       "Let a locally-built binary find config data and translations in the build/source tree" ON)
 if(EMULE_SEED_FROM_SOURCE_TREE)
     set(_emule_source_config "${PROJECT_SOURCE_DIR}/data/config")
+    set(_emule_dev_lang "${PROJECT_BINARY_DIR}/src/gui")
 else()
     set(_emule_source_config "")
+    set(_emule_dev_lang "")
 endif()
 target_compile_definitions(emule_platform INTERFACE
-    EMULE_SOURCE_CONFIG_DIR="${_emule_source_config}")
+    EMULE_SOURCE_CONFIG_DIR="${_emule_source_config}"
+    EMULE_DEV_LANG_DIR="${_emule_dev_lang}")
 
 # ---------------------------------------------------------------------------
 # Convenience "all common settings" target

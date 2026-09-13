@@ -194,17 +194,20 @@ void BodyCommand::onComplete()
     switch (m_decoder.status()) {
     case YencDecoder::Status::Ok:
         return;
+    // Every way a body can be undecodable, and all of them mean the same thing:
+    // what this server stores is unusable to us, and it will hand out the same
+    // copy next time. So exclude it and ask the next server, as for a 430 —
+    // NZBGet's RetryOnCrcError=no default.
+    //
+    // It is emphatically *not* a transport fault. This runs after the
+    // terminating "." on a connection that is back to Ready, so calling it one
+    // dropped a healthy connection and backed the account off for a minute.
     case YencDecoder::Status::CrcMismatch:
     case YencDecoder::Status::SizeMismatch:
-        // Corruption is a *transport* fault, not a missing article: the server
-        // has it, this copy arrived damaged. Retrying here is right; escalating
-        // to a fill server for it would waste the block account.
-        fail(NntpError::ProtocolError, m_decoder.statusText());
-        return;
     case YencDecoder::Status::NoBinaryData:
     case YencDecoder::Status::Incomplete:
     case YencDecoder::Status::Malformed:
-        fail(NntpError::ProtocolError, m_decoder.statusText());
+        fail(NntpError::ArticleCorrupt, m_decoder.statusText());
         return;
     }
 }

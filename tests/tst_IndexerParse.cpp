@@ -43,6 +43,8 @@ private slots:
     void search_readsTorznabFields();
     void search_skipsAnItemWithNoDownloadUrl();
     void search_dedupKeyIgnoresCase();
+    void search_classifiesThePasswordAttr();
+    void search_takesABracedPasswordOutOfTheTitle();
 };
 
 namespace {
@@ -356,6 +358,78 @@ void tst_IndexerParse::search_dedupKeyIgnoresCase()
 
     QCOMPARE(a.dedupKey(), b.dedupKey());
     QVERIFY(a.dedupKey() != c.dedupKey());
+}
+
+void tst_IndexerParse::search_classifiesThePasswordAttr()
+{
+    // The attribute is specified as a flag — 0/1/2 — and "-1" turns up in the
+    // wild. But indexers also put the real passphrase in it, so the value has to
+    // be classified rather than just compared against "0".
+    //
+    // The rule: anything that parses as an integer is a flag and never a
+    // password ("1" is nobody's passphrase, and using it as one turns a release
+    // that would have asked the user into one that fails with "wrong password").
+    // Everything else is a candidate, with a length floor for the "n/a" and "?"
+    // placeholders.
+    const auto rowFor = [](const QString& value) {
+        const QString xml =
+            QStringLiteral(R"(<?xml version="1.0"?>
+<rss xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+ <channel><item>
+  <title>Release.Name</title>
+  <guid>g1</guid>
+  <enclosure url="https://x/1.nzb" length="10"/>
+  <newznab:attr name="password" value="%1"/>
+ </item></channel></rss>)").arg(value);
+        const IndexerSearchPage page = parseIndexerSearch(
+            xml.toUtf8(), QStringLiteral("Test"), QStringLiteral("test"));
+        return page.results.value(0);
+    };
+
+    // Flags: never a password, whatever they say about protection.
+    QVERIFY(!rowFor(QStringLiteral("0")).passwordProtected);
+    QVERIFY(rowFor(QStringLiteral("0")).password.isEmpty());
+
+    for (const QString& flag : {QStringLiteral("1"), QStringLiteral("2"),
+                               QStringLiteral("-1")}) {
+        const IndexerResult row = rowFor(flag);
+        QVERIFY2(row.passwordProtected, qPrintable(flag));
+        QVERIFY2(row.password.isEmpty(), qPrintable(flag));
+    }
+
+    // Too short to be anything but a placeholder: protected, but nothing usable.
+    for (const QString& junk : {QStringLiteral("ab"), QStringLiteral("?"),
+                               QStringLiteral("n/a")}) {
+        const IndexerResult row = rowFor(junk);
+        QVERIFY2(row.passwordProtected, qPrintable(junk));
+        QVERIFY2(row.password.isEmpty(), qPrintable(junk));
+    }
+
+    // A real one.
+    const IndexerResult real = rowFor(QStringLiteral("s3cretpw"));
+    QVERIFY(real.passwordProtected);
+    QCOMPARE(real.password, QStringLiteral("s3cretpw"));
+}
+
+void tst_IndexerParse::search_takesABracedPasswordOutOfTheTitle()
+{
+    // Some indexers carry the passphrase in the title with NZBGet's marker
+    // rather than in an attribute. Taken *out* of the title as well as read, or
+    // the release is queued under a name with its own password showing.
+    const QByteArray xml = R"(<?xml version="1.0"?>
+<rss xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+ <channel><item>
+  <title>Some.Release.2160p{{letmein}}</title>
+  <guid>g1</guid>
+  <enclosure url="https://x/1.nzb" length="10"/>
+ </item></channel></rss>)";
+
+    const IndexerSearchPage page =
+        parseIndexerSearch(xml, QStringLiteral("Test"), QStringLiteral("test"));
+    QCOMPARE(page.results.size(), 1);
+    QCOMPARE(page.results.at(0).title, QStringLiteral("Some.Release.2160p"));
+    QCOMPARE(page.results.at(0).password, QStringLiteral("letmein"));
+    QVERIFY(page.results.at(0).passwordProtected);
 }
 
 QTEST_MAIN(tst_IndexerParse)

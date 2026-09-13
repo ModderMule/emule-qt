@@ -13,8 +13,10 @@
 
 #include "TestHelpers.h"
 
+#include "post/Par2NameIndex.h"
 #include "post/Par2Verifier.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -110,6 +112,15 @@ private slots:
     void repairsADamagedFile();
     void reportsBlocksNeededWhenRecoveryIsShort();
     void renameOnlyRestoresAnObfuscatedName();
+    void listsTheRecoverySetWithoutScanningAnyData();
+    void theListedHash16kMatchesTheFilesFirst16k();
+    void aFileShorterThan16kListsTheSameHashTwice();
+    void aTruncatedIndexIsReportedRatherThanCrashing();
+    void aDamagedObfuscatedFileCostsOnlyTheBlocksItLost();
+    void aRepairedObfuscatedFileLeavesItsOldNameBehind();
+    void theNameIndexKeysOnLengthAndTheOpeningBytesTogether();
+    void twoIdenticalFilesInASetAreLeftUnnamed();
+    void aFileWhoseOpeningBytesAreNotThereYetIsNotMatched();
 };
 
 // ---------------------------------------------------------------------------
@@ -226,6 +237,15 @@ void TestUsenetPar2::repairsADamagedFile()
     QVERIFY(fixed.ok());
 
     QCOMPARE(readFile(target), original);
+
+    // par2 does not delete what it repaired over: RenameTargetFiles() moves the
+    // damaged file aside as "payload.bin.1" and purgefiles is off. This happens
+    // on every repaired release, not only obfuscated ones, and the work folder
+    // is what gets published -- so the result has to name them.
+    QCOMPARE(fixed.backupFiles.size(), 1);
+    QCOMPARE(QFileInfo(fixed.backupFiles.first()).fileName(),
+             QStringLiteral("payload.bin.1"));
+    QVERIFY(QFileInfo::exists(fixed.backupFiles.first()));
 #endif
 }
 
@@ -295,6 +315,356 @@ void TestUsenetPar2::renameOnlyRestoresAnObfuscatedName()
     QCOMPARE(readFile(QDir(dir.path()).filePath(QStringLiteral("Real.Name.mkv"))), original);
     QVERIFY(r.renamedFiles > 0 || r.completeFiles > 0);
 #endif
+}
+
+// ---------------------------------------------------------------------------
+// listFiles -- the recovery set's own names
+// ---------------------------------------------------------------------------
+
+void TestUsenetPar2::listsTheRecoverySetWithoutScanningAnyData()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QByteArray a = patternData(30000, 'a');
+    const QByteArray b = patternData(12000, 'b');
+    QVERIFY(writeFile(QDir(dir.path()).filePath(QStringLiteral("Real.Name.part1.rar")), a));
+    QVERIFY(writeFile(QDir(dir.path()).filePath(QStringLiteral("Real.Name.part2.rar")), b));
+    QVERIFY(createPar2Set(dir.path(), QStringLiteral("rel"),
+                          {QStringLiteral("Real.Name.part1.rar"),
+                           QStringLiteral("Real.Name.part2.rar")},
+                          /*blockSize*/ 4000, /*recoveryBlocks*/ 2));
+
+    // Delete the payload outright. The names come from the packets, so a set
+    // can describe files that are not on disk yet -- which is the entire point:
+    // during a download they are not.
+    QVERIFY(QFile::remove(QDir(dir.path()).filePath(QStringLiteral("Real.Name.part1.rar"))));
+    QVERIFY(QFile::remove(QDir(dir.path()).filePath(QStringLiteral("Real.Name.part2.rar"))));
+
+    Par2Verifier v;
+    const Par2FileList list = v.listFiles(QDir(dir.path()).filePath(QStringLiteral("rel.par2")),
+                                          dir.path());
+
+    QVERIFY2(list.ok(), qPrintable(list.message));
+    QCOMPARE(list.outcome, Par2Outcome::Listed);
+    QCOMPARE(list.files.size(), 2);
+    QVERIFY(list.blockSize > 0);
+
+    QStringList names;
+    for (const Par2SetFile& f : list.files) {
+        names << f.fileName;
+        QVERIFY(f.recoverable);
+        QCOMPARE(f.hash16k.size(), 16);
+        QCOMPARE(f.hashFull.size(), 16);
+    }
+    names.sort();
+    QCOMPARE(names, QStringList({QStringLiteral("Real.Name.part1.rar"),
+                                 QStringLiteral("Real.Name.part2.rar")}));
+
+    for (const Par2SetFile& f : list.files) {
+        const qint64 expect = f.fileName.endsWith(QStringLiteral("part1.rar")) ? a.size()
+                                                                              : b.size();
+        QCOMPARE(f.size, expect);
+    }
+#endif
+}
+
+void TestUsenetPar2::theListedHash16kMatchesTheFilesFirst16k()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QByteArray data = patternData(30000, 'h');   // comfortably over 16 KiB
+    QVERIFY(writeFile(QDir(dir.path()).filePath(QStringLiteral("Big.bin")), data));
+    QVERIFY(createPar2Set(dir.path(), QStringLiteral("rel"),
+                          {QStringLiteral("Big.bin")}, 4000, 1));
+
+    Par2Verifier v;
+    const Par2FileList list = v.listFiles(QDir(dir.path()).filePath(QStringLiteral("rel.par2")),
+                                          dir.path());
+    QVERIFY2(list.ok(), qPrintable(list.message));
+    QCOMPARE(list.files.size(), 1);
+
+    // The case that fails the moment anyone reaches for MD5Hash::print(), which
+    // emits hash[15] first. Nothing would ever match, silently.
+    const QByteArray expect16k =
+        QCryptographicHash::hash(data.left(int(kPar2Hash16kBytes)), QCryptographicHash::Md5);
+    QCOMPARE(list.files.first().hash16k.toHex(), expect16k.toHex());
+
+    const QByteArray expectFull = QCryptographicHash::hash(data, QCryptographicHash::Md5);
+    QCOMPARE(list.files.first().hashFull.toHex(), expectFull.toHex());
+#endif
+}
+
+void TestUsenetPar2::aFileShorterThan16kListsTheSameHashTwice()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QByteArray data = patternData(5000, 's');    // under the 16 KiB window
+    QVERIFY(writeFile(QDir(dir.path()).filePath(QStringLiteral("Small.bin")), data));
+    QVERIFY(createPar2Set(dir.path(), QStringLiteral("rel"),
+                          {QStringLiteral("Small.bin")}, 1000, 1));
+
+    Par2Verifier v;
+    const Par2FileList list = v.listFiles(QDir(dir.path()).filePath(QStringLiteral("rel.par2")),
+                                          dir.path());
+    QVERIFY2(list.ok(), qPrintable(list.message));
+    QCOMPARE(list.files.size(), 1);
+
+    // A short file hashes whole for both fields, so a matcher keyed on hash16k
+    // still identifies it -- it does not need a special case.
+    const QByteArray whole = QCryptographicHash::hash(data, QCryptographicHash::Md5);
+    QCOMPARE(list.files.first().hash16k.toHex(), whole.toHex());
+    QCOMPARE(list.files.first().hashFull.toHex(), whole.toHex());
+#endif
+}
+
+void TestUsenetPar2::aTruncatedIndexIsReportedRatherThanCrashing()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    QVERIFY(writeFile(QDir(dir.path()).filePath(QStringLiteral("Real.bin")),
+                      patternData(20000, 't')));
+    QVERIFY(createPar2Set(dir.path(), QStringLiteral("rel"),
+                          {QStringLiteral("Real.bin")}, 4000, 1));
+
+    const QString index = QDir(dir.path()).filePath(QStringLiteral("rel.par2"));
+    const QByteArray whole = readFile(index);
+    QVERIFY(whole.size() > 64);
+    QVERIFY(writeFile(index, whole.left(whole.size() / 2)));
+
+    // CreateSourceFileList() pushes its map lookup unconditionally, so a set
+    // that lost a description packet leaves a null in `sourcefiles` rather than
+    // a shorter vector. Either a partial list or a refusal is a correct answer;
+    // dereferencing that null is not.
+    Par2Verifier v;
+    const Par2FileList list = v.listFiles(index, dir.path());
+    QVERIFY(list.outcome == Par2Outcome::Listed
+            || list.outcome == Par2Outcome::NoPar2Files
+            || list.outcome == Par2Outcome::Error);
+    for (const Par2SetFile& f : list.files) {
+        QVERIFY(!f.fileName.isEmpty());
+        QCOMPARE(f.hash16k.size(), 16);
+    }
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// The obfuscated file par2 was never told about
+// ---------------------------------------------------------------------------
+
+namespace {
+#ifdef EMULE_HAVE_PAR2
+/// A release as an obfuscated post leaves it: right bytes for the most part,
+/// meaningless name, and a hole where an article did not arrive.
+struct ObfuscatedSet {
+    QString index;
+    QString obfuscated;
+    QByteArray original;
+};
+
+bool buildDamagedObfuscatedSet(const QString& dir, ObfuscatedSet& out, int recoveryBlocks = 6)
+{
+    const QString real = QDir(dir).filePath(QStringLiteral("payload.bin"));
+    out.original = patternData(60000, 'x');
+    if (!writeFile(real, out.original))
+        return false;
+    if (!createPar2Set(dir, QStringLiteral("rel"), {QStringLiteral("payload.bin")},
+                       /*blockSize*/ 4000, recoveryBlocks))
+        return false;
+
+    // Two blocks' worth of zeros at a block boundary: right length, wrong bytes.
+    QByteArray damaged = out.original;
+    damaged.replace(20000, 8000, QByteArray(8000, '\0'));
+    if (!writeFile(real, damaged))
+        return false;
+
+    out.index = QDir(dir).filePath(QStringLiteral("rel.par2"));
+    out.obfuscated = QDir(dir).filePath(QStringLiteral("abcd1234efgh5678.bin"));
+    return QFile::rename(real, out.obfuscated);
+}
+#endif
+} // namespace
+
+void TestUsenetPar2::aDamagedObfuscatedFileCostsOnlyTheBlocksItLost()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    ObfuscatedSet set;
+    QVERIFY(buildDamagedObfuscatedSet(dir.path(), set));
+
+    Par2Verifier v;
+
+    // The rename pass cannot rescue this one: renameonly stops at the first
+    // partial match (par2repairer.cpp:1801), so a damaged obfuscated file keeps
+    // its meaningless name.
+    const Par2Result renamed = v.rename(set.index, dir.path());
+    QCOMPARE(renamed.renamedFiles, 0);
+    QVERIFY(QFileInfo::exists(set.obfuscated));
+
+    const Par2Result check = v.verify(set.index, dir.path());
+
+    // The defect: with no extra files handed to it, par2 never sees this file at
+    // all and books every one of its blocks as missing. missingBlocks is what
+    // UsenetQueue::requestPar2Volumes() spends the user's allowance on, so the
+    // difference between 2 and 15 is real money -- and, when recovery is short,
+    // a repairable release declared dead.
+    QCOMPARE(check.sourceBlocks, 15);
+    QCOMPARE(check.missingBlocks, 2);        // was 15: the whole file
+    QCOMPARE(check.availableBlocks, 13);
+    QCOMPARE(check.blocksStillNeeded(), 0);
+    QCOMPARE(check.outcome, Par2Outcome::RepairPossible);
+
+    // par2 still counts the *file* as missing, and that is not a bug to fix
+    // here: ePartialMatch on an extra file records its blocks but sets no target
+    // file (par2repairer.cpp:1499), so nothing owns the name. The blocks are
+    // what the queue spends money on; the file tally is bookkeeping.
+    QCOMPARE(check.missingFiles, 1);
+    QCOMPARE(check.completeFiles, 0);
+#endif
+}
+
+void TestUsenetPar2::aRepairedObfuscatedFileLeavesItsOldNameBehind()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    ObfuscatedSet set;
+    QVERIFY(buildDamagedObfuscatedSet(dir.path(), set));
+
+    Par2Verifier v;
+    const Par2Result fixed = v.repair(set.index, dir.path());
+    QCOMPARE(fixed.outcome, Par2Outcome::Repaired);
+
+    const QString real = QDir(dir.path()).filePath(QStringLiteral("payload.bin"));
+    QVERIFY(QFileInfo::exists(real));
+    QCOMPARE(readFile(real), set.original);
+
+    // RenameTargetFiles() renames a damaged target with DiskFile::Rename(void),
+    // which appends ".1" -- it does not delete it, because purgefiles is off.
+    // The result has to name them or the post-processor publishes a
+    // known-damaged copy of the payload beside the repaired one.
+    // ...and the obfuscated copy is still sitting there. This is the second,
+    // *unreported* leftover: with no target file to rename, par2 built the real
+    // name from recovery data and never touched the hex one, so backupFiles is
+    // empty and a publisher walking the work folder would offer ED2K peers a
+    // known-damaged copy of the payload. Naming it needs the recovery set's own
+    // file list -- see Par2NameIndex.
+    QVERIFY(QFileInfo::exists(set.obfuscated));
+    QVERIFY(fixed.backupFiles.isEmpty());
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Par2NameIndex
+// ---------------------------------------------------------------------------
+
+void TestUsenetPar2::theNameIndexKeysOnLengthAndTheOpeningBytesTogether()
+{
+    const QByteArray a = patternData(40000, 'a');
+    const QByteArray b = patternData(40000, 'b');   // same length, different bytes
+
+    const auto entry = [](const QString& name, const QByteArray& data) {
+        Par2SetFile f;
+        f.fileName = name;
+        f.size = data.size();
+        f.hash16k = QCryptographicHash::hash(data.left(int(kPar2Hash16kBytes)),
+                                             QCryptographicHash::Md5);
+        f.hashFull = QCryptographicHash::hash(data, QCryptographicHash::Md5);
+        return f;
+    };
+
+    Par2NameIndex index;
+    index.setFiles({entry(QStringLiteral("first.rar"), a),
+                    entry(QStringLiteral("second.rar"), b)});
+    QCOMPARE(index.size(), 2);
+
+    // Length alone would be useless here, and that is not a contrived case:
+    // every volume of a RAR set is the same length except the last.
+    QCOMPARE(index.match(a.size(), QCryptographicHash::hash(
+                             a.left(int(kPar2Hash16kBytes)), QCryptographicHash::Md5)),
+             QStringLiteral("first.rar"));
+    QCOMPARE(index.match(b.size(), QCryptographicHash::hash(
+                             b.left(int(kPar2Hash16kBytes)), QCryptographicHash::Md5)),
+             QStringLiteral("second.rar"));
+
+    // The right bytes at the wrong length is not a match either.
+    QVERIFY(index.match(a.size() + 1,
+                        QCryptographicHash::hash(a.left(int(kPar2Hash16kBytes)),
+                                                 QCryptographicHash::Md5)).isEmpty());
+
+    // One name, one file.
+    QVERIFY(index.claim(QStringLiteral("first.rar")));
+    QVERIFY(!index.claim(QStringLiteral("first.rar")));
+}
+
+void TestUsenetPar2::twoIdenticalFilesInASetAreLeftUnnamed()
+{
+    // A set can hold two byte-identical files under different names -- two copies
+    // of an .nfo is the everyday case. They are indistinguishable by length and
+    // opening bytes, which is all we have, so guessing would swap them.
+    const QByteArray same = patternData(20000, 'n');
+
+    Par2SetFile one;
+    one.fileName = QStringLiteral("readme.nfo");
+    one.size = same.size();
+    one.hash16k = QCryptographicHash::hash(same.left(int(kPar2Hash16kBytes)),
+                                           QCryptographicHash::Md5);
+
+    Par2SetFile two = one;
+    two.fileName = QStringLiteral("info.nfo");
+
+    Par2NameIndex index;
+    index.setFiles({one, two});
+    QVERIFY(index.match(same.size(), one.hash16k).isEmpty());
+}
+
+void TestUsenetPar2::aFileWhoseOpeningBytesAreNotThereYetIsNotMatched()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QByteArray whole = patternData(40000, 'p');
+    Par2SetFile f;
+    f.fileName = QStringLiteral("Real.mkv");
+    f.size = whole.size();
+    f.hash16k = QCryptographicHash::hash(whole.left(int(kPar2Hash16kBytes)),
+                                         QCryptographicHash::Md5);
+
+    Par2NameIndex index;
+    index.setFiles({f});
+
+    // A scratch file with only part of its opening window written. Reading it
+    // short and hashing whatever is there would produce a confident wrong answer.
+    const QString path = QDir(dir.path()).filePath(QStringLiteral("scratch.part"));
+    QVERIFY(writeFile(path, whole.left(int(kPar2Hash16kBytes) - 1)));
+    QVERIFY(index.matchFile(path, whole.size()).isEmpty());
+
+    QVERIFY(writeFile(path, whole));
+    QCOMPARE(index.matchFile(path, whole.size()), QStringLiteral("Real.mkv"));
+
+    // A file shorter than the window hashes whole, so the window is its length.
+    QCOMPARE(Par2NameIndex::bytesNeededFor(5000), qint64(5000));
+    QCOMPARE(Par2NameIndex::bytesNeededFor(40000), kPar2Hash16kBytes);
 }
 
 QTEST_MAIN(TestUsenetPar2)

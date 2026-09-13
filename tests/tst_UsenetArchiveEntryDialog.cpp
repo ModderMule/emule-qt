@@ -95,10 +95,14 @@ void tst_UsenetArchiveEntryDialog::unplayableRowsAreListedButCannotBeReached()
 void tst_UsenetArchiveEntryDialog::theChosenEntryIsTheOrdinalNotTheRow()
 {
     UsenetArchiveEntryDialog dlg(nullptr, QStringLiteral("item"), 0);
+    // 9 MB and 10 MB, deliberately: they format to "9.00 MB" and "10.00 MB",
+    // so the text order is the *reverse* of the byte order. Sizes that sort the
+    // same either way would let the Size column go back to comparing strings
+    // without this test noticing — which is how it shipped broken.
     dlg.applyListing(listing(kComplete, {
         entry(0, QStringLiteral("intro.nfo"), 500, false, QStringLiteral("Not playable")),
-        entry(1, QStringLiteral("small.mkv"), 1000, true),
-        entry(2, QStringLiteral("large.mkv"), 900000, true),
+        entry(1, QStringLiteral("small.mkv"), 9LL * 1024 * 1024, true),
+        entry(2, QStringLiteral("large.mkv"), 10LL * 1024 * 1024, true),
     }));
 
     auto* tree = dlg.findChild<QTreeWidget*>();

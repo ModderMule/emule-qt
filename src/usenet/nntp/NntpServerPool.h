@@ -137,6 +137,11 @@ private:
         QString bucket;     ///< which connection budget this lease spends
         int level = 0;
         bool inUse = false;
+
+        /// Dropped the moment its holder gives it back. Set when the server is
+        /// backed off or reconfigured while this connection is mid-article:
+        /// aborting it there strands the article (see dropConnections()).
+        bool retireOnRelease = false;
     };
 
     /// Abort @p lease's socket and hand it to the event loop to destroy.

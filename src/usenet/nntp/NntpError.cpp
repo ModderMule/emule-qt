@@ -16,6 +16,7 @@ QString describeNntpError(NntpError e)
     case NntpError::AuthFailed:        return QCoreApplication::translate("Usenet", "Authentication failed");
     case NntpError::ArticleNotFound:   return QCoreApplication::translate("Usenet", "Article not found");
     case NntpError::GroupNotFound:     return QCoreApplication::translate("Usenet", "Newsgroup not found");
+    case NntpError::ArticleCorrupt:    return QCoreApplication::translate("Usenet", "Damaged article");
     case NntpError::ProtocolError:     return QCoreApplication::translate("Usenet", "Protocol error");
     }
     return QCoreApplication::translate("Usenet", "Unknown error");

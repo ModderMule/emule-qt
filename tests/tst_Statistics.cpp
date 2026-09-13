@@ -3,11 +3,13 @@
 ///        transfer counters, ratio calculation, history ring buffer.
 
 #include "TestHelpers.h"
+#include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
+#include <QCborMap>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -28,6 +30,8 @@ private slots:
     void transferTime_tracking();
     void serverDuration_tracking();
     void add2TotalServerDuration_accumulates();
+    void serverConnected_countsReconnectsNotConnections();
+    void serverDisconnected_banksWithoutATickAndIsIdempotent();
     void overheadDown_accumulates();
     void overheadUp_accumulates();
     void overheadDown_packetCounting();
@@ -40,7 +44,12 @@ private slots:
     void avgDownloadRate_session();
     void avgUploadRate_session();
     void recordRate_appendsHistory();
-    void sessionBytesChanged_signal();
+    void addTransferData_feedsSessionTotals();
+    void addTransferData_stampsTransferStartOnce();
+    void totalAverage_blendsWithTheRebaseSnapshotNotThePref();
+    void combineCounters_sumsAndKeepsPeaks();
+    void countersCbor_roundTripsAndMissingKeysReadZero();
+    void cumulativeUsenet_isBasePlusSession();
     void overheadStatsUpdated_signal();
     void uptimeSecs_countsFromTheStartTick();
     void init_stampsStartTickOnceOnly();
@@ -191,6 +200,51 @@ void tst_Statistics::add2TotalServerDuration_accumulates()
     stats.setServerConnectTime(0);
     stats.updateConnectionStats(0.0f, 0.0f);
     QCOMPARE(stats.serverDuration(), dur1);  // only accumulated part
+}
+
+// "Reconnects" answers how often the server connection dropped and came back, so
+// the first login of the session is not one. MFC keeps the raw count and
+// subtracts one wherever it shows or saves it (StatisticsDlg.cpp:1415,
+// Preferences.cpp:857); counting the right thing here keeps the GUI, the web
+// server and the cumulative total honest without each repeating the rule.
+void tst_Statistics::serverConnected_countsReconnectsNotConnections()
+{
+    Statistics stats;
+    QCOMPARE(stats.reconnects(), uint16{0});
+
+    stats.serverConnected();
+    QCOMPARE(stats.reconnects(), uint16{0});
+    QVERIFY(stats.serverConnectTime() != 0);   // the clock is running
+
+    stats.serverDisconnected();
+    QCOMPARE(stats.serverConnectTime(), uint32{0});
+
+    stats.serverConnected();
+    QCOMPARE(stats.reconnects(), uint16{1});
+}
+
+// The bank happens from the connect stamp, not from whatever the 1 Hz update
+// last computed, so a connection that ends between ticks keeps its seconds. And
+// every teardown path may call it: several of them reach the same drop.
+void tst_Statistics::serverDisconnected_banksWithoutATickAndIsIdempotent()
+{
+    Statistics stats;
+    stats.serverConnected();
+    stats.setServerConnectTime(stats.serverConnectTime() - SEC2MS(10));
+
+    // No updateConnectionStats() in between — this is the point.
+    stats.serverDisconnected();
+    const uint32 banked = stats.serverDuration();
+    QVERIFY2(banked >= 9, qPrintable(QString::number(banked)));
+    QCOMPARE(stats.thisServerDuration(), uint32{0});
+
+    stats.serverDisconnected();
+    stats.serverDisconnected();
+    QCOMPARE(stats.serverDuration(), banked);
+
+    // A tick while disconnected does not revive the clock either.
+    stats.updateConnectionStats(0.0f, 0.0f);
+    QCOMPARE(stats.serverDuration(), banked);
 }
 
 void tst_Statistics::overheadDown_accumulates()
@@ -363,19 +417,135 @@ void tst_Statistics::recordRate_appendsHistory()
     QCOMPARE(stats.avgDownloadRate(AverageType::Time), 0.0f);
 }
 
-void tst_Statistics::sessionBytesChanged_signal()
+// MFC's Add2SessionTransferData ends in UpdateSentBytes/UpdateReceivedBytes: the
+// session totals are the per-client breakdown summed. They used to be fed by
+// nothing, so "Uploaded Data" read 0 however much was uploaded.
+void tst_Statistics::addTransferData_feedsSessionTotals()
 {
     Statistics stats;
-    QSignalSpy spy(&stats, &Statistics::sessionBytesChanged);
+    stats.addTransferData(ClientSoftware::eMule, 4662, false, true, 800);
+    stats.addTransferData(ClientSoftware::aMule, 5000, true, true, 200);
+    stats.addTransferData(ClientSoftware::eMule, 4662, false, false, 900);
+    stats.addTransferData(ClientSoftware::URL, 0, false, false, 100);
 
-    stats.addSessionReceivedBytes(100);
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(stats.sessionSentBytes(), uint64{1000});
+    QCOMPARE(stats.sessionReceivedBytes(), uint64{1000});
 
-    stats.addSessionSentBytes(200);
-    QCOMPARE(spy.count(), 2);
+    // The breakdown underneath still adds up to the same totals.
+    QCOMPARE(stats.sesUpByClient(0) + stats.sesUpByClient(3), uint64{1000});
+    QCOMPARE(stats.sesUpPort4662() + stats.sesUpPortOther(), uint64{1000});
+    QCOMPARE(stats.sesDownByClient(0) + stats.sesDownByClient(7), uint64{1000});
+    QCOMPARE(stats.sesDownPort4662(), uint64{900});
+    QCOMPARE(stats.sesDownPortOther(), uint64{100});
+}
 
-    stats.addSessionSentBytesToFriend(300);
-    QCOMPARE(spy.count(), 3);
+// MFC's SetTimeOnTransfer: the first byte starts the clock the session averages
+// run on, and later bytes leave it where it is.
+void tst_Statistics::addTransferData_stampsTransferStartOnce()
+{
+    Statistics stats;
+    stats.addTransferData(ClientSoftware::eMule, 4662, false, false, 0);
+    QCOMPARE(stats.transferStartTime(), uint32{0});   // nothing moved, nothing stamped
+
+    stats.addTransferData(ClientSoftware::eMule, 4662, false, false, 10);
+    const uint32 first = stats.transferStartTime();
+    QVERIFY(first != 0);
+
+    stats.addTransferData(ClientSoftware::eMule, 4662, false, true, 10);
+    stats.addSessionReceivedBytes(10);
+    QCOMPARE(stats.transferStartTime(), first);
+}
+
+// The flush banks the Total average into connAvgDownRate, as MFC's SaveStats
+// does. If the Total then read that pref back it would compound every interval;
+// it blends with the value captured at the rebase instead.
+void tst_Statistics::totalAverage_blendsWithTheRebaseSnapshotNotThePref()
+{
+    Preferences prefs;
+    prefs.setConnAvgDownRate(100.0f);
+
+    Statistics stats;
+    stats.init(prefs);
+    stats.setTransferStartTime(static_cast<uint32>(getTickCount()) - SEC2MS(10));
+    stats.addSessionReceivedBytes(10 * 1024 * 10);   // 10 KB/s over 10 s
+
+    const float total = stats.avgDownloadRate(AverageType::Total);
+    QVERIFY(total > 54.0f && total < 56.0f);           // (10 + 100) / 2
+
+    stats.flushCumulativeToPrefs(prefs, {});
+    QVERIFY(qAbs(prefs.connAvgDownRate() - total) < 0.5f);
+
+    // Flushing again, and asking again, changes nothing.
+    stats.flushCumulativeToPrefs(prefs, {});
+    QVERIFY(qAbs(stats.avgDownloadRate(AverageType::Total) - total) < 0.5f);
+    QVERIFY(qAbs(prefs.connAvgDownRate() - total) < 0.5f);
+}
+
+void tst_Statistics::combineCounters_sumsAndKeepsPeaks()
+{
+    UsenetCounters base;
+    base.wireBytes = 1000;
+    base.maxDownRate = 500;
+    base.peakConnections = 40;
+
+    UsenetCounters session;
+    session.wireBytes = 250;
+    session.maxDownRate = 700;
+    session.peakConnections = 10;
+
+    const UsenetCounters total = combineCounters(base, session);
+    QCOMPARE(total.wireBytes, uint64{1250});
+    QCOMPARE(total.maxDownRate, uint64{700});    // a peak, not an amount
+    QCOMPARE(total.peakConnections, uint64{40});
+}
+
+void tst_Statistics::countersCbor_roundTripsAndMissingKeysReadZero()
+{
+    IndexerCounters c;
+    c.searches = 3;
+    c.apiRequests = 12;
+    c.feedMatches = 1;
+
+    QCborMap map = countersToCbor(c);
+    QCOMPARE(map.value(QStringLiteral("apiRequests")).toInteger(), 12);
+    QCOMPARE(countersFromCbor<IndexerCounters>(map), c);
+
+    // An older sender without a field: the field reads 0 rather than failing.
+    map.remove(QStringLiteral("searches"));
+    QCOMPARE(countersFromCbor<IndexerCounters>(map).searches, uint64{0});
+    QCOMPARE(countersFromCbor<IndexerCounters>(map).apiRequests, uint64{12});
+}
+
+void tst_Statistics::cumulativeUsenet_isBasePlusSession()
+{
+    Preferences prefs;
+    UsenetCounters banked;
+    banked.decodedBytes = 5000;
+    banked.itemsCompleted = 2;
+    banked.maxDownRate = 900;
+    prefs.setCumUsenet(banked);
+    IndexerCounters bankedIdx;
+    bankedIdx.searches = 7;
+    prefs.setCumIndexer(bankedIdx);
+
+    Statistics stats;
+    stats.init(prefs);
+    stats.usenetSession().decodedBytes += 1000;
+    ++stats.usenetSession().itemsCompleted;
+    raiseCounter(stats.usenetSession().maxDownRate, 400);
+    ++stats.indexerSession().searches;
+
+    const UsenetCounters total = stats.cumulativeUsenet();
+    QCOMPARE(total.decodedBytes, uint64{6000});
+    QCOMPARE(total.itemsCompleted, uint64{3});
+    QCOMPARE(total.maxDownRate, uint64{900});
+    QCOMPARE(stats.cumulativeIndexer().searches, uint64{8});
+
+    // The flush writes the same totals back, absolutely.
+    stats.flushCumulativeToPrefs(prefs, {});
+    stats.flushCumulativeToPrefs(prefs, {});
+    QCOMPARE(prefs.cumUsenet(), total);
+    QCOMPARE(prefs.cumIndexer().searches, uint64{8});
 }
 
 void tst_Statistics::overheadStatsUpdated_signal()

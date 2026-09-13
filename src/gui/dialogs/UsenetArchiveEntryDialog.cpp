@@ -7,15 +7,16 @@
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 #include "utils/DialogSizing.h"
 #include "utils/FileTypeIcons.h"
+#include "utils/StringUtils.h"
 
 #include <QCborArray>
 #include <QCborMap>
 #include <QDialogButtonBox>
 #include <QHeaderView>
 #include <QLabel>
-#include <QLocale>
 #include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
@@ -90,11 +91,13 @@ void UsenetArchiveEntryDialog::applyListing(const QCborMap& listing)
         const bool canPlay = row.value(QStringLiteral("playable")).toBool();
         const QString note = row.value(QStringLiteral("note")).toString();
 
-        auto* item = new QTreeWidgetItem(m_tree);
+        auto* item = new SortableTreeItem(m_tree);
         item->setText(ColName, name);
         item->setIcon(ColName, fileTypeIconForName(name));
-        item->setText(ColSize, size > 0 ? QLocale::system().formattedDataSize(size) : QString());
-        item->setData(ColSize, Qt::UserRole, size);   // sort numerically, not as text
+        item->setText(ColSize, size > 0 ? formatByteSize(size) : QString());
+        // SortRole, not Qt::UserRole: ColName already spends UserRole on the
+        // entry ordinal below, and nothing reads UserRole for sorting anyway.
+        item->setData(ColSize, SortRole, size);
         item->setText(ColStatus, canPlay ? tr("Playable") : note);
         item->setData(ColName, Qt::UserRole, entry);  // never the row index: this list sorts
 

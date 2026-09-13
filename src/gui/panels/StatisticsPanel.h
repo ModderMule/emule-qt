@@ -4,11 +4,17 @@
 /// @brief Statistics panel — tree view + oscilloscope graphs.
 ///
 /// Left side: QTreeWidget showing live statistics (transfer, connection,
-/// time, clients, servers, shared files, total downloads).
+/// time, clients, servers, shared files, total downloads, Usenet).
 /// Right side: 3 stacked StatsGraph widgets (Download, Upload, Connections).
 
+#include <QHash>
+#include <QList>
 #include <QWidget>
 
+#include <span>
+
+class QCborArray;
+class QIcon;
 class QSplitter;
 class QTimer;
 class QTreeWidget;
@@ -33,12 +39,17 @@ public:
     void applySettings();
 
     // Formatting helpers
-    static QString formatBytes(qint64 bytes);
     static QString formatRate(double kbps);
     static QString formatDuration(qint64 secs);
     static QString formatOverhead(qint64 bytes, qint64 packets);
-    static QString formatRatio(qint64 sent, qint64 received);
+    static QString formatRatio(qint64 up, qint64 down);
     static QString formatPercent(qint64 part, qint64 whole);
+
+    /// Apply one GetUsenetStats reply to the Usenet branch. Public for tests.
+    void applyUsenetStats(const class QCborMap& data);
+
+    /// Apply one GetStats reply to the tree. Public for tests.
+    void updateTree(const class QCborMap& stats);
 
 private slots:
     void onContextMenu(const QPoint& pos);
@@ -49,7 +60,6 @@ private:
     void requestStats();
     /// Ask the daemon for graph samples newer than m_statsSeq.
     void requestGraphHistory();
-    void updateTree(const class QCborMap& stats);
     /// Apply one GetStatsHistory reply, clearing the graphs first if what we hold is
     /// no longer a prefix of the daemon's history.
     void applyGraphHistory(const class QCborMap& data);
@@ -116,17 +126,6 @@ private:
     QTreeWidgetItem* m_itemUpCumPort[2]{};
     QTreeWidgetItem* m_itemUpCumSource[2]{};
 
-    // HTTP Cache
-    QTreeWidgetItem* m_itemHcSesPublished = nullptr;
-    QTreeWidgetItem* m_itemHcSesFetched = nullptr;
-    QTreeWidgetItem* m_itemHcSesSaved = nullptr;
-    QTreeWidgetItem* m_itemHcSesChunksUp = nullptr;
-    QTreeWidgetItem* m_itemHcSesChunksDown = nullptr;
-    QTreeWidgetItem* m_itemHcCumPublished = nullptr;
-    QTreeWidgetItem* m_itemHcCumFetched = nullptr;
-    QTreeWidgetItem* m_itemHcCumSaved = nullptr;
-    QTreeWidgetItem* m_itemHcCumChunksUp = nullptr;
-    QTreeWidgetItem* m_itemHcCumChunksDown = nullptr;
     QTreeWidgetItem* m_itemUpCumSuccessful = nullptr;
     QTreeWidgetItem* m_itemUpCumFailed = nullptr;
     QTreeWidgetItem* m_itemUpCumAvgPerSession = nullptr;
@@ -209,6 +208,7 @@ private:
     QTreeWidgetItem* m_itemTransferTime = nullptr;
     QTreeWidgetItem* m_itemUploadTime = nullptr;
     QTreeWidgetItem* m_itemDownloadTime = nullptr;
+    QTreeWidgetItem* m_itemCurrentServerDuration = nullptr;
     QTreeWidgetItem* m_itemServerDuration = nullptr;
     // Cumulative
     QTreeWidgetItem* m_itemCumRuntime = nullptr;
@@ -251,6 +251,59 @@ private:
     QTreeWidgetItem* m_itemTotalDownDone = nullptr;
     QTreeWidgetItem* m_itemTotalDownLeft = nullptr;
     QTreeWidgetItem* m_itemTotalDownFreeSpace = nullptr;
+
+    // --- Usenet ---
+    //
+    // Data-driven rather than a member per row: the branch shows the same
+    // ~70 rows under Session and Cumulative, and the table is what keeps the
+    // two scopes, the IPC keys and the labels in one place.
+
+    enum class RowFormat : quint8 { Count, Bytes, Rate, DurationMs };
+
+    struct CounterRow {
+        const char* pattern;   ///< QT_TR_NOOP; "%1", or "%1 %2" when shareOf is set
+        const char* key;       ///< value key; null for a group heading
+        RowFormat format = RowFormat::Count;
+        const char* shareOf = nullptr;   ///< key of the 100% figure
+        quint8 depth = 0;                ///< nesting below the scope node
+        bool liveOnly = false;           ///< a current figure: Session only
+    };
+
+    struct CounterItem {
+        const CounterRow* row = nullptr;
+        QTreeWidgetItem* item = nullptr;
+    };
+
+    [[nodiscard]] static std::span<const CounterRow> usenetCounterRows();
+    [[nodiscard]] static std::span<const CounterRow> usenetQueueRows();
+    [[nodiscard]] static std::span<const CounterRow> httpCacheUploadRows();
+    [[nodiscard]] static std::span<const CounterRow> httpCacheDownloadRows();
+    void buildUsenetBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon);
+    void buildHttpCacheBranch(QTreeWidgetItem* transfer, const QIcon& detailIcon,
+                              const QIcon& cumulativeIcon);
+    static void buildCounterRows(QTreeWidgetItem* parent, std::span<const CounterRow> rows,
+                                 bool includeLive, QList<CounterItem>& out);
+    static void fillCounterRows(const QList<CounterItem>& items,
+                                const QHash<QString, qint64>& values);
+    /// One counter block's CBOR map as a lookup table for fillCounterRows().
+    [[nodiscard]] static QHash<QString, qint64> counterValues(const QCborMap& block);
+    void updateNewsServers(const QCborArray& servers, qint64 sessionWireBytes);
+
+    QTreeWidgetItem* m_itemUsenet = nullptr;
+    QTreeWidgetItem* m_itemUsenetServers = nullptr;
+    QList<CounterItem> m_usenetSessionRows;
+    QList<CounterItem> m_usenetCumulativeRows;
+    QList<CounterItem> m_usenetQueueRows;
+
+    // HTTP Cache: the same two scopes for each direction.
+    QList<CounterItem> m_hcUpSessionRows;
+    QList<CounterItem> m_hcUpCumulativeRows;
+    QList<CounterItem> m_hcDownSessionRows;
+    QList<CounterItem> m_hcDownCumulativeRows;
+
+    // From the last GetStats: what Usenet's download time is a share of.
+    qint64 m_sessionUptime = 0;
+    qint64 m_cumRunTime = 0;
 };
 
 } // namespace eMule

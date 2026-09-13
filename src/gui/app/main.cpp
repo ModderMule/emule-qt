@@ -48,7 +48,6 @@ static void unixSignalHandler(int)
 #include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
 #include "panels/UsenetPanel.h"
-#include "app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "utils/CrashHandler.h"
 #include "utils/Log.h"
@@ -192,13 +191,8 @@ int main(int argc, char* argv[])
 
     // Load application translations
     QTranslator appTranslator;
-    const QStringList translationPaths = {
-        QCoreApplication::applicationDirPath() + QStringLiteral("/lang"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/../Resources/lang"),
-#ifdef EMULE_DEV_BUILD
-        QCoreApplication::applicationDirPath() + QStringLiteral("/../../../lang"),
-#endif
-    };
+    const QStringList translationPaths =
+        eMule::AppConfig::langCandidates(QCoreApplication::applicationDirPath());
     for (const auto& path : translationPaths) {
         if (appTranslator.load(appLocale, QStringLiteral("emuleqt"), QStringLiteral("_"), path)) {
             app.installTranslator(&appTranslator);
@@ -679,7 +673,7 @@ int main(int argc, char* argv[])
 
     // Handle ed2k:// positional args and --screenshot/--options. The macOS Apple Event
     // route is already live — linkHandler went up before the splash screen.
-    cli.handleOpenArguments(linkHandler, mainWindow);
+    cli.handleOpenArguments(linkHandler);
     cli.setupScreenshotTimer(app, mainWindow);
 
     const int result = QApplication::exec();

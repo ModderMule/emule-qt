@@ -32,6 +32,9 @@ namespace eMule {
 
 using namespace Ipc;
 
+/// Defined in IpcClientHandler.cpp, beside the GetStats reply it must match.
+void insertDownloadSplit(QCborMap& stats);
+
 namespace {
 
 /// Cap on the Server Info backlog. A greeting is a handful of lines and a session
@@ -326,6 +329,9 @@ void CoreNotifierBridge::onStatsUpdated()
             stats.insert(QStringLiteral("upWaiting"),
                          static_cast<qint64>(theApp.uploadQueue->waitingUserCount()));
         }
+        // The Usenet panel says why its rate stops where it does, and the split
+        // moves with the other engine's demand, so it rides the once-a-second push.
+        insertDownloadSplit(stats);
         if (!stats.isEmpty())
             msg.append(stats);
         return msg;

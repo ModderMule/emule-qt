@@ -240,6 +240,24 @@ QStringList AppConfig::bundleCandidates(const QString& appDir)
     return candidates;
 }
 
+QStringList AppConfig::langCandidates(const QString& appDir)
+{
+    QStringList candidates{
+        appDir + QStringLiteral("/lang"),                // zip, tarball, bare local build
+        appDir + QStringLiteral("/../Resources/lang"),   // macOS .app bundle
+    };
+    // The build tree's lrelease output -- flat in <build>/src/gui, which is not one
+    // of the shipped layouts, so nothing above finds it. Empty in packaged builds,
+    // and always last so a real bundle wins. Absolute on purpose: it is the only
+    // entry that works for a dev .app, where the binary sits six levels below the
+    // build dir, and for the multi-config generators, which add a per-config subdir.
+    // Counting "../" hops cannot get all four layouts right, which is what the
+    // EMULE_DEV_BUILD fallback this replaced tried to do.
+    if (const QString devDir = QStringLiteral(EMULE_DEV_LANG_DIR); !devDir.isEmpty())
+        candidates << devDir;
+    return candidates;
+}
+
 AppConfig::SeedReport AppConfig::seedBundledData(const QString& configDir)
 {
 #ifdef Q_OS_WIN

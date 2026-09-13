@@ -53,6 +53,15 @@ struct IndexerResult {
     QString group;
     bool passwordProtected = false;
 
+    /// The passphrase itself, when the feed gave one.
+    ///
+    /// Newznab's `password` attribute is specified as a *flag* — 0 none, 1 maybe,
+    /// 2 yes — and "-1" turns up in the wild too. But some indexers put the real
+    /// passphrase in the same field, and a few put it in the title as
+    /// `Release{{secret}}`. Empty whenever the value was a number or too short to
+    /// be anything but a placeholder; see applyAttr().
+    QString password;
+
     // -- torznab ------------------------------------------------------------
     // Parsed now, consumed when a BitTorrent module exists. See §7.3.
     int seeders = -1;

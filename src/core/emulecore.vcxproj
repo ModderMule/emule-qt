@@ -173,6 +173,7 @@
     <ClCompile Include="app\AppConfig.cpp" />
     <ClCompile Include="app\AppContext.cpp" />
     <ClCompile Include="archive\ArchiveReader.cpp" />
+    <ClCompile Include="archive\ExternalUnpacker.cpp" />
     <ClCompile Include="archive\ArchiveRecovery.cpp" />
     <ClCompile Include="archive\ArchiveUnpack.cpp" />
     <ClCompile Include="net\HttpFileDownload.cpp" />
@@ -257,6 +258,7 @@
     <ClCompile Include="utils\PerfLog.cpp" />
     <ClCompile Include="net\Pinger.cpp" />
     <ClCompile Include="prefs\IndexerConfig.cpp" />
+    <ClCompile Include="prefs\DownloadCategory.cpp" />
     <ClCompile Include="prefs\IndexerFeed.cpp" />
     <ClCompile Include="prefs\Preferences.cpp" />
     <ClCompile Include="media\PreviewApps.cpp" />
@@ -308,6 +310,7 @@
     <ClInclude Include="app\AppConfig.h" />
     <ClInclude Include="app\AppContext.h" />
     <ClInclude Include="archive\ArchiveReader.h" />
+    <ClInclude Include="archive\ExternalUnpacker.h" />
     <ClInclude Include="archive\ArchiveRecovery.h" />
     <ClInclude Include="archive\ArchiveUnpack.h" />
     <ClInclude Include="net\HttpDefaults.h" />
@@ -413,6 +416,7 @@
     <ClInclude Include="prefs\DownloadCategory.h" />
     <ClInclude Include="prefs\IndexerFeed.h" />
     <ClInclude Include="prefs\NewsServer.h" />
+    <ClInclude Include="prefs\UsenetSubjectPattern.h" />
     <ClInclude Include="prefs\Preferences.h" />
     <ClInclude Include="media\PreviewApps.h" />
     <QtMoc Include="media\PreviewThread.h" />
@@ -437,6 +441,7 @@
     <QtMoc Include="files\SharedFileList.h" />
     <QtMoc Include="net\SmtpClient.h" />
     <ClInclude Include="files\StatisticFile.h" />
+    <ClInclude Include="stats\NetworkCounters.h" />
     <QtMoc Include="stats\Statistics.h" />
     <QtMoc Include="stats\StatsHistory.h" />
     <ClInclude Include="stats\StatsSnapshot.h" />

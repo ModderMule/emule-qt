@@ -2,6 +2,7 @@
 /// @brief Integration test — parse shipped data/config/webservices.dat.
 
 #include "TestHelpers.h"
+#include "app/AppConfig.h"
 #include "utils/WebServices.h"
 
 #include <QFile>
@@ -20,6 +21,7 @@ private slots:
     void parseComments();
     void parseFileMacros();
     void emptyAndMalformed();
+    void servicesFilePathFollowsTheConfigDir();
 };
 
 // ---------------------------------------------------------------------------
@@ -143,6 +145,46 @@ void tst_WebServicesData::emptyAndMalformed()
     QVERIFY(ws.loadFromFile(path));
     QCOMPARE(ws.services().size(), size_t(1));
     QCOMPARE(ws.services()[0].label, QStringLiteral("OK Service"));
+}
+
+// ---------------------------------------------------------------------------
+// Test: the path is resolved through AppConfig, not QStandardPaths
+// ---------------------------------------------------------------------------
+
+void tst_WebServicesData::servicesFilePathFollowsTheConfigDir()
+{
+    // This is the case that was broken: servicesFilePath() resolved the config dir
+    // itself via QStandardPaths::AppConfigLocation, so on macOS it read
+    // ~/Library/Preferences while the seeder wrote to ~/eMuleQt/Config, and a
+    // --config run was ignored on every platform.
+    TempDir sandbox;
+    const QString prev = AppConfig::configDirOverride();
+    AppConfig::setConfigDirOverride(sandbox.path());
+
+    const QString expected = sandbox.path() + QStringLiteral("/webservices.dat");
+    QCOMPARE(WebServices::userFilePath(), expected);
+
+    // Nothing there yet: falls back to a shipped copy, but still never invents a
+    // path outside the candidate list.
+    WebServices ws;
+    const QString missing = ws.servicesFilePath();
+    QVERIFY(missing == expected || QFile::exists(missing));
+
+    // Once the file exists, the user's copy wins over anything shipped.
+    {
+        QFile f(expected);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        QTextStream(&f) << "Probe,http://probe.example/#hashid\n";
+    }
+    QCOMPARE(ws.servicesFilePath(), expected);
+
+    // And it is the file actually parsed.
+    ws.reload();
+    QCOMPARE(ws.services().size(), size_t(1));
+    QCOMPARE(ws.services()[0].label, QStringLiteral("Probe"));
+
+    // The override is a process-global static -- restore it or later tests inherit it.
+    AppConfig::setConfigDirOverride(prev);
 }
 
 QTEST_GUILESS_MAIN(tst_WebServicesData)

@@ -16,6 +16,7 @@
 #include "prefs/Preferences.h"
 #include "utils/DialogSizing.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/WebServices.h"
 #include "utils/StringUtils.h"
 
 #include "IpcMessage.h"
@@ -45,7 +46,6 @@
 #include <QFormLayout>
 #include <QMenu>
 #include <QTimeEdit>
-#include <QListWidget>
 #include <QRadioButton>
 #include <QScrollArea>
 #include <QSoundEffect>
@@ -477,6 +477,12 @@ void OptionsDialog::markDirty()
 
 namespace {
 
+/// Value label beside a Connection-page limit slider.
+QString limitText(int kbps)
+{
+    return QStringLiteral("%1 KB/s").arg(kbps);
+}
+
 /// Room for a spin box's special value text.
 ///
 /// QFormLayout::ExpandingFieldsGrow only grows fields whose size policy expands, and a
@@ -689,14 +695,11 @@ QWidget* OptionsDialog::createGeneralPage()
     m_langCombo->addItem(tr("System Default"), QString{});
     m_langCombo->addItem(QStringLiteral("English (United States)"), QStringLiteral("en_US"));
 
-    // Discover available translations from .qm files
-    const QStringList langSearchPaths = {
-        QCoreApplication::applicationDirPath() + QStringLiteral("/lang"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/../Resources/lang"),
-#ifdef EMULE_DEV_BUILD
-        QCoreApplication::applicationDirPath() + QStringLiteral("/../../../lang"),
-#endif
-    };
+    // Discover available translations from .qm files. Every candidate directory,
+    // not just the first with any: main() picks one directory to load from, but the
+    // combo offers the union of what all of them hold.
+    const QStringList langSearchPaths =
+        eMule::AppConfig::langCandidates(QCoreApplication::applicationDirPath());
     QSet<QString> foundLocales;
     for (const auto& dir : langSearchPaths) {
         QDirIterator it(dir, {QStringLiteral("emuleqt_*.qm")}, QDir::Files);
@@ -750,12 +753,21 @@ QWidget* OptionsDialog::createGeneralPage()
     // Button row
     auto* miscBtnLayout = new QHBoxLayout;
     auto* webServicesBtn = new QPushButton(tr("Edit Web Services..."), miscGroup);
-    connect(webServicesBtn, &QPushButton::clicked, this, [] {
-        QString tmplPath = thePrefs.webServerTemplatePath();
-        if (tmplPath.isEmpty())
-            tmplPath = AppConfig::configDir() + QStringLiteral("/eMule.tmpl");
-        if (QFile::exists(tmplPath))
-            QDesktopServices::openUrl(QUrl::fromLocalFile(tmplPath));
+    connect(webServicesBtn, &QPushButton::clicked, this, [this] {
+        // webservices.dat, not eMule.tmpl -- that one is the web *server* template.
+        // MFC opens <configdir>webservices.dat (srchybrid/OtherFunctions.cpp:1071).
+        const QString path = WebServices::userFilePath();
+        if (!QFile::exists(path)) {
+            // Seeding should have placed it; recover from the shipped copy. Never
+            // open the shipped one directly -- edits there are lost on the next sync.
+            const QString shipped = WebServices::instance().servicesFilePath();
+            if (shipped == path || !QFile::copy(shipped, path)) {
+                QMessageBox::warning(this, tr("Web Services"),
+                                     tr("webservices.dat was not found in the config folder."));
+                return;
+            }
+        }
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     });
     auto* ed2kLinksBtn = new QPushButton(tr("Handle eD2K Links"), miscGroup);
     connect(ed2kLinksBtn, &QPushButton::clicked, this, [] {
@@ -1133,10 +1145,10 @@ QWidget* OptionsDialog::createConnectionPage()
 
     // --- Wire slider ↔ label sync ---
     connect(m_downloadLimitSlider, &QSlider::valueChanged, this, [this](int val) {
-        m_downloadLimitLabel->setText(QStringLiteral("%1 KB/s").arg(val));
+        m_downloadLimitLabel->setText(limitText(val));
     });
     connect(m_uploadLimitSlider, &QSlider::valueChanged, this, [this](int val) {
-        m_uploadLimitLabel->setText(QStringLiteral("%1 KB/s").arg(val));
+        m_uploadLimitLabel->setText(limitText(val));
     });
 
     // --- Wire capacity spin → slider max ---
@@ -2334,6 +2346,7 @@ QWidget* OptionsDialog::createStatisticsPage()
         {tr("Download Session"), 4},
         {tr("Download Average"), 3},
         {tr("Download Current"), 2},
+        {tr("Download Usenet"), 15},
         {tr("Upload Session"), 7},
         {tr("Upload Average"), 6},
         {tr("Upload Current"), 5},
@@ -2756,17 +2769,6 @@ void invalidateLayoutTree(QLayout* layout)
     layout->invalidate();
 }
 
-/// Decimal GB, to match the spin box and the invoice it was copied from.
-///
-/// Deliberately **not** formatByteSize(): that is 1024-based and still writes
-/// "GB", so a 500 GB plan typed in came back displayed as 465.66 GB beside its
-/// own spin box — and the table column disagreed with the detail line about the
-/// same number of bytes. Providers quote decimal; these have to agree.
-[[nodiscard]] QString formatQuotaGb(qint64 bytes)
-{
-    return QStringLiteral("%1 GB").arg(double(bytes) / 1e9, 0, 'f', 1);
-}
-
 void addTestRow(QFormLayout* form, QWidget* parent, QPushButton*& button,
                 QLabel*& result)
 {
@@ -2818,6 +2820,11 @@ QWidget* OptionsDialog::createUsenetPage()
 
     // Two tabs rather than the one ~1300 px column this page used to be -- which, being
     // the tallest of the eighteen, set the minimum height of every one of them.
+    //
+    // The split is by *scope*, not by how advanced a setting looks: everything on
+    // Account belongs to the one server highlighted in the table there, everything on
+    // Advanced applies to the whole Usenet engine. Anything else and a per-account
+    // field ends up on a tab with no account chooser on it, reading as global.
     auto* tabs = new QTabWidget(page);
     pageLayout->addWidget(tabs, 1);
 
@@ -2872,6 +2879,9 @@ QWidget* OptionsDialog::createUsenetPage()
 
     // -- Details ------------------------------------------------------------
     auto* details = new QGroupBox(tr("Account"), page);
+    // Prefix shared with the group below: tst_OptionsDialogSizing uses it to assert that
+    // no per-account field has drifted onto the Advanced tab.
+    details->setObjectName(QStringLiteral("usenetAccountIdentity"));
     auto* form = new QFormLayout(details);
     // Without this the fields keep their size hint on macOS and the test result
     // label never reaches the right edge, however much room the group box has.
@@ -2932,12 +2942,15 @@ QWidget* OptionsDialog::createUsenetPage()
     addTestRow(form, details, m_usenetTestBtn, m_usenetTestResult);
 
     accountLayout->addWidget(details);
-    accountLayout->addStretch();
 
     // -- Details, continued -------------------------------------------------
-    // The same selected account, tuned rather than identified. Not titled "Account"
-    // twice: two group boxes of that name in one dialog is unreadable in a bug report.
+    // The same selected account, tuned rather than identified. Stays on this tab even
+    // though these are the advanced fields: the table above is the only thing that says
+    // *which* account they belong to, and a per-account form on the Advanced tab reads
+    // as a global setting. Not titled "Account" twice -- two group boxes of that name in
+    // one dialog is unreadable in a bug report.
     auto* advDetails = new QGroupBox(tr("Account options"), page);
+    advDetails->setObjectName(QStringLiteral("usenetAccountTuning"));
     auto* advForm = new QFormLayout(advDetails);
     advForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     DialogSizing::enableHeightForWidth(advDetails);
@@ -2990,8 +3003,8 @@ QWidget* OptionsDialog::createUsenetPage()
     m_usenetQuotaSpin->setSpecialValueText(tr("No limit"));
     fitSpecialValue(m_usenetQuotaSpin);
     m_usenetQuotaSpin->setToolTip(
-        tr("Decimal GB, because that is what an invoice says — entering a 1000 GB "
-           "plan as GiB would be 7%% over.\n\n"
+        tr("Decimal GB, because that is what an invoice says — the 1024-based GB "
+           "used elsewhere in eMule would put a 1000 GB plan 7% over.\n\n"
            "Set it slightly under your plan. The figure is measured here, so it "
            "reads a few percent below your provider's, and articles already in "
            "flight when the limit is reached still finish."));
@@ -3020,23 +3033,31 @@ QWidget* OptionsDialog::createUsenetPage()
     // a second line is simply cut off — the detail lives in the tooltip instead.
     m_usenetUsageLabel->setWordWrap(false);
 
+    accountLayout->addWidget(advDetails);
+    accountLayout->addStretch();
 
-    advancedLayout->addWidget(advDetails);
+    // -- Everything below is global -----------------------------------------
+    // No account chooser on this tab, and none needed: none of it is per-account.
+    auto* limitsGroup = new QGroupBox(tr("Downloading"), page);
+    auto* limitsLayout = new QVBoxLayout(limitsGroup);
 
     auto* retryRow = new QHBoxLayout;
-    retryRow->addWidget(new QLabel(tr("Retry a failed server after:"), page));
-    m_usenetRetrySpin = new QSpinBox(page);
+    retryRow->addWidget(new QLabel(tr("Retry a failed server after:"), limitsGroup));
+    m_usenetRetrySpin = new QSpinBox(limitsGroup);
     m_usenetRetrySpin->setRange(0, 3600);
     m_usenetRetrySpin->setSuffix(tr(" s"));
     m_usenetRetrySpin->setSpecialValueText(tr("Never back off"));
+    m_usenetRetrySpin->setToolTip(
+        tr("Applies to every account: how long a server that refused or dropped a "
+           "connection is passed over before it is tried again."));
     fitSpecialValue(m_usenetRetrySpin);
     retryRow->addWidget(m_usenetRetrySpin);
     retryRow->addStretch();
-    advancedLayout->addLayout(retryRow);
+    limitsLayout->addLayout(retryRow);
 
     auto* shareRow = new QHBoxLayout;
-    shareRow->addWidget(new QLabel(tr("Share of the download limit:"), page));
-    m_usenetShareSpin = new QSpinBox(page);
+    shareRow->addWidget(new QLabel(tr("Share of the download limit:"), limitsGroup));
+    m_usenetShareSpin = new QSpinBox(limitsGroup);
     m_usenetShareSpin->setRange(1, 99);
     m_usenetShareSpin->setSuffix(tr(" %"));
     m_usenetShareSpin->setToolTip(
@@ -3045,7 +3066,9 @@ QWidget* OptionsDialog::createUsenetPage()
            "the other, so this only applies when both are busy."));
     shareRow->addWidget(m_usenetShareSpin);
     shareRow->addStretch();
-    advancedLayout->addLayout(shareRow);
+    limitsLayout->addLayout(shareRow);
+
+    advancedLayout->addWidget(limitsGroup);
 
     // Before downloading, so it goes above "After downloading" rather than into
     // it: the question this answers is whether to spend anything at all.
@@ -3182,7 +3205,8 @@ QWidget* OptionsDialog::createUsenetPage()
     m_usenetUnpackCheck = new QCheckBox(tr("Unpack archives"), postGroup);
     m_usenetUnpackCheck->setToolTip(
         tr("Extract RAR, 7z and ZIP volume sets once they have been verified.\n\n"
-           "Password-protected RAR archives cannot be unpacked."));
+           "Password-protected archives need 7-Zip or unrar installed — eMule's "
+           "own archive reader can only decrypt ZIP."));
     postLayout->addWidget(m_usenetUnpackCheck);
 
     m_usenetDirectUnpackCheck =
@@ -3195,6 +3219,28 @@ QWidget* OptionsDialog::createUsenetPage()
            "space. If the release turns out to need repairing, the result is "
            "discarded and it is unpacked again afterwards."));
     postLayout->addWidget(m_usenetDirectUnpackCheck);
+
+    m_usenetEncryptedPreviewCheck =
+        new QCheckBox(tr("Preview password-protected releases while downloading"), postGroup);
+    m_usenetEncryptedPreviewCheck->setToolTip(
+        tr("An encrypted archive cannot be read a piece at a time, so previewing "
+           "one means decrypting it again from the first volume every time more "
+           "of it arrives.\n\n"
+           "Nothing runs unless a preview is actually open, and only RAR releases "
+           "can do it at all — an incomplete 7z set decodes to nothing."));
+    postLayout->addWidget(m_usenetEncryptedPreviewCheck);
+
+    auto* unpackerRow = new QHBoxLayout;
+    unpackerRow->addWidget(new QLabel(tr("Unpacker:"), postGroup));
+    m_usenetUnpackerEdit = new QLineEdit(postGroup);
+    m_usenetUnpackerEdit->setPlaceholderText(tr("automatic (7zz, 7z, unrar)"));
+    m_usenetUnpackerEdit->setToolTip(
+        tr("Path to a 7-Zip or unrar binary, for password-protected archives.\n\n"
+           "Leave this empty to search the usual locations. Set it when eMule runs "
+           "as a background service, whose search path is often much shorter than "
+           "the one a terminal has."));
+    unpackerRow->addWidget(m_usenetUnpackerEdit, 1);
+    postLayout->addLayout(unpackerRow);
 
     m_usenetCleanupCheck =
         new QCheckBox(tr("Delete archives and PAR2 files after unpacking"), postGroup);
@@ -3215,9 +3261,11 @@ QWidget* OptionsDialog::createUsenetPage()
     connect(m_usenetShareSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
 
     for (QCheckBox* box : {m_usenetPar2Check, m_usenetRenameCheck, m_usenetUnpackCheck,
-                           m_usenetDirectUnpackCheck, m_usenetCleanupCheck}) {
+                           m_usenetDirectUnpackCheck, m_usenetEncryptedPreviewCheck,
+                           m_usenetCleanupCheck}) {
         connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     }
+    connect(m_usenetUnpackerEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
 
     // Unpacking is what produces the payload; with it off there is nothing to
     // clean up around, and cleanup would only delete the files just downloaded.
@@ -3225,6 +3273,9 @@ QWidget* OptionsDialog::createUsenetPage()
             &QWidget::setEnabled);
     // Same reasoning: unpacking early is still unpacking.
     connect(m_usenetUnpackCheck, &QCheckBox::toggled, m_usenetDirectUnpackCheck,
+            &QWidget::setEnabled);
+    // And previewing an encrypted set *is* unpacking it, one prefix at a time.
+    connect(m_usenetUnpackCheck, &QCheckBox::toggled, m_usenetEncryptedPreviewCheck,
             &QWidget::setEnabled);
 
     connect(m_usenetHealthCombo, &QComboBox::currentIndexChanged, this,
@@ -4026,6 +4077,17 @@ QWidget* OptionsDialog::createFeedsPage()
            "suspended."));
     form->addRow(tr("Check every:"), m_feedIntervalSpin);
 
+    // The download category everything this feed queues lands in. Named in full
+    // in the UI too: "Categories" three rows up is the *indexer's* category ids.
+    m_feedDownloadCategoryCombo = new QComboBox(details);
+    m_feedDownloadCategoryCombo->addItem(tr("No category"), 0);
+    m_feedDownloadCategoryCombo->setToolTip(
+        tr("Which download category this feed's matches go into. The category "
+           "decides the folder they finish in, and it is resolved when a release "
+           "completes — so repointing the category moves what is still running "
+           "with it."));
+    form->addRow(tr("Download category:"), m_feedDownloadCategoryCombo);
+
     m_feedGrabExistingCheck = new QCheckBox(tr("Queue what it already lists"), details);
     m_feedGrabExistingCheck->setToolTip(
         tr("Normally a feed's first check only takes note of what is there and "
@@ -4076,6 +4138,10 @@ QWidget* OptionsDialog::createFeedsPage()
     }
     for (QCheckBox* check : {m_feedEnabledCheck, m_feedGrabExistingCheck})
         connect(check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_feedDownloadCategoryCombo, &QComboBox::currentIndexChanged, this,
+            &OptionsDialog::markDirty);
+
+    loadDownloadCategories();
 
     // Start in the nothing-selected state. loadFeeds() only reaches selectFeed()
     // once the daemon answers, and until then an enabled-looking form invites
@@ -4130,6 +4196,40 @@ void OptionsDialog::saveIndexers()
                                  ? tr("The indexer list could not be saved.")
                                  : resp.fieldString(1));
     });
+}
+
+void OptionsDialog::loadDownloadCategories()
+{
+    if (!m_ipc || !m_feedDownloadCategoryCombo)
+        return;
+
+    m_ipc->sendRequest(
+        Ipc::IpcMessage(Ipc::IpcMsgType::GetCategories), [this](const Ipc::IpcMessage& resp) {
+            if (!m_feedDownloadCategoryCombo || !resp.fieldBool(0))
+                return;
+
+            // Remember the selection by category index, not by row: the list can
+            // have been re-ordered between the two.
+            const int previous = m_feedDownloadCategoryCombo->currentData().toInt();
+
+            const QSignalBlocker blocker(m_feedDownloadCategoryCombo);
+            m_feedDownloadCategoryCombo->clear();
+            m_feedDownloadCategoryCombo->addItem(tr("No category"), 0);
+
+            int i = 0;
+            for (const auto& value : resp.fieldArray(1)) {
+                // Index 0 is the implicit "All", which is not a category a feed
+                // files into — it is the absence of one, already offered above.
+                if (i++ == 0 || !value.isMap())
+                    continue;
+                const QString title = value.toMap().value(QStringLiteral("title")).toString();
+                m_feedDownloadCategoryCombo->addItem(
+                    title.isEmpty() ? QStringLiteral("?") : title, i - 1);
+            }
+
+            const int row = m_feedDownloadCategoryCombo->findData(previous);
+            m_feedDownloadCategoryCombo->setCurrentIndex(row >= 0 ? row : 0);
+        });
 }
 
 void OptionsDialog::loadFeeds()
@@ -4276,6 +4376,7 @@ void OptionsDialog::populateFeedDetails(int index)
     const QSignalBlocker b12(m_feedIntervalSpin);
     const QSignalBlocker b13(m_feedEnabledCheck);
     const QSignalBlocker b14(m_feedGrabExistingCheck);
+    const QSignalBlocker b15(m_feedDownloadCategoryCombo);
 
     m_feedNameEdit->setText(feed.value(QStringLiteral("name")).toString());
     const bool isUrl = feed.value(QStringLiteral("kind")).toString() == QLatin1String("url");
@@ -4308,6 +4409,13 @@ void OptionsDialog::populateFeedDetails(int index)
     m_feedGrabExistingCheck->setChecked(
         feed.value(QStringLiteral("grabExisting")).toBool(false));
 
+    // findData, not an index: the combo holds category *indices* as item data,
+    // and a feed can name one the list no longer has. -1 then falls back to
+    // "No category" rather than silently selecting whoever took the slot.
+    const int wantCat = int(feed.value(QStringLiteral("downloadCategory")).toInteger(0));
+    const int catRow = m_feedDownloadCategoryCombo->findData(wantCat);
+    m_feedDownloadCategoryCombo->setCurrentIndex(catRow >= 0 ? catRow : 0);
+
     // The kind decides which half of the form applies — but with nothing
     // selected neither does, so `have` gates both.
     m_feedUrlEdit->setEnabled(have && isUrl);
@@ -4324,7 +4432,8 @@ void OptionsDialog::populateFeedDetails(int index)
                        static_cast<QWidget*>(m_feedMaxAgeSpin),
                        static_cast<QWidget*>(m_feedIntervalSpin),
                        static_cast<QWidget*>(m_feedEnabledCheck),
-                       static_cast<QWidget*>(m_feedGrabExistingCheck)}) {
+                       static_cast<QWidget*>(m_feedGrabExistingCheck),
+                       static_cast<QWidget*>(m_feedDownloadCategoryCombo)}) {
         w->setEnabled(have);
     }
 
@@ -4391,6 +4500,8 @@ void OptionsDialog::applyFeedDetails()
     feed.insert(QStringLiteral("intervalMinutes"), m_feedIntervalSpin->value());
     feed.insert(QStringLiteral("enabled"), m_feedEnabledCheck->isChecked());
     feed.insert(QStringLiteral("grabExisting"), m_feedGrabExistingCheck->isChecked());
+    feed.insert(QStringLiteral("downloadCategory"),
+                m_feedDownloadCategoryCombo->currentData().toInt());
 
     m_feeds[m_currentFeed] = feed;
     updateFeedRow(m_currentFeed);
@@ -5662,6 +5773,10 @@ void OptionsDialog::loadSettings()
     m_showSmileysCheck->setChecked(thePrefs.showSmileys());
     m_indicateRatingsCheck->setChecked(thePrefs.indicateRatings());
 
+    // The GUI acts on this one (LogWidget, IpcClient), so its own copy is the truth;
+    // GetPreferences never carried it, which loaded the box unticked every time.
+    m_enableIpcLogCheck->setChecked(thePrefs.enableIpcLog());
+
     // Load daemon-owned settings: fetch synchronously from daemon if connected,
     // otherwise fall back to local thePrefs.
     m_loading = true;
@@ -6048,6 +6163,10 @@ void OptionsDialog::saveSettings()
         req.append(m_usenetUnpackCheck->isChecked());
         req.append(QStringLiteral("usenetDirectUnpack"));
         req.append(m_usenetDirectUnpackCheck->isChecked());
+        req.append(QStringLiteral("usenetEncryptedPreview"));
+        req.append(m_usenetEncryptedPreviewCheck->isChecked());
+        req.append(QStringLiteral("usenetExternalUnpacker"));
+        req.append(m_usenetUnpackerEdit->text().trimmed());
         req.append(QStringLiteral("usenetCleanupAfterUnpack"));
         req.append(m_usenetCleanupCheck->isChecked());
         req.append(QStringLiteral("usenetHealthCheck"));
@@ -6574,16 +6693,20 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     auto maxDown = static_cast<int>(prefs.value(QStringLiteral("maxDownload")).toInteger(0));
     auto maxUp   = static_cast<int>(prefs.value(QStringLiteral("maxUpload")).toInteger(0));
+    // An unlimited (0) limit parks its slider at the capacity, so ticking the box later
+    // offers the line rate rather than the slider's floor of 1 KB/s
+    // (MFC PPgConnection.cpp:177-184).
     m_downloadLimitCheck->setChecked(maxDown > 0);
     m_downloadLimitSlider->setEnabled(maxDown > 0);
     m_downloadLimitLabel->setEnabled(maxDown > 0);
-    if (maxDown > 0)
-        m_downloadLimitSlider->setValue(maxDown);
+    m_downloadLimitSlider->setValue(maxDown > 0 ? maxDown : capDown);
     m_uploadLimitCheck->setChecked(maxUp > 0);
     m_uploadLimitSlider->setEnabled(maxUp > 0);
     m_uploadLimitLabel->setEnabled(maxUp > 0);
-    if (maxUp > 0)
-        m_uploadLimitSlider->setValue(maxUp);
+    m_uploadLimitSlider->setValue(maxUp > 0 ? maxUp : capUp);
+    // valueChanged stays quiet when the value didn't move, so set the labels here too.
+    m_downloadLimitLabel->setText(limitText(m_downloadLimitSlider->value()));
+    m_uploadLimitLabel->setText(limitText(m_uploadLimitSlider->value()));
 
     auto tcpPort = static_cast<int>(prefs.value(QStringLiteral("port")).toInteger(5662));
     auto udpPort = static_cast<int>(prefs.value(QStringLiteral("udpPort")).toInteger(5672));
@@ -6732,6 +6855,10 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         prefs.value(QStringLiteral("usenetCleanupAfterUnpack")).toBool(true));
     m_usenetDirectUnpackCheck->setChecked(
         prefs.value(QStringLiteral("usenetDirectUnpack")).toBool(true));
+    m_usenetEncryptedPreviewCheck->setChecked(
+        prefs.value(QStringLiteral("usenetEncryptedPreview")).toBool(true));
+    m_usenetUnpackerEdit->setText(
+        prefs.value(QStringLiteral("usenetExternalUnpacker")).toString());
     m_usenetHealthCombo->setCurrentIndex(
         int(prefs.value(QStringLiteral("usenetHealthCheck")).toInteger(1)));
     m_usenetHealthMinSpin->setValue(
@@ -6747,6 +6874,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_usenetHealthMinSpin->setEnabled(m_usenetHealthCombo->currentIndex() > 0);
     m_usenetCleanupCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     m_usenetDirectUnpackCheck->setEnabled(m_usenetUnpackCheck->isChecked());
+    m_usenetEncryptedPreviewCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     updateUsenetEnabledStates();
 
     // Indexers page
@@ -6846,7 +6974,6 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_logWebServerCheck->setChecked(prefs.value(QStringLiteral("logWebServer")).toBool());
     m_logWebServerCheck->setEnabled(verboseOn);
     m_logPublicIPCheck->setChecked(prefs.value(QStringLiteral("logPublicIP")).toBool());
-    m_enableIpcLogCheck->setChecked(prefs.value(QStringLiteral("enableIpcLog")).toBool());
     m_startCoreWithConsoleCheck->setChecked(prefs.value(QStringLiteral("startCoreWithConsole")).toBool());
     // USS
     bool ussOn = prefs.value(QStringLiteral("dynUpEnabled")).toBool();

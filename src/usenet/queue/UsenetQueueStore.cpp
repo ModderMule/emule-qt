@@ -20,6 +20,11 @@ namespace {
 // 2 added requestedPar2 (phase 4, on-demand recovery volumes). A version-1
 // sidecar still loads: the field is simply absent and the item re-requests what
 // it needs on its next verify.
+// publishedPaths and the health keys are *optional* additions and deliberately do
+// not move the version: load() refuses anything newer than it knows, so a bump
+// would make an older daemon drop the whole queue rather than lose one advisory
+// list. An older sidecar loads with publishedPaths empty, which is honest — the
+// release did complete, nothing recorded what it published.
 constexpr int kStateVersion = 2;
 
 /// Bits out as base64. A 10 000-segment release is 1.25 KB packed, which is what
@@ -88,6 +93,10 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
     out << YAML::Key << "name" << YAML::Value << toStd(item.name);
     out << YAML::Key << "status" << YAML::Value << int(item.status);
     out << YAML::Key << "priority" << YAML::Value << item.priority;
+    // Written unconditionally: an absent key reads as 0, which is the implicit
+    // "All" category, which is what every sidecar written before categories
+    // existed already means. That is why kStateVersion does not move for it.
+    out << YAML::Key << "category" << YAML::Value << item.category;
     // Optional keys, and kStateVersion deliberately does not move for them:
     // load() *refuses* a sidecar newer than it knows, so a bump would make an
     // older daemon drop the whole queue rather than lose one advisory figure.
@@ -99,6 +108,12 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         out << YAML::Key << "healthRecoveryBytes" << YAML::Value
             << static_cast<long long>(item.healthRecoveryBytes);
         out << YAML::Key << "healthProbed" << YAML::Value << item.healthProbed;
+    }
+    if (!item.publishedPaths.isEmpty()) {
+        out << YAML::Key << "publishedPaths" << YAML::Value << YAML::BeginSeq;
+        for (const QString& path : item.publishedPaths)
+            out << toStd(path);
+        out << YAML::EndSeq;
     }
     if (!item.requestedPar2.isEmpty()) {
         QList<int> requested(item.requestedPar2.cbegin(), item.requestedPar2.cend());
@@ -112,6 +127,15 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         out << YAML::Key << "error" << YAML::Value << toStd(item.error);
     if (!item.nzb.password.isEmpty())
         out << YAML::Key << "password" << YAML::Value << toStd(item.nzb.password);
+    // Written only when true, like every other optional key here, so an existing
+    // sidecar gains nothing and kStateVersion stays where it is.
+    if (item.passwordRequired)
+        out << YAML::Key << "passwordRequired" << YAML::Value << true;
+    // The accounts that could not supply it, as they were when it failed. Absent
+    // means "never failed under this version", and Resume then re-asks nothing —
+    // which is what keeps the first run after an upgrade quiet.
+    if (!item.failedLadder.isEmpty())
+        out << YAML::Key << "failedLadder" << YAML::Value << toStd(item.failedLadder);
 
     out << YAML::Key << "files" << YAML::Value << YAML::BeginSeq;
     for (int i = 0; i < item.nzb.files.size(); ++i) {
@@ -144,11 +168,26 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         out << YAML::Key << "tempPath" << YAML::Value << toStd(st.tempPath);
         out << YAML::Key << "finalPath" << YAML::Value << toStd(st.finalPath);
         out << YAML::Key << "articleFileName" << YAML::Value << toStd(st.articleFileName);
+        // Optional, and kStateVersion deliberately does not move for it: absent
+        // means "no PAR2 name known", which is exactly what every sidecar
+        // written before this existed meant. load() refuses a version it does
+        // not know, so bumping would make an older daemon drop the whole queue
+        // rather than lose one name.
+        if (!st.par2FileName.isEmpty())
+            out << YAML::Key << "par2FileName" << YAML::Value << toStd(st.par2FileName);
         out << YAML::Key << "declaredSize" << YAML::Value << static_cast<long long>(st.declaredSize);
         out << YAML::Key << "decodedBytes" << YAML::Value << static_cast<long long>(st.decodedBytes);
         out << YAML::Key << "finalized" << YAML::Value << st.finalized;
         out << YAML::Key << "missingSegments" << YAML::Value << st.missingSegments;
         out << YAML::Key << "done" << YAML::Value << toStd(bitsToBase64(st.done));
+
+        // Which of those resolved bits are holes rather than arrivals. Optional,
+        // and kStateVersion stays where it is for the reason above: absent means
+        // "this sidecar predates the map", which retryMissingArticles() refuses
+        // rather than guessing which articles the count stood for. Written only
+        // when there is a hole, so an unblemished release gains no key.
+        if (st.missingSegments > 0 && st.missing.count(true) > 0)
+            out << YAML::Key << "missing" << YAML::Value << toStd(bitsToBase64(st.missing));
 
         // Byte ranges on disk, "start-end" per entry, half-open. Separate from
         // `done` because the two answer different questions: a done bit means
@@ -240,6 +279,7 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
         out.name = fromStd(root, "name");
         out.status = static_cast<UsenetItemStatus>(root["status"] ? root["status"].as<int>(0) : 0);
         out.priority = root["priority"] ? root["priority"].as<int>(0) : 0;
+        out.category = root["category"] ? root["category"].as<int>(0) : 0;
         // Absent in a sidecar written before the health check existed, and
         // absent is harmless: -1 means "not assessed", which is what an item
         // that was never probed should say.
@@ -252,6 +292,9 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
         out.error = fromStd(root, "error");
         out.nzb.name = out.name;
         out.nzb.password = fromStd(root, "password");
+        out.passwordRequired =
+            root["passwordRequired"] ? root["passwordRequired"].as<bool>(false) : false;
+        out.failedLadder = fromStd(root, "failedLadder");
 
         out.nzb.files.clear();
         out.files.clear();
@@ -283,12 +326,15 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
                 st.tempPath = fromStd(fnode, "tempPath");
                 st.finalPath = fromStd(fnode, "finalPath");
                 st.articleFileName = fromStd(fnode, "articleFileName");
+                st.par2FileName = fromStd(fnode, "par2FileName");
                 st.declaredSize = fnode["declaredSize"] ? fnode["declaredSize"].as<long long>(0) : 0;
                 st.decodedBytes = fnode["decodedBytes"] ? fnode["decodedBytes"].as<long long>(0) : 0;
                 st.finalized = fnode["finalized"] ? fnode["finalized"].as<bool>(false) : false;
                 st.missingSegments = fnode["missingSegments"]
                                          ? fnode["missingSegments"].as<int>(0) : 0;
                 st.done = bitsFromBase64(fromStd(fnode, "done"), int(info.segments.size()));
+                st.missing = bitsFromBase64(fromStd(fnode, "missing"),
+                                            int(info.segments.size()));
 
                 // Absent in a sidecar written before streaming existed, and
                 // absent is harmless: the file simply offers no preview until it
@@ -316,6 +362,17 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
 
                 out.nzb.files.append(info);
                 out.files.append(st);
+            }
+        }
+
+        // Absent in a version-2 sidecar. An empty list is the honest answer
+        // there: the release completed, but nothing recorded what it published.
+        if (const auto pub = root["publishedPaths"]; pub && pub.IsSequence()) {
+            for (const auto& entry : pub) {
+                const QString published =
+                    QString::fromStdString(entry.as<std::string>(std::string{}));
+                if (!published.isEmpty())
+                    out.publishedPaths.append(published);
             }
         }
 
@@ -365,6 +422,34 @@ QStringList UsenetQueueStore::listStateFiles()
     for (const QFileInfo& fi : entries)
         out << fi.absoluteFilePath();
     return out;
+}
+
+int UsenetQueueStore::remapCategories(const QHash<uint32, uint32>& oldToNew)
+{
+    int changed = 0;
+
+    for (const QString& path : listStateFiles()) {
+        UsenetQueueItem item;
+        QString error;
+        if (!load(path, item, error)) {
+            logWarning(QStringLiteral("Usenet: cannot renumber categories in %1: %2")
+                           .arg(path, error));
+            continue;
+        }
+
+        const int mapped = remapCategoryIndex(item.category, oldToNew);
+        if (mapped == item.category)
+            continue;
+
+        // Only a sidecar whose category actually moves is rewritten. load()
+        // demotes a resumable status on the way in, and writing that back for
+        // every item would persist a change nobody asked for.
+        item.category = mapped;
+        if (save(item))
+            ++changed;
+    }
+
+    return changed;
 }
 
 } // namespace eMule::usenet

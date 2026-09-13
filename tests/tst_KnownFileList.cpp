@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
+#include "prefs/Preferences.h"
 
 #include <QTest>
 #include <QTemporaryDir>
@@ -29,6 +30,9 @@ private slots:
     void addCancelledFileID_and_check();
     void isCancelledFileByID_notCancelled();
     void saveLoadRoundTrip();
+    void aCancelledHashIsStillCancelledAfterARestart();
+    void aCancelledHashIsForgottenWhenTheUserAsksUsNotToRemember();
+    void knownFilesAreNotWrittenWhenTheUserAsksUsNotToRemember();
     void process_autoSave();
     void clear_deletesAll();
 };
@@ -249,6 +253,103 @@ void tst_KnownFileList::saveLoadRoundTrip()
         QCOMPARE(static_cast<uint64>(found->fileSize()), uint64{9999});
         QCOMPARE(found->statistic.allTimeTransferred(), uint64{5000});
     }
+}
+
+void tst_KnownFileList::aCancelledHashIsStillCancelledAfterARestart()
+{
+    eMule::testing::TempDir tmpDir;
+    thePrefs.setRememberCancelledFiles(true);
+
+    uint8 hash[16];
+    std::memset(hash, 0xAA, 16);
+
+    {
+        KnownFileList list;
+        list.init(tmpDir.path());
+        list.addCancelledFileID(hash);
+        QVERIFY(list.isCancelledFileByID(hash));
+        list.save();
+    }
+
+    // The bug this pins: the seed used to be minted at *save* time, after the key
+    // had already been derived from the zero sentinel — so the header claimed one
+    // seed and every record beneath it came from another, and nothing ever matched
+    // again. In-memory coverage alone cannot see it; only the round trip can.
+    KnownFileList list;
+    QVERIFY(list.init(tmpDir.path()));
+    QVERIFY(list.isCancelledFileByID(hash));
+
+    uint8 other[16];
+    std::memset(other, 0xBB, 16);
+    QVERIFY(!list.isCancelledFileByID(other));
+}
+
+void tst_KnownFileList::aCancelledHashIsForgottenWhenTheUserAsksUsNotToRemember()
+{
+    eMule::testing::TempDir tmpDir;
+    thePrefs.setRememberCancelledFiles(true);
+
+    uint8 hash[16];
+    std::memset(hash, 0xA5, 16);
+
+    {
+        KnownFileList list;
+        list.init(tmpDir.path());
+        list.addCancelledFileID(hash);
+        list.save();
+    }
+
+    // Off means forget, the way cancelled.met has always behaved: not read, not
+    // written, and not matched — so turning it back on does not resurrect it.
+    thePrefs.setRememberCancelledFiles(false);
+    {
+        KnownFileList list;
+        QVERIFY(list.init(tmpDir.path()));
+        QVERIFY(!list.isCancelledFileByID(hash));
+        list.addCancelledFileID(hash);
+        QVERIFY(!list.isCancelledFileByID(hash));
+        list.save();
+    }
+
+    thePrefs.setRememberCancelledFiles(true);
+    KnownFileList list;
+    QVERIFY(list.init(tmpDir.path()));
+    QVERIFY(!list.isCancelledFileByID(hash));
+}
+
+void tst_KnownFileList::knownFilesAreNotWrittenWhenTheUserAsksUsNotToRemember()
+{
+    eMule::testing::TempDir tmpDir;
+    thePrefs.setRememberDownloadedFiles(false);
+
+    uint8 hash[16];
+    std::memset(hash, 0xDD, 16);
+
+    {
+        KnownFileList list;
+        list.init(tmpDir.path());
+
+        auto* file = new KnownFile();
+        file->setFileHash(hash);
+        file->setFileName(QStringLiteral("forgettable.bin"));
+        file->setFileSize(1234);
+        file->setUtcFileDate(1700000000);
+        list.safeAddKFile(file);
+        QCOMPARE(list.count(), size_t{1});
+
+        // Nothing is sharing it, so with the preference off it must not survive
+        // the write — which is the whole of what the checkbox does, and what it
+        // did not do at all until now.
+        list.save();
+    }
+
+    {
+        KnownFileList list;
+        QVERIFY(list.init(tmpDir.path()));
+        QCOMPARE(list.count(), size_t{0});
+    }
+
+    thePrefs.setRememberDownloadedFiles(true);
 }
 
 void tst_KnownFileList::process_autoSave()

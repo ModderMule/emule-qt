@@ -371,6 +371,12 @@ void tst_HttpCacheCorruptBan::httpCacheChunkBlamesThePeerAndNotTheServer()
     QVERIFY(file->isCorruptedPart(0));
     QVERIFY(m_clientList->isBannedClient(kPeerAddress));
 
+    // "Failed Hash Check" in the Statistics window: the fetch verified, the part
+    // did not. Counted once — the ledger entry is gone with it.
+    QCOMPARE(cache.sessionCounters().partsCorrupt, uint64(1));
+    file->flushBuffer();
+    QCOMPARE(cache.sessionCounters().partsCorrupt, uint64(1));
+
     // The whole point: the machine that served the bytes is not the machine that
     // chose them. Banning it would cost every other download its cache.
     QVERIFY(!m_clientList->isBannedClient(serverAddress));

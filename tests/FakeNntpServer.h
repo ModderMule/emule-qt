@@ -19,6 +19,7 @@
 #include <QByteArray>
 #include <QHash>
 #include <QHostAddress>
+#include <QPointer>
 #include <QString>
 #include <QSet>
 #include <QStringList>
@@ -95,6 +96,27 @@ public:
     void setDropOnArticle(const QString& messageId, int times = 1)
     {
         m_dropArticles.insert(normalizeId(messageId), times);
+    }
+
+    /// Answer BODY for @p messageId only once releaseHeld() is called.
+    ///
+    /// An article stuck in flight for as long as the test wants, with the
+    /// connection healthy and the socket silent — which is what the queue looks
+    /// like mid-download when something else happens to it (a settings save, a
+    /// pause). Unlike setMute() it holds one article, so the rest of the
+    /// download carries on around it.
+    void setHoldArticle(const QString& messageId) { m_holdId = normalizeId(messageId); }
+
+    /// Serve every held BODY and stop holding.
+    void releaseHeld()
+    {
+        m_holdId.clear();
+        const auto held = m_held;
+        m_held.clear();
+        for (const auto& [sock, id] : held) {
+            if (sock)
+                serveBody(sock, id);
+        }
     }
 
     // -- Observation --------------------------------------------------------
@@ -256,6 +278,18 @@ private:
             return;
         }
 
+        // Held: nothing goes out until releaseHeld(). The socket stays open and
+        // silent, exactly like a provider that is simply slow.
+        if (!m_holdId.isEmpty() && key == m_holdId) {
+            m_held.append({QPointer<QTcpSocket>(sock), key});
+            return;
+        }
+
+        serveBody(sock, key);
+    }
+
+    void serveBody(QTcpSocket* sock, const QString& key)
+    {
         const auto it = m_articles.constFind(key);
         if (it == m_articles.cend()) {
             writeLine(sock, QByteArrayLiteral("430 No article with that message-id"));
@@ -318,6 +352,10 @@ private:
     QHash<QString, QByteArray> m_articles;
 
     QHash<QString, int> m_dropArticles;
+
+    /// The article BODY sits on until releaseHeld(), and who is waiting for it.
+    QString m_holdId;
+    QList<QPair<QPointer<QTcpSocket>, QString>> m_held;
 
     /// Articles STAT denies but BODY still serves. See setStatRefusal().
     QSet<QString> m_statRefusals;

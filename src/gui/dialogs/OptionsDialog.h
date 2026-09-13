@@ -174,6 +174,11 @@ private:
     // "Check now" where the indexer page has "Test": a feed is not something you
     // can test, only something you can make run early.
     void loadFeeds();
+
+    /// Fill the feed page's download-category combo from the daemon's list.
+    /// Index 0 is skipped: "All" is the absence of a category, and the combo
+    /// already offers that as "No category".
+    void loadDownloadCategories();
     void saveFeeds();
     void refreshFeedTable();
     void updateFeedRow(int index);
@@ -394,6 +399,8 @@ private:
     QCheckBox*    m_usenetRenameCheck = nullptr;
     QCheckBox*    m_usenetUnpackCheck = nullptr;
     QCheckBox*    m_usenetDirectUnpackCheck = nullptr;
+    QCheckBox*    m_usenetEncryptedPreviewCheck = nullptr;
+    QLineEdit*    m_usenetUnpackerEdit = nullptr;
     QComboBox*    m_usenetHealthCombo = nullptr;
     QSpinBox*     m_usenetHealthMinSpin = nullptr;
     QCheckBox*    m_usenetAutoPausedCheck = nullptr;
@@ -472,6 +479,7 @@ private:
     QSpinBox* m_feedMaxAgeSpin = nullptr;
     QSpinBox* m_feedIntervalSpin = nullptr;
     QCheckBox* m_feedGrabExistingCheck = nullptr;
+    QComboBox* m_feedDownloadCategoryCombo = nullptr;
 
     QList<QCborMap> m_feeds;
     int m_currentFeed = -1;

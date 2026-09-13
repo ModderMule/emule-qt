@@ -36,7 +36,6 @@ private:
     void requestJobs();
     void updateJobList(const QCborArray& jobs);
     static QString statusString(int state);
-    static QString formatSize(int64_t bytes);
 
     IpcClient* m_ipc = nullptr;
     QTimer* m_refreshTimer = nullptr;

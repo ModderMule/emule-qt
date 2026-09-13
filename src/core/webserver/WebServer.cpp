@@ -268,6 +268,24 @@ bool WebServer::start(const WebServerConfig& config)
     if (QFile::exists(tmplPath))
         m_templateEngine->loadTemplate(tmplPath);
 
+    // A custom template may ship its own assets flat beside the .tmpl; the URL space
+    // is flat too, so they resolve by bare name. Custom path only -- the default
+    // template lives in configDir, which holds preferences and .dat files and must
+    // never become an asset root. Canonical compare, so Config/../Config is caught.
+    m_webAssetOverrideDir.clear();
+    if (!m_config.templatePath.isEmpty()) {
+        const QString dir = QFileInfo(m_config.templatePath).canonicalPath();
+        if (!dir.isEmpty() && dir != QFileInfo(configDir).canonicalFilePath())
+            m_webAssetOverrideDir = dir;
+    }
+
+    // Keyed on the two roots just set, and templatePath is user-editable -- a theme
+    // switch comes back through restartWebServer() -> start(), so the memo cannot be
+    // allowed to survive. Reset here and not in stop(): stop() early-returns when
+    // m_server is null, and ratingSpriteCss() is reachable on a stream token even
+    // with the web UI off.
+    m_ratingSpriteCss.reset();
+
     m_server = std::make_unique<QHttpServer>(this);
 
     registerRoutes();
@@ -1187,19 +1205,6 @@ QString incomingHref(const QString& path, const QString& token,
     return href.toHtmlEscaped();
 }
 
-QString humanSize(qint64 bytes)
-{
-    static const char* kUnit[] = {"B", "KB", "MB", "GB", "TB"};
-    double v = double(bytes);
-    int u = 0;
-    while (v >= 1024.0 && u < 4) {
-        v /= 1024.0;
-        ++u;
-    }
-    return QStringLiteral("%1 %2").arg(v, 0, 'f', u == 0 ? 0 : 1)
-                                 .arg(QLatin1String(kUnit[u]));
-}
-
 /// The `filetype_*` sprite suffix for a name — MFC _GetWebImageNameForFileType
 /// (srchybrid/WebServer.cpp:4157-4188). Note IMAGE maps to "picture", not
 /// "image": that is what the shipped sprite is called.
@@ -1580,6 +1585,41 @@ QString WebServer::resolveIncomingPath(const QString& relPath) const
     return abs;
 }
 
+QString WebServer::resolveWebAsset(const QString& fileName) const
+{
+    // One segment, always: the /<arg> route captures [^/]+ and the favicon route
+    // passes a literal. A separator here is malformed, not merely suspicious, so
+    // this rejects outright rather than walking components the way the sibling
+    // resolveIncomingPath() has to.
+    if (fileName.isEmpty()
+        || fileName.contains(QLatin1Char('/')) || fileName.contains(QLatin1Char('\\'))
+        || fileName == QLatin1String(".") || fileName == QLatin1String(".."))
+        return {};
+
+    // Template dir first so a theme can override any single file; the seeded assets
+    // behind it so a theme only has to ship what it changes.
+    for (const QString& root : {m_webAssetOverrideDir, m_webDataDir}) {
+        if (root.isEmpty())
+            continue;
+        // Canonicalised per request, not once in start(): config/webserver/ may not
+        // exist yet when start() runs (seeding is a separate pass) and
+        // canonicalFilePath() is empty for a missing path, so caching that would
+        // disable asset serving for the life of the process. Two extra stats per
+        // hit, against responses already carrying Cache-Control: max-age=3600.
+        const QString base = QFileInfo(root).canonicalFilePath();
+        if (base.isEmpty())
+            continue;
+        // Resolves symlinks, so a link in a theme dir pointing out of it fails
+        // containment instead of passing it. Empty for anything missing -- which is
+        // exactly the per-file fall-through to the next root.
+        const QString abs = QFileInfo(base + QLatin1Char('/') + fileName).canonicalFilePath();
+        if (abs.isEmpty() || !abs.startsWith(base + QLatin1Char('/')))
+            continue;
+        return abs;
+    }
+    return {};
+}
+
 QString WebServer::ratingSpriteCss() const
 {
     if (m_ratingSpriteCss)
@@ -1589,7 +1629,9 @@ QString WebServer::ratingSpriteCss() const
     // the web UI is on, and this page is reachable on a stream token with it off.
     // At 410 bytes that is cheaper than the request it saves, and it keeps the marks
     // pixel-identical to the ones the web UI and the Qt lists draw.
-    QFile sheet(m_webDataDir + QStringLiteral("/sprite-rating.png"));
+    // Same two-tier resolution as the static route: a theme shipping its own
+    // sprite-rating.png gets its marks inlined here too. Empty path -> open() fails.
+    QFile sheet(resolveWebAsset(QStringLiteral("sprite-rating.png")));
     if (!sheet.open(QIODevice::ReadOnly)) {
         m_ratingSpriteCss.emplace();
         return *m_ratingSpriteCss;
@@ -1774,7 +1816,7 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
 
         html += QStringLiteral("<tr><td>%1%2%3</td><td class=\"n\">%4</td><td class=\"n\">%5</td>"
                                "<td class=\"a\">%6</td></tr>")
-                    .arg(marker, rating, name.toHtmlEscaped(), humanSize(fi.size()), modified,
+                    .arg(marker, rating, name.toHtmlEscaped(), formatByteSize(fi.size()), modified,
                          actions);
     }
 
@@ -2526,13 +2568,12 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
 
 QHttpServerResponse WebServer::handleStaticFile(const QString& path)
 {
-    // Security: prevent directory traversal
-    if (path.contains(QStringLiteral("..")) || path.contains(QStringLiteral("//")))
-        return QHttpServerResponse(QHttpServerResponse::StatusCode::Forbidden);
-
-    const QString filePath = m_webDataDir + QStringLiteral("/") + path;
+    // Traversal guard, theme override and existence check all live in the resolver.
+    // A rejected path now 404s rather than 403s -- a 403 confirms the guard fired and
+    // so leaks whether the path exists.
+    const QString filePath = resolveWebAsset(path);
     QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
+    if (filePath.isEmpty() || !file.open(QIODevice::ReadOnly)) {
         return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
     }
 
@@ -2583,10 +2624,10 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
                 cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
             lineVars[QStringLiteral("DownloadFakeTitle")] =
                 containerWarningText(cc, file->fileName()).toHtmlEscaped();
-            lineVars[QStringLiteral("DownloadFileSize")] = QString::number(file->fileSize());
+            lineVars[QStringLiteral("DownloadFileSize")] = formatByteSize(file->fileSize());
             lineVars[QStringLiteral("DownloadFileHash")] = md4str(file->fileHash());
-            lineVars[QStringLiteral("DownloadCompleted")] = QString::number(file->completedSize());
-            lineVars[QStringLiteral("DownloadSpeed")] = QString::number(file->datarate(), 'f', 1);
+            lineVars[QStringLiteral("DownloadCompleted")] = formatByteSize(file->completedSize());
+            lineVars[QStringLiteral("DownloadSpeed")] = formatByteRate(file->datarate());
             lineVars[QStringLiteral("DownloadSources")] = QString::number(file->sourceCount());
             lineVars[QStringLiteral("DownloadPriority")] = QString::number(file->downPriority());
 
@@ -2657,8 +2698,8 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
                 ? static_cast<double>(transferred) * 1000.0 / static_cast<double>(delay)
                 : 0.0;
 
-            lineVars[QStringLiteral("3")] = QString::number(transferred);
-            lineVars[QStringLiteral("4")] = QString::number(speed, 'f', 1);
+            lineVars[QStringLiteral("3")] = formatByteSize(transferred);
+            lineVars[QStringLiteral("4")] = formatByteRate(speed);
 
             auto softToIcon = [](ClientSoftware soft) -> QString {
                 switch (soft) {
@@ -2693,8 +2734,8 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
     transferVars[QStringLiteral("UploadFilesList")] = upLines;
     transferVars[QStringLiteral("DownloadCount")] = m_downloadQueue
         ? QString::number(m_downloadQueue->fileCount()) : QStringLiteral("0");
-    transferVars[QStringLiteral("TotalUpTransferred")] = QString::number(totalUpTransferred);
-    transferVars[QStringLiteral("TotalUpSpeed")] = QString::number(totalUpSpeed);
+    transferVars[QStringLiteral("TotalUpTransferred")] = formatByteSize(totalUpTransferred);
+    transferVars[QStringLiteral("TotalUpSpeed")] = formatByteRate(totalUpSpeed);
 
     const QString downHeader = WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("TRANSFER_DOWN_HEADER")), transferVars);
@@ -2770,11 +2811,11 @@ QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& session
                 cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
             lineVars[QStringLiteral("SharedFakeTitle")] =
                 containerWarningText(cc, file->fileName()).toHtmlEscaped();
-            lineVars[QStringLiteral("SharedFileSize")] = QString::number(file->fileSize());
+            lineVars[QStringLiteral("SharedFileSize")] = formatByteSize(file->fileSize());
             lineVars[QStringLiteral("SharedFileHash")] = md4str(file->fileHash());
             lineVars[QStringLiteral("SharedRequests")] = QString::number(file->statistic.requests());
             lineVars[QStringLiteral("SharedAccepted")] = QString::number(file->statistic.accepts());
-            lineVars[QStringLiteral("SharedTransferred")] = QString::number(file->statistic.transferred());
+            lineVars[QStringLiteral("SharedTransferred")] = formatByteSize(file->statistic.transferred());
             lineVars[QStringLiteral("SharedPriority")] = QString::number(file->upPriority());
             // ED2K link for Copy ED2K Link context menu
             // Escape single quotes for JS string embedding in oncontextmenu attr
@@ -2802,8 +2843,8 @@ QString WebServer::buildStatisticsPage()
         vars[QStringLiteral("SpeedUp")] = QString::number(m_statistics->rateUp(), 'f', 1);
         vars[QStringLiteral("MaxSpeedDown")] = QString::number(m_statistics->maxDown(), 'f', 1);
         vars[QStringLiteral("MaxSpeedUp")] = QString::number(m_statistics->maxUp(), 'f', 1);
-        vars[QStringLiteral("SessionReceived")] = QString::number(m_statistics->sessionReceivedBytes());
-        vars[QStringLiteral("SessionSent")] = QString::number(m_statistics->sessionSentBytes());
+        vars[QStringLiteral("SessionReceived")] = formatByteSize(m_statistics->sessionReceivedBytes());
+        vars[QStringLiteral("SessionSent")] = formatByteSize(m_statistics->sessionSentBytes());
         vars[QStringLiteral("Reconnects")] = QString::number(m_statistics->reconnects());
         vars[QStringLiteral("Uptime")] = QString::number(m_statistics->uptimeSecs());
     }

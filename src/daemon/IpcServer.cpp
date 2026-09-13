@@ -47,7 +47,16 @@ bool IpcServer::isListening() const
 
 void IpcServer::broadcast(const Ipc::IpcMessage& msg)
 {
-    for (auto& handler : m_clients) {
+    // A failed write drops its client synchronously (errorOccurred ->
+    // onClientDisconnected), which erases it from m_clients mid-loop. Walk a
+    // snapshot: the dropped handler lives until its deleteLater() and reads as
+    // unhandshaked.
+    std::vector<IpcClientHandler*> clients;
+    clients.reserve(m_clients.size());
+    for (const auto& handler : m_clients)
+        clients.push_back(handler.get());
+
+    for (auto* handler : clients) {
         if (handler->isHandshaked())
             handler->sendMessage(msg);
     }

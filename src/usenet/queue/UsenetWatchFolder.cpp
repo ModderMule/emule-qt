@@ -148,7 +148,8 @@ void UsenetWatchFolder::consume(const QString& path)
     QString error;
     UsenetAddOutcome outcome = UsenetAddOutcome::Failed;
     m_queue->addNzb(data, QFileInfo(path).completeBaseName(), error,
-                    UsenetAddSource::Automatic, &outcome);
+                    {.source = UsenetAddSource::Automatic}, &outcome);
+    m_queue->stats().noteAdd(UsenetAddOrigin::WatchFolder, outcome);
 
     switch (outcome) {
     case UsenetAddOutcome::Added:
@@ -158,10 +159,13 @@ void UsenetWatchFolder::consume(const QString& path)
         return;
 
     case UsenetAddOutcome::Duplicate:
+    case UsenetAddOutcome::AlreadyDownloaded:
         // The answer, not a failure. Filing it as failed would be a lie, and
-        // leaving it would make every scan re-read it.
-        logInfo(QStringLiteral("Usenet: \"%1\" is already queued — %2")
-                    .arg(QFileInfo(path).fileName(), error));
+        // leaving it would make every scan re-read it. The reason leads, because
+        // it already says which kind of "already" this was — the line used to
+        // claim "already queued" for both.
+        logInfo(QStringLiteral("Usenet: %1 (\"%2\" was not queued)")
+                    .arg(error, QFileInfo(path).fileName()));
         fileTo(path, kProcessedDir);
         return;
 

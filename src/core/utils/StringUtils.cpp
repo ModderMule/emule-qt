@@ -4,10 +4,20 @@
 
 #include "StringUtils.h"
 
-#include <QLocale>
+#include <QCoreApplication>
+
+#include <array>
 
 
 namespace eMule {
+
+namespace {
+
+using UnitLabels = std::array<const char*, 5>;
+
+QString castItoXBytes(double count, int decimals, const UnitLabels& units);
+
+} // namespace
 
 QString fromStdString(std::string_view sv)
 {
@@ -55,26 +65,35 @@ QByteArray fromHexString(QStringView hex)
     return result;
 }
 
-QString formatByteSize(uint64 bytes)
+QString formatByteSize(double bytes, int decimals)
 {
-    constexpr std::array<const char*, 5> units = {"B", "KB", "MB", "GB", "TB"};
-    constexpr double kFactor = 1024.0;
+    // MFC IDS_BYTES..IDS_TBYTES (emule.rc:2498-2502)
+    static constexpr UnitLabels kUnits = {
+        QT_TRANSLATE_NOOP("Units", "Bytes"),
+        QT_TRANSLATE_NOOP("Units", "KB"),
+        QT_TRANSLATE_NOOP("Units", "MB"),
+        QT_TRANSLATE_NOOP("Units", "GB"),
+        QT_TRANSLATE_NOOP("Units", "TB"),
+    };
+    return castItoXBytes(bytes, decimals, kUnits);
+}
 
-    if (bytes == 0)
-        return QStringLiteral("0 B");
+QString formatByteRate(double bytesPerSec, int decimals)
+{
+    // MFC IDS_BYTESPERSEC..IDS_TBYTESPERSEC (emule.rc:3444-3448)
+    static constexpr UnitLabels kUnits = {
+        QT_TRANSLATE_NOOP("Units", "B/s"),
+        QT_TRANSLATE_NOOP("Units", "KB/s"),
+        QT_TRANSLATE_NOOP("Units", "MB/s"),
+        QT_TRANSLATE_NOOP("Units", "GB/s"),
+        QT_TRANSLATE_NOOP("Units", "TB/s"),
+    };
+    return castItoXBytes(bytesPerSec, decimals, kUnits);
+}
 
-    auto value = static_cast<double>(bytes);
-    std::size_t unitIdx = 0;
-    while (value >= kFactor && unitIdx < units.size() - 1) {
-        value /= kFactor;
-        ++unitIdx;
-    }
-
-    // Use 2 decimal places for MB and above, 0 for B/KB
-    const int decimals = (unitIdx >= 2) ? 2 : 0;
-    return QStringLiteral("%1 %2")
-        .arg(QLocale::c().toString(value, 'f', decimals),
-             QLatin1StringView(units[unitIdx]));
+QString formatQuotaGb(qint64 bytes)
+{
+    return QStringLiteral("%1 GB").arg(double(bytes) / 1e9, 0, 'f', 1);
 }
 
 QString formatDuration(std::chrono::seconds duration)
@@ -98,5 +117,28 @@ QString formatDuration(std::chrono::seconds duration)
 
     return result;
 }
+
+namespace {
+
+/// MFC CastItoXBytes (OtherFunctions.cpp:129-172). 1024-based, but a unit runs
+/// up to 1000 of itself before the next takes over; Bytes never get decimals.
+QString castItoXBytes(double count, int decimals, const UnitLabels& units)
+{
+    static constexpr std::array<double, 5> kDivisor = {
+        1.0, 1024.0, 1048576.0, 1073741824.0, 1099511627776.0};
+
+    std::size_t idx = 0;
+    if (count >= 1024.0) {
+        idx = 1;
+        while (idx + 1 < kDivisor.size() && count >= kDivisor[idx] * 1000.0)
+            ++idx;
+    }
+    const double value = count > 0.0 ? count / kDivisor[idx] : 0.0;
+    return QStringLiteral("%1 %2").arg(
+        QString::number(value, 'f', idx == 0 ? 0 : decimals),
+        QCoreApplication::translate("Units", units[idx]));
+}
+
+} // namespace
 
 } // namespace eMule

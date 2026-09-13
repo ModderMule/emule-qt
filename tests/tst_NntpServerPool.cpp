@@ -20,6 +20,7 @@
 #include "nntp/NntpServerPool.h"
 #include "nntp/NntpSocket.h"
 
+#include <QPointer>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -64,6 +65,7 @@ private slots:
     void releaseReusesAnIdleConnection();
     void releaseUnusableDropsIt();
     void blockedServerIsSkippedAndRestored();
+    void blockingKeepsBusyLeasesAliveUntilRelease();
     void retryIntervalZeroDisablesBlocking();
     void changingCredentialsDropsConnections();
     void generationBumpsOnEveryChange();
@@ -269,6 +271,46 @@ void tst_NntpServerPool::blockedServerIsSkippedAndRestored()
     // "could not connect" is not evidence the article is missing.
     pool.blockServer(b.key());
     QCOMPARE(pool.acquire(0), nullptr);
+}
+
+// A backoff must not reach into connections that are mid-article. Aborting one
+// raises no failed() — NntpSocket::abort() marks itself Disconnected before it
+// touches the QTcpSocket — so the article on it would never finish: its worker
+// slot held forever, its item stalled, and the job left pointing at a socket
+// deleteLater() has since freed. One damaged article on a busy account used to
+// take every other article on that worker with it.
+void tst_NntpServerPool::blockingKeepsBusyLeasesAliveUntilRelease()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpServerPool pool;
+    pool.setServers({make(QStringLiteral("solo"), port, 0, /*maxConnections*/ 2)});
+
+    NntpSocket* first = pool.acquire(0);
+    NntpSocket* second = pool.acquire(0);
+    QVERIFY(first != nullptr && second != nullptr);
+    QSignalSpy ready(second, &NntpSocket::ready);
+    QVERIFY(ready.wait(5000));
+
+    // The first lease fails and backs the account off while the second is still
+    // out — the article on it has nothing to do with the fault.
+    QPointer<NntpSocket> busy(second);
+    pool.release(first, /*reusable*/ false);
+    pool.blockServer(make(QStringLiteral("solo"), port, 0).key());
+    QTest::qWait(50);   // let any deleteLater() run
+
+    QVERIFY(!busy.isNull());
+    QVERIFY(busy->isReady());
+    QCOMPARE(pool.busyCount(), 1);
+
+    // Given back, it goes — a blocked server's connections are suspect, they
+    // just may not be taken away mid-article.
+    pool.release(second);
+    QTest::qWait(50);
+    QCOMPARE(pool.totalCount(), 0);
+    QVERIFY(busy.isNull());
 }
 
 void tst_NntpServerPool::retryIntervalZeroDisablesBlocking()

@@ -26,6 +26,11 @@ struct ServerRow {
     uint32_t users = 0;
     uint32_t maxUsers = 0;
     QString preference;
+
+    /// The wire value behind `preference`, kept because the name cannot be
+    /// sorted: the daemon sends 0 Normal, 1 High, 2 Low, which is neither
+    /// alphabetical nor a strength order.
+    int preferenceValue = 0;
     uint32_t failed = 0;
     bool isStatic = false;
     uint32_t softFiles = 0;

@@ -1,5 +1,7 @@
 #include "nzb/NzbFile.h"
 
+#include "utils/OtherFunctions.h"
+
 #include "nzb/SubjectParser.h"
 #include "utils/Log.h"
 
@@ -35,6 +37,11 @@ bool NzbFile::parse(const QByteArray& data, NzbInfo& out, QString& error)
     NzbFileInfo current;
     bool inFile = false;
 
+    // Taken once for the whole document, not per <file>. It costs a refcount and
+    // it buys the property that one NZB is read by one rule set even if the
+    // preference changes while this runs.
+    const std::shared_ptr<const SubjectRuleSet> rules = subjectRules();
+
     while (!xml.atEnd()) {
         const auto token = xml.readNext();
 
@@ -51,7 +58,7 @@ bool NzbFile::parse(const QByteArray& data, NzbInfo& out, QString& error)
                 current.poster = attrs.value(QLatin1String("poster")).toString();
                 current.date = attrs.value(QLatin1String("date")).toLongLong();
 
-                const SubjectInfo parsed = parseSubject(current.subject);
+                const SubjectInfo parsed = rules->parse(current.subject);
                 current.fileName = parsed.fileName;
                 current.partsTotal = parsed.total;
 
@@ -135,17 +142,9 @@ bool NzbFile::parseFile(const QString& path, NzbInfo& out, QString& error)
 
 QString NzbFile::takePasswordFromName(QString& baseName)
 {
-    const int open = baseName.indexOf(QLatin1String("{{"));
-    if (open < 0)
-        return {};
-    const int close = baseName.indexOf(QLatin1String("}}"), open + 2);
-    if (close < 0)
-        return {};
-
-    const QString password = baseName.mid(open + 2, close - open - 2);
-    baseName.remove(open, close - open + 2);
-    baseName = baseName.trimmed();
-    return password;
+    // The convention itself lives in core: the indexer's feed parser reads the
+    // same marker out of a release *title*, and it does not link this module.
+    return takeBracedPassword(baseName);
 }
 
 } // namespace eMule::usenet

@@ -6,6 +6,7 @@
 
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 #include "chat/IrcClient.h"
 #include "prefs/Preferences.h"
 #include "utils/TextLinks.h"
@@ -527,9 +528,12 @@ void IrcPanel::onChannelListed(const QString& channel, int userCount,
             return;
     }
 
-    auto* item = new QTreeWidgetItem(m_channelListWidget);
+    auto* item = new SortableTreeItem(m_channelListWidget);
     item->setText(0, channel);
     item->setText(1, QString::number(userCount));
+    // The whole point of this list is "busiest first" (see the sortByColumn in
+    // onChannelListFinished), and as text 950 outranks 10000.
+    item->setData(1, SortRole, userCount);
     item->setText(2, topic);
     item->setIcon(0, QIcon(QStringLiteral(":/icons/IRC.ico")));
     item->setData(0, Qt::UserRole, channel);

@@ -20,6 +20,8 @@
 /// Blocking and synchronous, like Par2Verifier and for the same reason:
 /// UsenetPostProcessor owns the thread.
 
+#include "archive/ArchiveReader.h"
+
 #include <QString>
 #include <QSet>
 #include <QStringList>
@@ -53,10 +55,21 @@ public:
         /// are.
         bool nothingToDo = false;
 
-        /// The archive is encrypted and libarchive cannot open it. True only for
-        /// RAR, where detection is as far as libarchive goes; ZIP and 7z decrypt
-        /// from NzbInfo::password like any other member.
+        /// The set is encrypted and libarchive could not get past it —
+        /// **every format but ZIP**, which is the only one libarchive decrypts.
+        /// Set whether or not the external unpacker then rescued it, because it
+        /// describes the archive rather than the outcome.
         bool encryptedUnsupported = false;
+
+        /// The set is encrypted and no password we have opens it: none was
+        /// given, the one given was refused, or there is no tool installed that
+        /// can decrypt the format. This is the flag the GUI turns into
+        /// "Set Password…", so it must never be set for an ordinary failure.
+        bool passwordRequired = false;
+
+        /// A password was supplied and the tool said it was wrong, as opposed to
+        /// missing. Only ZIP and the external tools can tell the difference.
+        bool wrongPassword = false;
 
         /// Absolute paths of what came out.
         QStringList extractedFiles;
@@ -76,13 +89,20 @@ public:
     /// Extract every archive set in @p sourceDir into @p destDir.
     ///
     /// @p password comes from NzbInfo::password — the `<meta type="password">`
-    /// tag or the release name. Empty is the normal case.
+    /// tag, the release name, a feed attribute, or the user. Empty is the
+    /// normal case. libarchive applies it to ZIP; for anything else an
+    /// encrypted set goes to ExternalUnpacker, which is the only way a RAR
+    /// password does anything at all.
+    /// @p externalTool is the usenetExternalUnpacker preference, passed in
+    /// rather than read here so this class stays free of Preferences and a test
+    /// can point it at a stub.
     /// @p skipFirstVolumes names sets already extracted elsewhere, by the path
     /// of their first volume. A skipped set is still *found* — it just is not
     /// unpacked again — so nothingToDo keeps meaning "no archives here at all".
     Result unpack(const QString& sourceDir, const QString& destDir,
                   const QString& password = {},
-                  const QSet<QString>& skipFirstVolumes = {});
+                  const QSet<QString>& skipFirstVolumes = {},
+                  const QString& externalTool = {});
 
     /// Group the archive files in @p dir into sets, one entry per set, each
     /// naming the volume that must be opened.
@@ -105,6 +125,18 @@ public:
     [[nodiscard]] static VolumePosition volumePositionOf(const QString& fileName);
 
 private:
+    /// Unpack one set libarchive refused on encryption, using an external
+    /// 7-Zip or unrar. Returns false when the set could not be extracted, with
+    /// @p result carrying the reason and the flags that let the GUI offer a
+    /// password.
+    ///
+    /// @p reader is the one that already failed — its formatName() and
+    /// wrongPassphrase() are what distinguish "no password" from "wrong one",
+    /// and re-opening the set to ask again would cost another full scan.
+    bool unpackEncrypted(const ArchiveSet& set, const QString& destDir,
+                         const QString& password, const QString& externalTool,
+                         const ArchiveReader& reader, Result& result);
+
     ProgressFn m_progress;
 };
 

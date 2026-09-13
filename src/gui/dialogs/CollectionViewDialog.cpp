@@ -6,12 +6,11 @@
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
 #include "utils/StringUtils.h"
 #include "utils/DialogSizing.h"
-
-#include <QLocale>
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
@@ -60,10 +59,13 @@ CollectionViewDialog::CollectionViewDialog(const Collection& collection,
     tree->bindColumns(QStringLiteral("collectionView"), {280, 90, 230});
 
     for (const auto& [key, cf] : collection.files()) {
-        auto* item = new QTreeWidgetItem(m_tree);
+        auto* item = new SortableTreeItem(m_tree);
         item->setText(0, cf->fileName());
-        item->setText(1, QLocale::system().formattedDataSize(cf->fileSize()));
-        item->setData(1, Qt::UserRole, static_cast<qint64>(cf->fileSize())); // for sorting
+        item->setText(1, formatByteSize(cf->fileSize()));
+        item->setData(1, SortRole, static_cast<qint64>(cf->fileSize()));
+        // UserRole is the payload downloadSelected() reads back, not a sort key;
+        // the two are separate roles precisely so neither can shadow the other.
+        item->setData(1, Qt::UserRole, static_cast<qint64>(cf->fileSize()));
         item->setText(2, md4str(cf->fileHash()));
     }
 

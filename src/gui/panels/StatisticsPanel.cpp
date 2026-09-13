@@ -7,8 +7,11 @@
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "controls/StatsGraph.h"
+#include "prefs/NewsServer.h"
 #include "prefs/Preferences.h"
+#include "stats/NetworkCounters.h"
 #include "utils/PanelPoller.h"
+#include "utils/StringUtils.h"
 
 #include "IpcMessage.h"
 
@@ -23,11 +26,16 @@
 #include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
+#include <QSet>
 #include <QSplitter>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+
+#include <algorithm>
+#include <array>
+#include <tuple>
 
 namespace eMule {
 
@@ -142,6 +150,7 @@ void StatisticsPanel::applySettings()
     m_graphDown->setSeriesColor(0, theUiState.statsColor(4));    // Session average
     m_graphDown->setSeriesColor(1, theUiState.statsColor(3));    // Average
     m_graphDown->setSeriesColor(2, theUiState.statsColor(2));    // Current
+    m_graphDown->setSeriesColor(3, theUiState.statsColor(15));   // Usenet (not in MFC)
 
     m_graphUp->setSeriesColor(0, theUiState.statsColor(7));      // Session average
     m_graphUp->setSeriesColor(1, theUiState.statsColor(6));      // Average
@@ -219,10 +228,11 @@ void StatisticsPanel::setupUi()
 
     // Labels here, colours from applySettings() — which is also what a change in
     // Options re-runs, so the two can never disagree.
-    m_graphDown = new StatsGraph(3, this);
+    m_graphDown = new StatsGraph(4, this);
     m_graphDown->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(4));
     m_graphDown->setSeriesInfo(1, tr("Average (3 min)"), theUiState.statsColor(3));
     m_graphDown->setSeriesInfo(2, tr("Current"), theUiState.statsColor(2));
+    m_graphDown->setSeriesInfo(3, tr("Usenet"), theUiState.statsColor(15));
     m_graphDown->setYUnits(tr("KB/s"));
     graphSplitter->addWidget(m_graphDown);
 
@@ -280,14 +290,18 @@ void StatisticsPanel::buildTree()
     m_tree->clear();
 
     const auto detailIcon = QIcon(QStringLiteral(":/icons/StatisticsDetail.ico"));
+    // MFC keeps a separate icon for every Cumulative node (StatisticsDlg.cpp:106-128).
+    const auto cumulativeIcon = QIcon(QStringLiteral(":/icons/StatsCumulative.ico"));
 
     // ===== Transfer =====
     auto* transfer = new QTreeWidgetItem(m_tree, {tr("Transfer")});
     transfer->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
 
-    m_itemSessionUlDlRatio = new QTreeWidgetItem(transfer, {tr("Session UL:DL Ratio: -")});
-    m_itemFriendUlDlRatio = new QTreeWidgetItem(transfer, {tr("Friend Session UL:DL Ratio: -")});
-    m_itemCumUlDlRatio = new QTreeWidgetItem(transfer, {tr("Cumulative UL:DL Ratio: -")});
+    const QString waiting = tr("Waiting...");
+    m_itemSessionUlDlRatio = new QTreeWidgetItem(transfer, {tr("Session UL:DL Ratio: %1").arg(waiting)});
+    m_itemFriendUlDlRatio = new QTreeWidgetItem(transfer,
+        {tr("Session UL:DL Ratio (Friends UL excluded): %1").arg(waiting)});
+    m_itemCumUlDlRatio = new QTreeWidgetItem(transfer, {tr("Cumulative UL:DL Ratio: %1").arg(waiting)});
 
     // --- Uploads ---
     auto* uploads = new QTreeWidgetItem(transfer, {tr("Uploads")});
@@ -327,7 +341,7 @@ void StatisticsPanel::buildTree()
 
     // Uploads > Cumulative
     auto* upCum = new QTreeWidgetItem(uploads, {tr("Cumulative")});
-    upCum->setIcon(0, detailIcon);
+    upCum->setIcon(0, cumulativeIcon);
 
     m_itemUpCumData = new QTreeWidgetItem(upCum, {tr("Uploaded Data: 0 Bytes")});
     auto* upCumClients = new QTreeWidgetItem(m_itemUpCumData, {tr("Clients")});
@@ -397,7 +411,7 @@ void StatisticsPanel::buildTree()
 
     // Downloads > Cumulative
     auto* downCum = new QTreeWidgetItem(downloads, {tr("Cumulative")});
-    downCum->setIcon(0, detailIcon);
+    downCum->setIcon(0, cumulativeIcon);
 
     m_itemDownCumData = new QTreeWidgetItem(downCum, {tr("Downloaded Data: 0 Bytes")});
     auto* downCumClients = new QTreeWidgetItem(m_itemDownCumData, {tr("Clients")});
@@ -428,28 +442,7 @@ void StatisticsPanel::buildTree()
     buildOverheadItems(downCum, m_itemDownCumOverheadTotal, m_itemDownCumOverheadFileReq,
                        m_itemDownCumOverheadSrcExch, m_itemDownCumOverheadServer, m_itemDownCumOverheadKad);
 
-    // --- HTTP Cache ---
-    // Its own branch rather than rows inside Uploads and Downloads: a cached
-    // chunk is one transfer that shows up on both sides, and "Saved" belongs to
-    // neither — it is upstream that never happened.
-    auto* httpCache = new QTreeWidgetItem(transfer, {tr("HTTP Cache")});
-    httpCache->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
-
-    auto* hcSession = new QTreeWidgetItem(httpCache, {tr("Session")});
-    hcSession->setIcon(0, detailIcon);
-    m_itemHcSesPublished = new QTreeWidgetItem(hcSession, {tr("Published: 0 Bytes")});
-    m_itemHcSesFetched = new QTreeWidgetItem(hcSession, {tr("Fetched: 0 Bytes")});
-    m_itemHcSesSaved = new QTreeWidgetItem(hcSession, {tr("Upload Saved: 0 Bytes")});
-    m_itemHcSesChunksUp = new QTreeWidgetItem(hcSession, {tr("Chunks Published: 0")});
-    m_itemHcSesChunksDown = new QTreeWidgetItem(hcSession, {tr("Chunks Fetched: 0")});
-
-    auto* hcCum = new QTreeWidgetItem(httpCache, {tr("Cumulative")});
-    hcCum->setIcon(0, detailIcon);
-    m_itemHcCumPublished = new QTreeWidgetItem(hcCum, {tr("Published: 0 Bytes")});
-    m_itemHcCumFetched = new QTreeWidgetItem(hcCum, {tr("Fetched: 0 Bytes")});
-    m_itemHcCumSaved = new QTreeWidgetItem(hcCum, {tr("Upload Saved: 0 Bytes")});
-    m_itemHcCumChunksUp = new QTreeWidgetItem(hcCum, {tr("Chunks Published: 0")});
-    m_itemHcCumChunksDown = new QTreeWidgetItem(hcCum, {tr("Chunks Fetched: 0")});
+    buildHttpCacheBranch(transfer, detailIcon, cumulativeIcon);
 
     // ===== Connection =====
     auto* connection = new QTreeWidgetItem(m_tree, {tr("Connection")});
@@ -478,7 +471,7 @@ void StatisticsPanel::buildTree()
 
     // Connection > Cumulative
     auto* connCum = new QTreeWidgetItem(connection, {tr("Cumulative")});
-    connCum->setIcon(0, detailIcon);
+    connCum->setIcon(0, cumulativeIcon);
 
     auto* connCumGen = new QTreeWidgetItem(connCum, {tr("General")});
     m_itemConnCumReconnects = new QTreeWidgetItem(connCumGen, {tr("Server Reconnects: 0")});
@@ -509,10 +502,13 @@ void StatisticsPanel::buildTree()
     m_itemTransferTime = new QTreeWidgetItem(timeSession, {tr("Transfer Time: 0:00:00")});
     m_itemUploadTime = new QTreeWidgetItem(m_itemTransferTime, {tr("Upload Time: 0:00:00")});
     m_itemDownloadTime = new QTreeWidgetItem(m_itemTransferTime, {tr("Download Time: 0:00:00")});
-    m_itemServerDuration = new QTreeWidgetItem(timeSession, {tr("Server Duration: 0:00:00")});
+    // MFC shows both, in this order (StatisticsDlg.cpp:1582-1588).
+    m_itemCurrentServerDuration =
+        new QTreeWidgetItem(timeSession, {tr("Current Server Duration: 0:00:00")});
+    m_itemServerDuration = new QTreeWidgetItem(timeSession, {tr("Total Server Duration: 0:00:00")});
 
     auto* timeCum = new QTreeWidgetItem(m_itemTimeHeader, {tr("Cumulative")});
-    timeCum->setIcon(0, detailIcon);
+    timeCum->setIcon(0, cumulativeIcon);
     m_itemCumRuntime = new QTreeWidgetItem(timeCum, {tr("Run Time: 0:00:00")});
     m_itemCumTransferTime = new QTreeWidgetItem(timeCum, {tr("Transfer Time: 0:00:00")});
     m_itemCumUploadTime = new QTreeWidgetItem(m_itemCumTransferTime, {tr("Upload Time: 0:00:00")});
@@ -568,6 +564,9 @@ void StatisticsPanel::buildTree()
     m_itemTotalDownLeft = new QTreeWidgetItem(totalDown, {tr("Total Size Left to Download: 0 Bytes")});
     m_itemTotalDownFreeSpace = new QTreeWidgetItem(totalDown, {tr("Free Space on Drive: 0 Bytes")});
 
+    // ===== Usenet ===== (not in MFC; last, so MFC's own order stays intact)
+    buildUsenetBranch(detailIcon, cumulativeIcon);
+
     // Restore expansion state from persistent settings (defaults: Transfer, Connection, Time expanded)
     theUiState.bindStatsTree(m_tree);
 }
@@ -587,6 +586,17 @@ void StatisticsPanel::requestStats()
             return;
 
         updateTree(resp.fieldMap(1));
+    });
+
+    // Its own request: the daemon answers GetStats every second for the status
+    // bar, and the Usenet branch is only worth building while this panel shows.
+    IpcMessage usenetReq(IpcMsgType::GetUsenetStats);
+    m_ipc->sendRequest(std::move(usenetReq), [this](const IpcMessage& resp) {
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_itemUsenet->setHidden(true);
+            return;
+        }
+        applyUsenetStats(resp.fieldMap(1));
     });
 }
 
@@ -627,8 +637,8 @@ void StatisticsPanel::applyGraphHistory(const QCborMap& data)
     }
 
     // Positional unpack of StatsGraphSample, whose field order is MFC's scope order
-    // (srchybrid/StatisticsDlg.cpp:569-600).
-    constexpr int kFieldCount = 14;
+    // (srchybrid/StatisticsDlg.cpp:569-600) plus the appended Usenet rate.
+    constexpr int kFieldCount = 15;
     const QCborArray samples = data.value(QStringLiteral("samples")).toArray();
     for (const auto& v : samples) {
         const QCborArray s = v.toArray();
@@ -637,7 +647,7 @@ void StatisticsPanel::applyGraphHistory(const QCborMap& data)
         m_statsSeq = static_cast<quint32>(s.at(0).toInteger());
 
         m_graphDown->appendPoints({s.at(2).toDouble(), s.at(3).toDouble(),
-                                   s.at(4).toDouble()});
+                                   s.at(4).toDouble(), s.at(14).toDouble()});
         m_graphUp->appendPoints({s.at(5).toDouble(), s.at(6).toDouble(),
                                  s.at(7).toDouble(), s.at(8).toDouble(),
                                  s.at(9).toDouble()});
@@ -660,11 +670,11 @@ static void setClientBreakdown(QTreeWidgetItem* item, const char* label,
         const double pct = 100.0 * static_cast<double>(bytes) / static_cast<double>(total);
         item->setText(0, QStringLiteral("%1: %2 (%3%)")
             .arg(QString::fromLatin1(label),
-                 StatisticsPanel::formatBytes(bytes),
+                 formatByteSize(bytes),
                  QString::number(pct, 'f', 1)));
     } else {
         item->setText(0, QStringLiteral("%1: %2")
-            .arg(QString::fromLatin1(label), StatisticsPanel::formatBytes(bytes)));
+            .arg(QString::fromLatin1(label), formatByteSize(bytes)));
     }
 }
 
@@ -678,16 +688,20 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     const qint64 cumTotalUp = cborInt(stats, QLatin1StringView("cumTotalUp"));
     const qint64 cumTotalDown = cborInt(stats, QLatin1StringView("cumTotalDown"));
 
-    // Transfer ratios
+    m_sessionUptime = uptime;
+    m_cumRunTime = cborInt(stats, QLatin1StringView("cumRunTime"));
+
+    // Transfer ratios. The friend row leaves friend uploads out of the numerator
+    // (MFC StatisticsDlg.cpp:633-640).
     m_itemSessionUlDlRatio->setText(0,
         tr("Session UL:DL Ratio: %1").arg(formatRatio(sent, recv)));
     m_itemFriendUlDlRatio->setText(0,
-        tr("Friend Session UL:DL Ratio: %1").arg(formatRatio(sentFriend, recv)));
+        tr("Session UL:DL Ratio (Friends UL excluded): %1").arg(formatRatio(sent - sentFriend, recv)));
     m_itemCumUlDlRatio->setText(0,
         tr("Cumulative UL:DL Ratio: %1").arg(formatRatio(cumTotalUp, cumTotalDown)));
 
     // === Uploads — Session ===
-    m_itemUpSessionData->setText(0, tr("Uploaded Data: %1").arg(formatBytes(sent)));
+    m_itemUpSessionData->setText(0, tr("Uploaded Data: %1").arg(formatByteSize(sent)));
 
     // Per-client session upload
     static const char* const sesUpKeys[] = {
@@ -699,20 +713,20 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         setClientBreakdown(m_itemUpSesClient[i], kUpClientLabels[i], v, sent);
     }
     m_itemUpSesPort[0]->setText(0, tr("Default Port 4662: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("sesUpPort4662"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("sesUpPort4662"))),
              formatPercent(cborInt(stats, QLatin1StringView("sesUpPort4662")), sent)));
     m_itemUpSesPort[1]->setText(0, tr("Other Ports: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("sesUpPortOther"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("sesUpPortOther"))),
              formatPercent(cborInt(stats, QLatin1StringView("sesUpPortOther")), sent)));
     m_itemUpSesSource[0]->setText(0, tr("Complete File: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("sesUpFromFile"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("sesUpFromFile"))),
              formatPercent(cborInt(stats, QLatin1StringView("sesUpFromFile")), sent)));
     m_itemUpSesSource[1]->setText(0, tr("Part File: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("sesUpFromPartfile"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("sesUpFromPartfile"))),
              formatPercent(cborInt(stats, QLatin1StringView("sesUpFromPartfile")), sent)));
 
     m_itemUpSessionFriendData->setText(0,
-        tr("Uploaded Data to Friends: %1").arg(formatBytes(sentFriend)));
+        tr("Uploaded Data to Friends: %1").arg(formatByteSize(sentFriend)));
     m_itemUpActiveUploads->setText(0,
         tr("Active Uploads: %1").arg(cborInt(stats, QLatin1StringView("upWaiting"))));
     m_itemUpWaitingUploads->setText(0,
@@ -726,7 +740,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     m_itemUpFailed->setText(0, tr("Failed: %1").arg(upFail));
     if (upSucc > 0)
         m_itemUpAvgPerSession->setText(0,
-            tr("Average Upload Per Session: %1").arg(formatBytes(sent / upSucc)));
+            tr("Average Upload Per Session: %1").arg(formatByteSize(sent / upSucc)));
     m_itemUpAvgTime->setText(0,
         tr("Average Upload Time: %1").arg(formatDuration(cborInt(stats, QLatin1StringView("upAvgTime")))));
 
@@ -743,7 +757,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     setOH(m_itemUpOverheadKad, tr("Kad Overhead (Packets)"), "upOverheadKad", "upOverheadKadPkt");
 
     // === Uploads — Cumulative ===
-    m_itemUpCumData->setText(0, tr("Uploaded Data: %1").arg(formatBytes(cumTotalUp)));
+    m_itemUpCumData->setText(0, tr("Uploaded Data: %1").arg(formatByteSize(cumTotalUp)));
 
     static const char* const cumUpKeys[] = {
         "cumUpEmule", "cumUpEDHybrid", "cumUpEDonkey", "cumUpAMule",
@@ -754,16 +768,16 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         setClientBreakdown(m_itemUpCumClient[i], kUpClientLabels[i], v, cumTotalUp);
     }
     m_itemUpCumPort[0]->setText(0, tr("Default Port 4662: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("cumUpPort4662"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("cumUpPort4662"))),
              formatPercent(cborInt(stats, QLatin1StringView("cumUpPort4662")), cumTotalUp)));
     m_itemUpCumPort[1]->setText(0, tr("Other Ports: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("cumUpPortOther"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("cumUpPortOther"))),
              formatPercent(cborInt(stats, QLatin1StringView("cumUpPortOther")), cumTotalUp)));
     m_itemUpCumSource[0]->setText(0, tr("Complete File: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("cumUpFromFile"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("cumUpFromFile"))),
              formatPercent(cborInt(stats, QLatin1StringView("cumUpFromFile")), cumTotalUp)));
     m_itemUpCumSource[1]->setText(0, tr("Part File: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("cumUpFromPartfile"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("cumUpFromPartfile"))),
              formatPercent(cborInt(stats, QLatin1StringView("cumUpFromPartfile")), cumTotalUp)));
 
     const qint64 cumUpSucc = cborInt(stats, QLatin1StringView("cumUpSuccessful"));
@@ -774,33 +788,27 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     m_itemUpCumFailed->setText(0, tr("Failed: %1").arg(cumUpFail));
     if (cumUpSucc > 0)
         m_itemUpCumAvgPerSession->setText(0,
-            tr("Average Upload Per Session: %1").arg(formatBytes(cumTotalUp / cumUpSucc)));
+            tr("Average Upload Per Session: %1").arg(formatByteSize(cumTotalUp / cumUpSucc)));
     m_itemUpCumAvgTime->setText(0,
         tr("Average Upload Time: %1").arg(formatDuration(cborInt(stats, QLatin1StringView("cumUpAvgTime")))));
 
     // === HTTP Cache ===
-    // "Upload Saved" is the number that justifies the feature: bytes peers got
-    // that we never had to send, because one published chunk served several.
-    const auto hcBytes = [&](QTreeWidgetItem* item, const QString& label, const char* key) {
-        item->setText(0, QStringLiteral("%1: %2").arg(label,
-            formatBytes(cborInt(stats, QLatin1StringView(key)))));
-    };
-    const auto hcCount = [&](QTreeWidgetItem* item, const QString& label, const char* key) {
-        item->setText(0, QStringLiteral("%1: %2").arg(label)
-            .arg(cborInt(stats, QLatin1StringView(key))));
-    };
-
-    hcBytes(m_itemHcSesPublished, tr("Published"), "sesHttpCachePublished");
-    hcBytes(m_itemHcSesFetched, tr("Fetched"), "sesHttpCacheFetched");
-    hcBytes(m_itemHcSesSaved, tr("Upload Saved"), "sesHttpCacheSaved");
-    hcCount(m_itemHcSesChunksUp, tr("Chunks Published"), "sesHttpCacheChunksUp");
-    hcCount(m_itemHcSesChunksDown, tr("Chunks Fetched"), "sesHttpCacheChunksDown");
-
-    hcBytes(m_itemHcCumPublished, tr("Published"), "cumHttpCachePublished");
-    hcBytes(m_itemHcCumFetched, tr("Fetched"), "cumHttpCacheFetched");
-    hcBytes(m_itemHcCumSaved, tr("Upload Saved"), "cumHttpCacheSaved");
-    hcCount(m_itemHcCumChunksUp, tr("Chunks Published"), "cumHttpCacheChunksUp");
-    hcCount(m_itemHcCumChunksDown, tr("Chunks Fetched"), "cumHttpCacheChunksDown");
+    // One block per scope, both directions out of it. "Upload Saved" is the
+    // number that justifies the feature: bytes peers got that we never had to
+    // send, because one published chunk served several.
+    for (const auto& [scope, upRows, downRows] : {
+             std::tuple{QStringLiteral("httpCacheSession"), &m_hcUpSessionRows, &m_hcDownSessionRows},
+             std::tuple{QStringLiteral("httpCacheCumulative"), &m_hcUpCumulativeRows,
+                        &m_hcDownCumulativeRows}}) {
+        QHash<QString, qint64> v = counterValues(stats.value(scope).toMap());
+        // What a fetch outcome is a share of: everything that got as far as
+        // being fetched, good or bad. A withdrawn offer never started.
+        v.insert(QStringLiteral("fetchesFinished"),
+                 v.value(QStringLiteral("chunksFetched"))
+                     + v.value(QStringLiteral("fetchesFailed")));
+        fillCounterRows(*upRows, v);
+        fillCounterRows(*downRows, v);
+    }
 
     setOH(m_itemUpCumOverheadTotal, tr("Total Overhead (Packets)"), "cumUpOhTotal", "cumUpOhTotalPkt");
     setOH(m_itemUpCumOverheadFileReq, tr("File Request Overhead (Packets)"), "cumUpOhFileReq", "cumUpOhFileReqPkt");
@@ -809,7 +817,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     setOH(m_itemUpCumOverheadKad, tr("Kad Overhead (Packets)"), "cumUpOhKad", "cumUpOhKadPkt");
 
     // === Downloads — Session ===
-    m_itemDownSessionData->setText(0, tr("Downloaded Data: %1").arg(formatBytes(recv)));
+    m_itemDownSessionData->setText(0, tr("Downloaded Data: %1").arg(formatByteSize(recv)));
 
     static const char* const sesDownKeys[] = {
         "sesDownEmule", "sesDownEDHybrid", "sesDownEDonkey", "sesDownAMule",
@@ -820,10 +828,10 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         setClientBreakdown(m_itemDownSesClient[i], kDownClientLabels[i], v, recv);
     }
     m_itemDownSesPort[0]->setText(0, tr("Default Port 4662: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("sesDownPort4662"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("sesDownPort4662"))),
              formatPercent(cborInt(stats, QLatin1StringView("sesDownPort4662")), recv)));
     m_itemDownSesPort[1]->setText(0, tr("Other Ports: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("sesDownPortOther"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("sesDownPortOther"))),
              formatPercent(cborInt(stats, QLatin1StringView("sesDownPortOther")), recv)));
 
     m_itemDownActiveDownloads->setText(0,
@@ -844,9 +852,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     const qint64 sesCompression = cborInt(stats, QLatin1StringView("sesCompressionGain"));
     const qint64 sesCorruption = cborInt(stats, QLatin1StringView("sesCorruptionLoss"));
     m_itemDownSesCompression->setText(0,
-        tr("Gain Due To Compression: %1 %2").arg(formatBytes(sesCompression), formatPercent(sesCompression, recv)));
+        tr("Gain Due To Compression: %1 %2").arg(formatByteSize(sesCompression), formatPercent(sesCompression, recv)));
     m_itemDownSesCorruption->setText(0,
-        tr("Lost Due To Corruption: %1 %2").arg(formatBytes(sesCorruption), formatPercent(sesCorruption, recv)));
+        tr("Lost Due To Corruption: %1 %2").arg(formatByteSize(sesCorruption), formatPercent(sesCorruption, recv)));
     m_itemDownSesIchSaved->setText(0,
         tr("Parts Saved Due To ICH: %1").arg(cborInt(stats, QLatin1StringView("sesIchPartsSaved"))));
 
@@ -857,7 +865,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     setOH(m_itemDownOverheadKad, tr("Kad Overhead (Packets)"), "downOverheadKad", "downOverheadKadPkt");
 
     // === Downloads — Cumulative ===
-    m_itemDownCumData->setText(0, tr("Downloaded Data: %1").arg(formatBytes(cumTotalDown)));
+    m_itemDownCumData->setText(0, tr("Downloaded Data: %1").arg(formatByteSize(cumTotalDown)));
 
     static const char* const cumDownKeys[] = {
         "cumDownEmule", "cumDownEDHybrid", "cumDownEDonkey", "cumDownAMule",
@@ -868,10 +876,10 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         setClientBreakdown(m_itemDownCumClient[i], kDownClientLabels[i], v, cumTotalDown);
     }
     m_itemDownCumPort[0]->setText(0, tr("Default Port 4662: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("cumDownPort4662"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("cumDownPort4662"))),
              formatPercent(cborInt(stats, QLatin1StringView("cumDownPort4662")), cumTotalDown)));
     m_itemDownCumPort[1]->setText(0, tr("Other Ports: %1 %2")
-        .arg(formatBytes(cborInt(stats, QLatin1StringView("cumDownPortOther"))),
+        .arg(formatByteSize(cborInt(stats, QLatin1StringView("cumDownPortOther"))),
              formatPercent(cborInt(stats, QLatin1StringView("cumDownPortOther")), cumTotalDown)));
 
     m_itemDownCumCompleted->setText(0,
@@ -880,9 +888,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     const qint64 cumCompression = cborInt(stats, QLatin1StringView("cumCompressionGain"));
     const qint64 cumCorruption = cborInt(stats, QLatin1StringView("cumCorruptionLoss"));
     m_itemDownCumCompression->setText(0,
-        tr("Gain Due To Compression: %1 %2").arg(formatBytes(cumCompression), formatPercent(cumCompression, cumTotalDown)));
+        tr("Gain Due To Compression: %1 %2").arg(formatByteSize(cumCompression), formatPercent(cumCompression, cumTotalDown)));
     m_itemDownCumCorruption->setText(0,
-        tr("Lost Due To Corruption: %1 %2").arg(formatBytes(cumCorruption), formatPercent(cumCorruption, cumTotalDown)));
+        tr("Lost Due To Corruption: %1 %2").arg(formatByteSize(cumCorruption), formatPercent(cumCorruption, cumTotalDown)));
     m_itemDownCumIchSaved->setText(0,
         tr("Parts Saved Due To ICH: %1").arg(cborInt(stats, QLatin1StringView("cumIchPartsSaved"))));
 
@@ -954,6 +962,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     const qint64 tUpload = cborInt(stats, QLatin1StringView("uploadTime"));
     const qint64 tDownload = cborInt(stats, QLatin1StringView("downloadTime"));
     const qint64 tServer = cborInt(stats, QLatin1StringView("serverDuration"));
+    const qint64 tServerNow = cborInt(stats, QLatin1StringView("currentServerDuration"));
 
     m_itemTransferTime->setText(0,
         tr("Transfer Time: %1 %2").arg(formatDuration(tTransfer), formatPercent(tTransfer, uptime)));
@@ -961,8 +970,11 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         tr("Upload Time: %1 %2").arg(formatDuration(tUpload), formatPercent(tUpload, uptime)));
     m_itemDownloadTime->setText(0,
         tr("Download Time: %1 %2").arg(formatDuration(tDownload), formatPercent(tDownload, uptime)));
+    m_itemCurrentServerDuration->setText(0,
+        tr("Current Server Duration: %1 %2")
+            .arg(formatDuration(tServerNow), formatPercent(tServerNow, uptime)));
     m_itemServerDuration->setText(0,
-        tr("Server Duration: %1 %2").arg(formatDuration(tServer), formatPercent(tServer, uptime)));
+        tr("Total Server Duration: %1 %2").arg(formatDuration(tServer), formatPercent(tServer, uptime)));
 
     // Cumulative
     const qint64 cumRunTime = cborInt(stats, QLatin1StringView("cumRunTime"));
@@ -1105,32 +1117,82 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     m_itemSharedCount->setText(0,
         tr("Number of Shared Files: %1").arg(sharedCount));
     m_itemSharedSize->setText(0,
-        tr("Total Size: %1").arg(formatBytes(sharedSize)));
+        tr("Total Size: %1").arg(formatByteSize(sharedSize)));
     m_itemSharedAvgSize->setText(0,
-        tr("Average File Size: %1").arg(sharedCount > 0 ? formatBytes(sharedSize / sharedCount) : formatBytes(0)));
+        tr("Average File Size: %1").arg(sharedCount > 0 ? formatByteSize(sharedSize / sharedCount) : formatByteSize(0)));
     m_itemSharedLargest->setText(0,
-        tr("Largest Shared File: %1").arg(formatBytes(cborInt(stats, QLatin1StringView("sharedLargest")))));
+        tr("Largest Shared File: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("sharedLargest")))));
 
     m_itemSharedRecCount->setText(0,
         tr("Most Files Shared: %1").arg(cborInt(stats, QLatin1StringView("recMaxSharedFiles"))));
     m_itemSharedRecSize->setText(0,
-        tr("Largest Share Size: %1").arg(formatBytes(cborInt(stats, QLatin1StringView("recMaxSharedSize")))));
+        tr("Largest Share Size: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("recMaxSharedSize")))));
     m_itemSharedRecAvg->setText(0,
-        tr("Largest Average File Size: %1").arg(formatBytes(cborInt(stats, QLatin1StringView("recMaxAvgFileSize")))));
+        tr("Largest Average File Size: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("recMaxAvgFileSize")))));
     m_itemSharedRecLargest->setText(0,
-        tr("Largest File Size: %1").arg(formatBytes(cborInt(stats, QLatin1StringView("recMaxLargestFile")))));
+        tr("Largest File Size: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("recMaxLargestFile")))));
 
     // === Total Downloads ===
     m_itemTotalDownCount->setText(0,
         tr("Number of Downloads: %1").arg(cborInt(stats, QLatin1StringView("totalDownCount"))));
     m_itemTotalDownSize->setText(0,
-        tr("Total Size of Downloads: %1").arg(formatBytes(cborInt(stats, QLatin1StringView("totalDownSize")))));
+        tr("Total Size of Downloads: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("totalDownSize")))));
     m_itemTotalDownDone->setText(0,
-        tr("Total Size Downloaded: %1").arg(formatBytes(cborInt(stats, QLatin1StringView("totalDownDone")))));
+        tr("Total Size Downloaded: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("totalDownDone")))));
     m_itemTotalDownLeft->setText(0,
-        tr("Total Size Left to Download: %1").arg(formatBytes(cborInt(stats, QLatin1StringView("totalDownLeft")))));
+        tr("Total Size Left to Download: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("totalDownLeft")))));
     m_itemTotalDownFreeSpace->setText(0,
-        tr("Free Space on Drive: %1").arg(formatBytes(cborInt(stats, QLatin1StringView("freeTempSpace")))));
+        tr("Free Space on Drive: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("freeTempSpace")))));
+}
+
+void StatisticsPanel::applyUsenetStats(const QCborMap& data)
+{
+    m_itemUsenet->setHidden(false);
+
+    const QCborMap usenet = data.value(QStringLiteral("usenet")).toMap();
+    const QCborMap indexer = data.value(QStringLiteral("indexer")).toMap();
+    const QCborMap current = usenet.value(QStringLiteral("current")).toMap();
+
+    // One flat table per scope: both counter blocks (their keys do not collide),
+    // plus the figures derived from them that the rows show or take shares of.
+    const auto scopeValues = [&](const QString& scope, qint64 runtimeSecs) {
+        QHash<QString, qint64> v = counterValues(usenet.value(scope).toMap());
+        v.insert(counterValues(indexer.value(scope).toMap()));
+        const qint64 wire = v.value(QStringLiteral("wireBytes"));
+        const qint64 timeMs = v.value(QStringLiteral("downloadTimeMs"));
+        v.insert(QStringLiteral("overheadBytes"),
+                 std::max<qint64>(0, wire - v.value(QStringLiteral("decodedBytes"))));
+        v.insert(QStringLiteral("avgDownRate"), timeMs > 0 ? wire * 1000 / timeMs : 0);
+        v.insert(QStringLiteral("itemsFinished"), v.value(QStringLiteral("itemsCompleted"))
+                                                      + v.value(QStringLiteral("itemsFailed")));
+        v.insert(QStringLiteral("postTimeMs"), v.value(QStringLiteral("verifyMs"))
+                                                   + v.value(QStringLiteral("repairMs"))
+                                                   + v.value(QStringLiteral("unpackMs")));
+        v.insert(QStringLiteral("nzbAdded"), v.value(QStringLiteral("nzbFromFile"))
+                                                 + v.value(QStringLiteral("nzbFromUrl"))
+                                                 + v.value(QStringLiteral("nzbFromWatch"))
+                                                 + v.value(QStringLiteral("nzbFromFeed"))
+                                                 + v.value(QStringLiteral("nzbFromIndexer")));
+        v.insert(QStringLiteral("runtimeMs"), runtimeSecs * 1000);
+        return v;
+    };
+
+    QHash<QString, qint64> session = scopeValues(QStringLiteral("session"), m_sessionUptime);
+    for (const char* live : {"downRate", "activeConnections", "openConnections"}) {
+        const QString key = QString::fromLatin1(live);
+        session.insert(key, current.value(key).toInteger());
+    }
+    fillCounterRows(m_usenetSessionRows, session);
+    fillCounterRows(m_usenetCumulativeRows, scopeValues(QStringLiteral("cumulative"), m_cumRunTime));
+
+    QHash<QString, qint64> queue;
+    const QCborMap queueMap = current.value(QStringLiteral("queue")).toMap();
+    for (auto it = queueMap.cbegin(); it != queueMap.cend(); ++it)
+        queue.insert(it.key().toString(), it.value().toInteger());
+    fillCounterRows(m_usenetQueueRows, queue);
+
+    updateNewsServers(usenet.value(QStringLiteral("servers")).toArray(),
+                      session.value(QStringLiteral("wireBytes")));
 }
 
 // ---------------------------------------------------------------------------
@@ -1264,22 +1326,10 @@ QString StatisticsPanel::treeItemText(QTreeWidgetItem* item, int depth) const
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
-QString StatisticsPanel::formatBytes(qint64 bytes)
-{
-    if (bytes < 1024)
-        return QObject::tr("%1 Bytes").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 2);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 2);
-    if (bytes < 1024LL * 1024 * 1024 * 1024)
-        return QStringLiteral("%1 GB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
-    return QStringLiteral("%1 TB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
-}
-
+/// The core sends KB/s; MFC's CastItoXBytes(x, true, true) scales it on to MB/s.
 QString StatisticsPanel::formatRate(double kbps)
 {
-    return QStringLiteral("%1 KB/s").arg(kbps, 0, 'f', 1);
+    return formatByteRate(kbps * 1024.0);
 }
 
 QString StatisticsPanel::formatDuration(qint64 secs)
@@ -1305,18 +1355,20 @@ QString StatisticsPanel::formatDuration(qint64 secs)
 
 QString StatisticsPanel::formatOverhead(qint64 bytes, qint64 packets)
 {
-    return QStringLiteral("%1 (%2)").arg(formatBytes(bytes)).arg(packets);
+    return QStringLiteral("%1 (%2)").arg(formatByteSize(bytes)).arg(packets);
 }
 
-QString StatisticsPanel::formatRatio(qint64 sent, qint64 received)
+/// MFC StatisticsDlg.cpp:623-651: the larger side is the multiple, so "5.00 : 1" is a net
+/// uploader and "1 : 5.00" a net downloader.
+QString StatisticsPanel::formatRatio(qint64 up, qint64 down)
 {
-    if (received == 0 && sent == 0)
-        return QStringLiteral("-");
-    if (received == 0)
-        return QStringLiteral("%1:0").arg(QString::number(1.0, 'f', 2));
-
-    const double ratio = static_cast<double>(sent) / static_cast<double>(received);
-    return QStringLiteral("1:%1").arg(QString::number(ratio, 'f', 2));
+    if (up <= 0 || down <= 0)
+        return tr("Waiting...");
+    const auto u = static_cast<double>(up);
+    const auto d = static_cast<double>(down);
+    if (d < u)
+        return QStringLiteral("%1 : 1").arg(QString::number(u / d, 'f', 2));
+    return QStringLiteral("1 : %1").arg(QString::number(d / u, 'f', 2));
 }
 
 QString StatisticsPanel::formatPercent(qint64 part, qint64 whole)
@@ -1325,6 +1377,352 @@ QString StatisticsPanel::formatPercent(qint64 part, qint64 whole)
         return QStringLiteral("(0.0%)");
     const double pct = 100.0 * static_cast<double>(part) / static_cast<double>(whole);
     return QStringLiteral("(%1%)").arg(QString::number(pct, 'f', 1));
+}
+
+// ---------------------------------------------------------------------------
+// Private — Usenet branch
+// ---------------------------------------------------------------------------
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::usenetCounterRows()
+{
+    using F = RowFormat;
+    // Keys are the counter walks' (core/stats/NetworkCounters.h) plus the ones
+    // applyUsenetStats() derives. A live row must have no children: the
+    // Cumulative scope skips it, and would hang them off the wrong parent.
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("General"), nullptr},
+        {QT_TR_NOOP("Download Speed: %1"), "downRate", F::Rate, nullptr, 1, true},
+        {QT_TR_NOOP("Average Download Rate: %1"), "avgDownRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Max Download Rate: %1"), "maxDownRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Download Time: %1 %2"), "downloadTimeMs", F::DurationMs, "runtimeMs", 1},
+        {QT_TR_NOOP("Open Connections: %1"), "openConnections", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Active Connections: %1"), "activeConnections", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Peak Connections: %1"), "peakConnections", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Downloaded Data: %1"), "decodedBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Network Traffic: %1"), "wireBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Overhead: %1 %2"), "overheadBytes", F::Bytes, "wireBytes", 2},
+
+        {QT_TR_NOOP("Articles"), nullptr},
+        {QT_TR_NOOP("Downloaded: %1"), "articlesDownloaded", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Not Found on a Server: %1"), "articlesNotFound", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Missing on All Servers: %1"), "articlesMissing", F::Count, nullptr, 1},
+        // Every yEnc verdict, not only CRC: truncated, malformed and "no binary
+        // data" are copies this server cannot serve us either.
+        {QT_TR_NOOP("Corrupt (Failed yEnc Check): %1"), "articlesCorrupt", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Connection Errors: %1"), "connectionErrors", F::Count, nullptr, 1},
+
+        {QT_TR_NOOP("Downloads"), nullptr},
+        {QT_TR_NOOP("Completed Downloads: %1 %2"), "itemsCompleted", F::Count, "itemsFinished", 1},
+        {QT_TR_NOOP("Completed Data: %1"), "completedBytes", F::Bytes, nullptr, 2},
+        {QT_TR_NOOP("Failed Downloads: %1 %2"), "itemsFailed", F::Count, "itemsFinished", 1},
+
+        {QT_TR_NOOP("Post-Processing"), nullptr},
+        {QT_TR_NOOP("PAR2 Verified: %1"), "par2Verified", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Repaired: %1 %2"), "par2Repaired", F::Count, "par2Verified", 2},
+        {QT_TR_NOOP("Repair Failed: %1 %2"), "par2RepairFailed", F::Count, "par2Verified", 2},
+        {QT_TR_NOOP("Blocks Repaired: %1"), "par2BlocksRepaired", F::Count, nullptr, 2},
+        {QT_TR_NOOP("Recovery Volumes Fetched: %1"), "recoveryVolumes", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Recovery Data: %1"), "recoveryBytes", F::Bytes, nullptr, 2},
+        {QT_TR_NOOP("Unpacked: %1"), "unpackOk", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Failed: %1"), "unpackFailed", F::Count, nullptr, 2},
+        {QT_TR_NOOP("Password Required: %1"), "unpackPassword", F::Count, nullptr, 2},
+        {QT_TR_NOOP("Sets Unpacked While Downloading: %1"), "directUnpacks", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Time Spent: %1"), "postTimeMs", F::DurationMs, nullptr, 1},
+        {QT_TR_NOOP("Verifying: %1 %2"), "verifyMs", F::DurationMs, "postTimeMs", 2},
+        {QT_TR_NOOP("Repairing: %1 %2"), "repairMs", F::DurationMs, "postTimeMs", 2},
+        {QT_TR_NOOP("Unpacking: %1 %2"), "unpackMs", F::DurationMs, "postTimeMs", 2},
+
+        {QT_TR_NOOP("Health Checks"), nullptr},
+        {QT_TR_NOOP("Checks Run: %1"), "healthChecks", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Passed: %1 %2"), "healthPassed", F::Count, "healthChecks", 2},
+        {QT_TR_NOOP("Paused as Incomplete: %1 %2"), "healthPaused", F::Count, "healthChecks", 2},
+        {QT_TR_NOOP("Inconclusive: %1 %2"), "healthInconclusive", F::Count, "healthChecks", 2},
+        {QT_TR_NOOP("Articles Probed: %1"), "statProbes", F::Count, nullptr, 1},
+
+        {QT_TR_NOOP("Intake"), nullptr},
+        {QT_TR_NOOP("NZBs Added: %1"), "nzbAdded", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Files: %1 %2"), "nzbFromFile", F::Count, "nzbAdded", 2},
+        {QT_TR_NOOP("URLs: %1 %2"), "nzbFromUrl", F::Count, "nzbAdded", 2},
+        {QT_TR_NOOP("Watch Folder: %1 %2"), "nzbFromWatch", F::Count, "nzbAdded", 2},
+        {QT_TR_NOOP("Feeds: %1 %2"), "nzbFromFeed", F::Count, "nzbAdded", 2},
+        {QT_TR_NOOP("Indexer Searches: %1 %2"), "nzbFromIndexer", F::Count, "nzbAdded", 2},
+        {QT_TR_NOOP("Duplicates: %1"), "nzbDuplicate", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Already Downloaded: %1"), "nzbAlreadyDownloaded", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Invalid NZBs: %1"), "nzbInvalid", F::Count, nullptr, 1},
+
+        {QT_TR_NOOP("Indexers"), nullptr},
+        {QT_TR_NOOP("Searches: %1"), "searches", F::Count, nullptr, 1},
+        {QT_TR_NOOP("API Requests: %1"), "apiRequests", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Errors: %1 %2"), "apiErrors", F::Count, "apiRequests", 2},
+        {QT_TR_NOOP("NZBs Fetched: %1"), "nzbFetches", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Failed: %1 %2"), "nzbFetchErrors", F::Count, "nzbFetches", 2},
+        {QT_TR_NOOP("Feed Polls: %1"), "feedPolls", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Feed Matches: %1"), "feedMatches", F::Count, nullptr, 1},
+    };
+    return kRows;
+}
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::usenetQueueRows()
+{
+    using F = RowFormat;
+    // The Usenet twin of Total Downloads, worded the same.
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Number of Downloads: %1"), "count"},
+        {QT_TR_NOOP("Downloading: %1"), "downloading", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Queued: %1"), "queued", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Paused: %1"), "paused", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Checking: %1"), "checking", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Post-Processing: %1"), "postProcessing", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Failed: %1"), "failed", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Completed: %1"), "complete", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Total Size of Downloads: %1"), "totalBytes", F::Bytes},
+        {QT_TR_NOOP("Total Size Downloaded: %1"), "downloadedBytes", F::Bytes},
+        {QT_TR_NOOP("Total Size Left to Download: %1"), "leftBytes", F::Bytes},
+    };
+    return kRows;
+}
+
+void StatisticsPanel::buildUsenetBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon)
+{
+    // Every label down to depth 1 is fixed text: UiState remembers expansion by
+    // it, so a value in one of these would forget the state on every update.
+    m_itemUsenet = new QTreeWidgetItem(m_tree, {tr("Usenet")});
+    m_itemUsenet->setIcon(0, QIcon(QStringLiteral(":/icons/Usenet.ico")));
+
+    auto* session = new QTreeWidgetItem(m_itemUsenet, {tr("Session")});
+    session->setIcon(0, detailIcon);
+    m_usenetSessionRows.clear();
+    buildCounterRows(session, usenetCounterRows(), true, m_usenetSessionRows);
+
+    auto* cumulative = new QTreeWidgetItem(m_itemUsenet, {tr("Cumulative")});
+    cumulative->setIcon(0, cumulativeIcon);
+    m_usenetCumulativeRows.clear();
+    buildCounterRows(cumulative, usenetCounterRows(), false, m_usenetCumulativeRows);
+
+    // Filled per reply, one child per account (updateNewsServers()).
+    m_itemUsenetServers = new QTreeWidgetItem(m_itemUsenet, {tr("News Servers")});
+    m_itemUsenetServers->setIcon(0, QIcon(QStringLiteral(":/icons/Server.ico")));
+
+    auto* queue = new QTreeWidgetItem(m_itemUsenet, {tr("Queue")});
+    queue->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    m_usenetQueueRows.clear();
+    buildCounterRows(queue, usenetQueueRows(), true, m_usenetQueueRows);
+
+    const QHash<QString, qint64> zeros;
+    fillCounterRows(m_usenetSessionRows, zeros);
+    fillCounterRows(m_usenetCumulativeRows, zeros);
+    fillCounterRows(m_usenetQueueRows, zeros);
+}
+
+// ---------------------------------------------------------------------------
+// Private — HTTP Cache branch
+// ---------------------------------------------------------------------------
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::httpCacheUploadRows()
+{
+    using F = RowFormat;
+    // Keys are HttpCacheCounters' own field names (core/stats/NetworkCounters.h).
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Published: %1"), "bytesPublished", F::Bytes},
+        {QT_TR_NOOP("Chunks Published: %1"), "chunksPublished"},
+        {QT_TR_NOOP("Upload Saved: %1"), "bytesSaved", F::Bytes},
+    };
+    return kRows;
+}
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::httpCacheDownloadRows()
+{
+    using F = RowFormat;
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Fetched: %1"), "bytesFetched", F::Bytes},
+        {QT_TR_NOOP("Chunks Fetched: %1 %2"), "chunksFetched", F::Count, "fetchesFinished"},
+        {QT_TR_NOOP("Failed: %1 %2"), "fetchesFailed", F::Count, "fetchesFinished", 1},
+        {QT_TR_NOOP("Failed Hash Check: %1"), "partsCorrupt", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Resumed: %1"), "resumes", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Offers Received: %1"), "offersReceived"},
+        {QT_TR_NOOP("Declined: %1 %2"), "offersDeclined", F::Count, "offersReceived", 1},
+        {QT_TR_NOOP("Chunks Found in Kad: %1"), "kadChunks"},
+    };
+    return kRows;
+}
+
+void StatisticsPanel::buildHttpCacheBranch(QTreeWidgetItem* transfer, const QIcon& detailIcon,
+                                           const QIcon& cumulativeIcon)
+{
+    // Its own branch rather than rows inside Uploads and Downloads: a cached
+    // chunk is one transfer that shows up on both sides, and "Saved" belongs to
+    // neither — it is upstream that never happened. Inside it the two directions
+    // are split the way Transfer itself is, arrows included: publishing and
+    // fetching share nothing but the cache server.
+    auto* httpCache = new QTreeWidgetItem(transfer, {tr("HTTP Cache")});
+    httpCache->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
+
+    const auto buildScopes = [&](QTreeWidgetItem* parent, std::span<const CounterRow> rows,
+                                 QList<CounterItem>& sessionOut, QList<CounterItem>& cumOut) {
+        auto* session = new QTreeWidgetItem(parent, {tr("Session")});
+        session->setIcon(0, detailIcon);
+        sessionOut.clear();
+        buildCounterRows(session, rows, true, sessionOut);
+
+        auto* cumulative = new QTreeWidgetItem(parent, {tr("Cumulative")});
+        cumulative->setIcon(0, cumulativeIcon);
+        cumOut.clear();
+        buildCounterRows(cumulative, rows, false, cumOut);
+    };
+
+    auto* uploads = new QTreeWidgetItem(httpCache, {tr("Uploads")});
+    uploads->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
+    buildScopes(uploads, httpCacheUploadRows(), m_hcUpSessionRows, m_hcUpCumulativeRows);
+
+    auto* downloads = new QTreeWidgetItem(httpCache, {tr("Downloads")});
+    downloads->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    buildScopes(downloads, httpCacheDownloadRows(), m_hcDownSessionRows, m_hcDownCumulativeRows);
+
+    const QHash<QString, qint64> zeros;
+    for (const QList<CounterItem>* rows : {&m_hcUpSessionRows, &m_hcUpCumulativeRows,
+                                           &m_hcDownSessionRows, &m_hcDownCumulativeRows}) {
+        fillCounterRows(*rows, zeros);
+    }
+}
+
+void StatisticsPanel::buildCounterRows(QTreeWidgetItem* parent, std::span<const CounterRow> rows,
+                                       bool includeLive, QList<CounterItem>& out)
+{
+    std::array<QTreeWidgetItem*, 4> parents{parent};
+    for (const CounterRow& row : rows) {
+        if (row.liveOnly && !includeLive)
+            continue;
+        const auto depth = static_cast<size_t>(row.depth);
+        if (depth + 1 >= parents.size() || !parents[depth])
+            continue;
+
+        auto* item = new QTreeWidgetItem(parents[depth]);
+        parents[depth + 1] = item;
+        if (row.key)
+            out.append({&row, item});
+        else
+            item->setText(0, tr(row.pattern));
+    }
+}
+
+QHash<QString, qint64> StatisticsPanel::counterValues(const QCborMap& block)
+{
+    QHash<QString, qint64> v;
+    v.reserve(block.size());
+    for (auto it = block.cbegin(); it != block.cend(); ++it)
+        v.insert(it.key().toString(), it.value().toInteger());
+    return v;
+}
+
+void StatisticsPanel::fillCounterRows(const QList<CounterItem>& items,
+                                      const QHash<QString, qint64>& values)
+{
+    for (const auto& [row, item] : items) {
+        const qint64 v = values.value(QString::fromLatin1(row->key));
+        QString value;
+        switch (row->format) {
+        case RowFormat::Count:      value = QString::number(v); break;
+        case RowFormat::Bytes:      value = formatByteSize(v); break;
+        case RowFormat::Rate:       value = formatByteRate(v); break;
+        case RowFormat::DurationMs: value = formatDuration(v / 1000); break;
+        }
+
+        if (row->shareOf) {
+            item->setText(0, tr(row->pattern).arg(
+                value, formatPercent(v, values.value(QString::fromLatin1(row->shareOf)))));
+        } else {
+            item->setText(0, tr(row->pattern).arg(value));
+        }
+    }
+}
+
+void StatisticsPanel::updateNewsServers(const QCborArray& servers, qint64 sessionWireBytes)
+{
+    // Updated in place, keyed by account id, so expansion and selection survive
+    // the poll. Rebuilding like the Client Software subtree would reset both.
+    QHash<QString, QTreeWidgetItem*> existing;
+    for (int i = 0; i < m_itemUsenetServers->childCount(); ++i) {
+        QTreeWidgetItem* node = m_itemUsenetServers->child(i);
+        existing.insert(node->data(0, Qt::UserRole).toString(), node);
+    }
+
+    QSet<QString> seen;
+    for (const auto& value : servers) {
+        const QCborMap s = value.toMap();
+        const QString id = s.value(QStringLiteral("accountId")).toString();
+        if (seen.contains(id))
+            continue;
+        seen.insert(id);
+
+        QTreeWidgetItem* node = existing.value(id);
+        if (!node) {
+            node = new QTreeWidgetItem(m_itemUsenetServers);
+            node->setData(0, Qt::UserRole, id);
+            new QTreeWidgetItem(node);                   // 0 open connections
+            new QTreeWidgetItem(node);                   // 1 session traffic
+            auto* articles = new QTreeWidgetItem(node);  // 2 articles
+            for (int i = 0; i < 3; ++i)
+                new QTreeWidgetItem(articles);           //   not found, corrupt, errors
+            auto* meter = new QTreeWidgetItem(node);     // 3 billing period
+            auto* allTime = new QTreeWidgetItem(node);   // 4 all time
+            const QString measured =
+                tr("Measured here, not reported by the provider, in decimal GB as "
+                   "providers bill. Expect a few percent below the provider's own figure.");
+            meter->setToolTip(0, measured);
+            allTime->setToolTip(0, measured);
+        }
+
+        QString name = s.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            name = s.value(QStringLiteral("host")).toString();
+        node->setText(0, s.value(QStringLiteral("enabled")).toBool(true)
+                             ? name : tr("%1 (disabled)").arg(name));
+
+        const auto session =
+            countersFromCbor<UsenetServerCounters>(s.value(QStringLiteral("session")).toMap());
+        const auto sessionWire = static_cast<qint64>(session.wireBytes);
+
+        node->child(0)->setText(0, tr("Open Connections: %1")
+            .arg(s.value(QStringLiteral("openConnections")).toInteger()));
+        node->child(1)->setText(0, tr("Session Traffic: %1 %2")
+            .arg(formatByteSize(sessionWire), formatPercent(sessionWire, sessionWireBytes)));
+
+        QTreeWidgetItem* articles = node->child(2);
+        articles->setText(0, tr("Articles Downloaded: %1").arg(session.articles));
+        articles->child(0)->setText(0, tr("Not Found: %1").arg(session.notFound));
+        articles->child(1)->setText(0, tr("Corrupt: %1").arg(session.corrupt));
+        articles->child(2)->setText(0, tr("Connection Errors: %1").arg(session.errors));
+
+        // The billing meter, worded like Options > Usenet so one account's
+        // allowance reads the same in both places.
+        const auto kind = static_cast<NntpQuotaKind>(s.value(QStringLiteral("quotaKind")).toInteger());
+        const qint64 period = s.value(QStringLiteral("periodBytes")).toInteger();
+        const qint64 quota = s.value(QStringLiteral("quotaBytes")).toInteger();
+        QString used = quota > 0
+            ? tr("%1 of %2 %3").arg(formatQuotaGb(period), formatQuotaGb(quota),
+                                    formatPercent(period, quota))
+            : formatQuotaGb(period);
+        if (kind == NntpQuotaKind::Monthly) {
+            const QDate resets = QDate::fromString(
+                s.value(QStringLiteral("resetsOn")).toString(), Qt::ISODate);
+            if (resets.isValid())
+                used += tr(", resets %1").arg(QLocale::system().toString(resets, QLocale::ShortFormat));
+        }
+        if (s.value(QStringLiteral("overQuota")).toBool(false))
+            used += tr(" — spent");
+
+        QTreeWidgetItem* meter = node->child(3);
+        meter->setHidden(kind == NntpQuotaKind::None);
+        meter->setText(0, kind == NntpQuotaKind::Block ? tr("Block: %1").arg(used)
+                                                        : tr("This Period: %1").arg(used));
+        node->child(4)->setText(0, tr("All Time: %1")
+            .arg(formatQuotaGb(s.value(QStringLiteral("totalBytes")).toInteger())));
+    }
+
+    for (auto it = existing.cbegin(); it != existing.cend(); ++it) {
+        if (!seen.contains(it.key()))
+            delete it.value();
+    }
 }
 
 } // namespace eMule

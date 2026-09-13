@@ -13,6 +13,9 @@
 /// floor no dialog can undercut, and `grabExisting` is off, which is what makes
 /// a new feed's first poll record what it saw and add nothing.
 
+#include "prefs/DownloadCategory.h"
+
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -106,6 +109,25 @@ struct IndexerFeed {
     /// first poll that acts downloads the entire retention window for the query.
     bool grabExisting = false;
 
+    // -- Destination ---------------------------------------------------------
+
+    /// Index into `Preferences::categories()` for everything this feed queues,
+    /// 0 being the implicit "All".
+    ///
+    /// Named in full because `categories` two fields up is the *newznab* id list
+    /// this feed searches, and a `category:` sitting beside a `categories:` in
+    /// the same YAML map would read as its singular.
+    ///
+    /// Deliberately **not** clamped against `categoryCount()` by
+    /// `Preferences::sanitizeFeeds()`: that would make a feed's category depend
+    /// on the order in which `load()` reads its blocks, and a load-order slip
+    /// would silently reset every feed to "All". An index the list no longer
+    /// holds is already harmless where it is used --
+    /// `incomingDirForCategory()` falls back -- and `SetCategories` is what
+    /// keeps it correct, because a *feed* pointing at a deleted category costs
+    /// every release it ever matches, not just one.
+    int downloadCategory = 0;
+
     /// Minutes. Public newznab terms commonly cap RSS at one request per quarter
     /// hour, and a feed is not a search — nothing is lost by being slow.
     static constexpr int kMinIntervalMinutes = 15;
@@ -123,5 +145,15 @@ struct IndexerFeed {
     /// feed needs a usable http(s) URL.
     [[nodiscard]] QUrl feedUrl() const;
 };
+
+/// Renumber every feed's download category after the list was edited.
+/// Returns whether anything changed. See `remapCategoryIndex()`.
+///
+/// A feed is the worst of the four stores to get this wrong on: a queue item
+/// pointing at a deleted category costs one release in the wrong folder, a feed
+/// pointing at one costs **every release it ever matches**, for as long as it
+/// runs.
+[[nodiscard]] bool remapFeedCategories(QList<IndexerFeed>& feeds,
+                                       const QHash<uint32, uint32>& oldToNew);
 
 } // namespace eMule

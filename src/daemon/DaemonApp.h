@@ -6,13 +6,13 @@
 /// Owns CoreSession + IpcServer + CoreNotifierBridge.
 /// Manages startup and shutdown sequence.
 
+#include "LogRelay.h"
+
 #include <QObject>
 #include <QString>
 
 #include <cstdint>
-#include <deque>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 namespace eMule {
@@ -22,15 +22,6 @@ class WebServer;
 
 class IpcServer;
 class CoreNotifierBridge;
-
-/// A single buffered log entry with a monotonic ID.
-struct LogEntry {
-    int64_t id = 0;
-    QString category;
-    QtMsgType severity = QtDebugMsg;
-    QString message;
-    qint64 timestamp = 0;  ///< Unix seconds when the message was generated.
-};
 
 namespace usenet { class UsenetSession; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
@@ -77,7 +68,7 @@ public:
     }
 
     /// Return all buffered log entries with id > @p lastLogId.
-    [[nodiscard]] static std::vector<LogEntry> logsSince(int64_t lastLogId);
+    [[nodiscard]] static std::vector<Ipc::LogEntry> logsSince(int64_t lastLogId);
 
     /// Random token generated once per daemon process. GUI uses this to detect
     /// daemon restarts and reset its log checkpoints accordingly.
@@ -97,9 +88,6 @@ public:
     /// one switch per process, so a line's origin is never in doubt. Safe to call
     /// at startup and whenever the pref changes at runtime.
     static void applyLogFileSettings();
-
-    /// Maximum number of log entries to buffer (per daemon instance).
-    static constexpr int MaxLogBuffer = 500;
 
 private:
     void startWebServer();
@@ -147,9 +135,6 @@ private:
 
     static DaemonApp* s_instance;
     static QtMessageHandler s_previousHandler;
-    static int64_t s_nextLogId;
-    static std::deque<LogEntry> s_logBuffer;
-    static std::mutex s_logMutex;
     static QString s_sessionToken;  ///< Random UUID for this daemon process lifetime.
 };
 

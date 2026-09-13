@@ -6,6 +6,8 @@
 /// Top-level rows are downloads (PartFiles). Each download can have child rows
 /// representing source clients, shown when the user expands the item.
 
+#include "controls/CategoryFilterProxy.h"
+
 #include <QAbstractItemModel>
 #include <QByteArray>
 #include <QString>
@@ -90,6 +92,9 @@ class DownloadListModel : public QAbstractItemModel {
 
 public:
     /// Custom data roles for the progress column delegate.
+    // eMule::kCategoryRole (CategoryFilterProxy.h) is also answered here. It
+    // lives there rather than in either model so the two cannot drift apart on
+    // its value, and so the proxy needs to know neither of them.
     static constexpr int PartMapRole = Qt::UserRole + 1;
     static constexpr int PausedRole  = Qt::UserRole + 2;
 

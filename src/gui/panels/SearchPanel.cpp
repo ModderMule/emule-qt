@@ -24,6 +24,8 @@
 #include "IpcMessage.h"
 
 #include <QApplication>
+#include <QPointer>
+#include <QTimer>
 #include <QClipboard>
 #include <QComboBox>
 #include <QCompleter>
@@ -107,6 +109,10 @@ void SearchPanel::setIpcClient(IpcClient* client)
     connect(m_resultRefreshTimer, &QTimer::timeout, this, [this] { drainDirtySearches(); });
 
     connect(m_ipc, &IpcClient::searchResultReceived, this, &SearchPanel::onSearchResultPush);
+    // Download To needs the list before the menu opens, not after a round trip.
+    connect(m_ipc, &IpcClient::categoriesChanged, this,
+            [this](const Ipc::IpcMessage&) { requestCategories(); });
+    requestCategories();
     connect(m_ipc, &IpcClient::indexerResultsReceived, this,
             &SearchPanel::onIndexerResultsPush);
     connect(m_ipc, &IpcClient::indexerSearchProgress, this,
@@ -115,6 +121,12 @@ void SearchPanel::setIpcClient(IpcClient* client)
             &SearchPanel::onIndexerFinishedPush);
     connect(m_ipc, &IpcClient::downloadAdded, this, [this]{ refreshKnownTypes(); });
     connect(m_ipc, &IpcClient::downloadRemoved, this, [this]{ refreshKnownTypes(); });
+    // Terminal events only. PushUsenetQueueItem fires continuously while a release
+    // downloads, and re-asking on every one of those would be a lookup per tick.
+    connect(m_ipc, &IpcClient::usenetItemFinished, this,
+            [this]{ refreshUsenetKnownTypes(); });
+    connect(m_ipc, &IpcClient::usenetItemRemoved, this,
+            [this]{ refreshUsenetKnownTypes(); });
     connect(m_ipc, &IpcClient::globalSearchProgress, this, [this](const IpcMessage& msg) {
         const auto searchID = static_cast<uint32_t>(msg.fieldInt(0));
         const bool running = msg.fieldBool(3);
@@ -196,7 +208,7 @@ void SearchPanel::setupUi()
     // MFC CSearchListCtrl (srchybrid/SearchListCtrl.cpp:800, :817): Enter downloads the
     // selection, exactly as a double click does, and Alt+Enter opens the result sheet.
     bindListActivation(m_resultView,
-        [this](const QModelIndex& index) { downloadResult(index.row()); },
+        [this](const QModelIndex& index) { downloadResults({index}); },
         [this](const QModelIndex& index) { showResultDetails(index); });
     mainLayout->addWidget(m_resultView, 1);
 
@@ -206,11 +218,9 @@ void SearchPanel::setupUi()
     m_downloadBtn = new QPushButton(tr("Download"), this);
     m_downloadBtn->setEnabled(false);
     connect(m_downloadBtn, &QPushButton::clicked, this, [this] {
-        const auto sel = m_resultView->selectionModel()
-                             ? m_resultView->selectionModel()->selectedRows()
-                             : QModelIndexList{};
-        for (const auto& idx : sel)
-            downloadResult(idx.row());
+        downloadResults(m_resultView->selectionModel()
+                            ? m_resultView->selectionModel()->selectedRows()
+                            : QModelIndexList{});
     });
     bottomLayout->addWidget(m_downloadBtn);
     m_statusLabel = new QLabel(this);
@@ -668,7 +678,23 @@ void SearchPanel::onIndexerFinishedPush(const IpcMessage& msg)
     }
 }
 
-void SearchPanel::grabIndexerResult(int proxyRow)
+void SearchPanel::requestCategories()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    m_ipc->sendRequest(IpcMessage(IpcMsgType::GetCategories), [this](const IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;
+        m_categoryTitles.clear();
+        for (const auto& value : resp.fieldArray(1)) {
+            if (value.isMap())
+                m_categoryTitles.append(value.toMap().value(QStringLiteral("title")).toString());
+        }
+    });
+}
+
+void SearchPanel::sendIndexerGrab(int proxyRow, bool force, int category)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -678,21 +704,48 @@ void SearchPanel::grabIndexerResult(int proxyRow)
         return;
 
     const auto srcIdx = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0));
-    const auto* result = tab->indexerModel->resultAt(srcIdx.row());
+    const int srcRow = srcIdx.row();
+    const auto* result = tab->indexerModel->resultAt(srcRow);
     if (!result)
         return;
 
     IpcMessage msg(IpcMsgType::GrabIndexerResult);
     msg.append(static_cast<qint64>(tab->searchID));
     msg.append(result->id);
+    // Asked and answered. Carried through the fetch so a yes does not spend a
+    // second of the indexer's daily grabs re-asking the same question.
+    msg.append(force);
+    // Download To picked one; plain Download sends 0, which the daemon reads as
+    // "nobody chose" and auto-categorises.
+    msg.append(qint64(category));
 
     const QString title = result->title;
-    m_ipc->sendRequest(std::move(msg), [this, title](const IpcMessage& resp) {
+    const int tabIdx = m_tabBar->currentIndex();
+    m_ipc->sendRequest(std::move(msg), [this, title, tabIdx, srcRow](const IpcMessage& resp) {
         if (!resp.fieldBool(0)) {
-            QMessageBox::warning(this, tr("Usenet search"),
-                                 tr("Could not queue \"%1\": %2")
-                                     .arg(title, resp.fieldString(1)));
+            // The daemon has already decided; a refusal reaching here is a real
+            // failure, because everything the user could have been asked about was
+            // asked before the grab was sent.
+            //
+            // One event-loop turn first: a modal opened inside the stack that
+            // delivered this reply spins a nested loop, and a quit arriving during
+            // it unwinds every loop at once — main() destroys the IpcClient and its
+            // socket while the socket read is still below us. Same rule, and same
+            // reason, as Ed2kLinkImporter's.
+            const QString reason = resp.fieldString(1);
+            QPointer<SearchPanel> self(this);
+            QTimer::singleShot(0, qApp, [self, title, reason] {
+                if (self) {
+                    QMessageBox::warning(self, tr("Usenet search"),
+                                         tr("Could not queue \"%1\": %2").arg(title, reason));
+                }
+            });
             return;
+        }
+        if (tabIdx >= 0 && tabIdx < static_cast<int>(m_tabs.size())
+            && m_tabs[static_cast<size_t>(tabIdx)].indexerModel)
+        {
+            m_tabs[static_cast<size_t>(tabIdx)].indexerModel->setKnownType(srcRow, 2);
         }
         StatusBarNotifier::post(tr("Queued \"%1\" for download from Usenet.").arg(title), 5000);
     });
@@ -799,10 +852,21 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     if (auto* indexerTab = currentTab(); indexerTab && indexerTab->isIndexer()) {
         QAction* grab = m_contextMenu->addAction(tr("&Download"));
         grab->setEnabled(hasSelection);
-        connect(grab, &QAction::triggered, this, [this, selection] {
-            for (const auto& idx : selection)
-                grabIndexerResult(idx.row());
-        });
+        connect(grab, &QAction::triggered, this,
+                [this, selection] { downloadResults(selection); });
+
+        // One click for "just download it", one submenu for "and file it there".
+        // Priority and paused are not offered here: the queue's own menu covers
+        // both a click later, and a grab is usually something you want now.
+        if (m_categoryTitles.size() > 1) {
+            QMenu* toMenu = m_contextMenu->addMenu(tr("Download &To"));
+            toMenu->setEnabled(hasSelection);
+            for (int i = 1; i < m_categoryTitles.size(); ++i) {
+                const QString title = m_categoryTitles.at(i);
+                connect(toMenu->addAction(title), &QAction::triggered, this,
+                        [this, selection, i] { downloadResults(selection, i); });
+            }
+        }
 
         QAction* copyName = m_contextMenu->addAction(tr("Copy &Name"));
         copyName->setEnabled(singleSel);
@@ -849,9 +913,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     auto* downloadAction = m_contextMenu->addAction(menuIcon("Download.ico"), tr("Download"));
     downloadAction->setEnabled(hasSelection && anyDownloadable);
     connect(downloadAction, &QAction::triggered, this, [this] {
-        const auto sel = m_resultView->selectionModel()->selectedRows();
-        for (const auto& i : sel)
-            downloadResult(i.row());
+        downloadResults(m_resultView->selectionModel()->selectedRows());
     });
     setMenuDefaultAction(m_contextMenu, downloadAction->isEnabled() ? downloadAction : nullptr);
 
@@ -1037,7 +1099,7 @@ void SearchPanel::showResultDetails(const QModelIndex& index)
 void SearchPanel::onResultDoubleClicked(const QModelIndex& index)
 {
     if (index.isValid())
-        downloadResult(index.row());
+        downloadResults({index});
 }
 
 // ---------------------------------------------------------------------------
@@ -1107,21 +1169,87 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
 // Download a result
 // ---------------------------------------------------------------------------
 
-void SearchPanel::downloadResult(int row)
+void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category)
 {
-    if (!m_ipc || !m_ipc->isConnected())
+    if (!m_ipc || !m_ipc->isConnected() || proxyRows.isEmpty())
         return;
 
     auto* tab = currentTab();
     if (!tab)
         return;
 
-    // An indexer row has no ED2K hash to download by. The daemon fetches its NZB
-    // and queues it instead.
-    if (tab->isIndexer()) {
-        grabIndexerResult(row);
-        return;
+    // Triaged once for the whole action, not once per row: selecting twenty rows
+    // of which three are already downloaded must raise one question, not three.
+    QList<int> plain;
+    QList<int> known;
+    QStringList knownNames;
+    for (const auto& idx : proxyRows) {
+        const int proxyRow = idx.row();
+        const int srcRow = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0)).row();
+
+        int knownType = 0;
+        QString name;
+        if (tab->isIndexer()) {
+            if (const auto* r = tab->indexerModel->resultAt(srcRow)) {
+                knownType = r->knownType;
+                name = r->title;
+            }
+        } else if (tab->model) {
+            if (const auto* r = tab->model->resultAt(srcRow)) {
+                knownType = r->knownType;
+                name = r->fileName;
+            }
+        }
+
+        // 3 downloaded, 4 cancelled — both mean it is gone from the transfer list
+        // and asking again is a legitimate thing to want. Shared and downloading
+        // are not asked about: re-adding those can never do anything useful.
+        if (knownType == 3 || knownType == 4) {
+            known.append(proxyRow);
+            knownNames.append(name);
+        } else {
+            plain.append(proxyRow);
+        }
     }
+
+    bool downloadKnown = false;
+    if (!known.isEmpty()) {
+        // Called from a UI event rather than an IPC reply, so a direct modal is
+        // safe here — unlike the reply handlers, which must defer one event-loop
+        // turn (see Ed2kLinkImporter's note on nested loops).
+        downloadKnown =
+            QMessageBox::question(
+                this, tr("Download"),
+                tr("You have already downloaded the following file(s). "
+                   "Download them again?\n\n%1")
+                    .arg(knownNames.join(QLatin1Char('\n'))),
+                QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
+    }
+
+    for (const int proxyRow : std::as_const(plain)) {
+        if (tab->isIndexer())
+            sendIndexerGrab(proxyRow, /*force*/ false, category);
+        else
+            sendDownloadRequest(proxyRow);
+    }
+    if (!downloadKnown)
+        return;
+    for (const int proxyRow : std::as_const(known)) {
+        if (tab->isIndexer())
+            sendIndexerGrab(proxyRow, /*force*/ true, category);
+        else
+            sendDownloadRequest(proxyRow);
+    }
+}
+
+void SearchPanel::sendDownloadRequest(int row)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    auto* tab = currentTab();
+    if (!tab || tab->isIndexer() || !tab->model)
+        return;
 
     // Map from proxy row to source row
     const auto proxyIdx = tab->proxy->index(row, 0);
@@ -1625,6 +1753,13 @@ void SearchPanel::refreshKnownTypes()
 
     for (size_t ti = 0; ti < m_tabs.size(); ++ti) {
         auto* tab = &m_tabs[ti];
+        // An indexer tab carries indexerModel and leaves model null, so this loop
+        // would dereference nothing at all. It runs on every downloadAdded /
+        // downloadRemoved, which is why one ED2K download starting while a Usenet
+        // search tab was open used to take the whole GUI down. Their own pass is
+        // refreshUsenetKnownTypes(), below.
+        if (tab->isIndexer() || !tab->model)
+            continue;
         const int count = tab->model->resultCount();
         if (count == 0)
             continue;
@@ -1644,6 +1779,8 @@ void SearchPanel::refreshKnownTypes()
                 return;
 
             auto* model = m_tabs[ti].model;
+            if (!model)
+                return;
             const auto types = resp.fieldArray(1);
             const int count = std::min(static_cast<int>(types.size()), model->resultCount());
 
@@ -1654,6 +1791,54 @@ void SearchPanel::refreshKnownTypes()
                     typesByHash.insert(row->hash, static_cast<int>(types.at(i).toInteger()));
             }
             model->updateKnownTypes(typesByHash);
+        });
+    }
+
+    refreshUsenetKnownTypes();
+}
+
+void SearchPanel::refreshUsenetKnownTypes()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    for (size_t ti = 0; ti < m_tabs.size(); ++ti) {
+        auto* tab = &m_tabs[ti];
+        if (!tab->isIndexer())
+            continue;
+        const int count = tab->indexerModel->resultCount();
+        if (count == 0)
+            continue;
+
+        // Titles, not titles and sizes. An indexer's size is its own arithmetic
+        // over the NZB and disagrees with ours often enough that matching on it
+        // would silently leave rows unmarked, which is the wrong way to be wrong.
+        QCborArray titles;
+        for (int r = 0; r < count; ++r) {
+            if (const auto* row = tab->indexerModel->resultAt(r))
+                titles.append(row->title);
+        }
+
+        IpcMessage msg(IpcMsgType::GetUsenetKnownTypes);
+        msg.append(QCborValue(titles));
+
+        m_ipc->sendRequest(std::move(msg), [this, ti](const IpcMessage& resp) {
+            if (!resp.fieldBool(0) || ti >= m_tabs.size())
+                return;
+
+            auto* model = m_tabs[ti].indexerModel;
+            if (!model)
+                return;
+            const auto types = resp.fieldArray(1);
+            const int count = std::min(static_cast<int>(types.size()), model->resultCount());
+
+            QHash<QString, int> typesByTitle;
+            for (int i = 0; i < count; ++i) {
+                const auto* row = model->resultAt(i);
+                if (row)
+                    typesByTitle.insert(row->title, static_cast<int>(types.at(i).toInteger()));
+            }
+            model->updateKnownTypes(typesByTitle);
         });
     }
 }
@@ -1670,9 +1855,11 @@ void SearchPanel::setupResultHeader(bool forIndexer)
     m_boundHeaderKey = key;
 
     if (forIndexer) {
-        // Name, Size, Age, Category, Grabs, Indexer, then the two torznab columns
-        // hidden below until a BitTorrent module can populate them.
-        m_resultView->bindColumns(kIndexerHeaderKey, {380, 80, 70, 120, 60, 110, 60, 60});
+        // Name, Size, Age, Category, Grabs, Indexer, the two torznab columns hidden
+        // below until a BitTorrent module can populate them, then Known. A layout
+        // saved before Known existed has a different column count, so Qt rejects it
+        // and these defaults apply — the indexer header resets once, then sticks.
+        m_resultView->bindColumns(kIndexerHeaderKey, {380, 80, 70, 120, 60, 110, 60, 60, 80});
         m_resultView->setColumnHidden(IndexerResultsModel::ColSeeders, true);
         m_resultView->setColumnHidden(IndexerResultsModel::ColPeers, true);
         return;

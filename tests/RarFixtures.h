@@ -326,4 +326,81 @@ inline QList<QByteArray> makeCompressedRarSet(const QByteArray& innerName,
     return volumes;
 }
 
+/// A set whose *file data* is encrypted — `rar a -p`, the common case.
+///
+/// The payload is written in the clear, which is the whole point: the flag is
+/// what libarchive reads, and a fixture that carried real RAR-AES would only
+/// test that we can implement RAR-AES. libarchive reports the entry, marks it
+/// encrypted and refuses to read its data; that path is what the unpacker has to
+/// route to an external tool.
+inline QList<QByteArray> makeDataEncryptedRarSet(const QByteArray& innerName,
+                                                 const QByteArray& payload,
+                                                 qint64 perVolume)
+{
+    QList<QByteArray> volumes;
+    const qint64 total = payload.size();
+    qint64 at = 0;
+    int number = 0;
+
+    while (at < total) {
+        const qint64 take = qMin<qint64>(perVolume, total - at);
+        quint16 flags = kFilePassword;
+        if (at > 0)
+            flags |= kSplitBefore;
+        if (at + take < total)
+            flags |= kSplitAfter;
+
+        QByteArray vol = rar4Marker();
+        vol += rar4Main(number == 0 ? kMainFirstVolume : quint16(0));
+        vol += rar4File(innerName, take, total, flags);
+        vol += payload.mid(int(at), int(take));
+
+        volumes.append(vol);
+        at += take;
+        ++number;
+    }
+    return volumes;
+}
+
+/// A set whose *headers* are encrypted — `rar a -hp`.
+///
+/// The dangerous one, and the reason this fixture exists. libarchive returns
+/// ARCHIVE_FATAL on the very first header, so the archive lists **no entries at
+/// all**; a reader whose loop condition is `== ARCHIVE_OK` then sees an empty
+/// archive rather than a failure, and an unpack of zero files used to count as a
+/// success — with every volume deleted after it.
+///
+/// MHD_PASSWORD on the main header is the flag libarchive checks. The file
+/// headers after it would in reality be ciphertext; here they are ordinary
+/// stored headers, which is more than libarchive ever gets to look at.
+inline QList<QByteArray> makeHeaderEncryptedRarSet(const QByteArray& innerName,
+                                                   const QByteArray& payload,
+                                                   qint64 perVolume)
+{
+    QList<QByteArray> volumes;
+    const qint64 total = payload.size();
+    qint64 at = 0;
+    int number = 0;
+
+    while (at < total) {
+        const qint64 take = qMin<qint64>(perVolume, total - at);
+        quint16 flags = kFilePassword;
+        if (at > 0)
+            flags |= kSplitBefore;
+        if (at + take < total)
+            flags |= kSplitAfter;
+
+        QByteArray vol = rar4Marker();
+        vol += rar4Main(quint16(kMainPassword
+                                | (number == 0 ? kMainFirstVolume : quint16(0))));
+        vol += rar4File(innerName, take, total, flags);
+        vol += payload.mid(int(at), int(take));
+
+        volumes.append(vol);
+        at += take;
+        ++number;
+    }
+    return volumes;
+}
+
 } // namespace eMule::testing::rar

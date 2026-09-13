@@ -18,6 +18,7 @@
 ///     files, holes and all, and no part of the system complained.
 
 #include "FakeNntpServer.h"
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 
 #include "decode/YencDecoder.h"
@@ -30,6 +31,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -44,6 +46,7 @@
 using namespace eMule;
 using namespace eMule::usenet;
 using eMule::testing::FakeNntpServer;
+using eMule::testing::ScopedStatistics;
 
 namespace {
 
@@ -269,6 +272,26 @@ bool requestedAnyRecoveryVolume(const QStringList& commands)
     return false;
 }
 
+/// Recovery blocks actually bought: the +NN counts of the distinct volume files
+/// a BODY was issued for.
+int recoveryBlocksFetched(const QStringList& commands)
+{
+    static const QRegularExpression re(QStringLiteral(R"((\S*\.vol\d+\+(\d+)\.par2))"),
+                                       QRegularExpression::CaseInsensitiveOption);
+    QSet<QString> seen;
+    int blocks = 0;
+    for (const QString& cmd : commands) {
+        if (!cmd.startsWith(QLatin1String("BODY"), Qt::CaseInsensitive))
+            continue;
+        const auto m = re.match(cmd);
+        if (!m.hasMatch() || seen.contains(m.captured(1)))
+            continue;
+        seen.insert(m.captured(1));
+        blocks += m.captured(2).toInt();
+    }
+    return blocks;
+}
+
 QStringList namesIn(const QString& dir)
 {
     QStringList names;
@@ -289,6 +312,11 @@ private slots:
     void refusesToShareAnUnrepairableRelease();
     void corruptVolumesNeverReachThePublishedRelease();
     void aRepairDiscardsWhatWasUnpackedWhileDownloading();
+    void aRepairedReleaseDoesNotPublishPar2sBackupCopy();
+    void anObfuscatedReleaseIsNamedFromPar2WhileItDownloads();
+    void theIndexPar2IsFetchedFirstOnAnObfuscatedRelease();
+    void aReleaseWithNoPar2IsScheduledExactlyAsBefore();
+    void aDamagedObfuscatedReleaseBuysOnlyTheBlocksItNeeds();
 };
 
 // ---------------------------------------------------------------------------
@@ -298,6 +326,7 @@ void tst_UsenetPostPipeline::skipsRecoveryVolumesForAHealthyRelease()
 #ifndef EMULE_HAVE_PAR2
     QSKIP("built without libpar2-turbo");
 #else
+    ScopedStatistics stats;
     eMule::testing::TempDir tmp;
     const QString stage = tmp.filePath(QStringLiteral("stage"));
     QVERIFY(QDir().mkpath(stage));
@@ -343,6 +372,13 @@ void tst_UsenetPostPipeline::skipsRecoveryVolumesForAHealthyRelease()
     QCOMPARE(readFile(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("Movie.mkv"))),
              movie);
 
+    const UsenetCounters& c = stats->usenetSession();
+    QCOMPARE(c.par2Verified, uint64(1));
+    QCOMPARE(c.par2Repaired, uint64(0));
+    QCOMPARE(c.recoveryVolumes, uint64(0));
+    QCOMPARE(c.unpackOk, uint64(1));
+    QCOMPARE(c.itemsCompleted, uint64(1));
+
     queue.stop();
 #endif
 }
@@ -352,6 +388,7 @@ void tst_UsenetPostPipeline::repairsUnpacksAndPublishesOnlyThePayload()
 #ifndef EMULE_HAVE_PAR2
     QSKIP("built without libpar2-turbo");
 #else
+    ScopedStatistics stats;
     eMule::testing::TempDir tmp;
     const QString stage = tmp.filePath(QStringLiteral("stage"));
     QVERIFY(QDir().mkpath(stage));
@@ -409,6 +446,352 @@ void tst_UsenetPostPipeline::repairsUnpacksAndPublishesOnlyThePayload()
     const auto* item = queue.findItem(id);
     QVERIFY(item);
     QCOMPARE(item->status, UsenetItemStatus::Complete);
+
+    // One verify counted, not two: the short first round sent it back for
+    // volumes and was not a verdict. The repair ran in whichever par2 pass
+    // got there first, and both report the blocks it restored.
+    const UsenetCounters& c = stats->usenetSession();
+    QCOMPARE(c.articlesMissing, uint64(1));
+    QVERIFY(c.recoveryVolumes >= 1);
+    QVERIFY(c.recoveryBytes > 0);
+    QCOMPARE(c.par2Verified, uint64(1));
+    QCOMPARE(c.par2Repaired, uint64(1));
+    QCOMPARE(c.par2RepairFailed, uint64(0));
+    QVERIFY(c.par2BlocksRepaired >= 1);
+    QCOMPARE(c.unpackOk, uint64(1));
+    QCOMPARE(c.itemsCompleted, uint64(1));
+
+    queue.stop();
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// A release that cannot name itself
+// ---------------------------------------------------------------------------
+//
+// The fixture is what makes these honest: the par2 set is built over the *real*
+// names, the payload is then renamed to hex, and only then is it posted. So the
+// NZB subject and the article's own `=ybegin name=` both carry the hex name --
+// a fully obfuscated post, where the module's usual answer ("=ybegin is the only
+// place the real name appears") is not an answer at all, and the PAR2 index is
+// the one file in the release that knows anything.
+
+namespace {
+
+struct ObfuscatedRelease {
+    PostedRelease posted;
+    QString realName;
+    QString hexName;
+};
+
+ObfuscatedRelease postObfuscated(const QString& stage, FakeNntpServer& server,
+                                 const QByteArray& movie, int recoveryBlocks = 8,
+                                 const QList<int>& corruptParts = {})
+{
+    ObfuscatedRelease out;
+    out.realName = QStringLiteral("Movie.mkv");
+    out.hexName = QStringLiteral("a1b2c3d4e5f60718.bin");
+
+    writeFile(QDir(stage).filePath(out.realName), movie);
+    createPar2Set(stage, QStringLiteral("Rel"), {out.realName}, 4000, recoveryBlocks);
+    QFile::rename(QDir(stage).filePath(out.realName), QDir(stage).filePath(out.hexName));
+
+    out.posted = postRelease(stage, server, out.hexName, {}, corruptParts);
+    return out;
+}
+
+/// Position of the first BODY for @p fileName's articles in what the server saw,
+/// or -1.
+int firstBodyIndexFor(const QStringList& commands, const QString& fileName)
+{
+    for (int i = 0; i < commands.size(); ++i) {
+        if (!commands.at(i).startsWith(QLatin1String("BODY"), Qt::CaseInsensitive))
+            continue;
+        for (int p = 1; p <= 40; ++p) {
+            if (commands.at(i).contains(messageIdFor(fileName, p)))
+                return i;
+        }
+    }
+    return -1;
+}
+
+} // namespace
+
+void tst_UsenetPostPipeline::anObfuscatedReleaseIsNamedFromPar2WhileItDownloads()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    FakeNntpServer server;
+    const ObfuscatedRelease rel = postObfuscated(stage, server, payload(60000, 21));
+
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(rel.posted.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(120000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    const auto* item = queue.findItem(id);
+    QVERIFY(item);
+
+    // The assertion that separates this from post-processing's rename pass,
+    // which would also end up with the right name on disk: par2FileName is only
+    // ever set *during* the download, before the file was sealed. An empty one
+    // with a correctly named file beside it means the name was recovered too
+    // late to inform anything.
+    int payloadIndex = -1;
+    for (int i = 0; i < item->nzb.files.size(); ++i) {
+        if (!item->nzb.files.at(i).isPar2())
+            payloadIndex = i;
+    }
+    QVERIFY(payloadIndex >= 0);
+    QCOMPARE(item->files.at(payloadIndex).par2FileName, rel.realName);
+    QCOMPARE(item->bestFileName(payloadIndex), rel.realName);
+
+    // And it was sealed under that name, so nothing downstream ever saw the hex
+    // one: the unpacker reads the directory, and the streaming index caches
+    // paths.
+    QCOMPARE(QFileInfo(item->files.at(payloadIndex).tempPath).fileName(), rel.realName);
+
+    QCOMPARE(namesIn(thePrefs.incomingDir()), QStringList{rel.realName});
+    queue.stop();
+#endif
+}
+
+void tst_UsenetPostPipeline::theIndexPar2IsFetchedFirstOnAnObfuscatedRelease()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    FakeNntpServer server;
+    const ObfuscatedRelease rel = postObfuscated(stage, server, payload(60000, 22));
+
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    // One connection, so the order the plan asks in is the order the server sees.
+    queue.applyServers({serverConfig(port, 1)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(rel.posted.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(120000), "no terminal outcome");
+
+    const QStringList commands = server.receivedCommands();
+    const int indexAt = firstBodyIndexFor(commands, QStringLiteral("Rel.par2"));
+    const int payloadAt = firstBodyIndexFor(commands, rel.hexName);
+    QVERIFY2(indexAt >= 0, "the index .par2 was never fetched");
+    QVERIFY2(payloadAt >= 0, "the payload was never fetched");
+
+    // Normally the index .par2 goes last -- it is small and only interesting if
+    // something came up short. Here it is the only file that says what the
+    // others are, so it is the first thing worth having.
+    QVERIFY2(indexAt < payloadAt,
+             "the index .par2 was not hoisted ahead of the payload");
+
+    // And no recovery volume was bought for a healthy release: the hoist moves
+    // the index only, and isPar2Volume() is a different question from isPar2().
+    QVERIFY2(!requestedAnyRecoveryVolume(commands),
+             "hoisting the index .par2 dragged the recovery volumes with it");
+
+    queue.stop();
+#endif
+}
+
+void tst_UsenetPostPipeline::aReleaseWithNoPar2IsScheduledExactlyAsBefore()
+{
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    // No par2 at all, and an obfuscated name: there is nothing to hoist, so the
+    // plan must be what it always was. This is the guard on the rebuildPlan()
+    // restructure rather than on the feature.
+    const QByteArray movie = payload(30000, 23);
+    QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("deadbeefdeadbeef.bin")), movie));
+
+    FakeNntpServer server;
+    const PostedRelease release = postRelease(stage, server);
+
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 1)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(120000), "no terminal outcome");
+
+    // Part order, from the first article, exactly as before.
+    const QStringList commands = server.receivedCommands();
+    const int first = firstBodyIndexFor(commands, QStringLiteral("deadbeefdeadbeef.bin"));
+    QVERIFY(first >= 0);
+    QVERIFY(commands.at(first).contains(messageIdFor(QStringLiteral("deadbeefdeadbeef.bin"), 1)));
+
+    const auto* item = queue.findItem(id);
+    QVERIFY(item);
+    QVERIFY(item->files.at(0).par2FileName.isEmpty());
+    QCOMPARE(namesIn(thePrefs.incomingDir()),
+             QStringList{QStringLiteral("deadbeefdeadbeef.bin")});
+
+    queue.stop();
+}
+
+void tst_UsenetPostPipeline::aDamagedObfuscatedReleaseBuysOnlyTheBlocksItNeeds()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    FakeNntpServer server;
+    // Two corrupt articles in the middle: valid yEnc over wrong bytes, so the
+    // download succeeds and the damage only shows at verification.
+    const ObfuscatedRelease rel =
+        postObfuscated(stage, server, payload(60000, 24), /*recoveryBlocks*/ 8, {5, 6});
+
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(rel.posted.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(120000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(),
+             qPrintable(QStringLiteral("a repairable release failed: %1")
+                            .arg(finished.at(0).at(2).toString())));
+
+    // Repaired, published under its real name, and with no second copy: par2
+    // moved the damaged file aside as ".1" and the pipeline cleared it.
+    // The point of the whole exercise. Two damaged blocks out of fifteen: with
+    // the extra-file list par2 sees a *damaged* file and asks for a couple of
+    // blocks. Without it the file is invisible and counts as entirely missing,
+    // so the queue buys volumes for all fifteen -- the user's allowance spent on
+    // damage that does not exist, and, when the set is short, a repairable
+    // release declared dead.
+    const int bought = recoveryBlocksFetched(server.receivedCommands());
+    QVERIFY2(bought > 0, "a damaged release did not go back for recovery volumes");
+    QVERIFY2(bought <= 4,
+             qPrintable(QStringLiteral("bought %1 recovery blocks for 2 damaged ones")
+                            .arg(bought)));
+
+    QCOMPARE(namesIn(thePrefs.incomingDir()), QStringList{rel.realName});
+    QCOMPARE(readFile(QDir(thePrefs.incomingDir()).filePath(rel.realName)),
+             payload(60000, 24));
+
+    queue.stop();
+#endif
+}
+
+// par2 repairs by building the correct file fresh and moving the damaged one
+// aside as "<name>.1" -- it does not delete it, because purgefiles also deletes
+// the .par2 set the on-demand recovery round still needs. A release with no
+// archive publishes whatever is in the work folder, so without someone clearing
+// those backups the client offers ED2K peers a known-damaged copy of the payload
+// beside the good one. That is the failure phase 4 was supposed to have closed.
+void tst_UsenetPostPipeline::aRepairedReleaseDoesNotPublishPar2sBackupCopy()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    // Raw, not archived: this is the path that publishes the work folder itself
+    // rather than an extraction.
+    const QByteArray movie = payload(24000, 17);
+    QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("Movie.mkv")), movie));
+    QVERIFY(createPar2Set(stage, QStringLiteral("Rel"), {QStringLiteral("Movie.mkv")},
+                          4000, 8));
+
+    FakeNntpServer server;
+    const PostedRelease release =
+        postRelease(stage, server, QStringLiteral("Movie.mkv"), {3});
+    QCOMPARE(release.droppedIds.size(), 1);
+
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QVERIFY2(finished.wait(120000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(),
+             qPrintable(QStringLiteral("repair failed: %1").arg(finished.at(0).at(2).toString())));
+
+    QCOMPARE(readFile(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("Movie.mkv"))),
+             movie);
+
+    // The whole assertion: one file, and not the ".1" beside it.
+    const QStringList published = namesIn(thePrefs.incomingDir());
+    QCOMPARE(published, QStringList{QStringLiteral("Movie.mkv")});
 
     queue.stop();
 #endif
@@ -545,12 +928,18 @@ void tst_UsenetPostPipeline::aRepairDiscardsWhatWasUnpackedWhileDownloading()
 
     // The staged payload is what came out of the *repaired* archive.
     QCOMPARE(result.staged.size(), 1);
-    QCOMPARE(readFile(result.staged.first().first), movie);
+    QCOMPARE(readFile(result.staged.first().stagedPath), movie);
+
+    // The staged entry knows where it came from. Nothing else can attribute a
+    // published file to an NZB file: the payload list is sorted by name and drops
+    // every .par2, so position says nothing.
+    QCOMPARE(QFileInfo(result.staged.first().source).fileName(), QStringLiteral("Movie.mkv"));
 #endif
 }
 
 void tst_UsenetPostPipeline::refusesToShareAnUnrepairableRelease()
 {
+    ScopedStatistics stats;
     eMule::testing::TempDir tmp;
     const QString stage = tmp.filePath(QStringLiteral("stage"));
     QVERIFY(QDir().mkpath(stage));
@@ -597,6 +986,10 @@ void tst_UsenetPostPipeline::refusesToShareAnUnrepairableRelease()
     // Nothing at all in incoming: not the short file, not a staging leftover.
     QVERIFY2(namesIn(thePrefs.incomingDir()).isEmpty(),
              qPrintable(namesIn(thePrefs.incomingDir()).join(u',')));
+
+    QCOMPARE(stats->usenetSession().articlesMissing, uint64(1));
+    QCOMPARE(stats->usenetSession().itemsFailed, uint64(1));
+    QCOMPARE(stats->usenetSession().par2Verified, uint64(0));   // nothing to verify with
 
     queue.stop();
 }

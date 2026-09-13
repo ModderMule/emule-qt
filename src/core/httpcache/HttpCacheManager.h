@@ -29,6 +29,7 @@
 #include "httpcache/HttpCacheOffer.h"
 #include "httpcache/HttpCachePublisher.h"
 #include "prefs/Preferences.h"
+#include "stats/NetworkCounters.h"
 #include "utils/Types.h"
 
 #include <QHash>
@@ -184,16 +185,26 @@ public:
 
     // -- Session counters (Statistics mirrors these into its cumulative totals) --
 
+    /// Everything this session did, in one block. The banked half is
+    /// `Preferences::cumHttpCache()`; the two are summed by `combineCounters`.
+    [[nodiscard]] const HttpCacheCounters& sessionCounters() const { return m_session; }
+
     /// Ciphertext bytes we pushed to the cache server.
-    [[nodiscard]] uint64 sessionBytesPublished() const { return m_sessionBytesPublished; }
+    [[nodiscard]] uint64 sessionBytesPublished() const { return m_session.bytesPublished; }
     /// Plaintext bytes we pulled back out of it.
-    [[nodiscard]] uint64 sessionBytesFetched() const { return m_sessionBytesFetched; }
+    [[nodiscard]] uint64 sessionBytesFetched() const { return m_session.bytesFetched; }
     /// Upstream we did not have to spend: every extra peer served from one upload.
-    [[nodiscard]] uint64 sessionBytesSaved() const { return m_sessionBytesSaved; }
+    [[nodiscard]] uint64 sessionBytesSaved() const { return m_session.bytesSaved; }
     /// Distinct parts published.
-    [[nodiscard]] uint32 sessionChunksPublished() const { return m_sessionChunksPublished; }
+    [[nodiscard]] uint32 sessionChunksPublished() const
+    {
+        return static_cast<uint32>(m_session.chunksPublished);
+    }
     /// Offers accepted and successfully fetched.
-    [[nodiscard]] uint32 sessionChunksFetched() const { return m_sessionChunksFetched; }
+    [[nodiscard]] uint32 sessionChunksFetched() const
+    {
+        return static_cast<uint32>(m_session.chunksFetched);
+    }
 
     /// Take chunk descriptors that arrived on a Kad source result and fetch any we
     /// still need.
@@ -384,11 +395,7 @@ private:
     uint64 m_publishedToday = 0;
     qint64 m_budgetDay = 0;    ///< days since epoch the counter belongs to
 
-    uint64 m_sessionBytesPublished = 0;
-    uint64 m_sessionBytesFetched = 0;
-    uint64 m_sessionBytesSaved = 0;
-    uint32 m_sessionChunksPublished = 0;
-    uint32 m_sessionChunksFetched = 0;
+    HttpCacheCounters m_session;
 };
 
 } // namespace eMule

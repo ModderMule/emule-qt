@@ -36,6 +36,16 @@ enum class UsenetAddSource : quint8 {
     Automatic = 1,  ///< the watch folder, or a feed
 };
 
+/// Where an NZB came from, for the intake statistics only. Policy keys on
+/// UsenetAddSource, which folds these into manual and automatic.
+enum class UsenetAddOrigin : quint8 {
+    File,         ///< file dialog, drop, command line
+    Url,
+    WatchFolder,
+    Feed,
+    IndexerGrab,
+};
+
 /// Why addNzb() did what it did.
 ///
 /// An automatic actor -- the watch folder, a feed -- has to tell "we already
@@ -45,9 +55,49 @@ enum class UsenetAddSource : quint8 {
 /// time a sentence is reworded or translated.
 enum class UsenetAddOutcome : quint8 {
     Added = 0,
-    Duplicate,   ///< already queued or already downloaded -- terminal, not a failure
+    Duplicate,   ///< in the queue and still on its way -- terminal, not a failure
     Invalid,     ///< not a parseable NZB, or it lists no files -- never worth retrying
     Failed,      ///< could not be created on disk -- worth one more attempt later
+
+    /// Finished, or in the history. Terminal for an automatic actor, and a
+    /// *question* for a person, which addNzb()'s force answers. Deliberately not
+    /// Duplicate: nothing overrides that one, and one value could not say both.
+    ///
+    /// Appended rather than inserted -- the value travels on the wire now.
+    AlreadyDownloaded,
+};
+
+/// What an add may choose, beside the bytes and the name.
+///
+/// Every field defaults to what the intake paths did before there was any way to
+/// say otherwise, so a caller states only what it cares about:
+/// `addNzb(data, name, error, {.category = 3, .paused = true})`. It is a struct
+/// rather than more trailing parameters because the positional form had already
+/// reached the point where `password` sat last only to avoid re-ordering five
+/// call sites -- the same reason setPostProcessingOptions() takes one.
+struct UsenetAddOptions {
+    /// Which existing items refuse this re-add.
+    UsenetAddSource source = UsenetAddSource::Manual;
+
+    /// Suppress the "you already downloaded this" refusal and nothing else. A
+    /// release whose articles are still arriving cannot usefully arrive twice,
+    /// so no caller may override that one.
+    bool force = false;
+
+    /// An archive passphrase from whoever is adding the release. A manual add
+    /// wins outright; otherwise the NZB's own metadata is authoritative.
+    QString password;
+
+    /// Index into Preferences::categories(). 0 means "the caller did not pick
+    /// one", which is when auto-categorisation runs.
+    int category = 0;
+
+    /// -2 very low .. +2 very high, clamped by addNzb(). Higher runs first.
+    int priority = 0;
+
+    /// Queue it without starting it. Independent of usenetAutoAddPaused(),
+    /// which pauses an automatic add whatever the caller asked for.
+    bool paused = false;
 };
 
 /// How hard to ask before spending anything. Mirrors the integer stored in
@@ -102,6 +152,17 @@ struct UsenetHealthVerdict {
 /// Sorted before hashing because two indexers may list the same articles in a
 /// different order, and an order-dependent digest would call that two releases.
 [[nodiscard]] QString nzbArticleDigest(const NzbInfo& nzb);
+
+/// One release name, folded to the one form everything compares on.
+///
+/// Case-folded, a trailing ".nzb" removed, and every run of spaces, dots,
+/// underscores and dashes collapsed to a single space. An indexer's title, an
+/// .nzb filename and the name inside the NZB are three spellings of the same
+/// release; without one folding, matching them is three different guesses.
+///
+/// Heuristic, and only ever used to *colour a row and ask a question* -- what
+/// actually gets refused is decided by nzbArticleDigest().
+[[nodiscard]] QString usenetFoldedReleaseName(const QString& name);
 
 /// Heuristic identity: folded name plus total encoded size.
 ///

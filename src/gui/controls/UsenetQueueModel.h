@@ -13,7 +13,12 @@
 /// roughly once a second — resetting would make a queue impossible to interact
 /// with while it runs.
 
+#include "controls/CategoryFilterProxy.h"
+
 #include <QAbstractItemModel>
+
+#include <array>
+#include <QCborMap>
 #include <QList>
 #include <QString>
 
@@ -76,12 +81,31 @@ struct UsenetFileRow {
     QString previewNote;
 };
 
+/// One file the release actually put on disk, as the daemon resolved it.
+///
+/// Deliberately not derived from UsenetFileRow: an unpacked release publishes the
+/// *extracted* members, which are not NZB files at all, so the two lists have
+/// different lengths and no positional correspondence.
+struct UsenetPublishedFile {
+    QString name;
+    QString path;      ///< absolute, on the *core's* filesystem
+    /// Relative to the core's incoming directory, for the browse route against a
+    /// remote core. Empty when the file landed outside it, which no URL can reach.
+    QString relPath;
+    qint64  size = 0;
+};
+
 struct UsenetItemRow {
     QString id;
     QString name;
     UsenetRowStatus status = UsenetRowStatus::Queued;
     QString statusText;
     int priority = 0;
+
+    /// Index into the daemon's category list, 0 being "All". The GUI never
+    /// resolves it to a folder -- that happens at completion, daemon-side.
+    int category = 0;
+
     int percent = 0;
     qint64 totalBytes = 0;
     qint64 decodedBytes = 0;
@@ -111,7 +135,21 @@ struct UsenetItemRow {
     /// own arithmetic — a weaker claim, and the tooltip says so.
     bool healthProbed = false;
 
+    /// A passphrase is stored for this release. The value itself never crosses
+    /// the wire, which is why this is a bool — the same one-way contract the
+    /// news-server passwords keep.
+    bool hasPassword = false;
+
+    /// The release is password-protected and no password we have opens it. A
+    /// flag rather than a match on `error`, which is translated.
+    bool passwordRequired = false;
+
     QList<UsenetFileRow> files;
+
+    /// What completion published. Empty until then — and empty is also what an
+    /// item restored from a sidecar written before publishedPaths existed
+    /// reports, since it went in as an optional key rather than a version bump.
+    QList<UsenetPublishedFile> publishedFiles;
 
     /// Bytes per second, derived by the model from consecutive updates. The
     /// daemon does not send a per-item rate: it measures the engine as a whole,
@@ -122,6 +160,28 @@ struct UsenetItemRow {
     qint64 lastDecodedBytes = 0;
     qint64 lastSampleMs = 0;
 };
+
+/// Mirrors usenet::UsenetItemStatus. Read as an int off the wire, because the GUI
+/// does not link eMule::Usenet.
+[[nodiscard]] UsenetRowStatus usenetStatusFromInt(int v);
+
+/// Decode one queue row. Lives here rather than in UsenetPanel because the
+/// details dialog decodes the same shape off GetUsenetItemDetails, and a wire
+/// decoder that exists twice drifts the moment one field is added.
+[[nodiscard]] UsenetItemRow usenetRowFromCbor(const QCborMap& m);
+
+/// The five levels the daemon accepts, highest first — menu order, and the order
+/// the queue runs them in.
+///
+/// Duplicated from `usenet::kUsenetPriorityLevels` because the GUI does not link
+/// eMule::Usenet and the wire carries a bare int. The daemon clamps what it is
+/// sent, so the worst a drift here can do is offer a level that comes back as
+/// its nearest neighbour.
+inline constexpr std::array<int, 5> kUsenetPriorityLevels{2, 1, 0, -1, -2};
+
+/// A level's name, for the menu and the Priority column. Anything outside the
+/// five reads as the nearest one.
+[[nodiscard]] QString usenetPriorityName(int priority);
 
 class UsenetQueueModel : public QAbstractItemModel {
     Q_OBJECT
@@ -141,6 +201,11 @@ public:
         /// invisible on exactly the failed, post-processing and stalled items
         /// where it is most worth reading.
         ColHealth,
+
+        /// Appended after Health rather than slotted beside Priority: the column
+        /// order is what uistate.yml stores widths against, and inserting one in
+        /// the middle would shift every saved width by one.
+        ColCategory,
 
         ColCount
     };
@@ -165,6 +230,10 @@ public:
     void upsertItem(const UsenetItemRow& item);
 
     void removeItem(const QString& id);
+
+    /// Category titles by index, so the Category column can show a name instead
+    /// of a number. Same contract as DownloadListModel's.
+    void setCategoryNames(QStringList names);
     void clear();
 
     [[nodiscard]] bool isFileRow(const QModelIndex& index) const;
@@ -182,7 +251,13 @@ private:
     void applyInto(UsenetItemRow& target, const UsenetItemRow& incoming);
     [[nodiscard]] int rowOf(const QString& id) const;
 
+    /// Where a release stands, as an order rather than a word. The enum above is
+    /// wire order and reads as nonsense in a column; this is the same
+    /// most-finished-first convention DownloadListModel::statusRank uses.
+    [[nodiscard]] static int statusRank(const UsenetItemRow& item);
+
     std::vector<UsenetItemRow> m_items;
+    QStringList m_categoryNames;
 };
 
 } // namespace eMule

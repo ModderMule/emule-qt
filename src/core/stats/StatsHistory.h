@@ -14,6 +14,7 @@
 #include <QObject>
 
 #include <deque>
+#include <functional>
 #include <vector>
 
 namespace eMule {
@@ -44,6 +45,9 @@ struct StatsGraphSample {
     uint32 upActive         = 0;
     uint32 upTotal          = 0;
     uint32 downTransferring = 0;
+
+    // Not in MFC — appended so the MFC order above stays intact. Download scope.
+    float usenetDown = 0.0f;   ///< KB/s, NNTP wire rate
 };
 
 /// One point of the toolbar download/upload graph.
@@ -100,6 +104,11 @@ public:
     /// Drop both histories and restart the sequences (Tools -> Reset statistics).
     void reset();
 
+    /// Where StatsGraphSample::usenetDown comes from, in KB/s. Injected by the
+    /// daemon because core must not know Usenet; cleared ({}) before the engine
+    /// goes away. Unset reads as 0.
+    void setUsenetDownRateSource(std::function<float()> source);
+
 private:
     void takeStatsSample(uint32 nowSecs);
     void takeSpeedSample();
@@ -110,6 +119,7 @@ private:
     uint32 m_speedSeq = 0;
     uint32 m_lastStatsSampleTime = 0;   ///< epoch secs of the last stats sample
     uint32 m_epoch = 0;
+    std::function<float()> m_usenetDownRate;
 };
 
 } // namespace eMule

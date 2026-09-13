@@ -158,7 +158,10 @@ void NntpServerPool::release(NntpSocket* socket, bool reusable)
     if (it == m_connections.end())
         return;
 
-    if (reusable && socket->isReady()) {
+    // retireOnRelease: the server was backed off or reconfigured while this
+    // connection was out. It could not be dropped then without stranding the
+    // article on it, so this is where it goes.
+    if (reusable && socket->isReady() && !it->retireOnRelease) {
         it->inUse = false;
         return;
     }
@@ -184,10 +187,15 @@ void NntpServerPool::blockServer(const QString& serverKey)
     if (m_retryIntervalSec <= 0)
         return;
 
+    // Every sibling article that was in flight on a dead server fails too, and
+    // each one lands here. Say it once per block, not once per article.
+    const bool alreadyBlocked = isServerBlocked(serverKey);
     m_blockedUntil.insert(serverKey, nowSeconds() + m_retryIntervalSec);
-    logWarning(QStringLiteral("Usenet: %1 backed off for %2 s")
-                   .arg(serverKey)
-                   .arg(m_retryIntervalSec));
+    if (!alreadyBlocked) {
+        logWarning(QStringLiteral("Usenet: %1 backed off for %2 s")
+                       .arg(serverKey)
+                       .arg(m_retryIntervalSec));
+    }
 
     // A blocked server's pooled connections are not merely unused, they are
     // suspect — the block exists because one of them failed.
@@ -275,6 +283,18 @@ void NntpServerPool::dropConnections(const QString& serverKey)
     std::erase_if(m_connections, [&serverKey](Lease& lease) {
         if (lease.serverKey != serverKey)
             return false;
+
+        // A leased socket is mid-article. abort() sets Disconnected before it
+        // touches the QTcpSocket, so onSocketDisconnected() raises no failed()
+        // and the article on it would simply never finish: its in-flight slot
+        // stays taken, its item stalls until the next restart, and the job's
+        // pointer to this socket dangles into UsenetWorker::shutdown(). Let the
+        // holder finish and drop the lease in release() instead.
+        if (lease.inUse) {
+            lease.retireOnRelease = true;
+            return false;
+        }
+
         retire(lease);
         return true;
     });

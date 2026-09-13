@@ -124,6 +124,7 @@ private slots:
     void chunkWithoutAnExpiryIsNeverRelayed();
     void relayNeedsNoCacheAccount();
     void relayCanBeTurnedOff();
+    void aDeclinedOfferIsCountedAsOne();
 
 private:
     /// Drive one offer end to end: fetch, then run MD4 by flushing. @p body is what the
@@ -322,6 +323,40 @@ void tst_HttpCacheRelay::relayCanBeTurnedOff()
     QCOMPARE(m_cache->liveEntryCount(), 0);
 }
 
+// An offer we turn down is still an offer. "Offers Received" against
+// "Declined" is what tells a user whose downloads never touch the cache why:
+// nobody offered, or we kept saying no.
+void tst_HttpCacheRelay::aDeclinedOfferIsCountedAsOne()
+{
+    thePrefs.setHttpCacheAllowDownload(false);
+
+    HttpCacheOffer offer;
+    std::memcpy(offer.fileHash.data(), m_file->fileHash(), offer.fileHash.size());
+    offer.partIndex = 0;
+    offer.plainLength = PARTSIZE;
+    offer.cipherLength = PARTSIZE + 16;
+    offer.url = QStringLiteral("http://127.0.0.1:1/chunk");
+    offer.key = aesRandomKey();
+    offer.iv = aesRandomIv();
+    offer.cipherSha256 = QCryptographicHash::hash(QByteArrayLiteral("x"),
+                                                  QCryptographicHash::Sha256);
+    offer.expiresAt = 1800000000;
+    QVERIFY(offer.isWellFormed());
+
+    const auto packet = HttpCacheCodec::buildOffer(offer);
+    QVERIFY(packet != nullptr);
+    m_cache->handlePacket(m_peer.get(),
+                          reinterpret_cast<const uint8*>(packet->pBuffer), packet->size);
+
+    const HttpCacheCounters& c = m_cache->sessionCounters();
+    QCOMPARE(c.offersReceived, uint64(1));
+    QCOMPARE(c.offersDeclined, uint64(1));
+    QCOMPARE(c.chunksFetched, uint64(0));
+    QCOMPARE(c.fetchesFailed, uint64(0));   // nothing was ever fetched
+
+    thePrefs.setHttpCacheAllowDownload(true);
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -356,6 +391,14 @@ void tst_HttpCacheRelay::runOffer(const QByteArray& plaintext, uint32 expiresAt)
 
     QTRY_VERIFY_WITH_TIMEOUT(m_cache->activeFetchCount() == 0, 120'000);
     QCOMPARE(m_cache->sessionChunksFetched(), 1U);
+
+    // What the Statistics window's HTTP Cache › Downloads rows are fed: an offer
+    // taken, not declined, and the plaintext it brought in.
+    const HttpCacheCounters& c = m_cache->sessionCounters();
+    QCOMPARE(c.offersReceived, uint64(1));
+    QCOMPARE(c.offersDeclined, uint64(0));
+    QCOMPARE(c.fetchesFailed, uint64(0));
+    QCOMPARE(c.bytesFetched, uint64(PARTSIZE));
 
     // MD4 does not run until the part file next flushes, which is where the relay
     // decision is taken.

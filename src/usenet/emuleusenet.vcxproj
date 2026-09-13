@@ -167,19 +167,23 @@
     <ClCompile Include="nzb\NzbInfo.cpp" />
     <ClCompile Include="nzb\NzbUrlFetch.cpp" />
     <ClCompile Include="nzb\SubjectParser.cpp" />
+    <ClCompile Include="post\Par2NameIndex.cpp" />
     <ClCompile Include="post\Par2Verifier.cpp" />
     <ClCompile Include="post\UsenetDirectUnpack.cpp" />
     <ClCompile Include="post\UsenetPostProcessor.cpp" />
     <ClCompile Include="post\UsenetUnpacker.cpp" />
     <ClCompile Include="queue\ArticleWriter.cpp" />
     <ClCompile Include="queue\UsenetHealth.cpp" />
+    <ClCompile Include="queue\UsenetHistory.cpp" />
     <ClCompile Include="queue\UsenetQueue.cpp" />
     <ClCompile Include="queue\UsenetQueueItem.cpp" />
     <ClCompile Include="queue\UsenetQueueStore.cpp" />
+    <ClCompile Include="queue\UsenetStatistics.cpp" />
     <ClCompile Include="queue\UsenetUsage.cpp" />
     <ClCompile Include="queue\UsenetWatchFolder.cpp" />
     <ClCompile Include="queue\UsenetWorker.cpp" />
     <ClCompile Include="stream\RarReader.cpp" />
+    <ClCompile Include="stream\UsenetEncryptedPreview.cpp" />
     <ClCompile Include="stream\UsenetStreamIndex.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -191,12 +195,15 @@
     <ClInclude Include="nzb\NzbInfo.h" />
     <ClInclude Include="nzb\NzbUrlFetch.h" />
     <ClInclude Include="nzb\SubjectParser.h" />
+    <ClInclude Include="post\Par2NameIndex.h" />
     <ClInclude Include="post\Par2Verifier.h" />
     <ClInclude Include="post\UsenetUnpacker.h" />
     <ClInclude Include="queue\ArticleWriter.h" />
     <ClInclude Include="queue\UsenetHealth.h" />
+    <ClInclude Include="queue\UsenetHistory.h" />
     <ClInclude Include="queue\UsenetQueueItem.h" />
     <ClInclude Include="queue\UsenetQueueStore.h" />
+    <ClInclude Include="queue\UsenetStatistics.h" />
     <ClInclude Include="queue\UsenetUsage.h" />
     <ClInclude Include="stream\RarReader.h" />
     <ClInclude Include="stream\UsenetStreamIndex.h" />
@@ -209,6 +216,7 @@
     <QtMoc Include="queue\UsenetQueue.h" />
     <QtMoc Include="queue\UsenetWatchFolder.h" />
     <QtMoc Include="queue\UsenetWorker.h" />
+    <QtMoc Include="stream\UsenetEncryptedPreview.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

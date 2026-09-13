@@ -65,6 +65,11 @@ private slots:
     void incomingDirForCategoryFollowsAVanishedFolder();
     void allIncomingDirsDeduplicates();
 
+    void autoCategoryPicksTheHighestMatchingIndex();
+    void autoCategoryUnderstandsWildcardsAndRegexps();
+    void autoCategoryNeverReturnsTheAllCategory();
+    void remapCategoryIndexDropsAVanishedCategory();
+
 private:
     /// A Preferences with the temp dir as its config/incoming/temp roots, so
     /// isShareableDirectory() has something real to judge against.
@@ -295,6 +300,104 @@ void tst_CategoryPrefs::allIncomingDirsDeduplicates()
     QCOMPARE(dirs.size(), 2);
     QCOMPARE(dirs.at(0), m_incoming);
     QCOMPARE(dirs.at(1), QDir::cleanPath(movies));
+}
+
+// ---------------------------------------------------------------------------
+// Auto-categorisation
+//
+// matchAutoCategory() was DownloadQueue::applyAutoCategory()'s inner half until
+// the Usenet queue became its second caller. These pin the answers so the move
+// cannot have changed them -- including the deliberate divergence from MFC's
+// inverted `if (!cmpExt.IsEmpty()) break;`, which makes its non-regexp branch
+// match nothing at all (docs/categories.local.md).
+// ---------------------------------------------------------------------------
+
+void tst_CategoryPrefs::autoCategoryPicksTheHighestMatchingIndex()
+{
+    QList<DownloadCategory> cats{makeCategory(QStringLiteral("All"))};
+
+    DownloadCategory a = makeCategory(QStringLiteral("Linux"));
+    a.autocat = QStringLiteral("ubuntu|debian");
+    cats.append(a);
+
+    DownloadCategory b = makeCategory(QStringLiteral("ISOs"));
+    b.autocat = QStringLiteral("ubuntu");
+    cats.append(b);
+
+    // Both match. The most recently added category wins, as MFC counts down for
+    // the same reason (srchybrid/DownloadQueue.cpp:1246).
+    QCOMPARE(matchAutoCategory(cats, QStringLiteral("ubuntu-24.04.iso")), 2);
+    // Only the first pattern lists debian.
+    QCOMPARE(matchAutoCategory(cats, QStringLiteral("debian-13.iso")), 1);
+    // Case-insensitive, and a plain term is a substring, not an anchor.
+    QCOMPARE(matchAutoCategory(cats, QStringLiteral("Xubuntu Desktop")), 2);
+    QCOMPARE(matchAutoCategory(cats, QStringLiteral("fedora-41.iso")), 0);
+}
+
+void tst_CategoryPrefs::autoCategoryUnderstandsWildcardsAndRegexps()
+{
+    QList<DownloadCategory> cats{makeCategory(QStringLiteral("All"))};
+
+    DownloadCategory wild = makeCategory(QStringLiteral("Video"));
+    wild.autocat = QStringLiteral("*.mkv|*.mp4");
+    cats.append(wild);
+
+    QCOMPARE(matchAutoCategory(cats, QStringLiteral("Some.Release.mkv")), 1);
+    QCOMPARE(matchAutoCategory(cats, QStringLiteral("Some.Release.avi")), 0);
+
+    QList<DownloadCategory> re{makeCategory(QStringLiteral("All"))};
+    DownloadCategory rx = makeCategory(QStringLiteral("Season"));
+    rx.autocat = QStringLiteral("S\\d\\dE\\d\\d");
+    rx.autocatIsRegexp = true;
+    re.append(rx);
+
+    QCOMPARE(matchAutoCategory(re, QStringLiteral("Show.S01E02.1080p")), 1);
+    QCOMPARE(matchAutoCategory(re, QStringLiteral("Show.Special.1080p")), 0);
+
+    // An unparseable expression matches nothing rather than everything. The
+    // permissive failure would auto-file every download into one category.
+    QList<DownloadCategory> bad{makeCategory(QStringLiteral("All"))};
+    DownloadCategory broken = makeCategory(QStringLiteral("Broken"));
+    broken.autocat = QStringLiteral("([unclosed");
+    broken.autocatIsRegexp = true;
+    bad.append(broken);
+    QCOMPARE(matchAutoCategory(bad, QStringLiteral("anything at all")), 0);
+}
+
+void tst_CategoryPrefs::autoCategoryNeverReturnsTheAllCategory()
+{
+    // Index 0 is the implicit "All" and is skipped even when its pattern would
+    // match: returning it would mean "auto-filed into no category", which is
+    // what 0 already means, and MFC's loop stops at 1 for the same reason.
+    QList<DownloadCategory> cats{makeCategory(QStringLiteral("All"))};
+    cats[0].autocat = QStringLiteral("ubuntu");
+    QCOMPARE(matchAutoCategory(cats, QStringLiteral("ubuntu.iso")), 0);
+
+    // And a list with nothing but "All" in it has nothing to match against.
+    QCOMPARE(matchAutoCategory({}, QStringLiteral("ubuntu.iso")), 0);
+    QCOMPARE(matchAutoCategory(cats, QString{}), 0);
+}
+
+
+void tst_CategoryPrefs::remapCategoryIndexDropsAVanishedCategory()
+{
+    // One definition, because four stores need it and they are renumbered in a
+    // single transaction: the ED2K queue, the Usenet queue, the Usenet sidecars
+    // and the feeds. A rule that differed between them would surface only as a
+    // download in the wrong folder.
+    const QHash<uint32, uint32> oldToNew{{2u, 1u}, {3u, 2u}};
+
+    // Index 0 is the implicit "All" and always exists.
+    QCOMPARE(remapCategoryIndex(0, oldToNew), 0);
+    // Absent from the map: the category was deleted. The item keeps its place
+    // and loses only its label — MFC's ResetCatParts answer.
+    QCOMPARE(remapCategoryIndex(1, oldToNew), 0);
+    QCOMPARE(remapCategoryIndex(2, oldToNew), 1);
+    QCOMPARE(remapCategoryIndex(3, oldToNew), 2);
+    // An index nothing ever pointed at is gone too, not passed through.
+    QCOMPARE(remapCategoryIndex(9, oldToNew), 0);
+    // A negative index cannot name a category at all.
+    QCOMPARE(remapCategoryIndex(-1, oldToNew), 0);
 }
 
 QTEST_MAIN(tst_CategoryPrefs)

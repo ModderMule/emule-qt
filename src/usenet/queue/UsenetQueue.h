@@ -12,9 +12,12 @@
 /// The failover rule is the whole of Usenet fault tolerance, and it is one line
 /// of judgement that must not be re-derived anywhere else:
 ///
-///   - `escalatesToNextLevel(error)` — the server does not have the article (430)
-///     — retry at `level + 1`, with that account added to `ignoreServers` so the
-///     escalation never asks it twice.
+///   - `escalatesToNextLevel(error)` — this server cannot supply the article:
+///     it has no copy (430), or the copy it has does not decode
+///     (`ArticleCorrupt`), which it will still not do next time. Retry at
+///     `level + 1`, with that account added to `ignoreServers` so the escalation
+///     never asks it twice. Out of servers means one missing article for PAR2,
+///     never a failed download.
 ///   - anything else is a *connection* fault. Retry the **same** level. The
 ///     worker has already backed the server off; a different account on the same
 ///     rung picks the article up.
@@ -33,20 +36,27 @@
 /// backstop.
 
 #include "nntp/NewsServer.h"
+#include "post/Par2NameIndex.h"
 #include "post/UsenetDirectUnpack.h"
 #include "post/UsenetPostProcessor.h"
 #include "queue/UsenetHealth.h"
+#include "queue/UsenetHistory.h"
 #include "queue/UsenetQueueItem.h"
+#include "queue/UsenetStatistics.h"
 #include "queue/UsenetUsage.h"
 #include "queue/UsenetWorker.h"
+#include "stream/UsenetEncryptedPreview.h"
 #include "stream/UsenetStreamIndex.h"
+#include "utils/Types.h"
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QList>
 #include <QObject>
 #include <QSet>
 #include <QString>
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -66,6 +76,41 @@ struct PostProcessingOptions {
     /// Unpack an archive set as its volumes land, instead of at the end. Only
     /// meaningful when `unpack` is on — it is the same extraction, moved.
     bool directUnpack = true;
+};
+
+/// Byte rate over the last few scheduler ticks.
+///
+/// The ED2K/Usenet split reads this to see what Usenet actually uses. One 250 ms
+/// tick is at the mercy of the token bucket's 100 ms refills and of TLS record
+/// boundaries; a jittery figure would move the split on every tick.
+class TickRateWindow {
+public:
+    static constexpr int kTicks = 8;
+
+    void push(qint64 bytes, qint64 elapsedMs)
+    {
+        m_sumBytes += bytes - m_bytes[m_next];
+        m_sumMs += elapsedMs - m_ms[m_next];
+        m_bytes[m_next] = bytes;
+        m_ms[m_next] = elapsedMs;
+        m_next = (m_next + 1) % kTicks;
+    }
+
+    void clear() { *this = {}; }
+
+    /// Mean over the ticks seen so far, not over a full window, so a queue that
+    /// just started is not under-reported for its first two seconds.
+    [[nodiscard]] qint64 bytesPerSecond() const
+    {
+        return m_sumMs > 0 ? m_sumBytes * 1000 / m_sumMs : 0;
+    }
+
+private:
+    std::array<qint64, kTicks> m_bytes{};
+    std::array<qint64, kTicks> m_ms{};
+    qint64 m_sumBytes = 0;
+    qint64 m_sumMs = 0;
+    int m_next = 0;
 };
 
 class UsenetQueue : public QObject {
@@ -92,16 +137,37 @@ public:
     /// Parse @p data and queue it. Returns the new item id, or an empty string
     /// with @p error set.
     ///
-    /// @p source decides which existing items refuse a re-add. A release that is
-    /// still downloading is refused either way; a *completed* one is refused
-    /// only for an automatic add, because re-downloading something deliberately
-    /// is a thing people do and a thing feeds should not. Same split, and the
-    /// same reasoning, as Ed2kLinkImporter::Source.
-    /// @p outcome, when given, says *why* — which is what lets an automatic
-    /// caller stop retrying something it already has.
+    /// @p options is every choice an intake path may make -- see
+    /// UsenetAddOptions, where each field carries its own contract. They are one
+    /// struct rather than five trailing arguments because designated
+    /// initialisers let a caller name only what it means, the way
+    /// setPostProcessingOptions() already does.
+    /// @p outcome, when given, says *why* -- which is what lets an automatic
+    /// caller stop retrying something it already has. It stays a parameter
+    /// because it is an answer, not a choice.
+    ///
+    /// Four things are enforced *here* rather than at each intake path, so every
+    /// present and future caller inherits them by construction: the duplicate
+    /// guard, `usenetAutoAddPaused`, auto-categorisation when nobody picked a
+    /// category, and the priority clamp.
+    ///
+    /// Password precedence: a **manual** add wins outright, because a person
+    /// typed it. Otherwise the NZB is authoritative -- `<meta type="password">`
+    /// first, then the `{{password}}` convention in the name, then this. A feed
+    /// guessing over a release's own metadata is how a working download stops
+    /// working.
     QString addNzb(const QByteArray& data, const QString& name, QString& error,
-                   UsenetAddSource source = UsenetAddSource::Manual,
+                   const UsenetAddOptions& options = {},
                    UsenetAddOutcome* outcome = nullptr);
+
+    /// What we already know about a release called @p title, using the same
+    /// numbering as SearchFile::KnownType so one colour helper serves both search
+    /// models: 0 unknown, 2 in the queue now, 3 downloaded, 4 cancelled.
+    ///
+    /// A folded-name match, because an indexer row carries no message-ids. Only
+    /// ever used to mark a row and raise a question — what an add actually does
+    /// is still decided by the article digest.
+    [[nodiscard]] int knownTypeForTitle(const QString& title) const;
 
     /// Re-run the availability probe for @p id. A release queued a week ago is a
     /// different question from the one answered when it was added.
@@ -115,6 +181,45 @@ public:
     bool pauseItem(const QString& id);
     bool resumeItem(const QString& id);
     bool setItemPriority(const QString& id, int priority);
+
+    /// Ask again for every article this item gave up on, and resume it.
+    ///
+    /// "Missing" means *no server I had, when I asked* -- a verdict about the
+    /// accounts configured at the time, which the user may since have added to.
+    /// Nothing else in the module clears a `done` bit; this is what makes that
+    /// verdict revocable, and the only actor allowed to revoke it is the user.
+    ///
+    /// Returns false, changing nothing, when the item is unknown, is not Failed,
+    /// is post-processing, has no recorded holes, or was persisted before the
+    /// `missing` map existed -- that last one is a refusal rather than a guess,
+    /// because the count alone cannot say *which* articles they were.
+    ///
+    /// Articles that are genuinely gone stay gone: this re-asks, it does not
+    /// repair. What comes back is kept, so a later retry starts from the smaller
+    /// hole set.
+    bool retryMissingArticles(const QString& id);
+
+    /// Move @p id into category @p category, or out of one with 0.
+    bool setItemCategory(const QString& id, int category);
+
+    /// Renumber every item's category after the list was reordered or trimmed.
+    ///
+    /// Mirrors `DownloadQueue::remapCategories()`, including its fallback: an
+    /// index absent from the map means the category is gone, and the item keeps
+    /// its place and loses only its label. `UsenetQueueStore::remapCategories()`
+    /// is the same job for the items this queue is not holding because it is not
+    /// running -- and between them they are why deleting a category cannot file a
+    /// finished release into a stranger's folder.
+    void remapCategories(const QHash<uint32, uint32>& oldToNew);
+
+    /// Set the archive passphrase for @p id, and retry if it had already failed.
+    ///
+    /// The retry is the point. A release that failed to unpack still has every
+    /// byte of itself in its work directory, so supplying the password is one
+    /// resumeItem() away from a finished download — and asking the user to
+    /// press Resume separately, after they just answered the only question that
+    /// was blocking it, is a step with no decision in it.
+    bool setItemPassword(const QString& id, const QString& password);
 
     [[nodiscard]] QList<const UsenetQueueItem*> items() const;
     [[nodiscard]] const UsenetQueueItem* findItem(const QString& id) const;
@@ -237,9 +342,10 @@ public:
     /// snapshot across the thread boundary.
     void setPostProcessingOptions(const PostProcessingOptions& options);
 
-    /// Decoded bytes per second, measured over the last tick. Feeds the
-    /// ED2K/Usenet budget split.
-    [[nodiscard]] qint64 currentRate() const { return m_currentRate; }
+    /// NNTP wire bytes per second, averaged over the last TickRateWindow::kTicks
+    /// ticks (2 s). Feeds the ED2K/Usenet budget split, its only consumer. Wire,
+    /// not decoded: it is what the line carries and what the rate limit charges.
+    [[nodiscard]] qint64 currentRate() const { return m_rateWindow.bytesPerSecond(); }
 
     /// Whether anything is actually downloading, i.e. whether Usenet needs a
     /// share of the budget at all. An item parked on a spent allowance does not
@@ -249,6 +355,15 @@ public:
 
     /// Per-account byte meters. Read for the IPC report; written only here.
     [[nodiscard]] const UsenetUsageTracker& usage() const { return m_usage; }
+
+    /// The Statistics window's judgement on engine events, and the per-account
+    /// session figures. Non-const for the intake call sites, which live outside.
+    [[nodiscard]] UsenetStatistics& stats() { return m_stats; }
+    [[nodiscard]] const UsenetStatistics& stats() const { return m_stats; }
+
+    /// Articles in flight across every worker right now — probes and jobs still
+    /// waiting on a handshake included, so an upper bound on busy connections.
+    [[nodiscard]] int activeFetches() const;
 
     /// Whether @p s has spent its allowance. Grouped accounts share one meter:
     /// `group` already means "one provider reached two ways", so the plan behind
@@ -303,6 +418,12 @@ private:
         /// than per attempt, because successive retries reach different accounts
         /// and one required failure anywhere has to keep the failing outcome.
         bool requiredFailure = false;
+
+        /// How many times storing this segment failed locally. Kept apart from
+        /// transportRetries because the two mean opposite things: one is a
+        /// statement about a server and escalates the ladder, this one is about
+        /// this machine and must never reach a server's record.
+        int writeFailures = 0;
     };
 
     /// One archive set being extracted while the item still downloads.
@@ -329,6 +450,40 @@ private:
         int promotedVolume = -1;
     };
 
+    /// Previewing an encrypted set by re-running the external unpacker.
+    ///
+    /// The state that outlives a run is what matters here. A run always starts
+    /// at byte 0 and dies at the first volume that has not landed, so `bytes` is
+    /// a high-water mark rather than a progress figure, and `member` is chosen
+    /// once and kept — re-listing the archive every twenty seconds would spawn
+    /// the tool for an answer that cannot change.
+    struct EncryptedPreviewRun {
+        UsenetEncryptedPreview* worker = nullptr;   ///< lives on `thread`
+        QThread* thread = nullptr;
+        bool running = false;
+
+        QString setKey;      ///< the volume set this belongs to
+        QString member;      ///< chosen once, on the worker's thread
+        QString path;        ///< the visible prefix; never truncated in place
+        qint64 memberSize = 0;
+        qint64 bytes = 0;    ///< high-water mark, only ever raised
+
+        /// Volumes contiguously sealed when the last run was scheduled. A
+        /// re-run with the same number of volumes would decrypt the same bytes
+        /// again for nothing.
+        int volumesAtLastRun = 0;
+        qint64 lastRunMs = 0;
+
+        /// Nothing here can ever be previewed — no tool, or an archive that
+        /// listed cleanly with nothing playable in it. The one state that
+        /// becomes a refusal; everything else is a wait.
+        bool refused = false;
+
+        /// Somebody asked for this member while a run was already going. The
+        /// run cannot be extended, so the next one starts as soon as it lands.
+        bool rerunWanted = false;
+    };
+
     struct ItemRuntime {
         std::unique_ptr<UsenetQueueItem> item;
         QHash<quint64, SegmentAttempt> attempts;
@@ -348,6 +503,11 @@ private:
         /// this item, and no second job may start, until it comes back.
         bool postRunning = false;
 
+        /// The stage the running job last reported, and since when — the
+        /// statistics' time per stage. Runtime only.
+        PostStage postStage = PostStage::Idle;
+        QElapsedTimer postStageClock;
+
         /// Every account that could still serve this item's next article has
         /// spent its allowance. The item leaves the dispatch order until a
         /// rollover, a usage edit or a config change can change the answer —
@@ -355,6 +515,28 @@ private:
         /// and onTick() rebuilds the whole plan four times a second until the
         /// billing day. Runtime only.
         bool quotaParked = false;
+
+        /// A retry of the articles a previous attempt could not find anywhere.
+        ///
+        /// It is a transaction because two things have to happen when the last
+        /// re-armed article resolves rather than as each one does: every file it
+        /// touched has to be padded back to `declaredSize` (a file whose opening
+        /// article was missing was never padded at all, and one whose trailing
+        /// article is still missing would otherwise stay short), and the stream
+        /// index has to be dropped once, because a re-fetched article can turn a
+        /// region it already scanned as zeros into a real volume header.
+        ///
+        /// `armed` and `landed` outlive the run, so a second failure can say
+        /// what the retry achieved instead of repeating the first failure.
+        /// Runtime only: a retry does not survive a restart, and half of one
+        /// restored from disk would be worse than none.
+        struct Refetch {
+            int armed = 0;
+            int outstanding = 0;
+            int landed = 0;
+            QSet<int> files;
+        };
+        Refetch refetch;
 
         // -- Availability probe -------------------------------------------
         //
@@ -400,6 +582,17 @@ private:
         /// persisted: a crash must not leave an item boosted forever.
         qint64 streamingUntilMs = 0;
 
+        // -- Names from the PAR2 set ---------------------------------------
+        //
+        // Runtime only, and deliberately: it re-derives exactly from the index
+        // .par2 still sitting in the work directory, and a stored copy would
+        // only be a second thing that can disagree with the first — the call
+        // articleDigest already makes for itself. The *names* it produces are
+        // persisted; the list is not.
+        enum class Par2NamesState { Unread, Loaded, Unavailable };
+        Par2NamesState par2NamesState = Par2NamesState::Unread;
+        Par2NameIndex par2Names;
+
         /// Maps reads of the logical file onto the volumes holding it. Runtime
         /// only: every input is on disk or one article away, so rebuilding it
         /// after a restart is cheaper than keeping it honest across one.
@@ -419,6 +612,10 @@ private:
         /// a fresh run is still below this mark the answer is "wait", not a
         /// shorter file.
         QHash<QString, qint64> streamHighWater;
+
+        /// The re-run that previews a password-protected set. At most one per
+        /// item, because every refresh re-decrypts the whole prefix.
+        EncryptedPreviewRun encryptedPreview;
     };
 
     void startWorkers();
@@ -427,7 +624,11 @@ private:
     void stopPostProcessor();
     void rebuildPlan(ItemRuntime& rt);
     void dispatch();
-    void onSegmentFinished(const UsenetFetchResult& result);
+    /// @param current false for a result from a worker stopWorkers() already
+    ///        tore down (engine stop, settings save). Its slot and in-flight
+    ///        markers were reset there and may belong to its replacement now,
+    ///        so such a result may be counted but must not be *booked*.
+    void onSegmentFinished(const UsenetFetchResult& result, bool current);
     void onCapacityChanged(int workerIndex, int capacity);
     void onTick();
 
@@ -451,6 +652,59 @@ private:
     /// mark it done. It does **not** publish — that is post-processing's last
     /// step now.
     void sealFile(ItemRuntime& rt, int fileIndex);
+
+    /// Grow @p st's file to `declaredSize` so a hole reads as zeros rather than
+    /// as a short file. Shared by sealFile() and the end of a retry, because a
+    /// hole at the *end* of a file leaves nothing to grow it afterwards and PAR2
+    /// then sees every later block at the wrong offset.
+    void padToDeclaredSize(const UsenetFileState& st);
+
+    /// Book a re-armed segment as resolved. At the last one, pad what the retry
+    /// touched and drop the stream index once.
+    void noteRefetchResolved(ItemRuntime& rt, int fileIndex, int segmentIndex, bool landed);
+
+    /// Re-arm @p fileIndex's missing segments, or say why it could not be.
+    ///
+    /// The file has to still be identifiable on disk: post-processing renames
+    /// (par2's rename pass repairs as a side effect), repairs and deletes files
+    /// without writing the new name back into `tempPath`, and ArticleWriter
+    /// *creates* whatever it cannot open — so a re-arm against a stale path
+    /// would quietly build a fresh sparse file holding one article, which the
+    /// unpack and share scans would then find. Rescue by the PAR2/yEnc name
+    /// first; refuse the file if even that is gone.
+    bool rearmMissingSegments(ItemRuntime& rt, int fileIndex);
+
+    /// Re-measure the scratch volume, at most every kDiskCheckIntervalMs unless
+    /// @p force. Parks or unparks the queue, with one log line per edge.
+    void refreshDiskState(bool force = false);
+
+    /// Whether @p dir has room to receive a release, for the publish gate.
+    /// Unknown reads as "no" for the same reason it does at dispatch: a volume
+    /// nobody can measure is not one to copy gigabytes onto.
+    [[nodiscard]] bool volumeHasRoom(const QString& dir) const;
+
+    /// A digest of the accounts that could have served this item, as they were
+    /// when it failed. What makes Resume able to tell "the user changed
+    /// something" from "the user pressed the same button twice".
+    [[nodiscard]] QString serverLadderDigest() const;
+
+    /// Read the recovery set's file list out of the index .par2, once.
+    ///
+    /// Runs when that file has sealed, and again on the restart path where it
+    /// sealed in an earlier session and no segment event is coming. Sets the
+    /// state either way: a read that failed must not be retried once per
+    /// article.
+    void learnPar2Names(ItemRuntime& rt);
+
+    /// Give @p fileIndex the name the PAR2 set has for it, if its first 16 KiB
+    /// are readable and the match is unambiguous.
+    ///
+    /// ⚠️ Only for a file that has **not** been sealed. Naming a sealed one
+    /// would leave the GUI, the streaming index and the unpacker's directory
+    /// scan disagreeing about it; renaming it on disk instead would strand any
+    /// direct-unpack run keyed on its old base name. When it happens anyway,
+    /// post-processing's rename pass is the answer, exactly as before.
+    void resolvePar2Name(ItemRuntime& rt, int fileIndex);
 
     void checkItemCompletion(ItemRuntime& rt);
 
@@ -506,6 +760,45 @@ private:
     /// preview of a set being unpacked pulls its own next bytes.
     void promoteExtractionVolume(ItemRuntime& rt, int fileIndex);
 
+    /// Serve @p info from a re-run of the external unpacker over the volumes
+    /// that have landed. The last byte source, for the one case the other two
+    /// cannot touch: a password-protected set.
+    ///
+    /// False means "not this way" and lets the caller refuse; true with no
+    /// pieces means "wait". Only RAR ever gets a true — a partial 7z set
+    /// decodes to nothing at all, its metadata living at the end of the set.
+    [[nodiscard]] bool streamFromEncryptedPreview(ItemRuntime& rt, int fileIndex,
+                                                  StreamInfo& info);
+
+    /// Start a preview re-run for @p baseName if one is worth starting: not
+    /// already running, new volumes since the last one, and past the interval.
+    void maybeStartEncryptedPreview(ItemRuntime& rt, const QString& baseName);
+
+    /// Ask the scheduler for the next volumes of @p fileIndex's set.
+    ///
+    /// Not promoteExtractionVolume(), which asks the *run* what it is waiting
+    /// on: an external tool is handed a fixed list and waits for nothing, so
+    /// that would promote volume one forever. What unblocks the next re-run is
+    /// simply the next volume that has not sealed.
+    void promoteEncryptedPreviewVolumes(ItemRuntime& rt, int fileIndex);
+
+    /// Contiguously sealed volumes of @p baseName, in volume order, starting at
+    /// volume one. Stops at the first gap: a preallocated file that has not
+    /// sealed reads as zeros, not as a short file, so handing one to the tool
+    /// produces a prefix that is quietly wrong rather than quietly short.
+    [[nodiscard]] QStringList sealedVolumesOf(const ItemRuntime& rt,
+                                              const QString& baseName) const;
+
+    /// Whether @p baseName's set is a RAR. 7z cannot be previewed this way at
+    /// all, and saying so up front beats spawning a tool to be told.
+    [[nodiscard]] bool setIsRar(const ItemRuntime& rt, const QString& baseName) const;
+
+    void onEncryptedPreviewFinished(
+        const eMule::usenet::UsenetEncryptedPreviewResult& result);
+
+    /// Stop the run and join its thread. Same call sites as cancelDirectUnpack().
+    void cancelEncryptedPreview(ItemRuntime& rt);
+
     /// Let the extraction overrule a member the map refused: playable once
     /// there are bytes, and saying so in the meantime.
     void annotateFromExtraction(ItemRuntime& rt, int fileIndex, int entryOrdinal,
@@ -530,6 +823,20 @@ private:
     /// a recovery volume nobody has asked for.
     [[nodiscard]] static bool isPlanned(const ItemRuntime& rt, int fileIndex);
 
+    /// Whether this release can name itself at all.
+    ///
+    /// True when no payload file has a name that is either an archive volume or
+    /// a playable media name — a fully obfuscated post, where even
+    /// `=ybegin name=` is scrambled and the PAR2 index is the only thing that
+    /// knows what anything is called.
+    ///
+    /// Crude on purpose, because the cost of being wrong is asymmetric: a false
+    /// positive fetches a few hundred KB of .par2 ahead of the payload and
+    /// delays the first playable byte by about one article, while a false
+    /// negative is exactly today's behaviour. Evaluated from bestFileName(), so
+    /// it sharpens as article names land.
+    [[nodiscard]] static bool looksObfuscated(const UsenetQueueItem& item);
+
     void beginPostProcessing(ItemRuntime& rt);
     void onPostStage(const QString& itemId, int stage, int percent, const QString& detail);
     void onPostFinished(const eMule::usenet::UsenetPostResult& result);
@@ -542,6 +849,14 @@ private:
     void publishStaged(ItemRuntime& rt, const eMule::usenet::UsenetPostResult& result);
 
     void failItem(ItemRuntime& rt, const QString& message);
+
+    /// The one place a terminal outcome is announced, so statistics count each
+    /// release exactly once however it ended.
+    void finishItem(ItemRuntime& rt, bool success, const QString& message);
+
+    /// Book the time since the last stage report against that stage.
+    void closePostStage(ItemRuntime& rt);
+
     void persist(ItemRuntime& rt);
 
     [[nodiscard]] ItemRuntime* runtimeFor(const QString& id);
@@ -598,16 +913,29 @@ private:
     [[nodiscard]] qint64 probeWeight(const ItemRuntime& rt, int fileIndex,
                                      int segIndex) const;
 
-    /// The queued item @p nzb would duplicate, or null. @p why is filled with a
-    /// sentence for the user when one is returned.
+    /// What already exists for @p nzb, and which kind of "already" it is.
+    ///
+    ///   - `Duplicate` — in the queue and still on its way. @p force never
+    ///     reaches this check, so nothing can override it.
+    ///   - `AlreadyDownloaded` — finished, or in the history. @p force suppresses
+    ///     exactly this verdict. Whether it is a refusal or a question is the
+    ///     caller's business, which is why UsenetAddSource is not consulted here
+    ///     any more: a feed treats it as terminal, a person is asked.
+    ///   - `Added` — nothing matched.
+    ///
+    /// Finished-and-still-listed and finished-and-cleared deliberately give the
+    /// same answer. They used to differ, which made the behaviour depend on
+    /// whether the user happened to have pressed Clear.
+    ///
+    /// @p why is filled with a sentence when the answer is not Added.
     ///
     /// ⚠️ The sentence must not contain " — ": AddNzbUrlDialog formats a failed
     /// line as "<url> — <reason>" and recovers the URL with section(" — ", 0, 0),
     /// so an em-dash-space inside the reason silently corrupts its retry list.
-    [[nodiscard]] const UsenetQueueItem* findDuplicate(const NzbInfo& nzb,
-                                                       const QString& name,
-                                                       UsenetAddSource source,
-                                                       QString& why) const;
+    [[nodiscard]] UsenetAddOutcome findDuplicate(const NzbInfo& nzb,
+                                                 const QString& name,
+                                                 bool force,
+                                                 QString& why) const;
 
     [[nodiscard]] int lowestUntriedRung(const QStringList& tried, qint64 date, int floorRung,
                                         bool respectRetention, bool respectQuota) const;
@@ -673,6 +1001,12 @@ private:
     QList<int> m_workerCapacity;
     QList<int> m_workerInFlight;
 
+    /// Which set of workers the per-slot lists above describe. Bumped by
+    /// stopWorkers(), captured by each worker's connections, and compared on
+    /// every result: the slots are reused by index, so without it a result from
+    /// a torn-down worker books itself against its replacement.
+    quint32 m_workerGeneration = 0;
+
     QList<NewsServer> m_servers;
     int m_retryIntervalSec = 60;
 
@@ -702,6 +1036,11 @@ private:
 
     /// Per-account byte meters, and the sidecar behind them.
     UsenetUsageTracker m_usage;
+
+    UsenetStatistics m_stats;
+    /// Releases that have left the queue. Loads itself lazily, so an add reaching
+    /// a queue that was never started still gets a truthful answer.
+    mutable UsenetHistory m_history;
 
     /// Keys of accounts that have spent their allowance. Recomputed per dispatch
     /// round and **never** written into SegmentAttempt::tried, so a rollover or
@@ -735,14 +1074,40 @@ private:
     int m_directUnpackRuns = 0;
     static constexpr int kMaxDirectUnpacks = 2;
 
+    /// Encrypted-preview re-runs in flight. One, deliberately: a run decrypts
+    /// the whole prefix from volume one every time, so two of them is two full
+    /// releases of CPU spent on a picture nobody is looking at yet.
+    int m_encryptedPreviewRuns = 0;
+    static constexpr int kMaxEncryptedPreviews = 1;
+
+    /// Never re-run more often than this. The floor is a guess, but the shape is
+    /// not: the cost of a run grows with the prefix, so a fixed interval spends
+    /// a steadily larger fraction of a core as the download goes on.
+    static constexpr qint64 kEncryptedPreviewRerunMs = 20'000;
+
     QTimer* m_tickTimer = nullptr;
     qint64 m_rateLimit = 0;
-    qint64 m_currentRate = 0;
-    qint64 m_bytesThisTick = 0;
+    TickRateWindow m_rateWindow;
+    qint64 m_lastWireBytes = 0;     ///< NntpSocket::totalWireBytesRead() at the last tick
 
     /// Set when a dispatch round found every server blocked or busy. Cleared on
     /// the next tick, which is what turns a spin into a 250 ms retry.
     bool m_starved = false;
+
+    /// The scratch volume is below the floor the user set, so nothing new is
+    /// started until it is not.
+    ///
+    /// Global rather than per item, unlike quotaParked: an allowance is a fact
+    /// about an account and differs per article, while free space is one fact
+    /// about one volume that every item shares. The *reason* is still written on
+    /// each item, because that is where the user reads it.
+    ///
+    /// This is a filter, and the module's rule for filters is that they may
+    /// never become verdicts: it stops the queue asking, it can never make an
+    /// article missing. Runtime only — a restart re-measures.
+    bool m_diskBlocked = false;
+    bool m_diskStallLogged = false;
+    QElapsedTimer m_diskCheckClock;
 
     bool m_running = false;
 };

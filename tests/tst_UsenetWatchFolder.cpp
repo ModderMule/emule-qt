@@ -8,6 +8,7 @@
 /// declared invalid and filed into `_failed/` looks exactly like a corrupt
 /// download, and the user's .nzb is gone from where they put it.
 
+#include "TestFixtures.h"
 #include "UsenetPostingHarness.h"
 
 #include "queue/UsenetQueue.h"
@@ -134,6 +135,7 @@ void tst_UsenetWatchFolder::aFileStillBeingWrittenIsNotReadUntilItSettles()
 
 void tst_UsenetWatchFolder::anAddedNzbIsMovedToProcessed()
 {
+    ScopedStatistics stats;
     TempDir tmp;
     const QString watch = setUpPrefs(tmp);
     thePrefs.setUsenetWatchDir(watch);
@@ -151,10 +153,12 @@ void tst_UsenetWatchFolder::anAddedNzbIsMovedToProcessed()
              QStringList{QStringLiteral("good.nzb")});
     // Moved, not deleted: a user should be able to see what became of it.
     QVERIFY(!QFile::exists(QDir(watch).filePath(QStringLiteral("good.nzb"))));
+    QCOMPARE(stats->usenetSession().nzbFromWatch, uint64(1));
 }
 
 void tst_UsenetWatchFolder::anUnparseableNzbIsMovedToFailed()
 {
+    ScopedStatistics stats;
     TempDir tmp;
     const QString watch = setUpPrefs(tmp);
     thePrefs.setUsenetWatchDir(watch);
@@ -170,10 +174,13 @@ void tst_UsenetWatchFolder::anUnparseableNzbIsMovedToFailed()
     QCOMPARE(queue.items().size(), 0);
     QCOMPARE(QDir(failedDir(watch)).entryList(QDir::Files),
              QStringList{QStringLiteral("junk.nzb")});
+    QCOMPARE(stats->usenetSession().nzbInvalid, uint64(1));
+    QCOMPARE(stats->usenetSession().nzbFromWatch, uint64(0));
 }
 
 void tst_UsenetWatchFolder::aDuplicateIsProcessedNotFailed()
 {
+    ScopedStatistics stats;
     TempDir tmp;
     const QString watch = setUpPrefs(tmp);
     thePrefs.setUsenetWatchDir(watch);
@@ -197,6 +204,7 @@ void tst_UsenetWatchFolder::aDuplicateIsProcessedNotFailed()
     QCOMPARE(QDir(processedDir(watch)).entryList(QDir::Files),
              QStringList{QStringLiteral("again.nzb")});
     QVERIFY(QDir(failedDir(watch)).entryList(QDir::Files).isEmpty());
+    QCOMPARE(stats->usenetSession().nzbDuplicate, uint64(1));
 }
 
 void tst_UsenetWatchFolder::filesPresentAtStartupAreAdded()

@@ -40,9 +40,34 @@ QString nzbArticleDigest(const NzbInfo& nzb)
     return QString::fromLatin1(hash.result().toHex());
 }
 
+QString usenetFoldedReleaseName(const QString& name)
+{
+    QString folded = name.trimmed();
+    if (folded.endsWith(QLatin1String(".nzb"), Qt::CaseInsensitive))
+        folded.chop(4);
+
+    QString out;
+    out.reserve(folded.size());
+    bool pendingSeparator = false;
+    for (const QChar ch : folded) {
+        if (ch.isSpace() || ch == QLatin1Char('.') || ch == QLatin1Char('_')
+            || ch == QLatin1Char('-'))
+        {
+            pendingSeparator = !out.isEmpty();
+            continue;
+        }
+        if (pendingSeparator) {
+            out += QLatin1Char(' ');
+            pendingSeparator = false;
+        }
+        out += ch;
+    }
+    return out.toCaseFolded();
+}
+
 QString nzbReleaseKey(const QString& name, qint64 totalEncodedBytes)
 {
-    const QString folded = name.trimmed().toCaseFolded();
+    const QString folded = usenetFoldedReleaseName(name);
     if (folded.isEmpty())
         return {};
     return folded + QLatin1Char('|') + QString::number(totalEncodedBytes);

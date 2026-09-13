@@ -286,6 +286,21 @@ private:
     /// of them: a `!1/` path may not escape into the global folder either.
     [[nodiscard]] QString resolveIncomingPath(const QString& relPath) const;
 
+    /// Absolute path to the static asset named @p fileName, or empty if there is
+    /// none that may be served.
+    ///
+    /// Two roots, tried in order: the directory of a custom templatePath, then the
+    /// seeded config/webserver/. Per file, not per theme — a theme that overrides
+    /// only sprites.css still gets the shipped PNGs. With no custom template there
+    /// is one root and the behaviour is what it always was.
+    ///
+    /// Guarded like resolveIncomingPath(): canonicalise, then require containment,
+    /// which is also what stops a symlink in a theme directory from reading outside
+    /// it. Flatter than that one because an asset is always a single path segment —
+    /// the /<arg> route captures [^/]+ — so a separator is malformed, not merely
+    /// suspicious.
+    [[nodiscard]] QString resolveWebAsset(const QString& fileName) const;
+
     /// The listing page, and the one-element player page, as standalone HTML.
     /// Self-contained by necessity: with the web UI off there is no stylesheet,
     /// no sprite sheet and no template to lean on.
@@ -293,6 +308,7 @@ private:
     /// rules, so the incoming pages can draw exactly the marks the rest of the UI
     /// draws. The sheet is 410 bytes and is seeded to config/webserver/ whether or
     /// not the web UI is enabled, unlike the static route that normally serves it.
+    /// Resolved through resolveWebAsset(), so a custom template may override it.
     /// Empty when it cannot be read; callers fall back to the CSS-drawn mark.
     [[nodiscard]] QString ratingSpriteCss() const;
 
@@ -363,7 +379,8 @@ private:
     // Template engine & session manager
     std::unique_ptr<class WebTemplateEngine> m_templateEngine;
     std::unique_ptr<class WebSessionManager> m_sessionManager;
-    QString m_webDataDir;  // path to config/webserver/ assets
+    QString m_webDataDir;            // config/webserver/ — the seeded assets
+    QString m_webAssetOverrideDir;   // dir holding a custom template, empty when none
 
     /// ratingSpriteCss(), built once. Empty string means "read and failed"; unset
     /// means "not looked yet", so a missing sheet is not re-read on every request.

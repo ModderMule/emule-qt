@@ -145,7 +145,7 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         // Data rate
         const auto datarate = static_cast<uint64>(num(d, QLatin1StringView("datarate")));
         if (datarate > 0)
-            addDetailRow(form, tr("Download Rate"), formatByteSize(datarate) + QStringLiteral("/s"));
+            addDetailRow(form, tr("Download Rate"), formatByteRate(datarate));
         else
             addDetailRow(form, tr("Download Rate"), QStringLiteral("\u2014"));
 

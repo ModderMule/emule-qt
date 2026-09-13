@@ -8,7 +8,9 @@
 #include "IndexerClient.h"
 #include "IndexerQuery.h"
 
+#include "app/AppContext.h"
 #include "prefs/Preferences.h"
+#include "stats/Statistics.h"
 #include "utils/Log.h"
 
 #include <QPointer>
@@ -300,6 +302,8 @@ void IndexerFeedList::beginActing(Entry& entry)
 {
     entry.state.lastPolled = QDateTime::currentDateTimeUtc();
     entry.matched = 0;
+    if (theApp.statistics)
+        ++theApp.statistics->indexerSession().feedPolls;
 
     const CompiledFeedFilter filter = compileFeedFilter(entry.feed);
 
@@ -350,6 +354,10 @@ void IndexerFeedList::beginActing(Entry& entry)
         if (!feedAccepts(entry.feed, filter, row))
             continue;
 
+        // A match the first time only: a failed grab keeps its seen entry and
+        // comes back through here on every poll until it is terminal.
+        if (known == nullptr && theApp.statistics)
+            ++theApp.statistics->indexerSession().feedMatches;
         entry.pendingGrabs.append(row);
     }
 
@@ -440,7 +448,10 @@ void IndexerFeedList::deliver(Entry& entry, const IndexerResult& row, const QByt
     }
 
     QString addError;
-    const FeedAddOutcome outcome = m_sink({entry.feed.name, row.title, payload}, addError);
+    const FeedAddOutcome outcome =
+        m_sink({entry.feed.name, row.title, payload, row.password,
+                entry.feed.downloadCategory},
+               addError);
 
     switch (outcome) {
     case FeedAddOutcome::Added:

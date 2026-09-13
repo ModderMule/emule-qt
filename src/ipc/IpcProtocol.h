@@ -71,6 +71,10 @@ enum class IpcMsgType : int {
     RemoveFriend         = 172,  ///< [hash]
     SendChatMessage      = 173,  ///< [hash: string, message: string]
     SetFriendSlot        = 174,  ///< [hash: string, enabled: bool]
+    /// {...StatsSnapshot, streamToken, maxDownloadKb, usenetLimitKb, ed2kBudgetKb}.
+    /// The last three are the live download split, effective caps in KB/s with
+    /// every sentinel resolved: 0 only when maxDownloadKb is 0 (unlimited), and a
+    /// cap below maxDownloadKb means the other engine is busy.
     GetStats             = 180,
     GetPreferences       = 190,
     SetPreferences       = 191,  ///< [key, value, ...]
@@ -251,10 +255,15 @@ enum class IpcMsgType : int {
     StopIndexerSearch       = 705,
     /// [searchId: int] -> [ok]
     RemoveIndexerSearch     = 706,
-    /// [searchId: int, resultId: string] -> [ok, itemIdOrError]
+    /// [searchId: int, resultId: string, force: bool, category: int,
+    ///  priority: int, paused: bool] -> [ok, itemIdOrError]
     /// The daemon fetches the .nzb itself and hands it to the Usenet queue. The
     /// download URL carries the API key, so it never travels to the GUI and the
     /// GUI never issues the request.
+    ///
+    /// Fields 3-5 are AddNzb's, and absent read the same way: 0 means "nobody
+    /// chose a category", so a grab with no opinion still gets
+    /// auto-categorisation.
     GrabIndexerResult       = 707,
 
     /// [] -> [[{name, kind, enabled, query, categories, indexers, url, hasUrl,
@@ -326,10 +335,30 @@ enum class IpcMsgType : int {
     /// another machine, and a path that resolves on one would silently open the
     /// wrong file — or nothing — on the other.
     ///
-    /// `automatic` decides which existing items refuse a re-add: a release still
-    /// downloading is refused either way, a *completed* one only for an automatic
-    /// add. Absent reads as false, which is what every GUI caller is — the field
-    /// exists for the watch folder and for feeds.
+    /// `automatic` decides how the caller treats an "already downloaded" answer,
+    /// and whether autoAddPaused applies. Absent reads as false, which is what
+    /// every GUI caller is — the field exists for the watch folder and for feeds.
+    ///
+    /// Field 3 `force` re-sends an add the user was asked about and said yes to.
+    /// It suppresses the "already downloaded" refusal and nothing else: a release
+    /// still arriving is refused whatever this says. Same probe-ask-resend shape
+    /// as ProbeHttpCacheServer followed by ApplyHttpCacheConfig, and it keeps no
+    /// daemon-side state between the two.
+    ///
+    /// The reply's field 2 is a UsenetAddOutcome int. Without it a caller has to
+    /// tell "we already have this" from "that broke" by reading the sentence,
+    /// which stops working the first time one is reworded or translated.
+    ///
+    /// Field 4 `password` is an archive passphrase the user typed in the Add NZB
+    /// dialog. A manual add's password wins over the NZB's own
+    /// `<meta type="password">`, because a person typed it; see
+    /// UsenetQueue::addNzb() for the full precedence.
+    ///
+    /// Fields 5-7 are what the Add NZB dialog now asks for: `category` (an index
+    /// into the category list, 0 meaning "nobody chose", which is what lets
+    /// auto-categorisation run), `priority` (-2..+2, clamped by the daemon) and
+    /// `paused`. All three absent read as 0/0/false, which is exactly what every
+    /// older GUI sends and exactly what this did before they existed.
     AddNzb                  = 724,
     /// [id: string, deleteFiles: bool] -> [ok]
     RemoveUsenetItem        = 725,
@@ -374,7 +403,9 @@ enum class IpcMsgType : int {
     /// link costs its own line and nothing more, and no reply waits out another
     /// URL's timeout.
     ///
-    /// Field 1 is the same `automatic` bit AddNzb takes.
+    /// Field 1 is the same `automatic` bit AddNzb takes, field 2 the same `force`,
+    /// field 3 the same `password`, fields 4-6 the same `category`, `priority`
+    /// and `paused`, and the reply carries the same outcome int.
     AddNzbUrl               = 730,
 
     /// [accountId: string, periodBytes: int64, totalBytes: int64] -> [ok, error]
@@ -401,6 +432,90 @@ enum class IpcMsgType : int {
     /// that cannot be probed; it never means the release is bad.
     CheckUsenetItem         = 732,
 
+    /// [titles: QCborArray of strings] -> [ok, types: QCborArray of ints]
+    ///
+    /// What we already know about each indexer search row, so the Search panel
+    /// can mark it and ask before re-downloading. The Usenet counterpart of
+    /// GetKnownTypes = 156, and it reuses that enumeration's *numbering* so one
+    /// colour helper serves both result models: 0 unknown, 2 in the Usenet queue
+    /// right now, 3 downloaded, 4 cancelled. 1 (Shared) is never emitted — a
+    /// Usenet release is not a shared file.
+    ///
+    /// Titles only, no sizes. An indexer's reported size is its own arithmetic
+    /// over the NZB and disagrees with totalEncodedBytes() often enough that
+    /// matching on it produces *false negatives* — no warning at all, which is
+    /// the wrong way to be wrong. A false positive costs one dismissible
+    /// question. What an add actually does is still decided by the article
+    /// digest, which this cannot see.
+    GetUsenetKnownTypes     = 733,
+
+    /// [itemId] -> [ok, map]. Everything about one queued release that the queue
+    /// row deliberately leaves out: per-file article counts, poster, date,
+    /// newsgroups, the NZB's own subject and part counter, and the scratch and
+    /// published paths.
+    ///
+    /// On-demand and never pushed. PushUsenetQueueItem fires every 250 ms per
+    /// changing item, and a newsgroup list plus a per-file segment tally on each
+    /// of those would be paying, continuously, for a dialog nobody has open. The
+    /// details dialog polls this instead, and only while it is on screen.
+    GetUsenetItemDetails    = 734,
+
+    /// [itemId, password] -> [ok, error]. Set the archive passphrase for one
+    /// queued release.
+    ///
+    /// **Write-only.** The password never travels the other way — GetUsenetQueue
+    /// reports `hasPassword`, exactly as GetNewsServers reports it for provider
+    /// accounts. An empty string clears it, which is how a user takes back a
+    /// wrong guess.
+    ///
+    /// Setting it on a *failed* item retries it, because the whole release is
+    /// already on disk and the password was the only thing missing. `ok` false
+    /// means the item is unknown, never that the password is wrong — nothing
+    /// knows that until the unpack runs.
+    ///
+    /// Numbered explicitly because the two above it are not: an opcode inserted
+    /// anywhere in this block renumbers everything after it, and the GUI and the
+    /// daemon then disagree about what 734 means.
+    SetUsenetItemPassword   = 735,
+
+    /// [itemId, category: int] -> [ok, error]. Move one queued release into a
+    /// download category, or out of one with 0.
+    ///
+    /// The *index* travels, never a path: which folder that is gets resolved at
+    /// completion, so a category repointed between queueing and landing does the
+    /// right thing without anything being re-sent.
+    SetUsenetItemCategory   = 736,
+
+    /// [category: int, action: Ipc::CategoryAction] -> [ok, error]. Apply one
+    /// action to every queued release in a category.
+    ///
+    /// Reuses the ED2K action enum rather than minting a Usenet-shaped twin, but
+    /// only **Pause**, **Resume** and **Cancel** mean anything here: `Stop` is
+    /// ED2K's "keep the file, drop the sources" and Usenet has no sources, and
+    /// `ResumeNext` ranks paused files by the category's a4af priority, which is
+    /// an ED2K concept. Both are refused with a reason rather than silently
+    /// ignored — a GUI that sends one has a bug worth seeing.
+    SetUsenetCategoryStatus = 737,
+    /// [] -> [ok, map]. The Usenet branch of the Statistics window. A request of
+    /// its own rather than GetStats keys, because GetStats is polled every second
+    /// for the status bar whether or not the panel is open.
+    ///
+    /// Counter maps are keyed by the field walks in core/stats/NetworkCounters.h —
+    /// decode them with countersFromCbor():
+    /// { usenet: { session: UsenetCounters, cumulative: UsenetCounters,
+    ///             current: { running, downRate (B/s wire), limitKb (0 = none),
+    ///                        activeConnections, openConnections,
+    ///                        queue: { count, downloading, queued, paused, checking,
+    ///                                 postProcessing, failed, complete,
+    ///                                 totalBytes, downloadedBytes, leftBytes } },
+    ///             servers: [ { accountId, name, host, enabled, openConnections,
+    ///                          session: UsenetServerCounters,
+    ///                          <GetNewsServers usage fields: quotaKind, quotaBytes,
+    ///                           periodBytes, totalBytes, periodStart, resetsOn,
+    ///                           overQuota> } ] },
+    ///   indexer: { session: IndexerCounters, cumulative: IndexerCounters } }
+    GetUsenetStats          = 738,
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd]
@@ -409,6 +524,8 @@ enum class IpcMsgType : int {
 
     // -- Push Events (Core -> GUI, seqId=0) ----------------------------------
 
+    /// {sessionSentBytes, sessionReceivedBytes, upWaiting, maxDownloadKb,
+    /// usenetLimitKb, ed2kBudgetKb} — same keys and meaning as GetStats.
     PushStatsUpdate      = 400,
     PushDownloadUpdate   = 410,
     PushDownloadAdded    = 411,
@@ -417,7 +534,7 @@ enum class IpcMsgType : int {
     PushServerMessage    = 421,  ///< [id, type: ServerMsgType, text: string] — one Server Info line
     PushSearchResult     = 430,
     PushGlobalSearchProgress = 431,  ///< [searchID, asked, total, running] — ED2K global UDP sweep
-    PushLogMessage       = 450,
+    PushLogMessage       = 450,  ///< [logId, category, severity: QtMsgType, message, timestamp: unix s]
     PushSharedFileUpdate = 460,
     PushUploadUpdate     = 470,
     PushKadUpdate        = 480,

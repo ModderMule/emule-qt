@@ -119,7 +119,9 @@ private slots:
     void incomingListingMarksTheFilesThatAreNotWhatTheyClaim();
     void incomingListingDrawsTheSameMarksAsEveryOtherList();
     void everySpriteTokenTheTemplateAsksForExists();
+    void aCustomTemplateOverridesAssetsOneFileAtATime();
     void theTemplateRowsAskForPerFileIcons();
+    void theTemplateLeavesSizeAndRateUnitsToTheValue();
 
     void graphVars_carryTheSeriesOldestFirst();
     void graphVars_ratesAreBytesPerSecond();
@@ -152,7 +154,8 @@ private:
 
     // Start a throwaway WebServer with the given UI/REST flags on a random port,
     // wired to the shared fixture dependencies. Caller owns and must stop it.
-    std::unique_ptr<WebServer> startServer(bool webUiEnabled, bool restApiEnabled);
+    std::unique_ptr<WebServer> startServer(bool webUiEnabled, bool restApiEnabled,
+                                           const QString& templatePath = QString());
 
     std::unique_ptr<WebServer>     m_webServer;
     std::unique_ptr<Statistics>    m_stats;
@@ -564,7 +567,8 @@ QString tst_WebServer::rawGetBody(uint16 port, const QString& path)
     return body;
 }
 
-std::unique_ptr<WebServer> tst_WebServer::startServer(bool webUiEnabled, bool restApiEnabled)
+std::unique_ptr<WebServer> tst_WebServer::startServer(bool webUiEnabled, bool restApiEnabled,
+                                                      const QString& templatePath)
 {
     auto server = std::make_unique<WebServer>();
     server->setStatistics(m_stats.get());
@@ -583,7 +587,7 @@ std::unique_ptr<WebServer> tst_WebServer::startServer(bool webUiEnabled, bool re
     config.restApiEnabled = restApiEnabled;
     config.port = 0;
     config.apiKey = m_apiKey;
-    config.templatePath = QString();  // no template file — page render is not under test here
+    config.templatePath = templatePath;  // empty by default — page render is not under test here
 
     server->start(config);
     return server;
@@ -1250,7 +1254,7 @@ void tst_WebServer::incomingListingShowsFilesAndFolders()
     const QString html = QString::fromUtf8(root.rawBody);
     QVERIFY(html.contains(QStringLiteral("Season 1")));
     QVERIFY(html.contains(QStringLiteral("notes.txt")));
-    QVERIFY(html.contains(QStringLiteral("5.0 MB")));       // big.bin, humanised
+    QVERIFY(html.contains(QStringLiteral("5.00 MB")));      // big.bin, humanised
 
     // A folder navigates; it is never offered as a download.
     QVERIFY(html.contains(QStringLiteral("path=Season%201")));
@@ -1341,6 +1345,31 @@ void tst_WebServer::theTemplateRowsAskForPerFileIcons()
 
     // The new stylesheet is actually linked, or every rating span renders blank.
     QVERIFY(text.contains(QStringLiteral("href=\"sprite-rating.css\"")));
+}
+
+void tst_WebServer::theTemplateLeavesSizeAndRateUnitsToTheValue()
+{
+    // The builders fill these through formatByteSize/formatByteRate, which carry
+    // their own unit (MFC CastItoXBytes). A unit left in the template doubles it
+    // — and "[DownloadSpeed] KB/s" was wrong outright: the value was bytes/s.
+    QFile tmpl(eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"));
+    QVERIFY(tmpl.open(QIODevice::ReadOnly));
+    const QString text = QString::fromUtf8(tmpl.readAll());
+
+    static const QRegularExpression doubled(QStringLiteral(
+        "\\[(DownloadFileSize|DownloadCompleted|DownloadSpeed|TotalUpTransferred|"
+        "TotalUpSpeed|SharedFileSize|SharedTransferred|SessionReceived|SessionSent)\\]"
+        "\\s*(bytes|[KMGT]?B(/s)?)\\b"),
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch m = doubled.match(text);
+    QVERIFY2(!m.hasMatch(), qPrintable(m.captured(0)));
+
+    // And the values themselves are still asked for.
+    for (const QString& key : {QStringLiteral("[DownloadSpeed]"),
+                               QStringLiteral("[TotalUpSpeed]"),
+                               QStringLiteral("[SessionReceived]")}) {
+        QVERIFY2(text.contains(key), qPrintable(key));
+    }
 }
 
 void tst_WebServer::everySpriteTokenTheTemplateAsksForExists()
@@ -1695,6 +1724,56 @@ void tst_WebServer::incomingPlayerWarnsAboutAnUnplayableContainer()
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
+
+void tst_WebServer::aCustomTemplateOverridesAssetsOneFileAtATime()
+{
+    // The point of the feature: a theme ships only what it changes. Before this,
+    // m_webDataDir was set from configDir before templatePath was even read, so a
+    // custom template could never supply an asset at all.
+    eMule::testing::TempDir cfgDir;
+    eMule::testing::TempDir themeDir;
+
+    const QString shippedDir = cfgDir.filePath(QStringLiteral("webserver"));
+    QVERIFY(QDir().mkpath(shippedDir));
+    const auto write = [](const QString& path, const QByteArray& body) {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(body), qint64(body.size()));
+    };
+    write(shippedDir + QStringLiteral("/sprites.css"), QByteArrayLiteral("SHIPPED"));
+    write(shippedDir + QStringLiteral("/sprite-progress.png"), QByteArrayLiteral("SHIPPED-PNG"));
+
+    // Theme overrides sprites.css and nothing else.
+    const QString tmpl = themeDir.filePath(QStringLiteral("theme.tmpl"));
+    write(tmpl, QByteArrayLiteral("<--TMPL_VERSION-->1<--TMPL_VERSION_END-->"));
+    write(themeDir.filePath(QStringLiteral("sprites.css")), QByteArrayLiteral("THEMED"));
+
+    const QString prevCfg = m_preferences->configDir();
+    m_preferences->setConfigDir(cfgDir.path());
+
+    auto server = startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ false, tmpl);
+    QVERIFY(server->isRunning());
+    const uint16 p = server->port();
+
+    // Overridden by the theme...
+    QCOMPARE(rawGetBody(p, QStringLiteral("/sprites.css")).trimmed(), QStringLiteral("THEMED"));
+    // ...while everything it did not ship still comes from the seeded assets.
+    QCOMPARE(rawGetBody(p, QStringLiteral("/sprite-progress.png")).trimmed(),
+             QStringLiteral("SHIPPED-PNG"));
+
+    // Traversal: "..css" ends in .css so it clears the route allowlist, and it
+    // contains ".." so the old substring guard was the only thing stopping it.
+    QCOMPARE(rawGetStatus(p, QStringLiteral("/..css"), /*withKey*/ false), 404);
+
+    // A symlink out of the theme dir must fail containment, not follow.
+    const QString secret = cfgDir.filePath(QStringLiteral("secret.css"));
+    write(secret, QByteArrayLiteral("SECRET"));
+    if (QFile::link(secret, themeDir.filePath(QStringLiteral("leak.css"))))
+        QCOMPARE(rawGetStatus(p, QStringLiteral("/leak.css"), /*withKey*/ false), 404);
+
+    server->stop();
+    m_preferences->setConfigDir(prevCfg);
+}
 
 QTEST_MAIN(tst_WebServer)
 #include "tst_WebServer.moc"

@@ -323,15 +323,21 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetNewsServers:       handleSetNewsServers(msg); break;
     case IpcMsgType::TestNewsServer:       handleTestNewsServer(msg); break;
     case IpcMsgType::SetNewsServerUsage:   handleSetNewsServerUsage(msg); break;
+    case IpcMsgType::GetUsenetStats:       handleGetUsenetStats(msg); break;
     case IpcMsgType::GetUsenetQueue:      handleGetUsenetQueue(msg); break;
     case IpcMsgType::AddNzb:              handleAddNzb(msg); break;
     case IpcMsgType::AddNzbUrl:           handleAddNzbUrl(msg); break;
     case IpcMsgType::CheckUsenetItem:     handleCheckUsenetItem(msg); break;
+    case IpcMsgType::GetUsenetKnownTypes: handleGetUsenetKnownTypes(msg); break;
     case IpcMsgType::RemoveUsenetItem:    handleRemoveUsenetItem(msg); break;
     case IpcMsgType::PauseUsenetItem:     handlePauseUsenetItem(msg); break;
     case IpcMsgType::ResumeUsenetItem:    handleResumeUsenetItem(msg); break;
     case IpcMsgType::SetUsenetItemPriority: handleSetUsenetItemPriority(msg); break;
+    case IpcMsgType::SetUsenetItemCategory: handleSetUsenetItemCategory(msg); break;
+    case IpcMsgType::SetUsenetCategoryStatus: handleSetUsenetCategoryStatus(msg); break;
+    case IpcMsgType::SetUsenetItemPassword: handleSetUsenetItemPassword(msg); break;
     case IpcMsgType::ListUsenetArchiveEntries: handleListUsenetArchiveEntries(msg); break;
+    case IpcMsgType::GetUsenetItemDetails:     handleGetUsenetItemDetails(msg);     break;
     case IpcMsgType::SetDownloadCategory:  handleSetDownloadCategory(msg); break;
     case IpcMsgType::GetDownloadDetails:   handleGetDownloadDetails(msg); break;
     case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
@@ -510,10 +516,12 @@ void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetDownloadClients(const IpcMessage& msg)
 {
+    // Only the sources we are receiving from: MFC's list is m_downloadingSourceList
+    // (PartFile.cpp:2159-2174), not every known source.
     QCborArray clients;
     if (theApp.downloadQueue) {
         for (const auto* pf : theApp.downloadQueue->files()) {
-            for (const auto* c : pf->srcList())
+            for (const auto* c : pf->downloadingSources())
                 clients.append(toCbor(*c));
         }
     }
@@ -1676,6 +1684,17 @@ void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
+void insertDownloadSplit(QCborMap& stats)
+{
+    // Stopped or not yet constructed reads as unthrottled, which is what it is.
+    const usenet::UsenetSession::DownloadSplit split =
+        usenet::theUsenetSession ? usenet::theUsenetSession->lastSplit()
+                                 : usenet::UsenetSession::DownloadSplit{thePrefs.maxDownload()};
+    stats.insert(QStringLiteral("maxDownloadKb"), static_cast<qint64>(split.ceilingKb));
+    stats.insert(QStringLiteral("usenetLimitKb"), split.usenetKb());
+    stats.insert(QStringLiteral("ed2kBudgetKb"), split.ed2kKb());
+}
+
 void IpcClientHandler::handleGetStats(const IpcMessage& msg)
 {
     QCborMap stats = toCborMap(collectStatsSnapshot());
@@ -1686,6 +1705,9 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
         if (auto* ws = da->webServer())
             stats.insert(QStringLiteral("streamToken"), ws->streamToken());
     }
+
+    // Likewise daemon-only: the split is Usenet's, and core must not know Usenet.
+    insertDownloadSplit(stats);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(stats)));
 }
@@ -1727,8 +1749,9 @@ void IpcClientHandler::handleGetStatsHistory(const IpcMessage& msg)
     QCborMap out;
     QCborArray samples;
     if (auto* hist = theApp.statsHistory) {
-        // Field order is StatsGraphSample's, which is MFC's scope order — the GUI
-        // unpacks it positionally into the download/upload/connection graphs.
+        // Field order is StatsGraphSample's, which is MFC's scope order plus the
+        // appended Usenet rate — the GUI unpacks it positionally into the
+        // download/upload/connection graphs.
         for (const auto& s : hist->statsSince(fromSeq))
             samples.append(QCborArray{static_cast<qint64>(s.seq),
                                       static_cast<qint64>(s.timestamp),
@@ -1743,7 +1766,8 @@ void IpcClientHandler::handleGetStatsHistory(const IpcMessage& msg)
                                       static_cast<qint64>(s.connActive),
                                       static_cast<qint64>(s.upActive),
                                       static_cast<qint64>(s.upTotal),
-                                      static_cast<qint64>(s.downTransferring)});
+                                      static_cast<qint64>(s.downTransferring),
+                                      static_cast<double>(s.usenetDown)});
         out.insert(QStringLiteral("epoch"), static_cast<qint64>(hist->epoch()));
         out.insert(QStringLiteral("oldestSeq"), static_cast<qint64>(hist->oldestStatsSeq()));
     }
@@ -1859,6 +1883,8 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     prefs.insert(QStringLiteral("usenetCleanupAfterUnpack"),
                  thePrefs.usenetCleanupAfterUnpack());
     prefs.insert(QStringLiteral("usenetDirectUnpack"), thePrefs.usenetDirectUnpack());
+    prefs.insert(QStringLiteral("usenetEncryptedPreview"), thePrefs.usenetEncryptedPreview());
+    prefs.insert(QStringLiteral("usenetExternalUnpacker"), thePrefs.usenetExternalUnpacker());
     prefs.insert(QStringLiteral("usenetHealthCheck"),
                  static_cast<qint64>(thePrefs.usenetHealthCheck()));
     prefs.insert(QStringLiteral("usenetHealthMinPercent"),
@@ -3764,6 +3790,10 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUsenetCleanupAfterUnpack(val.toBool());
     else if (key == QStringLiteral("usenetDirectUnpack"))
         thePrefs.setUsenetDirectUnpack(val.toBool());
+    else if (key == QStringLiteral("usenetEncryptedPreview"))
+        thePrefs.setUsenetEncryptedPreview(val.toBool());
+    else if (key == QStringLiteral("usenetExternalUnpacker"))
+        thePrefs.setUsenetExternalUnpacker(val.toString());
     else if (key == QStringLiteral("usenetHealthCheck"))
         thePrefs.setUsenetHealthCheck(int(val.toInteger()));
     else if (key == QStringLiteral("usenetHealthMinPercent"))
@@ -4293,6 +4323,7 @@ QCborMap indexerFeedToCbor(const IndexerFeed& feed, const indexer::IndexerFeedSt
         {QStringLiteral("maxAgeDays"),      feed.maxAgeDays},
         {QStringLiteral("intervalMinutes"), feed.intervalMinutes},
         {QStringLiteral("grabExisting"),    feed.grabExisting},
+        {QStringLiteral("downloadCategory"), feed.downloadCategory},
         {QStringLiteral("lastPolled"),
          status.lastPolled.isValid() ? status.lastPolled.toSecsSinceEpoch() : qint64(0)},
         {QStringLiteral("lastError"),       status.lastError},
@@ -4316,6 +4347,7 @@ IndexerFeed indexerFeedFromCbor(const QCborMap& map)
     feed.maxAgeDays = int(map.value(QStringLiteral("maxAgeDays")).toInteger(0));
     feed.intervalMinutes = int(map.value(QStringLiteral("intervalMinutes")).toInteger(30));
     feed.grabExisting = map.value(QStringLiteral("grabExisting")).toBool(false);
+    feed.downloadCategory = int(map.value(QStringLiteral("downloadCategory")).toInteger(0));
 
     for (const auto& cat : map.value(QStringLiteral("categories")).toArray())
         feed.categories.append(int(cat.toInteger(0)));
@@ -4709,6 +4741,34 @@ void IpcClientHandler::handleRemoveIndexerSearch(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
 }
 
+namespace {
+
+/// The three queue choices an add may carry, from @p first onward. Positional
+/// and optional, so a GUI that predates them sends nothing and gets exactly the
+/// behaviour it had: no category (auto-categorisation runs), normal priority,
+/// not paused. Shared by AddNzb, AddNzbUrl and GrabIndexerResult so the three
+/// cannot drift.
+struct AddChoices {
+    int category = 0;
+    int priority = 0;
+    bool paused = false;
+};
+
+AddChoices readAddChoices(const IpcMessage& msg, int first)
+{
+    return {int(msg.fieldInt(first)), int(msg.fieldInt(first + 1)),
+            msg.fieldBool(first + 2)};
+}
+
+/// Whether @p category names a real one. Mirrors SetUsenetItemCategory, which
+/// answers 400 rather than silently filing a release somewhere else.
+bool categoryExists(int category)
+{
+    return category >= 0 && category < int(thePrefs.categoryCount());
+}
+
+} // namespace
+
 void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
 {
     if (!indexer::theIndexerSearchList || !usenet::theUsenetSession
@@ -4720,14 +4780,27 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
 
     const auto searchId = static_cast<quint32>(msg.fieldInt(0));
     const QString resultId = msg.fieldString(1);
+    // The user was shown the row's Known column, asked, and said yes. Carried
+    // through the fetch so the answer survives it — re-grabbing to ask a second
+    // time would spend another of the indexer's daily grabs.
+    const bool force = msg.fieldBool(2);
+    // Fields 3-5: Download To picks a category; the other two are there so the
+    // three add paths carry the same shape.
+    const AddChoices choices = readAddChoices(msg, 3);
+    if (!categoryExists(choices.category)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Unknown category")));
+        return;
+    }
 
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
 
     indexer::theIndexerSearchList->grab(
         searchId, resultId,
-        [self, seqId](bool ok, const QByteArray& payload, const QString& name,
-                      const QString& error) {
+        [self, seqId, force, choices](bool ok, const QByteArray& payload,
+                                      const QString& name, const QString& password,
+                                      const QString& error) {
         if (!self)
             return;
 
@@ -4745,18 +4818,17 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
         }
 
         QString addError;
-        const QString itemId =
-            usenet::theUsenetSession->queue()->addNzb(payload, name, addError);
-        if (itemId.isEmpty()) {
-            // The fallback its two siblings already have: an empty error here
-            // reaches the user as an empty dialog.
-            self->sendMessage(IpcMessage::makeResult(
-                seqId, false,
-                QCborValue(addError.isEmpty() ? tr("The NZB could not be read.") : addError)));
-            return;
-        }
-
-        self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(itemId)));
+        usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
+        // A grab is a person clicking Download, so the feed's password arrives as
+        // a Manual one and outranks the NZB's own metadata: the indexer knows
+        // the release, the NZB says whatever its poster wrote.
+        const QString itemId = usenet::theUsenetSession->queue()->addNzb(
+            payload, name, addError,
+            {.force = force, .password = password, .category = choices.category,
+             .priority = choices.priority, .paused = choices.paused},
+            &outcome);
+        self->sendAddNzbResult(seqId, itemId, addError, outcome,
+                               usenet::UsenetAddOrigin::IndexerGrab);
     });
 }
 
@@ -4846,33 +4918,104 @@ NewsServer newsServerFromCbor(const QCborMap& m)
 
 } // namespace
 
+namespace {
+
+/// One account with the engine's meter figures, when there is an engine. Shared
+/// by GetNewsServers and GetUsenetStats so both carry the same numbers.
+QCborMap newsServerRow(const NewsServer& server, const usenet::UsenetQueue* queue)
+{
+    if (!queue)
+        return newsServerToCbor(server);
+
+    const auto& usage = queue->usage();
+    const QDate start = usage.periodStart(server.accountId);
+    const QDate next = server.quotaKind == NntpQuotaKind::Monthly
+        ? usenet::nntpQuotaNextReset(server.quotaResetDay, QDate::currentDate())
+        : QDate();
+
+    // The reset date is computed here so the GUI never re-implements the
+    // short-month clamp — a plan billed on the 31st resets on the 28th in
+    // February, and two copies of that rule would eventually disagree.
+    return newsServerToCbor(
+        server, usage.periodBytes(server.accountId), usage.totalBytes(server.accountId),
+        start.isValid() ? start.toString(Qt::ISODate) : QString(),
+        next.isValid() ? next.toString(Qt::ISODate) : QString(),
+        queue->isOverQuota(server));
+}
+
+} // namespace
+
 void IpcClientHandler::handleGetNewsServers(const IpcMessage& msg)
 {
     const auto* queue = usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
 
     QCborArray out;
+    for (const auto& server : thePrefs.usenetServers())
+        out.append(newsServerRow(server, queue));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+void IpcClientHandler::handleGetUsenetStats(const IpcMessage& msg)
+{
+    const auto* session = usenet::theUsenetSession;
+    const auto* queue = session ? session->queue() : nullptr;
+    const auto* stats = theApp.statistics;
+
+    // Usenet and indexer counters are core's, so they read the same whether or
+    // not the engine is running; only the live figures need the queue.
+    QCborMap usenetMap;
+    usenetMap.insert(QStringLiteral("session"),
+                     countersToCbor(stats ? stats->usenetSession() : UsenetCounters{}));
+    usenetMap.insert(QStringLiteral("cumulative"),
+                     countersToCbor(stats ? stats->cumulativeUsenet() : thePrefs.cumUsenet()));
+
+    QCborMap current;
+    current.insert(QStringLiteral("running"), queue && queue->isRunning());
+    current.insert(QStringLiteral("downRate"), queue ? queue->currentRate() : qint64(0));
+    current.insert(QStringLiteral("limitKb"),
+                   session ? session->lastSplit().usenetKb() : qint64(0));
+    current.insert(QStringLiteral("activeConnections"), queue ? queue->activeFetches() : 0);
+    current.insert(QStringLiteral("openConnections"), usenet::NntpSocket::openConnectionCount());
+
+    const usenet::UsenetQueueSummary summary =
+        queue ? usenet::summarizeQueue(queue->items()) : usenet::UsenetQueueSummary{};
+    current.insert(QStringLiteral("queue"), QCborMap{
+        {QStringLiteral("count"),           summary.count},
+        {QStringLiteral("downloading"),     summary.downloading},
+        {QStringLiteral("queued"),          summary.queued},
+        {QStringLiteral("paused"),          summary.paused},
+        {QStringLiteral("checking"),        summary.checking},
+        {QStringLiteral("postProcessing"),  summary.postProcessing},
+        {QStringLiteral("failed"),          summary.failed},
+        {QStringLiteral("complete"),        summary.complete},
+        {QStringLiteral("totalBytes"),      summary.totalBytes},
+        {QStringLiteral("downloadedBytes"), summary.downloadedBytes},
+        {QStringLiteral("leftBytes"),       summary.leftBytes},
+    });
+    usenetMap.insert(QStringLiteral("current"), current);
+
+    const QHash<QString, int> open = usenet::NntpSocket::openConnectionsByAccount();
+    QCborArray servers;
     for (const auto& server : thePrefs.usenetServers()) {
-        if (!queue) {
-            out.append(newsServerToCbor(server));
-            continue;
-        }
-
-        const auto& usage = queue->usage();
-        const QDate start = usage.periodStart(server.accountId);
-        const QDate next = server.quotaKind == NntpQuotaKind::Monthly
-            ? usenet::nntpQuotaNextReset(server.quotaResetDay, QDate::currentDate())
-            : QDate();
-
-        // The reset date is computed here so the GUI never re-implements the
-        // short-month clamp — a plan billed on the 31st resets on the 28th in
-        // February, and two copies of that rule would eventually disagree.
-        out.append(newsServerToCbor(
-            server, usage.periodBytes(server.accountId), usage.totalBytes(server.accountId),
-            start.isValid() ? start.toString(Qt::ISODate) : QString(),
-            next.isValid() ? next.toString(Qt::ISODate) : QString(),
-            queue->isOverQuota(server)));
+        QCborMap row = newsServerRow(server, queue);
+        row.insert(QStringLiteral("openConnections"), open.value(server.accountId));
+        row.insert(QStringLiteral("session"),
+                   countersToCbor(queue ? queue->stats().servers().value(server.accountId)
+                                        : UsenetServerCounters{}));
+        servers.append(row);
     }
+    usenetMap.insert(QStringLiteral("servers"), servers);
 
+    QCborMap indexerMap;
+    indexerMap.insert(QStringLiteral("session"),
+                      countersToCbor(stats ? stats->indexerSession() : IndexerCounters{}));
+    indexerMap.insert(QStringLiteral("cumulative"),
+                      countersToCbor(stats ? stats->cumulativeIndexer() : thePrefs.cumIndexer()));
+
+    QCborMap out;
+    out.insert(QStringLiteral("usenet"), usenetMap);
+    out.insert(QStringLiteral("indexer"), indexerMap);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
 }
 
@@ -5067,10 +5210,22 @@ void IpcClientHandler::handleSetCategories(const IpcMessage& msg)
         categories.append(cat);
     }
 
-    // Renumber the downloads *before* the new list is stored, so nothing in
-    // between can read an index that no longer names what it used to.
+    // Renumber *everything* that stores a category index, before the new list is
+    // stored, so nothing in between can read an index that no longer names what
+    // it used to. Three stores, not one:
+    //
+    //  - the ED2K queue, always live while the daemon is;
+    //  - the Usenet queue, which holds nothing while the engine is stopped and
+    //    therefore has to be renumbered on disk instead;
+    //  - the feeds, which are the worst of the three to get wrong — a queue item
+    //    pointing at a deleted category costs one release in the wrong folder, a
+    //    feed pointing at one costs every release it ever matches, for as long
+    //    as it runs.
     if (theApp.downloadQueue)
         theApp.downloadQueue->remapCategories(oldToNew);
+    if (usenet::theUsenetSession)
+        usenet::theUsenetSession->remapCategories(oldToNew);
+    remapFeedCategories(oldToNew);
 
     thePrefs.setCategories(categories);
 
@@ -5173,11 +5328,10 @@ QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
                   : usenet::UsenetQueue::PreviewInfo{
                         item.isFilePreviewable(i) && st.availableEnd() > 0, {}};
 
-        // The article's own =ybegin name first: for an obfuscated post the
-        // subject carries nothing readable, and this is the only real name.
-        QString name = st.articleFileName;
-        if (name.isEmpty())
-            name = info.fileName;
+        // PAR2's name, then the article's own =ybegin, then the subject: for an
+        // obfuscated post the subject carries nothing readable, and for a fully
+        // obfuscated one neither does =ybegin.
+        QString name = item.bestFileName(i);
         if (name.isEmpty())
             name = info.subject;
 
@@ -5216,12 +5370,38 @@ QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
     for (const auto& st : item.files)
         missing += st.missingSegments;
 
+    // What the release actually put on disk. `files` cannot answer this: an
+    // unpacked release publishes the extracted members, which are not NZB files.
+    // Empty until the item completes, so a running queue pays nothing for it.
+    //
+    // relPath is resolved here rather than in the GUI because the daemon's
+    // incoming directory is the authoritative one — against a remote core the
+    // GUI's own copy is somebody else's setting.
+    const QDir incoming(thePrefs.incomingDir());
+    QCborArray publishedFiles;
+    for (const QString& path : item.publishedPaths) {
+        const QFileInfo fi(path);
+        QString rel = incoming.relativeFilePath(path);
+        // A result that escapes the incoming root cannot be addressed by the
+        // browse route at all; say so with an empty string rather than a
+        // traversal the web server would refuse anyway.
+        if (rel.startsWith(QLatin1String("..")) || QDir::isAbsolutePath(rel))
+            rel.clear();
+        publishedFiles.append(QCborMap{
+            {QStringLiteral("name"),    fi.fileName()},
+            {QStringLiteral("path"),    path},
+            {QStringLiteral("relPath"), rel},
+            {QStringLiteral("size"),    static_cast<qint64>(fi.size())},
+        });
+    }
+
     return QCborMap{
         {QStringLiteral("id"),              item.id},
         {QStringLiteral("name"),            item.name},
         {QStringLiteral("status"),          int(item.status)},
         {QStringLiteral("statusText"),      usenet::describeUsenetItemStatus(item.status)},
         {QStringLiteral("priority"),        item.priority},
+        {QStringLiteral("category"),        item.category},
         {QStringLiteral("percent"),         item.percentComplete()},
         {QStringLiteral("totalBytes"),      static_cast<qint64>(item.totalEncodedBytes())},
         {QStringLiteral("decodedBytes"),    static_cast<qint64>(item.decodedBytes())},
@@ -5229,6 +5409,12 @@ QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
         {QStringLiteral("doneSegments"),    item.doneSegmentCount()},
         {QStringLiteral("missingSegments"), missing},
         {QStringLiteral("error"),           item.error},
+        // Whether a password is set, never the password itself — the same
+        // one-way contract GetNewsServers keeps for provider accounts.
+        {QStringLiteral("hasPassword"),     !item.nzb.password.isEmpty()},
+        // The release is password-protected and no password we have opens it.
+        // A flag rather than a match on `error`, which is translated.
+        {QStringLiteral("passwordRequired"), item.passwordRequired},
         // Post-processing progress. Separate from `percent`, which is segment
         // counts: a repair or an unpack moves no segments at all, so a single
         // figure would sit frozen at 100% for the whole of it.
@@ -5249,6 +5435,7 @@ QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
         // asked — a different statement from the same number with a probe behind it.
         {QStringLiteral("healthProbed"),    item.healthProbed},
         {QStringLiteral("files"),           files},
+        {QStringLiteral("publishedFiles"),  publishedFiles},
     };
 }
 
@@ -5270,6 +5457,79 @@ void IpcClientHandler::handleGetUsenetQueue(const IpcMessage& msg)
     QCborArray out;
     for (const auto* item : usenet::theUsenetSession->queue()->items())
         out.append(usenetItemToCbor(*item));
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+}
+
+/// Everything about one release that the queue row leaves out.
+///
+/// Built on usenetItemToCbor() rather than beside it, so the details view and the
+/// list can never disagree about a field they share. What is added here is the
+/// per-file detail that would be wasteful on a 250 ms push: article tallies, the
+/// NZB's own subject and part counter, poster, date and newsgroups.
+void IpcClientHandler::handleGetUsenetItemDetails(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const QString itemId = msg.fieldString(0);
+    const usenet::UsenetQueueItem* item = usenet::theUsenetSession->queue()->findItem(itemId);
+    if (!item) {
+        // 404 rather than an empty map: the dialog closes on this, and an empty
+        // map would leave it polling a release that no longer exists.
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+                                          QStringLiteral("No such Usenet item")));
+        return;
+    }
+
+    QCborMap out = usenetQueueItemToCbor(*item);
+
+    // Re-emit `files` with the detail fields merged in, keeping every key the
+    // queue row already carries (percent, previewable, previewNote, index, ...).
+    const QCborArray base = out.value(QStringLiteral("files")).toArray();
+    QCborArray files;
+    for (int i = 0; i < item->nzb.files.size(); ++i) {
+        const usenet::NzbFileInfo& info = item->nzb.files.at(i);
+        const usenet::UsenetFileState& st =
+            i < item->files.size() ? item->files.at(i) : usenet::UsenetFileState{};
+
+        QCborMap f = i < base.size() ? base.at(i).toMap() : QCborMap{};
+
+        int done = 0;
+        for (qsizetype b = 0; b < st.done.size(); ++b) {
+            if (st.done.testBit(b))
+                ++done;
+        }
+
+        QCborArray groups;
+        for (const QString& g : info.groups)
+            groups.append(g);
+
+        f.insert(QStringLiteral("subject"),      info.subject);
+        f.insert(QStringLiteral("poster"),       info.poster);
+        f.insert(QStringLiteral("date"),         static_cast<qint64>(info.date));
+        f.insert(QStringLiteral("groups"),       groups);
+        f.insert(QStringLiteral("segmentCount"), int(info.segments.size()));
+        f.insert(QStringLiteral("doneSegments"), done);
+        // What the subject's (n/m) counter claims, and what it claims the NZB
+        // never listed. Distinct from missingSegments, which is what no server
+        // would serve — one is the indexer's shortfall, the other the network's.
+        f.insert(QStringLiteral("partsTotal"),        info.partsTotal);
+        f.insert(QStringLiteral("nzbMissingSegments"), info.missingSegmentCount());
+        f.insert(QStringLiteral("encodedBytes"),  static_cast<qint64>(info.encodedBytes()));
+        f.insert(QStringLiteral("declaredSize"),  static_cast<qint64>(st.declaredSize));
+        f.insert(QStringLiteral("decodedBytes"),  static_cast<qint64>(st.decodedBytes));
+        f.insert(QStringLiteral("par2Blocks"),    info.par2RecoveryBlocks());
+        f.insert(QStringLiteral("requestedPar2"), item->requestedPar2.contains(i));
+        f.insert(QStringLiteral("finalized"),     st.finalized);
+        f.insert(QStringLiteral("tempPath"),      st.tempPath);
+
+        files.append(f);
+    }
+    out.insert(QStringLiteral("files"), files);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
 }
@@ -5327,20 +5587,74 @@ void IpcClientHandler::handleAddNzb(const IpcMessage& msg)
     // every existing caller is correctly treated as manual — which they are.
     const auto source = msg.fieldBool(2) ? usenet::UsenetAddSource::Automatic
                                          : usenet::UsenetAddSource::Manual;
-
-    QString error;
-    const QString id =
-        usenet::theUsenetSession->queue()->addNzb(data, name, error, source);
-    if (id.isEmpty()) {
-        // A user-facing refusal, not a protocol fault: the GUI shows this string
-        // in a dialog, so it has to read like a sentence.
-        sendMessage(IpcMessage::makeResult(
-            msg.seqId(), false,
-            QCborValue(error.isEmpty() ? tr("The NZB could not be read.") : error)));
+    // Field 3: the user was asked and said yes. Overrides the history and never
+    // the live queue — addNzb() enforces that, not this.
+    const bool force = msg.fieldBool(3);
+    // Field 4: an archive passphrase typed in the Add NZB dialog. Absent reads
+    // as empty, which is every older GUI and every other caller.
+    const QString password = msg.fieldString(4);
+    // Fields 5-7: what the Add NZB dialog asks for now.
+    const AddChoices choices = readAddChoices(msg, 5);
+    if (!categoryExists(choices.category)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Unknown category")));
         return;
     }
 
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(id)));
+    QString error;
+    usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
+    const QString id = usenet::theUsenetSession->queue()->addNzb(
+        data, name, error,
+        {.source = source, .force = force, .password = password,
+         .category = choices.category, .priority = choices.priority,
+         .paused = choices.paused},
+        &outcome);
+    sendAddNzbResult(msg.seqId(), id, error, outcome, usenet::UsenetAddOrigin::File);
+}
+
+void IpcClientHandler::sendAddNzbResult(int seqId, const QString& itemId, const QString& error,
+                                       usenet::UsenetAddOutcome outcome,
+                                       usenet::UsenetAddOrigin origin)
+{
+    // Every caller reaches here only after addNzb() ran, so this is also the one
+    // place an IPC add is counted.
+    if (usenet::theUsenetSession && usenet::theUsenetSession->queue())
+        usenet::theUsenetSession->queue()->stats().noteAdd(origin, outcome);
+
+    // Three intake paths answered this question three times before; one helper so
+    // their outcome codes cannot drift apart.
+    if (!itemId.isEmpty()) {
+        IpcMessage ok = IpcMessage::makeResult(seqId, true, QCborValue(itemId));
+        ok.append(static_cast<qint64>(outcome));
+        sendMessage(std::move(ok));
+        return;
+    }
+
+    // A user-facing refusal, not a protocol fault: the GUI shows this string in a
+    // dialog, so it has to read like a sentence. The outcome rides beside it so
+    // the GUI can tell "you already have this" — which is a question — from "that
+    // did not work", without reading the sentence.
+    IpcMessage refused = IpcMessage::makeResult(
+        seqId, false, QCborValue(error.isEmpty() ? tr("The NZB could not be read.") : error));
+    refused.append(static_cast<qint64>(outcome));
+    sendMessage(std::move(refused));
+}
+
+void IpcClientHandler::handleGetUsenetKnownTypes(const IpcMessage& msg)
+{
+    QCborArray types;
+
+    if (usenet::theUsenetSession && usenet::theUsenetSession->queue()) {
+        const auto titles = msg.fieldArray(0);
+        for (const auto& val : titles)
+            types.append(usenet::theUsenetSession->queue()->knownTypeForTitle(val.toString()));
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(types)));
+        return;
+    }
+
+    // false, not a list of zeroes: a row left unmarked is honest about not
+    // knowing, where "unknown" would claim we looked.
+    sendMessage(IpcMessage::makeResult(msg.seqId(), false));
 }
 
 void IpcClientHandler::handleCheckUsenetItem(const IpcMessage& msg)
@@ -5376,6 +5690,18 @@ void IpcClientHandler::handleAddNzbUrl(const IpcMessage& msg)
     const QUrl url(msg.fieldString(0).trimmed(), QUrl::StrictMode);
     const auto source = msg.fieldBool(1) ? usenet::UsenetAddSource::Automatic
                                          : usenet::UsenetAddSource::Manual;
+    // Field 2: the same "asked and answered" bit AddNzb takes. Carried through the
+    // fetch so saying yes does not cost a second HTTP GET to ask again.
+    const bool force = msg.fieldBool(2);
+    // Field 3: the same passphrase AddNzb takes, from the same dialog row.
+    const QString password = msg.fieldString(3);
+    // Fields 4-6: the same three AddNzb takes, from the same dialog.
+    const AddChoices choices = readAddChoices(msg, 4);
+    if (!categoryExists(choices.category)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Unknown category")));
+        return;
+    }
     if (const QString why = usenet::NzbUrlFetch::rejectReason(url); !why.isEmpty()) {
         sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(why)));
         return;
@@ -5396,7 +5722,8 @@ void IpcClientHandler::handleAddNzbUrl(const IpcMessage& msg)
     const int seqId = msg.seqId();
 
     usenet::NzbUrlFetch::fetch(this, url,
-                               [self, seqId, source](const usenet::NzbUrlFetch::Result& result) {
+                               [self, seqId, source, force, password, choices]
+                               (const usenet::NzbUrlFetch::Result& result) {
         if (!self)
             return;
         --self->m_nzbUrlFetchesInFlight;
@@ -5423,16 +5750,14 @@ void IpcClientHandler::handleAddNzbUrl(const IpcMessage& msg)
         // NZB's own <meta type="name">, which is a better answer than anything
         // an API-style URL could have told us.
         QString error;
+        usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
         const QString id = usenet::theUsenetSession->queue()->addNzb(
-            result.data, result.name, error, source);
-        if (id.isEmpty()) {
-            self->sendMessage(IpcMessage::makeResult(
-                seqId, false,
-                QCborValue(error.isEmpty() ? tr("The NZB could not be read.") : error)));
-            return;
-        }
-
-        self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(id)));
+            result.data, result.name, error,
+            {.source = source, .force = force, .password = password,
+             .category = choices.category, .priority = choices.priority,
+             .paused = choices.paused},
+            &outcome);
+        self->sendAddNzbResult(seqId, id, error, outcome, usenet::UsenetAddOrigin::Url);
     });
 }
 
@@ -5452,6 +5777,28 @@ void IpcClientHandler::handleRemoveUsenetItem(const IpcMessage& msg)
         return;
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSetUsenetItemPassword(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    // Not trimmed, and not validated. An archive passphrase is opaque bytes:
+    // leading spaces are legal in one, and the only thing that can judge it is
+    // the unpack. An empty string is a deliberate clear, not a mistake.
+    const QString id = msg.fieldString(0);
+    const QString password = msg.fieldString(1);
+
+    if (!usenet::theUsenetSession->queue()->setItemPassword(id, password)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+                                          QStringLiteral("Queue item not found")));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(QString())));
 }
 
 void IpcClientHandler::handlePauseUsenetItem(const IpcMessage& msg)
@@ -5501,6 +5848,90 @@ void IpcClientHandler::handleSetUsenetItemPriority(const IpcMessage& msg)
                                           QStringLiteral("Queue item not found")));
         return;
     }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSetUsenetItemCategory(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const QString id = msg.fieldString(0);
+    const int category = int(msg.fieldInt(1));
+    if (category < 0 || category >= thePrefs.categoryCount()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Unknown category")));
+        return;
+    }
+    if (!usenet::theUsenetSession->queue()->setItemCategory(id, category)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+                                          QStringLiteral("Queue item not found")));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSetUsenetCategoryStatus(const IpcMessage& msg)
+{
+    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    const int category = int(msg.fieldInt(0));
+    const auto action = static_cast<Ipc::CategoryAction>(msg.fieldInt(1));
+
+    if (category < 0 || category >= thePrefs.categoryCount()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Unknown category")));
+        return;
+    }
+
+    // Refused rather than ignored: Stop keeps an ED2K file and drops its
+    // sources, and Usenet has no sources; ResumeNext ranks paused files by the
+    // category's a4af priority, which is an ED2K concept. A GUI sending either
+    // has a bug, and silence would hide it.
+    if (action != Ipc::CategoryAction::Pause && action != Ipc::CategoryAction::Resume
+        && action != Ipc::CategoryAction::Cancel)
+    {
+        sendMessage(IpcMessage::makeError(
+            msg.seqId(), 400,
+            QStringLiteral("Usenet supports Pause, Resume and Cancel for a category")));
+        return;
+    }
+
+    auto* queue = usenet::theUsenetSession->queue();
+
+    // Snapshot the ids first: Cancel removes items while we walk, and items()
+    // hands out pointers into the very list it is about to mutate.
+    QStringList ids;
+    for (const auto* item : queue->items()) {
+        // Index 0 is "All" and means every release, categorised or not — the
+        // same thing the "All" tab shows.
+        if (category == 0 || item->category == category)
+            ids.append(item->id);
+    }
+
+    int acted = 0;
+    for (const QString& id : std::as_const(ids)) {
+        switch (action) {
+        case Ipc::CategoryAction::Pause:  acted += queue->pauseItem(id) ? 1 : 0; break;
+        case Ipc::CategoryAction::Resume: acted += queue->resumeItem(id) ? 1 : 0; break;
+        case Ipc::CategoryAction::Cancel:
+            acted += queue->removeItem(id, /*deleteFiles*/ true) ? 1 : 0;
+            break;
+        default: break;
+        }
+    }
+
+    logInfo(QStringLiteral("Usenet: %1 applied to %2 item(s) in \"%3\"")
+                .arg(QString::number(int(action)), QString::number(acted),
+                     thePrefs.category(category).displayName()));
+
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -5574,6 +6005,22 @@ void IpcClientHandler::handleTestNewsServer(const IpcMessage& msg)
 // Private helpers
 // ---------------------------------------------------------------------------
 
+void IpcClientHandler::remapFeedCategories(const QHash<uint32, uint32>& oldToNew)
+{
+    auto feeds = thePrefs.indexerFeeds();
+    if (!eMule::remapFeedCategories(feeds, oldToNew))
+        return;
+
+    // Logged, unlike the two queues: a feed losing its category changes where
+    // every future match lands, and that is worth a line even though nothing
+    // failed and nobody was watching.
+    for (const auto& feed : feeds) {
+        logInfo(QStringLiteral("Feed \"%1\": download category is now %2")
+                    .arg(feed.name, QString::number(feed.downloadCategory)));
+    }
+    thePrefs.setIndexerFeeds(feeds);
+}
+
 void IpcClientHandler::rebaseCategoryDirs(const QString& oldIncomingDir)
 {
     const QString newIncomingDir = thePrefs.incomingDir();
@@ -5620,7 +6067,9 @@ void IpcClientHandler::cancelDownloadFile(PartFile* pf)
     if (!pf || !theApp.downloadQueue)
         return;
 
-    if (thePrefs.rememberCancelledFiles() && theApp.knownFileList)
+    // No preference check here: KnownFileList::addCancelledFileID() owns it, so
+    // every caller inherits the gate rather than each remembering it.
+    if (theApp.knownFileList)
         theApp.knownFileList->addCancelledFileID(pf->fileHash());
     pf->stopFile(true);
     theApp.downloadQueue->removeFile(pf);

@@ -29,6 +29,7 @@ class tst_CommentsPanel : public QObject {
 private slots:
     void ratingLabelsMatchTheOriginal();
     void theListShowsOneRowPerComment();
+    void theRatingColumnSortsByTheOrdinalNotByTheLabel();
     void theEditorAcceptsNoMoreThanTheWireCarries();
     void applyIsOfferedOnlyAfterAnEdit();
     void resetClearsBothFields();
@@ -108,6 +109,39 @@ void tst_CommentsPanel::theListShowsOneRowPerComment()
     // A comment with no rating still fills the cell — CCommentListCtrl::AddComment
     // always passes GetRateString, so there is no blank case.
     QVERIFY(ratings.contains(QStringLiteral("Not rated")));
+}
+
+void tst_CommentsPanel::theRatingColumnSortsByTheOrdinalNotByTheLabel()
+{
+    // MFC's labels are not monotonic: alphabetically they run Excellent, Fair,
+    // Good, Invalid / Corrupt / Fake, Not rated, Poor, which puts the best rating
+    // at the top of an *ascending* sort and a fake between Good and Not rated.
+    // Inserted in a third order again, so neither answer can come from the sort
+    // simply leaving the rows where it found them.
+    CommentsPanel panel(QStringLiteral("tstCommentsSort"));
+    QCborMap details = detailsFor(QString{}, 0);
+    details.insert(QLatin1StringView("comments"), QCborArray{
+        QCborMap{{QLatin1StringView("userName"), QStringLiteral("c")},
+                 {QLatin1StringView("rating"), 3},
+                 {QLatin1StringView("comment"), QStringLiteral("fair")}},
+        QCborMap{{QLatin1StringView("userName"), QStringLiteral("a")},
+                 {QLatin1StringView("rating"), 5},
+                 {QLatin1StringView("comment"), QStringLiteral("excellent")}},
+        QCborMap{{QLatin1StringView("userName"), QStringLiteral("b")},
+                 {QLatin1StringView("rating"), 0},
+                 {QLatin1StringView("comment"), QStringLiteral("none")}},
+    });
+    panel.setDetails(details);
+
+    auto* tree = panel.findChild<QTreeWidget*>();
+    QVERIFY(tree);
+    tree->sortByColumn(CommentsPanel::ColRating, Qt::AscendingOrder);
+
+    QStringList order;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+        order << tree->topLevelItem(i)->text(CommentsPanel::ColComment);
+    QCOMPARE(order, (QStringList{QStringLiteral("none"), QStringLiteral("fair"),
+                                 QStringLiteral("excellent")}));
 }
 
 void tst_CommentsPanel::theEditorAcceptsNoMoreThanTheWireCarries()

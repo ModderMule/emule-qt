@@ -88,6 +88,7 @@ void UsenetWorker::fetchSegment(UsenetFetchRequest request)
         result.messageId = request.segment.messageId;
         result.error = NntpError::Disconnected;
         result.text = QStringLiteral("Worker is shutting down");
+        result.aborted = true;
         emit segmentFinished(result);
         return;
     }
@@ -110,7 +111,7 @@ void UsenetWorker::fetchSegment(UsenetFetchRequest request)
         if (!job->writer->open(job->request.targetPath, error)) {
             Job* raw = job.release();
             m_jobs.append(raw);
-            finishJob(raw, NntpError::ProtocolError, error);
+            finishJob(raw, NntpError::WriteFailed, error);
             return;
         }
     }
@@ -212,6 +213,7 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
     result.text = text;
     result.noServerAvailable = job->noServerAvailable;
     result.probeOnly = job->request.probeOnly;
+    result.aborted = m_shuttingDown;
 
     if (job->socket) {
         result.serverKey = job->socket->server().key();
@@ -243,6 +245,14 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
     QObject::disconnect(job->failedConn);
 
     if (job->socket) {
+        // A damaged copy is the server's, not the connection's: name it once,
+        // here, where the server is known. Nothing else logs it until the
+        // article runs out of servers and is declared missing.
+        if (error == NntpError::ArticleCorrupt && !m_shuttingDown) {
+            logWarning(QStringLiteral("Usenet: damaged copy of <%1> on %2 (%3); asking another server")
+                           .arg(result.messageId, job->socket->server().key(), text));
+        }
+
         // A connection that failed at transport level is not reusable, and handing
         // it out again is how one dead provider stalls the whole queue. A 430 is
         // not such a failure — the connection is fine, the article is elsewhere.

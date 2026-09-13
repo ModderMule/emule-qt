@@ -1,7 +1,6 @@
 #include "pch.h"
 #include <QUrl>
 #include "utils/FileAssociation.h"
-#include "panels/UsenetPanel.h"
 #include "app/MainWindow.h"
 /// @file CommandLineExec.cpp
 /// @brief Command-line parsing and execution for the GUI application.
@@ -191,8 +190,7 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
     }
 }
 
-void CommandLineExec::handleOpenArguments(ExternalLinkHandler& linkHandler,
-                                          MainWindow& mainWindow) const
+void CommandLineExec::handleOpenArguments(ExternalLinkHandler& linkHandler) const
 {
     bool linkTaken = false;
 
@@ -219,8 +217,7 @@ void CommandLineExec::handleOpenArguments(ExternalLinkHandler& linkHandler,
 
         // Every .nzb, not just the first: opening a selection of them is an
         // ordinary thing to do from a file manager.
-        if (auto* panel = mainWindow.usenetPanel())
-            panel->addNzbFile(path);
+        linkHandler.openFile(path);
     }
 }
 

@@ -110,15 +110,17 @@ void MessagesPanel::onSendClicked()
     if (text.isEmpty())
         return;
 
+    // The reply can land after a tab switch, so the echo goes to the hash we sent to.
+    const QString target = m_activeFriendHash;
     IpcMessage msg(IpcMsgType::SendChatMessage);
-    msg.append(m_activeFriendHash);
+    msg.append(target);
     msg.append(text);
 
-    m_ipc->sendRequest(std::move(msg), [this, text](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, target, text](const IpcMessage& resp) {
         if (resp.fieldBool(0)) {
-            // Success — append outgoing message to local history
-            appendChatMessage(m_activeFriendHash, tr("Me"), text, true);
-            updateChatDisplay();
+            appendChatMessage(target, tr("Me"), text, true);
+            if (target == m_activeFriendHash)
+                updateChatDisplay();
         }
     });
 

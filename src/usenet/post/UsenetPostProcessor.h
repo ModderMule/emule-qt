@@ -42,6 +42,15 @@ enum class PostStage : quint8 {
 
 [[nodiscard]] QString describePostStage(PostStage stage);
 
+/// What the unpack stage came to, for statistics.
+enum class UsenetUnpackOutcome : quint8 {
+    NotRun = 0,
+    NothingToUnpack,   ///< no archives; the payload was published as downloaded
+    Unpacked,
+    Failed,
+    PasswordRequired,
+};
+
 /// A path in @p dir carrying @p name, suffixed " (n)" until it names nothing that
 /// already exists. Shared with UsenetQueue, which does the final rename.
 [[nodiscard]] QString uniqueDestination(const QString& dir, const QString& name);
@@ -62,8 +71,15 @@ struct UsenetPostJob {
     /// Where the payload is staged. The incoming directory.
     QString destDir;
 
-    /// From NzbInfo::password. Decrypts ZIP and 7z; RAR is refused, not decrypted.
+    /// From NzbInfo::password. libarchive decrypts **ZIP only**; every other
+    /// encrypted format goes to ExternalUnpacker, which is what makes a RAR
+    /// password mean anything.
     QString password;
+
+    /// The usenetExternalUnpacker preference — an explicit 7-Zip or unrar path,
+    /// empty to search. Carried on the job rather than read in the pipeline so
+    /// this class keeps holding no pointers into anything.
+    QString externalUnpacker;
 
     bool par2Enabled    = true;
     bool renameEnabled  = true;
@@ -86,6 +102,24 @@ struct UsenetPostJob {
     QList<UsenetDirectUnpackResult> directUnpacked;
 };
 
+/// One payload file on its way into the incoming directory.
+///
+/// `source` is what makes the queue able to say which NZB file a published file
+/// came *from*. Positional correspondence cannot: the payload list is sorted by
+/// name, drops every .par2, and for an unpacked release holds extracted members
+/// that are not NZB files at all.
+struct UsenetStagedFile {
+    /// Where it was staged from — a sealed UsenetFileState::tempPath for a raw
+    /// release, an extracted member for an unpacked one. Empty matches nothing.
+    QString source;
+
+    /// `<incoming>/<name>.usenetpart`. The share scan skips it by name.
+    QString stagedPath;
+
+    /// The name it takes once the queue renames it in place, atomically.
+    QString finalPath;
+};
+
 struct UsenetPostResult {
     QString itemId;
     bool success = false;
@@ -95,16 +129,32 @@ struct UsenetPostResult {
     bool needsMoreBlocks = false;
     int  blocksNeeded = 0;
 
-    /// Staged payload: `<incoming>/<name>.usenetpart` on the left, the name it
-    /// takes on the right. The queue renames each in place — atomic — and then
-    /// offers it to the share.
-    QList<QPair<QString, QString>> staged;
+    /// Staged payload, each waiting for the queue to rename it into place.
+    QList<UsenetStagedFile> staged;
 
     /// Archive volumes and par2 files that are safe to delete. Only ever
     /// populated after a *successful* extraction.
     QStringList consumed;
 
     Par2Outcome par2Outcome = Par2Outcome::NoPar2Files;
+
+    /// The release is password-protected and no password we have opens it. The
+    /// GUI turns this into "Set Password…", so an ordinary failure must never
+    /// set it — see UsenetUnpacker::Result::passwordRequired.
+    bool passwordRequired = false;
+
+    /// A password was supplied and refused, as opposed to missing.
+    bool wrongPassword = false;
+
+    /// PAR2 rewrote volumes — by the repair, or by the rename pass, after which
+    /// par2Outcome reads Clean. Statistics only.
+    bool repaired = false;
+
+    /// Source blocks the repair restored. Statistics only.
+    int blocksRepaired = 0;
+
+    UsenetUnpackOutcome unpackOutcome = UsenetUnpackOutcome::NotRun;
+
     QString message;
 };
 

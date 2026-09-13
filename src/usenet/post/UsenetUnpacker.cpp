@@ -4,9 +4,11 @@
 #include "post/UsenetUnpacker.h"
 
 #include "archive/ArchiveReader.h"
+#include "archive/ExternalUnpacker.h"
 #include "utils/Log.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QRegularExpression>
@@ -122,7 +124,8 @@ QList<ArchiveSet> UsenetUnpacker::findArchiveSets(const QString& dir)
 
 UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QString& destDir,
                                               const QString& password,
-                                              const QSet<QString>& skipFirstVolumes)
+                                              const QSet<QString>& skipFirstVolumes,
+                                              const QString& externalTool)
 {
     Result result;
 
@@ -155,61 +158,174 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
         // The whole list, not just volume one. libarchive reads a set as one
         // stream over the files the caller hands it and never opens a sibling
         // volume by name, so opening on volume one stops at its end.
-        if (!reader.open(set.volumes)) {
+        const bool opened = reader.open(set.volumes);
+
+        // Encryption is not a corrupt archive, and it must not be reported as
+        // one. libarchive decrypts ZIP and nothing else, so every other
+        // encrypted format arrives here having failed for a reason the user can
+        // actually do something about.
+        //
+        // A header-encrypted set fails at open() with no entries at all; a
+        // data-encrypted one opens, lists, and fails at the first read. Both
+        // land in encryptionBlocked(), which is why this is one branch and not
+        // two.
+        if (!opened && !reader.encryptionBlocked()) {
             result.error = QObject::tr("Cannot open %1")
                                .arg(QFileInfo(set.firstVolume).fileName());
             allOk = false;
             continue;
         }
 
-        if (reader.hasEncryptedEntries()
-            && reader.formatName().contains(QLatin1String("RAR"), Qt::CaseInsensitive)) {
-            // libarchive flags RAR encryption and stops there — there is no
-            // passphrase path for it at all. Say so, because the alternative is
-            // a read error the user cannot act on.
-            result.encryptedUnsupported = true;
-            result.error = QObject::tr("%1 is a password-protected RAR, which cannot be "
-                                       "unpacked").arg(QFileInfo(set.firstVolume).fileName());
-            allOk = false;
-            continue;
-        }
+        if (opened && !reader.encryptionBlocked()) {
+            // Collect the destinations before extracting: the sanitiser decides
+            // them, and asking it again afterwards is how the two lists drift
+            // apart.
+            QStringList produced;
+            for (int i = 0; i < reader.entryCount(); ++i) {
+                if (reader.entryIsDir(i))
+                    continue;
+                const QString out = ArchiveReader::safeEntryPath(destDir, reader.entryName(i));
+                if (!out.isEmpty())
+                    produced.append(out);
+            }
 
-        // Collect the destinations before extracting: the sanitiser decides them,
-        // and asking it again afterwards is how the two lists drift apart.
-        QStringList produced;
-        for (int i = 0; i < reader.entryCount(); ++i) {
-            if (reader.entryIsDir(i))
+            if (reader.extractAll(destDir)) {
+                for (const QString& rejected : reader.rejectedEntries()) {
+                    logWarning(
+                        QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
+                            .arg(rejected, QFileInfo(set.firstVolume).fileName()));
+                }
+
+                result.extractedFiles += produced;
+                result.consumedArchives += set.volumes;
+
+                logInfo(QStringLiteral("Usenet: unpacked \"%1\" (%2 file(s))")
+                            .arg(QFileInfo(set.firstVolume).fileName())
+                            .arg(produced.size()));
                 continue;
-            const QString out = ArchiveReader::safeEntryPath(destDir, reader.entryName(i));
-            if (!out.isEmpty())
-                produced.append(out);
+            }
+
+            if (!reader.encryptionBlocked()) {
+                result.error = QObject::tr("Extraction of %1 failed")
+                                   .arg(QFileInfo(set.firstVolume).fileName());
+                allOk = false;
+                continue;
+            }
+            // Fell through: the read got as far as encrypted data. Nothing
+            // libarchive wrote is usable.
+            for (const QString& path : reader.extractedFiles())
+                QFile::remove(path);
         }
 
-        if (!reader.extractAll(destDir)) {
-            result.error = QObject::tr("Extraction of %1 failed")
-                               .arg(QFileInfo(set.firstVolume).fileName());
+        if (!unpackEncrypted(set, destDir, password, externalTool, reader, result))
             allOk = false;
-            continue;
-        }
-
-        for (const QString& rejected : reader.rejectedEntries()) {
-            logWarning(QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
-                           .arg(rejected, QFileInfo(set.firstVolume).fileName()));
-        }
-
-        result.extractedFiles += produced;
-        result.consumedArchives += set.volumes;
-
-        logInfo(QStringLiteral("Usenet: unpacked \"%1\" (%2 file(s))")
-                    .arg(QFileInfo(set.firstVolume).fileName())
-                    .arg(produced.size()));
     }
 
     if (m_progress)
         m_progress(100, QString());
 
+    // A set that was found and produced nothing is a failure, never a success.
+    //
+    // This is the second half of the header-encrypted data-loss fix. Before it,
+    // an archive that listed no members extracted no files, reported ok, and
+    // handed the caller a consumedArchives list holding every volume — which
+    // UsenetQueue then deleted, leaving a "Complete" download with nothing in
+    // it. Even with ArchiveReader fixed, nothing downstream should depend on
+    // that fix to stay safe.
+    if (allOk && result.extractedFiles.isEmpty() && !result.consumedArchives.isEmpty()) {
+        logWarning(QStringLiteral("Usenet: archive sets in \"%1\" produced no files")
+                       .arg(sourceDir));
+        result.consumedArchives.clear();
+        result.error = QObject::tr("The archives produced no files");
+        allOk = false;
+    }
+
     result.ok = allOk;
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// Private
+// ---------------------------------------------------------------------------
+
+bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destDir,
+                                     const QString& password, const QString& externalTool,
+                                     const ArchiveReader& reader, Result& result)
+{
+    const QString name = QFileInfo(set.firstVolume).fileName();
+    result.encryptedUnsupported = true;
+
+    ExternalUnpacker external(externalTool);
+    if (!external.available()) {
+        result.passwordRequired = true;
+        result.error = QObject::tr("%1 is password-protected. Install 7-Zip or unrar so "
+                                   "eMule can unpack it.").arg(name);
+        return false;
+    }
+
+    if (password.isEmpty()) {
+        // Running the tool with no password would only make it ask, and a
+        // daemon has nobody to ask. Say what is missing instead.
+        result.passwordRequired = true;
+        result.error = QObject::tr("%1 is password-protected — set a password for this "
+                                   "download to unpack it.").arg(name);
+        return false;
+    }
+
+    const QString format = reader.formatName().isEmpty() ? QStringLiteral("archive")
+                                                         : reader.formatName();
+    if (reader.wrongPassphrase()) {
+        // ZIP is the one format libarchive *can* decrypt, so saying it cannot
+        // would be wrong here — the passphrase was refused. Worth retrying
+        // through the tool anyway: it reads variants libarchive does not, and
+        // its answer is what separates "wrong password" from "broken archive".
+        logInfo(QStringLiteral("Usenet: the password for \"%1\" was refused; asking %2")
+                    .arg(name, external.toolName()));
+    } else {
+        logInfo(QStringLiteral("Usenet: \"%1\" is encrypted %2, which libarchive cannot "
+                               "decrypt; using %3")
+                    .arg(name, format, external.toolName()));
+    }
+
+    const auto outcome = external.extract(set.volumes, destDir, password);
+
+    for (const QString& rejected : outcome.rejectedEntries) {
+        logWarning(QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
+                       .arg(rejected, name));
+    }
+
+    if (outcome.ok() && outcome.extractedFiles.isEmpty()) {
+        // Exit 0 and nothing on disk. The unpack()-level guard would catch this
+        // only when *every* set came up empty; per set, one empty set beside a
+        // good one would still put its volumes on the delete list.
+        result.error = QObject::tr("%1 produced no files").arg(name);
+        return false;
+    }
+
+    if (outcome.ok()) {
+        result.extractedFiles += outcome.extractedFiles;
+        result.consumedArchives += set.volumes;
+        logInfo(QStringLiteral("Usenet: unpacked \"%1\" with %2 (%3 file(s))")
+                    .arg(name, external.toolName())
+                    .arg(outcome.extractedFiles.size()));
+        return true;
+    }
+
+    // Only a passphrase problem may ask the user for a password again. A tool
+    // that crashed or ran out of disk is a different conversation, and offering
+    // "Set Password…" for it sends the user chasing the wrong thing.
+    if (outcome.outcome == ExternalUnpacker::Outcome::WrongPassword
+        || reader.wrongPassphrase()) {
+        result.passwordRequired = true;
+        result.wrongPassword = true;
+        result.error = QObject::tr("The password for %1 is wrong.").arg(name);
+        return false;
+    }
+
+    result.error = outcome.error.isEmpty()
+                       ? QObject::tr("Extraction of %1 failed").arg(name)
+                       : outcome.error;
+    return false;
 }
 
 } // namespace eMule::usenet

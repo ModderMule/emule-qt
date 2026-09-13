@@ -16,6 +16,7 @@
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 #include "net/PeerVetting.h"
+#include "stats/Statistics.h"
 
 #include "utils/Log.h"
 
@@ -298,6 +299,8 @@ void URLClient::processHttpBlockPacket(const uint8* data, uint32 size)
     // Accumulate for rate averaging (drained in calculateDownloadRate)
     accumulateDownBytes(size);
 
+    bookHttpDownload(size);
+
     // Write data to PartFile
     PartFile* file = reqFile();
     if (file && data && size > 0) {
@@ -493,6 +496,18 @@ bool URLClient::acceptResolvedAddress(const Address& addr)
                  .arg(addr.toString(), m_urlHost));
     disconnected(QStringLiteral("URL host resolved to an unusable address"));
     return false;
+}
+
+// ===========================================================================
+// bookHttpDownload
+// ===========================================================================
+
+void URLClient::bookHttpDownload(uint64 bytes)
+{
+    // Explicit ClientSoftware::URL, because an HTTP client's own software field
+    // is never set to it; port 0 lands under "Other Ports", like MFC's -2.
+    if (bytes > 0 && theApp.statistics)
+        theApp.statistics->addTransferData(ClientSoftware::URL, 0, false, false, bytes);
 }
 
 } // namespace eMule

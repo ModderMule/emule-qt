@@ -186,6 +186,25 @@ private:
     };
 
     [[nodiscard]] static QString fileNameOf(const UsenetQueueItem& item, int fileIndex);
+
+    /// Whether @p fileIndex's name is as good as it is going to get.
+    ///
+    /// Not "is it empty": on a fully obfuscated post `=ybegin name=` returns a
+    /// name that is real text and means nothing, and treating that as an answer
+    /// orders a volume set from whichever files happened to look like volumes.
+    /// A name is settled when PAR2 named it, when the release has no PAR2 index
+    /// to name it with, or when the bytes PAR2 would need were there and it
+    /// still did not match.
+    [[nodiscard]] static bool nameIsSettled(const UsenetQueueItem& item, int fileIndex);
+
+    /// How many opening bytes to ask for when a name is not settled.
+    ///
+    /// ⚠️ kRarHeaderProbeBytes is 8192 and PAR2 identifies a file by its first
+    /// 16384, so a release that needs PAR2 to name it must ask for the larger of
+    /// the two. With ~700 KB articles both arrive in the same article and the
+    /// difference never shows; with a small-article post, asking for 8 KB leaves
+    /// the name unsettled forever and the prefetch loops.
+    [[nodiscard]] static qint64 nameProbeBytes(const UsenetQueueItem& item);
     [[nodiscard]] static QList<int> splitMembersOf(const UsenetQueueItem& item, int fileIndex);
     [[nodiscard]] static bool readIfAvailable(const UsenetQueueItem& item, int fileIndex,
                                               qint64 offset, qint64 length, QByteArray& out);

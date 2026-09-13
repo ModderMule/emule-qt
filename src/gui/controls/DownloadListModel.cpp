@@ -8,6 +8,7 @@
 
 #include "utils/OtherFunctions.h"
 #include "utils/RatingIcons.h"
+#include "utils/StringUtils.h"
 
 #include <QColor>
 #include <QFileInfo>
@@ -16,30 +17,6 @@
 namespace eMule {
 
 namespace {
-
-/// Format a byte count for display (B / KiB / MiB / GiB).
-QString formatSize(int64_t bytes)
-{
-    if (bytes < 0)
-        return {};
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
-}
-
-/// Format a speed value (bytes/sec) for display.
-QString formatSpeed(int64_t bytesPerSec)
-{
-    if (bytesPerSec <= 0)
-        return {};
-    if (bytesPerSec < 1024)
-        return QStringLiteral("%1 B/s").arg(bytesPerSec);
-    return QStringLiteral("%1 KiB/s").arg(static_cast<double>(bytesPerSec) / 1024.0, 0, 'f', 1);
-}
 
 /// Estimate remaining time from size and speed.
 QString formatRemaining(int64_t remaining, int64_t speed)
@@ -97,6 +74,21 @@ QString sourceFromDisplay(int sourceFrom)
     case 8:  return QObject::tr("HTTP Cache");      // SourceFrom::HttpCache
     default: return QObject::tr("Unknown");
     }
+}
+
+/// Rank for the Priority column, ascending with importance — the same direction
+/// SharedFilesModel::priorityOrdinal() runs in.
+///
+/// The wire sends a name (JsonSerializers.h priorityToString), and by name the
+/// column comes out auto, high, low, normal, veryHigh, veryLow, which is not an
+/// order anyone asked for.
+int downPriorityOrdinal(const QString& priority)
+{
+    if (priority == QLatin1String("veryLow"))  return 0;
+    if (priority == QLatin1String("low"))      return 1;
+    if (priority == QLatin1String("high"))     return 3;
+    if (priority == QLatin1String("veryHigh")) return 4;
+    return 2;   // normal, and auto, which the daemon resolves per file anyway
 }
 
 /// Map download state string to sort priority (lower = more important).
@@ -229,8 +221,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             switch (index.column()) {
             case ColFileName:      return s.userName;
             case ColSize:          return sourceFromDisplay(s.sourceFrom);
-            case ColCompleted:     return s.sessionDown > 0 ? formatSize(s.sessionDown) : QString{};
-            case ColSpeed:         return formatSpeed(s.datarate);
+            case ColCompleted:     return s.sessionDown > 0 ? formatByteSize(s.sessionDown) : QString{};
+            case ColSpeed:         return s.datarate > 0 ? formatByteRate(s.datarate) : QString{};
             case ColProgress:      return {};
             case ColSources:
                 if (s.downloadState == QLatin1String("Downloading"))
@@ -308,9 +300,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColFileName:   return d.fileName;
-        case ColSize:       return formatSize(d.fileSize);
-        case ColCompleted:  return formatSize(d.completedSize);
-        case ColSpeed:      return formatSpeed(d.datarate);
+        case ColSize:       return formatByteSize(d.fileSize);
+        case ColCompleted:  return formatByteSize(d.completedSize);
+        case ColSpeed:      return d.datarate > 0 ? formatByteRate(d.datarate) : QString{};
         case ColProgress:   return QStringLiteral("%1%").arg(d.percentCompleted, 0, 'f', 1);
         case ColSources:
             return QStringLiteral("%1 / %2").arg(d.transferringSrcCount).arg(d.sourceCount);
@@ -364,14 +356,14 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             "Accepted Requests:\t%11\n"
             "Transferred Data:\t%12")
             .arg(d.fileName, d.hash,
-                 formatSize(d.fileSize),
-                 formatSize(d.completedSize),
+                 formatByteSize(d.fileSize),
+                 formatByteSize(d.completedSize),
                  QString::number(d.percentCompleted, 'f', 1))
             .arg(fileTypeDisplay(d.fileType),
                  d.status, d.priority,
                  QStringLiteral("%1 / %2").arg(d.transferringSrcCount).arg(d.sourceCount))
             .arg(d.requests).arg(d.acceptedRequests)
-            .arg(formatSize(d.transferredData));
+            .arg(formatByteSize(d.transferredData));
         tip += extra;
         return tip;
     }
@@ -385,7 +377,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColSpeed:      return QVariant::fromValue(d.datarate);
         case ColProgress:   return d.percentCompleted;
         case ColSources:    return d.sourceCount;
-        case ColPriority:   return d.priority;
+        case ColPriority:   return downPriorityOrdinal(d.priority);
         case ColStatus:     return statusRank(d);
         case ColRemaining: {
             if (d.datarate > 0)
@@ -399,6 +391,11 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         default: break;
         }
     }
+
+    // Answered on every column, because CategoryFilterProxy asks column 0 and a
+    // caller inspecting a selected cell may be on any of them.
+    if (role == kCategoryRole)
+        return static_cast<int>(d.category);
 
     if (role == PartMapRole && index.column() == ColProgress)
         return d.partMap;

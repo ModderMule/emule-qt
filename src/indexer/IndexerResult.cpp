@@ -2,6 +2,8 @@
 
 #include "IndexerCaps.h"
 
+#include "utils/OtherFunctions.h"
+
 #include <QXmlStreamReader>
 
 namespace eMule::indexer {
@@ -73,8 +75,28 @@ void applyAttr(IndexerResult& row, QStringView key, QStringView value)
     } else if (key == QLatin1String("group")) {
         row.group = value.toString();
     } else if (key == QLatin1String("password")) {
-        // "0" means none; anything else is some flavour of protected.
-        row.passwordProtected = value != QLatin1String("0");
+        // The field is specified as a flag — 0 none, 1 maybe, 2 yes — and "-1"
+        // is common in the wild. But indexers also put the real passphrase here,
+        // so the value has to be classified rather than just tested.
+        //
+        // Anything that parses as an integer is a flag and never a password: "1"
+        // is not somebody's passphrase, and using it as one turns a release that
+        // would have prompted the user into one that fails with "wrong
+        // password". Everything else is a candidate, with a length floor for the
+        // "n/a" and "?" placeholders — the same `size() < 5` idea ServerList and
+        // IPFilter use for junk lines.
+        //
+        // Erring toward *protected* costs a colour in the results list; erring
+        // the other way costs a download that cannot be unpacked.
+        bool numeric = false;
+        const int flag = value.toInt(&numeric);
+        if (numeric) {
+            row.passwordProtected = flag != 0;
+        } else {
+            row.passwordProtected = true;
+            if (value.size() >= 4)
+                row.password = value.toString();
+        }
     } else if (key == QLatin1String("usenetdate")) {
         if (const QDateTime dt = parseFeedDate(value.toString()); dt.isValid())
             row.published = dt;
@@ -98,6 +120,14 @@ void readItem(QXmlStreamReader& xml, IndexerResult& row, qint64& enclosureLength
 
         if (name == QLatin1String("title")) {
             row.title = xml.readElementText().trimmed();
+            // `Release{{secret}}` — the same marker NZBGet writes into a .nzb
+            // filename, which some indexers carry in the title instead of in an
+            // attribute. Taken out of the title as well as read, or the release
+            // is queued under a name with the password showing.
+            if (const QString braced = takeBracedPassword(row.title); !braced.isEmpty()) {
+                row.password = braced;
+                row.passwordProtected = true;
+            }
             continue;
         }
         if (name == QLatin1String("guid")) {

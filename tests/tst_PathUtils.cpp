@@ -124,6 +124,30 @@ private slots:
         // /tmp should have some free space
         QVERIFY(space > 0);
     }
+
+    /// freeDiskSpace() answers 0 for both "full" and "could not tell", and a
+    /// guard that pauses downloads has to know which it is looking at.
+    void anUnreadableVolumeIsTellableFromAFullOne()
+    {
+        QVERIFY(eMule::tryFreeDiskSpace(QStringLiteral("/tmp")).has_value());
+        QVERIFY(!eMule::tryFreeDiskSpace(QString()).has_value());
+        QCOMPARE(eMule::freeDiskSpace(QString()), std::uint64_t(0));
+    }
+
+    /// A scratch or incoming directory is created on first use, so the question
+    /// is asked about a path that does not exist yet. QStorageInfo calls that
+    /// invalid; answering "cannot measure" would park a fresh install forever.
+    void aDirectoryThatDoesNotExistYetAnswersForItsVolume()
+    {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        const QString unborn =
+            QDir(tmp.path()).filePath(QStringLiteral("temp/Usenet/not/made/yet"));
+
+        const auto space = eMule::tryFreeDiskSpace(unborn);
+        QVERIFY2(space.has_value(), "a path that does not exist yet read as unmeasurable");
+        QCOMPARE(space, eMule::tryFreeDiskSpace(tmp.path()));
+    }
 };
 
 QTEST_MAIN(PathUtilsTest)

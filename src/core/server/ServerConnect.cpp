@@ -14,6 +14,7 @@
 #include "net/UDPSocket.h"
 #include "net/Packet.h"
 #include "protocol/Tag.h"
+#include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
@@ -421,6 +422,12 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
         // Login successful — we are now connected
         m_connected = true;
         m_connectedSocket = sender;
+
+        // MFC counts the server clock from here, not from the TCP connect
+        // (srchybrid/ServerConnect.cpp:212). A smart-LowID bounce never reaches
+        // this branch, so it is not counted as a connection.
+        if (auto* stats = theApp.statistics)
+            stats->serverConnected();
 
         const Server* cserver = sender->currentServer();
         if (cserver) {
@@ -861,6 +868,12 @@ void ServerConnect::destroySocket(ServerSocket* socket)
     if (m_connectedSocket == socket) {
         m_connectedSocket = nullptr;
         m_connected = false;
+
+        // The one funnel every ended connection passes through — disconnect(),
+        // connectionFailed(), a LowID bounce and the destructor alike — so the
+        // server clock is banked exactly once per connection, wherever it died.
+        if (auto* stats = theApp.statistics)
+            stats->serverDisconnected();
     }
 
     // Disconnect all signals from this socket

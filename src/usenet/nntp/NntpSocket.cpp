@@ -3,16 +3,39 @@
 #include "nntp/NntpCommand.h"
 #include "utils/Log.h"
 
+#include <QMutex>
+#include <QScopeGuard>
 #include <QSslConfiguration>
 #include <QSslSocket>
 #include <QTimer>
 
 #include <algorithm>
+#include <atomic>
 #include <utility>
 
 namespace eMule::usenet {
 
 namespace {
+
+/// NntpSocket::totalWireBytesRead(). Sockets live on the worker threads and the
+/// reader is the queue's tick on the daemon thread, hence atomic; relaxed, since
+/// nothing is ordered against it.
+std::atomic<qint64> g_wireBytesRead{0};
+
+/// Open authenticated connections, for statistics. Written by the worker
+/// threads on connect and close only, so a mutex costs nothing that matters.
+/// Never destroyed: a socket may still close during static destruction.
+struct OpenConnections {
+    QMutex mutex;
+    QHash<QString, int> byAccount;
+    int total = 0;
+};
+
+OpenConnections& openConnections()
+{
+    static auto* registry = new OpenConnections;
+    return *registry;
+}
 
 /// Refill granularity for the read budget. Ten slices a second is fine-grained
 /// enough that a limited connection does not arrive in visible bursts, and
@@ -57,6 +80,7 @@ NntpSocket::~NntpSocket()
     // signals first.
     if (m_socket)
         m_socket->disconnect(this);
+    markClosed();
 }
 
 void NntpSocket::connectToServer(const NewsServer& server)
@@ -150,7 +174,7 @@ void NntpSocket::close()
 void NntpSocket::abort()
 {
     disarmTimers();
-    m_state = State::Disconnected;
+    enterDisconnected();
     if (m_socket)
         m_socket->abort();
 }
@@ -162,7 +186,16 @@ bool NntpSocket::isConnected() const
 
 void NntpSocket::setReadRateLimit(qint64 bytesPerSecond)
 {
-    m_readRateLimit = std::max<qint64>(0, bytesPerSecond);
+    bytesPerSecond = std::max<qint64>(0, bytesPerSecond);
+
+    // Re-applied on every lease, every release and every bandwidth-split tick,
+    // nearly always with the figure already in force. Resetting the budget each
+    // time gave a drained socket a free refill per call — measured live, the
+    // engine ran ~12 % over its cap — and threw away credit banked while waiting
+    // on a round trip, which is the whole point of kBurstTicks.
+    if (bytesPerSecond == m_readRateLimit)
+        return;
+    m_readRateLimit = bytesPerSecond;
 
     if (m_readRateLimit == 0) {
         if (m_refillTimer)
@@ -178,8 +211,35 @@ void NntpSocket::setReadRateLimit(qint64 bytesPerSecond)
         m_refillTimer = new QTimer(this);
         connect(m_refillTimer, &QTimer::timeout, this, &NntpSocket::onReadBudgetRefill);
     }
-    m_readBudget = m_readRateLimit * kRefillIntervalMs / 1000;
-    m_refillTimer->start(kRefillIntervalMs);
+
+    const qint64 perTick = m_readRateLimit * kRefillIntervalMs / 1000;
+    if (m_refillTimer->isActive()) {
+        // A new figure on a limited socket: keep what it has banked, or owes,
+        // within the new burst cap. The running timer carries on at the new rate.
+        m_readBudget = std::min(m_readBudget, perTick * kBurstTicks);
+    } else {
+        m_readBudget = perTick;
+        m_refillTimer->start(kRefillIntervalMs);
+    }
+}
+
+qint64 NntpSocket::totalWireBytesRead()
+{
+    return g_wireBytesRead.load(std::memory_order_relaxed);
+}
+
+QHash<QString, int> NntpSocket::openConnectionsByAccount()
+{
+    auto& reg = openConnections();
+    QMutexLocker lock(&reg.mutex);
+    return reg.byAccount;
+}
+
+int NntpSocket::openConnectionCount()
+{
+    auto& reg = openConnections();
+    QMutexLocker lock(&reg.mutex);
+    return reg.total;
 }
 
 qint64 NntpSocket::takeBytesRead()
@@ -282,7 +342,7 @@ void NntpSocket::onSocketDisconnected()
     if (!wasQuit && m_state != State::Disconnected && !m_failed)
         fail(NntpError::Disconnected, QStringLiteral("Server closed the connection"));
 
-    m_state = State::Disconnected;
+    enterDisconnected();
     emit disconnected();
 }
 
@@ -333,6 +393,12 @@ void NntpSocket::drain()
     if (!m_socket)
         return;
 
+    // Published once per call rather than per line: one atomic add per read
+    // burst instead of one per ~128-byte yEnc line.
+    qint64 drained = 0;
+    const auto publish = qScopeGuard(
+        [&drained] { g_wireBytesRead.fetch_add(drained, std::memory_order_relaxed); });
+
     while (m_socket->canReadLine()) {
         // A limit of 0 means unlimited — read everything the socket holds.
         if (m_readRateLimit > 0 && m_readBudget <= 0) {
@@ -345,6 +411,7 @@ void NntpSocket::drain()
         QByteArray raw = m_socket->readLine();
         m_readBudget -= raw.size();
         m_bytesRead += raw.size();   // before the CRLF chop: this is the wire count
+        drained += raw.size();
 
         // Strip CRLF / LF. Everything downstream works on the bare line.
         while (raw.endsWith('\n') || raw.endsWith('\r'))
@@ -460,7 +527,7 @@ void NntpSocket::handleStatusLine(const QByteArray& raw)
     case State::QuitSent:
         // 205 is the polite answer; anything else still means we are done.
         Q_UNUSED(kClosing);
-        m_state = State::Disconnected;
+        enterDisconnected();
         m_socket->disconnectFromHost();
         break;
 
@@ -510,6 +577,7 @@ void NntpSocket::beginAuthOrReady()
 void NntpSocket::enterReady()
 {
     m_state = State::Ready;
+    markOpen();
     if (m_responseTimer)
         m_responseTimer->stop();
 
@@ -562,7 +630,7 @@ void NntpSocket::fail(NntpError error, const QString& text)
                    .arg(m_server.displayName(), describeNntpError(error), text));
 
     const bool wasConnected = m_state != State::Disconnected;
-    m_state = State::Disconnected;
+    enterDisconnected();
     emit failed(error, text);
 
     if (m_socket && wasConnected)
@@ -583,6 +651,39 @@ void NntpSocket::disarmTimers()
         m_idleTimer->stop();
     if (m_refillTimer)
         m_refillTimer->stop();
+}
+
+void NntpSocket::enterDisconnected()
+{
+    m_state = State::Disconnected;
+    markClosed();
+}
+
+void NntpSocket::markOpen()
+{
+    if (m_counted)
+        return;
+    m_counted = true;
+    m_countedAccount = m_server.accountId;
+
+    auto& reg = openConnections();
+    QMutexLocker lock(&reg.mutex);
+    ++reg.byAccount[m_countedAccount];
+    ++reg.total;
+}
+
+void NntpSocket::markClosed()
+{
+    if (!m_counted)
+        return;
+    m_counted = false;
+
+    auto& reg = openConnections();
+    QMutexLocker lock(&reg.mutex);
+    if (auto it = reg.byAccount.find(m_countedAccount); it != reg.byAccount.end()
+        && --it.value() <= 0)
+        reg.byAccount.erase(it);
+    --reg.total;
 }
 
 } // namespace eMule::usenet

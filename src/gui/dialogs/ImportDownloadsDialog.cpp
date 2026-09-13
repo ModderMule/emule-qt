@@ -7,6 +7,7 @@
 #include "controls/AbstractListView.h"
 #include "IpcMessage.h"
 #include "utils/DialogSizing.h"
+#include "utils/StringUtils.h"
 
 #include <QCborArray>
 #include <QPointer>
@@ -235,7 +236,7 @@ void ImportDownloadsDialog::updateJobList(const QCborArray& jobs)
         auto* item = new QTreeWidgetItem(m_jobList);
         item->setText(0, filename);
         item->setText(1, statusString(state));
-        item->setText(2, size > 0 ? formatSize(size) : QString());
+        item->setText(2, size > 0 ? formatByteSize(size) : QString());
         item->setText(3, fileHash);
         item->setData(0, Qt::UserRole, static_cast<int>(i));      // job index
         item->setData(0, Qt::UserRole + 1, state);                 // state for button logic
@@ -283,19 +284,6 @@ QString ImportDownloadsDialog::statusString(int state)
     case 8: return tr("Already Exists");
     default: return tr("Unknown");
     }
-}
-
-QString ImportDownloadsDialog::formatSize(int64_t bytes)
-{
-    if (bytes < 0)
-        return {};
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
 }
 
 } // namespace eMule

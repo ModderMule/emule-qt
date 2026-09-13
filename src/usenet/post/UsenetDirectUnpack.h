@@ -69,6 +69,13 @@ struct UsenetDirectUnpackResult {
     QStringList extracted;
     QStringList consumed;   ///< the volumes it read, for cleanup accounting
     bool ok = false;
+
+    /// The run stopped because the set is encrypted, not because anything is
+    /// wrong with it. The queue needs the distinction: this is the one failure
+    /// that a *password* fixes, and the one that must not make the preview
+    /// answer "never" while the download is still coming.
+    bool encrypted = false;
+
     QString error;
 };
 

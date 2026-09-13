@@ -11,6 +11,7 @@
 /// are the ones that silently pass when the fix is wrong.
 
 #include "FakeIndexerServer.h"
+#include "TestFixtures.h"
 
 #include "IndexerFeedList.h"
 #include "IndexerFeedStore.h"
@@ -35,6 +36,7 @@ private slots:
 
     void aNewFeedsFirstPollAddsNothing();
     void grabExistingMakesTheFirstPollAct();
+    void aFeedQueuesIntoItsDownloadCategory();
     void theSecondPollActsOnlyOnWhatIsNew();
     void addingAnIndexerToAnExistingFeedSeedsItRatherThanGrabbingItsBacklog();
     void aDuplicateRefusalIsTerminalNotARetry();
@@ -111,12 +113,14 @@ IndexerFeed feedNamed(const QString& name)
 /// Records everything handed to the sink, and answers however the case needs.
 struct SinkLog {
     QStringList titles;
+    QList<int> categories;
     FeedAddOutcome answer = FeedAddOutcome::Added;
 
     IndexerFeedList::NzbSink install()
     {
         return [this](const FeedAddRequest& request, QString& error) {
             titles.append(request.title);
+            categories.append(request.downloadCategory);
             if (answer == FeedAddOutcome::Rejected)
                 error = QStringLiteral("not an NZB");
             return answer;
@@ -168,6 +172,7 @@ void tst_IndexerFeedPoller::aNewFeedsFirstPollAddsNothing()
     QStringList titles;
     for (int i = 0; i < 50; ++i)
         titles.append(QStringLiteral("ubuntu-%1").arg(i));
+    ScopedStatistics stats;
 
     QString host;
     FakeIndexerServer server([&titles, &host](const QUrl& url) {
@@ -194,6 +199,10 @@ void tst_IndexerFeedPoller::aNewFeedsFirstPollAddsNothing()
     // And it fetched only the search: not one .nzb was pulled.
     for (const QString& path : server.seenPaths)
         QVERIFY(!path.startsWith(QStringLiteral("/nzb/")));
+
+    QCOMPARE(stats->indexerSession().feedPolls, uint64(1));
+    QCOMPARE(stats->indexerSession().feedMatches, uint64(0));
+    QCOMPARE(stats->indexerSession().nzbFetches, uint64(0));
 }
 
 void tst_IndexerFeedPoller::grabExistingMakesTheFirstPollAct()
@@ -222,9 +231,40 @@ void tst_IndexerFeedPoller::grabExistingMakesTheFirstPollAct()
     QCOMPARE(feeds.statusFor(QStringLiteral("Eager")).lastMatched, 2);
 }
 
+void tst_IndexerFeedPoller::aFeedQueuesIntoItsDownloadCategory()
+{
+    QString host;
+    FakeIndexerServer server([&host](const QUrl& url) {
+        if (url.path().startsWith(QStringLiteral("/nzb/")))
+            return qMakePair(200, anNzb());
+        return qMakePair(200, searchFeed({QStringLiteral("A"), QStringLiteral("B")}, host));
+    });
+    host = server.urlFor(QString());
+
+    thePrefs.setIndexers({accountFor(server, QStringLiteral("Main"))});
+    IndexerFeed feed = feedNamed(QStringLiteral("Shows"));
+    feed.grabExisting = true;
+    feed.downloadCategory = 3;
+    thePrefs.setIndexerFeeds({feed});
+
+    SinkLog sink;
+    IndexerFeedList feeds;
+    feeds.setNzbSink(sink.install());
+    feeds.applyPreferences();
+
+    pollAndWait(feeds, QStringLiteral("Shows"));
+
+    // Every match carries the feed's category out through the sink. It is an
+    // opaque int on the way past -- this module names nothing in eMule::Usenet,
+    // and what the number indexes is the sink's business.
+    QCOMPARE(sink.titles.size(), 2);
+    QCOMPARE(sink.categories, QList<int>({3, 3}));
+}
+
 void tst_IndexerFeedPoller::theSecondPollActsOnlyOnWhatIsNew()
 {
     QStringList titles{QStringLiteral("old-1"), QStringLiteral("old-2")};
+    ScopedStatistics stats;
 
     QString host;
     FakeIndexerServer server([&titles, &host](const QUrl& url) {
@@ -254,6 +294,11 @@ void tst_IndexerFeedPoller::theSecondPollActsOnlyOnWhatIsNew()
     QCOMPARE(sink.titles.size(), 2);
     QVERIFY(sink.titles.contains(QStringLiteral("new-1")));
     QVERIFY(sink.titles.contains(QStringLiteral("new-2")));
+
+    QCOMPARE(stats->indexerSession().feedPolls, uint64(2));
+    QCOMPARE(stats->indexerSession().feedMatches, uint64(2));
+    QCOMPARE(stats->indexerSession().nzbFetches, uint64(2));
+    QCOMPARE(stats->indexerSession().nzbFetchErrors, uint64(0));
 }
 
 void tst_IndexerFeedPoller::addingAnIndexerToAnExistingFeedSeedsItRatherThanGrabbingItsBacklog()
@@ -334,6 +379,7 @@ void tst_IndexerFeedPoller::aDuplicateRefusalIsTerminalNotARetry()
 void tst_IndexerFeedPoller::aFailedGrabIsRetriedAndThenGivenUpOn()
 {
     int nzbRequests = 0;
+    ScopedStatistics stats;
     QString host;
     FakeIndexerServer server([&nzbRequests, &host](const QUrl& url) {
         if (url.path().startsWith(QStringLiteral("/nzb/"))) {
@@ -361,6 +407,13 @@ void tst_IndexerFeedPoller::aFailedGrabIsRetriedAndThenGivenUpOn()
 
     QCOMPARE(nzbRequests, IndexerFeedList::kMaxGrabAttempts);
     QCOMPARE(sink.titles.size(), 0);
+
+    // One match, however many times it was retried; every attempt a failed fetch.
+    QCOMPARE(stats->indexerSession().feedPolls, uint64(6));
+    QCOMPARE(stats->indexerSession().feedMatches, uint64(1));
+    QCOMPARE(stats->indexerSession().nzbFetches, uint64(IndexerFeedList::kMaxGrabAttempts));
+    QCOMPARE(stats->indexerSession().nzbFetchErrors,
+             uint64(IndexerFeedList::kMaxGrabAttempts));
 }
 
 void tst_IndexerFeedPoller::aTorznabRowIsNeverGrabbedAsAnNzb()

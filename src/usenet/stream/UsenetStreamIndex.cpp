@@ -1,5 +1,6 @@
 #include "stream/UsenetStreamIndex.h"
 
+#include "post/Par2NameIndex.h"
 #include "post/UsenetUnpacker.h"
 #include "queue/UsenetQueueItem.h"
 #include "utils/OtherFunctions.h"
@@ -13,6 +14,18 @@
 namespace eMule::usenet {
 
 namespace {
+
+/// Whether the release carries an index .par2 — the only file that can name the
+/// others when everything else is obfuscated. Recovery volumes cannot: they
+/// carry recovery data and no file list.
+bool hasPar2Index(const UsenetQueueItem& item)
+{
+    for (const NzbFileInfo& info : item.nzb.files) {
+        if (info.isPar2() && !info.isPar2Volume())
+            return true;
+    }
+    return false;
+}
 
 /// `Movie.mkv.001` — a raw file cut into numbered pieces, with no container at
 /// all. UsenetUnpacker's reNumbered() only matches when the base carries an
@@ -184,10 +197,7 @@ void UsenetStreamIndex::invalidate()
 
 QString UsenetStreamIndex::fileNameOf(const UsenetQueueItem& item, int fileIndex)
 {
-    if (fileIndex < 0 || fileIndex >= item.files.size() || fileIndex >= item.nzb.files.size())
-        return {};
-    const QString fromArticle = item.files.at(fileIndex).articleFileName;
-    return fromArticle.isEmpty() ? item.nzb.files.at(fileIndex).fileName : fromArticle;
+    return item.bestFileName(fileIndex);
 }
 
 QList<int> UsenetStreamIndex::splitMembersOf(const UsenetQueueItem& item, int fileIndex)
@@ -279,16 +289,49 @@ StreamResolve UsenetStreamIndex::resolveSplitSet(const UsenetQueueItem& item,
     return out;
 }
 
+bool UsenetStreamIndex::nameIsSettled(const UsenetQueueItem& item, int fileIndex)
+{
+    if (fileIndex < 0 || fileIndex >= item.files.size() || fileIndex >= item.nzb.files.size())
+        return true;
+
+    const UsenetFileState& st = item.files.at(fileIndex);
+    if (!st.par2FileName.isEmpty())
+        return true;
+
+    // No PAR2 index in the release, so nothing better is coming and whatever the
+    // NZB or the article said is the final answer -- which is exactly how this
+    // behaved before PAR2 names existed.
+    if (!hasPar2Index(item))
+        return true;
+
+    if (st.declaredSize <= 0)
+        return false;
+
+    // The bytes PAR2 needs were available and it did not match. A par2 set
+    // covers the archive volumes, not the .nfo, the sample or itself, so that is
+    // a fact rather than a failure -- and a final one.
+    return st.availableFrom(0) >= Par2NameIndex::bytesNeededFor(st.declaredSize);
+}
+
+qint64 UsenetStreamIndex::nameProbeBytes(const UsenetQueueItem& item)
+{
+    return hasPar2Index(item) ? qMax<qint64>(kRarHeaderProbeBytes, kPar2Hash16kBytes)
+                              : kRarHeaderProbeBytes;
+}
+
 UsenetStreamIndex::SetInfo* UsenetStreamIndex::setFor(const UsenetQueueItem& item, int fileIndex,
                                                       StreamResolve& out)
 {
     const QString name = fileNameOf(item, fileIndex);
-    if (name.isEmpty()) {
+    if (!nameIsSettled(item, fileIndex)) {
         // An obfuscated post says nothing until its first article arrives, and
-        // `=ybegin name=` is then the only place the real name exists.
-        out = needBytes(fileIndex, 0, kRarHeaderProbeBytes);
+        // for a *fully* obfuscated one `=ybegin name=` is junk too — then only
+        // the PAR2 set knows, and it needs the file's first 16 KiB to say so.
+        out = needBytes(fileIndex, 0, nameProbeBytes(item));
         return nullptr;
     }
+    if (name.isEmpty())
+        return nullptr;
 
     const auto pos = UsenetUnpacker::volumePositionOf(name);
     if (pos.index < 0)
@@ -303,17 +346,23 @@ UsenetStreamIndex::SetInfo* UsenetStreamIndex::setFor(const UsenetQueueItem& ite
     if (set.volumes.isEmpty()) {
         QList<QPair<int, int>> ordered;   // (volume index, NZB file index)
         for (int i = 0; i < item.nzb.files.size() && i < item.files.size(); ++i) {
-            const QString n = fileNameOf(item, i);
-            if (n.isEmpty()) {
-                // One unnamed file is enough to make the set's order a guess.
-                // §7.2 calls this the mandatory prefetch pass: one article per
-                // file, and only on releases whose NZB hides the names.
+            // One *unsettled* file is enough to make the set's order a guess,
+            // and a junk name is as unsettled as no name at all -- skipping it
+            // silently orders the set from a subset of its volumes, which is a
+            // mis-map rather than a miss. §7.2 calls this the mandatory prefetch
+            // pass: one article per file, and only on releases that hide names.
+            if (!nameIsSettled(item, i)) {
                 if (!item.nzb.files.at(i).isPar2()) {
-                    out = needBytes(i, 0, kRarHeaderProbeBytes);
+                    out = needBytes(i, 0, nameProbeBytes(item));
                     return nullptr;
                 }
                 continue;
             }
+
+            const QString n = fileNameOf(item, i);
+            if (n.isEmpty())
+                continue;
+
             const auto p = UsenetUnpacker::volumePositionOf(n);
             if (p.index >= 0 && p.baseName == pos.baseName)
                 ordered.append({p.index, i});

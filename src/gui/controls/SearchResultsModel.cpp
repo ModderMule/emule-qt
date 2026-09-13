@@ -3,30 +3,40 @@
 /// @brief Table model for search results — implementation.
 
 #include "controls/SearchResultsModel.h"
+#include "controls/KnownTypeStyle.h"
 
+#include "prefs/Preferences.h"
+#include "utils/ColorUtils.h"
 #include "utils/FileTypeIcons.h"
 #include "utils/RatingIcons.h"
+#include "utils/StringUtils.h"
 
 #include <QColor>
+#include <QGuiApplication>
 #include <QHash>
 #include <QIcon>
+#include <QStyleHints>
+
+#include <algorithm>
 
 namespace eMule {
 
 namespace {
 
-/// Format a byte count for display (B / KiB / MiB / GiB).
-QString formatSize(int64_t bytes)
+/// MFC SearchListCtrl.cpp:1413-1416, 1493-1504: 13 steps from the text colour toward blue,
+/// one per source after the first. Dark mode heads for the palette's link blue instead —
+/// pure blue is unreadable on a dark list.
+QColor availabilityShade(int64_t sources)
 {
-    if (bytes < 0)
+    constexpr int64_t kShades = 13;   // MFC AVBLYSHADECOUNT
+    const int64_t step = std::clamp<int64_t>(sources - 1, 0, kShades - 1);
+    if (step == 0)
         return {};
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
+    const bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    const QPalette pal = QGuiApplication::palette();
+    const QColor base = dark ? pal.color(QPalette::Link) : QColor(0, 0, 255);
+    return blend(pal.color(QPalette::Text), base,
+                 static_cast<qreal>(step) / static_cast<qreal>(kShades));
 }
 
 /// Format media length in seconds to mm:ss or hh:mm:ss.
@@ -52,18 +62,6 @@ QString formatBitrate(int64_t bitrate)
     return QStringLiteral("%1 kbps").arg(bitrate);
 }
 
-/// Known type display string matching MFC.
-QString knownTypeString(int knownType)
-{
-    switch (knownType) {
-    case 1:  return QObject::tr("Shared");
-    case 2:  return QObject::tr("Downloading");
-    case 3:  return QObject::tr("Downloaded");
-    case 4:  return QObject::tr("Cancelled");
-    default: return {};
-    }
-}
-
 } // anonymous namespace
 
 SearchResultsModel::SearchResultsModel(QObject* parent)
@@ -81,7 +79,7 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColFileName:     return r.fileName;
-        case ColSize:         return formatSize(r.fileSize);
+        case ColSize:         return formatByteSize(r.fileSize);
         case ColAvailability: return r.sourceCount > 0 ? QString::number(r.sourceCount) : QString{};
         case ColComplete:
             return r.completeSourceCount > 0 ? QString::number(r.completeSourceCount) : QString{};
@@ -129,17 +127,15 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         }
     }
 
-    // Color coding matching MFC eMule: red = already have/downloading, green = known/cancelled
+    // MFC SearchListCtrl.cpp:1381-1417: what we have or had wins (shared with
+    // IndexerResultsModel), then spam in grey text, then the availability shade.
     if (role == Qt::ForegroundRole) {
-        if (r.isSpam)
-            return QColor(0xCC, 0x00, 0x00); // red — spam
-        switch (r.knownType) {
-        case 1: return QColor(0xFF, 0x00, 0x00); // Shared — red
-        case 2: return QColor(0xFF, 0x00, 0x00); // Downloading — red
-        case 3: return QColor(0x00, 0x80, 0x00); // Downloaded — green
-        case 4: return QColor(0x00, 0x80, 0x00); // Cancelled — green
-        default: break;
-        }
+        if (const QColor c = knownTypeColor(r.knownType); c.isValid())
+            return c;
+        if (r.isSpam && thePrefs.enableSearchResultFilter())
+            return dimmedText(0.5);   // COLOR_GRAYTEXT
+        if (const QColor c = availabilityShade(r.sourceCount); c.isValid())
+            return c;
     }
 
     return {};

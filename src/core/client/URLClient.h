@@ -86,6 +86,14 @@ protected:
     [[nodiscard]] uint64 rangeStart() const { return m_rangeStart; }
     void setRangeStart(uint64 pos) { m_rangeStart = pos; }
 
+    /// Book file data that arrived over HTTP into the Transfer statistics.
+    ///
+    /// MFC books every HTTP block as a download like any other
+    /// (srchybrid/URLClient.cpp:371) — including its PeerCache, this feature's
+    /// ancestor. Call it with the bytes as they are written to the part file, so
+    /// "Downloaded Data" and the UL:DL ratios count what actually arrived.
+    static void bookHttpDownload(uint64 bytes);
+
 private:
     void sendHelloPacket() override {} // no-op for HTTP
     void connectToHost(); // create socket and initiate TCP connection

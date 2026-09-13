@@ -164,15 +164,14 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
         addRow(tr("AICH Hash"), aich);
 
     const qint64 fileSize = num(d, QLatin1StringView("fileSize"));
-    addRow(tr("File Size"), QStringLiteral("%1 (%2 bytes)")
-        .arg(formatByteSize(static_cast<uint64>(fileSize)),
-             QLocale().toString(fileSize)));
+    // MFC FileDetailDialogInfo.cpp:280 — "734.53 MB  (770,215,936 Bytes)"
+    addRow(tr("File Size"), tr("%1 (%2 Bytes)")
+        .arg(formatByteSize(fileSize), QLocale().toString(fileSize)));
 
     const qint64 completed = num(d, QLatin1StringView("completedSize"));
     const double pct = d.value(QLatin1StringView("percentCompleted")).toDouble();
     addRow(tr("Completed"), QStringLiteral("%1 (%2%)")
-        .arg(formatByteSize(static_cast<uint64>(completed)),
-             QString::number(pct, 'f', 1)));
+        .arg(formatByteSize(completed), QString::number(pct, 'f', 1)));
 
     addRow(tr("Status"),   str(d, QLatin1StringView("status")));
     addRow(tr("Priority"), str(d, QLatin1StringView("downPriority")));

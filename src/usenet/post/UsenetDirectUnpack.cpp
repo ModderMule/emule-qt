@@ -131,13 +131,20 @@ void UsenetDirectUnpack::run(const eMule::usenet::UsenetDirectUnpackJob& job)
                        .arg(rejected, job.setKey));
     }
 
-    // libarchive detects RAR encryption and can do nothing about it, so an
-    // encrypted set produces no usable output however far the read got.
-    if (reader.hasEncryptedEntries()
-        && reader.formatName().contains(QLatin1String("RAR"), Qt::CaseInsensitive)) {
+    // libarchive decrypts ZIP and nothing else, so an encrypted set of any
+    // other format produces no usable output however far the read got.
+    //
+    // This cannot fall back to ExternalUnpacker the way UsenetUnpacker does: a
+    // keep-pace extraction is fed one volume at a time through
+    // ArchiveVolumeSource, and neither 7-Zip nor unrar can open a set that is
+    // not already complete on disk. An encrypted release therefore unpacks at
+    // the end of the download, and its preview comes from
+    // UsenetEncryptedPreview instead.
+    if (reader.encryptionBlocked()) {
         for (const QString& path : reader.extractedFiles())
             QFile::remove(path);
-        result.error = QStringLiteral("password-protected RAR");
+        result.encrypted = true;
+        result.error = QStringLiteral("password-protected archive");
         emit finished(result);
         return;
     }

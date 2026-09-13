@@ -5,6 +5,8 @@
 #include "dialogs/ArchivePreviewPanel.h"
 #include "archive/ArchiveReader.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
+#include "utils/StringUtils.h"
 
 #include <QHeaderView>
 #include <QLabel>
@@ -96,26 +98,33 @@ void ArchivePreviewPanel::startScan()
 
         QLocale locale;
         for (int i = 0; i < count; ++i) {
-            auto* nameItem = new QStandardItem(reader.entryName(i));
+            // SortableStandardItem throughout: the model is bound straight to
+            // the view, so its sortRole -- Qt::DisplayRole -- would otherwise
+            // order "9.90 MB" above "10.00 GB" and a date by its leading digit.
+            auto* nameItem = new SortableStandardItem(reader.entryName(i));
             nameItem->setEditable(false);
 
-            auto* sizeItem = new QStandardItem;
+            auto* sizeItem = new SortableStandardItem;
             sizeItem->setEditable(false);
             const uint64_t sz = reader.entrySize(i);
             if (reader.entryIsDir(i)) {
                 sizeItem->setText(QStringLiteral("--"));
+                // -1 rather than no key at all: a row with no SortRole falls back
+                // to comparing "--" against "1.20 MB" as text, which scatters the
+                // folders through the list instead of gathering them at one end.
+                sizeItem->setData(qint64{-1}, SortRole);
             } else {
-                sizeItem->setText(locale.formattedDataSize(static_cast<qint64>(sz)));
-                sizeItem->setData(static_cast<qint64>(sz), Qt::UserRole);
+                sizeItem->setText(formatByteSize(sz));
+                sizeItem->setData(static_cast<qint64>(sz), SortRole);
             }
             sizeItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
             // CRC — not available from libarchive read API
-            auto* crcItem = new QStandardItem(QStringLiteral("--"));
+            auto* crcItem = new SortableStandardItem(QStringLiteral("--"));
             crcItem->setEditable(false);
 
             // Attributes — show 'D' for directories, octal mode otherwise
-            auto* attrItem = new QStandardItem;
+            auto* attrItem = new SortableStandardItem;
             attrItem->setEditable(false);
             if (reader.entryIsDir(i)) {
                 attrItem->setText(QStringLiteral("D"));
@@ -126,16 +135,16 @@ void ArchivePreviewPanel::startScan()
             }
 
             // Last Modified
-            auto* mtimeItem = new QStandardItem;
+            auto* mtimeItem = new SortableStandardItem;
             mtimeItem->setEditable(false);
             QDateTime mtime = reader.entryMtime(i);
             if (mtime.isValid()) {
                 mtimeItem->setText(locale.toString(mtime, QLocale::ShortFormat));
-                mtimeItem->setData(mtime, Qt::UserRole);
+                mtimeItem->setData(mtime, SortRole);
             }
 
             // Comment — not available from libarchive
-            auto* commentItem = new QStandardItem;
+            auto* commentItem = new SortableStandardItem;
             commentItem->setEditable(false);
 
             rows.append({nameItem, sizeItem, crcItem, attrItem, mtimeItem, commentItem});

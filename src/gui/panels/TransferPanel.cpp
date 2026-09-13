@@ -8,6 +8,8 @@
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/ClientListModel.h"
+#include "controls/CategoryFilterProxy.h"
+#include "controls/CategoryTabBar.h"
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/TransferToolbar.h"
@@ -80,6 +82,9 @@ ClientRow parseClient(const QCborMap& m)
     row.queueSessionPayloadUp = m.value(QStringLiteral("queueSessionPayloadUp")).toInteger();
     row.upDatarate      = m.value(QStringLiteral("upDatarate")).toInteger();
     row.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
+    row.downDatarate    = m.value(QStringLiteral("datarate")).toInteger();
+    row.downloadedTotal = m.value(QStringLiteral("downloadedTotal")).toInteger();
+    row.uploadedTotal   = m.value(QStringLiteral("uploadedTotal")).toInteger();
     row.askedCount      = m.value(QStringLiteral("askedCount")).toInteger();
     row.waitStartTime   = m.value(QStringLiteral("waitStartTime")).toInteger();
     row.partCount       = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
@@ -118,66 +123,6 @@ constexpr int PrNormal  = 1;
 constexpr int PrHigh    = 2;
 constexpr int PrVeryHigh = 3;
 
-// ---------------------------------------------------------------------------
-// CategoryFilterProxy — filters downloads by category
-// ---------------------------------------------------------------------------
-
-class CategoryFilterProxy : public QSortFilterProxyModel {
-public:
-    using QSortFilterProxyModel::QSortFilterProxyModel;
-
-    /// The sort proxy this one is stacked on. Needed because filterAcceptsRow's
-    /// `sourceRow` is in *that* proxy's coordinate space, not the model's — the
-    /// bug that made every category tab show every download.
-    void setDownloadProxy(QAbstractProxyModel* proxy) { m_downloadProxy = proxy; }
-
-    void setCategoryFilter(int64_t cat)
-    {
-        if (m_category == cat)
-            return;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
-        beginFilterChange();
-        m_category = cat;
-        endFilterChange();
-#else
-        m_category = cat;
-        invalidateFilter();
-#endif
-    }
-
-protected:
-    bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override
-    {
-        // Always accept child (source) rows — filtering is only on top-level downloads
-        if (sourceParent.isValid())
-            return true;
-        if (m_category == 0)
-            return true; // "All" — show everything
-        if (!m_downloadProxy)
-            return true;
-
-        // Two hops: sourceModel() is the sort proxy, so the row has to be
-        // mapped through it before the model can be asked about it. Casting
-        // sourceModel() straight to DownloadListModel* always failed, and the
-        // `if (!model) return true` fallback then accepted every row — the tab
-        // bar looked like it worked and filtered nothing.
-        auto* model = qobject_cast<DownloadListModel*>(m_downloadProxy->sourceModel());
-        if (!model)
-            return true;
-
-        const QModelIndex srcIdx =
-            m_downloadProxy->mapToSource(m_downloadProxy->index(sourceRow, 0, sourceParent));
-        if (!srcIdx.isValid())
-            return true;
-
-        const auto* dl = model->downloadAt(srcIdx.row());
-        return dl && dl->category == m_category;
-    }
-
-private:
-    QAbstractProxyModel* m_downloadProxy = nullptr;
-    int64_t m_category = 0;
-};
 
 } // anonymous namespace
 
@@ -203,9 +148,18 @@ void TransferPanel::switchToTopView(int index)
         setTopView(index);
 }
 
+void TransferPanel::setStreamToken(const QString& token)
+{
+    m_streamToken = token;
+    // The tab bar needs it too: "Open Incoming Folder" against a remote core
+    // goes through the web server's browse page.
+    m_categoryTabBar->setStreamToken(token);
+}
+
 void TransferPanel::setIpcClient(IpcClient* client)
 {
     m_ipc = client;
+    m_categoryTabBar->setIpcClient(client);
 
     auto clearAll = [this] {
         m_downloadModel->clear();
@@ -226,7 +180,7 @@ void TransferPanel::setIpcClient(IpcClient* client)
         m_poller->setEnabled(true);
         // Not on the poll timer: the list changes only when someone edits it,
         // and the tab bar has to exist before the first download arrives.
-        requestCategories();
+        m_categoryTabBar->requestCategories();
     });
     connect(m_ipc, &IpcClient::disconnected, this, [this, clearAll]() {
         m_poller->setEnabled(false);
@@ -247,7 +201,7 @@ void TransferPanel::setIpcClient(IpcClient* client)
 
     // Another GUI — or this one's own edit — changed the list.
     connect(m_ipc, &IpcClient::categoriesChanged, this,
-            [this](const IpcMessage&) { requestCategories(); });
+            [this](const IpcMessage&) { m_categoryTabBar->requestCategories(); });
 
     // "Clients on queue: N" sits under the bottom pane whichever list is showing, but
     // the count is all it needs. Taking it off the stats push — which the daemon
@@ -557,12 +511,12 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             sendSetCategoryBatch(allHashes, 0);
         });
         allAct->setEnabled(hasSel);
-        for (int i = 1; i < m_categories.size(); ++i) {
-            auto* catAct = catMenu->addAction(categoryTitle(i), this,
+        for (int i = 1; i < m_categoryTabBar->categories().size(); ++i) {
+            auto* catAct = catMenu->addAction(m_categoryTabBar->categoryTitle(i), this,
                 [this, allHashes, i]() { sendSetCategoryBatch(allHashes, i); });
             catAct->setEnabled(hasSel);
         }
-        catMenu->setEnabled(hasSel && m_categories.size() > 1);
+        catMenu->setEnabled(hasSel && m_categoryTabBar->categories().size() > 1);
     }
 
     m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));
@@ -646,52 +600,19 @@ QWidget* TransferPanel::createDownloadsSection()
 
     headerRow->addWidget(m_toolbar1, 1);
 
-    // Category tab bar — right-aligned
-    m_categoryTabBar = new QTabBar;
-    m_categoryTabBar->setExpanding(false);
-    m_categoryTabBar->setDocumentMode(true);
-    m_categoryTabBar->addTab(tr("All"));
-    m_categoryTabBar->setTabData(0, QVariant::fromValue(int64_t{0}));
+    // Category tab bar — right-aligned. The widget owns the list, the editing
+    // and the shared half of its menu; what stays here is the part that is ED2K's
+    // alone, hung off menuRequested().
+    m_categoryTabBar = new CategoryTabBar;
 
-    connect(m_categoryTabBar, &QTabBar::currentChanged, this, [this](int tabIdx) {
-        const int64_t catId = m_categoryTabBar->tabData(tabIdx).toLongLong();
-        static_cast<CategoryFilterProxy*>(m_categoryProxy)->setCategoryFilter(catId);
+    connect(m_categoryTabBar, &CategoryTabBar::currentCategoryChanged, this, [this](int cat) {
+        static_cast<CategoryFilterProxy*>(m_categoryProxy)->setCategoryFilter(cat);
     });
-
-    // Right-click is the only way into the category editor, as in MFC. A click
-    // on empty tab-bar space (tabAt returns -1) still opens the menu, because
-    // that is how "Add Category..." is reached before any category exists.
-    m_categoryTabBar->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(m_categoryTabBar, &QWidget::customContextMenuRequested, this,
-            [this](const QPoint& pos) {
-                showCategoryMenu(m_categoryTabBar->tabAt(pos),
-                                 m_categoryTabBar->mapToGlobal(pos));
-            });
-
-    // Double-click edits, matching srchybrid/TransferWnd.cpp:1253-1262.
-    connect(m_categoryTabBar, &QTabBar::tabBarDoubleClicked, this,
-            &TransferPanel::editCategory);
-
-    // Drag to reorder, as MFC's tab control does (OnTabMovement,
-    // srchybrid/TransferWnd.cpp:1264-1291). QTabBar moves the tab itself and
-    // tells us afterwards; the daemon does the renumbering from the oldIndex
-    // list, and its push rebuilds the bar either way.
-    m_categoryTabBar->setMovable(true);
-    connect(m_categoryTabBar, &QTabBar::tabMoved, this, [this](int from, int to) {
-        // Index 0 is "All" and is pinned — MFC refuses the same move.
-        if (from == 0 || to == 0 || from >= m_categories.size()
-            || to >= m_categories.size())
-        {
-            updateCategoryTabs(); // put the bar back
-            return;
-        }
-
-        auto categories = m_categories;
-        auto oldIndex = m_categoryOldIndex;
-        categories.move(from, to);
-        oldIndex.move(from, to);
-        sendCategories(categories, oldIndex);
+    connect(m_categoryTabBar, &CategoryTabBar::categoriesReloaded, this, [this] {
+        m_downloadModel->setCategoryNames(m_categoryTabBar->categoryNames());
     });
+    connect(m_categoryTabBar, &CategoryTabBar::menuRequested, this,
+            &TransferPanel::populateCategoryMenu);
 
     headerRow->addWidget(m_categoryTabBar);
     layout->addLayout(headerRow);
@@ -701,10 +622,11 @@ QWidget* TransferPanel::createDownloadsSection()
     m_downloadProxy->setSourceModel(m_downloadModel);
     m_downloadProxy->setSortRole(Qt::UserRole);
 
-    // Category filter proxy sits on top of download sort proxy
+    // Category filter proxy sits on top of download sort proxy. It reads the
+    // category off the row through kCategoryRole, so it needs to know neither
+    // the model under it nor how many proxies are in between.
     auto* catProxy = new CategoryFilterProxy(this);
     catProxy->setSourceModel(m_downloadProxy);
-    catProxy->setDownloadProxy(m_downloadProxy);
     catProxy->setSortRole(Qt::UserRole);
     m_categoryProxy = catProxy;
 
@@ -1039,8 +961,8 @@ QToolBar* TransferPanel::createActionToolbar()
         QMenu catMenu(this);
         catMenu.addAction(tr("(Unassign)"), this,
                           [this, hashes]() { sendSetCategoryBatch(hashes, 0); });
-        for (int i = 1; i < m_categories.size(); ++i) {
-            catMenu.addAction(categoryTitle(i), this,
+        for (int i = 1; i < m_categoryTabBar->categories().size(); ++i) {
+            catMenu.addAction(m_categoryTabBar->categoryTitle(i), this,
                               [this, hashes, i]() { sendSetCategoryBatch(hashes, i); });
         }
         catMenu.exec(QCursor::pos());
@@ -1183,7 +1105,9 @@ void TransferPanel::requestDownloads()
         // Incremental update preserves selection, expansion, and scroll natively
         m_downloadModel->setDownloads(std::move(rows));
         updateToolbarLabels();
-        updateCategoryTabs();
+        // No category rebuild here: the tabs only ever change when the list
+        // itself does, and CategoryTabBar rebuilds on its own reload. Asking the
+        // daemon on every poll would be a round trip per refresh.
         updateActionStates();
         updateClearCompletedState();
 
@@ -1902,300 +1826,59 @@ void TransferPanel::updateToolbarLabels()
         m_queueCount >= 0 ? m_queueCount : clientSlot(OnQueue).model->clientCount()));
 }
 
-void TransferPanel::updateCategoryTabs()
-{
-    // Block signals to avoid triggering filter changes during rebuild
-    const QSignalBlocker blocker(m_categoryTabBar);
-
-    // Remember the *category*, not the tab position: a removed category shifts
-    // every tab behind it, and restoring by index would silently move the user
-    // to a different one.
-    const int64_t currentCat = m_categoryTabBar->currentIndex() >= 0
-        ? m_categoryTabBar->tabData(m_categoryTabBar->currentIndex()).toLongLong()
-        : 0;
-
-    while (m_categoryTabBar->count() > 0)
-        m_categoryTabBar->removeTab(0);
-
-    // One tab per category, in list order — the order *is* the identity, since
-    // that index is what part.met stores. Index 0 is the "All" tab.
-    for (int i = 0; i < m_categories.size(); ++i) {
-        const int idx = m_categoryTabBar->addTab(categoryTitle(i));
-        m_categoryTabBar->setTabData(idx, QVariant::fromValue(static_cast<int64_t>(i)));
-
-        if (!m_categories.at(i).comment.isEmpty())
-            m_categoryTabBar->setTabToolTip(idx, m_categories.at(i).comment);
-
-        // MFC colours the tab text, not its background (SetTabTextColor,
-        // srchybrid/TransferWnd.cpp:1035). kCategoryColorAuto means "leave the
-        // theme alone", which is not the same as black.
-        if (m_categories.at(i).color != kCategoryColorAuto)
-            m_categoryTabBar->setTabTextColor(idx, QColor::fromRgb(m_categories.at(i).color));
-    }
-
-    int restoreIdx = 0;
-    for (int i = 0; i < m_categoryTabBar->count(); ++i) {
-        if (m_categoryTabBar->tabData(i).toLongLong() == currentCat) {
-            restoreIdx = i;
-            break;
-        }
-    }
-    m_categoryTabBar->setCurrentIndex(restoreIdx);
-
-    // The blocker above suppressed currentChanged, so the filter still holds
-    // whatever the previous tab set. Re-apply it for the tab that is actually
-    // selected now.
-    const int64_t activeCat = m_categoryTabBar->tabData(restoreIdx).toLongLong();
-    static_cast<CategoryFilterProxy*>(m_categoryProxy)->setCategoryFilter(activeCat);
-}
-
 // ---------------------------------------------------------------------------
 // Categories
 // ---------------------------------------------------------------------------
 
-QString TransferPanel::categoryTitle(int index) const
+void TransferPanel::populateCategoryMenu(QMenu* menu, int index)
 {
-    if (index == 0)
-        return tr("All");
-    if (index > 0 && index < m_categories.size())
-        return m_categories.at(index).displayName();
-
-    // A download can outlive the category it names — a stale part.met, or a
-    // list edited by another GUI. Showing the bare index says more than an
-    // empty cell would.
-    return tr("Cat %1").arg(index);
-}
-
-QStringList TransferPanel::categoryNames() const
-{
-    QStringList names;
-    names.reserve(m_categories.size());
-    for (int i = 0; i < m_categories.size(); ++i)
-        names.append(categoryTitle(i));
-    return names;
-}
-
-void TransferPanel::requestCategories()
-{
-    if (!m_ipc || !m_ipc->isConnected())
+    if (!menu)
         return;
 
-    m_ipc->sendRequest(IpcMessage(IpcMsgType::GetCategories), [this](const IpcMessage& resp) {
-        if (!resp.fieldBool(0))
-            return;
-
-        m_categories.clear();
-        m_categoryOldIndex.clear();
-        for (const auto& value : resp.fieldArray(1)) {
-            if (!value.isMap())
-                continue;
-            const QCborMap map = value.toMap();
-
-            DownloadCategory cat;
-            cat.title = map.value(QStringLiteral("title")).toString();
-            cat.incomingPath = map.value(QStringLiteral("incoming")).toString();
-            cat.comment = map.value(QStringLiteral("comment")).toString();
-            cat.autocat = map.value(QStringLiteral("autocat")).toString();
-            cat.autocatIsRegexp = map.value(QStringLiteral("autocatRegexp")).toBool(false);
-            cat.regexp = map.value(QStringLiteral("regexp")).toString();
-            cat.color = static_cast<quint32>(
-                map.value(QStringLiteral("color")).toInteger(kCategoryColorAuto));
-            cat.prio = static_cast<quint8>(map.value(QStringLiteral("prio")).toInteger(cat.prio));
-            // Index 0's resolved path is the global incoming dir — the folder
-            // an unset category falls back to, and the sensible starting point
-            // for the browse button.
-            if (m_categories.isEmpty())
-                m_defaultIncomingDir = map.value(QStringLiteral("resolvedIncoming")).toString();
-
-            m_categories.append(cat);
-            m_categoryOldIndex.append(
-                static_cast<int>(map.value(QStringLiteral("index"))
-                                     .toInteger(m_categories.size() - 1)));
-        }
-
-        // The daemon guarantees index 0; a reply without it would leave the tab
-        // bar empty and the download list unreachable.
-        if (m_categories.isEmpty()) {
-            m_categories.append(DownloadCategory{.title = tr("All")});
-            m_categoryOldIndex.append(0);
-        }
-
-        m_downloadModel->setCategoryNames(categoryNames());
-        updateCategoryTabs();
-    });
-}
-
-void TransferPanel::sendCategories(const QList<DownloadCategory>& categories,
-                                   const QList<int>& oldIndex)
-{
-    if (!m_ipc || !m_ipc->isConnected())
-        return;
-
-    QCborArray rows;
-    for (int i = 0; i < categories.size(); ++i) {
-        const auto& cat = categories.at(i);
-        rows.append(QCborMap{
-            // -1 for an entry the user just created: nothing points at it yet.
-            {QStringLiteral("oldIndex"),      i < oldIndex.size() ? oldIndex.at(i) : -1},
-            {QStringLiteral("title"),         cat.title},
-            {QStringLiteral("incoming"),      cat.incomingPath},
-            {QStringLiteral("comment"),       cat.comment},
-            {QStringLiteral("autocat"),       cat.autocat},
-            {QStringLiteral("autocatRegexp"), cat.autocatIsRegexp},
-            {QStringLiteral("regexp"),        cat.regexp},
-            {QStringLiteral("color"),         static_cast<qint64>(cat.color)},
-            {QStringLiteral("prio"),          static_cast<int>(cat.prio)},
-        });
-    }
-
-    IpcMessage msg(IpcMsgType::SetCategories);
-    msg.append(rows);
-    m_ipc->sendRequest(msg, [this](const IpcMessage& resp) {
-        if (!resp.fieldBool(0)) {
-            StatusBarNotifier::post(tr("Could not save categories: %1")
-                                        .arg(resp.field(1).toString()));
-        }
-        // Refetch either way: on success to pick up what the daemon sanitised
-        // (a folder it refused, say), on failure to get back in step with what
-        // is actually stored.
-        requestCategories();
-    });
-}
-
-void TransferPanel::showCategoryMenu(int tabIndex, const QPoint& globalPos)
-{
-    const int index = tabIndex >= 0 ? tabIndex : 0;
     const bool isAll = index == 0;
-
-    QMenu menu(this);
-    menu.addSection(isAll ? tr("Category")
-                          : tr("Category (%1)").arg(categoryTitle(index)));
+    const auto& categories = m_categoryTabBar->categories();
 
     // Priority for the category — MFC's own submenu, and the value it edits is
     // the a4af priority that decides which paused file resumes first, not the
-    // download priority of the files in it.
-    if (!isAll) {
-        auto* prioMenu = menu.addMenu(tr("Priority"));
-        const std::array<std::pair<int, QString>, 3> prios{{
-            {PrLow, tr("Low")}, {PrNormal, tr("Normal")}, {PrHigh, tr("High")}}};
+    // download priority of the files in it. ED2K only: Usenet has no a4af.
+    if (!isAll && index < categories.size()) {
+        auto* prioMenu = menu->addMenu(tr("Priority"));
+        const std::array<std::pair<int, QString>, 3> prios{
+            {{PrLow, tr("Low")}, {PrNormal, tr("Normal")}, {PrHigh, tr("High")}}};
         for (const auto& [value, label] : prios) {
             const int prioValue = value;
             auto* act = prioMenu->addAction(label, this, [this, index, prioValue] {
-                auto categories = m_categories;
-                categories[index].prio = static_cast<quint8>(prioValue);
-                sendCategories(categories, m_categoryOldIndex);
+                auto edited = m_categoryTabBar->categories();
+                edited[index].prio = static_cast<quint8>(prioValue);
+                m_categoryTabBar->applyCategories(edited);
             });
             act->setCheckable(true);
-            act->setChecked(m_categories.at(index).prio == value);
+            act->setChecked(categories.at(index).prio == value);
         }
-        menu.addSeparator();
+        menu->addSeparator();
     }
 
-    menu.addAction(menuIcon("Pause.ico"), tr("Pause"), this,
-                   [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Pause); });
-    menu.addAction(menuIcon("Stop.ico"), tr("Stop"), this,
-                   [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Stop); });
-    menu.addAction(menuIcon("Start.ico"), tr("Resume"), this,
-                   [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Resume); });
-    menu.addAction(menuIcon("Delete.ico"), tr("Cancel"), this, [this, index] {
+    menu->addAction(menuIcon("Pause.ico"), tr("Pause"), this,
+                    [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Pause); });
+    menu->addAction(menuIcon("Stop.ico"), tr("Stop"), this,
+                    [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Stop); });
+    menu->addAction(menuIcon("Start.ico"), tr("Resume"), this,
+                    [this, index] { sendCategoryStatus(index, Ipc::CategoryAction::Resume); });
+    menu->addAction(menuIcon("Delete.ico"), tr("Cancel"), this, [this, index] {
         // MFC asks first (IDS_Q_CANCELDL) and so does this: the action deletes
         // every part file in the category, and there is no undo.
         if (QMessageBox::question(
                 this, tr("Cancel"),
                 tr("Are you sure you want to cancel every download in \"%1\"?")
-                    .arg(categoryTitle(index)))
+                    .arg(m_categoryTabBar->categoryTitle(index)))
             == QMessageBox::Yes)
         {
             sendCategoryStatus(index, Ipc::CategoryAction::Cancel);
         }
     });
-    menu.addAction(tr("Resume next file"), this, [this, index] {
+    menu->addAction(tr("Resume next file"), this, [this, index] {
         sendCategoryStatus(index, Ipc::CategoryAction::ResumeNext);
     });
-
-    menu.addSeparator();
-    // MFC's MP_HM_OPENINC (srchybrid/TransferWnd.cpp:1021). The daemon may be on
-    // another machine, so the shared helper decides between the file manager and
-    // the browse page; "!N" is how that page addresses a category root.
-    menu.addAction(tr("Open Incoming Folder"), this, [this, index] {
-        const QString localPath = index > 0 && index < m_categories.size()
-                                          && !m_categories.at(index).incomingPath.isEmpty()
-                                      ? m_categories.at(index).incomingPath
-                                      : m_defaultIncomingDir;
-        const QString relPath = localPath == m_defaultIncomingDir
-                                    ? QString{}
-                                    : QStringLiteral("!%1").arg(index);
-        openIncomingFolder(m_ipc, m_streamToken, localPath, relPath);
-    });
-
-    menu.addSeparator();
-    menu.addAction(tr("Add Category..."), this, &TransferPanel::addCategoryInteractive);
-    auto* editAct = menu.addAction(tr("Edit Category..."), this,
-                                   [this, index] { editCategory(index); });
-    auto* removeAct = menu.addAction(tr("Remove Category"), this,
-                                     [this, index] { removeCategory(index); });
-    // "All" is not a category the user owns — it has no folder, no colour and
-    // no place in the list. MFC greys the same two entries on index 0
-    // (srchybrid/TransferWnd.cpp:766-767).
-    editAct->setEnabled(!isAll);
-    removeAct->setEnabled(!isAll);
-
-    menu.exec(globalPos);
-}
-
-void TransferPanel::addCategoryInteractive()
-{
-    CategoryDialog dialog(DownloadCategory{}, m_defaultIncomingDir, this);
-    if (dialog.exec() != QDialog::Accepted)
-        return;
-
-    auto categories = m_categories;
-    auto oldIndex = m_categoryOldIndex;
-    categories.append(dialog.category());
-    oldIndex.append(-1); // brand new — no downloads point at it yet
-    sendCategories(categories, oldIndex);
-}
-
-void TransferPanel::editCategory(int index)
-{
-    if (index <= 0 || index >= m_categories.size())
-        return;
-
-    CategoryDialog dialog(m_categories.at(index), m_defaultIncomingDir, this);
-    if (dialog.exec() != QDialog::Accepted)
-        return;
-
-    auto categories = m_categories;
-    categories[index] = dialog.category();
-    sendCategories(categories, m_categoryOldIndex);
-}
-
-void TransferPanel::removeCategory(int index)
-{
-    if (index <= 0 || index >= m_categories.size())
-        return;
-
-    // Removing renumbers: the downloads in this category fall back to "All" and
-    // everything behind it shifts down one. Worth saying out loud, because the
-    // list is the only place that mapping is recorded.
-    if (QMessageBox::question(this, tr("Remove Category"),
-                              tr("Remove the category \"%1\"?\n\n"
-                                 "Its downloads keep their files and move to All.")
-                                  .arg(categoryTitle(index)))
-        != QMessageBox::Yes)
-    {
-        return;
-    }
-
-    // A plain removal: the surviving entries carry their old indices with them,
-    // so the daemon moves each download to wherever its category ended up and
-    // sends the ones that named this category back to All.
-    auto categories = m_categories;
-    auto oldIndex = m_categoryOldIndex;
-    categories.removeAt(index);
-    oldIndex.removeAt(index);
-
-    sendCategories(categories, oldIndex);
 }
 
 void TransferPanel::sendCategoryStatus(int index, Ipc::CategoryAction action)

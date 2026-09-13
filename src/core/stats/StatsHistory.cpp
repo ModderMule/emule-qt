@@ -70,6 +70,11 @@ uint32 StatsHistory::oldestSpeedSeq() const
     return m_speed.empty() ? 0 : m_speed.front().seq;
 }
 
+void StatsHistory::setUsenetDownRateSource(std::function<float()> source)
+{
+    m_usenetDownRate = std::move(source);
+}
+
 void StatsHistory::reset()
 {
     m_stats.clear();
@@ -129,6 +134,9 @@ void StatsHistory::takeStatsSample(uint32 nowSecs)
             transferring += f->transferringSrcCount();
         s.downTransferring = static_cast<uint32>(transferring);
     }
+
+    if (m_usenetDownRate)
+        s.usenetDown = std::max(0.0f, m_usenetDownRate());
 
     m_stats.push_back(s);
     if (m_stats.size() > kStatsCapacity)

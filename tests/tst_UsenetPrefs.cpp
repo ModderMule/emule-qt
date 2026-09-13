@@ -71,6 +71,12 @@ private slots:
     void quotaFieldsRoundTrip();
     void aConfigWithoutQuotasLoadsUnmeteredWithAnId();
     void healthCheckSettingsRoundTrip();
+    void subjectPatternsRoundTrip();
+    void noSubjectPatternsBlockIsWrittenWhenTheDefaultsAreInUse();
+    void aSubjectPatternThatWillNotCompileSurvivesASaveAndLoad();
+    void aPatternWithNoRoleIsDroppedOnLoad();
+    void subjectPatternListIsCapped();
+    void aPatternWithTrailingWhitespaceIsNotSilentlyTrimmed();
 
 private:
     QTemporaryDir m_dir;
@@ -366,6 +372,160 @@ void tst_UsenetPrefs::healthCheckSettingsRoundTrip()
     QCOMPARE(p2.usenetHealthCheck(), 0);
     p2.setUsenetHealthMinPercent(500);
     QCOMPARE(p2.usenetHealthMinPercent(), 100);
+}
+
+// ---------------------------------------------------------------------------
+// Subject patterns
+// ---------------------------------------------------------------------------
+
+namespace {
+
+UsenetSubjectPattern namePattern(const QString& name, const QString& pattern)
+{
+    UsenetSubjectPattern p;
+    p.name = name;
+    p.role = UsenetSubjectRole::Name;
+    p.pattern = pattern;
+    return p;
+}
+
+} // namespace
+
+void tst_UsenetPrefs::subjectPatternsRoundTrip()
+{
+    {
+        Preferences p;
+        UsenetSubjectPattern counter;
+        counter.name = QStringLiteral("my-counter");
+        counter.role = UsenetSubjectRole::Part;
+        counter.pattern = QStringLiteral("[(](?<index>\\d+)/(?<total>\\d+)[)]");
+        counter.pick = UsenetSubjectPick::Last;
+
+        UsenetSubjectPattern hex = namePattern(QStringLiteral("hex"),
+                                               QStringLiteral("(?<name>[0-9a-f]+[.]dat)"));
+        hex.caseInsensitive = true;
+        hex.enabled = false;
+
+        p.setUsenetSubjectPatterns({counter, hex});
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    const auto pats = p.usenetSubjectPatterns();
+    QCOMPARE(pats.size(), 2);
+
+    QCOMPARE(pats.at(0).name, QStringLiteral("my-counter"));
+    QCOMPARE(pats.at(0).role, UsenetSubjectRole::Part);
+    QCOMPARE(pats.at(0).pick, UsenetSubjectPick::Last);
+    QCOMPARE(pats.at(0).caseInsensitive, false);
+    QCOMPARE(pats.at(0).enabled, true);
+
+    QCOMPARE(pats.at(1).name, QStringLiteral("hex"));
+    QCOMPARE(pats.at(1).role, UsenetSubjectRole::Name);
+    QCOMPARE(pats.at(1).pick, UsenetSubjectPick::First);
+    QCOMPARE(pats.at(1).caseInsensitive, true);
+    QCOMPARE(pats.at(1).enabled, false);
+}
+
+void tst_UsenetPrefs::noSubjectPatternsBlockIsWrittenWhenTheDefaultsAreInUse()
+{
+    // What keeps every existing preferences.yml byte-identical: the built-ins
+    // are not a value, they are the absence of one. Writing them out would also
+    // freeze this release's defaults into installations that should keep
+    // following ours.
+    {
+        Preferences p;
+        p.setUsenetEnabled(true);
+        QVERIFY(p.saveTo(m_file));
+    }
+    QVERIFY(!readAll(m_file).contains(QStringLiteral("subjectPatterns")));
+}
+
+void tst_UsenetPrefs::aSubjectPatternThatWillNotCompileSurvivesASaveAndLoad()
+{
+    // Deliberately not validated here. Deleting a user's typo on the next save
+    // is worse than keeping it -- the typo is the only record of what they were
+    // trying to do, and a broken rule costs nothing at run time because its role
+    // falls back to the built-ins.
+    {
+        Preferences p;
+        p.setUsenetSubjectPatterns({namePattern(QStringLiteral("broken"),
+                                                QStringLiteral("(?<name>["))});
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    QCOMPARE(p.usenetSubjectPatterns().size(), 1);
+    QCOMPARE(p.usenetSubjectPatterns().first().pattern, QStringLiteral("(?<name>["));
+}
+
+void tst_UsenetPrefs::aPatternWithNoRoleIsDroppedOnLoad()
+{
+    // The asymmetry with the case above: a bad regex still says what the user
+    // meant and has somewhere to sit. A rule with no role is not a rule, and
+    // guessing one would quietly fill the wrong field.
+    {
+        Preferences p;
+        p.setUsenetEnabled(true);
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    QString yaml = readAll(m_file);
+    yaml.replace(QStringLiteral("usenet:"),
+                 QStringLiteral("usenet:\n  subjectPatterns:\n"
+                                "    - {name: no-role, pattern: \"(?<name>x)\"}\n"
+                                "    - {name: fine, role: name, pattern: \"(?<name>y)\"}"));
+    QFile f(m_file);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QVERIFY(f.write(yaml.toUtf8()) > 0);
+    f.close();
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    const auto pats = p.usenetSubjectPatterns();
+    QCOMPARE(pats.size(), 1);
+    QCOMPARE(pats.first().name, QStringLiteral("fine"));
+}
+
+void tst_UsenetPrefs::subjectPatternListIsCapped()
+{
+    QList<UsenetSubjectPattern> many;
+    for (int i = 0; i < Preferences::kMaxSubjectPatterns + 12; ++i) {
+        many.append(namePattern(QStringLiteral("rule-%1").arg(i),
+                                QStringLiteral("(?<name>x%1)").arg(i)));
+    }
+
+    Preferences p;
+    p.setUsenetSubjectPatterns(many);
+    QCOMPARE(p.usenetSubjectPatterns().size(), Preferences::kMaxSubjectPatterns);
+
+    // And duplicates collapse on the name, the way servers and feeds do.
+    p.setUsenetSubjectPatterns({namePattern(QStringLiteral("dup"), QStringLiteral("(?<name>a)")),
+                                namePattern(QStringLiteral("DUP"), QStringLiteral("(?<name>b)"))});
+    QCOMPARE(p.usenetSubjectPatterns().size(), 1);
+    QCOMPARE(p.usenetSubjectPatterns().first().pattern, QStringLiteral("(?<name>a)"));
+}
+
+void tst_UsenetPrefs::aPatternWithTrailingWhitespaceIsNotSilentlyTrimmed()
+{
+    // A regex can legitimately end in a literal space. The habit of trimming
+    // every string that comes out of a YAML loader would edit the user's rule
+    // and change what it matches, which is the exact kind of helpfulness this
+    // preference exists to avoid. The *name* is trimmed; the pattern is not.
+    const QString pattern = QStringLiteral("(?<name>[a-z]+[.]mkv) ");
+    {
+        Preferences p;
+        p.setUsenetSubjectPatterns({namePattern(QStringLiteral("  spaced  "), pattern)});
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    QCOMPARE(p.usenetSubjectPatterns().size(), 1);
+    QCOMPARE(p.usenetSubjectPatterns().first().name, QStringLiteral("spaced"));
+    QCOMPARE(p.usenetSubjectPatterns().first().pattern, pattern);
 }
 
 QTEST_MAIN(tst_UsenetPrefs)

@@ -3,6 +3,7 @@
 ///        priority, persistence, block selection, source tracking.
 
 #include "TestHelpers.h"
+#include "TestFixtures.h"
 #include "app/AppContext.h"
 #include "files/PartFile.h"
 #include "client/UpDownClient.h"
@@ -693,20 +694,7 @@ void tst_PartFile::getFilledArray_basic()
 
 namespace {
 
-/// Publishes a Statistics instance as theApp.statistics for the duration of a
-/// test, so a failed assertion cannot leave the global dangling.
-class ScopedStatistics {
-public:
-    ScopedStatistics() { theApp.statistics = &m_stats; }
-    ~ScopedStatistics() { theApp.statistics = nullptr; }
-    ScopedStatistics(const ScopedStatistics&) = delete;
-    ScopedStatistics& operator=(const ScopedStatistics&) = delete;
-
-    Statistics* operator->() { return &m_stats; }
-
-private:
-    Statistics m_stats;
-};
+using testing::ScopedStatistics;
 
 /// Deterministic filler so a re-written block is byte-identical to the first one.
 std::vector<uint8> makePattern(size_t size)

@@ -245,6 +245,7 @@ const std::array<QColor, UiState::kStatsColorCount>& UiState::defaultStatsColors
         QColor(255, 255, 255),   // 12 Active downloads
         QColor(255, 255, 255),   // 13 Upload friend slots
         QColor(255, 190, 190),   // 14 Upload current (excl. overhead)
+        QColor(0, 200, 255),     // 15 Download Usenet — not in MFC
     }};
     return defaults;
 }

@@ -63,4 +63,17 @@ QUrl IndexerFeed::feedUrl() const
     return parsed;
 }
 
+bool remapFeedCategories(QList<IndexerFeed>& feeds, const QHash<uint32, uint32>& oldToNew)
+{
+    bool changed = false;
+    for (auto& feed : feeds) {
+        const int mapped = remapCategoryIndex(feed.downloadCategory, oldToNew);
+        if (mapped == feed.downloadCategory)
+            continue;
+        feed.downloadCategory = mapped;
+        changed = true;
+    }
+    return changed;
+}
+
 } // namespace eMule

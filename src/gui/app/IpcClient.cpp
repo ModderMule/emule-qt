@@ -131,13 +131,18 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetNewsServers:       return QStringLiteral("SetNewsServers");
     case T::TestNewsServer:       return QStringLiteral("TestNewsServer");
     case T::SetNewsServerUsage:   return QStringLiteral("SetNewsServerUsage");
+    case T::GetUsenetStats:       return QStringLiteral("GetUsenetStats");
     case T::GetUsenetQueue:       return QStringLiteral("GetUsenetQueue");
+    case T::GetUsenetKnownTypes:  return QStringLiteral("GetUsenetKnownTypes");
     case T::AddNzb:               return QStringLiteral("AddNzb");
     case T::AddNzbUrl:            return QStringLiteral("AddNzbUrl");
     case T::RemoveUsenetItem:     return QStringLiteral("RemoveUsenetItem");
     case T::PauseUsenetItem:      return QStringLiteral("PauseUsenetItem");
     case T::ResumeUsenetItem:     return QStringLiteral("ResumeUsenetItem");
     case T::SetUsenetItemPriority: return QStringLiteral("SetUsenetItemPriority");
+    case T::SetUsenetItemPassword: return QStringLiteral("SetUsenetItemPassword");
+    case T::CheckUsenetItem:      return QStringLiteral("CheckUsenetItem");
+    case T::ListUsenetArchiveEntries: return QStringLiteral("ListUsenetArchiveEntries");
     case T::PushUsenetQueueItem:  return QStringLiteral("PushUsenetQueueItem");
     case T::PushUsenetItemRemoved: return QStringLiteral("PushUsenetItemRemoved");
     case T::PushUsenetItemFinished: return QStringLiteral("PushUsenetItemFinished");

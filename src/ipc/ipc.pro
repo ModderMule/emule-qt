@@ -24,6 +24,7 @@ SOURCES += \
     IpcConnection.cpp \
     IpcMessage.cpp \
     IpcProtocol.cpp \
+    LogRelay.cpp \
     PushCoalescer.cpp
 
 HEADERS += \
@@ -31,4 +32,5 @@ HEADERS += \
     IpcConnection.h \
     IpcMessage.h \
     IpcProtocol.h \
+    LogRelay.h \
     PushCoalescer.h

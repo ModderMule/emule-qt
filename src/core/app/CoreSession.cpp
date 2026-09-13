@@ -299,6 +299,10 @@ void CoreSession::onTimer()
     // Slow path — every 10th tick (~1s)
     if (m_tickCounter % 10 == 0) {
         updateUSSParams();
+        // Self-gated to once a minute. MFC calls its equivalent from
+        // CDownloadQueue::Process (srchybrid/DownloadQueue.cpp:412).
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->checkDiskspaceTimed();
         if (theApp.clientCredits) {
             const QString creditsPath = QDir(thePrefs.configDir()).filePath(
                 QStringLiteral("clients.met"));
@@ -327,6 +331,9 @@ void CoreSession::onTimer()
             float upRate = (theApp.uploadQueue && theApp.uploadQueue->hasActiveUploads())
                 ? static_cast<float>(theApp.uploadQueue->datarate()) / 1024.0f : 0.0f;
             theApp.statistics->updateConnectionStats(upRate, downRate);
+            // Once a second, as MFC (srchybrid/UploadQueue.cpp:962) — the history
+            // the "Average (x min)" series and the time averages are computed from.
+            theApp.statistics->recordRate();
             theApp.statistics->compUpDatarateOverhead();
             theApp.statistics->compDownDatarateOverhead();
 

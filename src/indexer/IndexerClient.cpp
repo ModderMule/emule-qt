@@ -1,7 +1,9 @@
 #include "IndexerClient.h"
 
+#include "app/AppContext.h"
 #include "net/HttpDefaults.h"
 #include "net/HttpFileDownload.h"
+#include "stats/Statistics.h"
 #include "utils/Log.h"
 
 #include <QNetworkAccessManager>
@@ -28,6 +30,13 @@ QString slugForSource(const QString& name)
     while (out.endsWith(u'_'))
         out.chop(1);
     return out.isEmpty() ? QStringLiteral("indexer") : out;
+}
+
+/// Statistics: load we put on the indexers. A no-op without a daemon.
+void countIndexer(uint64 IndexerCounters::* field)
+{
+    if (theApp.statistics)
+        ++(theApp.statistics->indexerSession().*field);
 }
 
 } // namespace
@@ -57,10 +66,18 @@ void IndexerClient::finish(QNetworkReply* reply, const QUrl& requestUrl,
                            const std::function<void(bool, const QByteArray&,
                                                     const QString&)>& done)
 {
-    m_pending.remove(reply);
+    // Gone from the set means abortAll() took it out before aborting: we
+    // cancelled it, so it is neither a request the indexer served nor an error.
+    const bool counted = m_pending.remove(reply);
     reply->deleteLater();
 
     const QByteArray body = reply->readAll();
+
+    if (counted) {
+        countIndexer(&IndexerCounters::apiRequests);
+        if (body.size() > kMaxResponseBytes || reply->error() != QNetworkReply::NoError)
+            countIndexer(&IndexerCounters::apiErrors);
+    }
 
     if (body.size() > kMaxResponseBytes) {
         done(false, {},
@@ -113,6 +130,9 @@ void IndexerClient::probeCaps(const IndexerConfig& config, CapsCallback done)
             QString parseError;
             const IndexerCaps caps = parseIndexerCaps(body, parseError);
             if (!parseError.isEmpty()) {
+                // An error document sent as 200. A 4xx one was counted in finish().
+                if (ok)
+                    countIndexer(&IndexerCounters::apiErrors);
                 // The indexer's own words beat the transport's every time:
                 // "Incorrect user credentials" tells a user which field to fix,
                 // "Unauthorized" does not.
@@ -162,6 +182,9 @@ void IndexerClient::searchUrl(const QUrl& url, int timeoutMs, const QString& sou
 
             IndexerSearchPage page = parseIndexerSearch(body, name, slug);
             if (!page.error.isEmpty()) {
+                // An error document sent as 200. A 4xx one was counted in finish().
+                if (ok)
+                    countIndexer(&IndexerCounters::apiErrors);
                 done(false, page, page.error);
                 return;
             }
@@ -191,6 +214,9 @@ void IndexerClient::fetchUrl(const QUrl& url, int timeoutMs, FetchCallback done)
     HttpFileDownload::get(this, url, opts,
                           [done = std::move(done)](bool ok, const QByteArray& data,
                                                    const QString&, const QString& error) {
+        countIndexer(&IndexerCounters::nzbFetches);
+        if (!ok)
+            countIndexer(&IndexerCounters::nzbFetchErrors);
         done(ok, data, redactApiKey(error));
     });
 }

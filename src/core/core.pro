@@ -66,6 +66,7 @@ SOURCES += \
     app/AppContext.cpp \
     app/CoreSession.cpp \
     archive/ArchiveReader.cpp \
+    archive/ExternalUnpacker.cpp \
     archive/ArchiveRecovery.cpp \
     archive/ArchiveUnpack.cpp \
     chat/IrcClient.cpp \
@@ -144,6 +145,7 @@ SOURCES += \
     net/SmtpClient.cpp \
     net/UDPSocket.cpp \
     prefs/IndexerConfig.cpp \
+    prefs/DownloadCategory.cpp \
     prefs/IndexerFeed.cpp \
     prefs/Preferences.cpp \
     protocol/ED2KLink.cpp \
@@ -185,6 +187,7 @@ HEADERS += \
     app/AppContext.h \
     app/CoreSession.h \
     archive/ArchiveReader.h \
+    archive/ExternalUnpacker.h \
     archive/ArchiveRecovery.h \
     archive/ArchiveUnpack.h \
     chat/IrcClient.h \
@@ -275,6 +278,7 @@ HEADERS += \
     prefs/IndexerConfig.h \
     prefs/IndexerFeed.h \
     prefs/Preferences.h \
+    prefs/UsenetSubjectPattern.h \
     protocol/ED2KLink.h \
     protocol/Tag.h \
     search/GlobalSearchScheduler.h \
@@ -286,6 +290,7 @@ HEADERS += \
     server/Server.h \
     server/ServerConnect.h \
     server/ServerList.h \
+    stats/NetworkCounters.h \
     stats/Statistics.h \
     stats/StatsHistory.h \
     stats/StatsSnapshot.h \

@@ -9,6 +9,8 @@
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
+#include <QThread>
+
 #include <algorithm>
 
 namespace eMule {
@@ -116,11 +118,10 @@ float Statistics::avgDownloadRate(AverageType type) const
         if (m_transferStartTime > 0) {
             const auto running = (static_cast<uint32>(getTickCount()) - m_transferStartTime) / SEC2MS(1);
             if (running >= 5) {
-                const float connAvg = m_prefs ? m_prefs->connAvgDownRate() : 0.0f;
-                return (static_cast<float>(m_sessionReceivedBytes.load()) / 1024.0f / static_cast<float>(running) + connAvg) / 2.0f;
+                return (static_cast<float>(m_sessionReceivedBytes.load()) / 1024.0f / static_cast<float>(running) + m_connAvgDownBase) / 2.0f;
             }
         }
-        return m_prefs ? m_prefs->connAvgDownRate() : 0.0f;
+        return m_connAvgDownBase;
 
     case AverageType::Time:
         if (!m_downRateHistory.empty()) {
@@ -149,11 +150,10 @@ float Statistics::avgUploadRate(AverageType type) const
         if (m_transferStartTime > 0) {
             const auto running = (static_cast<uint32>(getTickCount()) - m_transferStartTime) / SEC2MS(1);
             if (running >= 5) {
-                const float connAvg = m_prefs ? m_prefs->connAvgUpRate() : 0.0f;
-                return (static_cast<float>(m_sessionSentBytes.load()) / 1024.0f / static_cast<float>(running) + connAvg) / 2.0f;
+                return (static_cast<float>(m_sessionSentBytes.load()) / 1024.0f / static_cast<float>(running) + m_connAvgUpBase) / 2.0f;
             }
         }
-        return m_prefs ? m_prefs->connAvgUpRate() : 0.0f;
+        return m_connAvgUpBase;
 
     case AverageType::Time:
         if (!m_upRateHistory.empty()) {
@@ -291,26 +291,80 @@ void Statistics::add2TotalServerDuration()
     m_timeThisServerDuration = 0;
 }
 
+void Statistics::serverConnected()
+{
+    // Not on the first login of the session: "Reconnects" answers how often the
+    // connection dropped and came back, so a clean session reads 0.
+    if (m_serverConnectedOnce)
+        ++m_reconnects;
+    m_serverConnectedOnce = true;
+
+    // 0 is the "not connected" sentinel, so the one tick in 49 days that lands
+    // on it borrows the next millisecond.
+    m_serverConnectTime = std::max<uint32>(1, static_cast<uint32>(getTickCount()));
+    m_timeThisServerDuration = 0;
+}
+
+void Statistics::serverDisconnected()
+{
+    // Idempotent: several teardown paths can reach the same drop, and a
+    // disconnect with no connection behind it is not an error.
+    if (m_serverConnectTime == 0)
+        return;
+
+    // From the stamp, not from whatever updateConnectionStats() computed up to a
+    // second ago — MFC banks the stale value and loses that second per drop.
+    m_timeThisServerDuration =
+        (static_cast<uint32>(getTickCount()) - m_serverConnectTime) / SEC2MS(1);
+    m_serverConnectTime = 0;
+    add2TotalServerDuration();
+}
+
 // ---------------------------------------------------------------------------
 // Session byte counters
 // ---------------------------------------------------------------------------
 
 void Statistics::addSessionReceivedBytes(uint64 bytes)
 {
+    markTransferStarted();
     m_sessionReceivedBytes.fetch_add(bytes, std::memory_order_relaxed);
-    emit sessionBytesChanged();
 }
 
 void Statistics::addSessionSentBytes(uint64 bytes)
 {
+    markTransferStarted();
     m_sessionSentBytes.fetch_add(bytes, std::memory_order_relaxed);
-    emit sessionBytesChanged();
 }
 
 void Statistics::addSessionSentBytesToFriend(uint64 bytes)
 {
     m_sessionSentBytesToFriend.fetch_add(bytes, std::memory_order_relaxed);
-    emit sessionBytesChanged();
+}
+
+// ---------------------------------------------------------------------------
+// Usenet / indexer counters
+// ---------------------------------------------------------------------------
+
+UsenetCounters& Statistics::usenetSession()
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    return m_usenetSession;
+}
+
+IndexerCounters& Statistics::indexerSession()
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    return m_indexerSession;
+}
+
+UsenetCounters Statistics::cumulativeUsenet() const
+{
+    return combineCounters(m_cumBase.usenet, m_usenetSession);
+}
+
+IndexerCounters Statistics::cumulativeIndexer() const
+{
+    return combineCounters(m_cumBase.indexer, m_indexerSession);
 }
 
 // ---------------------------------------------------------------------------
@@ -540,6 +594,15 @@ void Statistics::addTransferData(ClientSoftware clientType, uint16 port,
         else
             m_sesDownPortOther.fetch_add(bytes, std::memory_order_relaxed);
     }
+
+    // The session totals are this breakdown summed, as in MFC, where
+    // Add2SessionTransferData ends in UpdateSentBytes/UpdateReceivedBytes
+    // (srchybrid/Preferences.cpp:1029/1076). Without it "Uploaded/Downloaded
+    // Data" and both ratios never saw an eD2K byte.
+    if (isUpload)
+        addSessionSentBytes(bytes);
+    else
+        addSessionReceivedBytes(bytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -611,11 +674,12 @@ void Statistics::rebaseCumulative(const Preferences& prefs)
     b.upFromFile = prefs.cumUpFromFile();
     b.upFromPartfile = prefs.cumUpFromPartfile();
 
-    b.httpCacheBytesPublished = prefs.cumHttpCacheBytesPublished();
-    b.httpCacheBytesFetched = prefs.cumHttpCacheBytesFetched();
-    b.httpCacheBytesSaved = prefs.cumHttpCacheBytesSaved();
-    b.httpCacheChunksPublished = prefs.cumHttpCacheChunksPublished();
-    b.httpCacheChunksFetched = prefs.cumHttpCacheChunksFetched();
+    b.httpCache = prefs.cumHttpCache();
+    b.usenet = prefs.cumUsenet();
+    b.indexer = prefs.cumIndexer();
+
+    m_connAvgDownBase = prefs.connAvgDownRate();
+    m_connAvgUpBase = prefs.connAvgUpRate();
 }
 
 Statistics::CumulativeTotals
@@ -638,11 +702,7 @@ Statistics::cumulativeTotals(const ExternalSessionCounters& ext) const
     t.connMaxLimitReached += ext.connMaxLimitReached;
     t.connReconnects += m_reconnects;
 
-    t.httpCacheBytesPublished += ext.httpCacheBytesPublished;
-    t.httpCacheBytesFetched += ext.httpCacheBytesFetched;
-    t.httpCacheBytesSaved += ext.httpCacheBytesSaved;
-    t.httpCacheChunksPublished += ext.httpCacheChunksPublished;
-    t.httpCacheChunksFetched += ext.httpCacheChunksFetched;
+    t.httpCache = combineCounters(t.httpCache, ext.httpCache);
 
     t.runTime += uptimeSecs();
     t.transferTime += transferTime();
@@ -711,6 +771,9 @@ Statistics::cumulativeTotals(const ExternalSessionCounters& ext) const
     t.upFromFile += m_sesUpFromFile.load();
     t.upFromPartfile += m_sesUpFromPartfile.load();
 
+    t.usenet = combineCounters(m_cumBase.usenet, m_usenetSession);
+    t.indexer = combineCounters(m_cumBase.indexer, m_indexerSession);
+
     return t;
 }
 
@@ -729,11 +792,7 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
     prefs.setCumDownFailedSessions(t.downFailedSessions);
     prefs.setCumDownCompletedFiles(t.downCompletedFiles);
 
-    prefs.setCumHttpCacheBytesPublished(t.httpCacheBytesPublished);
-    prefs.setCumHttpCacheBytesFetched(t.httpCacheBytesFetched);
-    prefs.setCumHttpCacheBytesSaved(t.httpCacheBytesSaved);
-    prefs.setCumHttpCacheChunksPublished(t.httpCacheChunksPublished);
-    prefs.setCumHttpCacheChunksFetched(t.httpCacheChunksFetched);
+    prefs.setCumHttpCache(t.httpCache);
 
     prefs.setCumConnPeak(t.connPeak);
     prefs.setCumConnMaxLimitReached(t.connMaxLimitReached);
@@ -795,6 +854,29 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
 
     prefs.setCumUpFromFile(t.upFromFile);
     prefs.setCumUpFromPartfile(t.upFromPartfile);
+
+    prefs.setCumUsenet(t.usenet);
+    prefs.setCumIndexer(t.indexer);
+
+    // MFC writes the blended Total into ConnAvgDown/UpRate at save
+    // (srchybrid/Preferences.cpp:824), so the next session blends with it. The
+    // Total reads the rebase snapshot, never this pref, so repeating it is harmless.
+    prefs.setConnAvgDownRate(avgDownloadRate(AverageType::Total));
+    prefs.setConnAvgUpRate(avgUploadRate(AverageType::Total));
+}
+
+// ---------------------------------------------------------------------------
+// Private
+// ---------------------------------------------------------------------------
+
+void Statistics::markTransferStarted()
+{
+    if (m_transferStartTime.load(std::memory_order_relaxed) != 0)
+        return;
+    // max(1): 0 is the "not started" sentinel, and the 32-bit tick can wrap to it.
+    uint32 expected = 0;
+    m_transferStartTime.compare_exchange_strong(
+        expected, std::max<uint32>(1, static_cast<uint32>(getTickCount())));
 }
 
 } // namespace eMule

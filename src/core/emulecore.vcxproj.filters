@@ -42,6 +42,9 @@
     <ClCompile Include="archive\ArchiveRecovery.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="archive\ExternalUnpacker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="archive\ArchiveUnpack.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -273,6 +276,9 @@
     <ClCompile Include="prefs\IndexerConfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="prefs\DownloadCategory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="prefs\IndexerFeed.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -426,6 +432,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="archive\ArchiveUnpack.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="archive\ExternalUnpacker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\HttpDefaults.h">
@@ -701,6 +710,9 @@
     <ClInclude Include="prefs\NewsServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="prefs\UsenetSubjectPattern.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="prefs\Preferences.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -768,6 +780,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="files\StatisticFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stats\NetworkCounters.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="stats\Statistics.h">

@@ -28,6 +28,7 @@
 #include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QTest>
+#include <QTimer>
 
 using namespace eMule::usenet;
 using eMule::testing::FakeNntpServer;
@@ -67,7 +68,10 @@ private slots:
     void dropMidCommand_failsTheCommand();
     void readRateLimit_stillDeliversEverything();
     void readRateLimit_repaysTimeSpentWaiting();
+    void readRateLimit_reapplyingKeepsBankedCredit();
+    void readRateLimit_reapplyingGrantsNoExtraBudget();
     void invalidServer_failsWithoutConnecting();
+    void openConnections_countsAuthenticatedSocketsPerAccount();
 };
 
 void tst_NntpSocket::connectsAuthenticatesAndBecomesReady()
@@ -465,6 +469,94 @@ void tst_NntpSocket::readRateLimit_repaysTimeSpentWaiting()
                                                  "not carrying credit across idle ticks").arg(ms)));
 }
 
+void tst_NntpSocket::readRateLimit_reapplyingKeepsBankedCredit()
+{
+    // UsenetWorker::applyRateLimits() re-applies the same figure on every lease,
+    // release and bandwidth-split tick. Doing so must not wipe what the socket
+    // banked while it waited — the same payload and bound as the test above,
+    // with one re-apply between the wait and the command.
+    QStringList many;
+    many.reserve(100);
+    for (int i = 0; i < 100; ++i)
+        many.append(QStringLiteral("CAP-%1 with some padding to make the line longer").arg(i));
+
+    FakeNntpServer server;
+    server.setCapabilities(many);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(localServer(port));
+    QVERIFY(ready.wait(5000));
+
+    socket.setReadRateLimit(5000);
+    QTest::qWait(600);
+    socket.setReadRateLimit(5000);
+
+    CapabilitiesCommand caps;
+    QSignalSpy done(&socket, &NntpSocket::commandFinished);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    socket.sendCommand(&caps);
+    QVERIFY(done.wait(10000));
+    const qint64 ms = elapsed.elapsed();
+
+    QVERIFY(!caps.failed());
+    QCOMPARE(caps.capabilities().size(), many.size());
+    QVERIFY2(ms < 700, qPrintable(QStringLiteral("took %1 ms — re-applying the limit "
+                                                 "threw the banked credit away").arg(ms)));
+}
+
+void tst_NntpSocket::readRateLimit_reapplyingGrantsNoExtraBudget()
+{
+    // The other half of the same bug. A reset handed out a fresh tick per call,
+    // and restarted the refill timer too: with data streaming in, each readyRead
+    // spent the gift and the socket ran over its limit (live: ~12 % over);
+    // re-applied faster than the 100 ms refill with the data already buffered,
+    // as here, the timer never fired and the transfer stalled outright.
+    QStringList many;
+    many.reserve(200);
+    for (int i = 0; i < 200; ++i)
+        many.append(QStringLiteral("CAP-%1 with some padding to make the line longer").arg(i));
+
+    FakeNntpServer server;
+    server.setCapabilities(many);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(localServer(port));
+    QVERIFY(ready.wait(5000));
+
+    // ~12 KB at 8 KB/s: about 1.4 s when every refill is earned; a fraction of
+    // that when a re-apply every 20 ms hands out a tick each time.
+    constexpr qint64 kLimit = 8192;
+    socket.setReadRateLimit(kLimit);
+
+    QTimer reapply;
+    reapply.setInterval(20);
+    QObject::connect(&reapply, &QTimer::timeout, &socket,
+                     [&socket] { socket.setReadRateLimit(kLimit); });
+    reapply.start();
+
+    CapabilitiesCommand caps;
+    QSignalSpy done(&socket, &NntpSocket::commandFinished);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    socket.sendCommand(&caps);
+    QVERIFY(done.wait(10000));
+    const qint64 ms = elapsed.elapsed();
+    reapply.stop();
+
+    QVERIFY(!caps.failed());
+    QCOMPARE(caps.capabilities().size(), many.size());
+    QVERIFY2(ms > 900, qPrintable(QStringLiteral("took %1 ms — re-applying the limit "
+                                                 "granted budget the refill never earned")
+                                      .arg(ms)));
+}
+
 void tst_NntpSocket::invalidServer_failsWithoutConnecting()
 {
     NntpSocket socket;
@@ -476,6 +568,66 @@ void tst_NntpSocket::invalidServer_failsWithoutConnecting()
 
     QCOMPARE(failed.count(), 1);
     QCOMPARE(failed.first().at(0).value<NntpError>(), NntpError::ConnectFailed);
+}
+
+// The Statistics window's "Open Connections": only a socket that got through
+// the handshake counts, it counts under its account, and every way a connection
+// ends — a drop, an abort, destruction — takes it back out.
+void tst_NntpSocket::openConnections_countsAuthenticatedSocketsPerAccount()
+{
+    const QString account = QStringLiteral("acct-registry");
+    const int before = NntpSocket::openConnectionCount();
+
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+    NewsServer config = localServer(port);
+    config.accountId = account;
+
+    {
+        NntpSocket a;
+        NntpSocket b;
+        QSignalSpy readyA(&a, &NntpSocket::ready);
+        QSignalSpy readyB(&b, &NntpSocket::ready);
+        a.connectToServer(config);
+        b.connectToServer(config);
+        QVERIFY(readyA.wait(5000));
+        QVERIFY(readyB.count() > 0 || readyB.wait(5000));
+        QCOMPARE(NntpSocket::openConnectionsByAccount().value(account), 2);
+        QCOMPARE(NntpSocket::openConnectionCount(), before + 2);
+
+        a.abort();
+        QCOMPARE(NntpSocket::openConnectionsByAccount().value(account), 1);
+    }   // b destroyed while still open
+    QVERIFY(!NntpSocket::openConnectionsByAccount().contains(account));
+    QCOMPARE(NntpSocket::openConnectionCount(), before);
+
+    // A server-side drop.
+    {
+        NntpSocket c;
+        QSignalSpy ready(&c, &NntpSocket::ready);
+        c.connectToServer(config);
+        QVERIFY(ready.wait(5000));
+        server.setDropOnNextCommand(true);
+        StatCommand stat(QStringLiteral("whatever@example"));
+        QSignalSpy done(&c, &NntpSocket::commandFinished);
+        c.sendCommand(&stat);
+        QVERIFY(done.wait(5000));
+        QCOMPARE(NntpSocket::openConnectionsByAccount().value(account), 0);
+    }
+
+    // Refused credentials never count at all.
+    FakeNntpServer rejecting;
+    rejecting.setRejectAuth(true);
+    const quint16 rejectPort = rejecting.start();
+    QVERIFY(rejectPort != 0);
+    NewsServer rejected = localServer(rejectPort);
+    rejected.accountId = account;
+    NntpSocket d;
+    QSignalSpy failed(&d, &NntpSocket::failed);
+    d.connectToServer(rejected);
+    QVERIFY(failed.wait(5000));
+    QCOMPARE(NntpSocket::openConnectionCount(), before);
 }
 
 QTEST_MAIN(tst_NntpSocket)

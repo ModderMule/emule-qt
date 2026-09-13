@@ -26,6 +26,8 @@
 #include "server/Server.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
+#include "utils/StringUtils.h"
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
@@ -1111,6 +1113,70 @@ void DownloadQueue::sortByPriority()
     });
 }
 
+/// How often the volume is re-measured. MFC uses DISKSPACERECHECKTIME (15 min,
+/// srchybrid/Opcodes.h:126); here it is a minute, because the port has no
+/// pre-write refusal to catch what happens in between — a failed write calls
+/// checkDiskspace() directly rather than waiting for this.
+static constexpr qint64 kDiskCheckIntervalMs = 60 * 1000;
+
+void DownloadQueue::checkDiskspaceTimed()
+{
+    if (m_diskCheckClock.isValid() && m_diskCheckClock.elapsed() < kDiskCheckIntervalMs)
+        return;
+    m_diskCheckClock.start();
+    checkDiskspace();
+}
+
+void DownloadQueue::checkDiskspace()
+{
+    if (!thePrefs.checkDiskspace())
+        return;
+
+    const QString dir = thePrefs.tempDirs().isEmpty() ? thePrefs.incomingDir()
+                                                      : thePrefs.tempDirs().first();
+    const std::optional<std::uint64_t> free = eMule::tryFreeDiskSpace(dir);
+
+    // Unknown is not full. Unlike the Usenet queue, which waits and can afford
+    // to be wrong in the safe direction, pausing every eD2K download because a
+    // path could not be read would strand a whole session over a transient
+    // answer — and the write path now keeps its buffer and retries anyway.
+    if (!free.has_value())
+        return;
+
+    const bool room = qint64(*free) >= qint64(thePrefs.minFreeDiskSpace());
+
+    for (auto* file : m_items) {
+        if (!file)
+            continue;
+
+        const PartFileStatus st = file->status();
+        if (st == PartFileStatus::Complete || st == PartFileStatus::Completing
+            || st == PartFileStatus::Error)
+            continue;
+
+        if (!room) {
+            // Idempotent, and deliberately so: pauseFile() saves the .met, and a
+            // sweep that re-paused an already-paused file would rewrite every
+            // one of them every minute for as long as the disk is full.
+            if (!file->isInsufficient() && !file->isPaused())
+                file->pauseFile(/*insufficient*/ true);
+        } else if (file->isInsufficient()) {
+            // Only files *this* paused: resumeFile() clears m_insufficient, and
+            // one the user paused has m_paused set and is not touched here.
+            file->resumeFile();
+        }
+    }
+
+    if (!room && !m_diskStallLogged) {
+        m_diskStallLogged = true;
+        logWarning(QStringLiteral("Downloads paused: %1 has %2 free, %3 required")
+                       .arg(dir, formatByteSize(qint64(*free)),
+                            formatByteSize(qint64(thePrefs.minFreeDiskSpace()))));
+    } else if (room) {
+        m_diskStallLogged = false;
+    }
+}
+
 void DownloadQueue::process()
 {
     const uint32 curTick = static_cast<uint32>(getTickCount());
@@ -1519,14 +1585,11 @@ void DownloadQueue::setCatStatus(uint32 category, bool paused)
 void DownloadQueue::remapCategories(const QHash<uint32, uint32>& oldToNew)
 {
     for (auto* file : m_items) {
-        const uint32 cat = file->category();
-        if (cat == 0)
-            continue; // "All" is never remapped: index 0 always exists
-
-        // Absent from the map means the category is gone. Falling back to 0 is
-        // MFC's answer too (ResetCatParts, srchybrid/DownloadQueue.cpp:1111) —
-        // the file keeps its place in the queue and loses only its label.
-        file->setCategory(oldToNew.value(cat, 0));
+        // remapCategoryIndex() is the one definition of this rule, shared with
+        // the Usenet queue, its sidecars and the feeds — they are renumbered in
+        // one transaction and have to agree.
+        file->setCategory(
+            static_cast<uint32>(remapCategoryIndex(int(file->category()), oldToNew)));
     }
 
     // Category priority is the first key rightFileHasHigherPrio() compares, so
@@ -1558,63 +1621,18 @@ void DownloadQueue::startNextFileIfPrefs(int category)
 
 void DownloadQueue::applyAutoCategory(PartFile* file) const
 {
-    // Never override a category the caller already picked, and there is nothing
-    // to match against until the user has made a category of their own.
+    // Never override a category the caller already picked.
     if (!file || file->category() > 0)
         return;
 
     const auto categories = thePrefs.categories();
-    if (categories.size() < 2)
+    const int match = matchAutoCategory(categories, file->fileName());
+    if (match <= 0)
         return;
 
-    const QString fileName = file->fileName();
-    if (fileName.isEmpty())
-        return;
-
-    // Highest index first, so the most recently added category wins a tie —
-    // MFC counts down for the same reason (srchybrid/DownloadQueue.cpp:1246).
-    for (int i = static_cast<int>(categories.size()) - 1; i > 0; --i) {
-        const QString pattern = categories.at(i).autocat.trimmed();
-        if (pattern.isEmpty())
-            continue;
-
-        bool matched = false;
-        if (categories.at(i).autocatIsRegexp) {
-            const QRegularExpression re(pattern, QRegularExpression::CaseInsensitiveOption);
-            matched = re.isValid() && re.match(fileName).hasMatch();
-        } else {
-            // '|'-separated terms; a term containing * or ? is a wildcard, any
-            // other is a plain substring. MFC's loop here is written
-            // `if (!cmpExt.IsEmpty()) break;` — inverted, so it bails on the
-            // first real term and the non-regexp branch never matches anything
-            // (its bFound also survives across outer iterations). Ported as
-            // intended rather than as written; the divergence is deliberate and
-            // is recorded in docs/categories.local.md.
-            for (const QStringView termView : QStringView{pattern}.split(u'|', Qt::SkipEmptyParts)) {
-                const QString term = termView.trimmed().toString();
-                if (term.isEmpty())
-                    continue;
-
-                if (term.contains(u'*') || term.contains(u'?')) {
-                    const auto wildcard = QRegularExpression::fromWildcard(
-                        term, Qt::CaseInsensitive, QRegularExpression::UnanchoredWildcardConversion);
-                    matched = wildcard.match(fileName).hasMatch();
-                } else {
-                    matched = fileName.contains(term, Qt::CaseInsensitive);
-                }
-
-                if (matched)
-                    break;
-            }
-        }
-
-        if (matched) {
-            file->setCategory(static_cast<uint32>(i));
-            logInfo(QStringLiteral("Auto-categorised %1 into \"%2\"")
-                        .arg(fileName, categories.at(i).displayName()));
-            return;
-        }
-    }
+    file->setCategory(static_cast<uint32>(match));
+    logInfo(QStringLiteral("Auto-categorised %1 into \"%2\"")
+                .arg(file->fileName(), categories.at(match).displayName()));
 }
 
 bool DownloadQueue::hasActiveTransfers() const

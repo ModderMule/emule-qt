@@ -80,40 +80,70 @@ private slots:
         QVERIFY(eMule::fromHexString(QStringLiteral("ZZZZ")).isEmpty());
     }
 
-    // ---- formatByteSize ----
+    // ---- formatByteSize / formatByteRate: MFC CastItoXBytes ----
 
     void testFormatByteSizeZero()
     {
-        QCOMPARE(eMule::formatByteSize(0), QStringLiteral("0 B"));
+        QCOMPARE(eMule::formatByteSize(0), QStringLiteral("0 Bytes"));
+    }
+
+    void testFormatByteSizeNegativeIsZero()
+    {
+        QCOMPARE(eMule::formatByteSize(qint64{-5}), QStringLiteral("0 Bytes"));
+        QCOMPARE(eMule::formatByteSize(-1.5), QStringLiteral("0 Bytes"));
     }
 
     void testFormatByteSizeBytes()
     {
-        QCOMPARE(eMule::formatByteSize(512), QStringLiteral("512 B"));
+        QCOMPARE(eMule::formatByteSize(512), QStringLiteral("512 Bytes"));
+        QCOMPARE(eMule::formatByteSize(1023), QStringLiteral("1023 Bytes"));
     }
 
     void testFormatByteSizeKB()
     {
-        QCOMPARE(eMule::formatByteSize(1024), QStringLiteral("1 KB"));
+        QCOMPARE(eMule::formatByteSize(1024), QStringLiteral("1.00 KB"));
+        QCOMPARE(eMule::formatByteSize(1536), QStringLiteral("1.50 KB"));
     }
 
     void testFormatByteSizeMB()
     {
-        const QString result = eMule::formatByteSize(1024ULL * 1024 * 5 + 1024 * 512);
-        // Should be approximately "5.50 MB"
-        QVERIFY(result.contains(QStringLiteral("MB")));
+        QCOMPARE(eMule::formatByteSize(1024ULL * 1024 * 5 + 1024 * 512),
+                 QStringLiteral("5.50 MB"));
     }
 
     void testFormatByteSizeGB()
     {
-        const QString result = eMule::formatByteSize(1024ULL * 1024 * 1024 * 2);
-        QCOMPARE(result, QStringLiteral("2.00 GB"));
+        QCOMPARE(eMule::formatByteSize(1024ULL * 1024 * 1024 * 2), QStringLiteral("2.00 GB"));
     }
 
     void testFormatByteSizeTB()
     {
-        const QString result = eMule::formatByteSize(1024ULL * 1024 * 1024 * 1024);
-        QCOMPARE(result, QStringLiteral("1.00 TB"));
+        QCOMPARE(eMule::formatByteSize(1024ULL * 1024 * 1024 * 1024), QStringLiteral("1.00 TB"));
+    }
+
+    /// A unit runs to 1000 of itself, not 1024: MFC never shows "1010.00 KB".
+    void testFormatByteSizeStepsAtThousand()
+    {
+        QCOMPARE(eMule::formatByteSize(1023999), QStringLiteral("1000.00 KB"));
+        QCOMPARE(eMule::formatByteSize(1024000), QStringLiteral("0.98 MB"));
+        QCOMPARE(eMule::formatByteSize(1048576000ULL), QStringLiteral("0.98 GB"));
+        QCOMPARE(eMule::formatByteSize(1073741824000ULL), QStringLiteral("0.98 TB"));
+    }
+
+    void testFormatByteSizeDecimals()
+    {
+        QCOMPARE(eMule::formatByteSize(1536, 1), QStringLiteral("1.5 KB"));
+        QCOMPARE(eMule::formatByteSize(1536, 0), QStringLiteral("2 KB"));
+        QCOMPARE(eMule::formatByteSize(1000, 1), QStringLiteral("1000 Bytes"));
+    }
+
+    void testFormatByteRate()
+    {
+        QCOMPARE(eMule::formatByteRate(0), QStringLiteral("0 B/s"));
+        QCOMPARE(eMule::formatByteRate(500), QStringLiteral("500 B/s"));
+        QCOMPARE(eMule::formatByteRate(1536), QStringLiteral("1.50 KB/s"));
+        QCOMPARE(eMule::formatByteRate(2 * 1024 * 1024), QStringLiteral("2.00 MB/s"));
+        QCOMPARE(eMule::formatByteRate(612.3 * 1024.0), QStringLiteral("612.30 KB/s"));
     }
 
     // ---- formatDuration ----

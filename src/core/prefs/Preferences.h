@@ -12,6 +12,8 @@
 #include "prefs/IndexerConfig.h"
 #include "prefs/IndexerFeed.h"
 #include "prefs/NewsServer.h"
+#include "prefs/UsenetSubjectPattern.h"
+#include "stats/NetworkCounters.h"
 #include "utils/Types.h"
 
 #include <QByteArray>
@@ -721,18 +723,15 @@ public:
     [[nodiscard]] uint64 cumUpFromPartfile() const;
     void setCumUpFromPartfile(uint64 val);
 
-    // HTTP Cache — cumulative totals. Written absolutely by
-    // Statistics::flushCumulativeToPrefs, never incremented in place.
-    [[nodiscard]] uint64 cumHttpCacheBytesPublished() const;
-    void setCumHttpCacheBytesPublished(uint64 val);
-    [[nodiscard]] uint64 cumHttpCacheBytesFetched() const;
-    void setCumHttpCacheBytesFetched(uint64 val);
-    [[nodiscard]] uint64 cumHttpCacheBytesSaved() const;
-    void setCumHttpCacheBytesSaved(uint64 val);
-    [[nodiscard]] uint32 cumHttpCacheChunksPublished() const;
-    void setCumHttpCacheChunksPublished(uint32 val);
-    [[nodiscard]] uint32 cumHttpCacheChunksFetched() const;
-    void setCumHttpCacheChunksFetched(uint32 val);
+    // HTTP Cache / Usenet / indexer — cumulative blocks, one struct each.
+    // Written absolutely by Statistics::flushCumulativeToPrefs, never
+    // incremented in place.
+    [[nodiscard]] HttpCacheCounters cumHttpCache() const;
+    void setCumHttpCache(const HttpCacheCounters& val);
+    [[nodiscard]] UsenetCounters cumUsenet() const;
+    void setCumUsenet(const UsenetCounters& val);
+    [[nodiscard]] IndexerCounters cumIndexer() const;
+    void setCumIndexer(const IndexerCounters& val);
 
     // Records
     [[nodiscard]] uint32 recMaxWorkingServers() const;
@@ -925,6 +924,24 @@ public:
     [[nodiscard]] bool usenetDirectUnpack() const;
     void setUsenetDirectUnpack(bool val);
 
+    /// Serve a preview of a *password-protected* set by re-running the external
+    /// unpacker over the volumes that have landed.
+    ///
+    /// Separate from usenetDirectUnpack() because the cost is different in kind:
+    /// an external tool cannot be fed volume by volume, so every refresh
+    /// re-decrypts from volume one. Nothing runs unless a preview is actually
+    /// open, and only RAR can do it at all — a partial 7z set decodes to
+    /// nothing, its metadata living at the end of the set.
+    [[nodiscard]] bool usenetEncryptedPreview() const;
+    void setUsenetEncryptedPreview(bool val);
+
+    /// Explicit path to a 7-Zip or unrar binary, empty to search PATH and the
+    /// usual install locations. It exists because a daemon started by launchd or
+    /// systemd inherits a minimal PATH, so a tool the user can run in a terminal
+    /// may be invisible to emulecored.
+    [[nodiscard]] QString usenetExternalUnpacker() const;
+    void setUsenetExternalUnpacker(const QString& val);
+
     // -- Usenet health check (before downloading) -----------------------------
 
     /// Whether to ask the servers if they still hold a release before spending
@@ -963,6 +980,31 @@ public:
     /// itself is still writing.
     [[nodiscard]] QString usenetWatchDir() const;
     void setUsenetWatchDir(const QString& val);
+
+    /// Rules for reading a yEnc subject line. Empty means the compiled-in set,
+    /// which is what every installation runs until somebody edits the file.
+    ///
+    /// Hand-edited only: no Options page, no IPC. The GUI never parses a subject
+    /// — eMule::Usenet is linked by the daemon alone — so there is nothing there
+    /// to show it.
+    [[nodiscard]] QList<UsenetSubjectPattern> usenetSubjectPatterns() const;
+    void setUsenetSubjectPatterns(const QList<UsenetSubjectPattern>& val);
+
+    /// Bumped on every change, and on every load().
+    ///
+    /// The parser compiles these once and caches the result; this is how it
+    /// knows to throw the cache away. A counter rather than a signal because
+    /// Preferences is not a QObject — and because a counter cannot be forgotten
+    /// the way a call to an invalidate() function can.
+    ///
+    /// ⚠️ Process-scope, deliberately not a field in Data: load() replaces the
+    /// whole Data object, so a member would reset to 0 and a cache still holding
+    /// 0 would look *fresh* while its rules were stale.
+    [[nodiscard]] static quint64 usenetSubjectPatternsRevision();
+
+    /// Ceiling on the list, same reasoning as kMaxUsenetServers — and it bounds
+    /// the per-subject cost at this many regex matches.
+    static constexpr int kMaxSubjectPatterns = 32;
 
     // -- Indexers (newznab / torznab) ----------------------------------------
     //
@@ -1013,8 +1055,12 @@ public:
     void setIndexerCapsRefreshDays(int val);
 
     /// ED2K's current slice of maxDownload(), in KB/s. Runtime only: it is
-    /// recomputed every second from the live split and never written to
+    /// recomputed twice a second from the live split and never written to
     /// preferences.yml, so a crash cannot leave a user permanently throttled.
+    ///
+    /// Demand-driven both ways (UsenetSession::computeDownloadSplit): ED2K is
+    /// held back only while Usenet is downloading, and only by what Usenet
+    /// measurably uses — and Usenet likewise borrows whatever ED2K leaves idle.
     ///
     /// **DownloadQueue::process() must read this, not maxDownload()** — reading
     /// the raw ceiling makes both engines aim at the whole line and the combined
@@ -1551,6 +1597,15 @@ private:
     /// the list. Shared by setIndexerFeeds() and the YAML loader — a hand-edited
     /// file is exactly as capable of writing nonsense as an IPC client is.
     [[nodiscard]] static QList<IndexerFeed> sanitizeFeeds(const QList<IndexerFeed>& feeds);
+
+    /// Drop what is structurally unusable, de-duplicate on key(), cap the list.
+    ///
+    /// Deliberately does **not** compile-check the patterns. Deleting a user's
+    /// typo on the next save is worse than keeping it: the typo is the only
+    /// record of what they meant, and a broken rule costs nothing at run time
+    /// because the role falls back to its built-ins.
+    [[nodiscard]] static QList<UsenetSubjectPattern> sanitizeSubjectPatterns(
+        const QList<UsenetSubjectPattern>& patterns);
 
     [[nodiscard]] static QString sanitizeWatchDir(const QString& dir, const QString& configDir,
                                                   const QString& incomingDir,

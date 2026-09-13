@@ -32,6 +32,7 @@ SOURCES += \
     nzb/NzbUrlFetch.cpp \
     nzb/NzbInfo.cpp \
     nzb/SubjectParser.cpp \
+    post/Par2NameIndex.cpp \
     post/Par2Verifier.cpp \
     post/UsenetDirectUnpack.cpp \
     post/UsenetPostProcessor.cpp \
@@ -42,9 +43,12 @@ SOURCES += \
     queue/UsenetQueueItem.cpp \
     queue/UsenetQueueStore.cpp \
     queue/UsenetHealth.cpp \
+    queue/UsenetHistory.cpp \
+    queue/UsenetStatistics.cpp \
     queue/UsenetUsage.cpp \
     queue/UsenetWorker.cpp \
     stream/RarReader.cpp \
+    stream/UsenetEncryptedPreview.cpp \
     stream/UsenetStreamIndex.cpp
 
 HEADERS += \
@@ -60,6 +64,7 @@ HEADERS += \
     nzb/NzbUrlFetch.h \
     nzb/NzbInfo.h \
     nzb/SubjectParser.h \
+    post/Par2NameIndex.h \
     post/Par2Verifier.h \
     post/UsenetDirectUnpack.h \
     post/UsenetPostProcessor.h \
@@ -70,7 +75,10 @@ HEADERS += \
     queue/UsenetQueueItem.h \
     queue/UsenetQueueStore.h \
     queue/UsenetHealth.h \
+    queue/UsenetHistory.h \
+    queue/UsenetStatistics.h \
     queue/UsenetUsage.h \
     queue/UsenetWorker.h \
     stream/RarReader.h \
+    stream/UsenetEncryptedPreview.h \
     stream/UsenetStreamIndex.h

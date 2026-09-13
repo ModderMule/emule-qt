@@ -478,6 +478,11 @@ bool HttpCacheClient::consumeStagedBlocks()
 
         m_plainWritten += static_cast<uint64>(toWrite);
         addPayloadDown(static_cast<uint64>(toWrite));
+
+        // These are part-file bytes like any other, so the Transfer branch has
+        // to see them: the plaintext as it is written, not the ciphertext, and
+        // at write time, so a fetch that fails later still counts what arrived.
+        bookHttpDownload(static_cast<uint64>(toWrite));
     }
 
     if (toWrite < plain.size())

@@ -16,6 +16,9 @@
 /// YAML rather than CBOR purely so a stuck item can be read with `cat`. The
 /// segment bitmaps are base64 inside it; everything else is meant to be legible.
 
+#include "utils/Types.h"
+
+#include <QHash>
 #include <QString>
 
 namespace eMule::usenet {
@@ -50,6 +53,19 @@ public:
 
     /// Every sidecar path currently on disk, sorted for a stable restore order.
     static QStringList listStateFiles();
+
+    /// Renumber the category of every item on disk. Returns how many changed.
+    ///
+    /// The queue only loads its sidecars in `start()`, so with Usenet disabled
+    /// the items exist *only* as these files -- and deleting a category then
+    /// would leave every one of them pointing at whatever moved into that slot.
+    /// ED2K has no equivalent exposure because its queue is live for as long as
+    /// the daemon is. Same fallback as `DownloadQueue::remapCategories()`: an
+    /// index absent from the map means the category is gone, and the item keeps
+    /// its place and loses only its label.
+    ///
+    /// Only sidecars whose category actually moves are rewritten.
+    static int remapCategories(const QHash<uint32, uint32>& oldToNew);
 };
 
 } // namespace eMule::usenet

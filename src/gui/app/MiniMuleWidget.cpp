@@ -3,13 +3,14 @@
 
 #include "app/MiniMuleWidget.h"
 
+#include "utils/StringUtils.h"
+
 #include <QApplication>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
 #include <QLinearGradient>
-#include <QLocale>
 #include <QPainter>
 #include <QPushButton>
 #include <QScreen>
@@ -79,17 +80,7 @@ void MiniMuleWidget::updateStats(bool connected, double upKBs, double downKBs,
     m_downloadLabel->setText(QStringLiteral("%1 KB/s").arg(downKBs, 0, 'f', 1));
     m_completedLabel->setText(QString::number(completed));
 
-    // Format free space in human-readable form
-    const QLocale locale;
-    if (freeBytes >= qint64(1) << 30)
-        m_freeSpaceLabel->setText(QStringLiteral("%1 GB")
-            .arg(static_cast<double>(freeBytes) / (1 << 30), 0, 'f', 2));
-    else if (freeBytes >= qint64(1) << 20)
-        m_freeSpaceLabel->setText(QStringLiteral("%1 MB")
-            .arg(static_cast<double>(freeBytes) / (1 << 20), 0, 'f', 1));
-    else
-        m_freeSpaceLabel->setText(QStringLiteral("%1 KB")
-            .arg(freeBytes / 1024));
+    m_freeSpaceLabel->setText(formatByteSize(freeBytes));   // MFC MiniMule.cpp:428
 }
 
 void MiniMuleWidget::showNearTray()

@@ -35,6 +35,11 @@ struct ParsedLink {
     QString name;
     QString hashHex;  ///< uppercase, as produced by md4str — the daemon's own format
     uint64 size = 0;
+
+    /// Why this one deserves a second look — "already downloaded", "previously
+    /// cancelled". Empty for the ordinary case, and set only for links the user
+    /// is being asked about rather than told about.
+    QString note;
 };
 
 /// Split link text into file links, collecting HTTP Cache configuration links into
@@ -79,7 +84,24 @@ int queueDownloads(const std::vector<ParsedLink>& links, IpcClient* ipc)
     return static_cast<int>(links.size());
 }
 
+/// One name per line, with its note in brackets when it has one.
+[[nodiscard]] QStringList describe(const std::vector<ParsedLink>& links)
+{
+    QStringList names;
+    names.reserve(static_cast<qsizetype>(links.size()));
+    for (const ParsedLink& link : links) {
+        names << (link.note.isEmpty()
+                      ? link.name
+                      : QStringLiteral("%1 (%2)").arg(link.name, link.note));
+    }
+    return names;
+}
+
 /// Confirm the download of @p links with the user. Always true for Prompt::Silent.
+///
+/// A link the core already has is listed with its note rather than hidden: the
+/// box exists to let someone see what they are about to start, and "you already
+/// have this" is the most useful thing it can say about a line.
 bool confirmDownload(const std::vector<ParsedLink>& links, QWidget* parent,
                      Ed2kLinkImporter::Prompt prompt,
                      const std::function<void()>& beforePrompt)
@@ -90,15 +112,31 @@ bool confirmDownload(const std::vector<ParsedLink>& links, QWidget* parent,
     if (beforePrompt)
         beforePrompt();
 
-    QStringList names;
-    names.reserve(static_cast<qsizetype>(links.size()));
-    for (const ParsedLink& link : links)
-        names << link.name;
-
     return QMessageBox::question(
                parent, QObject::tr("eD2K Link"),
                QObject::tr("Do you want to download the following file(s)?\n\n%1")
-                   .arg(names.join(QLatin1Char('\n'))),
+                   .arg(describe(links).join(QLatin1Char('\n'))),
+               QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
+}
+
+/// Ask specifically about the links the core already has, for a caller that has
+/// already confirmed the download itself.
+///
+/// Prompt::Silent means "the user has said yes to downloading these" — it does
+/// not mean they have said yes to downloading them *again*, which is a different
+/// question and the one this asks. Only the known links are dropped on a No: a
+/// twenty-link paste must not lose nineteen good links to one it already has.
+[[nodiscard]] bool confirmRedownload(const std::vector<ParsedLink>& known, QWidget* parent,
+                                     const std::function<void()>& beforePrompt)
+{
+    if (beforePrompt)
+        beforePrompt();
+
+    return QMessageBox::question(
+               parent, QObject::tr("eD2K Link"),
+               QObject::tr("You have already downloaded the following file(s). "
+                           "Download them again?\n\n%1")
+                   .arg(describe(known).join(QLatin1Char('\n'))),
                QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
 }
 
@@ -117,6 +155,25 @@ bool Ed2kLinkImporter::shouldSkip(SearchFile::KnownType type, Source source)
     case SearchFile::KnownType::Downloaded:
     case SearchFile::KnownType::Cancelled:
         return source == Source::Automatic;
+    case SearchFile::KnownType::NotDetermined:
+    case SearchFile::KnownType::Unknown:
+        break;
+    }
+    return false;
+}
+
+bool Ed2kLinkImporter::shouldConfirm(SearchFile::KnownType type, Source source)
+{
+    // The middle ground shouldSkip() has no room for. A manual paste of something
+    // already downloaded is a legitimate request — but doing it silently is how
+    // somebody re-fetches four gigabytes they already have without being told.
+    // Automatic imports never reach here: shouldSkip() has already dropped these.
+    switch (type) {
+    case SearchFile::KnownType::Downloaded:
+    case SearchFile::KnownType::Cancelled:
+        return source == Source::Manual;
+    case SearchFile::KnownType::Shared:
+    case SearchFile::KnownType::Downloading:
     case SearchFile::KnownType::NotDetermined:
     case SearchFile::KnownType::Unknown:
         break;
@@ -281,6 +338,7 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
         std::vector<ParsedLink> wanted;
         QString singleSkipMessage;
         const size_t linkCount = links.size();  // links is moved from below
+        int knownCount = 0;                     // wanted entries carrying a note
 
         if (!verdictOk) {
             // No verdict from the daemon. An automatic import must not guess and prompt;
@@ -302,6 +360,13 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
                     : SearchFile::KnownType::Unknown;
 
                 if (!shouldSkip(type, source)) {
+                    // Not skipped, but worth mentioning. The note follows the link
+                    // into whichever box gets shown, so neither one has to work out
+                    // a second time which links these were.
+                    if (shouldConfirm(type, source)) {
+                        links[i].note = skipReason(type);
+                        ++knownCount;
+                    }
                     wanted.push_back(std::move(links[i]));
                     continue;
                 }
@@ -343,6 +408,27 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
             if (done)
                 done(result);
             return;
+        }
+
+        // Prompt::Ask already lists everything, notes included, so one box covers
+        // both questions. Prompt::Silent means the caller confirmed the download
+        // and not the *re*-download, which is what this second box asks.
+        if (prompt == Prompt::Silent && knownCount > 0) {
+            std::vector<ParsedLink> known;
+            known.reserve(static_cast<size_t>(knownCount));
+            for (const ParsedLink& link : wanted) {
+                if (!link.note.isEmpty())
+                    known.push_back(link);
+            }
+            if (!confirmRedownload(known, safeParent, beforePrompt)) {
+                std::erase_if(wanted, [](const ParsedLink& l) { return !l.note.isEmpty(); });
+                result.skipped += knownCount;
+                if (wanted.empty()) {
+                    if (done)
+                        done(result);
+                    return;
+                }
+            }
         }
 
         if (!confirmDownload(wanted, safeParent, prompt, beforePrompt)) {

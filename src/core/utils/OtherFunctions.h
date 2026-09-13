@@ -102,6 +102,18 @@ inline void md4cpy(void* dst, const void* src) noexcept
 /// Encode a URL query parameter (space → '+', special chars → %XX).
 [[nodiscard]] QString encodeUrlQueryParam(const QString& query);
 
+/// Take an archive password out of a release name, in place.
+///
+/// Recognises the `Release{{secret}}` convention NZBGet writes into .nzb
+/// filenames and indexers put in feed titles. Returns the password and removes
+/// the marker from @p name; returns an empty string and leaves @p name alone
+/// when there is no well-formed pair.
+///
+/// In core rather than in the Usenet module because both the Usenet NZB parser
+/// and the indexer's feed parser need it, and the indexer deliberately does not
+/// link eMule::Usenet.
+[[nodiscard]] QString takeBracedPassword(QString& name);
+
 // ---------------------------------------------------------------------------
 // IP address helpers
 // ---------------------------------------------------------------------------

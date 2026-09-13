@@ -54,6 +54,7 @@ private slots:
     void aTruncatedBundleDoesNotTriggerPruning();
     void aBundleThatIsTheConfigDirIsANoOp();
     void theShippedBundleLayoutsAllResolve();
+    void theShippedLangLayoutsAllResolve();
 
 private:
     QTemporaryDir m_bundleDir;
@@ -271,6 +272,31 @@ void TestConfigSeeding::theShippedBundleLayoutsAllResolve()
     const QStringList any = AppConfig::bundleCandidates(QStringLiteral("/A"));
     if (any.size() > 2)
         QCOMPARE(any.indexOf(QStringLiteral("/A/config")) < any.size() - 1, true);
+}
+
+void TestConfigSeeding::theShippedLangLayoutsAllResolve()
+{
+    // Same arithmetic as the bundle layouts, for the .qm search. This replaced a
+    // hand-counted "../../../lang" that was right for a bare binary and wrong for
+    // a .app, so assert the shapes rather than the hop count.
+    const QStringList mac =
+        AppConfig::langCandidates(QStringLiteral("/A/emuleqt.app/Contents/MacOS"));
+    QVERIFY(mac.contains(QStringLiteral("/A/emuleqt.app/Contents/MacOS/../Resources/lang")));
+
+    // bundle-linux.sh and bundle-win.ps1 both put lang/ beside the binary.
+    for (const QString& stageRoot : {QStringLiteral("/opt/eMuleQt"), QStringLiteral("C:/eMule")}) {
+        const QStringList c = AppConfig::langCandidates(stageRoot);
+        QVERIFY2(c.contains(stageRoot + QStringLiteral("/lang")), qPrintable(stageRoot));
+    }
+
+    // The build tree is a fallback, never a winner over a real bundle. It is an
+    // absolute path, so it is the entry that saves the dev .app.
+    const QStringList any = AppConfig::langCandidates(QStringLiteral("/A"));
+    QCOMPARE(any.first(), QStringLiteral("/A/lang"));
+    if (any.size() > 2) {
+        QCOMPARE(any.indexOf(QStringLiteral("/A/lang")), 0);
+        QVERIFY(!any.last().startsWith(QStringLiteral("/A/")));
+    }
 }
 
 QTEST_MAIN(TestConfigSeeding)

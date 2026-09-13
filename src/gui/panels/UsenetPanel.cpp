@@ -6,15 +6,20 @@
 #include "controls/UsenetQueueModel.h"
 #include "utils/PanelPoller.h"
 #include "dialogs/UsenetArchiveEntryDialog.h"
+#include "dialogs/UsenetDetailsDialog.h"
 #include "utils/MenuUtils.h"
+#include "utils/NzbAdd.h"
 #include "utils/NzbDrop.h"
+#include "utils/OtherFunctions.h"
 
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QMimeData>
 #include "utils/PreviewLauncher.h"
+#include "dialogs/AddNzbFilesDialog.h"
 #include "dialogs/AddNzbUrlDialog.h"
+#include "utils/ListActivation.h"
 #include "utils/StatusBarNotifier.h"
 
 #include <QAction>
@@ -24,12 +29,17 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QInputDialog>
+#include "controls/CategoryFilterProxy.h"
+#include "controls/CategoryTabBar.h"
+
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
 #include <QScrollBar>
+#include <QHBoxLayout>
 #include <QSortFilterProxyModel>
 #include <QToolBar>
 #include <QTreeView>
@@ -37,71 +47,6 @@
 #include <QVBoxLayout>
 
 namespace eMule {
-
-namespace {
-
-/// Mirrors usenet::UsenetItemStatus. Read as an int off the wire, because the GUI
-/// does not link eMule::Usenet.
-[[nodiscard]] UsenetRowStatus statusFromInt(int v)
-{
-    switch (v) {
-    case 1: return UsenetRowStatus::Downloading;
-    case 2: return UsenetRowStatus::Paused;
-    case 3: return UsenetRowStatus::Complete;
-    case 4: return UsenetRowStatus::Failed;
-    case 5: return UsenetRowStatus::Verifying;
-    case 6: return UsenetRowStatus::Repairing;
-    case 7: return UsenetRowStatus::Unpacking;
-    case 8: return UsenetRowStatus::Checking;
-    default: return UsenetRowStatus::Queued;
-    }
-}
-
-[[nodiscard]] UsenetItemRow rowFromCbor(const QCborMap& m)
-{
-    UsenetItemRow r;
-    r.id = m.value(QStringLiteral("id")).toString();
-    r.name = m.value(QStringLiteral("name")).toString();
-    r.status = statusFromInt(int(m.value(QStringLiteral("status")).toInteger()));
-    r.statusText = m.value(QStringLiteral("statusText")).toString();
-    r.postPercent = int(m.value(QStringLiteral("postPercent")).toInteger(0));
-    r.postDetail = m.value(QStringLiteral("postDetail")).toString();
-    r.stalledReason = m.value(QStringLiteral("stalledReason")).toString();
-    // -1 is the daemon's "not assessed", and the default here has to agree with
-    // it: an older daemon sends no key at all, and 0 would render as 0% health.
-    r.healthPercent = int(m.value(QStringLiteral("healthPercent")).toInteger(-1));
-    r.healthMissingBytes = m.value(QStringLiteral("healthMissingBytes")).toInteger();
-    r.healthRecoveryBytes = m.value(QStringLiteral("healthRecoveryBytes")).toInteger();
-    r.healthProbed = m.value(QStringLiteral("healthProbed")).toBool();
-    r.priority = int(m.value(QStringLiteral("priority")).toInteger());
-    r.percent = int(m.value(QStringLiteral("percent")).toInteger());
-    r.totalBytes = m.value(QStringLiteral("totalBytes")).toInteger();
-    r.decodedBytes = m.value(QStringLiteral("decodedBytes")).toInteger();
-    r.segmentCount = int(m.value(QStringLiteral("segmentCount")).toInteger());
-    r.doneSegments = int(m.value(QStringLiteral("doneSegments")).toInteger());
-    r.missingSegments = int(m.value(QStringLiteral("missingSegments")).toInteger());
-    r.error = m.value(QStringLiteral("error")).toString();
-
-    const QCborArray files = m.value(QStringLiteral("files")).toArray();
-    r.files.reserve(files.size());
-    for (const auto& fv : files) {
-        const QCborMap fm = fv.toMap();
-        UsenetFileRow f;
-        f.name = fm.value(QStringLiteral("name")).toString();
-        f.size = fm.value(QStringLiteral("size")).toInteger();
-        f.percent = int(fm.value(QStringLiteral("percent")).toInteger());
-        f.finalPath = fm.value(QStringLiteral("finalPath")).toString();
-        f.isPar2 = fm.value(QStringLiteral("isPar2")).toBool();
-        f.missingSegments = int(fm.value(QStringLiteral("missingSegments")).toInteger());
-        f.index = int(fm.value(QStringLiteral("index")).toInteger(-1));
-        f.previewable = fm.value(QStringLiteral("previewable")).toBool();
-        f.previewNote = fm.value(QStringLiteral("previewNote")).toString();
-        r.files.append(f);
-    }
-    return r;
-}
-
-} // namespace
 
 UsenetPanel::UsenetPanel(QWidget* parent)
     : QWidget(parent)
@@ -116,15 +61,33 @@ UsenetPanel::~UsenetPanel() = default;
 // Public
 // ---------------------------------------------------------------------------
 
+void UsenetPanel::setStreamToken(const QString& token)
+{
+    m_streamToken = token;
+    // "Open Incoming Folder" on a category tab needs it against a remote core.
+    m_categoryTabBar->setStreamToken(token);
+}
+
 void UsenetPanel::setIpcClient(IpcClient* ipc)
 {
     m_ipc = ipc;
+    m_categoryTabBar->setIpcClient(ipc);
     if (!m_ipc)
         return;
+
+    // The list can change from the Transfers tab or another GUI, and this tab
+    // has to relabel its column and rebuild its tabs when it does.
+    connect(m_ipc, &IpcClient::categoriesChanged, this,
+            [this] { m_categoryTabBar->requestCategories(); });
 
     auto enable = [this] {
         m_poller->setInterval(m_ipc->pollingInterval());
         m_poller->setEnabled(true);
+        // Inside `enable`, not beside it: setIpcClient() runs before the
+        // handshake, and requestCategories() on a client that is not connected
+        // yet returns having asked nothing — leaving the bar showing "All" for
+        // the rest of the session.
+        m_categoryTabBar->requestCategories();
     };
 
     if (m_ipc->isConnected()) {
@@ -136,6 +99,26 @@ void UsenetPanel::setIpcClient(IpcClient* ipc)
     connect(m_ipc, &IpcClient::disconnected, this, [this] {
         m_poller->setEnabled(false);
         m_model->clear();
+        m_maxDownloadKb = m_usenetLimitKb = m_ed2kBudgetKb = 0;
+        updateSummary();
+    });
+
+    // The split moves with eD2K's demand, not with anything in this queue, so it
+    // cannot ride the item pushes. The stats push comes about once a second.
+    connect(m_ipc, &IpcClient::statsUpdated, this, [this](const Ipc::IpcMessage& msg) {
+        const QCborMap stats = msg.fieldMap(0);
+        const QCborValue ceiling = stats.value(QStringLiteral("maxDownloadKb"));
+        if (!ceiling.isInteger())
+            return;
+        const qint64 usenet = stats.value(QStringLiteral("usenetLimitKb")).toInteger();
+        const qint64 ed2k = stats.value(QStringLiteral("ed2kBudgetKb")).toInteger();
+        if (ceiling.toInteger() == m_maxDownloadKb && usenet == m_usenetLimitKb
+            && ed2k == m_ed2kBudgetKb) {
+            return;
+        }
+        m_maxDownloadKb = ceiling.toInteger();
+        m_usenetLimitKb = usenet;
+        m_ed2kBudgetKb = ed2k;
         updateSummary();
     });
 
@@ -146,7 +129,7 @@ void UsenetPanel::setIpcClient(IpcClient* ipc)
     connect(m_ipc, &IpcClient::usenetItemUpdated, this, [this](const Ipc::IpcMessage& msg) {
         const QCborMap row = msg.fieldMap(0);
         if (!row.isEmpty())
-            m_model->upsertItem(rowFromCbor(row));
+            m_model->upsertItem(usenetRowFromCbor(row));
         updateSummary();
         updateActions();
     });
@@ -167,7 +150,7 @@ void UsenetPanel::setIpcClient(IpcClient* ipc)
     });
 }
 
-void UsenetPanel::addNzbFile(const QString& path)
+void UsenetPanel::addNzbFile(const QString& path, const NzbAddChoices& choices)
 {
     if (!m_ipc || !m_ipc->isConnected()) {
         QMessageBox::warning(this, tr("Add NZB"),
@@ -186,17 +169,28 @@ void UsenetPanel::addNzbFile(const QString& path)
 
     // The file's contents travel, not its path: the daemon may be on another
     // machine, where that path resolves to something else or to nothing.
-    Ipc::IpcMessage msg(Ipc::IpcMsgType::AddNzb);
-    msg.append(QCborValue(data));
-    msg.append(QFileInfo(path).completeBaseName());
+    const QString name = QFileInfo(path).completeBaseName();
 
-    m_ipc->sendRequest(msg, [this](const Ipc::IpcMessage& resp) {
-        if (!resp.fieldBool(0)) {
-            QMessageBox::warning(this, tr("Add NZB"), resp.fieldString(1));
-            return;
-        }
-        m_poller->refreshNow();
-    });
+    // Every GUI file route funnels here — the file dialog, a panel drop, a window
+    // drop, a Finder open and the command line — so this one call gives all five
+    // the "you already downloaded this, again?" question.
+    gui::sendNzbAdd(m_ipc, this, name,
+        [data, name, choices](bool force) {
+            Ipc::IpcMessage msg(Ipc::IpcMsgType::AddNzb);
+            msg.append(QCborValue(data));
+            msg.append(name);
+            msg.append(false);   // automatic — a person asked for this one
+            msg.append(force);
+            msg.append(choices.password);   // archive passphrase, usually empty
+            msg.append(qint64(choices.category));
+            msg.append(qint64(choices.priority));
+            msg.append(choices.paused);
+            return msg;
+        },
+        [this](bool added) {
+            if (added)
+                m_poller->refreshNow();
+        });
 }
 
 bool UsenetPanel::acceptNzbDrop(const QMimeData* mime)
@@ -214,18 +208,18 @@ bool UsenetPanel::acceptNzbDrop(const QMimeData* mime)
         addNzbFile(path);
 
     for (const QString& url : candidates.urls) {
-        Ipc::IpcMessage msg(Ipc::IpcMsgType::AddNzbUrl);
-        msg.append(url);
-        m_ipc->sendRequest(msg, [this, url](const Ipc::IpcMessage& resp) {
-            if (!resp.fieldBool(0)) {
-                QMessageBox::warning(this, tr("Add NZB from URL"),
-                                     resp.fieldString(1).isEmpty()
-                                         ? tr("Could not add %1.").arg(url)
-                                         : resp.fieldString(1));
-                return;
-            }
-            m_poller->refreshNow();
-        });
+        gui::sendNzbAdd(m_ipc, this, url,
+            [url](bool force) {
+                Ipc::IpcMessage msg(Ipc::IpcMsgType::AddNzbUrl);
+                msg.append(url);
+                msg.append(false);   // automatic
+                msg.append(force);
+                return msg;
+            },
+            [this](bool added) {
+                if (added)
+                    m_poller->refreshNow();
+            });
     }
 
     return true;
@@ -251,6 +245,19 @@ void UsenetPanel::dropEvent(QDropEvent* event)
         event->acceptProposedAction();
 }
 
+/// The user's categories in their own order, index 0 first — what the add
+/// dialogs put in their category box. Taken from the tab strip the panel already
+/// keeps in sync rather than asking the daemon again, which would race it.
+QStringList UsenetPanel::categoryChoices() const
+{
+    QStringList names;
+    const int count = int(m_categoryTabBar->categories().size());
+    names.reserve(count);
+    for (int i = 0; i < count; ++i)
+        names.append(m_categoryTabBar->categoryTitle(i));
+    return names;
+}
+
 void UsenetPanel::promptAddNzbUrl()
 {
     if (!m_ipc || !m_ipc->isConnected()) {
@@ -259,7 +266,7 @@ void UsenetPanel::promptAddNzbUrl()
         return;
     }
 
-    AddNzbUrlDialog dlg(m_ipc, this);
+    AddNzbUrlDialog dlg(m_ipc, categoryChoices(), this);
     if (dlg.exec() == QDialog::Accepted)
         m_poller->refreshNow();
 }
@@ -308,7 +315,25 @@ void UsenetPanel::setupUi()
                                 tr("Check Availability"), this);
     connect(m_checkAction, &QAction::triggered, this,
             &UsenetPanel::onCheckAvailability);
-    layout->addWidget(toolbar);
+    // Header row: the toolbar, and the category tabs right-aligned beside it —
+    // the same arrangement the Transfers tab uses, through the same widget.
+    auto* headerRow = new QHBoxLayout;
+    headerRow->setContentsMargins(0, 0, 0, 0);
+    headerRow->setSpacing(2);
+    headerRow->addWidget(toolbar, 1);
+
+    m_categoryTabBar = new CategoryTabBar;
+    connect(m_categoryTabBar, &CategoryTabBar::currentCategoryChanged, this, [this](int cat) {
+        m_categoryProxy->setCategoryFilter(cat);
+    });
+    connect(m_categoryTabBar, &CategoryTabBar::categoriesReloaded, this, [this] {
+        m_model->setCategoryNames(m_categoryTabBar->categoryNames());
+    });
+    connect(m_categoryTabBar, &CategoryTabBar::menuRequested, this,
+            &UsenetPanel::populateCategoryMenu);
+    headerRow->addWidget(m_categoryTabBar);
+
+    layout->addLayout(headerRow);
 
     auto* view = new ListTreeView(this);
     m_view = view;
@@ -316,10 +341,21 @@ void UsenetPanel::setupUi()
 
     m_proxy = new QSortFilterProxyModel(this);
     m_proxy->setSourceModel(m_model);
-    m_proxy->setSortRole(Qt::DisplayRole);
+    // Qt::UserRole, as on Transfers: the model's display strings are formatted
+    // ("1.40 GB", "7%", "612.30 KB/s") and sorting those as text is worse than
+    // not sorting at all.
+    m_proxy->setSortRole(Qt::UserRole);
     m_proxy->setDynamicSortFilter(true);
 
-    m_view->setModel(m_proxy);
+    // Stacked on the sort proxy, exactly as on the Transfers tab. It reads the
+    // category off the row, so the order of the two proxies cannot matter.
+    m_categoryProxy = new CategoryFilterProxy(this);
+    m_categoryProxy->setSourceModel(m_proxy);
+    // The outer proxy is the one bound to the view, so this is the sort role that
+    // actually governs; both are set so the pair can never disagree.
+    m_categoryProxy->setSortRole(Qt::UserRole);
+
+    m_view->setModel(m_categoryProxy);
     m_view->setRootIsDecorated(true);
     m_view->setUniformRowHeights(true);
     m_view->setAlternatingRowColors(true);
@@ -331,7 +367,7 @@ void UsenetPanel::setupUi()
 
     // bindColumns only after setModel(): a header with no sections cannot take a
     // restore, and caching that empty state would destroy the saved layout.
-    view->bindColumns(QStringLiteral("usenetQueue"), {280, 80, 75, 160, 85, 85, 60, 60});
+    view->bindColumns(QStringLiteral("usenetQueue"), {280, 80, 75, 160, 85, 85, 60, 60, 90});
 
     connect(m_view, &QWidget::customContextMenuRequested,
             this, &UsenetPanel::onContextMenu);
@@ -342,6 +378,25 @@ void UsenetPanel::setupUi()
         if (!m_restoringSelection)
             updateActions();
     });
+
+    connect(m_view, &QTreeView::doubleClicked, this, &UsenetPanel::activateRow);
+
+    // Enter mirrors the double-click, Alt+Enter always opens Details — the same
+    // pairing TransferPanel and SharedFilesPanel use. Both resolve the row from
+    // the view at the moment they run, never from a captured index: this list
+    // refreshes about once a second.
+    bindListActivation(m_view,
+                       [this](const QModelIndex& index) { activateRow(index); },
+                       [this](const QModelIndex& index) {
+                           if (!index.isValid())
+                               return;
+                           QModelIndex src = toSourceIndex(index);
+                           if (m_model->isFileRow(src))
+                               src = src.parent();
+                           const QString id = m_model->idAt(src.row());
+                           if (!id.isEmpty())
+                               showDetails(id);
+                       });
 
     layout->addWidget(m_view, 1);
 
@@ -378,7 +433,7 @@ void UsenetPanel::applyQueue(const QCborArray& rows)
     items.reserve(rows.size());
     for (const auto& v : rows) {
         if (v.isMap())
-            items.append(rowFromCbor(v.toMap()));
+            items.append(usenetRowFromCbor(v.toMap()));
     }
 
     // The model updates incrementally, so the view's own state usually survives.
@@ -401,14 +456,14 @@ UsenetPanel::SelectionState UsenetPanel::saveSelection() const
 
     const QModelIndex current = m_view->selectionModel()->currentIndex();
     if (current.isValid()) {
-        QModelIndex src = m_proxy->mapToSource(current);
+        QModelIndex src = toSourceIndex(current);
         if (m_model->isFileRow(src))
             src = src.parent();
         state.currentId = m_model->idAt(src.row());
     }
 
     for (int row = 0; row < m_model->itemCount(); ++row) {
-        const QModelIndex proxyIdx = m_proxy->mapFromSource(m_model->index(row, 0));
+        const QModelIndex proxyIdx = fromSourceIndex(m_model->index(row, 0));
         if (proxyIdx.isValid() && m_view->isExpanded(proxyIdx))
             state.expandedIds << m_model->idAt(row);
     }
@@ -421,7 +476,7 @@ void UsenetPanel::restoreSelection(const SelectionState& state)
     for (int row = 0; row < m_model->itemCount(); ++row) {
         if (!state.expandedIds.contains(m_model->idAt(row)))
             continue;
-        const QModelIndex proxyIdx = m_proxy->mapFromSource(m_model->index(row, 0));
+        const QModelIndex proxyIdx = fromSourceIndex(m_model->index(row, 0));
         if (proxyIdx.isValid())
             m_view->setExpanded(proxyIdx, true);
     }
@@ -438,15 +493,16 @@ void UsenetPanel::restoreSelection(const SelectionState& state)
         if (!state.ids.contains(id))
             continue;
 
-        const QModelIndex proxyIdx = m_proxy->mapFromSource(m_model->index(row, 0));
+        const QModelIndex proxyIdx = fromSourceIndex(m_model->index(row, 0));
         if (!proxyIdx.isValid())
             continue;
 
         // selectedRows() only reports a row when every model column is selected,
         // so select the whole row rather than just column 0.
         selection.select(proxyIdx,
-                         m_proxy->index(proxyIdx.row(), UsenetQueueModel::ColCount - 1,
-                                        proxyIdx.parent()));
+                         m_categoryProxy->index(proxyIdx.row(),
+                                                UsenetQueueModel::ColCount - 1,
+                                                proxyIdx.parent()));
         if (id == state.currentId)
             currentIdx = proxyIdx;
     }
@@ -476,7 +532,7 @@ QStringList UsenetPanel::selectedItemIds() const
     for (const QModelIndex& proxyIdx : rows) {
         if (proxyIdx.column() != 0)
             continue;
-        QModelIndex src = m_proxy->mapToSource(proxyIdx);
+        QModelIndex src = toSourceIndex(proxyIdx);
         // Every action here acts on the NZB, so a selected file row resolves up.
         if (m_model->isFileRow(src))
             src = src.parent();
@@ -504,19 +560,75 @@ void UsenetPanel::onContextMenu(const QPoint& pos)
         menu.addAction(m_resumeAction);
         menu.addSeparator();
 
+        // Built from usenet::kUsenetPriorityLevels rather than spelled out, so
+        // the menu, the add dialogs and the column cannot drift apart. Five
+        // levels share three icons: eMule ships none for "very", and MFC's own
+        // download list has only the three.
         auto* priorityMenu = menu.addMenu(menuIcon("FilePriority.ico"), tr("Priority"));
-        priorityMenu->addAction(menuIcon("PriorityHigh.ico"), tr("High"), this,
-                                [this] { onSetPriority(1); });
-        priorityMenu->addAction(menuIcon("PriorityNormal.ico"), tr("Normal"), this,
-                                [this] { onSetPriority(0); });
-        priorityMenu->addAction(menuIcon("PriorityLow.ico"), tr("Low"), this,
-                                [this] { onSetPriority(-1); });
+        for (const int level : kUsenetPriorityLevels) {
+            const char* icon = level > 0   ? "PriorityHigh.ico"
+                               : level < 0 ? "PriorityLow.ico"
+                                           : "PriorityNormal.ico";
+            priorityMenu->addAction(menuIcon(icon), usenetPriorityName(level), this,
+                                    [this, level] { onSetPriority(level); });
+        }
+
+        // Batch over the whole selection, as the Transfers tab does.
+        auto* catMenu = menu.addMenu(menuIcon("Category.ico"), tr("Assign To Category"));
+        // Index 0 is not a category to assign *to* — picking it takes the release
+        // out of whatever category it is in, which is why MFC labels it this way.
+        catMenu->addAction(tr("No category"), this,
+                           [this, ids] { sendSetCategory(ids, 0); });
+        const int catCount = int(m_categoryTabBar->categories().size());
+        if (catCount > 1)
+            catMenu->addSeparator();
+        for (int i = 1; i < catCount; ++i) {
+            catMenu->addAction(m_categoryTabBar->categoryTitle(i), this,
+                               [this, ids, i] { sendSetCategory(ids, i); });
+        }
+        catMenu->setEnabled(catCount > 1);
+
+        menu.addSeparator();
+        // One item only: a passphrase belongs to a release, and setting the same
+        // one on four selected downloads is almost always a mistake.
+        auto* pwAct = menu.addAction(menuIcon("Security.ico"), tr("Set Password…"), this,
+                                     &UsenetPanel::onSetPassword);
+        pwAct->setEnabled(ids.size() == 1);
 
         menu.addSeparator();
         menu.addAction(m_checkAction);
         menu.addAction(m_previewAction);
+
+        // What the double-click does, spelled out. Resolved from the row under
+        // the cursor, so a file row offers *that* file and an item row its payload.
+        const QModelIndex src = toSourceIndex(m_view->currentIndex());
+        QString ownerId;
+        const UsenetFileRow* fileRow = m_model->fileAt(src, &ownerId);
+        const UsenetItemRow* itemRow = m_model->findById(ids.first());
+
+        const bool openable = fileRow ? !fileRow->finalPath.isEmpty()
+                                      : (itemRow && itemRow->status == UsenetRowStatus::Complete
+                                         && !itemRow->publishedFiles.isEmpty());
+
+        auto* openAct = menu.addAction(menuIcon("FileOpen.ico"), tr("Open File"), this,
+                                       [this, fileRow, ownerId, ids] {
+            if (fileRow)
+                openUsenetFile(ownerId, fileRow->index);
+            else
+                openUsenetFile(ids.first(), -1);
+        });
+        // One selection only: "open" names one file, and doing it for four rows
+        // at once would spawn four windows nobody asked for.
+        openAct->setEnabled(openable && ids.size() == 1);
+
         menu.addAction(menuIcon("FolderOpen.ico"), tr("Open Folder"), this,
                        &UsenetPanel::onOpenFolder);
+        menu.addAction(menuIcon("FileInfo.ico"), tr("Details…"), this,
+                       [this, ids] { showDetails(ids.first()); });
+
+        // Bold, so the entry the double-click runs is visible as such.
+        setMenuDefaultAction(&menu, openAct->isEnabled() ? openAct : nullptr);
+
         menu.addSeparator();
         menu.addAction(m_removeAction);
         menu.addAction(menuIcon("Delete.ico"), tr("Remove and Delete Files"), this,
@@ -529,8 +641,72 @@ void UsenetPanel::onAddNzb()
 {
     const QStringList paths = QFileDialog::getOpenFileNames(
         this, tr("Add NZB"), QString(), tr("NZB files (*.nzb);;All files (*)"));
+    if (paths.isEmpty())
+        return;
+
+    // A second dialog, and worth it: the passphrase is the one thing about a
+    // release that a file picker cannot express, and supplying it here is the
+    // difference between a download that finishes and one that fails and has to
+    // be retried. A *drop* stays silent — that is the quick path, and the
+    // context menu's Set Password… covers it afterwards.
+    AddNzbFilesDialog dlg(paths, categoryChoices(), this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const NzbAddChoices choices{dlg.archivePassword(), dlg.category(),
+                                dlg.priority(), dlg.paused()};
     for (const QString& path : paths)
-        addNzbFile(path);
+        addNzbFile(path, choices);
+}
+
+void UsenetPanel::onSetPassword()
+{
+    const QStringList ids = selectedItemIds();
+    if (ids.size() != 1 || !m_ipc || !m_ipc->isConnected())
+        return;
+
+    const UsenetItemRow* row = m_model->findById(ids.first());
+    const bool has = row && row->hasPassword;
+
+    bool ok = false;
+    // Never pre-filled with the stored value: the daemon does not send it, on
+    // purpose — the same one-way contract the news-server passwords keep. The
+    // placeholder says whether there is one without showing it.
+    QInputDialog dlg(this);
+    dlg.setWindowTitle(tr("Set Password"));
+    dlg.setLabelText(tr("Archive password for \"%1\":")
+                         .arg(row ? row->name : tr("this download")));
+    dlg.setInputMode(QInputDialog::TextInput);
+    dlg.setTextEchoMode(QLineEdit::Password);
+    dlg.setTextValue(QString());
+    ok = dlg.exec() == QDialog::Accepted;
+    if (!ok)
+        return;
+    const QString password = dlg.textValue();
+
+    // An empty box clears a stored password rather than doing nothing, which is
+    // how a user takes back a wrong guess. Confirmed, because the same gesture
+    // is what somebody who opened the dialog by mistake makes.
+    if (password.isEmpty() && has) {
+        if (QMessageBox::question(this, tr("Set Password"),
+                                  tr("Remove the stored password for this download?"),
+                                  QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+            return;
+        }
+    }
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetUsenetItemPassword);
+    msg.append(ids.first());
+    msg.append(password);
+    m_ipc->sendRequest(msg, [this](const Ipc::IpcMessage& reply) {
+        if (!reply.fieldBool(0)) {
+            StatusBarNotifier::post(tr("Could not set the password."));
+            return;
+        }
+        // Setting it on a failed item retries the unpack daemon-side, so the row
+        // is about to change status; refresh rather than wait for the poll.
+        m_poller->refreshNow();
+    });
 }
 
 void UsenetPanel::onPause()
@@ -626,12 +802,131 @@ void UsenetPanel::onOpenFolder()
     StatusBarNotifier::post(tr("Nothing has completed yet for \"%1\".").arg(row->name));
 }
 
+void UsenetPanel::activateRow(const QModelIndex& proxyIndex)
+{
+    if (!proxyIndex.isValid())
+        return;
+
+    const QModelIndex src = toSourceIndex(proxyIndex);
+
+    // A file row names one file. It opens when the release published it under
+    // its own name; a volume that was consumed into an archive never was, and
+    // the details view is the useful answer for those.
+    QString ownerId;
+    if (const UsenetFileRow* f = m_model->fileAt(src, &ownerId)) {
+        if (!f->finalPath.isEmpty())
+            openUsenetFile(ownerId, f->index);
+        else
+            showDetails(ownerId);
+        return;
+    }
+
+    const QString id = m_model->idAt(src.row());
+    if (id.isEmpty())
+        return;
+
+    const UsenetItemRow* row = m_model->findById(id);
+    if (row && row->status == UsenetRowStatus::Complete) {
+        openUsenetFile(id, -1);
+        return;
+    }
+
+    // Anything unfinished keeps Qt's expand-on-double-click. The child rows are
+    // the release's files, and opening them is what a double-click here has
+    // always meant.
+}
+
+void UsenetPanel::openUsenetFile(const QString& itemId, int fileIndex)
+{
+    const UsenetItemRow* row = m_model->findById(itemId);
+    if (!row)
+        return;
+
+    QString path;
+    QString relPath;
+    QString name;
+
+    if (fileIndex >= 0) {
+        for (const auto& f : row->files) {
+            if (f.index != fileIndex)
+                continue;
+            path = f.finalPath;
+            name = f.name;
+            // The queue row carries no per-file relPath; match the published
+            // entry by the name the daemon gave it.
+            for (const auto& pf : row->publishedFiles) {
+                if (pf.path == f.finalPath) {
+                    relPath = pf.relPath;
+                    break;
+                }
+            }
+            break;
+        }
+    } else {
+        // The item's payload: the biggest thing it published that is not a
+        // recovery volume. Same rule previewTarget() uses, and for the same
+        // reason — a release carries a sample and sometimes a trailer.
+        const UsenetPublishedFile* best = nullptr;
+        for (const auto& pf : row->publishedFiles) {
+            if (pf.name.endsWith(QLatin1String(".par2"), Qt::CaseInsensitive))
+                continue;
+            if (!best || pf.size > best->size)
+                best = &pf;
+        }
+        if (best) {
+            path = best->path;
+            relPath = best->relPath;
+            name = best->name;
+        }
+    }
+
+    if (path.isEmpty()) {
+        StatusBarNotifier::post(tr("Nothing has completed yet for \"%1\".").arg(row->name));
+        return;
+    }
+
+    // Local core: the recorded path is a path on this machine's filesystem, so
+    // the file manager's own handler is the right one.
+    if (m_ipc && m_ipc->isLocalConnection()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        return;
+    }
+
+    // Remote core: the bytes live on the daemon's disk and only its web server
+    // can reach them. A file outside the incoming folder has no browse address
+    // at all, so fall back to the listing rather than build a URL that 404s.
+    if (relPath.isEmpty()) {
+        openIncomingFolder(m_ipc, m_streamToken);
+        return;
+    }
+
+    const ED2KFileType type = getED2KFileTypeID(name);
+    const bool play = type == ED2KFileType::Video || type == ED2KFileType::Audio;
+    openIncomingFileInBrowser(m_ipc, m_streamToken, relPath, play);
+}
+
+void UsenetPanel::showDetails(const QString& itemId)
+{
+    if (itemId.isEmpty())
+        return;
+
+    if (m_detailsDialog) {
+        m_detailsDialog->raise();
+        m_detailsDialog->activateWindow();
+        return;
+    }
+
+    auto* dialog = new UsenetDetailsDialog(m_ipc, itemId, m_streamToken, this);
+    m_detailsDialog = dialog;
+    dialog->show();
+}
+
 QPair<QString, int> UsenetPanel::previewTarget() const
 {
     // A file row names itself.
     const QModelIndex current = m_view->currentIndex();
     if (current.isValid()) {
-        const QModelIndex src = m_proxy->mapToSource(current);
+        const QModelIndex src = toSourceIndex(current);
         QString ownerId;
         if (const UsenetFileRow* f = m_model->fileAt(src, &ownerId))
             return {f->previewable ? ownerId : QString(), f->previewable ? f->index : -1};
@@ -745,7 +1040,7 @@ QString UsenetPanel::previewNote() const
 {
     const QModelIndex current = m_view->currentIndex();
     if (current.isValid()) {
-        const QModelIndex src = m_proxy->mapToSource(current);
+        const QModelIndex src = toSourceIndex(current);
         if (const UsenetFileRow* f = m_model->fileAt(src))
             return f->previewNote;
     }
@@ -771,6 +1066,7 @@ void UsenetPanel::updateSummary()
     const int count = m_model->itemCount();
     if (count == 0) {
         m_summary->setText(tr("No Usenet downloads. Use \"Add NZB…\" to queue one."));
+        m_summary->setToolTip({});
         return;
     }
 
@@ -810,7 +1106,22 @@ void UsenetPanel::updateSummary()
     if (!stalled.isEmpty())
         text += tr(" — %1").arg(stalled);
 
+    // Only with a limit set and something to download: otherwise there is no
+    // split, and a cap on an idle queue answers a question nobody asked.
+    QString splitTip;
+    if (active > 0 && m_maxDownloadKb > 0) {
+        if (m_usenetLimitKb < m_maxDownloadKb) {
+            text += tr(" — limited to %1 KB/s while eD2K downloads").arg(m_usenetLimitKb);
+        }
+        splitTip = tr("Download limit %1 KB/s: Usenet up to %2 KB/s, eD2K up to %3 KB/s.\n"
+                      "Whichever network is idle lends its share to the other.")
+                       .arg(m_maxDownloadKb)
+                       .arg(m_usenetLimitKb)
+                       .arg(m_ed2kBudgetKb);
+    }
+
     m_summary->setText(text);
+    m_summary->setToolTip(splitTip);
 
     if (!stalled.isEmpty() && stalled != m_lastStallNotice) {
         StatusBarNotifier::post(tr("Usenet: %1").arg(stalled), 6000);
@@ -818,6 +1129,87 @@ void UsenetPanel::updateSummary()
         StatusBarNotifier::post(tr("Usenet: downloading again."), 4000);
     }
     m_lastStallNotice = stalled;
+}
+
+QModelIndex UsenetPanel::toSourceIndex(const QModelIndex& viewIndex) const
+{
+    // Two proxies now sit between the view and the model — the sort proxy, and
+    // the category filter on top of it. Mapping through only one silently yields
+    // the wrong row rather than an invalid index, which is precisely the bug the
+    // Transfers tab's filter used to have.
+    if (!viewIndex.isValid())
+        return {};
+    return m_proxy->mapToSource(m_categoryProxy->mapToSource(viewIndex));
+}
+
+QModelIndex UsenetPanel::fromSourceIndex(const QModelIndex& sourceIndex) const
+{
+    if (!sourceIndex.isValid())
+        return {};
+    // Invalid at the second hop is normal, not an error: it means the row is
+    // filtered out by the current category tab.
+    return m_categoryProxy->mapFromSource(m_proxy->mapFromSource(sourceIndex));
+}
+
+void UsenetPanel::populateCategoryMenu(QMenu* menu, int index)
+{
+    if (!menu)
+        return;
+
+    menu->addAction(menuIcon("Pause.ico"), tr("Pause"), this, [this, index] {
+        sendCategoryStatus(index, Ipc::CategoryAction::Pause);
+    });
+    menu->addAction(menuIcon("Start.ico"), tr("Resume"), this, [this, index] {
+        sendCategoryStatus(index, Ipc::CategoryAction::Resume);
+    });
+    // No Stop and no Resume-next: Stop keeps an ED2K file and drops its sources,
+    // and Usenet has no sources; Resume-next ranks paused files by the category's
+    // a4af priority, which is an ED2K concept. The daemon refuses both.
+    menu->addAction(menuIcon("Delete.ico"), tr("Cancel"), this, [this, index] {
+        // MFC asks before a cancel (IDS_Q_CANCELDL) and so does this: it deletes
+        // every article already fetched for those releases, and there is no undo.
+        if (QMessageBox::question(
+                this, tr("Cancel"),
+                tr("Remove every Usenet download in \"%1\" and delete its files?")
+                    .arg(m_categoryTabBar->categoryTitle(index)))
+            == QMessageBox::Yes)
+        {
+            sendCategoryStatus(index, Ipc::CategoryAction::Cancel);
+        }
+    });
+}
+
+void UsenetPanel::sendCategoryStatus(int index, Ipc::CategoryAction action)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetUsenetCategoryStatus);
+    msg.append(static_cast<qint64>(index));
+    msg.append(static_cast<qint64>(action));
+    m_ipc->sendRequest(msg, [this](const Ipc::IpcMessage& resp) {
+        if (!resp.fieldBool(0)) {
+            StatusBarNotifier::post(
+                tr("Could not apply that to the category: %1").arg(resp.field(1).toString()));
+        }
+        m_poller->refreshNow();
+    });
+}
+
+void UsenetPanel::sendSetCategory(const QStringList& ids, int category)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    for (const QString& id : ids) {
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::SetUsenetItemCategory);
+        msg.append(id);
+        msg.append(static_cast<qint64>(category));
+        m_ipc->sendRequest(msg, [](const Ipc::IpcMessage&) {});
+    }
+    // The daemon pushes the changed rows, but a refresh here is what makes the
+    // release leave the tab it was filtered into while the user is watching.
+    m_poller->refreshNow();
 }
 
 } // namespace eMule

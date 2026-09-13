@@ -68,6 +68,9 @@ private slots:
     void aUrlFeedsAddressIsNotStoredInClear();
     void anIntervalBelowTheFloorIsClamped();
     void invalidFeedsAreDropped();
+    void aFeedsDownloadCategoryRoundTrips();
+    void aFeedsDownloadCategoryIsNotClampedAtLoad();
+    void deletingACategoryRemapsFeedsToo();
 
 private:
     QTemporaryDir m_dir;
@@ -350,6 +353,7 @@ void tst_IndexerPrefs::feedsRoundTrip()
         search.maxAgeDays = 14;
         search.intervalMinutes = 45;
         search.grabExisting = true;
+        search.downloadCategory = 3;
 
         IndexerFeed pasted;
         pasted.name = QStringLiteral("Pasted");
@@ -378,6 +382,7 @@ void tst_IndexerPrefs::feedsRoundTrip()
     QCOMPARE(feeds[0].maxAgeDays, 14);
     QCOMPARE(feeds[0].intervalMinutes, 45);
     QVERIFY(feeds[0].grabExisting);
+    QCOMPARE(feeds[0].downloadCategory, 3);
 
     QCOMPARE(feeds[1].name, QStringLiteral("Pasted"));
     QCOMPARE(feeds[1].kind, IndexerFeedKind::Url);
@@ -460,6 +465,114 @@ void tst_IndexerPrefs::invalidFeedsAreDropped()
     p.setIndexerFeeds({unnamed, urlless, fileScheme, good, duplicate});
     QCOMPARE(p.indexerFeeds().size(), 1);
     QCOMPARE(p.indexerFeeds().first().name, QStringLiteral("Good"));
+}
+
+
+void tst_IndexerPrefs::aFeedsDownloadCategoryRoundTrips()
+{
+    // Written under its own key and never as `category`, which two fields up is
+    // the *indexer's* category id list. A `category:` beside a `categories:` in
+    // the same YAML map reads as its singular, and getting the two confused
+    // means a feed searching the wrong newznab section or filing into the wrong
+    // folder -- neither of which looks like an error.
+    {
+        Preferences p;
+        IndexerFeed feed;
+        feed.name = QStringLiteral("Shows");
+        feed.query = QStringLiteral("show");
+        feed.categories = {5000};        // newznab: TV
+        feed.downloadCategory = 2;       // eMule: the user's second category
+        p.setIndexerFeeds({feed});
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    QFile f(m_file);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QByteArray text = f.readAll();
+    f.close();
+    QVERIFY2(text.contains("downloadCategory: 2"), text.constData());
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    const auto feeds = p.indexerFeeds();
+    QCOMPARE(feeds.size(), 1);
+    QCOMPARE(feeds[0].downloadCategory, 2);
+    QCOMPARE(feeds[0].categories, QList<int>({5000}));
+
+    // Zero is the default and is not written at all, so a feed with no category
+    // costs nothing in the file.
+    {
+        Preferences q;
+        IndexerFeed plain;
+        plain.name = QStringLiteral("Plain");
+        plain.query = QStringLiteral("x");
+        q.setIndexerFeeds({plain});
+        QVERIFY(q.saveTo(m_file));
+    }
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QVERIFY(!f.readAll().contains("downloadCategory"));
+    f.close();
+}
+
+void tst_IndexerPrefs::aFeedsDownloadCategoryIsNotClampedAtLoad()
+{
+    // Deliberately *not* validated against categoryCount() on the way in.
+    // Clamping here would make a feed's destination depend on the order load()
+    // reads its blocks in, and a load-order slip would silently reset every feed
+    // to "All". An index the list no longer holds is already harmless where it
+    // is used -- incomingDirForCategory() falls back -- and SetCategories is
+    // what keeps it correct.
+    {
+        Preferences p;
+        // No categories at all, so 9 names nothing.
+        p.setCategories({});
+        IndexerFeed feed;
+        feed.name = QStringLiteral("Dangling");
+        feed.query = QStringLiteral("x");
+        feed.downloadCategory = 9;
+        p.setIndexerFeeds({feed});
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    QCOMPARE(p.indexerFeeds().size(), 1);
+    QCOMPARE(p.indexerFeeds().at(0).downloadCategory, 9);
+}
+
+
+void tst_IndexerPrefs::deletingACategoryRemapsFeedsToo()
+{
+    // The transaction rule. SetCategories renumbers the ED2K queue, the Usenet
+    // queue, the Usenet sidecars *and* the feeds before storing the new list --
+    // and the feeds are the ones worth a test, because a feed pointing at a
+    // deleted category files every future match into a stranger's folder rather
+    // than costing one release.
+    IndexerFeed tv;
+    tv.name = QStringLiteral("TV");
+    tv.query = QStringLiteral("show");
+    tv.downloadCategory = 1;
+
+    IndexerFeed films;
+    films.name = QStringLiteral("Films");
+    films.query = QStringLiteral("film");
+    films.downloadCategory = 2;
+
+    IndexerFeed none;
+    none.name = QStringLiteral("Anything");
+    none.query = QStringLiteral("x");
+
+    QList<IndexerFeed> feeds{tv, films, none};
+
+    // The user deletes category 1. Category 2 moves down into its slot.
+    QVERIFY(remapFeedCategories(feeds, {{2u, 1u}}));
+    QCOMPARE(feeds.at(0).downloadCategory, 0);   // its category is gone
+    QCOMPARE(feeds.at(1).downloadCategory, 1);   // moved with it
+    QCOMPARE(feeds.at(2).downloadCategory, 0);   // never had one
+
+    // A no-op map reports no change, so SetCategories does not rewrite
+    // preferences.yml for a rename.
+    QVERIFY(!remapFeedCategories(feeds, {{1u, 1u}}));
 }
 
 QTEST_MAIN(tst_IndexerPrefs)

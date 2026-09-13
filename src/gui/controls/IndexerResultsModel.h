@@ -14,6 +14,7 @@
 
 #include "AbstractTableModel.h"
 
+#include <QHash>
 #include <QString>
 
 #include <cstdint>
@@ -40,6 +41,12 @@ struct IndexerResultRow {
     int seeders = -1;
     int peers = -1;
     bool isUsenet = true;
+
+    /// What the daemon already knows about this release, in SearchFile::KnownType
+    /// numbering (0 unknown, 2 in the queue, 3 downloaded, 4 cancelled). A folded
+    /// *name* match — an indexer row carries no message-ids — so it marks the row
+    /// and raises a question, and never decides what an add does.
+    int knownType = 0;
 };
 
 class IndexerResultsModel : public AbstractTableModel<IndexerResultRow> {
@@ -55,6 +62,9 @@ public:
         ColIndexer,
         ColSeeders,   ///< Hidden until a BitTorrent module exists.
         ColPeers,     ///< Likewise.
+        /// Last, as SearchResultsModel::ColKnown is — appended rather than
+        /// inserted so a stored header layout in uistate.yml is not reindexed.
+        ColKnown,
         ColCount
     };
 
@@ -74,6 +84,14 @@ public:
 
     /// Result id at @p row, the key a grab and a selection restore both use.
     [[nodiscard]] QString idAt(int row) const;
+
+    /// Apply a batch of verdicts keyed by title. Keyed rather than positional
+    /// because addResults() appends: a reply that was in flight while a second
+    /// indexer answered would otherwise mark the wrong rows.
+    void updateKnownTypes(const QHash<QString, int>& typesByTitle);
+
+    /// Mark one row, for the optimistic update after a grab is accepted.
+    void setKnownType(int row, int knownType);
 
     [[nodiscard]] const IndexerResultRow* resultAt(int row) const { return rowAt(row); }
 

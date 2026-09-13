@@ -476,14 +476,40 @@ void PartFile::flushBuffer(bool forceICH)
         }
     }
 
-    // Write each buffered entry to disk
+    // ⚠️ Every one of these can fail, and dropping the buffer anyway is worse
+    // than any of them: the bytes are gone, the gap is filled with whatever was
+    // on disk, and the part then fails its MD4 — which this file charges to the
+    // *peer* that sent it (see punishCorruptionSenders below). A full disk would
+    // quietly ban the people uploading to us. MFC throws diskFull here
+    // (srchybrid/PartFile.cpp:4095); the Qt port has no exception path, so the
+    // buffer is kept instead and the write is retried on the next flush.
+    bool wrote = true;
     for (const auto& bd : m_bufferedData) {
-        m_partFileHandle.seek(static_cast<qint64>(bd.start));
-        m_partFileHandle.write(reinterpret_cast<const char*>(bd.data.data()),
-                                static_cast<qint64>(bd.data.size()));
+        if (!m_partFileHandle.seek(static_cast<qint64>(bd.start))) {
+            wrote = false;
+            break;
+        }
+        const qint64 n =
+            m_partFileHandle.write(reinterpret_cast<const char*>(bd.data.data()),
+                                   static_cast<qint64>(bd.data.size()));
+        if (n != static_cast<qint64>(bd.data.size())) {
+            wrote = false;
+            break;
+        }
+    }
+    if (wrote && !m_partFileHandle.flush())
+        wrote = false;
+
+    if (!wrote) {
+        logError(QStringLiteral("PartFile::flushBuffer: could not write %1: %2")
+                     .arg(fileName(), m_partFileHandle.errorString()));
+        // Held, not discarded: the next flush tries again, and if the cause is
+        // the disk filling up, checkDiskspace() pauses the file before then.
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->checkDiskspace();
+        return;
     }
 
-    m_partFileHandle.flush();
     m_bufferedData.clear();
     m_totalBufferData = 0;
 

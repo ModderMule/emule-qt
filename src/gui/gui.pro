@@ -86,6 +86,8 @@ SOURCES += \
     controls/ClientListModel.cpp \
     controls/ContactsGraph.cpp \
     controls/ContentScrollArea.cpp \
+    controls/CategoryFilterProxy.cpp \
+    controls/CategoryTabBar.cpp \
     controls/DownloadListModel.cpp \
     controls/DownloadProgressDelegate.cpp \
     controls/FriendListModel.cpp \
@@ -116,11 +118,13 @@ SOURCES += \
     dialogs/MetadataPage.cpp \
     dialogs/NetworkInfoDialog.cpp \
     dialogs/OptionsDialog.cpp \
+    dialogs/AddNzbFilesDialog.cpp \
     dialogs/AddNzbUrlDialog.cpp \
     dialogs/PasteLinksDialog.cpp \
     dialogs/PasteTextDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
     dialogs/UsenetArchiveEntryDialog.cpp \
+    dialogs/UsenetDetailsDialog.cpp \
     panels/IrcPanel.cpp \
     panels/KadPanel.cpp \
     panels/MessagesPanel.cpp \
@@ -137,14 +141,18 @@ HEADERS += \
     app/IpcClient.h \
     app/MainWindow.h \
     app/MiniMuleWidget.h \
+    app/PendingOpenQueue.h \
     app/PowerManager.h \
     app/UiState.h \
     app/VersionChecker.h \
     controls/AccordionSidebar.h \
     controls/AbstractListView.h \
+    controls/SortableItems.h \
     controls/ClientListModel.h \
     controls/ContactsGraph.h \
     controls/ContentScrollArea.h \
+    controls/CategoryFilterProxy.h \
+    controls/CategoryTabBar.h \
     controls/DownloadListModel.h \
     controls/DownloadProgressDelegate.h \
     controls/FriendListModel.h \
@@ -152,6 +160,7 @@ HEADERS += \
     controls/KadContactsModel.h \
     controls/KadLookupGraph.h \
     controls/KadSearchesModel.h \
+    controls/KnownTypeStyle.h \
     controls/LogWidget.h \
     controls/IndexerResultsModel.h \
     controls/SearchResultsModel.h \
@@ -175,11 +184,13 @@ HEADERS += \
     dialogs/MetadataPage.h \
     dialogs/NetworkInfoDialog.h \
     dialogs/OptionsDialog.h \
+    dialogs/AddNzbFilesDialog.h \
     dialogs/AddNzbUrlDialog.h \
     dialogs/PasteLinksDialog.h \
     dialogs/PasteTextDialog.h \
     dialogs/SearchDetailDialog.h \
     dialogs/UsenetArchiveEntryDialog.h \
+    dialogs/UsenetDetailsDialog.h \
     panels/IrcPanel.h \
     panels/KadPanel.h \
     panels/MessagesPanel.h \

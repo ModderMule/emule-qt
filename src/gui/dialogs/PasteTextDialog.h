@@ -17,6 +17,9 @@
 #include <QString>
 #include <QStringList>
 
+class QCheckBox;
+class QComboBox;
+class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 
@@ -34,6 +37,22 @@ public:
         QString placeholder;
         QString acceptText;
         QSize   defaultSize{450, 250};
+
+        /// Label for an optional password row under the box, empty for none.
+        /// Only the NZB dialogs want it — a paste of ED2K links has nothing to
+        /// decrypt — so it is a field rather than a second base class.
+        QString passwordLabel;
+
+        /// Show the box read-only, for a dialog that lists what the user already
+        /// picked rather than asking them to type it. The accept button then
+        /// stays enabled, since there is nothing for them to type into.
+        bool readOnlyText = false;
+
+        /// Offer a category / priority / start-paused row, and what to put in
+        /// the category box: one entry per category in the user's own order,
+        /// index 0 first. Empty for no row, which is every dialog but the two
+        /// NZB ones — the same call Chrome::passwordLabel makes.
+        QStringList queueCategories;
     };
 
 protected:
@@ -41,6 +60,21 @@ protected:
 
     /// Everything in the box, trimmed.
     [[nodiscard]] QString text() const;
+
+    /// What was typed in the password row, or an empty string when the chrome
+    /// asked for no row. Not trimmed: an archive passphrase is opaque bytes and
+    /// a leading space is legal in one.
+    [[nodiscard]] QString password() const;
+
+    /// The category index picked, or 0 for "no category" — which is also what
+    /// the daemon reads as "nobody chose", so auto-categorisation still runs.
+    [[nodiscard]] int queueCategory() const;
+
+    /// -2..+2, 0 when the chrome asked for no row.
+    [[nodiscard]] int queuePriority() const;
+
+    /// Whether to queue the release without starting it.
+    [[nodiscard]] bool queuePaused() const;
 
     /// One entry per line, trimmed, blanks dropped.
     [[nodiscard]] QStringList lines() const;
@@ -60,8 +94,15 @@ protected:
 
 private:
     QPlainTextEdit* m_edit = nullptr;
+    QLineEdit* m_password = nullptr;   ///< null unless Chrome::passwordLabel was set
+
+    /// All null unless Chrome::queueCategories was non-empty.
+    QComboBox* m_category = nullptr;
+    QComboBox* m_priority = nullptr;
+    QCheckBox* m_paused = nullptr;
     QPushButton* m_acceptBtn = nullptr;
     QString m_acceptText;
+    bool m_readOnlyText = false;
 };
 
 } // namespace eMule

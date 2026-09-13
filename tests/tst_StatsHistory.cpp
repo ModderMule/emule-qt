@@ -55,6 +55,7 @@ private slots:
     void stats_ringEvictsAtCapacity();
     void reset_clearsBothAndChangesEpoch();
     void fieldsAreCarriedThroughSince();
+    void usenetRateSource_isSampledClampedAndClearable();
 };
 
 void tst_StatsHistory::speed_seqStartsAtOneAndIsMonotonic()
@@ -218,6 +219,33 @@ void tst_StatsHistory::fieldsAreCarriedThroughSince()
     QCOMPARE(samples[0].upNoOverhead, 0.0f);
     QCOMPARE(samples[0].connActive, 0u);
     QCOMPARE(samples[0].downTransferring, 0u);
+    QCOMPARE(samples[0].usenetDown, 0.0f);   // no source installed
+}
+
+// Core cannot see the Usenet engine, so the daemon hands it a reader. The
+// daemon clears it before the engine goes away; a cleared source reads 0.
+void tst_StatsHistory::usenetRateSource_isSampledClampedAndClearable()
+{
+    const ScopedGraphInterval interval(1);
+    StatsHistory hist;
+
+    float rate = 512.0f;
+    hist.setUsenetDownRateSource([&rate] { return rate; });
+    hist.sample(100);
+    rate = -5.0f;                       // a rate is never negative on a graph
+    hist.sample(101);
+    hist.setUsenetDownRateSource({});
+    hist.sample(102);
+
+    const auto samples = hist.statsSince(0);
+    QCOMPARE(samples.size(), size_t{3});
+    QCOMPARE(samples[0].usenetDown, 512.0f);
+    QCOMPARE(samples[1].usenetDown, 0.0f);
+    QCOMPARE(samples[2].usenetDown, 0.0f);
+
+    // The toolbar's speed samples stay eD2K-only.
+    for (const auto& s : hist.speedSince(0))
+        QCOMPARE(s.down, 0.0f);
 }
 
 QTEST_MAIN(tst_StatsHistory)

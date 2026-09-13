@@ -44,11 +44,18 @@ public:
 
     [[nodiscard]] const std::vector<WebServiceEntry>& services() const { return m_services; }
 
+    /// The file the user owns and edits: <configdir>/webservices.dat.
+    /// Named even when absent, so a caller can create it.
+    /// MFC: CWebServices::GetDefaultServicesFile (srchybrid/OtherFunctions.cpp:946).
+    [[nodiscard]] static QString userFilePath();
+
+    /// The file actually read: the user's copy when present, else the shipped one.
+    [[nodiscard]] QString servicesFilePath() const;
+
     WebServices() = default;
 
 private:
 
-    [[nodiscard]] QString servicesFilePath() const;
     static QString expandMacros(const QString& urlTemplate, const QString& hash,
                                 const QString& fileName, uint64_t fileSize);
     static QString cleanupFilename(const QString& name, bool keepExtension = true);

@@ -284,6 +284,11 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("transferredDown"), static_cast<qint64>(c.transferredDown()));
     m.insert(QStringLiteral("sessionDown"),     static_cast<qint64>(c.sessionDown()));
     m.insert(QStringLiteral("datarate"),        static_cast<qint64>(c.downDatarate()));
+    // Credit totals across sessions; the Downloading list shows them beside the session
+    // figures (MFC DownloadClientsCtrl.cpp:187-198).
+    const auto* cr = c.credits();
+    m.insert(QStringLiteral("downloadedTotal"), cr ? static_cast<qint64>(cr->downloadedTotal()) : 0);
+    m.insert(QStringLiteral("uploadedTotal"),   cr ? static_cast<qint64>(cr->uploadedTotal()) : 0);
     m.insert(QStringLiteral("partCount"),       c.partCount());
     m.insert(QStringLiteral("upPartCount"),    static_cast<int>(c.upPartCount()));
     m.insert(QStringLiteral("fileName"),        c.clientFilename());
@@ -373,14 +378,10 @@ namespace eMule::Ipc {
         }
         m.insert(QStringLiteral("identification"), identStr);
 
-        // Credit totals
-        m.insert(QStringLiteral("downloadedTotal"), static_cast<qint64>(c.credits()->downloadedTotal()));
-        m.insert(QStringLiteral("uploadedTotal"),   static_cast<qint64>(c.credits()->uploadedTotal()));
+        // Credit totals come from toCbor()
         m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.userAddress().toNetworkUint32())));
     } else {
         m.insert(QStringLiteral("identification"), QStringLiteral("Not available"));
-        m.insert(QStringLiteral("downloadedTotal"), 0);
-        m.insert(QStringLiteral("uploadedTotal"),   0);
         m.insert(QStringLiteral("scoreRatio"),      1.0);
     }
 

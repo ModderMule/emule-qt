@@ -42,16 +42,18 @@ public:
     /// Schedule screenshot capture (if --screenshot is set).
     void setupScreenshotTimer(QApplication& app, MainWindow& mainWindow) const;
 
-    /// Import the ed2k:// positional arguments.
+    /// Import the ed2k:// positional arguments and queue the .nzb ones.
     ///
-    /// Handing them to @p linkHandler rather than importing here is what makes the wait
-    /// for the daemon correct: a link given on the command line always arrives before the
-    /// IPC connection is up, and the handler holds it until there is a daemon to import
-    /// it into instead of guessing at a delay.
-    /// Also queues the .nzb paths, which is why it is not called
-    /// handleEd2kLinks any more: a desktop launcher passes `%U`, so what arrives
-    /// here is whatever the user double-clicked.
-    void handleOpenArguments(ExternalLinkHandler& linkHandler, MainWindow& mainWindow) const;
+    /// Handing them to @p linkHandler rather than acting here is what makes the wait for
+    /// the daemon correct: an argument given on the command line always arrives before
+    /// the IPC connection is up — main() calls the *asynchronous* connectToDaemon() and
+    /// then this, on the next line — and the handler holds it until there is a daemon
+    /// instead of guessing at a delay. That is as true of a .nzb, whose contents travel
+    /// over IPC, as of a link; adding one here directly raised a modal "Not connected"
+    /// over a window the user had not seen yet.
+    /// It is not called handleEd2kLinks any more because a desktop launcher passes `%U`,
+    /// so what arrives here is whatever the user double-clicked.
+    void handleOpenArguments(ExternalLinkHandler& linkHandler) const;
 
     /// --register-file-types / --unregister-file-types, for a packager's
     /// post-install script or a user who turned the setting off. Returns true

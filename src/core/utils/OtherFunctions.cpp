@@ -154,6 +154,21 @@ QString encodeUrlQueryParam(const QString& query)
     return QString::fromUtf8(QUrl::toPercentEncoding(query, QByteArrayLiteral(""), QByteArrayLiteral("+")));
 }
 
+QString takeBracedPassword(QString& name)
+{
+    const int open = name.indexOf(QLatin1String("{{"));
+    if (open < 0)
+        return {};
+    const int close = name.indexOf(QLatin1String("}}"), open + 2);
+    if (close < 0)
+        return {};
+
+    const QString password = name.mid(open + 2, close - open - 2);
+    name.remove(open, close - open + 2);
+    name = name.trimmed();
+    return password;
+}
+
 // ---------------------------------------------------------------------------
 // IP address helpers
 // ---------------------------------------------------------------------------

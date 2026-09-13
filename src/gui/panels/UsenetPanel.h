@@ -11,6 +11,7 @@
 /// The GUI links eMule::Core and eMule::Ipc only, never eMule::Usenet, so
 /// everything here comes off the wire as CBOR.
 
+#include <QModelIndex>
 #include <QPointer>
 #include <QWidget>
 
@@ -25,10 +26,26 @@ class QTreeView;
 
 namespace eMule {
 
+class CategoryFilterProxy;
+class CategoryTabBar;
 class IpcClient;
 class PanelPoller;
 class UsenetArchiveEntryDialog;
+class UsenetDetailsDialog;
 class UsenetQueueModel;
+
+/// What an Add dialog asked for, or nothing when the path does not ask — a drop,
+/// a Finder open, the command line. The defaults reproduce those exactly: no
+/// category (so auto-categorisation runs), normal priority, not paused.
+///
+/// Outside the panel class because a default argument cannot use a member
+/// initializer of the class it is declared in.
+struct NzbAddChoices {
+    QString password;
+    int category = 0;
+    int priority = 0;
+    bool paused = false;
+};
 
 class UsenetPanel : public QWidget {
     Q_OBJECT
@@ -40,7 +57,12 @@ public:
     void setIpcClient(IpcClient* ipc);
 
     /// Queue an .nzb from disk. Also the drop and menu entry point.
-    void addNzbFile(const QString& path);
+    /// @p password is an archive passphrase for this release, usually empty.
+    /// Every file route funnels here, and only the Add NZB dialog has one to
+    /// offer — a drop is a quick action, and the context menu can set it after.
+    void addNzbFile(const QString& path, const NzbAddChoices& choices = {});
+
+    [[nodiscard]] QStringList categoryChoices() const;
 
     /// Ask for .nzb URLs and queue them. The daemon does the downloading, so a
     /// link only its network can reach still works — see IpcProtocol.h,
@@ -54,7 +76,7 @@ public:
     /// The daemon's per-process preview-stream token, handed out with the stats
     /// poll. Empty means the web server is not up, and Preview stays disabled —
     /// the same contract TransferPanel, SearchPanel and SharedFilesPanel use.
-    void setStreamToken(const QString& token) { m_streamToken = token; }
+    void setStreamToken(const QString& token);
 
 protected:
     // Drops are accepted here and in MainWindow, so a drop works wherever the
@@ -89,8 +111,21 @@ private:
     /// parent NZB, because every action here acts on the item.
     [[nodiscard]] QStringList selectedItemIds() const;
 
+    /// Map a view index down to the model, and back. Two proxies sit in between
+    /// — the sort proxy and the category filter on top of it — and going through
+    /// only one yields the *wrong row* rather than an invalid index.
+    [[nodiscard]] QModelIndex toSourceIndex(const QModelIndex& viewIndex) const;
+    [[nodiscard]] QModelIndex fromSourceIndex(const QModelIndex& sourceIndex) const;
+
+    /// The Usenet half of a category tab's context menu — CategoryTabBar owns
+    /// the entries that edit the category itself.
+    void populateCategoryMenu(QMenu* menu, int index);
+    void sendCategoryStatus(int index, Ipc::CategoryAction action);
+    void sendSetCategory(const QStringList& ids, int category);
+
     void onContextMenu(const QPoint& pos);
     void onAddNzb();
+    void onSetPassword();
     void onPause();
     void onResume();
     void onRemove(bool deleteFiles);
@@ -98,6 +133,24 @@ private:
     void onOpenFolder();
     void onPreview();
     void onCheckAvailability();
+
+    /// What a double-click or Enter does on @p index — the single place that
+    /// decision lives, so the mouse and the keyboard cannot diverge.
+    void activateRow(const QModelIndex& proxyIndex);
+
+    /// Open one published file with whatever can reach it: the OS default
+    /// application when the core runs on this machine, the daemon's own web page
+    /// when it does not.
+    ///
+    /// @p fileIndex names a file row's position in the NZB; -1 means "the item's
+    /// payload", which resolves to its largest non-PAR2 published file — a
+    /// release carries a sample and sometimes a trailer, and neither is what was
+    /// asked for.
+    void openUsenetFile(const QString& itemId, int fileIndex);
+
+    /// Show the release details dialog, raising the open one rather than
+    /// stacking a second.
+    void showDetails(const QString& itemId);
 
     /// The file a Preview should stream, as (item id, index in the NZB).
     ///
@@ -124,6 +177,12 @@ private:
     QTreeView* m_view = nullptr;
     UsenetQueueModel* m_model = nullptr;
     QSortFilterProxyModel* m_proxy = nullptr;
+
+    /// Sits on top of m_proxy and is what the view is actually bound to, so
+    /// every view index needs both hops — toSourceIndex()/fromSourceIndex().
+    CategoryFilterProxy* m_categoryProxy = nullptr;
+
+    CategoryTabBar* m_categoryTabBar = nullptr;
     QLabel* m_summary = nullptr;
 
     QAction* m_addAction = nullptr;
@@ -141,9 +200,18 @@ private:
 
     QString m_streamToken;
 
+    /// The live download split, off the stats push; KB/s, 0 = unlimited. Lets
+    /// the summary say why the rate stops where it does.
+    qint64 m_maxDownloadKb = 0;
+    qint64 m_usenetLimitKb = 0;
+    qint64 m_ed2kBudgetKb = 0;
+
     /// The chooser, while one is open. QPointer because the dialog is modeless
     /// and deletes itself on close.
     QPointer<UsenetArchiveEntryDialog> m_entryDialog;
+
+    /// The details window, on the same terms and for the same reason.
+    QPointer<UsenetDetailsDialog> m_detailsDialog;
 
     bool m_restoringSelection = false;
 };

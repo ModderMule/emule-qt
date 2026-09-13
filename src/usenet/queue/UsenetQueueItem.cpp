@@ -6,14 +6,11 @@
 #include <QDir>
 #include <QObject>
 
+#include <algorithm>
+
 namespace eMule::usenet {
 
-namespace {
-
-/// Strip anything a file system would object to, and anything that would let a
-/// crafted NZB escape the temp directory. An NZB is untrusted input: its subject
-/// line is attacker-controlled, and `fileName` is derived from it.
-[[nodiscard]] QString sanitizeName(const QString& raw)
+QString sanitizeName(const QString& raw)
 {
     QString out;
     out.reserve(raw.size());
@@ -38,8 +35,6 @@ namespace {
     return out.left(180);
 }
 
-} // namespace
-
 QString describeUsenetItemStatus(UsenetItemStatus s)
 {
     switch (s) {
@@ -54,6 +49,11 @@ QString describeUsenetItemStatus(UsenetItemStatus s)
     case UsenetItemStatus::Checking:    return QObject::tr("Checking");
     }
     return QObject::tr("Unknown");
+}
+
+int clampUsenetPriority(int priority)
+{
+    return std::clamp(priority, kUsenetPriorityVeryLow, kUsenetPriorityVeryHigh);
 }
 
 bool UsenetFileState::allSegmentsDone() const
@@ -128,6 +128,21 @@ int UsenetQueueItem::doneSegmentCount() const
     return n;
 }
 
+QString UsenetQueueItem::bestFileName(int fileIndex) const
+{
+    if (fileIndex < 0 || fileIndex >= files.size() || fileIndex >= nzb.files.size())
+        return {};
+
+    // Most evidence first. The PAR2 name had to hash-match the bytes on disk;
+    // the other two are claims, and on a fully obfuscated post both are junk.
+    const UsenetFileState& st = files.at(fileIndex);
+    if (!st.par2FileName.isEmpty())
+        return st.par2FileName;
+    if (!st.articleFileName.isEmpty())
+        return st.articleFileName;
+    return nzb.files.at(fileIndex).fileName;
+}
+
 bool UsenetQueueItem::isFilePreviewable(int fileIndex) const
 {
     if (fileIndex < 0 || fileIndex >= nzb.files.size() || fileIndex >= files.size())
@@ -137,12 +152,9 @@ bool UsenetQueueItem::isFilePreviewable(int fileIndex) const
     if (info.isPar2())
         return false;
 
-    // The name yEnc declared wins: an obfuscated post's subject carries no
-    // usable extension, and the extension is the whole of this test.
-    const UsenetFileState& st = files.at(fileIndex);
-    QString candidate = st.articleFileName;
-    if (candidate.isEmpty())
-        candidate = info.fileName;
+    // The best name available: an obfuscated post's subject carries no usable
+    // extension, and the extension is the whole of this test.
+    const QString candidate = bestFileName(fileIndex);
     if (candidate.isEmpty())
         return false;
 

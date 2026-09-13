@@ -11,6 +11,11 @@
 /// as adConnectError/adRetry vs adNotFound (`daemon/nntp/ArticleDownloader.h`),
 /// and getting it backwards either hammers a dead server or gives up on an
 /// article that a fill server would have had.
+///
+/// A damaged article is a content failure, not a transport one: the body was
+/// read to its terminating "." on a connection that is still in sync, and what
+/// this server stores is what it will serve again. So it excludes this server
+/// and asks the next, exactly like a 430 (NZBGet's RetryOnCrcError=no default).
 
 #include <QMetaType>
 #include <QString>
@@ -33,6 +38,15 @@ enum class NntpError : quint8 {
     // -- Content: this server does not have it; another level might. ---------
     ArticleNotFound,   ///< 430.
     GroupNotFound,     ///< 411.
+    ArticleCorrupt,    ///< yEnc decode failed: this server's copy is unusable.
+
+    // -- Local: the article is fine; storing it is not. ----------------------
+    ///
+    /// A full disk, a read-only volume, a scratch file that cannot be opened.
+    /// Its own value because every other one is a statement about a *server*,
+    /// and routing a local fault through them is how a full disk used to back
+    /// off a provider for a minute and then book the article as missing.
+    WriteFailed,
 
     // -- Anything else. ------------------------------------------------------
     ProtocolError,     ///< Unparseable or unexpected response.
@@ -43,7 +57,8 @@ enum class NntpError : quint8 {
 /// server is not evidence that the article is missing.
 [[nodiscard]] constexpr bool escalatesToNextLevel(NntpError e)
 {
-    return e == NntpError::ArticleNotFound || e == NntpError::GroupNotFound;
+    return e == NntpError::ArticleNotFound || e == NntpError::GroupNotFound
+        || e == NntpError::ArticleCorrupt;
 }
 
 /// Whether the connection is dead and must be rebuilt before reuse.
@@ -61,6 +76,16 @@ enum class NntpError : quint8 {
     case NntpError::None:
     case NntpError::ArticleNotFound:
     case NntpError::GroupNotFound:
+    // The body was read to its terminating "." and the socket is back to Ready
+    // before the decoder's verdict is even looked at, so the connection is in
+    // sync. Calling it fatal used to drop it *and* back the whole account off
+    // for a minute over one damaged article.
+    case NntpError::ArticleCorrupt:
+    // The body was read to its terminating "." — the writer's failure was
+    // latched and the rest of the chunks dropped on the floor, not the socket's.
+    // Dropping the connection over a local disk fault would rebuild it for
+    // nothing and back the account off on the way.
+    case NntpError::WriteFailed:
         return false;
     }
     return true;

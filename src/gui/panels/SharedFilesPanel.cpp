@@ -21,6 +21,7 @@
 #include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/StringUtils.h"
 #include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
 #include "dialogs/CollectionCreateDialog.h"
@@ -89,32 +90,6 @@ constexpr int PrLow      = 0;
 constexpr int PrNormal   = 1;
 constexpr int PrHigh     = 2;
 constexpr int PrVeryHigh = 3;
-
-/// Format a byte count for display.
-QString formatSize(int64_t bytes)
-{
-    if (bytes < 0)
-        return {};
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
-}
-
-/// Format a data rate in bytes/sec for display (matching MFC CastItoXBytes with rate flag).
-QString formatSpeed(int64_t bytesPerSec)
-{
-    if (bytesPerSec <= 0)
-        return QStringLiteral("0 B/s");
-    if (bytesPerSec < 1024)
-        return QStringLiteral("%1 B/s").arg(bytesPerSec);
-    if (bytesPerSec < 1024 * 1024)
-        return QStringLiteral("%1 KB/s").arg(static_cast<double>(bytesPerSec) / 1024.0, 0, 'f', 1);
-    return QStringLiteral("%1 MB/s").arg(static_cast<double>(bytesPerSec) / (1024.0 * 1024.0), 0, 'f', 1);
-}
 
 } // anonymous namespace
 
@@ -761,7 +736,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
 
     // Session — Transferred
     grid->addWidget(new QLabel(tr("  Transferred:")), row, 0);
-    m_statSessionTransferred = new QLabel(QStringLiteral("0 B"));
+    m_statSessionTransferred = new QLabel(formatByteSize(0));
     grid->addWidget(m_statSessionTransferred, row, 1);
     makeBar(m_barSessionTransferred);
     grid->addWidget(m_barSessionTransferred, row, 2);
@@ -796,7 +771,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
 
     // Total — Transferred
     grid->addWidget(new QLabel(tr("  Transferred:")), row, 0);
-    m_statTotalTransferred = new QLabel(QStringLiteral("0 B"));
+    m_statTotalTransferred = new QLabel(formatByteSize(0));
     grid->addWidget(m_statTotalTransferred, row, 1);
     makeBar(m_barTotalTransferred);
     grid->addWidget(m_barTotalTransferred, row, 2);
@@ -1156,24 +1131,24 @@ void SharedFilesPanel::updateStatsTab()
     if (!f) {
         m_statSessionRequests->setText(QStringLiteral("0"));
         m_statSessionAccepted->setText(QStringLiteral("0"));
-        m_statSessionTransferred->setText(QStringLiteral("0 B"));
+        m_statSessionTransferred->setText(formatByteSize(0));
         m_statTotalRequests->setText(QStringLiteral("0"));
         m_statTotalAccepted->setText(QStringLiteral("0"));
-        m_statTotalTransferred->setText(QStringLiteral("0 B"));
+        m_statTotalTransferred->setText(formatByteSize(0));
         m_statPopularity->setText(QStringLiteral("-"));
         m_statPopularity2->setText(QStringLiteral("-"));
         m_statOnQueue->setText(QStringLiteral("0"));
-        m_statUploading->setText(QStringLiteral("0 B/s"));
+        m_statUploading->setText(formatByteRate(0));
         clearBars();
         return;
     }
 
     m_statSessionRequests->setText(QString::number(f->requests));
     m_statSessionAccepted->setText(QString::number(f->acceptedUploads));
-    m_statSessionTransferred->setText(formatSize(f->transferred));
+    m_statSessionTransferred->setText(formatByteSize(f->transferred));
     m_statTotalRequests->setText(QString::number(f->allTimeRequests));
     m_statTotalAccepted->setText(QString::number(f->allTimeAccepted));
-    m_statTotalTransferred->setText(formatSize(f->allTimeTransferred));
+    m_statTotalTransferred->setText(formatByteSize(f->allTimeTransferred));
 
     // Popularity rank: file's position among all shared files sorted by request count
     const int sessionRank = computePopularityRank(f->requests, &SharedFileRow::requests);
@@ -1182,7 +1157,7 @@ void SharedFilesPanel::updateStatsTab()
     m_statPopularity2->setText(totalRank > 0 ? QString::number(totalRank) : QStringLiteral("-"));
 
     m_statOnQueue->setText(QString::number(f->queuedClients));
-    m_statUploading->setText(formatSpeed(f->uploadDataRate));
+    m_statUploading->setText(formatByteRate(f->uploadDataRate));
 
     // Compute percentage bars using cached aggregate totals
     auto pct = [](int64_t part, int64_t total) -> int {

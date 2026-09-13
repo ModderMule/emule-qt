@@ -21,6 +21,10 @@
 /// "All" category: it always exists and its `incomingPath` is always empty,
 /// which is what makes it resolve to the global incoming dir.
 
+#include "utils/Types.h"
+
+#include <QHash>
+#include <QList>
 #include <QString>
 #include <QtTypes>
 
@@ -92,5 +96,34 @@ struct DownloadCategory {
         return title.isEmpty() ? QStringLiteral("?") : title;
     }
 };
+
+/// Which category @p name auto-files into, or 0 for none.
+///
+/// The whole of MFC's auto-categorisation rule, with no I/O and no knowledge of
+/// what is being categorised: an ED2K part file and a Usenet release are both
+/// just a name. Split out of `DownloadQueue::applyAutoCategory()` when the
+/// Usenet queue became the second caller, the way `IndexerFeedMatch` is split
+/// out of the feed poller and for the same reason -- the part with no I/O is the
+/// part that can be tested hard.
+///
+/// Index 0 is never returned: it is the implicit "All" category and means
+/// exactly "not auto-filed anywhere".
+[[nodiscard]] int matchAutoCategory(const QList<DownloadCategory>& cats,
+                                    const QString& name);
+
+/// Where a stored category index lands after the list was reordered or trimmed.
+///
+/// @p oldToNew maps each surviving entry's old index to its new one; an index
+/// absent from it names a category that is **gone**, and the answer is 0. Losing
+/// the category costs the label, never the file -- MFC's `ResetCatParts` gives
+/// the same answer (srchybrid/DownloadQueue.cpp:1111).
+///
+/// Index 0 is returned unchanged: it is the implicit "All" and always exists.
+///
+/// One definition because four stores now need it — the ED2K queue, the Usenet
+/// queue, the Usenet sidecars on disk, and the feeds — and they have to agree.
+/// They are renumbered in one transaction, so a rule that differed between them
+/// would only show up as a download in the wrong folder.
+[[nodiscard]] int remapCategoryIndex(int category, const QHash<uint32, uint32>& oldToNew);
 
 } // namespace eMule

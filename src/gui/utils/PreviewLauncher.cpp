@@ -131,6 +131,51 @@ QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
     return url.toString(QUrl::FullyEncoded);
 }
 
+QString daemonIncomingFileUrl(const IpcClient* ipc, const QString& streamToken,
+                              const QString& relPath, bool play)
+{
+    if (!ipc || !ipc->isConnected() || streamToken.isEmpty() || relPath.isEmpty())
+        return {};
+
+    QUrl url;
+    url.setScheme(daemonWebScheme());
+    url.setHost(ipc->daemonHost());
+    url.setPort(thePrefs.webServerPort());
+
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("token"), streamToken);
+
+    // Two routes, two query keys. The listing route serves the player page under
+    // `play=` and refuses a `path=` that names a file; the download route takes
+    // `file=` and answers with an attachment.
+    if (play) {
+        url.setPath(QStringLiteral("/api/v1/incoming"));
+        query.addQueryItem(QStringLiteral("play"), relPath);
+    } else {
+        url.setPath(QStringLiteral("/api/v1/incoming/download"));
+        query.addQueryItem(QStringLiteral("file"), relPath);
+    }
+    url.setQuery(query);
+
+    return url.toString(QUrl::FullyEncoded);
+}
+
+bool openIncomingFileInBrowser(const IpcClient* ipc, const QString& streamToken,
+                               const QString& relPath, bool play)
+{
+    const QString reason = incomingBrowseUnavailableReason(ipc, streamToken);
+    if (!reason.isEmpty()) {
+        logWarning(QStringLiteral("Cannot open the file on the core: ") + reason);
+        return false;
+    }
+
+    const QString url = daemonIncomingFileUrl(ipc, streamToken, relPath, play);
+    if (url.isEmpty())
+        return false;
+
+    return QDesktopServices::openUrl(QUrl(url));
+}
+
 QString daemonWebUiUrl(const IpcClient* ipc)
 {
     if (!ipc || !ipc->isConnected())

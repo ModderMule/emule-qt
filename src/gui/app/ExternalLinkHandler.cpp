@@ -20,15 +20,6 @@
 
 namespace eMule {
 
-namespace {
-
-/// How many unopened links to keep. A cold start delivers one; anything beyond a handful
-/// means something is feeding us links faster than the daemon can start, and stacking
-/// confirmation dialogs behind each other helps nobody.
-constexpr qsizetype kMaxPending = 16;
-
-} // namespace
-
 ExternalLinkHandler::ExternalLinkHandler(QObject* parent)
     : QObject(parent)
 {
@@ -61,21 +52,27 @@ void ExternalLinkHandler::open(const QString& link)
     // to the browser and must not wait behind a connection that may never come up.
     const bool needsDaemon = link.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
                              || link.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive);
-    if (needsDaemon && (!m_mainWindow || !m_ipc || !m_ipc->isConnected())) {
-        if (m_pending.size() >= kMaxPending) {
-            logWarning(QStringLiteral("ExternalLinkHandler: queue full, dropping link"));
-            return;
-        }
-        // Deliberately not deduplicated: clicking the same link twice while the daemon
-        // starts is a repeat request, and the importer's own known-file filter is what
-        // decides whether it turns into anything.
-        m_pending << link;
-        logInfo(QStringLiteral("Link received before the daemon was ready — queued (%1)")
-                    .arg(m_pending.size()));
+    if (needsDaemon && !canOpenNow()) {
+        queueForLater({link, false});
         return;
     }
 
     openNow(link);
+}
+
+void ExternalLinkHandler::openFile(const QString& path)
+{
+    if (path.isEmpty())
+        return;
+
+    // No needsDaemon test, unlike open(): the file's bytes go to the daemon, so there
+    // is nothing useful to do with one without it.
+    if (!canOpenNow()) {
+        queueForLater({path, true});
+        return;
+    }
+
+    openFileNow(path);
 }
 
 bool ExternalLinkHandler::eventFilter(QObject* watched, QEvent* event)
@@ -98,12 +95,10 @@ bool ExternalLinkHandler::eventFilter(QObject* watched, QEvent* event)
         const QString path = static_cast<QFileOpenEvent*>(event)->file();
         if (path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive)
             && QFileInfo(path).isFile()) {
-            QTimer::singleShot(0, this, [this, path] {
-                if (m_mainWindow && m_mainWindow->usenetPanel()) {
-                    m_mainWindow->usenetPanel()->addNzbFile(path);
-                    m_mainWindow->switchToTab(MainWindow::TabUsenet);
-                }
-            });
+            // Off the Apple Event's call stack, then through the same queue a link
+            // uses. Acting here directly dropped the file when this arrived during
+            // the splash screen, with no main window yet.
+            QTimer::singleShot(0, this, [this, path] { openFile(path); });
             return true;
         }
     }
@@ -155,16 +150,48 @@ void ExternalLinkHandler::openNow(const QString& link)
         });
 }
 
+void ExternalLinkHandler::openFileNow(const QString& path)
+{
+    UsenetPanel* panel = m_mainWindow ? m_mainWindow->usenetPanel() : nullptr;
+    if (!panel) {
+        logError(QStringLiteral("No Usenet panel to add %1 to").arg(path));
+        return;
+    }
+
+    // Before the add, not after: the add is asynchronous and may come back asking
+    // "download it again?", and that question wants the queue behind it.
+    m_mainWindow->switchToTab(MainWindow::TabUsenet);
+    panel->addNzbFile(path);
+}
+
 void ExternalLinkHandler::flushPending()
 {
-    if (m_pending.isEmpty() || !m_mainWindow || !m_ipc || !m_ipc->isConnected())
+    if (m_pending.isEmpty() || !canOpenNow())
         return;
 
-    // Taken before the loop: openNow() can re-enter through the event loop, and a link
-    // released twice would prompt twice.
-    const QStringList links = std::exchange(m_pending, {});
-    for (const QString& link : links)
-        openNow(link);
+    m_pending.release([this](const PendingOpen& item) {
+        if (item.isFile)
+            openFileNow(item.value);
+        else
+            openNow(item.value);
+    });
+}
+
+bool ExternalLinkHandler::canOpenNow() const
+{
+    return m_mainWindow && m_ipc && m_ipc->isConnected();
+}
+
+void ExternalLinkHandler::queueForLater(PendingOpen item)
+{
+    const QString what = item.isFile ? QStringLiteral("File") : QStringLiteral("Link");
+    if (!m_pending.push(std::move(item))) {
+        logWarning(QStringLiteral("ExternalLinkHandler: queue full, dropping %1")
+                       .arg(what.toLower()));
+        return;
+    }
+    logInfo(QStringLiteral("%1 received before the daemon was ready — queued (%2)")
+                .arg(what).arg(m_pending.size()));
 }
 
 } // namespace eMule

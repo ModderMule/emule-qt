@@ -106,6 +106,7 @@ private slots:
     void assemblesAMultiPartFileOutOfOrder();
     void missingArticleEscalatesAndKeepsTheConnection();
     void obfuscatedNameComesFromTheArticle();
+    void aCrcMismatchIsReportedAsCorrupt();
 };
 
 void tst_UsenetArticleFetch::assemblesAMultiPartFileOutOfOrder()
@@ -273,6 +274,75 @@ void tst_UsenetArticleFetch::obfuscatedNameComesFromTheArticle()
 
     QCOMPARE(done.first().at(0).value<NntpError>(), NntpError::None);
     QCOMPARE(fetcher.articleFileName(), QStringLiteral("The.Real.Name.mkv"));
+}
+
+// A damaged copy is a *content* fault: its own error, and — the part that used
+// to be wrong — the connection survives it. The body was read to its terminating
+// "." before the CRC was even checked, so the very same socket serves the next
+// article. Calling it a protocol error dropped the connection and backed the
+// whole account off for a minute over one bad article.
+void tst_UsenetArticleFetch::aCrcMismatchIsReportedAsCorrupt()
+{
+    const QByteArray whole = payload(kPartSize);
+    QByteArray damaged = makeArticle(whole, 1, 1, QStringLiteral("x.bin"));
+    const qsizetype crcAt = damaged.lastIndexOf("pcrc32=") + 7;
+    damaged.replace(crcAt, 8, "deadbeef");
+
+    FakeNntpServer server;
+    server.addArticle(QStringLiteral("bad@example.com"), damaged);
+    server.addArticle(messageIdFor(1), makeArticle(whole, 1, 1, QStringLiteral("x.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NewsServer config;
+    config.host = QStringLiteral("127.0.0.1");
+    config.port = port;
+    config.tlsMode = TlsMode::None;
+    config.user = QStringLiteral("testuser");
+    config.pass = QStringLiteral("testpass");
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(config);
+    QVERIFY(ready.wait(5000));
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    ArticleWriter writer;
+    QString error;
+    QVERIFY(writer.open(dir.filePath(QStringLiteral("x.bin")), error));
+
+    NzbSegment bad;
+    bad.messageId = QStringLiteral("bad@example.com");
+    bad.number = 1;
+
+    ArticleFetcher fetcher;
+    QSignalSpy done(&fetcher, &ArticleFetcher::finished);
+    fetcher.fetch(&socket, bad, &writer);
+    QVERIFY(done.wait(5000));
+    QCOMPARE(done.first().at(0).value<NntpError>(), NntpError::ArticleCorrupt);
+    QVERIFY(!isFatalToConnection(NntpError::ArticleCorrupt));
+    QVERIFY(socket.isReady());
+
+    // The same connection, still in sync: the good copy of another article comes
+    // straight down it. This is what the account backoff used to cost.
+    NzbSegment good;
+    good.messageId = messageIdFor(1);
+    good.number = 1;
+    QSignalSpy doneGood(&fetcher, &ArticleFetcher::finished);
+    fetcher.fetch(&socket, good, &writer);
+    QVERIFY(doneGood.wait(5000));
+    QCOMPARE(doneGood.first().at(0).value<NntpError>(), NntpError::None);
+    QCOMPARE(server.connectionCount(), 1);
+
+    // A 430 is not corruption either.
+    NzbSegment missing;
+    missing.messageId = QStringLiteral("nope@example.com");
+    missing.number = 1;
+    QSignalSpy doneMissing(&fetcher, &ArticleFetcher::finished);
+    fetcher.fetch(&socket, missing, &writer);
+    QVERIFY(doneMissing.wait(5000));
+    QCOMPARE(doneMissing.first().at(0).value<NntpError>(), NntpError::ArticleNotFound);
 }
 
 QTEST_MAIN(tst_UsenetArticleFetch)

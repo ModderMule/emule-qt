@@ -25,7 +25,7 @@ void ArticleFetcher::fetch(NntpSocket* socket, const NzbSegment& segment,
     // closed writer is a local fault, and reporting it as a protocol error keeps
     // the queue from climbing the failover ladder over a full disk.
     if (!m_writer || !m_writer->isOpen()) {
-        finish(NntpError::ProtocolError, QStringLiteral("Output file is not open"));
+        finish(NntpError::WriteFailed, QStringLiteral("Output file is not open"));
         return;
     }
 
@@ -148,11 +148,11 @@ void ArticleFetcher::onCommandFinished(NntpCommand* command)
     m_articleFileName = m_bodyCommand->decoder().fileName();
     m_declaredFileSize = m_bodyCommand->decoder().fileSize();
 
-    // A write failure outranks a protocol one: a full disk is not something a
+    // A write failure outranks a damaged article: a full disk is not something a
     // different server can fix, and reporting it as "article not found" would
     // send the queue climbing the failover ladder for nothing.
     if (!m_writeError.isEmpty()) {
-        finish(NntpError::ProtocolError, m_writeError);
+        finish(NntpError::WriteFailed, m_writeError);
         return;
     }
     if (m_bodyCommand->failed()) {

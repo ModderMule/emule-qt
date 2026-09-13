@@ -7,6 +7,7 @@
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
 #include "utils/RatingIcons.h"
+#include "utils/StringUtils.h"
 
 #include <QColor>
 #include <QIcon>
@@ -17,28 +18,24 @@ namespace eMule {
 
 namespace {
 
-/// Format a byte count for display.
-QString formatSize(int64_t bytes)
+/// Client lists leave a zero byte count / idle rate blank rather than "0 Bytes".
+QString sizeCell(int64_t bytes)
 {
-    if (bytes <= 0)
-        return {};
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB").arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
+    return bytes > 0 ? formatByteSize(bytes) : QString{};
 }
 
-/// Format a speed value.
-QString formatSpeed(int64_t bytesPerSec)
+QString rateCell(int64_t bytesPerSec)
 {
-    if (bytesPerSec <= 0)
-        return {};
-    if (bytesPerSec < 1024)
-        return QStringLiteral("%1 B/s").arg(bytesPerSec);
-    return QStringLiteral("%1 KiB/s").arg(static_cast<double>(bytesPerSec) / 1024.0, 0, 'f', 1);
+    return bytesPerSec > 0 ? formatByteRate(bytesPerSec) : QString{};
+}
+
+/// The session figure, with the credit total in brackets when it is larger
+/// (MFC DownloadClientsCtrl.cpp:187-198).
+QString sessionWithTotal(int64_t session, int64_t total)
+{
+    if (total <= session)
+        return sizeCell(session);
+    return QStringLiteral("%1 (%2)").arg(formatByteSize(session), formatByteSize(total));
 }
 
 /// Format a duration in milliseconds as HH:MM:SS.
@@ -254,14 +251,14 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         switch (column) {
         case 0: return c.userName;
         case 1: return c.fileName;
-        case 2: return formatSpeed(c.upDatarate);
+        case 2: return rateCell(c.upDatarate);
         // Session, not lifetime: MFC's UploadListCtrl.cpp:200-203 shows GetSessionUp(), and
         // in advanced mode appends the file payload alone — the gap between the two is the
         // ed2k + in-packet framing this slot has paid for.
         case 3: return thePrefs.showExtControls()
-                     ? QStringLiteral("%1 (%2)").arg(formatSize(c.sessionUp),
-                                                     formatSize(c.queueSessionPayloadUp))
-                     : formatSize(c.sessionUp);
+                     ? QStringLiteral("%1 (%2)").arg(sizeCell(c.sessionUp),
+                                                     sizeCell(c.queueSessionPayloadUp))
+                     : sizeCell(c.sessionUp);
         case 4: return formatWaitTime(c.waitStartTime);
         case 5: return c.uploadStartDelay > 0 ? formatDuration(c.uploadStartDelay) : QString{};
         case 6: return c.uploadState;
@@ -270,15 +267,15 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         }
 
     case ClientListMode::Downloading:
-        // MFC: User Name, Software, File, Speed, Available Parts, Transferred, Transferred, Source Type
+        // MFC: User Name, Software, File, Speed, Available Parts, Transferred Down, Transferred Up, Source Type
         switch (column) {
         case 0: return c.userName;
         case 1: return c.software;
         case 2: return c.fileName;
-        case 3: return formatSpeed(c.sessionDown > 0 ? c.sessionDown : 0);
+        case 3: return rateCell(c.downDatarate);
         case 4: return c.availPartCount > 0 ? QString::number(c.availPartCount) : QString{};
-        case 5: return formatSize(c.sessionDown);
-        case 6: return formatSize(c.transferredDown);
+        case 5: return sessionWithTotal(c.sessionDown, c.downloadedTotal);
+        case 6: return sessionWithTotal(c.sessionUp, c.uploadedTotal);
         case 7: return sourceFromStr(c.sourceFrom);
         default: return {};
         }
@@ -304,9 +301,9 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         switch (column) {
         case 0: return c.userName;
         case 1: return c.uploadState;
-        case 2: return formatSize(c.transferredUp);
+        case 2: return sizeCell(c.transferredUp);
         case 3: return c.downloadState;
-        case 4: return formatSize(c.transferredDown);
+        case 4: return sizeCell(c.transferredDown);
         case 5: return c.software;
         case 6: return c.isConnected ? QObject::tr("Yes") : QString{};
         case 7: return c.userHash;
@@ -338,10 +335,10 @@ QVariant ClientListModel::sortData(const ClientRow& c, int column) const
         case 0: return c.userName;
         case 1: return c.software;
         case 2: return c.fileName;
-        case 3: return QVariant::fromValue(c.sessionDown);
+        case 3: return QVariant::fromValue(c.downDatarate);
         case 4: return c.availPartCount;
         case 5: return QVariant::fromValue(c.sessionDown);
-        case 6: return QVariant::fromValue(c.transferredDown);
+        case 6: return QVariant::fromValue(c.sessionUp);
         case 7: return c.sourceFrom;
         default: return {};
         }
@@ -401,8 +398,8 @@ QVariant ClientListModel::headerLabel(int column) const
         case 2: return tr("File");
         case 3: return tr("Speed");
         case 4: return tr("Available Parts");
-        case 5: return tr("Transferred");
-        case 6: return tr("Transferred");
+        case 5: return tr("Transferred Down");
+        case 6: return tr("Transferred Up");
         case 7: return tr("Source Type");
         default: return {};
         }

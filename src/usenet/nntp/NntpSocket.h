@@ -26,6 +26,7 @@
 #include "nntp/NntpError.h"
 
 #include <QByteArray>
+#include <QHash>
 #include <QObject>
 #include <QSslError>
 #include <QString>
@@ -91,6 +92,20 @@ public:
     /// bytes twice.
     [[nodiscard]] qint64 takeBytesRead();
 
+    /// Wire bytes read by every NntpSocket in the process, monotonic, from any
+    /// thread. Counted as lines are consumed — when the read budget is charged
+    /// too — so a rate taken from it is live, where decoded bytes only arrive a
+    /// whole article at a time. Everything NNTP spends of the line is in it:
+    /// downloads, health probes, the Options page's Test button.
+    [[nodiscard]] static qint64 totalWireBytesRead();
+
+    /// Authenticated connections open right now, per NewsServer::accountId and
+    /// in total, from any thread. Like totalWireBytesRead() it counts every
+    /// socket, the Test button's included. With no idle timeout a pooled
+    /// connection stays open between articles, so this is "open", not "busy".
+    [[nodiscard]] static QHash<QString, int> openConnectionsByAccount();
+    [[nodiscard]] static int openConnectionCount();
+
     /// How long to wait for a response before giving up. Default 60 s, matching
     /// NZBGet's ServerPool timeout.
     void setResponseTimeout(int ms);
@@ -148,6 +163,9 @@ private:
     void fail(NntpError error, const QString& text);
     void armResponseTimer();
     void disarmTimers();
+    void enterDisconnected();
+    void markOpen();
+    void markClosed();
 
     NewsServer m_server;
     QSslSocket* m_socket = nullptr;
@@ -167,6 +185,10 @@ private:
     qint64 m_bytesRead = 0;
 
     bool m_failed = false;
+
+    /// In the open-connection registry, under this account id.
+    bool m_counted = false;
+    QString m_countedAccount;
 };
 
 } // namespace eMule::usenet

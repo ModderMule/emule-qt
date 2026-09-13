@@ -23,6 +23,10 @@ private slots:
     void shouldSkip_data();
     void shouldSkip();
 
+    void shouldConfirm_data();
+    void shouldConfirm();
+    void skipAndConfirmAreNeverBothTrue();
+
     void skipReason_data();
     void skipReason();
 
@@ -80,6 +84,58 @@ void TestEd2kLinkImporter::shouldSkip()
     QCOMPARE(Ed2kLinkImporter::shouldSkip(static_cast<KnownType>(type),
                                           static_cast<Ed2kLinkImporter::Source>(source)),
              expected);
+}
+
+void TestEd2kLinkImporter::shouldConfirm_data()
+{
+    QTest::addColumn<int>("type");
+    QTest::addColumn<int>("source");
+    QTest::addColumn<bool>("expected");
+
+    const int automatic = static_cast<int>(Ed2kLinkImporter::Source::Automatic);
+    const int manual    = static_cast<int>(Ed2kLinkImporter::Source::Manual);
+
+    // The one state that is a question rather than a yes or a no: gone from the
+    // transfer list, so wanting it again is legitimate — but silently starting a
+    // second copy of something already downloaded is not.
+    QTest::newRow("downloaded/manual")  << int(KnownType::Downloaded)  << manual    << true;
+    QTest::newRow("cancelled/manual")   << int(KnownType::Cancelled)   << manual    << true;
+
+    // The clipboard watcher never asks; shouldSkip() has already dropped these.
+    QTest::newRow("downloaded/auto")    << int(KnownType::Downloaded)  << automatic << false;
+    QTest::newRow("cancelled/auto")     << int(KnownType::Cancelled)   << automatic << false;
+
+    // Re-adding these can never do anything useful, so there is nothing to ask.
+    QTest::newRow("shared/manual")      << int(KnownType::Shared)      << manual    << false;
+    QTest::newRow("downloading/manual") << int(KnownType::Downloading) << manual    << false;
+
+    QTest::newRow("unknown/manual")     << int(KnownType::Unknown)     << manual    << false;
+    QTest::newRow("undetermined/manual")<< int(KnownType::NotDetermined) << manual  << false;
+}
+
+void TestEd2kLinkImporter::shouldConfirm()
+{
+    QFETCH(int, type);
+    QFETCH(int, source);
+    QFETCH(bool, expected);
+
+    QCOMPARE(Ed2kLinkImporter::shouldConfirm(static_cast<KnownType>(type),
+                                             static_cast<Ed2kLinkImporter::Source>(source)),
+             expected);
+}
+
+void TestEd2kLinkImporter::skipAndConfirmAreNeverBothTrue()
+{
+    // The importer tests them in sequence, so a state claimed by both would be
+    // counted as skipped *and* queued.
+    for (const auto source : {Ed2kLinkImporter::Source::Automatic,
+                              Ed2kLinkImporter::Source::Manual}) {
+        for (int t = 0; t <= int(KnownType::Unknown); ++t) {
+            const auto type = static_cast<KnownType>(t);
+            QVERIFY(!(Ed2kLinkImporter::shouldSkip(type, source)
+                      && Ed2kLinkImporter::shouldConfirm(type, source)));
+        }
+    }
 }
 
 void TestEd2kLinkImporter::skipReason_data()

@@ -61,6 +61,12 @@
     <ClCompile Include="dialogs\CoreConnectDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\CategoryFilterProxy.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\CategoryTabBar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\DownloadListModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -118,6 +124,9 @@
     <ClCompile Include="utils\FileAssociation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\NzbAdd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\NzbDrop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -155,6 +164,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\OptionsDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\AddNzbFilesDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\AddNzbUrlDialog.cpp">
@@ -229,6 +241,9 @@
     <ClCompile Include="dialogs\UsenetArchiveEntryDialog.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\UsenetDetailsDialog.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\FileTypeIcons.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -252,6 +267,9 @@
     <QtMoc Include="dialogs\UsenetArchiveEntryDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\UsenetDetailsDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\ArchivePreviewPanel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -262,6 +280,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\AbstractListView.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="controls\SortableItems.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\TrayMeterIcon.h">
@@ -291,6 +312,15 @@
     <ClInclude Include="utils\FileAssociation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="controls\KnownTypeStyle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ColorUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\NzbAdd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\NzbDrop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -316,6 +346,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\CoreConnectDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\CategoryFilterProxy.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\CategoryTabBar.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\DownloadListModel.h">
@@ -390,6 +426,9 @@
     <QtMoc Include="dialogs\OptionsDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\AddNzbFilesDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\AddNzbUrlDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -399,6 +438,9 @@
     <QtMoc Include="dialogs\PasteTextDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="app\PendingOpenQueue.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="app\PowerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>

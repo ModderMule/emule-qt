@@ -3,6 +3,9 @@
 /// @brief Table model for newznab/torznab search results — implementation.
 
 #include "controls/IndexerResultsModel.h"
+#include "controls/KnownTypeStyle.h"
+
+#include "utils/StringUtils.h"
 
 #include <QColor>
 #include <QDateTime>
@@ -11,21 +14,6 @@
 namespace eMule {
 
 namespace {
-
-QString formatSize(int64_t bytes)
-{
-    if (bytes <= 0)
-        return {};
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KiB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1 MiB")
-            .arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GiB")
-        .arg(static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
-}
 
 /// Age reads better than a date here: what a user judges a Usenet release on is
 /// "how likely is it still complete", and that is a duration, not a calendar day.
@@ -68,6 +56,29 @@ QString IndexerResultsModel::idAt(int row) const
     return result ? result->id : QString{};
 }
 
+void IndexerResultsModel::updateKnownTypes(const QHash<QString, int>& typesByTitle)
+{
+    for (int i = 0; i < static_cast<int>(m_rows.size()); ++i) {
+        auto& r = m_rows[static_cast<size_t>(i)];
+        const auto it = typesByTitle.constFind(r.title);
+        if (it != typesByTitle.constEnd() && r.knownType != it.value()) {
+            r.knownType = it.value();
+            emit dataChanged(index(i, 0), index(i, ColCount - 1));
+        }
+    }
+}
+
+void IndexerResultsModel::setKnownType(int row, int knownType)
+{
+    if (row < 0 || row >= static_cast<int>(m_rows.size()))
+        return;
+    auto& r = m_rows[static_cast<size_t>(row)];
+    if (r.knownType == knownType)
+        return;
+    r.knownType = knownType;
+    emit dataChanged(index(row, 0), index(row, ColCount - 1));
+}
+
 QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
 {
     const auto* row = rowAt(index.row());
@@ -77,19 +88,20 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColTitle:    return row->title;
-        case ColSize:     return formatSize(row->size);
+        case ColSize:     return row->size > 0 ? formatByteSize(row->size) : QString{};
         case ColAge:      return formatAge(row->ageDays);
         case ColCategory: return row->category;
         case ColGrabs:    return row->grabs >= 0 ? QString::number(row->grabs) : QString{};
         case ColIndexer:  return row->indexerName;
         case ColSeeders:  return row->seeders >= 0 ? QString::number(row->seeders) : QString{};
         case ColPeers:    return row->peers >= 0 ? QString::number(row->peers) : QString{};
+        case ColKnown:    return knownTypeString(row->knownType);
         default:          return {};
         }
     }
 
-    // Sort on the raw value, not the formatted string, or "9 MiB" sorts above
-    // "10 GiB" and the size column is worse than useless.
+    // Sort on the raw value, not the formatted string, or "9 MB" sorts above
+    // "10 GB" and the size column is worse than useless.
     if (role == Qt::UserRole) {
         switch (index.column()) {
         case ColSize:    return QVariant::fromValue(row->size);
@@ -97,6 +109,7 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
         case ColGrabs:   return row->grabs;
         case ColSeeders: return row->seeders;
         case ColPeers:   return row->peers;
+        case ColKnown:   return row->knownType;
         default:         return data(index, Qt::DisplayRole);
         }
     }
@@ -127,14 +140,21 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
             parts.append(tr("%1 files").arg(row->files));
         if (row->passwordProtected)
             parts.append(tr("Password protected"));
+        if (const QString known = knownTypeString(row->knownType); !known.isEmpty())
+            parts.append(known);
         return parts.join(u'\n');
     }
 
-    // A password-protected release still needs the archive password to unpack,
-    // which we have no way to supply — flagging it in the list is cheaper than
-    // discovering it after the download.
-    if (role == Qt::ForegroundRole && row->passwordProtected)
-        return QColor(0xCC, 0x66, 0x00);
+    if (role == Qt::ForegroundRole) {
+        // A password-protected release still needs the archive password to unpack,
+        // which we have no way to supply — flagging it in the list is cheaper than
+        // discovering it after the download. It outranks the known-type colour:
+        // a release we cannot open is a stronger warning than one we already have.
+        if (row->passwordProtected)
+            return QColor(0xCC, 0x66, 0x00);
+        if (const QColor c = knownTypeColor(row->knownType); c.isValid())
+            return c;
+    }
 
     return {};
 }
@@ -154,6 +174,7 @@ QVariant IndexerResultsModel::headerData(int section, Qt::Orientation orientatio
     case ColIndexer:  return tr("Indexer");
     case ColSeeders:  return tr("Seeders");
     case ColPeers:    return tr("Peers");
+    case ColKnown:    return tr("Known");
     default:          return {};
     }
 }

@@ -3,6 +3,7 @@
 /// @brief Outlook-bar sidebar — see AccordionSidebar.h.
 
 #include "controls/AccordionSidebar.h"
+#include "utils/ColorUtils.h"
 
 #include <QAbstractButton>
 #include <QFontMetrics>
@@ -24,14 +25,6 @@ constexpr int kMaxBarWidth   = 280;
 constexpr int kHeaderPadding = 8;   // above + below the caption
 constexpr int kArrowBox      = 12;
 constexpr int kArrowInset    = 6;
-
-/// @p a mixed @p weight of the way towards @p b.
-QColor blend(const QColor& a, const QColor& b, qreal weight)
-{
-    return QColor::fromRgbF(a.redF()   * (1 - weight) + b.redF()   * weight,
-                            a.greenF() * (1 - weight) + b.greenF() * weight,
-                            a.blueF()  * (1 - weight) + b.blueF()  * weight);
-}
 
 /// One accordion header bar.
 ///
@@ -173,8 +166,11 @@ void AccordionSidebar::addItem(int group, const QIcon& icon, const QString& text
     auto* item = new QListWidgetItem(icon, text);
     item->setData(Qt::UserRole, id);
 
-    const QSignalBlocker block(m_groups[size_t(group)].list);
-    m_groups[size_t(group)].list->addItem(item);
+    {
+        const QSignalBlocker block(m_groups[size_t(group)].list);
+        m_groups[size_t(group)].list->addItem(item);
+    }
+    ensureSomethingCurrent();
 }
 
 int AccordionSidebar::currentItemId() const
@@ -325,6 +321,23 @@ void AccordionSidebar::onListRowChanged(int group, int row)
     m_updating = true;
     emit currentItemChanged(currentItemId());
     m_updating = false;
+}
+
+void AccordionSidebar::ensureSomethingCurrent()
+{
+    if (m_currentGroup >= 0)
+        return;
+
+    // Silent: this runs while the caller is still filling the bar, before it has had a
+    // chance to connect to us, and a page change emitted from inside addItem() would be
+    // both surprising and unheard.
+    for (size_t g = 0; g < m_groups.size(); ++g) {
+        if (m_groups[g].list->count() == 0)
+            continue;
+        const QSignalBlocker block(this);
+        setCurrentGroup(int(g));
+        return;
+    }
 }
 
 const AccordionSidebar::Group* AccordionSidebar::groupAt(int index) const

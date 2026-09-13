@@ -7,6 +7,7 @@
 /// lose a third of the answers, not all of them.
 
 #include "FakeIndexerServer.h"
+#include "TestFixtures.h"
 
 #include "IndexerClient.h"
 #include "IndexerSearch.h"
@@ -18,6 +19,7 @@
 #include <QTest>
 #include <QUrlQuery>
 
+using namespace eMule;
 using namespace eMule::indexer;
 using namespace eMule::testing;
 
@@ -134,6 +136,7 @@ void tst_IndexerSearch::oneIndexerFailing_doesNotLoseTheOther()
     FakeIndexerServer bad([](const QUrl&) {
         return qMakePair(500, QByteArray("boom"));
     });
+    ScopedStatistics stats;
 
     IndexerClient client;
     IndexerQuery query;
@@ -156,6 +159,11 @@ void tst_IndexerSearch::oneIndexerFailing_doesNotLoseTheOther()
     const QString error = finished.first().at(1).toString();
     QVERIFY2(!error.isEmpty(), "a failing indexer must be named");
     QVERIFY(error.contains(QStringLiteral("Bad")));
+
+    // Load on the indexers: two requests, one of them failed — the 500's body
+    // is not a second error on top of the status.
+    QCOMPARE(stats->indexerSession().apiRequests, uint64(2));
+    QCOMPARE(stats->indexerSession().apiErrors, uint64(1));
 }
 
 void tst_IndexerSearch::anErrorDocumentIsReportedNotSilentlyEmpty()
@@ -165,6 +173,7 @@ void tst_IndexerSearch::anErrorDocumentIsReportedNotSilentlyEmpty()
         return qMakePair(200,
             QByteArray(R"(<error code="100" description="Incorrect user credentials"/>)"));
     });
+    ScopedStatistics stats;
 
     IndexerClient client;
     IndexerQuery query;
@@ -179,6 +188,10 @@ void tst_IndexerSearch::anErrorDocumentIsReportedNotSilentlyEmpty()
     QVERIFY2(finished.first().at(1).toString().contains(
                  QStringLiteral("Incorrect user credentials")),
              "the indexer's own words must reach the user");
+
+    // A 200 carrying an error document is an error, counted once.
+    QCOMPARE(stats->indexerSession().apiRequests, uint64(1));
+    QCOMPARE(stats->indexerSession().apiErrors, uint64(1));
 }
 
 void tst_IndexerSearch::pagingStopsAtTheCap()
@@ -248,6 +261,7 @@ void tst_IndexerSearch::stopEndsTheSearchAndKeepsWhatArrived()
     query.text = QStringLiteral("x");
     query.limit = 1;
 
+    ScopedStatistics stats;
     IndexerSearch search(1, &client, query, {configFor(server, QStringLiteral("Slow"))}, 10);
     QSignalSpy results(&search, &IndexerSearch::resultsReady);
     QSignalSpy finished(&search, &IndexerSearch::finished);
@@ -260,6 +274,9 @@ void tst_IndexerSearch::stopEndsTheSearchAndKeepsWhatArrived()
     // A stopped search is a shorter search, not a lost one.
     QVERIFY(!search.results().isEmpty());
     QVERIFY(!search.isRunning());
+
+    // The page we cancelled is not the indexer failing.
+    QCOMPARE(stats->indexerSession().apiErrors, uint64(0));
 }
 
 QTEST_MAIN(tst_IndexerSearch)
