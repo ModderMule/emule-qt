@@ -8,6 +8,7 @@
 #include "prefs/Preferences.h"
 #include "utils/ColorUtils.h"
 #include "utils/FileTypeIcons.h"
+#include "utils/Opcodes.h"
 #include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
 
@@ -37,6 +38,41 @@ QColor availabilityShade(int64_t sources)
     const QColor base = dark ? pal.color(QPalette::Link) : QColor(0, 0, 255);
     return blend(pal.color(QPalette::Text), base,
                  static_cast<qreal>(step) / static_cast<qreal>(kShades));
+}
+
+/// MFC CSearchFile::IsComplete (SearchFile.cpp:382-396): -1 unknown, 1 complete, 0 not.
+int completeness(const SearchResultRow& r)
+{
+    if (r.isKad)
+        return -1;
+    if (r.inDirectory && r.sourceCount == 1 && r.completeSourceCount == 0)
+        return -1;   // a browsed file: nobody said how complete it is
+    return r.sourceCount > 0 && r.completeSourceCount > 0 ? 1 : 0;
+}
+
+/// MFC GetCompleteSourcesDisplayString (SearchListCtrl.cpp:444-482).
+QString completeSourcesText(const SearchResultRow& r)
+{
+    int complete = completeness(r);
+    int64_t completeSources = r.completeSourceCount;
+    if (complete < 0 && static_cast<uint64_t>(r.fileSize) <= PARTSIZE) {
+        complete = 1;   // a single part is complete wherever it is found
+        if (r.inDirectory)
+            completeSources = 1;
+    }
+    if (complete < 0)
+        return QStringLiteral("?");
+
+    const bool ext = thePrefs.showExtControls();
+    if (complete == 0)
+        return ext ? QStringLiteral("0% (0)") : QStringLiteral("0%");
+    if (r.sourceCount == 0 || completeSources == 0)
+        return SearchResultsModel::tr("Yes");
+
+    QString text = QStringLiteral("%1%").arg(completeSources * 100 / r.sourceCount);
+    if (ext)
+        text += QStringLiteral(" (%1)").arg(completeSources);
+    return text;
 }
 
 /// Format media length in seconds to mm:ss or hh:mm:ss.
@@ -81,8 +117,7 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         case ColFileName:     return r.fileName;
         case ColSize:         return formatByteSize(r.fileSize);
         case ColAvailability: return r.sourceCount > 0 ? QString::number(r.sourceCount) : QString{};
-        case ColComplete:
-            return r.completeSourceCount > 0 ? QString::number(r.completeSourceCount) : QString{};
+        case ColComplete:     return completeSourcesText(r);
         case ColType:         return r.fileType;
         case ColArtist:       return r.artist;
         case ColAlbum:        return r.album;
@@ -130,6 +165,10 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
     // MFC SearchListCtrl.cpp:1381-1417: what we have or had wins (shared with
     // IndexerResultsModel), then spam in grey text, then the availability shade.
     if (role == Qt::ForegroundRole) {
+        // SearchListCtrl.cpp:1452-1459: this one cell goes red for a file nobody has
+        // complete, over whatever colour the row has. Unknown (-1) stays uncoloured.
+        if (index.column() == ColComplete && completeness(r) == 0)
+            return QColor(255, 0, 0);
         if (const QColor c = knownTypeColor(r.knownType); c.isValid())
             return c;
         if (r.isSpam && thePrefs.enableSearchResultFilter())

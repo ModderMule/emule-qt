@@ -158,7 +158,7 @@ public:
     /// Update MiniMule popup stats (called from rate polling timer).
     void updateMiniMule(int completedCount, qint64 freeBytes);
 
-    /// Bypass minimize-to-tray and promptOnExit, then close and quit.
+    /// Close and quit — the tray menu's Exit and Cmd+Q. promptOnExit still asks.
     void forceQuit();
 
     /// Run a version check. \p manual reports the "up to date" and "check failed"
@@ -172,6 +172,8 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    /// Minimize-to-tray lives here: MFC hides on minimize, never on close.
+    void changeEvent(QEvent* event) override;
 
     // A .nzb dropped anywhere on the window switches to the Usenet tab and is
     // queued there. Narrow on purpose — nzbDropCandidates() accepts only .nzb
@@ -259,6 +261,7 @@ private:
     QLabel* m_statusDownLabel = nullptr;
     QLabel* m_statusEd2k = nullptr;
     QLabel* m_statusKad = nullptr;
+    QLabel* m_statusChat = nullptr;   ///< unread-message icon, MFC SBarChatMsg
     ConnectionStatusWidget* m_connStatus = nullptr;
 
     // Version checker
@@ -298,7 +301,6 @@ private:
 
     // Tray context menu
     TrayMenuManager* m_trayMenu = nullptr;
-    bool m_forceQuit = false;
 
     // What the tray icon currently shows, so an unchanged picture costs nothing.
     int     m_trayMeterLevel = -1;

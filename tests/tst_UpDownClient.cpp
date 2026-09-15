@@ -11,18 +11,24 @@
 #include "client/ClientList.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
+#include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/Kademlia.h"
 #include "net/ClientReqSocket.h"
+#include "net/ListenSocket.h"
+#include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "server/Server.h"
+#include "server/ServerList.h"
 #include "stats/Statistics.h"
 #include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
+#include <QPointer>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTemporaryDir>
@@ -92,6 +98,11 @@ private slots:
     void processHello_trailing_hybrid();
     void processHello_clearsPrevious();
     void processHelloAnswer_clearsPending();
+    void processHello_trailerNotFourBytesIsIgnored_data();
+    void processHello_trailerNotFourBytesIsIgnored();
+    void processHello_changedUserhashBans();
+    void processHello_trackedEndpointWithOtherHashBans();
+    void processHello_addsPeerServerOnlyWhenEnabled();
 
     // Phase 2 tests — mule info
     void processMuleInfo_basic();
@@ -125,6 +136,10 @@ private slots:
     void connectionEstablished_flushesWaitingPackets();
     void disconnected_resetsStates();
     void disconnected_preservesIdentity();
+    void disconnected_keepsNoNeededPartsSource();
+    void disconnected_releasesItsSocket();
+    void staleSocketDisconnect_keepsCurrentSocket();
+    void tryToConnect_refusesBannedAddress();
 
     // Phase 3 tests — protocol utility
     void resetFileStatusInfo_clearsAll();
@@ -156,6 +171,8 @@ private slots:
     void calculateDownloadRate_computation();
     void clearDownloadBlockRequests_cleansUp();
     void unzip_decompresses();
+    void processBlockPacket_badBlockThrows_data();
+    void processBlockPacket_badBlockThrows();
     void sendCancelTransfer_setsFlag();
     void availablePartCount_countsCorrectly();
 
@@ -1449,7 +1466,9 @@ void tst_UpDownClient::disconnected_resetsStates()
     client.disconnected(QStringLiteral("test disconnect"));
 
     QCOMPARE(client.uploadState(), UploadState::None);
-    QCOMPARE(client.downloadState(), DownloadState::None);
+    // A transfer that drops is still a good source: back on the queue, not dead.
+    // MFC BaseClient.cpp:1122-1124.
+    QCOMPARE(client.downloadState(), DownloadState::OnQueue);
     QCOMPARE(client.connectingState(), ConnectingState::None);
 }
 
@@ -2542,6 +2561,292 @@ void tst_UpDownClient::isReachableForSlot_coversEveryRoute()
     QVERIFY(v6.hasLowID());
     QVERIFY(v6.connectAddress().isIPv6());
     QVERIFY(v6.isReachableForSlot());
+}
+
+// ---------------------------------------------------------------------------
+// Hello trailer, user-hash change, peer servers — MFC BaseClient.cpp:560-622
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Point theApp at a credits list for one test, built in a scratch config dir: its
+/// constructor loads — or generates — cryptkey.dat in thePrefs.configDir().
+struct ScopedCredits {
+    QTemporaryDir dir;
+    QString savedConfigDir = thePrefs.configDir();
+    std::unique_ptr<ClientCreditsList> list;
+
+    ScopedCredits()
+    {
+        thePrefs.setConfigDir(dir.path());
+        list = std::make_unique<ClientCreditsList>();
+        theApp.clientCredits = list.get();
+    }
+    ~ScopedCredits()
+    {
+        theApp.clientCredits = nullptr;
+        list.reset();
+        thePrefs.setConfigDir(savedConfigDir);
+    }
+};
+
+void feedHello(UpDownClient& client, const uint8* hash, const std::vector<Tag>& tags,
+               uint32 serverIP = 0, uint16 serverPort = 0, const QByteArray& trailer = {})
+{
+    const auto buf = buildHelloPacket(hash, 0x0A0B0C0D, 4662, tags, serverIP, serverPort, trailer);
+    client.processHelloPacket(reinterpret_cast<const uint8*>(buf.constData()),
+                              static_cast<uint32>(buf.size()));
+}
+
+} // namespace
+
+void tst_UpDownClient::processHello_trailerNotFourBytesIsIgnored_data()
+{
+    QTest::addColumn<int>("trailerBytes");
+    QTest::newRow("1 byte") << 1;
+    QTest::newRow("2 bytes") << 2;
+    QTest::newRow("3 bytes") << 3;
+    QTest::newRow("5 bytes") << 5;
+}
+
+void tst_UpDownClient::processHello_trailerNotFourBytesIsIgnored()
+{
+    // MFC reads the hybrid/MLDonkey uint32 only when exactly four bytes are left. Reading
+    // whenever anything remained threw on a 1-3 byte trailer, which now disconnects the peer,
+    // and flagged any longer trailer as eDonkeyHybrid.
+    QFETCH(int, trailerBytes);
+    uint8 hash[16];
+    fillHash(hash, 0x67);
+    std::vector<Tag> tags;
+    tags.emplace_back(CT_NAME, QStringLiteral("TrailerPeer"));
+    tags.emplace_back(CT_VERSION, static_cast<uint32>(100));
+
+    UpDownClient client;
+    feedHello(client, hash, tags, 0, 0, QByteArray(trailerBytes, 'X'));
+
+    QCOMPARE(client.userName(), QStringLiteral("TrailerPeer"));
+    QVERIFY(client.clientSoft() != ClientSoftware::eDonkeyHybrid);
+}
+
+void tst_UpDownClient::processHello_changedUserhashBans()
+{
+    // Credits follow the user hash, so a client answering a later hello with another hash is
+    // claiming someone else's credits. MFC BaseClient.cpp:616-622.
+    ScopedCredits credits;
+    uint8 first[16], second[16];
+    fillHash(first, 0x31);
+    fillHash(second, 0x32);
+    std::vector<Tag> tags;
+    tags.emplace_back(CT_NAME, QStringLiteral("Changer"));
+
+    UpDownClient client;
+    feedHello(client, first, tags);
+    QVERIFY(client.credits() != nullptr);
+    QVERIFY(!client.isBanned());
+
+    feedHello(client, first, tags);   // the same hash again is fine
+    QVERIFY(!client.isBanned());
+
+    feedHello(client, second, tags);
+    QVERIFY2(client.isBanned(), "a changed user hash must ban the client");
+    QCOMPARE(client.credits(), credits.list->getCredit(second));
+}
+
+void tst_UpDownClient::processHello_trackedEndpointWithOtherHashBans()
+{
+    // On a client's first hello MFC compares with the credits this IP:port presented last time
+    // (the tracked-clients list). A different one is that endpoint claiming another peer's
+    // credits. MFC BaseClient.cpp:608-615.
+    ScopedCredits credits;
+    ClientList clientList;
+    struct ClientListGuard {
+        ~ClientListGuard() { theApp.clientList = nullptr; }
+    } guard;
+    theApp.clientList = &clientList;
+
+    const Address peer = Address::fromString(QStringLiteral("81.2.3.4"));
+    uint8 known[16], other[16];
+    fillHash(known, 0x41);
+    fillHash(other, 0x42);
+    std::vector<Tag> tags;
+    tags.emplace_back(CT_NAME, QStringLiteral("Tracked"));
+
+    UpDownClient first;
+    first.setUserAddress(peer);
+    feedHello(first, known, tags);
+    clientList.addTrackClient(&first);
+
+    UpDownClient same;
+    same.setUserAddress(peer);
+    feedHello(same, known, tags);
+    QVERIFY(!same.isBanned());
+
+    UpDownClient impostor;
+    impostor.setUserAddress(peer);
+    feedHello(impostor, other, tags);
+    QVERIFY2(impostor.isBanned(), "a tracked IP:port presenting another hash must be banned");
+}
+
+void tst_UpDownClient::processHello_addsPeerServerOnlyWhenEnabled()
+{
+    // Only with "Update server list when a client connects", and at low priority — MFC
+    // BaseClient.cpp:593-598. The port added every peer's server at normal priority.
+    ServerList serverList;
+    struct Guard {
+        ~Guard()
+        {
+            theApp.serverList = nullptr;
+            thePrefs.setAddServersFromClients(false);
+        }
+    } guard;
+    theApp.serverList = &serverList;
+
+    uint8 hash[16];
+    fillHash(hash, 0x51);
+    std::vector<Tag> tags;
+    tags.emplace_back(CT_NAME, QStringLiteral("ServerSharer"));
+    const uint32 serverIP = Address::fromString(QStringLiteral("8.8.4.4")).toNetworkUint32();
+
+    thePrefs.setAddServersFromClients(false);
+    UpDownClient off;
+    feedHello(off, hash, tags, serverIP, 4661);
+    QCOMPARE(serverList.serverCount(), size_t{0});
+
+    thePrefs.setAddServersFromClients(true);
+    UpDownClient on;
+    feedHello(on, hash, tags, serverIP, 4661);
+    QCOMPARE(serverList.serverCount(), size_t{1});
+    QCOMPARE(serverList.servers().front()->preference(), ServerPriority::Low);
+}
+
+// ---------------------------------------------------------------------------
+// disconnected() — MFC BaseClient.cpp:1101-1233
+// ---------------------------------------------------------------------------
+
+void tst_UpDownClient::disconnected_keepsNoNeededPartsSource()
+{
+    // A no-needed-parts source is kept (MFC BaseClient.cpp:1164-1170); PartFile::process()
+    // re-asks it later. Only a connection that never answered our file request is dead.
+    UpDownClient nnp;
+    nnp.setDownloadState(DownloadState::NoNeededParts);
+    nnp.disconnected(QStringLiteral("test"));
+    QCOMPARE(nnp.downloadState(), DownloadState::NoNeededParts);
+
+    UpDownClient unanswered;
+    unanswered.setDownloadState(DownloadState::Connected);
+    unanswered.disconnected(QStringLiteral("test"));
+    QCOMPARE(unanswered.downloadState(), DownloadState::None);
+}
+
+void tst_UpDownClient::disconnected_releasesItsSocket()
+{
+    // MFC BaseClient.cpp:1204-1208. After a connect timeout the socket is still live; left
+    // wired to the client it kept delivering packets, counted against the connection limit,
+    // and on its own close ran disconnected() again — against whatever socket the client
+    // held by then.
+    ListenSocket listener;
+    struct Guard {
+        ~Guard() { theApp.listenSocket = nullptr; }
+    } guard;
+    theApp.listenSocket = &listener;
+
+    auto* sock = new ClientReqSocket();
+    const QPointer<ClientReqSocket> alive(sock);
+    listener.addSocket(sock);
+
+    UpDownClient client;
+    client.wireIncomingSocket(sock);
+    QVERIFY(sock->getClient() == &client);
+
+    client.disconnected(QStringLiteral("Connection try timeout"));
+
+    QVERIFY(client.socket() == nullptr);
+    QVERIFY2(sock->getClient() == nullptr, "the socket must not keep a pointer to the client");
+    QVERIFY2(!listener.isValidSocket(sock), "the socket must leave the listen socket's pool");
+    QTRY_VERIFY2(alive.isNull(), "the socket must be deleted");
+}
+
+void tst_UpDownClient::staleSocketDisconnect_keepsCurrentSocket()
+{
+    // A socket the client no longer holds must not tear down the one it does.
+    auto* stale = new ClientReqSocket();
+    auto* current = new ClientReqSocket();
+
+    UpDownClient client;
+    client.wireIncomingSocket(stale);
+    client.wireIncomingSocket(current);   // replaced without releasing the first
+
+    stale->disconnect(QStringLiteral("Remote disconnected"));
+    QVERIFY2(client.socket() == current, "the stale socket's close must not detach its successor");
+
+    client.releaseSocket(/*destroy*/ true);
+}
+
+void tst_UpDownClient::tryToConnect_refusesBannedAddress()
+{
+    // Checked again before dialling: the address may have been banned after the source was
+    // queued. MFC BaseClient.cpp:1327-1336.
+    ClientList clientList;
+    struct ClientListGuard {
+        ~ClientListGuard() { theApp.clientList = nullptr; }
+    } guard;
+    theApp.clientList = &clientList;
+
+    const Address banned = Address::fromString(QStringLiteral("192.0.2.10"));
+    clientList.addBannedClient(banned);
+
+    UpDownClient client;
+    client.setUserIDHybrid(banned.toUint32());   // high ID
+    client.setConnectAddress(banned);
+    client.setUserPort(4662);
+
+    QVERIFY(!client.tryToConnect());
+    QVERIFY2(client.socket() == nullptr, "a banned address must not be dialled");
+}
+
+// ---------------------------------------------------------------------------
+// processBlockPacket size check — MFC DownloadClient.cpp:989-991
+// ---------------------------------------------------------------------------
+
+void tst_UpDownClient::processBlockPacket_badBlockThrows_data()
+{
+    // Bytes after hash16 + start32 (start = 100).
+    QTest::addColumn<bool>("packed");
+    QTest::addColumn<QByteArray>("tail");
+
+    // Shorter than its 24-byte header: size - nHeaderSize underflows. The read-only buffer's
+    // seek over the compressed-size field already throws first.
+    QTest::newRow("packed, shorter than header") << true << QByteArray(1, '\x00');
+    // end == start, and a block that declares 10 bytes but carries none: both were dropped
+    // silently while the peer stayed connected.
+    QTest::newRow("unpacked, end == start") << false << QByteArray("\x64\x00\x00\x00", 4);
+    QTest::newRow("unpacked, size disagrees") << false << QByteArray("\x6e\x00\x00\x00", 4);
+}
+
+void tst_UpDownClient::processBlockPacket_badBlockThrows()
+{
+    // MFC throws IDS_ERR_BADDATABLOCK, which disconnects the peer.
+    QFETCH(bool, packed);
+    QFETCH(QByteArray, tail);
+
+    uint8 fileHash[16];
+    fillHash(fileHash, 0x61);
+    PartFile file;
+    file.setFileHash(fileHash);
+
+    UpDownClient client;
+    client.setReqFile(&file);
+    client.setDownloadState(DownloadState::Downloading);   // blocks are dropped in any other state
+
+    SafeMemFile data;
+    data.writeHash16(fileHash);
+    data.writeUInt32(100);   // start
+    data.write(tail.constData(), tail.size());
+    const QByteArray packet = data.buffer();
+
+    QVERIFY_THROWS_EXCEPTION(FileException,
+        client.processBlockPacket(reinterpret_cast<const uint8*>(packet.constData()),
+                                  static_cast<uint32>(packet.size()), packed, false));
 }
 
 QTEST_MAIN(tst_UpDownClient)

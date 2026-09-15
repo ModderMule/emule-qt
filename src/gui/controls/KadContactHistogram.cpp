@@ -8,6 +8,8 @@
 #include <QPainter>
 #include <QPaintEvent>
 
+#include <algorithm>
+
 
 namespace eMule {
 
@@ -97,15 +99,17 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
     const int topBorder = maxLabelHeight;
     const int bottomBorder = maxLabelHeight;
 
-    const int plotW = rc.width() - leftBorder - rightBorder;
+    // MFC caps the width at one pixel per bucket (KadContactHistogramCtrl.cpp:128-129).
+    const int plotW = std::min(rc.width() - leftBorder - rightBorder, static_cast<int>(kHistSize));
     const int plotH = rc.height() - topBorder - bottomBorder;
 
     if (plotW < 10 || plotH < 10)
         return;
 
-    // -- Y-axis scaling (MFC logic) ---
-    // MFC averages: uMax = total / kHistSize, minimum 15
-    uint32_t uMax = m_contactCount > 0 ? (m_contactCount / kHistSize) : 0;
+    // -- Y-axis scaling (KadContactHistogramCtrl.cpp:142-151) ---
+    // The fullest bucket over the bucket count — MFC's "average", which keeps the
+    // cluster of closest contacts from stretching the graph. 15 for any real table.
+    uint32_t uMax = *std::ranges::max_element(m_buckets) / kHistSize;
     if (uMax < 15)
         uMax = 15;
 
@@ -125,8 +129,8 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
     if (uStep < 5)
         uStep = 5;
 
-    // Draw Y-axis numeric labels and grid lines together
-    for (uint32_t y = uStep; y <= uMax; y += uStep) {
+    // Y-axis labels from 0, grid lines above it (MFC :170-181)
+    for (uint32_t y = 0; y <= uMax; y += uStep) {
         const int yPos = rc.top() + topBorder + plotH
                          - static_cast<int>(static_cast<uint64_t>(y) * static_cast<uint32_t>(plotH) / uMax);
 
@@ -137,32 +141,31 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
                               maxNumLabelWidth, maxLabelHeight);
         p.drawText(labelRect, Qt::AlignRight | Qt::AlignVCenter, QString::number(y));
 
+        if (y == 0)
+            continue;
         // Dotted auxiliary grid line
         p.setPen(QPen(auxColor, 1, Qt::DotLine));
         p.drawLine(rc.left() + leftBorder, yPos,
                    rc.left() + leftBorder + plotW - 1, yPos);
     }
 
-    // -- Draw bars ---
-    // MFC: each pixel column accumulates buckets mapping to it.
+    // -- Draw bars (MFC :193-210) ---
+    // Each pixel column shows its own bucket plus any skipped since the last column.
+    int lastBucket = -1;
     for (int x = 0; x < plotW; ++x) {
-        const int bucketStart = static_cast<int>(
-            static_cast<int64_t>(x) * kHistSize / plotW);
-        const int bucketEnd = static_cast<int>(
-            static_cast<int64_t>(x + 1) * kHistSize / plotW);
-
-        uint32_t val = 0;
-        for (int b = bucketStart; b < bucketEnd; ++b)
-            val += m_buckets[static_cast<size_t>(b)];
+        const int bucket = static_cast<int>(static_cast<int64_t>(x) * kHistSize / plotW);
+        uint32_t val = m_buckets[static_cast<size_t>(bucket)];
+        while (++lastBucket < bucket)
+            val += m_buckets[static_cast<size_t>(lastBucket)];
 
         if (val == 0)
             continue;
 
-        int barH = static_cast<int>(static_cast<uint64_t>(val) * static_cast<uint32_t>(plotH) / uMax);
-        barH = std::min(barH, plotH);
-
-        // MFC: bars exceeding uMax drawn in axis color (gray) instead of red
-        const QColor& color = (val > uMax) ? axisColor : barColor;
+        // A bar past the top is clipped and drawn in the axis colour instead of red
+        const bool clipped = val > uMax;
+        const int barH = static_cast<int>(
+            static_cast<uint64_t>(clipped ? uMax : val) * static_cast<uint32_t>(plotH) / uMax);
+        const QColor& color = clipped ? axisColor : barColor;
 
         const int xPos = rc.left() + leftBorder + x;
         const int yBottom = rc.top() + topBorder + plotH - 1;

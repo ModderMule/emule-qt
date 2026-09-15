@@ -215,6 +215,8 @@ bool ClientReqSocket::packetReceived(Packet* packet)
             return processExtPacket(data, size, opcode, rawSize);
         }
     } catch (const FileException& ex) {
+        // MFC ListenSocket.cpp:1859-1865: a packet we cannot parse ends the connection. The
+        // stream past it cannot be trusted, and the rest of the read buffer is dropped anyway.
         logWarning(QStringLiteral("ClientReqSocket::packetReceived — malformed packet: %1 "
                                   "(proto=0x%2 opcode=0x%3 wireSize=%4 peer=%5:%6)")
                        .arg(QLatin1String(ex.what()))
@@ -222,6 +224,7 @@ bool ClientReqSocket::packetReceived(Packet* packet)
                        .arg(opcode, 2, 16, QLatin1Char('0'))
                        .arg(rawSize)
                        .arg(peerAddress().toString()).arg(peerPort()));
+        disconnect(QStringLiteral("Error while processing packet: %1").arg(QLatin1String(ex.what())));
         return false;
     } catch (const std::exception& ex) {
         logWarning(QStringLiteral("ClientReqSocket::packetReceived — exception: %1 "
@@ -230,6 +233,16 @@ bool ClientReqSocket::packetReceived(Packet* packet)
                        .arg(protocol, 2, 16, QLatin1Char('0'))
                        .arg(opcode, 2, 16, QLatin1Char('0'))
                        .arg(rawSize));
+        disconnect(QStringLiteral("Error while processing packet: %1").arg(QLatin1String(ex.what())));
+        return false;
+    } catch (...) {
+        // MFC ListenSocket.cpp:1836 — a non-std throw must not reach the Qt event loop.
+        logWarning(QStringLiteral("ClientReqSocket::packetReceived — unhandled exception "
+                                  "(proto=0x%1 opcode=0x%2 wireSize=%3)")
+                       .arg(protocol, 2, 16, QLatin1Char('0'))
+                       .arg(opcode, 2, 16, QLatin1Char('0'))
+                       .arg(rawSize));
+        disconnect(QStringLiteral("Unhandled exception"));
         return false;
     }
 

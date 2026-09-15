@@ -226,10 +226,11 @@ void ServerPanel::onRefreshTimer()
 
 void ServerPanel::updateConnectButton(bool connected, bool connecting)
 {
+    // MFC ServerWnd.cpp:699-709. Both non-Connect labels send a disconnect.
     if (connected)
         m_connectBtn->setText(tr("Disconnect"));
     else if (connecting)
-        m_connectBtn->setText(tr("Disconnect"));
+        m_connectBtn->setText(tr("Cancel"));
     else
         m_connectBtn->setText(tr("Connect"));
 }
@@ -638,10 +639,10 @@ QWidget* ServerPanel::createServerListPanel()
     auto* header = m_serverListView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(80);
-    // Name, IP, Description, Ping, Users, Max Users, Preference, Failed,
-    // Static, Soft/Files, LowID, Obfuscation.
+    // Name, IP, Description, Ping, Users, Max Users, Files, Preference, Failed,
+    // Static, Soft File Limit, LowID, Obfuscation.
     serverView->bindColumns(QStringLiteral("serverList"),
-        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80});
+        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80});
 
     m_serverListView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_serverListView, &QTreeView::doubleClicked,

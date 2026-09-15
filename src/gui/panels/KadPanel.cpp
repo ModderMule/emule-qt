@@ -600,7 +600,9 @@ void KadPanel::requestSearches()
             row.type     = m.value(QStringLiteral("type")).toString();
             row.name     = m.value(QStringLiteral("name")).toString();
             row.status   = m.value(QStringLiteral("status")).toString();
-            row.load     = static_cast<float>(m.value(QStringLiteral("load")).toInteger());
+            row.load     = static_cast<uint32_t>(m.value(QStringLiteral("load")).toInteger());
+            row.loadResponses = static_cast<uint32_t>(m.value(QStringLiteral("loadResponses")).toInteger());
+            row.loadTotal = static_cast<uint32_t>(m.value(QStringLiteral("loadTotal")).toInteger());
             row.packetsSent    = static_cast<uint32_t>(m.value(QStringLiteral("packetsSent")).toInteger());
             row.requestAnswers = static_cast<uint32_t>(m.value(QStringLiteral("requestAnswers")).toInteger());
             row.responses      = static_cast<uint32_t>(m.value(QStringLiteral("responses")).toInteger());

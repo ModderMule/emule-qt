@@ -298,6 +298,7 @@ private:
     QCheckBox*  m_proxyAuthCheck = nullptr;
     QLineEdit*  m_proxyUserEdit = nullptr;
     QLineEdit*  m_proxyPasswordEdit = nullptr;
+    QCheckBox*  m_proxyUsenetCheck = nullptr;
 
     // Server page controls
     QSpinBox*  m_deadServerRetriesSpin = nullptr;
@@ -408,6 +409,10 @@ private:
     QPushButton*  m_usenetWatchDirBrowse = nullptr;
     QCheckBox*    m_associateNzbCheck = nullptr;
     QCheckBox*    m_usenetCleanupCheck = nullptr;
+    QCheckBox*    m_usenetSfvCheck = nullptr;
+    QComboBox*    m_usenetUnrepairableCombo = nullptr;
+    QComboBox*    m_usenetUnwantedCombo = nullptr;
+    QLineEdit*    m_usenetUnwantedEdit = nullptr;
     QTreeWidget*  m_usenetServerTable = nullptr;
     QPushButton*  m_usenetAddBtn = nullptr;
     QPushButton*  m_usenetRemoveBtn = nullptr;

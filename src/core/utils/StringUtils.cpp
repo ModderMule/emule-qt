@@ -91,6 +91,32 @@ QString formatByteRate(double bytesPerSec, int decimals)
     return castItoXBytes(bytesPerSec, decimals, kUnits);
 }
 
+QString formatShortNumber(double count, int decimals)
+{
+    // MFC CastItoIShort (OtherFunctions.cpp:194-227), IDS_KILO..IDS_TERA (emule.rc:2597-2600)
+    static constexpr std::array<const char*, 4> kSuffix = {
+        QT_TRANSLATE_NOOP("Units", "k"),
+        QT_TRANSLATE_NOOP("Units", "M"),
+        QT_TRANSLATE_NOOP("Units", "G"),
+        QT_TRANSLATE_NOOP("Units", "T"),
+    };
+    if (count <= 0.0)
+        return QStringLiteral("0");
+    if (count < 1.0e3)
+        return QString::number(count, 'f', 0);
+    if (count >= 1.0e15)
+        return {};
+
+    std::size_t idx = 0;
+    double div = 1.0e3;
+    while (idx + 1 < kSuffix.size() && count >= div * 1000.0) {
+        div *= 1000.0;
+        ++idx;
+    }
+    return QStringLiteral("%1 %2").arg(QString::number(count / div, 'f', decimals),
+                                        QCoreApplication::translate("Units", kSuffix[idx]));
+}
+
 QString formatQuotaGb(qint64 bytes)
 {
     return QStringLiteral("%1 GB").arg(double(bytes) / 1e9, 0, 'f', 1);

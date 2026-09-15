@@ -28,6 +28,8 @@ struct SearchResultRow {
     int64_t length = 0;
     int64_t bitrate = 0;
     int knownType = 0;
+    bool isKad = false;         ///< Kad results carry no complete-source count
+    bool inDirectory = false;   ///< from browsing a client's shared files
     bool isSpam = false;
     bool hasComment = false;
     int userRating = 0;   // wire value: 6 means a Kad note lookup is running

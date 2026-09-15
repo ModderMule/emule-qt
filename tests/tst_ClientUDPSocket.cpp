@@ -8,6 +8,7 @@
 #include "stats/Statistics.h"
 #include "utils/ByteOrder.h"
 #include "utils/Opcodes.h"
+#include "utils/SafeFile.h"
 
 #include <QSignalSpy>
 #include <QTest>
@@ -29,6 +30,7 @@ private slots:
     void signalConnections();
     void receivesReservedProt_dispatchesInsteadOfDropping_data();
     void receivesReservedProt_dispatchesInsteadOfDropping();
+    void throwingHandler_doesNotEscapeReceiveLoop();
 };
 
 // ---------------------------------------------------------------------------
@@ -164,6 +166,56 @@ void tst_ClientUDPSocket::receivesReservedProt_dispatchesInsteadOfDropping()
 
     theApp.statistics = nullptr; // detach before the object leaves scope
     QCOMPARE(gotBytes, expectedSize);
+}
+
+// ---------------------------------------------------------------------------
+// A throwing handler stays inside the receive loop — MFC ClientUDPSocket.cpp:87-155
+//
+// Every signal processPacket() emits runs its slot inline, so a SafeMemFile over-read in one
+// (a 1-byte OP_REASKACK reaching CoreSession's handler) propagated out of onReadyRead() into
+// the event loop and terminated the daemon. The datagram behind it must still be processed.
+// ---------------------------------------------------------------------------
+
+void tst_ClientUDPSocket::throwingHandler_doesNotEscapeReceiveLoop()
+{
+    Statistics stats;
+    struct StatsGuard {
+        ~StatsGuard() { theApp.statistics = nullptr; }
+    } guard;
+    theApp.statistics = &stats;
+
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+    const uint16 port = sock.connectedPort();
+    QVERIFY(port != 0);
+
+    int thrown = 0;
+    connect(&sock, &ClientUDPSocket::reaskAckReceived, &sock,
+            [&thrown](const Endpoint&, const uint8*, uint32) {
+                ++thrown;
+                throw FileException("read past end");
+            });
+
+    QUdpSocket sender;
+    QVERIFY(sender.bind(QHostAddress::LocalHost, 0));
+
+    QByteArray shortAck;
+    shortAck.append(static_cast<char>(OP_EMULEPROT));
+    shortAck.append(static_cast<char>(OP_REASKACK));
+    shortAck.append('\x01');   // one byte where the rank needs two
+    QByteArray reserved;
+    reserved.append(static_cast<char>(OP_UDPRESERVEDPROT1));
+    reserved.append(static_cast<char>(0x99));
+    reserved.append("payld!", 6);
+
+    QCOMPARE(sender.writeDatagram(shortAck, QHostAddress::LocalHost, port),
+             static_cast<qint64>(shortAck.size()));
+    QCOMPARE(sender.writeDatagram(reserved, QHostAddress::LocalHost, port),
+             static_cast<qint64>(reserved.size()));
+
+    // Both datagrams are metered as they are dispatched, the throwing one included.
+    QTRY_COMPARE(stats.downDataOverheadOtherPackets(), static_cast<uint64>(2));
+    QCOMPARE(thrown, 1);
 }
 
 QTEST_MAIN(tst_ClientUDPSocket)

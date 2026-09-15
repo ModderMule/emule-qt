@@ -254,7 +254,7 @@ void UsenetDetailsDialog::poll()
 
     QPointer<UsenetDetailsDialog> self(this);
     m_ipc->sendRequest(msg, [self](const Ipc::IpcMessage& resp) {
-        if (!self)
+        if (!self || !resp.isValid())   // a dropped connection is not a removed release
             return;
         if (!resp.fieldBool(0)) {
             // 404: the release was removed while this was open. There is nothing

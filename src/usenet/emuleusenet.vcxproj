@@ -171,6 +171,7 @@
     <ClCompile Include="post\Par2Verifier.cpp" />
     <ClCompile Include="post\UsenetDirectUnpack.cpp" />
     <ClCompile Include="post\UsenetPostProcessor.cpp" />
+    <ClCompile Include="post\UsenetReleaseChecks.cpp" />
     <ClCompile Include="post\UsenetUnpacker.cpp" />
     <ClCompile Include="queue\ArticleWriter.cpp" />
     <ClCompile Include="queue\UsenetHealth.cpp" />
@@ -178,6 +179,7 @@
     <ClCompile Include="queue\UsenetQueue.cpp" />
     <ClCompile Include="queue\UsenetQueueItem.cpp" />
     <ClCompile Include="queue\UsenetQueueStore.cpp" />
+    <ClCompile Include="queue\UsenetRepairEstimate.cpp" />
     <ClCompile Include="queue\UsenetStatistics.cpp" />
     <ClCompile Include="queue\UsenetUsage.cpp" />
     <ClCompile Include="queue\UsenetWatchFolder.cpp" />
@@ -197,12 +199,14 @@
     <ClInclude Include="nzb\SubjectParser.h" />
     <ClInclude Include="post\Par2NameIndex.h" />
     <ClInclude Include="post\Par2Verifier.h" />
+    <ClInclude Include="post\UsenetReleaseChecks.h" />
     <ClInclude Include="post\UsenetUnpacker.h" />
     <ClInclude Include="queue\ArticleWriter.h" />
     <ClInclude Include="queue\UsenetHealth.h" />
     <ClInclude Include="queue\UsenetHistory.h" />
     <ClInclude Include="queue\UsenetQueueItem.h" />
     <ClInclude Include="queue\UsenetQueueStore.h" />
+    <ClInclude Include="queue\UsenetRepairEstimate.h" />
     <ClInclude Include="queue\UsenetStatistics.h" />
     <ClInclude Include="queue\UsenetUsage.h" />
     <ClInclude Include="stream\RarReader.h" />

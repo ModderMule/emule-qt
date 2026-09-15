@@ -7,7 +7,9 @@
 
 #include "panels/StatisticsPanel.h"
 
+#include "controls/StatsGraph.h"
 #include "prefs/NewsServer.h"
+#include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
 #include "utils/StringUtils.h"
 
@@ -173,6 +175,7 @@ private slots:
     void ratioReadsFromTheLargerSide();
     void httpCacheSplitsUploadsFromDownloads();
     void timeShowsCurrentAndTotalServerDuration();
+    void rateScopesArePinnedToTheGraphMaxima();
 };
 
 void tst_StatisticsPanel::usenetIsTheLastBranchAndMfcsOrderStays()
@@ -405,6 +408,22 @@ void tst_StatisticsPanel::timeShowsCurrentAndTotalServerDuration()
              QStringLiteral("Current Server Duration: 0:15:00 (25.0%)"));
     QCOMPARE(childNamed(session, QStringLiteral("Total Server Duration:"))->text(0),
              QStringLiteral("Total Server Duration: 0:30:00 (50.0%)"));
+}
+
+// MFC StatisticsDlg.cpp:166,178: the download and upload scopes use the Connection page's
+// graph maxima. Only the connections scope had a fixed range; the rate ones auto-scaled.
+void tst_StatisticsPanel::rateScopesArePinnedToTheGraphMaxima()
+{
+    thePrefs.setMaxGraphDownloadRate(777);
+    thePrefs.setMaxGraphUploadRate(333);
+    StatisticsPanel panel;
+    panel.applySettings();
+
+    QList<double> uppers;
+    for (const StatsGraph* graph : panel.findChildren<StatsGraph*>())
+        uppers << graph->yUpper();
+    QVERIFY(uppers.contains(777.0));
+    QVERIFY(uppers.contains(333.0));
 }
 
 QTEST_MAIN(tst_StatisticsPanel)

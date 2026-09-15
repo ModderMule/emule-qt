@@ -5,6 +5,7 @@
 #include "controls/DownloadListModel.h"
 
 #include "client/ClientStateDefs.h"
+#include "prefs/Preferences.h"
 
 #include "utils/OtherFunctions.h"
 #include "utils/RatingIcons.h"
@@ -91,6 +92,23 @@ int downPriorityOrdinal(const QString& priority)
     return 2;   // normal, and auto, which the daemon resolves per file anyway
 }
 
+/// MFC's Sources column, `available[/total][+a4af] (transferring)`
+/// (srchybrid/DownloadListCtrl.cpp:2019-2036). Available means on queue or downloading.
+QString sourcesText(const DownloadRow& d)
+{
+    const bool paused = d.status == QLatin1String("paused");
+    if ((paused && d.sourceCount == 0) || d.isComplete())
+        return {};
+    QString text = QString::number(d.availableSrcCount);
+    if (d.sourceCount > d.availableSrcCount)
+        text += QStringLiteral("/%1").arg(d.sourceCount);
+    if (thePrefs.showExtControls() && d.a4afSrcCount > 0)
+        text += QStringLiteral("+%1").arg(d.a4afSrcCount);
+    if (d.transferringSrcCount > 0)
+        text += QStringLiteral(" (%1)").arg(d.transferringSrcCount);
+    return text;
+}
+
 /// Map download state string to sort priority (lower = more important).
 int downloadStateSortOrder(const QString& state)
 {
@@ -124,18 +142,14 @@ QModelIndex DownloadListModel::index(int row, int column, const QModelIndex& par
     if (!hasIndex(row, column, parent))
         return {};
 
-    if (!parent.isValid()) {
-        // Top-level (download) row — internalId = 0 (no parent row encoded)
-        // We encode the parent row + 1 in internalId so that source rows
-        // can find their parent. Top-level rows use internalId = 0.
+    // Download rows carry internalId 0. A source row carries its download's uid, not
+    // its row: a row number goes stale when a download above leaves, and the view's
+    // persistent child indexes (selection, current) then point into the wrong file.
+    if (!parent.isValid())
         return createIndex(row, column, quintptr(0));
-    }
 
-    // Child (source) row — encode parent row + 1 in internalId
-    if (parent.internalId() == 0) {
-        // parent is a top-level row
-        return createIndex(row, column, quintptr(parent.row() + 1));
-    }
+    if (parent.internalId() == 0 && parent.row() < static_cast<int>(m_downloads.size()))
+        return createIndex(row, column, m_downloads[static_cast<size_t>(parent.row())].uid);
 
     // No deeper nesting
     return {};
@@ -150,8 +164,9 @@ QModelIndex DownloadListModel::parent(const QModelIndex& index) const
     if (id == 0)
         return {}; // top-level row has no parent
 
-    // Source row — parent is top-level row at (id - 1)
-    const int parentRow = static_cast<int>(id - 1);
+    const int parentRow = rowOfUid(id);
+    if (parentRow < 0)
+        return {};
     return createIndex(parentRow, 0, quintptr(0));
 }
 
@@ -209,8 +224,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
 
     // --------------- Source (child) row ---------------
     if (id != 0) {
-        const int parentRow = static_cast<int>(id - 1);
-        if (parentRow < 0 || parentRow >= static_cast<int>(m_downloads.size()))
+        const int parentRow = rowOfUid(id);
+        if (parentRow < 0)
             return {};
         const auto& dl = m_downloads[static_cast<size_t>(parentRow)];
         if (index.row() < 0 || index.row() >= static_cast<int>(dl.sources.size()))
@@ -224,20 +239,21 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             case ColCompleted:     return s.sessionDown > 0 ? formatByteSize(s.sessionDown) : QString{};
             case ColSpeed:         return s.datarate > 0 ? formatByteRate(s.datarate) : QString{};
             case ColProgress:      return {};
-            case ColSources:
-                if (s.downloadState == QLatin1String("Downloading"))
-                    return tr("Downloading");
+            // MFC GetSourceItemDisplayText (DownloadListCtrl.cpp:510-519): software
+            // under Sources, the queue rank under Priority.
+            case ColSources:       return s.software;
+            case ColPriority:
+                if (s.downloadState != QLatin1String("OnQueue"))
+                    return {};
+                if (s.remoteQueueFull)
+                    return tr("Queue Full");
                 return s.remoteQueueRank > 0
                     ? QStringLiteral("QR: %1").arg(s.remoteQueueRank)
                     : QString{};
-            case ColPriority:      return {};
             case ColStatus:        return s.downloadState;
             case ColRemaining:     return {};
-            case ColSeenComplete:
-                return (s.partCount > 0)
-                    ? QStringLiteral("%1 / %2").arg(s.availPartCount).arg(s.partCount)
-                    : QString{};
-            case ColLastReception: return s.software;
+            case ColSeenComplete:  return {};
+            case ColLastReception: return {};
             case ColCategory:      return {};
             case ColAddedOn:       return {};
             default: break;
@@ -251,17 +267,21 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             case ColCompleted:     return QVariant::fromValue(s.sessionDown);
             case ColSpeed:         return QVariant::fromValue(s.datarate);
             case ColProgress:      return 0.0;
-            case ColSources: {
-                if (s.downloadState == QLatin1String("Downloading"))
-                    return -1;
+            case ColSources:       return s.software;
+            case ColPriority: {
+                if (s.downloadState != QLatin1String("OnQueue"))
+                    return qlonglong(INT_MAX);
+                if (s.remoteQueueFull)
+                    return qlonglong(INT_MAX - 1);
                 return s.remoteQueueRank > 0 ? static_cast<qlonglong>(s.remoteQueueRank) : qlonglong(INT_MAX);
             }
             case ColStatus:        return downloadStateSortOrder(s.downloadState);
-            case ColSeenComplete:  return s.availPartCount;
-            case ColLastReception: return s.software;
             default:               return {};
             }
         }
+
+        if (role == Qt::ToolTipRole && s.partCount > 0)
+            return tr("Available parts: %1 / %2").arg(s.availPartCount).arg(s.partCount);
 
         // A source fetching over HTTP Cache is not costing the uploader anything,
         // which is worth seeing at a glance — MFC gave PeerCache its own bar for
@@ -304,8 +324,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColCompleted:  return formatByteSize(d.completedSize);
         case ColSpeed:      return d.datarate > 0 ? formatByteRate(d.datarate) : QString{};
         case ColProgress:   return QStringLiteral("%1%").arg(d.percentCompleted, 0, 'f', 1);
-        case ColSources:
-            return QStringLiteral("%1 / %2").arg(d.transferringSrcCount).arg(d.sourceCount);
+        case ColSources:    return sourcesText(d);
         case ColPriority: {
             if (d.isAutoDownPriority)
                 return tr("Auto [%1]").arg(d.priority);
@@ -360,8 +379,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                  formatByteSize(d.completedSize),
                  QString::number(d.percentCompleted, 'f', 1))
             .arg(fileTypeDisplay(d.fileType),
-                 d.status, d.priority,
-                 QStringLiteral("%1 / %2").arg(d.transferringSrcCount).arg(d.sourceCount))
+                 d.status, d.priority, sourcesText(d))
             .arg(d.requests).arg(d.acceptedRequests)
             .arg(formatByteSize(d.transferredData));
         tip += extra;
@@ -440,12 +458,13 @@ void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
     for (size_t i = 0; i < incoming.size(); ++i)
         incomingByHash.insert(incoming[i].hash, i);
 
-    // 2. Remove departed downloads (reverse order keeps indices stable for
-    //    rows below the removal point, preserving internalId encoding)
+    // 2. Remove departed downloads. Reindexed before endRemoveRows(), which is where
+    //    views start asking parent() of the child indexes under the shifted rows.
     for (int i = static_cast<int>(m_downloads.size()) - 1; i >= 0; --i) {
         if (!incomingByHash.contains(m_downloads[static_cast<size_t>(i)].hash)) {
             beginRemoveRows({}, i, i);
             m_downloads.erase(m_downloads.begin() + i);
+            reindexRows();
             endRemoveRows();
         }
     }
@@ -471,6 +490,7 @@ void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
             } else {
                 fresh.sources = std::move(existing.sources); // preserve child rows
             }
+            fresh.uid = existing.uid;
             existing = std::move(fresh);
         }
     }
@@ -487,8 +507,11 @@ void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
         const int first = static_cast<int>(m_downloads.size());
         const int last  = first + static_cast<int>(toInsert.size()) - 1;
         beginInsertRows({}, first, last);
-        for (auto& r : toInsert)
+        for (auto& r : toInsert) {
+            r.uid = m_nextUid++;
+            m_rowByUid.insert(r.uid, static_cast<int>(m_downloads.size()));
             m_downloads.push_back(std::move(r));
+        }
         endInsertRows();
     }
 }
@@ -559,6 +582,7 @@ void DownloadListModel::clear()
 {
     beginResetModel();
     m_downloads.clear();
+    m_rowByUid.clear();
     endResetModel();
 }
 
@@ -600,8 +624,8 @@ const SourceRow* DownloadListModel::sourceAt(const QModelIndex& index) const
 {
     if (!isSourceRow(index))
         return nullptr;
-    const auto parentRow = static_cast<int>(index.internalId() - 1);
-    if (parentRow < 0 || parentRow >= static_cast<int>(m_downloads.size()))
+    const int parentRow = rowOfUid(index.internalId());
+    if (parentRow < 0)
         return nullptr;
     const auto& srcs = m_downloads[static_cast<size_t>(parentRow)].sources;
     if (index.row() < 0 || index.row() >= static_cast<int>(srcs.size()))
@@ -683,6 +707,18 @@ int DownloadListModel::statusRank(const DownloadRow& d)
     if (d.status == QLatin1String("error"))
         return 8;
     return d.transferringSrcCount > 0 ? 2 : 3;
+}
+
+int DownloadListModel::rowOfUid(quintptr uid) const
+{
+    return m_rowByUid.value(uid, -1);
+}
+
+void DownloadListModel::reindexRows()
+{
+    m_rowByUid.clear();
+    for (size_t i = 0; i < m_downloads.size(); ++i)
+        m_rowByUid.insert(m_downloads[i].uid, static_cast<int>(i));
 }
 
 } // namespace eMule

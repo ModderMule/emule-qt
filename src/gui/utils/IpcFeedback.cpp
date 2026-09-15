@@ -14,6 +14,8 @@ bool checkOrWarn(const Ipc::IpcMessage& resp, QWidget* parent,
 {
     if (resp.fieldBool(0))
         return true;
+    if (!resp.isValid())
+        return false;
 
     QString text = resp.fieldString(1);
     if (text.isEmpty())

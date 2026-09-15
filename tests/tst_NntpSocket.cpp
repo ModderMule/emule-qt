@@ -21,17 +21,22 @@
 ///     codebase has shipped before.
 
 #include "FakeNntpServer.h"
+#include "FakeProxyServer.h"
 
 #include "nntp/NntpCommand.h"
 #include "nntp/NntpSocket.h"
 
 #include <QElapsedTimer>
+#include <QNetworkProxy>
+#include <QScopeGuard>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTest>
 #include <QTimer>
 
 using namespace eMule::usenet;
 using eMule::testing::FakeNntpServer;
+using eMule::testing::FakeProxyServer;
 
 namespace {
 
@@ -46,6 +51,13 @@ NewsServer localServer(quint16 port)
     s.user = QStringLiteral("testuser");
     s.pass = QStringLiteral("testpass");
     return s;
+}
+
+/// A loopback port nothing listens on: taken, then released.
+quint16 deadPort()
+{
+    QTcpServer probe;
+    return probe.listen(QHostAddress::LocalHost, 0) ? probe.serverPort() : 0;
 }
 
 } // namespace
@@ -72,6 +84,10 @@ private slots:
     void readRateLimit_reapplyingGrantsNoExtraBudget();
     void invalidServer_failsWithoutConnecting();
     void openConnections_countsAuthenticatedSocketsPerAccount();
+    void connectsThroughASocks5ProxyByHostName();
+    void connectsThroughAnHttpConnectProxyWithAuthentication();
+    void withNoProxyOfItsOwnAnApplicationProxyIsIgnored();
+    void aProxyFailureNamesTheProxyNotTheServer();
 };
 
 void tst_NntpSocket::connectsAuthenticatesAndBecomesReady()
@@ -628,6 +644,112 @@ void tst_NntpSocket::openConnections_countsAuthenticatedSocketsPerAccount()
     d.connectToServer(rejected);
     QVERIFY(failed.wait(5000));
     QCOMPARE(NntpSocket::openConnectionCount(), before);
+}
+
+// By *name*: a SOCKS5 request carrying an address would mean the provider's host
+// was resolved locally, which is the leak a proxy is usually there to prevent.
+void tst_NntpSocket::connectsThroughASocks5ProxyByHostName()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    FakeProxyServer proxy(FakeProxyServer::Kind::Socks5);
+    proxy.setCredentials(QStringLiteral("puser"), QStringLiteral("ppass"));
+    const quint16 proxyPort = proxy.start();
+    QVERIFY(proxyPort != 0);
+
+    NntpSocket socket;
+    socket.setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, QStringLiteral("127.0.0.1"),
+                                  proxyPort, QStringLiteral("puser"), QStringLiteral("ppass")));
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+
+    NewsServer s = localServer(port);
+    s.host = QStringLiteral("localhost");
+    socket.connectToServer(s);
+
+    QVERIFY(ready.wait(5000));
+    QCOMPARE(proxy.targets(), QStringList{QStringLiteral("localhost:%1").arg(port)});
+    QVERIFY2(proxy.sawDomainName(), "the host name was resolved locally, not by the proxy");
+    QCOMPARE(server.receivedCommands().value(0), QStringLiteral("MODE READER"));
+}
+
+void tst_NntpSocket::connectsThroughAnHttpConnectProxyWithAuthentication()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    FakeProxyServer proxy(FakeProxyServer::Kind::HttpConnect);
+    proxy.setCredentials(QStringLiteral("puser"), QStringLiteral("ppass"));
+    const quint16 proxyPort = proxy.start();
+    QVERIFY(proxyPort != 0);
+
+    NntpSocket socket;
+    socket.setProxy(QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"),
+                                  proxyPort, QStringLiteral("puser"), QStringLiteral("ppass")));
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+
+    socket.connectToServer(localServer(port));
+
+    QVERIFY2(ready.wait(5000), failed.isEmpty() ? "no answer"
+                                                : qPrintable(failed.first().at(1).toString()));
+    QVERIFY(!proxy.targets().isEmpty());
+    QCOMPARE(proxy.targets().constLast(), QStringLiteral("127.0.0.1:%1").arg(port));
+}
+
+// NoProxy is explicit, not Qt's DefaultProxy: a proxy that some other part of the
+// process set application-wide must not silently carry a news-server connection
+// the user switched off.
+void tst_NntpSocket::withNoProxyOfItsOwnAnApplicationProxyIsIgnored()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    FakeProxyServer proxy(FakeProxyServer::Kind::Socks5);
+    const quint16 proxyPort = proxy.start();
+    QVERIFY(proxyPort != 0);
+
+    QNetworkProxy::setApplicationProxy(
+        QNetworkProxy(QNetworkProxy::Socks5Proxy, QStringLiteral("127.0.0.1"), proxyPort));
+    const auto restore = qScopeGuard([] {
+        QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+    });
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(localServer(port));
+
+    QVERIFY(ready.wait(5000));
+    QVERIFY2(proxy.targets().isEmpty(), "a socket with no proxy of its own went through one");
+}
+
+// The error must say whose fault it was: the queue waits for a proxy, while a
+// ConnectFailed backs the provider off and spends the article's retries.
+void tst_NntpSocket::aProxyFailureNamesTheProxyNotTheServer()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    const quint16 dead = deadPort();
+    QVERIFY(dead != 0);
+
+    NntpSocket socket;
+    socket.setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, QStringLiteral("127.0.0.1"), dead));
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+    socket.connectToServer(localServer(port));
+
+    QVERIFY(failed.wait(5000));
+    const auto error = failed.first().at(0).value<NntpError>();
+    QCOMPARE(error, NntpError::ProxyFailed);
+    QVERIFY2(failed.first().at(1).toString().contains(QStringLiteral("127.0.0.1:%1").arg(dead)),
+             qPrintable(failed.first().at(1).toString()));
+    QVERIFY(!escalatesToNextLevel(error));
+    QVERIFY(isFatalToConnection(error));
+    QVERIFY(server.receivedCommands().isEmpty());
 }
 
 QTEST_MAIN(tst_NntpSocket)

@@ -58,6 +58,11 @@ void sendNzbAdd(IpcClient* ipc, QWidget* parent, const QString& title,
                 done(true);
             return;
         }
+        if (!resp.isValid()) {   // connection dropped: no verdict to show
+            if (done)
+                done(false);
+            return;
+        }
 
         const auto outcome = static_cast<NzbAddOutcome>(resp.fieldInt(2));
         const QString reason = refusalText(resp, title);
@@ -95,7 +100,8 @@ void sendNzbAdd(IpcClient* ipc, QWidget* parent, const QString& title,
                         done(true);
                     return;
                 }
-                warnLater(safeParent, refusalText(retry, title));
+                if (retry.isValid())   // a dropped connection has no refusal to show
+                    warnLater(safeParent, refusalText(retry, title));
                 if (done)
                     done(false);
             });

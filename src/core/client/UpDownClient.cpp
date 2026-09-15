@@ -1040,8 +1040,9 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     m_serverAddress = Address::fromNetworkOrder(data.readUInt32());
     m_serverPort = data.readUInt16();
 
-    // Check for trailing client identification bytes
-    if (data.position() < data.length()) {
+    // Hybrid 0.40-1.2 and MLDonkey append one uint32. MFC reads it only when exactly that much
+    // is left (BaseClient.cpp:565-586); any other trailer is ignored rather than over-read.
+    if (data.length() - data.position() == 4) {
         const uint32 trailer = data.readUInt32();
         if (trailer == kMLDonkeyTrailer)
             m_isMLDonkey = true;
@@ -1056,17 +1057,42 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
             setUserAddress(Address::fromQHostAddress(addr));
     }
 
-    // Add peer's server to our server list if not already known
-    if (theApp.serverList && !m_serverAddress.isNull() && m_serverPort != 0) {
+    // Learn the peer's server only when the user asked for it, and at low priority —
+    // MFC BaseClient.cpp:593-598.
+    if (thePrefs.addServersFromClients() && theApp.serverList
+        && !m_serverAddress.isNull() && m_serverPort != 0)
+    {
         if (!theApp.serverList->findByIPTcp(m_serverAddress.toNetworkUint32(), m_serverPort)) {
             auto newServer = std::make_unique<Server>(m_serverAddress.toNetworkUint32(), m_serverPort);
+            newServer->setName(newServer->address());
+            newServer->setPreference(ServerPriority::Low);
             theApp.serverList->addServer(std::move(newServer));
         }
     }
 
-    // Credits lookup
-    if (theApp.clientCredits)
-        setCredits(theApp.clientCredits->getCredit(m_userHash.data()));
+    // Credits, and the ban on a changed user hash — MFC BaseClient.cpp:608-622. Without it a
+    // peer presenting another client's hash simply inherits that client's credits.
+    if (theApp.clientCredits) {
+        ClientCredits* found = theApp.clientCredits->getCredit(m_userHash.data());
+        if (!m_credits) {
+            setCredits(found);
+            // First hello on this object: check what this IP:port presented last time.
+            if (theApp.clientList
+                && !theApp.clientList->comparePriorUserhash(m_userAddress, m_userPort, found)) {
+                if (thePrefs.logBannedClients())
+                    logWarning(QStringLiteral("Clients: %1 (%2), Ban reason: Userhash changed (Found in TrackedClientsList)")
+                                   .arg(userName(), ipstr(m_userAddress)));
+                ban(QStringLiteral("Userhash changed"));
+            }
+        } else if (m_credits != found) {
+            // Allowed, but the peer sits out the ban before the new hash counts.
+            setCredits(found);
+            if (thePrefs.logBannedClients())
+                logWarning(QStringLiteral("Clients: %1 (%2), Ban reason: Userhash changed")
+                               .arg(userName(), ipstr(m_userAddress)));
+            ban(QStringLiteral("Userhash changed"));
+        }
+    }
 
     // Friend linking — MFC srchybrid/BaseClient.cpp:625-648.
     if (theApp.friendList) {
@@ -1426,7 +1452,8 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
     const uint32 tagCount = file.readUInt32();
 
     for (uint32 i = 0; i < tagCount; ++i) {
-        Tag tag(file, true);
+        // Not UTF-8: MFC BaseClient.cpp:772 reads EMULEINFO tags as plain strings.
+        Tag tag(file, false);
 
         switch (tag.nameId()) {
         case ET_COMPRESSION:
@@ -1673,6 +1700,16 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         }
         if (theApp.statistics)
             theApp.statistics->addFilteredClient();
+        return false;
+    }
+
+    // Checked again for safety: the address may have been banned since this source was added.
+    // MFC BaseClient.cpp:1327-1336.
+    if (theApp.clientList && !m_connectAddress.isNull()
+        && theApp.clientList->isBannedClient(m_connectAddress)) {
+        if (thePrefs.logBannedClients())
+            logDebug(QStringLiteral("Refused to connect to banned client %1 (IP=%2)")
+                         .arg(userName(), ipstr(m_connectAddress)));
         return false;
     }
 
@@ -1929,8 +1966,9 @@ void UpDownClient::connect()
 
     // Connect socket signals
     QObject::connect(reqSocket, &ClientReqSocket::clientDisconnected,
-                     this, [this](const QString& reason) {
-        disconnected(reason, true);
+                     this, [this, reqSocket](const QString& reason) {
+        if (m_socket == reqSocket)   // a replaced socket must not tear down its successor
+            disconnected(reason, true);
     });
 
     QObject::connect(reqSocket, &ClientReqSocket::extPacketReceived,
@@ -2024,8 +2062,9 @@ void UpDownClient::wireIncomingSocket(ClientReqSocket* socket)
     m_incomingConnection = true;
 
     QObject::connect(socket, &ClientReqSocket::clientDisconnected,
-                     this, [this](const QString& reason) {
-        disconnected(reason, true);
+                     this, [this, socket](const QString& reason) {
+        if (m_socket == socket)   // a replaced socket must not tear down its successor
+            disconnected(reason, true);
     });
 
     QObject::connect(socket, &ClientReqSocket::helloReceived,
@@ -2218,13 +2257,39 @@ void UpDownClient::maybeBootstrapKadFromPeer()
 }
 
 // ===========================================================================
+// releaseSocket
+// ===========================================================================
+
+void UpDownClient::releaseSocket(bool destroy)
+{
+    EMSocket* sock = m_socket;
+    m_socket = nullptr;
+    if (!sock)
+        return;
+
+    // Cut the wiring first: a dying socket must not report back, or its close would run
+    // disconnected() again against whatever socket this client holds by then.
+    QObject::disconnect(sock, nullptr, this, nullptr);
+
+    auto* reqSocket = qobject_cast<ClientReqSocket*>(sock);
+    if (!reqSocket)
+        return;
+    reqSocket->setClient(nullptr);   // checkTimeOut() reads it, and this client may go first
+    if (destroy) {
+        // safeDelete() does not unregister, and ListenSocket::process() would walk a
+        // dangling pointer.
+        if (theApp.listenSocket)
+            theApp.listenSocket->removeSocket(reqSocket);
+        reqSocket->safeDelete();
+    }
+}
+
+// ===========================================================================
 // disconnected — MFC BaseClient.cpp:1101-1233
 // ===========================================================================
 
 bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
 {
-    Q_UNUSED(fromSocket);
-
     logDebug(QStringLiteral("Client disconnected: %1 reason: %2").arg(userName(), reason));
 
     if (theApp.clientList)
@@ -2232,8 +2297,10 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
 
     m_connectingState = ConnectingState::None;
 
-    // Release socket reference so tryToConnect() can create a fresh one.
-    m_socket = nullptr;
+    // Detach the socket so tryToConnect() can create a fresh one. One we did not get here from
+    // is still live and is closed too — MFC BaseClient.cpp:1204-1208. Left wired, it kept
+    // delivering packets and later ran this function again from its own close.
+    releaseSocket(/*destroy*/ !fromSocket);
 
     // Reset handshake state so the next connection starts a fresh HELLO
     // exchange.  Without this, checkHandshakeFinished() returns true on
@@ -2265,13 +2332,16 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
                        .arg(userName()));
     }
 
-    if (m_downloadState == DownloadState::Downloading ||
-        m_downloadState == DownloadState::Connected ||
-        m_downloadState == DownloadState::Connecting ||
-        m_downloadState == DownloadState::WaitCallback ||
-        m_downloadState == DownloadState::WaitCallbackKad ||
-        m_downloadState == DownloadState::ReqHashSet ||
-        m_downloadState == DownloadState::NoNeededParts)
+    // MFC BaseClient.cpp:1122-1132. A transfer that drops is still a good source: back on the
+    // queue, where PartFile::process() re-asks it. NoNeededParts is kept as it is. Only a
+    // connection that never got an answer to our file request counts as dead.
+    if (m_downloadState == DownloadState::Downloading) {
+        setDownloadState(DownloadState::OnQueue);
+    } else if (m_downloadState == DownloadState::Connected ||
+               m_downloadState == DownloadState::Connecting ||
+               m_downloadState == DownloadState::WaitCallback ||
+               m_downloadState == DownloadState::WaitCallbackKad ||
+               m_downloadState == DownloadState::ReqHashSet)
     {
         // Add to dead source list
         if (theApp.clientList) {

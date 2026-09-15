@@ -844,11 +844,11 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
 
     const uint32 uTransferredFileDataSize = size - nHeaderSize;
 
-    // Validate: end must be > start and data size must match
-    if (nEndPos <= nStartPos || uTransferredFileDataSize != (nEndPos - nStartPos)) {
-        logDebug(QStringLiteral("processBlockPacket: bad data block from %1").arg(userName()));
-        return;
-    }
+    // MFC DownloadClient.cpp:989-991. The packed branch derives nEndPos from size, so only this
+    // form catches a block shorter than its own header — size - nHeaderSize underflows and
+    // would hand unzip() ~4 GB of avail_in past the buffer. The throw disconnects the peer.
+    if (nEndPos <= nStartPos || size != (nEndPos - nStartPos) + nHeaderSize)
+        throw FileException("bad data block (processBlockPacket)");
 
     // Per-client/port breakdown tracking
     if (uTransferredFileDataSize > 0 && theApp.statistics)
@@ -1161,7 +1161,15 @@ void UpDownClient::checkDownloadTimeout()
 
     if ((curTick - m_lastBlockReceived) > DOWNLOADTIMEOUT) {
         logDebug(QStringLiteral("Download timeout for %1").arg(userName()));
-        disconnected(QStringLiteral("Download timeout"));
+        // HTTP sources have no cancel opcode and resume through disconnected().
+        if (!m_socket || m_socket->isRawDataMode()) {
+            disconnected(QStringLiteral("Download timeout"));
+            return;
+        }
+        // MFC DownloadClient.cpp:1280-1289: cancel and fall back to the queue. The connection
+        // stays up — a stalled uploader is not a dead source.
+        sendCancelTransfer();
+        setDownloadState(DownloadState::OnQueue);
     }
 }
 
@@ -1233,11 +1241,11 @@ void UpDownClient::udpReaskForDownload()
     if (m_udpPending)
         return;
 
-    // Check UDP packet success rate — abort if failure rate > 30%
-    if (m_totalUDPPackets > 5 && m_failedUDPPackets > 0) {
-        if ((m_failedUDPPackets * 100 / m_totalUDPPackets) > 30)
-            return;
-    }
+    // Give up on UDP once over 30 % of more than three reasks went unanswered — MFC
+    // DownloadClient.cpp:1344. Float, as there: integer percent rounded 4/13 down to 30.
+    if (m_totalUDPPackets > 3
+        && static_cast<float>(m_failedUDPPackets) / static_cast<float>(m_totalUDPPackets) > 0.3f)
+        return;
 
     // The rest of MFC's precondition set (srchybrid/DownloadClient.cpp:1350-1351).
     // supportsUDP() above is only its first half — the peer's UDP port and version.
@@ -1286,20 +1294,7 @@ void UpDownClient::udpReaskForDownload()
         SafeMemFile data;
         data.writeHash16(m_reqFile->fileHash());
 
-        // If source exchange v3+, include our part status
-        if (m_sourceExchange1Ver >= 3 && m_reqFile->partCount() > 0) {
-            const uint16 parts = m_reqFile->partCount();
-            data.writeUInt16(parts);
-            const uint16 byteCount = (parts + 7) / 8;
-            std::vector<uint8> bitmap(byteCount, 0);
-            for (uint16 i = 0; i < parts; ++i) {
-                if (m_reqFile->isComplete(i))
-                    bitmap[i / 8] |= (1 << (i % 8));
-            }
-            data.write(bitmap.data(), byteCount);
-        }
-        if (m_extendedRequestsVer >= 2)
-            data.writeUInt16(static_cast<uint16>(m_reqFile->sourceCount()));
+        writeReaskFileInfo(data);
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);
         const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
@@ -1323,19 +1318,7 @@ void UpDownClient::udpReaskForDownload()
         data.writeHash16(m_buddyID.data());             // buddy ID (16 bytes)
         data.writeHash16(m_reqFile->fileHash());         // file hash (16 bytes)
 
-        if (m_sourceExchange1Ver >= 3 && m_reqFile->partCount() > 0) {
-            const uint16 parts = m_reqFile->partCount();
-            data.writeUInt16(parts);
-            const uint16 byteCount = (parts + 7) / 8;
-            std::vector<uint8> bitmap(byteCount, 0);
-            for (uint16 i = 0; i < parts; ++i) {
-                if (m_reqFile->isComplete(i))
-                    bitmap[i / 8] |= (1 << (i % 8));
-            }
-            data.write(bitmap.data(), byteCount);
-        }
-        if (m_extendedRequestsVer >= 2)
-            data.writeUInt16(static_cast<uint16>(m_reqFile->sourceCount()));
+        writeReaskFileInfo(data);
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKCALLBACKUDP);
         if (theApp.downloadQueue)
@@ -1952,6 +1935,21 @@ int UpDownClient::unzip(Pending_Block_Struct* block, const uint8* zipped,
         *lenUnzipped = 0;
 
     return err;
+}
+
+// ===========================================================================
+// writeReaskFileInfo — private
+// ===========================================================================
+
+void UpDownClient::writeReaskFileInfo(SafeMemFile& data) const
+{
+    // Gated on the UDP version the peer advertised, which is what it parses the ping by —
+    // not on our SX or extended-request versions. MFC DownloadClient.cpp:1361-1369.
+    if (m_udpVer > 2) {
+        if (m_udpVer > 3)
+            m_reqFile->writePartStatus(data);
+        m_reqFile->writeCompleteSourcesCount(data);
+    }
 }
 
 } // namespace eMule

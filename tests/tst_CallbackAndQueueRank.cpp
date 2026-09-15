@@ -425,6 +425,10 @@ private slots:
     // UDP re-ask accounting — MFC DownloadQueue.h:114-117, DownloadClient.cpp:179-183
     void udpReask_countsSentAndUnansweredReasks();
     void udpReask_notBlockedByADelayedTcpReask();
+    // OP_REASKFILEPING payload + abort threshold — MFC DownloadClient.cpp:1344, :1361-1369
+    void udpReask_payloadFollowsPeerUdpVersion_data();
+    void udpReask_payloadFollowsPeerUdpVersion();
+    void udpReask_abortsAboveThirtyPercentOfFourSends();
 
 private:
     // Shared helper for TCP QR tests
@@ -1647,6 +1651,101 @@ void tst_CallbackAndQueueRank::udpReask_notBlockedByADelayedTcpReask()
     QVERIFY2(client->udpPacketPending(), "the UDP re-ask must still go out");
     QCOMPARE(m_downloadQueue->udpFileReasks(), sentBefore + 1);
     QVERIFY2(client->reaskPending(), "the owed TCP re-ask is untouched by the UDP path");
+
+    m_downloadQueue->removeSource(client);
+    m_clientList->removeClient(client);
+    m_downloadQueue->removeFile(partFile);
+}
+
+void tst_CallbackAndQueueRank::udpReask_payloadFollowsPeerUdpVersion_data()
+{
+    QTest::addColumn<int>("udpVer");
+    QTest::addColumn<int>("expectedSize");
+    // hash 16 | + complete-source count 2 from v3 | + part status 2+1 (one part) from v4
+    QTest::newRow("udp v2") << 2 << 16;
+    QTest::newRow("udp v3") << 3 << 18;
+    QTest::newRow("udp v4") << 4 << 21;
+}
+
+void tst_CallbackAndQueueRank::udpReask_payloadFollowsPeerUdpVersion()
+{
+    // The peer parses OP_REASKFILEPING by the UDP version it advertised, so that is what the
+    // sender gates on (MFC DownloadClient.cpp:1361-1369). Gating on our SX1 and extended-
+    // request versions made a peer with a different mix misparse the ping and never answer,
+    // and the count sent was all sources rather than complete ones.
+    QFETCH(int, udpVer);
+    QFETCH(int, expectedSize);
+    UdpReaskReadyGuard udpReady;
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("reask_payload.bin"));
+    partFile->setFileSize(EMFileSize(1024 * 1024));
+    uint8 fileHash[16];
+    std::memset(fileHash, 0x7E, sizeof(fileHash));
+    partFile->setFileHash(fileHash);
+    QVERIFY(partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
+    m_downloadQueue->addDownload(partFile);
+
+    auto* client = makeUdpSource(m_clientList, partFile, m_senderUDP->connectedPort(), 0x7F);
+    client->setUdpVer(static_cast<uint8>(udpVer));
+    client->setConnectOptions(0, false, false);   // plaintext, so the sink can read it
+
+    QByteArray payload;
+    QObject sink;   // declared after payload: dies first and takes the connection with it
+    connect(m_senderUDP, &ClientUDPSocket::reaskFilePingReceived, &sink,
+            [&payload](const Endpoint&, const uint8* data, uint32 size) {
+                payload = QByteArray(reinterpret_cast<const char*>(data),
+                                     static_cast<qsizetype>(size));
+            });
+
+    client->udpReaskForDownload();
+    QVERIFY(client->udpPacketPending());
+    flushUDPSocket(m_receiverUDP);   // theApp.clientUDP in this fixture
+    QTRY_VERIFY_WITH_TIMEOUT(!payload.isEmpty(), 5000);
+
+    QCOMPARE(payload.size(), expectedSize);
+    QCOMPARE(std::memcmp(payload.constData(), fileHash, 16), 0);
+    if (udpVer > 2) {
+        const auto lo = static_cast<uint8>(payload.at(payload.size() - 2));
+        const auto hi = static_cast<uint8>(payload.at(payload.size() - 1));
+        QCOMPARE(static_cast<uint16>(lo | (hi << 8)), partFile->completeSourcesCount());
+    }
+
+    m_downloadQueue->removeSource(client);
+    m_clientList->removeClient(client);
+    m_downloadQueue->removeFile(partFile);
+}
+
+void tst_CallbackAndQueueRank::udpReask_abortsAboveThirtyPercentOfFourSends()
+{
+    // MFC DownloadClient.cpp:1344 gives up on UDP once more than three re-asks went out and
+    // over 30 % of them went unanswered. The port waited for six, so a dead source kept
+    // getting pinged.
+    UdpReaskReadyGuard udpReady;
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("reask_abort.bin"));
+    partFile->setFileSize(EMFileSize(1024 * 1024));
+    uint8 fileHash[16];
+    std::memset(fileHash, 0x80, sizeof(fileHash));
+    partFile->setFileHash(fileHash);
+    QVERIFY(partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
+    m_downloadQueue->addDownload(partFile);
+
+    auto* client = makeUdpSource(m_clientList, partFile, m_senderUDP->connectedPort(), 0x81);
+
+    for (int i = 1; i <= 4; ++i) {
+        client->udpReaskForDownload();
+        QVERIFY2(client->udpPacketPending(), qPrintable(QStringLiteral("re-ask %1 must go out").arg(i)));
+        // Unanswered, then charged as failed by the next TCP re-ask — see
+        // udpReask_countsSentAndUnansweredReasks.
+        client->setDownloadState(DownloadState::OnQueue);
+        client->askForDownload();
+        QVERIFY(!client->udpPacketPending());
+    }
+
+    client->udpReaskForDownload();
+    QVERIFY2(!client->udpPacketPending(), "four unanswered re-asks out of four must end UDP");
 
     m_downloadQueue->removeSource(client);
     m_clientList->removeClient(client);

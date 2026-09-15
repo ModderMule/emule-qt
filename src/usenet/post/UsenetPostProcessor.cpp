@@ -4,6 +4,7 @@
 #include "post/UsenetPostProcessor.h"
 
 #include "post/Par2NameIndex.h"
+#include "post/UsenetReleaseChecks.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -253,6 +254,9 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
     const QStringList par2Files = par2FilesIn(job.workDir);
     const bool canVerify = job.par2Enabled && Par2Verifier::available() && !par2Files.isEmpty();
 
+    // .sfv files a clean check has read; cleanup treats them like the par2 set.
+    QStringList verifiedSfvFiles;
+
     // -- verify, and repair if we can -------------------------------------
     if (canVerify) {
         const QString index = Par2Verifier::chooseIndexFile(par2Files);
@@ -350,6 +354,46 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             : QObject::tr("Articles are missing and this build has no PAR2 support");
         emit finished(result);
         return;
+    } else if (job.sfvEnabled) {
+        // No PAR2 ran: none shipped, it is off, or this build has none. An .sfv
+        // cannot repair anything, but it can refuse what arrived damaged.
+        emitStage(job.itemId, PostStage::Verifying, 0, QObject::tr("Checking SFV"));
+        const SfvCheck sfv = verifySfv(
+            job.workDir, job.expectedNames,
+            [&](int percent, const QString& file) {
+                emitStage(job.itemId, PostStage::Verifying, percent, file);
+            },
+            [this] { return m_stopRequested.load(); });
+
+        if (sfv.outcome == SfvCheck::Outcome::Cancelled) {
+            result.message = QObject::tr("Cancelled");
+            emit finished(result);
+            return;
+        }
+        if (!sfv.unposted.isEmpty()) {
+            logInfo(QStringLiteral("Usenet: the SFV lists file(s) this release never posted: %1")
+                        .arg(describeFileList(sfv.unposted)));
+        }
+        if (sfv.outcome == SfvCheck::Outcome::NothingToCheck) {
+            logInfo(QStringLiteral("Usenet: the SFV of \"%1\" lists none of its files; not checked")
+                        .arg(job.itemId));
+        }
+        if (sfv.outcome == SfvCheck::Outcome::Damaged) {
+            // Extracted while downloading, from volumes now known to be bad.
+            for (const UsenetDirectUnpackResult& done : job.directUnpacked) {
+                for (const QString& path : done.extracted)
+                    QFile::remove(path);
+            }
+            result.message = QObject::tr("SFV check failed: %n file(s) damaged (%1)", nullptr,
+                                         int(sfv.damaged.size()))
+                                 .arg(describeFileList(sfv.damaged));
+            emit finished(result);
+            return;
+        }
+        if (sfv.outcome == SfvCheck::Outcome::Clean) {
+            logInfo(QStringLiteral("Usenet: %1 file(s) passed the SFV check").arg(sfv.checked));
+            verifiedSfvFiles = sfv.sfvFiles;
+        }
     }
 
     if (m_stopRequested) {
@@ -396,8 +440,28 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             emitStage(job.itemId, PostStage::Unpacking, percent, file);
         });
 
+        if (!job.unwantedExtensions.isEmpty()) {
+            unpacker.setVeto([&job](const QStringList& names) {
+                return unwantedFileNames(names, job.unwantedExtensions, job.mediaRelease);
+            });
+        }
+
         const auto unpacked =
             unpacker.unpack(job.workDir, unpackDir, job.password, skip, job.externalUnpacker);
+
+        if (!unpacked.vetoed.isEmpty()) {
+            // Nothing extracted from this release stays. The volumes do, so a
+            // Resume that overrules the check unpacks it again from them.
+            for (const QString& path : unpacked.extractedFiles)
+                QFile::remove(path);
+            for (const QString& path : std::as_const(directPayload))
+                QFile::remove(path);
+            result.unwantedFiles = unpacked.vetoed;
+            result.message = QObject::tr("Contains unwanted files: %1")
+                                 .arg(describeFileList(unpacked.vetoed));
+            emit finished(result);
+            return;
+        }
 
         if (!unpacked.ok) {
             // Carried before the early return, or the GUI cannot tell a release
@@ -447,9 +511,45 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
         return;
     }
 
+    // The last look before publishing, over everything together: a set judged
+    // alone may not have known the release was a movie, and a release with no
+    // archives had no member list for anyone to judge.
+    if (!job.unwantedExtensions.isEmpty()) {
+        QStringList names;
+        for (const QString& path : std::as_const(payload))
+            names.append(QFileInfo(path).fileName());
+        QStringList unwanted = unwantedFileNames(names, job.unwantedExtensions, job.mediaRelease);
+        for (const QString& path : std::as_const(payload)) {
+            if (isFakeMediaFile(path))
+                unwanted.append(QFileInfo(path).fileName());
+        }
+        unwanted.removeDuplicates();
+
+        if (!unwanted.isEmpty()) {
+            // Extracted files go; downloaded ones are the release itself and stay.
+            if (result.unpackOutcome == UsenetUnpackOutcome::Unpacked) {
+                for (const QString& path : std::as_const(payload))
+                    QFile::remove(path);
+            }
+            result.unwantedFiles = unwanted;
+            result.message =
+                QObject::tr("Contains unwanted files: %1").arg(describeFileList(unwanted));
+            emit finished(result);
+            return;
+        }
+    }
+
     // Recovery volumes are never payload. They exist to repair the release, and
     // that job is finished by the time we get here.
     consumed += par2Files;
+
+    // A checked .sfv has done its job too: published, it offers ED2K peers a
+    // checksum list for files they will mostly never see.
+    for (const QString& sfv : std::as_const(verifiedSfvFiles)) {
+        payload.removeAll(sfv);
+        if (!consumed.contains(sfv))
+            consumed.append(sfv);
+    }
 
     if (!job.cleanupEnabled) {
         // Publish everything instead of only what came out of the archives.

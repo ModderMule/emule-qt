@@ -5,6 +5,7 @@
 #include "controls/SharedFilesModel.h"
 
 #include "utils/OtherFunctions.h"
+#include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
 
@@ -25,23 +26,6 @@ QString fileTypeDisplay(const QString& type)
     if (type == QLatin1String("EmuleCollection")) return QObject::tr("eMule Collection");
     if (!type.isEmpty())                   return type;
     return {};
-}
-
-/// Priority display string matching MFC eMule.
-QString priorityDisplay(int prio, bool isAuto)
-{
-    QString name;
-    switch (prio) {
-    case 4:  name = QObject::tr("Very Low");  break;
-    case 0:  name = QObject::tr("Low");       break;
-    case 1:  name = QObject::tr("Normal");    break;
-    case 2:  name = QObject::tr("High");      break;
-    case 3:  name = QObject::tr("Very High"); break;
-    default: name = QObject::tr("Normal");    break;
-    }
-    if (isAuto)
-        return QObject::tr("Auto [%1]").arg(name);
-    return name;
 }
 
 /// Priority ordinal for sorting (higher priority = higher ordinal).
@@ -106,7 +90,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColType:
             return fileTypeDisplay(f.fileType);
         case ColPriority:
-            return priorityDisplay(f.upPriority, f.isAutoUpPriority);
+            return uploadPriorityText(f.upPriority, f.isAutoUpPriority);
         case ColRequests:
             return QStringLiteral("%1 (%2)").arg(f.requests).arg(f.allTimeRequests);
         case ColTransferred:
@@ -139,7 +123,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             "Complete Sources:\t%11\n"
             "Folder:\t%12")
             .arg(f.fileName, f.hash, fileTypeDisplay(f.fileType),
-                 priorityDisplay(f.upPriority, f.isAutoUpPriority))
+                 uploadPriorityText(f.upPriority, f.isAutoUpPriority))
             .arg(f.requests).arg(f.allTimeRequests)
             .arg(f.acceptedUploads).arg(f.allTimeAccepted)
             .arg(formatByteSize(f.transferred), formatByteSize(f.allTimeTransferred))

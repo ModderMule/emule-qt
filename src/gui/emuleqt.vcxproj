@@ -215,6 +215,8 @@
     <ClCompile Include="utils\FileTypeIcons.cpp" />
     <ClCompile Include="utils\NzbAdd.cpp" />
     <ClCompile Include="utils\NzbDrop.cpp" />
+    <ClCompile Include="utils\PriorityText.cpp" />
+    <ClCompile Include="utils\Smileys.cpp" />
     <ClCompile Include="utils\RatingIcons.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
@@ -302,6 +304,8 @@
     <ClInclude Include="controls\KnownTypeStyle.h" />
     <ClInclude Include="utils\NzbAdd.h" />
     <ClInclude Include="utils\NzbDrop.h" />
+    <ClInclude Include="utils\PriorityText.h" />
+    <ClInclude Include="utils\Smileys.h" />
     <ClInclude Include="utils\RatingIcons.h" />
     <ClInclude Include="utils\Ed2kLinkImporter.h" />
     <ClInclude Include="utils\HttpCacheLinkImporter.h" />

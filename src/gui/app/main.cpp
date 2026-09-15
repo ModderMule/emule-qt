@@ -447,11 +447,18 @@ int main(int argc, char* argv[])
             // GetPreferences response inside the dialog arrives.
             eMule::Ipc::IpcMessage reqPrefs(eMule::Ipc::IpcMsgType::GetPreferences);
             ipcClient.sendRequest(std::move(reqPrefs),
-                                  [](const eMule::Ipc::IpcMessage& resp) {
+                                  [&mainWindow](const eMule::Ipc::IpcMessage& resp) {
+                // A failed reply (the connection dropped first) has no map, and
+                // applying one would zero every daemon-owned setting.
+                if (!resp.fieldBool(0))
+                    return;
                 eMule::thePrefs.updateFromCbor(resp.fieldMap(1));
                 // logToDiskGui is stored by the daemon (it owns preferences.yml)
                 // but acted on here, so the sink follows the value that just landed.
                 eMule::LogWidget::applyLogFileSettings();
+                // The graph maxima just landed, and the rate scopes are pinned to them.
+                if (auto* stats = mainWindow.statisticsPanel())
+                    stats->applySettings();
             });
 
             // Automatic version check: one now if the interval has elapsed, then

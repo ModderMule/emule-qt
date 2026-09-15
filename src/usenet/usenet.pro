@@ -36,6 +36,7 @@ SOURCES += \
     post/Par2Verifier.cpp \
     post/UsenetDirectUnpack.cpp \
     post/UsenetPostProcessor.cpp \
+    post/UsenetReleaseChecks.cpp \
     post/UsenetUnpacker.cpp \
     queue/ArticleWriter.cpp \
     queue/UsenetQueue.cpp \
@@ -43,6 +44,7 @@ SOURCES += \
     queue/UsenetQueueItem.cpp \
     queue/UsenetQueueStore.cpp \
     queue/UsenetHealth.cpp \
+    queue/UsenetRepairEstimate.cpp \
     queue/UsenetHistory.cpp \
     queue/UsenetStatistics.cpp \
     queue/UsenetUsage.cpp \
@@ -68,6 +70,7 @@ HEADERS += \
     post/Par2Verifier.h \
     post/UsenetDirectUnpack.h \
     post/UsenetPostProcessor.h \
+    post/UsenetReleaseChecks.h \
     post/UsenetUnpacker.h \
     queue/ArticleWriter.h \
     queue/UsenetQueue.h \
@@ -75,6 +78,7 @@ HEADERS += \
     queue/UsenetQueueItem.h \
     queue/UsenetQueueStore.h \
     queue/UsenetHealth.h \
+    queue/UsenetRepairEstimate.h \
     queue/UsenetHistory.h \
     queue/UsenetStatistics.h \
     queue/UsenetUsage.h \

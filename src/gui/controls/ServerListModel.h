@@ -60,6 +60,7 @@ public:
         ColPing,
         ColUsers,
         ColMaxUsers,
+        ColFiles,
         ColPreference,
         ColFailed,
         ColStatic,

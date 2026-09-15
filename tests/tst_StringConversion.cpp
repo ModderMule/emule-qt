@@ -146,6 +146,19 @@ private slots:
         QCOMPARE(eMule::formatByteRate(612.3 * 1024.0), QStringLiteral("612.30 KB/s"));
     }
 
+    // ---- formatShortNumber (MFC CastItoIShort) ----
+
+    void testFormatShortNumber()
+    {
+        QCOMPARE(eMule::formatShortNumber(0), QStringLiteral("0"));
+        QCOMPARE(eMule::formatShortNumber(-5), QStringLiteral("0"));
+        QCOMPARE(eMule::formatShortNumber(999), QStringLiteral("999"));
+        QCOMPARE(eMule::formatShortNumber(1000), QStringLiteral("1.00 k"));   // 1000-based, not 1024
+        QCOMPARE(eMule::formatShortNumber(1'234'567), QStringLiteral("1.23 M"));
+        QCOMPARE(eMule::formatShortNumber(int64_t{5'000'000'000}), QStringLiteral("5.00 G"));
+        QCOMPARE(eMule::formatShortNumber(int64_t{2'500'000'000'000}), QStringLiteral("2.50 T"));
+    }
+
     // ---- formatDuration ----
 
     void testFormatDurationZero()

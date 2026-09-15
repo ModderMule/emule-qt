@@ -57,7 +57,8 @@ UsenetWorker::~UsenetWorker()
 // Public slots
 // ---------------------------------------------------------------------------
 
-void UsenetWorker::setServers(QList<NewsServer> servers, int retryIntervalSec)
+void UsenetWorker::setServers(QList<NewsServer> servers, int retryIntervalSec,
+                              QNetworkProxy proxy)
 {
     // Constructed lazily and here rather than in the constructor: the object is
     // moveToThread()'d after construction, and the pool's sockets must belong to
@@ -65,6 +66,7 @@ void UsenetWorker::setServers(QList<NewsServer> servers, int retryIntervalSec)
     if (!m_pool)
         m_pool = std::make_unique<NntpServerPool>();
 
+    m_pool->setProxy(proxy);
     m_pool->setRetryInterval(retryIntervalSec);
     m_pool->setServers(std::move(servers));
 
@@ -261,8 +263,11 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
         // this, stopping the engine backs the server off once per article still in
         // flight — dozens of warnings naming a fault that never happened, and a
         // real 60 s stall for any caller whose pool outlives the shutdown.
+        // Nor is a dead proxy: it fails every account at once, and backing each
+        // off would outlast the proxy coming back. The queue waits for it instead.
         if (!reusable && !m_shuttingDown && !result.serverKey.isEmpty()
-            && error != NntpError::ArticleNotFound && error != NntpError::GroupNotFound) {
+            && error != NntpError::ArticleNotFound && error != NntpError::GroupNotFound
+            && error != NntpError::ProxyFailed) {
             // Name the error. A backoff is the most consequential thing this
             // module does on its own — it takes a provider out for a minute —
             // and "backed off" with no cause is unactionable in a log.

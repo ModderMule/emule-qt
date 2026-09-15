@@ -11,6 +11,7 @@
 /// bytes, smileys, and query strings whose '&' must reach the handler as '&', not as
 /// the "&amp;" the old detect-URLs-in-rendered-HTML pass captured.
 
+#include "utils/Smileys.h"
 #include "utils/TextLinks.h"
 
 #include <QRegularExpression>
@@ -89,6 +90,12 @@ private slots:
     // The click itself, through a real widget
     void clickingAnAnchorDeliversThePlainLink();
     void clickingDoesNotNavigateTheBrowser();
+
+    // Smileys (utils/Smileys.h), matched on the raw text
+    void aSmileyWithAngleBracketsRenders();
+    void smileysNeedWordBoundaries();
+    void markupAroundASmileyStaysEscaped();
+    void placeholderCharactersFromAPeerAreDropped();
 };
 
 void TestTextLinks::ed2kLinkSurvivesRoundTrip()
@@ -295,6 +302,53 @@ void TestTextLinks::clickingDoesNotNavigateTheBrowser()
 
     QCOMPARE(browser.toPlainText(), before);
     QVERIFY(browser.source().isEmpty());
+}
+
+// ---------------------------------------------------------------------------
+// Smileys
+// ---------------------------------------------------------------------------
+
+/// Substitution used to run over escaped HTML, where ">_>" is "&gt;_&gt;" and never matches.
+void TestTextLinks::aSmileyWithAngleBracketsRenders()
+{
+    const QString html = eMule::Smileys::render(QStringLiteral("hi >_> there"));
+    QVERIFY2(html.contains(QStringLiteral("Smiley_lookside.ico")), qPrintable(html));
+    QVERIFY(!html.contains(QStringLiteral("&gt;_&gt;")));
+
+    QVERIFY(eMule::Smileys::render(QStringLiteral("<*_*>")).contains(QStringLiteral("Smiley_Love")));
+}
+
+/// MFC CHTRichEditCtrl::AddSmileys: after a space or '.', or at the start; before a space,
+/// a line break or the end. A bare substring match turned "a:/b" into an image.
+void TestTextLinks::smileysNeedWordBoundaries()
+{
+    using eMule::Smileys::render;
+    QVERIFY(!render(QStringLiteral("a:/b")).contains(QStringLiteral("<img")));
+    QVERIFY(!render(QStringLiteral("hi:)")).contains(QStringLiteral("<img")));
+    QVERIFY(!render(QStringLiteral(":)x")).contains(QStringLiteral("<img")));
+    QCOMPARE(render(QStringLiteral(":) :)")).count(QStringLiteral("<img")), 2);
+    QVERIFY(render(QStringLiteral("end.:)")).contains(QStringLiteral("Smiley_Smile")));
+
+    // ":))" is its own smiley, not ":)" plus a stray bracket: ":)" is not followed by a boundary
+    const QString happy = render(QStringLiteral(":))"));
+    QVERIFY2(happy.contains(QStringLiteral("Smiley_Happy")), qPrintable(happy));
+    QCOMPARE(happy.count(QStringLiteral("<img")), 1);
+}
+
+void TestTextLinks::markupAroundASmileyStaysEscaped()
+{
+    const QString html = eMule::Smileys::render(QStringLiteral("<b>x</b> :-) & more"));
+    QVERIFY2(html.startsWith(QStringLiteral("&lt;b&gt;x&lt;/b&gt; <img src=\"qrc:/smileys/Smiley_Smile.ico\"")),
+             qPrintable(html));
+    QVERIFY(html.endsWith(QStringLiteral(" &amp; more")));
+}
+
+/// The placeholders live in the private use area; one arriving in a message must not
+/// come out as an image.
+void TestTextLinks::placeholderCharactersFromAPeerAreDropped()
+{
+    const QString sneaky = QStringLiteral("a") + QChar(u'\uE000') + QStringLiteral("b");
+    QCOMPARE(eMule::Smileys::render(sneaky), QStringLiteral("ab"));
 }
 
 QTEST_MAIN(TestTextLinks)

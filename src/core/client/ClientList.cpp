@@ -137,19 +137,11 @@ UpDownClient* ClientList::attachToAlreadyKnown(UpDownClient* newClient, ClientRe
                 return nullptr;
             }
 
-            // The known client's socket is stale — drop it before taking the new one.
-            // safeDelete() does not call removeSocket(), so the pool entry must go first
-            // or ListenSocket::process() would walk a dangling pointer.
-            if (theApp.listenSocket)
-                theApp.listenSocket->removeSocket(oldSocket);
-            // MFC clears the socket's back-pointer here (`socket->client = NULL`) so the
-            // dying socket cannot report back. The Qt equivalent has to cut the signal
-            // connections too, otherwise a clientDisconnected from the close below would
-            // reach `found` and null out the socket we are about to give it.
-            QObject::disconnect(oldSocket, nullptr, found, nullptr);
-            oldSocket->setClient(nullptr);
-            oldSocket->safeDelete();
-            found->setSocket(nullptr);
+            // The known client's socket is stale — drop it before taking the new one. MFC
+            // clears the socket's back-pointer here (`socket->client = NULL`); releaseSocket()
+            // also cuts the signals, or a clientDisconnected from the close would reach
+            // `found` and null out the socket we are about to give it.
+            found->releaseSocket(/*destroy*/ true);
         }
 
         // Re-home the socket. Disconnecting during the very emission that got us here is

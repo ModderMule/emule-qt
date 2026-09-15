@@ -28,8 +28,9 @@ public:
                                      QWidget* parent = nullptr);
 
     /// Load existing collection data for modify mode.
-    void loadExistingCollection(const QString& collectionHash,
-                                const QString& name,
+    /// Saving writes <incoming>/<name>.emulecollection like MFC, so there is no
+    /// source file to update in place; renaming saves a new one.
+    void loadExistingCollection(const QString& name,
                                 const QList<QVariantMap>& files,
                                 bool textFormat);
 
@@ -42,6 +43,9 @@ private:
     void onSave();
     void onFormatChanged();
 
+    /// @p overwrite: the user has agreed to replace an existing file of that name.
+    void sendSave(bool overwrite);
+
     IpcClient* m_ipc;
     QTreeWidget* m_sharedTree = nullptr;      // left pane
     QTreeWidget* m_collectionTree = nullptr;  // right pane
@@ -52,7 +56,6 @@ private:
     QCheckBox* m_signCheck = nullptr;
 
     QStringList m_preselectedHashes;
-    QString m_existingCollectionHash;  // non-empty in modify mode
 };
 
 } // namespace eMule

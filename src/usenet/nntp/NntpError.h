@@ -50,6 +50,14 @@ enum class NntpError : quint8 {
 
     // -- Anything else. ------------------------------------------------------
     ProtocolError,     ///< Unparseable or unexpected response.
+
+    // -- Local: the proxy in front of every server. ---------------------------
+    ///
+    /// Appended so no existing value shifts. Says nothing about any provider: a
+    /// dead proxy fails every account at once, and as a ConnectFailed it backed
+    /// each of them off and spent the article's retries until the item failed or
+    /// the article was booked missing.
+    ProxyFailed,
 };
 
 /// Whether the article should be retried on the *next* priority level rather
@@ -72,6 +80,7 @@ enum class NntpError : quint8 {
     case NntpError::ServerUnavailable:
     case NntpError::AuthFailed:
     case NntpError::ProtocolError:
+    case NntpError::ProxyFailed:
         return true;
     case NntpError::None:
     case NntpError::ArticleNotFound:

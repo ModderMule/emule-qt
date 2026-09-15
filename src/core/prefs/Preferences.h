@@ -973,6 +973,39 @@ public:
     [[nodiscard]] bool usenetAutoAddPaused() const;
     void setUsenetAutoAddPaused(bool val);
 
+    /// Route news-server connections through the Proxy page's proxy. On by
+    /// default: a user who set a proxy up meant their traffic to go through it.
+    /// Meaningless while no proxy is configured.
+    [[nodiscard]] bool usenetUseProxy() const;
+    void setUsenetUseProxy(bool val);
+
+    // -- Usenet release checks ------------------------------------------------
+    //
+    // The actions below take one of three values: 0 keep going, 1 pause (the
+    // default), 2 fail. Resume from the queue overrides a check for that item.
+
+    /// Verify a release against its .sfv when PAR2 did not run — none shipped,
+    /// PAR2 is off, or this build has no PAR2 support.
+    [[nodiscard]] bool usenetSfvCheck() const;
+    void setUsenetSfvCheck(bool val);
+
+    /// A download that provably cannot be repaired: more blocks damaged than
+    /// its whole recovery set holds.
+    [[nodiscard]] int usenetUnrepairableAction() const;
+    void setUsenetUnrepairableAction(int val);
+
+    /// A media release carrying a file with one of usenetUnwantedExtensions(),
+    /// or a media file whose bytes are no media container.
+    [[nodiscard]] int usenetUnwantedAction() const;
+    void setUsenetUnwantedAction(int val);
+
+    /// Comma-separated, dots optional. Empty turns the unwanted check off.
+    [[nodiscard]] QString usenetUnwantedExtensions() const;
+    void setUsenetUnwantedExtensions(const QString& val);
+
+    static constexpr QLatin1StringView kDefaultUsenetUnwantedExtensions{
+        "exe, com, scr, pif, lnk, bat, cmd, vbs, vbe, js, jse, wsf, hta, cpl, msi, ps1, jar, reg"};
+
     /// A folder watched for .nzb files, empty when the feature is off.
     ///
     /// Refused when it sits inside the temp tree, the incoming directory or the
@@ -1531,6 +1564,10 @@ public:
     /// so the GUI's thePrefs always reflects live daemon values.
     void updateFromCbor(const QCborMap& prefs);
 
+    /// The daemon-owned settings exactly as GetPreferences sends them. The Options
+    /// dialog's offline path reads the same map, so neither path misses a key.
+    [[nodiscard]] QCborMap toIpcMap() const;
+
     // -- Factory methods (bridge to existing config structs) -------------------
 
     /// Build an ObfuscationConfig from current encryption + general settings.
@@ -1538,6 +1575,11 @@ public:
 
     /// Build a ProxySettings struct from current proxy settings.
     [[nodiscard]] ProxySettings proxySettings() const;
+
+    /// proxySettings(), switched off unless usenetUseProxy(). The one answer to
+    /// "which route does a news-server connection take", for downloads and the
+    /// Test button alike.
+    [[nodiscard]] ProxySettings usenetProxySettings() const;
 
     // -- Static utilities -----------------------------------------------------
 

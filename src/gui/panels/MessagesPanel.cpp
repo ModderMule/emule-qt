@@ -11,11 +11,13 @@
 #include "dialogs/DetailDialog.h"
 #include "utils/ListActivation.h"
 #include "utils/PanelPoller.h"
+#include "utils/Smileys.h"
 #include "utils/TextLinks.h"
 
 
 #include <QAction>
 #include <QCborArray>
+#include <QColor>
 #include <QDateTime>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -45,6 +47,14 @@ MessagesPanel::MessagesPanel(QWidget* parent)
     : QWidget(parent)
 {
     setupUi();
+
+    // MFC ChatSelector.cpp:93 — unread sessions blink every 1.5 s
+    m_blinkTimer = new QTimer(this);
+    m_blinkTimer->setInterval(1500);
+    connect(m_blinkTimer, &QTimer::timeout, this, [this] {
+        m_blinkOn = !m_blinkOn;
+        refreshNotifyCues();
+    });
 }
 
 MessagesPanel::~MessagesPanel() = default;
@@ -77,6 +87,14 @@ void MessagesPanel::setCustomFont(const QFont& font)
 {
     if (m_chatBrowser)
         m_chatBrowser->setFont(font);
+}
+
+void MessagesPanel::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    // The session on screen counts as read once the panel is (ChatSelector::ShowChat)
+    if (!m_activeFriendHash.isEmpty())
+        setNotify(m_activeFriendHash, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,13 +172,17 @@ void MessagesPanel::onChatMessagePush(const IpcMessage& msg)
 
     appendChatMessage(senderHash, senderName, message, false);
 
-    // Auto-open a tab for the sender if one doesn't exist
+    // A new session opens behind the one being read (MFC StartSession(sender, false));
+    // the first tab becomes current on its own.
     if (findTabByHash(senderHash) < 0)
-        openChatTab(senderHash, senderName);
+        openChatTab(senderHash, senderName, /*activate*/ false);
 
-    // If this is the active chat, refresh the display
     if (senderHash == m_activeFriendHash)
         updateChatDisplay();
+
+    // MFC ChatSelector.cpp:239-248: flag it unless it is the session on screen
+    if (senderHash != m_activeFriendHash || !isVisible())
+        setNotify(senderHash, true);
 }
 
 void MessagesPanel::onFriendListPush(const IpcMessage& /*msg*/)
@@ -415,6 +437,8 @@ void MessagesPanel::requestFriendList()
 
     IpcMessage msg(IpcMsgType::GetFriends);
     m_ipc->sendRequest(std::move(msg), [this, sel](const IpcMessage& resp) {
+        if (!resp.fieldBool(0))
+            return;   // keep the list: a dropped connection would otherwise empty it
         const QCborArray friends = resp.fieldArray(1);
         m_friendModel->refreshFromCborArray(friends);
         m_friendsLabel->setText(tr("Friends (%1)").arg(m_friendModel->rowCount()));
@@ -459,7 +483,7 @@ void MessagesPanel::updateChatDisplay()
         // Linkify the raw message; smileys are rendered into the gaps between links
         // only, so a ':/' inside a URL cannot turn into an image (TextLinks.h).
         const QString escapedText = TextLinks::linkify(
-            msg.text, [this](const QString& text) { return renderSmileys(text.toHtmlEscaped()); });
+            msg.text, [](const QString& text) { return Smileys::render(text); });
         m_chatBrowser->append(
             QStringLiteral("<font color='gray'>[%1]</font> "
                            "<font color='%2'><b>%3:</b></font> %4")
@@ -555,19 +579,27 @@ int MessagesPanel::findTabByHash(const QString& friendHash) const
     return -1;
 }
 
-void MessagesPanel::openChatTab(const QString& friendHash, const QString& friendName)
+void MessagesPanel::openChatTab(const QString& friendHash, const QString& friendName,
+                                bool activate)
 {
     const int existing = findTabByHash(friendHash);
     if (existing >= 0) {
-        m_chatTabBar->setCurrentIndex(existing);
+        if (activate)
+            m_chatTabBar->setCurrentIndex(existing);
         return;
     }
 
+    // Data is set before the tab can become current: adding the first tab emits
+    // currentChanged, and onChatTabChanged reads it.
+    const QSignalBlocker block(m_chatTabBar);
     const int idx = m_chatTabBar->addTab(
         QIcon(QStringLiteral(":/icons/Chat.ico")), friendName);
     m_chatTabBar->setTabData(idx, QVariant(friendHash));
     updateTabBarVisibility();
-    m_chatTabBar->setCurrentIndex(idx);
+    if (activate || m_chatTabBar->count() == 1) {
+        m_chatTabBar->setCurrentIndex(idx);
+        onChatTabChanged(idx);
+    }
 }
 
 void MessagesPanel::closeChatTab(int tabIndex)
@@ -577,8 +609,10 @@ void MessagesPanel::closeChatTab(int tabIndex)
 
     const QString hash = m_chatTabBar->tabData(tabIndex).toString();
     m_chatHistory.remove(hash);
+    m_notifyHashes.remove(hash);
     m_chatTabBar->removeTab(tabIndex);
     updateTabBarVisibility();
+    refreshNotifyCues();
 
     if (m_chatTabBar->count() == 0) {
         m_activeFriendHash.clear();
@@ -603,6 +637,7 @@ void MessagesPanel::onChatTabChanged(int index)
     const QString hash = m_chatTabBar->tabData(index).toString();
     m_activeFriendHash = hash;
     updateChatDisplay();
+    setNotify(hash, false);   // MFC ShowChat clears it on selection
 
     // Select the corresponding friend in the list and update info
     const int friendRow = m_friendModel->findByHash(hash);
@@ -618,39 +653,13 @@ void MessagesPanel::onChatTabCloseRequested(int index)
 }
 
 // ---------------------------------------------------------------------------
-// Smiley data table (matching MFC SmileySelector.cpp)
+// Smiley selector
 // ---------------------------------------------------------------------------
-
-struct SmileyEntry {
-    const char* icon;
-    const char* code;
-};
-
-static constexpr SmileyEntry kSmileys[] = {
-    { "Smiley_Smile",    ":-)"     },
-    { "Smiley_Happy",    ":-))"    },
-    { "Smiley_Laugh",    ":-D"     },
-    { "Smiley_Wink",     ";-)"     },
-    { "Smiley_Tongue",   ":-P"     },
-    { "Smiley_Interest", "=-)"     },
-    { "Smiley_Sad",      ":-("     },
-    { "Smiley_Cry",      ":'("     },
-    { "Smiley_Disgust",  ":-|"     },
-    { "Smiley_omg",      ":-O"     },
-    { "Smiley_Skeptic",  ":-/"     },
-    { "Smiley_Love",     ":-*"     },
-    { "Smiley_smileq",   ":-]"     },
-    { "Smiley_sadq",     ":-["     },
-    { "Smiley_Ph34r",    ":ph34r:" },
-    { "Smiley_lookside", ">_>"     },
-    { "Smiley_Sealed",   ":-X"     },
-};
-
-static constexpr int kSmileyCount = std::size(kSmileys);
-static constexpr int kSmileyCols  = 6;
 
 void MessagesPanel::showSmileySelector()
 {
+    constexpr int kSmileyCols = 6;
+
     auto* menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
 
@@ -659,16 +668,18 @@ void MessagesPanel::showSmileySelector()
     grid->setSpacing(2);
     grid->setContentsMargins(4, 4, 4, 4);
 
-    for (int i = 0; i < kSmileyCount; ++i) {
+    const auto smileys = Smileys::picker();
+    for (int i = 0; i < static_cast<int>(smileys.size()); ++i) {
+        const auto& smiley = smileys[static_cast<size_t>(i)];
         auto* btn = new QToolButton(gridWidget);
-        btn->setIcon(QIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(kSmileys[i].icon))));
+        btn->setIcon(QIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(smiley.icon))));
         btn->setIconSize(QSize(24, 24));
         btn->setFixedSize(28, 28);
         btn->setAutoRaise(true);
-        btn->setToolTip(QString::fromLatin1(kSmileys[i].code));
+        btn->setToolTip(QString::fromLatin1(smiley.code));
 
-        connect(btn, &QToolButton::clicked, this, [this, i, menu]() {
-            const QString code = QString::fromLatin1(kSmileys[i].code);
+        connect(btn, &QToolButton::clicked, this,
+                [this, code = QString::fromLatin1(smiley.code), menu]() {
             const int pos = m_messageInput->cursorPosition();
             QString text = m_messageInput->text();
 
@@ -697,32 +708,47 @@ void MessagesPanel::showSmileySelector()
     menu->popup(m_smileyBtn->mapToGlobal(QPoint(0, -menu->sizeHint().height())));
 }
 
-QString MessagesPanel::renderSmileys(const QString& text) const
+// ---------------------------------------------------------------------------
+// Private: unread sessions
+// ---------------------------------------------------------------------------
+
+void MessagesPanel::setNotify(const QString& friendHash, bool on)
 {
-    QString result = text;
+    if (on == m_notifyHashes.contains(friendHash))
+        return;
+    if (on)
+        m_notifyHashes.insert(friendHash);
+    else
+        m_notifyHashes.remove(friendHash);
+    refreshNotifyCues();
+}
 
-    // Replace longer codes first to avoid partial matches (e.g. ":-)" inside ":-))")
-    // The table is ordered with ":-)" before ":-))", so process in reverse length order
-    // Actually, iterate in order but replace ":-)" last — simplest: sort by code length desc
-    struct IndexedEntry {
-        int index;
-        int codeLen;
-    };
-    QVector<IndexedEntry> sorted;
-    sorted.reserve(kSmileyCount);
-    for (int i = 0; i < kSmileyCount; ++i)
-        sorted.append({i, static_cast<int>(std::strlen(kSmileys[i].code))});
-    std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) {
-        return a.codeLen > b.codeLen;
-    });
-
-    for (const auto& entry : sorted) {
-        const QString code = QString::fromLatin1(kSmileys[entry.index].code);
-        const QString img = QStringLiteral("<img src=\"qrc:/smileys/%1.ico\" width=\"16\" height=\"16\">")
-                                .arg(QLatin1StringView(kSmileys[entry.index].icon));
-        result.replace(code, img);
+void MessagesPanel::refreshNotifyCues()
+{
+    // MFC CChatSelector::OnTimer (ChatSelector.cpp:372-399): an unread session alternates
+    // Message and MessagePending, every other one shows Chat.
+    if (m_notifyHashes.isEmpty()) {
+        m_blinkTimer->stop();
+        m_blinkOn = true;   // the next one starts on the Message phase
+    } else if (!m_blinkTimer->isActive()) {
+        m_blinkTimer->start();
     }
-    return result;
+
+    for (int i = 0; i < m_chatTabBar->count(); ++i) {
+        const bool notify = m_notifyHashes.contains(m_chatTabBar->tabData(i).toString());
+        const QString icon = !notify  ? QStringLiteral(":/icons/Chat.ico")
+                             : m_blinkOn ? QStringLiteral(":/icons/Message.ico")
+                                         : QStringLiteral(":/icons/MessagePending.ico");
+        m_chatTabBar->setTabIcon(i, QIcon(icon));
+        // The same cue IrcPanel gives an inactive channel with new lines
+        m_chatTabBar->setTabTextColor(i, notify ? QColor(Qt::red) : QColor());
+    }
+
+    const int state = m_notifyHashes.isEmpty() ? 0 : (m_blinkOn ? 1 : 2);
+    if (state != m_messageState) {
+        m_messageState = state;
+        emit messageStateChanged(state);
+    }
 }
 
 } // namespace eMule

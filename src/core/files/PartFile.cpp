@@ -3005,15 +3005,11 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         if (extSX ? haveCryptFlags : (version >= 4))
             client->setConnectOptions(cryptFlags, true, false);
 
-        if (theApp.downloadQueue) {
-            if (theApp.downloadQueue->checkAndAddSource(this, client)) {
-                client->tryToConnect();
-            } else {
-                delete client;
-            }
-        } else {
+        // Queued, not dialled — MFC PartFile.cpp:3927. process() reaches it through
+        // askForDownload(), which owns the socket cap, the re-ask throttle, the LowID
+        // handling and the A4AF swap that a direct tryToConnect() skipped.
+        if (!theApp.downloadQueue || !theApp.downloadQueue->checkAndAddSource(this, client))
             delete client;
-        }
     }
     } catch (...) {
         logWarning(QStringLiteral("Truncated or corrupt source-exchange packet for %1").arg(fileName()));

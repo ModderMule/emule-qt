@@ -320,7 +320,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             addPrioAction(tr("Low"),       PrLow);
             addPrioAction(tr("Normal"),    PrNormal);
             addPrioAction(tr("High"),      PrHigh);
-            addPrioAction(tr("Very High"), PrVeryHigh);
+            addPrioAction(tr("Release"),   PrVeryHigh);   // MFC IDS_PRIORELEASE
             prioMenu->addSeparator();
             auto* autoAct = prioMenu->addAction(tr("Auto"), this, [this, hashes]() {
                 sendSetPriorityBatch(hashes, PrNormal, true);
@@ -369,7 +369,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
                 }
 
                 auto* dlg = new CollectionCreateDialog(m_ipc, {}, this);
-                dlg->loadExistingCollection({}, name, files, textFmt);
+                dlg->loadExistingCollection(name, files, textFmt);
                 dlg->setAttribute(Qt::WA_DeleteOnClose);
                 dlg->show();
             });
@@ -1034,6 +1034,8 @@ void SharedFilesPanel::sendSetFileShared(const QString& filePath, bool shared)
     req.append(filePath);
     req.append(shared);
     m_ipc->sendRequest(std::move(req), [this, shared](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;   // connection dropped: the refetch below could not run either
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             StatusBarNotifier::post(shared ? tr("Could not share that file")
                                            : tr("Could not unshare that file"));

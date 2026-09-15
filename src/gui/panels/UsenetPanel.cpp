@@ -699,6 +699,8 @@ void UsenetPanel::onSetPassword()
     msg.append(ids.first());
     msg.append(password);
     m_ipc->sendRequest(msg, [this](const Ipc::IpcMessage& reply) {
+        if (!reply.isValid())
+            return;   // connection dropped
         if (!reply.fieldBool(0)) {
             StatusBarNotifier::post(tr("Could not set the password."));
             return;
@@ -1188,6 +1190,8 @@ void UsenetPanel::sendCategoryStatus(int index, Ipc::CategoryAction action)
     msg.append(static_cast<qint64>(index));
     msg.append(static_cast<qint64>(action));
     m_ipc->sendRequest(msg, [this](const Ipc::IpcMessage& resp) {
+        if (!resp.isValid())
+            return;   // connection dropped
         if (!resp.fieldBool(0)) {
             StatusBarNotifier::post(
                 tr("Could not apply that to the category: %1").arg(resp.field(1).toString()));

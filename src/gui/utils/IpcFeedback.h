@@ -25,6 +25,9 @@ namespace eMule::IpcFeedback {
 /// QCborValue::toBool() yields false for that integer, so one check covers both, and
 /// field 1 is the message either way.
 ///
+/// A dropped connection (an invalid message, see IpcClient::sendRequest) returns false
+/// without a box: nothing was refused, and one box per pending request is noise.
+///
 /// @param parent    Box parent; may be null. Guard it with QPointer inside lambdas.
 /// @param title     Box caption, e.g. tr("Search Kad").
 /// @param fallback  Shown when the daemon sent no message of its own.

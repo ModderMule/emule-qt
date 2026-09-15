@@ -877,9 +877,9 @@ std::unique_ptr<Packet> KnownFile::buildSrcInfoPacket(
     const auto countPos = data.position();
     data.writeUInt16(0);
 
-    // ExtSX pins usedVersion to 1, so keying the cap on the version alone would quietly
-    // give our best-equipped peers the 50-source branch instead of 500.
-    const uint16 maxSources = (extSX || usedVersion >= 4) ? 500 : 50;
+    // 500 for every version and format — MFC PartFile.cpp:3731, KnownFile.cpp:1141. A 50 cap
+    // for v1-v3 peers had no reference counterpart and starved them of sources.
+    constexpr uint16 maxSources = 500;
     uint16 count = 0;
 
     for (const auto* client : candidates) {

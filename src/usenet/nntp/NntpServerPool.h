@@ -27,6 +27,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QNetworkProxy>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -111,6 +112,11 @@ public:
     void blockServer(const QString& serverKey);
     [[nodiscard]] bool isServerBlocked(const QString& serverKey) const;
 
+    /// Route for connections opened from now on. Open ones keep theirs:
+    /// UsenetQueue rebuilds its workers, and with them their pools, on every
+    /// settings change, which is what makes a new proxy take effect.
+    void setProxy(const QNetworkProxy& proxy) { m_proxy = proxy; }
+
     /// Seconds a blocked server stays out of rotation. 0 disables blocking.
     void setRetryInterval(int seconds) { m_retryIntervalSec = seconds; }
     [[nodiscard]] int retryInterval() const { return m_retryIntervalSec; }
@@ -161,6 +167,7 @@ private:
     void dropConnections(const QString& serverKey);
 
     QList<NewsServer> m_servers;
+    QNetworkProxy m_proxy{QNetworkProxy::NoProxy};
     QHash<QString, int> m_normalizedLevel;   ///< server key -> 0..maxLevel
     QHash<QString, NntpConnectionBucket> m_buckets;   ///< server key -> its budget
     QHash<QString, qint64> m_blockedUntil;   ///< server key -> epoch seconds

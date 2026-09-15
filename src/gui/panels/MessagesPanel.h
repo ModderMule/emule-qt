@@ -11,6 +11,7 @@
 #include "IpcMessage.h"
 
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <QVector>
 #include <QWidget>
@@ -57,6 +58,13 @@ signals:
     /// back to an empty string (see TextLinks.h). main.cpp routes it.
     void linkActivated(const QString& link);
 
+    /// Unread chat, for the status bar's message icon (MFC ShowMessageState):
+    /// 0 none, 1 and 2 the two blink phases.
+    void messageStateChanged(int state);
+
+protected:
+    void showEvent(QShowEvent* event) override;
+
 private slots:
     void onFriendClicked(const QModelIndex& index);
     void onSendClicked();
@@ -81,12 +89,17 @@ private:
 
     void showAddFriendDialog();
     void showFindDialog();
-    [[nodiscard]] QString renderSmileys(const QString& text) const;
 
     [[nodiscard]] int findTabByHash(const QString& friendHash) const;
-    void openChatTab(const QString& friendHash, const QString& friendName);
+    /// @p activate false opens it in the background, as an incoming message does.
+    void openChatTab(const QString& friendHash, const QString& friendName, bool activate = true);
     void closeChatTab(int tabIndex);
     void updateTabBarVisibility();
+
+    /// Mark or clear a session as unread.
+    void setNotify(const QString& friendHash, bool on);
+    /// Tab icons, tab text colour and the status-bar state for unread sessions.
+    void refreshNotifyCues();
 
     // Models
     FriendListModel* m_friendModel = nullptr;
@@ -129,6 +142,12 @@ private:
 
     // Chat history (session-only, keyed by friend hash)
     QMap<QString, QVector<ChatMsg>> m_chatHistory;
+
+    // Unread sessions (MFC chat item `notify`), blinking while any are left
+    QSet<QString> m_notifyHashes;
+    QTimer* m_blinkTimer = nullptr;
+    bool m_blinkOn = true;
+    int m_messageState = 0;
 };
 
 } // namespace eMule

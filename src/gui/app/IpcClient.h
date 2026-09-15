@@ -69,7 +69,15 @@ public:
 
     /// Send a request and register a callback for the response.
     /// Returns the sequence ID used for this request.
+    ///
+    /// The callback runs exactly once while this client lives: with the reply, or — when
+    /// the connection drops first — with a default-constructed message, which reads as
+    /// a failure (fieldBool(0) is false). Callbacks must check before using the payload;
+    /// IpcMessage::isValid() tells a dropped connection from a daemon refusal.
     int sendRequest(Ipc::IpcMessage msg, ResponseCallback callback = nullptr);
+
+    /// Forget the callback of request @p seqId; a reply that still arrives is ignored.
+    void cancelRequest(int seqId);
 
     /// Fan one request per hash out to the daemon, then run @p onAllDone once the last
     /// reply lands. @p build makes the message for a hash, so callers can attach their own
@@ -172,6 +180,9 @@ private:
     void requestServerMessages();
     void scheduleReconnect();
     void resetConnection();
+
+    /// Answer every pending request with a failure, one event-loop turn later.
+    void failPendingRequests();
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     QTcpSocket* m_socket = nullptr;  // Owned by IpcConnection after handoff

@@ -319,6 +319,13 @@ void EMSocket::readIncoming(bool peerShutdown)
         m_pendingPacketSize = 0;
         onError(kErrWrongHeader);
         return;
+    } catch (...) {
+        logWarning(QStringLiteral("EMSocket::onReadyRead — unhandled exception in packet processing (peer %1:%2)")
+                       .arg(peerAddress().toString()).arg(peerPort()));
+        m_pendingPacket.reset();
+        m_pendingPacketSize = 0;
+        onError(kErrWrongHeader);
+        return;
     }
 
     // Save any leftover bytes (partial header) for next read
@@ -869,31 +876,10 @@ bool EMSocket::useBigSendBuffer()
 
 void EMSocket::initProxySupport(const ProxySettings& settings)
 {
-    if (!settings.useProxy || settings.type == PROXYTYPE_NOPROXY)
-        return;
-
-    QNetworkProxy proxy;
-    switch (settings.type) {
-    case PROXYTYPE_SOCKS4:
-    case PROXYTYPE_SOCKS4A:
-    case PROXYTYPE_SOCKS5:
-        proxy.setType(QNetworkProxy::Socks5Proxy);
-        break;
-    case PROXYTYPE_HTTP10:
-    case PROXYTYPE_HTTP11:
-        proxy.setType(QNetworkProxy::HttpProxy);
-        break;
-    default:
-        return;
-    }
-
-    proxy.setHostName(settings.host);
-    proxy.setPort(settings.port);
-    if (settings.enablePassword) {
-        proxy.setUser(settings.user);
-        proxy.setPassword(settings.password);
-    }
-    setProxy(proxy);
+    // Off leaves the socket on DefaultProxy, as eD2K sockets always have been.
+    const QNetworkProxy proxy = toNetworkProxy(settings);
+    if (proxy.type() != QNetworkProxy::NoProxy)
+        setProxy(proxy);
 }
 
 // ---------------------------------------------------------------------------

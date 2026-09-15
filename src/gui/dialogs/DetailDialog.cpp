@@ -155,7 +155,8 @@ void connectDetailNavigation(DetailDialog* dialog, IpcClient* ipc,
                     // The list has already moved; keep the previous content rather
                     // than blanking the dialog, and tell the user it went nowhere.
                     if (!resp.fieldBool(0)) {
-                        QApplication::beep();
+                        if (resp.isValid())   // not for a dropped connection
+                            QApplication::beep();
                         return;
                     }
                     dlgPtr->setDetails(resp.field(1).toMap());

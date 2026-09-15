@@ -96,6 +96,21 @@ struct UsenetPostJob {
     /// only thing that would notice.
     bool hasMissingSegments = false;
 
+    /// Check the release against its .sfv when PAR2 did not run.
+    bool sfvEnabled = true;
+
+    /// What the download sealed, by name. An .sfv entry outside this list is a
+    /// sample nobody posted; one inside it and absent is damage.
+    QStringList expectedNames;
+
+    /// Lower case, no dots. Empty when the unwanted check is off, overridden
+    /// for this item, or set to keep going.
+    QStringList unwantedExtensions;
+
+    /// What the queue already knows about the release: a playable name in the
+    /// NZB, or a video tag in its title.
+    bool mediaRelease = false;
+
     /// Sets already extracted during the download. Their members are on disk in
     /// the same place this would have put them, so the unpack stage skips those
     /// sets — unless a repair ran, which invalidates them by definition.
@@ -154,6 +169,11 @@ struct UsenetPostResult {
     int blocksRepaired = 0;
 
     UsenetUnpackOutcome unpackOutcome = UsenetUnpackOutcome::NotRun;
+
+    /// A media release carrying files it must not, bare names. Not a failure:
+    /// the queue decides, from the user's setting, whether that pauses or fails
+    /// the item, and nothing was published.
+    QStringList unwantedFiles;
 
     QString message;
 };

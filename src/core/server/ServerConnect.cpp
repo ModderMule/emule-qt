@@ -284,7 +284,9 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
 
                 auto* client = theApp.clientList->findByConnIP(clientIP, clientPort);
                 if (!client) {
-                    client = new UpDownClient(clientPort, 0, clientIP, 0, nullptr);
+                    // The requester's IP is its user ID (network order, ed2kID). With 0 there
+                    // it reads as LowID and is never dialled. MFC ServerSocket.cpp:536.
+                    client = new UpDownClient(clientPort, clientIP, 0, 0, nullptr, true);
                     theApp.clientList->addClient(client);
                 }
 

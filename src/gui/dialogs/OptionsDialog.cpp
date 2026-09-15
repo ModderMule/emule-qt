@@ -53,6 +53,7 @@
 #include <QDate>
 #include <QLocale>
 #include <QPainter>
+#include <QPointer>
 #include <QProcess>
 #include <QPushButton>
 #include <QScreen>
@@ -181,6 +182,11 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_coreAddressEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_corePortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_coreTokenEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_langCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_enableOnlineSigCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_preventStandbyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showSplashCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_startWithOSCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Display page
     connect(m_depth3DSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
@@ -240,6 +246,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_proxyAuthCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_proxyUserEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_proxyPasswordEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_proxyUsenetCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Directories page
     connect(m_incomingDirEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
@@ -352,6 +359,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_dynUpGoingDownSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpNumPingsSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
 #ifdef Q_OS_WIN
+    connect(m_enableMiniMuleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autotakeEd2kCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_winFirewallCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_sparsePartFilesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -365,7 +373,11 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
         if (m_ipc && m_ipc->isConnected()) {
             m_reloadIPFilterBtn->setEnabled(false);
             Ipc::IpcMessage req(Ipc::IpcMsgType::ReloadIPFilter);
-            m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+            // Guarded: the dialog can close before the reply — or the failure a dropped
+            // connection sends — arrives.
+            m_ipc->sendRequest(std::move(req), [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+                if (!self)
+                    return;
                 m_reloadIPFilterBtn->setEnabled(true);
                 if (resp.fieldBool(0)) {
                     auto count = resp.fieldInt(1);
@@ -399,6 +411,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
         m_proxyAuthCheck->setEnabled(on);
         m_proxyUserEdit->setEnabled(on && m_proxyAuthCheck->isChecked());
         m_proxyPasswordEdit->setEnabled(on && m_proxyAuthCheck->isChecked());
+        m_proxyUsenetCheck->setEnabled(on);
     });
     connect(m_proxyAuthCheck, &QCheckBox::toggled, this, [this](bool on) {
         bool proxyOn = m_proxyEnableCheck->isChecked();
@@ -1220,6 +1233,15 @@ QWidget* OptionsDialog::createProxyPage()
     generalForm->addLayout(labelCol);
     generalForm->addLayout(editCol, 1);
     generalLayout->addLayout(generalForm);
+
+    m_proxyUsenetCheck = new QCheckBox(tr("Use for news servers"), generalGroup);
+    m_proxyUsenetCheck->setToolTip(
+        tr("Route Usenet downloads, availability checks and the news server Test "
+           "button through this proxy too. News servers switch over as soon as you "
+           "press OK.\n\n"
+           "Every Usenet connection then passes through the proxy, so its speed caps "
+           "the download, and many HTTP proxies only allow connections to port 443."));
+    generalLayout->addWidget(m_proxyUsenetCheck);
     layout->addWidget(generalGroup);
 
     // --- Authentication group ---
@@ -1256,6 +1278,7 @@ QWidget* OptionsDialog::createProxyPage()
     m_proxyAuthCheck->setEnabled(false);
     m_proxyUserEdit->setEnabled(false);
     m_proxyPasswordEdit->setEnabled(false);
+    m_proxyUsenetCheck->setEnabled(false);
 
     return page;
 }
@@ -2644,6 +2667,8 @@ QWidget* OptionsDialog::createWebInterfacePage()
             return;
         m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::ReloadWebTemplate),
                            [](const Ipc::IpcMessage& resp) {
+                               if (!resp.isValid())
+                                   return;   // connection dropped: neither reloaded nor refused
                                StatusBarNotifier::post(
                                    resp.fieldBool(0)
                                        ? OptionsDialog::tr("Web template reloaded")
@@ -3202,6 +3227,13 @@ QWidget* OptionsDialog::createUsenetPage()
            "be identified for unpacking either."));
     postLayout->addWidget(m_usenetRenameCheck);
 
+    m_usenetSfvCheck = new QCheckBox(tr("Verify with SFV when there is no PAR2"), postGroup);
+    m_usenetSfvCheck->setToolTip(
+        tr("A release posted without a PAR2 set often comes with an .sfv file "
+           "instead. Its checksums cannot repair anything, but a release they call "
+           "damaged is not published."));
+    postLayout->addWidget(m_usenetSfvCheck);
+
     m_usenetUnpackCheck = new QCheckBox(tr("Unpack archives"), postGroup);
     m_usenetUnpackCheck->setToolTip(
         tr("Extract RAR, 7z and ZIP volume sets once they have been verified.\n\n"
@@ -3250,6 +3282,36 @@ QWidget* OptionsDialog::createUsenetPage()
            "files with eD2K peers, who have no use for them."));
     postLayout->addWidget(m_usenetCleanupCheck);
 
+    auto* checksForm = new QFormLayout;
+    m_usenetUnrepairableCombo = new QComboBox(postGroup);
+    m_usenetUnrepairableCombo->addItem(tr("Keep downloading"));   // 0
+    m_usenetUnrepairableCombo->addItem(tr("Pause it"));           // 1
+    m_usenetUnrepairableCombo->addItem(tr("Fail it"));            // 2
+    m_usenetUnrepairableCombo->setToolTip(
+        tr("A release that has lost more than its recovery files could ever repair "
+           "stops here instead of using up your allowance until the final check. "
+           "The estimate only ever errs towards downloading.\n\n"
+           "Resume downloads it anyway."));
+    checksForm->addRow(tr("When a download cannot be repaired:"), m_usenetUnrepairableCombo);
+
+    m_usenetUnwantedCombo = new QComboBox(postGroup);
+    m_usenetUnwantedCombo->addItem(tr("Publish anyway"));   // 0
+    m_usenetUnwantedCombo->addItem(tr("Pause it"));         // 1
+    m_usenetUnwantedCombo->addItem(tr("Fail it"));          // 2
+    m_usenetUnwantedCombo->setToolTip(
+        tr("A movie or episode whose download contains programs or shortcuts is "
+           "almost always a fake. Only releases with video or audio in them are "
+           "checked, so software downloads are not affected.\n\n"
+           "Resume publishes it anyway."));
+    checksForm->addRow(tr("When a media release has unwanted files:"), m_usenetUnwantedCombo);
+
+    m_usenetUnwantedEdit = new QLineEdit(postGroup);
+    m_usenetUnwantedEdit->setToolTip(
+        tr("File extensions, separated by commas. A video file that is not really a "
+           "video counts as well. Leave this empty to turn the check off."));
+    checksForm->addRow(tr("Unwanted file types:"), m_usenetUnwantedEdit);
+    postLayout->addLayout(checksForm);
+
     advancedLayout->addWidget(postGroup);
 
     advancedLayout->addStretch();
@@ -3262,10 +3324,18 @@ QWidget* OptionsDialog::createUsenetPage()
 
     for (QCheckBox* box : {m_usenetPar2Check, m_usenetRenameCheck, m_usenetUnpackCheck,
                            m_usenetDirectUnpackCheck, m_usenetEncryptedPreviewCheck,
-                           m_usenetCleanupCheck}) {
+                           m_usenetCleanupCheck, m_usenetSfvCheck}) {
         connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     }
     connect(m_usenetUnpackerEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_usenetUnrepairableCombo, &QComboBox::currentIndexChanged, this,
+            &OptionsDialog::markDirty);
+    connect(m_usenetUnwantedCombo, &QComboBox::currentIndexChanged, this,
+            &OptionsDialog::markDirty);
+    connect(m_usenetUnwantedEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    // A list nothing acts on is a list nobody should be editing.
+    connect(m_usenetUnwantedCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index) { m_usenetUnwantedEdit->setEnabled(index > 0); });
 
     // Unpacking is what produces the payload; with it off there is nothing to
     // clean up around, and cleanup would only delete the files just downloaded.
@@ -3423,10 +3493,12 @@ void OptionsDialog::saveNewsServers()
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::SetNewsServers);
     msg.append(rows);
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
-        if (resp.fieldBool(0))
+    // OK saves and then destroys the dialog, so this reply usually finds it gone: the
+    // box then has no parent, and a dropped connection shows none at all.
+    m_ipc->sendRequest(std::move(msg), [self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (resp.fieldBool(0) || !resp.isValid())
             return;
-        QMessageBox::warning(this, tr("News servers"),
+        QMessageBox::warning(self, tr("News servers"),
                              resp.fieldString(1).isEmpty()
                                  ? tr("The news server list could not be saved.")
                                  : resp.fieldString(1));
@@ -3686,7 +3758,9 @@ void OptionsDialog::onCorrectNewsServerUsage()
     msg.append(accountId);
     msg.append(qint64(value * 1e9 + 0.5));
     msg.append(qint64(-1));   // leave the all-time figure alone
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid())
+            return;
         if (!resp.fieldBool(0)) {
             QMessageBox::warning(this, tr("News servers"),
                                  resp.fieldString(1).isEmpty()
@@ -3761,8 +3835,14 @@ void OptionsDialog::testNewsServer()
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::TestNewsServer);
     msg.append(server);
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
         m_usenetTestBtn->setEnabled(m_currentNewsServer >= 0);
+        if (!resp.isValid()) {
+            m_usenetTestResult->clear();   // connection dropped: no verdict either way
+            return;
+        }
         if (!resp.fieldBool(0)) {
             m_usenetTestResult->setText(resp.fieldString(1));
             m_usenetTestResult->setStyleSheet(QStringLiteral("color: #c62828;"));
@@ -4188,10 +4268,11 @@ void OptionsDialog::saveIndexers()
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::SetIndexers);
     msg.append(rows);
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
-        if (resp.fieldBool(0))
+    // Same as saveNewsServers(): the dialog is usually gone by the reply.
+    m_ipc->sendRequest(std::move(msg), [self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (resp.fieldBool(0) || !resp.isValid())
             return;
-        QMessageBox::warning(this, tr("Indexers"),
+        QMessageBox::warning(self, tr("Indexers"),
                              resp.fieldString(1).isEmpty()
                                  ? tr("The indexer list could not be saved.")
                                  : resp.fieldString(1));
@@ -4204,8 +4285,9 @@ void OptionsDialog::loadDownloadCategories()
         return;
 
     m_ipc->sendRequest(
-        Ipc::IpcMessage(Ipc::IpcMsgType::GetCategories), [this](const Ipc::IpcMessage& resp) {
-            if (!m_feedDownloadCategoryCombo || !resp.fieldBool(0))
+        Ipc::IpcMessage(Ipc::IpcMsgType::GetCategories),
+        [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+            if (!self || !m_feedDownloadCategoryCombo || !resp.fieldBool(0))
                 return;
 
             // Remember the selection by category index, not by row: the list can
@@ -4280,10 +4362,11 @@ void OptionsDialog::saveFeeds()
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::SetIndexerFeeds);
     msg.append(rows);
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
-        if (resp.fieldBool(0))
+    // Same as saveNewsServers(): the dialog is usually gone by the reply.
+    m_ipc->sendRequest(std::move(msg), [self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (resp.fieldBool(0) || !resp.isValid())
             return;
-        QMessageBox::warning(this, tr("Feeds"),
+        QMessageBox::warning(self, tr("Feeds"),
                              resp.fieldString(1).isEmpty()
                                  ? tr("The feed list could not be saved.")
                                  : resp.fieldString(1));
@@ -4556,7 +4639,9 @@ void OptionsDialog::checkFeedNow()
     const QString name = m_feeds.at(m_currentFeed).value(QStringLiteral("name")).toString();
     Ipc::IpcMessage msg(Ipc::IpcMsgType::PollIndexerFeedNow);
     msg.append(name);
-    m_ipc->sendRequest(std::move(msg), [this, name](const Ipc::IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, self = QPointer<OptionsDialog>(this), name](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid())
+            return;
         if (!resp.fieldBool(0)) {
             QMessageBox::warning(this, tr("Feeds"),
                                  resp.fieldString(1).isEmpty()
@@ -4780,8 +4865,14 @@ void OptionsDialog::testIndexer()
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::TestIndexer);
     msg.append(ix);
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
         m_indexerTestBtn->setEnabled(m_currentIndexer >= 0);
+        if (!resp.isValid()) {
+            m_indexerTestResult->clear();   // connection dropped: no verdict either way
+            return;
+        }
         if (!resp.fieldBool(0)) {
             m_indexerTestResult->setText(resp.fieldString(1));
             m_indexerTestResult->setStyleSheet(QStringLiteral("color: #c62828;"));
@@ -4867,7 +4958,7 @@ QWidget* OptionsDialog::createExtendedPage()
     auto* tcpRow1 = new QHBoxLayout;
     tcpRow1->addWidget(new QLabel(tr("Max. new connections / 5 secs.:"), tcpGroup));
     m_maxConPerFiveSpin = new QSpinBox(tcpGroup);
-    m_maxConPerFiveSpin->setRange(1, 100);
+    m_maxConPerFiveSpin->setRange(1, 50);   // core clamps to 1-50 on load
     tcpRow1->addWidget(m_maxConPerFiveSpin);
     tcpRow1->addStretch();
     tcpLayout->addLayout(tcpRow1);
@@ -5239,8 +5330,9 @@ QWidget* OptionsDialog::createExtendedPage()
     outerLayout->addLayout(queueRow);
 
     m_queueSizeSlider = new QSlider(Qt::Horizontal, page);
-    // Range: 2000 to 30000, step 100
-    m_queueSizeSlider->setRange(5, 300);
+    // ×100: 2000 to 50000, the core's range. MFC stops at 10000 (PPgTweaks.cpp:497),
+    // which would silently lower a larger stored value on the next OK.
+    m_queueSizeSlider->setRange(20, 500);
     m_queueSizeSlider->setTickPosition(QSlider::TicksBelow);
     m_queueSizeSlider->setTickInterval(50);
     outerLayout->addWidget(m_queueSizeSlider);
@@ -5781,21 +5873,33 @@ void OptionsDialog::loadSettings()
     // otherwise fall back to local thePrefs.
     m_loading = true;
     if (m_ipc && m_ipc->isConnected()) {
-        QCborMap prefs;
+        // Shared rather than captured by reference: a reply landing after the timeout
+        // used to write into this stack frame after it was gone.
+        struct Pending {
+            QCborMap prefs;
+            QEventLoop* loop = nullptr;
+        };
+        const auto pending = std::make_shared<Pending>();
         QEventLoop loop;
+        pending->loop = &loop;
         QTimer timeout;
         timeout.setSingleShot(true);
-        timeout.start(3000);
         QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
         Ipc::IpcMessage req(Ipc::IpcMsgType::GetPreferences);
-        m_ipc->sendRequest(std::move(req), [&](const Ipc::IpcMessage& resp) {
+        const int seqId = m_ipc->sendRequest(std::move(req), [pending](const Ipc::IpcMessage& resp) {
             if (resp.fieldBool(0))
-                prefs = resp.fieldMap(1);
-            loop.quit();
+                pending->prefs = resp.fieldMap(1);
+            if (pending->loop)
+                pending->loop->quit();
         });
-        loop.exec();
-        if (!prefs.isEmpty())
-            fillDaemonSettings(prefs);
+        if (seqId >= 0) {
+            timeout.start(3000);
+            loop.exec();
+        }
+        pending->loop = nullptr;
+        m_ipc->cancelRequest(seqId);
+        if (!pending->prefs.isEmpty())
+            fillDaemonSettings(pending->prefs);
         else
             fillDaemonSettingsFromPrefs();
     } else {
@@ -5826,7 +5930,8 @@ void OptionsDialog::saveSettings()
         || m_proxyPasswordEdit->text() != thePrefs.proxyPassword()) {
         QMessageBox::information(this, tr("Proxy"),
             tr("Proxy settings will only apply to new connections.\n"
-               "Restart eMule for all connections to use the new proxy settings."));
+               "Restart eMule for all connections to use the new proxy settings.\n\n"
+               "News server connections switch over immediately."));
     }
 
     // GUI-only settings — save locally
@@ -6041,6 +6146,8 @@ void OptionsDialog::saveSettings()
         req.append(m_proxyUserEdit->text());
         req.append(QStringLiteral("proxyPassword"));
         req.append(m_proxyPasswordEdit->text());
+        req.append(QStringLiteral("usenetUseProxy"));
+        req.append(m_proxyUsenetCheck->isChecked());
 
         // Directories page
         req.append(QStringLiteral("incomingDir"));
@@ -6169,6 +6276,14 @@ void OptionsDialog::saveSettings()
         req.append(m_usenetUnpackerEdit->text().trimmed());
         req.append(QStringLiteral("usenetCleanupAfterUnpack"));
         req.append(m_usenetCleanupCheck->isChecked());
+        req.append(QStringLiteral("usenetSfvCheck"));
+        req.append(m_usenetSfvCheck->isChecked());
+        req.append(QStringLiteral("usenetUnrepairableAction"));
+        req.append(static_cast<qint64>(m_usenetUnrepairableCombo->currentIndex()));
+        req.append(QStringLiteral("usenetUnwantedAction"));
+        req.append(static_cast<qint64>(m_usenetUnwantedCombo->currentIndex()));
+        req.append(QStringLiteral("usenetUnwantedExtensions"));
+        req.append(m_usenetUnwantedEdit->text().trimmed());
         req.append(QStringLiteral("usenetHealthCheck"));
         req.append(static_cast<qint64>(m_usenetHealthCombo->currentIndex()));
         req.append(QStringLiteral("usenetHealthMinPercent"));
@@ -6516,6 +6631,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setProxyEnablePassword(m_proxyAuthCheck->isChecked());
         thePrefs.setProxyUser(m_proxyUserEdit->text());
         thePrefs.setProxyPassword(m_proxyPasswordEdit->text());
+        thePrefs.setUsenetUseProxy(m_proxyUsenetCheck->isChecked());
 
         // Directories page fallback
         thePrefs.setIncomingDir(m_incomingDirEdit->text());
@@ -6756,12 +6872,14 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_proxyAuthCheck->setChecked(authOn);
     m_proxyUserEdit->setText(prefs.value(QStringLiteral("proxyUser")).toString());
     m_proxyPasswordEdit->setText(prefs.value(QStringLiteral("proxyPassword")).toString());
+    m_proxyUsenetCheck->setChecked(prefs.value(QStringLiteral("usenetUseProxy")).toBool(true));
     m_proxyTypeCombo->setEnabled(proxyOn);
     m_proxyHostEdit->setEnabled(proxyOn);
     m_proxyPortSpin->setEnabled(proxyOn);
     m_proxyAuthCheck->setEnabled(proxyOn);
     m_proxyUserEdit->setEnabled(proxyOn && authOn);
     m_proxyPasswordEdit->setEnabled(proxyOn && authOn);
+    m_proxyUsenetCheck->setEnabled(proxyOn);
 
     // Directories page
     m_incomingDirEdit->setText(prefs.value(QStringLiteral("incomingDir")).toString());
@@ -6859,6 +6977,17 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         prefs.value(QStringLiteral("usenetEncryptedPreview")).toBool(true));
     m_usenetUnpackerEdit->setText(
         prefs.value(QStringLiteral("usenetExternalUnpacker")).toString());
+    m_usenetSfvCheck->setChecked(prefs.value(QStringLiteral("usenetSfvCheck")).toBool(true));
+    m_usenetUnrepairableCombo->setCurrentIndex(
+        int(prefs.value(QStringLiteral("usenetUnrepairableAction")).toInteger(1)));
+    m_usenetUnwantedCombo->setCurrentIndex(
+        int(prefs.value(QStringLiteral("usenetUnwantedAction")).toInteger(1)));
+    // An older daemon sends no key; empty would read as "check off".
+    m_usenetUnwantedEdit->setText(
+        prefs.contains(QStringLiteral("usenetUnwantedExtensions"))
+            ? prefs.value(QStringLiteral("usenetUnwantedExtensions")).toString()
+            : QString(Preferences::kDefaultUsenetUnwantedExtensions));
+    m_usenetUnwantedEdit->setEnabled(m_usenetUnwantedCombo->currentIndex() > 0);
     m_usenetHealthCombo->setCurrentIndex(
         int(prefs.value(QStringLiteral("usenetHealthCheck")).toInteger(1)));
     m_usenetHealthMinSpin->setValue(
@@ -7022,58 +7151,10 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
 void OptionsDialog::fillDaemonSettingsFromPrefs()
 {
-    // Build a QCborMap from thePrefs and delegate to fillDaemonSettings.
-    // This avoids duplicating the widget-setting code.
-    QCborMap p;
-    p.insert(QStringLiteral("nick"), thePrefs.nick());
-    p.insert(QStringLiteral("maxGraphDownloadRate"), static_cast<qint64>(thePrefs.maxGraphDownloadRate()));
-    p.insert(QStringLiteral("maxGraphUploadRate"), static_cast<qint64>(thePrefs.maxGraphUploadRate()));
-    p.insert(QStringLiteral("maxDownload"), static_cast<qint64>(thePrefs.maxDownload()));
-    p.insert(QStringLiteral("maxUpload"), static_cast<qint64>(thePrefs.maxUpload()));
-    p.insert(QStringLiteral("port"), static_cast<qint64>(thePrefs.port()));
-    p.insert(QStringLiteral("udpPort"), static_cast<qint64>(thePrefs.udpPort()));
-    p.insert(QStringLiteral("enableUPnP"), thePrefs.enableUPnP());
-    p.insert(QStringLiteral("maxSourcesPerFile"), static_cast<qint64>(thePrefs.maxSourcesPerFile()));
-    p.insert(QStringLiteral("maxConnections"), static_cast<qint64>(thePrefs.maxConnections()));
-    p.insert(QStringLiteral("autoConnect"), thePrefs.autoConnect());
-    p.insert(QStringLiteral("reconnect"), thePrefs.reconnect());
-    p.insert(QStringLiteral("showOverhead"), thePrefs.showOverhead());
-    p.insert(QStringLiteral("kadEnabled"), thePrefs.kadEnabled());
-    p.insert(QStringLiteral("networkED2K"), thePrefs.networkED2K());
-    p.insert(QStringLiteral("separateIPv6Queue"), thePrefs.separateIPv6Queue());
-    p.insert(QStringLiteral("safeServerConnect"), thePrefs.safeServerConnect());
-    p.insert(QStringLiteral("autoConnectStaticOnly"), thePrefs.autoConnectStaticOnly());
-    p.insert(QStringLiteral("useServerPriorities"), thePrefs.useServerPriorities());
-    p.insert(QStringLiteral("addServersFromServer"), thePrefs.addServersFromServer());
-    p.insert(QStringLiteral("useUserSortedServerList"), thePrefs.useUserSortedServerList());
-    p.insert(QStringLiteral("addServersFromClients"), thePrefs.addServersFromClients());
-    p.insert(QStringLiteral("deadServerRetries"), static_cast<qint64>(thePrefs.deadServerRetries()));
-    p.insert(QStringLiteral("autoUpdateServerList"), thePrefs.autoUpdateServerList());
-    p.insert(QStringLiteral("serverListURL"), thePrefs.serverListURL());
-    p.insert(QStringLiteral("smartLowIdCheck"), thePrefs.smartLowIdCheck());
-    p.insert(QStringLiteral("manualServerHighPriority"), thePrefs.manualServerHighPriority());
-    p.insert(QStringLiteral("proxyType"), static_cast<qint64>(thePrefs.proxyType()));
-    p.insert(QStringLiteral("proxyHost"), thePrefs.proxyHost());
-    p.insert(QStringLiteral("proxyPort"), static_cast<qint64>(thePrefs.proxyPort()));
-    p.insert(QStringLiteral("proxyEnablePassword"), thePrefs.proxyEnablePassword());
-    p.insert(QStringLiteral("proxyUser"), thePrefs.proxyUser());
-    p.insert(QStringLiteral("proxyPassword"), thePrefs.proxyPassword());
-    p.insert(QStringLiteral("incomingDir"), thePrefs.incomingDir());
-    { QCborArray arr; for (const auto& d : thePrefs.tempDirs()) arr.append(d); p.insert(QStringLiteral("tempDirs"), arr); }
-    { QCborArray arr; for (const auto& d : thePrefs.sharedDirs()) arr.append(d); p.insert(QStringLiteral("sharedDirs"), arr); }
-    p.insert(QStringLiteral("addNewFilesPaused"), thePrefs.addNewFilesPaused());
-    p.insert(QStringLiteral("useSaveLoadSources"), thePrefs.useSaveLoadSources());
-    p.insert(QStringLiteral("autoSharedFilesPriority"), thePrefs.autoSharedFilesPriority());
-    p.insert(QStringLiteral("autoDownloadPriority"), thePrefs.autoDownloadPriority());
-    p.insert(QStringLiteral("transferFullChunks"), thePrefs.transferFullChunks());
-    p.insert(QStringLiteral("previewPrio"), thePrefs.previewPrio());
-    p.insert(QStringLiteral("startNextPausedFile"), thePrefs.startNextPausedFile());
-    p.insert(QStringLiteral("startNextPausedFileSameCat"), thePrefs.startNextPausedFileSameCat());
-    p.insert(QStringLiteral("startNextPausedFileOnlySameCat"), thePrefs.startNextPausedFileOnlySameCat());
-    p.insert(QStringLiteral("rememberDownloadedFiles"), thePrefs.rememberDownloadedFiles());
-    p.insert(QStringLiteral("rememberCancelledFiles"), thePrefs.rememberCancelledFiles());
-    // Reuse fillDaemonSettings — remaining fields use defaults from toInteger/toBool
-    fillDaemonSettings(p);
+    // The same map GetPreferences sends. This used to be a hand-picked subset, so every
+    // key after the Files page fell through to fillDaemonSettings' hardcoded fallbacks
+    // (a 240 KB file buffer, 20 connections / 5 s) — and the next OK saved them.
+    fillDaemonSettings(thePrefs.toIpcMap());
 }
 
 // ---------------------------------------------------------------------------

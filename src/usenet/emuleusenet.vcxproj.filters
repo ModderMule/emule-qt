@@ -60,6 +60,9 @@
     <ClCompile Include="post\UsenetPostProcessor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="post\UsenetReleaseChecks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="post\UsenetUnpacker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -79,6 +82,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="queue\UsenetQueueStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetRepairEstimate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="queue\UsenetStatistics.cpp">
@@ -134,6 +140,9 @@
     <ClInclude Include="post\Par2Verifier.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="post\UsenetReleaseChecks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="post\UsenetUnpacker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -150,6 +159,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue\UsenetQueueStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue\UsenetRepairEstimate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue\UsenetStatistics.h">

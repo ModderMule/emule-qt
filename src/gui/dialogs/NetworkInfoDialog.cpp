@@ -13,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QHostAddress>
 #include <QLocale>
+#include <QPointer>
 #include <QTextBrowser>
 #include <QVBoxLayout>
 
@@ -82,9 +83,15 @@ void NetworkInfoDialog::requestNetworkInfo()
     }
 
     Ipc::IpcMessage req(Ipc::IpcMsgType::GetNetworkInfo);
-    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
-        const QCborMap info = resp.fieldMap(1);
-        populateInfo(info);
+    // The dialog runs modally and is destroyed once closed; a late reply must not follow it.
+    m_ipc->sendRequest(std::move(req), [this, self = QPointer<NetworkInfoDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
+        if (!resp.isValid()) {
+            m_browser->setHtml(tr("<b>Not connected to daemon.</b>"));
+            return;
+        }
+        populateInfo(resp.fieldMap(1));
     });
 }
 

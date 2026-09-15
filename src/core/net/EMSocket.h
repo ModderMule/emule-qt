@@ -11,6 +11,7 @@
 
 #include "net/EncryptedStreamSocket.h"
 #include "net/Packet.h"
+#include "net/ProxySettings.h"
 #include "net/ThrottledSocket.h"
 
 #include <QElapsedTimer>
@@ -22,21 +23,6 @@
 #include <mutex>
 
 namespace eMule {
-
-// ---------------------------------------------------------------------------
-// Proxy configuration
-// ---------------------------------------------------------------------------
-
-/// Proxy settings (replaces the ProxySettings struct used by thePrefs).
-struct ProxySettings {
-    bool useProxy = false;
-    int type = PROXYTYPE_NOPROXY;   ///< PROXYTYPE_* from Opcodes.h.
-    QString host;
-    uint16 port = 0;
-    bool enablePassword = false;
-    QString user;
-    QString password;
-};
 
 // ---------------------------------------------------------------------------
 // Queue entry for standard (file data) packets

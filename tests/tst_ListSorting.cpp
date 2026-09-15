@@ -22,6 +22,7 @@
 #include "controls/UsenetQueueModel.h"
 #include "prefs/Preferences.h"
 #include "utils/ColorUtils.h"
+#include "utils/PriorityText.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -98,6 +99,14 @@ private slots:
     // --- colour cues --------------------------------------------------------
     void searchResultsShadeByAvailability();
     void failingServersAreDimmed();
+
+    // --- MFC column text ----------------------------------------------------
+    void downloadSourcesReadAvailableOfTotal();
+    void sourceRowsFollowMfcColumns();
+    void aSourceIndexSurvivesAnEarlierDownloadLeaving();
+    void completeSourcesShowPercentOrUnknown();
+    void uploadPriorityLabelsMatchMfc();
+    void serverCountsHideZeroAndCompact();
 };
 
 // ---------------------------------------------------------------------------
@@ -394,7 +403,7 @@ void tst_ListSorting::serverAddressesSortByOctetValue()
 
     // The displayed form is untouched — only the key behind it is padded.
     QCOMPARE(proxy.index(2, ServerListModel::ColIP).data().toString(),
-             QStringLiteral("192.168.1.10:4661"));
+             QStringLiteral("192.168.1.10 : 4661"));
 }
 
 void tst_ListSorting::downloadPrioritySortsByRankNotByName()
@@ -539,6 +548,212 @@ void tst_ListSorting::failingServersAreDimmed()
     thePrefs.setDeadServerRetries(0);
     QCOMPARE(fg(2).value<QColor>(), dimmedText(0.5));
     thePrefs.setDeadServerRetries(20);
+}
+
+// ---------------------------------------------------------------------------
+// MFC column text
+// ---------------------------------------------------------------------------
+
+void tst_ListSorting::downloadSourcesReadAvailableOfTotal()
+{
+    // MFC DownloadListCtrl.cpp:2019-2036. The port led with the transferring count, so
+    // "2 / 12" read as two usable sources where nine were queued or sending.
+    thePrefs.setShowExtControls(true);
+    DownloadRow busy;
+    busy.hash = QStringLiteral("busy");
+    busy.status = QStringLiteral("ready");
+    busy.sourceCount = 12;
+    busy.availableSrcCount = 9;
+    busy.transferringSrcCount = 2;
+    busy.a4afSrcCount = 3;
+
+    DownloadRow allUsable;
+    allUsable.hash = QStringLiteral("usable");
+    allUsable.status = QStringLiteral("ready");
+    allUsable.sourceCount = 4;
+    allUsable.availableSrcCount = 4;
+
+    DownloadRow paused;
+    paused.hash = QStringLiteral("paused");
+    paused.status = QStringLiteral("paused");
+
+    DownloadListModel model;
+    model.setDownloads({busy, allUsable, paused});
+    const auto text = [&model](int row) {
+        return model.index(row, DownloadListModel::ColSources).data().toString();
+    };
+    QCOMPARE(text(0), QStringLiteral("9/12+3 (2)"));
+    QCOMPARE(text(1), QStringLiteral("4"));
+    QCOMPARE(text(2), QString());   // paused with no sources: blank
+
+    thePrefs.setShowExtControls(false);   // A4AF is an extended control
+    QCOMPARE(text(0), QStringLiteral("9/12 (2)"));
+    thePrefs.setShowExtControls(true);
+}
+
+void tst_ListSorting::sourceRowsFollowMfcColumns()
+{
+    // MFC GetSourceItemDisplayText (DownloadListCtrl.cpp:508-519): software under Sources,
+    // the queue rank under Priority. They sat under Last Reception and Sources.
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("ready");
+    file.sourceCount = 3;
+
+    SourceRow queued;
+    queued.userHash = QStringLiteral("q");
+    queued.userName = QStringLiteral("queued");
+    queued.software = QStringLiteral("eMule v0.70b");
+    queued.downloadState = QStringLiteral("OnQueue");
+    queued.remoteQueueRank = 42;
+    queued.partCount = 10;
+    queued.availPartCount = 4;
+    SourceRow full = queued;
+    full.userHash = QStringLiteral("f");
+    full.remoteQueueFull = true;
+    SourceRow sending = queued;
+    sending.userHash = QStringLiteral("s");
+    sending.downloadState = QStringLiteral("Downloading");
+
+    DownloadListModel model;
+    model.setDownloads({file});
+    model.setSources(QStringLiteral("file"), {queued, full, sending});
+    const QModelIndex parent = model.index(0, 0);
+    const auto text = [&](int row, int column) {
+        return model.index(row, column, parent).data().toString();
+    };
+
+    QCOMPARE(text(0, DownloadListModel::ColSources), QStringLiteral("eMule v0.70b"));
+    QCOMPARE(text(0, DownloadListModel::ColPriority), QStringLiteral("QR: 42"));
+    QCOMPARE(text(1, DownloadListModel::ColPriority), QStringLiteral("Queue Full"));
+    QCOMPARE(text(2, DownloadListModel::ColPriority), QString());   // only on queue
+    QCOMPARE(text(0, DownloadListModel::ColLastReception), QString());
+    QCOMPARE(text(0, DownloadListModel::ColSeenComplete), QString());
+}
+
+void tst_ListSorting::aSourceIndexSurvivesAnEarlierDownloadLeaving()
+{
+    // A source index used to carry its download's *row*. When a download above left,
+    // a selected source under a lower one pointed past the end — or at another file.
+    std::vector<DownloadRow> rows;
+    for (const auto* hash : {"a", "b", "c"}) {
+        DownloadRow row;
+        row.hash = QString::fromLatin1(hash);
+        row.fileName = row.hash;
+        row.status = QStringLiteral("ready");
+        row.sourceCount = 1;
+        rows.push_back(row);
+    }
+    DownloadListModel model;
+    model.setDownloads(rows);
+
+    SourceRow peer;
+    peer.userHash = QStringLiteral("peer");
+    peer.userName = QStringLiteral("peer of c");
+    model.setSources(QStringLiteral("c"), {peer});
+
+    const QPersistentModelIndex source = model.index(0, 0, model.index(2, 0));
+    QVERIFY(source.isValid());
+
+    rows.erase(rows.begin() + 1);   // "b" goes; "c" moves up to row 1
+    model.setDownloads(rows);
+
+    QVERIFY(source.isValid());
+    QCOMPARE(source.parent().row(), 1);
+    QCOMPARE(source.parent().data().toString(), QStringLiteral("c"));
+    const SourceRow* resolved = model.sourceAt(source);
+    QVERIFY(resolved);
+    QCOMPARE(resolved->userName, QStringLiteral("peer of c"));
+}
+
+void tst_ListSorting::completeSourcesShowPercentOrUnknown()
+{
+    // MFC SearchListCtrl.cpp:444-482 and 1452-1459. The port showed the raw count and
+    // never the red that marks a file nobody has complete.
+    thePrefs.setShowExtControls(false);
+    std::vector<SearchResultRow> rows(4);
+    rows[0].sourceCount = 8;
+    rows[0].completeSourceCount = 2;
+    rows[0].fileSize = 700'000'000;
+    rows[1].sourceCount = 5;
+    rows[1].fileSize = 700'000'000;
+    rows[2].sourceCount = 5;
+    rows[2].isKad = true;               // Kad knows no complete sources
+    rows[2].fileSize = 700'000'000;
+    rows[3].sourceCount = 1;
+    rows[3].isKad = true;
+    rows[3].fileSize = 1'000'000;       // one part: complete wherever it is
+
+    SearchResultsModel model;
+    model.setResults(std::move(rows));
+    const auto text = [&model](int row) {
+        return model.index(row, SearchResultsModel::ColComplete).data().toString();
+    };
+    const auto colour = [&model](int row, int column) {
+        return model.index(row, column).data(Qt::ForegroundRole).value<QColor>();
+    };
+
+    QCOMPARE(text(0), QStringLiteral("25%"));
+    QCOMPARE(text(1), QStringLiteral("0%"));
+    QCOMPARE(text(2), QStringLiteral("?"));
+    QCOMPARE(text(3), QStringLiteral("Yes"));
+
+    const QColor red(255, 0, 0);
+    QCOMPARE(colour(1, SearchResultsModel::ColComplete), red);
+    QVERIFY(colour(2, SearchResultsModel::ColComplete) != red);   // unknown is not incomplete
+    QVERIFY(colour(1, SearchResultsModel::ColFileName) != red);   // that cell only
+
+    thePrefs.setShowExtControls(true);
+    QCOMPARE(text(0), QStringLiteral("25% (2)"));
+}
+
+void tst_ListSorting::uploadPriorityLabelsMatchMfc()
+{
+    // MFC KnownFile.cpp:1703-1726: PR_VERYHIGH is "Release", and neither end of the
+    // scale is ever shown as auto.
+    QCOMPARE(uploadPriorityText(3, false), QStringLiteral("Release"));
+    QCOMPARE(uploadPriorityText(3, true), QStringLiteral("Release"));
+    QCOMPARE(uploadPriorityText(4, true), QStringLiteral("Very Low"));
+    QCOMPARE(uploadPriorityText(0, true), QStringLiteral("Auto [Lo]"));
+    QCOMPARE(uploadPriorityText(1, true), QStringLiteral("Auto [No]"));
+    QCOMPARE(uploadPriorityText(2, false), QStringLiteral("High"));
+}
+
+void tst_ListSorting::serverCountsHideZeroAndCompact()
+{
+    // MFC ServerListCtrl.cpp:117-190: unknown counts are blank, big ones CastItoIShort'd,
+    // Max Users waits for Users, and there is a Files column.
+    QCborMap busy = server(QStringLiteral("busy"), QStringLiteral("1.1.1.1"), 4661, 0);
+    busy.insert(QStringLiteral("users"), 1'234'567);
+    busy.insert(QStringLiteral("maxUsers"), 2'000'000);
+    busy.insert(QStringLiteral("files"), 900);
+    busy.insert(QStringLiteral("ping"), 35);
+    QCborMap fresh = server(QStringLiteral("fresh"), QStringLiteral("1.1.1.2"), 4661, 0);
+    fresh.insert(QStringLiteral("maxUsers"), 5000);
+    QCborMap mid = server(QStringLiteral("mid"), QStringLiteral("1.1.1.3"), 4661, 0);
+    mid.insert(QStringLiteral("users"), 5);
+    mid.insert(QStringLiteral("files"), 120'000);   // "120.00 k" leads "900" as text
+
+    ServerListModel model;
+    model.refreshFromCborArray({busy, fresh, mid});
+    const auto text = [&model](int row, int column) {
+        return model.index(row, column).data().toString();
+    };
+
+    QCOMPARE(model.headerData(ServerListModel::ColFiles, Qt::Horizontal).toString(),
+             QStringLiteral("Files"));
+    QCOMPARE(text(0, ServerListModel::ColUsers), QStringLiteral("1.23 M"));
+    QCOMPARE(text(0, ServerListModel::ColMaxUsers), QStringLiteral("2.00 M"));
+    QCOMPARE(text(0, ServerListModel::ColFiles), QStringLiteral("900"));
+    QCOMPARE(text(0, ServerListModel::ColPing), QStringLiteral("35"));
+    QCOMPARE(text(1, ServerListModel::ColUsers), QString());
+    QCOMPARE(text(1, ServerListModel::ColMaxUsers), QString());
+    QCOMPARE(text(1, ServerListModel::ColFiles), QString());
+    QCOMPARE(text(1, ServerListModel::ColPing), QString());
+
+    QSortFilterProxyModel proxy;
+    sortThrough(proxy, &model, ServerListModel::ColFiles, Qt::DescendingOrder);
+    QCOMPARE(proxy.index(0, ServerListModel::ColName).data().toString(), QStringLiteral("mid"));
 }
 
 QTEST_MAIN(tst_ListSorting)

@@ -32,7 +32,9 @@ QVariant KadSearchesModel::data(const QModelIndex& index, int role) const
         case ColType:        return s.type;
         case ColName:        return s.name;
         case ColStatus:      return s.status;
-        case ColLoad:        return QStringLiteral("%1 (0.00)").arg(s.load, 0, 'f', 0);
+        // MFC KadSearchListCtrl.cpp:168-169
+        case ColLoad:
+            return QStringLiteral("%1 (%2|%3)").arg(s.load).arg(s.loadResponses).arg(s.loadTotal);
         case ColPacketsSent: return QStringLiteral("%1|%2").arg(s.packetsSent).arg(s.requestAnswers);
         case ColResponses:   return s.responses;
         default:             break;
@@ -46,7 +48,7 @@ QVariant KadSearchesModel::data(const QModelIndex& index, int role) const
         case ColType:        return s.type;
         case ColName:        return s.name;
         case ColStatus:      return s.status;
-        case ColLoad:        return static_cast<double>(s.load);
+        case ColLoad:        return s.load;
         case ColPacketsSent: return s.packetsSent;  // sort by node-finding count (matching MFC)
         case ColResponses:   return s.responses;
         default:             break;

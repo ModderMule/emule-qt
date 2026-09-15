@@ -108,6 +108,9 @@
     <ClCompile Include="net\EMSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\ProxySettings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\EncryptedDatagramSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -497,6 +500,9 @@
     <QtMoc Include="net\EMSocket.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="net\ProxySettings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="net\EncryptedDatagramSocket.h">
       <Filter>Header Files</Filter>
     </ClInclude>

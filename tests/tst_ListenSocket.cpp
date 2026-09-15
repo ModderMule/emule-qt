@@ -13,6 +13,7 @@
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/Opcodes.h"
+#include "utils/SafeFile.h"
 
 #include <QSignalSpy>
 #include <QTcpSocket>
@@ -157,6 +158,10 @@ private slots:
     void packedPacket_underCapButOver50kSucceeds();
     void packedPacket_overCapIsDroppedGracefully();
     void packedPacket_alwaysRoutesToExtDispatch();
+
+    // A packet that fails to parse ends the connection — MFC ListenSocket.cpp:1830-1865
+    void malformedPacket_disconnectsPeer();
+    void nonStdException_isCaughtAndDisconnects();
 
 private:
     /// Open a connection to `listener` and give it a chance to be accepted or rejected.
@@ -590,6 +595,40 @@ void tst_ListenSocket::packedPacket_alwaysRoutesToExtDispatch()
     QVERIFY(plain.deliver(OP_EDONKEYPROT, OP_CHANGE_CLIENT_IP, body));
     QCOMPARE(plain.received.size(), std::size_t(1));
     QCOMPARE(plain.received[0].via, QByteArray("client"));
+}
+
+// ---------------------------------------------------------------------------
+// A packet that fails to parse ends the connection — MFC ListenSocket.cpp:1830-1865
+//
+// Returning false alone dropped the rest of the read buffer yet kept the peer connected, on
+// a stream we could no longer trust. The throwing slot stands in for any handler whose
+// SafeMemFile read runs off the end of a short payload.
+// ---------------------------------------------------------------------------
+
+void tst_ListenSocket::malformedPacket_disconnectsPeer()
+{
+    PacketProbeSocket socket;
+    QSignalSpy disconnected(&socket, &ClientReqSocket::clientDisconnected);
+    connect(&socket, &ClientReqSocket::extPacketReceived, &socket,
+            [](const uint8*, uint32, uint8) { throw FileException("short packet"); });
+
+    QVERIFY(!socket.deliver(OP_EMULEPROT, OP_ANSWERSOURCES2, QByteArray(8, '\x01')));
+    QVERIFY2(socket.isTornDown(), "a peer that sent a malformed packet must be disconnected");
+    QCOMPARE(disconnected.count(), 1);
+}
+
+void tst_ListenSocket::nonStdException_isCaughtAndDisconnects()
+{
+    // MFC ListenSocket.cpp:1836. Without the catch-all a non-std throw reached the Qt event
+    // loop and terminated the daemon.
+    PacketProbeSocket socket;
+    QSignalSpy disconnected(&socket, &ClientReqSocket::clientDisconnected);
+    connect(&socket, &ClientReqSocket::extPacketReceived, &socket,
+            [](const uint8*, uint32, uint8) { throw 42; });
+
+    QVERIFY(!socket.deliver(OP_EMULEPROT, OP_ANSWERSOURCES2, QByteArray(8, '\x01')));
+    QVERIFY(socket.isTornDown());
+    QCOMPARE(disconnected.count(), 1);
 }
 
 QTEST_MAIN(tst_ListenSocket)

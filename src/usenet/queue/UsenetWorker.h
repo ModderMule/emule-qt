@@ -28,6 +28,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QNetworkProxy>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -145,7 +146,9 @@ public:
 public slots:
     /// Replace this worker's slice of the server list. @p servers already carries
     /// the divided maxConnections — the worker does not divide anything itself.
-    void setServers(QList<eMule::NewsServer> servers, int retryIntervalSec);
+    /// @p proxy routes every connection this worker's pool opens.
+    void setServers(QList<eMule::NewsServer> servers, int retryIntervalSec,
+                    QNetworkProxy proxy = QNetworkProxy(QNetworkProxy::NoProxy));
 
     /// This worker's share of the Usenet download budget, in bytes per second.
     /// 0 is unlimited, as everywhere else in eMuleQt. Split again across the

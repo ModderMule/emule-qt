@@ -69,7 +69,7 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
 /// only through Customize Toolbar. That is deliberate — the alternative re-adds a
 /// button the user deliberately removed, on every restart.
 inline const QList<int> kDefaultToolbarOrder = {
-    0, 1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1, 23, 20, 21, 22
+    0, 1, 10, 11, 12, 13, 14, 15, 16, 18, 17, 1, 23, 20, 21, 22
 };
 
 [[nodiscard]] inline const ToolbarButtonDef* findButtonDef(ToolbarButtonId id)

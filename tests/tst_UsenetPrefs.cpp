@@ -22,9 +22,11 @@
 /// shoulder-surfer, a config pasted into a bug report and a grep across a
 /// backup; it does not defeat anyone holding preferences.yml.
 
+#include "net/ProxySettings.h"
 #include "prefs/Preferences.h"
 
 #include <QFile>
+#include <QNetworkProxy>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -71,6 +73,7 @@ private slots:
     void quotaFieldsRoundTrip();
     void aConfigWithoutQuotasLoadsUnmeteredWithAnId();
     void healthCheckSettingsRoundTrip();
+    void newsServersFollowTheProxyUnlessSwitchedOff();
     void subjectPatternsRoundTrip();
     void noSubjectPatternsBlockIsWrittenWhenTheDefaultsAreInUse();
     void aSubjectPatternThatWillNotCompileSurvivesASaveAndLoad();
@@ -601,6 +604,40 @@ void tst_UsenetPrefs::aConfigWithoutQuotasLoadsUnmeteredWithAnId()
     QCOMPARE(servers.at(0).quotaResetDay, 1);
     QVERIFY(!servers.at(0).isMetered());
     QVERIFY(!servers.at(0).accountId.isEmpty());
+}
+
+void tst_UsenetPrefs::newsServersFollowTheProxyUnlessSwitchedOff()
+{
+    {
+        Preferences p;
+        // On by default: a proxy the user set up was meant for their traffic.
+        QVERIFY(p.usenetUseProxy());
+
+        p.setProxyType(PROXYTYPE_SOCKS5);
+        p.setProxyHost(QStringLiteral("proxy.example"));
+        p.setProxyPort(1080);
+        const QNetworkProxy route = toNetworkProxy(p.usenetProxySettings());
+        QCOMPARE(route.type(), QNetworkProxy::Socks5Proxy);
+        QCOMPARE(route.hostName(), QStringLiteral("proxy.example"));
+        QCOMPARE(route.port(), quint16(1080));
+
+        p.setUsenetUseProxy(false);
+        QCOMPARE(toNetworkProxy(p.usenetProxySettings()).type(), QNetworkProxy::NoProxy);
+        // The switch is Usenet's alone; eD2K's route does not move with it.
+        QVERIFY(p.proxySettings().useProxy);
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    Preferences p2;
+    QVERIFY(p2.load(m_file));
+    QVERIFY(!p2.usenetUseProxy());
+
+    // Qt has no SOCKS4 client; SOCKS5 is the nearest thing it can speak.
+    p2.setUsenetUseProxy(true);
+    p2.setProxyType(PROXYTYPE_SOCKS4A);
+    QCOMPARE(toNetworkProxy(p2.usenetProxySettings()).type(), QNetworkProxy::Socks5Proxy);
+    p2.setProxyType(PROXYTYPE_NOPROXY);
+    QCOMPARE(toNetworkProxy(p2.usenetProxySettings()).type(), QNetworkProxy::NoProxy);
 }
 
 

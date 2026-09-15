@@ -117,7 +117,7 @@ enum class IpcMsgType : int {
     SearchKadNotes       = 255, ///< [hash: string, fileName: string] — trigger Kad notes lookup for file
 
     GetCollectionInfo       = 256, ///< [hash: string] → collection metadata for shared file
-    SaveCollection          = 257, ///< [name, fileHashes[], textFormat, sign] → create & share
+    SaveCollection          = 257, ///< [name, fileHashes[], textFormat, sign, overwrite] → create & share; error "exists" unless overwrite
     // 258 was SearchAuthorCollections; the GUI now drives that search through StartSearch.
     GetServerMessages       = 259, ///< [fromId] → CborArray of [id, type, text] — Server Info backlog
     /// [searchID: int, hash: string] → comments/tags for one search result.

@@ -222,6 +222,11 @@ void finishProbe(const ED2KHttpCacheLink& link, const ProbeAnswer& answer, IpcCl
     apply.append(link.keyId);
 
     ipc->sendRequest(std::move(apply), [host, parent, done](const IpcMessage& resp) {
+        if (!resp.isValid()) {   // connection dropped: neither applied nor refused
+            if (done)
+                done(false);
+            return;
+        }
         const bool ok = resp.fieldBool(0);
         if (ok) {
             logInfo(HttpCacheLinkImporter::tr("HTTP Cache configured for %1.").arg(host));

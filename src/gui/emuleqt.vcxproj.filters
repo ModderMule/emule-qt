@@ -247,6 +247,12 @@
     <ClCompile Include="utils\FileTypeIcons.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\PriorityText.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\Smileys.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\RatingIcons.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -298,6 +304,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\FileTypeIcons.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\PriorityText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\Smileys.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\RatingIcons.h">

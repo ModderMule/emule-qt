@@ -136,6 +136,14 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
     // which is what keeps the first run after an upgrade quiet.
     if (!item.failedLadder.isEmpty())
         out << YAML::Key << "failedLadder" << YAML::Value << toStd(item.failedLadder);
+    // Which check stopped it and what it found: a paused item has to be able to
+    // say why after a restart, and an overruled check must stay overruled.
+    if (item.stopReason != UsenetStopReason::None) {
+        out << YAML::Key << "stopReason" << YAML::Value << int(item.stopReason);
+        out << YAML::Key << "stopDetail" << YAML::Value << toStd(item.stopDetail);
+    }
+    if (item.checksOverridden != 0)
+        out << YAML::Key << "checksOverridden" << YAML::Value << item.checksOverridden;
 
     out << YAML::Key << "files" << YAML::Value << YAML::BeginSeq;
     for (int i = 0; i < item.nzb.files.size(); ++i) {
@@ -295,6 +303,16 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
         out.passwordRequired =
             root["passwordRequired"] ? root["passwordRequired"].as<bool>(false) : false;
         out.failedLadder = fromStd(root, "failedLadder");
+        const int stopReason = root["stopReason"] ? root["stopReason"].as<int>(0) : 0;
+        if (stopReason == int(UsenetStopReason::Unrepairable)
+            || stopReason == int(UsenetStopReason::Unwanted)) {
+            out.stopReason = static_cast<UsenetStopReason>(stopReason);
+            out.stopDetail = fromStd(root, "stopDetail");
+            if (out.status == UsenetItemStatus::Paused)
+                out.stalledReason = out.stopDetail;
+        }
+        out.checksOverridden =
+            root["checksOverridden"] ? root["checksOverridden"].as<int>(0) : 0;
 
         out.nzb.files.clear();
         out.files.clear();

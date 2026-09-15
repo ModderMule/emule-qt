@@ -720,8 +720,12 @@ void SearchPanel::sendIndexerGrab(int proxyRow, bool force, int category)
     msg.append(qint64(category));
 
     const QString title = result->title;
-    const int tabIdx = m_tabBar->currentIndex();
-    m_ipc->sendRequest(std::move(msg), [this, title, tabIdx, srcRow](const IpcMessage& resp) {
+    // The model, not the tab index and row: tabs close and results refresh while the
+    // reply is out, and a stale index marks some other row — or no model at all.
+    const QPointer<IndexerResultsModel> model(tab->indexerModel);
+    m_ipc->sendRequest(std::move(msg), [this, title, model](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;   // connection dropped: nothing was queued, and nothing refused
         if (!resp.fieldBool(0)) {
             // The daemon has already decided; a refusal reaching here is a real
             // failure, because everything the user could have been asked about was
@@ -742,11 +746,8 @@ void SearchPanel::sendIndexerGrab(int proxyRow, bool force, int category)
             });
             return;
         }
-        if (tabIdx >= 0 && tabIdx < static_cast<int>(m_tabs.size())
-            && m_tabs[static_cast<size_t>(tabIdx)].indexerModel)
-        {
-            m_tabs[static_cast<size_t>(tabIdx)].indexerModel->setKnownType(srcRow, 2);
-        }
+        if (model)
+            model->updateKnownTypes({{title, 2}});   // Downloading
         StatusBarNotifier::post(tr("Queued \"%1\" for download from Usenet.").arg(title), 5000);
     });
 }
@@ -1130,6 +1131,8 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.fileSize           = m.value(QStringLiteral("fileSize")).toInteger();
             row.sourceCount        = m.value(QStringLiteral("sourceCount")).toInteger();
             row.completeSourceCount = m.value(QStringLiteral("completeSourceCount")).toInteger();
+            row.isKad              = m.value(QStringLiteral("isKad")).toBool();
+            row.inDirectory        = m.value(QStringLiteral("inDirectory")).toBool();
             row.fileType           = m.value(QStringLiteral("fileType")).toString();
             row.knownType          = static_cast<int>(m.value(QStringLiteral("knownType")).toInteger());
             row.isSpam             = m.value(QStringLiteral("isSpam")).toBool();
@@ -1258,17 +1261,17 @@ void SearchPanel::sendDownloadRequest(int row)
     if (!result)
         return;
 
-    const int srcRow = srcIdx.row();
-
     IpcMessage msg(IpcMsgType::DownloadSearchFile);
     msg.append(result->hash);
     msg.append(result->fileName);
     msg.append(static_cast<qint64>(result->fileSize));
-    const int tabIdx = m_tabBar->currentIndex();
-    m_ipc->sendRequest(std::move(msg), [this, tabIdx, srcRow](const IpcMessage& resp) {
-        if (resp.fieldBool(0) && tabIdx >= 0
-            && tabIdx < static_cast<int>(m_tabs.size()))
-            m_tabs[static_cast<size_t>(tabIdx)].model->setKnownType(srcRow, 2); // Downloading
+    // Model and hash, not tab index and row: the tab at that index can be another
+    // search by the time the reply lands (an indexer one has no model at all), and
+    // every result push resets the rows.
+    const QPointer<SearchResultsModel> model(tab->model);
+    m_ipc->sendRequest(std::move(msg), [model, hash = result->hash](const IpcMessage& resp) {
+        if (resp.fieldBool(0) && model)
+            model->updateKnownTypes({{hash, 2}});   // Downloading
     });
 }
 
@@ -1555,6 +1558,8 @@ void SearchPanel::saveSearches()
             rowObj[QStringLiteral("fileSize")]            = static_cast<qint64>(row->fileSize);
             rowObj[QStringLiteral("sourceCount")]         = static_cast<qint64>(row->sourceCount);
             rowObj[QStringLiteral("completeSourceCount")] = static_cast<qint64>(row->completeSourceCount);
+            rowObj[QStringLiteral("isKad")]               = row->isKad;
+            rowObj[QStringLiteral("inDirectory")]         = row->inDirectory;
             rowObj[QStringLiteral("artist")]              = row->artist;
             rowObj[QStringLiteral("album")]               = row->album;
             rowObj[QStringLiteral("title")]               = row->title;
@@ -1615,6 +1620,8 @@ void SearchPanel::loadSearches()
             row.fileSize            = static_cast<qint64>(r[QStringLiteral("fileSize")].toDouble());
             row.sourceCount         = static_cast<qint64>(r[QStringLiteral("sourceCount")].toDouble());
             row.completeSourceCount = static_cast<qint64>(r[QStringLiteral("completeSourceCount")].toDouble());
+            row.isKad               = r[QStringLiteral("isKad")].toBool();
+            row.inDirectory         = r[QStringLiteral("inDirectory")].toBool();
             row.artist              = r[QStringLiteral("artist")].toString();
             row.album               = r[QStringLiteral("album")].toString();
             row.title               = r[QStringLiteral("title")].toString();
@@ -1751,45 +1758,39 @@ void SearchPanel::refreshKnownTypes()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    for (size_t ti = 0; ti < m_tabs.size(); ++ti) {
-        auto* tab = &m_tabs[ti];
+    for (const SearchTab& tab : m_tabs) {
         // An indexer tab carries indexerModel and leaves model null, so this loop
         // would dereference nothing at all. It runs on every downloadAdded /
         // downloadRemoved, which is why one ED2K download starting while a Usenet
         // search tab was open used to take the whole GUI down. Their own pass is
         // refreshUsenetKnownTypes(), below.
-        if (tab->isIndexer() || !tab->model)
+        if (tab.isIndexer() || !tab.model)
             continue;
-        const int count = tab->model->resultCount();
+        const int count = tab.model->resultCount();
         if (count == 0)
             continue;
 
-        QCborArray hashes;
+        // The reply is one type per hash *sent*. Pair it with this list, never with
+        // the model's rows at reply time — a result push resets them in between.
+        QStringList sent;
+        sent.reserve(count);
         for (int r = 0; r < count; ++r) {
-            const auto* row = tab->model->resultAt(r);
-            if (row)
-                hashes.append(row->hash);
+            if (const auto* row = tab.model->resultAt(r))
+                sent.append(row->hash);
         }
 
         IpcMessage msg(IpcMsgType::GetKnownTypes);
-        msg.append(QCborValue(hashes));
+        msg.append(QCborValue(QCborArray::fromStringList(sent)));
 
-        m_ipc->sendRequest(std::move(msg), [this, ti](const IpcMessage& resp) {
-            if (!resp.fieldBool(0) || ti >= m_tabs.size())
-                return;
-
-            auto* model = m_tabs[ti].model;
-            if (!model)
+        const QPointer<SearchResultsModel> model(tab.model);
+        m_ipc->sendRequest(std::move(msg), [model, sent](const IpcMessage& resp) {
+            if (!resp.fieldBool(0) || !model)
                 return;
             const auto types = resp.fieldArray(1);
-            const int count = std::min(static_cast<int>(types.size()), model->resultCount());
-
+            const qsizetype n = std::min(types.size(), sent.size());
             QHash<QString, int> typesByHash;
-            for (int i = 0; i < count; ++i) {
-                const auto* row = model->resultAt(i);
-                if (row)
-                    typesByHash.insert(row->hash, static_cast<int>(types.at(i).toInteger()));
-            }
+            for (qsizetype i = 0; i < n; ++i)
+                typesByHash.insert(sent.at(i), static_cast<int>(types.at(i).toInteger()));
             model->updateKnownTypes(typesByHash);
         });
     }
@@ -1802,42 +1803,36 @@ void SearchPanel::refreshUsenetKnownTypes()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    for (size_t ti = 0; ti < m_tabs.size(); ++ti) {
-        auto* tab = &m_tabs[ti];
-        if (!tab->isIndexer())
+    for (const SearchTab& tab : m_tabs) {
+        if (!tab.isIndexer())
             continue;
-        const int count = tab->indexerModel->resultCount();
+        const int count = tab.indexerModel->resultCount();
         if (count == 0)
             continue;
 
         // Titles, not titles and sizes. An indexer's size is its own arithmetic
         // over the NZB and disagrees with ours often enough that matching on it
         // would silently leave rows unmarked, which is the wrong way to be wrong.
-        QCborArray titles;
+        // Kept as sent, for the same reason refreshKnownTypes() keeps its hashes.
+        QStringList sent;
+        sent.reserve(count);
         for (int r = 0; r < count; ++r) {
-            if (const auto* row = tab->indexerModel->resultAt(r))
-                titles.append(row->title);
+            if (const auto* row = tab.indexerModel->resultAt(r))
+                sent.append(row->title);
         }
 
         IpcMessage msg(IpcMsgType::GetUsenetKnownTypes);
-        msg.append(QCborValue(titles));
+        msg.append(QCborValue(QCborArray::fromStringList(sent)));
 
-        m_ipc->sendRequest(std::move(msg), [this, ti](const IpcMessage& resp) {
-            if (!resp.fieldBool(0) || ti >= m_tabs.size())
-                return;
-
-            auto* model = m_tabs[ti].indexerModel;
-            if (!model)
+        const QPointer<IndexerResultsModel> model(tab.indexerModel);
+        m_ipc->sendRequest(std::move(msg), [model, sent](const IpcMessage& resp) {
+            if (!resp.fieldBool(0) || !model)
                 return;
             const auto types = resp.fieldArray(1);
-            const int count = std::min(static_cast<int>(types.size()), model->resultCount());
-
+            const qsizetype n = std::min(types.size(), sent.size());
             QHash<QString, int> typesByTitle;
-            for (int i = 0; i < count; ++i) {
-                const auto* row = model->resultAt(i);
-                if (row)
-                    typesByTitle.insert(row->title, static_cast<int>(types.at(i).toInteger()));
-            }
+            for (qsizetype i = 0; i < n; ++i)
+                typesByTitle.insert(sent.at(i), static_cast<int>(types.at(i).toInteger()));
             model->updateKnownTypes(typesByTitle);
         });
     }

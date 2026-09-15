@@ -10,6 +10,7 @@
 
 #include <QAbstractItemModel>
 #include <QByteArray>
+#include <QHash>
 #include <QString>
 #include <QStringList>
 
@@ -24,6 +25,7 @@ struct SourceRow {
     QString software;
     QString downloadState;   // "On Queue", "Downloading", etc.
     int64_t remoteQueueRank = 0;
+    bool remoteQueueFull = false;
     int64_t transferredDown = 0;
     int64_t sessionDown = 0;
     int64_t datarate = 0;      // download speed from this source
@@ -50,6 +52,8 @@ struct DownloadRow {
     double percentCompleted = 0.0;
     int sourceCount = 0;
     int transferringSrcCount = 0;
+    int availableSrcCount = 0;   ///< sources on queue or downloading
+    int a4afSrcCount = 0;
     bool isPaused = false;
     bool isStopped = false;
     /// PartFileOp ordinal: 0 none, 1 hashing, 2 copying, 3 uncompressing, 4 importing.
@@ -79,6 +83,9 @@ struct DownloadRow {
     QString containerActual;     // what it really is; empty when unrecognised
 
     std::vector<SourceRow> sources;  // child rows (populated when expanded)
+
+    /// Model-assigned identity, never 0. Source indexes carry it as internalId.
+    quintptr uid = 0;
 
     /// A completed download (green 100% bar). Completed files have no live
     /// sources, so they are never expandable in the tree.
@@ -174,7 +181,13 @@ private:
     /// alphabetically by token. srchybrid/PartFile.cpp:3456-3476.
     [[nodiscard]] static int statusRank(const DownloadRow& d);
 
+    /// Row of the download with this uid, -1 if it has gone.
+    [[nodiscard]] int rowOfUid(quintptr uid) const;
+    void reindexRows();
+
     std::vector<DownloadRow> m_downloads;
+    QHash<quintptr, int> m_rowByUid;
+    quintptr m_nextUid = 1;
     QStringList m_categoryNames;
 };
 

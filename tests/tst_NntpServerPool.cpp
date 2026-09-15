@@ -16,16 +16,19 @@
 /// pool bookkeeping alone would not catch a lease that never becomes usable.
 
 #include "FakeNntpServer.h"
+#include "FakeProxyServer.h"
 
 #include "nntp/NntpServerPool.h"
 #include "nntp/NntpSocket.h"
 
+#include <QNetworkProxy>
 #include <QPointer>
 #include <QSignalSpy>
 #include <QTest>
 
 using namespace eMule::usenet;
 using eMule::testing::FakeNntpServer;
+using eMule::testing::FakeProxyServer;
 
 namespace {
 
@@ -74,6 +77,7 @@ private slots:
     void ungroupedServersKeepSeparateBudgets();
     void zeroConnectionServerIsNeverLeased();
     void ladderIsBuiltFromTheConfiguredLevelsOnly();
+    void everyLeaseConnectsThroughThePoolsProxy();
 };
 
 void tst_NntpServerPool::sparseLevelsAreNormalized()
@@ -465,6 +469,35 @@ void tst_NntpServerPool::ladderIsBuiltFromTheConfiguredLevelsOnly()
     // Disabled rows are gone; a row with no connections is NOT -- filtering on
     // maxConnections here is what would make a worker's slice renumber the rungs.
     QCOMPARE(ladder, QList<int>({0, 10}));
+}
+
+// The pool is where downloads open their connections; a proxy set on it and not
+// handed to each new socket would leave the Test button proxied and the
+// downloads direct.
+void tst_NntpServerPool::everyLeaseConnectsThroughThePoolsProxy()
+{
+    FakeNntpServer main;
+    const quint16 port = main.start();
+    QVERIFY(port != 0);
+
+    FakeProxyServer proxy(FakeProxyServer::Kind::Socks5);
+    const quint16 proxyPort = proxy.start();
+    QVERIFY(proxyPort != 0);
+
+    NntpServerPool pool;
+    pool.setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, QStringLiteral("127.0.0.1"), proxyPort));
+    pool.setServers({make(QStringLiteral("main"), port, 0, /*maxConnections*/ 2)});
+
+    NntpSocket* first = pool.acquire(0);
+    NntpSocket* second = pool.acquire(0);
+    QVERIFY(first != nullptr && second != nullptr);
+    QSignalSpy firstReady(first, &NntpSocket::ready);
+    QSignalSpy secondReady(second, &NntpSocket::ready);
+    QVERIFY(firstReady.wait(5000) || firstReady.count() > 0);
+    QTRY_VERIFY_WITH_TIMEOUT(secondReady.count() > 0, 5000);
+
+    QCOMPARE(proxy.targets().size(), 2);
+    QCOMPARE(proxy.targets().constFirst(), QStringLiteral("127.0.0.1:%1").arg(port));
 }
 
 #include "tst_NntpServerPool.moc"

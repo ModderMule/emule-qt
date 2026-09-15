@@ -245,123 +245,141 @@ void ClientUDPSocket::flushSendQueue()
 void ClientUDPSocket::onReadyRead()
 {
     while (m_socket.hasPendingDatagrams()) {
-        QNetworkDatagram datagram = m_socket.receiveDatagram(kMaxClientUDPPacketSize);
+        const QNetworkDatagram datagram = m_socket.receiveDatagram(kMaxClientUDPPacketSize);
         if (!datagram.isValid())
             continue;
 
-        QByteArray data = datagram.data();
-        if (data.size() < 2)
-            continue;
+        // MFC ClientUDPSocket.cpp:87-155 guards the whole dispatch. The handlers parse with
+        // SafeMemFile, which throws on a short datagram, and every slot runs inline from
+        // here — so one malformed packet from any sender used to terminate the daemon.
+        // Debug level, as MFC logs it only when verbose: senders choose how often this fires.
+        try {
+            processDatagram(datagram);
+        } catch (const std::exception& ex) {
+            logDebug(QStringLiteral("ClientUDPSocket: error processing datagram from %1:%2: %3")
+                         .arg(datagram.senderAddress().toString()).arg(datagram.senderPort())
+                         .arg(QLatin1String(ex.what())));
+        } catch (...) {
+            logDebug(QStringLiteral("ClientUDPSocket: unhandled exception processing datagram from %1:%2")
+                         .arg(datagram.senderAddress().toString()).arg(datagram.senderPort()));
+        }
+    }
+}
 
-        const Address senderAddress = Address::fromQHostAddress(datagram.senderAddress());
-        const uint16 senderPort = static_cast<uint16>(datagram.senderPort());
-        const Endpoint senderEP(senderAddress, senderPort);
-        // Host-order IPv4 for the IPv4-only Kad verify-key store; 0 for IPv6 (no Kad over v6).
-        const uint32 senderIPv4Host = senderAddress.isIPv4() ? senderAddress.toUint32() : 0;
+void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
+{
+    QByteArray data = datagram.data();
+    if (data.size() < 2)
+        return;
 
-        // Address-typed: the filter now holds a per-family range table, so an IPv6 sender
-        // is checked against the IPv6 ranges instead of passing unfiltered.
-        if (auto* filter = theApp.ipFilter) {
-            if (filter->isFiltered(senderAddress, thePrefs.ipFilterLevel())) {
+    const Address senderAddress = Address::fromQHostAddress(datagram.senderAddress());
+    const uint16 senderPort = static_cast<uint16>(datagram.senderPort());
+    const Endpoint senderEP(senderAddress, senderPort);
+    // Host-order IPv4 for the IPv4-only Kad verify-key store; 0 for IPv6 (no Kad over v6).
+    const uint32 senderIPv4Host = senderAddress.isIPv4() ? senderAddress.toUint32() : 0;
+
+    // Address-typed: the filter now holds a per-family range table, so an IPv6 sender
+    // is checked against the IPv6 ranges instead of passing unfiltered.
+    if (auto* filter = theApp.ipFilter) {
+        if (filter->isFiltered(senderAddress, thePrefs.ipFilterLevel())) {
+            if (auto* stats = theApp.statistics)
+                stats->addFilteredClient();
+            return;
+        }
+    }
+    if (auto* cl = theApp.clientList) {
+        if (cl->isBannedClient(senderAddress))
+            return;
+    }
+
+    auto* buf = reinterpret_cast<uint8*>(data.data());
+    qsizetype bufLen = data.size();
+
+    uint8 protoByte = buf[0];
+
+    // logDebug(QStringLiteral("UDP recv %1 bytes from %2:%3 proto=0x%4")
+    //     .arg(data.size()).arg(senderAddr.toString()).arg(senderPort)
+    //     .arg(protoByte, 2, 16, QLatin1Char('0')));
+
+    if (protoByte == OP_EMULEPROT) {
+        // Unencrypted eMule client UDP packet
+        uint8 opcode = buf[1];
+        processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderEP);
+    } else if (protoByte == OP_KADEMLIAHEADER) {
+        // Uncompressed Kademlia packet — forward directly
+        if (auto* stats = theApp.statistics)
+            stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
+        uint8 opcode = buf[1];
+        emit kadPacketReceived(opcode, buf + 2,
+                               static_cast<uint32>(bufLen - 2), senderEP,
+                               false, 0);
+    } else if (protoByte == OP_KADEMLIAPACKEDPROT) {
+        // Compressed Kademlia packet — decompress before forwarding
+        if (auto* stats = theApp.statistics)
+            stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
+        uint8 opcode = buf[1];
+        QByteArray decompressed = decompressKadPayload(buf + 2, static_cast<int>(bufLen - 2));
+        if (!decompressed.isEmpty()) {
+            emit kadPacketReceived(opcode,
+                                   reinterpret_cast<const uint8*>(decompressed.constData()),
+                                   static_cast<uint32>(decompressed.size()),
+                                   senderEP, false, 0);
+        }
+    } else if (protoByte == OP_UDPRESERVEDPROT1 || protoByte == OP_UDPRESERVEDPROT2) {
+        // Reserved UDP protocol headers (0xA3 / 0xB2). Obfuscation-transparent
+        // (see isProtocolHeader in EncryptedDatagramSocket.cpp), so they always
+        // arrive in the clear. No payload semantics are defined yet — dispatch to
+        // a named stub instead of dropping them silently.
+        processReservedProtPacket(protoByte, buf + 2, static_cast<uint32>(bufLen - 2),
+                                  buf[1], senderIPv4Host, senderPort);
+    } else {
+        // May be encrypted — use our userHash and kadID for decryption
+        auto userHash = thePrefs.userHash();
+        const uint8* kadIDPtr = nullptr;
+        uint32 kadRecvKey = 0;
+        if (auto* kadPrefs = eMule::kad::Kademlia::getInstancePrefs()) {
+            // Use getData() (raw m_data bytes), NOT toByteArray() which
+            // byte-swaps.  The wire format uses the raw uint32 representation,
+            // so encryption keys must match that byte order.
+            kadIDPtr = eMule::kad::RoutingZone::localKadId().getData();
+            kadRecvKey = kadPrefs->getUDPVerifyKey(senderIPv4Host);
+        }
+        DecryptResult dr = EncryptedDatagramSocket::decryptReceivedClient(
+            buf, static_cast<int>(bufLen), senderAddress, userHash.data(), kadIDPtr, kadRecvKey);
+
+        if (dr.length > 1 && dr.data != nullptr) {
+            uint8 innerProto = dr.data[0];
+            uint8 opcode = dr.data[1];
+
+            if (innerProto == OP_EMULEPROT) {
+                processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2),
+                              opcode, senderEP);
+            } else if (innerProto == OP_KADEMLIAHEADER) {
                 if (auto* stats = theApp.statistics)
-                    stats->addFilteredClient();
-                continue;
-            }
-        }
-        if (auto* cl = theApp.clientList) {
-            if (cl->isBannedClient(senderAddress))
-                continue;
-        }
-
-        auto* buf = reinterpret_cast<uint8*>(data.data());
-        qsizetype bufLen = data.size();
-
-        uint8 protoByte = buf[0];
-
-        // logDebug(QStringLiteral("UDP recv %1 bytes from %2:%3 proto=0x%4")
-        //     .arg(data.size()).arg(senderAddr.toString()).arg(senderPort)
-        //     .arg(protoByte, 2, 16, QLatin1Char('0')));
-
-        if (protoByte == OP_EMULEPROT) {
-            // Unencrypted eMule client UDP packet
-            uint8 opcode = buf[1];
-            processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderEP);
-        } else if (protoByte == OP_KADEMLIAHEADER) {
-            // Uncompressed Kademlia packet — forward directly
-            if (auto* stats = theApp.statistics)
-                stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
-            uint8 opcode = buf[1];
-            emit kadPacketReceived(opcode, buf + 2,
-                                   static_cast<uint32>(bufLen - 2), senderEP,
-                                   false, 0);
-        } else if (protoByte == OP_KADEMLIAPACKEDPROT) {
-            // Compressed Kademlia packet — decompress before forwarding
-            if (auto* stats = theApp.statistics)
-                stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
-            uint8 opcode = buf[1];
-            QByteArray decompressed = decompressKadPayload(buf + 2, static_cast<int>(bufLen - 2));
-            if (!decompressed.isEmpty()) {
-                emit kadPacketReceived(opcode,
-                                       reinterpret_cast<const uint8*>(decompressed.constData()),
-                                       static_cast<uint32>(decompressed.size()),
-                                       senderEP, false, 0);
-            }
-        } else if (protoByte == OP_UDPRESERVEDPROT1 || protoByte == OP_UDPRESERVEDPROT2) {
-            // Reserved UDP protocol headers (0xA3 / 0xB2). Obfuscation-transparent
-            // (see isProtocolHeader in EncryptedDatagramSocket.cpp), so they always
-            // arrive in the clear. No payload semantics are defined yet — dispatch to
-            // a named stub instead of dropping them silently.
-            processReservedProtPacket(protoByte, buf + 2, static_cast<uint32>(bufLen - 2),
-                                      buf[1], senderIPv4Host, senderPort);
-        } else {
-            // May be encrypted — use our userHash and kadID for decryption
-            auto userHash = thePrefs.userHash();
-            const uint8* kadIDPtr = nullptr;
-            uint32 kadRecvKey = 0;
-            if (auto* kadPrefs = eMule::kad::Kademlia::getInstancePrefs()) {
-                // Use getData() (raw m_data bytes), NOT toByteArray() which
-                // byte-swaps.  The wire format uses the raw uint32 representation,
-                // so encryption keys must match that byte order.
-                kadIDPtr = eMule::kad::RoutingZone::localKadId().getData();
-                kadRecvKey = kadPrefs->getUDPVerifyKey(senderIPv4Host);
-            }
-            DecryptResult dr = EncryptedDatagramSocket::decryptReceivedClient(
-                buf, static_cast<int>(bufLen), senderAddress, userHash.data(), kadIDPtr, kadRecvKey);
-
-            if (dr.length > 1 && dr.data != nullptr) {
-                uint8 innerProto = dr.data[0];
-                uint8 opcode = dr.data[1];
-
-                if (innerProto == OP_EMULEPROT) {
-                    processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2),
-                                  opcode, senderEP);
-                } else if (innerProto == OP_KADEMLIAHEADER) {
-                    if (auto* stats = theApp.statistics)
-                        stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
-                    // The two keys are not interchangeable. The *receiver* key is the
-                    // one we minted for this peer's IP and handed to it earlier; seeing
-                    // it echoed back proves the peer really lives at that address. The
-                    // *sender* key is the peer's own key for us, which we keep and echo
-                    // back on our next packet. MFC ClientUDPSocket.cpp:121,137.
-                    const bool validKey = (dr.receiverVerifyKey != 0) &&
-                        (dr.receiverVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIPv4Host));
-                    emit kadPacketReceived(opcode, dr.data + 2,
-                                           static_cast<uint32>(dr.length - 2),
+                    stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
+                // The two keys are not interchangeable. The *receiver* key is the
+                // one we minted for this peer's IP and handed to it earlier; seeing
+                // it echoed back proves the peer really lives at that address. The
+                // *sender* key is the peer's own key for us, which we keep and echo
+                // back on our next packet. MFC ClientUDPSocket.cpp:121,137.
+                const bool validKey = (dr.receiverVerifyKey != 0) &&
+                    (dr.receiverVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIPv4Host));
+                emit kadPacketReceived(opcode, dr.data + 2,
+                                       static_cast<uint32>(dr.length - 2),
+                                       senderEP,
+                                       validKey, dr.senderVerifyKey);
+            } else if (innerProto == OP_KADEMLIAPACKEDPROT) {
+                if (auto* stats = theApp.statistics)
+                    stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
+                const bool validKey = (dr.receiverVerifyKey != 0) &&
+                    (dr.receiverVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIPv4Host));
+                QByteArray decompressed = decompressKadPayload(dr.data + 2, dr.length - 2);
+                if (!decompressed.isEmpty()) {
+                    emit kadPacketReceived(opcode,
+                                           reinterpret_cast<const uint8*>(decompressed.constData()),
+                                           static_cast<uint32>(decompressed.size()),
                                            senderEP,
                                            validKey, dr.senderVerifyKey);
-                } else if (innerProto == OP_KADEMLIAPACKEDPROT) {
-                    if (auto* stats = theApp.statistics)
-                        stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
-                    const bool validKey = (dr.receiverVerifyKey != 0) &&
-                        (dr.receiverVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIPv4Host));
-                    QByteArray decompressed = decompressKadPayload(dr.data + 2, dr.length - 2);
-                    if (!decompressed.isEmpty()) {
-                        emit kadPacketReceived(opcode,
-                                               reinterpret_cast<const uint8*>(decompressed.constData()),
-                                               static_cast<uint32>(decompressed.size()),
-                                               senderEP,
-                                               validKey, dr.senderVerifyKey);
-                    }
                 }
             }
         }

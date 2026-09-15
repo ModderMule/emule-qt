@@ -60,8 +60,9 @@ using namespace eMule::testing;
 
 namespace {
 
-/// A mock peer needs a run-unique user hash *and* TCP port, or ClientList reads it as the
-/// previous peer reconnecting and displaces that one instead of adding a second identity.
+/// A mock peer needs a run-unique user hash *and* TCP port — and Kad port, which
+/// buildHelloPacket() derives from the TCP one — or ClientList reads it as the previous peer
+/// reconnecting with a changed hash, which bans 127.0.0.1 for every test after it.
 constexpr uint16 kFriendPeerPort  = 4772;
 constexpr uint16 kFriendPeerPort2 = 4782;
 constexpr uint16 kSessionPeerPort = 4792;
@@ -1104,8 +1105,11 @@ std::unique_ptr<Packet> tst_MockPeerUpload::buildHelloPacket(const uint8* userHa
     Tag(CT_NAME, QStringLiteral("MockPeer")).writeTagToFile(data);
     Tag(CT_VERSION, static_cast<uint32>(EDONKEYVERSION)).writeTagToFile(data);
 
-    // CT_EMULE_UDPPORTS — (kadPort << 16) | udpPort
-    const uint32 udpPorts = (static_cast<uint32>(4672) << 16) | 4672;
+    // CT_EMULE_UDPPORTS — (kadPort << 16) | udpPort. The Kad port follows the TCP port: on one
+    // IP, UpDownClient::compare() matches on either (as MFC does), so a shared Kad port made each
+    // new identity look like the previous mock peer changing its user hash — which bans it.
+    const auto kadPort = static_cast<uint16>(tcpPort + 10);
+    const uint32 udpPorts = (static_cast<uint32>(kadPort) << 16) | 4672;
     Tag(CT_EMULE_UDPPORTS, udpPorts).writeTagToFile(data);
 
     // CT_EMULE_MISCOPTIONS1 — capability bits

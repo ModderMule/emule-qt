@@ -115,8 +115,9 @@ void UsenetStatistics::noteResult(const UsenetFetchResult& result)
     }
 
     // A local fault with no connection behind it (the target file would not
-    // open): no provider did anything wrong.
-    if (result.serverKey.isEmpty())
+    // open): no provider did anything wrong. Nor did one when the proxy in front
+    // of every account refused the connection.
+    if (result.serverKey.isEmpty() || result.error == NntpError::ProxyFailed)
         return;
 
     if (c)

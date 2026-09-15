@@ -105,7 +105,10 @@ namespace eMule::Ipc {
         {QStringLiteral("datarate"),             f.status() == PartFileStatus::Complete ? 0 : static_cast<qint64>(f.datarate())},
         {QStringLiteral("sourceCount"),          f.sourceCount()},
         {QStringLiteral("transferringSrcCount"), f.transferringSrcCount()},
-        {QStringLiteral("downPriority"),         priorityToString(f.downPriority())},
+        // MFC's Sources column: available (on queue + downloading) of total, plus A4AF.
+        {QStringLiteral("availableSrcCount"),    f.availableSourceCount()},
+        {QStringLiteral("a4afSrcCount"),         f.a4afSourceCount()},
+        {QStringLiteral("downPriority"),        priorityToString(f.downPriority())},
         {QStringLiteral("isAutoDownPriority"),   f.isAutoDownPriority()},
         {QStringLiteral("isPaused"),             f.isPaused()},
         {QStringLiteral("isStopped"),            f.isStopped()},
@@ -189,6 +192,10 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("fileSize"),            static_cast<qint64>(f.fileSize()));
     m.insert(QStringLiteral("sourceCount"),         static_cast<qint64>(f.sourceCount()));
     m.insert(QStringLiteral("completeSourceCount"), static_cast<qint64>(f.completeSourceCount()));
+    // MFC CSearchFile::IsComplete(): neither a Kad hit nor a browsed file carries
+    // complete-source information, so the GUI shows "?" instead of 0%.
+    m.insert(QStringLiteral("isKad"),               f.isKadResult());
+    m.insert(QStringLiteral("inDirectory"),         !f.directory().isEmpty());
     m.insert(QStringLiteral("fileType"),            f.fileType());
     m.insert(QStringLiteral("searchID"),            static_cast<qint64>(f.searchID()));
     m.insert(QStringLiteral("knownType"),           static_cast<int>(f.knownType()));
@@ -293,6 +300,7 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("upPartCount"),    static_cast<int>(c.upPartCount()));
     m.insert(QStringLiteral("fileName"),        c.clientFilename());
     m.insert(QStringLiteral("remoteQueueRank"), static_cast<qint64>(c.remoteQueueRank()));
+    m.insert(QStringLiteral("remoteQueueFull"), c.remoteQueueFull());
     m.insert(QStringLiteral("availPartCount"),  c.availablePartCount());
     // Client software identification
     m.insert(QStringLiteral("softwareId"), static_cast<int>(c.clientSoft()));

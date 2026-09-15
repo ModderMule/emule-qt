@@ -23,6 +23,7 @@
 
 #include "decode/YencDecoder.h"
 #include "post/UsenetPostProcessor.h"
+#include "post/UsenetReleaseChecks.h"
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 
@@ -32,6 +33,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -317,6 +319,14 @@ private slots:
     void theIndexPar2IsFetchedFirstOnAnObfuscatedRelease();
     void aReleaseWithNoPar2IsScheduledExactlyAsBefore();
     void aDamagedObfuscatedReleaseBuysOnlyTheBlocksItNeeds();
+    void anSfvMismatchFailsAReleaseWithNoPar2();
+    void aCleanSfvPublishesThePayloadButNotTheSfv();
+    void anSfvListingAnUnpostedSampleStillPublishes();
+    void anExecutableInAMovieReleaseIsHeldBack();
+    void anExecutableInASoftwareReleaseIsPublished();
+    void anArchiveHidingADisguisedProgramIsNeverExtracted();
+    void aStoppedReleaseWaitsForTheUserAndOnlyTheUser();
+    void aReleaseThatCannotBeRepairedStopsBeforeTheRest();
 };
 
 // ---------------------------------------------------------------------------
@@ -992,6 +1002,353 @@ void tst_UsenetPostPipeline::refusesToShareAnUnrepairableRelease()
     QCOMPARE(stats->usenetSession().par2Verified, uint64(0));   // nothing to verify with
 
     queue.stop();
+}
+
+namespace {
+
+QByteArray sfvLineFor(const QString& name, const QByteArray& content)
+{
+    return QStringLiteral("%1 %2\r\n")
+        .arg(name)
+        .arg(yencCrc32(0, content), 8, 16, QLatin1Char('0'))
+        .toUtf8();
+}
+
+/// A job over a folder with no PAR2 in it, as the queue would build one.
+UsenetPostJob sfvJob(const QString& work, const QString& dest, const QStringList& expected)
+{
+    UsenetPostJob job;
+    job.itemId = QStringLiteral("item");
+    job.workDir = work;
+    job.destDir = dest;
+    job.expectedNames = expected;
+    return job;
+}
+
+UsenetPostResult runJob(const UsenetPostJob& job)
+{
+    UsenetPostProcessor processor;
+    QSignalSpy finished(&processor, &UsenetPostProcessor::finished);
+    processor.process(job);
+    return finished.isEmpty() ? UsenetPostResult{}
+                              : finished.first().at(0).value<UsenetPostResult>();
+}
+
+} // namespace
+
+// A release with no PAR2 used to be published unchecked: the one check its poster
+// shipped was never read.
+void tst_UsenetPostPipeline::anSfvMismatchFailsAReleaseWithNoPar2()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    QByteArray movie = payload(20000, 31);
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("rel.sfv")),
+                      sfvLineFor(QStringLiteral("movie.bin"), movie)));
+    movie[10000] = char(~quint8(movie.at(10000)));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("movie.bin")), movie));
+
+    const QStringList expected{QStringLiteral("movie.bin"), QStringLiteral("rel.sfv")};
+    const UsenetPostResult result = runJob(sfvJob(work, dest, expected));
+    QVERIFY2(!result.success, "a release its own SFV calls damaged was published");
+    QVERIFY2(result.message.contains(QLatin1String("SFV"))
+                 && result.message.contains(QLatin1String("movie.bin")),
+             qPrintable(result.message));
+    QVERIFY(namesIn(dest).isEmpty());
+
+    // Switched off, it is exactly what it was before.
+    UsenetPostJob off = sfvJob(work, dest, expected);
+    off.sfvEnabled = false;
+    const UsenetPostResult published = runJob(off);
+    QVERIFY2(published.success, qPrintable(published.message));
+}
+
+void tst_UsenetPostPipeline::aCleanSfvPublishesThePayloadButNotTheSfv()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    const QByteArray movie = payload(20000, 32);
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("movie.bin")), movie));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("rel.sfv")),
+                      sfvLineFor(QStringLiteral("movie.bin"), movie)));
+
+    const UsenetPostResult result =
+        runJob(sfvJob(work, dest, {QStringLiteral("movie.bin"), QStringLiteral("rel.sfv")}));
+    QVERIFY2(result.success, qPrintable(result.message));
+    QCOMPARE(result.staged.size(), 1);
+    QCOMPARE(QFileInfo(result.staged.first().finalPath).fileName(), QStringLiteral("movie.bin"));
+    QVERIFY2(result.consumed.contains(QDir(work).filePath(QStringLiteral("rel.sfv"))),
+             qPrintable(result.consumed.join(u',')));
+}
+
+// Posters list the sample and the .nfo and then never post them. Reading that as
+// damage would fail most of the releases the check exists for.
+void tst_UsenetPostPipeline::anSfvListingAnUnpostedSampleStillPublishes()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    const QByteArray movie = payload(20000, 33);
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("movie.bin")), movie));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("rel.sfv")),
+                      sfvLineFor(QStringLiteral("movie.bin"), movie)
+                          + sfvLineFor(QStringLiteral("sample.bin"), movie.left(100))));
+
+    const UsenetPostResult result =
+        runJob(sfvJob(work, dest, {QStringLiteral("movie.bin"), QStringLiteral("rel.sfv")}));
+    QVERIFY2(result.success, qPrintable(result.message));
+}
+
+namespace {
+
+/// Starts like a Matroska file, so the container check calls it honest.
+QByteArray matroskaLike(int size, int seed)
+{
+    return QByteArray("\x1a\x45\xdf\xa3", 4) + payload(size - 4, seed);
+}
+
+/// Starts like a Windows executable.
+QByteArray programLike(int size, int seed)
+{
+    return QByteArray("MZ", 2) + payload(size - 2, seed);
+}
+
+QStringList defaultUnwanted()
+{
+    return parseExtensionList(QString(Preferences::kDefaultUsenetUnwantedExtensions));
+}
+
+} // namespace
+
+// The commonest fake on Usenet: the movie, and a "codec" to install first.
+void tst_UsenetPostPipeline::anExecutableInAMovieReleaseIsHeldBack()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Movie.mkv")), matroskaLike(9000, 41)));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Codec Pack.exe")), programLike(3000, 42)));
+
+    UsenetPostJob job = sfvJob(work, dest, {});
+    job.unwantedExtensions = defaultUnwanted();
+    const UsenetPostResult result = runJob(job);
+
+    QVERIFY2(!result.success, "a movie carrying a program was published");
+    QCOMPARE(result.unwantedFiles, QStringList{QStringLiteral("Codec Pack.exe")});
+    QVERIFY(namesIn(dest).isEmpty());
+    // Held back, not deleted: the download is the user's to judge.
+    QVERIFY(QFile::exists(QDir(work).filePath(QStringLiteral("Codec Pack.exe"))));
+}
+
+void tst_UsenetPostPipeline::anExecutableInASoftwareReleaseIsPublished()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("setup.exe")), programLike(3000, 43)));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("readme.txt")), payload(500, 44)));
+
+    UsenetPostJob job = sfvJob(work, dest, {});
+    job.unwantedExtensions = defaultUnwanted();
+    const UsenetPostResult result = runJob(job);
+
+    QVERIFY2(result.success, qPrintable(result.message));
+    QVERIFY(result.unwantedFiles.isEmpty());
+    QCOMPARE(result.staged.size(), 2);
+}
+
+// Refused from the member list, before a byte is written: nothing a veto
+// catches ever lands in the unpack folder.
+void tst_UsenetPostPipeline::anArchiveHidingADisguisedProgramIsNeverExtracted()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    QVERIFY(writeZip(QDir(work).filePath(QStringLiteral("Rel.zip")),
+                     QStringLiteral("Movie.2024.mkv.exe"), programLike(6000, 45)));
+
+    UsenetPostJob job = sfvJob(work, dest, {});
+    job.unwantedExtensions = defaultUnwanted();
+    const UsenetPostResult result = runJob(job);
+
+    QVERIFY(!result.success);
+    QCOMPARE(result.unwantedFiles, QStringList{QStringLiteral("Movie.2024.mkv.exe")});
+    QVERIFY2(!QFile::exists(QDir(work).filePath(QStringLiteral("%1/Movie.2024.mkv.exe")
+                                                    .arg(QString(kUnpackDirName)))),
+             "the refused member was extracted anyway");
+    QVERIFY(QFile::exists(QDir(work).filePath(QStringLiteral("Rel.zip"))));
+    QVERIFY(namesIn(dest).isEmpty());
+}
+
+// The whole round trip through the queue: the check pauses the release with a
+// reason, a restart keeps both, a bulk resume and a password leave it alone, and
+// the user's own Resume publishes it and is not asked again.
+void tst_UsenetPostPipeline::aStoppedReleaseWaitsForTheUserAndOnlyTheUser()
+{
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+    QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("Movie.mkv")), matroskaLike(9000, 46)));
+    QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("Codec.exe")), programLike(4000, 47)));
+
+    FakeNntpServer server;
+    const PostedRelease release = postRelease(stage, server);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+    thePrefs.setUsenetUnwantedAction(int(UsenetCheckAction::Pause));
+    thePrefs.setUsenetUnwantedExtensions(QString(Preferences::kDefaultUsenetUnwantedExtensions));
+
+    QString id;
+    {
+        UsenetQueue queue;
+        queue.applyServers({serverConfig(port, 2)}, 60);
+        queue.setPostProcessingOptions({});
+        queue.start();
+
+        QString error;
+        id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error);
+        QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+        QTRY_COMPARE_WITH_TIMEOUT(queue.findItem(id)->status, UsenetItemStatus::Paused, 60000);
+        const UsenetQueueItem* item = queue.findItem(id);
+        QCOMPARE(item->stopReason, UsenetStopReason::Unwanted);
+        QVERIFY2(item->stalledReason.contains(QLatin1String("Codec.exe")),
+                 qPrintable(item->stalledReason));
+        QVERIFY(namesIn(thePrefs.incomingDir()).isEmpty());
+
+        QVERIFY2(!queue.resumeItem(id, UsenetQueue::ResumeIntent::Bulk),
+                 "a category-wide resume waved a stopped release through");
+        QVERIFY(!queue.resumeItem(id, UsenetQueue::ResumeIntent::Password));
+        QCOMPARE(queue.findItem(id)->status, UsenetItemStatus::Paused);
+        queue.stop();
+    }
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    const UsenetQueueItem* restored = queue.findItem(id);
+    QVERIFY(restored);
+    QCOMPARE(restored->status, UsenetItemStatus::Paused);
+    QCOMPARE(restored->stopReason, UsenetStopReason::Unwanted);
+    QVERIFY2(restored->stalledReason.contains(QLatin1String("Codec.exe")),
+             "the reason did not survive the restart");
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QVERIFY(queue.resumeItem(id));
+    QVERIFY2(finished.wait(60000), "the overruled release was never published");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+    QVERIFY(queue.findItem(id)->checkOverridden(UsenetStopReason::Unwanted));
+    QCOMPARE(namesIn(thePrefs.incomingDir()),
+             QStringList({QStringLiteral("Codec.exe"), QStringLiteral("Movie.mkv")}));
+
+    queue.stop();
+}
+
+// Six volumes, the first gone from every server, and two recovery blocks for a
+// hole of fifteen. The release stops the moment the lost volume resolves — not
+// after paying for the other five — and Resume downloads it anyway, after which
+// par2's own count fails it without buying recovery volumes that cannot help.
+void tst_UsenetPostPipeline::aReleaseThatCannotBeRepairedStopsBeforeTheRest()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    ScopedStatistics stats;
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    QStringList volumes;
+    for (int v = 1; v <= 6; ++v) {
+        const QString name = QStringLiteral("Rel.part%1.bin").arg(v);
+        QVERIFY(writeFile(QDir(stage).filePath(name), payload(v == 1 ? 60000 : 9000, 50 + v)));
+        volumes.append(name);
+    }
+    QVERIFY(createPar2Set(stage, QStringLiteral("Rel"), volumes, 4000, 2));
+
+    FakeNntpServer server;
+    const PostedRelease release =
+        postRelease(stage, server, QStringLiteral("Rel.part1.bin"), [] {
+            QList<int> all;
+            for (int p = 1; p <= 20; ++p)
+                all.append(p);
+            return all;
+        }());
+    QCOMPARE(release.droppedIds.size(), 20);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    // A probe would pause it first — for the right reason, but not this one.
+    const int oldHealth = thePrefs.usenetHealthCheck();
+    const int oldAction = thePrefs.usenetUnrepairableAction();
+    thePrefs.setUsenetHealthCheck(0);
+    thePrefs.setUsenetUnrepairableAction(int(UsenetCheckAction::Pause));
+    const auto restore = qScopeGuard([oldHealth, oldAction] {
+        thePrefs.setUsenetHealthCheck(oldHealth);
+        thePrefs.setUsenetUnrepairableAction(oldAction);
+    });
+
+    UsenetQueue queue;
+    // One connection: nothing is in flight beside the article that tips it over.
+    queue.applyServers({serverConfig(port, 1)}, 60);
+    // Rename off too: the block size has to be learned without it.
+    queue.setPostProcessingOptions({.rename = false});
+    queue.start();
+
+    QString error;
+    const QString id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QTRY_COMPARE_WITH_TIMEOUT(queue.findItem(id)->status, UsenetItemStatus::Paused, 60000);
+    const UsenetQueueItem* item = queue.findItem(id);
+    QCOMPARE(item->stopReason, UsenetStopReason::Unrepairable);
+    QVERIFY2(item->stalledReason.contains(QLatin1String("cannot be repaired")),
+             qPrintable(item->stalledReason));
+    QVERIFY2(firstBodyIndexFor(server.receivedCommands(), QStringLiteral("Rel.part2.bin")) < 0,
+             "the rest of a release that could not be repaired was paid for anyway");
+    for (const UsenetFileState& st : item->files)
+        QVERIFY2(st.par2FileName.isEmpty(), "a name was applied with rename off");
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QVERIFY(queue.resumeItem(id));
+    QVERIFY2(finished.wait(120000), "the resumed release never came to an end");
+    QVERIFY2(!finished.at(0).at(1).toBool(), "fifteen blocks short, and it succeeded?");
+
+    item = queue.findItem(id);
+    QVERIFY(item->checkOverridden(UsenetStopReason::Unrepairable));
+    QCOMPARE(item->stopReason, UsenetStopReason::None);
+    QVERIFY(firstBodyIndexFor(server.receivedCommands(), QStringLiteral("Rel.part6.bin")) >= 0);
+    QVERIFY2(!requestedAnyRecoveryVolume(server.receivedCommands()),
+             "bought recovery volumes that could never cover the shortfall");
+
+    queue.stop();
+#endif
 }
 
 QTEST_MAIN(tst_UsenetPostPipeline)

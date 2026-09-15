@@ -325,6 +325,7 @@ emule_add_test(tst_RarReader FOLDER "Usenet" LIBRARIES eMule::Usenet)
 # unnecessary.
 emule_add_test(tst_UsenetDirectUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetReleaseChecks FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetPassword FOLDER "Usenet" LIBRARIES eMule::Usenet)
 set_tests_properties(tst_UsenetPassword PROPERTIES TIMEOUT 180)
 
@@ -458,6 +459,7 @@ emule_add_test(tst_ListSorting FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
             # The Usenet model marks a password-protected release with menuIcon().
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp")
 target_include_directories(tst_ListSorting PRIVATE
@@ -585,6 +587,7 @@ emule_add_test(tst_FileMarks FOLDER "Gui"
     SOURCES tst_FileMarks.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
             "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
@@ -623,7 +626,9 @@ target_link_libraries(tst_TrayMeterIcon PRIVATE Qt6::Widgets)
 # Link codec shared by the Server Info, chat and IRC panes — header-only, so nothing
 # but the test itself is compiled. Widgets is for QTextDocument: one case replays the
 # rich-text parse a QTextBrowser does.
-emule_add_test(tst_TextLinks FOLDER "Ipc")
+emule_add_test(tst_TextLinks FOLDER "Ipc"
+    SOURCES tst_TextLinks.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Smileys.cpp")
 target_include_directories(tst_TextLinks PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
 target_link_libraries(tst_TextLinks PRIVATE Qt6::Widgets)
 

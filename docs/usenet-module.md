@@ -73,6 +73,36 @@ Inbound rate limiting is `NntpSocket::setReadRateLimit()`, a token bucket with a
 refill timer. `0` means unlimited, as everywhere else in eMuleQt. It is driven by
 the budget split described below.
 
+### Through the user's proxy
+
+The Proxy page's proxy carries news-server connections too, unless its
+**Use for news servers** box (`usenet.useProxy`, default on) is cleared.
+`toNetworkProxy()` in `core/net/ProxySettings.h` is the one translation from the
+page to a `QNetworkProxy`, shared with `EMSocket`; `Preferences::usenetProxySettings()`
+is the one answer to "which route", read by `UsenetSession::applyPreferences()` for
+the workers and by `handleTestNewsServer()`, so the Test button proves the route a
+download takes. It reaches each socket through `UsenetQueue::setProxy()` →
+`UsenetWorker::setServers()` → `NntpServerPool::setProxy()`, and takes effect at the
+worker rebuild `applyServers()` does on every save — news servers switch over at
+once, unlike eD2K sockets.
+
+- **`NoProxy` is explicit**, not Qt's `DefaultProxy`: with the box cleared, an
+  application-wide proxy set by anything else must not carry the connection.
+- **SOCKS4 and SOCKS4a are reached as SOCKS5**, as `EMSocket` always did: Qt has no
+  SOCKS4 client. The Test button says so when such a proxy refuses.
+- Qt's SOCKS5 and HTTP clients send the **host name** to the proxy (SOCKS5 ATYP 3),
+  so a provider's name is never resolved locally.
+- Many HTTP proxies only allow `CONNECT` to port 443; an error names the proxy.
+
+⚠️ **A dead proxy is not a dead provider.** Qt's `Proxy*Error` codes map to
+`NntpError::ProxyFailed`, appended to the enum so no stored value moved. As a
+`ConnectFailed` it backed *every* account off for a minute, counted connection
+errors against each, spent every article's transport retries, failed items on
+required accounts and booked articles **missing** on optional ones. Now the worker
+blocks no server, statistics blame nobody, and the queue parks for the retry
+interval with "waiting for the proxy" on each item — the same shape as the disk
+floor — until an article comes through or a settings save lifts it.
+
 ## Transport and commands are separate, on purpose
 
 `NntpSocket` owns transport, greeting and authentication and knows nothing about
@@ -169,6 +199,11 @@ usenet:
   healthCheck: 1            # 0 off, 1 sample one article per file, 2 every article
   healthMinPercent: 95      # below this a release is queued *paused*, never failed
   autoAddPaused: false      # queue automatic adds paused, so a feed proposes
+  useProxy: true            # news servers through the Proxy page's proxy
+  sfvCheck: true            # verify against an .sfv when PAR2 did not run
+  unrepairableAction: 1     # provably unrepairable: 0 keep going, 1 pause, 2 fail
+  unwantedAction: 1         # a media release carrying unwanted files: same values
+  unwantedExtensions: "exe, com, scr, pif, lnk, bat, cmd, vbs, vbe, js, jse, wsf, hta, cpl, msi, ps1, jar, reg"
   watchDir: ""              # a folder .nzb files are picked up from; empty = off
   subjectPatterns: []       # absent = the built-in heuristics; see § Subject parsing
   servers:
@@ -709,14 +744,15 @@ header.
 | Target | Covers |
 |---|---|
 | `tst_UsenetSmoke` | the library links and moc ran |
-| `tst_NntpSocket` | greeting, auth, TLS modes, watchdog, dot-unstuffing, rate limit; and every "cannot answer for this article" code (430/423/420/412) mapping to `ArticleNotFound` rather than to a protocol error, which is fatal to the connection and would back the whole account off on every probe |
-| `tst_NntpServerPool` | level normalisation, rotation, exclusion, backoff; grouped accounts sharing one connection budget and an ungrouped pair keeping separate ones; a server divided down to zero connections keeping its rung but leasing nothing; the shared ladder built from the configured levels only |
-| `tst_UsenetPrefs` | round trip, encryption, ordering, mint condition, caps; subject patterns: a round trip, **no `subjectPatterns` block written while the defaults are in use** — what keeps every existing preferences.yml byte-identical — a pattern that will not compile surviving a save because the typo is the record of what was meant, one with no role dropped on load, the cap and the name de-duplication, and a trailing space in a pattern *not* trimmed away |
+| `tst_NntpSocket` | greeting, auth, TLS modes, watchdog, dot-unstuffing, rate limit; and every "cannot answer for this article" code (430/423/420/412) mapping to `ArticleNotFound` rather than to a protocol error, which is fatal to the connection and would back the whole account off on every probe. Proxy, against `tests/FakeProxyServer.h`: SOCKS5 with credentials **asked by host name** (ATYP 3), HTTP `CONNECT` answering a 407, an application-wide proxy **ignored** by a socket with none of its own, and a refused proxy reported as `ProxyFailed` naming the proxy |
+| `tst_NntpServerPool` | level normalisation, rotation, exclusion, backoff; grouped accounts sharing one connection budget and an ungrouped pair keeping separate ones; a server divided down to zero connections keeping its rung but leasing nothing; the shared ladder built from the configured levels only; every lease connecting through the pool's proxy |
+| `tst_UsenetReleaseChecks` | the checks without a queue. SFV: comments, tabs, quotes and paths parsed; a clean set in either case; a damaged file named; an expected file gone is damage while **a listed sample nobody posted is not**; nothing present checks nothing; cancel. Unwanted: extension lists normalised; video tags; a program in a media release, **none in a software release**, a double extension without media, an empty list off; a program named `.mkv` fake while an MP4 named `.mkv` and **an unrecognised container are not**. The repair estimate: a covered hole repairable, losing more than the set holds unrepairable, **a file still downloading claiming no damage**, a repost counting its best copy, a repeated part number not a hole, **recovery data counted whatever it is called**, and nothing to judge from being Unknown |
+| `tst_UsenetPrefs` | round trip, encryption, ordering, mint condition, caps; news servers following the proxy unless switched off, **eD2K's route unmoved by that switch**, and SOCKS4 reached as SOCKS5; subject patterns: a round trip, **no `subjectPatterns` block written while the defaults are in use** — what keeps every existing preferences.yml byte-identical — a pattern that will not compile surviving a save because the typo is the record of what was meant, one with no role dropped on load, the cap and the name de-duplication, and a trailing space in a pattern *not* trimmed away |
 | `tst_UsenetYenc` | CRC vector, every byte value, the four traps above |
 | `tst_UsenetSubjectPatterns` | the heuristics once they became data. A 16-row corpus run against a **frozen verbatim copy** of the hand-written parser this replaced *and* against golden columns — including the quoted-whitespace quirk, preserved rather than fixed, and the length cap, which is the one intentional divergence. Policy: a pattern that will not compile skipped rather than fatal, a role whose rules are all typos falling back to the built-ins while one whose rules are all *disabled* does not, positional groups refused, a counter rule missing `total` refused so a part never arrives without one, a pattern matching the empty string refused, **configuring one role leaving the others on their built-ins**, first-match-wins within a role, `pick: last` keeping a year out of the counter, an absurdly long subject yielding nothing rather than hanging, and the same rule set handed out until the preference changes |
 | `tst_UsenetNzbParse` | schema, namespaces, HTML error pages, subject heuristics; and the NZB's own shortfall — a short segment run reported with its bytes priced at *that file's* mean, an obfuscated post with no part counter **not** called incomplete, and the par2 index file kept out of the recovery total it carries no recovery data for |
 | `tst_UsenetArticleFetch` | a multi-part file assembled **out of order**, byte-identical |
-| `tst_UsenetQueue` | the ladder: every account on a level asked before escalating (a sibling used to be skipped on the first 430); an article older than an account's retention skipped while another can serve it, and **fetched anyway when none can** — the fail-safe; a dead *optional* account costing one article rather than the download, and the same account not optional still failing it; an NZB naming itself through `<meta type="name">` when the caller supplies no name. Allowances: raw wire bytes booked against the account that served them and against one that only answered 430; an account over its allowance skipped while a sibling serves, and **never asked**; a spent allowance parking the download rather than failing it or declaring an article missing, and resuming when the limit is raised; a dead *optional* account unable to strand an article the allowance is hiding; and a spent rung parking rather than spending the next one until asked; the 90% warning said once rather than four times a second. Health: STAT issued **before** any BODY; sampling asking exactly one article per file; an article the second server holds **not** counted unavailable — the ladder-blind version pauses four releases that download perfectly; a probe whose answer is wrong changing nothing at all (`missingSegments == 0`, payload byte-identical) — the fail-safe twin of the retention case; a short release added *paused* and downloading in full on resume; a checking item not counted as a live download; and no verdict at all when there is nothing to ask. Duplicates: the same NZB refused under a different name, a manual re-add of a completed release allowed and an automatic one skipped, a repost with fresh message-ids **not** a duplicate, the guard surviving a restart, and the refusal sentence carrying no em dash; `addNzb()` reporting Added / Duplicate / Invalid, and an automatic add queued *paused* when the user asked for that while a manual one is not. Categories: a release completing into its category's folder **and not into the global incoming dir**; a category whose folder was deleted mid-download landing in the global one rather than being stranded, and keeping its label; an index the list no longer holds resolving to "All" rather than reaching past the end; the category surviving a restart through the sidecar, and a sidecar with no `category:` key at all reading as "All"; a deleted category renumbering the live queue **and the sidecars of a queue that is not running** — the case ED2K has no analogue for; and an automatic add still auto-categorised while one the caller categorised is never second-guessed |
+| `tst_UsenetQueue` | the ladder: every account on a level asked before escalating (a sibling used to be skipped on the first 430); an article older than an account's retention skipped while another can serve it, and **fetched anyway when none can** — the fail-safe; a dead *optional* account costing one article rather than the download, and the same account not optional still failing it; an NZB naming itself through `<meta type="name">` when the caller supplies no name. Allowances: raw wire bytes booked against the account that served them and against one that only answered 430; an account over its allowance skipped while a sibling serves, and **never asked**; a spent allowance parking the download rather than failing it or declaring an article missing, and resuming when the limit is raised; a dead *optional* account unable to strand an article the allowance is hiding; and a spent rung parking rather than spending the next one until asked; the 90% warning said once rather than four times a second. Health: STAT issued **before** any BODY; sampling asking exactly one article per file; an article the second server holds **not** counted unavailable — the ladder-blind version pauses four releases that download perfectly; a probe whose answer is wrong changing nothing at all (`missingSegments == 0`, payload byte-identical) — the fail-safe twin of the retention case; a short release added *paused* and downloading in full on resume; a checking item not counted as a live download; and no verdict at all when there is nothing to ask. Duplicates: the same NZB refused under a different name, a manual re-add of a completed release allowed and an automatic one skipped, a repost with fresh message-ids **not** a duplicate, the guard surviving a restart, and the refusal sentence carrying no em dash; `addNzb()` reporting Added / Duplicate / Invalid, and an automatic add queued *paused* when the user asked for that while a manual one is not. Categories: a release completing into its category's folder **and not into the global incoming dir**; a category whose folder was deleted mid-download landing in the global one rather than being stranded, and keeping its label; an index the list no longer holds resolving to "All" rather than reaching past the end; the category surviving a restart through the sidecar, and a sidecar with no `category:` key at all reading as "All"; a deleted category renumbering the live queue **and the sidecars of a queue that is not running** — the case ED2K has no analogue for; and an automatic add still auto-categorised while one the caller categorised is never second-guessed. Proxy: a dead proxy parking the queue with the reason on the item, **no article missing, no connection error charged, no `BODY` issued**, and a settings save that turns it off letting the release straight through |
 | `tst_UsenetWatchFolder` | intake: a file still being written left alone until its size and mtime hold still — the regression files it into `_failed/`, which looks exactly like a corrupt download; a queued .nzb moved to `_processed/` and an unreadable one to `_failed/`; a **duplicate** treated as processed rather than failed; files already present when the daemon started picked up, since no watcher event ever fires for those; and the two output folders never rescanned — otherwise the scanner re-queues its own output forever |
 | `tst_NzbDrop` | what a drop is: .nzb files and http(s) links whose *path* ends .nzb, several at once, and an indexer link with a query string after it — against `.emulecollection`, `server.met`, an `ed2k:` link, an ftp URL and a plain-text drag, all of which must fall through untouched |
 | `tst_PendingOpenQueue` | what waits for the daemon on a cold start: that the kind survives the wait (a path replayed as a link reaches the eD2K importer and is lost), that a re-entrant release cannot replay anything twice, arrival order, and the cap |
@@ -725,7 +761,7 @@ header.
 | `tst_UsenetNzbUrl` | the URL intake: `file:`, `qrc:`, `ftp:`, `data:`, hostless and relative links refused; a **private address accepted**, pinned so nobody blocks the self-hosted-indexer case; the display name stripped of `.nzb`/`.gz`, percent-decoded, and empty for API-style URLs; a plain and a gzipped `.nzb` fetched; a 404 reported as a *download* failure rather than a parse one; and no callback after its context dies |
 | `tst_UsenetPar2` | verify, repair, rename and the blocks-needed figure, against sets built in-process by `Par2::par2creator`. The file list: every name returned with **every source file deleted first**, `hash16k` equal to a `QCryptographicHash` digest of the first 16 KiB — the case that fails the moment anyone reaches for `MD5Hash::print()`, which emits `hash[15]` first — a short file hashing whole for both fields, and a truncated index answering rather than dereferencing the null `CreateSourceFileList()` leaves behind. The defect: a damaged obfuscated file costing **the 2 blocks it lost and not the 15 it has**, and a repair reporting the `.1` it moved aside — plus the second, unreported leftover, the obfuscated original par2 never touched. `Par2NameIndex`: length and opening bytes keyed *together*, two identical files in a set left unnamed, and a scratch file one byte short of the window not matched |
 | `tst_UsenetUnpack` | volume-set detection across all three naming schemes; path-traversal and reserved-name refusals; a multi-volume RAR set extracted through the whole list, and a set skipped because it was unpacked during the download |
-| `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing. Names: a fully obfuscated release — par2 built over the real names, the payload then renamed to hex and only then posted, so the subject *and* `=ybegin` are junk — carrying `par2FileName` and sealed under the real one, which is what separates this from the post-processing rename that would also end up with the right name on disk; the index `.par2` fetched **before** the payload and dragging no recovery volume with it; a release with no par2 scheduled exactly as before; a damaged obfuscated release buying **≤4 recovery blocks for 2 damaged ones** rather than 15; and `<name>.1` never published, with and without the cleanup preference |
+| `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing. Names: a fully obfuscated release — par2 built over the real names, the payload then renamed to hex and only then posted, so the subject *and* `=ybegin` are junk — carrying `par2FileName` and sealed under the real one, which is what separates this from the post-processing rename that would also end up with the right name on disk; the index `.par2` fetched **before** the payload and dragging no recovery volume with it; a release with no par2 scheduled exactly as before; a damaged obfuscated release buying **≤4 recovery blocks for 2 damaged ones** rather than 15; and `<name>.1` never published, with and without the cleanup preference. Without PAR2: an SFV mismatch failing the release (and the check off publishing it), a clean SFV publishing the payload but not itself, an unposted sample listed and still publishing. Held back: a program in a movie release, **a program in a software release published**, an archive whose only member is `movie.mkv.exe` **never extracted**; through the queue, a stopped release paused with its reason, **left alone by a bulk resume and a password**, keeping both across a restart, and published by the user's Resume. Unrepairable: six volumes with the first gone and two recovery blocks, stopped **before a single `BODY` for the second volume**, with rename off; Resume downloading it anyway and failing it **without buying the recovery volumes** that could never cover it |
 | `tst_UsenetStream` | phase 6a: part-number dispatch order over a shuffled NZB, a failed article retried *before* later ones, interval merge and the hole that stops it, `written` surviving a restart, the previewable predicate. Phase 6b: a stored RAR set resolving to the file inside it and reading back byte-identically across volume boundaries; **a seek to 80% that never issues a `BODY` for the volumes it skipped** — the exit criterion, asserted; a compressed set saying why; a `.001` split set. Multi-file sets: every inner file enumerated with its ordinal, each mapping to its own bytes across a volume boundary, **a set whose first file is an `.nfo` streaming the movie with no `entry=` named**, and a listing on a paused item that neither fetches nor guesses. Preview from the extraction: a **solid stored** set — refused by the map, extractable by libarchive, which is the only fixture that separates the two sources — streamed out of `_unpacked/` with the archive's own declared size as the total, listed and marked playable, and a control case proving the same set is refused when nothing is extracting it |
 | `tst_RarReader` | phase 6b: RAR4 and RAR5 stored volumes — name, method, packed/unpacked sizes, data offset, split flags, `LHD_LARGE` sizes past 4 GB, RAR5 multi-byte vints; compressed read but not stored; solid and encrypted refused with a reason; every truncated prefix asking for more bytes rather than reading past the buffer; a volume carrying two file headers listing both; resuming mid-volume at a computed offset, and a resumed block at a wrong address caught by its header CRC |
 | `tst_UsenetPassword` | password-protected releases: a header-encrypted RAR failing rather than completing empty with its volumes deleted; a data-encrypted one naming the password; ZIP decrypting through libarchive and refusing a wrong passphrase; an encrypted 7z going through `ExternalUnpacker` and coming back byte-identical; a configured unpacker that is not a binary refusing rather than substituting; stored paths harvested out of a staging directory; an incomplete 7z set listing nothing; the biggest playable member chosen over the sample; the `{{password}}` name convention reaching the queue; manual beating the NZB where automatic does not; a failed release retrying — without re-downloading — the moment a password is set; and, end to end, a genuinely encrypted release posted as articles, downloaded, unpacked with its password and published byte-identically |
@@ -995,6 +1031,66 @@ ignored the return of `seek()`, `write()` and `flush()` and cleared the buffer
 regardless, so a full disk silently left a hole that failed its MD4 later and was
 charged to the **peer** that sent it. The buffer is now kept and retried, and a
 failed write asks the queue to re-check the volume.
+
+### A stop is a pause with a proof, never a guess
+
+Two checks may now stop a download on their own — the first things in the module
+allowed to — and they share one piece of machinery.
+
+> Every filter above may never be a verdict. These two may act only because they
+> act on something provable, their default is to **pause** with the reason on the
+> row, and the user's Resume overrules them for that release for good.
+
+**The machinery.** `stopForCheck()` reads the setting for the check
+(`unrepairableAction` / `unwantedAction`: keep going, pause, fail), records
+`stopReason` and `stopDetail` on the item — optional sidecar keys, `kStateVersion`
+unchanged — and pauses or fails it from *any* status, since one check fires at the
+end of post-processing where `pauseItem()` refuses. The detail is loaded back into
+`stalledReason` for a paused item, so the row still says why after a restart.
+`resumeItem()` now takes a `ResumeIntent`:
+
+- **User** sets the matching bit in `checksOverridden`, which is never cleared;
+- ⚠️ **Bulk** — the category-wide resume, where "All" is every release — refuses an
+  item a check stopped. Otherwise one click publishes a fake nobody looked at;
+- **Password** (`setItemPassword()`) refuses too: it answers a different question.
+
+Every Resume also clears `stalledReason`, which fixes a health-paused row that went
+on saying "only N% looks available" after the user had answered it. And Resume no
+longer restarts direct unpack when every file is sealed, or a release stopped after
+its download would re-extract every set from volume one first.
+
+**Unrepairable.** `estimateRepair()` (`queue/UsenetRepairEstimate.cpp`) is pure and
+answers from bounds — at least N blocks damaged, at most M in the release — and
+stops only when N > M. Each input errs towards downloading:
+
+- damage is counted only for a file **every** article of which has resolved,
+  priced as the size the PAR2 set declares minus the bytes that arrived, with a
+  one-block minimum for a hole whose part number no other segment supplied. NZB
+  `bytes` never enter the damage side: they are encoded sizes, and the test
+  harness declares 4200 for 3000-byte articles exactly as real NZBs misstate them;
+- a repost puts one volume in the NZB twice, so a set file takes the **least**
+  damage among its copies;
+- capacity counts **every** file the set does not cover as a source, by
+  `max(bytes / blockSize, par2RecoveryBlocks())` — an obfuscated post names its
+  volumes nothing like `.vol00+01.par2`, and counting by name would call such a
+  release hopeless;
+- no block size, no matched file, or a segment with no declared size is *Unknown*.
+
+The block size comes from the index `.par2`, which `learnPar2Names()` now reads
+whenever PAR2 is on — the rename switch moved into `resolvePar2Name()`, because
+`sealFile()` renames from `par2FileName`. With the check active, `rebuildPlan()`
+hoists **the index alone** to the front (`hoistIndex`, beside the naming
+`hoistPar2`): at the end of the plan the block size arrives when there is nothing
+left to save. It is evaluated when a file with a hole seals — synchronously, before
+the next article goes out — before post-processing, and on the tick.
+
+`requestPar2Volumes()` had the same disease one level up: it returned
+`covered > 0`, so a shortfall no remaining volume could cover downloaded all of
+them and failed a round later, under a comment saying it did not. It now totals
+what is left first and fails at once. That failure is par2's own count, not an
+estimate, so it fails whatever the setting says.
+
+**Unwanted files** are the other check; see § Post-processing.
 
 ### An allowance may not be a verdict either — but it waits instead of asking
 
@@ -1568,8 +1664,8 @@ Verification then decides what happens next:
 
 That makes completion a **cycle**, which is the one genuinely new hazard in this
 phase: every path out of it has to terminate. `requestPar2Volumes()` returning
-false — nothing left to ask for — is the real terminator, and `kMaxPar2Rounds` is
-the backstop. `requestedPar2` is persisted for the same reason: a queue that
+false — nothing left to ask for, or not enough left to cover the shortfall — is
+the real terminator, and `kMaxPar2Rounds` is the backstop. `requestedPar2` is persisted for the same reason: a queue that
 forgot which volumes it had asked for would drop them from the rebuilt plan and
 re-request them once per restart, forever.
 
@@ -1735,6 +1831,49 @@ And **a release that failed verification is not published at all**. Phase 3
 shared short files, holes and all, and nothing in the system complained — the
 client quietly advertised corrupt data. `missingSegments > 0` with no usable
 recovery set is now a failure, and the files stay in the work folder.
+
+### A release without PAR2 is checked against its SFV
+
+`UsenetPostProcessor::process()` used to publish a release unchecked whenever PAR2
+did not run — none shipped, `par2Repair` off, or a build without libpar2. Many such
+releases carry an `.sfv`, and `verifySfv()` (`post/UsenetReleaseChecks.cpp`) now
+reads it: CRC32 per file, streamed through `yencCrc32()`, cancellable, exact names
+first and then case-folded, paths in a line reduced to a bare name. A mismatch
+fails the release and discards anything direct unpack took from the damaged
+volumes; a clean check sends the `.sfv` to `consumed` beside the par2 set.
+
+⚠️ **A file the SFV lists and nobody posted is not damage.** Posters list the
+sample and the `.nfo` and then leave them out. `UsenetPostJob::expectedNames` —
+what the download actually sealed — is what separates "expected and gone" from
+"never posted", which is only logged. There is no Resume override: an SFV mismatch
+is as much a fact as a failed PAR2 verify.
+
+### A media release carrying programs is held back
+
+The commonest fake on Usenet is a movie whose archive holds `Codec Pack.exe`, or a
+`movie.mkv.exe`. `unwantedFileNames()` judges names against `unwantedExtensions`
+and only for a **media** release — one whose NZB or payload has a playable name
+(`isPlayableName()`, the streaming index's own test), or whose title carries a
+video tag (1080p, x265, WEB-DL, S01E02…) — so a software download keeps its
+`setup.exe`. A disguised double extension counts regardless. `isFakeMediaFile()`
+adds a `.mkv` whose bytes are a program or an archive: `ContainerSniffer` finding no
+container **and** an `MZ`/ELF/Mach-O/ZIP/RAR/7z/`#!` head, because an unrecognised
+container may still be real video.
+
+Checked at three points, earliest first:
+
+1. **Direct-unpack progress**, while the release is still downloading — noted in
+   `onDirectUnpackProgress()` and acted on from the tick, because stopping cancels
+   the very run the handler was called for;
+2. **The member list**, through `UsenetUnpacker::setVeto()`, before `extractAll()`
+   writes a byte (after extraction for an encrypted set, whose members only an
+   external tool can list — and what it wrote is deleted);
+3. **The payload**, all together, just before staging.
+
+The result is `UsenetPostResult::unwantedFiles` rather than a failure: extracted
+files are deleted, downloaded ones stay, and `onPostFinished()` hands the item to
+`stopForCheck()` ahead of the statistics, so an overruling Resume that re-runs the
+pipeline does not count its verify twice.
 
 ## Storage, and why Usenet scratch is never shared
 
@@ -2341,6 +2480,94 @@ Two rules the counter is shaped by, both learned elsewhere in this codebase:
   period. The check runs on the queue's own tick, not lazily inside `add()`: a
   parked queue spends nothing, so a lazy check would never fire and a
   single-account queue would sit parked past its own billing day forever.
+
+## Not built yet
+
+The Usenet features this module still lacks, found by sweeping these docs, the
+source, and a feature-by-feature comparison with SABnzbd and NZBGet (2026-09-15).
+**The numbers are stable** — refer to "#19" in plans and commits; a built item is
+marked, never renumbered or removed. Sizes are relative (S/M/L).
+
+**Queue and downloading**
+
+1. **History view** of finished and failed releases. The daemon keeps
+   `UsenetHistory`, but only to catch duplicates; the GUI can neither see nor clear
+   it. (M)
+2. **Clear Completed, an explicit "Re-fetch missing articles", and re-running
+   post-processing on a finished item.** Resume only re-asks missing articles when
+   the account list changed since the failure. (S–M)
+3. **Stop downloads that cannot be repaired**, instead of spending the allowance
+   until the final verify. (S–M) *(built 2026-09-15)*
+4. **Pick files inside an NZB** — skip samples and extras, pause one file. (M)
+5. **Propagation delay** — do not fetch posts younger than N minutes. (S)
+6. **Scheduler actions for Usenet** — the scheduler cannot pause or resume it. (S)
+7. **Speed limit per server or per item**; there is one global Usenet limit. (M)
+8. **Queue order within a priority level survives a restart.** Sidecars load in
+   UUID filename order. (S)
+
+**Post-processing**
+
+9. **SFV/CRC32 check when a release has no PAR2**; such releases are published
+   unchecked. (S) *(built 2026-09-15)*
+10. **A folder per release in Incoming**; everything lands flat. Sorting into
+    TV/movie folders on top of that is L. (S)
+11. **Rename junk-named output to the release name** after unpacking. (S)
+12. **Archives inside archives, and split zips named `.zip` + `.z01`.** (S–M)
+13. **Unwanted-extension / fake-release check** — `.exe`, `.scr`, `.lnk` inside a
+    video release. (S–M) *(built 2026-09-15)*
+14. **Per-category post-processing settings**; repair, unpack and cleanup are
+    global switches. (S–M)
+15. **User scripts after a download, per category.** (M)
+16. **A password list to try, and acting on encryption as soon as it is
+    detected.** (S)
+17. **Keep a copy of every added `.nzb`**; only the watch folder keeps originals. (S)
+18. **Accept `.nzb` inside `.zip`/`.gz` for local adds**; URL and indexer grabs
+    already unwrap them. (S)
+
+**Integration**
+
+19. **SABnzbd-compatible API** so Sonarr, Radarr and Lidarr can add and track
+    releases. Needs #1 for output paths. (M–L)
+20. **Completion and failure notifications** — email and tray popups exist only
+    for eD2K. (S)
+21. **Usenet speed in the tray tooltip, status bar and MiniMule**, which show eD2K
+    only. (S)
+22. **Proxy for news-server connections**; eD2K sockets honour the proxy, NNTP
+    connects directly. (S–M) *(built 2026-09-15)*
+23. **Usenet in the web interface**; only the preview link exists there. (M–L)
+24. **Merge the Usenet tab into the shared transfers list** — the refactor
+    deferred under § GUI. (L)
+
+**Indexer search**
+
+25. **Typed search** — TV/movie modes, season/episode/IMDb, categories, a choice
+    of indexer. The daemon can report what each indexer supports; the GUI never
+    asks. (M)
+26. **Easynews search**, through an unofficial endpoint that will break. (S)
+27. **Search sites without a newznab API** such as binsearch and nzbindex, by
+    scraping. (M)
+
+**Security and plumbing**
+
+28. **Keep the encryption key in the OS keychain**; it sits in `preferences.yml`
+    beside the passwords it encrypts. (M)
+29. **A dedicated IPC message for post-processing progress.** Mostly delivered
+    already. (S)
+
+**Known defects, not features**
+
+- Open Folder on an unpacked release says "Nothing has completed yet":
+  `UsenetPanel::onOpenFolder` reads only `files[].finalPath`, which unpacking
+  deliberately leaves empty, while `publishedFiles[].path` has the answer
+  (`UsenetPanel.cpp:802`, `:884`).
+- The eD2K Priority column prints `Auto [%1]` with a number where MFC prints a
+  word (`DownloadListModel.cpp:311`).
+- A `SetPreferences` from a client other than the GUI does not re-apply Usenet
+  settings; the GUI's OK works only because it sends `SetNewsServers` after it.
+
+Deliberately not on the list, because these docs argue against them: posting,
+crawling newsgroup headers into a local index, an in-memory article cache, and an
+Options page for subject patterns.
 
 ## Build note
 

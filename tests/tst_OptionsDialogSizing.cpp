@@ -22,9 +22,12 @@
 #include "prefs/Preferences.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QLabel>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
+#include <QSpinBox>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTest>
@@ -74,6 +77,9 @@ private slots:
     // --- values loaded into the pages (offline: IpcClient nullptr) ---------
     void anUnlimitedLimitParksAtTheCapacity();
     void theIpcLogBoxShowsTheStoredValue();
+    void aLargeQueueSizeSurvivesTheSlider();
+    void extendedValuesComeFromThePrefsNotFallbacks();
+    void generalPageControlsEnableApply();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -240,6 +246,83 @@ void TestOptionsDialogSizing::theIpcLogBoxShowsTheStoredValue()
     QVERIFY(box);
     QVERIFY(box->isChecked());
     thePrefs.setEnableIpcLog(false);
+}
+
+/// The slider stopped at 30 000, so a larger stored queue was cut down by the next OK.
+void TestOptionsDialogSizing::aLargeQueueSizeSurvivesTheSlider()
+{
+    thePrefs.setQueueSize(42'000);
+    OptionsDialog dlg(nullptr, nullptr);
+
+    QSlider* queue = nullptr;
+    for (QSlider* s : stackOf(dlg)->widget(OptionsDialog::PageExtended)->findChildren<QSlider*>())
+        if (s->maximum() == 500)   // ×100
+            queue = s;
+    QVERIFY(queue);
+    QCOMPARE(queue->minimum(), 20);
+    QCOMPARE(queue->value(), 420);
+    thePrefs.setQueueSize(5000);
+}
+
+/// The offline map stopped after the Files page, so everything later loaded hardcoded
+/// fallbacks — a 240 KB file buffer, 20 connections per 5 s — and the next OK saved them.
+void TestOptionsDialogSizing::extendedValuesComeFromThePrefsNotFallbacks()
+{
+    thePrefs.setMaxConsPerFive(37);
+    thePrefs.setFileBufferSize(64 * 16384);
+    OptionsDialog dlg(nullptr, nullptr);
+    const QWidget* page = stackOf(dlg)->widget(OptionsDialog::PageExtended);
+
+    bool spinShowsIt = false;
+    for (const QSpinBox* s : page->findChildren<QSpinBox*>())
+        spinShowsIt |= s->maximum() == 50 && s->value() == 37;   // capped at the core's clamp
+    QVERIFY(spinShowsIt);
+
+    bool sliderShowsIt = false;
+    for (const QSlider* s : page->findChildren<QSlider*>())
+        sliderShowsIt |= s->maximum() == 4096 && s->value() == 64;
+    QVERIFY(sliderShowsIt);
+}
+
+/// Six General-page controls never called markDirty, so changing only them left Apply grey.
+void TestOptionsDialogSizing::generalPageControlsEnableApply()
+{
+    const auto applyOf = [](OptionsDialog& dlg) {
+        QPushButton* apply = nullptr;
+        for (QPushButton* b : dlg.findChildren<QPushButton*>())
+            if (b->text() == QStringLiteral("Apply"))
+                apply = b;
+        return apply;
+    };
+
+    const QStringList boxes = {QStringLiteral("Show splash screen"),
+                               QStringLiteral("Enable online signature"),
+                               QStringLiteral("Prevent standby mode while running"),
+                               QStringLiteral("Start with")};   // "…macOS" / "…Windows" / "…system"
+    for (const QString& label : boxes) {
+        OptionsDialog dlg(nullptr, nullptr);
+        QPushButton* apply = applyOf(dlg);
+        QVERIFY(apply);
+        QCheckBox* box = nullptr;
+        for (QCheckBox* c : dlg.findChildren<QCheckBox*>())
+            if (c->text().startsWith(label))
+                box = c;
+        QVERIFY2(box, qPrintable(label));
+        QVERIFY(!apply->isEnabled());
+        box->toggle();
+        QVERIFY2(apply->isEnabled(), qPrintable(label));
+    }
+
+    OptionsDialog dlg(nullptr, nullptr);
+    QPushButton* apply = applyOf(dlg);
+    QComboBox* lang = nullptr;
+    for (QComboBox* c : dlg.findChildren<QComboBox*>())
+        if (c->count() > 1 && c->itemText(0) == QStringLiteral("System Default"))
+            lang = c;
+    QVERIFY(lang);
+    QVERIFY(!apply->isEnabled());
+    lang->setCurrentIndex(lang->currentIndex() == 0 ? 1 : 0);
+    QVERIFY(apply->isEnabled());
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

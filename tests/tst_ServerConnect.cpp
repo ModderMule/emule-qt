@@ -4,6 +4,9 @@
 #include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
+#include "client/ClientList.h"
+#include "client/UpDownClient.h"
+#include "net/Address.h"
 #include "stats/Statistics.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -170,6 +173,9 @@ private slots:
     void serverMessage_errorAndWarningNotShown();
     void serverMessage_recordsServerVersion();
     void serverMessage_splitsOnBareNewlines();
+
+    // OP_CALLBACKREQUESTED — MFC ServerSocket.cpp:536
+    void callbackRequested_dialsTheRequester();
 
     // Statistics
     void statistics_timeAndReconnectsAcrossTwoConnections();
@@ -951,6 +957,46 @@ void tst_ServerConnect::statistics_timeAndReconnectsAcrossTwoConnections()
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// OP_CALLBACKREQUESTED — we are LowID, a HighID peer asked the server for a callback
+// ---------------------------------------------------------------------------
+
+void tst_ServerConnect::callbackRequested_dialsTheRequester()
+{
+    // The client was built with userId 0, which reads as LowID: tryToConnect() found no
+    // callback route and never dialled, so a LowID user could not answer the request.
+    // MFC ServerSocket.cpp:536 passes the requester's IP as the user ID.
+    ClientList clientList;
+    struct ClientListGuard {
+        ~ClientListGuard() { theApp.clientList = nullptr; }
+    } guard;
+    theApp.clientList = &clientList;
+
+    QTcpServer requester;
+    QVERIFY(requester.listen(QHostAddress::LocalHost, 0));
+    const uint16 requesterPort = requester.serverPort();
+
+    ConnectedFixture fx;
+    QVERIFY(fx.start());
+    QTRY_VERIFY_WITH_TIMEOUT(fx.conn->isConnected(), 5000);
+
+    // ip[4] in network order, port[2] little-endian.
+    const char payload[6] = { 127, 0, 0, 1,
+                              static_cast<char>(requesterPort & 0xFF),
+                              static_cast<char>(requesterPort >> 8) };
+    writeRawPacket(fx.serverSide, OP_EDONKEYPROT, OP_CALLBACKREQUESTED, payload, 6);
+
+    QTRY_VERIFY_WITH_TIMEOUT(requester.hasPendingConnections(), 5000);
+
+    const uint32 requesterIP = Address::fromString(QStringLiteral("127.0.0.1")).toNetworkUint32();
+    auto* client = clientList.findByConnIP(requesterIP, requesterPort);
+    QVERIFY(client != nullptr);
+    QVERIFY(!client->hasLowID());
+    client->releaseSocket(/*destroy*/ true);
+    clientList.removeClient(client);
+    delete client;
+}
 
 QTEST_MAIN(tst_ServerConnect)
 #include "tst_ServerConnect.moc"

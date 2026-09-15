@@ -9,6 +9,7 @@
 #include "controls/SortableItems.h"
 #include "chat/IrcClient.h"
 #include "prefs/Preferences.h"
+#include "utils/Smileys.h"
 #include "utils/TextLinks.h"
 
 #include <QDateTime>
@@ -48,38 +49,6 @@ static constexpr const char* kMircColors[] = {
     "#0000FF", "#FF00FF", "#7F7F7F", "#D2D2D2",
 };
 static constexpr int kMircColorCount = std::size(kMircColors);
-
-// ---------------------------------------------------------------------------
-// Smiley data table (matching MFC SmileySelector.cpp)
-// ---------------------------------------------------------------------------
-
-struct SmileyEntry {
-    const char* icon;
-    const char* code;
-};
-
-static constexpr SmileyEntry kSmileys[] = {
-    { "Smiley_Smile",    ":-)"     },
-    { "Smiley_Happy",    ":-))"    },
-    { "Smiley_Laugh",    ":-D"     },
-    { "Smiley_Wink",     ";-)"     },
-    { "Smiley_Tongue",   ":-P"     },
-    { "Smiley_Interest", "=-)"     },
-    { "Smiley_Sad",      ":-("     },
-    { "Smiley_Cry",      ":'("     },
-    { "Smiley_Disgust",  ":-|"     },
-    { "Smiley_omg",      ":-O"     },
-    { "Smiley_Skeptic",  ":-/"     },
-    { "Smiley_Love",     ":-*"     },
-    { "Smiley_smileq",   ":-]"     },
-    { "Smiley_sadq",     ":-["     },
-    { "Smiley_Ph34r",    ":ph34r:" },
-    { "Smiley_lookside", ">_>"     },
-    { "Smiley_Sealed",   ":-X"     },
-};
-
-static constexpr int kSmileyCount = std::size(kSmileys);
-static constexpr int kSmileyCols  = 6;
 
 // ---------------------------------------------------------------------------
 // IrcPanel
@@ -1109,43 +1078,19 @@ QString IrcPanel::renderMircCodes(QStringView text, MircFormat& fmt) const
     return result;
 }
 
-QString IrcPanel::renderSmileys(const QString& text) const
-{
-    QString result = text;
-
-    // Sort by code length descending to avoid partial matches
-    struct IndexedEntry {
-        int index;
-        int codeLen;
-    };
-    QVector<IndexedEntry> sorted;
-    sorted.reserve(kSmileyCount);
-    for (int i = 0; i < kSmileyCount; ++i)
-        sorted.append({i, static_cast<int>(std::strlen(kSmileys[i].code))});
-    std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) {
-        return a.codeLen > b.codeLen;
-    });
-
-    for (const auto& entry : sorted) {
-        const QString code = QString::fromLatin1(kSmileys[entry.index].code);
-        const QString img = QStringLiteral("<img src=\"qrc:/smileys/%1.ico\" width=\"16\" height=\"16\">")
-                                .arg(QLatin1StringView(kSmileys[entry.index].icon));
-        result.replace(code, img);
-    }
-    return result;
-}
-
 QString IrcPanel::formatMessage(const QString& text) const
 {
     // Links are found in the RAW message and everything around them is rendered
-    // through mIRC codes (which escape) and then smileys. The old order — render
+    // through mIRC codes (which escape). The old order — render
     // first, then regex the HTML for URLs — captured "&amp;" inside a query string
     // and only worked because the parser unescaped the href again; percent-encoding
     // it into an emuleqt:link wrapper would not survive that. It also handed
     // ed2k:// links straight to QUrl, where they vanish (TextLinks.h).
+    // Smileys are matched on the raw text too and ride through the escaping as
+    // placeholders — matched afterwards, ">_>" was already "&gt;_&gt;".
     MircFormat fmt;
     QString html = TextLinks::linkify(text, [this, &fmt](const QString& segment) {
-        return renderSmileys(renderMircCodes(segment, fmt));
+        return Smileys::expand(renderMircCodes(Smileys::protect(segment), fmt));
     });
     return html + fmt.close();
 }
@@ -1339,16 +1284,19 @@ void IrcPanel::showSmileySelector()
     grid->setSpacing(2);
     grid->setContentsMargins(4, 4, 4, 4);
 
-    for (int i = 0; i < kSmileyCount; ++i) {
+    constexpr int kSmileyCols = 6;
+    const auto smileys = Smileys::picker();
+    for (int i = 0; i < static_cast<int>(smileys.size()); ++i) {
+        const auto& smiley = smileys[static_cast<size_t>(i)];
         auto* btn = new QToolButton(gridWidget);
-        btn->setIcon(QIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(kSmileys[i].icon))));
+        btn->setIcon(QIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(smiley.icon))));
         btn->setIconSize(QSize(24, 24));
         btn->setFixedSize(28, 28);
         btn->setAutoRaise(true);
-        btn->setToolTip(QString::fromLatin1(kSmileys[i].code));
+        btn->setToolTip(QString::fromLatin1(smiley.code));
 
-        connect(btn, &QToolButton::clicked, this, [this, i, menu]() {
-            const QString code = QString::fromLatin1(kSmileys[i].code);
+        connect(btn, &QToolButton::clicked, this,
+                [this, code = QString::fromLatin1(smiley.code), menu]() {
             const int pos = m_input->cursorPosition();
             QString text = m_input->text();
 

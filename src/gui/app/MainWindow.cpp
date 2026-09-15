@@ -518,14 +518,16 @@ void MainWindow::dropEvent(QDropEvent* event)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    // Minimize to tray instead of exiting (unless force-quit via Exit action / Cmd+Q)
-    if (!m_forceQuit && m_trayIcon && thePrefs.minimizeToTray()) {
-        event->ignore();
-        hide();
-        return;
-    }
-
+    // Closing exits, as in MFC (OnClose → CanClose, EmuleDlg.cpp:1616,1632-1650); only
+    // minimizing goes to the tray — see changeEvent(). It used to be the other way round,
+    // so with the preference on the close button could not quit at all.
     if (thePrefs.promptOnExit()) {
+        // MFC restores the window before asking, so the question is never hidden
+        if (!isVisible() || isMinimized()) {
+            showNormal();
+            raise();
+            activateWindow();
+        }
         auto result = QMessageBox::question(
             this,
             tr("Confirm Exit"),
@@ -550,8 +552,20 @@ void MainWindow::closeEvent(QCloseEvent* event)
 
 void MainWindow::forceQuit()
 {
-    m_forceQuit = true;
     close();
+}
+
+void MainWindow::changeEvent(QEvent* event)
+{
+    QMainWindow::changeEvent(event);
+    // MFC CTrayDialog::OnSysCommand (TrayDialog.cpp:255-268): with the preference on,
+    // minimizing hides to the tray. Deferred, because hiding inside the state change
+    // leaves some platforms' minimize animation half done.
+    if (event->type() == QEvent::WindowStateChange && isMinimized() && m_trayIcon
+        && thePrefs.minimizeToTray())
+    {
+        QTimer::singleShot(0, this, &QWidget::hide);
+    }
 }
 
 void MainWindow::checkForUpdates(bool manual)
@@ -584,6 +598,10 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
         }
         if (obj == m_statusUpDownWidget) {
             switchToTab(TabStatistics);
+            return true;
+        }
+        if (obj == m_statusChat) {
+            switchToTab(TabMessages);
             return true;
         }
     }
@@ -726,11 +744,13 @@ void MainWindow::buildToolsMenu()
         schedOn ? tr("Disable Scheduler") : tr("Enable Scheduler"),
         this, &MainWindow::onSchedulerToggle);
 
-    // Fetch schedule entries from daemon and append them
+    // Fetch schedule entries from daemon and append them. Guarded: reopening the menu
+    // before the reply clears it, which deletes this submenu.
     if (m_ipc && m_ipc->isConnected()) {
         Ipc::IpcMessage req(Ipc::IpcMsgType::GetSchedules);
-        m_ipc->sendRequest(std::move(req), [schedMenu](const Ipc::IpcMessage& resp) {
-            if (!resp.fieldBool(0))
+        m_ipc->sendRequest(std::move(req),
+                           [schedMenu = QPointer<QMenu>(schedMenu)](const Ipc::IpcMessage& resp) {
+            if (!schedMenu || !resp.fieldBool(0))
                 return;
             const QCborMap data = resp.fieldMap(1);
             const QCborArray schedArr = data.value(QStringLiteral("schedules")).toArray();
@@ -1403,6 +1423,21 @@ void MainWindow::setupStatusBar()
     m_statusKad = new QLabel(tr("Kad: Disconnected"), this);
     m_statusKad->installEventFilter(this);
     sb->addPermanentWidget(m_statusKad);
+
+    // Unread chat (MFC SBarChatMsg): empty until a message waits, then it blinks
+    m_statusChat = new QLabel(this);
+    m_statusChat->setFixedSize(16, 16);
+    m_statusChat->setScaledContents(true);
+    m_statusChat->installEventFilter(this);
+    sb->addPermanentWidget(m_statusChat);
+    connect(m_messagesPanel, &MessagesPanel::messageStateChanged, this, [this](int state) {
+        m_statusChat->setPixmap(
+            state == 0 ? QPixmap()
+                       : QIcon(state == 1 ? QStringLiteral(":/icons/Message.ico")
+                                          : QStringLiteral(":/icons/MessagePending.ico"))
+                             .pixmap(16, 16));
+        m_statusChat->setToolTip(state == 0 ? QString() : tr("New message — double-click to read"));
+    });
 }
 
 void MainWindow::setupPages()

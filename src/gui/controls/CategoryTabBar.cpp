@@ -270,6 +270,8 @@ void CategoryTabBar::sendCategories(const QList<DownloadCategory>& categories,
     IpcMessage msg(IpcMsgType::SetCategories);
     msg.append(rows);
     m_ipc->sendRequest(msg, [this](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;   // connection dropped: the refetch below could not run either
         if (!resp.fieldBool(0)) {
             StatusBarNotifier::post(
                 tr("Could not save categories: %1").arg(resp.field(1).toString()));

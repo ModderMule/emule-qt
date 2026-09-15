@@ -749,7 +749,7 @@ private slots:
     void defaults_serverExtended()
     {
         Preferences prefs;
-        QCOMPARE(prefs.addServersFromClients(), true);
+        QCOMPARE(prefs.addServersFromClients(), false);   // MFC default
         QCOMPARE(prefs.filterServerByIP(), false);
     }
 

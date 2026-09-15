@@ -591,6 +591,9 @@ public:
     void maybeBootstrapKadFromPeer();
 
     virtual bool disconnected(const QString& reason, bool fromSocket = false);
+    /// Detach m_socket: cut its signals and back-pointer, and with @p destroy also
+    /// unregister and safeDelete() it. MFC BaseClient.cpp:1204-1208.
+    void releaseSocket(bool destroy);
     void connect();
     virtual void onSocketConnected(int errorCode);
 
@@ -882,6 +885,10 @@ private:
     /// MFC ListenSocket.cpp:996-1028 served all of them from one code path; keeping one
     /// here is what stops the standalone and bundled forms from drifting apart.
     void answerSourceRequest(KnownFile* file, uint8 requestedVersion, uint16 requestedOptions);
+
+    /// Part status + complete-source count after the hash of a UDP reask, gated on the
+    /// peer's UDP version. MFC DownloadClient.cpp:1361-1369.
+    void writeReaskFileInfo(SafeMemFile& data) const;
 
     // Helpers for upload-side file lookup
     KnownFile* findUploadFile(const uint8* fileHash) const;

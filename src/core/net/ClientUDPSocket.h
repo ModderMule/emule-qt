@@ -13,6 +13,7 @@
 #include "utils/Types.h"
 
 #include <QElapsedTimer>
+#include <QNetworkDatagram>
 #include <QUdpSocket>
 
 #include <array>
@@ -132,6 +133,8 @@ private slots:
     void flushSendQueue();
 
 private:
+    /// Filter, decrypt and dispatch one datagram. May throw — onReadyRead() catches.
+    void processDatagram(const QNetworkDatagram& datagram);
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode,
                        const Endpoint& sender);
 

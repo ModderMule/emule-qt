@@ -137,6 +137,7 @@ NntpSocket* NntpServerPool::acquire(int level, const QStringList& ignoreServers)
         auto socket = std::make_unique<NntpSocket>();
         NntpSocket* raw = socket.get();
         m_connections.push_back(Lease{std::move(socket), key, bucket.id, level, true});
+        raw->setProxy(m_proxy);
         raw->connectToServer(*server);
         m_rotation[level] = (start + i + 1) % candidates.size();
         return raw;

@@ -40,6 +40,18 @@ public:
 
     /// Set fixed Y range; pass 0,0 for auto-scale (default).
     void setYRange(double lower, double upper);
+    [[nodiscard]] double yUpper() const { return m_yUpper; }
+
+    /// Seconds between samples — the daemon's graphsUpdateSec. Scales the
+    /// 10-minute grid and the elapsed-time label.
+    void setSampleIntervalSec(double seconds)
+    {
+        if (seconds > 0.0 && seconds != m_sampleIntervalSec) {
+            m_sampleIntervalSec = seconds;
+            update();
+        }
+    }
+    [[nodiscard]] double sampleIntervalSec() const { return m_sampleIntervalSec; }
 
     /// Append one data point per series (vector size must match seriesCount).
     void appendPoints(const std::vector<double>& values);

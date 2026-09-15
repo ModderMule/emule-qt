@@ -18,6 +18,8 @@ QString describeNntpError(NntpError e)
     case NntpError::GroupNotFound:     return QCoreApplication::translate("Usenet", "Newsgroup not found");
     case NntpError::ArticleCorrupt:    return QCoreApplication::translate("Usenet", "Damaged article");
     case NntpError::ProtocolError:     return QCoreApplication::translate("Usenet", "Protocol error");
+    case NntpError::WriteFailed:       return QCoreApplication::translate("Usenet", "Could not write the article");
+    case NntpError::ProxyFailed:       return QCoreApplication::translate("Usenet", "Proxy failed");
     }
     return QCoreApplication::translate("Usenet", "Unknown error");
 }

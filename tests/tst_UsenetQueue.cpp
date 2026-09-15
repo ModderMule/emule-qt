@@ -26,7 +26,9 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QNetworkProxy>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTest>
 
 using namespace eMule;
@@ -287,6 +289,7 @@ private slots:
     void aWriteFailureFailsLocallyAndNeverBlamesTheServer();
     void aVeryHighItemIsFetchedBeforeAHighOne();
     void aPriorityOutsideTheFiveLevelsIsClamped();
+    void aDeadProxyNeverMakesAnArticleMissingOrBlamesAServer();
 };
 
 void tst_UsenetQueue::downloadsAnNzbByteIdentically()
@@ -3666,6 +3669,69 @@ void tst_UsenetQueue::aPriorityOutsideTheFiveLevelsIsClamped()
 
     QVERIFY(queue.setItemPriority(id, 0));
     QCOMPARE(queue.findItem(id)->priority, 0);
+
+    queue.stop();
+}
+
+// Every account sits behind the one proxy, so a dead proxy fails all of them at
+// once. As a ConnectFailed it backed each provider off, counted connection errors
+// against them and spent every article's retries. It waits instead — and the user
+// fixing the proxy lets the queue straight through.
+void tst_UsenetQueue::aDeadProxyNeverMakesAnArticleMissingOrBlamesAServer()
+{
+    ScopedStatistics stats;
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 4; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, 4,
+                                                       QStringLiteral("proxy.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    quint16 deadPort = 0;
+    {
+        QTcpServer probe;
+        QVERIFY(probe.listen(QHostAddress::LocalHost, 0));
+        deadPort = probe.serverPort();
+    }
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, QStringLiteral("127.0.0.1"), deadPort));
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.start();
+
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("proxy.bin"), 4),
+                                    QStringLiteral("proxy"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QTRY_VERIFY2_WITH_TIMEOUT(queue.findItem(id)->stalledReason.contains(QStringLiteral("proxy")),
+                              "the queue stopped without saying the proxy was why", 10000);
+    QTest::qWait(1000);
+
+    const UsenetQueueItem* item = queue.findItem(id);
+    QVERIFY2(item->status != UsenetItemStatus::Failed, "a dead proxy became a verdict");
+    QCOMPARE(item->files.at(0).missingSegments, 0);
+    QCOMPARE(stats->usenetSession().articlesMissing, uint64(0));
+    QCOMPARE(stats->usenetSession().connectionErrors, uint64(0));
+    QVERIFY(server.receivedCommands().isEmpty());
+
+    // The user fixes it: a settings save that turns the proxy off.
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    queue.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+    queue.applyServers({serverConfig(port, 4)}, 60);
+
+    QVERIFY2(finished.wait(30000), "the queue never came back once the proxy was fixed");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+    QVERIFY2(queue.findItem(id)->stalledReason.isEmpty(), "the reason outlived the stall");
 
     queue.stop();
 }

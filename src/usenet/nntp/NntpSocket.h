@@ -27,6 +27,7 @@
 
 #include <QByteArray>
 #include <QHash>
+#include <QNetworkProxy>
 #include <QObject>
 #include <QSslError>
 #include <QString>
@@ -49,6 +50,12 @@ public:
     /// The QSslSocket is created here, so calling this from the thread that
     /// owns the object is what puts the socket in the right event loop.
     void connectToServer(const NewsServer& server);
+
+    /// Route the next connectToServer() through @p proxy. NoProxy by default,
+    /// explicitly, so an application-wide proxy never applies unasked. A refusal
+    /// by the proxy itself fails with NntpError::ProxyFailed.
+    void setProxy(const QNetworkProxy& proxy) { m_proxy = proxy; }
+    [[nodiscard]] const QNetworkProxy& proxy() const { return m_proxy; }
 
     /// Send @p command. It must outlive the commandFinished() signal; the
     /// socket does not take ownership. One at a time — a second call while a
@@ -168,6 +175,7 @@ private:
     void markClosed();
 
     NewsServer m_server;
+    QNetworkProxy m_proxy{QNetworkProxy::NoProxy};
     QSslSocket* m_socket = nullptr;
     State m_state = State::Disconnected;
 

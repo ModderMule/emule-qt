@@ -3,6 +3,7 @@
 
 #include "prefs/Preferences.h"
 #include "utils/ColorUtils.h"
+#include "utils/StringUtils.h"
 
 #include <QCborMap>
 #include <QColor>
@@ -57,19 +58,22 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
 
     const auto& r = m_rows[static_cast<size_t>(index.row())];
 
+    // MFC ServerListCtrl.cpp:117-190: an unknown ping, user or file count is blank,
+    // not 0, and Max Users is blank until the server has reported users at all.
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColName:        return r.name;
-        case ColIP:          return QStringLiteral("%1:%2").arg(r.ip).arg(r.port);
+        case ColIP:          return QStringLiteral("%1 : %2").arg(r.ip).arg(r.port);
         case ColDescription: return r.description;
-        case ColPing:        return r.ping;
-        case ColUsers:       return r.users;
-        case ColMaxUsers:    return r.maxUsers;
+        case ColPing:        return r.ping ? QString::number(r.ping) : QString{};
+        case ColUsers:       return r.users ? formatShortNumber(r.users) : QString{};
+        case ColMaxUsers:    return r.users ? formatShortNumber(r.maxUsers) : QString{};
+        case ColFiles:       return r.files ? formatShortNumber(r.files) : QString{};
         case ColPreference:  return r.preference;
         case ColFailed:      return r.failed;
         case ColStatic:      return r.isStatic ? tr("Yes") : tr("No");
-        case ColSoftFiles:   return r.softFiles;
-        case ColLowID:       return r.lowIdUsers;
+        case ColSoftFiles:   return formatShortNumber(r.softFiles);
+        case ColLowID:       return formatShortNumber(r.lowIdUsers);
         case ColObfuscation: return r.obfuscation ? tr("Yes") : tr("No");
         default:             break;
         }
@@ -83,6 +87,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColPing:        return r.ping;
         case ColUsers:       return r.users;
         case ColMaxUsers:    return r.maxUsers;
+        case ColFiles:       return r.files;
         case ColPreference:  return preferenceRank(r.preferenceValue);
         case ColFailed:      return r.failed;
         case ColStatic:      return r.isStatic ? 1 : 0;
@@ -111,6 +116,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColPing:
         case ColUsers:
         case ColMaxUsers:
+        case ColFiles:
         case ColFailed:
         case ColSoftFiles:
         case ColLowID:
@@ -135,10 +141,11 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
     case ColPing:        return tr("Ping");
     case ColUsers:       return tr("Users");
     case ColMaxUsers:    return tr("Max Users");
+    case ColFiles:       return tr("Files");
     case ColPreference:  return tr("Preference");
     case ColFailed:      return tr("Failed");
     case ColStatic:      return tr("Static");
-    case ColSoftFiles:   return tr("Soft Files");
+    case ColSoftFiles:   return tr("Soft File Limit");
     case ColLowID:       return tr("Low ID");
     case ColObfuscation: return tr("Obfuscation");
     default:             return {};
@@ -149,10 +156,6 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
 {
     std::vector<ServerRow> rows;
     rows.reserve(static_cast<size_t>(servers.size()));
-
-    static constexpr std::pair<int, const char*> prefNames[] = {
-        {0, "Normal"}, {1, "High"}, {2, "Low"},
-    };
 
     for (const auto& val : servers) {
         const QCborMap m = val.toMap();
@@ -173,9 +176,10 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
 
         const int pref  = static_cast<int>(m.value(QStringLiteral("preference")).toInteger());
         row.preferenceValue = pref;
-        row.preference = QStringLiteral("Normal");
-        for (const auto& [v, s] : prefNames) {
-            if (v == pref) { row.preference = QString::fromLatin1(s); break; }
+        switch (pref) {
+        case 1:  row.preference = tr("High");   break;
+        case 2:  row.preference = tr("Low");    break;
+        default: row.preference = tr("Normal"); break;
         }
 
         row.numericIp = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());

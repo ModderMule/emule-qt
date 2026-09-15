@@ -244,7 +244,7 @@ void IpcClient::disconnectFromDaemon()
     m_reconnectTimer.stop();
 
     m_handshaked = false;
-    m_pendingCallbacks.clear();
+    failPendingRequests();
 
     if (m_connection) {
         disconnect(m_connection.get(), nullptr, this, nullptr);
@@ -322,6 +322,11 @@ int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
             /*outgoing=*/true);
 
     return seqId;
+}
+
+void IpcClient::cancelRequest(int seqId)
+{
+    m_pendingCallbacks.erase(seqId);
 }
 
 void IpcClient::sendBatchRequest(const QStringList& keys,
@@ -479,7 +484,7 @@ void IpcClient::onConnectionLost()
     m_keepaliveTimer.stop();
     m_keepaliveTimeoutTimer.stop();
     m_handshaked = false;
-    m_pendingCallbacks.clear();
+    failPendingRequests();
     emit disconnected();
 
     scheduleReconnect();
@@ -701,13 +706,34 @@ void IpcClient::scheduleReconnect()
     m_reconnectDelayMs = std::min(m_reconnectDelayMs * 2, MaxReconnectDelay);
 }
 
+void IpcClient::failPendingRequests()
+{
+    // They used to be dropped: a batch never settled and anything waiting on a reply
+    // waited forever. Deferred so no callback runs inside the socket teardown (one may
+    // open a dialog), and skipped entirely if this client is destroyed first.
+    if (m_pendingCallbacks.empty())
+        return;
+    using Pending = std::vector<std::pair<int, ResponseCallback>>;
+    auto pending = std::make_shared<Pending>(std::make_move_iterator(m_pendingCallbacks.begin()),
+                                             std::make_move_iterator(m_pendingCallbacks.end()));
+    m_pendingCallbacks = {};
+    std::ranges::sort(*pending, {}, &Pending::value_type::first);   // in send order
+
+    QTimer::singleShot(0, this, [pending] {
+        for (auto& [seqId, callback] : *pending) {
+            if (callback)
+                callback(IpcMessage{});
+        }
+    });
+}
+
 void IpcClient::resetConnection()
 {
     m_handshakeTimer.stop();
     m_keepaliveTimer.stop();
     m_keepaliveTimeoutTimer.stop();
     m_handshaked = false;
-    m_pendingCallbacks.clear();
+    failPendingRequests();
 
     if (m_connection) {
         // Disconnect all signals before closing so that close() → disconnectFromHost()

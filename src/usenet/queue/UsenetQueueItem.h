@@ -83,6 +83,23 @@ inline constexpr std::array kUsenetPriorityLevels{
 /// sixth bucket that nothing can name and no menu entry can ever select again.
 [[nodiscard]] int clampUsenetPriority(int priority);
 
+/// The check that stopped an item on its own, persisted so both the reason and
+/// the user's override survive a restart. The values double as bits in
+/// UsenetQueueItem::checksOverridden.
+enum class UsenetStopReason : quint8 {
+    None = 0,
+    Unrepairable = 1,   ///< more blocks damaged than the recovery set holds
+    Unwanted = 2,       ///< a media release carrying files it must not
+};
+
+/// What a check does when it fires: the usenetUnrepairableAction and
+/// usenetUnwantedAction values.
+enum class UsenetCheckAction : quint8 {
+    KeepGoing = 0,
+    Pause = 1,
+    Fail = 2,
+};
+
 /// Strip anything a file system would object to, and anything that would let a
 /// crafted name escape the temp directory.
 ///
@@ -252,6 +269,21 @@ public:
     /// moment the message is translated. Cleared by a successful post-processing
     /// run, so a retry that works leaves nothing behind.
     bool passwordRequired = false;
+
+    /// The check that stopped this item, if one did, and what it found. A paused
+    /// item shows the detail as its stalledReason, after a restart too — which
+    /// is why this is persisted and stalledReason is not.
+    UsenetStopReason stopReason = UsenetStopReason::None;
+    QString stopDetail;
+
+    /// Checks the user overruled by pressing Resume, as UsenetStopReason bits.
+    /// Never cleared: "download it anyway" is an answer about this release.
+    int checksOverridden = 0;
+
+    [[nodiscard]] bool checkOverridden(UsenetStopReason reason) const
+    {
+        return (checksOverridden & int(reason)) != 0;
+    }
 
     /// Absolute paths of what this release actually published, in staging order.
     ///

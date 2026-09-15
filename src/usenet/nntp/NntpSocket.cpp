@@ -112,14 +112,21 @@ void NntpSocket::connectToServer(const NewsServer& server)
         connect(m_responseTimer, &QTimer::timeout, this, &NntpSocket::onResponseTimeout);
     }
 
+    // Every connect, not only the first: a reused NntpSocket may have been given
+    // a different route since.
+    m_socket->setProxy(m_proxy);
     applyTlsConfiguration();
 
     m_state = State::Connecting;
-    logInfo(QStringLiteral("NNTP: connecting to %1:%2%3")
+    logInfo(QStringLiteral("NNTP: connecting to %1:%2%3%4")
                 .arg(m_server.host)
                 .arg(m_server.port)
                 .arg(m_server.tlsMode == TlsMode::None ? QString{}
-                                                       : QStringLiteral(" (TLS)")));
+                                                       : QStringLiteral(" (TLS)"))
+                .arg(m_proxy.type() == QNetworkProxy::NoProxy
+                         ? QString{}
+                         : QStringLiteral(" via proxy %1:%2")
+                               .arg(m_proxy.hostName()).arg(m_proxy.port())));
 
     // Implicit TLS negotiates before the greeting; STARTTLS and cleartext both
     // start as plain TCP. This is the explicit form of what SmtpClient decides
@@ -277,11 +284,28 @@ void NntpSocket::onSocketError()
     if (m_state == State::QuitSent || m_state == State::Disconnected)
         return;
 
-    const auto err = m_socket->error() == QAbstractSocket::SslHandshakeFailedError
-                         ? NntpError::TlsFailed
-                     : m_socket->error() == QAbstractSocket::RemoteHostClosedError
-                         ? NntpError::Disconnected
-                         : NntpError::ConnectFailed;
+    const QAbstractSocket::SocketError code = m_socket->error();
+    switch (code) {
+    // The proxy's own refusal, named as such: the queue waits for a proxy and
+    // must never back a provider off, or book an article missing, over one.
+    case QAbstractSocket::ProxyAuthenticationRequiredError:
+    case QAbstractSocket::ProxyConnectionRefusedError:
+    case QAbstractSocket::ProxyConnectionClosedError:
+    case QAbstractSocket::ProxyConnectionTimeoutError:
+    case QAbstractSocket::ProxyNotFoundError:
+    case QAbstractSocket::ProxyProtocolError:
+        fail(NntpError::ProxyFailed, QStringLiteral("proxy %1:%2: %3")
+                                         .arg(m_proxy.hostName())
+                                         .arg(m_proxy.port())
+                                         .arg(m_socket->errorString()));
+        return;
+    default:
+        break;
+    }
+
+    const auto err = code == QAbstractSocket::SslHandshakeFailedError ? NntpError::TlsFailed
+                   : code == QAbstractSocket::RemoteHostClosedError   ? NntpError::Disconnected
+                                                                      : NntpError::ConnectFailed;
     fail(err, m_socket->errorString());
 }
 

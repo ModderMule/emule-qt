@@ -168,6 +168,11 @@ void StatisticsPanel::applySettings()
         m_graphConn->setYRange(0, connMax);
     else
         m_graphConn->setYRange(0, 0);
+
+    // MFC StatisticsDlg.cpp:166,178: the rate scopes are pinned to the Connection page's
+    // graph maxima, not fitted to the data. 0 falls back to auto-scale.
+    m_graphDown->setYRange(0, static_cast<double>(thePrefs.maxGraphDownloadRate()));
+    m_graphUp->setYRange(0, static_cast<double>(thePrefs.maxGraphUploadRate()));
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +597,8 @@ void StatisticsPanel::requestStats()
     // bar, and the Usenet branch is only worth building while this panel shows.
     IpcMessage usenetReq(IpcMsgType::GetUsenetStats);
     m_ipc->sendRequest(std::move(usenetReq), [this](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;   // dropped: leave the branch on screen, like the rest of the tree
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_itemUsenet->setHidden(true);
             return;
@@ -634,6 +641,12 @@ void StatisticsPanel::applyGraphHistory(const QCborMap& data)
         m_graphConn->reset();
         m_statsSeq = 0;
         m_statsEpoch = epoch;
+    }
+
+    // One sample per graphsUpdateSec on the daemon; the time axis was fixed at 3 s.
+    if (const qint64 interval = data.value(QStringLiteral("intervalSec")).toInteger(); interval > 0) {
+        for (auto* graph : {m_graphDown, m_graphUp, m_graphConn})
+            graph->setSampleIntervalSec(static_cast<double>(interval));
     }
 
     // Positional unpack of StatsGraphSample, whose field order is MFC's scope order

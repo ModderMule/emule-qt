@@ -6,6 +6,7 @@
 
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
+#include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
 
@@ -57,23 +58,6 @@ QString formatDuration(int64_t ms)
 QString formatWaitTime(int64_t ms)
 {
     return formatDuration(ms);
-}
-
-/// Priority display string matching MFC eMule (same as SharedFilesModel).
-QString priorityStr(int prio, bool isAuto)
-{
-    QString name;
-    switch (prio) {
-    case 4:  name = QObject::tr("Very Low");  break;
-    case 0:  name = QObject::tr("Low");       break;
-    case 1:  name = QObject::tr("Normal");    break;
-    case 2:  name = QObject::tr("High");      break;
-    case 3:  name = QObject::tr("Very High"); break;
-    default: name = QObject::tr("Normal");    break;
-    }
-    if (isAuto)
-        return QObject::tr("Auto [%1]").arg(name);
-    return name;
 }
 
 /// SourceFrom enum to display string.
@@ -285,7 +269,7 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         switch (column) {
         case 0: return c.userName;
         case 1: return c.fileName;
-        case 2: return c.filePriority >= 0 ? priorityStr(c.filePriority, c.isAutoPriority) : QString{};
+        case 2: return c.filePriority >= 0 ? uploadPriorityText(c.filePriority, c.isAutoPriority) : QString{};
         case 3: return c.fileRating > 0 ? ratingText(c.fileRating) : QString{};
         case 4: return c.remoteQueueRank > 0 ? QString::number(c.remoteQueueRank) : QString{};
         case 5: return c.askedCount > 0 ? QString::number(c.askedCount) : QString{};

@@ -5,6 +5,7 @@
 #include "queue/UsenetQueueStore.h"
 #include "queue/UsenetWatchFolder.h"
 #include "app/AppContext.h"
+#include "net/ProxySettings.h"
 #include "nzb/SubjectParser.h"
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
@@ -138,6 +139,8 @@ void UsenetSession::applyPreferences()
         m_watchFolder->applyPreferences();
 
     if (m_queue) {
+        // Before applyServers(): its worker rebuild is what hands the route out.
+        m_queue->setProxy(toNetworkProxy(thePrefs.usenetProxySettings()));
         m_queue->applyServers(thePrefs.usenetServers(),
                               thePrefs.usenetRetryIntervalSeconds());
 
@@ -150,6 +153,7 @@ void UsenetSession::applyPreferences()
             .unpack = thePrefs.usenetUnpack(),
             .cleanup = thePrefs.usenetCleanupAfterUnpack(),
             .directUnpack = thePrefs.usenetDirectUnpack(),
+            .sfv = thePrefs.usenetSfvCheck(),
         });
     }
 }

@@ -77,6 +77,8 @@ public:
     [[nodiscard]] const QCborArray& toArray() const;
 
     /// Returns true if the message has a valid type and seqId.
+    /// False for the default-constructed message IpcClient hands a pending callback
+    /// when the connection drops first; a daemon refusal is valid.
     [[nodiscard]] bool isValid() const;
 
     // -- Factory methods ------------------------------------------------------

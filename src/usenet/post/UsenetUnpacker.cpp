@@ -181,12 +181,27 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
             // them, and asking it again afterwards is how the two lists drift
             // apart.
             QStringList produced;
+            QStringList memberNames;
             for (int i = 0; i < reader.entryCount(); ++i) {
                 if (reader.entryIsDir(i))
                     continue;
+                memberNames.append(reader.entryName(i));
                 const QString out = ArchiveReader::safeEntryPath(destDir, reader.entryName(i));
                 if (!out.isEmpty())
                     produced.append(out);
+            }
+
+            // Before a byte is written: a set carrying what the caller refuses is
+            // not extracted, and neither is anything after it.
+            if (m_veto) {
+                const QStringList refused = m_veto(memberNames);
+                if (!refused.isEmpty()) {
+                    result.vetoed += refused;
+                    result.error = QObject::tr("%1 contains unwanted files")
+                                       .arg(QFileInfo(set.firstVolume).fileName());
+                    allOk = false;
+                    break;
+                }
             }
 
             if (reader.extractAll(destDir)) {
@@ -217,8 +232,11 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
                 QFile::remove(path);
         }
 
-        if (!unpackEncrypted(set, destDir, password, externalTool, reader, result))
+        if (!unpackEncrypted(set, destDir, password, externalTool, reader, result)) {
             allOk = false;
+            if (!result.vetoed.isEmpty())
+                break;
+        }
     }
 
     if (m_progress)
@@ -300,6 +318,22 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
         // good one would still put its volumes on the delete list.
         result.error = QObject::tr("%1 produced no files").arg(name);
         return false;
+    }
+
+    if (outcome.ok() && m_veto) {
+        // Asked afterwards: listing an encrypted set first would be a second
+        // decrypting pass through the tool. What it wrote goes instead.
+        QStringList names;
+        for (const QString& path : outcome.extractedFiles)
+            names.append(QFileInfo(path).fileName());
+        const QStringList refused = m_veto(names);
+        if (!refused.isEmpty()) {
+            for (const QString& path : outcome.extractedFiles)
+                QFile::remove(path);
+            result.vetoed += refused;
+            result.error = QObject::tr("%1 contains unwanted files").arg(name);
+            return false;
+        }
     }
 
     if (outcome.ok()) {

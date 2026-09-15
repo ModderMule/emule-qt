@@ -52,6 +52,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QList>
+#include <QNetworkProxy>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -76,6 +77,9 @@ struct PostProcessingOptions {
     /// Unpack an archive set as its volumes land, instead of at the end. Only
     /// meaningful when `unpack` is on — it is the same extraction, moved.
     bool directUnpack = true;
+
+    /// Check against the release's .sfv when PAR2 did not run.
+    bool sfv = true;
 };
 
 /// Byte rate over the last few scheduler ticks.
@@ -132,6 +136,10 @@ public:
     /// Re-slice the server list across the workers. Safe while running.
     void applyServers(const QList<NewsServer>& servers, int retryIntervalSec);
 
+    /// Route for every news-server connection. Takes effect at the next worker
+    /// rebuild, so call it before applyServers(), which does one.
+    void setProxy(const QNetworkProxy& proxy) { m_proxy = proxy; }
+
     // -- Queue operations ---------------------------------------------------
 
     /// Parse @p data and queue it. Returns the new item id, or an empty string
@@ -179,7 +187,13 @@ public:
 
     bool removeItem(const QString& id, bool deleteFiles);
     bool pauseItem(const QString& id);
-    bool resumeItem(const QString& id);
+
+    /// Who is resuming. Only the user may overrule a check that stopped an item:
+    /// a category-wide resume never looked at the release, and a password is an
+    /// answer to a different question.
+    enum class ResumeIntent : quint8 { User, Password, Bulk };
+
+    bool resumeItem(const QString& id, ResumeIntent intent = ResumeIntent::User);
     bool setItemPriority(const QString& id, int priority);
 
     /// Ask again for every article this item gave up on, and resume it.
@@ -538,6 +552,10 @@ private:
         };
         Refetch refetch;
 
+        /// Unwanted member names direct unpack reported, acted on from the tick:
+        /// stopping cancels the very run whose progress handler found them.
+        QStringList unwantedPending;
+
         // -- Availability probe -------------------------------------------
         //
         // A whole second key space, deliberately. Sharing `plan` / `planCursor`
@@ -592,6 +610,15 @@ private:
         enum class Par2NamesState { Unread, Loaded, Unavailable };
         Par2NamesState par2NamesState = Par2NamesState::Unread;
         Par2NameIndex par2Names;
+
+        /// What the index said beyond names, for the repair estimate: its block
+        /// size and what it covers. Read with PAR2 on whether or not rename is.
+        qint64 par2BlockSize = 0;
+        QList<Par2SetFile> par2SetFiles;
+
+        /// Something the estimate depends on changed since it was last asked: a
+        /// hole, a file matched to the set by name, the index itself.
+        bool repairEstimateStale = false;
 
         /// Maps reads of the logical file onto the volumes holding it. Runtime
         /// only: every input is on disk or one article away, so rebuilding it
@@ -682,6 +709,30 @@ private:
     /// Unknown reads as "no" for the same reason it does at dispatch: a volume
     /// nobody can measure is not one to copy gigabytes onto.
     [[nodiscard]] bool volumeHasRoom(const QString& dir) const;
+
+    /// A connection died at the proxy. Parks the whole queue for the retry
+    /// interval with the reason on every active item — never a statement about a
+    /// server, never a spent retry.
+    void noteProxyStall(const QString& text);
+
+    /// Something came through, or the settings changed: lift the proxy park and
+    /// the reason it left on the items.
+    void noteProxyRecovered();
+
+    /// A check fired: pause or fail @p rt per the user's setting, from any
+    /// status, with @p detail as the reason. False, changing nothing, when the
+    /// setting is to keep going or the user already overruled this check here.
+    bool stopForCheck(ItemRuntime& rt, UsenetStopReason reason, const QString& detail);
+
+    /// What a job for @p rt checks for; empty when the check is off, set to keep
+    /// going, or overruled for this item.
+    [[nodiscard]] QStringList unwantedExtensionsFor(const ItemRuntime& rt) const;
+
+    /// A playable name in the NZB, or a video tag in the release's name.
+    [[nodiscard]] bool isMediaRelease(const ItemRuntime& rt) const;
+
+    /// Stop @p rt if its estimate is stale and now proves it cannot be repaired.
+    void checkRepairable(ItemRuntime& rt);
 
     /// A digest of the accounts that could have served this item, as they were
     /// when it failed. What makes Resume able to tell "the user changed
@@ -1067,6 +1118,7 @@ private:
     bool m_unpackEnabled  = true;
     bool m_cleanupEnabled = true;
     bool m_directUnpackEnabled = true;
+    bool m_sfvEnabled = true;
 
     /// Runs in flight across the whole queue. Each holds a thread that is
     /// blocked for as long as its download takes, so this is capped rather than
@@ -1108,6 +1160,19 @@ private:
     bool m_diskBlocked = false;
     bool m_diskStallLogged = false;
     QElapsedTimer m_diskCheckClock;
+
+    /// Route for every connection the workers open; NoProxy unless the user's
+    /// proxy is on and meant for news servers.
+    QNetworkProxy m_proxy{QNetworkProxy::NoProxy};
+
+    /// A connection died at the proxy: nothing is dispatched before this
+    /// epoch-ms time. Global like m_diskBlocked, since every account sits behind
+    /// the one proxy. Runtime only.
+    qint64 m_proxyBlockedUntilMs = 0;
+
+    /// The reason written on the items, empty when no stall is unresolved. Also
+    /// what keeps the warning to one per stall.
+    QString m_proxyStallReason;
 
     bool m_running = false;
 };

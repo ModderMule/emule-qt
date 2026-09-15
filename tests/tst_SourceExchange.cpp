@@ -208,6 +208,9 @@ private slots:
     void extSX_userHashAndCryptTagsOnlyForTolerantPeer();
     void extSX_userHashAndCryptTagsRoundTrip();
 
+    // Received sources wait for PartFile::process() — MFC PartFile.cpp:3927
+    void receivedSources_areQueuedNotDialled();
+
     // Public-IPv6 confidence gate — peer corroboration + server override
     void peerCorroboration_adoptsOnlyAfterThresholdDistinctPeers();
     void reflectedIPv6NotHeldLocally_isRejected();
@@ -938,11 +941,12 @@ void tst_SourceExchange::extSX_sourceCapIs500NotV1Default()
     QVERIFY(v4Packet != nullptr);
     QCOMPARE(declaredCount(std::move(v4Packet)), uint16(kSources));
 
-    // A v1 peer that is NOT ExtSX still gets the old 50 cap — that branch is untouched.
+    // A plain v1 peer gets the same 500: MFC applies one cap to every version
+    // (PartFile.cpp:3731, KnownFile.cpp:1141). The port used to hand it 50.
     auto* v1 = track(makeRequester());
     auto v1Packet = file->createSrcInfoPacket(v1, 1, 0);
     QVERIFY(v1Packet != nullptr);
-    QCOMPARE(declaredCount(std::move(v1Packet)), uint16(50));
+    QCOMPARE(declaredCount(std::move(v1Packet)), uint16(kSources));
 }
 
 // On the ExtSX path the ID field is htonl(userIDHybrid), matching the reference
@@ -1131,6 +1135,38 @@ void tst_SourceExchange::publicIPv6_tierPrecedenceAndAdvertiseGate()
     theApp.clearPublicIPv6Observed();
     theApp.setPublicIPv6Override(Address{});
     theApp.setLocalIPv6Addresses({});
+}
+
+// MFC PartFile.cpp:3927 only adds a received source. PartFile::process() asks it later through
+// askForDownload(), which owns the socket cap, the re-ask throttle and the LowID handling.
+// Dialling on arrival skipped all of that and opened a connection per source in the answer.
+void tst_SourceExchange::receivedSources_areQueuedNotDialled()
+{
+    auto* peer = track(makeRequester());
+    auto* src = track(makeHighIdClient(QStringLiteral("60.70.80.90"), 4662));
+    auto file = makeFile({ src });
+    auto packet = file->createSrcInfoPacket(peer, 4, 0);
+    QVERIFY(packet != nullptr);
+
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x56, sizeof(hash));
+    pf->setFileHash(hash);
+    queue.addDownload(pf);
+
+    SafeMemFile io(reinterpret_cast<const uint8*>(packet->pBuffer + kHeaderSize),
+                   packet->size - kHeaderSize);
+    pf->addClientSources(io, 4, /*isSX2*/ true, peer);
+
+    QCOMPARE(pf->sourceCount(), 1);
+    const auto* learned = pf->srcList().front();
+    QVERIFY2(learned->socket() == nullptr, "a received source must not be dialled on arrival");
+    QCOMPARE(learned->connectingState(), ConnectingState::None);
+
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
 }
 
 QTEST_MAIN(tst_SourceExchange)

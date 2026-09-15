@@ -4,9 +4,11 @@
 #include "nntp/NntpSocket.h"
 #include "nzb/NzbFile.h"
 #include "post/Par2Verifier.h"
+#include "post/UsenetReleaseChecks.h"
 #include "post/UsenetUnpacker.h"
 #include "queue/ArticleWriter.h"
 #include "queue/UsenetQueueStore.h"
+#include "queue/UsenetRepairEstimate.h"
 
 #include "app/AppContext.h"
 #include "files/SharedFileList.h"
@@ -299,6 +301,10 @@ void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryInterv
         emit itemChanged(rt->item->id);
     }
 
+    // A settings save may have fixed or removed the proxy; the rebuild below is
+    // the retry, so waiting out the old stall would only delay it.
+    noteProxyRecovered();
+
     if (!m_running)
         return;
 
@@ -534,7 +540,7 @@ bool UsenetQueue::pauseItem(const QString& id)
     return true;
 }
 
-bool UsenetQueue::resumeItem(const QString& id)
+bool UsenetQueue::resumeItem(const QString& id, ResumeIntent intent)
 {
     ItemRuntime* rt = runtimeFor(id);
     if (!rt)
@@ -542,6 +548,22 @@ bool UsenetQueue::resumeItem(const QString& id)
     if (rt->item->status != UsenetItemStatus::Paused
         && rt->item->status != UsenetItemStatus::Failed)
         return false;
+
+    // A check stopped this, and only the user may overrule a check: a bulk
+    // resume never looked at the release, and a password answers a different
+    // question. Overruled once, it stays overruled for this release.
+    if (rt->item->stopReason != UsenetStopReason::None) {
+        if (intent != ResumeIntent::User)
+            return false;
+        rt->item->checksOverridden |= int(rt->item->stopReason);
+        logInfo(QStringLiteral("Usenet: \"%1\" resumed past its check — %2")
+                    .arg(rt->item->name, rt->item->stopDetail));
+    }
+    rt->item->stopReason = UsenetStopReason::None;
+    rt->item->stopDetail.clear();
+    // Whatever it was waiting on, it is not waiting any more. A health pause
+    // used to keep saying "only N% looks available" after the user had answered.
+    rt->item->stalledReason.clear();
 
     // A failed item whose accounts have changed since it failed re-asks the
     // articles nobody had. That is what "retries from the top of the ladder"
@@ -578,7 +600,17 @@ bool UsenetQueue::resumeItem(const QString& id)
     // pauseItem() cancelled every run, and pumpDirectUnpack() only fires from a
     // volume that seals *after* this point — so without this a paused set is
     // never extracted while downloading again, and a preview of it dies with it.
-    restartDirectUnpack(*rt);
+    //
+    // Not when every file is already sealed: a release stopped after its
+    // download would re-extract every set from volume one, and
+    // checkItemCompletion() waits for that before post-processing unpacks it
+    // again anyway.
+    for (int f = 0; f < rt->item->files.size(); ++f) {
+        if (isPlanned(*rt, f) && !rt->item->files.at(f).finalized) {
+            restartDirectUnpack(*rt);
+            break;
+        }
+    }
 
     emit itemChanged(id);
     dispatch();
@@ -730,7 +762,7 @@ bool UsenetQueue::setItemPassword(const QString& id, const QString& password)
         // Everything is already on disk; resumeItem() clears the error, finds
         // nothing left to fetch and runs post-processing again on the next tick.
         persist(*rt);
-        return resumeItem(id);
+        return resumeItem(id, ResumeIntent::Password);
     }
 
     persist(*rt);
@@ -1242,7 +1274,8 @@ void UsenetQueue::startWorkers()
 
         QMetaObject::invokeMethod(m_workers.at(i), "setServers", Qt::QueuedConnection,
                                   Q_ARG(QList<eMule::NewsServer>, slice),
-                                  Q_ARG(int, m_retryIntervalSec));
+                                  Q_ARG(int, m_retryIntervalSec),
+                                  Q_ARG(QNetworkProxy, m_proxy));
     }
 
     setRateLimit(m_rateLimit);
@@ -1327,11 +1360,19 @@ void UsenetQueue::stopPostProcessor()
 
 void UsenetQueue::setPostProcessingOptions(const PostProcessingOptions& options)
 {
+    // An index nobody would read with PAR2 off can be read now.
+    if (options.par2 && !m_par2Enabled) {
+        for (auto& rt : m_items) {
+            if (rt->par2NamesState == ItemRuntime::Par2NamesState::Unavailable)
+                rt->par2NamesState = ItemRuntime::Par2NamesState::Unread;
+        }
+    }
     m_par2Enabled = options.par2;
     m_renameEnabled = options.rename;
     m_unpackEnabled = options.unpack;
     m_cleanupEnabled = options.cleanup;
     m_directUnpackEnabled = options.directUnpack;
+    m_sfvEnabled = options.sfv;
 }
 
 void UsenetQueue::onCapacityChanged(int workerIndex, int capacity)
@@ -1398,6 +1439,27 @@ void UsenetQueue::rebuildPlan(ItemRuntime& rt)
                            && Par2Verifier::available()
                            && looksObfuscated(item);
 
+    // The index alone, when a download that cannot be repaired is to stop: the
+    // estimate is priced in its block size, and at the end of the plan it would
+    // arrive when there is nothing left to save. Small, and in the plan anyway.
+    const bool hoistIndex = !hoistPar2 && rt.par2BlockSize <= 0
+                            && m_par2Enabled && Par2Verifier::available()
+                            && thePrefs.usenetUnrepairableAction()
+                                   != int(UsenetCheckAction::KeepGoing)
+                            && !item.checkOverridden(UsenetStopReason::Unrepairable);
+    QSet<int> hoistedIndex;
+    if (hoistIndex) {
+        for (int f = 0; f < item.nzb.files.size(); ++f) {
+            if (f >= item.files.size() || !isPlanned(rt, f) || !isIndexPar2(f))
+                continue;
+            if (item.nzb.files.at(f).encodedBytes() > kMaxPar2IndexBytes)
+                continue;
+            hoistedIndex.insert(f);
+            for (const int s : pendingSegments(f))
+                rt.plan.append(SegmentKey{f, s}.packed());
+        }
+    }
+
     // File -> the segments pass 2 already took, so pass 3 does not list them
     // twice. Harmless in dispatch(), which checks inFlight and done, but a plan
     // nobody can read back is its own bug.
@@ -1451,7 +1513,7 @@ void UsenetQueue::rebuildPlan(ItemRuntime& rt)
                 continue;
             if (f >= item.files.size() || !isPlanned(rt, f))
                 continue;
-            if (hoistPar2 && par2Pass && isIndexPar2(f))
+            if ((hoistPar2 || hoistedIndex.contains(f)) && par2Pass && isIndexPar2(f))
                 continue;   // already at the front
 
             const QSet<int> taken = prefetched.value(f);
@@ -1492,6 +1554,11 @@ void UsenetQueue::dispatch()
     // is a syscall at most every kDiskCheckIntervalMs however often it is asked.
     refreshDiskState();
     if (m_diskBlocked)
+        return;
+
+    // A connection died at the proxy, which every account is behind. Waiting it
+    // out is the only answer that cannot spend retries or back providers off.
+    if (m_proxyBlockedUntilMs > QDateTime::currentMSecsSinceEpoch())
         return;
 
     // Once per round rather than once per segment, so every segment in a round
@@ -1704,6 +1771,31 @@ void UsenetQueue::onTick()
         }
     }
 
+    // The checks that may stop a running download: unwanted members direct unpack
+    // found (see onDirectUnpackProgress()), and the repair estimate. By id,
+    // because stopping an item emits signals whose slots may touch m_items.
+    QStringList activeIds;
+    for (const auto& rt : m_items) {
+        if (rt->item->isActive())
+            activeIds.append(rt->item->id);
+    }
+    for (const QString& id : std::as_const(activeIds)) {
+        ItemRuntime* rt = runtimeFor(id);
+        if (!rt || !rt->item->isActive())
+            continue;
+        if (!rt->unwantedPending.isEmpty()) {
+            const QStringList names = std::exchange(rt->unwantedPending, {});
+            if (stopForCheck(*rt, UsenetStopReason::Unwanted,
+                             tr("contains unwanted files: %1").arg(describeFileList(names)))) {
+                continue;
+            }
+        }
+        // A restored item's index sealed in an earlier session, so no sealFile()
+        // is coming to read it — and the estimate is priced in its block size.
+        learnPar2Names(*rt);
+        checkRepairable(*rt);
+    }
+
     // A segment that found every server blocked comes back immediately and its
     // plan cursor has already moved past it, so a rewind is what actually retries
     // it once the backoff expires.
@@ -1759,6 +1851,10 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
     // applyServers() replaces that list on every settings save.
     if (!result.accountId.isEmpty() && result.rawBytes > 0)
         m_usage.add(result.accountId, result.rawBytes);
+
+    // An answer came through, so whatever the proxy was doing it is not doing now.
+    if (result.error == NntpError::None && !m_proxyStallReason.isEmpty())
+        noteProxyRecovered();
     m_stats.noteResult(result);
 
     // Only for a worker that still exists. A torn-down worker's slot number now
@@ -1868,8 +1964,10 @@ void UsenetQueue::markSegmentDone(ItemRuntime& rt, const UsenetFetchResult& resu
     // its article with it, and there is no other source for the number.
     st.partLength = qMax(st.partLength, result.decodedBytes);
 
-    if (st.articleFileName.isEmpty() && !result.articleFileName.isEmpty())
+    if (st.articleFileName.isEmpty() && !result.articleFileName.isEmpty()) {
         st.articleFileName = result.articleFileName;
+        rt.repairEstimateStale = true;   // a name the set may know the file by
+    }
     if (st.declaredSize == 0 && result.declaredFileSize > 0)
         st.declaredSize = result.declaredFileSize;
 
@@ -1936,6 +2034,15 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
         rt.attempts.insert(key, attempt);
         rt.plan.insert(qBound(0, rt.planCursor, int(rt.plan.size())), key);
         rt.dirty = true;
+        return;
+    }
+
+    // The proxy's fault, and a fact about every account at once. The same shape
+    // as the write failure minus a bound: the queue waits for a proxy however
+    // long it takes, as it waits for disk space.
+    if (result.error == NntpError::ProxyFailed) {
+        rt.plan.insert(qBound(0, rt.planCursor, int(rt.plan.size())), key);
+        noteProxyStall(result.text);
         return;
     }
 
@@ -2041,6 +2148,15 @@ void UsenetQueue::checkFileCompletion(ItemRuntime& rt, int fileIndex)
         return;
 
     sealFile(rt, fileIndex);
+
+    // Damage is only counted for a file every article of which has resolved, so
+    // this — synchronously, before the next article goes out — is the moment a
+    // lost volume can prove the release hopeless.
+    const bool wasActive = rt.item->isActive();
+    checkRepairable(rt);
+    if (wasActive && !rt.item->isActive())
+        return;
+
     pumpDirectUnpack(rt, fileIndex);
     checkItemCompletion(rt);
 }
@@ -2174,6 +2290,12 @@ void UsenetQueue::checkItemCompletion(ItemRuntime& rt)
         if (!rt.item->files.at(f).finalized)
             return;
     }
+
+    // The last look before paying for a verify, and the recovery volumes a short
+    // one would send it back for.
+    checkRepairable(rt);
+    if (!rt.item->isActive())
+        return;
 
     // Every volume is in. Tell the extractions so, then wait for them: a run
     // still reading is about to produce exactly what post-processing would
@@ -2333,6 +2455,22 @@ void UsenetQueue::onDirectUnpackProgress(const eMule::usenet::UsenetDirectUnpack
     auto it = rt->directUnpack.find(state.setKey);
     if (it != rt->directUnpack.end())
         it->progress = state;
+
+    // The earliest a member's name exists — while the release is still
+    // downloading — so a fake stops costing allowance now rather than at the
+    // final unpack. Noted here, acted on from the tick: stopping cancels the run
+    // this handler was called for.
+    if (!rt->item->isActive() || !rt->unwantedPending.isEmpty())
+        return;
+    const QStringList extensions = unwantedExtensionsFor(*rt);
+    if (extensions.isEmpty())
+        return;
+
+    QStringList names;
+    names.reserve(state.entries.size());
+    for (const UsenetDirectUnpackEntry& entry : state.entries)
+        names.append(entry.name);
+    rt->unwantedPending = unwantedFileNames(names, extensions, isMediaRelease(*rt));
 }
 
 const UsenetDirectUnpackEntry* UsenetQueue::extractionEntryFor(ItemRuntime& rt, int fileIndex,
@@ -2978,6 +3116,17 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
     job.renameEnabled = m_renameEnabled;
     job.unpackEnabled = m_unpackEnabled;
     job.cleanupEnabled = m_cleanupEnabled;
+    job.sfvEnabled = m_sfvEnabled;
+    job.unwantedExtensions = unwantedExtensionsFor(rt);
+    job.mediaRelease = isMediaRelease(rt);
+
+    // As sealed. Recovery volumes nobody asked for were never on disk, so they
+    // are not "expected" even when an .sfv happens to list them.
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const UsenetFileState& st = rt.item->files.at(f);
+        if (isPlanned(rt, f) && st.finalized && !st.tempPath.isEmpty())
+            job.expectedNames.append(QFileInfo(st.tempPath).fileName());
+    }
 
     for (const DirectUnpackRun& run : std::as_const(rt.directUnpack)) {
         if (run.result.ok)
@@ -3032,6 +3181,23 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
     rt->item->postDetail.clear();
 
     closePostStage(*rt);
+
+    // Held back, not failed: nothing was published, and whether that pauses or
+    // fails the item is the user's setting. Ahead of the statistics, so a Resume
+    // that re-runs the pipeline does not count its verify and unpack twice.
+    if (!result.unwantedFiles.isEmpty()) {
+        const QString detail =
+            tr("contains unwanted files: %1").arg(describeFileList(result.unwantedFiles));
+        if (!stopForCheck(*rt, UsenetStopReason::Unwanted, detail)) {
+            // Switched to "publish anyway" while the job ran: the tick runs it
+            // again, and this time the job checks for nothing.
+            rt->item->status = UsenetItemStatus::Queued;
+            persist(*rt);
+            emit itemChanged(rt->item->id);
+        }
+        return;
+    }
+
     m_stats.notePostFinished(result);
 
     // Repair rewrites volumes, rename moves them and unpack publishes elsewhere.
@@ -3125,6 +3291,14 @@ bool UsenetQueue::requestPar2Volumes(ItemRuntime& rt, int blocks)
     if (available.isEmpty())
         return false;
 
+    // Even everything left may not be enough, and fetching it would only fail a
+    // round later. Said now, before requestedPar2 is touched.
+    int remaining = 0;
+    for (const Candidate& c : std::as_const(available))
+        remaining += c.blocks;
+    if (remaining < blocks)
+        return false;
+
     // Smallest first, so covering a two-block shortfall costs a two-block volume
     // rather than the 64-block one that happens to come first in the NZB.
     std::sort(available.begin(), available.end(),
@@ -3148,8 +3322,7 @@ bool UsenetQueue::requestPar2Volumes(ItemRuntime& rt, int blocks)
             break;
     }
 
-    // Even taking everything left may not be enough. Say so now rather than
-    // downloading the whole recovery set and failing afterwards.
+    // Nothing could be requested at all: every scratch file refused to open.
     return covered > 0;
 }
 
@@ -3574,6 +3747,7 @@ void UsenetQueue::markSegmentMissing(ItemRuntime& rt, int fileIndex, int segment
         if (st.missing.size() > segmentIndex && st.missing.testBit(segmentIndex)) {
             st.done.setBit(segmentIndex);  // re-armed, and still nowhere
             rt.dirty = true;
+            rt.repairEstimateStale = true;
             noteRefetchResolved(rt, fileIndex, segmentIndex, /*landed*/ false);
             return;
         }
@@ -3585,6 +3759,7 @@ void UsenetQueue::markSegmentMissing(ItemRuntime& rt, int fileIndex, int segment
         st.missing.setBit(segmentIndex);
     }
     st.missingSegments += 1;
+    rt.repairEstimateStale = true;
     m_stats.bump(&UsenetCounters::articlesMissing);
 
     rt.attempts.remove(SegmentKey{fileIndex, segmentIndex}.packed());
@@ -3816,6 +3991,13 @@ void UsenetQueue::handleProbeResult(ItemRuntime& rt, const UsenetFetchResult& re
         rt.checkMissingBytes += weight;
         rt.checkMissingFiles.insert(result.fileIndex);
         rt.checkAttempts.remove(key);
+        return;
+    }
+
+    // Not even a transport fault of this account's: put it back unspent.
+    if (result.error == NntpError::ProxyFailed) {
+        rt.checkPlan.insert(qBound(0, rt.checkCursor, int(rt.checkPlan.size())), key);
+        noteProxyStall(result.text);
         return;
     }
 
@@ -4072,9 +4254,10 @@ void UsenetQueue::learnPar2Names(ItemRuntime& rt)
     if (rt.par2NamesState != ItemRuntime::Par2NamesState::Unread)
         return;
 
-    // The same switch that governs post-processing's rename pass: one setting
-    // for one behaviour, rather than a second one nobody would think to look for.
-    if (!m_par2Enabled || !m_renameEnabled || !Par2Verifier::available()) {
+    // Read whenever PAR2 is on: the repair estimate needs the block size whether
+    // or not anything is renamed. Applying the names is resolvePar2Name()'s
+    // business, and it asks the rename switch itself.
+    if (!m_par2Enabled || !Par2Verifier::available()) {
         rt.par2NamesState = ItemRuntime::Par2NamesState::Unavailable;
         return;
     }
@@ -4119,6 +4302,9 @@ void UsenetQueue::learnPar2Names(ItemRuntime& rt)
 
     rt.par2Names.setFiles(list.files);
     rt.par2NamesState = ItemRuntime::Par2NamesState::Loaded;
+    rt.par2BlockSize = list.blockSize;
+    rt.par2SetFiles = list.files;
+    rt.repairEstimateStale = true;
 
     // A file that already sealed owns the name it sealed under, so nothing else
     // may be given it.
@@ -4140,7 +4326,9 @@ void UsenetQueue::learnPar2Names(ItemRuntime& rt)
 
 void UsenetQueue::resolvePar2Name(ItemRuntime& rt, int fileIndex)
 {
-    if (rt.par2NamesState != ItemRuntime::Par2NamesState::Loaded)
+    // The index is read with rename off too, for its block size; sealFile()
+    // renames from par2FileName, so this is where the switch has to hold.
+    if (!m_renameEnabled || rt.par2NamesState != ItemRuntime::Par2NamesState::Loaded)
         return;
     if (fileIndex < 0 || fileIndex >= rt.item->files.size()
         || fileIndex >= rt.item->nzb.files.size()) {
@@ -4172,6 +4360,7 @@ void UsenetQueue::resolvePar2Name(ItemRuntime& rt, int fileIndex)
 
     st.par2FileName = safe;
     rt.dirty = true;
+    rt.repairEstimateStale = true;   // the estimate matches files to the set by name
 
     // The set cache is keyed by base name, and this changes it.
     rt.streamIndex.invalidate();
@@ -4369,6 +4558,123 @@ bool UsenetQueue::volumeHasRoom(const QString& dir) const
 
     const std::optional<std::uint64_t> free = eMule::tryFreeDiskSpace(dir);
     return free.has_value() && qint64(*free) >= qint64(thePrefs.minFreeDiskSpace());
+}
+
+void UsenetQueue::noteProxyStall(const QString& text)
+{
+    // At least a second: a retry interval of 0 turns server backoff off, and a
+    // proxy wait of 0 would redial a dead proxy on every dispatch.
+    const int waitSec = std::max(1, m_retryIntervalSec);
+    m_proxyBlockedUntilMs = QDateTime::currentMSecsSinceEpoch() + qint64(waitSec) * 1000;
+
+    const QString reason = tr("waiting for the proxy — %1").arg(text);
+    if (m_proxyStallReason.isEmpty()) {
+        logWarning(QStringLiteral("Usenet: waiting for the proxy, retrying every %1 s — %2")
+                       .arg(waitSec)
+                       .arg(text));
+    }
+
+    // Checking too: its probes are held by the same park, and "checking
+    // availability" would otherwise sit there with nothing being checked.
+    for (auto& rt : m_items) {
+        const bool waiting = rt->item->isActive()
+                             || rt->item->status == UsenetItemStatus::Checking;
+        if (!waiting || rt->item->stalledReason == reason)
+            continue;
+        rt->item->stalledReason = reason;
+        emit itemChanged(rt->item->id);
+    }
+    m_proxyStallReason = reason;
+}
+
+void UsenetQueue::noteProxyRecovered()
+{
+    m_proxyBlockedUntilMs = 0;
+    if (m_proxyStallReason.isEmpty())
+        return;
+
+    for (auto& rt : m_items) {
+        if (rt->item->stalledReason != m_proxyStallReason)
+            continue;
+        rt->item->stalledReason.clear();
+        emit itemChanged(rt->item->id);
+    }
+    m_proxyStallReason.clear();
+    logInfo(QStringLiteral("Usenet: news servers are reachable again"));
+}
+
+bool UsenetQueue::stopForCheck(ItemRuntime& rt, UsenetStopReason reason, const QString& detail)
+{
+    const int action = reason == UsenetStopReason::Unrepairable
+                           ? thePrefs.usenetUnrepairableAction()
+                           : thePrefs.usenetUnwantedAction();
+    if (action == int(UsenetCheckAction::KeepGoing) || rt.item->checkOverridden(reason))
+        return false;
+
+    rt.item->stopReason = reason;
+    rt.item->stopDetail = detail;
+
+    if (action == int(UsenetCheckAction::Fail)) {
+        failItem(rt, detail);
+        return true;
+    }
+
+    // From any status, where pauseItem() takes only an active one: a check can
+    // fire from the end of post-processing too.
+    rt.postRunning = false;
+    rt.item->status = UsenetItemStatus::Paused;
+    rt.item->stalledReason = detail;
+    cancelDirectUnpack(rt);
+    cancelEncryptedPreview(rt);
+    persist(rt);
+
+    logWarning(QStringLiteral("Usenet: paused \"%1\" — %2").arg(rt.item->name, detail));
+    emit itemChanged(rt.item->id);
+    return true;
+}
+
+QStringList UsenetQueue::unwantedExtensionsFor(const ItemRuntime& rt) const
+{
+    if (thePrefs.usenetUnwantedAction() == int(UsenetCheckAction::KeepGoing)
+        || rt.item->checkOverridden(UsenetStopReason::Unwanted)) {
+        return {};
+    }
+    return parseExtensionList(thePrefs.usenetUnwantedExtensions());
+}
+
+bool UsenetQueue::isMediaRelease(const ItemRuntime& rt) const
+{
+    if (looksLikeVideoReleaseName(rt.item->name))
+        return true;
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        if (isPlayableName(rt.item->bestFileName(f)))
+            return true;
+    }
+    return false;
+}
+
+void UsenetQueue::checkRepairable(ItemRuntime& rt)
+{
+    if (!rt.repairEstimateStale)
+        return;
+    rt.repairEstimateStale = false;
+
+    if (!rt.item->isActive() || rt.par2BlockSize <= 0
+        || thePrefs.usenetUnrepairableAction() == int(UsenetCheckAction::KeepGoing)
+        || rt.item->checkOverridden(UsenetStopReason::Unrepairable)) {
+        return;
+    }
+
+    const UsenetRepairEstimate estimate =
+        estimateRepair(*rt.item, rt.par2BlockSize, rt.par2SetFiles);
+    if (estimate.verdict != UsenetRepairEstimate::Verdict::Unrepairable)
+        return;
+
+    stopForCheck(rt, UsenetStopReason::Unrepairable,
+                 tr("cannot be repaired: at least %1 damaged block(s), the recovery "
+                    "files hold at most %2")
+                     .arg(estimate.damagedBlocks)
+                     .arg(estimate.recoveryBlocks));
 }
 
 QString UsenetQueue::serverLadderDigest() const

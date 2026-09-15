@@ -77,14 +77,26 @@ public:
         /// Volume files consumed, across every set. Cleanup deletes these.
         QStringList consumedArchives;
 
+        /// Member names the veto refused. Extraction stopped at that set, and
+        /// nothing it would have written was left behind.
+        QStringList vetoed;
+
         QString error;
     };
 
     using ProgressFn = std::function<void(int percent, const QString& fileName)>;
 
+    /// Given a set's member names, the ones it must not contain. Non-empty stops
+    /// the unpack before that set writes anything.
+    using VetoFn = std::function<QStringList(const QStringList& memberNames)>;
+
     UsenetUnpacker() = default;
 
     void setProgressCallback(ProgressFn fn) { m_progress = std::move(fn); }
+
+    /// Asked of every set before it is extracted — after, for an encrypted set,
+    /// whose members only an external tool can list.
+    void setVeto(VetoFn fn) { m_veto = std::move(fn); }
 
     /// Extract every archive set in @p sourceDir into @p destDir.
     ///
@@ -138,6 +150,7 @@ private:
                          const ArchiveReader& reader, Result& result);
 
     ProgressFn m_progress;
+    VetoFn m_veto;
 };
 
 } // namespace eMule::usenet

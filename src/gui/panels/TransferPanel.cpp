@@ -1074,6 +1074,8 @@ void TransferPanel::requestDownloads()
             row.datarate          = m.value(QStringLiteral("datarate")).toInteger();
             row.sourceCount       = static_cast<int>(m.value(QStringLiteral("sourceCount")).toInteger());
             row.transferringSrcCount = static_cast<int>(m.value(QStringLiteral("transferringSrcCount")).toInteger());
+            row.availableSrcCount = static_cast<int>(m.value(QStringLiteral("availableSrcCount")).toInteger());
+            row.a4afSrcCount      = static_cast<int>(m.value(QStringLiteral("a4afSrcCount")).toInteger());
             row.priority          = m.value(QStringLiteral("downPriority")).toString();
             row.isAutoDownPriority = m.value(QStringLiteral("isAutoDownPriority")).toBool();
             row.isPaused          = m.value(QStringLiteral("isPaused")).toBool();
@@ -1148,6 +1150,7 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.software        = m.value(QStringLiteral("software")).toString();
             src.downloadState   = m.value(QStringLiteral("downloadState")).toString();
             src.remoteQueueRank = m.value(QStringLiteral("remoteQueueRank")).toInteger();
+            src.remoteQueueFull = m.value(QStringLiteral("remoteQueueFull")).toBool();
             src.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
             src.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
             src.datarate        = m.value(QStringLiteral("datarate")).toInteger();

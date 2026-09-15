@@ -135,7 +135,6 @@ private:
     void appendToStatus(const QString& html);
     [[nodiscard]] QString formatTimestamp() const;
     [[nodiscard]] QString renderMircCodes(QStringView text, MircFormat& fmt) const;
-    [[nodiscard]] QString renderSmileys(const QString& text) const;
     [[nodiscard]] QString formatMessage(const QString& text) const;
 
     // Nick list

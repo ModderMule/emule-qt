@@ -455,8 +455,9 @@ void URLClient::connectToHost()
 
     // Connect socket signals
     QObject::connect(reqSocket, &ClientReqSocket::clientDisconnected,
-                     this, [this](const QString& reason) {
-        disconnected(reason, true);
+                     this, [this, reqSocket](const QString& reason) {
+        if (socket() == reqSocket)   // a replaced socket must not tear down its successor
+            disconnected(reason, true);
     });
 
     // Without this the TCP connection completes and then nothing happens: the

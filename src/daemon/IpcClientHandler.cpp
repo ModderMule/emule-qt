@@ -51,6 +51,7 @@
 #include "portmap/PortMapper.h"
 #include "kademlia/KadPrefs.h"
 #include "net/ListenSocket.h"
+#include "net/ProxySettings.h"
 #include "prefs/Preferences.h"
 #include "net/Packet.h"
 #include "protocol/ED2KLink.h"
@@ -1779,227 +1780,7 @@ void IpcClientHandler::handleGetStatsHistory(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
 {
-    QCborMap prefs;
-    prefs.insert(QStringLiteral("nick"), thePrefs.nick());
-    prefs.insert(QStringLiteral("port"), thePrefs.port());
-    prefs.insert(QStringLiteral("udpPort"), thePrefs.udpPort());
-    prefs.insert(QStringLiteral("maxUpload"), static_cast<qint64>(thePrefs.maxUpload()));
-    prefs.insert(QStringLiteral("maxDownload"), static_cast<qint64>(thePrefs.maxDownload()));
-    prefs.insert(QStringLiteral("maxGraphDownloadRate"), static_cast<qint64>(thePrefs.maxGraphDownloadRate()));
-    prefs.insert(QStringLiteral("maxGraphUploadRate"), static_cast<qint64>(thePrefs.maxGraphUploadRate()));
-    prefs.insert(QStringLiteral("maxConnections"), static_cast<qint64>(thePrefs.maxConnections()));
-    prefs.insert(QStringLiteral("maxSourcesPerFile"), static_cast<qint64>(thePrefs.maxSourcesPerFile()));
-    prefs.insert(QStringLiteral("autoConnect"), thePrefs.autoConnect());
-    prefs.insert(QStringLiteral("reconnect"), thePrefs.reconnect());
-    prefs.insert(QStringLiteral("showOverhead"), thePrefs.showOverhead());
-    prefs.insert(QStringLiteral("networkED2K"), thePrefs.networkED2K());
-    prefs.insert(QStringLiteral("kadEnabled"), thePrefs.kadEnabled());
-    prefs.insert(QStringLiteral("schedulerEnabled"), thePrefs.schedulerEnabled());
-    prefs.insert(QStringLiteral("enableUPnP"), thePrefs.enableUPnP());
-    prefs.insert(QStringLiteral("separateIPv6Queue"), thePrefs.separateIPv6Queue());
-
-    // Server
-    prefs.insert(QStringLiteral("safeServerConnect"), thePrefs.safeServerConnect());
-    prefs.insert(QStringLiteral("autoConnectStaticOnly"), thePrefs.autoConnectStaticOnly());
-    prefs.insert(QStringLiteral("useServerPriorities"), thePrefs.useServerPriorities());
-    prefs.insert(QStringLiteral("addServersFromServer"), thePrefs.addServersFromServer());
-    prefs.insert(QStringLiteral("useUserSortedServerList"), thePrefs.useUserSortedServerList());
-    prefs.insert(QStringLiteral("addServersFromClients"), thePrefs.addServersFromClients());
-    prefs.insert(QStringLiteral("deadServerRetries"), static_cast<qint64>(thePrefs.deadServerRetries()));
-    prefs.insert(QStringLiteral("autoUpdateServerList"), thePrefs.autoUpdateServerList());
-    prefs.insert(QStringLiteral("serverListURL"), thePrefs.serverListURL());
-    prefs.insert(QStringLiteral("smartLowIdCheck"), thePrefs.smartLowIdCheck());
-    prefs.insert(QStringLiteral("manualServerHighPriority"), thePrefs.manualServerHighPriority());
-
-    // Proxy
-    prefs.insert(QStringLiteral("proxyType"), thePrefs.proxyType());
-    prefs.insert(QStringLiteral("proxyHost"), thePrefs.proxyHost());
-    prefs.insert(QStringLiteral("proxyPort"), static_cast<qint64>(thePrefs.proxyPort()));
-    prefs.insert(QStringLiteral("proxyEnablePassword"), thePrefs.proxyEnablePassword());
-    prefs.insert(QStringLiteral("proxyUser"), thePrefs.proxyUser());
-    prefs.insert(QStringLiteral("proxyPassword"), thePrefs.proxyPassword());
-
-    // Files page (daemon-side)
-    prefs.insert(QStringLiteral("addNewFilesPaused"), thePrefs.addNewFilesPaused());
-    prefs.insert(QStringLiteral("useSaveLoadSources"), thePrefs.useSaveLoadSources());
-    prefs.insert(QStringLiteral("autoDownloadPriority"), thePrefs.autoDownloadPriority());
-    prefs.insert(QStringLiteral("autoSharedFilesPriority"), thePrefs.autoSharedFilesPriority());
-    prefs.insert(QStringLiteral("transferFullChunks"), thePrefs.transferFullChunks());
-    prefs.insert(QStringLiteral("previewPrio"), thePrefs.previewPrio());
-    prefs.insert(QStringLiteral("startNextPausedFile"), thePrefs.startNextPausedFile());
-    prefs.insert(QStringLiteral("startNextPausedFileSameCat"), thePrefs.startNextPausedFileSameCat());
-    prefs.insert(QStringLiteral("startNextPausedFileOnlySameCat"), thePrefs.startNextPausedFileOnlySameCat());
-    prefs.insert(QStringLiteral("rememberDownloadedFiles"), thePrefs.rememberDownloadedFiles());
-    prefs.insert(QStringLiteral("rememberCancelledFiles"), thePrefs.rememberCancelledFiles());
-
-    // Notifications (daemon-side)
-    prefs.insert(QStringLiteral("notifyOnLog"), thePrefs.notifyOnLog());
-    prefs.insert(QStringLiteral("notifyOnChat"), thePrefs.notifyOnChat());
-    prefs.insert(QStringLiteral("notifyOnChatMsg"), thePrefs.notifyOnChatMsg());
-    prefs.insert(QStringLiteral("notifyOnDownloadAdded"), thePrefs.notifyOnDownloadAdded());
-    prefs.insert(QStringLiteral("notifyOnDownloadFinished"), thePrefs.notifyOnDownloadFinished());
-    prefs.insert(QStringLiteral("notifyOnNewVersion"), thePrefs.notifyOnNewVersion());
-    prefs.insert(QStringLiteral("notifyOnUrgent"), thePrefs.notifyOnUrgent());
-    prefs.insert(QStringLiteral("notifyEmailEnabled"), thePrefs.notifyEmailEnabled());
-    prefs.insert(QStringLiteral("notifyEmailSmtpServer"), thePrefs.notifyEmailSmtpServer());
-    prefs.insert(QStringLiteral("notifyEmailSmtpPort"), static_cast<qint64>(thePrefs.notifyEmailSmtpPort()));
-    prefs.insert(QStringLiteral("notifyEmailSmtpAuth"), thePrefs.notifyEmailSmtpAuth());
-    prefs.insert(QStringLiteral("notifyEmailSmtpTls"), thePrefs.notifyEmailSmtpTls());
-    prefs.insert(QStringLiteral("notifyEmailSmtpUser"), thePrefs.notifyEmailSmtpUser());
-    prefs.insert(QStringLiteral("notifyEmailSmtpPassword"), thePrefs.notifyEmailSmtpPassword());
-    prefs.insert(QStringLiteral("notifyEmailRecipient"), thePrefs.notifyEmailRecipient());
-    prefs.insert(QStringLiteral("notifyEmailSender"), thePrefs.notifyEmailSender());
-
-    // Messages and Comments
-    prefs.insert(QStringLiteral("msgOnlyFriends"), thePrefs.msgOnlyFriends());
-    prefs.insert(QStringLiteral("enableSpamFilter"), thePrefs.enableSpamFilter());
-    prefs.insert(QStringLiteral("useChatCaptchas"), thePrefs.useChatCaptchas());
-    prefs.insert(QStringLiteral("messageFilter"), thePrefs.messageFilter());
-    prefs.insert(QStringLiteral("commentFilter"), thePrefs.commentFilter());
-
-    // Security
-    prefs.insert(QStringLiteral("filterServerByIP"), thePrefs.filterServerByIP());
-    prefs.insert(QStringLiteral("ipFilterLevel"), static_cast<qint64>(thePrefs.ipFilterLevel()));
-    prefs.insert(QStringLiteral("viewSharedFilesAccess"), thePrefs.viewSharedFilesAccess());
-    prefs.insert(QStringLiteral("cryptLayerSupported"), thePrefs.cryptLayerSupported());
-    prefs.insert(QStringLiteral("cryptLayerRequested"), thePrefs.cryptLayerRequested());
-    prefs.insert(QStringLiteral("cryptLayerRequired"), thePrefs.cryptLayerRequired());
-    prefs.insert(QStringLiteral("useSecureIdent"), thePrefs.useSecureIdent());
-    prefs.insert(QStringLiteral("enableSearchResultFilter"), thePrefs.enableSearchResultFilter());
-    prefs.insert(QStringLiteral("warnUntrustedFiles"), thePrefs.warnUntrustedFiles());
-    prefs.insert(QStringLiteral("ipFilterUpdateUrl"), thePrefs.ipFilterUpdateUrl());
-    prefs.insert(QStringLiteral("appToken"), thePrefs.appToken());
-
-    // Usenet. The server list travels over GetNewsServers=720 instead, because
-    // it carries credentials and needs the password-withholding rules.
-    prefs.insert(QStringLiteral("usenetEnabled"), thePrefs.usenetEnabled());
-    prefs.insert(QStringLiteral("usenetRetryIntervalSeconds"),
-                 static_cast<qint64>(thePrefs.usenetRetryIntervalSeconds()));
-    prefs.insert(QStringLiteral("usenetDownloadSharePercent"),
-                 static_cast<qint64>(thePrefs.usenetDownloadSharePercent()));
-    prefs.insert(QStringLiteral("usenetPar2Repair"), thePrefs.usenetPar2Repair());
-    prefs.insert(QStringLiteral("usenetPar2RenameFiles"), thePrefs.usenetPar2RenameFiles());
-    prefs.insert(QStringLiteral("usenetUnpack"), thePrefs.usenetUnpack());
-    prefs.insert(QStringLiteral("usenetCleanupAfterUnpack"),
-                 thePrefs.usenetCleanupAfterUnpack());
-    prefs.insert(QStringLiteral("usenetDirectUnpack"), thePrefs.usenetDirectUnpack());
-    prefs.insert(QStringLiteral("usenetEncryptedPreview"), thePrefs.usenetEncryptedPreview());
-    prefs.insert(QStringLiteral("usenetExternalUnpacker"), thePrefs.usenetExternalUnpacker());
-    prefs.insert(QStringLiteral("usenetHealthCheck"),
-                 static_cast<qint64>(thePrefs.usenetHealthCheck()));
-    prefs.insert(QStringLiteral("usenetHealthMinPercent"),
-                 static_cast<qint64>(thePrefs.usenetHealthMinPercent()));
-    prefs.insert(QStringLiteral("usenetAutoAddPaused"), thePrefs.usenetAutoAddPaused());
-    prefs.insert(QStringLiteral("usenetWatchDir"), thePrefs.usenetWatchDir());
-
-    // Indexers — the four search settings only. The account list travels over
-    // GetIndexers=700 instead, because it carries API keys and needs the
-    // key-withholding rules.
-    prefs.insert(QStringLiteral("indexerResultLimit"),
-                 static_cast<qint64>(thePrefs.indexerResultLimit()));
-    prefs.insert(QStringLiteral("indexerMaxPages"),
-                 static_cast<qint64>(thePrefs.indexerMaxPages()));
-    prefs.insert(QStringLiteral("indexerTimeoutSeconds"),
-                 static_cast<qint64>(thePrefs.indexerTimeoutSeconds()));
-    prefs.insert(QStringLiteral("indexerCapsRefreshDays"),
-                 static_cast<qint64>(thePrefs.indexerCapsRefreshDays()));
-
-    // Statistics
-    prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(thePrefs.statsAverageMinutes()));
-    prefs.insert(QStringLiteral("graphsUpdateSec"), static_cast<qint64>(thePrefs.graphsUpdateSec()));
-    prefs.insert(QStringLiteral("statsUpdateSec"), static_cast<qint64>(thePrefs.statsUpdateSec()));
-    prefs.insert(QStringLiteral("fillGraphs"), thePrefs.fillGraphs());
-    prefs.insert(QStringLiteral("statsConnectionsMax"), static_cast<qint64>(thePrefs.statsConnectionsMax()));
-    prefs.insert(QStringLiteral("statsConnectionsRatio"), static_cast<qint64>(thePrefs.statsConnectionsRatio()));
-
-    // Extended (PPgTweaks)
-    prefs.insert(QStringLiteral("maxConsPerFive"), static_cast<qint64>(thePrefs.maxConsPerFive()));
-    prefs.insert(QStringLiteral("maxHalfConnections"), static_cast<qint64>(thePrefs.maxHalfConnections()));
-    prefs.insert(QStringLiteral("serverKeepAliveTimeout"), static_cast<qint64>(thePrefs.serverKeepAliveTimeout()));
-    prefs.insert(QStringLiteral("filterLANIPs"), thePrefs.filterLANIPs());
-    prefs.insert(QStringLiteral("checkDiskspace"), thePrefs.checkDiskspace());
-    prefs.insert(QStringLiteral("minFreeDiskSpace"), static_cast<qint64>(thePrefs.minFreeDiskSpace()));
-    prefs.insert(QStringLiteral("logToDiskCore"), thePrefs.logToDiskCore());
-    prefs.insert(QStringLiteral("logToDiskGui"), thePrefs.logToDiskGui());
-    prefs.insert(QStringLiteral("verbose"), thePrefs.verbose());
-    prefs.insert(QStringLiteral("serverVerboseLog"), thePrefs.serverVerboseLog());
-    prefs.insert(QStringLiteral("logPublicIP"), thePrefs.logPublicIP());
-    prefs.insert(QStringLiteral("closeUPnPOnExit"), thePrefs.closeUPnPOnExit());
-    prefs.insert(QStringLiteral("portMapProtocols"),
-                 static_cast<int>(thePrefs.portMapProtocols()));
-    prefs.insert(QStringLiteral("portMapIPv6"), thePrefs.portMapIPv6());
-    prefs.insert(QStringLiteral("portMapLeaseSecs"),
-                 static_cast<int>(thePrefs.portMapLeaseSecs()));
-    prefs.insert(QStringLiteral("fileBufferSize"), static_cast<qint64>(thePrefs.fileBufferSize()));
-    prefs.insert(QStringLiteral("useCreditSystem"), thePrefs.useCreditSystem());
-    prefs.insert(QStringLiteral("a4afSaveCpu"), thePrefs.a4afSaveCpu());
-    prefs.insert(QStringLiteral("autoArchivePreviewStart"), thePrefs.autoArchivePreviewStart());
-    prefs.insert(QStringLiteral("ed2kHostname"), thePrefs.ed2kHostname());
-    prefs.insert(QStringLiteral("ed2kLinkAdvertiseIPv6"), thePrefs.ed2kLinkAdvertiseIPv6());
-    prefs.insert(QStringLiteral("showExtControls"), thePrefs.showExtControls());
-    prefs.insert(QStringLiteral("commitFiles"), thePrefs.commitFiles());
-    prefs.insert(QStringLiteral("extractMetaData"), thePrefs.extractMetaData());
-    prefs.insert(QStringLiteral("logLevel"), thePrefs.logLevel());
-    prefs.insert(QStringLiteral("logSourceExchange"), thePrefs.logSourceExchange());
-    prefs.insert(QStringLiteral("logBannedClients"), thePrefs.logBannedClients());
-    prefs.insert(QStringLiteral("logRatingDescReceived"), thePrefs.logRatingDescReceived());
-    prefs.insert(QStringLiteral("logSecureIdent"), thePrefs.logSecureIdent());
-    prefs.insert(QStringLiteral("logFilteredIPs"), thePrefs.logFilteredIPs());
-    prefs.insert(QStringLiteral("logFileSaving"), thePrefs.logFileSaving());
-    prefs.insert(QStringLiteral("logA4AF"), thePrefs.logA4AF());
-    prefs.insert(QStringLiteral("logUlDlEvents"), thePrefs.logUlDlEvents());
-    prefs.insert(QStringLiteral("logRawSocketPackets"), thePrefs.logRawSocketPackets());
-    prefs.insert(QStringLiteral("logWebServer"), thePrefs.logWebServer());
-    prefs.insert(QStringLiteral("startCoreWithConsole"), thePrefs.startCoreWithConsole());
-    prefs.insert(QStringLiteral("queueSize"), static_cast<qint64>(thePrefs.queueSize()));
-    prefs.insert(QStringLiteral("rememberUploadQueue"), thePrefs.rememberUploadQueue());
-    // USS
-    prefs.insert(QStringLiteral("dynUpEnabled"), thePrefs.dynUpEnabled());
-    prefs.insert(QStringLiteral("dynUpPingTolerance"), static_cast<qint64>(thePrefs.dynUpPingTolerance()));
-    prefs.insert(QStringLiteral("dynUpPingToleranceMs"), static_cast<qint64>(thePrefs.dynUpPingToleranceMs()));
-    prefs.insert(QStringLiteral("dynUpUseMillisecondPingTolerance"), thePrefs.dynUpUseMillisecondPingTolerance());
-    prefs.insert(QStringLiteral("dynUpGoingUpDivider"), static_cast<qint64>(thePrefs.dynUpGoingUpDivider()));
-    prefs.insert(QStringLiteral("dynUpGoingDownDivider"), static_cast<qint64>(thePrefs.dynUpGoingDownDivider()));
-    prefs.insert(QStringLiteral("dynUpNumberOfPings"), static_cast<qint64>(thePrefs.dynUpNumberOfPings()));
-#ifdef Q_OS_WIN
-    prefs.insert(QStringLiteral("autotakeEd2kLinks"), thePrefs.autotakeEd2kLinks());
-    prefs.insert(QStringLiteral("openPortsOnWinFirewall"), thePrefs.openPortsOnWinFirewall());
-    prefs.insert(QStringLiteral("sparsePartFiles"), thePrefs.sparsePartFiles());
-    prefs.insert(QStringLiteral("allocFullFile"), thePrefs.allocFullFile());
-    prefs.insert(QStringLiteral("resolveShellLinks"), thePrefs.resolveShellLinks());
-    prefs.insert(QStringLiteral("multiUserSharing"), thePrefs.multiUserSharing());
-#endif
-
-    // Directories
-    prefs.insert(QStringLiteral("incomingDir"), thePrefs.incomingDir());
-    QCborArray tempArr;
-    for (const auto& t : thePrefs.tempDirs())
-        tempArr.append(t);
-    prefs.insert(QStringLiteral("tempDirs"), tempArr);
-    QCborArray sharedArr;
-    for (const auto& s : thePrefs.sharedDirs())
-        sharedArr.append(s);
-    prefs.insert(QStringLiteral("sharedDirs"), sharedArr);
-
-    // Web Server
-    prefs.insert(QStringLiteral("webServerEnabled"), thePrefs.webServerEnabled());
-    prefs.insert(QStringLiteral("webServerPort"), static_cast<qint64>(thePrefs.webServerPort()));
-    prefs.insert(QStringLiteral("webServerApiKey"), thePrefs.webServerApiKey());
-    prefs.insert(QStringLiteral("webServerListenAddress"), thePrefs.webServerListenAddress());
-    prefs.insert(QStringLiteral("webServerRestApiEnabled"), thePrefs.webServerRestApiEnabled());
-    prefs.insert(QStringLiteral("webServerGzipEnabled"), thePrefs.webServerGzipEnabled());
-    prefs.insert(QStringLiteral("webServerUPnP"), thePrefs.webServerUPnP());
-    prefs.insert(QStringLiteral("webServerTemplatePath"), thePrefs.webServerTemplatePath());
-    prefs.insert(QStringLiteral("webServerSessionTimeout"), static_cast<qint64>(thePrefs.webServerSessionTimeout()));
-    prefs.insert(QStringLiteral("webServerHttpsEnabled"), thePrefs.webServerHttpsEnabled());
-    prefs.insert(QStringLiteral("webServerCertPath"), thePrefs.webServerCertPath());
-    prefs.insert(QStringLiteral("webServerKeyPath"), thePrefs.webServerKeyPath());
-    prefs.insert(QStringLiteral("webServerAdminPassword"), thePrefs.webServerAdminPassword());
-    prefs.insert(QStringLiteral("webServerAdminAllowHiLevFunc"), thePrefs.webServerAdminAllowHiLevFunc());
-    prefs.insert(QStringLiteral("webServerGuestEnabled"), thePrefs.webServerGuestEnabled());
-    prefs.insert(QStringLiteral("webServerGuestPassword"), thePrefs.webServerGuestPassword());
-
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(prefs)));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(thePrefs.toIpcMap())));
 }
 
 void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
@@ -2227,7 +2008,10 @@ void IpcClientHandler::handleGetKadSearches(const IpcMessage& msg)
             m.insert(QStringLiteral("name"), search->getGUIName());
             m.insert(QStringLiteral("status"),
                      search->stopping() ? QStringLiteral("Stopping") : QStringLiteral("Active"));
+            // MFC shows "load (responses|total)" — KadSearchListCtrl.cpp:168-169
             m.insert(QStringLiteral("load"), static_cast<qint64>(search->getNodeLoad()));
+            m.insert(QStringLiteral("loadResponses"), static_cast<qint64>(search->getNodeLoadResponse()));
+            m.insert(QStringLiteral("loadTotal"), static_cast<qint64>(search->getNodeLoadTotal()));
             m.insert(QStringLiteral("packetsSent"), static_cast<qint64>(search->getKadPacketSent()));
             m.insert(QStringLiteral("requestAnswers"), static_cast<qint64>(search->getRequestAnswer()));
             m.insert(QStringLiteral("responses"), static_cast<qint64>(search->getAnswers()));
@@ -3790,6 +3574,16 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUsenetCleanupAfterUnpack(val.toBool());
     else if (key == QStringLiteral("usenetDirectUnpack"))
         thePrefs.setUsenetDirectUnpack(val.toBool());
+    else if (key == QStringLiteral("usenetUseProxy"))
+        thePrefs.setUsenetUseProxy(val.toBool());
+    else if (key == QStringLiteral("usenetSfvCheck"))
+        thePrefs.setUsenetSfvCheck(val.toBool());
+    else if (key == QStringLiteral("usenetUnrepairableAction"))
+        thePrefs.setUsenetUnrepairableAction(int(val.toInteger()));
+    else if (key == QStringLiteral("usenetUnwantedAction"))
+        thePrefs.setUsenetUnwantedAction(int(val.toInteger()));
+    else if (key == QStringLiteral("usenetUnwantedExtensions"))
+        thePrefs.setUsenetUnwantedExtensions(val.toString());
     else if (key == QStringLiteral("usenetEncryptedPreview"))
         thePrefs.setUsenetEncryptedPreview(val.toBool());
     else if (key == QStringLiteral("usenetExternalUnpacker"))
@@ -4174,10 +3968,13 @@ void IpcClientHandler::handleGetCollectionInfo(const IpcMessage& msg)
 
 void IpcClientHandler::handleSaveCollection(const IpcMessage& msg)
 {
-    const QString name = msg.fieldString(0);
+    // The name becomes the file name, so it is made valid first — MFC
+    // OnEnKillFocusCollectionName does the same before saving.
+    const QString name = stripInvalidFilenameChars(msg.fieldString(0).trimmed());
     const QCborArray hashesArr = msg.fieldArray(1);
     const bool textFormat = msg.fieldBool(2);
     const bool sign = msg.fieldBool(3);
+    const bool overwrite = msg.fieldBool(4);
 
     if (name.isEmpty()) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Collection name required")));
@@ -4226,9 +4023,19 @@ void IpcClientHandler::handleSaveCollection(const IpcMessage& msg)
     const QString filePath = QDir(thePrefs.incomingDir())
                                  .filePath(name + QStringLiteral(".emulecollection"));
 
-    // Remove existing file if present
-    if (QFile::exists(filePath))
-        QFile::remove(filePath);
+    // MFC asks before replacing a collection of the same name
+    // (CollectionCreateDialog.cpp:285-300). The GUI asks; "exists" is its cue.
+    if (QFile::exists(filePath)) {
+        if (!overwrite) {
+            sendMessage(IpcMessage::makeError(msg.seqId(), 409, QStringLiteral("exists")));
+            return;
+        }
+        if (!QFile::remove(filePath)) {
+            sendMessage(IpcMessage::makeError(msg.seqId(), 500,
+                                              QStringLiteral("Could not delete the existing file")));
+            return;
+        }
+    }
 
     if (!coll.writeToFile(filePath, signKey)) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 500, QStringLiteral("Failed to write collection file")));
@@ -5920,7 +5727,11 @@ void IpcClientHandler::handleSetUsenetCategoryStatus(const IpcMessage& msg)
     for (const QString& id : std::as_const(ids)) {
         switch (action) {
         case Ipc::CategoryAction::Pause:  acted += queue->pauseItem(id) ? 1 : 0; break;
-        case Ipc::CategoryAction::Resume: acted += queue->resumeItem(id) ? 1 : 0; break;
+        case Ipc::CategoryAction::Resume:
+            // Bulk: a category-wide resume must not wave through a release a
+            // check stopped, which nobody looked at.
+            acted += queue->resumeItem(id, usenet::UsenetQueue::ResumeIntent::Bulk) ? 1 : 0;
+            break;
         case Ipc::CategoryAction::Cancel:
             acted += queue->removeItem(id, /*deleteFiles*/ true) ? 1 : 0;
             break;
@@ -5962,6 +5773,9 @@ void IpcClientHandler::handleTestNewsServer(const IpcMessage& msg)
     auto* socket = new usenet::NntpSocket(this);
     // Short by design: this is a user waiting on a button, not a download.
     socket->setResponseTimeout(20'000);
+    // The route a download would take, or Test proves a connection nothing uses.
+    const ProxySettings route = thePrefs.usenetProxySettings();
+    socket->setProxy(toNetworkProxy(route));
 
     const int seqId = msg.seqId();
     auto* answered = new bool(false);
@@ -5991,11 +5805,19 @@ void IpcClientHandler::handleTestNewsServer(const IpcMessage& msg)
                         : tr("281 Authentication accepted"));
     });
     connect(socket, &usenet::NntpSocket::failed, this,
-            [reply](usenet::NntpError error, const QString& text) {
+            [reply, route](usenet::NntpError error, const QString& text) {
                 // The provider's own words, not ours: "481 Authentication
                 // failed" tells a user which half of the form to fix, where
                 // "connection failed" does not.
-                reply(false, text.isEmpty() ? usenet::describeNntpError(error) : text);
+                QString answer = text.isEmpty() ? usenet::describeNntpError(error) : text;
+                // Qt has no SOCKS4 client and speaks SOCKS5 to it instead, which
+                // a SOCKS4-only proxy refuses without saying why.
+                if (error == usenet::NntpError::ProxyFailed && route.useProxy
+                    && isSocks4ProxyType(route.type)) {
+                    answer = tr("%1 (SOCKS4 proxies are reached with SOCKS5, which "
+                                "this one may not accept)").arg(answer);
+                }
+                reply(false, answer);
             });
 
     socket->connectToServer(server);

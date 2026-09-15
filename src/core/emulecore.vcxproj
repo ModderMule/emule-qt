@@ -198,6 +198,7 @@
     <ClCompile Include="protocol\ED2KLink.cpp" />
     <ClCompile Include="net\Address.cpp" />
     <ClCompile Include="net\EMSocket.cpp" />
+    <ClCompile Include="net\ProxySettings.cpp" />
     <ClCompile Include="net\EncryptedDatagramSocket.cpp" />
     <ClCompile Include="net\EncryptedStreamSocket.cpp" />
     <ClCompile Include="crypto\FileIdentifier.cpp" />
@@ -339,6 +340,7 @@
     <ClInclude Include="utils\EntityList.h" />
     <ClInclude Include="utils\EntityMap.h" />
     <QtMoc Include="net\EMSocket.h" />
+    <ClInclude Include="net\ProxySettings.h" />
     <ClInclude Include="net\EncryptedDatagramSocket.h" />
     <QtMoc Include="net\EncryptedStreamSocket.h" />
     <ClInclude Include="utils\Exceptions.h" />

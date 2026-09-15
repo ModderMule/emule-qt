@@ -10,6 +10,7 @@
 #include "IpcProtocol.h"
 #include "utils/DialogSizing.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -18,7 +19,9 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -43,13 +46,12 @@ CollectionCreateDialog::CollectionCreateDialog(IpcClient* ipc,
 // loadExistingCollection — modify mode
 // ---------------------------------------------------------------------------
 
-void CollectionCreateDialog::loadExistingCollection(const QString& collectionHash,
-                                                     const QString& name,
+void CollectionCreateDialog::loadExistingCollection(const QString& name,
                                                      const QList<QVariantMap>& files,
                                                      bool textFormat)
 {
-    m_existingCollectionHash = collectionHash;
-    setWindowTitle(tr("Modify Collection..."));
+    // MFC CollectionCreateDialog.cpp:120
+    setWindowTitle(tr("Modify Collection...") + QStringLiteral(": ") + name);
     m_nameEdit->setText(name);
     m_textFormatCheck->setChecked(textFormat);
     onFormatChanged();
@@ -193,10 +195,12 @@ void CollectionCreateDialog::populateSharedFiles()
 
         const QCborArray arr = resp.fieldArray(1);
 
-        // Collect hashes already in the right pane
+        // Hashes already in the right pane. The trees have one column; the hash
+        // lives in UserRole (reading text(2) matched nothing, so Modify listed
+        // every file on both sides).
         QSet<QString> rightHashes;
         for (int i = 0; i < m_collectionTree->topLevelItemCount(); ++i)
-            rightHashes.insert(m_collectionTree->topLevelItem(i)->text(2));
+            rightHashes.insert(m_collectionTree->topLevelItem(i)->data(0, Qt::UserRole).toString());
 
         for (const auto& val : arr) {
             const QCborMap m = val.toMap();
@@ -294,30 +298,56 @@ void CollectionCreateDialog::onSave()
         return;
     }
 
+    sendSave(false);
+}
+
+void CollectionCreateDialog::sendSave(bool overwrite)
+{
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
     // Collect hashes from right pane (stored in UserRole)
     QCborArray hashes;
-    for (int i = 0; i < fileCount; ++i) {
-        auto* item = m_collectionTree->topLevelItem(i);
-        hashes.append(item->data(0, Qt::UserRole).toString());
-    }
+    for (int i = 0; i < m_collectionTree->topLevelItemCount(); ++i)
+        hashes.append(m_collectionTree->topLevelItem(i)->data(0, Qt::UserRole).toString());
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::SaveCollection);
-    msg.append(name);
+    msg.append(m_nameEdit->text().trimmed());
     msg.append(QCborValue(hashes));
     msg.append(m_textFormatCheck->isChecked());
     msg.append(m_signCheck->isChecked());
+    msg.append(overwrite);
 
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+    QPointer<CollectionCreateDialog> self(this);
+    m_ipc->sendRequest(std::move(msg), [self](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
         if (resp.type() == Ipc::IpcMsgType::Result && resp.fieldBool(0)) {
-            accept();
-        } else {
-            const QString err = resp.fieldString(1);
-            QMessageBox::warning(this, tr("Collection"),
-                tr("Failed to save collection: %1").arg(err));
+            self->accept();
+            return;
         }
+        if (!resp.isValid())
+            return;   // connection dropped: nothing saved, nothing refused
+        // One event-loop turn before any modal: a nested loop inside the socket read
+        // is what crashes on quit (see Ed2kLinkImporter).
+        const QString err = resp.fieldString(1);
+        QTimer::singleShot(0, qApp, [self, err] {
+            if (!self)
+                return;
+            if (err == QLatin1String("exists")) {
+                // MFC IDS_COLL_REPLACEEXISTING, No by default
+                if (QMessageBox::warning(self, tr("Collection"),
+                                         tr("Do you want to replace existing file?"),
+                                         QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                    == QMessageBox::Yes)
+                {
+                    self->sendSave(true);
+                }
+                return;
+            }
+            QMessageBox::warning(self, tr("Collection"),
+                                 tr("Failed to save collection: %1").arg(err));
+        });
     });
 }
 

@@ -127,6 +127,7 @@ SOURCES += \
     net/ClientReqSocket.cpp \
     net/ClientUDPSocket.cpp \
     net/EMSocket.cpp \
+    net/ProxySettings.cpp \
     net/EncryptedDatagramSocket.cpp \
     net/EncryptedStreamSocket.cpp \
     net/HttpClientReqSocket.cpp \
@@ -254,6 +255,7 @@ HEADERS += \
     net/ClientReqSocket.h \
     net/ClientUDPSocket.h \
     net/EMSocket.h \
+    net/ProxySettings.h \
     net/EncryptedDatagramSocket.h \
     net/EncryptedStreamSocket.h \
     net/HttpClientReqSocket.h \
